@@ -8,6 +8,48 @@
 #include "../camera.h"
 #include <glm/gtc/matrix_transform.hpp>
 
+// dec 2 2025 idk where put this todo 
+// ---------- static hitbox VAO (init once) ----------
+static GLuint hitboxVAO = 0;
+static GLuint hitboxVBO = 0;
+
+static void initHitboxVAO()
+{
+    if (hitboxVAO != 0) return;
+
+    float verts[] = {
+        // bottom
+        -0.5,-0.5,-0.5,  0.5,-0.5,-0.5,
+         0.5,-0.5,-0.5,  0.5,-0.5, 0.5,
+         0.5,-0.5, 0.5, -0.5,-0.5, 0.5,
+        -0.5,-0.5, 0.5, -0.5,-0.5,-0.5,
+
+        // top
+        -0.5,0.5,-0.5,  0.5,0.5,-0.5,
+         0.5,0.5,-0.5,  0.5,0.5, 0.5,
+         0.5,0.5, 0.5, -0.5,0.5, 0.5,
+        -0.5,0.5, 0.5, -0.5,0.5,-0.5,
+
+        // verticals
+        -0.5,-0.5,-0.5, -0.5,0.5,-0.5,
+         0.5,-0.5,-0.5,  0.5,0.5,-0.5,
+         0.5,-0.5, 0.5,  0.5,0.5, 0.5,
+        -0.5,-0.5, 0.5, -0.5,0.5, 0.5
+    };
+
+    glGenVertexArrays(1, &hitboxVAO);
+    glGenBuffers(1, &hitboxVBO);
+
+    glBindVertexArray(hitboxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, hitboxVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
+
+    glBindVertexArray(0);
+}
+
 // At the very top of player.cpp (below your includes), add:
 #include "../renderer/renderer.h"
 extern Renderer* gRenderer;
@@ -20,7 +62,9 @@ Player::Player() {
     pos = glm::vec3(0.0f, 2.0f, 0.0f);
     vel = glm::vec3(0.0f);
     onGround = false;
-    hitboxSize = glm::vec3(0.8f, 1.8f, 0.8f);
+    // todo NO MORE HARD CODINGGGGGG dec 2 2025
+    // this is hitbox actual definition i think i dont know
+    hitboxSize = glm::vec3(1.2f, 1.8f, 0.4f);
 }
 
 void Player::reset() {
@@ -45,14 +89,19 @@ void Player::move(const glm::vec3& dir, float speed, float dt) {
 
 // dec 2 2025 todo idk where put this 
 OBB Player::getOBB() const {
-    glm::mat4 rot = glm::mat4(1.0f);
-    float yaw = this->yaw; // you must add this field to Player
-    rot = glm::rotate(rot, glm::radians(-yaw), glm::vec3(0,1,0));
-
     OBB box;
+
+    // center = position + offset
     box.center = pos + hitboxOffset;
+
+    // half sizes
     box.halfSize = hitboxSize * 0.5f;
+
+    // orientation from player yaw
+    glm::mat4 rot = glm::mat4(1.0f);
+    rot = glm::rotate(rot, glm::radians(-yaw), glm::vec3(0,1,0));
     box.orientation = rot;
+
     return box;
 }
 
@@ -80,36 +129,23 @@ void Player::render(GLuint shaderProgram, GLuint vao, int vertCount,
     glLineWidth(2.0f);
     glBindVertexArray(0);
 
-    // reuse your existing edge array
-    // todo dec 2 2025 make this  not be ugl hard code
-    float hitboxVerts[] = {
-        // bottom
-        -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,
-        0.5f,-0.5f,-0.5f,  0.5f,-0.5f, 0.5f,
-        0.5f,-0.5f, 0.5f, -0.5f,-0.5f, 0.5f,
-        -0.5f,-0.5f, 0.5f, -0.5f,-0.5f,-0.5f,
-        // top
-        -0.5f, 0.5f,-0.5f,  0.5f, 0.5f,-0.5f,
-        0.5f, 0.5f,-0.5f,  0.5f, 0.5f, 0.5f,
-        0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f,
-        -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,-0.5f,
-        // verticals
-        -0.5f,-0.5f,-0.5f, -0.5f, 0.5f,-0.5f,
-        0.5f,-0.5f,-0.5f,  0.5f, 0.5f,-0.5f,
-        0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f,
-        -0.5f,-0.5f, 0.5f, -0.5f, 0.5f, 0.5f
-    };
-    GLuint hbVAO, hbVBO;
-    glGenVertexArrays(1, &hbVAO);
-    glGenBuffers(1, &hbVBO);
-    glBindVertexArray(hbVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, hbVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(hitboxVerts), hitboxVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    initHitboxVAO();  // ensure VAO exists once
+
+    glm::mat4 hitboxModel = glm::mat4(1.0f);
+    hitboxModel = glm::translate(hitboxModel, pos + hitboxOffset);
+    hitboxModel = glm::rotate(hitboxModel, glm::radians(-yaw), glm::vec3(0,1,0));
+    hitboxModel = glm::scale(hitboxModel, hitboxSize);
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &hitboxModel[0][0]);
+    glUniform3f(glGetUniformLocation(shaderProgram, "color"), 1.0f, 0.0f, 0.0f);
+
+    glDisable(GL_DEPTH_TEST);
+    glLineWidth(2.0f);
+
+    glBindVertexArray(hitboxVAO);
     glDrawArrays(GL_LINES, 0, 24);
-    glDeleteBuffers(1, &hbVBO);
-    glDeleteVertexArrays(1, &hbVAO);
+    glBindVertexArray(0);
+
     glEnable(GL_DEPTH_TEST);
 
     // ---------------- PLAYER MESH ----------------

@@ -79,7 +79,7 @@ GLuint gMainShaderProgram = 0;
 
 int main() {
     srand((unsigned)time(NULL));
-    Renderer renderer(1200, 900, "mimita.exe");
+    Renderer renderer(800, 600, "mimita.exe");
     gRenderer = &renderer;
 
     // now OpenGL exists, so load textures
@@ -126,6 +126,7 @@ int main() {
         // Camera
         // calling only, not writing code in main.cpp
         camera.follow(player.pos);
+        player.yaw = camera.yaw;        // <-- absolutely required
         glm::mat4 view = camera.getView();
         glm::mat4 proj = camera.getProj(800.0f, 600.0f);
 

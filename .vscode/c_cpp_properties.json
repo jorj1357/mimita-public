@@ -4,20 +4,25 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${vcpkgRoot}/x64-windows/include",
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/src/map/deps"
+
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/include",
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/x86_64-w64-mingw32/include",
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include",
+
+                "C:/important/glfw-3.4.bin.WIN64/include",
+                "C:/important/glm-1.0.2",
+
+                "C:/important/quiet/n/mimita-public/mimita-public/include"
             ],
             "defines": [
                 "_DEBUG",
                 "UNICODE",
                 "_UNICODE"
             ],
-            "windowsSdkVersion": "10.0.26100.0",
-            "compilerPath": "cl.exe",
+            "compilerPath": "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/bin/g++.exe",
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "windows-msvc-x64"
+            "intelliSenseMode": "windows-gcc-x64"
         }
     ],
     "version": 4

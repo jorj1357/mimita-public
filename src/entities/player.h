@@ -2,59 +2,53 @@
 
 #pragma once
 #include <glad/glad.h>
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <GLFW/glfw3.h>
 
 class Camera;
 
-// dec 2 2025 i think we should have a single file/folder that controls
-// all player data and health and size and blah balh
-inline float PLAYER_WIDTH  = 1.0f;
-inline float PLAYER_HEIGHT = 2.0f;
-inline float PLAYER_DEPTH  = 0.5f;
-
-// dec 2 2025 todo where put this ???
-float yaw = 0.0f;
-OBB getOBB() const;
-
-// idk where put nov 12 2025 todo
+// ------------- Oriented Bounding Box -------------
 struct OBB {
     glm::vec3 center;
     glm::vec3 halfSize;
     glm::mat4 orientation;
 };
 
+// ------------- Player Definition -----------------
 class Player {
 public:
-    // -------- Core State --------
+    // Core state
     glm::vec3 pos{0, 2, 0};
     glm::vec3 vel{0};
     bool onGround = false;
 
-    // -------- Hitbox Config --------
-    glm::vec3 hitboxSize   = {0.8f, 1.8f, 0.8f};   // width, height, depth
-    glm::vec3 hitboxOffset = {0.0f, 0.0f, 0.0f};   // center offset
+    // Orientation
+    float yaw = 0.0f;   // <-- THIS was missing
 
-    // -------- Mesh Config --------
-    glm::vec3 meshScale  = {1.0f, 1.0f, 1.0f};
-    glm::vec3 meshOffset = {0.0f, -0.9f, 0.0f};    // shift mesh within hitbox
+    // Hitbox
+    // dec 2 2025 this size shouldddd be like robloxian
+    // head torso and legs are solid but arms arent
+    glm::vec3 hitboxSize = {1.0f, 1.8f, 0.35f}; 
+    glm::vec3 hitboxOffset = {0.0f, 0.0f, 0.0f};
 
-    // -------- Camera Config --------
-    glm::vec3 cameraOffset = {0.0f, 0.6f, 2.5f};
+    // Mesh
+    glm::vec3 meshScale  = {1,1,1};
+    glm::vec3 meshOffset = {0.0f, -0.9f, 0.0f};
 
-    // -------- Derived Helpers --------
+    // Camera follow
+    glm::vec3 cameraOffset = {0, 0.6f, 2.5f};
+
+    // Helpers
     inline glm::vec3 halfExtents() const { return hitboxSize * 0.5f; }
-    inline glm::mat4 getRootTransform(float yaw) const {
-        glm::mat4 root = glm::mat4(1.0f);
-        root = glm::translate(root, pos - glm::vec3(0, hitboxSize.y * 0.5f, 0));
-        root = glm::rotate(root, glm::radians(-yaw), glm::vec3(0, 1, 0));
-        return root;
-    }
 
     glm::mat4 rootTransform = glm::mat4(1.0f);
 
+    // REQUIRED NEW FUNCTION
+    OBB getOBB() const;
+
+    // Methods
     Player();
     void reset();
     void jump(float strength);
