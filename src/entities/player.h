@@ -9,9 +9,15 @@
 
 class Camera;
 
+// dec 2 2025 i think we should have a single file/folder that controls
+// all player data and health and size and blah balh
 inline float PLAYER_WIDTH  = 1.0f;
 inline float PLAYER_HEIGHT = 2.0f;
 inline float PLAYER_DEPTH  = 0.5f;
+
+// dec 2 2025 todo where put this ???
+float yaw = 0.0f;
+OBB getOBB() const;
 
 // idk where put nov 12 2025 todo
 struct OBB {

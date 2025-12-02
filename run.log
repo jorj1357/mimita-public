@@ -1,2 +1,5 @@
-terminate called after throwing an instance of 'std::runtime_error'
-  what():  Failed to load OBJ: C:/important/go away v5/s/mimita-v5/assets/entity/player/default/mimita-dev-player-v1.obj
+OpenGL version: 3.3.0 - Build 31.0.101.4502
+Renderer initialized successfully.
+Loaded 11 textures.
+Window pointer: 000001d24e711d50
+Loading map...

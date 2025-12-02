@@ -43,6 +43,19 @@ void Player::move(const glm::vec3& dir, float speed, float dt) {
     pos += dir * speed * dt;
 }
 
+// dec 2 2025 todo idk where put this 
+OBB Player::getOBB() const {
+    glm::mat4 rot = glm::mat4(1.0f);
+    float yaw = this->yaw; // you must add this field to Player
+    rot = glm::rotate(rot, glm::radians(-yaw), glm::vec3(0,1,0));
+
+    OBB box;
+    box.center = pos + hitboxOffset;
+    box.halfSize = hitboxSize * 0.5f;
+    box.orientation = rot;
+    return box;
+}
+
 void Player::render(GLuint shaderProgram, GLuint vao, int vertCount,
                     const glm::mat4& view, const glm::mat4& proj,
                     const Camera& camera, GLuint tex) {
@@ -68,6 +81,7 @@ void Player::render(GLuint shaderProgram, GLuint vao, int vertCount,
     glBindVertexArray(0);
 
     // reuse your existing edge array
+    // todo dec 2 2025 make this  not be ugl hard code
     float hitboxVerts[] = {
         // bottom
         -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,

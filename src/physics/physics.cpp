@@ -9,6 +9,19 @@
 #include <iostream>
 #include <Windows.h>
 
+// idk where put this dec 2 2025 todo
+struct Ray {
+    glm::vec3 origin;
+    glm::vec3 dir;
+};
+
+float intersectPlane(const glm::vec3& p0, const glm::vec3& n, const Ray& r) {
+    float denom = glm::dot(n, r.dir);
+    if (fabs(denom) < 1e-6f) return -1.0f;
+    float t = glm::dot(p0 - r.origin, n) / denom;
+    return (t >= 0.0f ? t : -1.0f);
+}
+
 void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const Camera& cam) {
     // derive camera-relative forward/right, ignoring vertical pitch
     glm::vec3 forward = glm::normalize(glm::vec3(cam.front.x, 0, cam.front.z));
@@ -57,10 +70,26 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     i dont want to code that in, i want it to be a result
     of our collisions
     */
-    float groundY = p.halfExtents().y;
-    if (p.pos.y < groundY) {
-        p.pos.y = groundY;
-        p.vel.y = 0;
+
+    OBB obb = p.getOBB();
+
+    // Very simple ground plane collision: y=0
+    glm::vec3 planeNormal = glm::vec3(0,1,0);
+    glm::vec3 planePoint  = glm::vec3(0,0,0);
+
+    // Cast a ray from OBB center downward
+    Ray r;
+    r.origin = obb.center;
+    r.dir = glm::vec3(0,-1,0);
+
+    float t = intersectPlane(planePoint, planeNormal, r);
+
+    float bottomY = obb.center.y - obb.halfSize.y;
+
+    if (t >= 0.0f && bottomY <= 0.0f) {
+        // Push player up so hitbox bottom aligns with ground
+        p.pos.y = obb.halfSize.y;
+        p.vel.y = 0.0f;
         p.onGround = true;
     } else {
         p.onGround = false;

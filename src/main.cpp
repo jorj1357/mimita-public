@@ -79,7 +79,7 @@ GLuint gMainShaderProgram = 0;
 
 int main() {
     srand((unsigned)time(NULL));
-    Renderer renderer(800, 600, "mimita.exe");
+    Renderer renderer(1200, 900, "mimita.exe");
     gRenderer = &renderer;
 
     // now OpenGL exists, so load textures
@@ -91,12 +91,13 @@ int main() {
 
     // mesh loading
     // nov 6 2025 todo do we rly need to load the mesh every loop? performance hit maybe
-    Mesh playerMesh = loadOBJ("C:/important/go away v5/s/mimita-v5/assets/entity/player/default/mimita-dev-player-v1.obj");
+    // dec 2 2025 PLZ todo no more hard coding this high ke make me mad
+    Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-dev-player-v1.obj");
     GLuint playerVAO = createMapVAO(playerMesh);
-    GLuint playerTex = loadTexture("C:/important/go away v5/s/mimita-v5/assets/textures/greenwirev1.png");
+    GLuint playerTex = loadTexture("assets/textures/greenwirev1.png");
 
     printf("Loading map...\n");
-    Mesh map = loadOBJ("C:/important/go away v5/s/mimita-v5/assets/maps/mimita-4-squares-map-v1.obj");
+    Mesh map = loadOBJ("assets/maps/mimita-4-squares-map-v1.obj");
     if (map.verts.empty()) {
         fprintf(stderr, "Map failed to load or has 0 verts.\n");
         return -1;
