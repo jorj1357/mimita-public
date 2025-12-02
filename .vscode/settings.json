@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "maincpp": "cpp",
+        "ctime": "cpp",
+        "algorithm": "cpp",
+        "vector": "cpp",
+        "string": "cpp",
+        "random": "cpp",
+        "cmath": "cpp"
+    }
+}

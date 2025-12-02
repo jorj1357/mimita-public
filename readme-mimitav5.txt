@@ -1,0 +1,1 @@
+another mimita attempt but self coded not all ai bc inspired from roblox and seeing i can be fast whne manual 

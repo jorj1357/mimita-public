@@ -1,0 +1,83 @@
+// C:\important\go away v5\s\mimita-v5\src\map\map_editor.cpp
+// not done at all and also sucks and also just use blender
+// todo nov 6 2025
+
+#include "map/map_editor.h"
+#include "renderer/renderer.h"
+#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <cstdlib>
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+// its not in this folder
+#include "../player.h"
+
+using json = nlohmann::json;
+
+void MapEditor::update(Renderer& renderer, Player& player) {
+    if (!active) return;
+
+    glm::ivec3 gridPos = glm::round(player.pos);
+
+    // Left click = place block
+    if (glfwGetMouseButton(renderer.window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        bool exists = false;
+        for (auto& b : blocks)
+            if (b.pos == gridPos) exists = true;
+
+        if (!exists) {
+            Block b;
+            b.pos = gridPos;
+            b.color = glm::vec3(
+                (float)rand() / RAND_MAX,
+                (float)rand() / RAND_MAX,
+                (float)rand() / RAND_MAX
+            );
+            blocks.push_back(b);
+        }
+    }
+
+    // Right click = remove block
+    if (glfwGetMouseButton(renderer.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        blocks.erase(std::remove_if(blocks.begin(), blocks.end(),
+            [gridPos](const Block& b) { return b.pos == gridPos; }),
+            blocks.end());
+    }
+}
+
+void MapEditor::renderGrid(Renderer& renderer, const glm::mat4& view, const glm::mat4& proj) {
+    if (!active) return;
+    for (int x = -20; x <= 20; ++x)
+        for (int z = -20; z <= 20; ++z)
+            renderer.drawGridCell(glm::vec3(x, 0, z), view, proj);
+
+    for (auto& b : blocks)
+        renderer.drawCubeColored(glm::vec3(b.pos), b.color, view, proj);
+}
+
+void MapEditor::save(const std::string& path) {
+    json j;
+    for (auto& b : blocks)
+        j.push_back({
+            {"x", b.pos.x}, {"y", b.pos.y}, {"z", b.pos.z},
+            {"r", b.color.r}, {"g", b.color.g}, {"b", b.color.b}
+        });
+
+    std::ofstream out(path);
+    out << j.dump(2);
+}
+
+void MapEditor::load(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) return;
+    json j;
+    in >> j;
+    blocks.clear();
+    for (auto& e : j) {
+        Block b;
+        b.pos = glm::ivec3(e["x"], e["y"], e["z"]);
+        b.color = glm::vec3(e["r"], e["g"], e["b"]);
+        blocks.push_back(b);
+    }
+}

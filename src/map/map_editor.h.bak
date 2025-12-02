@@ -1,0 +1,23 @@
+#pragma once
+#include <vector>
+#include <glm/glm.hpp>
+#include <string>
+
+class Renderer;
+class Player;
+
+struct Block {
+    glm::ivec3 pos;
+    glm::vec3 color;
+};
+
+class MapEditor {
+public:
+    bool active = false;
+    std::vector<Block> blocks;
+
+    void update(Renderer& renderer, Player& player);
+    void renderGrid(Renderer& renderer, const glm::mat4& view, const glm::mat4& proj);
+    void save(const std::string& path);
+    void load(const std::string& path);
+};
