@@ -51,7 +51,11 @@ public:
 
     // Mesh
     glm::vec3 meshScale  = {1,1,1};
-    glm::vec3 meshOffset = {0.0f, -0.9f, 0.0f};
+    // new cool one dec 3 2025 todo is it good
+    glm::vec3 meshOffset = {0.0f, 0.0f, 0.0f};
+    // old one
+    // glm::vec3 meshOffset = {0.0f, -0.9f, 0.0f};
+
 
     // Camera follow
     glm::vec3 cameraOffset = {0, 0.6f, 2.5f};

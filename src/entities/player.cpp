@@ -78,7 +78,7 @@ Player::Player() {
     // so 25 units = 25 meters,
     // and techinically height should be 1.8m but oh well scaling 
     // default/small
-    hitboxSize = glm::vec3(1.2f, 1.8f, 0.4f);
+    // hitboxSize = glm::vec3(1.2f, 1.8f, 0.4f);
     // default v2
     hitboxSize = glm::vec3(0.4f, 1.8f, 1.2f);
 
@@ -189,14 +189,14 @@ void Player::render(GLuint shaderProgram, GLuint vao, int vertCount,
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &hitboxModel[0][0]);
     glUniform3f(glGetUniformLocation(shaderProgram, "color"), 1.0f, 0.0f, 0.0f);
 
-    glDisable(GL_DEPTH_TEST);
-    glLineWidth(2.0f);
+    // dec 3 2025 changed so hitbox dont get drawn over 
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glLineWidth(1.5f);
 
     glBindVertexArray(hitboxVAO);
     glDrawArrays(GL_LINES, 0, 24);
     glBindVertexArray(0);
-
-    glEnable(GL_DEPTH_TEST);
 
     // ---------------- PLAYER MESH ----------------
     glm::mat4 meshModel = glm::mat4(1.0f);
