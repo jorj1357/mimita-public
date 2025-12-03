@@ -119,7 +119,7 @@ int main() {
     // Mesh map = loadOBJ("assets/maps/mimita-collisions-test-map.obj");
 
     // big slopes map dec 3 2025 test
-    Mesh map = loadOBJ("assets/maps/mimita-big-map-v1.obj");
+    Mesh map = loadOBJ("assets/maps/mimita-big-map-v2.obj");
 
 
     if (map.verts.empty()) {

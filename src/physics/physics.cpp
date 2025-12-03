@@ -391,45 +391,56 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
 
     if (wantsStep)
     {
-        // First check: normal movement hits something?
         SweepResult normalCheck = sweepBoxMesh(world, centerStart, centerEnd, half);
 
-if (normalCheck.hit)
-{
-    // 1. Try small step (standard 0.5f)
-    glm::vec3 stepPos = p.pos;
-    stepPos.y += STEP_HEIGHT;
-
-    glm::vec3 stepCenterStart = stepPos + glm::vec3(0, half.y, 0);
-    glm::vec3 stepCenterEnd   = stepCenterStart + p.vel * dt;
-
-    SweepResult stepCheck = sweepBoxMesh(world, stepCenterStart, stepCenterEnd, half);
-
-            if (!stepCheck.hit)
+        if (normalCheck.hit)
+        {
+            // ===== NEW SLOPE CHECK =====
+            // If the obstacle is too steep (not walkable)
+            // then do NOT step up or mantle.
+            if (normalCheck.normal.y < MAX_WALKABLE_DOT)
             {
-                p.pos = stepPos + p.vel * dt;
-                return;
+                // Treat like a wall. No climbing allowed.
+                // Do nothing here. Normal collision will handle it later.
             }
-
-            // 2. Try adaptive climb (mantle style)
-            // Scan upward for up to ~1.5x player height
-            const float MAX_CLIMB = p.hitboxSize.y * 1.5f;
-            const float STEP = 0.1f;  // cheap and stable
-
-            for (float up = STEP_HEIGHT; up < MAX_CLIMB; up += STEP)
+            else
             {
-                glm::vec3 climbPos = p.pos;
-                climbPos.y += up;
+                // ===== WALKABLE SLOPE OR SMALL LEDGE =====
+                // 1. Try small step (0.5f)
+                glm::vec3 stepPos = p.pos;
+                stepPos.y += STEP_HEIGHT;
 
-                glm::vec3 climbStart = climbPos + glm::vec3(0, half.y, 0);
-                glm::vec3 climbEnd   = climbStart + p.vel * dt;
+                glm::vec3 stepCenterStart = stepPos + glm::vec3(0, half.y, 0);
+                glm::vec3 stepCenterEnd   = stepCenterStart + p.vel * dt;
 
-                SweepResult climbCheck = sweepBoxMesh(world, climbStart, climbEnd, half);
+                SweepResult stepCheck = sweepBoxMesh(world, stepCenterStart, stepCenterEnd, half);
 
-                if (!climbCheck.hit)
+                if (!stepCheck.hit)
                 {
-                    p.pos = climbPos + p.vel * dt;
-                    return; // climb success
+                    p.pos = stepPos + p.vel * dt;
+                    return;
+                }
+
+                // 2. Try adaptive mantle climb
+                const float MAX_CLIMB = p.hitboxSize.y * 1.5f;
+                const float STEP = 0.1f;
+
+                for (float up = STEP_HEIGHT; up < MAX_CLIMB; up += STEP)
+                {
+                    glm::vec3 climbPos = p.pos;
+                    climbPos.y += up;
+
+                    glm::vec3 climbStart = climbPos + glm::vec3(0, half.y, 0);
+                    glm::vec3 climbEnd   = climbStart + p.vel * dt;
+
+                    SweepResult climbCheck = sweepBoxMesh(world, climbStart, climbEnd, half);
+
+                    if (!climbCheck.hit)
+                    {
+                        // Only mantle if original hit was walkable
+                        p.pos = climbPos + p.vel * dt;
+                        return;
+                    }
                 }
             }
         }
@@ -448,6 +459,20 @@ if (normalCheck.hit)
         if (into < 0) v -= result.normal * into;
         p.vel = v;
 
+        // If slope is too steep, apply surfing (Source engine behavior)
+        if (result.normal.y < MAX_WALKABLE_DOT) 
+        {
+            // Can't stand on it
+            p.onGround = false;
+
+            // Remove vertical velocity component INTO the slope
+            float intoSlope = glm::dot(p.vel, result.normal);
+            if (intoSlope < 0)
+                p.vel -= result.normal * intoSlope;
+
+            // No upward snap allowed on steep slopes
+        }
+
         // Fix vertical placement - stand on the floor
         bool isFloor = result.normal.y > 0.6f;
         if (isFloor) {
@@ -457,12 +482,14 @@ if (normalCheck.hit)
             p.onGround = false;
         }
 
-        p.pos = newCenter - glm::vec3(0, half.y, 0);
+        // Push slightly out of the hit surface to avoid embedding
+        p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.001f;
     }
     else
     {
         glm::vec3 newCenter = centerEnd;
-        p.pos = newCenter - glm::vec3(0, half.y, 0);
+        // Push slightly out of the hit surface to avoid embedding
+        p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.001f;
     }
 
     // --- UNIVERSAL UN-STUCK PASS ---
@@ -476,12 +503,18 @@ if (normalCheck.hit)
     float penetration = surfaceY - playerFeet;
 
     // If feet are below the actual surface by more than a hair, snap up.
-    if (penetration > 0.001f && penetration < 2.0f) {
-        p.pos.y = surfaceY;
-        // tiny upward bias so next frame isn't half inside again
-        p.pos.y += 0.001f;
-        p.vel.y = 0;
-        p.onGround = true;
+    if (penetration > 0.001f && penetration < 2.0f)
+    {
+        // get normal under player
+        glm::vec3 underN = findTriangleNormalAt(world, p.pos.x, p.pos.z);
+
+        // only snap if normal is walkable (<= 50 degrees)
+        if (underN.y > MAX_WALKABLE_DOT)
+        {
+            p.pos.y = surfaceY + 0.001f;
+            p.vel.y = 0;
+            p.onGround = true;
+        }
     }
 
     /*
