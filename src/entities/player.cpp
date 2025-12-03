@@ -80,7 +80,7 @@ Player::Player() {
     // default/small
     // hitboxSize = glm::vec3(1.2f, 1.8f, 0.4f);
     // default v2
-    hitboxSize = glm::vec3(0.4f, 3.4f, 1.3f);
+    hitboxSize = glm::vec3(0.4f, 3.3f, 1.4f);
 
     // big 1
    //  hitboxSize = glm::vec3(4.0f, 6.0f, 4.0f);
