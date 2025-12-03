@@ -80,7 +80,7 @@ Player::Player() {
     // default/small
     // hitboxSize = glm::vec3(1.2f, 1.8f, 0.4f);
     // default v2
-    hitboxSize = glm::vec3(0.4f, 1.8f, 1.2f);
+    hitboxSize = glm::vec3(0.4f, 3.4f, 1.3f);
 
     // big 1
    //  hitboxSize = glm::vec3(4.0f, 6.0f, 4.0f);
@@ -89,6 +89,8 @@ Player::Player() {
     // hitboxSize = glm::vec3(8.0f, 12.0f, 8.0f);
     // compute offset AFTER size is correct
     hitboxOffset = glm::vec3(0.0f, hitboxSize.y * 0.5f, 0.0f);
+    // dec 3 2025 test no 
+    // hitboxOffset = glm::vec3(0.0f, 0.0f, 0.0f);
 
     pos = glm::vec3(0.0f, 30.0f, 0.0f);
     vel = glm::vec3(0.0f);
