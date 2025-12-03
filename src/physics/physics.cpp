@@ -258,7 +258,7 @@ static SweepResult sweepBoxMesh(
     const Mesh& mesh,
     const glm::vec3& start,
     const glm::vec3& end,
-    const glm::vec3& halfExtents)    // half of hitboxSize
+    const glm::vec3& halfExtents)
 {
     SweepResult best;
     best.hit = false;
@@ -270,23 +270,17 @@ static SweepResult sweepBoxMesh(
         glm::vec3 v1 = mesh.verts[i+1].pos;
         glm::vec3 v2 = mesh.verts[i+2].pos;
 
-        // Minkowski expansion:
-        // Shrink the player to a point by expanding the triangles.
-        glm::vec3 ex = glm::vec3(halfExtents.x, 0, halfExtents.z);
+        // Expand for XZ hull
+        glm::vec3 ex(halfExtents.x, 0, halfExtents.z);
 
-        glm::vec3 v0e = v0;
-        glm::vec3 v1e = v1;
-        glm::vec3 v2e = v2;
+        glm::vec3 v0e = v0 - ex;
+        glm::vec3 v1e = v1 - ex;
+        glm::vec3 v2e = v2 - ex;
 
-        // Expand XZ (walls)
-        v0e -= ex;
-        v1e -= ex;
-        v2e -= ex;
-
-        // Expand Y (floor / ceiling)
-        v0e.y -= halfExtents.y;
-        v1e.y -= halfExtents.y;
-        v2e.y -= halfExtents.y;
+        // *** NO Y SHIFT ***
+        // Do NOT do: v0e.y -= halfExtents.y;
+        // Do NOT do: v1e.y -= halfExtents.y;
+        // Do NOT do: v2e.y -= halfExtents.y;
 
         SweepResult hit = sweepPointTriangle(start, end, v0e, v1e, v2e);
         if (hit.hit && hit.t < best.t)
