@@ -59,7 +59,15 @@ todo no more hardcoding spawn positions
 put them in config.h probably
 */
 Player::Player() {
-    pos = glm::vec3(0.0f, 2.0f, 0.0f);
+    // dec 3 2025 todo 
+    // put this , this player init spawn position
+    // in a centralized physics/game settings config file
+    // and even better an object in the world that is the spawn pos
+
+    // default spawn
+    // pos = glm::vec3(0.0f, 2.0f, 0.0f);
+    // higher spawn
+    pos = glm::vec3(0.0f, 30.0f, 0.0f);
     vel = glm::vec3(0.0f);
     onGround = false;
     // todo NO MORE HARD CODINGGGGGG dec 2 2025
@@ -68,7 +76,11 @@ Player::Player() {
 }
 
 void Player::reset() {
-    pos = glm::vec3(0.0f, 10.0f, 0.0f);
+    // default reset
+    // pos = glm::vec3(0.0f, 10.0f, 0.0f);
+    // higher reset
+    pos = glm::vec3(0.0f, 50.0f, 0.0f);
+
     vel = glm::vec3(0.0f);
     onGround = false;
 }
