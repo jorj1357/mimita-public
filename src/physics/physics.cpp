@@ -319,6 +319,7 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     else
     {
         // AIR MOVEMENT
+        // todo dec 3 2025 make nice and fix and not ultra fast but a lil fast 
         if (glm::length(dir) > 0)
             applyAirStrafe(p, dir, dt);
     }
@@ -352,18 +353,21 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     {
         glm::vec3 newCenter = centerStart + (centerEnd - centerStart) * result.t;
 
+        // Slide velocity
         glm::vec3 v = p.vel;
         float into = glm::dot(v, result.normal);
         if (into < 0) v -= result.normal * into;
         p.vel = v;
 
-        p.pos = newCenter - glm::vec3(0, half.y, 0);
-
-        if (result.normal.y > 0.7f)
-        {
+        // Fix vertical placement - stand on the floor
+        if (result.normal.y > 0.7f) {
+            float floorY = result.hitPoint.y;
+            newCenter.y = floorY + half.y;
             p.onGround = true;
             p.vel.y = 0;
         }
+
+        p.pos = newCenter - glm::vec3(0, half.y, 0);
     }
     else
     {
