@@ -394,22 +394,43 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
         // First check: normal movement hits something?
         SweepResult normalCheck = sweepBoxMesh(world, centerStart, centerEnd, half);
 
-        if (normalCheck.hit)
-        {
-            // Try stepping up
-            glm::vec3 stepPos = p.pos;
-            stepPos.y += STEP_HEIGHT;
+if (normalCheck.hit)
+{
+    // 1. Try small step (standard 0.5f)
+    glm::vec3 stepPos = p.pos;
+    stepPos.y += STEP_HEIGHT;
 
-            glm::vec3 stepCenterStart = stepPos + glm::vec3(0, half.y, 0);
-            glm::vec3 stepCenterEnd   = stepCenterStart + p.vel * dt;
+    glm::vec3 stepCenterStart = stepPos + glm::vec3(0, half.y, 0);
+    glm::vec3 stepCenterEnd   = stepCenterStart + p.vel * dt;
 
-            SweepResult stepCheck = sweepBoxMesh(world, stepCenterStart, stepCenterEnd, half);
+    SweepResult stepCheck = sweepBoxMesh(world, stepCenterStart, stepCenterEnd, half);
 
             if (!stepCheck.hit)
             {
-                // valid step
                 p.pos = stepPos + p.vel * dt;
                 return;
+            }
+
+            // 2. Try adaptive climb (mantle style)
+            // Scan upward for up to ~1.5x player height
+            const float MAX_CLIMB = p.hitboxSize.y * 1.5f;
+            const float STEP = 0.1f;  // cheap and stable
+
+            for (float up = STEP_HEIGHT; up < MAX_CLIMB; up += STEP)
+            {
+                glm::vec3 climbPos = p.pos;
+                climbPos.y += up;
+
+                glm::vec3 climbStart = climbPos + glm::vec3(0, half.y, 0);
+                glm::vec3 climbEnd   = climbStart + p.vel * dt;
+
+                SweepResult climbCheck = sweepBoxMesh(world, climbStart, climbEnd, half);
+
+                if (!climbCheck.hit)
+                {
+                    p.pos = climbPos + p.vel * dt;
+                    return; // climb success
+                }
             }
         }
     }
@@ -444,10 +465,21 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
         p.pos = newCenter - glm::vec3(0, half.y, 0);
     }
 
-        // Overlap check - push player up if inside geometry
-    float floorY = raycastMeshDown(world, p.pos + glm::vec3(0, half.y + 0.01f, 0));
-    if (floorY > p.pos.y) {
-        p.pos.y = floorY;
+    // --- UNIVERSAL UN-STUCK PASS ---
+    // Cast *from ABOVE* the player, not from their position.
+    // This guarantees you find the correct top surface even if you're embedded.
+
+    glm::vec3 probeOrigin = p.pos + glm::vec3(0, half.y + 2.0f, 0);  // always above player
+    float surfaceY = raycastMeshDown(world, probeOrigin);
+
+    float playerFeet = p.pos.y;
+    float penetration = surfaceY - playerFeet;
+
+    // If feet are below the actual surface by more than a hair, snap up.
+    if (penetration > 0.001f && penetration < 2.0f) {
+        p.pos.y = surfaceY;
+        // tiny upward bias so next frame isn't half inside again
+        p.pos.y += 0.001f;
         p.vel.y = 0;
         p.onGround = true;
     }
