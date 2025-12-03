@@ -384,4 +384,61 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     i dont want to code that in, i want it to be a result
     of our collisions
     */
+
+    // dec 3 2025 todo delete eventually 
+    // ALSO ITS A HITBOX NOT A CAPSULE 
+    // --- TRUE TRIANGLE GROUNDING (mesh raycast) ---
+    OBB obb = p.getOBB();
+
+    glm::vec3 c1 = getBottomCorner(obb, -1, -1);
+    glm::vec3 c2 = getBottomCorner(obb, +1, -1);
+    glm::vec3 c3 = getBottomCorner(obb, -1, +1);
+    glm::vec3 c4 = getBottomCorner(obb, +1, +1);
+    glm::vec3 corners[4] = { c1, c2, c3, c4 };
+
+    // dec 3 2025 todo 
+    // goes rigth before the for i = 0 thing
+    bool grounded = false;
+    float bestGround = -9999.0f;
+    float bestCornerX = 0.0f;
+    float bestCornerZ = 0.0f;
+
+    for (int i = 0; i < 4; i++)
+    {
+        float y = raycastMeshDown(world, corners[i]);
+        if (y > -9000.0f) // valid hit
+        {
+            if (corners[i].y <= y + 0.05f)
+            {
+                grounded = true;
+
+                if (y > bestGround)
+                {
+                    bestGround = y;
+                    bestCornerX = corners[i].x;
+                    bestCornerZ = corners[i].z;
+                }
+            }
+        }
+    }
+
+    if (grounded)
+    {
+        // find triangle normal too
+        glm::vec3 triNormal = findTriangleNormalAt(world, bestCornerX, bestCornerZ);
+
+        // surfing
+        applySurfing(p, triNormal);
+
+        p.pos.y = bestGround + obb.halfSize.y;
+        p.vel.y = 0;
+        p.onGround = true;
+    }
+    else
+    {
+        p.onGround = false;
+    }
+
+    // respawn check (optional)
+    if (p.pos.y < PHYS.deathHeight) p.reset();
 }
