@@ -80,7 +80,15 @@ Player::Player() {
     // default/small
     // hitboxSize = glm::vec3(1.2f, 1.8f, 0.4f);
     // default v2
+    // dec 3 2025 
+    // i dont know why but this is a rly accurate hitbox size
+    // for the v3 character mesh
+    // the scaling is weird and sucksb ut whatever 
+    // i think 1 meter is 0.5f or
+    // theres some 2x mult scaling IDK WAHTEVER 
     hitboxSize = glm::vec3(0.4f, 3.3f, 1.4f);
+    // hitbox scale test dec 3 2025
+    // hitboxSize = glm::vec3(0.5f, 1.7f, 0.8f);
 
     // big 1
    //  hitboxSize = glm::vec3(4.0f, 6.0f, 4.0f);

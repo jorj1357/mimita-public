@@ -103,6 +103,8 @@ int main() {
     computeMeshBounds(playerMesh, meshMin, meshMax);
 
     glm::vec3 meshDims = meshMax - meshMin;
+    // dec 3 2025 todo WTF IS M HITBOX 
+    printf("Mesh dims: %f %f %f\n", meshDims.x, meshDims.y, meshDims.z);
 
     GLuint playerVAO = createMapVAO(playerMesh);
     GLuint playerTex = loadTexture("assets/textures/greenwirev1.png");

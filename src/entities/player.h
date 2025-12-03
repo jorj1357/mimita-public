@@ -51,6 +51,9 @@ public:
 
     // Mesh
     glm::vec3 meshScale  = {1,1,1};
+    // mesh v2 i think blender is 2x smaller than the 0.0f scale
+    // glm::vec3 meshScale  = {0.5,0.5,0.5};
+
     // new cool one dec 3 2025 todo is it good
     glm::vec3 meshOffset = {0.0f, 0.0f, 0.0f};
     // old one
