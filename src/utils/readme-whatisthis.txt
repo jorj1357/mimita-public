@@ -1,0 +1,2 @@
+this is for utils that supposedl get used all over the rpojcet but i worry bc its more folders and folders and files scare moreso keep
+so keep it if needed but idk i prefer smallest file and folder acountpossible 

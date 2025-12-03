@@ -49,6 +49,9 @@ extern Renderer* gRenderer;
 
 #include "camera.h"
 
+// dec 3 2025 todo sort includes maybe 
+#include "utils/mesh_utils.h"
+
 TextureManager TEX; // global instance
 GLuint groundTex;
 
@@ -92,7 +95,15 @@ int main() {
     // mesh loading
     // nov 6 2025 todo do we rly need to load the mesh every loop? performance hit maybe
     // dec 2 2025 PLZ todo no more hard coding this high ke make me mad
-    Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-dev-player-v1.obj");
+    // Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-dev-player-v1.obj");
+    // dec 3 2025 new cool
+    Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-char-concise-v3.obj");
+    // dec 3 2025 todo where put this
+    glm::vec3 meshMin, meshMax;
+    computeMeshBounds(playerMesh, meshMin, meshMax);
+
+    glm::vec3 meshDims = meshMax - meshMin;
+
     GLuint playerVAO = createMapVAO(playerMesh);
     GLuint playerTex = loadTexture("assets/textures/greenwirev1.png");
 
