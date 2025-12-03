@@ -45,6 +45,14 @@ struct Ray {
     glm::vec3 dir;
 };
 
+// dec 3 2025 todo need make this better , this for collisions 
+static glm::vec3 findTriangleNormalAt(const Mesh& mesh, float x, float z)
+{
+    // TEMP: return straight upward normal
+    // TODO: implement real triangle lookup using raycast
+    return glm::vec3(0, 1, 0);
+}
+
 // dec 2 2025 dont hardcode ground friction here put it in a physics config or smth
 static float groundFriction = 6.0f; // tweakable
 
@@ -230,19 +238,28 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     glm::vec3 c4 = getBottomCorner(obb, +1, +1);
     glm::vec3 corners[4] = { c1, c2, c3, c4 };
 
+    // dec 3 2025 todo 
+    // goes rigth before the for i = 0 thing
     bool grounded = false;
     float bestGround = -9999.0f;
+    float bestCornerX = 0.0f;
+    float bestCornerZ = 0.0f;
 
     for (int i = 0; i < 4; i++)
     {
         float y = raycastMeshDown(world, corners[i]);
         if (y > -9000.0f) // valid hit
         {
-            // corner is on or below ground
             if (corners[i].y <= y + 0.05f)
             {
                 grounded = true;
-                bestGround = std::max(bestGround, y);
+
+                if (y > bestGround)
+                {
+                    bestGround = y;
+                    bestCornerX = corners[i].x;
+                    bestCornerZ = corners[i].z;
+                }
             }
         }
     }

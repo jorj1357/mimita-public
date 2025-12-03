@@ -117,19 +117,7 @@ void Player::render(GLuint shaderProgram, GLuint vao, int vertCount,
     rootTransform = glm::rotate(rootTransform, glm::radians(-yaw), glm::vec3(0, 1, 0));
 
     // ---------------- HITBOX (red wireframe) ----------------
-    glm::mat4 hitboxModel = glm::mat4(1.0f);
-    hitboxModel = glm::translate(hitboxModel, pos + hitboxOffset);
-    hitboxModel = glm::rotate(hitboxModel, glm::radians(-yaw), glm::vec3(0, 1, 0));
-    hitboxModel = glm::scale(hitboxModel, hitboxSize);
-
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &hitboxModel[0][0]);
-    glUniform3f(glGetUniformLocation(shaderProgram, "color"), 1.0f, 0.0f, 0.0f);
-
-    glDisable(GL_DEPTH_TEST);
-    glLineWidth(2.0f);
-    glBindVertexArray(0);
-
-    initHitboxVAO();  // ensure VAO exists once
+    initHitboxVAO();
 
     glm::mat4 hitboxModel = glm::mat4(1.0f);
     hitboxModel = glm::translate(hitboxModel, pos + hitboxOffset);
