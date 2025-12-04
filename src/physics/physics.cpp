@@ -15,7 +15,10 @@
 // dec 3 2025 idk where put this
 // prob should go in a centralized player config file
 // MAKE THIS LIKE 89 DEGREES LATER after testing done 
-const float MAX_WALKABLE_ANGLE = 50.0f;  // degrees
+// dec 4 2025 default
+// const float MAX_WALKABLE_ANGLE = 50.0f;  // degrees
+// 70 deg = default + 20
+const float MAX_WALKABLE_ANGLE = 70.0f;  // degrees
 const float MAX_WALKABLE_DOT = cos(glm::radians(MAX_WALKABLE_ANGLE));
 // dec 3 2025 this rl tall maybe dont 
 const float STEP_HEIGHT = 0.5f;
@@ -344,25 +347,24 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
 
     // movement and gravity from config
     // dec 2 2025 includes air strafe maybe
-    if (p.onGround || p.vel.y < 0.0f)
+    if (p.onGround)
     {
-        // === DEBUG ===
-        std::cout << "pos.y=" << p.pos.y
-                << " vel.y=" << p.vel.y
-                << "\n";
-
-        // Standard grounded movement
         p.vel.x = dir.x * PHYS.moveSpeed;
         p.vel.z = dir.z * PHYS.moveSpeed;
     }
     else
     {
-        // AIR MOVEMENT
-        if (glm::length(dir) > 0)
+        if (glm::length(dir) > 0.0f)
             applyAirStrafe(p, dir, dt);
     }
     p.vel.y += PHYS.gravity * dt;
 
+    // jump
+    // put this ater     p.vel.y += PHYS.gravity * dt; ? or no?
+    if (p.onGround && glfwGetKey(w, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        p.vel.y = PHYS.jumpStrength;
+        p.onGround = false;
+    }
 
     // apply velocity
     // p.pos += p.vel * dt;
@@ -463,12 +465,15 @@ if (result.hit)
             if (p.vel.y < 0) p.vel.y = 0;
 
             // snap position
-            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.001f;
+            // the last number is the amt to get moved up by
+            // p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.02f;
+            // snap position v2 dec 4 2025
+            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.002f;
             return;
         }
 
         // --- 2. STEEP SLOPE (surf slope) ---
-        if (dotUp > 0.0f)
+        if (dotUp > 0.0f && dotUp < MAX_WALKABLE_DOT)
         {
             p.onGround = false;
 
@@ -481,7 +486,7 @@ if (result.hit)
             return;
         }
 
-        // --- 3. WALL ---
+        // --- 3. WALL (or very steep slope, e.g. wall tilted toward you ) ---
         {
             p.onGround = false;
 
@@ -493,12 +498,6 @@ if (result.hit)
             return;
         }
     }
-        // jump
-        // dec 3 2025 do i rl put this here i think itll get not called
-    if (p.onGround && glfwGetKey(w, GLFW_KEY_SPACE) == GLFW_PRESS) {
-        p.vel.y = PHYS.jumpStrength;
-        p.onGround = false;
-    }
 
     else
     {
@@ -506,29 +505,31 @@ if (result.hit)
         p.pos = newCenter - glm::vec3(0, half.y, 0);
     }
 
-    // --- UNIVERSAL UN-STUCK PASS ---
-    if (p.onGround && p.vel.y <= 0.0f)   // AND you're moving down OR not moving up
-    {
-        glm::vec3 probeOrigin = p.pos + glm::vec3(0, half.y + 2.0f, 0);
-        float surfaceY = raycastMeshDown(world, probeOrigin);
+    // // --- UNIVERSAL UN-STUCK PASS ---
+    // if (p.onGround && p.vel.y <= 0.0f)   // AND you're moving down OR not moving up
+    // {
+    //     glm::vec3 probeOrigin = p.pos + glm::vec3(0, half.y + 2.0f, 0);
+    //     float surfaceY = raycastMeshDown(world, probeOrigin);
 
-        float playerFeet = p.pos.y;
-        float penetration = surfaceY - playerFeet;
+    //     float playerFeet = p.pos.y;
+    //     float penetration = surfaceY - playerFeet;
 
-        if (fabs(penetration) < 0.01f) return;   // we're basically correct height
+    //     // i think this relates to the snap position being like 0.02f
+    //     // if this is bigger than the snap position tolerance i think its ok?
+    //     if (fabs(penetration) < 0.05f) return;   // we're basically correct height
 
-        if (penetration > 0.001f && penetration < 2.0f)
-        {
-            glm::vec3 underN = findTriangleNormalAt(world, p.pos.x, p.pos.z);
+    //     if (penetration > 0.001f && penetration < 2.0f)
+    //     {
+    //         glm::vec3 underN = findTriangleNormalAt(world, p.pos.x, p.pos.z);
 
-            if (underN.y > MAX_WALKABLE_DOT)   // only snap on walkable
-            {
-                p.pos.y = surfaceY + 0.001f;
-                p.vel.y = 0;
-                p.onGround = true;
-            }
-        }
-    }
+    //         if (underN.y > MAX_WALKABLE_DOT)   // only snap on walkable
+    //         {
+    //             p.pos.y = surfaceY + 0.001f;
+    //             p.vel.y = 0;
+    //             p.onGround = true;
+    //         }
+    //     }
+    // }
             /*
             todo nov 6 2025
             need much better collisions
