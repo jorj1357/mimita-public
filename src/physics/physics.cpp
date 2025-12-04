@@ -363,11 +363,6 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     }
     p.vel.y += PHYS.gravity * dt;
 
-    // jump
-    if (p.onGround && glfwGetKey(w, GLFW_KEY_SPACE) == GLFW_PRESS) {
-        p.vel.y = PHYS.jumpStrength;
-        p.onGround = false;
-    }
 
     // apply velocity
     // p.pos += p.vel * dt;
@@ -498,6 +493,13 @@ if (result.hit)
             return;
         }
     }
+        // jump
+        // dec 3 2025 do i rl put this here i think itll get not called
+    if (p.onGround && glfwGetKey(w, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        p.vel.y = PHYS.jumpStrength;
+        p.onGround = false;
+    }
+
     else
     {
         glm::vec3 newCenter = centerEnd;
@@ -505,13 +507,15 @@ if (result.hit)
     }
 
     // --- UNIVERSAL UN-STUCK PASS ---
-    if (p.onGround)   // ONLY run when grounded
+    if (p.onGround && p.vel.y <= 0.0f)   // AND you're moving down OR not moving up
     {
         glm::vec3 probeOrigin = p.pos + glm::vec3(0, half.y + 2.0f, 0);
         float surfaceY = raycastMeshDown(world, probeOrigin);
 
         float playerFeet = p.pos.y;
         float penetration = surfaceY - playerFeet;
+
+        if (fabs(penetration) < 0.01f) return;   // we're basically correct height
 
         if (penetration > 0.001f && penetration < 2.0f)
         {
