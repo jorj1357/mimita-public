@@ -4,9 +4,18 @@
  * this controls physics for the whole game
  * air accel and collisions and step up and velocity too i think idk
  * but i want to split it into multiple tiny files eventually just later 
+ * 
+ * eventually do this
+ * move()
+sweep()
+resolveFloor()
+resolveSlope()
+resolveWall()
+stepUp()
+just functions for other files to call 
  */
 
-// ------------------ PHYSICS.CPP (CLEAN TF2 VERSION) --------------------
+// ------------------ PHYSICS.CPP (CLEAN Source VERSION) --------------------
 
 #define NOMINMAX
 #include "physics/config.h"
@@ -84,6 +93,7 @@ static SweepResult sweepPointTri(const glm::vec3& a, const glm::vec3& b,
     glm::vec3 p = a + dir * t;
 
     glm::vec3 n = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+    if (n.y < 0) n = -n; // <-- Force normals to face upward
 
     // barycentric manual test
     if (glm::dot(n, glm::cross(v1 - v0, p - v0)) < 0) return r;
@@ -232,10 +242,15 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     if (hit.hit)
     {
         if (hit.t < 0.001f)
+        {
             p.vel = glm::vec3(0);
+        }
+
+        float up = hit.normal.y;   // <-- now visible below
 
         glm::vec3 newC = cs + (ce - cs) * hit.t;
-        float up = hit.normal.y;
+        glm::vec3 push = hit.normal * 0.01f;
+        p.pos = newC - glm::vec3(0, half.y, 0) + push;
 
         // --- floor ---
         if (up >= MAX_WALKABLE_DOT)
@@ -252,7 +267,7 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
         }
 
         // --- steep slope ---
-        if (up > 0 && up < MAX_WALKABLE_DOT)
+        if (up > 0.05f && up < MAX_WALKABLE_DOT)
         {
             p.onGround = false;
             slideWall(p, hit.normal);
