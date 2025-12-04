@@ -23,6 +23,17 @@ const float MAX_WALKABLE_DOT = cos(glm::radians(MAX_WALKABLE_ANGLE));
 // dec 3 2025 this rl tall maybe dont 
 const float STEP_HEIGHT = 0.5f;
 
+const float FLOOR_EPS = 0.001f;
+const float WALL_EPS  = 0.0002f;
+
+// dec 4 2025 idk where put this
+static void slideAgainstWall(Player& p, const glm::vec3& n)
+{
+    float into = glm::dot(p.vel, n);
+    if (into < 0.0f)
+        p.vel -= n * into;  // remove component pushing into wall
+}
+
 // dec 2 2025 todo no idea whre put this 
 static glm::vec3 getBottomCorner(const OBB& obb, float sx, float sz)
 {
@@ -390,54 +401,41 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     {
         SweepResult normalCheck = sweepBoxMesh(world, centerStart, centerEnd, half);
 
-        if (normalCheck.hit)
+        if (normalCheck.hit && normalCheck.normal.y >= MAX_WALKABLE_DOT)
         {
-            // ===== NEW SLOPE CHECK =====
-            // If the obstacle is too steep (not walkable)
-            // then do NOT step up or mantle.
-            if (normalCheck.normal.y < MAX_WALKABLE_DOT)
+            // ===== WALKABLE SLOPE OR SMALL LEDGE =====
+            glm::vec3 stepPos = p.pos;
+            stepPos.y += STEP_HEIGHT;
+
+            glm::vec3 stepCenterStart = stepPos + glm::vec3(0, half.y, 0);
+            glm::vec3 stepCenterEnd   = stepCenterStart + p.vel * dt;
+
+            SweepResult stepCheck = sweepBoxMesh(world, stepCenterStart, stepCenterEnd, half);
+
+            if (!stepCheck.hit)
             {
-                // Treat like a wall. No climbing allowed.
-                // Do nothing here. Normal collision will handle it later.
+                p.pos = stepPos + p.vel * dt;
+                return;
             }
-            else
+
+            // adaptive climb
+            const float MAX_CLIMB = p.hitboxSize.y * 1.5f;
+            const float STEP = 0.1f;
+
+            for (float up = STEP_HEIGHT; up < MAX_CLIMB; up += STEP)
             {
-                // ===== WALKABLE SLOPE OR SMALL LEDGE =====
-                // 1. Try small step (0.5f)
-                glm::vec3 stepPos = p.pos;
-                stepPos.y += STEP_HEIGHT;
+                glm::vec3 climbPos = p.pos;
+                climbPos.y += up;
 
-                glm::vec3 stepCenterStart = stepPos + glm::vec3(0, half.y, 0);
-                glm::vec3 stepCenterEnd   = stepCenterStart + p.vel * dt;
+                glm::vec3 climbStart = climbPos + glm::vec3(0, half.y, 0);
+                glm::vec3 climbEnd   = climbStart + p.vel * dt;
 
-                SweepResult stepCheck = sweepBoxMesh(world, stepCenterStart, stepCenterEnd, half);
+                SweepResult climbCheck = sweepBoxMesh(world, climbStart, climbEnd, half);
 
-                if (!stepCheck.hit)
+                if (!climbCheck.hit)
                 {
-                    p.pos = stepPos + p.vel * dt;
+                    p.pos = climbPos + p.vel * dt;
                     return;
-                }
-
-                // 2. Try adaptive mantle climb
-                const float MAX_CLIMB = p.hitboxSize.y * 1.5f;
-                const float STEP = 0.1f;
-
-                for (float up = STEP_HEIGHT; up < MAX_CLIMB; up += STEP)
-                {
-                    glm::vec3 climbPos = p.pos;
-                    climbPos.y += up;
-
-                    glm::vec3 climbStart = climbPos + glm::vec3(0, half.y, 0);
-                    glm::vec3 climbEnd   = climbStart + p.vel * dt;
-
-                    SweepResult climbCheck = sweepBoxMesh(world, climbStart, climbEnd, half);
-
-                    if (!climbCheck.hit)
-                    {
-                        // Only mantle if original hit was walkable
-                        p.pos = climbPos + p.vel * dt;
-                        return;
-                    }
                 }
             }
         }
@@ -446,59 +444,51 @@ void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const 
     // USE CENTER, not FEET
     SweepResult result = sweepBoxMesh(world, centerStart, centerEnd, half);
 
-if (result.hit)
-{
-    glm::vec3 newCenter = centerStart + (centerEnd - centerStart) * result.t;
-    float dotUp = result.normal.y;
+    if (result.hit)
+    {
+        // Before handling walkable/steep/wall:
+        if (result.t < 0.001f)
+        {
+            p.vel = glm::vec3(0.0f);
+        }
 
-        // --- 1. WALKABLE FLOOR ---
+        glm::vec3 newCenter = centerStart + (centerEnd - centerStart) * result.t;
+        float dotUp = result.normal.y;
+
+        // --- walkable floor ---
         if (dotUp >= MAX_WALKABLE_DOT)
         {
             p.onGround = true;
 
-            // remove velocity into the floor
             float into = glm::dot(p.vel, result.normal);
             if (into < 0.0f)
                 p.vel -= result.normal * into;
 
-            // kill downward falling
             if (p.vel.y < 0) p.vel.y = 0;
 
-            // snap position
-            // the last number is the amt to get moved up by
-            // p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.02f;
-            // snap position v2 dec 4 2025
-            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.002f;
+            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * FLOOR_EPS;
             return;
         }
 
-        // --- 2. STEEP SLOPE (surf slope) ---
+        // --- steep slope ---
         if (dotUp > 0.0f && dotUp < MAX_WALKABLE_DOT)
         {
             p.onGround = false;
 
             float into = glm::dot(p.vel, result.normal);
             if (into < 0.0f)
-                p.vel -= result.normal * into;  // remove INTO slope
-
-            // allow horizontal slide
-            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.001f;
-            return;
-        }
-
-        // --- 3. WALL (or very steep slope, e.g. wall tilted toward you ) ---
-        {
-            p.onGround = false;
-
-            float into = glm::dot(p.vel, result.normal);
-            if (into < 0.0f)
                 p.vel -= result.normal * into;
 
-            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * 0.001f;
+            p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * FLOOR_EPS;
             return;
         }
-    }
 
+        // --- WALL ---
+        p.onGround = false;
+        slideAgainstWall(p, result.normal);
+        p.pos = newCenter - glm::vec3(0, half.y, 0) + result.normal * WALL_EPS;
+        return;
+    }
     else
     {
         glm::vec3 newCenter = centerEnd;
