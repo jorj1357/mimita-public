@@ -1,289 +1,160 @@
-// C:\important\quiet\n\mimita-public\mimita-public\src\physics\physics.cpp
-/**
- * file purpose
- * this controls physics for the whole game
- * air accel and collisions and step up and velocity too i think idk
- * but i want to split it into multiple tiny files eventually just later 
- * 
- * eventually do this
- * move()
-sweep()
-resolveFloor()
-resolveSlope()
-resolveWall()
-stepUp()
-just functions for other files to call 
- */
-
-// ------------------ PHYSICS.CPP (CLEAN Source VERSION) --------------------
-
-#define NOMINMAX
-#include "physics/config.h"
+// physics.cpp
 #include "physics.h"
 #include "../camera.h"
-
 #include <glm/glm.hpp>
-#include <algorithm>
+#include <glm/gtc/constants.hpp>
 
-// ---------------- CONFIG ----------------
+// ------------------------------
+// Constants
+// ------------------------------
+const float GRAVITY     = -25.0f;
+const float MOVE_SPEED  = 50.0f;
+const float JUMP_SPEED  = 10.0f;
 
-const float MAX_WALKABLE_ANGLE = 70.0f;
-const float MAX_WALKABLE_DOT   = cos(glm::radians(MAX_WALKABLE_ANGLE));
-const float STEP_HEIGHT        = 0.5f;
-const float FLOOR_EPS          = 0.001f;
-const float WALL_EPS           = 0.0002f;
+const float CAPSULE_RADIUS = 0.35f;
+const float CAPSULE_HEIGHT = 1.8f;
+const float FLOOR_MAX_ANGLE = 50.0f;
 
-// ---------------- BASIC HELPERS ----------------
+const float FLOOR_MIN_DOT =
+    glm::cos(glm::radians(90.0f - FLOOR_MAX_ANGLE));
 
-struct Ray {
-    glm::vec3 o, d;
-};
-
-struct SweepResult {
-    bool hit = false;
-    float t = 1.0f;
-    glm::vec3 normal = {0,1,0};
-};
-
-// point-triangle sweep (Möller-Trumbore)
-static bool rayTri(const Ray& r,
-                   const glm::vec3& v0,
-                   const glm::vec3& v1,
-                   const glm::vec3& v2,
-                   float& tOut)
+// ------------------------------
+// Helpers
+// ------------------------------
+static inline float planeDist(const glm::vec3& p,
+                              const glm::vec3& n,
+                              const glm::vec3& p0)
 {
-    const float EPS = 1e-6f;
-    glm::vec3 e1 = v1 - v0;
-    glm::vec3 e2 = v2 - v0;
-    glm::vec3 p  = glm::cross(r.d, e2);
-    float det = glm::dot(e1, p);
-    if (fabs(det) < EPS) return false;
-
-    float inv = 1.0f / det;
-    glm::vec3 t = r.o - v0;
-    float u = glm::dot(t, p) * inv;
-    if (u < 0 || u > 1) return false;
-
-    glm::vec3 q = glm::cross(t, e1);
-    float v = glm::dot(r.d, q) * inv;
-    if (v < 0 || u + v > 1) return false;
-
-    float dist = glm::dot(e2, q) * inv;
-    if (dist > EPS) {
-        tOut = dist;
-        return true;
-    }
-
-    return false;
+    return glm::dot(p - p0, n);
 }
 
-static SweepResult sweepPointTri(const glm::vec3& a, const glm::vec3& b,
-                                 const glm::vec3& v0,
-                                 const glm::vec3& v1,
-                                 const glm::vec3& v2)
+static inline bool pointInTri(const glm::vec3& p,
+                              const glm::vec3& a,
+                              const glm::vec3& b,
+                              const glm::vec3& c,
+                              const glm::vec3& n)
 {
-    SweepResult r;
-    glm::vec3 dir = b - a;
-    Ray ray{a, dir};
-
-    float t;
-    if (!rayTri(ray, v0, v1, v2, t)) return r;
-    if (t < 0.0f || t > 1.0f) return r;
-
-    glm::vec3 p = a + dir * t;
-
-    glm::vec3 n = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-    if (n.y < 0) n = -n; // <-- Force normals to face upward
-
-    // barycentric manual test
-    if (glm::dot(n, glm::cross(v1 - v0, p - v0)) < 0) return r;
-    if (glm::dot(n, glm::cross(v2 - v1, p - v1)) < 0) return r;
-    if (glm::dot(n, glm::cross(v0 - v2, p - v2)) < 0) return r;
-
-    r.hit = true;
-    r.t = t;
-    r.normal = n;
-    return r;
+    if (glm::dot(n, glm::cross(b - a, p - a)) < 0) return false;
+    if (glm::dot(n, glm::cross(c - b, p - b)) < 0) return false;
+    if (glm::dot(n, glm::cross(a - c, p - c)) < 0) return false;
+    return true;
 }
 
-// box sweep (8 corner tests)
-static SweepResult sweepBoxMesh(const Mesh& mesh,
-                                const glm::vec3& cs,
-                                const glm::vec3& ce,
-                                const glm::vec3& half)
+static inline glm::vec3 projectToPlane(const glm::vec3& p,
+                                       const glm::vec3& n,
+                                       const glm::vec3& p0)
 {
-    SweepResult best;
-
-    glm::vec3 offs[8] = {
-        {+half.x,+half.y,+half.z}, {+half.x,+half.y,-half.z},
-        {+half.x,-half.y,+half.z}, {+half.x,-half.y,-half.z},
-        {-half.x,+half.y,+half.z}, {-half.x,+half.y,-half.z},
-        {-half.x,-half.y,+half.z}, {-half.x,-half.y,-half.z},
-    };
-
-    for (int c = 0; c < 8; c++)
-    {
-        glm::vec3 a = cs + offs[c];
-        glm::vec3 b = ce + offs[c];
-
-        for (size_t i = 0; i < mesh.verts.size(); i += 3)
-        {
-            auto& v0 = mesh.verts[i+0].pos;
-            auto& v1 = mesh.verts[i+1].pos;
-            auto& v2 = mesh.verts[i+2].pos;
-
-            SweepResult hit = sweepPointTri(a, b, v0, v1, v2);
-            if (hit.hit && hit.t < best.t) {
-                best = hit;
-                if (best.t < 0.0001f) return best;
-            }
-        }
-    }
-
-    return best;
+    float d = glm::dot(p - p0, n);
+    return p - n * d;
 }
 
-// ---------------- MOVEMENT HELPERS ----------------
-
-static void slideWall(Player& p, const glm::vec3& n)
+static inline glm::vec3 slideVector(const glm::vec3& v, const glm::vec3& n)
 {
-    float into = glm::dot(p.vel, n);
-    if (into < 0)
-        p.vel -= n * into;
+    return v - n * glm::dot(v, n);
 }
 
-static void applyAirStrafe(Player& p, const glm::vec3& wish, float dt)
+
+// ==============================================
+// MAIN UPDATE FUNCTION
+// ==============================================
+void updatePhysics(Player& p, const Mesh& world,
+                   GLFWwindow* win, float dt, const Camera& cam)
 {
-    const float accel = 140.0f;
-    const float maxAir = 30.0f;
+    // movement input
+    glm::vec3 forward = glm::normalize(glm::vec3(cam.front.x, 0, cam.front.z));
+    glm::vec3 right   = glm::cross(forward, glm::vec3(0,1,0));
 
-    float wishSpeed = maxAir;
-    float cur = glm::dot(p.vel, wish);
-    float add = wishSpeed - cur;
-    if (add <= 0) return;
+    glm::vec3 wish(0);
 
-    float a = accel * dt;
-    if (a > add) a = add;
-    p.vel += wish * a;
-}
+    if (glfwGetKey(win, GLFW_KEY_W)) wish += forward;
+    if (glfwGetKey(win, GLFW_KEY_S)) wish -= forward;
+    if (glfwGetKey(win, GLFW_KEY_A)) wish -= right;
+    if (glfwGetKey(win, GLFW_KEY_D)) wish += right;
 
-static void applyGroundFriction(Player& p, float dt)
-{
-    float sp = glm::length(glm::vec2(p.vel.x, p.vel.z));
-    if (sp < 0.0001f) return;
+    if (glm::dot(wish, wish) > 0.0001f)
+        wish = glm::normalize(wish);
 
-    float drop = sp * 6.0f * dt;
-    float ns = std::max(sp - drop, 0.0f);
-    float scale = (sp > 0) ? ns / sp : 0;
-
-    p.vel.x *= scale;
-    p.vel.z *= scale;
-}
-
-// ---------------- MAIN UPDATE ----------------
-
-void updatePhysics(Player& p, const Mesh& world, GLFWwindow* w, float dt, const Camera& cam)
-{
-    glm::vec3 f = glm::normalize(glm::vec3(cam.front.x, 0, cam.front.z));
-    glm::vec3 r = glm::cross(f, glm::vec3(0,1,0));
-
-    glm::vec3 dir(0);
-    if (glfwGetKey(w, GLFW_KEY_W)) dir += f;
-    if (glfwGetKey(w, GLFW_KEY_S)) dir -= f;
-    if (glfwGetKey(w, GLFW_KEY_A)) dir -= r;
-    if (glfwGetKey(w, GLFW_KEY_D)) dir += r;
-    if (glm::length(dir) > 0) dir = glm::normalize(dir);
-
-    // ground or air move
-    if (p.onGround) {
-        p.vel.x = dir.x * PHYS.moveSpeed;
-        p.vel.z = dir.z * PHYS.moveSpeed;
-    } else if (glm::length(dir) > 0) {
-        applyAirStrafe(p, dir, dt);
-    }
+    p.vel.x = wish.x * MOVE_SPEED;
+    p.vel.z = wish.z * MOVE_SPEED;
 
     // gravity
-    p.vel.y += PHYS.gravity * dt;
+    p.vel.y += GRAVITY * dt;
 
     // jump
-    if (p.onGround && glfwGetKey(w, GLFW_KEY_SPACE)) {
-        p.vel.y = PHYS.jumpStrength;
+    if (p.onGround && glfwGetKey(win, GLFW_KEY_SPACE))
+    {
+        p.vel.y = JUMP_SPEED;
         p.onGround = false;
     }
 
-    glm::vec3 half = p.hitboxSize * 0.5f;
-    glm::vec3 cs   = p.pos + glm::vec3(0, half.y, 0);
-    glm::vec3 ce   = cs + p.vel * dt;
+    glm::vec3 finalPos = p.pos;
+    glm::vec3 move = p.vel * dt;
 
-    float horiz = glm::length(glm::vec2(p.vel.x, p.vel.z));
-    bool wantsStep = horiz > 0.001f;
+    p.onGround = false;
 
-    // ---------------- STEP-UP ATTEMPT (minimal version) ----------------
-    if (wantsStep)
+    // -----------------------------
+    // sweep 4 iterations
+    // -----------------------------
+    for (int iter = 0; iter < 4; iter++)
     {
-        SweepResult nc = sweepBoxMesh(world, cs, ce, half);
+        float bestT = 1.0f;
+        glm::vec3 bestNormal(0);
+        bool hit = false;
 
-        if (nc.hit && nc.normal.y >= MAX_WALKABLE_DOT)
+        // test triangles
+        for (size_t i = 0; i < world.verts.size(); i += 3)
         {
-            glm::vec3 stepPos = p.pos; stepPos.y += STEP_HEIGHT;
-            glm::vec3 scs = stepPos + glm::vec3(0, half.y, 0);
-            glm::vec3 sce = scs + p.vel * dt;
+            glm::vec3 a = world.verts[i+0].pos;
+            glm::vec3 b = world.verts[i+1].pos;
+            glm::vec3 c = world.verts[i+2].pos;
 
-            if (!sweepBoxMesh(world, scs, sce, half).hit) {
-                p.pos = stepPos + p.vel * dt;
-                return;
+            glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+            if (glm::dot(n, n) < 1e-5f) continue;
+
+            glm::vec3 bottom = finalPos + glm::vec3(0, CAPSULE_RADIUS, 0);
+
+            float d0 = planeDist(bottom, n, a);
+            float d1 = planeDist(bottom + move, n, a);
+
+            if (d0 > CAPSULE_RADIUS && d1 < CAPSULE_RADIUS)
+            {
+                float t = (d0 - CAPSULE_RADIUS) / (d0 - d1);
+                if (t < bestT)
+                {
+                    glm::vec3 hitPos = bottom + move * t;
+                    glm::vec3 proj = projectToPlane(hitPos, n, a);
+
+                    if (pointInTri(proj, a, b, c, n))
+                    {
+                        bestT = t;
+                        bestNormal = n;
+                        hit = true;
+                    }
+                }
             }
         }
-    }
 
-    // ---------------- BOX SWEEP ----------------
-    SweepResult hit = sweepBoxMesh(world, cs, ce, half);
-
-    if (hit.hit)
-    {
-        if (hit.t < 0.001f)
+        if (!hit)
         {
-            p.vel = glm::vec3(0);
+            finalPos += move;
+            break;
         }
 
-        float up = hit.normal.y;   // <-- now visible below
+        finalPos += move * bestT;
 
-        glm::vec3 newC = cs + (ce - cs) * hit.t;
-        glm::vec3 push = hit.normal * 0.01f;
-        p.pos = newC - glm::vec3(0, half.y, 0) + push;
+        bool isFloor = bestNormal.y > FLOOR_MIN_DOT;
 
-        // --- floor ---
-        if (up >= MAX_WALKABLE_DOT)
+        if (isFloor)
         {
             p.onGround = true;
-
-            float into = glm::dot(p.vel, hit.normal);
-            if (into < 0) p.vel -= hit.normal * into;
-            if (p.vel.y < 0) p.vel.y = 0;
-
-            p.pos = newC - glm::vec3(0, half.y, 0) + hit.normal * FLOOR_EPS;
-            applyGroundFriction(p, dt);
-            return;
+            p.vel.y = 0;
+            move = slideVector(move * (1 - bestT), glm::vec3(0,1,0));
         }
-
-        // --- steep slope ---
-        if (up > 0.05f && up < MAX_WALKABLE_DOT)
+        else
         {
-            p.onGround = false;
-            slideWall(p, hit.normal);
-            p.pos = newC - glm::vec3(0, half.y, 0) + hit.normal * FLOOR_EPS;
-            return;
+            move = slideVector(move * (1 - bestT), bestNormal);
         }
-
-        // --- wall ---
-        p.onGround = false;
-        slideWall(p, hit.normal);
-        p.pos = newC - glm::vec3(0, half.y, 0) + hit.normal * WALL_EPS;
-        return;
     }
 
-    // no collision
-    glm::vec3 newC = ce;
-    p.pos = newC - glm::vec3(0, half.y, 0);
+    p.pos = finalPos;
 }
-
