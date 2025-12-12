@@ -53,6 +53,45 @@ static inline glm::vec3 slideVector(const glm::vec3& v, const glm::vec3& n)
     return v - n * glm::dot(v, n);
 }
 
+/**
+ * dec 12 2025 todo understnad what this even does 
+ * even tho i think it helps collisions a lot
+ * 
+ */
+
+static bool sweepSphereTriangle(
+    const glm::vec3& center,
+    float radius,
+    const glm::vec3& move,
+    const glm::vec3& a,
+    const glm::vec3& b,
+    const glm::vec3& c,
+    float& outT,
+    glm::vec3& outNormal
+) {
+    glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+    if (glm::dot(n, n) < 1e-6f) return false;
+
+    float d0 = planeDist(center, n, a);
+    float d1 = planeDist(center + move, n, a);
+
+    // must cross plane toward triangle
+    if (d0 > radius && d1 < radius) {
+        float t = (d0 - radius) / (d0 - d1);
+        if (t < outT) {
+            glm::vec3 hitPos = center + move * t;
+            glm::vec3 proj = projectToPlane(hitPos, n, a);
+            if (pointInTri(proj, a, b, c, n)) {
+                outT = t;
+                outNormal = n;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
 
 // ==============================================
 // MAIN UPDATE FUNCTION
@@ -101,38 +140,39 @@ void updatePhysics(Player& p, const Mesh& world,
         glm::vec3 bestNormal(0);
         bool hit = false;
 
-        // test triangles
-        for (size_t i = 0; i < world.verts.size(); i += 3)
+    // test triangles (capsule = bottom sphere + top sphere)
+    for (size_t i = 0; i < world.verts.size(); i += 3)
+    {
+        glm::vec3 a = world.verts[i+0].pos;
+        glm::vec3 b = world.verts[i+1].pos;
+        glm::vec3 c = world.verts[i+2].pos;
+
+        // bottom sphere
+        glm::vec3 bottom = finalPos + glm::vec3(0, CAPSULE_RADIUS, 0);
+        if (sweepSphereTriangle(
+                bottom,
+                CAPSULE_RADIUS,
+                move,
+                a, b, c,
+                bestT,
+                bestNormal))
         {
-            glm::vec3 a = world.verts[i+0].pos;
-            glm::vec3 b = world.verts[i+1].pos;
-            glm::vec3 c = world.verts[i+2].pos;
-
-            glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
-            if (glm::dot(n, n) < 1e-5f) continue;
-
-            glm::vec3 bottom = finalPos + glm::vec3(0, CAPSULE_RADIUS, 0);
-
-            float d0 = planeDist(bottom, n, a);
-            float d1 = planeDist(bottom + move, n, a);
-
-            if (d0 > CAPSULE_RADIUS && d1 < CAPSULE_RADIUS)
-            {
-                float t = (d0 - CAPSULE_RADIUS) / (d0 - d1);
-                if (t < bestT)
-                {
-                    glm::vec3 hitPos = bottom + move * t;
-                    glm::vec3 proj = projectToPlane(hitPos, n, a);
-
-                    if (pointInTri(proj, a, b, c, n))
-                    {
-                        bestT = t;
-                        bestNormal = n;
-                        hit = true;
-                    }
-                }
-            }
+            hit = true;
         }
+
+        // top sphere
+        glm::vec3 top = finalPos + glm::vec3(0, CAPSULE_HEIGHT - CAPSULE_RADIUS, 0);
+        if (sweepSphereTriangle(
+                top,
+                CAPSULE_RADIUS,
+                move,
+                a, b, c,
+                bestT,
+                bestNormal))
+        {
+            hit = true;
+        }
+    }
 
         if (!hit)
         {
@@ -148,7 +188,9 @@ void updatePhysics(Player& p, const Mesh& world,
         {
             p.onGround = true;
             p.vel.y = 0;
-            move = slideVector(move * (1 - bestT), glm::vec3(0,1,0));
+
+            // slide ALONG the floor, not world-up
+            move = slideVector(move * (1 - bestT), bestNormal);
         }
         else
         {

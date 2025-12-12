@@ -86,7 +86,28 @@ Player::Player() {
     // the scaling is weird and sucksb ut whatever 
     // i think 1 meter is 0.5f or
     // theres some 2x mult scaling IDK WAHTEVER 
-    hitboxSize = glm::vec3(0.4f, 3.3f, 1.4f);
+
+    // ------------------------------------------------
+    // --- fake stupid bullshit red hitbox start ---
+    // ------------------------------------------------
+
+    /** 
+     * dec 12 2025 hitbox test
+     * removed this hitbox size thing bc i think its the
+     * red wireframe?
+     * and it doenst even do anuthing so whatever  
+     */
+
+    // dec 12 2025 default
+    // hitboxSize = glm::vec3(0.4f, 3.3f, 1.4f);
+
+    // dec 12 2025 small to test if it does anything
+    hitboxSize = glm::vec3(0.1f, 1.0f, 0.5f);
+
+    // ------------------------------------------------
+    // --- fake stupid bullshit red hitbox end ---
+    // ------------------------------------------------
+
     // hitbox scale test dec 3 2025
     // hitboxSize = glm::vec3(0.5f, 1.7f, 0.8f);
 
@@ -190,6 +211,12 @@ void Player::render(GLuint shaderProgram, GLuint vao, int vertCount,
     rootTransform = glm::rotate(rootTransform, glm::radians(-yaw), glm::vec3(0, 1, 0));
 
     // ---------------- HITBOX (red wireframe) ----------------
+    /**
+     * dec 12 2025 todo
+     * apparently the hitbox red wireframe hitbox doesnt work 
+     * and its handled in physics.cpp ? 
+     * so its just visual and doesnt even whatever explodes mself 
+     */
     initHitboxVAO();
 
     glm::mat4 hitboxModel = glm::mat4(1.0f);

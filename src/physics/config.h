@@ -52,6 +52,11 @@ idk
 need fix later
 */
 
+/**
+ * todo dec 12 2025 is this even what actual
+ * ly does anthing? we go wa faster than 20 i think  idk
+ */
+
 struct PhysicsConfig {
     float gravity = -25.0f;
     float moveSpeed = 20.0f;
