@@ -23,35 +23,11 @@ if(NOT glfw3_FOUND)
     endif()
 endif()
 
-# If GLFW still not found, try to find it manually
-if(NOT glfw3_FOUND AND NOT GLFW3_FOUND)
-    # Try common installation paths
-    find_path(GLFW3_INCLUDE_DIR GLFW/glfw3.h
-        PATHS
-        /usr/include
-        /usr/local/include
-        /opt/homebrew/include
-        /usr/local/opt/glfw/include
-    )
-    
-    find_library(GLFW3_LIBRARY
-        NAMES glfw3 glfw
-        PATHS
-        /usr/lib
-        /usr/local/lib
-        /opt/homebrew/lib
-        /usr/local/opt/glfw/lib
-    )
-    
-    if(GLFW3_INCLUDE_DIR AND GLFW3_LIBRARY)
-        set(GLFW3_FOUND TRUE)
-        set(GLFW3_INCLUDE_DIRS ${GLFW3_INCLUDE_DIR})
-        set(GLFW3_LIBRARIES ${GLFW3_LIBRARY})
-    endif()
-endif()
-
 if(NOT GLFW3_FOUND AND NOT glfw3_FOUND)
-    message(FATAL_ERROR "GLFW3 not found. Please install GLFW3 development libraries.")
+    message(FATAL_ERROR "GLFW3 not found. Please install GLFW3 development libraries.\n"
+        "On Linux: sudo apt-get install libglfw3-dev (or equivalent)\n"
+        "On macOS: brew install glfw\n"
+        "On Windows: Install GLFW and set GLFW_ROOT environment variable")
 endif()
 
 # Set include directories

@@ -6,25 +6,18 @@ cd /d "%~dp0"
 echo.
 echo === [STEP 1] Setting up paths ===
 
-REM Check for environment variables first, then try common locations
+REM Check for environment variables
 if defined MIMITA_GPP (
     set "GPP=%MIMITA_GPP%"
 ) else if defined MINGW_ROOT (
     set "GPP=%MINGW_ROOT%\bin\g++.exe"
 ) else (
-    REM Try common MinGW installation paths
-    if exist "C:\mingw64\bin\g++.exe" (
-        set "GPP=C:\mingw64\bin\g++.exe"
-    ) else if exist "C:\msys64\mingw64\bin\g++.exe" (
-        set "GPP=C:\msys64\mingw64\bin\g++.exe"
-    ) else if exist "C:\Program Files\mingw-w64\*\mingw64\bin\g++.exe" (
-        for %%d in ("C:\Program Files\mingw-w64\*\mingw64\bin\g++.exe") do set "GPP=%%d"
-    ) else (
-        echo ERROR: Could not find g++.exe
-        echo Please set MIMITA_GPP environment variable or install MinGW-w64
-        pause
-        exit /b 1
-    )
+    echo ERROR: Could not find g++.exe
+    echo Please set one of the following environment variables:
+    echo   MIMITA_GPP - Full path to g++.exe (e.g., C:\mingw64\bin\g++.exe)
+    echo   MINGW_ROOT - Path to MinGW root directory (e.g., C:\mingw64)
+    pause
+    exit /b 1
 )
 
 if defined MIMITA_GLFW_INC (
@@ -32,15 +25,12 @@ if defined MIMITA_GLFW_INC (
 ) else if defined GLFW_ROOT (
     set "GLFW_INC=%GLFW_ROOT%\include"
 ) else (
-    REM Try common GLFW installation paths
-    if exist "C:\glfw\include" (
-        set "GLFW_INC=C:\glfw\include"
-    ) else if exist "C:\Program Files\GLFW\include" (
-        set "GLFW_INC=C:\Program Files\GLFW\include"
-    ) else (
-        echo WARNING: GLFW include directory not found. Trying pkg-config...
-        set "GLFW_INC="
-    )
+    echo WARNING: GLFW include directory not found.
+    echo Please set one of the following environment variables:
+    echo   MIMITA_GLFW_INC - Full path to GLFW include directory
+    echo   GLFW_ROOT - Path to GLFW root directory
+    echo Attempting to continue without explicit GLFW include path...
+    set "GLFW_INC="
 )
 
 if defined MIMITA_GLFW_LIB (
@@ -48,15 +38,12 @@ if defined MIMITA_GLFW_LIB (
 ) else if defined GLFW_ROOT (
     set "GLFW_LIB=%GLFW_ROOT%\lib-mingw-w64"
 ) else (
-    REM Try common GLFW library paths
-    if exist "C:\glfw\lib-mingw-w64" (
-        set "GLFW_LIB=C:\glfw\lib-mingw-w64"
-    ) else if exist "C:\Program Files\GLFW\lib-mingw-w64" (
-        set "GLFW_LIB=C:\Program Files\GLFW\lib-mingw-w64"
-    ) else (
-        echo WARNING: GLFW library directory not found. Trying pkg-config...
-        set "GLFW_LIB="
-    )
+    echo WARNING: GLFW library directory not found.
+    echo Please set one of the following environment variables:
+    echo   MIMITA_GLFW_LIB - Full path to GLFW library directory
+    echo   GLFW_ROOT - Path to GLFW root directory
+    echo Attempting to continue without explicit GLFW library path...
+    set "GLFW_LIB="
 )
 
 set "EXT_INC=external\include"
