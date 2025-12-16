@@ -27,6 +27,13 @@ struct Renderer {
     void drawGridCell(const glm::vec3& pos, const glm::mat4& view, const glm::mat4& proj);
     // idk where to add this nov 6 2025 todo
     GLuint getShaderProgram(); // add this inside Renderer
+    void drawDebugSphere(
+        const glm::vec3& center,
+        float radius,
+        const glm::vec3& color,
+        const glm::mat4& view,
+        const glm::mat4& proj);
+
 };
 
 // Add this after the class (not inside)

@@ -14,6 +14,7 @@
  */
 
 #include "physics.h"
+#include "physics/config.h"
 #include "../camera.h"
 #include <glm/glm.hpp>
 
@@ -21,9 +22,20 @@
 const float GRAVITY     = -25.0f;
 
 // ---------------- player constants ----------------
-const float PLAYER_RADIUS = 0.35f;
+// player radius is in src\physics\config.h
 const float JUMP_SPEED = 12.0f;
 const float MOVE_SPEED = 12.0f;
+
+// ---------------- helper functions start ----------------
+
+// “Gives me the direction the triangle is facing.""
+glm::vec3 triangleNormal(
+    const glm::vec3& a,
+    const glm::vec3& b,
+    const glm::vec3& c)
+{
+    return glm::normalize(glm::cross(b - a, c - a));
+}
 
 // “Given a point and a triangle, tell me the closest spot on the triangle.”
 glm::vec3 closestPointOnTriangle(
@@ -69,14 +81,25 @@ glm::vec3 closestPointOnTriangle(
     return a + ab * v + ac * w;
 }
 
+// ---------------- helper functions end ----------------
+
 // ---------------- main update ----------------
 void updatePhysics(
     Player& p,
-    const Mesh& world,      // unused for now
+    const Mesh& world,     
     GLFWwindow* win,
     float dt,
     const Camera& cam)
 {
+
+    // player spheres
+    // I KNOW its not a rectangle like roblox but just get it working first fix later
+    const glm::vec3 SPHERE_OFFSETS[3] = {
+        glm::vec3(0.0f, PLAYER_RADIUS, 0.0f),   // feet
+        glm::vec3(0.0f, 0.9f, 0.0f),             // body
+        glm::vec3(0.0f, 1.6f, 0.0f)              // head
+    };
+
     // ---- movement input ----
     glm::vec3 move(0);
 
@@ -112,42 +135,58 @@ void updatePhysics(
     p.vel.y += GRAVITY * dt;
     p.pos.y += p.vel.y * dt;
 
+    // ---- collisions ----
     p.onGround = false;
 
-    // ---- collisions i think ----
+    // feet, body, head
+    const glm::vec3 SPHERE_OFFSETS[3] = {
+        glm::vec3(0.0f, PLAYER_RADIUS, 0.0f), // feet
+        glm::vec3(0.0f, 0.9f, 0.0f),           // body
+        glm::vec3(0.0f, 1.6f, 0.0f)            // head
+    };
 
-    // feet sphere center
-    glm::vec3 sphereCenter = p.pos + glm::vec3(0.0f, PLAYER_RADIUS, 0.0f);
-
-    for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
+    // do a few passes so we fully escape geometry
+    for (int pass = 0; pass < 2; ++pass)
     {
-        glm::vec3 a = world.verts[i + 0].pos;
-        glm::vec3 b = world.verts[i + 1].pos;
-        glm::vec3 c = world.verts[i + 2].pos;
-
-        glm::vec3 closest = closestPointOnTriangle(sphereCenter, a, b, c);
-        glm::vec3 delta = sphereCenter - closest;
-
-        float dist = glm::length(delta);
-        if (dist < PLAYER_RADIUS && dist > 0.0001f)
+        // loop over player spheres
+        for (int s = 0; s < 3; ++s)
         {
-            glm::vec3 normal = glm::normalize(delta);
-            float push = PLAYER_RADIUS - dist;
+            glm::vec3 sphereCenter = p.pos + SPHERE_OFFSETS[s];
 
-            // push player out of triangle
-            p.pos += normal * push;
+            // loop over map triangles
+            for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
+            {
+                glm::vec3 a = world.verts[i + 0].pos;
+                glm::vec3 b = world.verts[i + 1].pos;
+                glm::vec3 c = world.verts[i + 2].pos;
 
-            // if triangle is ground-ish, allow jumping
-            if (normal.y > 0.5f)
-            {
-                p.onGround = true;
-                p.vel.y = 0.0f;
-            }
-            else
-            {
-                // wall slide: remove velocity into wall
-                p.vel -= normal * glm::dot(p.vel, normal);
+                glm::vec3 closest =
+                    closestPointOnTriangle(sphereCenter, a, b, c);
+
+                glm::vec3 delta = sphereCenter - closest;
+                float dist = glm::length(delta);
+
+                if (dist < PLAYER_RADIUS && dist > 0.0001f)
+                {
+                    glm::vec3 normal = delta / dist;
+                    float push = PLAYER_RADIUS - dist;
+
+                    // ALWAYS push out of geometry
+                    p.pos += normal * push;
+
+                    // ONLY feet sphere can create "ground"
+                    if (s == 0 && normal.y > 0.5f)
+                    {
+                        p.onGround = true;
+                        if (p.vel.y < 0.0f)
+                            p.vel.y = 0.0f;
+                    }
+                    else
+                    {
+                        // slide along walls / ceilings
+                        p.vel -= normal * glm::dot(p.vel, normal);
+                    }
+                }
             }
         }
     }
-}

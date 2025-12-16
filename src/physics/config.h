@@ -65,5 +65,8 @@ struct PhysicsConfig {
     float respawnDelay = 1.0f;
 };
 
+// player_radius is in physics as of dec 16 2025 but we duplicate code here bc idk 
+constexpr float PLAYER_RADIUS = 0.35f;
+
 // global config instance
 inline PhysicsConfig PHYS;

@@ -241,6 +241,51 @@ void Renderer::drawCubeColored(const glm::vec3& pos, const glm::vec3& color,
     glUseProgram(0);
 }
 
+// dec 16 2025 todo make this file not full of random stuff i dont  think i need like cube
+// and just reuse a object renderer for everthing 
+void Renderer::drawDebugSphere(
+    const glm::vec3& center,
+    float radius,
+    const glm::vec3& color,
+    const glm::mat4& view,
+    const glm::mat4& proj)
+{
+    glUseProgram(shaderProgram);
+
+    // semi-transparent
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), center);
+    model = glm::scale(model, glm::vec3(radius * 2.0f));
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(shaderProgram,"model"),
+        1, GL_FALSE, &model[0][0]);
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(shaderProgram,"view"),
+        1, GL_FALSE, &view[0][0]);
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(shaderProgram,"projection"),
+        1, GL_FALSE, &proj[0][0]);
+
+    // lighter color so you can see through
+    glUniform3f(
+        glGetUniformLocation(shaderProgram,"color"),
+        color.r * 0.5f,
+        color.g * 0.5f,
+        color.b * 0.5f);
+
+    glBindVertexArray(cubeVAO);
+    glDrawElements(GL_LINES, 36, GL_UNSIGNED_INT, 0);
+
+    glDisable(GL_BLEND);
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
 // todo understand why this goes here nov 6 2025
 extern GLuint groundTex;  // use the one loaded in main.cpp
 

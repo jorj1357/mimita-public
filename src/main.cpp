@@ -52,6 +52,9 @@ extern Renderer* gRenderer;
 // dec 3 2025 todo sort includes maybe 
 #include "utils/mesh_utils.h"
 
+// dec 16 2025 use config everwhere 
+#include "physics/config.h"
+
 TextureManager TEX; // global instance
 GLuint groundTex;
 
@@ -182,6 +185,24 @@ int main() {
         // simple floor collision BEFORE rendering stuff
         // do u put this here nov 6 2025 todo
         updatePhysics(player, map, renderer.window, dt, camera);
+
+        // DEBUG: draw collision spheres
+        const glm::vec3 SPHERE_OFFSETS[3] = {
+            glm::vec3(0.0f, PLAYER_RADIUS, 0.0f),
+            glm::vec3(0.0f, 0.9f, 0.0f),
+            glm::vec3(0.0f, 1.6f, 0.0f)
+        };
+
+        for (int s = 0; s < 3; ++s)
+        {
+            glm::vec3 center = player.pos + SPHERE_OFFSETS[s];
+            renderer.drawDebugSphere(
+                center,
+                PLAYER_RADIUS,
+                glm::vec3(1.0f, 0.0f, 0.0f),
+                view,
+                proj);
+        }
 
         // player drawing logic in player.cpp
         player.render(shaderProgram, playerVAO, playerMesh.verts.size(), view, proj, camera, playerTex);
