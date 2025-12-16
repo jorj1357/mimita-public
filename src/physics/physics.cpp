@@ -138,13 +138,6 @@ void updatePhysics(
     // ---- collisions ----
     p.onGround = false;
 
-    // feet, body, head
-    const glm::vec3 SPHERE_OFFSETS[3] = {
-        glm::vec3(0.0f, PLAYER_RADIUS, 0.0f), // feet
-        glm::vec3(0.0f, 0.9f, 0.0f),           // body
-        glm::vec3(0.0f, 1.6f, 0.0f)            // head
-    };
-
     // do a few passes so we fully escape geometry
     for (int pass = 0; pass < 2; ++pass)
     {
