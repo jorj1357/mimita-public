@@ -57,7 +57,8 @@ static bool aabbOverlapsTriangle(
 
 static bool playerBoxHitsWorld(const Player& p, const Mesh& world)
 {
-    glm::vec3 center = p.pos + glm::vec3(0.0f, PLAYER_HALF.y, 0.0f);
+    glm::vec3 half = playerHalfExtents();
+    glm::vec3 center = p.pos + glm::vec3(0.0f, half.y, 0.0f);
 
     for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
     {
@@ -65,12 +66,11 @@ static bool playerBoxHitsWorld(const Player& p, const Mesh& world)
         glm::vec3 b = world.verts[i + 1].pos;
         glm::vec3 c = world.verts[i + 2].pos;
 
-        if (aabbOverlapsTriangle(center, PLAYER_HALF, a,b,c))
+        if (aabbOverlapsTriangle(center, half, a, b, c))
             return true;
     }
     return false;
 }
-
 
 // ---------------- helper functions end ----------------
 
