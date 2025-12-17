@@ -2,180 +2,503 @@ MAP AABB min(-644.248474 -189.559464 -489.021912) max(107.551941 2017.133667 100
 OpenGL version: 3.3.0 - Build 31.0.101.4502
 Renderer initialized successfully.
 Loaded 11 textures.
-Window pointer: 000001caef8e5de0
+Window pointer: 0000025502665de0
 Mesh dims: 0.880001 3.400000 1.616000
 Loading map...
-[PHYS]
-  pos:   (0.00 26.88 0.00)
-  vel.y: -12.45
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.85 0.00) velY=-12.51 ground=0 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (0.00 26.66 0.00)
-  vel.y: 0.00
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
-[PHYS]
-  pos:   (-0.37 26.52 7.08)
-  vel.y: -2.60
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(-0.37 26.52 7.09) velY=-2.61 ground=0 tris=0
-[PHYS]
-  pos:   (-0.47 22.13 9.18)
-  vel.y: -15.01
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(-0.47 22.07 9.18) velY=-15.11 ground=0 tris=0
-[PHYS]
-  pos:   (-0.47 11.38 9.18)
-  vel.y: -27.59
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(-0.47 11.24 9.18) velY=-27.72 ground=0 tris=0
-[PHYS]
-  pos:   (-0.47 -5.58 9.18)
-  vel.y: -40.10
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(-0.47 -5.79 9.18) velY=-40.23 ground=0 tris=0
-[PHYS]
-  pos:   (0.80 -29.04 9.20)
-  vel.y: -52.73
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.83 -29.37 9.20) velY=-52.88 ground=0 tris=0
-[PHYS]
-  pos:   (0.94 -57.79 9.20)
-  vel.y: -65.38
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(0.94 -57.92 9.20) velY=-65.43 ground=0 tris=0
-[PHYS]
-  pos:   (2.26 -94.07 7.97)
-  vel.y: -77.88
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(2.27 -94.23 7.96) velY=-77.93 ground=0 tris=0
-[PHYS]
-  pos:   (2.34 -136.17 7.43)
-  vel.y: -90.38
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(2.34 -136.53 7.43) velY=-90.48 ground=0 tris=0
-[PHYS]
-  pos:   (2.34 -184.76 7.43)
-  vel.y: -102.94
-  move.y 0.00
-  onGround: -274394240
-[PHYS] pos(2.34 -185.27 7.43) velY=-103.07 ground=0 tris=0
+[WORLD] buildFromMesh: verts=1521936 tris=507312 chunks=4445 chunkSize=5.00
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 29.86 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 29.57 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 29.15 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 28.47 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 27.73 0.00)
+[PHYS DEBUG 1] pos(0.00 26.79 0.00) velY=-12.61 ground=0 tris=17
+[PHYS DEBUG 2] pos(0.00 26.79 0.00) velY=-12.61 move(0.00 -0.08 0.00) ground=0
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.79 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.67 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[WORLD] chunkSize=5.00 base(0 0 0) foundChunks=3 tris=17 pos(0.00 26.66 0.00)
+[PHYS DEBUG 1] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS DEBUG 2] pos(0.00 26.66 0.00) velY=0.00 move(0.00 0.00 0.00) ground=1
+[WORLD] chunkSize=5.00 base(-1 0 0) foundChunks=3 tris=63 pos(-0.02 26.66 0.13)
+[WORLD] chunkSize=5.00 base(-1 0 0) foundChunks=3 tris=63 pos(-0.24 26.66 1.58)
+[WORLD] chunkSize=5.00 base(-1 0 0) foundChunks=3 tris=63 pos(-0.44 26.66 3.16)
+[WORLD] chunkSize=5.00 base(-1 0 0) foundChunks=3 tris=63 pos(-0.47 26.66 4.72)
+[WORLD] chunkSize=5.00 base(-1 0 1) foundChunks=0 tris=0 pos(-0.33 26.61 6.26)
+[WORLD] chunkSize=5.00 base(-1 0 1) foundChunks=0 tris=0 pos(-0.17 26.38 7.98)
+[PHYS DEBUG 1] pos(-0.07 26.19 8.85) velY=-4.83 ground=0 tris=0
+[PHYS DEBUG 2] pos(-0.07 26.19 8.85) velY=-4.83 move(0.01 -0.03 0.12) ground=0
+[WORLD] chunkSize=5.00 base(0 0 1) foundChunks=0 tris=0 pos(0.04 25.92 9.83)
+[WORLD] chunkSize=5.00 base(0 0 2) foundChunks=1 tris=3 pos(0.22 25.82 11.41)
+[WORLD] chunkSize=5.00 base(0 0 2) foundChunks=1 tris=3 pos(0.38 25.82 12.92)
+[WORLD] chunkSize=5.00 base(0 0 2) foundChunks=1 tris=3 pos(0.51 25.82 14.46)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(0.64 25.82 16.09)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(0.77 25.81 17.12)
+[PHYS DEBUG 1] pos(0.87 25.73 17.22) velY=-2.04 ground=1 tris=2752
+[PHYS DEBUG 2] pos(0.87 25.73 17.22) velY=-2.04 move(0.01 -0.01 -0.06) ground=1
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(0.90 25.69 17.22)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(1.03 25.39 17.14)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(1.16 24.92 17.24)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(1.29 24.25 17.22)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(1.38 23.29 17.55)
+[WORLD] chunkSize=5.00 base(0 0 3) foundChunks=4 tris=2752 pos(1.44 22.33 18.67)
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.52 21.25 20.26)
+[PHYS DEBUG 1] pos(1.52 21.17 20.38) velY=-14.54 ground=0 tris=2752
+[PHYS DEBUG 2] pos(1.52 21.17 20.38) velY=-14.54 move(0.00 -0.07 0.10) ground=0
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.55 20.10 20.87)
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.55 18.79 20.87)
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.55 17.33 20.87)
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.55 15.73 20.87)
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.55 13.88 20.87)
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.49 11.96 22.04)
+[PHYS DEBUG 1] pos(1.45 10.70 22.98) velY=-27.09 ground=0 tris=2752
+[PHYS DEBUG 2] pos(1.45 10.70 22.98) velY=-27.09 move(-0.00 -0.11 0.08) ground=0
+[WORLD] chunkSize=5.00 base(0 0 4) foundChunks=4 tris=2752 pos(1.42 9.87 23.59)
+[WORLD] chunkSize=5.00 base(0 0 5) foundChunks=3 tris=2749 pos(1.36 7.64 25.13)
+[WORLD] chunkSize=5.00 base(0 0 5) foundChunks=3 tris=2749 pos(1.29 5.21 26.70)
+[WORLD] chunkSize=5.00 base(0 0 5) foundChunks=3 tris=2749 pos(1.21 2.51 28.35)
+[WORLD] chunkSize=5.00 base(0 0 5) foundChunks=3 tris=2749 pos(1.22 -0.21 29.91)
+[WORLD] chunkSize=5.00 base(0 0 6) foundChunks=0 tris=0 pos(0.92 -3.22 31.31)
+[PHYS DEBUG 1] pos(0.52 -6.01 32.70) velY=-39.60 ground=0 tris=0
+[PHYS DEBUG 2] pos(0.52 -6.01 32.70) velY=-39.60 move(-0.03 -0.22 0.11) ground=0
+[WORLD] chunkSize=5.00 base(0 0 6) foundChunks=0 tris=0 pos(0.50 -6.21 32.79)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-0.08 -9.37 32.64)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-1.66 -12.88 32.19)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-3.21 -16.46 31.82)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-3.62 -20.15 31.77)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-3.62 -24.02 31.77)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-3.94 -27.82 31.76)
+[PHYS DEBUG 1] pos(-4.05 -28.98 31.76) velY=-52.10 ground=0 tris=0
+[PHYS DEBUG 2] pos(-4.05 -28.98 31.76) velY=-52.10 move(0.00 -0.02 0.00) ground=0
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-4.34 -31.83 31.75)
+[WORLD] chunkSize=5.00 base(-1 0 6) foundChunks=0 tris=0 pos(-4.73 -36.04 31.74)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.11 -40.59 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -45.03 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -49.68 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -54.48 31.73)
+[PHYS DEBUG 1] pos(-5.25 -58.21 31.73) velY=-64.62 ground=0 tris=0
+[PHYS DEBUG 2] pos(-5.25 -58.21 31.73) velY=-64.62 move(0.00 -0.15 0.00) ground=0
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -59.29 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -64.70 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -69.91 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -75.08 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -80.80 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -86.31 31.73)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.25 -91.74 31.73)
+[PHYS DEBUG 1] pos(-5.25 -92.68 31.73) velY=-77.20 ground=0 tris=0
+[PHYS DEBUG 2] pos(-5.25 -92.68 31.73) velY=-77.20 move(0.00 -0.37 0.00) ground=0
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.58 -97.78 31.72)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-5.98 -104.01 31.71)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-6.28 -110.70 31.70)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-6.28 -117.14 31.70)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-6.28 -123.67 31.70)
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-7.53 -130.44 31.67)
+[PHYS DEBUG 1] pos(-8.67 -135.56 31.62) velY=-89.83 ground=0 tris=0
+[PHYS DEBUG 2] pos(-8.67 -135.56 31.62) velY=-89.83 move(-0.16 -0.71 -0.01) ground=0
+[WORLD] chunkSize=5.00 base(-2 0 6) foundChunks=0 tris=0 pos(-9.09 -137.44 31.58)
+[WORLD] chunkSize=5.00 base(-3 0 6) foundChunks=0 tris=0 pos(-10.63 -144.49 31.42)
+[WORLD] chunkSize=5.00 base(-3 0 6) foundChunks=0 tris=0 pos(-12.23 -152.07 31.19)
+[WORLD] chunkSize=5.00 base(-3 0 6) foundChunks=0 tris=0 pos(-13.72 -159.41 30.80)
+[WORLD] chunkSize=5.00 base(-3 0 5) foundChunks=3 tris=1960 pos(-15.00 -167.03 29.92)
+[WORLD] chunkSize=5.00 base(-4 0 5) foundChunks=3 tris=2092 pos(-15.96 -174.90 28.66)
+[WORLD] chunkSize=5.00 base(-4 0 5) foundChunks=3 tris=2092 pos(-16.84 -182.54 27.43)
+[PHYS DEBUG 1] pos(-16.98 -183.75 27.24) velY=-102.36 ground=0 tris=2092
+[PHYS DEBUG 2] pos(-16.98 -183.75 27.24) velY=-102.36 move(-0.05 -0.46 -0.07) ground=0
+[WORLD] chunkSize=5.00 base(-4 0 5) foundChunks=3 tris=2092 pos(-17.73 -190.46 26.18)
+[WORLD] chunkSize=5.00 base(-4 0 4) foundChunks=4 tris=2095 pos(-18.62 -198.47 24.94)
+[WORLD] chunkSize=5.00 base(-4 0 4) foundChunks=4 tris=2095 pos(-19.59 -207.28 23.61)
+[WORLD] chunkSize=5.00 base(-5 0 4) foundChunks=4 tris=1571 pos(-20.46 -215.44 22.39)
+[WORLD] chunkSize=5.00 base(-5 0 4) foundChunks=4 tris=1571 pos(-21.35 -223.87 21.15)
+[WORLD] chunkSize=5.00 base(-5 0 3) foundChunks=4 tris=1571 pos(-22.24 -232.46 19.92)
+[PHYS DEBUG 1] pos(-22.84 -238.39 19.07) velY=-114.93 ground=0 tris=1571
+[PHYS DEBUG 2] pos(-22.84 -238.39 19.07) velY=-114.93 move(-0.07 -0.70 -0.10) ground=0
+[WORLD] chunkSize=5.00 base(-5 0 3) foundChunks=4 tris=1571 pos(-23.13 -241.25 18.67)
+[WORLD] chunkSize=5.00 base(-5 0 3) foundChunks=4 tris=1571 pos(-24.03 -250.19 17.43)
+[WORLD] chunkSize=5.00 base(-5 0 3) foundChunks=4 tris=1571 pos(-24.96 -259.69 16.12)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-25.83 -268.68 14.91)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-26.73 -278.07 13.66)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-27.62 -287.52 12.43)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-28.37 -296.94 11.38)
+[PHYS DEBUG 1] pos(-28.37 -299.26 11.38) velY=-127.48 ground=0 tris=3
+[PHYS DEBUG 2] pos(-28.37 -299.26 11.38) velY=-127.48 move(0.00 -0.88 0.00) ground=0
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-28.37 -307.00 11.38)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-28.37 -316.94 11.38)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-28.37 -326.72 11.38)
+[WORLD] chunkSize=5.00 base(-6 0 2) foundChunks=1 tris=3 pos(-28.37 -337.21 11.38)
