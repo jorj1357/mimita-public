@@ -1,16 +1,15 @@
 // C:\important\go away v5\s\mimita-v5\src\entities\player.cpp
 
-// dec 16 2025 it was so m ess i clean it 
-
 // make sure GLAD comes first
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <algorithm>
-#include "../map/map_common.h"   
+#include "../map/map_common.h"   // defines Mesh
 #include "player.h"
 #include "../camera.h"
 #include <glm/gtc/matrix_transform.hpp>
 
+// dec 2 2025 idk where put this todo 
 // ---------- static hitbox VAO (init once) ----------
 static GLuint hitboxVAO = 0;
 static GLuint hitboxVBO = 0;

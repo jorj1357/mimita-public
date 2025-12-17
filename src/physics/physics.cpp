@@ -21,89 +21,130 @@
 // ---------------- world constants ----------------
 // lives in config.h never hardcode values in a file again 
 
-// ---------------- helper functions start ----------------
+// ---------------- struct for players start ----------------
 
-glm::vec3 playerHalfExtents()
+struct Capsule {
+    glm::vec3 a; // bottom sphere center
+    glm::vec3 b; // top sphere center
+    float r;
+};
+
+static Capsule playerCapsule(const Player& p)
 {
-    return glm::vec3(
-        PLAYER_WIDTH * 0.5f,
-        PLAYER_HEIGHT * 0.5f,
-        PLAYER_DEPTH * 0.5f
-    );
+    Capsule c;
+    c.r = PLAYER_RADIUS;
+    c.a = p.pos + glm::vec3(0.0f, c.r, 0.0f);
+    c.b = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT - c.r, 0.0f);
+    return c;
 }
 
-static bool aabbOverlapsTriangle(
-    const glm::vec3& boxCenter,
-    const glm::vec3& half,
+// ---------------- struct for players end ----------------
+
+// ---------------- helper functions start ----------------
+
+static glm::vec3 closestPointOnTriangle(
+    const glm::vec3& p,
     const glm::vec3& a,
     const glm::vec3& b,
     const glm::vec3& c)
 {
-    // Triangle AABB
-    glm::vec3 tmin = glm::min(a, glm::min(b, c));
-    glm::vec3 tmax = glm::max(a, glm::max(b, c));
+    // edges
+    glm::vec3 ab = b - a;
+    glm::vec3 ac = c - a;
+    glm::vec3 ap = p - a;
 
-    // Box AABB
-    glm::vec3 bmin = boxCenter - half;
-    glm::vec3 bmax = boxCenter + half;
+    float d1 = glm::dot(ab, ap);
+    float d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
 
-    // AABB vs AABB overlap
-    if (bmax.x < tmin.x || bmin.x > tmax.x) return false;
-    if (bmax.y < tmin.y || bmin.y > tmax.y) return false;
-    if (bmax.z < tmin.z || bmin.z > tmax.z) return false;
+    glm::vec3 bp = p - b;
+    float d3 = glm::dot(ab, bp);
+    float d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
 
-    return true;
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+        return a + ab * (d1 / (d1 - d3));
+
+    glm::vec3 cp = p - c;
+    float d5 = glm::dot(ab, cp);
+    float d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+        return a + ac * (d2 / (d2 - d6));
+
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+
+    float denom = 1.0f / (va + vb + vc);
+    float v = vb * denom;
+    float w = vc * denom;
+    return a + ab * v + ac * w;
 }
-
-static bool playerBoxHitsWorld(const Player& p, const Mesh& world)
+    
+static glm::vec3 closestPointOnSegment(
+    const glm::vec3& p,
+    const glm::vec3& a,
+    const glm::vec3& b)
 {
-    glm::vec3 half = playerHalfExtents();
-    glm::vec3 center = p.pos + glm::vec3(0.0f, half.y, 0.0f);
-
-    for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
-    {
-        glm::vec3 a = world.verts[i + 0].pos;
-        glm::vec3 b = world.verts[i + 1].pos;
-        glm::vec3 c = world.verts[i + 2].pos;
-
-        if (aabbOverlapsTriangle(center, half, a, b, c))
-            return true;
-    }
-    return false;
+    glm::vec3 ab = b - a;
+    float t = glm::dot(p - a, ab) / glm::dot(ab, ab);
+    t = glm::clamp(t, 0.0f, 1.0f);
+    return a + ab * t;
 }
+
+static void collideCapsuleTriangle(
+    Player& p,
+    Capsule& cap,
+    const glm::vec3& a,
+    const glm::vec3& b,
+    const glm::vec3& c)
+{
+    // closest point on triangle to capsule line
+    glm::vec3 triPoint = closestPointOnTriangle(
+        closestPointOnSegment((a + b + c) / 3.0f, cap.a, cap.b),
+        a, b, c
+    );
+
+    // closest point on capsule line to triangle
+    glm::vec3 capPoint = closestPointOnSegment(triPoint, cap.a, cap.b);
+
+    glm::vec3 delta = capPoint - triPoint;
+    float dist = glm::length(delta);
+
+    if (dist < cap.r && dist > 0.0001f)
+    {
+        glm::vec3 normal = delta / dist;
+        float push = cap.r - dist;
+
+        // push player out
+        p.pos += normal * push;
+
+        // ground detection
+        if (normal.y > 0.5f)
+        {
+            p.onGround = true;
+            if (p.vel.y < 0.0f)
+                p.vel.y = 0.0f;
+        }
+    }
+}
+
 
 // ---------------- helper functions end ----------------
 
 // ---------------- main update ----------------
 void updatePhysics(
     Player& p,
-    const Mesh& world,     
+    const Mesh& world,
     GLFWwindow* win,
     float dt,
     const Camera& cam)
 {
-
-    // debug stuff so i get not stuck
-    // teleport up
-    if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS)
-    {
-        p.pos.y += 1.0f;
-        p.vel = glm::vec3(0.0f);
-    }
-
-    // teleport forward (where player is facing)
-    if (glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS)
-    {
-        glm::vec3 dir = cam.front;
-        dir.y = 0.0f; // stay horizontal
-        if (glm::length(dir) > 0.0001f)
-            dir = glm::normalize(dir);
-
-        p.pos += dir * 1.0f;
-        p.vel = glm::vec3(0.0f);
-    }
-
-    // ---- movement input ----
+    // movement input
     glm::vec3 wish(0.0f);
 
     glm::vec3 forward = cam.front;
@@ -123,65 +164,32 @@ void updatePhysics(
 
     glm::vec3 delta = wish * PHYS.moveSpeed * dt;
 
-    // ---- CS-style sliding ----
+    // horizontal move
+    p.pos += glm::vec3(delta.x, 0.0f, delta.z);
 
-    // X axis
-    p.pos.x += delta.x;
-    if (playerBoxHitsWorld(p, world))
-        p.pos.x -= delta.x;
-
-    // Z axis
-    p.pos.z += delta.z;
-    if (playerBoxHitsWorld(p, world))
-        p.pos.z -= delta.z;
-
-    // ---- gravity ----
+    // gravity
     p.vel.y += PHYS.gravity * dt;
-    float dy = p.vel.y * dt;
+    p.pos.y += p.vel.y * dt;
 
-    p.pos.y += dy;
-    if (playerBoxHitsWorld(p, world))
+    // collisions
+    p.onGround = false;
+    Capsule cap = playerCapsule(p);
+
+    for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
     {
-        p.pos.y -= dy;
-
-        if (p.vel.y < 0.0f)
-            p.onGround = true;
-
-        p.vel.y = 0.0f;
-    }
-    else
-    {
-        p.onGround = false;
+        collideCapsuleTriangle(
+            p,
+            cap,
+            world.verts[i+0].pos,
+            world.verts[i+1].pos,
+            world.verts[i+2].pos
+        );
     }
 
-    // jump i think 
+    // jump
     if (glfwGetKey(win, GLFW_KEY_SPACE) && p.onGround)
     {
         p.vel.y = PHYS.jumpStrength;
         p.onGround = false;
     }
-
-
-    // ---- collisions ----
-    // p.onGround = false;
-
-    // for (int pass = 0; pass < 2; ++pass)
-    // {
-    //     // do we do this twice i dont know 
-    //     glm::vec3 feetSphereCenter = p.pos + glm::vec3(0.0f, PLAYER_RADIUS, 0.0f);
-    //     glm::vec3 midSphereCenter    = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT * 0.5f, 0.0f);
-    //     // matbe dont subtract the radius? hmm 
-    //     glm::vec3 headSphereCenter    = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT, 0.0f);
-
-    //     for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
-    //     {
-    //         glm::vec3 a = world.verts[i + 0].pos;
-    //         glm::vec3 b = world.verts[i + 1].pos;
-    //         glm::vec3 c = world.verts[i + 2].pos;
-
-    //         collideSphere(p, feetSphereCenter, PLAYER_RADIUS, a, b, c);
-    //         collideSphere(p, midSphereCenter,  PLAYER_RADIUS, a, b, c);
-    //         collideSphere(p, headSphereCenter, PLAYER_RADIUS, a, b, c);
-    //     }
-    // }
 }

@@ -21,3 +21,7 @@ inline PhysicsConfig PHYS = {
 inline float PLAYER_WIDTH  = 0.7f;   // meters
 inline float PLAYER_HEIGHT = 1.8f;   // meters
 inline float PLAYER_DEPTH  = 0.7f;
+
+// do we use this idk
+// i put it jsut so errors stop 
+inline float PLAYER_RADIUS = 0.35f;
