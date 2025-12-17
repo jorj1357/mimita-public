@@ -1,8 +1,54 @@
-*.exe
-*.o
-compile_commands.json
+# Build artifacts
 build/
+*.o
+*.obj
+*.exe
 mimita
 mimita.exe
+compile_commands.json
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Windows runtime libraries
+*.dll
+*.lib
+
+# Windows-specific directories
+lib/
+random-dll-fix/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Log files
+*.log
 run.log
+
+# Cache and temporary files
 .cache/
+*.tmp
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Compiled binaries (platform-specific)
+*.dylib
+*.so
+*.a
