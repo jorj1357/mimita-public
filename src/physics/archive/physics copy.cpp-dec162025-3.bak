@@ -1,0 +1,140 @@
+// /**
+//  * dec 12 2025 i dont get this so make it super super dumb
+//  * and add bit by bit only the pieces i can comfortably explain jus 
+//  * offthe ttop of my head
+//  * like 
+//  * yeah gravity pulls you down every frame dt = last frame i think
+//  * yeah move speed is your move speed
+//  * idgaf about what 30.0f is or 30f or what the f is 
+//  * or what voidi means or what stdio i dont want definitions i want functionality
+//  * if i can explain what it DOES off top my head then i get it and i can add it
+//  * if i dont get it dont add it
+//  * and that sounds slow but it avoids bloat that makes sutpid bullshit happen later 
+//  * and file size dont matter line count dont matter, its just do i understand it or not
+//  */
+
+// #include "collision-capsule-triangle.h"
+// #include "physics.h"
+// #include "physics/config.h"
+// #include "../camera.h"
+// #include <glm/glm.hpp>
+
+// // ---------------- world constants ----------------
+// // lives in config.h never hardcode values in a file again 
+
+// // ---------------- struct for players start ----------------
+
+// static Capsule playerCapsule(const Player& p)
+// {
+//     Capsule c;
+//     c.r = PLAYER_RADIUS;
+
+//     // bottom sphere center (feet)
+//     c.a = p.pos + glm::vec3(0.0f, c.r, 0.0f);
+
+//     // top sphere center (head)
+//     c.b = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT - c.r, 0.0f);
+
+//     return c;
+// }
+
+// // ---------------- struct for players end ----------------
+
+// // ---------------- helper functions start ----------------
+
+// // dec 16 2025 these all live in collision-capsule-triangle now
+
+// // ---------------- helper functions end ----------------
+
+// // ---------------- main update ----------------
+// void updatePhysics(
+//     Player& p,
+//     const Mesh& world,
+//     GLFWwindow* win,
+//     float dt,
+//     const Camera& cam)
+// {
+
+//     // ---- debug teleports ----
+//     if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS)
+//     {
+//         p.pos.y += 1.0f;
+//         p.vel = glm::vec3(0.0f);
+//     }
+
+//     if (glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS)
+//     {
+//         glm::vec3 dir = cam.front;
+//         dir.y = 0.0f;
+//         if (glm::length(dir) > 0.0001f)
+//             dir = glm::normalize(dir);
+
+//         p.pos += dir * 1.0f;
+//         p.vel = glm::vec3(0.0f);
+//     }
+
+//     // PUT THIS ABOVE ALL MOVEMENT... EXCEPT DEBUG
+//     // remember old pos so we prevent going in blocks, not just snap out
+//     glm::vec3 oldPos = p.pos;
+
+//     // idk if we do this 
+//     dt = glm::min(dt, 0.033f); // never simulate more than ~30fps worth
+
+//     // movement input
+//     glm::vec3 wish(0.0f);
+
+//     glm::vec3 forward = cam.front;
+//     forward.y = 0.0f;
+//     if (glm::length(forward) > 0.0001f)
+//         forward = glm::normalize(forward);
+
+//     glm::vec3 right = glm::cross(forward, glm::vec3(0,1,0));
+
+//     if (glfwGetKey(win, GLFW_KEY_W)) wish += forward;
+//     if (glfwGetKey(win, GLFW_KEY_S)) wish -= forward;
+//     if (glfwGetKey(win, GLFW_KEY_A)) wish -= right;
+//     if (glfwGetKey(win, GLFW_KEY_D)) wish += right;
+
+//     if (glm::length(wish) > 0.0001f)
+//         wish = glm::normalize(wish);
+
+//     glm::vec3 delta = wish * PHYS.moveSpeed * dt;
+
+//     // horizontal move
+//     Capsule cap = playerCapsule(p);
+//     float maxMove = cap.r * 0.5f;
+//     delta.x = glm::clamp(delta.x, -maxMove, maxMove);
+//     delta.z = glm::clamp(delta.z, -maxMove, maxMove);
+//     glm::vec3 move = glm::vec3(delta.x, 0.0f, delta.z);
+//     // p.pos += move;
+
+//     // gravity
+//     p.vel.y += PHYS.gravity * dt;
+//     p.pos.y += p.vel.y * dt;
+ 
+//     // collisions
+//     p.onGround = false;
+
+//     for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
+//     {
+//         collideCapsuleTriangle(
+//             p,
+//             cap,
+//             move,
+//             oldPos,
+//             world.verts[i+0].pos,
+//             world.verts[i+1].pos,
+//             world.verts[i+2].pos
+//         );
+//     }
+
+//     // apply final safe move ONCE
+//     p.pos = oldPos + move;
+
+//     // jump
+//     if (glfwGetKey(win, GLFW_KEY_SPACE) && p.onGround)
+//     {
+//         p.vel.y = PHYS.jumpStrength;
+//         p.onGround = false;
+//     }
+// }

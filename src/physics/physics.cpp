@@ -1,209 +1,51 @@
+// C:\important\quiet\n\mimita-public\mimita-public\src\physics\physics.cpp
+// dec 16 2025 
 /**
- * dec 12 2025 i dont get this so make it super super dumb
- * and add bit by bit only the pieces i can comfortably explain jus 
- * offthe ttop of my head
- * like 
- * yeah gravity pulls you down every frame dt = last frame i think
- * yeah move speed is your move speed
- * idgaf about what 30.0f is or 30f or what the f is 
- * or what voidi means or what stdio i dont want definitions i want functionality
- * if i can explain what it DOES off top my head then i get it and i can add it
- * if i dont get it dont add it
- * and that sounds slow but it avoids bloat that makes sutpid bullshit happen later 
- * and file size dont matter line count dont matter, its just do i understand it or not
+ * purpose
+ * phsics just like main cpp
+ * just calls other files functions
+ * no mess in here 
+ * config values all defined in config.h 
+ * and when we have a bunch of values thatll get split too but u know whaever 
  */
 
+// physics.cpp
 #include "physics.h"
 #include "physics/config.h"
+#include "collision-capsule-triangle.h"
+#include "world/world.h"              // <-- your World type
 #include "../camera.h"
 #include <glm/glm.hpp>
+#include <vector>
 
-// ---------------- world constants ----------------
-// lives in config.h never hardcode values in a file again 
-
-// ---------------- struct for players start ----------------
-
-// can we move this into player cpp or .h or config idk 
-struct Capsule {
-    glm::vec3 a; // bottom sphere center
-    glm::vec3 b; // top sphere center
-    float r;
-};
+// you need access to your built world somewhere.
+// simplest: pass it into updatePhysics (recommended)
+// OR use extern World gWorld; if you want global.
 
 static Capsule playerCapsule(const Player& p)
 {
     Capsule c;
     c.r = PLAYER_RADIUS;
-
-    // bottom sphere center (feet)
     c.a = p.pos + glm::vec3(0.0f, c.r, 0.0f);
-
-    // top sphere center (head)
     c.b = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT - c.r, 0.0f);
-
     return c;
 }
 
-// ---------------- struct for players end ----------------
-
-// ---------------- helper functions start ----------------
-
-static glm::vec3 closestPointOnTriangle(
-    const glm::vec3& p,
-    const glm::vec3& a,
-    const glm::vec3& b,
-    const glm::vec3& c)
-{
-    // edges
-    glm::vec3 ab = b - a;
-    glm::vec3 ac = c - a;
-    glm::vec3 ap = p - a;
-
-    float d1 = glm::dot(ab, ap);
-    float d2 = glm::dot(ac, ap);
-    if (d1 <= 0.0f && d2 <= 0.0f) return a;
-
-    glm::vec3 bp = p - b;
-    float d3 = glm::dot(ab, bp);
-    float d4 = glm::dot(ac, bp);
-    if (d3 >= 0.0f && d4 <= d3) return b;
-
-    float vc = d1 * d4 - d3 * d2;
-    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
-        return a + ab * (d1 / (d1 - d3));
-
-    glm::vec3 cp = p - c;
-    float d5 = glm::dot(ab, cp);
-    float d6 = glm::dot(ac, cp);
-    if (d6 >= 0.0f && d5 <= d6) return c;
-
-    float vb = d5 * d2 - d1 * d6;
-    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
-        return a + ac * (d2 / (d2 - d6));
-
-    float va = d3 * d6 - d5 * d4;
-    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
-        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
-
-    float denom = 1.0f / (va + vb + vc);
-    float v = vb * denom;
-    float w = vc * denom;
-    return a + ab * v + ac * w;
-}
-
-static glm::vec3 closestPointOnSegment(
-    const glm::vec3& p,
-    const glm::vec3& a,
-    const glm::vec3& b)
-{
-    glm::vec3 ab = b - a;
-    float t = glm::dot(p - a, ab) / glm::dot(ab, ab);
-    t = glm::clamp(t, 0.0f, 1.0f);
-    return a + ab * t;
-}
-
-static void collideCapsuleTriangle(
-    Player& p,
-    Capsule& cap,
-    const glm::vec3& oldPos,
-    const glm::vec3& a,
-    const glm::vec3& b,
-    const glm::vec3& c)
-{
-    // find closest triangle point to capsule line
-    glm::vec3 triPoint = closestPointOnTriangle(
-        closestPointOnSegment(
-            (a + b + c) / 3.0f, 
-            cap.a, 
-            cap.b),
-        a, b, c
-    );
-
-    // find closest capsule point to triangle
-    glm::vec3 capPoint = closestPointOnSegment(triPoint, cap.a, cap.b);
-
-    glm::vec3 delta = capPoint - triPoint;
-    float dist = glm::length(delta);
-
-    // INSIDE = HARD SNAP OUT
-    if (dist < cap.r && dist > ALMOST_ZERO)
-    {
-        float penetration = cap.r - dist;
-
-        // TOO DEEP = illegal move → revert
-        if (penetration > cap.r * HOW_DEEP)
-        {
-            p.pos = oldPos;
-            p.vel = glm::vec3(0.0f);
-            return;
-        }
-
-        glm::vec3 normal = delta / dist;
-
-        // move player out of triangle with bias
-        float bias = 0.002f; // maybe 0.002, maybe 0.2 maube 2 idk 
-        float correction = (cap.r - dist) + bias;
-        p.pos += normal * correction;
-
-        // kill velocity into surface
-        float into = glm::dot(p.vel, normal);
-        if (into < 0.0f)
-            p.vel -= normal * into;
-
-        // ground check
-        if (normal.y > MAX_SLOPE_ANGLE)
-        {
-            p.onGround = true;
-            if (p.vel.y < 0.00001f)
-                p.vel.y = 0.0f;
-        }
-    }
-}
-
-// ---------------- helper functions end ----------------
-
-// ---------------- main update ----------------
 void updatePhysics(
     Player& p,
-    const Mesh& world,
+    const World& world,          // <-- CHANGE: Mesh -> World
     GLFWwindow* win,
     float dt,
     const Camera& cam)
 {
+    dt = glm::min(dt, 0.033f);
 
-
-    // ---- debug teleports ----
-    if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS)
-    {
-        p.pos.y += 1.0f;
-        p.vel = glm::vec3(0.0f);
-    }
-
-    if (glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS)
-    {
-        glm::vec3 dir = cam.front;
-        dir.y = 0.0f;
-        if (glm::length(dir) > 0.0001f)
-            dir = glm::normalize(dir);
-
-        p.pos += dir * 1.0f;
-        p.vel = glm::vec3(0.0f);
-    }
-
-    // PUT THIS ABOVE ALL MOVEMENT... EXCEPT DEBUG
-    // remember old pos so we prevent going in blocks, not just snap out
-    glm::vec3 oldPos = p.pos;
-
-    // idk if we do this 
-    dt = glm::min(dt, 0.033f); // never simulate more than ~30fps worth
-
-    // movement input
+    // 1) build desired move from input (this IS your "desiredMove")
     glm::vec3 wish(0.0f);
 
     glm::vec3 forward = cam.front;
     forward.y = 0.0f;
-    if (glm::length(forward) > 0.0001f)
-        forward = glm::normalize(forward);
+    if (glm::length(forward) > 0.0001f) forward = glm::normalize(forward);
 
     glm::vec3 right = glm::cross(forward, glm::vec3(0,1,0));
 
@@ -212,38 +54,35 @@ void updatePhysics(
     if (glfwGetKey(win, GLFW_KEY_A)) wish -= right;
     if (glfwGetKey(win, GLFW_KEY_D)) wish += right;
 
-    if (glm::length(wish) > 0.0001f)
-        wish = glm::normalize(wish);
+    if (glm::length(wish) > 0.0001f) wish = glm::normalize(wish);
 
-    glm::vec3 delta = wish * PHYS.moveSpeed * dt;
+    glm::vec3 move = wish * PHYS.moveSpeed * dt;   // <-- THIS is desiredMove
 
-    // horizontal move
-    Capsule cap = playerCapsule(p);
-    float maxMove = cap.r * 0.5f;
-    delta.x = glm::clamp(delta.x, -maxMove, maxMove);
-    delta.z = glm::clamp(delta.z, -maxMove, maxMove);
-    p.pos += glm::vec3(delta.x, 0.0f, delta.z);
-
-    // gravity
+    // 2) gravity (your existing code)
     p.vel.y += PHYS.gravity * dt;
     p.pos.y += p.vel.y * dt;
 
-    // collisions
+    // 3) query nearby triangles (chunking)
+    std::vector<Triangle> nearby;
+    nearby.reserve(2048); // optional, reduces allocations
+    world.getNearbyTriangles(p.pos, nearby);
+
+    // 4) multipass slide
+    Capsule cap = playerCapsule(p);
     p.onGround = false;
 
-    for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
+    for (int pass = 0; pass < 3; pass++)
     {
-        collideCapsuleTriangle(
-            p,
-            cap,
-            oldPos,
-            world.verts[i+0].pos,
-            world.verts[i+1].pos,
-            world.verts[i+2].pos
-        );
+        for (const Triangle& t : nearby)
+        {
+            move = collideCapsuleTriangleMove(cap, move, t, p.onGround);
+        }
     }
 
-    // jump
+    // 5) apply final move once
+    p.pos += glm::vec3(move.x, 0.0f, move.z);
+
+    // 6) jump (your existing code)
     if (glfwGetKey(win, GLFW_KEY_SPACE) && p.onGround)
     {
         p.vel.y = PHYS.jumpStrength;

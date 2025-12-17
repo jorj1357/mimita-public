@@ -41,9 +41,16 @@ inline float MAX_SLOPE_ANGLE = 0.5f;
 // e.g. 0.5f = im alll up in there
 // 0.01f = if im a LIL in there stop. 
 
-inline float HOW_DEEP = 0.01f;
+inline float HOW_DEEP = 0.5f;
 
 // almost 0 
 // because we're werid
-inline float ALMOST_ZERO = 0.00001f
+inline float ALMOST_ZERO = 0.00001f;
 
+// everi map is now in chunks of this size 
+// if ur in 1, calc onli that ones colisions
+// if ur in 2, calc both
+// if ur in 3+, calc those 
+// just dont calc the entire freakin map
+// which allows multi pass which allows working freakin collisions finalli
+inline float CHUNK_SIZE = 5.0f; 
