@@ -34,7 +34,7 @@ static Capsule playerCapsule(const Player& p)
     Capsule c;
     c.r = PLAYER_RADIUS;
     c.a = p.pos + glm::vec3(0.0f, c.r, 0.0f);
-    c.b = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT - c.r, 0.0f);
+    c.b = p.pos + glm::vec3(0.0f, (PLAYER_HEIGHT - c.r) * 2, 0.0f);
     return c;
 }
 
@@ -118,7 +118,12 @@ static void collideCapsuleTriangle(
     if (dist < cap.r && dist > 0.0001f)
     {
         glm::vec3 normal = delta / dist;
-        float push = (cap.r - dist) + 0.01f; // push out a little more 
+        float howmuchinside = cap.r - dist;
+
+        // only add bias if we're INSIDE A BLOCK. A BLOCK NOTHING ELSE (phasing case)
+        float bias = (howmuchinside > 0.05f) ? 0.005f : 0.0f;
+
+        float push = howmuchinside + bias;
 
         // push player out
         p.pos += normal * push;
@@ -194,20 +199,15 @@ void updatePhysics(
     p.onGround = false;
     Capsule cap = playerCapsule(p);
 
-    for (int pass = 0; pass < 3; pass++) // run more than once run like 3 times i think
+    for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
     {
-        Capsule cap = playerCapsule(p);
-
-        for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
-        {
-            collideCapsuleTriangle(
-                p,
-                cap,
-                world.verts[i+0].pos,
-                world.verts[i+1].pos,
-                world.verts[i+2].pos
-            );
-        }
+        collideCapsuleTriangle(
+            p,
+            cap,
+            world.verts[i+0].pos,
+            world.verts[i+1].pos,
+            world.verts[i+2].pos
+        );
     }
 
     // jump

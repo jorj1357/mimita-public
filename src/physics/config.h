@@ -18,9 +18,9 @@ inline PhysicsConfig PHYS = {
 };
 
 // Player dimensions (RAW FLOATS ONLY)
-inline float PLAYER_WIDTH  = 0.7f;   // meters
+inline float PLAYER_WIDTH  = 0.5f;   // meters
 inline float PLAYER_HEIGHT = 1.8f;   // meters
-inline float PLAYER_DEPTH  = 0.7f;
+inline float PLAYER_DEPTH  = 0.2f;  // meters
 
 // do we use this idk
 // i put it jsut so errors stop 
