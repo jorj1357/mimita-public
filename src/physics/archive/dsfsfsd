@@ -1,0 +1,105 @@
+// void updatePhysics(
+//     Player& p,
+//     const World& world,
+//     GLFWwindow* win,
+//     float dt,
+//     const Camera& cam)
+// {
+//     dt = glm::min(dt, 0.033f);
+
+//     // ----------------------------
+//     // INPUT → DESIRED MOTION
+//     // ----------------------------
+//     glm::vec3 wish(0.0f);
+
+//     glm::vec3 forward = cam.front;
+//     forward.y = 0.0f;
+//     if (glm::length(forward) > 0.0001f)
+//         forward = glm::normalize(forward);
+
+//     glm::vec3 right = glm::cross(forward, glm::vec3(0,1,0));
+
+//     if (glfwGetKey(win, GLFW_KEY_W)) wish += forward;
+//     if (glfwGetKey(win, GLFW_KEY_S)) wish -= forward;
+//     if (glfwGetKey(win, GLFW_KEY_A)) wish -= right;
+//     if (glfwGetKey(win, GLFW_KEY_D)) wish += right;
+
+//     if (glm::length(wish) > 0.0001f)
+//         wish = glm::normalize(wish);
+
+//     glm::vec3 move = wish * PHYS.moveSpeed * dt;
+
+//     // ----------------------------
+//     // GRAVITY (VELOCITY ONLY)
+//     // ----------------------------
+//     p.vel.y += PHYS.gravity * dt;
+//     p.vel.y = glm::max(p.vel.y, -MAX_FALL_SPEED);
+//     move.y = p.vel.y * dt;
+
+//     // ----------------------------
+//     // COLLECT NEARBY TRIANGLES
+//     // ----------------------------
+//     std::vector<Triangle> nearby;
+//     world.getNearbyTriangles(p.pos, nearby);
+
+//     Capsule cap = playerCapsule(p);
+//     p.onGround = false;
+
+//     // ----------------------------
+//     // COLLISION (BEST EFFORT)
+//     // ----------------------------
+//     for (int pass = 0; pass < 3; pass++)
+//     {
+//         for (const Triangle& t : nearby)
+//         {
+//             move = collideCapsuleTriangleMove(cap, move, t, p.onGround);
+//         }
+//     }
+
+//     // ----------------------------
+//     // GROUND PREVENTION FALLBACK
+//     // ----------------------------
+//     if (!p.onGround && move.y < 0.0f)
+//     {
+//         float highestGround = -1e9f;
+//         bool foundGround = false;
+
+//         for (const Triangle& t : nearby)
+//         {
+//             // simple flat-ground assumption (temporary)
+//             float y = (t.a.y + t.b.y + t.c.y) / 3.0f;
+//             if (y <= p.pos.y && y > highestGround)
+//             {
+//                 highestGround = y;
+//                 foundGround = true;
+//             }
+//         }
+
+//         if (foundGround)
+//         {
+//             float feetY = p.pos.y;
+//             float nextFeetY = feetY + move.y;
+
+//             if (nextFeetY < highestGround)
+//             {
+//                 move.y = 0.0f;
+//                 p.vel.y = 0.0f;
+//                 p.onGround = true;
+//             }
+//         }
+//     }
+
+//     // ----------------------------
+//     // APPLY MOTION (ONCE)
+//     // ----------------------------
+//     p.pos += move;
+
+//     // ----------------------------
+//     // JUMP
+//     // ----------------------------
+//     if (glfwGetKey(win, GLFW_KEY_SPACE) && p.onGround)
+//     {
+//         p.vel.y = PHYS.jumpStrength;
+//         p.onGround = false;
+//     }
+// }

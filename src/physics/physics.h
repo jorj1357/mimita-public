@@ -3,8 +3,17 @@
 #pragma once
 #include <glad/glad.h>
 #include "entities/player.h"
+#include "world/world.h"   // <-- ADD THIS
 #include "map/map_common.h"
 #include "physics/config.h"
 #include <GLFW/glfw3.h>
 
-void updatePhysics(Player& player, const Mesh& map, GLFWwindow* win, float dt, const Camera& cam);
+// const World& world, not const Mesh& map
+// this is defined here and in phsics.cpp need to pick 1 prob this one
+void updatePhysics(
+    Player& player, 
+    const World& world, 
+    GLFWwindow* win, 
+    float dt, 
+    const Camera& cam
+);

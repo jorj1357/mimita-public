@@ -3,7 +3,8 @@
 /**
  * purpose
  * get chunks for whole world 
- * so we stop calc evert single triangle bc thats bad performance  
+ * so we stop doing triangle stuff forever 
+ * this file runs 1 time no more just makes chunks at sstart then we use them 
  */
 
 #include "world.h"
@@ -36,46 +37,54 @@ void World::buildFromMesh(const Mesh& mesh)
         glm::ivec3 c = chunkCoord(center, chunkSize);
         chunks[c].tris.push_back(t);
     }
-    printf("[WORLD] buildFromMesh: verts=%zu tris=%zu chunks=%zu chunkSize=%.2f\n",
-        mesh.verts.size(),
-        mesh.verts.size() / 3,
-        chunks.size(),
-        (double)chunkSize
-    );
 }
 
 // dec 17 2025 
 // this is called every single frame but we still fal thru the floor need fix 
 void World::getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const
 {
-    out.clear();
 
+    // debug print wtf goin on 
     glm::ivec3 base = chunkCoord(pos, chunkSize);
 
-    size_t foundChunks = 0;
+    static glm::ivec3 last = glm::ivec3(999999);
+    if (base != last)
+    {
+        printf("[WORLD] Player entered chunk (%d, %d, %d)\n",
+            base.x, base.y, base.z);
+        last = base;
+    }
+
+    // ALWAYS CALC X Y AND Z
+    // DONT SKIP Y
+    // THIS IS 3D NEED TO CALC UP AND DOWN TOO 
+    // optimize later 
     for (int x = -1; x <= 1; x++)
+    for (int y = -1; y <= 1; y++)
     for (int z = -1; z <= 1; z++)
     {
-        glm::ivec3 c = base + glm::ivec3(x, 0, z);
+        glm::ivec3 c = base + glm::ivec3(x, y, z);
         auto it = chunks.find(c);
         if (it != chunks.end())
         {
-            foundChunks++;
-            out.insert(out.end(), it->second.tris.begin(), it->second.tris.end());
+            out.insert(out.end(),
+                it->second.tris.begin(),
+                it->second.tris.end());
         }
     }
 
-    static float t = 0.0f;
-    t += 0.016f; // ok for debug
-    if (t >= 0.5f)
+    static float worldTimer = 0.0f;
+    worldTimer += 0.016f; // approx frame
+
+    if (worldTimer >= 0.5f)
     {
-        t = 0.0f;
-        printf("[WORLD] chunkSize=%.2f base(%d %d %d) foundChunks=%zu tris=%zu pos(%.2f %.2f %.2f)\n",
-            (double)chunkSize,
+        worldTimer = 0.0f;
+        printf(
+            "[WORLD] chunk (%d %d %d) → %zu tris\n",
             base.x, base.y, base.z,
-            foundChunks,
-            out.size(),
-            (double)pos.x, (double)pos.y, (double)pos.z
+            out.size()
         );
     }
+
 }
+

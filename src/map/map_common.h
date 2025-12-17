@@ -20,7 +20,4 @@ struct Mesh {
     std::vector<Vertex> verts; // keep legacy for VAO creation
 };
 
-struct Chunk
-{
-    std::vector<Vertex> tris;
-};
+// do NOT define struct chunk here

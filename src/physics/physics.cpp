@@ -10,18 +10,17 @@
  */
 
 // physics.cpp
+#include "physics-debug-movement.h"
 #include "physics.h"
 #include "physics/config.h"
 #include "collision-capsule-triangle.h"
-#include "world/world.h"              // <-- your World type
+#include "world/world.h"              // <-- your World type (idk waht this is dec 172205)
 #include "../camera.h"
 #include <glm/glm.hpp>
 #include <vector>
+#include <cstdio>
 
-// you need access to your built world somewhere.
-// simplest: pass it into updatePhysics (recommended)
-// OR use extern World gWorld; if you want global.
-
+// do we really define this here or no 
 static Capsule playerCapsule(const Player& p)
 {
     Capsule c;
@@ -33,19 +32,28 @@ static Capsule playerCapsule(const Player& p)
 
 void updatePhysics(
     Player& p,
-    const World& world,          // <-- CHANGE: Mesh -> World
+    const World& world,
     GLFWwindow* win,
     float dt,
     const Camera& cam)
 {
+
+    static float debugTimer = 0.0f;
+    debugTimer += dt;
+
+  
+
     dt = glm::min(dt, 0.033f);
 
-    // 1) build desired move from input (this IS your "desiredMove")
+    // ----------------------------
+    // INPUT → DESIRED MOTION
+    // ----------------------------
     glm::vec3 wish(0.0f);
 
     glm::vec3 forward = cam.front;
     forward.y = 0.0f;
-    if (glm::length(forward) > 0.0001f) forward = glm::normalize(forward);
+    if (glm::length(forward) > 0.0001f)
+        forward = glm::normalize(forward);
 
     glm::vec3 right = glm::cross(forward, glm::vec3(0,1,0));
 
@@ -54,38 +62,125 @@ void updatePhysics(
     if (glfwGetKey(win, GLFW_KEY_A)) wish -= right;
     if (glfwGetKey(win, GLFW_KEY_D)) wish += right;
 
-    if (glm::length(wish) > 0.0001f) wish = glm::normalize(wish);
+    if (glm::length(wish) > 0.0001f)
+        wish = glm::normalize(wish);
 
-    glm::vec3 move = wish * PHYS.moveSpeed * dt;   // <-- THIS is desiredMove
+    glm::vec3 move = wish * PHYS.moveSpeed * dt;
 
-    // 2) gravity (your existing code)
+    // ----------------------------
+    // GRAVITY (VELOCITY ONLY)
+    // ----------------------------
     p.vel.y += PHYS.gravity * dt;
-    p.pos.y += p.vel.y * dt;
+    p.vel.y = glm::max(p.vel.y, -MAX_FALL_SPEED);
+    move.y = p.vel.y * dt;
 
-    // 3) query nearby triangles (chunking)
+    // no idea where to put debugmovement
+    applyDebugMovement(p, win, cam, dt);
+
+    // ----------------------------
+    // COLLECT NEARBY TRIANGLES
+    // ----------------------------
     std::vector<Triangle> nearby;
-    nearby.reserve(2048); // optional, reduces allocations
     world.getNearbyTriangles(p.pos, nearby);
 
-    // 4) multipass slide
+    // ----------------------------
+    // COLLISION 
+    // ----------------------------
     Capsule cap = playerCapsule(p);
     p.onGround = false;
 
     for (int pass = 0; pass < 3; pass++)
     {
+        // move capsule to where it WOULD be this frame
+        cap.a += move;
+        cap.b += move;
+
         for (const Triangle& t : nearby)
         {
+            // collideCapsuleTriangleMove has main logic 
+            // so if things broken check that as well
             move = collideCapsuleTriangleMove(cap, move, t, p.onGround);
         }
     }
 
-    // 5) apply final move once
-    p.pos += glm::vec3(move.x, 0.0f, move.z);
+    // ----------------------------
+    // GROUND PREVENTION FALLBACK
+    // ----------------------------
+    // dec 17 2025 todo this is cheating 
+    // i dont want to just snap to the ground 
+    // just work with the blocks we have imported from blender 
+    if (!p.onGround && move.y < 0.0f)
+    {
+        float highestGround = -1e9f;
+        bool foundGround = false;
 
-    // 6) jump (your existing code)
+        for (const Triangle& t : nearby)
+        {
+            if (nearby.empty())
+            {
+                printf("[WARN] NO TRIANGLES NEAR PLAYER\n");
+                continue;
+            }
+            // simple flat-ground assumption (temporary)
+            float y = (t.a.y + t.b.y + t.c.y) / 3.0f;
+            if (y <= p.pos.y && y > highestGround)
+            {
+                highestGround = y;
+                foundGround = true;
+            }
+        }
+
+        if (foundGround)
+        {
+            float feetY = p.pos.y;
+            float nextFeetY = feetY + move.y;
+
+            if (nextFeetY < highestGround)
+            {
+                move.y = 0.0f;
+                p.vel.y = 0.0f;
+                p.onGround = true;
+            }
+        }
+    }
+
+    // ----------------------------
+    // APPLY MOTION
+    // ----------------------------
+    p.pos += move;
+
+    // ----------------------------
+    // JUMP
+    // ----------------------------
     if (glfwGetKey(win, GLFW_KEY_SPACE) && p.onGround)
     {
         p.vel.y = PHYS.jumpStrength;
         p.onGround = false;
+    }
+
+    static float dbg = 0;
+    dbg += dt;
+    if (dbg > 0.5f)
+    {
+        dbg = 0;
+        printf(
+            "[PHYS DEBUG 1] pos(%.2f %.2f %.2f) velY=%.2f ground=%d tris=%zu\n",
+            p.pos.x, p.pos.y, p.pos.z,
+            p.vel.y,
+            p.onGround,
+            nearby.size()
+        );
+    }
+
+    if (debugTimer >= 0.5f)
+    {
+        debugTimer = 0.0f;
+        printf(
+            "[PHYS DEBUG 2] pos(%.2f %.2f %.2f) velY=%.2f move(%.2f %.2f %.2f) ground=%d\n",
+            p.pos.x, p.pos.y, p.pos.z,
+            (double)p.vel.y,
+            (double)move.x, (double)move.y, (double)move.z,
+            p.onGround ? 1 : 0
+        );
     }
 }

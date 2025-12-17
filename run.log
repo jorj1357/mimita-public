@@ -2,6 +2,180 @@ MAP AABB min(-644.248474 -189.559464 -489.021912) max(107.551941 2017.133667 100
 OpenGL version: 3.3.0 - Build 31.0.101.4502
 Renderer initialized successfully.
 Loaded 11 textures.
-Window pointer: 0000027ac8aa1d50
+Window pointer: 000001caef8e5de0
 Mesh dims: 0.880001 3.400000 1.616000
 Loading map...
+[PHYS]
+  pos:   (0.00 26.88 0.00)
+  vel.y: -12.45
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.85 0.00) velY=-12.51 ground=0 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (0.00 26.66 0.00)
+  vel.y: 0.00
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.00 26.66 0.00) velY=0.00 ground=1 tris=17
+[PHYS]
+  pos:   (-0.37 26.52 7.08)
+  vel.y: -2.60
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(-0.37 26.52 7.09) velY=-2.61 ground=0 tris=0
+[PHYS]
+  pos:   (-0.47 22.13 9.18)
+  vel.y: -15.01
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(-0.47 22.07 9.18) velY=-15.11 ground=0 tris=0
+[PHYS]
+  pos:   (-0.47 11.38 9.18)
+  vel.y: -27.59
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(-0.47 11.24 9.18) velY=-27.72 ground=0 tris=0
+[PHYS]
+  pos:   (-0.47 -5.58 9.18)
+  vel.y: -40.10
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(-0.47 -5.79 9.18) velY=-40.23 ground=0 tris=0
+[PHYS]
+  pos:   (0.80 -29.04 9.20)
+  vel.y: -52.73
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.83 -29.37 9.20) velY=-52.88 ground=0 tris=0
+[PHYS]
+  pos:   (0.94 -57.79 9.20)
+  vel.y: -65.38
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(0.94 -57.92 9.20) velY=-65.43 ground=0 tris=0
+[PHYS]
+  pos:   (2.26 -94.07 7.97)
+  vel.y: -77.88
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(2.27 -94.23 7.96) velY=-77.93 ground=0 tris=0
+[PHYS]
+  pos:   (2.34 -136.17 7.43)
+  vel.y: -90.38
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(2.34 -136.53 7.43) velY=-90.48 ground=0 tris=0
+[PHYS]
+  pos:   (2.34 -184.76 7.43)
+  vel.y: -102.94
+  move.y 0.00
+  onGround: -274394240
+[PHYS] pos(2.34 -185.27 7.43) velY=-103.07 ground=0 tris=0

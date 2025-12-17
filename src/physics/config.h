@@ -40,7 +40,7 @@ inline float MAX_SLOPE_ANGLE = 0.5f;
 // how deep
 // e.g. 0.5f = im alll up in there
 // 0.01f = if im a LIL in there stop. 
-
+// its called this bc i dont like the word penetration
 inline float HOW_DEEP = 0.5f;
 
 // almost 0 
@@ -54,3 +54,13 @@ inline float ALMOST_ZERO = 0.00001f;
 // just dont calc the entire freakin map
 // which allows multi pass which allows working freakin collisions finalli
 inline float CHUNK_SIZE = 5.0f; 
+
+// so for now i think we clamp it to this max value
+// max fall speed
+// but i really like unclamped speed values 
+// or at least the limit is very high
+// but idk tweak this 
+// be a good little PROGRAMMER and TWEAK with yo CODE 
+// its move speed * 20 but we dont have move_speed rn 
+inline float MAX_FALL_SPEED = 20.0f * 20; 
+

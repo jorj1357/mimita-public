@@ -1,4 +1,14 @@
-// C:\important\go away v5\s\mimita-v5\src\main.cpp
+// C:\important\quiet\n\mimita-public\mimita-public\src\main.cpp
+// dec 17 2025 new update but not made dec 17 2025
+
+/**
+ * purpose
+ * only calls other files functions
+ * does no math here
+ * todo cleanup bc like 50% is just comments 
+ * also can we just include a file that has all the includes?
+ * so includes arent giant 
+ */
 
 // main.cpp
 #define GL_SILENCE_DEPRECATION
@@ -56,6 +66,11 @@ extern Renderer* gRenderer;
 #include "physics/config.h"
 #include "physics/config-loader.h"
 #include "debug/debug-status.h"
+
+#include "world/world.h"
+
+// where to put this idk dec 17 2025 
+World world;
 
 TextureManager TEX; // global instance
 GLuint groundTex;
@@ -160,13 +175,17 @@ int main() {
         return -1;
     }
     GLuint mapVAO = createMapVAO(map);
+    
+    // NOW we do world chunking ...? dec 17 2025
+    world.buildFromMesh(map);
 
+    // i dotn want enemy for now but later yes we need ai 
     // place enemy at map center and on top of ground
-    glm::vec3 avg = glm::vec3(0);
-    for (auto& v : map.verts) avg += v.pos;
-    avg /= (float)map.verts.size();
-    enemy.pos = avg; // center on map
-    enemy.pos.y += 1.0f; // lift slightly above ground
+    // glm::vec3 avg = glm::vec3(0);
+    // for (auto& v : map.verts) avg += v.pos;
+    // avg /= (float)map.verts.size();
+    // enemy.pos = avg; // center on map
+    // enemy.pos.y += 1.0f; // lift slightly above ground
 
     glfwSetInputMode(renderer.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -185,11 +204,13 @@ int main() {
         camera.follow(player.pos);
         player.yaw = camera.yaw;        // <-- absolutely required
         glm::mat4 view = camera.getView();
+        // can we make it not 800 x 600 plz i hate this tiny little chud window 
         glm::mat4 proj = camera.getProj(800.0f, 600.0f);
 
         // simple floor collision BEFORE rendering stuff
         // do u put this here nov 6 2025 todo
-        updatePhysics(player, map, renderer.window, dt, camera);
+        // world WAS map now its world for chunking dec 17 2025 
+        updatePhysics(player, world, renderer.window, dt, camera);
 
         // DEBUG: draw collision spheres
         // const glm::vec3 SPHERE_OFFSETS[3] = {
@@ -242,10 +263,10 @@ int main() {
         drawText2D(hud, 10, 580, 1.0f);
 
         // Player shoot
-        if (glfwGetMouseButton(renderer.window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-            glm::vec3 shootDir = glm::normalize(camera.front);
-            weapon.shoot(projectiles, player.pos + glm::vec3(0,1,0), shootDir);
-        }
+        // if (glfwGetMouseButton(renderer.window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        //     glm::vec3 shootDir = glm::normalize(camera.front);
+        //     weapon.shoot(projectiles, player.pos + glm::vec3(0,1,0), shootDir);
+        // }
 
         // Update
         weapon.update(dt);
