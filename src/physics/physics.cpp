@@ -84,7 +84,7 @@ static glm::vec3 closestPointOnTriangle(
     float w = vc * denom;
     return a + ab * v + ac * w;
 }
-    
+
 static glm::vec3 closestPointOnSegment(
     const glm::vec3& p,
     const glm::vec3& a,
@@ -118,7 +118,7 @@ static void collideCapsuleTriangle(
     if (dist < cap.r && dist > 0.0001f)
     {
         glm::vec3 normal = delta / dist;
-        float push = cap.r - dist;
+        float push = (cap.r - dist) + 0.01f; // push out a little more 
 
         // push player out
         p.pos += normal * push;
@@ -144,6 +144,25 @@ void updatePhysics(
     float dt,
     const Camera& cam)
 {
+
+    // ---- debug teleports ----
+    if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS)
+    {
+        p.pos.y += 1.0f;
+        p.vel = glm::vec3(0.0f);
+    }
+
+    if (glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS)
+    {
+        glm::vec3 dir = cam.front;
+        dir.y = 0.0f;
+        if (glm::length(dir) > 0.0001f)
+            dir = glm::normalize(dir);
+
+        p.pos += dir * 1.0f;
+        p.vel = glm::vec3(0.0f);
+    }
+
     // movement input
     glm::vec3 wish(0.0f);
 
@@ -175,15 +194,20 @@ void updatePhysics(
     p.onGround = false;
     Capsule cap = playerCapsule(p);
 
-    for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
+    for (int pass = 0; pass < 3; pass++) // run more than once run like 3 times i think
     {
-        collideCapsuleTriangle(
-            p,
-            cap,
-            world.verts[i+0].pos,
-            world.verts[i+1].pos,
-            world.verts[i+2].pos
-        );
+        Capsule cap = playerCapsule(p);
+
+        for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
+        {
+            collideCapsuleTriangle(
+                p,
+                cap,
+                world.verts[i+0].pos,
+                world.verts[i+1].pos,
+                world.verts[i+2].pos
+            );
+        }
     }
 
     // jump
