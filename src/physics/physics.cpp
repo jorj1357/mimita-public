@@ -23,6 +23,7 @@
 
 // ---------------- struct for players start ----------------
 
+// can we move this into player cpp or .h or config idk 
 struct Capsule {
     glm::vec3 a; // bottom sphere center
     glm::vec3 b; // top sphere center
@@ -101,47 +102,47 @@ static void collideCapsuleTriangle(
     Capsule& cap,
     const glm::vec3& a,
     const glm::vec3& b,
-    const glm::vec3& c,
-    float& pushBudget)
+    const glm::vec3& c)
 {
-    // closest point on triangle to capsule line
+    // find closest triangle point to capsule line
     glm::vec3 triPoint = closestPointOnTriangle(
-        closestPointOnSegment((a + b + c) / 3.0f, cap.a, cap.b),
+        closestPointOnSegment(
+            (a + b + c) / 3.0f, 
+            cap.a, 
+            cap.b),
         a, b, c
     );
 
-    // closest point on capsule line to triangle
+    // find closest capsule point to triangle
     glm::vec3 capPoint = closestPointOnSegment(triPoint, cap.a, cap.b);
 
     glm::vec3 delta = capPoint - triPoint;
     float dist = glm::length(delta);
 
-    if (dist < cap.r && dist > 0.0001f)
+    // INSIDE = HARD SNAP OUT
+    if (dist < cap.r && dist > 0.00001f)
     {
         glm::vec3 normal = delta / dist;
-        float howmuchinside = cap.r - dist;
 
-        // only add bias if we're INSIDE A BLOCK. A BLOCK NOTHING ELSE (phasing case)
-        float bias = (howmuchinside > 0.05f) ? 0.005f : 0.0f;
+        // move player out of triangle with bias
+        float bias = 0.002f; // maybe 0.002, maybe 0.2 maube 2 idk 
+        float correction = (cap.r - dist) + bias;
+        p.pos += normal * correction;
 
-        float push = howmuchinside + bias;
+        // kill velocity into surface
+        float into = glm::dot(p.vel, normal);
+        if (into < 0.0f)
+            p.vel -= normal * into;
 
-        if (push > pushBudget) push = pushBudget;
-        if (push <= 0.0f) return;
-
-        p.pos += normal * push;
-        pushBudget -= push;
-
-        // ground detection
-        if (normal.y > 0.5f)
+        // ground check
+        if (normal.y > MAX_SLOPE_ANGLE)
         {
             p.onGround = true;
-            if (p.vel.y < 0.0f)
+            if (p.vel.y < 0.00001f)
                 p.vel.y = 0.0f;
         }
     }
 }
-
 
 // ---------------- helper functions end ----------------
 
@@ -153,8 +154,6 @@ void updatePhysics(
     float dt,
     const Camera& cam)
 {
-
-    float pushBudget = 0.10f; // max meters we can be moved by collisions this frame
 
     // ---- debug teleports ----
     if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS)
@@ -195,6 +194,10 @@ void updatePhysics(
     glm::vec3 delta = wish * PHYS.moveSpeed * dt;
 
     // horizontal move
+    Capsule cap = playerCapsule(p);
+    float maxMove = cap.r * 0.5f;
+    delta.x = glm::clamp(delta.x, -maxMove, maxMove);
+    delta.z = glm::clamp(delta.z, -maxMove, maxMove);
     p.pos += glm::vec3(delta.x, 0.0f, delta.z);
 
     // gravity
@@ -203,7 +206,6 @@ void updatePhysics(
 
     // collisions
     p.onGround = false;
-    Capsule cap = playerCapsule(p);
 
     for (size_t i = 0; i + 2 < world.verts.size(); i += 3)
     {
@@ -212,8 +214,7 @@ void updatePhysics(
             cap,
             world.verts[i+0].pos,
             world.verts[i+1].pos,
-            world.verts[i+2].pos,
-            pushBudget
+            world.verts[i+2].pos
         );
     }
 

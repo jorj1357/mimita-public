@@ -127,7 +127,10 @@ int main() {
     // Mesh map = loadOBJ("assets/maps/mimita-big-map-v2.obj");
 
     // sizing test dec 4 2025 test
-    Mesh map = loadOBJ("assets/maps/mimita-sizing-v1.obj");
+    // Mesh map = loadOBJ("assets/maps/mimita-sizing-v1.obj");
+
+    // sizing test better dec 16 2025
+    Mesh map = loadOBJ("assets/maps/mimita-sizing-better-v2.obj");
 
     // do this so that the map actually has data for us to walk on 
     // ---- BAKE MAP TRANSFORM FOR PHYSICS ----

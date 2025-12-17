@@ -25,3 +25,5 @@ inline float PLAYER_DEPTH  = 0.2f;  // meters
 // do we use this idk
 // i put it jsut so errors stop 
 inline float PLAYER_RADIUS = 0.35f;
+
+inline float MAX_SLOPE_ANGLE = 0.5f;
