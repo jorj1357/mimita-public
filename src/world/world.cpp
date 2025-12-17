@@ -79,3 +79,37 @@ void World::getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const
         );
     }
 }
+
+// dec 17 2025 its rbroken i dontk now whi but need to  fix and go doctor  
+static int chunkFloor(float v, float size) { return (int)floor(v / size); }
+
+void World::getNearbyTrianglesForCapsule(
+    const Capsule& cap,
+    const glm::vec3& move,
+    std::vector<Triangle>& out
+) const {
+    out.clear();
+
+    // capsule AABB expanded by movement
+    glm::vec3 mn = glm::min(cap.a, cap.b) - glm::vec3(cap.r);
+    glm::vec3 mx = glm::max(cap.a, cap.b) + glm::vec3(cap.r);
+
+    glm::vec3 mvMin = glm::min(glm::vec3(0.0f), move);
+    glm::vec3 mvMax = glm::max(glm::vec3(0.0f), move);
+    mn += mvMin;  mx += mvMax;
+
+    int x0 = chunkFloor(mn.x, chunkSize);
+    int x1 = chunkFloor(mx.x, chunkSize);
+    int z0 = chunkFloor(mn.z, chunkSize);
+    int z1 = chunkFloor(mx.z, chunkSize);
+
+    // If you are flattening Y for now, keep y=0 consistently:
+    for (int x = x0; x <= x1; x++)
+    for (int z = z0; z <= z1; z++) {
+        glm::ivec3 key(x, 0, z);
+        auto it = chunks.find(key);
+        if (it != chunks.end()) {
+            out.insert(out.end(), it->second.tris.begin(), it->second.tris.end());
+        }
+    }
+}

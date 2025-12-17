@@ -16,7 +16,7 @@
 #include "collision-capsule-triangle.h"
 #include "world/world.h"              // <-- your World type (idk waht this is dec 172205)
 #include "../camera.h"
-#include <glm/glm.hpp>
+#include "glm/glm.hpp"
 #include <vector>
 #include <cstdio>
 
@@ -86,22 +86,21 @@ void updatePhysics(
     // ----------------------------
     // COLLISION 
     // ----------------------------
-    Capsule cap = playerCapsule(p);
+    Capsule cap0 = playerCapsule(p);
+    glm::vec3 resolvedMove = move;
     p.onGround = false;
 
-    for (int pass = 0; pass < 3; pass++)
-    {
-        // move capsule to where it WOULD be this frame
-        cap.a += move;
-        cap.b += move;
-
-        for (const Triangle& t : nearby)
-        {
-            // collideCapsuleTriangleMove has main logic 
-            // so if things broken check that as well
-            move = collideCapsuleTriangleMove(cap, move, t, p.onGround);
+    for (int pass = 0; pass < 3; pass++) {
+        bool hitThisPass = false;
+        for (const Triangle& t : nearby) {
+            glm::vec3 newMove = collideCapsuleTriangleMove(cap0, resolvedMove, t, p.onGround);
+            if (glm::length2(newMove - resolvedMove) > 1e-10f) hitThisPass = true;
+            resolvedMove = newMove;
         }
+        if (!hitThisPass) break; // stop early if nothing changes
     }
+
+    p.pos += resolvedMove;
 
     // ----------------------------
     // GROUND PREVENTION FALLBACK
@@ -183,4 +182,12 @@ void updatePhysics(
             p.onGround ? 1 : 0
         );
     }
+
+    static int lastTris = -1;
+    if ((int)nearby.size() != lastTris) {
+        lastTris = (int)nearby.size();
+        printf("[PHYS] nearby tris=%d pos(%.2f %.2f %.2f)\n",
+            lastTris, (double)p.pos.x, (double)p.pos.y, (double)p.pos.z);
+    }
+
 }

@@ -3,16 +3,18 @@
         {
             "name": "Win32",
             "includePath": [
-                "${workspaceFolder}/**",
+                "C:/important/quiet/n/mimita-public/mimita-public/include",
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+
+                "C:/important/glfw-3.4.bin.WIN64/include",
 
                 "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/include",
                 "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/x86_64-w64-mingw32/include",
-                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include",
-
-                "C:/important/glfw-3.4.bin.WIN64/include",
-                "C:/important/glm-1.0.2",
-
-                "C:/important/quiet/n/mimita-public/mimita-public/include"
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include"
             ],
             "defines": [
                 "_DEBUG",
