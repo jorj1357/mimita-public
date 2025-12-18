@@ -14,16 +14,16 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 
-#include "physics/config.h"   // for CHUNK_SIZE
+#include "physics/config.h"
 
 // --------------------
 // World primitives
 // --------------------
 
 struct Block {
-    glm::vec3 pos;   // center
-    glm::vec3 size;  // full size
-    glm::vec3 rot;   // degrees (future)
+    glm::vec3 pos;
+    glm::vec3 size;
+    glm::vec3 rot;
 };
 
 struct Sphere {
@@ -58,24 +58,19 @@ struct World {
 
     std::vector<Block> blocks;
     std::vector<Sphere> spheres;
-
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunks;
 
+    // lifecycle
     void clear() {
         blocks.clear();
         spheres.clear();
         chunks.clear();
     }
 
-    void rebuildChunks();
-    void getNearby(
-        const glm::vec3& pos,
-        std::vector<Block*>& outBlocks,
-        std::vector<Sphere*>& outSpheres
-    ) const;
-
+    // chunking
     void rebuildChunks();
 
+    // queries
     void getNearby(
         const glm::vec3& pos,
         std::vector<Block*>& outBlocks,
