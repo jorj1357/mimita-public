@@ -92,7 +92,7 @@ def run_inside_blender():
             export["spheres"].append({
                 "name": name,
                 "position": snap_position(obj.location),
-                "radius": round(radius, 3)
+                "radius": snap(radius, POS_STEP, 1)
             })
 
     blend_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
