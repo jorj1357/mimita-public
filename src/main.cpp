@@ -188,7 +188,7 @@ int main() {
 
         // old value 
         // char hud[128];
-        char hud[64];
+        char hud[32];
         snprintf(hud, sizeof(hud), "Speed, hp, gui goes here. debug: T = up, G = forward, B = down, R = reset");
         if (gDebugStatusTimer > 0.0f)
         {

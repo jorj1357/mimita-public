@@ -31,6 +31,7 @@ void applyDebugMovement(Player& p, GLFWwindow* win, const Camera& cam, float dt)
     if (glfwGetKey(win, GLFW_KEY_B))
         p.vel.y = -5.0f * vmult;
 
+    // dec 18 2025 broken whatevr 
     if (glfwGetKey(win, GLFW_KEY_G))
         p.vel += forward * (5.0f * vmult);
 

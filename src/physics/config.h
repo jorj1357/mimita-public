@@ -64,3 +64,9 @@ inline float CHUNK_SIZE = 5.0f;
 // its move speed * 20 but we dont have move_speed rn 
 inline float MAX_FALL_SPEED = 20.0f * 20; 
 
+// for blender to map  stuff that isnt broken 
+inline float ROTATION_SNAP = 15.0f;
+inline float POSITION_SNAP = 0.1f;
+
+
+

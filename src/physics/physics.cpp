@@ -41,8 +41,7 @@ void updatePhysics(
     static float debugTimer = 0.0f;
     debugTimer += dt;
 
-  
-
+    // prevent phisics calc from crashing everthing and killing us 
     dt = glm::min(dt, 0.033f);
 
     // no idea where to put debugmovement
@@ -88,9 +87,10 @@ void updatePhysics(
     // ----------------------------
     // COLLISION 
     // ----------------------------
+    bool wasOnGround = p.onGround;
     Capsule cap0 = playerCapsule(p);
     glm::vec3 resolvedMove = move;
-    p.onGround = false;
+    p.onGround = false; // start false for this frame
 
     for (int pass = 0; pass < 3; pass++) {
         bool hitThisPass = false;
@@ -103,6 +103,12 @@ void updatePhysics(
     }
 
     p.pos += resolvedMove;
+
+    // make gravity acrtually apply i think
+    if (p.onGround && p.vel.y < 0.0f) p.vel.y = 0.0f;
+
+    // something to help jumps be normal?
+    if (!wasOnGround && p.onGround && p.vel.y > 0.0f) p.onGround = false;
 
     // ----------------------------
     // GROUND PREVENTION FALLBACK
@@ -154,11 +160,17 @@ void updatePhysics(
     // ----------------------------
     // JUMP
     // ----------------------------
-    if (glfwGetKey(win, GLFW_KEY_SPACE) && p.onGround)
-    {
+    static bool lastSpace = false;
+    bool spaceNow = glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS;
+
+    if (spaceNow && !lastSpace && p.onGround) {
         p.vel.y = PHYS.jumpStrength;
         p.onGround = false;
     }
+
+    lastSpace = spaceNow;
+
+    // debug
 
     static float dbg = 0;
     dbg += dt;
