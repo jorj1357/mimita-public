@@ -11,6 +11,8 @@
  * so includes arent giant 
  */
 
+#include "world/world-loader.h"
+
 #define GL_SILENCE_DEPRECATION
 #define GLFW_INCLUDE_NONE
 
@@ -56,13 +58,14 @@ extern Renderer* gRenderer;
 
 // dec 16 2025 use config everwhere 
 #include "physics/config.h"
-#include "physics/config-loader.h"
+// this is for the hot loader that we dont need right now dec 18 2025 
+// #include "physics/config-loader.h"
 #include "debug/debug-status.h"
 
 #include "world/world.h"
 
-// where to put this idk dec 17 2025 
 World world;
+
 
 TextureManager TEX; 
 GLuint groundTex;
@@ -85,6 +88,18 @@ GLuint gMainShaderProgram = 0;
 
 int main() {
     srand((unsigned)time(NULL));
+
+    if (!loadWorldFromJSON(
+            world,
+            // "assets/maps/json-converts/mimita-simple-collisions-apartment-v3-converted.json"
+            "assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json"
+        )) {
+        // goes here? idk dec 18 2025 
+        world.rebuildChunks();
+        return -1;
+    }
+
+
     Renderer renderer(800, 600, "mimita.exe");
     gRenderer = &renderer;
 
@@ -160,7 +175,7 @@ int main() {
     GLuint mapVAO = createMapVAO(map);
     
     // NOW we do world chunking ...? dec 17 2025
-    world.buildFromMesh(map);
+    // world.buildFromMesh(map);
 
     glfwSetInputMode(renderer.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 

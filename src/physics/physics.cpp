@@ -12,9 +12,11 @@
 // physics.cpp
 #include "physics-debug-movement.h"
 #include "physics.h"
+#include "physics-types.h"
+#include "physics/collision-capsule-aabb.h"
 #include "physics/config.h"
-#include "collision-capsule-triangle.h"
-#include "world/world.h"              // <-- your World type (idk waht this is dec 172205)
+// #include "collision-capsule-triangle.h"
+#include "world/world.h"
 #include "../camera.h"
 #include "glm/glm.hpp"
 #include <vector>
@@ -76,85 +78,38 @@ void updatePhysics(
     p.vel.y = glm::max(p.vel.y, -MAX_FALL_SPEED);
     move.y = p.vel.y * dt;
 
+    // ----------------------------
+    // COLLECT NEARBY Parts... json.. not triangles dec 18 2025
+    // ----------------------------
+    std::vector<Block*> nearbyBlocks;
+    std::vector<Sphere*> nearbySpheres;
 
-    // ----------------------------
-    // COLLECT NEARBY TRIANGLES
-    // ----------------------------
-    std::vector<Triangle> nearby;
-    world.getNearbyTriangles(p.pos, nearby);
+    world.getNearby(p.pos, nearbyBlocks, nearbySpheres);
 
     // ----------------------------
     // COLLISION 
     // ----------------------------
-    bool wasOnGround = p.onGround;
+    // bool wasOnGround = p.onGround;
     Capsule cap0 = playerCapsule(p);
     glm::vec3 resolvedMove = move;
     p.onGround = false; // start false for this frame
 
     for (int pass = 0; pass < 3; pass++) {
         bool hitThisPass = false;
-        for (const Triangle& t : nearby) {
-            glm::vec3 newMove = collideCapsuleTriangleMove(cap0, resolvedMove, t, p.onGround);
-            if (glm::dot(newMove - resolvedMove, newMove - resolvedMove) > 1e-10f) hitThisPass = true;
+        for (Block* b : nearbyBlocks) {
+            glm::vec3 newMove = collideCapsuleAABBMove(
+                cap0,
+                resolvedMove,
+                b->pos,
+                b->size,
+                p.onGround
+            );
             resolvedMove = newMove;
         }
         if (!hitThisPass) break; // stop early if nothing changes
     }
 
     p.pos += resolvedMove;
-
-    // make gravity acrtually apply i think
-    if (p.onGround && p.vel.y < 0.0f) p.vel.y = 0.0f;
-
-    // something to help jumps be normal?
-    if (!wasOnGround && p.onGround && p.vel.y > 0.0f) p.onGround = false;
-
-    // ----------------------------
-    // GROUND PREVENTION FALLBACK
-    // ----------------------------
-    // dec 17 2025 todo this is cheating 
-    // i dont want to just snap to the ground 
-    // just work with the blocks we have imported from blender 
-    if (!p.onGround && move.y < 0.0f)
-    {
-        float highestGround = -1e9f;
-        bool foundGround = false;
-
-        for (const Triangle& t : nearby)
-        {
-            if (nearby.empty())
-            {
-                printf("[WARN] NO TRIANGLES NEAR PLAYER\n");
-                continue;
-            }
-            // simple flat-ground assumption (temporary)
-            float y = (t.a.y + t.b.y + t.c.y) / 3.0f;
-            if (y <= p.pos.y && y > highestGround)
-            {
-                highestGround = y;
-                foundGround = true;
-            }
-        }
-
-        if (foundGround)
-        {
-            float feetY = p.pos.y;
-            float nextFeetY = feetY + move.y;
-
-            if (nextFeetY < highestGround)
-            {
-                move.y = 0.0f;
-                p.vel.y = 0.0f;
-                p.onGround = true;
-            }
-        }
-    }
-
-    // ----------------------------
-    // APPLY MOTION
-    // ----------------------------
-    // dec 18 2025 dont? bc we alr did it above with resolvedmove?
-    // p.pos += move;
 
     // ----------------------------
     // JUMP
@@ -168,40 +123,4 @@ void updatePhysics(
     }
 
     lastSpace = spaceNow;
-
-    // debug
-
-    static float dbg = 0;
-    dbg += dt;
-    if (dbg > 0.5f)
-    {
-        dbg = 0;
-        printf(
-            "[PHYS DEBUG 1] pos(%.2f %.2f %.2f) velY=%.2f ground=%d tris=%zu\n",
-            p.pos.x, p.pos.y, p.pos.z,
-            p.vel.y,
-            p.onGround,
-            nearby.size()
-        );
-    }
-
-    if (debugTimer >= 0.5f)
-    {
-        debugTimer = 0.0f;
-        printf(
-            "[PHYS DEBUG 2] pos(%.2f %.2f %.2f) velY=%.2f move(%.2f %.2f %.2f) ground=%d\n",
-            p.pos.x, p.pos.y, p.pos.z,
-            (double)p.vel.y,
-            (double)move.x, (double)move.y, (double)move.z,
-            p.onGround ? 1 : 0
-        );
-    }
-
-    static int lastTris = -1;
-    if ((int)nearby.size() != lastTris) {
-        lastTris = (int)nearby.size();
-        printf("[PHYS] nearby tris=%d pos(%.2f %.2f %.2f)\n",
-            lastTris, (double)p.pos.x, (double)p.pos.y, (double)p.pos.z);
-    }
-
 }

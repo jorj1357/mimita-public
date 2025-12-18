@@ -37,7 +37,7 @@ def normalize_deg(a):
 # ============================================================
 
 def run_inside_blender():
-    import bpy  # ONLY valid inside Blender
+    import bpy # type: ignore
 
     def snap_position(loc):
         return [
@@ -149,7 +149,7 @@ def run_as_launcher():
 # ============================================================
 
 try:
-    import bpy
+    import bpy # type: ignore
     run_inside_blender()
 except ImportError:
     run_as_launcher()

@@ -6,33 +6,42 @@
  * helper for chunks
  * so we can do multi pass
  * so collisions work 
- * so i can walk on spheres and triangles and cones and whatever 
- * not just boring csgo flat land walls maaaaube some  surfing NO
- * mi game is COOL and works with BELNDER 
- * ...biiiiiiitch
  */
 
 #pragma once
 
-#include <unordered_map>
 #include <vector>
-// this throws errors for no reason ignore 
-#include "glm/glm.hpp"
+#include <unordered_map>
+#include <glm/glm.hpp>
 
-#include "world-types.h"
-#include "map/map_common.h"
-#include "../physics/config.h"
-#include "physics/collision-capsule-triangle.h"
+#include "physics/config.h"   // for CHUNK_SIZE
 
-struct Chunk
-{
-    std::vector<Triangle> tris;
+// --------------------
+// World primitives
+// --------------------
+
+struct Block {
+    glm::vec3 pos;   // center
+    glm::vec3 size;  // full size
+    glm::vec3 rot;   // degrees (future)
 };
 
-struct IVec3Hash
-{
-    size_t operator()(const glm::ivec3& v) const noexcept
-    {
+struct Sphere {
+    glm::vec3 pos;
+    float radius;
+};
+
+// --------------------
+// Chunking
+// --------------------
+
+struct Chunk {
+    std::vector<Block*> blocks;
+    std::vector<Sphere*> spheres;
+};
+
+struct IVec3Hash {
+    size_t operator()(const glm::ivec3& v) const noexcept {
         size_t h1 = std::hash<int>{}(v.x);
         size_t h2 = std::hash<int>{}(v.y);
         size_t h3 = std::hash<int>{}(v.z);
@@ -40,16 +49,36 @@ struct IVec3Hash
     }
 };
 
-struct World
-{
+// --------------------
+// World
+// --------------------
+
+struct World {
     float chunkSize = CHUNK_SIZE;
+
+    std::vector<Block> blocks;
+    std::vector<Sphere> spheres;
+
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunks;
 
-    void buildFromMesh(const Mesh& mesh);
-    void getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const;
-    void getNearbyTrianglesForCapsule(
-        const Capsule& cap,
-        const glm::vec3& move,
-        std::vector<Triangle>& out
+    void clear() {
+        blocks.clear();
+        spheres.clear();
+        chunks.clear();
+    }
+
+    void rebuildChunks();
+    void getNearby(
+        const glm::vec3& pos,
+        std::vector<Block*>& outBlocks,
+        std::vector<Sphere*>& outSpheres
+    ) const;
+
+    void rebuildChunks();
+
+    void getNearby(
+        const glm::vec3& pos,
+        std::vector<Block*>& outBlocks,
+        std::vector<Sphere*>& outSpheres
     ) const;
 };
