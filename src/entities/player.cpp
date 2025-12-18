@@ -125,6 +125,7 @@ Player::Player() {
     // dec 3 2025 test no 
     // hitboxOffset = glm::vec3(0.0f, 0.0f, 0.0f);
 
+    // dec 18 2025 THIS IS THE INITIAL SPAWN HEIGHT
     pos = glm::vec3(0.0f, 30.0f, 0.0f);
     vel = glm::vec3(0.0f);
     onGround = false;

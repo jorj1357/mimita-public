@@ -22,6 +22,7 @@
 #include "world-types.h"
 #include "map/map_common.h"
 #include "../physics/config.h"
+#include "physics/collision-capsule-triangle.h"
 
 struct Chunk
 {
@@ -46,4 +47,9 @@ struct World
 
     void buildFromMesh(const Mesh& mesh);
     void getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const;
+    void getNearbyTrianglesForCapsule(
+        const Capsule& cap,
+        const glm::vec3& move,
+        std::vector<Triangle>& out
+    ) const;
 };

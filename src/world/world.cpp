@@ -6,6 +6,8 @@
  * so we stop calc evert single triangle bc thats bad performance  
  */
 
+// ORDER MATTERS apparenlt dec 18 2025 
+#include "physics/collision-capsule-triangle.h"
 #include "world.h"
 #include <cmath>
 #include <cstdio>

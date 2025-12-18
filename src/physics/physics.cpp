@@ -45,6 +45,10 @@ void updatePhysics(
 
     dt = glm::min(dt, 0.033f);
 
+    // no idea where to put debugmovement
+    // still no idea dec 18 2025 
+    applyDebugMovement(p, win, cam, dt);
+
     // ----------------------------
     // INPUT → DESIRED MOTION
     // ----------------------------
@@ -74,8 +78,6 @@ void updatePhysics(
     p.vel.y = glm::max(p.vel.y, -MAX_FALL_SPEED);
     move.y = p.vel.y * dt;
 
-    // no idea where to put debugmovement
-    applyDebugMovement(p, win, cam, dt);
 
     // ----------------------------
     // COLLECT NEARBY TRIANGLES
@@ -94,7 +96,7 @@ void updatePhysics(
         bool hitThisPass = false;
         for (const Triangle& t : nearby) {
             glm::vec3 newMove = collideCapsuleTriangleMove(cap0, resolvedMove, t, p.onGround);
-            if (glm::length2(newMove - resolvedMove) > 1e-10f) hitThisPass = true;
+            if (glm::dot(newMove - resolvedMove, newMove - resolvedMove) > 1e-10f) hitThisPass = true;
             resolvedMove = newMove;
         }
         if (!hitThisPass) break; // stop early if nothing changes
@@ -146,7 +148,8 @@ void updatePhysics(
     // ----------------------------
     // APPLY MOTION
     // ----------------------------
-    p.pos += move;
+    // dec 18 2025 dont? bc we alr did it above with resolvedmove?
+    // p.pos += move;
 
     // ----------------------------
     // JUMP
