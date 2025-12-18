@@ -117,6 +117,7 @@ int main() {
     // dec 2 2025 PLZ todo no more hard coding this high ke make me mad
     // Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-dev-player-v1.obj");
     // dec 3 2025 new cool
+    // dec 18 2025 make sure the origin is at the feet 
     Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-char-concise-v3.obj");
     // dec 3 2025 todo where put this
     glm::vec3 meshMin, meshMax;
@@ -145,7 +146,11 @@ int main() {
     // Mesh map = loadOBJ("assets/maps/mimita-sizing-v1.obj");
 
     // sizing test better dec 16 2025
-    Mesh map = loadOBJ("assets/maps/mimita-sizing-better-v2.obj");
+    // Mesh map = loadOBJ("assets/maps/mimita-sizing-better-v2.obj");
+
+    // apartments first real map i think
+    // first REAL map dec 18 2025 ugh
+    Mesh map = loadOBJ("assets/maps/mimita-apartments-final-v2.obj");
 
     // do this so that the map actually has data for us to walk on 
     // ---- BAKE MAP TRANSFORM FOR PHYSICS ----
