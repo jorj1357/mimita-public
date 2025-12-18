@@ -12,6 +12,7 @@ BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe"
 
 OUT_DIR = r"C:\important\quiet\n\mimita-public\mimita-public\assets\maps\json-converts"
 
+# these are defined in config.h as well
 POS_STEP = 0.1
 ROT_STEP = 15.0
 
@@ -19,9 +20,12 @@ ROT_STEP = 15.0
 # HELPERS (shared logic)
 # ============================================================
 
+# 1 decimal place thats ALL U GET BRUH
+# also dont do 12.80000000005 
 def snap(v, step, decimals):
     return round(round(v / step) * step, decimals)
 
+# minimum is -180, max is 180
 def normalize_deg(a):
     a = a % 360.0
     if a >= 180.0:
@@ -49,16 +53,47 @@ def run_inside_blender():
     
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    export = {}
+    export = {
+        "blocks": [],
+        "spheres": []
+    }
 
     for obj in bpy.context.scene.objects:
-        if obj.type not in {"MESH", "EMPTY"}:
+        if obj.type != "MESH":
             continue
 
-        export[obj.name] = {
-            "position": snap_position(obj.location),
-            "rotation": snap_rotation(obj.rotation_euler),
-        }
+        name = obj.name
+
+        # -------------------------
+        # BLOCKS (Cube.*)
+        # -------------------------
+        if name.startswith("Cube"):
+            export["blocks"].append({
+                "name": name,
+                "position": snap_position(obj.location),
+                "rotation": snap_rotation(obj.rotation_euler),
+                "size": [
+                    snap(obj.dimensions.x, POS_STEP, 1),
+                    snap(obj.dimensions.y, POS_STEP, 1),
+                    snap(obj.dimensions.z, POS_STEP, 1),
+                ]
+            })
+
+        # -------------------------
+        # SPHERES (Sphere.*)
+        # -------------------------
+        elif name.startswith("Sphere"):
+            radius = max(
+                obj.dimensions.x,
+                obj.dimensions.y,
+                obj.dimensions.z
+            ) * 0.5
+
+            export["spheres"].append({
+                "name": name,
+                "position": snap_position(obj.location),
+                "radius": round(radius, 3)
+            })
 
     blend_name = os.path.splitext(os.path.basename(bpy.data.filepath))[0]
     out_path = os.path.join(OUT_DIR, blend_name + "-converted.json")

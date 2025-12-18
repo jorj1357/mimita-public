@@ -44,8 +44,7 @@ void updatePhysics(
     // prevent phisics calc from crashing everthing and killing us 
     dt = glm::min(dt, 0.033f);
 
-    // no idea where to put debugmovement
-    // still no idea dec 18 2025 
+    // DEC 18 2025 THIS WORKS IT STAY HERE 
     applyDebugMovement(p, win, cam, dt);
 
     // ----------------------------
