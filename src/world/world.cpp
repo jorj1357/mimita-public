@@ -34,7 +34,7 @@ static glm::mat3 blenderToEngineBasis()
     return glm::mat3(
         glm::rotate(
             glm::mat4(1.0f),
-            glm::radians(-90.0f),
+            glm::radians(90.0f),
             glm::vec3(1,0,0)
         )
     );
@@ -42,21 +42,40 @@ static glm::mat3 blenderToEngineBasis()
 
 static glm::mat3 eulerXYZDegToMat3(const glm::vec3& deg)
 {
-    // remap Blender Euler → Engine Euler
+    
+    // old one 
+    glm::vec3 r = glm::radians(deg);
+
+    // Blender → Engine axis remap
     // Blender: X right, Y forward, Z up
     // Engine:  X right, Y up,      Z forward
-    glm::vec3 r = glm::radians(glm::vec3(
-        deg.x,  // X stays X
-        deg.z,  // Z (up) becomes Y (up)
-        deg.y   // Y (forward) becomes Z (forward)
-    ));
+    // glm::vec3 r = glm::radians(glm::vec3(
+    //     deg.x,  // X stays X
+    //     deg.z,  // Blender Z (up) → Engine Y
+    //     deg.y   // Blender Y (forward) → Engine Z
+    // ));
 
-    // Apply X then Y then Z (right-multiply local vector)
     glm::mat3 Rx = glm::mat3(glm::rotate(glm::mat4(1.0f), r.x, glm::vec3(1,0,0)));
     glm::mat3 Ry = glm::mat3(glm::rotate(glm::mat4(1.0f), r.y, glm::vec3(0,1,0)));
     glm::mat3 Rz = glm::mat3(glm::rotate(glm::mat4(1.0f), r.z, glm::vec3(0,0,1)));
 
-    return Rz * Ry * Rx;
+    // z first
+    // bad
+    // return Rz * Ry * Rx;
+    // bad
+    // return Rz * Rx * Ry;
+
+    // y first
+    // better but bad?
+    // return Ry * Rx * Rz;
+    // i dont think it changes bad
+    // return Ry * Rz * Rx;
+
+    // x first
+    // bad 
+    // return Rx * Ry * Rz;
+    return Rx * Rz * Ry;
+
 }
 
 // --------------------
@@ -120,10 +139,12 @@ void World::getNearby(
 
 void World::finalize()
 {
-    glm::mat3 basis = blenderToEngineBasis();
+    glm::mat3 B = blenderToEngineBasis();
 
     for (auto& b : blocks) {
         glm::mat3 R = eulerXYZDegToMat3(b.rotEuler);
-        b.rot = basis * R;
+
+        // convert from Blender frame → Engine frame
+        b.rot = B * R * glm::transpose(B);
     }
 }
