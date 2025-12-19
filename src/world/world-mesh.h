@@ -15,6 +15,8 @@
 struct WorldVertex {
     glm::vec3 pos;
     glm::vec2 uv;
+    float texIndex;
+    glm::vec3 normal;
 };
 
 void buildWorldMesh(

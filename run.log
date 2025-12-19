@@ -1,11 +1,1 @@
 MAIN START
-OpenGL version: 3.3.0 - Build 31.0.101.4502
-Renderer initialized successfully.
-Loaded 11 textures.
-loaded renderr
-[WORLD] Loaded 35 blocks, 8 spheres from assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json
-[WORLD] chunks=39 blocks=35 spheres=8
-[WORLD] chunks=39 blocks=35 spheres=8
-loaded world
-loaded world json
-loaded plr

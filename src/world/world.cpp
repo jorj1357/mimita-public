@@ -2,7 +2,7 @@
 // dec 18 2025
 /**
  * purpose
- * chunking and world laoding i think
+ * define chunking functions and world laoding i think
  * for the json conversion
  * it said delete this file and then recreate it ok buddy
  * vibe coder andy

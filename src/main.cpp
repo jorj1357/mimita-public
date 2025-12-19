@@ -101,6 +101,23 @@ int main()
     TEX.init();
 
     GLuint shader = renderer.getShaderProgram();
+
+    glUseProgram(shader);
+
+    int samplers[16];
+    for (int i = 0; i < 16; i++) {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, TEX.get(i));
+        samplers[i] = i;
+    }
+
+    glUniform1iv(
+        glGetUniformLocation(shader, "uTextures"),
+        16,
+        samplers
+    );
+
+    glUseProgram(0);
     
     printf("loaded renderr\n");
 
@@ -133,13 +150,27 @@ int main()
         GL_STATIC_DRAW
     );
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+    // position
+    glVertexAttribPointer(
+        0, 3, GL_FLOAT, GL_FALSE,
+        sizeof(WorldVertex),
+        (void*)offsetof(WorldVertex, pos)
+    );
     glEnableVertexAttribArray(0);
 
+    // uv
     glVertexAttribPointer(
-        2, 2, GL_FLOAT, GL_FALSE,
+        1, 2, GL_FLOAT, GL_FALSE,
         sizeof(WorldVertex),
         (void*)offsetof(WorldVertex, uv)
+    );
+    glEnableVertexAttribArray(1);
+
+    // texture index
+    glVertexAttribPointer(
+        2, 1, GL_FLOAT, GL_FALSE,
+        sizeof(WorldVertex),
+        (void*)offsetof(WorldVertex, texIndex)
     );
     glEnableVertexAttribArray(2);
 

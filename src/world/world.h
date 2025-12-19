@@ -2,6 +2,7 @@
 // dec 16 2025
 /**
  * purpose
+ * define World data (blocks, spheres)
  * make chunks 
  * helper for chunks
  * so we can do multi pass
@@ -13,6 +14,7 @@
 #include <vector>
 #include <unordered_map>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "physics/config.h"
 
@@ -24,11 +26,15 @@ struct Block {
     glm::vec3 pos;
     glm::vec3 size;
     glm::vec3 rot;
+    // TEMP: per-face texture indices
+    // order: +X, -X, +Y, -Y, +Z, -Z
+    uint8_t tex[6];
 };
 
 struct Sphere {
     glm::vec3 pos;
     float radius;
+    uint8_t tex; // texture index
 };
 
 // --------------------
