@@ -21,6 +21,7 @@
 #include "glm/glm.hpp"
 #include <vector>
 #include <cstdio>
+#include "world/world-mesh.cpp" // i know its n ot a header ughhh
 
 // do we really define this here or no 
 static Capsule playerCapsule(const Player& p)
@@ -94,19 +95,44 @@ void updatePhysics(
     glm::vec3 resolvedMove = move;
     p.onGround = false; // start false for this frame
 
+    // 3 passes best 
     for (int pass = 0; pass < 3; pass++) {
-        bool hitThisPass = false;
         for (Block* b : nearbyBlocks) {
+
+            glm::vec3 boxCenter = toYUp(b->pos);
+            glm::vec3 boxSize   = glm::vec3(
+                b->size.x,
+                b->size.z,
+                b->size.y
+            ) * BLOCK_PHYS_MULT;
+
             glm::vec3 newMove = collideCapsuleAABBMove(
                 cap0,
                 resolvedMove,
-                b->pos,
-                b->size,
+                boxCenter,
+                boxSize,
                 p.onGround
             );
+
+            static FILE* f = fopen("run.log", "w");
+
+            fprintf(
+                f,
+                "BLOCK pos engine: %.2f %.2f %.2f  size: %.2f %.2f %.2f\n",
+                boxCenter.x, boxCenter.y, boxCenter.z,
+                boxSize.x, boxSize.y, boxSize.z
+            );
+            fprintf(
+                f,
+                "CAP a: %.2f %.2f %.2f  b: %.2f %.2f %.2f\n",
+                cap0.a.x, cap0.a.y, cap0.a.z,
+                cap0.b.x, cap0.b.y, cap0.b.z
+            );
+
+            fflush(f);
+
             resolvedMove = newMove;
         }
-        if (!hitThisPass) break; // stop early if nothing changes
     }
 
     p.pos += resolvedMove;
