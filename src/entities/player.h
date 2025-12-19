@@ -61,6 +61,7 @@ public:
 
 
     // Camera follow
+    // dec 19 2025 i donth think wer even use this its in camera.h and camera.cpp todo 
     glm::vec3 cameraOffset = {0, 0.6f, 2.5f};
 
     // Helpers
@@ -73,9 +74,9 @@ public:
 
     // ---- DEBUG COLLISION SPHERES (visual only) ----
     // dec 16 2025 im conuffsed and making bunches of edits and it mightbreak later but ok wahtrever 
-    glm::vec3 debugFeetSphere {0};
-    glm::vec3 debugMidSphere  {0};
-    glm::vec3 debugHeadSphere {0};
+    // glm::vec3 debugFeetSphere {0};
+    // glm::vec3 debugMidSphere  {0};
+    // glm::vec3 debugHeadSphere {0};
 
     // Methods
     Player();

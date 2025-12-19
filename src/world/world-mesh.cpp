@@ -12,7 +12,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 // this comes after those so we have push_back working 
 #include "world-mesh.h"
-#include "coord.h"
 
 static void addQuad(
     std::vector<WorldVertex>& v,
@@ -20,6 +19,9 @@ static void addQuad(
     glm::vec3 c, glm::vec3 d,
     float tex
 ) {
+    // are you rotating things
+    // dont rotate things
+    // only world.h rotates things with it functions 
     v.push_back({a, {0,0}, tex, glm::vec3(0,1,0)});
     v.push_back({b, {1,0}, tex, glm::vec3(0,1,0)});
     v.push_back({c, {1,1}, tex, glm::vec3(0,1,0)});
@@ -29,6 +31,8 @@ static void addQuad(
     v.push_back({d, {0,1}, tex, glm::vec3(0,1,0)});
 }
 
+// i know spheres dont have rotation but this looks like its rotating things too 
+// todo dec 19 2025 make not rotate but whatever 
 static void addSphere(
     std::vector<WorldVertex>& out,
     glm::vec3 center,
@@ -62,6 +66,10 @@ static void addSphere(
     }
 }
 
+// is it a mesh or is it the actual blocks that we are going to collide with
+// or what 
+// also this looks like rotating things sotp  only world.h rotates tihngs dec 19 2025
+
 void buildWorldMesh(
     const World& world,
     std::vector<WorldVertex>& out
@@ -73,6 +81,7 @@ void buildWorldMesh(
 
         auto V = [&](float x, float y, float z) {
             glm::vec3 local(x, y, z);
+            // it shouldnt be rotatingthings this just how blocks get placed in world
             return b.pos + b.rot * local; // rot is mat3
         };
 

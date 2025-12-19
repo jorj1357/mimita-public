@@ -24,7 +24,6 @@
 #include "world/world.h"
 #include "world/world-mesh.h"
 #include "../camera.h"
-#include "world/coord.h"
 
 // do we really define this here or no 
 static Capsule playerCapsule(const Player& p)
@@ -43,9 +42,6 @@ void updatePhysics(
     float dt,
     const Camera& cam)
 {
-
-    static float debugTimer = 0.0f;
-    debugTimer += dt;
 
     // prevent phisics calc from crashing everthing and killing us 
     dt = glm::min(dt, 0.033f);
@@ -103,15 +99,12 @@ void updatePhysics(
     for (int pass = 0; pass < 3; pass++) {
         for (Block* b : nearbyBlocks) {
 
-            // no rotating in phsics. only world.cpp
+            // dec 19 2025 
+            // todo fix haunted evil rotation bug and see if its here or not
             // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
             glm::mat3 rot = b->rot;
-
             glm::vec3 boxCenter = b->pos;
-
-            // size in world units (full extents)
             glm::vec3 boxSize = b->size * BLOCK_PHYS_MULT;
-
             glm::vec3 newMove = collideCapsuleOBBMove(
                 cap0,
                 resolvedMove,

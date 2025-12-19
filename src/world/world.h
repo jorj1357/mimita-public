@@ -22,37 +22,7 @@
 // Position helpers 
 // --------------------
 
-static glm::ivec3 chunkCoord(const glm::vec3& p, float size)
-{
-    return glm::ivec3(
-        (int)floor(p.x / size),
-        0,
-        (int)floor(p.z / size)
-    );
-}
-
-static glm::vec3 blenderPosToEngine(const glm::vec3& p)
-{
-    // Blender: X right, Y forward, Z up
-    // Engine:  X right, Y up,      Z forward
-    return glm::vec3(-p.x, p.z, p.y);
-}
-
-static glm::vec3 blenderRotToEngine(const glm::vec3& r)
-{
-    return glm::vec3(-r.x + 90.0f, r.z, r.y);
-}
-
-static glm::mat3 eulerToMat(const glm::vec3& deg)
-{
-    glm::vec3 r = glm::radians(deg);
-
-    // THE LAW: Y -> X -> Z
-    return
-        glm::mat3(glm::rotate(glm::mat4(1.0f), r.y, glm::vec3(0,1,0))) *
-        glm::mat3(glm::rotate(glm::mat4(1.0f), r.x, glm::vec3(1,0,0))) *
-        glm::mat3(glm::rotate(glm::mat4(1.0f), r.z, glm::vec3(0,0,1)));
-}
+// no static goes here only struct and stuff 
 
 // --------------------
 // World primitives
@@ -62,6 +32,7 @@ struct Block {
     glm::vec3 pos;
     glm::vec3 size;
     // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+    glm::vec3 rotEuler; // from JSON, degrees, Blender space
     glm::mat3 rot;
     // TEMP: per-face texture indices
     // order: +X, -X, +Y, -Y, +Z, -Z
@@ -119,4 +90,5 @@ struct World {
         std::vector<Block*>& outBlocks,
         std::vector<Sphere*>& outSpheres
     ) const;
+    void finalize(); 
 };

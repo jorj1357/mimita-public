@@ -31,61 +31,36 @@ bool loadWorldFromJSON(World& world, const char* path)
     f >> j;
 
     for (auto& jb : j["blocks"]) {
-        Block b;
+        Block b{};
 
-        // 1. read raw JSON values
-        glm::vec3 jsonPos(
+        b.pos = glm::vec3(
             jb["position"][0],
             jb["position"][1],
             jb["position"][2]
         );
 
-        glm::vec3 jsonRot(
-            jb["rotation"][0],
-            jb["rotation"][1],
-            jb["rotation"][2]
-        );
-
-        glm::vec3 jsonSize(
+        b.size = glm::vec3(
             jb["size"][0],
             jb["size"][1],
             jb["size"][2]
         );
 
-        // 2. convert Blender → engine space
-        b.pos  = blenderPosToEngine(jsonPos);
-        b.size = jsonSize;
+        b.rotEuler = glm::vec3(
+            jb["rotation"][0],
+            jb["rotation"][1],
+            jb["rotation"][2]
+        );
 
-        glm::vec3 rotDeg = blenderRotToEngine(jsonRot);
+        b.rot = glm::mat3(1.0f);
 
-        // optional snap (recommended for blocks)
-        rotDeg = glm::round(rotDeg);
-
-        // 3. bake rotation ONCE
-        b.rot = eulerToMat(rotDeg);
+        for (int i = 0; i < 6; i++)
+            b.tex[i] = 0;
 
         world.blocks.push_back(b);
     }
 
-    for (auto& js : j["spheres"]) {
-        Sphere s;
-        s.pos = blenderPosToEngine(glm::vec3(
-            js["position"][0],
-            js["position"][1],
-            js["position"][2]
-        ));
-        s.radius = (float)js["radius"];
+    world.finalize();      // converts Euler -> mat3 ONCE
+    world.rebuildChunks(); // builds spatial structure
 
-        world.spheres.push_back(s);
-    }
-
-    printf(
-        "[WORLD] Loaded %zu blocks, %zu spheres from %s\n",
-        world.blocks.size(),
-        world.spheres.size(),
-        path
-    );
-
-    world.rebuildChunks();
     return true;
 }

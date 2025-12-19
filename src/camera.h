@@ -26,6 +26,7 @@ inline float CAMERA_SHOULDER_OFFSET = 1.2f; // a lil further
  */
 
 // dec 3 2025 values v3
+// dec 19 2025 move these to config.h todo 
 inline float CAMERA_DISTANCE = 4.0f;  // closer
 inline float CAMERA_HEIGHT   = 3.5f;  // higher
 inline float CAMERA_SENS     = 0.15f; // a little fast

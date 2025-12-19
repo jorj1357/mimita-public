@@ -18,10 +18,8 @@ glm::vec3 collideCapsuleOBBMove(
     const glm::mat3& boxRot,
     bool& onGround
 ) {
-    // inverse rotation (world -> box local)
     glm::mat3 invR = glm::transpose(boxRot);
 
-    // transform capsule into box local space
     Capsule capLocal;
     capLocal.r = capWorld.r;
     capLocal.a = invR * (capWorld.a - boxPos);
@@ -29,7 +27,6 @@ glm::vec3 collideCapsuleOBBMove(
 
     glm::vec3 moveLocal = invR * moveWorld;
 
-    // collide in local AABB space
     glm::vec3 resolvedLocal =
         collideCapsuleAABBMove(
             capLocal,
@@ -39,9 +36,8 @@ glm::vec3 collideCapsuleOBBMove(
             onGround
         );
 
-    // rotate movement back to world space
     glm::vec3 resolvedWorld = boxRot * resolvedLocal;
-
     return resolvedWorld;
 }
+
 
