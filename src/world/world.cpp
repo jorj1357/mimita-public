@@ -44,7 +44,7 @@ static glm::mat3 eulerXYZDegToMat3(const glm::vec3& deg)
 {
     
     // old one 
-    glm::vec3 r = glm::radians(deg);
+    // glm::vec3 r = glm::radians(deg);
 
     // Blender → Engine axis remap
     // Blender: X right, Y forward, Z up
@@ -54,6 +54,27 @@ static glm::mat3 eulerXYZDegToMat3(const glm::vec3& deg)
     //     deg.z,  // Blender Z (up) → Engine Y
     //     deg.y   // Blender Y (forward) → Engine Z
     // ));
+
+    glm::vec3 r = glm::radians(glm::vec3(
+        // test 2
+        // ehh
+        // test 6 only add it to x and z
+        deg.x + 90.0f, 
+        // test 5 
+        // only add it to z and y?no thats bad
+        // deg.x,
+        // dec 19 2025 all tests
+        // old was just x z y, we are adding stuff to fix maybe
+        // test 1
+        // good?
+        // deg.z + 90.0f,
+        // test 4 add 90 to them all
+        // deg.z + 90.0f,
+        deg.z,
+        // test 3 
+        // Y IS PERFECT BECAUSE WE ADDED 90
+        deg.y + 90.0f   
+    ));
 
     glm::mat3 Rx = glm::mat3(glm::rotate(glm::mat4(1.0f), r.x, glm::vec3(1,0,0)));
     glm::mat3 Ry = glm::mat3(glm::rotate(glm::mat4(1.0f), r.y, glm::vec3(0,1,0)));
@@ -73,8 +94,11 @@ static glm::mat3 eulerXYZDegToMat3(const glm::vec3& deg)
 
     // x first
     // bad 
-    // return Rx * Ry * Rz;
-    return Rx * Rz * Ry;
+    // dec 19 2025 keep this as it bc its simple x y z
+    // the old one is y x z but idk
+    return Rx * Ry * Rz;
+    // bad doesnt change anthing
+    // return Rx * Rz * Ry;
 
 }
 
