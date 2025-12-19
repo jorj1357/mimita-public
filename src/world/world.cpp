@@ -9,6 +9,7 @@
  */
 
 #include "world.h"
+#include "world/coord.h"
 
 #include <cmath>
 #include <cstdio>
@@ -35,21 +36,19 @@ void World::rebuildChunks()
     chunks.clear();
 
     for (auto& b : blocks) {
-        glm::ivec3 c = chunkCoord(b.pos, chunkSize);
+        glm::vec3 pe = toYUp(b.pos);                // <-- key fix
+        glm::ivec3 c = chunkCoord(pe, chunkSize);
         chunks[c].blocks.push_back(&b);
     }
 
     for (auto& s : spheres) {
-        glm::ivec3 c = chunkCoord(s.pos, chunkSize);
+        glm::vec3 pe = toYUp(s.pos);                // <-- key fix
+        glm::ivec3 c = chunkCoord(pe, chunkSize);
         chunks[c].spheres.push_back(&s);
     }
 
-    printf(
-        "[WORLD] chunks=%zu blocks=%zu spheres=%zu\n",
-        chunks.size(),
-        blocks.size(),
-        spheres.size()
-    );
+    printf("[WORLD] chunks=%zu blocks=%zu spheres=%zu\n",
+        chunks.size(), blocks.size(), spheres.size());
 }
 
 void World::getNearby(

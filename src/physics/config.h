@@ -35,6 +35,7 @@ inline float PLAYER_HEIGHT = 1.8f * PHYS_MULT;
 inline float PLAYER_DEPTH  = 0.2f * PHYS_MULT;  
 inline float PLAYER_RADIUS = 0.35f * PHYS_MULT;
 
+// DONT CONVERT to radians keep it as (number)f
 inline float MAX_SLOPE_ANGLE = 0.5f;
 
 // dec 18 2025

@@ -10,6 +10,10 @@
  */
 
 // physics.cpp
+#include <glm/gtc/matrix_transform.hpp>
+#include "glm/glm.hpp"
+#include <vector>
+#include <cstdio>
 #include "physics-debug-movement.h"
 #include "physics.h"
 #include "physics-types.h"
@@ -20,9 +24,7 @@
 #include "world/world.h"
 #include "world/world-mesh.h"
 #include "../camera.h"
-#include "glm/glm.hpp"
-#include <vector>
-#include <cstdio>
+#include "world/coord.h"
 
 // do we really define this here or no 
 static Capsule playerCapsule(const Player& p)
@@ -93,6 +95,10 @@ void updatePhysics(
     // ----------------------------
     // bool wasOnGround = p.onGround;
     Capsule cap0 = playerCapsule(p);
+
+    // convert capsule to engine space
+    cap0.a = toYUp(cap0.a);
+    cap0.b = toYUp(cap0.b);
     glm::vec3 resolvedMove = move;
     p.onGround = false; // start false for this frame
 
@@ -122,26 +128,6 @@ void updatePhysics(
                 rot,
                 p.onGround
             );
-
-            static FILE* f = nullptr;
-            if (!f) {
-                f = fopen("run.log", "w");
-            }
-
-            fprintf(
-                f,
-                "BLOCK pos engine: %.2f %.2f %.2f  size: %.2f %.2f %.2f\n",
-                boxCenter.x, boxCenter.y, boxCenter.z,
-                boxSize.x, boxSize.y, boxSize.z
-            );
-            fprintf(
-                f,
-                "CAP a: %.2f %.2f %.2f  b: %.2f %.2f %.2f\n",
-                cap0.a.x, cap0.a.y, cap0.a.z,
-                cap0.b.x, cap0.b.y, cap0.b.z
-            );
-
-            fflush(f);
 
             resolvedMove = newMove;
         }

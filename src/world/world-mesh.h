@@ -15,9 +15,9 @@
 
 // BLENDER IS Z-UP
 // MIMITA IS Y-UP
-static inline glm::vec3 toYUp(glm::vec3 p) {
-    return { p.x, p.z, -p.y };
-}
+// static inline glm::vec3 toYUp(glm::vec3 p) {
+//     return { p.x, p.z, -p.y };
+// }
 
 struct WorldVertex {
     glm::vec3 pos;

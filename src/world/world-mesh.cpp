@@ -12,6 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 // this comes after those so we have push_back working 
 #include "world-mesh.h"
+#include "coord.h"
 
 static void addQuad(
     std::vector<WorldVertex>& v,
@@ -71,27 +72,32 @@ void buildWorldMesh(
         glm::vec3 h = b.size * BLOCK_PHYS_MULT;
         glm::vec3 c = b.pos;
 
-        // rotation in radians (Blender space)
         glm::vec3 r = glm::radians(b.rot);
 
-        glm::mat4 R(1.0f);
-        // Blender applies rotations Z -> Y -> X
-        R = glm::rotate(R, r.z, glm::vec3(0,0,1)); // Z
-        R = glm::rotate(R, r.y, glm::vec3(0,1,0)); // Y
-        R = glm::rotate(R, r.x, glm::vec3(1,0,0)); // X
+        // Blender rotation
+        glm::mat3 Rb(1.0f);
+        Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.z, {0,0,1})) * Rb;
+        Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.y, {0,1,0})) * Rb;
+        Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.x, {1,0,0})) * Rb;
+
+        // convert to engine space
+        glm::mat3 C  = basisToYUp();
+        glm::mat3 rot = C * Rb * glm::transpose(C);
 
         auto V = [&](float x, float y, float z) {
-            // Blender-local vertex
+            // local in Blender
             glm::vec3 local(x, y, z);
 
-            // rotate in Blender space
-            glm::vec3 rotated = glm::vec3(R * glm::vec4(local, 1.0f));
+            // convert local vector to engine basis
+            glm::vec3 localEngine = basisToYUp() * local;
 
-            // translate in Blender space
-            glm::vec3 worldBlender = c + rotated;
+            // rotate in engine space
+            glm::vec3 rotated = rot * localEngine;
 
-            // convert ONCE to engine space
-            return toYUp(worldBlender);
+            // translate in engine space
+            glm::vec3 centerEngine = toYUp(c);
+
+            return centerEngine + rotated;
         };
 
         glm::vec3 p000 = V(-h.x,-h.y,-h.z);
