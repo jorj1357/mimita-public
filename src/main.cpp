@@ -130,9 +130,6 @@ int main()
         return -1;
     }
 
-    // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
-    // world.convertToEngineSpace();
-
     world.rebuildChunks();
     printf("loaded world\n");
 

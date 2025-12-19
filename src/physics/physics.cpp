@@ -103,14 +103,6 @@ void updatePhysics(
     for (int pass = 0; pass < 3; pass++) {
         for (Block* b : nearbyBlocks) {
 
-            // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
-            // glm::vec3 boxCenter = b->pos;
-            // glm::vec3 boxSize   = glm::vec3(
-            //     b->size.x,
-            //     b->size.z,
-            //     b->size.y
-            // ) * BLOCK_PHYS_MULT;
-
             glm::mat3 rot =
                 glm::mat3(
                     glm::rotate(glm::mat4(1.0f), glm::radians(b->rot.z), glm::vec3(0,0,1)) *

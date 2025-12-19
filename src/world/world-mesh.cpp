@@ -74,27 +74,11 @@ void buildWorldMesh(
 
         glm::vec3 r = glm::radians(b.rot);
 
-        // Blender rotation
-        glm::mat3 Rb(1.0f);
-        Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.z, {0,0,1})) * Rb;
-        Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.y, {0,1,0})) * Rb;
-        Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.x, {1,0,0})) * Rb;
-
-        // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
-        // glm::mat3 C  = basisToYUp();
-        glm::mat3 rot = C * Rb * glm::transpose(C);
-
         auto V = [&](float x, float y, float z) {
             glm::vec3 local(x, y, z);
 
-            // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
-            // glm::vec3 localEngine = basisToYUp() * local;
+            // need to fix dec 19 2025 
 
-            // rotate in engine space
-            glm::vec3 rotated = rot * localEngine;
-
-            // translate using already-engine-space position
-            return c + rotated;
         };
 
         glm::vec3 p000 = V(-h.x,-h.y,-h.z);

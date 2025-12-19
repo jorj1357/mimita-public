@@ -59,13 +59,12 @@ void World::convertToEngineSpace()
 void World::convertToEngineSpace()
 {
     for (auto& b : blocks) {
-        b.pos = toYUp(b.pos);
-        // b.rot stays the same if it's already degrees
-        // size usually stays the same
+        b.pos = blenderPosToEngine(b.pos);
+        b.rot = blenderRotToEngine(b.rot);
     }
 
     for (auto& s : spheres) {
-        s.pos = toYUp(s.pos);
+        s.pos = blenderPosToEngine(s.pos);
     }
 }
 
