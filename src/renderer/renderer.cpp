@@ -168,11 +168,12 @@ Renderer::Renderer(int w, int h, const char* title) {
     glBindVertexArray(0);
 
     // ---- Ground plane ----
+    // z up dec 19 2025 fix but i dont think we even use it
     float groundVerts[] = {
-        -50.0f, 0.0f, -50.0f,   0.0f,   0.0f,
-         50.0f, 0.0f, -50.0f,  10.0f,   0.0f,
-         50.0f, 0.0f,  50.0f,  10.0f,  10.0f,
-        -50.0f, 0.0f,  50.0f,   0.0f,  10.0f
+        -50.0f, -50.0f, 0.0f,
+        50.0f, -50.0f, 0.0f,
+        50.0f,  50.0f, 0.0f,
+        -50.0f,  50.0f, 0.0f
     };
     unsigned int groundIdx[] = { 0,1,2, 2,3,0 };
 
@@ -401,7 +402,8 @@ void drawText2D(const char* text, float x, float y, float scale)
 void Renderer::drawGridCell(const glm::vec3& pos, const glm::mat4& view, const glm::mat4& proj) {
     glUseProgram(shaderProgram);
     glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
-    model = glm::scale(model, glm::vec3(1.0f, 0.001f, 1.0f));
+    // z up so the small number is the last one now 
+    model = glm::scale(model, glm::vec3(1.0f, 1.0f, 0.001f));
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"model"),1,GL_FALSE,&model[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"view"),1,GL_FALSE,&view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"projection"),1,GL_FALSE,&proj[0][0]);

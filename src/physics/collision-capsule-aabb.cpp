@@ -53,11 +53,12 @@ glm::vec3 collideCapsuleAABBMove(
     float dist = sqrtf(glm::max(bestD2, 1e-8f));
     float pen = cap.r - dist;
 
+    // dec 19 2025 z up fix 
     glm::vec3 n = (dist > 1e-6f)
         ? (bestP - bestQ) / dist
-        : glm::vec3(0,1,0);
+        : glm::vec3(0,0,1);
 
-    if (n.y > MAX_SLOPE_ANGLE) onGround = true;
+    if (n.z > MAX_SLOPE_ANGLE) onGround = true;
 
     glm::vec3 out = move + n * pen;
     float into = glm::dot(out, n);

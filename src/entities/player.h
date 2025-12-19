@@ -7,6 +7,17 @@
 #include <glm/mat4x4.hpp>
 #include <GLFW/glfw3.h>
 
+// dec 19 2025 todo cleanthis file from haivng so much comments
+// also
+/**
+ * // Coordinate system:
+// X = right
+// Y = forward
+// Z = up
+// All height, gravity, jump, offsets use Z
+dec 19 2025 update 
+ */
+
 class Camera;
 
 // ------------- Oriented Bounding Box -------------
@@ -20,7 +31,8 @@ struct OBB {
 class Player {
 public:
     // Core state
-    glm::vec3 pos{0, 2, 0};
+    // do we use this even? dec 19 2025 todo 
+    glm::vec3 pos{0, 0, 2};
     glm::vec3 vel{0};
     bool onGround = false;
 
@@ -62,7 +74,8 @@ public:
 
     // Camera follow
     // dec 19 2025 i donth think wer even use this its in camera.h and camera.cpp todo 
-    glm::vec3 cameraOffset = {0, 0.6f, 2.5f};
+    // dec 19 2025 z is up but idont think we use this 
+    glm::vec3 cameraOffset = {0.0f, -2.5f, 0.6f};
 
     // Helpers
     inline glm::vec3 halfExtents() const { return hitboxSize * 0.5f; }

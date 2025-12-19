@@ -15,7 +15,8 @@ void Camera::updateMouse(double xpos, double ypos) {
     xoff *= CAMERA_SENS;
     yoff *= CAMERA_SENS;
 
-    yaw += xoff;
+    // this makes me look left or right dec192025 ? 
+    yaw -= xoff;
     pitch += yoff;
 
     // Expanded pitch range
@@ -23,9 +24,10 @@ void Camera::updateMouse(double xpos, double ypos) {
     if (pitch < -89.9f) pitch = -89.9f;
 
     glm::vec3 dir;
+    // dec 19 2025 z is up now 
     dir.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    dir.y = sin(glm::radians(pitch));
-    dir.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    dir.y = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    dir.z = sin(glm::radians(pitch));
     front = glm::normalize(dir);
 }
 
@@ -34,20 +36,22 @@ void Camera::follow(const glm::vec3& target) {
     glm::vec3 right = glm::normalize(glm::cross(front, up));
 
     // Set camera position behind and slightly right of the target
+    // z is up dec 19 2025 
     pos = target
-        - front * CAMERA_DISTANCE      // behind player
-        + glm::vec3(0, CAMERA_HEIGHT, 0) // height offset
-        + right * CAMERA_SHOULDER_OFFSET;        // right shoulder offset
+        - front * CAMERA_DISTANCE
+        + glm::vec3(0, 0, CAMERA_HEIGHT)
+        + right * CAMERA_SHOULDER_OFFSET;
 }
 
 void Camera::updateVectors() {
     front = glm::normalize(glm::vec3(
         cos(glm::radians(yaw)) * cos(glm::radians(pitch)),
-        sin(glm::radians(pitch)),
-        sin(glm::radians(yaw)) * cos(glm::radians(pitch))
+        sin(glm::radians(yaw)) * cos(glm::radians(pitch)),
+        sin(glm::radians(pitch))
     ));
-    right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
-    up = glm::normalize(glm::cross(right, front));
+
+    right = glm::normalize(glm::cross(front, glm::vec3(0,0,1)));
+    up    = glm::normalize(glm::cross(right, front));
 }
 
 glm::mat4 Camera::getView() const {

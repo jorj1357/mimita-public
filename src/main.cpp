@@ -15,6 +15,9 @@
 // cleaned dec 18 2025
 // purpose: high-level orchestration only
 
+// dec 19 2025 why does this little tinsmall chud game use 100% of gpu need to optimize
+// and see ifits even in this file 
+
 #define GL_SILENCE_DEPRECATION
 #define GLFW_INCLUDE_NONE
 

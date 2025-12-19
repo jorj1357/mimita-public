@@ -35,17 +35,19 @@ inline float CAMERA_SHOULDER_OFFSET = 1.5f; // a lil further
  
 class Camera {
 public:
-    glm::vec3 pos{0, CAMERA_HEIGHT, CAMERA_DISTANCE};
-    glm::vec3 front{0, 0, -1};
-    glm::vec3 up{0, 1, 0};
+    // z is up dec 19 2025 
+    glm::vec3 pos{0, -CAMERA_DISTANCE, CAMERA_HEIGHT};
+    glm::vec3 front{0, 1, 0};
+    glm::vec3 up{0, 0, 1};
     glm::vec3 right{1, 0, 0};
 
     float yaw = -90.0f;
     float pitch = 10.0f;
     bool firstMouse = true;
+    // dec 19 2025 make this work with main.cpp window dimensions 
     double lastX = 400, lastY = 300;
 
-    void updateVectors();  // ✅ keep this line here
+    void updateVectors(); 
     void updateMouse(double xpos, double ypos);
     void follow(const glm::vec3& target);
     glm::mat4 getView() const;

@@ -9,7 +9,8 @@
  * and when we have a bunch of values thatll get split too but u know whaever 
  */
 
-// physics.cpp
+// dec 19 2025 we are z up not y up
+
 #include <glm/gtc/matrix_transform.hpp>
 #include "glm/glm.hpp"
 #include <vector>
@@ -25,13 +26,13 @@
 #include "world/world-mesh.h"
 #include "../camera.h"
 
-// do we really define this here or no 
+// dec 19 2025 z is up not y
 static Capsule playerCapsule(const Player& p)
 {
     Capsule c;
     c.r = PLAYER_RADIUS;
-    c.a = p.pos + glm::vec3(0.0f, c.r, 0.0f);
-    c.b = p.pos + glm::vec3(0.0f, PLAYER_HEIGHT - c.r, 0.0f);
+    c.a = p.pos + glm::vec3(0.0f, 0.0f, c.r);
+    c.b = p.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT - c.r);
     return c;
 }
 
@@ -54,12 +55,14 @@ void updatePhysics(
     // ----------------------------
     glm::vec3 wish(0.0f);
 
+    // z is up, flatten for z 
     glm::vec3 forward = cam.front;
-    forward.y = 0.0f;
+    forward.z = 0.0f;
     if (glm::length(forward) > 0.0001f)
         forward = glm::normalize(forward);
 
-    glm::vec3 right = glm::cross(forward, glm::vec3(0,1,0));
+    // again z is up not y dec 19 2025 
+    glm::vec3 right = glm::cross(forward, glm::vec3(0,0,1));
 
     if (glfwGetKey(win, GLFW_KEY_W)) wish += forward;
     if (glfwGetKey(win, GLFW_KEY_S)) wish -= forward;
@@ -74,9 +77,10 @@ void updatePhysics(
     // ----------------------------
     // GRAVITY (VELOCITY ONLY)
     // ----------------------------
-    p.vel.y += PHYS.gravity * dt;
-    p.vel.y = glm::max(p.vel.y, -MAX_FALL_SPEED);
-    move.y = p.vel.y * dt;
+    // z is up now, dec 19 2025 
+    p.vel.z += PHYS.gravity * dt;
+    p.vel.z = glm::max(p.vel.z, -MAX_FALL_SPEED);
+    move.z = p.vel.z * dt;
 
     // ----------------------------
     // COLLECT NEARBY Parts... json.. not triangles dec 18 2025
@@ -126,8 +130,9 @@ void updatePhysics(
     static bool lastSpace = false;
     bool spaceNow = glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS;
 
+    // z is up now dec 19 2025 
     if (spaceNow && !lastSpace && p.onGround) {
-        p.vel.y = PHYS.jumpStrength;
+        p.vel.z = PHYS.jumpStrength;
         p.onGround = false;
     }
 

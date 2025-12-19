@@ -20,16 +20,17 @@ void applyDebugMovement(Player& p, GLFWwindow* win, const Camera& cam, float dt)
     const int vmult = 10.0f;
 
     glm::vec3 forward = cam.front;
-    forward.y = 0.0f;
+    // z is up dec 19 2025 
+    forward.z = 0.0f;
     if (glm::length(forward) > 0.0001f)
         forward = glm::normalize(forward);
 
     // dont mult with dt dec 18 2025 ? 
     if (glfwGetKey(win, GLFW_KEY_T))
-        p.vel.y = 5.0f * vmult;
+        p.vel.z = 5.0f * vmult;
 
     if (glfwGetKey(win, GLFW_KEY_B))
-        p.vel.y = -5.0f * vmult;
+        p.vel.z = -5.0f * vmult;
 
     // dec 18 2025 broken whatevr 
     // if (glfwGetKey(win, GLFW_KEY_G))
@@ -43,9 +44,14 @@ void applyDebugMovement(Player& p, GLFWwindow* win, const Camera& cam, float dt)
     //     p.vel = forward * (5.0f * vmult);
 
     // no forward = 0? just definte it as 1?
+    // if (glfwGetKey(win, GLFW_KEY_G))
+    //     p.vel += 1.0f * (5.0f * vmult);
+
+    // idk how to fix this 
     if (glfwGetKey(win, GLFW_KEY_G))
-        p.vel += 1.0f * (5.0f * vmult);
+        p.vel += forward * (5.0f * vmult);
 
     if (glfwGetKey(win, GLFW_KEY_R))
-        p.pos = glm::vec3(0.0f, 50.0f, 0.0f);
+    // dec 19 2025 z is up reset 
+        p.pos = glm::vec3(0.0f, 0.0f, 50.0f);
 }

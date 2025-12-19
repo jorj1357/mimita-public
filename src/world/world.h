@@ -9,6 +9,16 @@
  * so collisions work 
  */
 
+// dec 19 2025
+/*
+// Coordinate system (engine-wide):
+// X = right
+// Y = forward
+// Z = up
+// Blender exports are already Z-up.
+// No basis conversion anywhere.
+*/
+
 #pragma once
 
 #include <vector>

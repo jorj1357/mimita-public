@@ -56,11 +56,27 @@ static void addSphere(
             float p0 = u0 * glm::two_pi<float>();
             float p1 = u1 * glm::two_pi<float>();
 
-            glm::vec3 a = center + r * glm::vec3(sin(t0)*cos(p0), cos(t0), sin(t0)*sin(p0));
-            glm::vec3 b = center + r * glm::vec3(sin(t0)*cos(p1), cos(t0), sin(t0)*sin(p1));
-            glm::vec3 c = center + r * glm::vec3(sin(t1)*cos(p1), cos(t1), sin(t1)*sin(p1));
-            glm::vec3 d = center + r * glm::vec3(sin(t1)*cos(p0), cos(t1), sin(t1)*sin(p0));
-
+        // dec 19 2025 z is up now 
+        glm::vec3 a = center + r * glm::vec3(
+            sin(t0)*cos(p0),
+            sin(t0)*sin(p0),
+            cos(t0)
+        );
+        glm::vec3 b = center + r * glm::vec3(
+            sin(t0)*cos(p1),
+            sin(t0)*sin(p1),
+            cos(t0)
+        );
+        glm::vec3 c = center + r * glm::vec3(
+            sin(t1)*cos(p1),
+            sin(t1)*sin(p1),
+            cos(t1)
+        );
+        glm::vec3 d = center + r * glm::vec3(
+            sin(t1)*cos(p0),
+            sin(t1)*sin(p0),
+            cos(t1)
+        );
             addQuad(out, a,b,c,d, tex);
         }
     }
