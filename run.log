@@ -1,8 +1,11 @@
-MAP AABB min(-74.168091 -4.519485 -89.403542) max(66.901611 76.761406 89.872856)
-[WORLD] Loaded 35 blocks, 8 spheres from assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json
-[WORLD] chunks=39 blocks=35 spheres=8
+MAIN START
 OpenGL version: 3.3.0 - Build 31.0.101.4502
 Renderer initialized successfully.
 Loaded 11 textures.
-Window pointer: 000001202b0d5de0
-Loading map...
+loaded renderr
+[WORLD] Loaded 35 blocks, 8 spheres from assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json
+[WORLD] chunks=39 blocks=35 spheres=8
+[WORLD] chunks=39 blocks=35 spheres=8
+loaded world
+loaded world mesh
+loaded plr

@@ -20,7 +20,7 @@ struct Renderer {
     void drawCube(const glm::vec3& pos, const glm::mat4& view, const glm::mat4& proj);
     void drawCubeColored(const glm::vec3& pos, const glm::vec3& color,
                          const glm::mat4& view, const glm::mat4& proj);
-    void drawGround(const glm::mat4& view, const glm::mat4& proj);
+    // void drawGround(const glm::mat4& view, const glm::mat4& proj);
     void endFrame();
     bool shouldClose();
     void shutdown();

@@ -289,23 +289,23 @@ void Renderer::drawDebugSphere(
 // todo understand why this goes here nov 6 2025
 extern GLuint groundTex;  // use the one loaded in main.cpp
 
-void Renderer::drawGround(const glm::mat4& view, const glm::mat4& proj) {
-    glUseProgram(shaderProgram);
-    glm::mat4 model(1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"model"),1,GL_FALSE,&model[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"view"),1,GL_FALSE,&view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"projection"),1,GL_FALSE,&proj[0][0]);
+// void Renderer::drawGround(const glm::mat4& view, const glm::mat4& proj) {
+//     glUseProgram(shaderProgram);
+//     glm::mat4 model(1.0f);
+//     glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"model"),1,GL_FALSE,&model[0][0]);
+//     glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"view"),1,GL_FALSE,&view[0][0]);
+//     glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"projection"),1,GL_FALSE,&proj[0][0]);
 
-    glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), true);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, groundTex);
-    glUniform1i(glGetUniformLocation(shaderProgram,"tex"), 0);
+//     glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), true);
+//     glActiveTexture(GL_TEXTURE0);
+//     glBindTexture(GL_TEXTURE_2D, groundTex);
+//     glUniform1i(glGetUniformLocation(shaderProgram,"tex"), 0);
 
-    glBindVertexArray(groundVAO);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+//     glBindVertexArray(groundVAO);
+//     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-    glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), false);
-}
+//     glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), false);
+// }
 
 void drawText2D(const char* text, float x, float y, float scale)
 {
