@@ -14,14 +14,15 @@
 #include "physics.h"
 #include "physics-types.h"
 #include "physics/collision-capsule-aabb.h"
+#include "physics/collision-capsule-obb.h"
 #include "physics/config.h"
 // #include "collision-capsule-triangle.h"
 #include "world/world.h"
+#include "world/world-mesh.h"
 #include "../camera.h"
 #include "glm/glm.hpp"
 #include <vector>
 #include <cstdio>
-#include "world/world-mesh.cpp" // i know its n ot a header ughhh
 
 // do we really define this here or no 
 static Capsule playerCapsule(const Player& p)
@@ -106,15 +107,26 @@ void updatePhysics(
                 b->size.y
             ) * BLOCK_PHYS_MULT;
 
-            glm::vec3 newMove = collideCapsuleAABBMove(
+            glm::mat3 rot =
+                glm::mat3(
+                    glm::rotate(glm::mat4(1.0f), glm::radians(b->rot.z), glm::vec3(0,0,1)) *
+                    glm::rotate(glm::mat4(1.0f), glm::radians(b->rot.y), glm::vec3(0,1,0)) *
+                    glm::rotate(glm::mat4(1.0f), glm::radians(b->rot.x), glm::vec3(1,0,0))
+                );
+
+            glm::vec3 newMove = collideCapsuleOBBMove(
                 cap0,
                 resolvedMove,
                 boxCenter,
-                boxSize,
+                boxSize * 0.5f,
+                rot,
                 p.onGround
             );
 
-            static FILE* f = fopen("run.log", "w");
+            static FILE* f = nullptr;
+            if (!f) {
+                f = fopen("run.log", "w");
+            }
 
             fprintf(
                 f,

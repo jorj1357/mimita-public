@@ -7,6 +7,7 @@
  */
 
 #include "collision-capsule-aabb.h"
+#include "physics/config.h"
 #include <algorithm>
 #include <cmath>
 
@@ -56,7 +57,7 @@ glm::vec3 collideCapsuleAABBMove(
         ? (bestP - bestQ) / dist
         : glm::vec3(0,1,0);
 
-    if (n.y > 0.6f) onGround = true;
+    if (n.y > MAX_SLOPE_ANGLE) onGround = true;
 
     glm::vec3 out = move + n * pen;
     float into = glm::dot(out, n);

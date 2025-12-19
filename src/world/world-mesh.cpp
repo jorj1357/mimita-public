@@ -8,15 +8,10 @@
  * 1:1 i see it and its real and collidable
  */
 
-#include "world-mesh.h"
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-// BLENDER IS Z-UP
-// MIMITA IS Y-UP
-static inline glm::vec3 toYUp(glm::vec3 p) {
-    return { p.x, p.z, -p.y };
-}
+// this comes after those so we have push_back working 
+#include "world-mesh.h"
 
 static void addQuad(
     std::vector<WorldVertex>& v,
@@ -24,13 +19,13 @@ static void addQuad(
     glm::vec3 c, glm::vec3 d,
     float tex
 ) {
-    v.push_back({a, {0,0}, tex});
-    v.push_back({b, {1,0}, tex});
-    v.push_back({c, {1,1}, tex});
+    v.push_back({a, {0,0}, tex, glm::vec3(0,1,0)});
+    v.push_back({b, {1,0}, tex, glm::vec3(0,1,0)});
+    v.push_back({c, {1,1}, tex, glm::vec3(0,1,0)});
 
-    v.push_back({a, {0,0}, tex});
-    v.push_back({c, {1,1}, tex});
-    v.push_back({d, {0,1}, tex});
+    v.push_back({a, {0,0}, tex, glm::vec3(0,1,0)});
+    v.push_back({c, {1,1}, tex, glm::vec3(0,1,0)});
+    v.push_back({d, {0,1}, tex, glm::vec3(0,1,0)});
 }
 
 static void addSphere(
