@@ -7,6 +7,7 @@
  */
 
 #include "world/world-loader.h"
+#include "world/world.h"
 
 #include <fstream>
 #include <cstdio>
@@ -29,35 +30,53 @@ bool loadWorldFromJSON(World& world, const char* path)
     json j;
     f >> j;
 
-    for (auto& b : j["blocks"]) {
-        world.blocks.push_back({
-            glm::vec3(
-                b["position"][0],
-                b["position"][1],
-                b["position"][2]
-            ),
-            glm::vec3(
-                b["size"][0],
-                b["size"][1],
-                b["size"][2]
-            ),
-            glm::vec3(
-                b["rotation"][0],
-                b["rotation"][1],
-                b["rotation"][2]
-            )
-        });
+    for (auto& jb : j["blocks"]) {
+        Block b;
+
+        // 1. read raw JSON values
+        glm::vec3 jsonPos(
+            jb["position"][0],
+            jb["position"][1],
+            jb["position"][2]
+        );
+
+        glm::vec3 jsonRot(
+            jb["rotation"][0],
+            jb["rotation"][1],
+            jb["rotation"][2]
+        );
+
+        glm::vec3 jsonSize(
+            jb["size"][0],
+            jb["size"][1],
+            jb["size"][2]
+        );
+
+        // 2. convert Blender → engine space
+        b.pos  = blenderPosToEngine(jsonPos);
+        b.size = jsonSize;
+
+        glm::vec3 rotDeg = blenderRotToEngine(jsonRot);
+
+        // optional snap (recommended for blocks)
+        rotDeg = glm::round(rotDeg);
+
+        // 3. bake rotation ONCE
+        b.rot = eulerToMat(rotDeg);
+
+        world.blocks.push_back(b);
     }
 
-    for (auto& s : j["spheres"]) {
-        world.spheres.push_back({
-            glm::vec3(
-                s["position"][0],
-                s["position"][1],
-                s["position"][2]
-            ),
-            (float)s["radius"]
-        });
+    for (auto& js : j["spheres"]) {
+        Sphere s;
+        s.pos = blenderPosToEngine(glm::vec3(
+            js["position"][0],
+            js["position"][1],
+            js["position"][2]
+        ));
+        s.radius = (float)js["radius"];
+
+        world.spheres.push_back(s);
     }
 
     printf(

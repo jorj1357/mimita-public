@@ -125,7 +125,8 @@ int main()
     if (!loadWorldFromJSON(
             world,
             // forward slash not back, /, not \, 
-            "assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json"))
+            "assets/maps/json-converts/mimita-rotations-test-v1-converted.json"))
+            // "assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json"))
     {
         return -1;
     }

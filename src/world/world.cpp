@@ -18,55 +18,17 @@
 // Helpers
 // --------------------
 
-static glm::ivec3 chunkCoord(const glm::vec3& p, float size)
-{
-    return glm::ivec3(
-        (int)floor(p.x / size),
-        0,
-        (int)floor(p.z / size)
-    );
-}
-
-static glm::vec3 blenderPosToEngine(const glm::vec3& p)
-{
-    // Blender: X right, Y forward, Z up
-    // Engine:  X right, Y up,      Z forward
-    return glm::vec3(p.x, p.z, -p.y);
-}
-
-static glm::vec3 blenderRotToEngine(const glm::vec3& r)
-{
-    return glm::vec3(r.x, r.z, -r.y);
-}
-
-void World::convertToEngineSpace()
-{
-    for (auto& b : blocks) {
-        b.pos = blenderPosToEngine(b.pos);
-        b.rot = blenderRotToEngine(b.rot);
-    }
-
-    for (auto& s : spheres) {
-        s.pos = blenderPosToEngine(s.pos);
-    }
-}
+// in world.h
 
 // --------------------
 // World methods
 // --------------------
 
 // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
-void World::convertToEngineSpace()
-{
-    for (auto& b : blocks) {
-        b.pos = blenderPosToEngine(b.pos);
-        b.rot = blenderRotToEngine(b.rot);
-    }
-
-    for (auto& s : spheres) {
-        s.pos = blenderPosToEngine(s.pos);
-    }
-}
+// void World::convertToEngineSpace()
+// {
+//     // empty on purpose dec 19 2025 
+// }
 
 void World::rebuildChunks()
 {

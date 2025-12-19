@@ -70,15 +70,10 @@ void buildWorldMesh(
 
     for (const Block& b : world.blocks) {
         glm::vec3 h = b.size * BLOCK_PHYS_MULT;
-        glm::vec3 c = b.pos;
-
-        glm::vec3 r = glm::radians(b.rot);
 
         auto V = [&](float x, float y, float z) {
             glm::vec3 local(x, y, z);
-
-            // need to fix dec 19 2025 
-
+            return b.pos + b.rot * local; // rot is mat3
         };
 
         glm::vec3 p000 = V(-h.x,-h.y,-h.z);
@@ -90,19 +85,14 @@ void buildWorldMesh(
         glm::vec3 p110 = V( h.x, h.y,-h.z);
         glm::vec3 p111 = V( h.x, h.y, h.z);
 
-        // +X
         addQuad(out, p100,p101,p111,p110, b.tex[0]);
-        // -X
         addQuad(out, p000,p010,p011,p001, b.tex[1]);
-        // +Y
         addQuad(out, p010,p110,p111,p011, b.tex[2]);
-        // -Y
         addQuad(out, p000,p001,p101,p100, b.tex[3]);
-        // +Z
         addQuad(out, p001,p011,p111,p101, b.tex[4]);
-        // -Z
         addQuad(out, p000,p100,p110,p010, b.tex[5]);
     }
+
     for (const Sphere& s : world.spheres) {
         addSphere(out, s.pos, s.radius, s.tex);
     }
