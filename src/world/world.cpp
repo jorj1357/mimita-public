@@ -31,19 +31,30 @@ static glm::ivec3 chunkCoord(const glm::vec3& p, float size)
 // World methods
 // --------------------
 
+void World::convertToEngineSpace()
+{
+    for (auto& b : blocks) {
+        b.pos = toYUp(b.pos);
+        // b.rot stays the same if it's already degrees
+        // size usually stays the same
+    }
+
+    for (auto& s : spheres) {
+        s.pos = toYUp(s.pos);
+    }
+}
+
 void World::rebuildChunks()
 {
     chunks.clear();
 
     for (auto& b : blocks) {
-        glm::vec3 pe = toYUp(b.pos);                // <-- key fix
-        glm::ivec3 c = chunkCoord(pe, chunkSize);
+        glm::ivec3 c = chunkCoord(b.pos, chunkSize);
         chunks[c].blocks.push_back(&b);
     }
 
     for (auto& s : spheres) {
-        glm::vec3 pe = toYUp(s.pos);                // <-- key fix
-        glm::ivec3 c = chunkCoord(pe, chunkSize);
+        glm::ivec3 c = chunkCoord(s.pos, chunkSize);
         chunks[c].spheres.push_back(&s);
     }
 

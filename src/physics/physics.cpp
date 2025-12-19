@@ -96,9 +96,6 @@ void updatePhysics(
     // bool wasOnGround = p.onGround;
     Capsule cap0 = playerCapsule(p);
 
-    // convert capsule to engine space
-    cap0.a = toYUp(cap0.a);
-    cap0.b = toYUp(cap0.b);
     glm::vec3 resolvedMove = move;
     p.onGround = false; // start false for this frame
 
@@ -106,7 +103,8 @@ void updatePhysics(
     for (int pass = 0; pass < 3; pass++) {
         for (Block* b : nearbyBlocks) {
 
-            glm::vec3 boxCenter = toYUp(b->pos);
+            // REMOVE toYUp in phsics none its only in 1 file 
+            glm::vec3 boxCenter = b->pos;
             glm::vec3 boxSize   = glm::vec3(
                 b->size.x,
                 b->size.z,

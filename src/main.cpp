@@ -130,6 +130,10 @@ int main()
         return -1;
     }
 
+    // dec 18 2025 SINGLE SOURCE OF TRUTH
+    // PLZ ONLY ONE toYUp CALL REPO WIDE 
+    world.convertToEngineSpace();
+
     world.rebuildChunks();
     printf("loaded world\n");
 

@@ -85,19 +85,17 @@ void buildWorldMesh(
         glm::mat3 rot = C * Rb * glm::transpose(C);
 
         auto V = [&](float x, float y, float z) {
-            // local in Blender
             glm::vec3 local(x, y, z);
 
-            // convert local vector to engine basis
+            // convert local Blender-space offset to engine basis
+            // basisToYUp() converts local mesh axes, not world position
             glm::vec3 localEngine = basisToYUp() * local;
 
             // rotate in engine space
             glm::vec3 rotated = rot * localEngine;
 
-            // translate in engine space
-            glm::vec3 centerEngine = toYUp(c);
-
-            return centerEngine + rotated;
+            // translate using already-engine-space position
+            return c + rotated;
         };
 
         glm::vec3 p000 = V(-h.x,-h.y,-h.z);
@@ -123,6 +121,6 @@ void buildWorldMesh(
         addQuad(out, p000,p100,p110,p010, b.tex[5]);
     }
     for (const Sphere& s : world.spheres) {
-        addSphere(out, toYUp(s.pos), s.radius, s.tex);
+        addSphere(out, s.pos, s.radius, s.tex);
     }
 }

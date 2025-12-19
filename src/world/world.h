@@ -73,6 +73,9 @@ struct World {
         chunks.clear();
     }
 
+    // import normalization toYUp kinda (ONE TIME ONLY)
+    void convertToEngineSpace(); 
+
     // chunking
     void rebuildChunks();
 
