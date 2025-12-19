@@ -37,6 +37,10 @@ inline float PLAYER_RADIUS = 0.35f * PHYS_MULT;
 
 inline float MAX_SLOPE_ANGLE = 0.5f;
 
+// dec 18 2025
+// json loading stuff
+inline float BLOCK_PHYS_MULT = 0.5f;
+
 // how deep
 // e.g. 0.5f = im alll up in there
 // 0.01f = if im a LIL in there stop. 

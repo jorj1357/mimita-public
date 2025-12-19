@@ -73,7 +73,7 @@ void buildWorldMesh(
     out.clear();
 
     for (const Block& b : world.blocks) {
-        glm::vec3 h = b.size * PHYS_MULT;
+        glm::vec3 h = b.size * BLOCK_PHYS_MULT;
         glm::vec3 c = b.pos;
 
         // rotation in radians
