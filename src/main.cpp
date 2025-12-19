@@ -12,6 +12,7 @@
  */
 
 #include "world/world-loader.h"
+#include "world/world-mesh.h"
 
 #define GL_SILENCE_DEPRECATION
 #define GLFW_INCLUDE_NONE
@@ -93,12 +94,39 @@ int main() {
             world,
             // "assets/maps/json-converts/mimita-simple-collisions-apartment-v3-converted.json"
             "assets/maps/json-converts/mimita-block-sphere-limit-v1-converted.json"
-        )) {
-        // goes here? idk dec 18 2025 
-        world.rebuildChunks();
+        )) { 
         return -1;
     }
 
+    world.rebuildChunks();
+
+    std::vector<WorldVertex> worldVerts;
+    buildWorldMesh(world, worldVerts);
+
+    GLuint worldVAO, worldVBO;
+    glGenVertexArrays(1, &worldVAO);
+    glGenBuffers(1, &worldVBO);
+
+    glBindVertexArray(worldVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, worldVBO);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        worldVerts.size() * sizeof(WorldVertex),
+        worldVerts.data(),
+        GL_STATIC_DRAW
+    );
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(
+        2, 2, GL_FLOAT, GL_FALSE,
+        sizeof(WorldVertex),
+        (void*)offsetof(WorldVertex, uv)
+    );
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
 
     Renderer renderer(800, 600, "mimita.exe");
     gRenderer = &renderer;
@@ -140,7 +168,8 @@ int main() {
 
     // apartments first real map i think
     // first REAL map dec 18 2025 ugh
-    Mesh map = loadOBJ("assets/maps/mimita-apartments-final-v2.obj");
+    // no maps plz 
+    // Mesh map = loadOBJ("assets/maps/mimita-apartments-final-v2.obj");
 
     // ---------------------
     // map picker section end  
@@ -155,24 +184,24 @@ int main() {
     mapTransform = glm::translate(mapTransform, glm::vec3(0.0f));
     mapTransform = glm::rotate(mapTransform, 0.0f, glm::vec3(0,1,0));
 
-    for (auto& v : map.verts) {
-        glm::vec4 p = mapTransform * glm::vec4(v.pos, 1.0f);
-        v.pos = glm::vec3(p);
-    }
+    // for (auto& v : map.verts) {
+    //     glm::vec4 p = mapTransform * glm::vec4(v.pos, 1.0f);
+    //     v.pos = glm::vec3(p);
+    // }
 
-        glm::vec3 min(1e9f), max(-1e9f);
-    for (auto& v : map.verts) {
-        min = glm::min(min, v.pos);
-        max = glm::max(max, v.pos);
-    }
-    fprintf(stderr, "MAP AABB min(%f %f %f) max(%f %f %f)\n",
-            min.x, min.y, min.z, max.x, max.y, max.z);
+    //     glm::vec3 min(1e9f), max(-1e9f);
+    // for (auto& v : map.verts) {
+    //     min = glm::min(min, v.pos);
+    //     max = glm::max(max, v.pos);
+    // }
+    // fprintf(stderr, "MAP AABB min(%f %f %f) max(%f %f %f)\n",
+    //         min.x, min.y, min.z, max.x, max.y, max.z);
 
-    if (map.verts.empty()) {
-        fprintf(stderr, "Map failed to load or has 0 verts.\n");
-        return -1;
-    }
-    GLuint mapVAO = createMapVAO(map);
+    // if (map.verts.empty()) {
+    //     fprintf(stderr, "Map failed to load or has 0 verts.\n");
+    //     return -1;
+    // }
+    // GLuint mapVAO = createMapVAO(map);
     
     // NOW we do world chunking ...? dec 17 2025
     // world.buildFromMesh(map);
@@ -236,7 +265,7 @@ int main() {
         // Right before calling drawMap(...) in main.cpp, add:
         glUniform1i(glGetUniformLocation(shaderProgram, "useTex"), true);
         glUniform1i(glGetUniformLocation(shaderProgram, "tex"), 0);
-        drawMap(mapVAO, map.verts.size());
+        // drawMap(mapVAO, map.verts.size());
 
         glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), false);
         glBindVertexArray(0);
