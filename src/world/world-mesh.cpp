@@ -76,30 +76,27 @@ void buildWorldMesh(
         glm::vec3 h = b.size * BLOCK_PHYS_MULT;
         glm::vec3 c = b.pos;
 
-        // rotation in radians
+        // rotation in radians (Blender space)
         glm::vec3 r = glm::radians(b.rot);
 
-        // build rotation matrix (XYZ order)
         glm::mat4 R(1.0f);
-        R = glm::rotate(R, r.x, glm::vec3(1,0,0));
-        R = glm::rotate(R, r.y, glm::vec3(0,1,0));
-        R = glm::rotate(R, r.z, glm::vec3(0,0,1));
+        // Blender applies rotations Z -> Y -> X
+        R = glm::rotate(R, r.z, glm::vec3(0,0,1)); // Z
+        R = glm::rotate(R, r.y, glm::vec3(0,1,0)); // Y
+        R = glm::rotate(R, r.x, glm::vec3(1,0,0)); // X
 
         auto V = [&](float x, float y, float z) {
-            // local cube point (Blender space)
+            // Blender-local vertex
             glm::vec3 local(x, y, z);
 
-            // convert local point to engine space FIRST
-            local = toYUp(local);
-
-            // rotate in engine space
+            // rotate in Blender space
             glm::vec3 rotated = glm::vec3(R * glm::vec4(local, 1.0f));
 
-            // convert center once
-            glm::vec3 center = toYUp(c);
+            // translate in Blender space
+            glm::vec3 worldBlender = c + rotated;
 
-            // translate
-            return center + rotated;
+            // convert ONCE to engine space
+            return toYUp(worldBlender);
         };
 
         glm::vec3 p000 = V(-h.x,-h.y,-h.z);
