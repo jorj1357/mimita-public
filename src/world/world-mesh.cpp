@@ -80,16 +80,15 @@ void buildWorldMesh(
         Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.y, {0,1,0})) * Rb;
         Rb = glm::mat3(glm::rotate(glm::mat4(1.0f), r.x, {1,0,0})) * Rb;
 
-        // convert to engine space
-        glm::mat3 C  = basisToYUp();
+        // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+        // glm::mat3 C  = basisToYUp();
         glm::mat3 rot = C * Rb * glm::transpose(C);
 
         auto V = [&](float x, float y, float z) {
             glm::vec3 local(x, y, z);
 
-            // convert local Blender-space offset to engine basis
-            // basisToYUp() converts local mesh axes, not world position
-            glm::vec3 localEngine = basisToYUp() * local;
+            // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+            // glm::vec3 localEngine = basisToYUp() * local;
 
             // rotate in engine space
             glm::vec3 rotated = rot * localEngine;

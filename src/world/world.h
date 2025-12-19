@@ -73,7 +73,8 @@ struct World {
         chunks.clear();
     }
 
-    // import normalization toYUp kinda (ONE TIME ONLY)
+    // toYUp THE ONLY CALL OF toYUp, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+    // this is allowed because it defines the function for world.cpp AND ONLY WORLD.CPP TO USE
     void convertToEngineSpace(); 
 
     // chunking

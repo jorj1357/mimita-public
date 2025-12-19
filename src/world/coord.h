@@ -9,22 +9,23 @@
  #pragma once
 #include <glm/glm.hpp>
 
-// Blender Z-up -> Engine Y-up
-static inline glm::vec3 toYUp(const glm::vec3& p) {
-    return { p.x, p.z, -p.y };
-}
+// toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+// static inline glm::vec3 toYUp(const glm::vec3& p) {
+//     return { p.x, p.z, -p.y };
+// }
 
-// sizes: swap Y/Z, no sign flip
-static inline glm::vec3 sizeToYUp(const glm::vec3& s) {
-    return { s.x, s.z, s.y };
-}
+// toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+// static inline glm::vec3 sizeToYUp(const glm::vec3& s) {
+//     return { s.x, s.z, s.y };
+// }
 
+// toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
 // basis matrix for rotation conversion (Blender -> Engine)
-static inline glm::mat3 basisToYUp() {
-    // maps (x,y,z) -> (x,z,-y)
-    return glm::mat3(
-        1,  0,  0,
-        0,  0, -1,
-        0,  1,  0
-    );
-}
+// static inline glm::mat3 basisToYUp() {
+//     // maps (x,y,z) -> (x,z,-y)
+//     return glm::mat3(
+//         1,  0,  0,
+//         0,  0, -1,
+//         0,  1,  0
+//     );
+// }

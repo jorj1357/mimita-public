@@ -103,13 +103,13 @@ void updatePhysics(
     for (int pass = 0; pass < 3; pass++) {
         for (Block* b : nearbyBlocks) {
 
-            // REMOVE toYUp in phsics none its only in 1 file 
-            glm::vec3 boxCenter = b->pos;
-            glm::vec3 boxSize   = glm::vec3(
-                b->size.x,
-                b->size.z,
-                b->size.y
-            ) * BLOCK_PHYS_MULT;
+            // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
+            // glm::vec3 boxCenter = b->pos;
+            // glm::vec3 boxSize   = glm::vec3(
+            //     b->size.x,
+            //     b->size.z,
+            //     b->size.y
+            // ) * BLOCK_PHYS_MULT;
 
             glm::mat3 rot =
                 glm::mat3(
@@ -122,7 +122,7 @@ void updatePhysics(
                 cap0,
                 resolvedMove,
                 boxCenter,
-                boxSize * 0.5f,
+                boxSize * 0.5f, // todo dec 19 2025 what are we multiplying by 0.5f for? we have PHYS_MULT in config.h
                 rot,
                 p.onGround
             );
