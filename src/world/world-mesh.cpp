@@ -86,16 +86,20 @@ void buildWorldMesh(
         R = glm::rotate(R, r.z, glm::vec3(0,0,1));
 
         auto V = [&](float x, float y, float z) {
+            // local cube point (Blender space)
             glm::vec3 local(x, y, z);
 
-            // rotate around block center
+            // convert local point to engine space FIRST
+            local = toYUp(local);
+
+            // rotate in engine space
             glm::vec3 rotated = glm::vec3(R * glm::vec4(local, 1.0f));
 
-            // translate to world
-            glm::vec3 worldPos = c + rotated;
+            // convert center once
+            glm::vec3 center = toYUp(c);
 
-            // convert Z-up -> Y-up
-            return toYUp(worldPos);
+            // translate
+            return center + rotated;
         };
 
         glm::vec3 p000 = V(-h.x,-h.y,-h.z);
