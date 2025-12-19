@@ -7,5 +7,5 @@ loaded renderr
 [WORLD] chunks=39 blocks=35 spheres=8
 [WORLD] chunks=39 blocks=35 spheres=8
 loaded world
-loaded world mesh
+loaded world json
 loaded plr
