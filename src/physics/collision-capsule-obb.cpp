@@ -44,7 +44,7 @@ glm::vec3 collideCapsuleOBBMove(
         );
 
     glm::vec3 resolvedWorld = boxRot * resolvedLocal;
-    printf("nLocal = %.2f %.2f %.2f\n", nLocal.x, nLocal.y, nLocal.z);
+    printf("COLLISION OBB nLocal = %.2f %.2f %.2f\n", nLocal.x, nLocal.y, nLocal.z);
 
     return resolvedWorld;
 }

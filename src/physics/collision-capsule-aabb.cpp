@@ -10,6 +10,7 @@
 #include "physics/config.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 static glm::vec3 closestPointOnSegment(
     const glm::vec3& p,
@@ -64,9 +65,19 @@ glm::vec3 collideCapsuleAABBMove(
     glm::vec3 delta = bestCap - bestBox;
     float d2 = glm::dot(delta, delta);
 
-    if (d2 > 0.0f) {
-        float dist = sqrtf(d2);
-        glm::vec3 n = delta / dist;
+    const float EPS = 1e-6f;
+
+    if (d2 <= cap.r * cap.r + EPS) {
+        float dist = sqrtf(glm::max(d2, EPS));
+
+        glm::vec3 n;
+        if (dist > EPS) {
+            n = delta / dist;
+        } else {
+            // Degenerate case: capsule axis inside expanded box
+            // Push up by strongest separating axis (z-up bias)
+            n = glm::vec3(0, 0, 1);
+        }
 
         if (outNormalLocal) *outNormalLocal = n;
 
@@ -82,11 +93,20 @@ glm::vec3 collideCapsuleAABBMove(
 
         if (n.z >= MIN_GROUND_DOT) {
             onGround = true;
+
             glm::vec3 horiz(out.x, out.y, 0.0f);
             horiz -= n * glm::dot(horiz, n);
             out.x = horiz.x;
             out.y = horiz.y;
         }
+
+        printf(
+            "COLLIsion AABB | d2=%.5f dist=%.5f n=(%.2f %.2f %.2f) onGround=%d\n",
+            d2,
+            sqrtf(glm::max(d2, 0.0f)),
+            n.x, n.y, n.z,
+            onGround ? 1 : 0
+        );
 
         return out;
     }

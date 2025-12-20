@@ -141,6 +141,15 @@ void updatePhysics(
             p.vel.z = 0.0f;
             remaining.z = 0.0f;
         }
+
+        printf(
+            "PHYsics collision | onGround=%d velZ=%.3f remZ=%.3f totZ=%.3f\n",
+            p.onGround ? 1 : 0,
+            p.vel.z,
+            remaining.z,
+            totalMove.z
+        );
+
     }
 
     p.pos += totalMove;
