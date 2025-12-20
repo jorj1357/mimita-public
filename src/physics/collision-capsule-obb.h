@@ -10,7 +10,7 @@ but headers and fucntins
 #pragma once
 
 #include <glm/glm.hpp>
-#include "physics-types.h"   // where Capsule is defined
+#include "physics-types.h"
 
 glm::vec3 collideCapsuleOBBMove(
     const Capsule& capWorld,

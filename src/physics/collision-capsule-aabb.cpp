@@ -30,44 +30,44 @@ static glm::vec3 clampPointAABB(
     return glm::clamp(p, c - h, c + h);
 }
 
-glm::vec3 collideCapsuleOBBMove(
-    const Capsule& capWorld,
-    const glm::vec3& moveWorld,
-    const glm::vec3& boxPos,
-    const glm::vec3& boxHalf,
-    const glm::mat3& boxRot,
-    bool& onGround
-) {
-    glm::mat3 invR = glm::transpose(boxRot);
+// glm::vec3 collideCapsuleOBBMove(
+//     const Capsule& capWorld,
+//     const glm::vec3& moveWorld,
+//     const glm::vec3& boxPos,
+//     const glm::vec3& boxHalf,
+//     const glm::mat3& boxRot,
+//     bool& onGround
+// ) {
+//     glm::mat3 invR = glm::transpose(boxRot);
 
-    Capsule capLocal;
-    capLocal.r = capWorld.r;
-    capLocal.a = invR * (capWorld.a - boxPos);
-    capLocal.b = invR * (capWorld.b - boxPos);
+//     Capsule capLocal;
+//     capLocal.r = capWorld.r;
+//     capLocal.a = invR * (capWorld.a - boxPos);
+//     capLocal.b = invR * (capWorld.b - boxPos);
 
-    glm::vec3 moveLocal = invR * moveWorld;
+//     glm::vec3 moveLocal = invR * moveWorld;
 
-    bool hitGroundLocal = false;
-    glm::vec3 nLocal(0,0,0);
+//     bool hitGroundLocal = false;
+//     glm::vec3 nLocal(0,0,0);
 
-    glm::vec3 resolvedLocal =
-        collideCapsuleAABBMove(
-            capLocal,
-            moveLocal,
-            glm::vec3(0.0f),
-            boxHalf * 2.0f,
-            hitGroundLocal,
-            &nLocal
-        );
+//     glm::vec3 resolvedLocal =
+//         collideCapsuleAABBMove(
+//             capLocal,
+//             moveLocal,
+//             glm::vec3(0.0f),
+//             boxHalf * 2.0f,
+//             hitGroundLocal,
+//             &nLocal
+//         );
 
-    // Convert normal back to world and do the REAL ground test (z-up)
-    if (glm::length(nLocal) > 0.00001f) {
-        glm::vec3 nWorld = glm::normalize(boxRot * nLocal);
-        if (glm::dot(nWorld, glm::vec3(0,0,1)) >= MIN_GROUND_DOT) {
-            onGround = true;
-        }
-    }
+//     // Convert normal back to world and do the REAL ground test (z-up)
+//     if (glm::length(nLocal) > 0.00001f) {
+//         glm::vec3 nWorld = glm::normalize(boxRot * nLocal);
+//         if (glm::dot(nWorld, glm::vec3(0,0,1)) >= MIN_GROUND_DOT) {
+//             onGround = true;
+//         }
+//     }
 
-    glm::vec3 resolvedWorld = boxRot * resolvedLocal;
-    return resolvedWorld;
-}
+//     glm::vec3 resolvedWorld = boxRot * resolvedLocal;
+//     return resolvedWorld;
+// }
