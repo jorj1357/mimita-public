@@ -30,44 +30,69 @@ static glm::vec3 clampPointAABB(
     return glm::clamp(p, c - h, c + h);
 }
 
-// glm::vec3 collideCapsuleOBBMove(
-//     const Capsule& capWorld,
-//     const glm::vec3& moveWorld,
-//     const glm::vec3& boxPos,
-//     const glm::vec3& boxHalf,
-//     const glm::mat3& boxRot,
-//     bool& onGround
-// ) {
-//     glm::mat3 invR = glm::transpose(boxRot);
+glm::vec3 collideCapsuleAABBMove(
+    const Capsule& capStart,
+    const glm::vec3& move,
+    const glm::vec3& boxCenter,
+    const glm::vec3& boxSize,
+    bool& onGround,
+    glm::vec3* outNormalLocal
+) {
+    Capsule cap = capStart;
+    cap.a += move;
+    cap.b += move;
 
-//     Capsule capLocal;
-//     capLocal.r = capWorld.r;
-//     capLocal.a = invR * (capWorld.a - boxPos);
-//     capLocal.b = invR * (capWorld.b - boxPos);
+    glm::vec3 half = boxSize * 0.5f;
 
-//     glm::vec3 moveLocal = invR * moveWorld;
+    glm::vec3 bestCap(0.0f);
+    glm::vec3 bestBox(0.0f);
+    float bestD2 = 1e30f;
 
-//     bool hitGroundLocal = false;
-//     glm::vec3 nLocal(0,0,0);
+    // sample along capsule segment
+    const int SAMPLES = 8;
+    for (int i = 0; i < SAMPLES; i++) {
+        float t = i / float(SAMPLES - 1);
+        glm::vec3 p = glm::mix(cap.a, cap.b, t);
 
-//     glm::vec3 resolvedLocal =
-//         collideCapsuleAABBMove(
-//             capLocal,
-//             moveLocal,
-//             glm::vec3(0.0f),
-//             boxHalf * 2.0f,
-//             hitGroundLocal,
-//             &nLocal
-//         );
+        glm::vec3 q = clampPointAABB(p, boxCenter, half);
+        float d2 = glm::dot(p - q, p - q);
 
-//     // Convert normal back to world and do the REAL ground test (z-up)
-//     if (glm::length(nLocal) > 0.00001f) {
-//         glm::vec3 nWorld = glm::normalize(boxRot * nLocal);
-//         if (glm::dot(nWorld, glm::vec3(0,0,1)) >= MIN_GROUND_DOT) {
-//             onGround = true;
-//         }
-//     }
+        if (d2 < bestD2) {
+            bestD2 = d2;
+            bestCap = p;
+            bestBox = q;
+        }
+    }
 
-//     glm::vec3 resolvedWorld = boxRot * resolvedLocal;
-//     return resolvedWorld;
-// }
+    if (bestD2 >= cap.r * cap.r) {
+        if (outNormalLocal) *outNormalLocal = glm::vec3(0.0f);
+        return move;
+    }
+
+    float dist = sqrtf(glm::max(bestD2, 1e-8f));
+    float pen = cap.r - dist;
+
+    glm::vec3 n = (bestCap - bestBox) / dist;
+
+    if (outNormalLocal)
+        *outNormalLocal = n;
+
+    glm::vec3 out = move + n * pen;
+
+    float into = glm::dot(out, n);
+    if (into < 0.0f)
+        out -= n * into;
+
+    // ground test is LOCAL here
+    if (n.z >= MIN_GROUND_DOT) {
+        onGround = true;
+
+        glm::vec3 horiz(out.x, out.y, 0.0f);
+        horiz -= n * glm::dot(horiz, n);
+
+        out.x = horiz.x;
+        out.y = horiz.y;
+    }
+
+    return out;
+}
