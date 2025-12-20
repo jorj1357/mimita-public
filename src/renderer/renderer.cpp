@@ -63,9 +63,15 @@ void main() {
     if (useTex)
         FragColor = texture(tex, TexCoord);
     else
-        FragColor = vec4(color * 1.5, 1.0);
+        FragColor = vec4(color * 0.75, 1.0);
 }
 )";
+
+// dec 19 2025 texture updating 
+// THIS STUFF CONTROLS THE WHITE COLOR STUFF 
+// used to be         FragColor = vec4(color * 1.5, 1.0);
+// now its         FragColor = vec4(color * 0.75, 1.0);
+
 
 static stbtt_bakedchar cdata[96]; // ASCII 32..126
 static GLuint fontTex = 0;

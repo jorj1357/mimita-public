@@ -27,13 +27,16 @@ glm::vec3 collideCapsuleOBBMove(
 
     glm::vec3 moveLocal = invR * moveWorld;
 
+    glm::vec3 nLocal(0.0f);
+
     glm::vec3 resolvedLocal =
         collideCapsuleAABBMove(
             capLocal,
             moveLocal,
             glm::vec3(0.0f),
             boxHalf * 2.0f,
-            onGround
+            onGround,
+            &nLocal
         );
 
     glm::vec3 resolvedWorld = boxRot * resolvedLocal;

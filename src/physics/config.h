@@ -36,7 +36,11 @@ inline float PLAYER_DEPTH  = 0.2f * PHYS_MULT;
 inline float PLAYER_RADIUS = 0.35f * PHYS_MULT;
 
 // DONT CONVERT to radians keep it as (number)f
-inline float MAX_SLOPE_ANGLE = 0.5f;
+// dec 19 2025 nevermind we dont use for some  reason
+// inline float MAX_SLOPE_ANGLE = 0.5f;
+
+// cosine of max walkable slope (~45 degrees)
+inline float MIN_GROUND_DOT = 0.7f;
 
 // dec 18 2025
 // json loading stuff
@@ -49,7 +53,8 @@ inline float BLOCK_PHYS_MULT = 0.5f;
 inline float HOW_DEEP = 0.5f;
 
 // almost 0 
-// because we're werid
+// because we're weird
+// dec 19 2025 todo use this everwhere for consistenet epsilon for the 0.1% improvement it gives
 inline float ALMOST_ZERO = 0.00001f;
 
 // everi map is now in chunks of this size 
@@ -69,9 +74,13 @@ inline float CHUNK_SIZE = 5.0f;
 // its move speed * 20 but we dont have move_speed rn 
 inline float MAX_FALL_SPEED = 20.0f * 20; 
 
-// for blender to map  stuff that isnt broken 
+// for blender to map stuff that isnt broken 
 inline float ROTATION_SNAP = 15.0f;
 inline float POSITION_SNAP = 0.1f;
+
+// grace period testing dec 19 2025 collisions
+inline float COLLISIONS_GRACE_PERIOD = 0.1f;
+
 
 
 

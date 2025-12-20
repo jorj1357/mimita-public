@@ -59,7 +59,7 @@ bool loadWorldFromJSON(World& world, const char* path)
         world.blocks.push_back(b);
     }
 
-    world.finalize();      // converts Euler -> mat3 ONCE
+    world.finalize();      
     world.rebuildChunks(); // builds spatial structure
 
     return true;

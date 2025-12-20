@@ -15,5 +15,6 @@ glm::vec3 collideCapsuleAABBMove(
     const glm::vec3& move,
     const glm::vec3& boxCenter,
     const glm::vec3& boxSize,
-    bool& onGround
+    bool& onGround,
+    glm::vec3* outNormalLocal
 );

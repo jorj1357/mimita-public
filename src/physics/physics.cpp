@@ -93,36 +93,53 @@ void updatePhysics(
     // ----------------------------
     // COLLISION 
     // ----------------------------
-    // bool wasOnGround = p.onGround;
-    Capsule cap0 = playerCapsule(p);
+    Capsule baseCap = playerCapsule(p);
 
-    glm::vec3 resolvedMove = move;
+    p.groundGrace -= dt;
+
     p.onGround = false; // start false for this frame
 
+    // sweeping 
+    float moveLen = glm::length(move);
+    int steps = glm::max(1, (int)ceil(moveLen / PLAYER_RADIUS));
+
     // 3 passes best 
-    for (int pass = 0; pass < 3; pass++) {
-        for (Block* b : nearbyBlocks) {
+    glm::vec3 remaining = move;
+    glm::vec3 totalMove(0.0f);
 
-            // dec 19 2025 
-            // todo fix haunted evil rotation bug and see if its here or not
-            // toYUp THE ONLY CALL OF toYUp, blenderPosToEngine, blenderRotToEngine, convertToEngineSpace, OR ANY OTHER WORLD FLIPPING SHOULD BE IN WORLD.CPP dec 19 2025
-            glm::mat3 rot = b->rot;
-            glm::vec3 boxCenter = b->pos;
-            glm::vec3 boxSize = b->size * BLOCK_PHYS_MULT;
-            glm::vec3 newMove = collideCapsuleOBBMove(
-                cap0,
-                resolvedMove,
-                boxCenter,
-                boxSize * 0.5f, // todo dec 19 2025 what are we multiplying by 0.5f for? we have PHYS_MULT in config.h
-                rot,
-                p.onGround
-            );
+    for (int step = 0; step < steps; step++) {
+        glm::vec3 stepMove = remaining / float(steps - step);
 
-            resolvedMove = newMove;
+        Capsule cap = baseCap;
+        cap.a += totalMove;
+        cap.b += totalMove;
+
+        for (int pass = 0; pass < 3; pass++) {
+            for (Block* b : nearbyBlocks) {
+                glm::vec3 correction = collideCapsuleOBBMove(
+                    cap,
+                    stepMove,
+                    b->pos,
+                    b->size * BLOCK_PHYS_MULT,
+                    b->rot,
+                    p.onGround
+                );
+
+                stepMove = correction;
+            }
+        }
+
+        totalMove += stepMove;
+        remaining -= stepMove;
+
+        if (p.onGround && p.vel.z < 0.0f) {
+            p.groundGrace = COLLISIONS_GRACE_PERIOD;
+            p.vel.z = 0.0f;
+            remaining.z = 0.0f;
         }
     }
 
-    p.pos += resolvedMove;
+    p.pos += totalMove;
 
     // ----------------------------
     // JUMP
