@@ -9,6 +9,7 @@ like csgo
 #include "collision-capsule-obb.h"
 #include "collision-capsule-aabb.h"
 #include <glm/glm.hpp>
+#include <cstdio>
 
 glm::vec3 collideCapsuleOBBMove(
     const Capsule& capWorld,
@@ -34,12 +35,17 @@ glm::vec3 collideCapsuleOBBMove(
             capLocal,
             moveLocal,
             glm::vec3(0.0f),
-            boxHalf * 2.0f,
+            // testing no size mult
+            // dont multiply by 0.5f or 2.0f anywhere but collision capsule aabb
+            boxHalf,
+            // boxHalf * 2.0f,
             onGround,
             &nLocal
         );
 
     glm::vec3 resolvedWorld = boxRot * resolvedLocal;
+    printf("nLocal = %.2f %.2f %.2f\n", nLocal.x, nLocal.y, nLocal.z);
+
     return resolvedWorld;
 }
 

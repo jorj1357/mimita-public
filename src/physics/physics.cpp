@@ -107,6 +107,8 @@ void updatePhysics(
     glm::vec3 remaining = move;
     glm::vec3 totalMove(0.0f);
 
+    // collision loop
+
     for (int step = 0; step < steps; step++) {
         glm::vec3 stepMove = remaining / float(steps - step);
 
@@ -120,7 +122,9 @@ void updatePhysics(
                     cap,
                     stepMove,
                     b->pos,
-                    b->size * BLOCK_PHYS_MULT,
+                    // test no size mult
+                    // b->size * BLOCK_PHYS_MULT,
+                    b->size,
                     b->rot,
                     p.onGround
                 );
@@ -144,6 +148,7 @@ void updatePhysics(
     // ----------------------------
     // JUMP
     // ----------------------------
+    // todo allow holding space to make auto hop 
     static bool lastSpace = false;
     bool spaceNow = glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS;
 

@@ -42,57 +42,56 @@ glm::vec3 collideCapsuleAABBMove(
     cap.a += move;
     cap.b += move;
 
+    // testing no half size mults dec 19 2025
     glm::vec3 half = boxSize * 0.5f;
+    glm::vec3 expandedHalf = half + glm::vec3(cap.r);
 
-    glm::vec3 bestCap(0.0f);
-    glm::vec3 bestBox(0.0f);
-    float bestD2 = 1e30f;
+    // dec 19 2025 todo DONT SAMPLE JUST CHECK THE ENTIRRREEE BLOCK 
+    // Closest point on segment to AABB (no sampling)
+    glm::vec3 segDir = cap.b - cap.a;
+    float segLen2 = glm::dot(segDir, segDir);
 
-    // sample along capsule segment
-    const int SAMPLES = 8;
-    for (int i = 0; i < SAMPLES; i++) {
-        float t = i / float(SAMPLES - 1);
-        glm::vec3 p = glm::mix(cap.a, cap.b, t);
+    float t = 0.0f;
+    if (segLen2 > 0.0f) {
+        glm::vec3 c = clampPointAABB(cap.a, boxCenter, expandedHalf);
+        t = glm::dot(c - cap.a, segDir) / segLen2;
+        t = glm::clamp(t, 0.0f, 1.0f);
+    }
 
-        glm::vec3 q = clampPointAABB(p, boxCenter, half);
-        float d2 = glm::dot(p - q, p - q);
+    glm::vec3 bestCap = cap.a + segDir * t;
+    glm::vec3 bestBox = clampPointAABB(bestCap, boxCenter, expandedHalf);
 
-        if (d2 < bestD2) {
-            bestD2 = d2;
-            bestCap = p;
-            bestBox = q;
+    glm::vec3 delta = bestCap - bestBox;
+    float d2 = glm::dot(delta, delta);
+
+    if (d2 > 0.0f) {
+        float dist = sqrtf(d2);
+        glm::vec3 n = delta / dist;
+
+        if (outNormalLocal) *outNormalLocal = n;
+
+        float pen = cap.r - dist;
+        if (pen <= 0.0f)
+            return move;
+
+        glm::vec3 out = move + n * pen;
+
+        float into = glm::dot(out, n);
+        if (into < 0.0f)
+            out -= n * into;
+
+        if (n.z >= MIN_GROUND_DOT) {
+            onGround = true;
+            glm::vec3 horiz(out.x, out.y, 0.0f);
+            horiz -= n * glm::dot(horiz, n);
+            out.x = horiz.x;
+            out.y = horiz.y;
         }
+
+        return out;
     }
 
-    if (bestD2 >= cap.r * cap.r) {
-        if (outNormalLocal) *outNormalLocal = glm::vec3(0.0f);
-        return move;
-    }
+    if (outNormalLocal) *outNormalLocal = glm::vec3(0.0f);
+    return move;
 
-    float dist = sqrtf(glm::max(bestD2, 1e-8f));
-    float pen = cap.r - dist;
-
-    glm::vec3 n = (bestCap - bestBox) / dist;
-
-    if (outNormalLocal)
-        *outNormalLocal = n;
-
-    glm::vec3 out = move + n * pen;
-
-    float into = glm::dot(out, n);
-    if (into < 0.0f)
-        out -= n * into;
-
-    // ground test is LOCAL here
-    if (n.z >= MIN_GROUND_DOT) {
-        onGround = true;
-
-        glm::vec3 horiz(out.x, out.y, 0.0f);
-        horiz -= n * glm::dot(horiz, n);
-
-        out.x = horiz.x;
-        out.y = horiz.y;
-    }
-
-    return out;
 }
