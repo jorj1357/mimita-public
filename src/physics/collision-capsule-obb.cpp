@@ -9,6 +9,9 @@ like csgo
 #include "collision-capsule-obb.h"
 #include "collision-capsule-aabb.h"
 #include <glm/glm.hpp>
+// debugging
+#include <thread>
+#include <chrono>
 #include <cstdio>
 
 glm::vec3 collideCapsuleOBBMove(
@@ -44,7 +47,6 @@ glm::vec3 collideCapsuleOBBMove(
         );
 
     glm::vec3 resolvedWorld = boxRot * resolvedLocal;
-    printf("COLLISION OBB nLocal = %.2f %.2f %.2f\n", nLocal.x, nLocal.y, nLocal.z);
 
     return resolvedWorld;
 }

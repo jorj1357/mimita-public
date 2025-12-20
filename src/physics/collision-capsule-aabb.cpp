@@ -10,18 +10,23 @@
 #include "physics/config.h"
 #include <algorithm>
 #include <cmath>
+// debugging
+#include <thread>
+#include <chrono>
 #include <cstdio>
 
-static glm::vec3 closestPointOnSegment(
-    const glm::vec3& p,
-    const glm::vec3& a,
-    const glm::vec3& b
-) {
-    glm::vec3 ab = b - a;
-    float t = glm::dot(p - a, ab) / glm::dot(ab, ab);
-    t = glm::clamp(t, 0.0f, 1.0f);
-    return a + ab * t;
-}
+// why unused i dont know but wahteve dec 19 2025 
+
+// static glm::vec3 closestPointOnSegment(
+//     const glm::vec3& p,
+//     const glm::vec3& a,
+//     const glm::vec3& b
+// ) {
+//     glm::vec3 ab = b - a;
+//     float t = glm::dot(p - a, ab) / glm::dot(ab, ab);
+//     t = glm::clamp(t, 0.0f, 1.0f);
+//     return a + ab * t;
+// }
 
 static glm::vec3 clampPointAABB(
     const glm::vec3& p,
@@ -68,6 +73,8 @@ glm::vec3 collideCapsuleAABBMove(
     const float EPS = 1e-6f;
 
     if (d2 <= cap.r * cap.r + EPS) {
+
+
         float dist = sqrtf(glm::max(d2, EPS));
 
         glm::vec3 n;
@@ -99,14 +106,6 @@ glm::vec3 collideCapsuleAABBMove(
             out.x = horiz.x;
             out.y = horiz.y;
         }
-
-        printf(
-            "COLLIsion AABB | d2=%.5f dist=%.5f n=(%.2f %.2f %.2f) onGround=%d\n",
-            d2,
-            sqrtf(glm::max(d2, 0.0f)),
-            n.x, n.y, n.z,
-            onGround ? 1 : 0
-        );
 
         return out;
     }

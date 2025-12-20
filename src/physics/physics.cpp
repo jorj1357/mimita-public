@@ -14,7 +14,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "glm/glm.hpp"
 #include <vector>
+// debugging
+#include <thread>
+#include <chrono>
 #include <cstdio>
+
 #include "physics-debug-movement.h"
 #include "physics.h"
 #include "physics-types.h"
@@ -25,6 +29,7 @@
 #include "world/world.h"
 #include "world/world-mesh.h"
 #include "../camera.h"
+
 
 // dec 19 2025 z is up not y
 static Capsule playerCapsule(const Player& p)
@@ -43,7 +48,6 @@ void updatePhysics(
     float dt,
     const Camera& cam)
 {
-
     // prevent phisics calc from crashing everthing and killing us 
     dt = glm::min(dt, 0.033f);
 
@@ -110,6 +114,7 @@ void updatePhysics(
     // collision loop
 
     for (int step = 0; step < steps; step++) {
+
         glm::vec3 stepMove = remaining / float(steps - step);
 
         Capsule cap = baseCap;
@@ -128,7 +133,7 @@ void updatePhysics(
                     b->rot,
                     p.onGround
                 );
-
+                
                 stepMove = correction;
             }
         }
@@ -141,14 +146,6 @@ void updatePhysics(
             p.vel.z = 0.0f;
             remaining.z = 0.0f;
         }
-
-        printf(
-            "PHYsics collision | onGround=%d velZ=%.3f remZ=%.3f totZ=%.3f\n",
-            p.onGround ? 1 : 0,
-            p.vel.z,
-            remaining.z,
-            totalMove.z
-        );
 
     }
 

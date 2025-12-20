@@ -48,15 +48,27 @@ void World::rebuildChunks()
     chunks.clear();
 
     for (auto& b : blocks) {
-        glm::ivec3 c = chunkCoord(b.pos, chunkSize);
-        chunks[c].blocks.push_back(&b);
+
+        glm::vec3 half = b.size * 0.5f;
+
+        glm::vec3 minP = b.pos - half;
+        glm::vec3 maxP = b.pos + half;
+
+        glm::ivec3 c0 = chunkCoord(minP, chunkSize);
+        glm::ivec3 c1 = chunkCoord(maxP, chunkSize);
+
+        for (int x = c0.x; x <= c1.x; x++)
+        for (int y = c0.y; y <= c1.y; y++) {
+            glm::ivec3 c(x, y, 0);
+            chunks[c].blocks.push_back(&b);
+
+        }
     }
 
     for (auto& s : spheres) {
         glm::ivec3 c = chunkCoord(s.pos, chunkSize);
         chunks[c].spheres.push_back(&s);
     }
-
 }
 
 // dec 19 2025 todo understand why const 
@@ -91,6 +103,8 @@ void World::getNearby(
             it->second.spheres.end()
         );
     }
+    
+
 }
 
 void World::finalize()
