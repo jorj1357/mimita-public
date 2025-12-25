@@ -30,8 +30,9 @@
 #include <ctime>
 #include <vector>
 
-// Local headers
+// Local headers alphabetical order 
 #include "camera.h"
+#include "debug/debug-visuals.h"
 #include "entities/enemy.h"
 #include "entities/player.h"
 #include "map/map_common.h"
@@ -39,18 +40,16 @@
 #include "map/map_render.h"
 #include "map/texture.h"
 #include "map/texture_manager.h"
+#include "physics/config.h"
 #include "physics/physics.h"
 #include "renderer/renderer.h"
 #include "utils/mesh_utils.h"
 #include "weapons/projectile.h"
 #include "weapons/weapon.h"
 
+
 extern Renderer* gRenderer;
 
-// dec 16 2025 use config everwhere 
-#include "physics/config.h"
-#include "physics/config-loader.h"
-#include "debug/debug-status.h"
 
 // -------------------- Globals --------------------
 Renderer* gRenderer = nullptr;
@@ -88,6 +87,8 @@ int main()
 
     if (!renderer.window)
         return -1;
+    
+    DebugVis::init(renderer.window);
 
     TEX.init();
 
@@ -196,6 +197,7 @@ int main()
     while (!renderer.shouldClose())
     {
         float dt = renderer.beginFrame();
+        DebugVis::update();
 
         // ---- Camera ----
         camera.follow(player.pos);
@@ -284,27 +286,6 @@ int main()
             projectiles.end()
         );
 
-<<<<<<< HEAD
-=======
-        // Bind texture to texture unit 0 BEFORE setting sampler uniform (fixes Metal warning)
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, TEX.get(0));
-        
-        // Right before calling drawMap(...) in main.cpp, add:
-        glUniform1i(glGetUniformLocation(shaderProgram, "useTex"), true);
-        glUniform1i(glGetUniformLocation(shaderProgram, "tex"), 0);
-        drawMap(mapVAO, map.verts.size());
-
-        glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), false);
-        glBindVertexArray(0);
-        glUseProgram(0);
-        glBindVertexArray(0);
-        glUseProgram(0);
-
-        // im not a cube... im a mesh
-        // player.cpp has drawcube i think idk
-        // renderer.drawCube(player.pos, view, proj);
->>>>>>> cmake-from-xamspanda
         enemy.draw(renderer, view, proj);
         for (auto& p : projectiles)
             p.draw(renderer, view, proj);

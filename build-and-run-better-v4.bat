@@ -1,4 +1,6 @@
 @echo on
+echo RUNNING FILE: %~f0
+pause
 title Build + Run Mimita (verbose)
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
@@ -6,55 +8,32 @@ cd /d "%~dp0"
 echo.
 echo === [STEP 1] Setting up paths ===
 
-REM Check for environment variables
+set "GPP="
+
 if defined MIMITA_GPP (
     set "GPP=%MIMITA_GPP%"
-) else if defined MINGW_ROOT (
+)
+
+if not defined GPP if defined MINGW_ROOT (
     set "GPP=%MINGW_ROOT%\bin\g++.exe"
-) else (
+)
+
+if not defined GPP (
     echo ERROR: Could not find g++.exe
-    echo Please set one of the following environment variables:
-    echo   MIMITA_GPP - Full path to g++.exe (e.g., C:\mingw64\bin\g++.exe)
-    echo   MINGW_ROOT - Path to MinGW root directory (e.g., C:\mingw64)
+    echo MIMITA_GPP = %MIMITA_GPP%
+    echo MINGW_ROOT = %MINGW_ROOT%
     pause
     exit /b 1
 )
 
-if defined MIMITA_GLFW_INC (
-    set "GLFW_INC=%MIMITA_GLFW_INC%"
-) else if defined GLFW_ROOT (
-    set "GLFW_INC=%GLFW_ROOT%\include"
-) else (
-    echo WARNING: GLFW include directory not found.
-    echo Please set one of the following environment variables:
-    echo   MIMITA_GLFW_INC - Full path to GLFW include directory
-    echo   GLFW_ROOT - Path to GLFW root directory
-    echo Attempting to continue without explicit GLFW include path...
-    set "GLFW_INC="
+if not exist "%GPP%" (
+    echo ERROR: g++.exe not found at:
+    echo %GPP%
+    pause
+    exit /b 1
 )
 
-if defined MIMITA_GLFW_LIB (
-    set "GLFW_LIB=%MIMITA_GLFW_LIB%"
-) else if defined GLFW_ROOT (
-    set "GLFW_LIB=%GLFW_ROOT%\lib-mingw-w64"
-) else (
-    echo WARNING: GLFW library directory not found.
-    echo Please set one of the following environment variables:
-    echo   MIMITA_GLFW_LIB - Full path to GLFW library directory
-    echo   GLFW_ROOT - Path to GLFW root directory
-    echo Attempting to continue without explicit GLFW library path...
-    set "GLFW_LIB="
-)
-
-set "EXT_INC=external\include"
-set "EXT_LIB=external\lib"
-
-echo Using compiler: %GPP%
-if defined GLFW_INC echo GLFW include:   %GLFW_INC%
-if defined GLFW_LIB echo GLFW lib:       %GLFW_LIB%
-echo External include: %EXT_INC%
-echo External lib:     %EXT_LIB%
-echo.
+echo Using compiler: "%GPP%"
 
 echo === [STEP 2] Gathering .cpp files ===
 set SRC_FILES=

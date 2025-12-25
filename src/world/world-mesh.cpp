@@ -21,7 +21,9 @@ static void addQuad(
 ) {
     // are you rotating things
     // dont rotate things
-    // only world.h rotates things with it functions 
+    // only world.h rotates things with it functions
+    // DEC 24 2025 DONT DO PUSH BACK THATS BAD FOR PERFORMANCE
+    // WE NEED THIS TO RUN ON GRANDMAS LAPTOP FROM 1845 BRUH  
     v.push_back({a, {0,0}, tex, glm::vec3(0,1,0)});
     v.push_back({b, {1,0}, tex, glm::vec3(0,1,0)});
     v.push_back({c, {1,1}, tex, glm::vec3(0,1,0)});
