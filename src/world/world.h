@@ -29,6 +29,8 @@
 
 #include "physics/config.h"
 
+struct Triangle;
+
 // todo for jorj figure out what  this does 
 // and how to make cross platform happy for entire whole big fat repo 
 // Hash function for glm::ivec3 to use as key in unordered_map
@@ -100,36 +102,14 @@ struct World {
     std::vector<Sphere> spheres;
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunks;
 
-    // lifecycle
-    void clear() {
-        blocks.clear();
-        spheres.clear();
-        chunks.clear();
-    }
-
-    // chunking
+    void clear();
     void rebuildChunks();
 
-    // queries
     void getNearby(
         const glm::vec3& pos,
         std::vector<Block*>& outBlocks,
         std::vector<Sphere*>& outSpheres
     ) const;
-    void finalize(); 
 
-
-
-struct Chunk
-{
-    std::vector<Triangle> tris;
-};
-
-struct World
-{
-    float chunkSize = 8.0f;
-    std::unordered_map<glm::ivec3, Chunk> chunks;
-
-    void buildFromMesh(const Mesh& mesh);
-    void getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const;
+    void finalize();
 };

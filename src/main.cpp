@@ -46,6 +46,8 @@
 #include "utils/mesh_utils.h"
 #include "weapons/projectile.h"
 #include "weapons/weapon.h"
+#include "world/world-loader.h"
+#include "world/world-mesh.h"
 
 
 extern Renderer* gRenderer;
