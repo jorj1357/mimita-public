@@ -1,11 +1,10 @@
 // C:\important\go away v5\s\mimita-v5\src\camera.h
 
 #pragma once
-#include <glad/glad.h>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
-#include <GLFW/glfw3.h>
 
 /**
  * dec 3 2025 todo backup

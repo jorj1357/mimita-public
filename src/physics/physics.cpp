@@ -11,6 +11,8 @@
 
 // dec 19 2025 we are z up not y up
 
+#define GLFW_INCLUDE_NONE
+
 #include <glm/gtc/matrix_transform.hpp>
 #include "glm/glm.hpp"
 #include <vector>
