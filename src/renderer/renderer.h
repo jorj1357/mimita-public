@@ -34,6 +34,13 @@ struct Renderer {
         const glm::mat4& view,
         const glm::mat4& proj);
 
+    void drawLine(
+        const glm::vec3& a,
+        const glm::vec3& b,
+        const glm::vec3& color,
+        const glm::mat4& view,
+        const glm::mat4& proj
+    );
 };
 
 // Add this after the class (not inside)

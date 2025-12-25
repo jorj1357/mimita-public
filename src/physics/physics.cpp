@@ -19,17 +19,20 @@
 #include <chrono>
 #include <cstdio>
 
+#include "debug/debug-visuals.h"
 #include "physics-debug-movement.h"
 #include "physics.h"
 #include "physics-types.h"
 #include "physics/collision-capsule-aabb.h"
 #include "physics/collision-capsule-obb.h"
 #include "physics/config.h"
-// #include "collision-capsule-triangle.h"
 #include "world/world.h"
 #include "world/world-mesh.h"
 #include "../camera.h"
+#include "renderer/renderer.h"
 
+extern Renderer* gRenderer;
+extern Camera*   gActiveCamera;
 
 // dec 19 2025 z is up not y
 static Capsule playerCapsule(const Player& p)
@@ -163,6 +166,20 @@ void updatePhysics(
         p.vel.z = PHYS.jumpStrength;
         p.onGround = false;
     }
-
+    
+   
     lastSpace = spaceNow;
+
+    if (DebugVis::enabled()) {
+        const auto& C = DebugVis::colors();
+        Capsule cap = playerCapsule(p);
+
+        gRenderer->drawLine(
+            cap.a,
+            cap.b,
+            C.playerCapsule,
+            gActiveCamera->getView(),
+            gActiveCamera->getProj(800, 600)
+        );
+    }
 }

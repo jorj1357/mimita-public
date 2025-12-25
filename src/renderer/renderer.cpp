@@ -431,6 +431,46 @@ void Renderer::drawGridCell(const glm::vec3& pos, const glm::mat4& view, const g
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
+void Renderer::drawLine(
+    const glm::vec3& a,
+    const glm::vec3& b,
+    const glm::vec3& color,
+    const glm::mat4& view,
+    const glm::mat4& proj)
+{
+    float verts[] = {
+        a.x, a.y, a.z,
+        b.x, b.y, b.z
+    };
+
+    static GLuint vao = 0, vbo = 0;
+    if (!vao) {
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(verts), nullptr, GL_DYNAMIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+        glEnableVertexAttribArray(0);
+    }
+
+    glUseProgram(shaderProgram);
+
+    glm::mat4 model(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"model"),1,GL_FALSE,&model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"view"),1,GL_FALSE,&view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram,"projection"),1,GL_FALSE,&proj[0][0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram,"color"),1,&color[0]);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+    glDrawArrays(GL_LINES, 0, 2);
+
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
 void Renderer::endFrame() {
     glfwSwapBuffers(window);
     glfwPollEvents();

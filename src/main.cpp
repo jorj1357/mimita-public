@@ -131,6 +131,7 @@ int main()
     }
 
     world.rebuildChunks();
+   
     printf("loaded world\n");
 
     // -------- Build world mesh --------
@@ -252,6 +253,44 @@ int main()
             camera,
             playerTex
         );
+
+        if (DebugVis::enabled()) {
+            const auto& C = DebugVis::colors();
+
+            glm::vec3 start = camera.pos;
+            glm::vec3 end   = camera.pos + camera.front * 2.0f;
+
+            gRenderer->drawLine(
+                start,
+                end,
+                C.lookVector,
+                view,
+                proj
+            );
+        }
+        
+        if (DebugVis::enabled()) {
+            const auto& C = DebugVis::colors();
+
+            for (auto& [coord, chunk] : world.chunks) {
+                glm::vec3 min(
+                    coord.x * world.chunkSize,
+                    coord.y * world.chunkSize,
+                    0.0f
+                );
+
+                glm::vec3 max = min + glm::vec3(
+                    world.chunkSize,
+                    world.chunkSize,
+                    CHUNK_SIZE
+                );
+
+                // draw a few edges only (keep it simple)
+                gRenderer->drawLine(min, {max.x, min.y, min.z}, C.worldChunks, view, proj);
+                gRenderer->drawLine(min, {min.x, max.y, min.z}, C.worldChunks, view, proj);
+            }
+        }
+
 
         // ---- HUD / Debug ----
         // if (gDebugStatusTimer > 0.0f)
