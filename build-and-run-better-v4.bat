@@ -52,12 +52,14 @@ if defined GLFW_INC set "INCLUDE_FLAGS=%INCLUDE_FLAGS% -I%GLFW_INC%"
 set "LIB_FLAGS=-L%EXT_LIB%"
 if defined GLFW_LIB set "LIB_FLAGS=%LIB_FLAGS% -L%GLFW_LIB%"
 
-"%GPP%" !SRC_FILES! src\glad.c ^
- -std=c++17 -O2 -Wall ^
- %INCLUDE_FLAGS% ^
- %LIB_FLAGS% ^
- -lglfw3dll -lopengl32 -lgdi32 -luser32 -ldwmapi ^
- -o mimita.exe -mconsole
+rem I KNOW THIS IS NOT CROSS PLATFORM FRIENDLIES AT ALL IM SORRT IN ADVANCE JORJ dec242025
+"C:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\bin\g++.exe" ^
+!SRC_FILES! src\glad.c ^
+-std=c++17 -O2 -Wall ^
+-Iinclude -Isrc ^
+-LC:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\lib ^
+-lglfw3 -lopengl32 -lgdi32 -luser32 -ldwmapi ^
+-o mimita.exe -mconsole
 
 if errorlevel 1 (
     echo.
