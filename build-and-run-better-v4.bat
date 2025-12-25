@@ -57,7 +57,7 @@ rem I KNOW THIS IS NOT CROSS PLATFORM FRIENDLIES AT ALL IM SORRT IN ADVANCE JORJ
 !SRC_FILES! src\glad.c ^
 -std=c++17 -O2 -Wall ^
 -Iinclude -Isrc ^
--LC:\important\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4\mingw64\lib ^
+-LC:\important\glfw-3.4.bin.WIN64\lib-mingw-w64 ^
 -lglfw3 -lopengl32 -lgdi32 -luser32 -ldwmapi ^
 -o mimita.exe -mconsole
 

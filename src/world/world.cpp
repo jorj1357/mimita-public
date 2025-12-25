@@ -107,9 +107,17 @@ void World::getNearby(
 
 }
 
+void World::clear()
+{
+    blocks.clear();
+    spheres.clear();
+    chunks.clear();
+}
+
 void World::finalize()
 {
     for (auto& b : blocks) {
+        // U BETTER NOT frick:)  EVERTHING UP DEC 24 2025 JORJ bc rotations
         b.rot = eulerXYZDegToMat3(b.rotEuler);
     }
 }
