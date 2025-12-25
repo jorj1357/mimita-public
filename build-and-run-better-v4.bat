@@ -1,6 +1,5 @@
 @echo on
 echo RUNNING FILE: %~f0
-pause
 title Build + Run Mimita (verbose)
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
