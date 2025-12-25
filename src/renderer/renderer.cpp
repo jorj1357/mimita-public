@@ -9,16 +9,12 @@ combine with map renderer
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-
-#include "stb_truetype.h"
-
-#include <algorithm>
-#include <vector>
-
-#include "renderer/renderer.h"
+#include <stb_truetype.h>
+#include <cstdio>
+#include <string>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <iostream>
+#include "renderer.h"
+#include "utils/path_utils.h"
 
 static GLuint shaderProgram = 0;
 static GLuint cubeVAO = 0, cubeVBO = 0;
@@ -81,10 +77,27 @@ static void initFont() {
 
     unsigned char ttfBuffer[1 << 20];
     unsigned char tempBitmap[512 * 512];
-    FILE* f = fopen("C:\\Windows\\Fonts\\arial.ttf", "rb");
-    if (!f) return;
-    fread(ttfBuffer, 1, 1 << 20, f);
+    
+    // Find system font using cross-platform utility
+    std::string fontPath = findSystemFont("Arial");
+    if (fontPath.empty()) {
+        fprintf(stderr, "Warning: Could not find system font. Text rendering may not work.\n");
+        return;
+    }
+    
+    FILE* f = fopen(fontPath.c_str(), "rb");
+    if (!f) {
+        fprintf(stderr, "Warning: Could not open font file: %s\n", fontPath.c_str());
+        return;
+    }
+    
+    size_t bytesRead = fread(ttfBuffer, 1, 1 << 20, f);
     fclose(f);
+    
+    if (bytesRead == 0) {
+        fprintf(stderr, "Warning: Font file is empty: %s\n", fontPath.c_str());
+        return;
+    }
 
     stbtt_BakeFontBitmap(ttfBuffer, 0, 32.0f, tempBitmap, 512, 512, 32, 96, cdata);
 
@@ -380,7 +393,7 @@ void drawText2D(const char* text, float x, float y, float scale)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     while (*text) {
-        if (*text >= 32 && *text < 128) {
+        if (static_cast<unsigned char>(*text) >= 32 && static_cast<unsigned char>(*text) <= 128) {
             stbtt_aligned_quad q;
             stbtt_GetBakedQuad(cdata, 512, 512, *text - 32, &x, &y, &q, 1);
 

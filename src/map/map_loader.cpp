@@ -5,12 +5,14 @@
 #include <random>
 #include <ctime>
 #include "texture_manager.h"
+#include "utils/path_utils.h"
 extern TextureManager TEX;
 
 Mesh loadOBJ(const std::string& path) {
+    std::string resolvedPath = resolveAssetPath(path);
     tinyobj::ObjReader reader;
-    if (!reader.ParseFromFile(path)) {
-        throw std::runtime_error("Failed to load OBJ: " + path);
+    if (!reader.ParseFromFile(resolvedPath)) {
+        throw std::runtime_error("Failed to load OBJ: " + resolvedPath + " (resolved from " + path + ")");
     }
 
     const auto& attrib = reader.GetAttrib();

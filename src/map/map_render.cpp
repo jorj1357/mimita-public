@@ -2,8 +2,7 @@
 
 #include "map_common.h"
 #include <glad/glad.h>
-#include "map/texture.h"
-#include "map/texture_manager.h"
+#include "texture_manager.h"
 
 extern TextureManager TEX;
 

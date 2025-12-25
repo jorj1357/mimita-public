@@ -3,6 +3,8 @@
 #pragma once
 #include <glad/glad.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/mat4x4.hpp>
 #include <GLFW/glfw3.h>
 
 /**

@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include "../map/map_common.h"
+#include "map/map_common.h"
 #include <glm/glm.hpp>
 
 inline void computeMeshBounds(const Mesh& mesh, glm::vec3& minOut, glm::vec3& maxOut)

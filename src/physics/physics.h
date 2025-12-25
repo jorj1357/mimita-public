@@ -2,11 +2,10 @@
 
 #pragma once
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include "entities/player.h"
 #include "world/world.h"   // <-- ADD THIS
 #include "map/map_common.h"
-#include "physics/config.h"
-#include <GLFW/glfw3.h>
 
 // const World& world, not const Mesh& map
 // this is defined here and in phsics.cpp need to pick 1 prob this one

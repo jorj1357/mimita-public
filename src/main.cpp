@@ -21,47 +21,35 @@
 #define GL_SILENCE_DEPRECATION
 #define GLFW_INCLUDE_NONE
 
-// -------------------- Core --------------------
+// System/external headers
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <vector>
-#include <algorithm>
-#include <random>
 
-// -------------------- GL / Math --------------------
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-// -------------------- Engine --------------------
-#include "renderer/renderer.h"
+// Local headers
 #include "camera.h"
-
-// -------------------- World --------------------
-#include "world/world.h"
-#include "world/world-loader.h"
-#include "world/world-mesh.h"
-
-// -------------------- Map / Assets --------------------
+#include "entities/enemy.h"
+#include "entities/player.h"
 #include "map/map_common.h"
+#include "map/map_loader.h"
+#include "map/map_render.h"
 #include "map/texture.h"
 #include "map/texture_manager.h"
-#include "map/map_loader.h"
-
-// -------------------- Entities --------------------
-#include "entities/player.h"
-#include "entities/enemy.h"
-#include "weapons/weapon.h"
-#include "weapons/projectile.h"
-
-// -------------------- Physics --------------------
 #include "physics/physics.h"
-#include "physics/config.h"
-
-// -------------------- Utils / Debug --------------------
+#include "renderer/renderer.h"
 #include "utils/mesh_utils.h"
+#include "weapons/projectile.h"
+#include "weapons/weapon.h"
+
+extern Renderer* gRenderer;
+
+// dec 16 2025 use config everwhere 
+#include "physics/config.h"
+#include "physics/config-loader.h"
 #include "debug/debug-status.h"
 
 // -------------------- Globals --------------------
@@ -296,6 +284,27 @@ int main()
             projectiles.end()
         );
 
+<<<<<<< HEAD
+=======
+        // Bind texture to texture unit 0 BEFORE setting sampler uniform (fixes Metal warning)
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, TEX.get(0));
+        
+        // Right before calling drawMap(...) in main.cpp, add:
+        glUniform1i(glGetUniformLocation(shaderProgram, "useTex"), true);
+        glUniform1i(glGetUniformLocation(shaderProgram, "tex"), 0);
+        drawMap(mapVAO, map.verts.size());
+
+        glUniform1i(glGetUniformLocation(shaderProgram,"useTex"), false);
+        glBindVertexArray(0);
+        glUseProgram(0);
+        glBindVertexArray(0);
+        glUseProgram(0);
+
+        // im not a cube... im a mesh
+        // player.cpp has drawcube i think idk
+        // renderer.drawCube(player.pos, view, proj);
+>>>>>>> cmake-from-xamspanda
         enemy.draw(renderer, view, proj);
         for (auto& p : projectiles)
             p.draw(renderer, view, proj);

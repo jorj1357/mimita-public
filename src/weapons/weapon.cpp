@@ -1,9 +1,9 @@
 // C:\important\go away v5\s\mimita-v5\src\weapons\weapon.cpp
 
-#include <vector>
 #include "weapon.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <vector>
 
 void Weapon::update(float dt) {
     if (timer > 0) timer -= dt;

@@ -1,6 +1,40 @@
 {
     "configurations": [
         {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/external/include",
+                "/opt/homebrew/include",
+                "/opt/homebrew/Cellar/glfw/*/include",
+                "/usr/local/include",
+                "/usr/local/Cellar/glfw/*/include"
+            ],
+            "defines": [
+                "GL_SILENCE_DEPRECATION",
+                "GLFW_INCLUDE_NONE"
+            ],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c17",
+            "cppStandard": "c++23",
+            "intelliSenseMode": "macos-clang-x64",
+            "compileCommands": "${workspaceFolder}/compile_commands.json",
+            "macFrameworkPath": [
+                "/System/Library/Frameworks",
+                "/Library/Frameworks"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "/opt/homebrew/include",
+                    "/usr/local/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        },
+        {
             "name": "Win32",
             "includePath": [
                 "C:/important/quiet/n/mimita-public/mimita-public/include",
@@ -15,16 +49,35 @@
                 "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/include",
                 "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/x86_64-w64-mingw32/include",
                 "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include"
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/external/include",
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/include",
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/x86_64-w64-mingw32/include",
+                "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include",
+                "C:/important/glfw-3.4.bin.WIN64/include",
+                "C:/important/glm-1.0.2",
+                "C:/important/quiet/n/mimita-public/mimita-public/include"
             ],
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE"
+                "_UNICODE",
+                "GL_SILENCE_DEPRECATION",
+                "GLFW_INCLUDE_NONE"
             ],
             "compilerPath": "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/bin/g++.exe",
             "cStandard": "c17",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "windows-gcc-x64"
+            "cppStandard": "c++23",
+            "intelliSenseMode": "windows-gcc-x64",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "C:/important/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r4/mingw64/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
         }
     ],
     "version": 4

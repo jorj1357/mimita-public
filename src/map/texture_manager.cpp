@@ -1,7 +1,7 @@
 // C:\important\go away v5\s\mimita-v5\src\map\texture_manager.cpp
 
 #include "texture_manager.h"
-#include "map/texture.h"
+#include "texture.h"
 #include <iostream>
 
 /*

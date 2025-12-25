@@ -1,7 +1,6 @@
 #include "enemy.h"
 #include <cstdlib>
-#include <ctime>
-#include <glm/gtc/matrix_transform.hpp>
+#include <time.h>
 
 void Enemy::update(float dt) {
     static bool seeded = false;

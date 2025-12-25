@@ -2,7 +2,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
-#include "../renderer/Renderer.h"
+#include "renderer/renderer.h"
 
 struct Enemy {
     glm::vec3 pos{5.0f, 0.5f, 5.0f};

@@ -7,5 +7,6 @@
         "string": "cpp",
         "random": "cpp",
         "cmath": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/Users/Laura/Repos/mimita"
 }

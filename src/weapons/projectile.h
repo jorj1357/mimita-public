@@ -1,6 +1,6 @@
 #pragma once
 #include <glm/glm.hpp>
-#include "../renderer/Renderer.h"
+#include "renderer/renderer.h"
 
 struct Projectile {
     glm::vec3 pos;

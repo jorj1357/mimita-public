@@ -1,6 +1,7 @@
 // C:\important\go away v5\s\mimita-v5\src\map\map_common.h
 
 #pragma once
+// make this cross platform happy friendly
 #include <glm/glm.hpp>
 #include <vector>
 

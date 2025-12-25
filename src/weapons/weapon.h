@@ -1,7 +1,6 @@
 #pragma once
 #include <vector>
 #include <glm/glm.hpp>
-#include "../renderer/Renderer.h"
 #include "projectile.h"
 
 struct Weapon {

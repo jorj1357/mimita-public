@@ -101,4 +101,32 @@ struct World {
         std::vector<Sphere*>& outSpheres
     ) const;
     void finalize(); 
+#include "world-types.h"
+#include "map/map_common.h"
+
+// Hash function for glm::ivec3 to use as key in unordered_map
+namespace std {
+    template<>
+    struct hash<glm::ivec3> {
+        size_t operator()(const glm::ivec3& v) const {
+            size_t h1 = std::hash<int>()(v.x);
+            size_t h2 = std::hash<int>()(v.y);
+            size_t h3 = std::hash<int>()(v.z);
+            return h1 ^ (h2 << 1) ^ (h3 << 2);
+        }
+    };
+}
+
+struct Chunk
+{
+    std::vector<Triangle> tris;
+};
+
+struct World
+{
+    float chunkSize = 8.0f;
+    std::unordered_map<glm::ivec3, Chunk> chunks;
+
+    void buildFromMesh(const Mesh& mesh);
+    void getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const;
 };
