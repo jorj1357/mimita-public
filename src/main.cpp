@@ -168,62 +168,33 @@ int main()
 
     glBindVertexArray(worldVAO);
     glBindBuffer(GL_ARRAY_BUFFER, worldVBO);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        worldVerts.size() * sizeof(WorldVertex),
-        worldVerts.data(),
-        GL_STATIC_DRAW
-    );
-
-    // // position
-    // glVertexAttribPointer(
-    //     0, 3, GL_FLOAT, GL_FALSE,
-    //     sizeof(WorldVertex),
-    //     (void*)offsetof(WorldVertex, pos)
-    // );
-    // glEnableVertexAttribArray(0);
-
-    // // uv
-    // glVertexAttribPointer(
-    //     1, 2, GL_FLOAT, GL_FALSE,
-    //     sizeof(WorldVertex),
-    //     (void*)offsetof(WorldVertex, uv)
-    // );
-    // glEnableVertexAttribArray(1);
-
-    // // texture index
-    // glVertexAttribPointer(
-    //     2, 1, GL_FLOAT, GL_FALSE,
-    //     sizeof(WorldVertex),
-    //     (void*)offsetof(WorldVertex, texIndex)
-    // );
-    // glEnableVertexAttribArray(2);
-
-    // glBindVertexArray(0);
 
     // position
-    // debug test jan 5 2026 
     glVertexAttribPointer(
         0, 3, GL_FLOAT, GL_FALSE,
-        sizeof(Vertex),
-        (void*)offsetof(Vertex, pos)
+        sizeof(WorldVertex),
+        (void*)offsetof(WorldVertex, pos)
     );
     glEnableVertexAttribArray(0);
 
     // uv
     glVertexAttribPointer(
         1, 2, GL_FLOAT, GL_FALSE,
-        sizeof(Vertex),
-        (void*)offsetof(Vertex, uv)
+        sizeof(WorldVertex),
+        (void*)offsetof(WorldVertex, uv)
     );
     glEnableVertexAttribArray(1);
 
-    // texture index (TEMP: force 0)
-    glVertexAttrib1f(2, 0.0f);
+    // texture index
+    glVertexAttribPointer(
+        2, 1, GL_FLOAT, GL_FALSE,
+        sizeof(WorldVertex),
+        (void*)offsetof(WorldVertex, texIndex)
+    );
+    glEnableVertexAttribArray(2);
 
-    // idk wher  put these jan 5 2026 
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE); // temporarily, for sanity
+    glBindVertexArray(0);
+
 
     printf("loaded world json\n");
 
@@ -246,6 +217,11 @@ int main()
     glfwSetCursorPosCallback(renderer.window, mouseCallback);
 
     printf("loaded plr\n");
+
+    // idk wher  put these jan 5 2026 
+    // Put this after context creation, not inside VAO setup:
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE); // temporarily, for sanity
 
     // ==================== LOOP ====================
     while (!renderer.shouldClose())
@@ -291,8 +267,9 @@ int main()
             1, GL_FALSE, &proj[0][0]
         );
 
-        glUniform1i(glGetUniformLocation(shader, "useTex"), false);
-        glUniform3f(glGetUniformLocation(shader, "color"), 0.7f, 0.7f, 0.75f);
+        // debug comment 
+        // glUniform1i(glGetUniformLocation(shader, "useTex"), false);
+        // glUniform3f(glGetUniformLocation(shader, "color"), 0.7f, 0.7f, 0.75f);
 
         glBindVertexArray(worldVAO);
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)worldVerts.size());
