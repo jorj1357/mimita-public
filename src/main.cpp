@@ -57,11 +57,18 @@ extern Renderer* gRenderer;
 Renderer* gRenderer = nullptr;
 Camera*   gActiveCamera = nullptr;
 
+// jan 5 2026 debug test
+// World world;
+// TextureManager TEX;
+
+// Enemy enemy;
+// Weapon weapon;
+
 World world;
 TextureManager TEX;
-
 Enemy enemy;
 Weapon weapon;
+
 std::vector<Projectile> projectiles;
 
 GLuint groundTex = 0;
@@ -81,20 +88,34 @@ int main()
 {
     printf("MAIN START\n");
     fflush(stdout);
+    printf("fflush \n");
     srand((unsigned)time(nullptr));
+    printf("null ptr\n");
 
     // -------- Renderer FIRST --------
+    printf("abt to load renderer \n");
     static Renderer renderer(1200, 800, "mimita.exe");
     gRenderer = &renderer;
 
+    printf("render static load \n");
+    printf("renderer.window = %p\n", (void*)renderer.window);
+    fflush(stdout);
+
     if (!renderer.window)
         return -1;
-    
-    DebugVis::init(renderer.window);
+    printf("render returned -1 \n");
+    printf("tetx init atempt \n");
+
+    // tri this jan 5 2026 
+    glfwMakeContextCurrent(renderer.window);   // ← REQUIRED
 
     TEX.init();
+    printf("tex init works \n");
+
+    // DebugVis::init(renderer.window);
 
     GLuint shader = renderer.getShaderProgram();
+    printf("loaded shaders\n");
 
     glUseProgram(shader);
 
@@ -117,6 +138,7 @@ int main()
 
     // -------- THEN Load world --------
     if (!loadWorldFromJSON(
+            // whi its a asterisk before that fix it idk jan 5 2026 
             world,
             // forward slash not back, /, not \, 
             // mimita-rotations-v3-converted.json
@@ -137,6 +159,8 @@ int main()
     // -------- Build world mesh --------
     std::vector<WorldVertex> worldVerts;
     buildWorldMesh(world, worldVerts);
+            printf("loaded buildworldmesh\n");
+
 
     GLuint worldVAO, worldVBO;
     glGenVertexArrays(1, &worldVAO);
@@ -151,31 +175,55 @@ int main()
         GL_STATIC_DRAW
     );
 
+    // // position
+    // glVertexAttribPointer(
+    //     0, 3, GL_FLOAT, GL_FALSE,
+    //     sizeof(WorldVertex),
+    //     (void*)offsetof(WorldVertex, pos)
+    // );
+    // glEnableVertexAttribArray(0);
+
+    // // uv
+    // glVertexAttribPointer(
+    //     1, 2, GL_FLOAT, GL_FALSE,
+    //     sizeof(WorldVertex),
+    //     (void*)offsetof(WorldVertex, uv)
+    // );
+    // glEnableVertexAttribArray(1);
+
+    // // texture index
+    // glVertexAttribPointer(
+    //     2, 1, GL_FLOAT, GL_FALSE,
+    //     sizeof(WorldVertex),
+    //     (void*)offsetof(WorldVertex, texIndex)
+    // );
+    // glEnableVertexAttribArray(2);
+
+    // glBindVertexArray(0);
+
     // position
+    // debug test jan 5 2026 
     glVertexAttribPointer(
         0, 3, GL_FLOAT, GL_FALSE,
-        sizeof(WorldVertex),
-        (void*)offsetof(WorldVertex, pos)
+        sizeof(Vertex),
+        (void*)offsetof(Vertex, pos)
     );
     glEnableVertexAttribArray(0);
 
     // uv
     glVertexAttribPointer(
         1, 2, GL_FLOAT, GL_FALSE,
-        sizeof(WorldVertex),
-        (void*)offsetof(WorldVertex, uv)
+        sizeof(Vertex),
+        (void*)offsetof(Vertex, uv)
     );
     glEnableVertexAttribArray(1);
 
-    // texture index
-    glVertexAttribPointer(
-        2, 1, GL_FLOAT, GL_FALSE,
-        sizeof(WorldVertex),
-        (void*)offsetof(WorldVertex, texIndex)
-    );
-    glEnableVertexAttribArray(2);
+    // texture index (TEMP: force 0)
+    glVertexAttrib1f(2, 0.0f);
 
-    glBindVertexArray(0);
+    // idk wher  put these jan 5 2026 
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE); // temporarily, for sanity
 
     printf("loaded world json\n");
 
@@ -186,6 +234,9 @@ int main()
 
     GLuint playerVAO = createMapVAO(playerMesh);
     GLuint playerTex = loadTexture("assets/textures/greenwirev1.png");
+
+            printf("loaded plr textrue\n");
+
 
     Player player;
     Camera camera;
@@ -200,6 +251,11 @@ int main()
     while (!renderer.shouldClose())
     {
         float dt = renderer.beginFrame();
+        // DEBUG is it even showing antthing 
+        glViewport(0, 0, 1200, 800);
+        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         DebugVis::update();
 
         // ---- Camera ----
@@ -209,7 +265,11 @@ int main()
         glm::mat4 view = camera.getView();
         // dec 18 2025 these dont match the render window on purpose, 
         // testing stretched res
+        printf("attempt 800 x 600 camera \n");
+
         glm::mat4 proj = camera.getProj(800.0f, 600.0f);
+        printf(" 800 x 600 camera good \n");
+
 
         // ---- Render World ----
         glUseProgram(shader);
@@ -239,9 +299,13 @@ int main()
         glBindVertexArray(0);
 
         glUseProgram(0);
+                printf(" gluseprogram stuff good \n");
+
 
         // ---- Physics ----
         updatePhysics(player, world, renderer.window, dt, camera);
+                        printf(" update phsics good  \n");
+
 
         // ---- Render Player ----
         player.render(
@@ -253,6 +317,9 @@ int main()
             camera,
             playerTex
         );
+        printf(" render plr good  \n");
+
+                printf(" attempt to debug vis enable  \n");
 
         if (DebugVis::enabled()) {
             const auto& C = DebugVis::colors();
@@ -268,7 +335,10 @@ int main()
                 proj
             );
         }
-        
+                printf(" debug vis good  \n");
+
+                        printf(" attempt to debug vis enable 2  \n");
+
         if (DebugVis::enabled()) {
             const auto& C = DebugVis::colors();
 
@@ -290,6 +360,7 @@ int main()
                 gRenderer->drawLine(min, {min.x, max.y, min.z}, C.worldChunks, view, proj);
             }
         }
+        printf(" attempt to debug vis enable GOOD 2  \n");
 
 
         // ---- HUD / Debug ----
@@ -314,6 +385,8 @@ int main()
         // ---- Entities ----
         weapon.update(dt);
         enemy.update(dt);
+                printf(" weapon and enemi update good \n");
+
 
         for (auto& p : projectiles)
             p.update(dt);
@@ -327,13 +400,22 @@ int main()
             projectiles.end()
         );
 
+                        printf(" projectile update good \n");
+
         enemy.draw(renderer, view, proj);
         for (auto& p : projectiles)
             p.draw(renderer, view, proj);
+                        printf(" render end frame attempt \n");
 
         renderer.endFrame();
+        printf(" render end frame GOOD  \n");
+
     }
 
     // renderer.shutdown();
+            printf(" return 0 attempt  \n");
+
     return 0;
+                printf(" return 0 GOOD   \n");
+
 }
