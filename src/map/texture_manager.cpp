@@ -10,6 +10,9 @@ todo
 i dont think we use this cuz its hardcoding and we know hard coding is bad
 */
 void TextureManager::init() {
+    // jan 5 2026 wtf is wrong fix 1
+    printf("TextureManager::init START\n");
+    fflush(stdout);
     paths = {
         "assets/textures/bluev1.png",
         "assets/textures/boringskyv1.png",

@@ -21,10 +21,11 @@ static GLuint cubeVAO = 0, cubeVBO = 0;
 static GLuint groundVAO = 0, groundVBO = 0;
 
 // use location 2 for vec2 not 1
+// jan 25 2026 i think we use location 1 instead of 2? 
 static const char* vertexShaderSrc = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
-layout (location = 2) in vec2 aUV;
+layout (location = 1) in vec2 aUV;
 out vec2 TexCoord;
 
 uniform mat4 model;

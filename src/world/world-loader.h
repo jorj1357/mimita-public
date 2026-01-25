@@ -9,4 +9,7 @@
 
 #include "world/world.h"
 
-bool loadWorldFromJSON(World& world, const char* path);
+// jan 5 2026 fix
+class TextureManager;
+
+bool loadWorldFromJSON(World& world, TextureManager& tex, const char* path);

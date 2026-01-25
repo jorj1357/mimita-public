@@ -64,14 +64,16 @@ Camera*   gActiveCamera = nullptr;
 // Enemy enemy;
 // Weapon weapon;
 
-World world;
-TextureManager TEX;
-Enemy enemy;
-Weapon weapon;
+// jan 5 2026 moving them into the render 1200 800 loop 
+// World world;
+// TextureManager TEX;
+// Enemy enemy;
+// Weapon weapon;
 
 std::vector<Projectile> projectiles;
 
 GLuint groundTex = 0;
+GLuint worldShader = 0;
 
 // -------------------- Forward Decls --------------------
 GLuint createMapVAO(const Mesh&);
@@ -81,6 +83,77 @@ static void mouseCallback(GLFWwindow*, double x, double y)
 {
     if (gActiveCamera)
         gActiveCamera->updateMouse(x, y);
+}
+
+/**
+ * jan 25 2026
+ * i know this make the file messies 
+ * but need to just fix this then clean it later ?
+ * i think idk 
+ */
+
+ #include <fstream>
+#include <sstream>
+#include <string>
+
+static std::string readFile(const char* path)
+{
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        printf("FAILED TO OPEN %s\n", path);
+        return "";
+    }
+    std::stringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
+}
+
+static GLuint compileShader(GLenum type, const char* src)
+{
+    GLuint s = glCreateShader(type);
+    glShaderSource(s, 1, &src, nullptr);
+    glCompileShader(s);
+
+    GLint ok;
+    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+        printf("SHADER COMPILE ERROR:\n%s\n", log);
+        return 0;
+    }
+    return s;
+}
+
+static GLuint loadShader(const char* vertPath, const char* fragPath)
+{
+    std::string vsSrc = readFile(vertPath);
+    std::string fsSrc = readFile(fragPath);
+
+    if (vsSrc.empty() || fsSrc.empty())
+        return 0;
+
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vsSrc.c_str());
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc.c_str());
+    if (!vs || !fs) return 0;
+
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+
+    GLint ok;
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
+        printf("SHADER LINK ERROR:\n%s\n", log);
+        return 0;
+    }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return prog;
 }
 
 // -------------------- Main --------------------
@@ -94,30 +167,71 @@ int main()
 
     // -------- Renderer FIRST --------
     printf("abt to load renderer \n");
-    static Renderer renderer(1200, 800, "mimita.exe");
+    // static Renderer renderer(1200, 800, "mimita.exe");
+    // testing jan 5 2026 to m atch the real thing 
+    static Renderer renderer(800, 600, "mimita.exe");
     gRenderer = &renderer;
+
+    // tri this jan 5 2026 
+    // move before world tex enem weapon etc fix 2 
+    glfwMakeContextCurrent(renderer.window);   // ← REQUIRED
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        printf("FAILED TO INIT GLAD\n");
+        return -1;
+    }
+    printf("GLAD OK\n");
+
+    worldShader = loadShader(
+        "shaders/basic.vert",
+        "shaders/basic.frag"
+    );
+
+    if (!worldShader) {
+        printf("FAILED TO LOAD WORLD SHADER\n");
+        return -1;
+    }
+
+    printf("World shader loaded\n");
+
+    // jan 5 2026 moved them here 
+    // fix 3 printfs 
+    printf("before World\n");
+    World world;
+    printf("after World\n");
+
+    printf("before TextureManager\n");
+    TextureManager TEX;
+    printf("after TextureManager\n");
+
+    printf("before Enemy\n");
+    Enemy enemy;
+    printf("after Enemy\n");
+
+    printf("before Weapon\n");
+    Weapon weapon;
+    printf("after Weapon\n");
 
     printf("render static load \n");
     printf("renderer.window = %p\n", (void*)renderer.window);
     fflush(stdout);
+    printf("fflush stoud\n");
 
+    printf("render window attempt\n");
     if (!renderer.window)
         return -1;
     printf("render returned -1 \n");
     printf("tetx init atempt \n");
 
-    // tri this jan 5 2026 
-    glfwMakeContextCurrent(renderer.window);   // ← REQUIRED
+    // add this before tex init ? jan 25 2026 
+    GLuint texVAO;
+    glGenVertexArrays(1, &texVAO);
+    glBindVertexArray(texVAO);
 
     TEX.init();
     printf("tex init works \n");
 
-    // DebugVis::init(renderer.window);
-
-    GLuint shader = renderer.getShaderProgram();
-    printf("loaded shaders\n");
-
-    glUseProgram(shader);
+    glUseProgram(worldShader);
 
     int samplers[16];
     for (int i = 0; i < 16; i++) {
@@ -127,19 +241,20 @@ int main()
     }
 
     glUniform1iv(
-        glGetUniformLocation(shader, "uTextures"),
+        glGetUniformLocation(worldShader, "uTextures"),
         16,
         samplers
     );
 
     glUseProgram(0);
     
-    printf("loaded renderr\n");
+    printf("loaded renderr v2 with worldshader not just shader\n");
 
     // -------- THEN Load world --------
     if (!loadWorldFromJSON(
             // whi its a asterisk before that fix it idk jan 5 2026 
             world,
+            TEX,
             // forward slash not back, /, not \, 
             // mimita-rotations-v3-converted.json
             "assets/maps/json-converts/mimita-rotations-v6-converted.json"))
@@ -152,7 +267,9 @@ int main()
         return -1;
     }
 
-    world.rebuildChunks();
+    // are we alreadu doing this? commet jan 5 2026 
+    // we do it in world-loader.cpp 
+    // world.rebuildChunks();
    
     printf("loaded world\n");
 
@@ -228,7 +345,9 @@ int main()
     {
         float dt = renderer.beginFrame();
         // DEBUG is it even showing antthing 
-        glViewport(0, 0, 1200, 800);
+        // glViewport(0, 0, 1200, 800);
+        // jan 5 2026 testing to match it
+        glViewport(0, 0, 800, 600);
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -248,22 +367,22 @@ int main()
 
 
         // ---- Render World ----
-        glUseProgram(shader);
+        glUseProgram(worldShader);
 
         glm::mat4 worldModel(1.0f);
 
         glUniformMatrix4fv(
-            glGetUniformLocation(shader, "model"),
+            glGetUniformLocation(worldShader, "model"),
             1, GL_FALSE, &worldModel[0][0]
         );
 
         glUniformMatrix4fv(
-            glGetUniformLocation(shader, "view"),
+            glGetUniformLocation(worldShader, "view"),
             1, GL_FALSE, &view[0][0]
         );
 
         glUniformMatrix4fv(
-            glGetUniformLocation(shader, "projection"),
+            glGetUniformLocation(worldShader, "projection"),
             1, GL_FALSE, &proj[0][0]
         );
 
@@ -286,7 +405,7 @@ int main()
 
         // ---- Render Player ----
         player.render(
-            shader,
+            worldShader,
             playerVAO,
             playerMesh.verts.size(),
             view,

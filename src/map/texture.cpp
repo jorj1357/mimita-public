@@ -1,6 +1,7 @@
 // C:\important\quiet\n\mimita-public\mimita-public\src\map\texture.cpp
 // dec 19 2025 need update i think 
 
+
 // todo use this texture or use texture_manager.cpp
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -17,12 +18,16 @@ its bad and breaks everythung
 #include "utils/path_utils.h"
 #include <string>
 
+
 GLuint loadTexture(const char* path) {
     std::string resolvedPath = resolveAssetPath(path);
     int w, h, n;
     unsigned char* data = stbi_load(resolvedPath.c_str(), &w, &h, &n, 4);
     if (!data) { printf("Failed to load texture %s (resolved from %s)\n", resolvedPath.c_str(), path); return 0; }
 
+    printf("loadTexture: %s\n", path);
+    fflush(stdout);
+    
     GLuint tex;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);

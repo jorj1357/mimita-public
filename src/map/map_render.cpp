@@ -4,7 +4,8 @@
 #include <glad/glad.h>
 #include "texture_manager.h"
 
-extern TextureManager TEX;
+// dont do this jan 5 2026 
+// extern TextureManager TEX;
 
 GLuint createMapVAO(const Mesh& mesh) {
     GLuint vao, vbo;
@@ -25,16 +26,25 @@ GLuint createMapVAO(const Mesh& mesh) {
     return vao;
 }
 
-void drawMap(GLuint vao, size_t vertexCount) {
-    glBindVertexArray(vao);
+// void drawMap(GLuint vao, size_t vertexCount) {
+//     glBindVertexArray(vao);
 
-    // Pick one texture to actually render with (for now)
-    GLuint tex = TEX.get(0);
+//     // Pick one texture to actually render with (for now)
+//     GLuint tex = TEX.get(0);
+//     glActiveTexture(GL_TEXTURE0);
+//     glBindTexture(GL_TEXTURE_2D, tex);
+
+//     glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+
+//     glBindTexture(GL_TEXTURE_2D, 0);
+//     glBindVertexArray(0);
+// }
+
+void drawMap(GLuint vao, size_t vertexCount, GLuint tex) {
+    glBindVertexArray(vao);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
-
     glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindVertexArray(0);
 }
