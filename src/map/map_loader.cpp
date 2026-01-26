@@ -9,7 +9,8 @@
  */
 
 #include "map_common.h"
-#include "deps/tiny_obj_loader.h"
+// now its in /include so should work 
+#include "tiny_obj_loader.h"
 #include <random>
 #include <ctime>
 #include "texture_manager.h"

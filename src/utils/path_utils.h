@@ -8,7 +8,10 @@ std::string getExecutableDirectory();
 
 // Resolve an asset path relative to the executable directory
 // Falls back to relative path if executable directory can't be determined
-std::string resolveAssetPath(const std::string& relativePath);
+// jan 25 2026 this crashed teh entire whole ass game if i do it like this so idk - jorj 
+// std::string resolveAssetPath(const std::string& relativePath);
+std::string resolveAssetPath(std::string relativePath);
+
 
 // Find a system font file (cross-platform)
 // Returns empty string if no font found

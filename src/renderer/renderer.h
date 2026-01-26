@@ -1,47 +1,18 @@
-// C:\important\go away v5\s\mimita-v5\src\renderer\renderer.h
+// C:\important\quiet\n\mimita-public-main\src\renderer\renderer.h
+// jan 25 2026 small clean refactor
 
 #pragma once
 #include <glad/glad.h>
-#include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
 
 struct Renderer {
-    GLFWwindow* window;
+    GLFWwindow* window = nullptr;
+    int width = 0;
+    int height = 0;
+
     Renderer(int w, int h, const char* title);
     float beginFrame();
-    /*
-    todo nov 6 2025
-    remove phase out
-        drawCube
-        drawCubeColored
-    remove these
-    */
-
-    void drawCube(const glm::vec3& pos, const glm::mat4& view, const glm::mat4& proj);
-    void drawCubeColored(const glm::vec3& pos, const glm::vec3& color,
-                         const glm::mat4& view, const glm::mat4& proj);
-    // void drawGround(const glm::mat4& view, const glm::mat4& proj);
     void endFrame();
     bool shouldClose();
     void shutdown();
-    void drawGridCell(const glm::vec3& pos, const glm::mat4& view, const glm::mat4& proj);
-    // idk where to add this nov 6 2025 todo
-    GLuint getShaderProgram(); // add this inside Renderer
-    void drawDebugSphere(
-        const glm::vec3& center,
-        float radius,
-        const glm::vec3& color,
-        const glm::mat4& view,
-        const glm::mat4& proj);
-
-    void drawLine(
-        const glm::vec3& a,
-        const glm::vec3& b,
-        const glm::vec3& color,
-        const glm::mat4& view,
-        const glm::mat4& proj
-    );
 };
-
-// Add this after the class (not inside)
-void drawText2D(const char* text, float x, float y, float scale);

@@ -57,7 +57,9 @@ std::string getExecutableDirectory() {
     return "./";
 }
 
-std::string resolveAssetPath(const std::string& relativePath) {
+// jan 25 2026 jorj sas that this might not crash teh whole repo but idk 
+std::string resolveAssetPath(std::string relativePath) {
+// std::string resolveAssetPath(const std::string& relativePath) {
     std::string exeDir = getExecutableDirectory();
     
     // Try executable directory first
