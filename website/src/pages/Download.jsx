@@ -1,28 +1,34 @@
+import "../App.css"
+
+import Layout from "../components/Layout"
+
 export default function Download() {
   return (
-    <div className="downloadPage">
+    <Layout>
 
-      <h1 className="downloadTitle">
-        DOWNLOAD MiMITA
-      </h1>
+      <div className="downloadPage">
 
-      <img
-        src="https://placehold.co/1000x600/000000/FFFFFF?text=MiMITA+Gameplay+GIF"
-        alt="MiMITA Gameplay"
-        className="downloadGif"
-      />
+        <img
+          src="https://placehold.co/1000x600/000000/FFFFFF?text=MiMITA+Gameplay+GIF"
+          alt="MiMITA Gameplay"
+          className="downloadGif"
+        />
 
-      <a
-        href="/"
-        className="downloadButton"
-      >
-        DOWNLOAD v1
-      </a>
+        <a
+          href="https://github.com/jorj1357/mimita-public"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="downloadButton"
+        >
+          DOWNLOAD v1
+        </a>
 
-      <p className="downloadInfo">
-        windows 64-bit
-      </p>
+        <p className="downloadInfo">
+          windows 64-bit
+        </p>
 
-    </div>
+      </div>
+
+    </Layout>
   )
 }
