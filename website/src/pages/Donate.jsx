@@ -8,36 +8,57 @@ export default function Donate() {
 
       <div className="donatePage">
 
+        <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        className="donateVideo"
+        >
+
+        <source
+            src="/thank-you-small.mp4"
+            type="video/mp4"
+        />
+
+        </video>
+
         <h1 className="donateTitle">
           SUPPORT MiMITA
+          <br></br>
+          <br></br>
         </h1>
 
         <p className="donateText">
-          Supporting MiMITA directly helps move toward a world where
-          creation is done more for the love of creating,
-          experimenting,
+          Supporting MiMITA directly 
+          <br></br>
+          helps move toward a world 
+          <br></br>where
+          creation is done 
+          <br></br>
+          more for the love of creating, experimenting,
           and building meaningful things.
+        <br></br>
+          <br></br>
+
         </p>
 
-        <p className="donateText">
+        {/* <p className="donateText">
           No popups.
           No pressure.
           No manipulation.
           Just optional support if you believe in the vision.
-        </p>
+        </p> */}
 
         <a
-          href="/"
-          className="donateButton"
+        href="https://www.paypal.com/donate/?hosted_button_id=ANQ9KHSMCYMFC"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="donateButton"
         >
-          DONATE PLACEHOLDER
+        SUPPORT MiMITA
         </a>
-
-        {/* <p className="donateSmall">
-          eventually:
-          <br></br>
-          ko-fi / github sponsors / stripe / crypto / mimita-native support
-        </p> */}
 
       </div>
 

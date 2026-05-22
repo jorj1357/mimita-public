@@ -53,62 +53,141 @@ body {
 
   display: flex;
 
-  align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: center;
+  align-items: center;
 
-  padding: 1.5rem;
+  padding:
+    1rem
+    2rem;
 
-  position: relative;
+  position: sticky;
+
+  top: 0;
+
+  z-index: 1000;
+
+  background:
+    rgba(0,0,0,0.85);
+
+  backdrop-filter: blur(8px);
 
   border-bottom:
-    1px solid rgba(255,255,255,0.15);
+    1px solid rgba(255,255,255,0.08);
 }
+
+
+/* =========================
+   HEADER CONTENT
+========================= */
+
+.headerLeft {
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 1.5rem;
+}
+
+
+/* =========================
+   MAIN NAV LINKS
+========================= */
+
+.headerMainLink {
+  color: rgba(255,255,255,0.82);
+
+  text-decoration: none;
+
+  font-size:
+    clamp(12px, 1.1vmin, 18px);
+
+  font-weight: 900;
+
+  letter-spacing: 0.16em;
+
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+
+.headerMainLink:hover {
+  color: white;
+
+  transform: translateY(-1px);
+}
+
+
+/* =========================
+   MENU BUTTON
+========================= */
 
 .menuButton {
   background: transparent;
 
-  color: white;
+  color: rgba(255,255,255,0.9);
 
   border: none;
 
   cursor: pointer;
 
-  font-size: 2rem;
+  font-size: 1.9rem;
 
   font-weight: 900;
 
+  line-height: 1;
+
   transition:
     opacity 0.2s ease,
-    transform 0.2s ease;
+    transform 0.2s ease,
+    color 0.2s ease;
 }
 
 .menuButton:hover {
-  opacity: 0.7;
+  color: white;
 
-  transform: scale(1.05);
+  transform: scale(1.06);
 }
+
+
+/* =========================
+   DROPDOWN MENU
+========================= */
 
 .dropdownMenu {
   position: absolute;
 
-  top: 5rem;
-  left: 1.5rem;
+  top: 4.5rem;
+  left: 50%;
+
+  transform: translateX(-50%);
 
   display: flex;
   flex-direction: column;
 
-  min-width: 250px;
+  min-width: 260px;
 
-  background: black;
+  background:
+    rgba(0,0,0,0.96);
 
   border:
-    1px solid rgba(255,255,255,0.15);
+    1px solid rgba(255,255,255,0.08);
 
-  z-index: 1000;
+  backdrop-filter: blur(10px);
+
+  overflow: hidden;
+
+  z-index: 2000;
 }
 
+
+/* =========================
+   DROPDOWN LINKS
+========================= */
+
 .dropdownMenu a {
-  color: white;
+  color: rgba(255,255,255,0.82);
 
   text-decoration: none;
 
@@ -117,18 +196,19 @@ body {
     1.5rem;
 
   font-size:
-    clamp(1rem, 1.3vmin, 1.2rem);
+    clamp(0.9rem, 1.2vmin, 1.1rem);
 
   font-weight: 900;
 
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
 
   border-bottom:
-    1px solid rgba(255,255,255,0.08);
+    1px solid rgba(255,255,255,0.05);
 
   transition:
     background 0.2s ease,
-    opacity 0.2s ease;
+    color 0.2s ease,
+    padding-left 0.2s ease;
 }
 
 .dropdownMenu a:last-child {
@@ -137,11 +217,35 @@ body {
 
 .dropdownMenu a:hover {
   background:
-    rgba(255,255,255,0.05);
+    rgba(255,255,255,0.04);
 
-  opacity: 0.9;
+  color: white;
+
+  padding-left: 1.8rem;
 }
 
+
+/* =========================
+   MOBILE
+========================= */
+
+@media (max-width: 700px) {
+
+  .headerLeft {
+    gap: 0.8rem;
+  }
+
+  .headerMainLink {
+    font-size: 0.8rem;
+
+    letter-spacing: 0.08em;
+  }
+
+  .menuButton {
+    font-size: 1.6rem;
+  }
+
+}
 
 /* =========================
    FOOTER
@@ -835,4 +939,40 @@ body {
   border-radius: 6px;
 
   object-fit: cover;
+}
+
+.donateVideo {
+  width: min(90vw, 900px);
+
+  margin-bottom: 4vmin;
+
+  border:
+    1px solid rgba(255,255,255,0.15);
+
+  border-radius: 6px;
+
+  object-fit: cover;
+}
+
+/* =========================
+   CONTRIBUTE
+========================= */
+
+.contributeSection {
+
+  margin-top: 70px;
+
+}
+
+.contributeSection .donateText {
+
+  margin-top: 18px;
+  margin-bottom: 0px;
+
+}
+
+.donateButton {
+
+  display: inline-block;
+
 }
