@@ -1,18 +1,32 @@
-* {
-  font-family: "MingLiU";
-}
+/* =========================
+   GLOBAL
+========================= */
 
 html,
 body,
-#root,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
 * {
   font-family: "MingLiU" !important;
+
+  margin: 0;
+  padding: 0;
+
+  box-sizing: border-box;
 }
 
 body {
   background: black;
   color: white;
 }
+
+
+/* =========================
+   APP LAYOUT
+========================= */
 
 .app {
   width: 100%;
@@ -22,10 +36,23 @@ body {
   flex-direction: column;
 }
 
+.pageContent {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* =========================
+   HEADER
+========================= */
+
 .header {
   width: 100%;
 
   display: flex;
+
   justify-content: center;
   align-items: center;
   flex-wrap: wrap;
@@ -34,14 +61,18 @@ body {
 
   padding: 2vmin;
 
-  border-bottom: 1px solid rgba(255,255,255,0.15);
+  border-bottom:
+    1px solid rgba(255,255,255,0.15);
 }
 
 .header a {
   color: white;
+
   text-decoration: none;
 
-  font-size: clamp(12px, 1.2vmin, 20px);
+  font-size:
+    clamp(12px, 1.2vmin, 20px);
+
   font-weight: 700;
 
   letter-spacing: 0.08em;
@@ -52,6 +83,32 @@ body {
 .header a:hover {
   opacity: 0.6;
 }
+
+
+/* =========================
+   FOOTER
+========================= */
+
+.footer {
+  width: 100%;
+
+  padding: 2vmin;
+
+  display: flex;
+
+  justify-content: center;
+  align-items: center;
+
+  border-top:
+    1px solid rgba(255,255,255,0.15);
+
+  opacity: 0.5;
+}
+
+
+/* =========================
+   HERO / HOME
+========================= */
 
 .hero {
   flex: 1;
@@ -75,7 +132,8 @@ body {
 }
 
 .title {
-  font-size: 8vmin;
+  font-size:
+    clamp(3rem, 8vmin, 10rem);
 
   font-weight: 900;
 
@@ -84,14 +142,19 @@ body {
   text-align: center;
 }
 
+
+/* =========================
+   ABOUT SECTION
+========================= */
+
 .aboutSection {
   width: 100%;
 
   display: flex;
   flex-direction: column;
 
-  align-items: center;
   justify-content: center;
+  align-items: center;
 
   gap: 3vmin;
 
@@ -101,61 +164,76 @@ body {
 }
 
 .aboutBig {
-  font-size: clamp(2rem, 4vmin, 5rem);
+  width: min(90vw, 900px);
+
+  font-size:
+    clamp(2rem, 4vmin, 5rem);
 
   font-weight: 700;
-
-  width: min(90vw, 900px);
 
   line-height: 1.3;
 }
 
 .aboutSmall {
-  font-size: clamp(0.8rem, 1.3vmin, 1.4rem);
+  font-size:
+    clamp(0.8rem, 1.3vmin, 1.4rem);
 
   opacity: 0.6;
 
   letter-spacing: 0.15em;
 }
 
-.linkGroup {
-  margin-top: 3vmin;
 
+/* =========================
+   LINK GROUPS
+========================= */
+
+.linkGroup,
+.socialsLinks {
   display: flex;
   flex-direction: column;
 
   gap: 1.5vmin;
 }
 
-.bigLink {
+.linkGroup {
+  margin-top: 3vmin;
+}
+
+.bigLink,
+.socialLink {
   color: white;
 
   text-decoration: none;
 
-  font-size: clamp(1rem, 2vmin, 2rem);
+  font-size:
+    clamp(1rem, 2vmin, 2rem);
 
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
 }
 
-.bigLink:hover {
+.bigLink:hover,
+.socialLink:hover {
   opacity: 0.6;
 
   transform: scale(1.03);
 }
 
+
+/* =========================
+   DOWNLOAD PAGE
+========================= */
+
 .downloadPage {
   min-height: 100vh;
-
-  background: black;
-  color: white;
 
   display: flex;
   flex-direction: column;
 
-  align-items: center;
   justify-content: center;
+  align-items: center;
 
   gap: 3vmin;
 
@@ -165,7 +243,8 @@ body {
 }
 
 .downloadTitle {
-  font-size: clamp(2rem, 5vmin, 6rem);
+  font-size:
+    clamp(2rem, 5vmin, 6rem);
 
   letter-spacing: 0.08em;
 }
@@ -173,9 +252,10 @@ body {
 .downloadGif {
   width: min(90vw, 1000px);
 
-  border: 1px solid rgba(255,255,255,0.15);
-
   object-fit: cover;
+
+  border:
+    1px solid rgba(255,255,255,0.15);
 }
 
 .downloadButton {
@@ -184,25 +264,222 @@ body {
 
   text-decoration: none;
 
-  padding:
-    1rem
-    2rem;
+  padding: 1rem 2rem;
 
-  font-size: clamp(1rem, 2vmin, 2rem);
+  font-size:
+    clamp(1rem, 2vmin, 2rem);
 
   transition:
-    transform 0.2s ease,
-    opacity 0.2s ease;
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .downloadButton:hover {
-  transform: scale(1.05);
-
   opacity: 0.8;
+
+  transform: scale(1.05);
 }
 
 .downloadInfo {
   opacity: 0.5;
 
-  font-size: clamp(0.8rem, 1.2vmin, 1.2rem);
+  font-size:
+    clamp(0.8rem, 1.2vmin, 1.2rem);
+}
+
+
+/* =========================
+   SOCIALS PAGE
+========================= */
+
+.socialsPage {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  justify-content: center;
+  align-items: center;
+
+  gap: 4vmin;
+
+  padding: 5vmin;
+
+  text-align: center;
+}
+
+.socialsTitle {
+  font-size:
+    clamp(2rem, 5vmin, 6rem);
+
+  letter-spacing: 0.08em;
+}
+
+/* =========================
+   ABOUT PAGE
+========================= */
+
+.aboutPage {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+
+  padding: 6vmin;
+
+  text-align: center;
+}
+
+.aboutPageTitle {
+  font-size:
+    clamp(2rem, 6vmin, 6rem);
+
+  letter-spacing: 0.08em;
+
+  margin-bottom: 5vmin;
+}
+
+.aboutPageContent {
+  width: min(90vw, 900px);
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 2.5vmin;
+
+  font-size:
+    clamp(1rem, 1.8vmin, 1.5rem);
+
+  line-height: 1.8;
+
+  opacity: 0.9;
+}
+
+.aboutList {
+  list-style: none;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 1vmin;
+
+  opacity: 0.75;
+}
+
+
+/* =========================
+   STYLING
+========================= */
+
+.highlight {
+  color: #6aa9ff;
+}
+
+.red {
+  color: #ff6a6a;
+}
+
+.bold {
+  font-weight: 900;
+}
+
+.italic {
+  font-style: italic;
+}
+
+.aboutQuote {
+  font-size:
+    clamp(1.2rem, 2.5vmin, 2rem);
+
+  opacity: 0.9;
+
+  letter-spacing: 0.05em;
+}
+
+/* =========================
+   DONATE PAGE
+========================= */
+
+.donatePage {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  justify-content: center;
+  align-items: center;
+
+  text-align: center;
+
+  gap: 3vmin;
+
+  padding: 6vmin;
+}
+
+.donateTitle {
+  font-size:
+    clamp(2rem, 6vmin, 6rem);
+
+  letter-spacing: 0.08em;
+}
+
+.donateText {
+  width: min(90vw, 800px);
+
+  font-size:
+    clamp(1rem, 1.8vmin, 1.5rem);
+
+  line-height: 1.8;
+
+  opacity: 0.9;
+}
+
+.donateButton {
+  color: white;
+
+  background: #2a1683;
+
+  font-weight: 900;
+
+  text-decoration: none;
+
+  padding:
+    1rem
+    2rem;
+
+  font-size:
+    clamp(1rem, 2vmin, 2rem);
+
+  border:
+    1px solid rgba(255,255,255,0.15);
+
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.donateButton:hover {
+  opacity: 0.95;
+
+  background: #9277ff;
+
+  transform: scale(1.05);
+}
+
+.donateButton:hover {
+  opacity: 0.8;
+
+  transform: scale(1.05);
+}
+
+.donateSmall {
+  opacity: 0.5;
+
+  font-size:
+    clamp(0.8rem, 1.2vmin, 1.1rem);
+
+  line-height: 1.6;
 }

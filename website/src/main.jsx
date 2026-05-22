@@ -1,5 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import About from "./pages/About"
+import Donate from "./pages/Donate"
 
 import {
   BrowserRouter,
@@ -7,10 +9,11 @@ import {
   Route,
 } from "react-router-dom"
 
-import App from './App.jsx'
-import Download from './pages/Download.jsx'
+import "./App.css"
 
-import './App.css'
+import Home from "./pages/Home"
+import Download from "./pages/Download"
+import Socials from "./pages/Socials"
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -18,8 +21,32 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
 
       <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/download" element={<Download />} />
+
+        <Route
+          path="/"
+          element={<Home />}
+        />
+
+        <Route
+          path="/donate"
+          element={<Donate />}
+        />
+
+        <Route
+          path="/download"
+          element={<Download />}
+        />
+
+        <Route
+          path="/socials"
+          element={<Socials />}
+        />
+
+        <Route
+          path="/about"
+          element={<About />}
+        />
+
       </Routes>
 
     </BrowserRouter>
