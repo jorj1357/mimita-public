@@ -42,54 +42,74 @@ export default function Header() {
   return (
     <header className="header">
 
-      <div ref={menuRef}>
+      <div className="headerLeft">
 
-        <button
-          className="menuButton"
-          onClick={() => setOpen(!open)}
-        >
-          ☰
-        </button>
+        <div ref={menuRef}>
 
-        {open && (
+          <button
+            className="menuButton"
+            onClick={() => setOpen(!open)}
+          >
+            ☰
+          </button>
 
-          <div className="dropdownMenu">
+          {open && (
 
-            <Link to="/" onClick={() => setOpen(false)}>
-              ABOUT
-            </Link>
+            <div className="dropdownMenu">
 
-            <Link to="/donate" onClick={() => setOpen(false)}>
-              DONATE
-            </Link>
+              <Link to="/" onClick={() => setOpen(false)}>
+                HOME
+              </Link>
 
-            <Link to="/download" onClick={() => setOpen(false)}>
-              DOWNLOAD
-            </Link>
+              <Link to="/about" onClick={() => setOpen(false)}>
+                ABOUT
+              </Link>
 
-            <Link to="/feedback" onClick={() => setOpen(false)}>
-              FEEDBACK
-            </Link>
+              <Link to="/contribute" onClick={() => setOpen(false)}>
+                CONTRIBUTE
+                </Link>
 
-            <Link to="/" onClick={() => setOpen(false)}>
-              HOME
-            </Link>
+              <Link to="/download" onClick={() => setOpen(false)}>
+                DOWNLOAD
+              </Link>
 
-            <Link to="/newsletter" onClick={() => setOpen(false)}>
-              NEWSLETTER
-            </Link>
+              <Link to="/feedback" onClick={() => setOpen(false)}>
+                FEEDBACK
+              </Link>
 
-            <Link to="/socials" onClick={() => setOpen(false)}>
-              SOCIALS
-            </Link>
+              <Link to="/newsletter" onClick={() => setOpen(false)}>
+                NEWSLETTER
+              </Link>
 
-            <Link to="/terms" onClick={() => setOpen(false)}>
-              TERMS
-            </Link>
+              <Link to="/socials" onClick={() => setOpen(false)}>
+                SOCIALS
+              </Link>
 
-          </div>
+              <Link to="/terms" onClick={() => setOpen(false)}>
+                TERMS
+              </Link>
 
-        )}
+            </div>
+
+          )}
+
+        </div>
+
+        <Link className="headerMainLink" to="/">
+          HOME
+        </Link>
+
+        <Link className="headerMainLink" to="/download">
+          DOWNLOAD
+        </Link>
+
+        <Link className="headerMainLink" to="/about">
+          ABOUT
+        </Link>
+
+        <Link className="headerMainLink" to="/contribute">
+        CONTRIBUTE
+        </Link>
 
       </div>
 

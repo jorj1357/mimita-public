@@ -8,11 +8,21 @@ export default function Download() {
 
       <div className="downloadPage">
 
-        <img
-          src="https://placehold.co/1000x600/000000/FFFFFF?text=MiMITA+Gameplay+GIF"
-          alt="MiMITA Gameplay"
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
           className="downloadGif"
-        />
+        >
+
+          <source
+            src="/mimita-preview-small.mp4"
+            type="video/mp4"
+          />
+
+        </video>
 
         <a
           href="https://github.com/jorj1357/mimita-public"
@@ -21,6 +31,8 @@ export default function Download() {
           className="downloadButton"
         >
           DOWNLOAD v1
+          <br></br>
+          (redirects to github)
         </a>
 
         <p className="downloadInfo">
