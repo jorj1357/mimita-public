@@ -8,6 +8,22 @@ export default function About() {
 
       <div className="aboutPage">
 
+        <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        className="aboutVideo"
+        >
+
+        <source
+            src="/untitled-loop-small.mp4"
+            type="video/mp4"
+        />
+
+        </video>
+
         <h1 className="aboutPageTitle">
           ABOUT MiMITA
         </h1>
@@ -22,7 +38,7 @@ export default function About() {
                 <span className="highlight"> movement</span>,
                 emergence,
                 editability,
-                and making things that feel genuinely fun.
+                and making things that just feel fun.
             </p>
 
             <p>
@@ -42,7 +58,7 @@ export default function About() {
 
             <p>
                 Long-term,
-                MiMITA should become a place people genuinely want to:
+                MiMITA should become a place people want to:
                 <br></br>
                 play,
                 <br></br>
@@ -74,14 +90,8 @@ export default function About() {
 
             <p>
                 Ideally,
-                people create here because they genuinely want to,
+                people create here because they want to,
                 not because they are forced to survive.
-            </p>
-
-            <p>
-                make something genuinely fun first
-                <br></br>
-                then keep building outward from there.
             </p>
 
             </div>
