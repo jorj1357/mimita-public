@@ -1,7 +1,5 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import About from "./pages/About"
-import Donate from "./pages/Donate"
+import React from "react"
+import ReactDOM from "react-dom/client"
 
 import {
   BrowserRouter,
@@ -11,11 +9,34 @@ import {
 
 import "./App.css"
 
+/* =========================
+   PAGES
+========================= */
+
 import Home from "./pages/Home"
+
+import About from "./pages/About"
+
 import Download from "./pages/Download"
+
 import Socials from "./pages/Socials"
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+import Donate from "./pages/Donate"
+
+import Newsletter from "./pages/Newsletter"
+
+import Feedback from "./pages/Feedback"
+
+import Terms from "./pages/Terms"
+
+/* =========================
+   APP
+========================= */
+
+ReactDOM.createRoot(
+  document.getElementById("root")
+).render(
+
   <React.StrictMode>
 
     <BrowserRouter>
@@ -28,8 +49,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         />
 
         <Route
-          path="/donate"
-          element={<Donate />}
+          path="/about"
+          element={<About />}
         />
 
         <Route
@@ -43,13 +64,28 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         />
 
         <Route
-          path="/about"
-          element={<About />}
+          path="/donate"
+          element={<Donate />}
+        />
+
+        <Route
+          path="/newsletter"
+          element={<Newsletter />}
+        />
+
+        <Route
+          path="/feedback"
+          element={<Feedback />}
+        />
+
+        <Route
+          path="/terms"
+          element={<Terms />}
         />
 
       </Routes>
 
     </BrowserRouter>
 
-  </React.StrictMode>,
+  </React.StrictMode>
 )
