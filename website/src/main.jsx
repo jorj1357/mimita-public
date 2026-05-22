@@ -21,7 +21,7 @@ import Download from "./pages/Download"
 
 import Socials from "./pages/Socials"
 
-import Donate from "./pages/Donate"
+import Contribute from "./pages/Contribute"
 
 import Newsletter from "./pages/Newsletter"
 
@@ -64,8 +64,8 @@ ReactDOM.createRoot(
         />
 
         <Route
-          path="/donate"
-          element={<Donate />}
+          path="/contribute"
+          element={<Contribute />}
         />
 
         <Route
