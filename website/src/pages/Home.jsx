@@ -10,11 +10,21 @@ export default function Home() {
 
       <main className="hero">
 
-        <img
-          src="/mimita icon v1.png"
-          alt="MiMITA"
-          className="logo"
+        <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        className="logoVideo"
+        >
+
+        <source
+            src="/mimita-preview-small.mp4"
+            type="video/mp4"
         />
+
+        </video>
 
         <h1 className="title">
           MiMITA: v1
@@ -32,39 +42,23 @@ export default function Home() {
           copyleft-enabled experimental game engine
         </p>
 
-        <div className="linkGroup">
+            <div className="linkGroup">
 
-          <a
-            href="https://github.com/jorj1357/mimita-public"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bigLink"
-          >
-            DOWNLOAD MiMITA
-          </a>
+            <Link
+                to="/download"
+                className="bigLink"
+            >
+                DOWNLOAD
+            </Link>
 
-          <Link
-            to="/socials"
-            className="bigLink"
-          >
-            SOCIAL LINKS
-          </Link>
+            <Link
+                to="/about"
+                className="bigLink"
+            >
+                ABOUT
+            </Link>
 
-          <Link
-            to="/donate"
-            className="bigLink"
-          >
-            SUPPORT DEVELOPMENT + GET COOL PERKS
-          </Link>
-
-          <Link
-            to="/newsletter"
-            className="bigLink"
-          >
-            EMAIL NEWSLETTER
-          </Link>
-
-        </div>
+            </div>
 
       </section>
 
