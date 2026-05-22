@@ -1,0 +1,299 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\physics\config.h
+// // jan 30 2026 version like 5 i think 
+// // we finallt use this for the actual hitbox sizes 
+
+// #pragma once
+// #include <glm/glm.hpp>
+
+// // =====================================================
+// // CORE PHYSICS CONFIG (game feel)
+// // =====================================================
+
+// struct PhysicsConfig {
+//     float gravity;
+//     float moveSpeed;
+//     float jumpStrength;
+// };
+
+// inline PhysicsConfig PHYS = {
+//     -25.0f, // gravity
+//     20.0f, // move speed
+//     12.0f // jump strength
+// };
+
+// // =====================================================
+// // PLAYER DIMENSIONS (SOURCE OF TRUTH)
+// // =====================================================
+// // These control *everything* about player size:
+// // - collisions
+// // - debug visuals
+// // - rendering capsule
+// // - camera offsets
+// //
+// // If something feels "off", these are the numbers.
+
+
+// // explain what this does even 
+// // i think its to go from blender to our system?
+// // i thought blender was 1 meter = 1 blender unit = 1 mimita (mimita is meters)
+// inline float PHYS_MULT = 2.0f;  
+
+// // defaults are
+// /*
+// 0.5f for width
+// 1.8f for height
+// 0.2f for depth
+// 0.35f for radius
+// */
+
+// // jan 30 2026 test not multpling these w phs mult
+// inline float PLAYER_WIDTH  = 0.5f * PHYS_MULT;  
+// inline float PLAYER_HEIGHT = 1.8f * PHYS_MULT;   
+// inline float PLAYER_DEPTH  = 0.2f * PHYS_MULT;  
+// // feb 3 2026 plr radius doesnt need phys mult for some reason
+// inline float PLAYER_RADIUS = 0.35f * PHYS_MULT;
+// // inline float PLAYER_RADIUS = 0.35f;
+// // jan 30 2026 its not this, keep phs mult, without it im just small
+// // inline float PLAYER_WIDTH  = 0.5f;  
+// // inline float PLAYER_HEIGHT = 1.8f;   
+// // inline float PLAYER_DEPTH  = 0.2f;  
+// // inline float PLAYER_RADIUS = 0.35f;
+
+
+// // =====================================================
+// // PLAYER CAPSULE TYPE (the real hitbox)
+// // =====================================================
+
+// struct PlayerCapsule {
+//     glm::vec3 a;   // bottom sphere center
+//     glm::vec3 b;   // top sphere center
+//     float r;
+// };
+
+
+// // =====================================================
+// // PLAYER CAPSULE HELPERS
+// // =====================================================
+// // This is THE HITBOX across the whole repo.
+
+// // jan 30 2026 i dont think we ues this 
+// // jan 30 2026 but we might so idk 
+// // feb 3 2026 fuck this bullshit ass function we need better for collisions to work 
+// // inline PlayerCapsule makePlayerCapsuleFromFeetPos(const glm::vec3& feetPos)
+// // {
+// //     // jan 30 2026 default broken
+// //     // PlayerCapsule c;
+// //     // c.r = PLAYER_RADIUS; // radius og the spheres that make the plauer 
+// //     // // Bottom sphere center is one radius above the feet.
+// //     // c.a = feetPos + glm::vec3(0.0f, 0.0f, c.r); 
+// //     // // Top sphere center is:
+// //     // // full height minus one radius 
+// //     // c.b = feetPos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT - c.r);
+// //     // return c;
+
+// //     // jan 30 2026 testing hardcoded values 
+// //     // test 1
+// //     // c.a is 0.5f mult, so half a radiusabove the feet 
+// //     // result: didnt do antthing im still flaoting 
+// //     // test 2
+// //     // c.a is 0.01f mult 
+// //     // result didnt do anthing at all
+// //     // tes 3
+// //     // plr radius is hard coded to be 0.4
+// //     // result GOOD: ITS LIKE ALMOST PERFECT.. smth tells me radius dont need to be * 2
+// //     // test 4
+// //     // put 0.35f hardcoded radius and then do smth with the plr height, replace with 1.8f
+// //     // result 4: 0.35f IS PERFECT SO KEEP THAT 
+// //     // result 4: but 1.8f hard coded doesnn do antthing?...
+// //     // test 5
+// //     // c.b = 0,0,1.8f no minusing c.r
+// //     // result 5: no change, but i do see that m head goes thru blocks, so hitbox MIGHT BE RENDERING WRONGA GAIN fdijndis
+// //     // test 6: put c.b back to normal but edit plauer.cpp to have specfiic offset on Z (z is up)
+// //     PlayerCapsule c;
+// //     c.r = 0.35f; // radius og the spheres that make the plauer 
+// //     c.a = feetPos + glm::vec3(0.0f, 0.0f, c.r); // Bottom sphere center is one radius above the feet.
+// //     c.b = feetPos + glm::vec3(0.0f, 0.0f, 1.8f);     // Top sphere center is full height minus one radius 
+
+// //     return c;
+
+// // }
+
+// // jan 30 2026 unused
+// // Optional helpers (nice for debug / rendering alignment)
+// // this dont work i think bc 2.0f is hard code and that not good 
+// // inline float playerCapsuleCylinderHeight()
+// // {
+// //     return PLAYER_HEIGHT - 2.0f * PLAYER_RADIUS;
+// // }
+
+// // // dont do anuthing with feet just center no feet jan 30 2026 
+// // inline glm::vec3 playerCapsuleCenterFromFeetPos(const glm::vec3& feetPos)
+// // {
+// //     return feetPos + glm::vec3(0, 0, PLAYER_HEIGHT * 0.5f);
+// // }
+
+
+// // =====================================================
+// // WORLD / COLLISION TUNING
+// // =====================================================
+
+// // cosine of max walkable slope (~45 degrees)
+// // jan 30 2026 does bigger = i can walk up 89 deg slope or smaller?
+// // lower = more tolerant, e.g. 0.0f = 90 deg wall is a floor to me 
+// // too strict this is 
+// // inline float MIN_GROUND_DOT = 0.7f;
+// // should be like 80 deg? idk 
+// // nevermind just keep it as 0 so stop sliding bruh
+// // inline float MIN_GROUND_DOT = 0.2f;
+// inline float MIN_GROUND_DOT = 0.0f;
+
+// // json loading stuff
+// // jan 30 2026 do we need this?  i would like to have no conversions 
+// // no mults etc but idk
+// // jan 30 2026 im just making this 1 bc i dontn wanna use it and dont wana break others
+// inline float BLOCK_PHYS_MULT = 0.5f;
+// // jan 30 2026 nvm lets just use 0.5f because world mesh wants 0.5f mult to be happy
+// // inline float BLOCK_PHYS_MULT = 1.0f;
+
+// // how deep
+// // e.g. 0.5f = im alll up in there
+// // 0.01f = if im a LIL in there stop. 
+// // its called this bc i dont like the word penetration
+// inline float HOW_DEEP = 0.5f;
+
+// // almost 0 
+// // because we're weird
+// // dec 19 2025 todo use this everwhere for consistenet epsilon for the 0.1% improvement it gives
+// inline float ALMOST_ZERO = 0.00001f;
+
+// // everi map is now in chunks of this size 
+// // if ur in 1, calc onli that ones colisions
+// // if ur in 2, calc both
+// // if ur in 3+, calc those 
+// // just dont calc the entire freakin map
+// // test smaller chunk size? idk feb 3 2026
+// // inline float CHUNK_SIZE = 5.0f; 
+// inline float CHUNK_SIZE = 3.0f; 
+
+// // max fall speed
+// inline float MAX_FALL_SPEED = 20.0f * 20; 
+
+// // max speed of plr in whole phs engine feb 8 2026
+// // max speed is 100x the plr default move speed
+// inline float MAX_PLAYER_MOVE_SPEED = PHYS.moveSpeed * 100; 
+
+// // for blender to map stuff that isnt broken 
+// inline float ROTATION_SNAP = 15.0f;
+// inline float POSITION_SNAP = 0.1f;
+
+// // grace period testing dec 19 2025 collisions
+// inline float COLLISIONS_GRACE_PERIOD = 0.1f;
+
+// // feb 6 2026 allowing double jumps or more permissive jumps? idk  
+// // 0.08f should be 80ms, so we will just call it 0.001f bc we like 1ms grace
+// inline float COYOTE_JUMP_TIME = 0.001f;
+
+// // higher = more friction, lower = less friction
+// // feb 6 2026 testing the default of 0.2f
+// // general version, feb 8 2026 i think we have air and ground friction separate?
+// inline float FRICTION_AMOUNT = 0.2f;
+
+// // 0.2f as of feb 8 2026 
+// inline float GROUND_FRICTION_ACCEL_AMOUNT = 0.2f;
+
+// // friction for ground, 0.2f as of feb 8 2026
+// // 0.2f is way too low. testing 5.0f
+// // 5.0f its kinda annoying its not instant like i want.
+// // near instant is what i wnt but a little slide 
+// // testing 20.0f
+// inline float GROUND_FRICTION_AMOUNT = 20.0f;
+
+// // friction for air, 0.02f as of feb 8 2026
+// inline float AIR_FRICTION_AMOUNT = 0.02f;
+
+// // accel for air for BUNN HOPS AYYYAYYAY feb 8 2026 
+// // first value; 50.0f test
+// inline float AIR_ACCEL_AMOUNT = 50.0f;
+
+// // 1.0f too high
+// // testing 0.25f
+// inline float DRAG_FRICTION_MULTIPLIER = 0.25f;
+
+// // anti friction? higher = lower friction, 
+// // lower = more friction?
+// inline float OPPOSITE_FRICTION_AMOUNT = 0.99f;
+
+// // how strong is the impulse for dash
+// // 100.0f is too weak, testing 1000.0f
+// // its too strong lets do 50.0f
+// // too low
+// // 250?
+// // 2500?
+// // too high, if this is above 100 im doing smth wrong
+// // testing 50.0f for the jank version
+// // where i can onl dash forward bc perssing wasd = ground fticrion applies
+// // and no more sliding for me
+// // 50.0f almost good just a little too easy to go fast
+// // testing 25.0f
+// // 25.0f is literallt like barely above walking speed taht sucks
+// // prob keep it at 50.0f, just need to make it decay faster speed wise
+// inline float DASH_IMPULSE = 50.0f;
+
+// // how many charges u got
+// constexpr int   DASH_MAX_CHARGES   = 3;
+
+// // how long between each dash charge 
+// constexpr float DASH_RECHARGE_TIME = 1.0f; // seconds
+
+// // how long can i be frozen for maximum
+// constexpr float FREEZE_MAX_TIME = 5.0f; // seconds
+
+// // how man times can i do it befoer i gotta wiat the recharge
+// constexpr float GROUND_RETURN_MAX_CHARGES = 3.0f;
+
+// // go to the ground at this speed
+// constexpr float GROUND_RETURN_SPEED = -150.0f;
+
+// // how long in seconds before it recharges 
+// constexpr float GROUND_RETURN_RECHARGE_TIME = 1.0f;
+
+// // i want the cooldown to be like 0.01ms bro so i set this to 0.001
+// inline float DASH_COOLDOWN = 0.001f;
+
+// // something so that our slopes (which are currenlty 2 halves so that its not infinite)
+// // doesn't just make us get stuck in the dead center btwn them 
+// inline float SLOPE_OVERLAP = 0.1f;
+
+// // defined in config.h but its 0.02f for now
+// // tune 0.01-0.05
+// inline float SLOPE_SKIN = 0.02f;
+
+// // max step heihgt
+// // how up can u walk , like how tall can it be , the block
+// // testing 1 f = 1 meter might be too much but wtv feb 6 2026 
+// // i think 1.0f not enough im gon test 3.0f
+// // inline float MAX_STEP_HEIGHT = 1.0f;
+// // feb 9 2026 doewsnt do antthing so wtv add later 
+// inline float MAX_STEP_HEIGHT = 3.0f;
+
+// // this was for pushing me up when im on a slope? idk 
+// inline float SLOPE_VELOCITY_PUSHUP_MULT = 1.01f;
+
+// // this is for like 
+// // snapping the plr to the slope so we dont have to hold jump to stay on it 
+// inline float SLOPE_SNAP_DIST = 0.15f;
+
+// // push me away from walls
+// // take me awaayy (take me away)
+// // a secret plaace (away from the wall)
+// // a sweet escaaaaape (so i can move and not stuck in the wall)
+// // take me awaaayy (i want to be able to move )
+// // inline float SLOPE_WALL_CLEARANCE = 0.5f; // try 0.1–0.25
+// // try 2.5f because fuck uou (i keep getting stuck in the thing )
+// inline float SLOPE_WALL_CLEARANCE = 2.5f; 
+
+// // both default was 0.08f but i want lots of clearance 
+// inline float SLOPE_EXIT_TIMER = 0.16f;
+
+// // both default was 0.08f but i want lots of clearance 
+// inline float SLOPE_SUPPORT_TIMER = 0.16f;

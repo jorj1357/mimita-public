@@ -1,0 +1,657 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\physics\physics-simple.cpp
+// // feb 3 2026
+// // fixing phiscs bc it broken and sux 
+
+// #include "physics-simple.h"
+
+// #include <algorithm>
+// #include <vector>
+
+// // ---- You must include your real definitions somewhere ----
+// #include "world/world.h"      // World, Block
+// #include "entities/player.h"  // Player
+// #include "config.h"
+
+// // Minimal AABB
+// struct AABB {
+//     glm::vec3 min;
+//     glm::vec3 max;
+// };
+
+// static inline AABB makePlayerAABBAt(const glm::vec3& pos,
+//                                    const PhysicsSimpleConfig& cfg)
+// {
+//     glm::vec3 h(cfg.playerWidth*0.5f,
+//                 cfg.playerDepth*0.5f,
+//                 cfg.playerHeight*0.5f);
+//     return { pos - h, pos + h };
+// }
+
+// // i think this is double code writing but whatever feb 6 2026 
+// static inline AABB makePlayerAABB(const Player& p,
+//                                   const PhysicsSimpleConfig& cfg)
+// {
+//     return makePlayerAABBAt(p.pos, cfg);
+// }
+
+// static inline AABB makeBlockAABB(const Block& b)
+// {
+//     // IMPORTANT: b.size must be FULL extents (width/height/depth), not half.
+//     glm::vec3 half = b.size * 0.5f;
+//     return { b.pos - half, b.pos + half };
+// }
+
+// static inline bool overlaps(const AABB& a, const AABB& b)
+// {
+//     return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+//            (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+//            (a.min.z <= b.max.z && a.max.z >= b.min.z);
+// }
+
+// // Push player out of block along smallest penetration axis.
+// // Returns which axis was used: 0=x, 1=y, 2=z. Also outputs push vector.
+// static inline int resolveOne(AABB& pa, const AABB& ba, glm::vec3& pos, float slop, glm::vec3& outPush)
+// {
+//     // penetration distances for each side
+//     float px1 = ba.max.x - pa.min.x; // push -x
+//     float px2 = pa.max.x - ba.min.x; // push +x
+//     float py1 = ba.max.y - pa.min.y;
+//     float py2 = pa.max.y - ba.min.y;
+//     float pz1 = ba.max.z - pa.min.z;
+//     float pz2 = pa.max.z - ba.min.z;
+
+//     float penX = std::min(px1, px2);
+//     float penY = std::min(py1, py2);
+//     float penZ = std::min(pz1, pz2);
+
+//     outPush = glm::vec3(0.0f);
+
+//     // choose smallest axis
+//     if (penX <= penY && penX <= penZ) {
+//         float push = (px1 < px2) ? -(px1 + slop) : (px2 + slop);
+//         pos.x += push;
+//         outPush.x = push;
+//         return 0;
+//     }
+//     if (penY <= penZ) {
+//         float push = (py1 < py2) ? -(py1 + slop) : (py2 + slop);
+//         pos.y += push;
+//         outPush.y = push;
+//         return 1;
+//     }
+
+//     float push = (pz1 < pz2) ? -(pz1 + slop) : (pz2 + slop);
+//     pos.z += push;
+//     outPush.z = push;
+//     return 2;
+// }
+
+// static inline bool pointInSlopeXY(const Block& b, const glm::vec3& worldPt, float margin)
+// {
+//     glm::vec3 local = glm::inverse(b.rot) * (worldPt - b.pos);
+//     float hx = b.size.x * 0.5f + margin;
+//     float hy = b.size.y * 0.5f + margin;
+//     return (local.x >= -hx && local.x <= hx &&
+//             local.y >= -hy && local.y <= hy);
+// }
+
+// // returns true if slope is SOLID at this foot position (i.e. foot is under the ramp plane)
+// static inline bool slopeSolidAtFoot(const Block& b, const glm::vec3& footWorld)
+// {
+//     // bounded plane (no infinite plane)
+//     if (!pointInSlopeXY(b, footWorld, SLOPE_OVERLAP)) return false;
+
+//     glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+//     float halfZ = b.size.z * 0.5f;
+//     glm::vec3 p0 = b.pos + n * halfZ;
+
+//     float d = glm::dot(footWorld - p0, n);
+
+//     // d > 0 means foot is "inside/below" the ramp plane -> should collide
+//     // small skin prevents seam flicker
+//     constexpr float SKIN = 0.01f;
+//     return d > SKIN;
+// }
+
+// // this exist so that we dont just push u out of the slope all the time no reason
+// static inline bool slopePenetrating(const Block& b,
+//                                     const glm::vec3& footWorld)
+// {
+//     if (!pointInSlopeXY(b, footWorld, SLOPE_OVERLAP))
+//         return false;
+
+//     glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+//     float halfZ = b.size.z * 0.5f;
+//     glm::vec3 p0 = b.pos + n * halfZ;
+
+//     float d = glm::dot(footWorld - p0, n);
+
+//     // 🚨 penetrating ONLY if clearly below the plane
+//     return d < -SLOPE_SKIN;
+// }
+
+// // new helper so that slope walls have their own special logic bruh 
+// static inline AABB makeSlopeWallAABB(const Block& b) {
+//     glm::vec3 half = b.size * 0.5f;
+//     // just add a little smth smth 
+//     // to avoid stupidness i think idk // tall vertical wall
+//     half.z = b.size.z + SLOPE_OVERLAP; 
+//     // test this if slope overlap dont help
+//     // half.z = b.size.z; 
+//     return { b.pos - half, b.pos + half };
+// }
+
+// // this is like resolveone but pushing me out if im stuck inside a block
+// static void resolveStuck(Player& p,
+//                          const PhysicsSimpleConfig& cfg,
+//                          const World& world)
+// {
+//     const int MAX_ITERS = 6;
+//     const float SLOP = 0.001f;
+
+//     for (int iter = 0; iter < MAX_ITERS; iter++) {
+//         bool fixed = false;
+
+//         AABB pa = makePlayerAABB(p, cfg);
+
+//         for (const Block& b : world.blocks) {
+
+//             if (!b.isSlope)
+//                 // idk what the comment does but it sas 
+//                 //d odont let this function touch slopes? idk 
+//                 continue; // 🚨 never resolve against slopes
+            
+//             glm::vec3 foot = p.pos;
+//             foot.z -= cfg.playerHeight * 0.5f;
+
+//             // if (!slopeSolidAtFoot(b, foot))
+//             //     continue;
+
+//             // new version? idk feb 7 2026
+//             if (!slopePenetrating(b, foot))
+//                 continue;
+
+//             AABB ba = makeSlopeWallAABB(b);
+
+//             if (!overlaps(pa, ba))
+//                 continue;
+
+//             glm::vec3 push;
+//             int axis = resolveOne(pa, ba, p.pos, SLOP, push);
+
+//             // never allow Z push from slopes
+//             if (axis == 2) {
+//                 p.pos -= push;
+//                 continue;
+//             }
+
+//             pa = makePlayerAABB(p, cfg);
+//             fixed = true;
+//             break;
+//         }
+
+//         if (!fixed)
+//             break;
+//     }
+// }
+
+// static inline void pushOutOfSlopeWall(
+//     Player& p,
+//     const Block& b,
+//     const PhysicsSimpleConfig& cfg
+// ) {
+//     AABB pa = makePlayerAABB(p, cfg);
+//     AABB wa = makeSlopeWallAABB(b);
+
+//     if (!overlaps(pa, wa))
+//         return;
+
+//     // push away from slope center horizontally
+//     glm::vec2 away = glm::vec2(p.pos.x - b.pos.x,
+//                                p.pos.y - b.pos.y);
+
+//     if (glm::length(away) < 0.0001f)
+//         away = glm::vec2(1.0f, 0.0f);
+
+//     away = glm::normalize(away);
+
+//     p.pos.x += away.x * SLOPE_WALL_CLEARANCE;
+//     p.pos.y += away.y * SLOPE_WALL_CLEARANCE;
+// }
+
+// static inline bool playerHorizontallyOnSlope(
+//     const Block& b,
+//     const Player& p,
+//     const PhysicsSimpleConfig& cfg,
+//     float margin
+// ) {
+//     // Project player center onto slope XY
+//     glm::vec3 center = p.pos;
+//     center.z = b.pos.z; // Z irrelevant for XY test
+
+//     // Shrink test region so edges don’t count as support
+//     float supportMargin =
+//         std::max(cfg.playerWidth, cfg.playerDepth) * 0.25f;
+
+//     return pointInSlopeXY(b, center, margin - supportMargin);
+// }
+
+// static inline float slideAlongAxis(
+//     int axis,
+//     float deltaAxis,
+//     const Block& b,
+//     const glm::vec3& playerPos
+// ) {
+//     // approximate wall normal in XY from block center
+//     glm::vec2 toPlayer(
+//         playerPos.x - b.pos.x,
+//         playerPos.y - b.pos.y
+//     );
+
+//     if (glm::length(toPlayer) < 0.0001f)
+//         return 0.0f;
+
+//     glm::vec2 n = glm::normalize(toPlayer);
+
+//     glm::vec2 v(0.0f);
+//     v[axis] = deltaAxis;
+
+//     // project out the normal component
+//     glm::vec2 slid = v - n * glm::dot(v, n);
+
+//     return slid[axis];
+// }
+
+// void physicsSimpleUpdate(
+//     Player& p,
+//     const World& world,
+//     const PhysicsSimpleConfig& cfg,
+//     const glm::vec2& wishMoveXY,
+//     bool jumpHeld,
+//     float dt
+// ){
+//     dt = std::min(dt, 0.033f);
+
+//     // let me jump on slopes bro 
+//     bool didJumpThisFrame = false;
+//     bool groundedThisFrame = false;
+//     bool onSlopeThisFrame = false;
+//     bool allowHorizontalThisFrame = true;
+//     bool jumpHeldThisFrame = jumpHeld;
+
+//     static float slopeSupportTimer = 0.0f;
+
+//     // jumping stuff and slope stuff
+//     static float coyoteTimer = 0.0f;
+//     // decay so i can keep jumping 
+//     static float jumpIntentTimer = 0.0f;
+//     bool wantsJump = jumpIntentTimer > 0.0f;
+//     // this so i can jump on slopes i think 
+//     bool jumpAllowedThisFrame = wantsJump && coyoteTimer > 0.0f;
+
+//     // let me walk off slopes for a little plz 
+//     static float slopeExitTimer = 0.0f;
+//     slopeExitTimer -= dt;
+
+//     slopeSupportTimer -= dt;
+//     bool allowSlopeSupport = slopeSupportTimer > 0.0f;
+
+//     // keep this ABOVE coyote jump timer
+//     // this makes it so we dont snap thru the slope 
+//     // if jump held 
+//     static float slopeSnapDisableTimer = 0.0f;
+//     // now dt is here, it decays the timer like normal like the other things too
+//     slopeSnapDisableTimer = std::max(0.0f, slopeSnapDisableTimer - dt);
+
+//     // 1. integrate gravity
+//     p.vel.z += cfg.gravity * dt;
+//     p.vel.z = std::max(p.vel.z, -cfg.maxFallSpeed);
+
+//     // 2. compute delta
+//     glm::vec3 delta;
+//     delta.x = wishMoveXY.x * dt;
+//     delta.y = wishMoveXY.y * dt;
+//     delta.z = p.vel.z * dt;
+
+//     // put this BEFORE moveaxis? testing feb 7 2026 so i 
+//     // stop getting stuck and not be ablbe to move xy directions (wasd)
+//     // slope penetration prevention (ONLY prevent going inside)
+//     // BOUNDED. DONT LET PLANES BE INFINITE, WITH THE local and fabs
+//     for (const Block& b : world.blocks) {
+//         if (!b.isSlope) continue;
+
+//         glm::vec3 foot = p.pos;
+//         foot.z -= cfg.playerHeight * 0.5f;
+
+//         // transform foot into slope local space
+//         glm::vec3 local = glm::inverse(b.rot) * (foot - b.pos);
+
+//         // float hx = b.size.x * 0.5f;
+//         // float hy = b.size.y * 0.5f;
+
+//         // DONT GET STUCK IN THE CETNER OF IT. THATS STUPID
+//         // SLOPE over lap fixes it probabl.
+//         float hx = b.size.x * 0.5f + SLOPE_OVERLAP;
+//         float hy = b.size.y * 0.5f + SLOPE_OVERLAP;
+
+//         // outside slope → ignore plane
+//         if (local.x < -hx || local.x > hx ||
+//             local.y < -hy || local.y > hy)
+//             continue;
+
+//         glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+//         if (n.z < 0.5f) continue;
+
+//         glm::vec3 p0 = b.pos + n * (b.size.z * 0.5f);
+//         float d = glm::dot(foot - p0, n);
+
+//         // slope skin defined in config.h but its 0.02f for now
+//         // tune 0.01-0.05
+
+//         if (d > MAX_STEP_HEIGHT)
+//             continue;
+
+//         // idk it works good enough 
+//         // snapping is the issue i think 
+//         // if (!wantsJump &&
+//         // test using did jump this frame, instead of just wanting it
+//         // nope itm akes so i cant jump on slopes at all
+//         // if (!didJumpThisFrame &&
+//         // testing if we can even allow a jump 
+//         // nope i still cant jump 
+//         // if (!jumpAllowedThisFrame &&
+//         // testing if we do jumpheldthisframe
+//         // if (!jumpHeldThisFrame &&
+//         // testing the slope disable timer
+//         // dont just snap instantly just wait, based on jump timer 
+//         if (slopeSnapDisableTimer <= 0.0f &&
+//             (playerHorizontallyOnSlope(b, p, cfg, SLOPE_OVERLAP) || allowSlopeSupport) &&
+//             d > -SLOPE_SNAP_DIST &&
+//             d < MAX_STEP_HEIGHT)
+//         {
+//             p.pos.z -= (d + SLOPE_SKIN);
+//             p.vel.z = 0.0f;
+
+//             groundedThisFrame = true;
+//             onSlopeThisFrame  = true;
+
+//             slopeSupportTimer = SLOPE_SUPPORT_TIMER;
+//             slopeExitTimer    = SLOPE_EXIT_TIMER;
+
+//             // kmportant
+//             // makes it so i can wasd even after being snapped out awesome 
+//             // untested tho idk if it rlu does work 
+//             allowHorizontalThisFrame = true;
+//         }
+
+//         // test 6
+//         // stop making it so holding jump = phase thru slope and walls thats bad
+//         // bc snapout fire too fast andtoo much
+//         // --- slope collision logic ---
+//         // nevermind this fucks it all up too 
+
+//         // // 1. ALWAYS block penetration (solid slope)
+//         // if (d < -SLOPE_SKIN) {
+//         //     p.pos.z -= (d + SLOPE_SKIN);
+//         //     if (p.vel.z < 0.0f)
+//         //         p.vel.z = 0.0f;
+//         // }
+
+//         // // 2. ONLY snap/support when allowed
+//         // else if (slopeSnapDisableTimer <= 0.0f &&
+//         //         (playerHorizontallyOnSlope(b, p, cfg, SLOPE_OVERLAP) || allowSlopeSupport) &&
+//         //         d > -SLOPE_SNAP_DIST &&
+//         //         d < MAX_STEP_HEIGHT)
+//         // {
+//         //     p.pos.z -= (d + SLOPE_SKIN);
+//         //     p.vel.z = 0.0f;
+
+//         //     groundedThisFrame = true;
+//         //     onSlopeThisFrame  = true;
+
+//         //     slopeSupportTimer = SLOPE_SUPPORT_TIMER;
+//         //     slopeExitTimer    = SLOPE_EXIT_TIMER;
+//         // }
+
+//     }
+
+
+//     // 2.1. put this before step 3, so movement works
+//     auto moveAxis = [&](int axis, float deltaAxis) {
+//         if (axis == 2) return; // 🚨 Z is handled elsewhere WHERE exactlt tho?
+//         if (deltaAxis == 0.0f) return;
+
+//         glm::vec3 tryPos = p.pos;
+//         tryPos[axis] += deltaAxis;
+
+//         AABB pa = makePlayerAABBAt(tryPos, cfg);
+
+//         // change this so that i can move if i fall in a slope?
+//         // for (const Block& b : world.blocks) {
+//         //     if (overlaps(pa, makeBlockAABB(b)))
+//         //         return;
+//         // }
+
+//         // yes this means i can walk thru walls,
+//         // we will keep this and find a fix feb 6 2026 
+//         // this is fix 1, for slope walls being phase thru able
+//         // this should make them solid,
+//         // and keep slopes as 
+//         // 1. consistent,
+//         // 2. not sticking me to them for no reason
+//         // 3. letting me jump on them at any point 
+
+//         for (const Block& b : world.blocks) {
+//             if (!b.isSlope) {
+//                 if (overlaps(pa, makeBlockAABB(b)))
+//                     return;
+//             } 
+
+//             // if (b.isSlope) {
+
+//             //     // testing this
+//             //     // i think this will mess up slopes and stuff
+//             //     // i like the allow ignore but still
+//             //     // maibe tri projecting movement along the wall instead of just blocking movement
+//             //     // slope walls are ALWAYS solid in X/Y
+//             //     // if (overlaps(pa, makeSlopeWallAABB(b))) {
+//             //     //     return;
+//             //     // }
+
+//             //     // mode 3
+//             //     // just project movement along the wall?
+//             //     // idk 
+//             //     // if (overlaps(pa, makeSlopeWallAABB(b))) {
+//             //     //     float slid = slideAlongAxis(axis, deltaAxis, b, p.pos);
+
+//             //     //     if (std::abs(slid) < 0.00001f)
+//             //     //         return; // fully blocked
+
+//             //     //     tryPos[axis] = p.pos[axis] + slid;
+//             //     //     break; // stop checking blocks, apply slide
+//             //     // }
+
+//             //     // test 4
+//             //     // allow the bool allowignore bc makes good movemnet 
+//             //     if (overlaps(pa, makeSlopeWallAABB(b))) {
+
+//             //         // soft clamp: undo only the axis that caused penetration
+//             //         // instead of canceling movement or projecting
+//             //         tryPos[axis] = p.pos[axis];
+
+//             //         // IMPORTANT:
+//             //         // do NOT return; do NOT continue;
+//             //         // let other axis still apply
+//             //         break;
+//             //     }
+
+//             //     // bool allowIgnore =
+//             //     //     allowHorizontalThisFrame ||
+//             //     //     onSlopeThisFrame ||
+//             //     //     allowSlopeSupport ||
+//             //     //     slopeExitTimer > 0.0f;
+
+//             //     // // If slope is currently supporting us (or just exited),
+//             //     // // ignore slope walls (so movement feels smooth)
+//             //     // if (allowIgnore) {
+//             //     //     continue;
+//             //     // }
+
+//             //     // // Otherwise, slope walls behave like normal solid walls
+//             //     // if (overlaps(pa, makeSlopeWallAABB(b))) {
+//             //     //     return;
+//             //     // }
+//             // }
+
+//             // try 5
+//             // i want the jank movement back i miss it idk if this does it
+//             if (b.isSlope) {
+
+//                 AABB wall = makeSlopeWallAABB(b);
+
+//                 bool wasOutside = !overlaps(makePlayerAABBAt(p.pos, cfg), wall);
+//                 bool entering   = overlaps(pa, wall);
+
+//                 // 🚨 core rule:
+//                 // allowIgnore NEVER allows entering a slope wall
+//                 if (entering && wasOutside) {
+
+//                     // soft clamp: cancel only this axis
+//                     tryPos[axis] = p.pos[axis];
+
+//                     // optional but recommended: kill velocity into wall
+//                     p.vel[axis] = 0.0f;
+
+//                     break;
+//                 }
+
+//                 // otherwise:
+//                 // - already outside → free movement
+//                 // - already inside (rare, e.g. spawn) → resolve later
+//                 continue;
+//             }
+
+//         }
+//         // now apply movement finally 
+//         p.pos[axis] = tryPos[axis];
+//     };
+
+//     // 3. horizontal movement (X/Y)
+//     moveAxis(0, delta.x);
+//     moveAxis(1, delta.y);
+
+//     // 4. vertical movement (Z, solid blocks only)
+//     {
+//         glm::vec3 tryPos = p.pos;
+//         tryPos.z += delta.z;
+
+//         AABB pa = makePlayerAABBAt(tryPos, cfg);
+//         bool hit = false;
+
+//         for (const Block& b : world.blocks) {
+//             if (b.isSlope) continue;
+//             if (overlaps(pa, makeBlockAABB(b))) {
+//                 hit = true;
+//                 break;
+//             }
+//         }
+
+//         if (!hit) {
+//             p.pos.z = tryPos.z;
+//         } else if (p.vel.z < 0.0f) {
+//             groundedThisFrame = true;
+//             p.vel.z = 0.0f;
+//         }
+//     }
+
+    
+//     // 5.01. add this after slope snapping? im not sure feb 7 2026
+//     if (groundedThisFrame) {
+//         p.vel.z = std::max(p.vel.z, 0.0f);
+//     }
+
+//     // 5.1. resolve penetration ONCE, before on ground stuff
+//     // bc it wasnt befoer? idk feb 6 2026 
+//     // added feb 7 condition for if ur NOT onthe ground then do it
+//     // else dont do it
+//     // added onslopethisframe condition so we dont fuck shit up  anumore feb 7 2026
+//     // “Only push me out if I’m airborne AND not supported by a slope.”
+//     // if (!p.onGround && !onSlopeThisFrame) {
+//     if (!p.onGround && !onSlopeThisFrame && !allowSlopeSupport) {
+//             resolveStuck(p, cfg, world);
+//     }
+
+//     // 6. finalize grounded state
+//     // feb 7 2026 im testing to do this at the veru end
+//     // p.onGround = groundedThisFrame;
+
+//     // 7. jump
+
+//     if (p.onGround)
+//         coyoteTimer = COYOTE_JUMP_TIME;
+//     else
+//         coyoteTimer -= dt;
+
+//     // 7.1. jump update thing better maibe -jump intent + snap suppression
+
+//     if (jumpHeld) {
+//         jumpIntentTimer = 0.12f;
+
+//         // As soon as jump is requested, suppress slope snapping
+//         slopeSnapDisableTimer = std::max(
+//             slopeSnapDisableTimer,
+//             COYOTE_JUMP_TIME + 0.05f
+//         );
+//     } else {
+//         jumpIntentTimer -= dt;
+//     }
+    
+//     // if (jumpHeld)
+//     //     // test diferent values 
+//     //     jumpIntentTimer = 0.12f; // ~7 frames at 60fps
+//     // else
+//     //     if (wantsJump) {
+//     //     // Disable slope snapping long enough for jump to resolve
+//     //     // todo add this to config.h problabblue
+//     //     slopeSnapDisableTimer = std::max(
+//     //         slopeSnapDisableTimer,
+//     //         COYOTE_JUMP_TIME + 0.05f
+//     //     );
+//     // }
+//     //     // NOW update jumptimer bro 
+//     //     jumpIntentTimer -= dt;
+
+//     // if (jumpHeld && coyoteTimer > 0.0f) {
+//     //     p.vel.z = cfg.jumpStrength;
+//     //     coyoteTimer = 0.0f;
+//     //     p.onGround = false;
+//     // }
+
+//     if (wantsJump && coyoteTimer > 0.0f) {
+//         p.vel.z = cfg.jumpStrength;
+//         coyoteTimer = 0.0f;
+//         p.onGround = false;
+//         didJumpThisFrame = true;
+//     }
+
+//     // this drag doesnt work but we just gonna add it later
+//     // 9. drag (last)
+//     // float drag = std::exp(-FRICTION_AMOUNT * dt);
+//     // testing like 0.99f as the firction amount 
+//     float drag = std::exp(-OPPOSITE_FRICTION_AMOUNT * dt);
+//     p.vel.x *= drag;
+//     p.vel.y *= drag;
+
+//     // 10. emergency escape if i cant move and its stupid
+//     // if grounded but XY blocked, allow sliding escape
+//     // this idk if works so we test thi other one
+//     // if (!p.onGround && glm::length(wishMoveXY) > 0.001f) {
+//     // testing this thingidk 
+//     if (!p.onGround && !onSlopeThisFrame && !allowSlopeSupport) {
+//         resolveStuck(p, cfg, world);
+//     }
+
+//     // 11. testing finalizing grounded state at the veru end?
+//     p.onGround = groundedThisFrame;
+// };
+

@@ -1,0 +1,231 @@
+// C:\important\quiet\n\mimita-priv-v7\src\physics\physics-simple.cpp
+// feb 3 2026
+// fixing phiscs bc it broken and sux 
+
+#include "physics-simple.h"
+
+#include <algorithm>
+#include <vector>
+
+// ---- You must include your real definitions somewhere ----
+#include "world/world.h"      // World, Block
+#include "entities/player.h"  // Player
+#include "config.h"
+
+// Minimal AABB
+struct AABB {
+    glm::vec3 min;
+    glm::vec3 max;
+};
+
+static inline AABB makePlayerAABB(const Player& p, const PhysicsSimpleConfig& cfg)
+{
+    glm::vec3 half(cfg.playerWidth * 0.5f, cfg.playerDepth * 0.5f, cfg.playerHeight * 0.5f);
+    return { p.pos - half, p.pos + half };
+}
+
+static inline AABB makeBlockAABB(const Block& b)
+{
+    // IMPORTANT: b.size must be FULL extents (width/height/depth), not half.
+    glm::vec3 half = b.size * 0.5f;
+    return { b.pos - half, b.pos + half };
+}
+
+static inline bool overlaps(const AABB& a, const AABB& b)
+{
+    return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+           (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+           (a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
+
+static bool collidesAt(const Player& p,
+                       const PhysicsSimpleConfig& cfg,
+                       const World& world,
+                       const glm::vec3& testPos)
+{
+    glm::vec3 half(cfg.playerWidth*0.5f,
+                   cfg.playerDepth*0.5f,
+                   cfg.playerHeight*0.5f);
+
+    AABB pa { testPos - half, testPos + half };
+
+    for (const Block& b : world.blocks)
+    {
+        if (b.isSlope)
+            continue;   // slopes handled by planes only'
+        
+        glm::vec3 bh = b.size * 0.5f;
+        AABB ba { b.pos - bh, b.pos + bh };
+
+        if (overlaps(pa, ba))
+            return true;
+    }
+    return false;
+}
+
+// Push player out of block along smallest penetration axis.
+// Returns which axis was used: 0=x, 1=y, 2=z. Also outputs push vector.
+static inline int resolveOne(AABB& pa, const AABB& ba, glm::vec3& pos, float slop, glm::vec3& outPush)
+{
+    // penetration distances for each side
+    float px1 = ba.max.x - pa.min.x; // push -x
+    float px2 = pa.max.x - ba.min.x; // push +x
+    float py1 = ba.max.y - pa.min.y;
+    float py2 = pa.max.y - ba.min.y;
+    float pz1 = ba.max.z - pa.min.z;
+    float pz2 = pa.max.z - ba.min.z;
+
+    float penX = std::min(px1, px2);
+    float penY = std::min(py1, py2);
+    float penZ = std::min(pz1, pz2);
+
+    outPush = glm::vec3(0.0f);
+
+    // choose smallest axis
+    if (penX <= penY && penX <= penZ) {
+        float push = (px1 < px2) ? -(px1 + slop) : (px2 + slop);
+        pos.x += push;
+        outPush.x = push;
+        return 0;
+    }
+    if (penY <= penZ) {
+        float push = (py1 < py2) ? -(py1 + slop) : (py2 + slop);
+        pos.y += push;
+        outPush.y = push;
+        return 1;
+    }
+
+    float push = (pz1 < pz2) ? -(pz1 + slop) : (pz2 + slop);
+    pos.z += push;
+    outPush.z = push;
+    return 2;
+}
+
+void physicsSimpleUpdate(
+    Player& p,
+    const World& world,
+    const PhysicsSimpleConfig& cfg,
+    const glm::vec2& wishMoveXY,
+    bool jumpHeld,
+    float dt
+){
+    dt = std::min(dt, 0.033f);
+
+    // 1. assume airborne
+    p.onGround = false;
+
+    // gravity
+    p.vel.z += cfg.gravity * dt;
+    p.vel.z = std::max(p.vel.z, -cfg.maxFallSpeed);
+
+    // desired movement
+    glm::vec3 delta;
+    delta.x = wishMoveXY.x * dt;
+    delta.y = wishMoveXY.y * dt;
+    delta.z = p.vel.z * dt;
+
+    // ----- X -----
+    glm::vec3 tryPos = p.pos;
+    tryPos.x += delta.x;
+    if (!collidesAt(p, cfg, world, tryPos))
+        p.pos.x = tryPos.x;
+    else
+        p.vel.x = 0;
+
+    // ----- Y -----
+    tryPos = p.pos;
+    tryPos.y += delta.y;
+    if (!collidesAt(p, cfg, world, tryPos))
+        p.pos.y = tryPos.y;
+    else
+        p.vel.y = 0;
+
+    // ----- Z (flat ground) -----
+    tryPos = p.pos;
+    tryPos.z += delta.z;
+    if (!collidesAt(p, cfg, world, tryPos)) {
+        p.pos.z = tryPos.z;
+    } else {
+        if (p.vel.z < 0)
+            p.onGround = true;
+        p.vel.z = 0;
+    }
+
+    // ----- SLOPES -----
+    for (const Block& b : world.blocks)
+    {
+        if (!b.isSlope)
+            continue;
+
+        // feet in world space
+        glm::vec3 foot = p.pos;
+        foot.z -= cfg.playerHeight * 0.5f;
+
+        // to slope local space
+        glm::vec3 local = glm::inverse(b.rot) * (foot - b.pos);
+
+        float halfX = b.size.x * 0.5f;
+        float halfY = b.size.y * 0.5f;
+        float halfZ = b.size.z * 0.5f;
+
+        if (fabs(local.x) > halfX) continue;
+        if (fabs(local.y) > halfY) continue;
+
+        // slope along X only
+        // testing the hardcode of it so that it mihgt work maibe idk 
+        // float t = (local.x + halfX) / b.size.x;
+        // test 2 flip it?
+        // float t = 1.0f - (local.x + halfX) / b.size.x;   
+
+        // float slopeZ = -b.size.z * 0.5f + t * b.size.z;
+        // test using whole heihgt, so we have real heihgt and its good
+        // float slopeZ = t * b.size.z;
+ 
+        // OUR SLOPE IS Z, Z IS UP, BUT TO OPENGL, Y IS UP
+        // SO USE THE Y VALUE AS OUR Z VALUE 
+        // float slopeZ = t * b.size.y;
+        // or use this i dont  know whatever feb 4 2026
+        // float slopeZ = t * b.size.x;
+        // tests
+        // z = z means too steep
+        // y = z means too shallow, looks like its corner to corner? idk
+        // x = z means way too steep 
+
+        float footZ  = foot.z;
+
+        // test 3 idk 
+        // test 3 this makes walking up ramp = go down, and go down = walk up. notgood
+        // float t = (local.x + halfX) / b.size.x;
+        // test 4
+        // flip the halfx and local x 
+        // now it goes up the right way, but its too steep
+        // e.g. it goes up 1x for 1y, this goes up 2x for 1y
+        // float t = (halfX - local.x) / b.size.x;
+        // test 5
+        // mult halfx by 2
+        // makes it way too steep 
+        // float t = ((halfX * 2.0f) - local.x) / b.size.x;
+        // test 6 idk what this does but  test it
+        // its good ish? but same flipped issue,
+        // walking up = going down, down = going up
+        // test 7 flip it with a 1.0f negative mult
+        // this makes it so i cant collide with it whatsoever 
+        float t = ( -1.0f * (local.x + halfX) / (2.0f * halfX));
+
+        float slopeZ = -halfZ + t * b.size.z;
+        float worldZ = b.pos.z + slopeZ;
+
+        // *** THIS WAS MISSING ***
+        if (footZ <= worldZ + 0.01f) {
+            p.pos.z += (worldZ - footZ);
+            p.vel.z = 0;
+            p.onGround = true;
+        }
+    }
+
+    // ----- JUMP (ONCE, AFTER ALL COLLISIONS) -----
+    if (jumpHeld && p.onGround) {
+        p.vel.z = cfg.jumpStrength;
+        p.onGround = false;
+    }
+}
