@@ -1,0 +1,713 @@
+// // C:\important\quiet\n\mimita-public-main\src\main.cpp
+// // jan 25 2026 3rd refacotr
+// // purpose is only to call other functions from other files thats it
+
+
+// #include <cstdio>
+// #include <vector>
+// #include <ctime>
+// #include <algorithm>
+
+// #include "renderer/renderer.h"
+// #include "camera.h"
+// // #include "map/texture_manager.h"
+// #include "map/map_loader.h"
+// #include "map/map_render.h"
+// // #include "world/world-mesh.h"
+// #include "entities/player.h"
+// // #include "entities/enemy.h"
+// // #include "weapons/weapon.h"
+// // #include "weapons/projectile.h"
+// #include "debug/debug-visuals.h"
+
+// // #include "world/world-loader.h"
+// // #include "map/texture.h"
+// #include "physics/physics.h"
+// #include "utils/path_utils.h"
+// #include "physics/physics-simple.h"
+
+// // ---------------- Globals ----------------
+// Renderer* gRenderer = nullptr;
+// Camera*   gActiveCamera = nullptr;
+// // std::vector<Projectile> projectiles;
+// GLuint worldShader = 0;
+
+// // ---------------- Shader loader ----------------
+// #include <fstream>
+// #include <sstream>
+
+// static std::string readFile(const char* path) {
+//     std::ifstream f(path);
+//     if (!f.is_open()) {
+//         printf("FAILED TO OPEN %s\n", path);
+//         return "";
+//     }
+//     std::stringstream ss;
+//     ss << f.rdbuf();
+//     return ss.str();
+// }
+
+// static GLuint compileShader(GLenum type, const char* src) {
+//     GLuint s = glCreateShader(type);
+//     glShaderSource(s, 1, &src, nullptr);
+//     glCompileShader(s);
+
+//     GLint ok;
+//     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+//     if (!ok) {
+//         char log[1024];
+//         glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+//         printf("SHADER ERROR:\n%s\n", log);
+//         return 0;
+//     }
+//     return s;
+// }
+
+// static GLuint loadShader(const char* vsPath, const char* fsPath) {
+//     auto vsSrc = readFile(vsPath);
+//     auto fsSrc = readFile(fsPath);
+//     if (vsSrc.empty() || fsSrc.empty()) return 0;
+
+//     GLuint vs = compileShader(GL_VERTEX_SHADER, vsSrc.c_str());
+//     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc.c_str());
+
+//     GLuint prog = glCreateProgram();
+//     glAttachShader(prog, vs);
+//     glAttachShader(prog, fs);
+//     glLinkProgram(prog);
+
+//     GLint linked = 0;
+//     glGetProgramiv(prog, GL_LINK_STATUS, &linked);
+//     if (!linked) {
+//         char log[1024];
+//         glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
+//         printf("PROGRAM LINK ERROR:\n%s\n", log);
+//         return 0;
+//     }
+
+//     glDeleteShader(vs);
+//     glDeleteShader(fs);
+//     return prog;
+// }
+
+// // ---------------- Input ----------------
+// static void mouseCallback(GLFWwindow*, double x, double y) {
+//     if (gActiveCamera)
+//         gActiveCamera->updateMouse(x, y);
+// }
+
+// // feb 3 2026 simple world mesh build
+// struct SimpleVertex {
+//     glm::vec3 pos;
+// };
+
+// static void buildSimpleWorldMesh(
+//     const World& world,
+//     std::vector<SimpleVertex>& out
+// ) {
+//     out.clear();
+
+//     for (const Block& b : world.blocks) {
+//         glm::vec3 h = b.size * 0.5f;
+
+//         auto W = [&](glm::vec3 local) {
+//             return b.pos + b.rot * local;
+//         };
+
+//         auto tri = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+//             out.push_back({a});
+//             out.push_back({b});
+//             out.push_back({c});
+//         };
+
+//         // -----------------------
+//         // NORMAL BLOCK = CUBE
+//         // -----------------------
+//         if (!b.isSlope) {
+//             glm::vec3 p000 = W({-h.x, -h.y, -h.z});
+//             glm::vec3 p001 = W({-h.x, -h.y,  h.z});
+//             glm::vec3 p010 = W({-h.x,  h.y, -h.z});
+//             glm::vec3 p011 = W({-h.x,  h.y,  h.z});
+//             glm::vec3 p100 = W({ h.x, -h.y, -h.z});
+//             glm::vec3 p101 = W({ h.x, -h.y,  h.z});
+//             glm::vec3 p110 = W({ h.x,  h.y, -h.z});
+//             glm::vec3 p111 = W({ h.x,  h.y,  h.z});
+
+//             tri(p100,p101,p111); tri(p100,p111,p110); // +X
+//             tri(p000,p010,p011); tri(p000,p011,p001); // -X
+//             tri(p010,p110,p111); tri(p010,p111,p011); // +Y
+//             tri(p000,p001,p101); tri(p000,p101,p100); // -Y
+//             tri(p001,p011,p111); tri(p001,p111,p101); // +Z
+//             tri(p000,p100,p110); tri(p000,p110,p010); // -Z
+//         }
+
+//         // -----------------------
+//         // SLOPE = RAMP
+//         // -----------------------
+//        else {
+//             // bottom rectangle
+//             glm::vec3 p0 = W({-h.x, -h.y, -h.z});
+//             glm::vec3 p1 = W({ h.x, -h.y, -h.z});
+//             glm::vec3 p2 = W({ h.x,  h.y, -h.z});
+//             glm::vec3 p3 = W({-h.x,  h.y, -h.z});
+
+//             // top edge (the high side of the ramp)
+//             glm::vec3 p4 = W({-h.x, -h.y,  h.z});
+//             glm::vec3 p5 = W({ h.x, -h.y,  h.z});
+//             glm::vec3 p6 = W({ h.x,  h.y,  h.z});
+//             glm::vec3 p7 = W({-h.x,  h.y,  h.z});
+
+//             // ramp surface (slanted face)
+//             tri(p4,p5,p6);
+//             tri(p4,p6,p7);
+
+//             // back wall
+//             tri(p0,p4,p5);
+//             tri(p0,p5,p1);
+
+//             // left wall
+//             tri(p0,p3,p7);
+//             tri(p0,p7,p4);
+
+//             // right wall
+//             // might be broken
+//             // tri(p1,p5,p6);
+//             // tri(p1,p6,p2);
+            
+//             // right wall mihgt fix feb 4 2026
+//             tri(p1,p6,p5);
+//             tri(p1,p2,p6);
+
+//             // bottom
+//             tri(p0,p1,p2);
+//             tri(p0,p2,p3);
+//         }
+//     }
+// }
+
+// // static void buildSimpleWorldMesh(
+// //     const World& world,
+// //     std::vector<SimpleVertex>& out
+// // ) {
+// //     out.clear();
+
+// //     for (const Block& b : world.blocks) {
+// //         glm::vec3 h = b.size * 0.5f;
+
+// //         auto W = [&](glm::vec3 local) {
+// //             return b.pos + b.rot * local;
+// //         };
+
+// //         glm::vec3 p000 = W(glm::vec3(-h.x, -h.y, -h.z));
+// //         glm::vec3 p001 = W(glm::vec3(-h.x, -h.y,  h.z));
+// //         glm::vec3 p010 = W(glm::vec3(-h.x,  h.y, -h.z));
+// //         glm::vec3 p011 = W(glm::vec3(-h.x,  h.y,  h.z));
+// //         glm::vec3 p100 = W(glm::vec3( h.x, -h.y, -h.z));
+// //         glm::vec3 p101 = W(glm::vec3( h.x, -h.y,  h.z));
+// //         glm::vec3 p110 = W(glm::vec3( h.x,  h.y, -h.z));
+// //         glm::vec3 p111 = W(glm::vec3( h.x,  h.y,  h.z));
+
+// //         auto tri = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+// //             out.push_back({a});
+// //             out.push_back({b});
+// //             out.push_back({c});
+// //         };
+
+// //         // 6 faces, 2 triangles each
+// //         tri(p100,p101,p111); tri(p100,p111,p110); // +X
+// //         tri(p000,p010,p011); tri(p000,p011,p001); // -X
+// //         tri(p010,p110,p111); tri(p010,p111,p011); // +Y
+// //         tri(p000,p001,p101); tri(p000,p101,p100); // -Y
+// //         tri(p001,p011,p111); tri(p001,p111,p101); // +Z
+// //         tri(p000,p100,p110); tri(p000,p110,p010); // -Z
+// //     }
+// // }
+
+// // NO PLANES we hate planes grrr feb 4 2026
+// // static void drawPlaneDebug(
+// //     const Plane& p,
+// //     float size,
+// //     std::vector<SimpleVertex>& out
+// // ){
+// //     glm::vec3 n = glm::normalize(p.normal);
+// //     glm::vec3 up = fabs(n.z) < 0.9f ? glm::vec3(0,0,1) : glm::vec3(1,0,0);
+
+// //     glm::vec3 t = glm::normalize(glm::cross(up, n));
+// //     glm::vec3 b = glm::cross(n, t);
+
+// //     glm::vec3 c = p.point;
+
+// //     glm::vec3 v0 = c + ( t + b) * size;
+// //     glm::vec3 v1 = c + (-t + b) * size;
+// //     glm::vec3 v2 = c + (-t - b) * size;
+// //     glm::vec3 v3 = c + ( t - b) * size;
+
+// //     out.push_back({v0});
+// //     out.push_back({v1});
+// //     out.push_back({v2});
+
+// //     out.push_back({v0});
+// //     out.push_back({v2});
+// //     out.push_back({v3});
+// // }
+
+// // static Plane makePlane(
+// //     glm::vec3 point,
+// //     glm::vec3 normal,
+// //     float halfLength,
+// //     float halfWidth
+// // ){
+// //     Plane p;
+// //     p.point = point;
+// //     p.normal = glm::normalize(normal);
+
+// //     glm::vec3 up = fabs(p.normal.z) < 0.9f
+// //         ? glm::vec3(0,0,1)
+// //         : glm::vec3(1,0,0);
+
+// //     p.tangent   = glm::normalize(glm::cross(up, p.normal));
+// //     p.bitangent = glm::cross(p.normal, p.tangent);
+
+// //     p.halfLength = halfLength;
+// //     p.halfWidth  = halfWidth;
+// //     return p;
+// // }
+
+// // ---------------- Main ----------------
+// int main() {
+//     printf("MAIN START\n");
+//     srand((unsigned)time(nullptr));
+
+//     // ---- Renderer (owns GL) ----
+//     // static or no ? idk jan 25 2026 
+//     static Renderer renderer(800,600,"mimita.exe");
+//     // Renderer renderer(800, 600, "mimita.exe");
+//     gRenderer = &renderer;
+//     // so we debug visuals is good jan 30 2026 
+//     DebugVis::init(renderer.window); 
+
+//     if (!renderer.window) return -1;
+
+//     printf("GL_VENDOR   = %s\n", glGetString(GL_VENDOR));
+//     printf("GL_RENDERER = %s\n", glGetString(GL_RENDERER));
+//     printf("GL_VERSION  = %s\n", glGetString(GL_VERSION));
+
+//     // ---- Shaders ----
+//     worldShader = loadShader("shaders/basic.vert", "shaders/basic.frag");
+//     if (!worldShader) {
+//         printf("World shader failed\n");
+//         return -1;
+//     }
+
+//     printf("World shader loaded\n");
+
+//     // --- TRIANGLE TEST VAO ---
+//     GLuint triVAO = 0, triVBO = 0;
+//     {
+//         float tri[] = {
+//             -0.6f, -0.4f, 0.0f,
+//             0.6f, -0.4f, 0.0f,
+//             0.0f,  0.6f, 0.0f
+//         };
+
+//         glGenVertexArrays(1, &triVAO);
+//         glGenBuffers(1, &triVBO);
+
+//         glBindVertexArray(triVAO);
+//         glBindBuffer(GL_ARRAY_BUFFER, triVBO);
+//         glBufferData(GL_ARRAY_BUFFER, sizeof(tri), tri, GL_STATIC_DRAW);
+
+//         glEnableVertexAttribArray(0);
+//         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+//         glBindVertexArray(0);
+//     }
+//     printf("[TRI] triangle VAO ready\n");
+
+
+//     // ---- Game systems ----
+//     // comment world world out bc feb 3 2026 collisions suck
+//     // World world;
+//     // TextureManager TEX;
+//     // Enemy enemy;
+//     // Weapon weapon;
+
+//     printf("main cpp: NOT Initializing textures we removed \n");
+//     // TEX.init();
+
+//     // ---- Bind textures to shader ----
+//     // commented jan 25 2026 bc textures i think are fucking everuthing up
+//     // glUseProgram(worldShader);
+//     // // limited to 8, bc 
+//     // int texCount = std::min(8, (int)TEX.count());
+//     // int samplers[16];
+
+//     // for (int i = 0; i < texCount; i++) {
+//     //     glActiveTexture(GL_TEXTURE0 + i);
+//     //     glBindTexture(GL_TEXTURE_2D, TEX.get(i));
+//     //     samplers[i] = i;
+//     // }
+//     // glUniform1iv(
+//     //     glGetUniformLocation(worldShader, "uTextures"),
+//     //     texCount,
+//     //     samplers
+//     // );
+//     // glUseProgram(0);
+//     printf("[STEP] about to print the stuff BEFOre load world json...\n");
+
+//     FILE* test = fopen("C:/important/quiet/n/mimita-priv-v7/README.md", "rb");
+//     printf("fopen README = %p\n", test);
+//     if (test) fclose(test);
+
+//     // ---- Load world ----
+//     printf("[STEP] about to load world json...\n");
+//     fflush(stdout);
+
+//     // just hardcode for now jan 25 2026
+//     // feb 3 2026 testing simple phsics and worl loaders 
+//     // bool ok = loadWorldFromJSON(
+//     // world,
+//     // "C:/important/quiet/n/mimita-priv-v7/assets/maps/json-converts/mimita-rotations-v6-converted.json"
+//     // );  
+
+//     World world;
+
+//     // ----------------------
+//     // FLOOR
+//     // ----------------------
+//     world.blocks.push_back({
+//         .pos  = glm::vec3(0, 0, 0),
+//         .size = glm::vec3(200, 200, 4)
+//     });
+
+//     // ----------------------
+//     // SINGLE WALL
+//     // ----------------------
+//     world.blocks.push_back({
+//         .pos  = glm::vec3(10, 0, 5),
+//         .size = glm::vec3(2, 20, 10)
+//     });
+
+//     // ----------------------
+//     // TEST BOX (corner)
+//     // ----------------------
+//     world.blocks.push_back({
+//         .pos  = glm::vec3(5, 5, 2),
+//         .size = glm::vec3(4, 4, 4)
+//     });
+
+//     // ----------------------
+//     // CORRIDOR
+//     // ----------------------
+//     world.blocks.push_back({
+//         .pos  = glm::vec3(0, -5, 3),
+//         .size = glm::vec3(50, 2, 6)
+//     });
+
+//     world.blocks.push_back({
+//         .pos  = glm::vec3(0,  5, 3),
+//         .size = glm::vec3(50, 2, 6)
+//     });
+
+//     // ----------------------
+//     // STAIRS (slope test)
+//     // ----------------------
+//     for (int i = 0; i < 6; i++) {
+//         world.blocks.push_back({
+//             .pos  = glm::vec3(-10 + i*3, 0, 1 + i*2),
+//             .size = glm::vec3(3, 6, 2)
+//         });
+//     }
+
+//     // slopes
+
+//     // dont do planes, just block
+//     Block ramp;
+//     ramp.pos  = glm::vec3(50, 10, 5);
+//     // length width height
+//     // 20 long, 10 wide, 15 tall
+//     ramp.size = glm::vec3(20, 10, 15);
+//     ramp.isSlope = true;   // <-- THIS IS THE ENTIRE BUG    
+
+//     // rotate 15° around Y axis (tilt like a ramp)
+//     glm::mat4 R4 = glm::rotate(glm::mat4(1.0f), glm::radians(15.0f), glm::vec3(0,1,0));
+//     ramp.rot = glm::mat3(R4);
+
+//     world.blocks.push_back(ramp);
+
+//     // world.planes.push_back(
+//     //     makePlane(
+//     //         glm::vec3(0, 0, 0),          // center
+//     //         glm::vec3(-1, 0, 0.26f),     // slope direction
+//     //         20.0f,                      // half length (along ramp)
+//     //         6.0f                        // half width
+//     //     )
+//     // );
+
+//     // world.planes.push_back({
+//     //     .point  = glm::vec3(10, 0, 0),
+//     //     .normal = glm::normalize(glm::vec3(-1, 0, 1))
+//     // });
+
+//     // world.planes.push_back({
+//     //     .point  = glm::vec3(20, 0, 0),
+//     //     .normal = glm::normalize(glm::vec3(-1, 0, 2.75f))
+//     // });
+
+
+//     // bool ok = loadWorldFromJSON(world, "assets/maps/json-converts/mimita-rotations-v6-converted.json");
+//     // printf("[STEP] loadWorldFro?mJSON returned = %d\n", (int)ok);
+//     fflush(stdout);
+
+//     // if (!ok) {
+//     //     printf("[FATAL] World load failed. Press Enter...\n");
+//     //     getchar(); // keeps window open even if you ran exe directly
+//     //     return -1;
+//     // }
+
+//     printf("main.cpp: std vectro world verts\n");
+
+//     // add before buildsimplesowrldmesh idk feb 4 2026 640 pm
+//     // AUTO-GENERATE SLOPE PLANES FROM ROTATED BLOCKS
+//     for (const Block& b : world.blocks) {
+//         if (b.isSlope) {
+//             // continue;   // slopes handled by planes only
+//             Plane p;
+//             // feb 4 2026 might break things? i dont know bruh 
+//             // the below might fix it
+//             // p.point = b.pos;
+//             // move plane to top face of the block
+//             p.point = b.pos + p.normal * (b.size.z * 0.5f);
+
+//             // normal = rotated +Z (top face of block)
+//             p.normal = glm::normalize(b.rot * glm::vec3(0,0,1));
+
+//             // make sure it faces upward
+//             if (p.normal.z < 0)
+//                 p.normal = -p.normal;
+
+//             glm::vec3 up = glm::vec3(0,0,1);
+//             p.tangent   = glm::normalize(glm::cross(up, p.normal));
+//             p.bitangent = glm::cross(p.normal, p.tangent);
+
+//             p.halfLength = b.size.x * 0.5f;
+//             p.halfWidth  = b.size.y * 0.5f;
+
+//             world.planes.push_back(p);
+//         }
+//     }
+
+//     // std::vector<WorldVertex> worldVerts;
+//     std::vector<SimpleVertex> worldVerts;
+//     buildSimpleWorldMesh(
+//         world, 
+//         worldVerts
+//     );
+//     //     for (const Plane& p : world.planes) {
+//     //     printf("main.cpp: draw planes but stop feb 4 2026 \n");
+
+//     //     // drawPlaneDebug(p, 20.0f, worldVerts);
+//     // }
+
+//     printf("main.cpp: build SIMPLE world mesh now feb 3 2026 \n");
+
+//     // buildWorldMesh(world, worldVerts);
+//     // printf("worldVerts count = %zu\n", worldVerts.size());
+//     // for (int i = 0; i < 5 && i < worldVerts.size(); i++) {
+//     //     auto& v = worldVerts[i];
+//     //     printf("v[%d] = %f %f %f\n", i, v.pos.x, v.pos.y, v.pos.z);
+//     // }
+
+//     printf("main.cpp: gluint world vao  \n");
+
+//     GLuint worldVAO, worldVBO;
+//     glGenVertexArrays(1, &worldVAO);
+//     glGenBuffers(1, &worldVBO);
+
+//     printf("main.cpp: glbind vertex arrraauuss \n");
+
+//     glBindVertexArray(worldVAO);
+//     glBindBuffer(GL_ARRAY_BUFFER, worldVBO);    
+//     // glBufferData(GL_ARRAY_BUFFER, worldVerts.size()*sizeof(WorldVertex), worldVerts.data(), GL_STATIC_DRAW);
+
+//     // feb 3 2026 fix 
+//     glBufferData(
+//         GL_ARRAY_BUFFER,
+//         worldVerts.size() * sizeof(SimpleVertex),
+//         worldVerts.data(),
+//         GL_STATIC_DRAW
+//     );
+//     printf("main.cpp: glVertexAttribPointer attempt \n");
+
+//     // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)offsetof(WorldVertex, pos));
+   
+//     // simple feb 3 2026 
+//     glVertexAttribPointer(
+//     0,
+//     3,
+//     GL_FLOAT,
+//     GL_FALSE,
+//     sizeof(SimpleVertex),
+//     (void*)0
+//     );
+//     glEnableVertexAttribArray(0);
+
+//     printf("main.cpp: glBindVertexArray attempt \n");
+
+//     glBindVertexArray(0);
+
+//     // ---- Player ----
+//     printf("main.cpp: Mesh playerMesh = loadOBJ attempt  \n");
+
+//     // jan 30 2026 these two little SHITS are breakign EVERTHING
+//     // need fix
+//     printf("[OBJ] about to resolve path but i commented it out also \n");
+//     // std::string resolved = resolveAssetPath("assets/entity/player/default/mimita-char-concise-v3.obj");
+//     // printf("[OBJ] resolved = %s\n", resolved.c_str());
+//     fflush(stdout);
+
+//     printf("[OBJ] about to ParseFromFile\n");
+//     // fuck u bruh im not loading ur dumbass obj anummore
+//     // breaking m  whole repo fuck u 
+//     // Mesh playerMesh = loadOBJ("assets/entity/player/default/mimita-char-concise-v3.obj");
+//     printf("[OBJ] returned from loadOBJ\n");
+//     fflush(stdout);
+//     // printf("PLAYER VERTS = %zu\n", playerMesh.verts.size());
+
+//     // GLuint playerVAO = createMapVAO(playerMesh);
+
+//     // it doesnt even use this stupid bulshit anways so jan 25 2026 
+//     // GLuint playerTex = loadTexture("assets/textures/greenwirev1.png");
+
+//     printf("main.cpp: defiing player camera gactivecamera globals i think \n");
+
+//     Player player;
+//     Camera camera;
+//     // debug putting camera here
+//     camera.pos = glm::vec3(120, 40, 200); // roughly near your world data
+//     gActiveCamera = &camera;
+
+//     printf("main.cpp: set input mode attempts \n");
+
+//     glfwSetInputMode(renderer.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+//     printf("main.cpp: glfwSetCursorPosCallback attempts \n");
+
+//     glfwSetCursorPosCallback(renderer.window, mouseCallback);
+
+//     // ---- Loop ----
+//     printf("shouldClose at start = %d\n", renderer.shouldClose());
+
+//     glfwPollEvents();   // <-- ADD THIS
+
+//     printf("main.cpp: about to start render loop\n");
+
+//     while (!renderer.shouldClose()) {
+//         // static int frames = 0;
+//         // frames++;
+//         // if (frames % 60 == 0)
+//         //     printf("frame %d\n", frames);
+
+//             // unused var: because we are fixing it bc its broken jan 30 2026 
+//         float dt = renderer.beginFrame();
+
+//         glViewport(0, 0, 800, 600);
+//         glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
+//         glClear(GL_COLOR_BUFFER_BIT);
+
+//         // float dt = renderer.beginFrame();
+        
+//         // // add so that it has a framebufer? what ? jan 25 2026 
+//         // glViewport(0, 0, 800, 600);
+//         // glClearColor(0.2f, 0.2f, 0.25f, 1.0f);
+//         // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+//         // DONT DO GL DEPTH TEST IN MAIN IT GOES IN RENDERER.CPP 
+//         // glEnable(GL_DEPTH_TEST);
+
+//         // DebugVis::update();
+//         // camera.follow(player.pos);
+
+//         glm::mat4 view = camera.getView();
+//         // testing putting it after
+//         // camera follow before view calc = character spins too fast for camera
+//         // camera follow after view calc = ? 
+//         camera.follow(player.pos);
+//         glm::mat4 proj = camera.getProj(800,600);
+//         glm::mat4 model(1.0f);
+
+//         // World
+//         glUseProgram(worldShader);
+//         // does this go here idk jan 30 2026 
+//         glUniform1i(glGetUniformLocation(worldShader,"uUseColor"), 0);
+//         glUniformMatrix4fv(glGetUniformLocation(worldShader,"view"),1,0,&view[0][0]);
+//         glUniformMatrix4fv(glGetUniformLocation(worldShader,"projection"),1,0,&proj[0][0]);
+//         glUniformMatrix4fv(glGetUniformLocation(worldShader,"model"),1,0,&model[0][0]);        // glUniformMatrix4fv(glGetUniformLocation(worldShader,"model"),1,0,&model[0][0]);
+
+//         glBindVertexArray(worldVAO);
+//         glDrawArrays(GL_TRIANGLES, 0, worldVerts.size());    
+//         // glBindVertexArray(0);
+//         // glUseProgram(0);
+
+//         DebugVis::update();
+
+//         if (DebugVis::enabled()) {
+//             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+//             // drawDebugStuff(player, camera, world);
+//             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+//         }
+
+//         // ---------------- SIMPLE PHYSICS ----------------
+//         static PhysicsSimpleConfig CFG;
+
+//         CFG.gravity = -25.0f;
+//         CFG.jumpStrength = 12.0f;
+//         CFG.autoHop = true;     // hold space = bunny hop
+//         // feb 3 2026 controls hitbox for some reaosn idk
+//         // CFG.playerWidth  = 0.7f;
+//         // CFG.playerDepth  = 0.7f;
+//         // CFG.playerHeight = 2.8f;
+//         // feb 3 2026 allows a little bit of jank so not too accurate
+//         CFG.playerWidth  = 1.35f;
+//         CFG.playerDepth  = 1.35f;
+//         CFG.playerHeight = 3.5f;
+
+//         // build wish direction (same as before)
+//         glm::vec3 forward = camera.front;
+//         forward.z = 0.0f;
+//         if (glm::length(forward) > 0.0001f)
+//             forward = glm::normalize(forward);
+
+//         glm::vec3 right = glm::cross(forward, glm::vec3(0,0,1));
+
+//         glm::vec3 wish(0.0f);
+//         if (glfwGetKey(renderer.window, GLFW_KEY_W)) wish += forward;
+//         if (glfwGetKey(renderer.window, GLFW_KEY_S)) wish -= forward;
+//         if (glfwGetKey(renderer.window, GLFW_KEY_D)) wish += right;
+//         if (glfwGetKey(renderer.window, GLFW_KEY_A)) wish -= right;
+
+//         if (glm::length(wish) > 0.0001f)
+//             wish = glm::normalize(wish);
+
+//         float moveSpeed = 20.0f;
+//         glm::vec2 wishXY(wish.x * moveSpeed, wish.y * moveSpeed);
+
+//         bool jumpHeld = glfwGetKey(renderer.window, GLFW_KEY_SPACE) == GLFW_PRESS;
+
+//         physicsSimpleUpdate(
+//             player,
+//             world,
+//             CFG,
+//             wishXY,
+//             jumpHeld,
+//             dt
+//         );
+
+//         player.render(worldShader, view, proj);
+
+//         // // weapon.update(dt);
+//         // // enemy.update(dt);
+
+//         renderer.endFrame();
+//     }
+
+//     return 0;
+// }

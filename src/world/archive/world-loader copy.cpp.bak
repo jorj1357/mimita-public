@@ -1,0 +1,80 @@
+// C:\important\quiet\n\mimita-public\mimita-public\src\world\world-loader.cpp
+// dec 18 2025
+/**
+ * purpose
+ * take json file
+ * turnn it into stuff we walk on
+ */
+
+#include "world/world-loader.h"
+#include "world/world.h"
+
+#include <cstdio>
+#include <vector>
+#include <string>
+
+#include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+bool loadWorldFromJSON(World& world, const char* path)
+{
+    printf("[WORLD] opening via fopen: %s\n", path);
+
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        printf("[WORLD] fopen failed\n");
+        return false;
+    }
+
+    fseek(f, 0, SEEK_END);
+    size_t size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    std::string raw;
+    raw.resize(size);
+
+    fread(raw.data(), 1, size, f);
+    fclose(f);
+
+    // Replace nan/inf
+    const char* bad[] = { "nan", "NaN", "inf", "Infinity", "-inf", "-Infinity" };
+    for (auto b : bad) {
+        size_t p;
+        while ((p = raw.find(b)) != std::string::npos)
+            raw.replace(p, strlen(b), "0");
+    }
+
+    json j;
+    try {
+        j = json::parse(raw);
+    }
+    catch (const std::exception& e) {
+        printf("[WORLD] JSON parse error: %s\n", e.what());
+        return false;
+    }
+
+    if (!j.contains("blocks") || !j["blocks"].is_array()) {
+        printf("[WORLD] no blocks array\n");
+        return false;
+    }
+
+    printf("[WORLD] blocks = %zu\n", j["blocks"].size());
+
+    world.clear();
+
+    for (auto& jb : j["blocks"]) {
+        Block b{};
+        b.pos = glm::vec3(jb["position"][0], jb["position"][1], jb["position"][2]);
+        b.size = glm::vec3(jb["size"][0], jb["size"][1], jb["size"][2]);
+        b.rotEuler = glm::vec3(jb["rotation"][0], jb["rotation"][1], jb["rotation"][2]);
+        world.blocks.push_back(b);
+    }
+
+    world.finalize();
+    world.rebuildChunks();
+
+    printf("[WORLD] world built OK\n");
+    return true;
+}

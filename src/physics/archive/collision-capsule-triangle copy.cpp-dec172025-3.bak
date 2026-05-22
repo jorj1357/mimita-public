@@ -1,0 +1,140 @@
+// C:\important\quiet\n\mimita-public\mimita-public\src\physics\collision-capsule-triangle.cpp
+// dec 16 2025
+/**
+ * purpose
+ * this has all the SB that we dont want in the phsics cpp file 
+ * so phsics just calls the functions 
+ * and its all nice and readable 
+ */
+
+// collision-capsule-triangle.cpp
+// dec 16 2025
+// REAL capsule vs triangle collision
+
+#include "collision-capsule-triangle.h"
+#include "physics/config.h"
+#include <glm/glm.hpp>
+#include <algorithm>
+
+// ----------------------------
+// Helpers
+// ----------------------------
+
+static glm::vec3 closestPointOnSegment(
+    const glm::vec3& p,
+    const glm::vec3& a,
+    const glm::vec3& b)
+{
+    glm::vec3 ab = b - a;
+    float t = glm::dot(p - a, ab) / glm::dot(ab, ab);
+    t = glm::clamp(t, 0.0f, 1.0f);
+    return a + ab * t;
+}
+
+// Closest point on triangle to point P
+// From "Real-Time Collision Detection" (Ericson)
+static glm::vec3 closestPointOnTriangle(
+    const glm::vec3& p,
+    const Triangle& t)
+{
+    glm::vec3 ab = t.b - t.a;
+    glm::vec3 ac = t.c - t.a;
+    glm::vec3 ap = p - t.a;
+
+    float d1 = glm::dot(ab, ap);
+    float d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return t.a;
+
+    glm::vec3 bp = p - t.b;
+    float d3 = glm::dot(ab, bp);
+    float d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return t.b;
+
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+    {
+        float v = d1 / (d1 - d3);
+        return t.a + v * ab;
+    }
+
+    glm::vec3 cp = p - t.c;
+    float d5 = glm::dot(ab, cp);
+    float d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return t.c;
+
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+    {
+        float w = d2 / (d2 - d6);
+        return t.a + w * ac;
+    }
+
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+    {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return t.b + w * (t.c - t.b);
+    }
+
+    float denom = 1.0f / (va + vb + vc);
+    float v = vb * denom;
+    float w = vc * denom;
+    return t.a + ab * v + ac * w;
+}
+
+// ----------------------------
+// REAL collision
+// ----------------------------
+
+glm::vec3 collideCapsuleTriangleMove(
+    const Capsule& cap,
+    const glm::vec3& move,
+    const Triangle& tri,
+    bool& onGround)
+{
+    // Triangle normal
+    glm::vec3 triNormal = glm::normalize(
+        glm::cross(tri.b - tri.a, tri.c - tri.a)
+    );
+
+    // Ignore backfaces
+    if (triNormal.y <= -0.01f)
+        return move;
+
+    // Step 1: closest point on triangle to capsule segment
+    glm::vec3 triPoint =
+        closestPointOnTriangle(
+            closestPointOnSegment(tri.a, cap.a, cap.b),
+            tri
+        );
+
+    // Step 2: closest point on capsule segment to that point
+    glm::vec3 capPoint =
+        closestPointOnSegment(triPoint, cap.a, cap.b);
+
+    glm::vec3 delta = capPoint - triPoint;
+    float dist = glm::length(delta);
+
+    if (dist >= cap.r || dist < 0.00001f)
+        return move;
+
+    glm::vec3 normal = delta / dist;
+
+    // Only remove motion INTO the surface
+    float into = glm::dot(move, normal);
+    if (into >= 0.0f)
+        return move;
+
+    // Small bias to prevent sinking
+    float push = (cap.r - dist) + 0.001f;
+
+    glm::vec3 out = move;
+    out -= normal * into;
+    out += normal * push;
+
+    // Ground detection
+    if (normal.y > MAX_SLOPE_ANGLE)
+        onGround = true;
+
+    return out;
+}

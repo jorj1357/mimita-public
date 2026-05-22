@@ -1,0 +1,117 @@
+// // C:\important\quiet\n\mimita-public\mimita-public\src\world\world.cpp REAL FILE PATH DEC 17 2025
+// // dec 16 2025
+// /**
+//  * purpose
+//  * get chunks for whole world 
+//  * so we stop calc evert single triangle bc thats bad performance  
+//  */
+
+// // ORDER MATTERS apparenlt dec 18 2025 
+// #include "physics/collision-capsule-triangle.h"
+// #include "world.h"
+// #include <cmath>
+// #include <cstdio>
+
+// static glm::ivec3 chunkCoord(glm::vec3 p, float size)
+// {
+//     return glm::ivec3(
+//         floor(p.x / size),
+//         // i think 0 here is better?
+//         // bc we include all triangles above and below us
+//         // might make it bad later for if u have hella triangles above and below u
+//         0, // i think we keep 0
+//         floor(p.z / size)
+//     );
+// }
+
+// void World::buildFromMesh(const Mesh& mesh)
+// {
+//     for (size_t i = 0; i + 2 < mesh.verts.size(); i += 3)
+//     {
+//         Triangle t{
+//             mesh.verts[i+0].pos,
+//             mesh.verts[i+1].pos,
+//             mesh.verts[i+2].pos
+//         };
+
+//         glm::vec3 center = (t.a + t.b + t.c) / 3.0f;
+//         glm::ivec3 c = chunkCoord(center, chunkSize);
+//         chunks[c].tris.push_back(t);
+//     }
+//     printf("[WORLD] buildFromMesh: verts=%zu tris=%zu chunks=%zu chunkSize=%.2f\n",
+//         mesh.verts.size(),
+//         mesh.verts.size() / 3,
+//         chunks.size(),
+//         (double)chunkSize
+//     );
+// }
+
+// // dec 17 2025 
+// // this is called every single frame but we still fal thru the floor need fix 
+// void World::getNearbyTriangles(glm::vec3 pos, std::vector<Triangle>& out) const
+// {
+//     out.clear();
+
+//     glm::ivec3 base = chunkCoord(pos, chunkSize);
+
+//     size_t foundChunks = 0;
+//     for (int x = -1; x <= 1; x++)
+//     for (int z = -1; z <= 1; z++)
+//     {
+//         glm::ivec3 c = base + glm::ivec3(x, 0, z);
+//         auto it = chunks.find(c);
+//         if (it != chunks.end())
+//         {
+//             foundChunks++;
+//             out.insert(out.end(), it->second.tris.begin(), it->second.tris.end());
+//         }
+//     }
+
+//     static float t = 0.0f;
+//     t += 0.016f; // ok for debug
+//     if (t >= 0.5f)
+//     {
+//         t = 0.0f;
+//         printf("[WORLD] chunkSize=%.2f base(%d %d %d) foundChunks=%zu tris=%zu pos(%.2f %.2f %.2f)\n",
+//             (double)chunkSize,
+//             base.x, base.y, base.z,
+//             foundChunks,
+//             out.size(),
+//             (double)pos.x, (double)pos.y, (double)pos.z
+//         );
+//     }
+// }
+
+// // dec 17 2025 its rbroken i dontk now whi but need to  fix and go doctor  
+// static int chunkFloor(float v, float size) { return (int)floor(v / size); }
+
+// void World::getNearbyTrianglesForCapsule(
+//     const Capsule& cap,
+//     const glm::vec3& move,
+//     std::vector<Triangle>& out
+// ) const {
+//     out.clear();
+
+//     // capsule AABB expanded by movement
+//     glm::vec3 mn = glm::min(cap.a, cap.b) - glm::vec3(cap.r);
+//     glm::vec3 mx = glm::max(cap.a, cap.b) + glm::vec3(cap.r);
+
+//     glm::vec3 mvMin = glm::min(glm::vec3(0.0f), move);
+//     glm::vec3 mvMax = glm::max(glm::vec3(0.0f), move);
+//     mn += mvMin;  mx += mvMax;
+
+//     int x0 = chunkFloor(mn.x, chunkSize);
+//     int x1 = chunkFloor(mx.x, chunkSize);
+//     int z0 = chunkFloor(mn.z, chunkSize);
+//     int z1 = chunkFloor(mx.z, chunkSize);
+
+//     // If you are flattening Y for now, keep y=0 consistently:
+//     for (int x = x0; x <= x1; x++)
+//     for (int z = z0; z <= z1; z++) {
+//         glm::ivec3 key(x, 0, z);
+//         auto it = chunks.find(key);
+//         if (it != chunks.end()) {
+//             out.insert(out.end(), it->second.tris.begin(), it->second.tris.end());
+//         }
+//     }
+// }

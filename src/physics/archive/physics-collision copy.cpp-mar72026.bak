@@ -1,0 +1,438 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-collision.cpp
+// // feb 10 2026
+// // Purpose:
+// // - Handle ALL solid world collisions
+// // - No slope logic
+// // - No audio
+// // - No input handling
+// // - Pure positional correction + grounded detection
+// //
+// // Exposes:
+// //   doCollisions(...)
+
+// #include <algorithm>
+// #include <cstdio>
+// #include <glm/glm.hpp>
+
+// #include "physics/config.h"
+// #include "world/world.h"
+// #include "entities/player.h"
+
+// // =====================================================
+// // DEBUG TOGGLE
+// // =====================================================
+// #define PHYS_DEBUG_COLLISIONS 1
+
+// #if PHYS_DEBUG_COLLISIONS
+//     #define PHYS_LOG(...) std::printf(__VA_ARGS__)
+// #else
+//     #define PHYS_LOG(...)
+// #endif
+
+// // =====================================================
+// // AABB helpers (TEMP until capsule collisions v3)
+// // =====================================================
+
+// struct AABB {
+//     glm::vec3 min;
+//     glm::vec3 max;
+// };
+
+// static inline AABB makePlayerAABB(const Player& p) {
+//     glm::vec3 half(
+//         PLAYER_WIDTH  * 0.5f,
+//         PLAYER_DEPTH  * 0.5f,
+//         PLAYER_HEIGHT * 0.5f
+//     );
+
+//     return { p.pos - half, p.pos + half };
+// }
+
+// static inline AABB makeBlockAABB(const Block& b) {
+//     glm::vec3 half = b.size * 0.5f * BLOCK_PHYS_MULT;
+//     return { b.pos - half, b.pos + half };
+// }
+
+// static inline bool overlaps(const AABB& a, const AABB& b) {
+//     return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+//            (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+//            (a.min.z <= b.max.z && a.max.z >= b.min.z);
+// }
+
+// // =====================================================
+// // Resolution
+// // =====================================================
+
+// static inline void resolveOverlap(
+//     const AABB& block,
+//     AABB& player,
+//     Player& p,
+//     bool& groundedOut,
+//     const Block& b
+// ) {
+//     float px1 = block.max.x - player.min.x;
+//     float px2 = player.max.x - block.min.x;
+//     float py1 = block.max.y - player.min.y;
+//     float py2 = player.max.y - block.min.y;
+//     float pz1 = block.max.z - player.min.z;
+//     float pz2 = player.max.z - block.min.z;
+
+//     float penX = std::min(px1, px2);
+//     float penY = std::min(py1, py2);
+//     float penZ = std::min(pz1, pz2);
+
+//     constexpr float SLOP = 0.001f;
+
+//     // Decide axis
+//     if (penX <= penY && penX <= penZ) {
+//         float centerPlayer = (player.min.x + player.max.x) * 0.5f;
+//         float centerBlock  = (block.min.x  + block.max.x)  * 0.5f;
+
+//         float push = (centerPlayer < centerBlock)
+//             ? -(penX + SLOP)
+//             :  (penX + SLOP);
+
+//         p.pos.x += push;
+//         p.vel.x = 0.0f;
+
+//         PHYS_LOG(
+//             "[PHYS][COLLISION] X axis | push=%.4f | block=(%.2f %.2f %.2f)\n",
+//             push, b.pos.x, b.pos.y, b.pos.z
+//         );
+//     }
+//     else if (penY <= penZ) {
+//         float centerPlayer = (player.min.y + player.max.y) * 0.5f;
+//         float centerBlock  = (block.min.y  + block.max.y)  * 0.5f;
+
+//         float push = (centerPlayer < centerBlock)
+//             ? -(penY + SLOP)
+//             :  (penY + SLOP);
+
+//         p.pos.y += push;
+//         p.vel.y = 0.0f;
+
+//         PHYS_LOG(
+//             "[PHYS][COLLISION] Y axis | push=%.4f | block=(%.2f %.2f %.2f)\n",
+//             push, b.pos.x, b.pos.y, b.pos.z
+//         );
+//     }
+//     else {
+//         float centerPlayer = (player.min.z + player.max.z) * 0.5f;
+//         float centerBlock  = (block.min.z  + block.max.z)  * 0.5f;
+
+//         float push = (centerPlayer < centerBlock)
+//             ? -(penZ + SLOP)
+//             :  (penZ + SLOP);
+
+//         p.pos.z += push;
+//         p.vel.z = 0.0f;
+
+//         // do i add this here idk im confuse mar 6 2026 
+//         // testing differetnt grounded logic
+//         if (push > 0.0f)
+//         {
+//             groundedOut = true;
+//             PHYS_LOG(
+//                 "[PHYS][GROUND] Grounded on block=(%.2f %.2f %.2f)\n",
+//                 b.pos.x, b.pos.y, b.pos.z
+//             );
+
+//             if (p.vel.z < 0.0f)
+//                 p.vel.z = 0.0f;
+//         }
+
+//         // if (push > 0.0f && !groundedOut) {
+//         //     groundedOut = true;
+//         //     PHYS_LOG(
+//         //         "[PHYS][GROUND] Grounded on block=(%.2f %.2f %.2f)\n",
+//         //         b.pos.x, b.pos.y, b.pos.z
+//         //     );
+//         // }
+
+//         PHYS_LOG(
+//             "[PHYS][COLLISION] Z axis | push=%.4f | block=(%.2f %.2f %.2f)\n",
+//             push, b.pos.x, b.pos.y, b.pos.z
+//         );
+//     }
+
+//     player = makePlayerAABB(p);
+// }
+
+// // =====================================================
+// // PUBLIC ENTRY
+// // =====================================================
+
+// void doCollisions(
+//     Player& p,
+//     const World& world,
+//     bool& groundedThisFrame
+// ) {
+//     groundedThisFrame = false;
+
+//     AABB pa = makePlayerAABB(p);
+//     // log our player size
+//     PHYS_LOG(
+//     "[PHYS][PLAYER AABB] min=(%.2f %.2f %.2f) max=(%.2f %.2f %.2f)\n",
+//     pa.min.x, pa.min.y, pa.min.z,
+//     pa.max.x, pa.max.y, pa.max.z
+//     );
+
+// #if PHYS_DEBUG_COLLISIONS
+//     PHYS_LOG(
+//         "[PHYS][START] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
+//         p.pos.x, p.pos.y, p.pos.z,
+//         p.vel.x, p.vel.y, p.vel.z
+//     );
+// #endif
+
+//     // constexpr int MAX_ITERS = 4;
+//     // testing 8 
+//     constexpr int MAX_ITERS = 8;
+
+//     for (int iter = 0; iter < MAX_ITERS; ++iter) {
+//         bool fixed = false;
+
+//         for (const Block& b : world.blocks) {
+//             if (b.isSlope)
+//                 continue;
+
+//             AABB ba = makeBlockAABB(b);
+
+//             // dont log bc makes super slow 
+//             // PHYS_LOG(
+//             // "[PHYS][BLOCK AABB] min=(%.2f %.2f %.2f) max=(%.2f %.2f %.2f)\n",
+//             // ba.min.x, ba.min.y, ba.min.z,
+//             // ba.max.x, ba.max.y, ba.max.z
+//             // );
+
+//             if (!overlaps(pa, ba))
+//                 continue;
+
+//             PHYS_LOG(
+//                 "[PHYS][OVERLAP] iter=%d block=(%.2f %.2f %.2f)\n",
+//                 iter, b.pos.x, b.pos.y, b.pos.z
+//             );
+
+//             resolveOverlap(ba, pa, p, groundedThisFrame, b);
+//             pa = makePlayerAABB(p);
+
+//             fixed = true;
+//             break;
+//         }
+
+//         if (!fixed)
+//             break;
+//     }
+
+// #if PHYS_DEBUG_COLLISIONS
+//     PHYS_LOG(
+//         "[PHYS][END] pos=(%.2f %.2f %.2f) grounded=%d\n\n",
+//         p.pos.x, p.pos.y, p.pos.z,
+//         groundedThisFrame ? 1 : 0
+//     );
+// #endif
+// }
+
+
+// // do this
+// // You’re on the right track. The main change is:
+
+// // 1) Stop iterating all world.blocks
+// // 2) Use world.getNearby() (your chunk system)
+// // 3) Replace overlap resolution with a swept test using the player’s motion vector
+
+// // I’ll give you a clean drop-in version of doCollisions() that:
+
+// // uses your chunk system
+
+// // performs swept AABB
+
+// // keeps your ground detection
+
+// // avoids the expensive prints
+
+// // This keeps your architecture intact.
+
+// // 1. Add Swept AABB function
+
+// // Put this above doCollisions() in the same file.
+
+// // static bool sweptAABB(
+// //     const AABB& moving,
+// //     const glm::vec3& vel,
+// //     const AABB& block,
+// //     float& hitTime,
+// //     glm::vec3& hitNormal
+// // )
+// // {
+// //     glm::vec3 invEntry, invExit;
+
+// //     if (vel.x > 0.0f) {
+// //         invEntry.x = block.min.x - moving.max.x;
+// //         invExit.x  = block.max.x - moving.min.x;
+// //     } else {
+// //         invEntry.x = block.max.x - moving.min.x;
+// //         invExit.x  = block.min.x - moving.max.x;
+// //     }
+
+// //     if (vel.y > 0.0f) {
+// //         invEntry.y = block.min.y - moving.max.y;
+// //         invExit.y  = block.max.y - moving.min.y;
+// //     } else {
+// //         invEntry.y = block.max.y - moving.min.y;
+// //         invExit.y  = block.min.y - moving.max.y;
+// //     }
+
+// //     if (vel.z > 0.0f) {
+// //         invEntry.z = block.min.z - moving.max.z;
+// //         invExit.z  = block.max.z - moving.min.z;
+// //     } else {
+// //         invEntry.z = block.max.z - moving.min.z;
+// //         invExit.z  = block.min.z - moving.max.z;
+// //     }
+
+// //     glm::vec3 entry, exit;
+
+// //     entry.x = vel.x == 0 ? -INFINITY : invEntry.x / vel.x;
+// //     exit.x  = vel.x == 0 ?  INFINITY : invExit.x  / vel.x;
+
+// //     entry.y = vel.y == 0 ? -INFINITY : invEntry.y / vel.y;
+// //     exit.y  = vel.y == 0 ?  INFINITY : invExit.y  / vel.y;
+
+// //     entry.z = vel.z == 0 ? -INFINITY : invEntry.z / vel.z;
+// //     exit.z  = vel.z == 0 ?  INFINITY : invExit.z  / vel.z;
+
+// //     float entryTime = std::max(std::max(entry.x, entry.y), entry.z);
+// //     float exitTime  = std::min(std::min(exit.x, exit.y), exit.z);
+
+// //     if (entryTime > exitTime || entryTime < 0.0f || entryTime > 1.0f)
+// //         return false;
+
+// //     hitTime = entryTime;
+
+// //     if (entryTime == entry.x)
+// //         hitNormal = {vel.x > 0 ? -1.f : 1.f,0,0};
+// //     else if (entryTime == entry.y)
+// //         hitNormal = {0,vel.y > 0 ? -1.f : 1.f,0};
+// //     else
+// //         hitNormal = {0,0,vel.z > 0 ? -1.f : 1.f};
+
+// //     return true;
+// // }
+// // 2. Replace your doCollisions() with this
+// // void doCollisions(
+// //     Player& p,
+// //     const World& world,
+// //     bool& groundedThisFrame
+// // )
+// // {
+// //     groundedThisFrame = false;
+
+// //     AABB playerAABB = makePlayerAABB(p);
+
+// //     glm::vec3 move = p.vel;
+
+// //     float earliest = 1.0f;
+// //     glm::vec3 hitNormal{0};
+
+// //     std::vector<Block*> nearbyBlocks;
+// //     std::vector<Sphere*> nearbySpheres;
+
+// //     world.getNearby(p.pos, nearbyBlocks, nearbySpheres);
+
+// //     for (Block* b : nearbyBlocks)
+// //     {
+// //         if (b->isSlope)
+// //             continue;
+
+// //         AABB ba = makeBlockAABB(*b);
+
+// //         float t;
+// //         glm::vec3 normal;
+
+// //         if (sweptAABB(playerAABB, move, ba, t, normal))
+// //         {
+// //             if (t < earliest)
+// //             {
+// //                 earliest = t;
+// //                 hitNormal = normal;
+// //             }
+// //         }
+// //     }
+
+// //     // move player
+// //     p.pos += move * earliest;
+
+// //     // collision response
+// //     if (earliest < 1.0f)
+// //     {
+// //         if (hitNormal.z > 0)
+// //             groundedThisFrame = true;
+
+// //         float vn = glm::dot(p.vel, hitNormal);
+
+// //         if (vn < 0.0f)
+// //             p.vel -= hitNormal * vn;
+// //     }
+// // }
+// // 3. Why this is much faster
+
+// // Old system:
+
+// // for all blocks in world
+
+// // New system:
+
+// // getNearby(playerChunk)
+// // for ~20 blocks
+
+// // So instead of checking 10,000 blocks, you check maybe 20–40.
+
+// // That’s a 500× improvement.
+
+// // 4. Why swept is better
+
+// // Your previous system:
+
+// // move
+// // detect overlap
+// // push out
+
+// // Swept system:
+
+// // predict collision
+// // stop before impact
+// // slide
+
+// // So even at very high speeds, the player cannot tunnel through walls.
+
+// // 5. This also prepares you for slopes
+
+// // Later you can replace block tests with:
+
+// // ray vs triangle
+// // ray vs sphere
+// // ray vs capsule
+
+// // Same solver.
+
+// // That’s why engines evolve toward this structure.
+
+// // 6. Important next step (for smooth sliding)
+
+// // Right now we only resolve one collision.
+
+// // Eventually you’ll want:
+
+// // max 4 collision iterations per frame
+
+// // That lets the player:
+
+// // run into wall
+// // slide
+// // hit floor
+// // continue
+
+// // I can show that next if you want.
+
+// // And one small mindset reminder while you’re building this: systems like this feel complicated only while parts are still unknown. Once each piece is understood—chunks, sweep, slide—they become simple building blocks you can combine however you want.

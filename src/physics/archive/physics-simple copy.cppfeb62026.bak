@@ -1,0 +1,318 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\physics\physics-simple.cpp
+// // feb 3 2026
+// // fixing phiscs bc it broken and sux 
+
+// #include "physics-simple.h"
+
+// #include <algorithm>
+// #include <vector>
+
+// // ---- You must include your real definitions somewhere ----
+// #include "world/world.h"      // World, Block
+// #include "entities/player.h"  // Player
+// #include "config.h"
+
+// // Minimal AABB
+// struct AABB {
+//     glm::vec3 min;
+//     glm::vec3 max;
+// };
+
+// static inline AABB makePlayerAABB(const Player& p, const PhysicsSimpleConfig& cfg)
+// {
+//     glm::vec3 half(cfg.playerWidth * 0.5f, cfg.playerDepth * 0.5f, cfg.playerHeight * 0.5f);
+//     return { p.pos - half, p.pos + half };
+// }
+
+// static inline AABB makeBlockAABB(const Block& b)
+// {
+//     // IMPORTANT: b.size must be FULL extents (width/height/depth), not half.
+//     glm::vec3 half = b.size * 0.5f;
+//     return { b.pos - half, b.pos + half };
+// }
+
+// static inline bool overlaps(const AABB& a, const AABB& b)
+// {
+//     return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+//            (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+//            (a.min.z <= b.max.z && a.max.z >= b.min.z);
+// }
+
+// static bool collidesAt(const Player& p,
+//                        const PhysicsSimpleConfig& cfg,
+//                        const World& world,
+//                        const glm::vec3& testPos)
+// {
+//     glm::vec3 half(cfg.playerWidth*0.5f,
+//                    cfg.playerDepth*0.5f,
+//                    cfg.playerHeight*0.5f);
+
+//     AABB pa { testPos - half, testPos + half };
+
+//     for (const Block& b : world.blocks)
+//     {
+//         // feb 6 2026 commented, this makes slopes non collidabel? 
+//         // if (b.isSlope)
+//         //     continue;   // slopes handled by planes only'
+        
+//         glm::vec3 bh = b.size * 0.5f;
+//         AABB ba { b.pos - bh, b.pos + bh };
+
+//         if (overlaps(pa, ba))
+//             return true;
+//     }
+//     return false;
+// }
+
+// // Push player out of block along smallest penetration axis.
+// // Returns which axis was used: 0=x, 1=y, 2=z. Also outputs push vector.
+// static inline int resolveOne(AABB& pa, const AABB& ba, glm::vec3& pos, float slop, glm::vec3& outPush)
+// {
+//     // penetration distances for each side
+//     float px1 = ba.max.x - pa.min.x; // push -x
+//     float px2 = pa.max.x - ba.min.x; // push +x
+//     float py1 = ba.max.y - pa.min.y;
+//     float py2 = pa.max.y - ba.min.y;
+//     float pz1 = ba.max.z - pa.min.z;
+//     float pz2 = pa.max.z - ba.min.z;
+
+//     float penX = std::min(px1, px2);
+//     float penY = std::min(py1, py2);
+//     float penZ = std::min(pz1, pz2);
+
+//     outPush = glm::vec3(0.0f);
+
+//     // choose smallest axis
+//     if (penX <= penY && penX <= penZ) {
+//         float push = (px1 < px2) ? -(px1 + slop) : (px2 + slop);
+//         pos.x += push;
+//         outPush.x = push;
+//         return 0;
+//     }
+//     if (penY <= penZ) {
+//         float push = (py1 < py2) ? -(py1 + slop) : (py2 + slop);
+//         pos.y += push;
+//         outPush.y = push;
+//         return 1;
+//     }
+
+//     float push = (pz1 < pz2) ? -(pz1 + slop) : (pz2 + slop);
+//     pos.z += push;
+//     outPush.z = push;
+//     return 2;
+// }
+
+// void physicsSimpleUpdate(
+//     Player& p,
+//     const World& world,
+//     const PhysicsSimpleConfig& cfg,
+//     const glm::vec2& wishMoveXY,
+//     bool jumpHeld,
+//     float dt
+// ){
+//     dt = std::min(dt, 0.033f);
+
+//     // 1. assume airborne
+//     p.onGround = false;
+
+//     // gravity
+//     p.vel.z += cfg.gravity * dt;
+//     p.vel.z = std::max(p.vel.z, -cfg.maxFallSpeed);
+
+//     // might go here idk feb 5 2026
+//     // feb 6 2026 not een use
+//     // float prevFootZ = p.pos.z - cfg.playerHeight * 0.5f;
+
+//     // desired movement
+//     glm::vec3 delta;
+//     delta.x = wishMoveXY.x * dt;
+//     delta.y = wishMoveXY.y * dt;
+//     delta.z = p.vel.z * dt;
+
+//     // ----- X -----
+//     glm::vec3 tryPos = p.pos;
+//     tryPos.x += delta.x;
+//     if (!collidesAt(p, cfg, world, tryPos))
+//         p.pos.x = tryPos.x;
+//     else
+//         p.vel.x = 0;
+
+//     // ----- Y -----
+//     tryPos = p.pos;
+//     tryPos.y += delta.y;
+//     if (!collidesAt(p, cfg, world, tryPos))
+//         p.pos.y = tryPos.y;
+//     else
+//         p.vel.y = 0;
+
+//     // // ----- Z (flat ground) -----
+//     // tryPos = p.pos;
+//     // tryPos.z += delta.z;
+//     // if (!collidesAt(p, cfg, world, tryPos)) {
+//     //     p.pos.z = tryPos.z;
+//     // } else {
+//     //     if (p.vel.z < 0)
+//     //         p.onGround = true;
+//     //     p.vel.z = 0;
+//     // }
+
+//     // testing a new z (up down , z is up down)
+//     // // ----- Z v2 (flat ground) -----
+//     // tryPos = p.pos;
+//     // tryPos.z += delta.z;
+
+//     // bool hit = collidesAt(p, cfg, world, tryPos);
+
+//     // // if the collision is ONLY with slopes, ignore it here
+//     // if (hit) {
+//     //     for (const Block& b : world.blocks)
+//     //         if (b.isSlope)
+//     //             hit = false;
+//     // }
+
+//     // if (!hit) {
+//     //     p.pos.z = tryPos.z;
+//     // } else {
+//     //     if (p.vel.z < 0)
+//     //         p.onGround = true;
+//     //     p.vel.z = 0;
+//     // }
+
+//     // testing a new z (up down , z is up down)
+//     // the last one was good, but made it so i cant collide with antthing at all
+//     // // ----- Z v3 (flat ground) -----
+
+//     tryPos = p.pos;
+//     tryPos.z += delta.z;
+
+//     bool hitSolid = false;
+//     bool hitSlope = false;
+
+//     // detect what we hit
+//     for (const Block& b : world.blocks) {
+//         glm::vec3 bh = b.size * 0.5f;
+//         AABB ba { b.pos - bh, b.pos + bh };
+
+//         glm::vec3 half(cfg.playerWidth*0.5f,
+//                     cfg.playerDepth*0.5f,
+//                     cfg.playerHeight*0.5f);
+//         AABB pa { tryPos - half, tryPos + half };
+
+//         if (overlaps(pa, ba)) {
+//             if (b.isSlope) hitSlope = true;
+//             else hitSolid = true;
+//         }
+//     }
+
+//     // solid blocks always block Z
+//     if (hitSolid) {
+//         if (p.vel.z < 0) p.onGround = true;
+//         p.vel.z = 0;
+//     }
+//     // no solid hit → allow movement
+//     else {
+//         p.pos.z = tryPos.z;
+//     }
+
+//     // ----- SLOPES -----
+//     for (const Block& b : world.blocks)
+//     {
+//         if (!b.isSlope)
+//             continue;
+
+//         // feet in world space
+//         glm::vec3 foot = p.pos;
+//         foot.z -= cfg.playerHeight * 0.5f;
+
+//         // add this here idsk? feb 5 2026
+//         glm::vec3 prevFoot = foot;
+//         prevFoot.z -= delta.z;   // undo vertical movement
+
+//         // to slope local space
+//         glm::vec3 local = glm::inverse(b.rot) * (foot - b.pos);
+
+//         float halfX = b.size.x * 0.5f;
+//         float halfY = b.size.y * 0.5f;
+//         float halfZ = b.size.z * 0.5f;
+
+//         if (fabs(local.x) > halfX) continue;
+//         if (fabs(local.y) > halfY) continue;
+
+//         // commented because we dont use this i think? feb 6 2026 
+//         // float footZ  = foot.z;
+//         float t = (local.x + halfX) / (2.0f * halfX);
+//         t = glm::clamp(t, 0.0f, 1.0f);
+//         t = 1.0f - t; // direction
+
+//         // THIS IS PERFECT. THIS MAKES SLOPES WORK. DONT CHANGE FEB 5 2026
+//         // THIS IS PERFECT. THIS MAKES SLOPES WORK. DONT CHANGE FEB 5 2026
+//         // THIS IS PERFECT. THIS MAKES SLOPES WORK. DONT CHANGE FEB 5 2026
+
+//         // slope normal = rotated up
+//         glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+
+//         // max walkable slope = 60 degrees
+//         // attempt to stop snapping up walls and too-steep slopes 
+//         if (n.z < 0.5f) {
+//             // remove velocity into the wall
+//             float vn = glm::dot(p.vel, n);
+//             if (vn < 0.0f)
+//                 p.vel -= vn * n;
+//             continue;
+//         }
+//         // point on the ramp surface (center of top face)
+//         glm::vec3 p0 = b.pos + n * halfZ;
+
+//         // signed distance from foot to ramp plane
+//         // float d = glm::dot(foot - p0, n);
+        
+//         // test feb 5 2026 stop snapping up , but still collide good
+//         float dNow  = glm::dot(foot     - p0, n);
+//         float dPrev = glm::dot(prevFoot - p0, n);
+
+//         // height of ramp under foot
+//         // float worldZ = foot.z - d;
+
+//         // testing same no snap good collide
+//         float worldZNow  = foot.z     - dNow;
+//         float worldZPrev = prevFoot.z - dPrev;
+        
+//         // THIS IS PERFECT. THIS MAKES SLOPES WORK. DONT CHANGE FEB 5 2026
+//         // THIS IS PERFECT. THIS MAKES SLOPES WORK. DONT CHANGE FEB 5 2026
+//         // THIS IS PERFECT. THIS MAKES SLOPES WORK. DONT CHANGE FEB 5 2026
+        
+//         // only land on slope if falling downward
+//         // make it so i dont snap up on things 
+//         if (p.vel.z > 0.0f)
+//             continue;
+
+//         // *** THIS WAS MISSING ***
+//         // good working verison feb 5 2026
+//         // if (footZ <= worldZ + 0.01f) {
+//         //     p.pos.z += (worldZ - footZ);
+//         //     p.vel.z = 0;
+//         //     p.onGround = true;
+//         // }
+
+//         // testing expetmental feb 5 2026
+//         // stop snapping up onto things 
+//         // if (prevFootZ > worldZ && footZ <= worldZ + 0.01f) {
+//         //     p.pos.z += (worldZ - footZ);
+//         //     p.vel.z = 0;
+//         //     p.onGround = true;
+//         // }
+
+//         // test the snap out and collision fixes here feb 5 2026 
+//     if (prevFoot.z > worldZPrev && foot.z <= worldZNow + 0.01f) {
+//             p.pos.z += (worldZNow - foot.z);
+//             p.vel.z = 0;
+//             p.onGround = true;
+//         }
+//     }
+
+//     // ----- JUMP (ONCE, AFTER ALL COLLISIONS) -----
+//     if (jumpHeld && p.onGround) {
+//         p.vel.z = cfg.jumpStrength;
+//         p.onGround = false;
+//     }
+// }

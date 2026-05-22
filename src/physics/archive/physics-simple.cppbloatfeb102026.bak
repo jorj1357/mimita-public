@@ -1,0 +1,832 @@
+// feb 10 2026
+// we dont use this no more
+// we use like this new src/phsics/moevment sstem which i think is super cool 
+// and modular and makes thingseasier to debug and code 
+
+// // C:\important\quiet\n\mimita-priv-v7\src\physics\physics-simple.cpp
+// // feb 3 2026
+// // FEB 8 2026
+// /**
+//  * THIS IS the first
+//  * real
+//  * version of phsics.
+//  * this file si SACRED
+//  * DONT mess things up here.
+//  * this is what makes phsics work generally.
+//  */
+// // FEB 8 2026
+// // fixing phiscs bc it broken and sux 
+
+// #include "physics-simple.h"
+
+// #include <algorithm>
+// #include <vector>
+
+// // ---- You must include your real definitions somewhere ----
+// #include "world/world.h"      // World, Block
+// #include "entities/player.h"  // Player
+// #include "config.h"
+
+// // Minimal AABB
+// struct AABB {
+//     glm::vec3 min;
+//     glm::vec3 max;
+// };
+
+// static inline AABB makePlayerAABBAt(const glm::vec3& pos,
+//                                    const PhysicsSimpleConfig& cfg)
+// {
+//     glm::vec3 h(cfg.playerWidth*0.5f,
+//                 cfg.playerDepth*0.5f,
+//                 cfg.playerHeight*0.5f);
+//     return { pos - h, pos + h };
+// }
+
+// // i think this is double code writing but whatever feb 6 2026 
+// static inline AABB makePlayerAABB(const Player& p,
+//                                   const PhysicsSimpleConfig& cfg)
+// {
+//     return makePlayerAABBAt(p.pos, cfg);
+// }
+
+// static inline AABB makeBlockAABB(const Block& b)
+// {
+//     // IMPORTANT: b.size must be FULL extents (width/height/depth), not half.
+//     glm::vec3 half = b.size * 0.5f;
+//     return { b.pos - half, b.pos + half };
+// }
+
+// static inline bool overlaps(const AABB& a, const AABB& b)
+// {
+//     return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+//            (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+//            (a.min.z <= b.max.z && a.max.z >= b.min.z);
+// }
+
+// // Push player out of block along smallest penetration axis.
+// // Returns which axis was used: 0=x, 1=y, 2=z. Also outputs push vector.
+// static inline int resolveOne(AABB& pa, const AABB& ba, glm::vec3& pos, float slop, glm::vec3& outPush)
+// {
+//     // penetration distances for each side
+//     float px1 = ba.max.x - pa.min.x; // push -x
+//     float px2 = pa.max.x - ba.min.x; // push +x
+//     float py1 = ba.max.y - pa.min.y;
+//     float py2 = pa.max.y - ba.min.y;
+//     float pz1 = ba.max.z - pa.min.z;
+//     float pz2 = pa.max.z - ba.min.z;
+
+//     float penX = std::min(px1, px2);
+//     float penY = std::min(py1, py2);
+//     float penZ = std::min(pz1, pz2);
+
+//     outPush = glm::vec3(0.0f);
+
+//     // choose smallest axis
+//     if (penX <= penY && penX <= penZ) {
+//         float push = (px1 < px2) ? -(px1 + slop) : (px2 + slop);
+//         pos.x += push;
+//         outPush.x = push;
+//         return 0;
+//     }
+//     if (penY <= penZ) {
+//         float push = (py1 < py2) ? -(py1 + slop) : (py2 + slop);
+//         pos.y += push;
+//         outPush.y = push;
+//         return 1;
+//     }
+
+//     float push = (pz1 < pz2) ? -(pz1 + slop) : (pz2 + slop);
+//     pos.z += push;
+//     outPush.z = push;
+//     return 2;
+// }
+
+// static inline bool pointInSlopeXY(const Block& b, const glm::vec3& worldPt, float margin)
+// {
+//     glm::vec3 local = glm::inverse(b.rot) * (worldPt - b.pos);
+//     float hx = b.size.x * 0.5f + margin;
+//     float hy = b.size.y * 0.5f + margin;
+//     return (local.x >= -hx && local.x <= hx &&
+//             local.y >= -hy && local.y <= hy);
+// }
+
+// // returns true if slope is SOLID at this foot position (i.e. foot is under the ramp plane)
+// static inline bool slopeSolidAtFoot(const Block& b, const glm::vec3& footWorld)
+// {
+//     // bounded plane (no infinite plane)
+//     if (!pointInSlopeXY(b, footWorld, SLOPE_OVERLAP)) return false;
+
+//     glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+//     float halfZ = b.size.z * 0.5f;
+//     glm::vec3 p0 = b.pos + n * halfZ;
+
+//     float d = glm::dot(footWorld - p0, n);
+
+//     // d > 0 means foot is "inside/below" the ramp plane -> should collide
+//     // small skin prevents seam flicker
+//     constexpr float SKIN = 0.01f;
+//     return d > SKIN;
+// }
+
+// // this exist so that we dont just push u out of the slope all the time no reason
+// static inline bool slopePenetrating(const Block& b,
+//                                     const glm::vec3& footWorld)
+// {
+//     if (!pointInSlopeXY(b, footWorld, SLOPE_OVERLAP))
+//         return false;
+
+//     glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+//     float halfZ = b.size.z * 0.5f;
+//     glm::vec3 p0 = b.pos + n * halfZ;
+
+//     float d = glm::dot(footWorld - p0, n);
+
+//     // 🚨 penetrating ONLY if clearly below the plane
+//     return d < -SLOPE_SKIN;
+// }
+
+// // new helper so that slope walls have their own special logic bruh 
+// static inline AABB makeSlopeWallAABB(const Block& b) {
+//     glm::vec3 half = b.size * 0.5f;
+//     // just add a little smth smth 
+//     // to avoid stupidness i think idk // tall vertical wall
+//     half.z = b.size.z + SLOPE_OVERLAP; 
+//     // test this if slope overlap dont help
+//     // half.z = b.size.z; 
+//     return { b.pos - half, b.pos + half };
+// }
+
+// // this is like resolveone but pushing me out if im stuck inside a block
+// static void resolveStuck(Player& p,
+//                          const PhysicsSimpleConfig& cfg,
+//                          const World& world)
+// {
+//     const int MAX_ITERS = 6;
+//     const float SLOP = 0.001f;
+
+//     for (int iter = 0; iter < MAX_ITERS; iter++) {
+//         bool fixed = false;
+
+//         AABB pa = makePlayerAABB(p, cfg);
+
+//         for (const Block& b : world.blocks) {
+
+//             if (!b.isSlope)
+//                 // idk what the comment does but it sas 
+//                 //d odont let this function touch slopes? idk 
+//                 continue; // 🚨 never resolve against slopes
+            
+//             glm::vec3 foot = p.pos;
+//             foot.z -= cfg.playerHeight * 0.5f;
+
+//             // if (!slopeSolidAtFoot(b, foot))
+//             //     continue;
+
+//             // new version? idk feb 7 2026
+//             if (!slopePenetrating(b, foot))
+//                 continue;
+
+//             AABB ba = makeSlopeWallAABB(b);
+
+//             if (!overlaps(pa, ba))
+//                 continue;
+
+//             glm::vec3 push;
+//             int axis = resolveOne(pa, ba, p.pos, SLOP, push);
+
+//             // never allow Z push from slopes
+//             if (axis == 2) {
+//                 p.pos -= push;
+//                 continue;
+//             }
+
+//             pa = makePlayerAABB(p, cfg);
+//             fixed = true;
+//             break;
+//         }
+
+//         if (!fixed)
+//             break;
+//     }
+// }
+
+// static inline void pushOutOfSlopeWall(
+//     Player& p,
+//     const Block& b,
+//     const PhysicsSimpleConfig& cfg
+// ) {
+//     AABB pa = makePlayerAABB(p, cfg);
+//     AABB wa = makeSlopeWallAABB(b);
+
+//     if (!overlaps(pa, wa))
+//         return;
+
+//     // push away from slope center horizontally
+//     glm::vec2 away = glm::vec2(p.pos.x - b.pos.x,
+//                                p.pos.y - b.pos.y);
+
+//     if (glm::length(away) < 0.0001f)
+//         away = glm::vec2(1.0f, 0.0f);
+
+//     away = glm::normalize(away);
+
+//     p.pos.x += away.x * SLOPE_WALL_CLEARANCE;
+//     p.pos.y += away.y * SLOPE_WALL_CLEARANCE;
+// }
+
+// static inline bool playerHorizontallyOnSlope(
+//     const Block& b,
+//     const Player& p,
+//     const PhysicsSimpleConfig& cfg,
+//     float margin
+// ) {
+//     // Project player center onto slope XY
+//     glm::vec3 center = p.pos;
+//     center.z = b.pos.z; // Z irrelevant for XY test
+
+//     // Shrink test region so edges don’t count as support
+//     float supportMargin =
+//         std::max(cfg.playerWidth, cfg.playerDepth) * 0.25f;
+
+//     return pointInSlopeXY(b, center, margin - supportMargin);
+// }
+
+// static inline float slideAlongAxis(
+//     int axis,
+//     float deltaAxis,
+//     const Block& b,
+//     const glm::vec3& playerPos
+// ) {
+//     // approximate wall normal in XY from block center
+//     glm::vec2 toPlayer(
+//         playerPos.x - b.pos.x,
+//         playerPos.y - b.pos.y
+//     );
+
+//     if (glm::length(toPlayer) < 0.0001f)
+//         return 0.0f;
+
+//     glm::vec2 n = glm::normalize(toPlayer);
+
+//     glm::vec2 v(0.0f);
+//     v[axis] = deltaAxis;
+
+//     // project out the normal component
+//     glm::vec2 slid = v - n * glm::dot(v, n);
+
+//     return slid[axis];
+// }
+
+// void physicsSimpleUpdate(
+//     Player& p,
+//     const World& world,
+//     const PhysicsSimpleConfig& cfg,
+//     const glm::vec2& wishMoveXY,
+//     bool jumpHeld,
+//     bool dashPressed,      
+//     bool freezeHeld,    
+//     bool groundReturnPressed,
+//     const glm::vec3& camForward, 
+//     float dt
+// ){
+//     dt = std::min(dt, 0.033f);
+
+//     // BOOLS
+//     // BOOLS
+//     // BOOLS
+
+//     // stuff for audio for landing sort later feb 9 2026 
+//     // THIS IS THE ONL ON GROUND BOOL NO OTHERS A
+//     bool wasOnGround = p.onGround;
+//     // double definition maibe but lemme maek it work then organize later
+//     // bool prevOnGround = p.onGround;
+
+//     // triple definition? idk 
+//     // bool wasOnGroundPrev = p.onGround;
+//     bool didGroundJumpThisFrame = false;
+//     bool didAirJumpThisFrame = false;
+//     bool didLandThisFrame = false;
+//     // double definition
+//     bool didDashThisFrame = false;
+//     // dont assign this here? idk feb 10 2026
+//     // bool didDash = false;
+
+//     // jump stuff so its not spamming
+//     // but i like spam
+//     // idk wtv fix later feb 10 2026
+//     static bool jumpHeldPrev = false;
+//     bool jumpPressed = jumpHeld && !jumpHeldPrev;
+//     jumpHeldPrev = jumpHeld;
+
+//     // BOOLS
+//     // BOOLS
+//     // BOOLS
+
+//     // ---------------- FREEZE ----------------
+
+//     // Cooldown ticking (always runs)
+//     if (p.freezeCooldownTimer > 0.0f) {
+//         p.freezeCooldownTimer = std::max(0.0f, p.freezeCooldownTimer - dt);
+//     }
+
+//     // Can we freeze right now?
+//     bool freezeAvailable = (p.freezeCooldownTimer <= 0.0f);
+
+//     // Actively freezing
+//     if (freezeHeld && freezeAvailable) {
+//         p.isFrozen = true;
+
+//         // accumulate hold time
+//         p.freezeHoldTime += dt;
+
+//         // hard cap freeze duration
+//         if (p.freezeHoldTime >= FREEZE_MAX_TIME) {
+//             // force unfreeze
+//             p.isFrozen = false;
+
+//             // cooldown = 2x hold time
+//             p.freezeCooldownTimer = p.freezeHoldTime * 2.0f;
+
+//             p.freezeHoldTime = 0.0f;
+//         } else {
+//             // while frozen
+//             p.vel = glm::vec3(0.0f);
+//             p.dashVel = glm::vec2(0.0f);
+//             return; // skip rest of physics
+//         }
+//     }
+
+//     // Released G manually
+//     if (!freezeHeld && p.isFrozen) {
+//         p.isFrozen = false;
+
+//         // cooldown = 2x how long it was held
+//         p.freezeCooldownTimer = p.freezeHoldTime * 2.0f;
+
+//         p.freezeHoldTime = 0.0f;
+//     }
+
+//     // ---------------- GROUND RETURN RECHARGE ----------------
+//     if (p.groundReturnCharges < GROUND_RETURN_MAX_CHARGES) {
+//         p.groundReturnRechargeTimer += dt;
+
+//         if (p.groundReturnRechargeTimer >= GROUND_RETURN_RECHARGE_TIME) {
+//             p.groundReturnRechargeTimer -= GROUND_RETURN_RECHARGE_TIME;
+//             p.groundReturnCharges++;
+//         }
+//     } else {
+//         p.groundReturnRechargeTimer = 0.0f;
+//     }
+
+//     // ---------------- DASH RECHARGE ----------------
+//     if (p.dashCharges < DASH_MAX_CHARGES) {
+//         p.dashRechargeTimer += dt;
+
+//         if (p.dashRechargeTimer >= DASH_RECHARGE_TIME) {
+//             p.dashRechargeTimer -= DASH_RECHARGE_TIME;
+//             p.dashCharges++;
+//         }
+//     } else {
+//         p.dashRechargeTimer = 0.0f;
+//     }
+
+//     // so i can dash with wasd
+//     // but if i press a button again then it turn to high friction walk
+//     static glm::vec2 lastWishDir(0.0f);
+  
+//     bool groundedThisFrame = false;
+//     bool onSlopeThisFrame = false;
+//     static bool lastHadMove = false;
+
+//     // deouble jumps resettign
+//     bool touchedWorldThisFrame = false;
+//     bool touchedWallThisFrame = false;
+
+//     static float slopeSupportTimer = 0.0f;
+
+//     static float coyoteTimer = 0.0f;
+//     static float jumpIntentTimer = 0.0f;
+//     bool wantsJump = jumpIntentTimer > 0.0f;
+
+//     static float slopeExitTimer = 0.0f;
+//     slopeExitTimer -= dt;
+
+//     slopeSupportTimer -= dt;
+//     bool allowSlopeSupport = slopeSupportTimer > 0.0f;
+
+//     static float slopeSnapDisableTimer = 0.0f;
+//     slopeSnapDisableTimer = std::max(0.0f, slopeSnapDisableTimer - dt);
+
+//     // 1. integrate gravity
+//     p.vel.z += cfg.gravity * dt;
+//     p.vel.z = std::max(p.vel.z, -cfg.maxFallSpeed);
+
+//     // ---------------- GROUND RETURN ----------------
+//     if (groundReturnPressed &&
+//         p.groundReturnCharges > 0 &&
+//         !p.onGround &&          // optional: air only
+//         !p.isFrozen)            // freeze should block it
+//     {
+//         // Hard override vertical motion
+//         p.vel.z = GROUND_RETURN_SPEED;
+
+//         p.groundReturnCharges--;
+//         p.groundReturnRechargeTimer = 0.0f;
+//     }
+
+//     // ---------------- DASH ----------------
+//     // DASH LOGIC
+//     // DASH LOGIC
+//     // DASH LOGIC
+//     glm::vec2 dashDir = wishMoveXY;
+
+//     // If no input or canceled (A+D / W+S), dash forward
+//     if (glm::length(dashDir) < 0.001f) {
+//         dashDir = glm::normalize(glm::vec2(camForward.x, camForward.y));
+//     } else {
+//         dashDir = glm::normalize(dashDir);
+//     }
+
+//     // no momentum gain
+//     if (dashPressed && p.dashCharges > 0) {
+
+//         // SET dash velocity (no accumulation)
+//         // p.dashVel = dashDir * DASH_IMPULSE;
+
+//         // ADD dash veloc (yes accumulate)
+//         p.dashVel += dashDir * DASH_IMPULSE;
+
+//         // consume one dash
+//         p.dashCharges--;
+
+//         // reset recharge timer so it feels fair
+//         p.dashRechargeTimer = 0.0f;
+
+//         p.didDash = true;
+//     }
+
+//     p.dashCooldown = std::max(0.0f, p.dashCooldown - dt);
+
+//     // Smoothly return dash drag back to normal (1.0)
+//     p.dashDragMultiplier = glm::mix(
+//         p.dashDragMultiplier,
+//         1.0f,
+//         6.0f * dt // the 1st number here is how fast it returns to normal speed
+//     );
+
+//     // --------------------------------------------------
+//     // HORIZONTAL INPUT RESPONSE (INSTANT)
+//     // --------------------------------------------------
+//     glm::vec2 wish = wishMoveXY;
+//     float wishLen = glm::length(wish);
+
+//     bool hasMove = (wishLen > 0.0001f);
+//     bool newMovePress = hasMove && !lastHadMove;
+
+//     if (newMovePress && !dashPressed) {
+//         p.dashVel = glm::vec2(0.0f);
+//     }
+
+//     // Remember for next frame
+//     lastHadMove = hasMove;
+
+//     glm::vec2 velXY(p.vel.x, p.vel.y);
+//     // float speedXY = glm::length(velXY);
+
+//     if (wishLen > 0.0001f) {
+//         // --- DASH CANCEL TUNING ---
+//         constexpr float DASH_CANCEL_TIME = 1.0f; 
+//         constexpr float DASH_CANCEL_REMAIN = 0.001f; 
+        
+//         float kill = std::exp(std::log(DASH_CANCEL_REMAIN) * dt / DASH_CANCEL_TIME);
+//         p.dashVel *= kill;
+//         wish /= wishLen;
+
+//         if (p.onGround) {
+//             // -----------------------------
+//             // GROUND: instant, stable
+//             // -----------------------------
+//             float curSpeed = glm::length(velXY);
+//             float targetSpeed = std::max(curSpeed, PHYS.moveSpeed);
+//             // above 2 floats make it so i can keep momentum 
+//             velXY = wish * targetSpeed;
+//         } else {
+//             // -----------------------------
+//             // AIR: steering + small speed bonus
+//             // -----------------------------
+//             float airSteer = 100.0f;
+//             float t = std::min(1.0f, airSteer * dt);
+
+//             float baseSpeed = PHYS.moveSpeed;
+//             float maxAirSpeed = PHYS.moveSpeed * 1.05f; 
+
+//             float speed = glm::length(velXY);
+
+//             // If air velocity collapsed, recover cleanly
+//             if (speed < baseSpeed) {
+//                 speed = baseSpeed;
+//             }
+
+//             // feb 10 2026 set to 1.1f heh
+//             float gain = 1.1f; 
+//             float boostedSpeed = std::min(speed * gain, maxAirSpeed);
+
+//             glm::vec2 target = wish * boostedSpeed;
+//             velXY = glm::mix(velXY, target, t);
+//         }
+
+//         p.vel.x = velXY.x;
+//         p.vel.y = velXY.y;
+//     }
+
+//     // 2. compute delta
+//     glm::vec3 delta;
+
+//     // this version lets us have friction in our movement?
+//     // delta.x = p.vel.x * dt;
+//     // delta.y = p.vel.y * dt;
+
+//     glm::vec2 totalXY = glm::vec2(p.vel.x, p.vel.y) + p.dashVel;
+
+//     // x and y (wasd) have dash velocit in them too 
+//     delta.x = totalXY.x * dt;
+//     delta.y = totalXY.y * dt;
+//     delta.z = p.vel.z * dt;
+
+//     // BOUNDED. DONT LET PLANES BE INFINITE, WITH THE local and fabs
+//     for (const Block& b : world.blocks) {
+//         if (!b.isSlope) continue;
+
+//         glm::vec3 foot = p.pos;
+//         foot.z -= cfg.playerHeight * 0.5f;
+
+//         // transform foot into slope local space
+//         glm::vec3 local = glm::inverse(b.rot) * (foot - b.pos);
+
+//         // float hx = b.size.x * 0.5f;
+//         // float hy = b.size.y * 0.5f;
+
+//         // DONT GET STUCK IN THE CETNER OF IT. THATS STUPID
+//         // SLOPE over lap fixes it probabl.
+//         float hx = b.size.x * 0.5f + SLOPE_OVERLAP;
+//         float hy = b.size.y * 0.5f + SLOPE_OVERLAP;
+
+//         // outside slope → ignore plane
+//         if (local.x < -hx || local.x > hx ||
+//             local.y < -hy || local.y > hy)
+//             continue;
+
+//         glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+//         if (n.z < 0.5f) continue;
+
+//         glm::vec3 p0 = b.pos + n * (b.size.z * 0.5f);
+//         float d = glm::dot(foot - p0, n);
+
+//         // slope skin defined in config.h but its 0.02f for now
+//         // tune 0.01-0.05
+
+//         if (d > MAX_STEP_HEIGHT)
+//             continue;
+
+//         if (slopeSnapDisableTimer <= 0.0f &&
+//             (playerHorizontallyOnSlope(b, p, cfg, SLOPE_OVERLAP) || allowSlopeSupport) &&
+//             d > -SLOPE_SNAP_DIST &&
+//             d < MAX_STEP_HEIGHT)
+//         {
+//             p.pos.z -= (d + SLOPE_SKIN);
+//             p.vel.z = 0.0f;
+
+//             groundedThisFrame = true;
+//             onSlopeThisFrame  = true;
+//             touchedWorldThisFrame = true;
+
+//             slopeSupportTimer = SLOPE_SUPPORT_TIMER;
+//             slopeExitTimer    = SLOPE_EXIT_TIMER;
+//         }
+//     }
+
+
+//     // 2.1. put this before step 3, so movement works
+//     auto moveAxis = [&](int axis, float deltaAxis) {
+//         if (axis == 2) return; // 🚨 Z is handled elsewhere WHERE exactlt tho?
+//         if (deltaAxis == 0.0f) return;
+
+//         glm::vec3 tryPos = p.pos;
+//         tryPos[axis] += deltaAxis;
+
+//         AABB pa = makePlayerAABBAt(tryPos, cfg);
+
+//         for (const Block& b : world.blocks) {
+//             if (!b.isSlope) {
+//                 if (overlaps(pa, makeBlockAABB(b))) {
+//                     touchedWorldThisFrame = true;
+//                     touchedWallThisFrame = true;
+//                     return;
+//                 }
+//             }
+
+//             // try 5
+//             // i want the jank movement back i miss it idk if this does it
+//             if (b.isSlope) {
+
+//                 AABB wall = makeSlopeWallAABB(b);
+
+//                 bool wasOutside = !overlaps(makePlayerAABBAt(p.pos, cfg), wall);
+//                 bool entering   = overlaps(pa, wall);
+
+//                 // 🚨 core rule:
+//                 // allowIgnore NEVER allows entering a slope wall
+//                 if (entering && wasOutside) {
+
+//                     // soft clamp: cancel only this axis
+//                     tryPos[axis] = p.pos[axis];
+
+//                     // optional but recommended: kill velocity into wall
+//                     p.vel[axis] = 0.0f;
+
+//                     touchedWorldThisFrame = true;
+//                     break;
+//                 }
+
+//                 // otherwise:
+//                 // - already outside → free movement
+//                 // - already inside (rare, e.g. spawn) → resolve later
+//                 continue;
+//             }
+
+//         }
+//         // now apply movement finally 
+//         p.pos[axis] = tryPos[axis];
+//     };
+
+//     // 3. horizontal movement (X/Y)
+//     moveAxis(0, delta.x);
+//     moveAxis(1, delta.y);
+
+//     // 4. vertical movement (Z, solid blocks only)
+//     {
+//         glm::vec3 tryPos = p.pos;
+//         tryPos.z += delta.z;
+
+//         AABB pa = makePlayerAABBAt(tryPos, cfg);
+//         bool hit = false;
+
+//         for (const Block& b : world.blocks) {
+//             if (b.isSlope) continue;
+//             if (overlaps(pa, makeBlockAABB(b))) {
+//                 hit = true;
+//                 break;
+//             }
+//         }
+
+//         if (!hit) {
+//             p.pos.z = tryPos.z;
+//         } else if (p.vel.z < 0.0f) {
+//             groundedThisFrame = true;
+//             // double jump reset when touching blocks 
+//             touchedWorldThisFrame = true;
+//             p.vel.z = 0.0f;
+//         }
+//     }
+
+//     // 5.01. add this after slope snapping? im not sure feb 7 2026
+//     if (groundedThisFrame) {
+//         p.vel.z = std::max(p.vel.z, 0.0f);
+//     }
+
+//     // uses wasOnGround and p.onGround 
+//     // which are the only grounded bools 
+//     if (!wasOnGround && groundedThisFrame) {
+//         p.airJumpsLeft = 1;
+//     }
+//     else if (touchedWallThisFrame) {
+//         p.airJumpsLeft = 1;
+//     }
+
+//     // 7. jump
+//     // JUMP INTENT LOGIC
+//     // JUMP INTENT LOGIC
+//     // JUMP INTENT LOGIC
+
+//     // jump fix v6 idk 
+//     p.jumpRepeatTimer -= dt;
+
+//     if (jumpHeld && p.jumpRepeatTimer <= 0.0f) {
+//         jumpIntentTimer = 0.12f;
+//         // set this delau into config.h eventuallt 
+//         // p.jumpRepeatTimer = 0.18f; // delay between jumps
+//         p.jumpRepeatTimer = 0.01f; // delay between jumps
+//     }
+
+//     if (!p.wasOnGround && groundedThisFrame) {
+//         // p.jumpRepeatTimer = 0.0f;
+//         p.jumpRepeatTimer = 0.01f;
+//     }
+
+
+//     // 9. drag v2
+//     float drag;
+//     if (p.onGround) {
+//         drag = std::exp(-GROUND_FRICTION_AMOUNT * dt);
+//     } else {
+//         drag = std::exp(-GROUND_FRICTION_AMOUNT* dt);
+//     }
+
+//     // ---------------- WALK FRICTION (HIGH) ----------------
+//     // v2 so walkingn = high friction, dash = low friction 
+//     if (wishLen < 0.0001f) {
+//         p.vel.x *= drag;
+//         p.vel.y *= drag;
+//     }
+
+//     // ---------------- DASH FRICTION (LOW) ----------------
+//     float dashDrag = std::exp(-GROUND_FRICTION_AMOUNT * 0.01f * dt); // 4× longer glide
+//     p.dashVel *= dashDrag;
+
+//     // i think this goes here but idk
+//     if (glm::length(p.dashVel) < 0.0001f)
+//         p.dashVel = glm::vec2(0.0f);
+
+//     // --------------------------------------------------
+//     // 9.5. clamp horizontal speed (PREVENT RUNAWAY)
+//     // --------------------------------------------------
+//     float maxSpeed =
+//         p.onGround
+//             // use the config values dont hardcode them here 
+//             ? PHYS.moveSpeed * 1.25f   // ground cap (tunable)
+//             : PHYS.moveSpeed * 1.6f;   // air cap (tunable)
+
+//     glm::vec2 hv = glm::vec2(p.vel.x, p.vel.y) + p.dashVel;
+//     float speed = glm::length(hv);
+
+//     if (speed > maxSpeed) {
+//         hv = (hv / speed) * maxSpeed;
+//         if (wishLen < 0.0001f) {
+//             float dashDrag = std::exp(-GROUND_FRICTION_AMOUNT * 0.2f * dt);
+//             p.dashVel *= dashDrag;
+//         }
+//     }
+
+//     if (!p.onGround && !onSlopeThisFrame && !allowSlopeSupport) {
+//         resolveStuck(p, cfg, world);
+//     }
+
+//     // attempt 6 jumping with no audio spam
+
+//     // JUMP REAL LOGIC
+//     // JUMP REAL LOGIC
+//     // JUMP REAL LOGIC
+
+//     bool canGroundJump = p.onGround || coyoteTimer > 0.0f;
+
+//     if (jumpIntentTimer > 0.0f) {
+//         if (canGroundJump) {
+//             // ---- GROUND JUMP ----
+//             p.vel.z = cfg.jumpStrength;
+//             p.onGround = false;
+//             coyoteTimer = 0.0f;
+
+//             didGroundJumpThisFrame = true;
+//             jumpIntentTimer = 0.0f;
+//         }
+//         else if (p.airJumpsLeft > 0) {
+//             // ---- AIR JUMP ----
+//             p.vel.z = cfg.jumpStrength;
+//             p.airJumpsLeft--;
+
+//             didAirJumpThisFrame = true;
+//             jumpIntentTimer = 0.0f;
+//         }
+//     }
+
+//     // finalize grounded state
+//     p.onGround = groundedThisFrame;
+
+        
+//     // -------- LAND EDGE --------
+//     if (!p.wasOnGround && p.onGround && !p.hasLanded) {
+//         p.didLand = true;
+//         p.hasLanded = true;
+//     }
+
+//     // -------- TAKEOFF RESET --------
+//     if (!p.onGround) {
+//         p.hasLanded = false;
+//     }
+
+//     // store previous state
+//     p.wasOnGround = p.onGround;
+
+//     // goes here? idk
+//     bool landedThisFrame = (!wasOnGround && p.onGround);
+
+//     // SET THESE AFTER EVERYTHING DONT SET THEM BEFORE 
+//     p.didGroundJump = didGroundJumpThisFrame;
+//     p.didAirJump = didAirJumpThisFrame;
+//     p.didLand = landedThisFrame;
+//     // testing setting them to just be false
+//     // it sucks
+//     // p.didGroundJump = false;
+//     // p.didAirJump = false;
+//     // p.didLand = false;
+// };
