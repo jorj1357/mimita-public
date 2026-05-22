@@ -1,0 +1,35 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\render\render-world.cpp
+// // feb 10 2026
+// /**
+//  * prupose 
+//  * small wrapper so that
+//  * renderer can cal?
+//  * idk
+//  * keepinng file size low rewrite
+//  */
+
+// #include "render-world.h"
+// #include "world/world.h"
+// #include "camera.h"
+// #include "renderer/renderer.h"
+// #include "world/texture-store.h"
+
+// #include <cstdio>
+
+// extern Renderer* gRenderer;
+
+// void renderWorld(const World& world, const Camera& cam)
+// {
+//     // TEMP: assume world mesh already built elsewhere
+//     // This file just *issues draw calls*
+
+//     if (!gRenderer) {
+//         printf("[RENDER] renderer missing\n");
+//         return;
+//     }
+
+//     // later: bind shader, set matrices, draw chunks
+//     // for now: placeholder so wiring compiles
+
+//     // printf("[RENDER] world draw\n");
+// }

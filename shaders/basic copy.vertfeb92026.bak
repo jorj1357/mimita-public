@@ -1,0 +1,23 @@
+// C:\important\quiet\n\mimita-priv-v7\shaders\basic.vert
+// jan 30 2025 version 
+// cant just have blue on blue bruh its so i cant see 
+
+#version 330 core
+layout(location = 0) in vec3 aPos;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+out float vDepth;
+out vec3 vWorldPos;
+
+void main() {
+    vec4 world = model * vec4(aPos, 1.0);
+    vec4 viewPos = view * world;
+
+    vDepth = -viewPos.z;   // distance from CAMERA
+    vWorldPos = world.xyz;
+
+    gl_Position = projection * viewPos;
+}

@@ -1,0 +1,208 @@
+* {
+  font-family: "MingLiU";
+}
+
+html,
+body,
+#root,
+* {
+  font-family: "MingLiU" !important;
+}
+
+body {
+  background: black;
+  color: white;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  width: 100%;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+
+  gap: 2.5vmin;
+
+  padding: 2vmin;
+
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
+.header a {
+  color: white;
+  text-decoration: none;
+
+  font-size: clamp(12px, 1.2vmin, 20px);
+  font-weight: 700;
+
+  letter-spacing: 0.08em;
+
+  transition: opacity 0.2s ease;
+}
+
+.header a:hover {
+  opacity: 0.6;
+}
+
+.hero {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  justify-content: center;
+  align-items: center;
+
+  gap: 3vmin;
+
+  padding: 4vmin;
+}
+
+.logo {
+  width: 40vmin;
+  height: 40vmin;
+
+  object-fit: contain;
+}
+
+.title {
+  font-size: 8vmin;
+
+  font-weight: 900;
+
+  letter-spacing: 0.08em;
+
+  text-align: center;
+}
+
+.aboutSection {
+  width: 100%;
+
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 3vmin;
+
+  padding-bottom: 12vmin;
+
+  text-align: center;
+}
+
+.aboutBig {
+  font-size: clamp(2rem, 4vmin, 5rem);
+
+  font-weight: 700;
+
+  width: min(90vw, 900px);
+
+  line-height: 1.3;
+}
+
+.aboutSmall {
+  font-size: clamp(0.8rem, 1.3vmin, 1.4rem);
+
+  opacity: 0.6;
+
+  letter-spacing: 0.15em;
+}
+
+.linkGroup {
+  margin-top: 3vmin;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 1.5vmin;
+}
+
+.bigLink {
+  color: white;
+
+  text-decoration: none;
+
+  font-size: clamp(1rem, 2vmin, 2rem);
+
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.bigLink:hover {
+  opacity: 0.6;
+
+  transform: scale(1.03);
+}
+
+.downloadPage {
+  min-height: 100vh;
+
+  background: black;
+  color: white;
+
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 3vmin;
+
+  padding: 5vmin;
+
+  text-align: center;
+}
+
+.downloadTitle {
+  font-size: clamp(2rem, 5vmin, 6rem);
+
+  letter-spacing: 0.08em;
+}
+
+.downloadGif {
+  width: min(90vw, 1000px);
+
+  border: 1px solid rgba(255,255,255,0.15);
+
+  object-fit: cover;
+}
+
+.downloadButton {
+  color: black;
+  background: white;
+
+  text-decoration: none;
+
+  padding:
+    1rem
+    2rem;
+
+  font-size: clamp(1rem, 2vmin, 2rem);
+
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.downloadButton:hover {
+  transform: scale(1.05);
+
+  opacity: 0.8;
+}
+
+.downloadInfo {
+  opacity: 0.5;
+
+  font-size: clamp(0.8rem, 1.2vmin, 1.2rem);
+}

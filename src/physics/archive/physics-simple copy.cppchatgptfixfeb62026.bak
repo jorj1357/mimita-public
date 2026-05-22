@@ -1,0 +1,339 @@
+// C:\important\quiet\n\mimita-priv-v7\src\physics\physics-simple.cpp
+// feb 3 2026
+// fixing phiscs bc it broken and sux 
+
+#include "physics-simple.h"
+
+#include <algorithm>
+#include <vector>
+
+// ---- You must include your real definitions somewhere ----
+#include "world/world.h"      // World, Block
+#include "entities/player.h"  // Player
+#include "config.h"
+
+// Minimal AABB
+struct AABB {
+    glm::vec3 min;
+    glm::vec3 max;
+};
+
+static inline AABB makePlayerAABBAt(const glm::vec3& pos,
+                                   const PhysicsSimpleConfig& cfg)
+{
+    glm::vec3 h(cfg.playerWidth*0.5f,
+                cfg.playerDepth*0.5f,
+                cfg.playerHeight*0.5f);
+    return { pos - h, pos + h };
+}
+
+// i think this is double code writing but whatever feb 6 2026 
+static inline AABB makePlayerAABB(const Player& p,
+                                  const PhysicsSimpleConfig& cfg)
+{
+    return makePlayerAABBAt(p.pos, cfg);
+}
+
+static inline AABB makeBlockAABB(const Block& b)
+{
+    // IMPORTANT: b.size must be FULL extents (width/height/depth), not half.
+    glm::vec3 half = b.size * 0.5f;
+    return { b.pos - half, b.pos + half };
+}
+
+static inline bool overlaps(const AABB& a, const AABB& b)
+{
+    return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+           (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+           (a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
+
+static bool collidesAt(const Player& p,
+                       const PhysicsSimpleConfig& cfg,
+                       const World& world,
+                       const glm::vec3& testPos)
+{
+    glm::vec3 half(cfg.playerWidth*0.5f,
+                   cfg.playerDepth*0.5f,
+                   cfg.playerHeight*0.5f);
+
+    AABB pa { testPos - half, testPos + half };
+
+    for (const Block& b : world.blocks)
+    {
+        // feb 6 2026 commented, this makes slopes non collidabel? 
+        // if (b.isSlope)
+        //     continue;   // slopes handled by planes only'
+
+        // add ing it back? feb 6 2026,
+        // so slopes stop messing with velocity and making me freeze
+        if (b.isSlope) continue;
+        
+        glm::vec3 bh = b.size * 0.5f;
+        AABB ba { b.pos - bh, b.pos + bh };
+
+        if (overlaps(pa, ba))
+            return true;
+    }
+    return false;
+}
+
+// Push player out of block along smallest penetration axis.
+// Returns which axis was used: 0=x, 1=y, 2=z. Also outputs push vector.
+static inline int resolveOne(AABB& pa, const AABB& ba, glm::vec3& pos, float slop, glm::vec3& outPush)
+{
+    // penetration distances for each side
+    float px1 = ba.max.x - pa.min.x; // push -x
+    float px2 = pa.max.x - ba.min.x; // push +x
+    float py1 = ba.max.y - pa.min.y;
+    float py2 = pa.max.y - ba.min.y;
+    float pz1 = ba.max.z - pa.min.z;
+    float pz2 = pa.max.z - ba.min.z;
+
+    float penX = std::min(px1, px2);
+    float penY = std::min(py1, py2);
+    float penZ = std::min(pz1, pz2);
+
+    outPush = glm::vec3(0.0f);
+
+    // choose smallest axis
+    if (penX <= penY && penX <= penZ) {
+        float push = (px1 < px2) ? -(px1 + slop) : (px2 + slop);
+        pos.x += push;
+        outPush.x = push;
+        return 0;
+    }
+    if (penY <= penZ) {
+        float push = (py1 < py2) ? -(py1 + slop) : (py2 + slop);
+        pos.y += push;
+        outPush.y = push;
+        return 1;
+    }
+
+    float push = (pz1 < pz2) ? -(pz1 + slop) : (pz2 + slop);
+    pos.z += push;
+    outPush.z = push;
+    return 2;
+}
+
+// this is like resolveone but pushing me out if im stuck inside a block
+static void resolveStuck(Player& p,
+                         const PhysicsSimpleConfig& cfg,
+                         const World& world)
+{
+    const int MAX_ITERS = 6;
+    const float SLOP = 0.001f;
+
+    for (int iter = 0; iter < MAX_ITERS; iter++) {
+        bool fixed = false;
+
+        AABB pa = makePlayerAABB(p, cfg);
+
+        for (const Block& b : world.blocks) {
+            if (b.isSlope) continue; // slopes handled by plane logic
+
+            AABB ba = makeBlockAABB(b);
+
+            if (!overlaps(pa, ba))
+                continue;
+
+            glm::vec3 push;
+            resolveOne(pa, ba, p.pos, SLOP, push);
+
+            // update AABB after move
+            pa = makePlayerAABB(p, cfg);
+
+            fixed = true;
+            break;
+        }
+
+        if (!fixed)
+            break;
+    }
+}
+
+// idk where put this , its auto
+// auto moveAxis = [&](int axis, float delta) {
+//     glm::vec3 tryPos = p.pos;
+//     tryPos[axis] += delta;
+
+//     AABB pa = makePlayerAABBAt(tryPos, cfg);
+
+//     for (const Block& b : world.blocks) {
+//         if (b.isSlope) continue;
+
+//         AABB ba = makeBlockAABB(b);
+//         if (overlaps(pa, ba))
+//             return; // blocked
+//     }
+
+//     p.pos[axis] = tryPos[axis];
+
+//     /**
+//      * Usage:
+
+//         moveAxis(0, delta.x);
+//         moveAxis(1, delta.y);
+
+
+//         No friction here.
+//         No velocity touching.
+//      */
+// };
+
+// caps movement per frame? not sure, pla w it so its not restrictive
+static void recover(Player& p,
+                    const PhysicsSimpleConfig& cfg,
+                    const World& world)
+{
+    const float MAX_PUSH = 0.05f;
+
+    AABB pa = makePlayerAABB(p, cfg);
+
+    for (const Block& b : world.blocks) {
+        AABB ba = makeBlockAABB(b);
+        if (!overlaps(pa, ba)) continue;
+
+        glm::vec3 push;
+        resolveOne(pa, ba, p.pos, 0.001f, push);
+
+        push = glm::clamp(push,
+                          glm::vec3(-MAX_PUSH),
+                          glm::vec3( MAX_PUSH));
+
+        p.pos += push;
+        break;
+    }
+}
+
+void physicsSimpleUpdate(
+    Player& p,
+    const World& world,
+    const PhysicsSimpleConfig& cfg,
+    const glm::vec2& wishMoveXY,
+    bool jumpHeld,
+    float dt
+){
+    dt = std::min(dt, 0.033f);
+    bool groundedThisFrame = false;
+
+    // 1. integrate gravity
+    p.vel.z += cfg.gravity * dt;
+    p.vel.z = std::max(p.vel.z, -cfg.maxFallSpeed);
+
+    // 2. compute delta
+    glm::vec3 delta;
+    delta.x = wishMoveXY.x * dt;
+    delta.y = wishMoveXY.y * dt;
+    delta.z = p.vel.z * dt;
+
+    // 2.1. put this before step 3, so movement works
+    auto moveAxis = [&](int axis, float delta) {
+        if (delta == 0.0f) return;
+
+        glm::vec3 tryPos = p.pos;
+        tryPos[axis] += delta;
+
+        AABB pa = makePlayerAABBAt(tryPos, cfg);
+
+        for (const Block& b : world.blocks) {
+            // dont just continue, 
+            // if we continue when its a slope, we walk thru walls. not good
+            // if (b.isSlope) continue;
+            if (overlaps(pa, makeBlockAABB(b)))
+                return; // blocked
+        }
+
+        p.pos[axis] = tryPos[axis];
+    };
+
+    // 3. horizontal movement (X/Y)
+    moveAxis(0, delta.x);
+    moveAxis(1, delta.y);
+
+    // 4. vertical movement (Z, solid blocks only)
+    {
+        glm::vec3 tryPos = p.pos;
+        tryPos.z += delta.z;
+
+        AABB pa = makePlayerAABBAt(tryPos, cfg);
+        bool hit = false;
+
+        for (const Block& b : world.blocks) {
+            if (b.isSlope) continue;
+            if (overlaps(pa, makeBlockAABB(b))) {
+                hit = true;
+                break;
+            }
+        }
+
+        if (!hit) {
+            p.pos.z = tryPos.z;
+        } else if (p.vel.z < 0.0f) {
+            groundedThisFrame = true;
+            p.vel.z = 0.0f;
+        }
+    }
+
+    // 5. slope penetration prevention (ONLY prevent going inside)
+    // BOUNDED. DONT LET PLANES BE INFINITE, WITH THE local and fabs
+    for (const Block& b : world.blocks) {
+        if (!b.isSlope) continue;
+
+        glm::vec3 foot = p.pos;
+        foot.z -= cfg.playerHeight * 0.5f;
+
+        // transform foot into slope local space
+        glm::vec3 local = glm::inverse(b.rot) * (foot - b.pos);
+
+        // float hx = b.size.x * 0.5f;
+        // float hy = b.size.y * 0.5f;
+
+        // DONT GET STUCK IN THE CETNER OF IT. THATS STUPID
+        // SLOPE over lap fixes it probabl.
+        float hx = b.size.x * 0.5f + SLOPE_OVERLAP;
+        float hy = b.size.y * 0.5f + SLOPE_OVERLAP;
+
+        // outside slope → ignore plane
+        if (local.x < -hx || local.x > hx ||
+            local.y < -hy || local.y > hy)
+            continue;
+
+        glm::vec3 n = glm::normalize(b.rot * glm::vec3(0,0,1));
+        if (n.z < 0.5f) continue;
+
+        glm::vec3 p0 = b.pos + n * (b.size.z * 0.5f);
+        float d = glm::dot(foot - p0, n);
+
+        if (d > 0.0f) {
+            p.pos.z -= d;
+            if (p.vel.z <= 0.0f)
+                groundedThisFrame = true;
+        }
+    }
+
+    // 6. finalize grounded state
+    p.onGround = groundedThisFrame;
+
+    // 7. jump
+    static float coyoteTimer = 0.0f;
+
+    if (p.onGround)
+        coyoteTimer = COYOTE_JUMP_TIME;
+    else
+        coyoteTimer -= dt;
+
+    if (jumpHeld && coyoteTimer > 0.0f) {
+        p.vel.z = cfg.jumpStrength;
+        coyoteTimer = 0.0f;
+        p.onGround = false;
+    }
+
+    // 8. resolve penetration ONCE
+    resolveStuck(p, cfg, world);
+
+    // 9. drag (last)
+    float drag = std::exp(-FRICTION_AMOUNT * dt);
+    p.vel.x *= drag;
+    p.vel.y *= drag;
+}

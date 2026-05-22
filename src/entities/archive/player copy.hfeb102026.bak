@@ -1,0 +1,145 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\entities\player.h
+// // feb 9 2026 rigth path 
+
+// #pragma once
+// #include <glad/glad.h>
+// #include <glm/glm.hpp>
+// #include <glm/gtc/matrix_transform.hpp>
+// #include <glm/mat4x4.hpp>
+// #include <GLFW/glfw3.h>
+// #include "physics/physics-types.h"
+// #include "audio/audio.h" // wherever playSound lives
+
+// // dec 19 2025 todo cleanthis file from haivng so much comments
+// // also
+// /**
+//  * // Coordinate system:
+// // X = right
+// // Y = forward
+// // Z = up
+// // All height, gravity, jump, offsets use Z
+// dec 19 2025 update 
+//  */
+
+// class Camera;
+
+// // ------------- Oriented Bounding Box -------------
+// struct OBB {
+//     glm::vec3 center;
+//     glm::vec3 halfSize;
+//     glm::mat4 orientation;
+// };
+
+// // ------------- Player Definition -----------------
+// class Player {
+// public:
+//     // Core state
+//     // do we use this even? dec 19 2025 todo 
+//     // z = up
+//     glm::vec3 pos{0, 0, 2};
+//     glm::vec3 vel{0};
+//     bool onGround = false;
+
+//     // Orientation
+//     float yaw = 0.0f;  
+
+//     // dont fall thru stuff
+//     float groundGrace = 0.0f;
+
+//     // this cooldown is 0ms functionally
+//     float dashCooldown = 0.0f;
+
+//     // dont be super drag be a little drag
+//     // float dashDragMultiplier = DRAG_FRICTION_MULTIPLIER;
+//     // it cant be a config value it has to be a float
+//     // make it constexpr float blahblah = 1.0f; if u want it to be global? 
+//     // feb 9 2026 
+//     float dashDragMultiplier = 1.0f;
+
+//     int   dashCharges = 3;
+//     float dashRechargeTimer = 0.0f;
+
+//     // hi 
+//     bool isFrozen = false;
+//     // 5 sec max i think is good but idk feb 9 2026
+//     // this is tracking how long plr has been holding freeze?
+//     float freezeTimer = 0.0f;
+//     // or this is? idk
+//     float freezeHoldTime = 0.0f;    
+//     // cooldown is 2x as long as u held freeze
+//     // e.g. hold freeze for 0.13s = wait 0.26s to freeze again 
+//     float freezeCooldownTimer = 0.0f;  // remaining cooldown
+
+//     // hold to jump repeat no spam
+//     float jumpRepeatTimer = 0.0f;
+
+//     // Ground return (slam)
+//     int   groundReturnCharges = 3;
+//     float groundReturnRechargeTimer = 0.0f;
+
+//     // for audio no spamming jump audio
+//     // commented bc we do edge triggered idk ehat that is feb 10 2026 
+//     // bool jumpConsumed = false;   // prevents spam per press
+//     bool wasOnGround = false;
+//     // bool landConsumed = false;
+
+//     // more audio stuff
+//     float footstepTimer = 0.0f;
+
+//     bool didGroundJump = false;
+//     bool didAirJump    = false;
+//     bool didLand       = false;
+//     bool hasLanded = false;
+
+//     bool didDash       = false;
+
+//     // speical dash drag onli 
+//     glm::vec2 dashVel = glm::vec2(0.0f);
+
+//     // double jumps
+//     int airJumpsLeft = 1;   // allow ONE extra jump
+
+//     // --- FAKE UNUSED HITBOX SECTION START fake unused jan 30 2026
+//     // real hitbox size is defined in config.h ---
+//     // dec 19 2025 todo make hitboxes here not in phsics
+//     // make it like robloxian but better
+//     // legs, arms, head, torso all collidable
+//     // or capsule idk 
+//     glm::vec3 hitboxSize;
+//     glm::vec3 hitboxOffset;
+
+//     // Mesh
+//     glm::vec3 meshScale  = {1,1,1};
+  
+//     glm::vec3 meshOffset = {0.0f, 0.0f, 0.0f};
+
+//     // Camera follow
+//     // dec 19 2025 i donth think wer even use this its in camera.h and camera.cpp todo 
+//     // dec 19 2025 z is up but idont think we use this 
+//     glm::vec3 cameraOffset = {0.0f, -2.5f, 0.6f};
+
+//     // Helpers
+//     inline glm::vec3 halfExtents() const { return hitboxSize * 0.5f; }
+
+//     glm::mat4 rootTransform = glm::mat4(1.0f);
+
+//     // REQUIRED NEW FUNCTION
+//     OBB getOBB() const;
+
+//     // fixind collisions feb 3 2026 test 
+//     Capsule getCapsule() const;
+
+//     // Methods
+//     Player();
+//     void reset();
+//     void jump(float strength);
+//     void applyGravity(float gravity, float dt);
+//     void move(const glm::vec3& dir, float speed, float dt);
+//     void updateAudio(float dt);
+
+//     // textures come later bruh jan 25 2026 
+//     // NEW SIMPLE RENDER (capsule only) jan 30 2026 
+//     void render(GLuint shaderProgram,
+//                 const glm::mat4& view,
+//                 const glm::mat4& proj);
+// };

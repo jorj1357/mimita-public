@@ -1,0 +1,71 @@
+// // C:\important\quiet\n\mimita-priv-v7\src\main.cpp
+// // feb 10 2026 ultra minimal edit
+// // purpose:
+// // main.cpp should only do orchestration.
+// // No logic. No GLFW. No OpenGL. No physics math. No world iteration.
+// // Just:
+// // init
+// // loop:
+// //   poll input
+// //   update audio
+// //   update physics
+// //   render
+// // shutdown
+// // Everything else lives behind headers.
+
+// #include "engine/engine.h"
+// #include "world/world.h"
+// #include "world/world-loader.h"
+// #include "entities/player.h"
+// #include "camera.h"
+// #include "input/input-state.h"
+// #include "input/input-poll.h"
+// #include "render/render-world.h"
+// #include "render/render-player.h"
+// #include "renderer/renderer.h"
+// #include "physics/physics-mini.h"
+// #include "physics/physics-debug-movement.h"
+
+// int main()
+// {
+//     Engine engine;
+//     engine.init(800, 600, "mimita.exe");
+
+//     World world;
+//     // todo make this somethign that happens in world
+//     // so we just call worldLoad(args) and it does everything and more
+//     loadWorldFromJSON(
+//         world,
+//         "assets/maps/json-converts/mimita-aabb-only-interior-small-v2-converted-v2.json"
+//     );
+
+//     Player player;
+//     Camera camera;
+//     engine.bindCamera(&camera);
+
+//     while (engine.running())
+//     {
+//         float dt = engine.beginFrame();
+
+//         InputState input = pollInput(engine.window(), camera);
+
+//         physicsMainUpdate(
+//             player,
+//             world,
+//             input,
+//             dt
+//         );
+
+//         // comment out if testing non debug movement feb 10 2026
+//         applyDebugMovement(player, engine.window(), camera, dt);
+
+//         player.updateAudio(dt);
+
+//         renderWorld(world, camera);
+//         renderPlayer(player, camera);
+
+//         engine.endFrame();
+//     }
+
+//     return 0;
+// }
