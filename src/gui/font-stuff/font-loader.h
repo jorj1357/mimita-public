@@ -15,13 +15,20 @@ these variables and functions exist somewhere else
 extern Glyph gGlyphs[256];
 
 extern GLuint gFontTex;
+extern GLuint gFontPages[8];
+extern int gFontPageCount;
 
 extern GLuint guiVAO;
 extern GLuint guiVBO;
 
 extern int atlasWidth;
 extern int atlasHeight;
+extern int fontLineHeight;
+extern int fontBase;
 
 bool loadFontAtlas(const char* path);
 bool loadFontGlyphs(const char* path);
 void fontInit();
+bool fontReady();
+bool fontGetGlyph(unsigned int codepoint, Glyph& out);
+int fontGetKerning(unsigned int first, unsigned int second);

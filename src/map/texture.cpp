@@ -19,41 +19,57 @@ its bad and breaks everythung
 #include "utils/path_utils.h"
 #include <string>
 
+static GLuint makeFallbackTexture()
+{
+    static GLuint fallback = 0;
+    if (fallback)
+        return fallback;
+
+    printf("[TEXTURE WARNING] Creating bright checkerboard fallback texture\n");
+    unsigned int pixels[16] = {
+        0xffff00ff, 0xff00ffff, 0xffff00ff, 0xff00ffff,
+        0xff00ffff, 0xffff00ff, 0xff00ffff, 0xffff00ff,
+        0xffff00ff, 0xff00ffff, 0xffff00ff, 0xff00ffff,
+        0xff00ffff, 0xffff00ff, 0xff00ffff, 0xffff00ff
+    };
+
+    glGenTextures(1, &fallback);
+    glBindTexture(GL_TEXTURE_2D, fallback);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    return fallback;
+}
 
 GLuint loadTexture(const char* path) {
-    printf("loadTexture: started\n");
+    printf("[TEXTURE] Loading texture %s\n", path);
 
-    // idk jan 25 2026 might work 
     std::string resolvedPath = path;
-    // std::string resolvedPath = resolveAssetPath(path);
     int w, h, n;
     unsigned char* data = stbi_load(resolvedPath.c_str(), &w, &h, &n, 4);
-        printf("loadTexture: abt to print failed to loadtexture prob \n");
 
-    if (!data) { printf("Failed to load texture %s (resolved from %s)\n", resolvedPath.c_str(), path); return 0; }
-
-    printf("loadTexture: %s\n", path);
-    fflush(stdout);
-
-    printf("loadTexture: gluint text righ after \n");
+    if (!data) {
+        printf("[TEXTURE WARNING] Missing texture %s (resolved from %s)\n", resolvedPath.c_str(), path);
+        return makeFallbackTexture();
+    }
 
     GLuint tex;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
 
-    printf("loadTexture: params before \n");
-
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    printf("loadTexture: teximage 2d before  \n");
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+    printf("[TEXTURE] Uploading to GPU tex=%u size=%dx%d channels=%d\n", tex, w, h, n);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     stbi_image_free(data);
-    printf("loadTexture: reached the return tex; thing   \n");
+    printf("[TEXTURE] Upload complete %s tex=%u\n", path, tex);
 
     return tex;
 }

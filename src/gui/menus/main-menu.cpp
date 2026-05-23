@@ -26,8 +26,8 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     float cy = h * 0.5f;
 
     uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
-    uiDrawText("MiMITA", cx - 148.0f, cy - 185.0f, 5.0f, {0.95f, 0.98f, 1.0f, 1.0f});
-    uiDrawText("\"movement is more important than aim\"", cx - 330.0f, cy - 84.0f, 2.0f, {0.72f, 0.82f, 0.9f, 1.0f});
+    uiDrawText("MiMITA", cx - 88.0f, cy - 160.0f, 1.25f, {0.95f, 0.98f, 1.0f, 1.0f});
+    uiDrawText("\"movement is more important than aim\"", cx - 205.0f, cy - 70.0f, 0.46f, {0.72f, 0.82f, 0.9f, 1.0f});
 
     if (uiButton(win, "PLAY", {cx - 125.0f, cy + 5.0f, 250.0f, 58.0f}, {0.24f,0.82f,0.48f,1.0f}).clicked)
     {

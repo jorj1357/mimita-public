@@ -142,6 +142,24 @@ int main()
             drawDebugStuff(player, camera, world);
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
+            uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
+            uiDrawText("admin", 24, 88, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
+            uiDrawText("HP: 100/100", 24, 116, 0.38f, {0.35f, 1.0f, 0.45f, 1.0f});
+            {
+                glm::vec3 totalVel = player.vel + glm::vec3(player.dashVel.x, player.dashVel.y, 0.0f);
+                float speed = glm::length(totalVel);
+                char speedText[64];
+                snprintf(speedText, sizeof(speedText), "Speed: %.2f m/s", speed);
+                uiDrawText(speedText, 24, 144, 0.38f, {0.75f, 0.9f, 1.0f, 1.0f});
+            }
+            if (DebugVis::render())
+            {
+                char dbg[256];
+                snprintf(dbg, sizeof(dbg), "dt %.3f grounded %d vel %.2f %.2f %.2f cam %.1f %.1f %.1f",
+                         dt, (int)player.onGround, player.vel.x, player.vel.y, player.vel.z,
+                         camera.pos.x, camera.pos.y, camera.pos.z);
+                uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
+            }
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
         }

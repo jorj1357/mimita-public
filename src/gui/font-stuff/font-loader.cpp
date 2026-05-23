@@ -19,8 +19,11 @@ Call them once at startup.
 #include "font-glyph.h"
 #include "font-loader.h"
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <glad/glad.h>
 
 // do not define stb image implementation here 
@@ -32,6 +35,8 @@ Call them once at startup.
 Glyph gGlyphs[256];
 
 GLuint gFontTex = 0;
+GLuint gFontPages[8] = {};
+int gFontPageCount = 0;
 
 // font-loader.cpp (the only definition) of guivao and guivbo
 GLuint guiVAO = 0;
@@ -39,16 +44,84 @@ GLuint guiVBO = 0;
 
 int atlasWidth = 0;
 int atlasHeight = 0;
+int fontLineHeight = 48;
+int fontBase = 38;
+
+static bool gFontReady = false;
+static std::unordered_map<unsigned int, Glyph> gGlyphMap;
+static std::unordered_map<unsigned long long, int> gKerning;
+
+static int readIntField(const char* line, const char* key, int fallback = 0)
+{
+    const char* p = strstr(line, key);
+    if (!p) return fallback;
+    p += strlen(key);
+    return atoi(p);
+}
+
+static bool readQuotedField(const char* line, const char* key, char* out, size_t outSize)
+{
+    const char* p = strstr(line, key);
+    if (!p) return false;
+    p += strlen(key);
+    const char* end = strchr(p, '"');
+    if (!end) return false;
+    size_t n = (size_t)(end - p);
+    if (n >= outSize) n = outSize - 1;
+    memcpy(out, p, n);
+    out[n] = 0;
+    return true;
+}
+
+static GLuint loadFontAtlasPage(const char* path, int pageId)
+{
+    printf("[FONT] Loaded atlas page request id=%d path=%s\n", pageId, path);
+    int channels = 0;
+    int w = 0;
+    int h = 0;
+    unsigned char* data = stbi_load(path, &w, &h, &channels, 4);
+    if (!data)
+    {
+        printf("[FONT ERROR] Failed to load atlas page %d: %s\n", pageId, path);
+        return 0;
+    }
+
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    // 5 23 2026 fonts not wokring? added this
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    stbi_image_free(data);
+
+    if (pageId >= 0 && pageId < 8)
+    {
+        gFontPages[pageId] = tex;
+        if (pageId + 1 > gFontPageCount)
+            gFontPageCount = pageId + 1;
+    }
+    if (pageId == 0)
+        gFontTex = tex;
+
+    atlasWidth = w;
+    atlasHeight = h;
+    printf("[FONT] Loaded atlas page id=%d tex=%u size=%dx%d\n", pageId, tex, w, h);
+    return tex;
+}
 
 void fontInit()
 {
-    printf("[FONT] init\n");
-    printf("[FONT] bitmap font assets are optional; UI has a built-in fallback renderer\n");
+    printf("[FONT] Loading bitmap font\n");
 
-    bool atlasOk = loadFontAtlas("assets/font/mingliu-mimita-v3_0.png");
     bool glyphsOk = loadFontGlyphs("assets/font/mingliu-mimita-v3.fnt");
+    bool atlasOk = gFontPageCount > 0 && gFontPages[0] != 0;
     if (!atlasOk || !glyphsOk)
-        printf("[FONT WARNING] asset font failed; using built-in UI fallback text\n");
+        printf("[FONT WARNING] asset font failed; UI will use visible fallback text\n");
+    gFontReady = atlasOk && glyphsOk;
 
     // we must have this stuff below 
     // or else it just draws nothing
@@ -83,78 +156,113 @@ void fontInit()
 }
 bool loadFontAtlas(const char* path)
 {
-    int channels;
-
-    unsigned char* data =
-        stbi_load(path,&atlasWidth,&atlasHeight,&channels,4);
-
-    if(!data)
-    {
-        printf("[FONT] atlas load failed\n");
-        return false;
-    }
-
-    glGenTextures(1,&gFontTex);
-    glBindTexture(GL_TEXTURE_2D,gFontTex);
-
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA,
-        atlasWidth,
-        atlasHeight,
-        0,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        data
-    );
-
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-
-    stbi_image_free(data);
-
-    printf("[FONT] atlas loaded %dx%d\n",atlasWidth,atlasHeight);
-    printf("[FONT] about to reading glyphs...\n");
-
-    return true;
+    return loadFontAtlasPage(path, 0) != 0;
 }
 
 // testing new version mar 14 2026 with no std::ifstream
 bool loadFontGlyphs(const char* path)
 {
-    printf("[FONT] reading glyphs...\n");
+    printf("[FONT] Loading bitmap font descriptor\n");
     printf("[FONT] opening file: %s\n", path);
 
     FILE* f = fopen(path, "rb");
     if (!f)
     {
-        printf("[FONT] FAILED TO OPEN FILE\n");
+        printf("[FONT ERROR] Failed to parse .fnt: could not open file\n");
         return false;
     }
+
+    gGlyphMap.clear();
+    gKerning.clear();
+    for (Glyph& glyph : gGlyphs)
+        glyph = Glyph{};
+    memset(gFontPages, 0, sizeof(gFontPages));
+    gFontPageCount = 0;
 
     char line[1024];
 
     while (fgets(line, sizeof(line), f))
     {
-        int id;
-        Glyph g;
-
-        if (sscanf(
-                line,
-                "char id=%d x=%d y=%d width=%d height=%d xoffset=%d yoffset=%d xadvance=%d",
-                &id, &g.x, &g.y, &g.w, &g.h, &g.xoffset, &g.yoffset, &g.xadvance
-            ) == 8)
+        if (strncmp(line, "common ", 7) == 0)
         {
-            if (id >= 0 && id < 256)
-                gGlyphs[id] = g;
+            fontLineHeight = readIntField(line, "lineHeight=", fontLineHeight);
+            fontBase = readIntField(line, "base=", fontBase);
+            atlasWidth = readIntField(line, "scaleW=", atlasWidth);
+            atlasHeight = readIntField(line, "scaleH=", atlasHeight);
+            printf("[FONT] common lineHeight=%d base=%d atlas=%dx%d\n", fontLineHeight, fontBase, atlasWidth, atlasHeight);
+        }
+        else if (strncmp(line, "page ", 5) == 0)
+        {
+            int id = readIntField(line, "id=", 0);
+            char fileName[256];
+            if (readQuotedField(line, "file=\"", fileName, sizeof(fileName)))
+            {
+                char atlasPath[512];
+                snprintf(atlasPath, sizeof(atlasPath), "assets/font/%s", fileName);
+                loadFontAtlasPage(atlasPath, id);
+            }
+        }
+        else if (strncmp(line, "char ", 5) == 0)
+        {
+            Glyph g{};
+            g.id = readIntField(line, "id=", 0);
+            g.x = readIntField(line, "x=", 0);
+            g.y = readIntField(line, "y=", 0);
+            g.w = readIntField(line, "width=", 0);
+            g.h = readIntField(line, "height=", 0);
+            g.xoffset = readIntField(line, "xoffset=", 0);
+            g.yoffset = readIntField(line, "yoffset=", 0);
+            g.xadvance = readIntField(line, "xadvance=", 0);
+            g.page = readIntField(line, "page=", 0);
+            gGlyphMap[(unsigned int)g.id] = g;
+            if (g.id >= 0 && g.id < 256)
+                gGlyphs[g.id] = g;
+        }
+        else if (strncmp(line, "kerning ", 8) == 0)
+        {
+            unsigned int first = (unsigned int)readIntField(line, "first=", 0);
+            unsigned int second = (unsigned int)readIntField(line, "second=", 0);
+            int amount = readIntField(line, "amount=", 0);
+            unsigned long long key = ((unsigned long long)first << 32) | second;
+            gKerning[key] = amount;
         }
     }
 
     fclose(f);
 
-    printf("[FONT] glyphs loaded\n");
+    printf("[FONT] Loaded glyphs count=%zu kernings=%zu pages=%d\n", gGlyphMap.size(), gKerning.size(), gFontPageCount);
     return true;
+}
+
+bool fontReady()
+{
+    return gFontReady;
+}
+
+bool fontGetGlyph(unsigned int codepoint, Glyph& out)
+{
+    auto it = gGlyphMap.find(codepoint);
+    if (it == gGlyphMap.end())
+    {
+        static int missingPrints = 0;
+        if (missingPrints < 20)
+        {
+            printf("[FONT] Missing glyph codepoint=%u\n", codepoint);
+            missingPrints++;
+        }
+        return false;
+    }
+    out = it->second;
+    return true;
+}
+
+int fontGetKerning(unsigned int first, unsigned int second)
+{
+    unsigned long long key = ((unsigned long long)first << 32) | second;
+    auto it = gKerning.find(key);
+    if (it == gKerning.end())
+        return 0;
+    return it->second;
 }
 
 // this version breaks mar 14 2026? because of std:ifstream? idk 

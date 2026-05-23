@@ -149,9 +149,19 @@ bool loadWorldFromJSON(World& world, const char* path)
             b.pos = glm::vec3(0.0f);
         }
 
-        // print what textures msissing 
-        if (!jb.contains("tex") || !jb["tex"].is_string()) {
-            printf("[ERROR] Block missing tex field\n");
+        const char* textureKeys[] = {"tex", "texture", "material", "mat"};
+        std::string foundTexture;
+        for (const char* textureKey : textureKeys)
+        {
+            if (jb.contains(textureKey) && jb[textureKey].is_string())
+            {
+                foundTexture = jb[textureKey].get<std::string>();
+                break;
+            }
+        }
+
+        if (foundTexture.empty()) {
+            printf("[TEXTURE WARNING] Block missing texture/material field\n");
             b.texName = "missing_texture";
         }
 
@@ -162,10 +172,28 @@ bool loadWorldFromJSON(World& world, const char* path)
         b.rot = glm::mat3(1.0f);
         b.isSlope = false;
 
-        if (jb.contains("tex") && jb["tex"].is_string())
-            b.texName = jb["tex"].get<std::string>();
-        else
+        if (!foundTexture.empty())
+            b.texName = foundTexture;
+        else if (b.texName.empty())
             b.texName = "default";
+
+        for (int face = 0; face < 6; ++face)
+            b.faceTexName[face] = b.texName;
+
+        const char* faceArrayKeys[] = {"faceTextures", "face_textures", "textures"};
+        for (const char* faceKey : faceArrayKeys)
+        {
+            if (jb.contains(faceKey) && jb[faceKey].is_array() && jb[faceKey].size() >= 6)
+            {
+                for (int face = 0; face < 6; ++face)
+                {
+                    if (jb[faceKey][face].is_string())
+                        b.faceTexName[face] = jb[faceKey][face].get<std::string>();
+                }
+                printf("[TEXTURE] Block uses per-face texture array key=%s\n", faceKey);
+                break;
+            }
+        }
 
         world.blocks.push_back(b);
         // now idx add ? idk 

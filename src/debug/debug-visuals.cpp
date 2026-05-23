@@ -17,7 +17,7 @@ namespace {
 GLFWwindow* gWindow = nullptr;
 DebugColors gColors;
 bool gPhysics = true;
-bool gUi = true;
+bool gUi = false;
 bool gRender = true;
 bool gCollision = true;
 bool gWireframe = false;

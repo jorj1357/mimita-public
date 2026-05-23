@@ -30,12 +30,12 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     float cx = w * 0.5f;
 
     uiDrawRect({0, 0, (float)w, (float)h}, {0.025f, 0.03f, 0.04f, 1.0f}, "settings-background");
-    uiDrawText("SETTINGS / DEBUG UI TEST", cx - 300.0f, 52.0f, 2.6f, {0.95f, 0.98f, 1.0f, 1.0f});
-    uiDrawText("VISIBLE WIDGET TYPES: LABELS BUTTONS SLIDERS CHECKBOXES IMAGE PLACEHOLDERS SCROLL REGION", 46.0f, 112.0f, 1.3f, {0.62f,0.82f,1.0f,1});
+    uiDrawText("SETTINGS / DEBUG UI TEST", cx - 215.0f, 52.0f, 0.72f, {0.95f, 0.98f, 1.0f, 1.0f});
+    uiDrawText("VISIBLE WIDGET TYPES: LABELS BUTTONS SLIDERS CHECKBOXES IMAGE PLACEHOLDERS SCROLL REGION", 46.0f, 112.0f, 0.33f, {0.62f,0.82f,1.0f,1});
 
     uiDrawRect({42, 150, (float)w - 84.0f, (float)h - 235.0f}, {0.08f, 0.09f, 0.12f, 0.92f}, "scrollable-region-placeholder");
     uiDrawRectOutline({42, 150, (float)w - 84.0f, (float)h - 235.0f}, {0.3f, 0.8f, 1.0f, 1.0f}, "scrollable-region-outline");
-    uiDrawText("[SCROLLABLE REGION PLACEHOLDER]", 62.0f, 170.0f, 1.6f, {0.95f,0.8f,0.3f,1});
+    uiDrawText("[SCROLLABLE REGION PLACEHOLDER]", 62.0f, 170.0f, 0.4f, {0.95f,0.8f,0.3f,1});
 
     uiSlider(win, "VOLUME", {80, 255, 360, 28}, &volume, 0.0f, 100.0f);
     uiSlider(win, "FOV", {80, 345, 360, 28}, &fov, 60.0f, 140.0f);
@@ -50,7 +50,7 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         printf("[SETTINGS MENU] Test button pressed\n");
 
     uiDrawWarning("[MISSING FONT/TEXTURE WARNINGS ARE DRAWN HERE ON PURPOSE]", 520, 510);
-    uiDrawText("HOTKEYS F1 PHYSICS | F2 UI | F3 RENDER | F4 COLLISION | F5 WIREFRAME | F6 NORMALS | F7 BOUNDS", 62, (float)h - 60.0f, 1.3f, {0.8f, 1.0f, 0.8f, 1});
+    uiDrawText("HOTKEYS F1 PHYSICS | F2 UI | F3 RENDER | F4 COLLISION | F5 WIREFRAME | F6 NORMALS | F7 BOUNDS", 62, (float)h - 60.0f, 0.32f, {0.8f, 1.0f, 0.8f, 1});
 
     if (uiButton(win, "BACK", {42, (float)h - 72.0f, 150, 48}, {0.75f,0.25f,0.25f,1.0f}).clicked)
     {
