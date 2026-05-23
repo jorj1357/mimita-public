@@ -7,6 +7,9 @@
 
 #pragma once
 #include <glm/glm.hpp>
+#ifndef GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_NONE
+#endif
 #include <GLFW/glfw3.h>
 
 // forward declatrions so we can use them elsewhere i think idk 
@@ -24,8 +27,15 @@ struct DebugColors {
 
 namespace DebugVis {
     void init(GLFWwindow* win);
-    void update();                 // handles key toggle
+    void update();                 // handles F1-F7 hotkey toggles
     bool enabled();
+    bool physics();
+    bool ui();
+    bool render();
+    bool collision();
+    bool wireframe();
+    bool normals();
+    bool bounds();
 
     const DebugColors& colors();
 }

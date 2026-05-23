@@ -165,6 +165,9 @@ float Renderer::beginFrame() {
     float dt = float(now - last);
     last = now;
 
+    glfwGetFramebufferSize(window, &width, &height);
+    if (width <= 0) width = 1;
+    if (height <= 0) height = 1;
     glViewport(0, 0, width, height);
     glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

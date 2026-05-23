@@ -81,9 +81,11 @@ bool loadWorldFromJSON(World& world, const char* path)
     // declare here so we can count 
     int idx = 0;
     for (auto& jb : j["blocks"]) {
-        printf("[WORLD] parsing block %d\n", idx);
+        bool verboseBlockLog = idx < 10 || (idx % 100) == 0;
+        if (verboseBlockLog)
+            printf("[WORLD] parsing block %d\n", idx);
 
-        if (jb.contains("name"))
+        if (verboseBlockLog && jb.contains("name"))
             printf("  name = %s\n", jb["name"].get<std::string>().c_str());
 
         Block b{};
