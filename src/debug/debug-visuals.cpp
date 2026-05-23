@@ -23,7 +23,11 @@ bool gCollision = true;
 bool gWireframe = false;
 bool gNormals = false;
 bool gBounds = true;
-bool gPrev[8] = {};
+bool gUvChecker = false;
+bool gLightingOnly = false;
+bool gTexturesOnly = false;
+bool gAoOnly = false;
+bool gPrev[12] = {};
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
 
@@ -108,7 +112,7 @@ void drawCapsuleApprox(const Player& player, const Camera& camera)
 void DebugVis::init(GLFWwindow* win)
 {
     gWindow = win;
-    printf("[DEBUG] DebugVis initialized. F1 physics F2 UI F3 render F4 collision F5 wireframe F6 normals F7 bounds\n");
+    printf("[DEBUG] DebugVis initialized. F1 physics F2 UI F3 render F4 collision F5 wireframe F6 normals F7 bounds F8 UV F9 light F10 texture F11 AO\n");
 }
 
 void DebugVis::update()
@@ -121,6 +125,10 @@ void DebugVis::update()
     if (edge(5, GLFW_KEY_F5)) { gWireframe = !gWireframe; printf("[DEBUG] wireframe=%d\n", gWireframe); }
     if (edge(6, GLFW_KEY_F6)) { gNormals = !gNormals; printf("[DEBUG] normals=%d\n", gNormals); }
     if (edge(7, GLFW_KEY_F7)) { gBounds = !gBounds; printf("[DEBUG] bounds=%d\n", gBounds); }
+    if (edge(8, GLFW_KEY_F8)) { gUvChecker = !gUvChecker; printf("[DEBUG] uvChecker=%d\n", gUvChecker); }
+    if (edge(9, GLFW_KEY_F9)) { gLightingOnly = !gLightingOnly; printf("[DEBUG] lightingOnly=%d\n", gLightingOnly); }
+    if (edge(10, GLFW_KEY_F10)) { gTexturesOnly = !gTexturesOnly; printf("[DEBUG] texturesOnly=%d\n", gTexturesOnly); }
+    if (edge(11, GLFW_KEY_F11)) { gAoOnly = !gAoOnly; printf("[DEBUG] aoOnly=%d\n", gAoOnly); }
     glPolygonMode(GL_FRONT_AND_BACK, gWireframe ? GL_LINE : GL_FILL);
 }
 
@@ -132,6 +140,19 @@ bool DebugVis::collision() { return gCollision; }
 bool DebugVis::wireframe() { return gWireframe; }
 bool DebugVis::normals() { return gNormals; }
 bool DebugVis::bounds() { return gBounds; }
+bool DebugVis::uvChecker() { return gUvChecker; }
+bool DebugVis::lightingOnly() { return gLightingOnly; }
+bool DebugVis::texturesOnly() { return gTexturesOnly; }
+bool DebugVis::aoOnly() { return gAoOnly; }
+int DebugVis::shaderDebugView()
+{
+    if (gUvChecker) return 1;
+    if (gLightingOnly) return 2;
+    if (gTexturesOnly) return 3;
+    if (gAoOnly) return 4;
+    if (gNormals) return 5;
+    return 0;
+}
 const DebugColors& DebugVis::colors() { return gColors; }
 
 void drawDebugStuff(const Player& player, const Camera& camera, const World& world)
