@@ -36,6 +36,11 @@ namespace DebugVis {
     bool wireframe();
     bool normals();
     bool bounds();
+    bool uvChecker();
+    bool lightingOnly();
+    bool texturesOnly();
+    bool aoOnly();
+    int shaderDebugView();
 
     const DebugColors& colors();
 }
