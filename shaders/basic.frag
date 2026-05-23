@@ -24,7 +24,5 @@ void main() {
     float depthShade = clamp(1.0 - vDepth * 0.002, 0.5, 1.0);
     float shade = max(ambient, depthShade);
 
-    // mar 13 2026 this broken for gui rendering so commented
-    // FragColor = vec4(texColor.rgb * shade, texColor.a);
-    FragColor = vec4(1.0,1.0,1.0,1.0);
+    FragColor = vec4(texColor.rgb * shade, texColor.a);
 }

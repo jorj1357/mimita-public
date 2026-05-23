@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <glad/glad.h>
+#include "gui/font-stuff/font-loader.h"
 
 namespace {
 GLFWwindow* gWindow = nullptr;
@@ -15,6 +16,8 @@ GLuint gVao = 0;
 GLuint gVbo = 0;
 GLint gScreenLoc = -1;
 GLint gColorLoc = -1;
+GLint gUseTexLoc = -1;
+GLint gTexLoc = -1;
 int gFbW = 1;
 int gFbH = 1;
 bool gDebug = true;
@@ -112,16 +115,30 @@ void ensureProgram()
     const char* vs =
         "#version 330 core\n"
         "layout(location=0) in vec2 aPos;\n"
+        "layout(location=1) in vec2 aUV;\n"
         "uniform vec2 uScreen;\n"
+        "out vec2 vUV;\n"
         "void main(){\n"
         "  vec2 ndc = vec2((aPos.x/uScreen.x)*2.0-1.0, 1.0-(aPos.y/uScreen.y)*2.0);\n"
+        "  vUV = aUV;\n"
         "  gl_Position = vec4(ndc, 0.0, 1.0);\n"
         "}\n";
     const char* fs =
         "#version 330 core\n"
         "out vec4 FragColor;\n"
+        "in vec2 vUV;\n"
         "uniform vec4 uColor;\n"
-        "void main(){ FragColor = uColor; }\n";
+        "uniform sampler2D uTex;\n"
+        "uniform int uUseTex;\n"
+        "void main(){\n"
+        "  if (uUseTex == 1) {\n"
+        "    vec4 texel = texture(uTex, vUV);\n"
+        // "    FragColor = vec4(uColor.rgb, uColor.a * texel.a);\n"
+        "FragColor = vec4(texel.rgb * uColor.rgb, texel.a * uColor.a);\n"
+        "  } else {\n"
+        "    FragColor = uColor;\n"
+        "  }\n"
+        "}\n";
 
     GLuint vert = compile(GL_VERTEX_SHADER, vs, "ui.vert");
     GLuint frag = compile(GL_FRAGMENT_SHADER, fs, "ui.frag");
@@ -144,14 +161,18 @@ void ensureProgram()
 
     gScreenLoc = glGetUniformLocation(gProgram, "uScreen");
     gColorLoc = glGetUniformLocation(gProgram, "uColor");
+    gUseTexLoc = glGetUniformLocation(gProgram, "uUseTex");
+    gTexLoc = glGetUniformLocation(gProgram, "uTex");
 
     glGenVertexArrays(1, &gVao);
     glGenBuffers(1, &gVbo);
     glBindVertexArray(gVao);
     glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 64, nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 128, nullptr, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 2, (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)(sizeof(float) * 2));
 }
 
 bool pointIn(double mx, double my, UIRect r)
@@ -165,10 +186,28 @@ void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, GLenum mod
     glUseProgram(gProgram);
     glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
     glUniform4fv(gColorLoc, 1, &color.x);
+    glUniform1i(gUseTexLoc, 0);
     glBindVertexArray(gVao);
     glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 2 * vertCount, verts, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW);
     glDrawArrays(mode, 0, vertCount);
+    ++gDrawCalls;
+}
+
+void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 color)
+{
+    ensureProgram();
+    glUseProgram(gProgram);
+    glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
+    glUniform4fv(gColorLoc, 1, &color.x);
+    glUniform1i(gUseTexLoc, 1);
+    glUniform1i(gTexLoc, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(gVao);
+    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, vertCount);
     ++gDrawCalls;
 }
 
@@ -183,7 +222,7 @@ void debugWidget(const char* type, const char* name, UIRect r, bool hovered, boo
     snprintf(buf, sizeof(buf), "[%s: %s] hovered=%s pressed=%s bounds=(%.0f,%.0f,%.0f,%.0f)",
              type, name, hovered ? "true" : "false", pressed ? "true" : "false",
              r.x, r.y, r.w, r.h);
-    uiDrawText(buf, r.x, r.y + r.h + 8.0f, 1.2f, {0.7f, 1.0f, 0.95f, 1.0f});
+    uiDrawText(buf, r.x, r.y + r.h + 8.0f, 0.28f, {0.7f, 1.0f, 0.95f, 1.0f});
 }
 }
 
@@ -229,6 +268,21 @@ void uiEndFrame()
     glEnable(GL_DEPTH_TEST);
 }
 
+// 5 23 2026 idk where to put this 
+float uiMeasureText(const char* text, float scale)
+{
+    float w = 0.0f;
+
+    for (const char* p = text; *p; ++p)
+    {
+        Glyph g{};
+        if (fontGetGlyph((unsigned char)*p, g))
+            w += g.xadvance * scale;
+    }
+
+    return w;
+}
+
 void uiSetDebug(bool enabled) { gDebug = enabled; }
 bool uiDebugEnabled() { return gDebug; }
 
@@ -239,8 +293,8 @@ void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName)
         return;
     }
     float verts[] = {
-        r.x, r.y, r.x + r.w, r.y, r.x + r.w, r.y + r.h,
-        r.x, r.y, r.x + r.w, r.y + r.h, r.x, r.y + r.h
+        r.x, r.y, 0, 0, r.x + r.w, r.y, 0, 0, r.x + r.w, r.y + r.h, 0, 0,
+        r.x, r.y, 0, 0, r.x + r.w, r.y + r.h, 0, 0, r.x, r.y + r.h, 0, 0
     };
     drawTriVerts(verts, 6, color, GL_TRIANGLES);
 }
@@ -249,10 +303,10 @@ void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName)
 {
     (void)debugName;
     float verts[] = {
-        r.x, r.y, r.x + r.w, r.y,
-        r.x + r.w, r.y, r.x + r.w, r.y + r.h,
-        r.x + r.w, r.y + r.h, r.x, r.y + r.h,
-        r.x, r.y + r.h, r.x, r.y
+        r.x, r.y, 0, 0, r.x + r.w, r.y, 0, 0,
+        r.x + r.w, r.y, 0, 0, r.x + r.w, r.y + r.h, 0, 0,
+        r.x + r.w, r.y + r.h, 0, 0, r.x, r.y + r.h, 0, 0,
+        r.x, r.y + r.h, 0, 0, r.x, r.y, 0, 0
     };
     drawTriVerts(verts, 8, color, GL_LINES);
 }
@@ -260,6 +314,83 @@ void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName)
 void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color)
 {
     if (!text) return;
+
+    if (fontReady())
+    {
+        float cursorX = x;
+        float cursorY = y;
+        unsigned int prev = 0;
+
+        for (const char* p = text; *p; ++p)
+        {
+            unsigned int ch = (unsigned char)*p;
+            if (ch == '\n')
+            {
+                cursorX = x;
+                cursorY += (float)fontLineHeight * scale;
+                prev = 0;
+                continue;
+            }
+
+            Glyph g{};
+            if (!fontGetGlyph(ch, g))
+            {
+                cursorX += 12.0f * scale;
+                prev = ch;
+                continue;
+            }
+
+            cursorX += (float)fontGetKerning(prev, ch) * scale;
+            float x0 = cursorX + (float)g.xoffset * scale;
+
+            // 5 23 2026 working on font scale might not work 
+            // float y0 = cursorY + (float)g.yoffset * scale;
+            // float y0 = cursorY + ((float)g.yoffset - (float)fontBase) * scale;
+            float baseline = cursorY + fontBase * scale;
+            float y0 = baseline - ((float)fontBase - (float)g.yoffset) * scale;
+            // 5 23 2026 try this if above line not wokring 
+            // float y0 = cursorY + ((float)fontBase - (float)g.yoffset) * scale;
+
+            float x1 = x0 + (float)g.w * scale;
+            float y1 = y0 + (float)g.h * scale;
+
+            float u0 = (float)g.x / (float)atlasWidth;
+            // float v0 = (float)g.y / (float)atlasHeight;
+            float u1 = (float)(g.x + g.w) / (float)atlasWidth;
+            // float v1 = (float)(g.y + g.h) / (float)atlasHeight;
+
+            // 5 23 2026 fixing block texures idk 
+            float v0 = 1.0f - ((float)(g.y + g.h) / (float)atlasHeight);
+            float v1 = 1.0f - ((float)g.y / (float)atlasHeight);
+
+            GLuint pageTex = 0;
+            if (g.page >= 0 && g.page < 8)
+                pageTex = gFontPages[g.page];
+            if (!pageTex)
+            {
+                uiDrawWarning("[MISSING FONT PAGE]", x0, y0);
+                cursorX += (float)g.xadvance * scale;
+                prev = ch;
+                continue;
+            }
+
+            float verts[] = {
+                x0,y0,u0,v0, x1,y0,u1,v0, x1,y1,u1,v1,
+                x0,y0,u0,v0, x1,y1,u1,v1, x0,y1,u0,v1
+            };
+            drawTexturedQuad(verts, 6, pageTex, color);
+
+            if (gDebug)
+            {
+                uiDrawRectOutline({x0, y0, x1 - x0, y1 - y0}, {0.2f, 1.0f, 0.2f, 0.55f}, "glyph-bounds");
+                uiDrawRect({cursorX, cursorY + (float)fontBase * scale, 18.0f * scale, 1.0f}, {1.0f, 0.2f, 0.2f, 0.7f}, "text-baseline");
+            }
+
+            cursorX += (float)g.xadvance * scale;
+            prev = ch;
+        }
+        return;
+    }
 
     float cursor = x;
     const float cell = 2.0f * scale;
@@ -282,7 +413,7 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
 void uiDrawWarning(const char* text, float x, float y)
 {
     uiDrawRect({x - 8.0f, y - 8.0f, 560.0f, 34.0f}, {0.6f, 0.0f, 0.0f, 0.85f}, "warning-bg");
-    uiDrawText(text, x, y, 1.3f, {1.0f, 1.0f, 0.1f, 1.0f});
+    uiDrawText(text, x, y, 0.34f, {1.0f, 1.0f, 0.1f, 1.0f});
 }
 
 UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color)
@@ -301,8 +432,10 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     uiDrawRect(r, c, text);
     uiDrawRectOutline(r, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
 
-    float textScale = std::max(1.4f, r.h / 24.0f);
-    float textW = (float)std::strlen(text) * 6.0f * (2.0f * textScale + 1.0f * textScale);
+    // float textScale = std::clamp(r.h / 110.0f, 0.38f, 0.62f);
+    float textScale = 1.0f;
+    // float textW = (float)std::strlen(text) * 24.0f * textScale;
+    float textW = uiMeasureText(text, textScale);
     uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {0.02f, 0.02f, 0.025f, 1.0f});
     debugWidget("BUTTON", text, r, s.hovered, s.pressed);
 
@@ -314,7 +447,7 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
 bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value)
 {
     UIButtonState s = uiButton(win, *value ? "ON" : "OFF", r, *value ? glm::vec4(0.2f,0.8f,0.35f,1) : glm::vec4(0.7f,0.25f,0.25f,1));
-    uiDrawText(label, r.x + r.w + 14.0f, r.y + 10.0f, 1.5f, {0.88f,0.9f,0.94f,1});
+    uiDrawText(label, r.x + r.w + 14.0f, r.y + 10.0f, 0.42f, {0.88f,0.9f,0.94f,1});
     if (s.clicked) *value = !*value;
     debugWidget("CHECKBOX", label, r, s.hovered, s.pressed);
     return s.clicked;
@@ -337,7 +470,7 @@ bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float 
     uiDrawRectOutline(r, {0.9f,0.9f,0.9f,0.9f}, "slider-border");
     char buf[128];
     snprintf(buf, sizeof(buf), "%s %.1f", label, *value);
-    uiDrawText(buf, r.x, r.y - 28.0f, 1.35f, {0.88f,0.9f,0.94f,1});
+    uiDrawText(buf, r.x, r.y - 28.0f, 0.42f, {0.88f,0.9f,0.94f,1});
     debugWidget("SLIDER", label, r, hovered, hovered && gMouseDown);
     return hovered && gMouseDown;
 }
@@ -346,7 +479,7 @@ void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)
 {
     UIButtonState s = uiButton(win, "IMG", r, {0.35f,0.24f,0.65f,1});
     uiDrawRect({r.x + 10, r.y + 10, r.w - 20, r.h - 20}, {0.95f,0.2f,0.85f,0.35f}, "missing-image");
-    uiDrawText("[MISSING TEXTURE]", r.x + 8, r.y + r.h + 8, 1.15f, {1.0f,0.8f,0.2f,1});
+    uiDrawText("[MISSING TEXTURE]", r.x + 8, r.y + r.h + 8, 0.35f, {1.0f,0.8f,0.2f,1});
     debugWidget("IMAGE_BUTTON", label, r, s.hovered, s.pressed);
 }
 
@@ -358,5 +491,5 @@ void uiRenderFrameDebugOverlay(GLFWwindow* win, const char* activeScene, bool wo
     snprintf(buf, sizeof(buf), "FPS/FRAME UI PASS OK | scene=%s worldPass=%s framebuffer=%dx%d drawCalls=%d widgets=%d",
              activeScene, worldPassRan ? "ran" : "skipped", gFbW, gFbH, gDrawCalls, gWidgets);
     uiDrawRect({10, 10, 760, 54}, {0.0f, 0.0f, 0.0f, 0.62f}, "debug-overlay-bg");
-    uiDrawText(buf, 18, 24, 1.15f, {0.55f, 1.0f, 0.65f, 1.0f});
+    uiDrawText(buf, 18, 24, 0.32f, {0.55f, 1.0f, 0.65f, 1.0f});
 }

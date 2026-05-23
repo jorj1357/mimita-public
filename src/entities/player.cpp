@@ -306,9 +306,11 @@ void Player::render(unsigned int shader,
     glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
+    glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
+    glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gTextures.get("player"));
+    glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1"));
 
     glBindVertexArray(capsuleVAO);
     glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount);
