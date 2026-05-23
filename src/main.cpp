@@ -27,8 +27,10 @@
 #include "physics/physics-debug-movement.h"
 #include "audio/audio.h"
 #include "gui/gui-main.h"
+#include "gui/ui-system.h"
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
+#include "debug/debug-visuals.h"
 
 #include <cstdio>
 
@@ -47,6 +49,10 @@ int main()
 
     fontInit();   // load .fnt + png
     printf("[MAIN] after fontInit()\n");
+    uiInit(engine.window());
+    printf("[MAIN] after uiInit()\n");
+    DebugVis::init(engine.window());
+    printf("[MAIN] after DebugVis::init()\n");
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -61,12 +67,8 @@ int main()
     // printf("[MAIN] after loadFontGlyphs()\n");
 
     World world;
-    printf("[MAIN] before loadWorldFromJSON\n");
-    loadWorldFromJSON(
-        world,
-        "assets/maps/json-converts/mimita-aabb-only-interior-small-v2-converted-v2.json"
-    );
-    printf("[MAIN] after loadWorldFromJSON\n");
+    bool worldLoaded = false;
+    printf("[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first\n");
 
     Player player;
     printf("[MAIN] player made\n");
@@ -85,12 +87,40 @@ int main()
 
     // start in main menu
     GameState gameState = GAME_MENU;
+    GameState prevState = GAME_MENU;
 
         while (engine.running())
     {
         float dt = engine.beginFrame();
+        bool worldPassRan = false;
 
         audioUpdate(dt);
+        DebugVis::update();
+        uiSetDebug(DebugVis::ui());
+
+        if (gameState != prevState)
+        {
+            printf("[MAIN] gameState changed %d -> %d\n", (int)prevState, (int)gameState);
+            if (gameState == GAME_PLAYING)
+            {
+                if (!worldLoaded)
+                {
+                    printf("[MAIN] PLAY requested; loading existing world now\n");
+                    loadWorldFromJSON(
+                        world,
+                        "assets/maps/json-converts/mimita-aabb-only-interior-small-v2-converted-v2.json"
+                    );
+                    worldLoaded = true;
+                    printf("[MAIN] world load complete blocks=%zu spheres=%zu\n", world.blocks.size(), world.spheres.size());
+                }
+                glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            }
+            else
+            {
+                glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+            prevState = gameState;
+        }
 
         InputState input = pollInput(engine.window(), camera);
 
@@ -107,6 +137,13 @@ int main()
 
             renderWorld(world, camera);
             renderPlayer(player, camera);
+            worldPassRan = true;
+
+            drawDebugStuff(player, camera, world);
+
+            uiBeginFrame(engine.window(), "game-debug-overlay");
+            uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
+            uiEndFrame();
         }
 
         if (gameState == GAME_MENU)

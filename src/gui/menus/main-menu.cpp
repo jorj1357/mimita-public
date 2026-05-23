@@ -13,30 +13,33 @@
  */
 
 #include "main-menu.h"
-#include "../gui-button.h"
-#include "../gui-label.h"
+#include "../ui-system.h"
 #include <cstdio>
 
 MainMenuResult drawMainMenu(GLFWwindow* win)
 {
-    printf("[MAIN MENU] begin\n");
-
     MainMenuResult r{};
 
-    guiLabel("Mimita", 820, 220);
+    int w = 0, h = 0;
+    glfwGetFramebufferSize(win, &w, &h);
+    float cx = w * 0.5f;
+    float cy = h * 0.5f;
 
-    if (guiButton(win, "Play", 800, 400, 320, 80, {0.3f,0.8f,0.4f,1.0f}))
+    uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
+    uiDrawText("MiMITA", cx - 148.0f, cy - 185.0f, 5.0f, {0.95f, 0.98f, 1.0f, 1.0f});
+    uiDrawText("\"movement is more important than aim\"", cx - 330.0f, cy - 84.0f, 2.0f, {0.72f, 0.82f, 0.9f, 1.0f});
+
+    if (uiButton(win, "PLAY", {cx - 125.0f, cy + 5.0f, 250.0f, 58.0f}, {0.24f,0.82f,0.48f,1.0f}).clicked)
     {
         printf("[MAIN MENU] Play pressed\n");
         r.goPlay = true;
     }
 
-    if (guiButton(win, "Settings", 800, 520, 320, 80, {0.8f,0.8f,0.2f,1.0f}))
+    if (uiButton(win, "SETTINGS", {cx - 125.0f, cy + 82.0f, 250.0f, 58.0f}, {0.86f,0.74f,0.28f,1.0f}).clicked)
     {
         printf("[MAIN MENU] Settings pressed\n");
         r.goSettings = true;
     }
 
-    printf("[MAIN MENU] end\n");
     return r;
 }
