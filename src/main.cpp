@@ -17,6 +17,7 @@
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
+#include "world/world-gltf-loader.h"
 #include "entities/player.h"
 #include "camera.h"
 #include "input/input-state.h"
@@ -106,9 +107,14 @@ int main()
                 if (!worldLoaded)
                 {
                     printf("[MAIN] PLAY requested; loading existing world now\n");
-                    loadWorldFromJSON(
+                    // loadWorldFromJSON(
+                    //     world,
+                    //     "assets/maps/json-converts/mimita-aabb-only-interior-small-v2-converted-v2.json"
+                    // );
+                    // 5 23 2026 using gltf glb stuff for better strucutres mhm 
+                    loadWorldFromGLB(
                         world,
-                        "assets/maps/json-converts/mimita-aabb-only-interior-small-v2-converted-v2.json"
+                        "assets/maps/mimita-aabb-only-interior-small-v4.glb"
                     );
                     worldLoaded = true;
                     printf("[MAIN] world load complete blocks=%zu spheres=%zu\n", world.blocks.size(), world.spheres.size());

@@ -126,6 +126,8 @@ struct World {
     std::vector<Sphere> spheres;
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunks;
 
+    Mesh mesh;
+
     void clear();
     void rebuildChunks();
 

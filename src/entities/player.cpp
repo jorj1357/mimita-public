@@ -33,6 +33,7 @@ static void initCapsuleMesh()
     struct V {
         glm::vec3 pos;
         glm::vec2 uv;
+        glm::vec3 normal;
     };
 
     constexpr int slices = 16;
@@ -63,13 +64,13 @@ static void initCapsuleMesh()
         glm::vec3 p2(r*cos(a0), r*sin(a0),  cylinderHalf);
         glm::vec3 p3(r*cos(a1), r*sin(a1),  cylinderHalf);
 
-        verts.push_back({p0,{u0,0}});
-        verts.push_back({p1,{u1,0}});
-        verts.push_back({p2,{u0,1}});
+        verts.push_back({p0,{u0,0}, glm::normalize(glm::vec3(p0.x,p0.y,0.0f))});
+        verts.push_back({p1,{u1,0}, glm::normalize(glm::vec3(p1.x,p1.y,0.0f))});
+        verts.push_back({p2,{u0,1}, glm::normalize(glm::vec3(p2.x,p2.y,0.0f))});
 
-        verts.push_back({p1,{u1,0}});
-        verts.push_back({p3,{u1,1}});
-        verts.push_back({p2,{u0,1}});
+        verts.push_back({p1,{u1,0}, glm::normalize(glm::vec3(p1.x,p1.y,0.0f))});
+        verts.push_back({p3,{u1,1}, glm::normalize(glm::vec3(p3.x,p3.y,0.0f))});
+        verts.push_back({p2,{u0,1}, glm::normalize(glm::vec3(p2.x,p2.y,0.0f))});
     }
 
     // ===============================
@@ -116,13 +117,13 @@ static void initCapsuleMesh()
                 r * sin(phi1) + cylinderHalf
             );
 
-            verts.push_back({p0,{u0,v0}});
-            verts.push_back({p1,{u1,v0}});
-            verts.push_back({p2,{u0,v1}});
+            verts.push_back({p0,{u0,v0}, glm::normalize(p0 - glm::vec3(0,0,cylinderHalf))});
+            verts.push_back({p1,{u1,v0}, glm::normalize(p1 - glm::vec3(0,0,cylinderHalf))});
+            verts.push_back({p2,{u0,v1}, glm::normalize(p2 - glm::vec3(0,0,cylinderHalf))});
 
-            verts.push_back({p1,{u1,v0}});
-            verts.push_back({p3,{u1,v1}});
-            verts.push_back({p2,{u0,v1}});
+            verts.push_back({p1,{u1,v0}, glm::normalize(p1 - glm::vec3(0,0,cylinderHalf))});
+            verts.push_back({p3,{u1,v1}, glm::normalize(p3 - glm::vec3(0,0,cylinderHalf))});
+            verts.push_back({p2,{u0,v1}, glm::normalize(p2 - glm::vec3(0,0,cylinderHalf))});
         }
     }
 
@@ -170,13 +171,13 @@ static void initCapsuleMesh()
                 -r * sin(phi1) - cylinderHalf
             );
 
-            verts.push_back({p0,{u0,v0}});
-            verts.push_back({p2,{u0,v1}});
-            verts.push_back({p1,{u1,v0}});
+            verts.push_back({p0,{u0,v0}, glm::normalize(p0 - glm::vec3(0,0,-cylinderHalf))});
+            verts.push_back({p2,{u0,v1}, glm::normalize(p2 - glm::vec3(0,0,-cylinderHalf))});
+            verts.push_back({p1,{u1,v0}, glm::normalize(p1 - glm::vec3(0,0,-cylinderHalf))});
 
-            verts.push_back({p1,{u1,v0}});
-            verts.push_back({p2,{u0,v1}});
-            verts.push_back({p3,{u1,v1}});
+            verts.push_back({p1,{u1,v0}, glm::normalize(p1 - glm::vec3(0,0,-cylinderHalf))});
+            verts.push_back({p2,{u0,v1}, glm::normalize(p2 - glm::vec3(0,0,-cylinderHalf))});
+            verts.push_back({p3,{u1,v1}, glm::normalize(p3 - glm::vec3(0,0,-cylinderHalf))});
         }
     }
 
@@ -198,6 +199,9 @@ static void initCapsuleMesh()
 
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,uv));
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,normal));
 }
 
 // =====================================================
