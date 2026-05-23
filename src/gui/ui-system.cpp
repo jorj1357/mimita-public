@@ -135,6 +135,8 @@ void ensureProgram()
         "    vec4 texel = texture(uTex, vUV);\n"
         // "    FragColor = vec4(uColor.rgb, uColor.a * texel.a);\n"
         "FragColor = vec4(texel.rgb * uColor.rgb, texel.a * uColor.a);\n"
+        // 5 23 2026 124 testing making buttons appear actually
+        // "FragColor = vec4(uColor.rgb, texel.a * uColor.a);\n"
         "  } else {\n"
         "    FragColor = uColor;\n"
         "  }\n"
@@ -374,10 +376,10 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
             float y1 = y0 + (float)g.h * scale;
 
             // 5 23 2026 also rounding? test? for fonts 
-            x0 = roundf(x0);
-            y0 = roundf(y0);
-            x1 = roundf(x1);
-            y1 = roundf(y1);
+            // x0 = roundf(x0);
+            // y0 = roundf(y0);
+            // x1 = roundf(x1);
+            // y1 = roundf(y1);
 
             float u0 = (float)g.x / (float)atlasWidth;
             float v0 = (float)g.y / (float)atlasHeight;
@@ -458,12 +460,14 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     uiDrawRectOutline(r, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
 
     // float textScale = std::clamp(r.h / 110.0f, 0.38f, 0.62f);
+    float textScale = std::clamp(r.h / 110.0f, 0.38f, 1.2f);
     // float textScale = 1.0f;
     // float textScale = 0.5f;
-    float textScale = 0.1f;
+    // float textScale = 0.1f;
     // float textW = (float)std::strlen(text) * 24.0f * textScale;
     float textW = uiMeasureText(text, textScale);
-    uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {0.02f, 0.02f, 0.025f, 1.0f});
+    // uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {0.02f, 0.02f, 0.025f, 1.0f});
+    uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
     debugWidget("BUTTON", text, r, s.hovered, s.pressed);
 
     if (s.clicked)
