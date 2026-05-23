@@ -23,6 +23,7 @@
 
 #include <vector>
 #include <unordered_map>
+#include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "map/map_common.h"
@@ -74,6 +75,9 @@ struct Block {
     // nvm feb 9 2026 we just going to skip slopes bc its stupid and make me sad 
     bool isSlope = false;
     std::string texName;
+    // Optional per-face texture names in render order:
+    // bottom, top, left, right, front, back. Empty entries fall back to texName.
+    std::array<std::string, 6> faceTexName;
 };
 
 struct Sphere {

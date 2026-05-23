@@ -11,6 +11,7 @@
 
 struct Glyph
 {
+    int id = 0;
     int x;
     int y;
     int w;
@@ -19,4 +20,5 @@ struct Glyph
     int xoffset;
     int yoffset;
     int xadvance;
+    int page = 0;
 };
