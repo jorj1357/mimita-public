@@ -58,35 +58,35 @@ export default function Header() {
             <div className="dropdownMenu">
 
               <Link to="/" onClick={() => setOpen(false)}>
-                HOME
+                home
               </Link>
 
               <Link to="/about" onClick={() => setOpen(false)}>
-                ABOUT
+                about
               </Link>
 
               <Link to="/contribute" onClick={() => setOpen(false)}>
-                CONTRIBUTE
+                contribute
                 </Link>
 
               <Link to="/download" onClick={() => setOpen(false)}>
-                DOWNLOAD
+                download
               </Link>
 
-              <Link to="/feedback" onClick={() => setOpen(false)}>
+              {/* <Link to="/feedback" onClick={() => setOpen(false)}>
                 FEEDBACK
-              </Link>
+              </Link> */}
 
               <Link to="/newsletter" onClick={() => setOpen(false)}>
-                NEWSLETTER
+                newsletter
               </Link>
 
               <Link to="/socials" onClick={() => setOpen(false)}>
-                SOCIALS
+                socials
               </Link>
 
               <Link to="/terms" onClick={() => setOpen(false)}>
-                TERMS
+                terms
               </Link>
 
             </div>
@@ -96,19 +96,19 @@ export default function Header() {
         </div>
 
         <Link className="headerMainLink" to="/">
-          HOME
+          home
         </Link>
 
         <Link className="headerMainLink" to="/download">
-          DOWNLOAD
+          download
         </Link>
 
         <Link className="headerMainLink" to="/about">
-          ABOUT
+          about
         </Link>
 
         <Link className="headerMainLink" to="/contribute">
-        CONTRIBUTE
+        contribute
         </Link>
 
       </div>

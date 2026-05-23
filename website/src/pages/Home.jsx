@@ -48,14 +48,14 @@ export default function Home() {
                 to="/download"
                 className="bigLink"
             >
-                DOWNLOAD
+                download
             </Link>
 
             <Link
                 to="/about"
                 className="bigLink"
             >
-                ABOUT
+                about
             </Link>
 
             </div>

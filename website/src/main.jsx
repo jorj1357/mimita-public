@@ -72,11 +72,11 @@ ReactDOM.createRoot(
           path="/newsletter"
           element={<Newsletter />}
         />
-
+{/* 
         <Route
           path="/feedback"
           element={<Feedback />}
-        />
+        /> */}
 
         <Route
           path="/terms"
