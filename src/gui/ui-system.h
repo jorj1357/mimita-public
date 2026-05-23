@@ -36,4 +36,20 @@ bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value);
 bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float minValue, float maxValue);
 void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r);
 
+float uiScaleX(float px);
+float uiScaleY(float px);
+
+float uiScreenW();
+float uiScreenH();
+
+UIRect uiCentered(float w, float h, float y);
+
+UIRect uiRow(
+    float x,
+    float& y,
+    float w,
+    float h,
+    float gap
+);
+
 void uiRenderFrameDebugOverlay(GLFWwindow* win, const char* activeScene, bool worldPassRan);
