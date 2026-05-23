@@ -340,28 +340,53 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
                 continue;
             }
 
+            printf(
+                "[GLYPH] ch=%c x=%d y=%d w=%d h=%d xoff=%d yoff=%d xadv=%d page=%d\n",
+                ch,
+                g.x,
+                g.y,
+                g.w,
+                g.h,
+                g.xoffset,
+                g.yoffset,
+                g.xadvance,
+                g.page
+            );
+
             cursorX += (float)fontGetKerning(prev, ch) * scale;
             float x0 = cursorX + (float)g.xoffset * scale;
 
             // 5 23 2026 working on font scale might not work 
             // float y0 = cursorY + (float)g.yoffset * scale;
             // float y0 = cursorY + ((float)g.yoffset - (float)fontBase) * scale;
-            float baseline = cursorY + fontBase * scale;
-            float y0 = baseline - ((float)fontBase - (float)g.yoffset) * scale;
+            // float baseline = cursorY + fontBase * scale;
+            // float y0 = baseline - ((float)fontBase - (float)g.yoffset) * scale;
+
+            // 5 23 2026 attempt 4 font scale fix 
+            // float y0 = cursorY + (float)g.yoffset * scale;
+            // 5 23 2026 attemtp 5 118 pm
+            float y0 = cursorY - ((float)fontBase - (float)g.yoffset) * scale;
+
             // 5 23 2026 try this if above line not wokring 
             // float y0 = cursorY + ((float)fontBase - (float)g.yoffset) * scale;
 
             float x1 = x0 + (float)g.w * scale;
             float y1 = y0 + (float)g.h * scale;
 
+            // 5 23 2026 also rounding? test? for fonts 
+            x0 = roundf(x0);
+            y0 = roundf(y0);
+            x1 = roundf(x1);
+            y1 = roundf(y1);
+
             float u0 = (float)g.x / (float)atlasWidth;
-            // float v0 = (float)g.y / (float)atlasHeight;
+            float v0 = (float)g.y / (float)atlasHeight;
             float u1 = (float)(g.x + g.w) / (float)atlasWidth;
-            // float v1 = (float)(g.y + g.h) / (float)atlasHeight;
+            float v1 = (float)(g.y + g.h) / (float)atlasHeight;
 
             // 5 23 2026 fixing block texures idk 
-            float v0 = 1.0f - ((float)(g.y + g.h) / (float)atlasHeight);
-            float v1 = 1.0f - ((float)g.y / (float)atlasHeight);
+            // float v0 = 1.0f - ((float)(g.y + g.h) / (float)atlasHeight);
+            // float v1 = 1.0f - ((float)g.y / (float)atlasHeight);
 
             GLuint pageTex = 0;
             if (g.page >= 0 && g.page < 8)
@@ -433,7 +458,9 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     uiDrawRectOutline(r, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
 
     // float textScale = std::clamp(r.h / 110.0f, 0.38f, 0.62f);
-    float textScale = 1.0f;
+    // float textScale = 1.0f;
+    // float textScale = 0.5f;
+    float textScale = 0.1f;
     // float textW = (float)std::strlen(text) * 24.0f * textScale;
     float textW = uiMeasureText(text, textScale);
     uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {0.02f, 0.02f, 0.025f, 1.0f});
