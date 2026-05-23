@@ -43,13 +43,12 @@ int atlasHeight = 0;
 void fontInit()
 {
     printf("[FONT] init\n");
+    printf("[FONT] bitmap font assets are optional; UI has a built-in fallback renderer\n");
 
-    // mar 14 2026 we have 2 of these, not just 1 
-    // its a _0 and a _1 
-    loadFontAtlas("assets/font/mingliu-mimita-v3_0.png");
-    // loadFontGlyphs("assets/font/mingliu-mimita-v3.fnt");
-    // mar 14 2026 testing absolute path loading
-    loadFontGlyphs("C:/important/quiet/n/mimita-private-v7-a9358d95ca5050b5d062287dd41ee2e63709f9a5/assets/font/mingliu-mimita-v3.fnt");
+    bool atlasOk = loadFontAtlas("assets/font/mingliu-mimita-v3_0.png");
+    bool glyphsOk = loadFontGlyphs("assets/font/mingliu-mimita-v3.fnt");
+    if (!atlasOk || !glyphsOk)
+        printf("[FONT WARNING] asset font failed; using built-in UI fallback text\n");
 
     // we must have this stuff below 
     // or else it just draws nothing

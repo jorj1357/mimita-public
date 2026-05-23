@@ -105,6 +105,7 @@ void renderWorld(const World& world, const Camera& cam)
     }
 
     glUseProgram(gRenderer->shaderProgram);
+    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram,"uUseColor"), 0);
 
     glm::mat4 view = cam.getView();
     glm::mat4 proj = cam.getProj((float)gRenderer->width,(float)gRenderer->height);

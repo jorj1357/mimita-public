@@ -17,22 +17,20 @@
 #include "menus/play-menu.h"
 #include "menus/settings-menu.h"
 #include "menus/debug-menu.h"
+#include "ui-system.h"
 #include <cstdio>
 
 enum GuiMenuState
 {
     GUI_MENU_MAIN,
-    GUI_MENU_PLAY,
-    GUI_MENU_SETTINGS,
-    GUI_MENU_DEBUG
+    GUI_MENU_SETTINGS
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
-    printf("[GUI MAIN] begin\n");
-    printf("[GUI MAIN] menu-state=%d game-state=%d\n", (int)gGuiMenuState, (int)state);
+    uiBeginFrame(win, "menu");
 
     switch (gGuiMenuState)
     {
@@ -42,7 +40,8 @@ void guiMain(GLFWwindow* win, GameState& state)
 
             if (r.goPlay)
             {
-                gGuiMenuState = GUI_MENU_PLAY;
+                printf("[GUI MAIN] PLAY -> GAME_PLAYING\n");
+                state = GAME_PLAYING;
             }
             else if (r.goSettings)
             {
@@ -51,68 +50,18 @@ void guiMain(GLFWwindow* win, GameState& state)
             break;
         }
 
-        case GUI_MENU_PLAY:
-        {
-            PlayMenuResult r = drawPlayMenu(win);
-
-            if (r.startSandbox)
-            {
-                printf("[GUI MAIN] start sandbox -> GAME_PLAYING\n");
-                state = GAME_PLAYING;
-            }
-            else if (r.startTimeTrials)
-            {
-                printf("[GUI MAIN] start time trials -> GAME_PLAYING\n");
-                state = GAME_PLAYING;
-            }
-            else if (r.startPractice)
-            {
-                printf("[GUI MAIN] start practice -> GAME_PLAYING\n");
-                state = GAME_PLAYING;
-            }
-            else if (r.goBack)
-            {
-                gGuiMenuState = GUI_MENU_MAIN;
-            }
-            break;
-        }
-
         case GUI_MENU_SETTINGS:
         {
             SettingsMenuResult r = drawSettingsMenu(win);
 
-            if (r.goDebug)
-            {
-                gGuiMenuState = GUI_MENU_DEBUG;
-            }
-            else if (r.goBack)
-            {
-                gGuiMenuState = GUI_MENU_MAIN;
-            }
-            break;
-        }
-
-        case GUI_MENU_DEBUG:
-        {
-            DebugMenuResult r = drawDebugMenu(win);
-
-            if (r.toggleDebugMovement)
-            {
-                printf("[GUI MAIN] TODO toggle debug movement\n");
-            }
-
-            if (r.toggleDebugVisuals)
-            {
-                printf("[GUI MAIN] TODO toggle debug visuals\n");
-            }
-
             if (r.goBack)
             {
-                gGuiMenuState = GUI_MENU_SETTINGS;
+                gGuiMenuState = GUI_MENU_MAIN;
             }
             break;
         }
     }
 
-    printf("[GUI MAIN] end\n");
+    uiRenderFrameDebugOverlay(win, "MENU", false);
+    uiEndFrame();
 }

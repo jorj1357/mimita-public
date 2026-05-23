@@ -9,8 +9,15 @@ in vec2 vUV;
 in float vDepth;
 
 uniform sampler2D uTex;
+uniform int uUseColor;
+uniform vec4 uColor;
 
 void main() {
+    if (uUseColor == 1) {
+        FragColor = uColor;
+        return;
+    }
+
     vec4 texColor = texture(uTex, vUV);
 
     float ambient = 0.5;

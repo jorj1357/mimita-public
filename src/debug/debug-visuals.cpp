@@ -1,276 +1,165 @@
-// // C:\important\quiet\n\mimita-public\mimita-public\src\debug\archive\debug-visuals.cpp
-// // dec 24 2025
-// /**
-//  * purpose
-//  * so we CAN FINALLT SEE
-//  * WHATTHE HECKS GOING ON 
-//  * BC I DIDNT HAVE THESE AT ALL BEFORE
-//  * jan 30 2026 
-//  * RENDERER.CPP DOES THE RENDERING
-//  * THIS JUST GIVES IT THE TOOLS TO DO SO
-//  */
+#include "debug-visuals.h"
 
-//  // C:\important\quiet\n\mimita-public\mimita-public\src\debug\archive\debug-visuals.cpp
-// // dec 24 2025
+#include <cstdio>
+#include <cmath>
 
-// #include <glad/glad.h>
-// #include <GLFW/glfw3.h>
-// #include <glm/glm.hpp>
-// #include <cstdio>
-// #include "physics/config.h"
+#include <glad/glad.h>
+#include <glm/gtc/matrix_transform.hpp>
 
-// #include "debug-visuals.h"
-// #include "entities/player.h"
-// #include "camera.h"
+#include "camera.h"
+#include "entities/player.h"
+#include "renderer/renderer.h"
+#include "world/world.h"
 
-// #include <vector>
-// #include "world/world.h"
-// #include "physics/physics-types.h"
+extern Renderer* gRenderer;
 
-// // jan 30 2026 i just learned
-// // extern means we are importing some other global from another file
-// // chatgpt said this lives in maincpp but i dont know 
-// // nevermind im not using it 
-// // extern GLuint worldShader;
+namespace {
+GLFWwindow* gWindow = nullptr;
+DebugColors gColors;
+bool gPhysics = true;
+bool gUi = true;
+bool gRender = true;
+bool gCollision = true;
+bool gWireframe = false;
+bool gNormals = false;
+bool gBounds = true;
+bool gPrev[8] = {};
+GLuint gLineVao = 0;
+GLuint gLineVbo = 0;
 
-// namespace {
-//     bool gEnabled = false;
-//     bool last0 = false;
-//     GLFWwindow* gWindow = nullptr;
-//     DebugColors gColors;
-// }
+bool edge(int idx, int key)
+{
+    bool down = glfwGetKey(gWindow, key) == GLFW_PRESS;
+    bool hit = down && !gPrev[idx];
+    gPrev[idx] = down;
+    return hit;
+}
 
-// void DebugVis::init(GLFWwindow* win) {
-//     gWindow = win;
-// }
+void setLineState(const Camera& camera, glm::vec4 color)
+{
+    if (!gRenderer || !gRenderer->shaderProgram) {
+        printf("[DEBUG WARNING] Cannot draw line: renderer/shader missing\n");
+        return;
+    }
 
-// void DebugVis::update() {
-//     if (!gWindow) return;
+    glUseProgram(gRenderer->shaderProgram);
+    glm::mat4 model(1.0f);
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
+    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 1);
+    glUniform4fv(glGetUniformLocation(gRenderer->shaderProgram, "uColor"), 1, &color.x);
+}
 
-//     bool key0 = glfwGetKey(gWindow, GLFW_KEY_0) == GLFW_PRESS;
-//     if (key0 && !last0) {
-//         gEnabled = !gEnabled;
-//         printf("DEBUG TOGGLED: %d\n", gEnabled);
-//     }
-//     last0 = key0;
-// }
+void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
+{
+    if (!gLineVao) {
+        glGenVertexArrays(1, &gLineVao);
+        glGenBuffers(1, &gLineVbo);
+    }
 
-// bool DebugVis::enabled() {
-//     return gEnabled;
-// }
+    glm::vec3 pts[2] = {a, b};
+    glDisable(GL_DEPTH_TEST);
+    setLineState(camera, color);
+    glBindVertexArray(gLineVao);
+    glBindBuffer(GL_ARRAY_BUFFER, gLineVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(pts), pts, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+    glEnableVertexAttribArray(0);
+    glDrawArrays(GL_LINES, 0, 2);
+    glEnable(GL_DEPTH_TEST);
+}
 
-// const DebugColors& DebugVis::colors() {
-//     return gColors;
-// }
+void drawBox(const Camera& camera, glm::vec3 center, glm::vec3 half, glm::vec4 color)
+{
+    glm::vec3 v[8] = {
+        center + glm::vec3(-half.x,-half.y,-half.z),
+        center + glm::vec3( half.x,-half.y,-half.z),
+        center + glm::vec3( half.x, half.y,-half.z),
+        center + glm::vec3(-half.x, half.y,-half.z),
+        center + glm::vec3(-half.x,-half.y, half.z),
+        center + glm::vec3( half.x,-half.y, half.z),
+        center + glm::vec3( half.x, half.y, half.z),
+        center + glm::vec3(-half.x, half.y, half.z)
+    };
+    int e[12][2] = {
+        {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}
+    };
+    for (auto& edgePair : e)
+        drawLine(camera, v[edgePair[0]], v[edgePair[1]], color);
+}
 
-// static GLuint lineVAO = 0, lineVBO = 0;
+void drawCapsuleApprox(const Player& player, const Camera& camera)
+{
+    Capsule c = player.getCapsule();
+    glm::vec3 z(0,0,1);
+    drawLine(camera, c.a, c.b, {1,0.1f,0.1f,1});
+    drawLine(camera, c.a + glm::vec3(c.r,0,0), c.b + glm::vec3(c.r,0,0), {1,0.1f,0.1f,1});
+    drawLine(camera, c.a - glm::vec3(c.r,0,0), c.b - glm::vec3(c.r,0,0), {1,0.1f,0.1f,1});
+    drawLine(camera, c.a + glm::vec3(0,c.r,0), c.b + glm::vec3(0,c.r,0), {1,0.1f,0.1f,1});
+    drawLine(camera, c.a - glm::vec3(0,c.r,0), c.b - glm::vec3(0,c.r,0), {1,0.1f,0.1f,1});
+    drawLine(camera, c.a - z * c.r, c.a + z * c.r, {1,0.1f,0.1f,1});
+    drawLine(camera, c.b - z * c.r, c.b + z * c.r, {1,0.1f,0.1f,1});
+}
+}
 
-// void drawLine(const glm::vec3& a,
-//               const glm::vec3& b,
-//               const glm::vec3& color)
-// {
-//     if (!lineVAO) {
-//         glGenVertexArrays(1, &lineVAO);
-//         glGenBuffers(1, &lineVBO);
-//     }
+void DebugVis::init(GLFWwindow* win)
+{
+    gWindow = win;
+    printf("[DEBUG] DebugVis initialized. F1 physics F2 UI F3 render F4 collision F5 wireframe F6 normals F7 bounds\n");
+}
 
-//     glm::vec3 pts[2] = { a, b };
+void DebugVis::update()
+{
+    if (!gWindow) return;
+    if (edge(1, GLFW_KEY_F1)) { gPhysics = !gPhysics; printf("[DEBUG] physics=%d\n", gPhysics); }
+    if (edge(2, GLFW_KEY_F2)) { gUi = !gUi; printf("[DEBUG] ui=%d\n", gUi); }
+    if (edge(3, GLFW_KEY_F3)) { gRender = !gRender; printf("[DEBUG] render=%d\n", gRender); }
+    if (edge(4, GLFW_KEY_F4)) { gCollision = !gCollision; printf("[DEBUG] collision=%d\n", gCollision); }
+    if (edge(5, GLFW_KEY_F5)) { gWireframe = !gWireframe; printf("[DEBUG] wireframe=%d\n", gWireframe); }
+    if (edge(6, GLFW_KEY_F6)) { gNormals = !gNormals; printf("[DEBUG] normals=%d\n", gNormals); }
+    if (edge(7, GLFW_KEY_F7)) { gBounds = !gBounds; printf("[DEBUG] bounds=%d\n", gBounds); }
+    glPolygonMode(GL_FRONT_AND_BACK, gWireframe ? GL_LINE : GL_FILL);
+}
 
-//     glBindVertexArray(lineVAO);
-//     glBindBuffer(GL_ARRAY_BUFFER, lineVBO);
-//     glBufferData(GL_ARRAY_BUFFER, sizeof(pts), pts, GL_DYNAMIC_DRAW);
+bool DebugVis::enabled() { return gPhysics || gCollision || gBounds || gNormals; }
+bool DebugVis::physics() { return gPhysics; }
+bool DebugVis::ui() { return gUi; }
+bool DebugVis::render() { return gRender; }
+bool DebugVis::collision() { return gCollision; }
+bool DebugVis::wireframe() { return gWireframe; }
+bool DebugVis::normals() { return gNormals; }
+bool DebugVis::bounds() { return gBounds; }
+const DebugColors& DebugVis::colors() { return gColors; }
 
-//     glVertexAttribPointer(0,3,GL_FLOAT,0,0,(void*)0);
-//     glEnableVertexAttribArray(0);
+void drawDebugStuff(const Player& player, const Camera& camera, const World& world)
+{
+    if (!DebugVis::enabled()) return;
 
-//     glUseProgram(worldShader);
-//     glUniform1i(glGetUniformLocation(worldShader,"uUseColor"), 1);
-//     glUniform3fv(glGetUniformLocation(worldShader,"uColor"),1,&color.x);
-//     glDrawArrays(GL_LINES, 0, 2);
-// }
+    if (DebugVis::physics()) {
+        drawCapsuleApprox(player, camera);
+        drawLine(camera, player.pos, player.pos + player.vel * 0.25f, {0.0f,1.0f,0.2f,1.0f});
+        drawLine(camera, player.pos, player.pos + glm::vec3(0,0,-3), {0.2f,0.5f,1.0f,1.0f});
+        drawLine(camera, player.pos, player.pos + glm::vec3(0,0,2), {1.0f,1.0f,0.0f,1.0f});
+    }
 
-// void drawOBB(const OBB& box, glm::vec3 color)
-// {
-//     glm::vec3 hs = box.halfSize;
+    if (DebugVis::render()) {
+        drawLine(camera, camera.pos, camera.pos + camera.front * 5.0f, {0.2f,0.8f,1.0f,1.0f});
+    }
 
-//     glm::vec3 local[8] = {
-//         {-hs.x,-hs.y,-hs.z}, {hs.x,-hs.y,-hs.z},
-//         {hs.x, hs.y,-hs.z}, {-hs.x, hs.y,-hs.z},
-//         {-hs.x,-hs.y, hs.z}, {hs.x,-hs.y, hs.z},
-//         {hs.x, hs.y, hs.z}, {-hs.x, hs.y, hs.z},
-//     };
+    if (DebugVis::bounds()) {
+        drawBox(camera, player.pos + glm::vec3(0,0,1), {0.55f,0.55f,1.0f}, {1.0f,0.0f,1.0f,1.0f});
+        int drawn = 0;
+        for (const Block& b : world.blocks) {
+            drawBox(camera, b.pos, b.size * 0.5f, {1.0f,1.0f,0.0f,0.85f});
+            if (++drawn >= 24) break;
+        }
+    }
 
-//     glm::vec3 world[8];
-//     for (int i = 0; i < 8; i++) {
-//         world[i] = box.center + glm::vec3(box.orientation * glm::vec4(local[i],1));
-//     }
-
-//     int edges[12][2] = {
-//         {0,1},{1,2},{2,3},{3,0},
-//         {4,5},{5,6},{6,7},{7,4},
-//         {0,4},{1,5},{2,6},{3,7}
-//     };
-
-//     for (auto& e : edges)
-//         drawLine(world[e[0]], world[e[1]], color);
-// }
-
-// // void drawCapsule(const Player& p, glm::vec3 color)
-// // {
-// //     float r = PLAYER_RADIUS;
-// //     glm::vec3 a = p.pos + glm::vec3(0,0,r);
-// //     glm::vec3 b = p.pos + glm::vec3(0,0,PLAYER_HEIGHT - r);
-
-// //     const int slices = 16;
-// //     const float PI = 3.14159265f;
-
-// //     for (int i = 0; i < slices; i++) {
-// //         float t0 = i * 2*PI / slices;
-// //         float t1 = (i+1) * 2*PI / slices;
-
-// //         glm::vec3 d0 = {cos(t0)*r, sin(t0)*r, 0};
-// //         glm::vec3 d1 = {cos(t1)*r, sin(t1)*r, 0};
-
-// //         // bottom ring
-// //         drawLine(a + d0, a + d1, color);
-
-// //         // top ring
-// //         drawLine(b + d0, b + d1, color);
-
-// //         // side lines
-// //         drawLine(a + d0, b + d0, color);
-// //     }
-// // }
-
-// // feb 2 2026 testing 
-
-// // void drawCapsule(const Player& p, glm::vec3 color)
-// // {
-// //     Capsule c = p.getCapsule();
-// //     glm::vec3 a = c.a;
-// //     glm::vec3 b = c.b;
-// //     float r = c.r;
-
-// //     const int slices = 16;
-// //     const float PI = 3.14159265f;
-
-// //     for (int i = 0; i < slices; i++) {
-// //         float t0 = i * 2*PI / slices;
-// //         float t1 = (i+1) * 2*PI / slices;
-
-// //         glm::vec3 d0 = {cos(t0)*r, sin(t0)*r, 0};
-// //         glm::vec3 d1 = {cos(t1)*r, sin(t1)*r, 0};
-
-// //         drawLine(a + d0, a + d1, color); // bottom ring
-// //         drawLine(b + d0, b + d1, color); // top ring
-// //         drawLine(a + d0, b + d0, color); // side line
-// //     }
-// // }
-
-// // feb 3 2026 draw better hihtbox for capsule idk
-// void drawCapsule(const Player& p, glm::vec3 color)
-// {
-//     Capsule c = p.getCapsule();
-//     glm::vec3 a = c.a;
-//     glm::vec3 b = c.b;
-//     float r = c.r;
-
-//     const int slices = 16;
-//     const int hemiSteps = 8;
-//     const float PI = 3.14159265f;
-
-//     // cylinder rings
-//     for (int i = 0; i < slices; i++) {
-//         float t0 = (i / (float)slices) * 2*PI;
-//         float t1 = ((i+1) / (float)slices) * 2*PI;
-
-//         glm::vec3 d0(cos(t0)*r, sin(t0)*r, 0);
-//         glm::vec3 d1(cos(t1)*r, sin(t1)*r, 0);
-
-//         drawLine(a + d0, a + d1, color);
-//         drawLine(b + d0, b + d1, color);
-//         drawLine(a + d0, b + d0, color);
-//     }
-
-//     // bottom hemisphere
-//     for (int j = 0; j < hemiSteps; j++) {
-//         float v0 = (j / (float)hemiSteps) * (PI/2);
-//         float v1 = ((j+1) / (float)hemiSteps) * (PI/2);
-
-//         for (int i = 0; i < slices; i++) {
-//             float t0 = (i / (float)slices) * 2*PI;
-//             float t1 = ((i+1) / (float)slices) * 2*PI;
-
-//             auto sph = [&](float v, float t) {
-//                 return glm::vec3(
-//                     cos(t)*sin(v)*r,
-//                     sin(t)*sin(v)*r,
-//                     -cos(v)*r
-//                 );
-//             };
-
-//             drawLine(a + sph(v0,t0), a + sph(v0,t1), color);
-//             drawLine(a + sph(v0,t0), a + sph(v1,t0), color);
-//         }
-//     }
-
-//     // top hemisphere
-//     for (int j = 0; j < hemiSteps; j++) {
-//         float v0 = (j / (float)hemiSteps) * (PI/2);
-//         float v1 = ((j+1) / (float)hemiSteps) * (PI/2);
-
-//         for (int i = 0; i < slices; i++) {
-//             float t0 = (i / (float)slices) * 2*PI;
-//             float t1 = ((i+1) / (float)slices) * 2*PI;
-
-//             auto sph = [&](float v, float t) {
-//                 return glm::vec3(
-//                     cos(t)*sin(v)*r,
-//                     sin(t)*sin(v)*r,
-//                     cos(v)*r
-//                 );
-//             };
-
-//             drawLine(b + sph(v0,t0), b + sph(v0,t1), color);
-//             drawLine(b + sph(v0,t0), b + sph(v1,t0), color);
-//         }
-//     }
-// }
-
-// void drawWorldHitboxes(const std::vector<Block*>& blocks)
-// {
-//     for (Block* b : blocks) {
-//         OBB box;
-//         box.center = b->pos;
-//         box.halfSize = b->size * 0.5f;   // half extents
-//         box.orientation = glm::mat4(b->rot);
-
-//         drawOBB(box, DebugVis::colors().worldChunks);
-//     }
-// }
-
-// // where the m agic happen jan 30 2026 
-// void drawDebugStuff(const Player& player,
-//                     const Camera& camera,
-//                     const World& world)
-// {
-//     // Player capsule
-//     drawCapsule(player, DebugVis::colors().playerCapsule);
-
-//     std::vector<Block*> nearbyBlocks;
-//     std::vector<Sphere*> nearbySpheres;
-//     // stop feb 3 2026 commneted out bc phsics suck
-//     // world.getNearby(player.pos, nearbyBlocks, nearbySpheres);
-
-//     drawWorldHitboxes(nearbyBlocks);
-    
-//     // Look vector
-//     // i dont rl want this for now jan 30 2026 
-//     // this is just like velocity of where im going but its a line 
-//     // drawLine(
-//     //     camera.pos,
-//     //     // front, not forward? not sure if this works jan 30 2026
-//     //     camera.pos + camera.front * 5.0f,
-//     //     DebugVis::colors().lookVector
-//     // );
-// }
+    if (gRenderer && gRenderer->shaderProgram) {
+        glUseProgram(gRenderer->shaderProgram);
+        glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
+    }
+}
