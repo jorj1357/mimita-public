@@ -15,45 +15,48 @@ export default function Socials() {
         <div className="socialsLinks">
 
           <a
-            href="/"
+            href="https://www.youtube.com/@mimita_move"
+            target="_blank"
+            rel="noopener noreferrer"
             className="socialLink"
           >
             MiMITA : YOUTUBE
           </a>
 
           <a
-            href="/"
+            href="https://www.tiktok.com/@mimita.move"
+            target="_blank"
+            rel="noopener noreferrer"
             className="socialLink"
           >
             MiMITA : TIKTOK
           </a>
 
           <a
-            href="/"
+            href="https://www.instagram.com/mimita.move/"
+            target="_blank"
+            rel="noopener noreferrer"
             className="socialLink"
           >
             MiMITA : INSTAGRAM
           </a>
 
           <a
-            href="/"
+            href="https://bsky.app/profile/mimita-move.bsky.social"
+            target="_blank"
+            rel="noopener noreferrer"
             className="socialLink"
           >
             MiMITA : BLUESKY
           </a>
 
           <a
-            href="/"
+            href="https://mastodon.social/@MiMITA"
+            target="_blank"
+            rel="noopener noreferrer"
             className="socialLink"
           >
             MiMITA : MASTODON
-          </a>
-
-          <a
-            href="/"
-            className="socialLink"
-          >
-            MiMITA : MIMITA
           </a>
 
         </div>
