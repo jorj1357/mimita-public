@@ -1000,3 +1000,47 @@ body {
   display: inline-block;
 
 }
+
+/* =========================
+   NEWSLETTER BOX
+========================= */
+
+.newsletterBox {
+
+    display: flex;
+    flex-direction: column;
+
+    align-items: center;
+
+    gap: 12px;
+
+    margin-top: 3px;
+}
+
+.newsletterInput {
+
+    width: 320px;
+    max-width: 80vw;
+
+    padding: 14px;
+
+    font-size: 18px;
+
+    border-radius: 12px;
+}
+
+.newsletterButton {
+
+    padding: 14px 28px;
+
+    font-size: 18px;
+
+    border-radius: 12px;
+
+    cursor: pointer;
+}
+
+.newsletterMessage {
+
+    min-height: 24px;
+}
