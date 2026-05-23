@@ -5,3 +5,4 @@
 #include <string>
 
 Mesh loadOBJ(const std::string& path);
+Mesh loadGLB(const std::string& path);
