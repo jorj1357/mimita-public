@@ -22,10 +22,41 @@ export default function NewsletterBox() {
 
     async function submitEmail() {
 
-        if (!email) {
+        // stop spam clicking
+        if (loading) {
+
+            setMessage(
+                `[${getTime()}] [ERROR] request already processing`
+            )
+
+            return
+        }
+
+        // normalize email
+        const cleanedEmail =
+            email
+            .trim()
+            .toLowerCase()
+
+        // empty email
+        if (!cleanedEmail) {
 
             setMessage(
                 `[${getTime()}] [ERROR] email required`
+            )
+
+            return
+        }
+
+        // basic email validation
+        if (
+            !cleanedEmail.includes("@")
+            ||
+            !cleanedEmail.includes(".")
+        ) {
+
+            setMessage(
+                `[${getTime()}] [ERROR] invalid email format`
             )
 
             return
@@ -36,11 +67,11 @@ export default function NewsletterBox() {
             setLoading(true)
 
             setMessage(
-                `[${getTime()}] [STATUS] signing up...`
+                `[${getTime()}] [STATUS] contacting MiMITA servers...`
             )
 
             const response = await fetch(
-                "http://localhost:3002/api/newsletter",
+                "/api/newsletter",
                 {
                     method: "POST",
 
@@ -49,13 +80,14 @@ export default function NewsletterBox() {
                     },
 
                     body: JSON.stringify({
-                        email
+                        email: cleanedEmail
                     })
                 }
             )
 
             const data = await response.json()
 
+            // too many requests
             if (response.status === 429) {
 
                 setMessage(
@@ -63,6 +95,7 @@ export default function NewsletterBox() {
                 )
             }
 
+            // already signed up
             else if (data.alreadySubscribed) {
 
                 setMessage(
@@ -70,6 +103,7 @@ export default function NewsletterBox() {
                 )
             }
 
+            // success
             else if (data.success) {
 
                 setMessage(
@@ -79,22 +113,33 @@ export default function NewsletterBox() {
                 setEmail("")
             }
 
-            else {
+            // backend custom message
+            else if (data.message) {
 
                 setMessage(
-                    `[${getTime()}] [ERROR] signup failed`
+                    `[${getTime()}] [ERROR] ${data.message}`
                 )
             }
 
-        } catch (err) {
+            // unknown
+            else {
+
+                setMessage(
+                    `[${getTime()}] [ERROR] unknown signup failure`
+                )
+            }
+
+        }
+        catch (err) {
 
             console.log(err)
 
             setMessage(
-                `[${getTime()}] [ERROR] server offline`
+                `[${getTime()}] [ERROR] unable to contact MiMITA servers`
             )
 
-        } finally {
+        }
+        finally {
 
             setLoading(false)
         }
@@ -106,7 +151,7 @@ export default function NewsletterBox() {
 
             <input
                 type="email"
-                placeholder="email"
+                placeholder="enter email"
                 value={email}
                 disabled={loading}
                 onChange={(e) => setEmail(e.target.value)}
