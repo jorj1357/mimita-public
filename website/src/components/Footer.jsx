@@ -3,7 +3,9 @@ export default function Footer() {
     <footer className="footer">
 
       <p>
-        MiMITA © v1
+        MiMITA © v2 
+        <br></br>
+        :D
       </p>
 
     </footer>
