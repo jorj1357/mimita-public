@@ -4,6 +4,8 @@ import Layout from "../components/Layout"
 
 import { Link } from "react-router-dom"
 
+import NewsletterBox from "../components/NewsletterBox"
+
 export default function Home() {
   return (
     <Layout>
@@ -61,6 +63,8 @@ export default function Home() {
             </div>
 
       </section>
+
+      <NewsletterBox />
 
     </Layout>
   )
