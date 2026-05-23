@@ -342,18 +342,18 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
                 continue;
             }
 
-            printf(
-                "[GLYPH] ch=%c x=%d y=%d w=%d h=%d xoff=%d yoff=%d xadv=%d page=%d\n",
-                ch,
-                g.x,
-                g.y,
-                g.w,
-                g.h,
-                g.xoffset,
-                g.yoffset,
-                g.xadvance,
-                g.page
-            );
+            // printf(
+            //     "[GLYPH] ch=%c x=%d y=%d w=%d h=%d xoff=%d yoff=%d xadv=%d page=%d\n",
+            //     ch,
+            //     g.x,
+            //     g.y,
+            //     g.w,
+            //     g.h,
+            //     g.xoffset,
+            //     g.yoffset,
+            //     g.xadvance,
+            //     g.page
+            // );
 
             cursorX += (float)fontGetKerning(prev, ch) * scale;
             float x0 = cursorX + (float)g.xoffset * scale;
@@ -512,6 +512,56 @@ void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)
     uiDrawRect({r.x + 10, r.y + 10, r.w - 20, r.h - 20}, {0.95f,0.2f,0.85f,0.35f}, "missing-image");
     uiDrawText("[MISSING TEXTURE]", r.x + 8, r.y + r.h + 8, 0.35f, {1.0f,0.8f,0.2f,1});
     debugWidget("IMAGE_BUTTON", label, r, s.hovered, s.pressed);
+}
+
+float uiScreenW()
+{
+    return (float)gFbW;
+}
+
+float uiScreenH()
+{
+    return (float)gFbH;
+}
+
+float uiScaleX(float px)
+{
+    return px * ((float)gFbW / 1920.0f);
+}
+
+float uiScaleY(float px)
+{
+    return px * ((float)gFbH / 1080.0f);
+}
+
+UIRect uiCentered(float w, float h, float y)
+{
+    return {
+        uiScreenW() * 0.5f - w * 0.5f,
+        y,
+        w,
+        h
+    };
+}
+
+UIRect uiRow(
+    float x,
+    float& y,
+    float w,
+    float h,
+    float gap
+)
+{
+    UIRect r{
+        x,
+        y,
+        w,
+        h
+    };
+
+    y += h + gap;
+
+    return r;
 }
 
 void uiRenderFrameDebugOverlay(GLFWwindow* win, const char* activeScene, bool worldPassRan)
