@@ -1,7 +1,18 @@
 import dotenv from "dotenv"
+
 import express from "express"
+
 import cors from "cors"
+
 import pg from "pg"
+
+import fs from "fs"
+
+import path from "path"
+
+import nodemailer from "nodemailer"
+
+import { fileURLToPath } from "url"
 
 dotenv.config()
 
@@ -10,7 +21,14 @@ const { Pool } = pg
 const app = express()
 
 app.use(cors())
+
 app.use(express.json())
+
+const __filename =
+    fileURLToPath(import.meta.url)
+
+const __dirname =
+    path.dirname(__filename)
 
 const pool = new Pool({
 
@@ -23,6 +41,22 @@ const pool = new Pool({
     password: process.env.DB_PASSWORD,
 
     port: process.env.DB_PORT
+})
+
+const transporter = nodemailer.createTransport({
+
+    host: process.env.SMTP_HOST,
+
+    port: process.env.SMTP_PORT,
+
+    secure: false,
+
+    auth: {
+
+        user: process.env.SMTP_USER,
+
+        pass: process.env.SMTP_PASS
+    }
 })
 
 async function init() {
@@ -42,7 +76,8 @@ async function init() {
 
         console.log("newsletter table ready")
 
-    } catch (err) {
+    }
+    catch (err) {
 
         console.log("database init failed")
 
@@ -52,11 +87,64 @@ async function init() {
 
 init()
 
+function getTimestamp() {
+
+    return new Date().toLocaleTimeString()
+}
+
+async function sendWelcomeEmail(email) {
+
+    try {
+
+        const htmlPath = path.join(
+            __dirname,
+            "emailTemplates",
+            "welcome.html"
+        )
+
+        const html =
+            fs.readFileSync(
+                htmlPath,
+                "utf8"
+            )
+
+        await transporter.sendMail({
+
+            from:
+                `"MiMITA" <hello@mimita.fun>`,
+
+            to: email,
+
+            subject:
+                "Welcome to MiMITA",
+
+            html
+        })
+
+        console.log(
+            `[${getTimestamp()}] welcome email sent -> ${email}`
+        )
+
+    }
+    catch (err) {
+
+        console.log(
+            `[${getTimestamp()}] failed sending email`
+        )
+
+        console.log(err)
+    }
+}
+
 app.post("/api/newsletter", async (req, res) => {
 
     try {
 
         const { email } = req.body
+
+        console.log(
+            `[${getTimestamp()}] signup request -> ${email}`
+        )
 
         if (!email) {
 
@@ -76,16 +164,28 @@ app.post("/api/newsletter", async (req, res) => {
             [email]
         )
 
+        console.log(
+            `[${getTimestamp()}] email saved -> ${email}`
+        )
+
+        await sendWelcomeEmail(email)
+
         res.json({
 
-            success: true
+            success: true,
+
+            message: "joined newsletter"
         })
 
-    } catch (err) {
+    }
+    catch (err) {
+
+        console.log(
+            `[${getTimestamp()}] signup failed`
+        )
 
         console.log(err)
 
-        // duplicate email
         if (err.code === "23505") {
 
             return res.json({
@@ -94,11 +194,11 @@ app.post("/api/newsletter", async (req, res) => {
 
                 alreadySubscribed: true,
 
-                message: "email already signed up"
+                message:
+                    "email already signed up"
             })
         }
 
-        // generic server error
         res.status(500).json({
 
             success: false,
@@ -111,6 +211,6 @@ app.post("/api/newsletter", async (req, res) => {
 app.listen(process.env.PORT, () => {
 
     console.log(
-        `server running on port ${process.env.PORT}`
+        `[${getTimestamp()}] server running on port ${process.env.PORT}`
     )
 })
