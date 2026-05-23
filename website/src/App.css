@@ -954,6 +954,30 @@ body {
   object-fit: cover;
 }
 
+.logoVideo {
+    width: 300px;
+    max-width: 80vw;
+
+    height: auto;
+
+    border-radius: 12px;
+
+    display: block;
+    margin: 0 auto;
+}
+
+.downloadGif {
+    width: 360px;
+    max-width: 80vw;
+
+    height: auto;
+
+    border-radius: 12px;
+
+    display: block;
+    margin: 0 auto 24px auto;
+}
+
 /* =========================
    CONTRIBUTE
 ========================= */

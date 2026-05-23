@@ -111,6 +111,10 @@ export default function Header() {
         contribute
         </Link>
 
+        <Link className="headerMainLink" to="/socials">
+        socials
+        </Link>
+
       </div>
 
     </header>
