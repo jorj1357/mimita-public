@@ -94,6 +94,11 @@ export default function About() {
                 not because they are forced to survive.
             </p>
 
+            <p>
+                5 25 2026 - 
+                hi
+            </p>
+
             </div>
         </div>
 
