@@ -61,24 +61,28 @@ export default function Header() {
                 home
               </Link>
 
+               <Link to="/3cage" onClick={() => setOpen(false)}>
+                3cage
+              </Link>
+
               <Link to="/about" onClick={() => setOpen(false)}>
                 about
               </Link>
 
               <Link to="/contribute" onClick={() => setOpen(false)}>
                 contribute
-                </Link>
+              </Link>
 
               <Link to="/download" onClick={() => setOpen(false)}>
                 download
               </Link>
 
-              {/* <Link to="/feedback" onClick={() => setOpen(false)}>
-                FEEDBACK
-              </Link> */}
-
               <Link to="/newsletter" onClick={() => setOpen(false)}>
                 newsletter
+              </Link>
+
+              <Link to="/jorj" onClick={() => setOpen(false)}>
+                jorj1357
               </Link>
 
               <Link to="/socials" onClick={() => setOpen(false)}>
@@ -108,12 +112,20 @@ export default function Header() {
         </Link>
 
         <Link className="headerMainLink" to="/contribute">
-        contribute
+          contribute
         </Link>
 
         <Link className="headerMainLink" to="/socials">
-        socials
+          socials
         </Link>
+{/* 
+        <Link className="headerMainLink" to="/3cage">
+          3cage
+        </Link>
+
+        <Link className="headerMainLink" to="/jorj">
+          jorj1357
+        </Link> */}
 
       </div>
 
