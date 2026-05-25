@@ -29,6 +29,14 @@ import Feedback from "./pages/Feedback"
 
 import Terms from "./pages/Terms"
 
+// its actuallt 3cage but cant put numbers so whatever 5 25 2026
+import ThreeCage from "./pages/Socials-Threecage"
+
+// and this is jorj1357 but still shhh 
+import Jorj from "./pages/Socials-jorj"
+
+import NotFound from "./pages/NotFound"
+
 /* =========================
    APP
 ========================= */
@@ -72,6 +80,8 @@ ReactDOM.createRoot(
           path="/newsletter"
           element={<Newsletter />}
         />
+
+        {/* commented bc doesnt work and ugh 5 25 2026  */}
 {/* 
         <Route
           path="/feedback"
@@ -81,6 +91,26 @@ ReactDOM.createRoot(
         <Route
           path="/terms"
           element={<Terms />}
+        />
+
+        <Route
+          path="/3cage"
+          element={<ThreeCage />}
+        />
+
+        <Route
+          path="/jorj"
+          element={<Jorj />}
+        />
+
+        {/* goes last 5 25 2026
+        becaues
+        Putting it last is important because:
+        path="*" catches everything that doesn’t exist.
+        */}
+        <Route
+          path="*"
+          element={<NotFound />}
         />
 
       </Routes>
