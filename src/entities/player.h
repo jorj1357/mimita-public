@@ -4,6 +4,8 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
+#include <vector>
+#include "map/map_common.h"
 #include "physics/physics-types.h"
 
 // ---------------- Player ----------------
@@ -97,10 +99,16 @@ public:
     // -------- Rendering --------
     glm::vec3 meshScale  {1,1,1};
     glm::vec3 meshOffset {0,0,0};
+    Mesh renderMesh;
+    bool modelLoaded = false;
+    std::vector<TransformNode> nodes;
+    std::vector<Collider> bodyColliders;
 
     // -------- Construction --------
     Player();
     void reset();
+    bool loadModel(const char* path);
+    void updateModelWorldTransforms();
 
     // -------- Queries --------
     Capsule getCapsule() const;
