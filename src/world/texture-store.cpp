@@ -10,6 +10,7 @@
 
 #include "texture-store.h"
 #include "map/texture.h"
+#include "debug/debug-log.h"
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -29,13 +30,13 @@ GLuint TextureStore::get(const std::string& name) {
     auto it = map.find(key);
     if (it != map.end())
     {
-        printf("[TEXTURE] Bound texture name=%s tex=%u\n", key.c_str(), it->second);
+        Debug::logThrottled(Debug::Category::Render, "texture-bind", DebugConfig::PRINT_INTERVAL, "[TEXTURE] Bound texture name=%s tex=%u\n", key.c_str(), it->second);
         return it->second;
     }
 
     std::string path = "assets/textures/" + key + ".png";
     GLuint tex = loadTexture(path.c_str()); // your loader
     map[key] = tex;
-    printf("[TEXTURE] Registered texture name=%s tex=%u\n", key.c_str(), tex);
+    Debug::logOnce(Debug::Category::Render, key.c_str(), "[TEXTURE] Registered texture name=%s tex=%u\n", key.c_str(), tex);
     return tex;
 }

@@ -31,24 +31,21 @@
 
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
+#include "debug/debug-log.h"
 
 extern TextureStore gTextures;
 
 namespace {
 
-#define GLB_LOG(...) do { std::printf(__VA_ARGS__); std::fflush(stdout); } while (0)
+#define GLB_LOG(...) Debug::logAuto(Debug::Category::GLB, __VA_ARGS__)
 
 bool glbVerbose()
 {
-    static int enabled = -1;
-    if (enabled < 0)
-        enabled = std::getenv("MIMITA_GLB_VERBOSE") ? 1 : 0;
-    return enabled == 1;
+    return DebugConfig::GLB_VERBOSE || std::getenv("MIMITA_GLB_VERBOSE") != nullptr;
 }
 
 bool shouldLogPrimitiveDetails(int meshIndex, int primitiveIndex)
 {
-    // return glbVerbose() || meshIndex < 20 || (meshIndex % 100) == 0 || primitiveIndex > 0;
     return glbVerbose();
 }
 
@@ -218,7 +215,7 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
 
     GLB_LOG("[GLB] loaded texture image=%d name=%s size=%dx%d components=%d bytes=%zu tex=%u\n",
            imageIndex, image.name.c_str(), image.width, image.height, image.component, image.image.size(), tex);
-    GLB_LOG("[TEXTURE] Uploading GLB image to GPU and generating mipmaps\n");
+    Debug::log(Debug::Category::GLB, "[TEXTURE] Uploading GLB image to GPU and generating mipmaps\n");
 
     glTexImage2D(
         GL_TEXTURE_2D,
@@ -244,7 +241,7 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glGenerateMipmap(GL_TEXTURE_2D);
-    GLB_LOG("[TEXTURE] mipmaps generated for GLB texture tex=%u\n", tex);
+    Debug::log(Debug::Category::GLB, "[TEXTURE] mipmaps generated for GLB texture tex=%u\n", tex);
 
     GLfloat maxAniso = 1.0f;
     glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
@@ -252,7 +249,7 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
     {
         GLfloat useAniso = maxAniso < 4.0f ? maxAniso : 4.0f;
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, useAniso);
-        GLB_LOG("[TEXTURE] anisotropic filtering %.1fx applied to GLB texture\n", useAniso);
+        Debug::log(Debug::Category::GLB, "[TEXTURE] anisotropic filtering %.1fx applied to GLB texture\n", useAniso);
     }
 
     return tex;
@@ -723,9 +720,9 @@ Mesh loadGLB(const std::string& path)
     std::string err;
     std::string warn;
 
-    GLB_LOG("[GLB] before tinygltf LoadBinaryFromFile\n");
+    Debug::log(Debug::Category::GLB, "[GLB] before tinygltf LoadBinaryFromFile\n");
     bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, resolvedPath);
-    GLB_LOG("[GLB] after tinygltf LoadBinaryFromFile ok=%d\n", ok ? 1 : 0);
+    Debug::log(Debug::Category::GLB, "[GLB] after tinygltf LoadBinaryFromFile ok=%d\n", ok ? 1 : 0);
 
     if (!warn.empty()) GLB_LOG("[GLB WARNING] %s\n", warn.c_str());
     if (!err.empty()) GLB_LOG("[GLB ERROR] %s\n", err.c_str());
@@ -735,7 +732,7 @@ Mesh loadGLB(const std::string& path)
         return Mesh{};
     }
 
-    GLB_LOG("[GLB] model meshes=%zu nodes=%zu materials=%zu textures=%zu images=%zu scenes=%zu buffers=%zu bufferViews=%zu accessors=%zu defaultScene=%d\n",
+    Debug::logOnce(Debug::Category::GLB, resolvedPath.c_str(), "[GLB] model meshes=%zu nodes=%zu materials=%zu textures=%zu images=%zu scenes=%zu buffers=%zu bufferViews=%zu accessors=%zu defaultScene=%d\n",
             model.meshes.size(), model.nodes.size(), model.materials.size(), model.textures.size(),
             model.images.size(), model.scenes.size(), model.buffers.size(), model.bufferViews.size(),
             model.accessors.size(), model.defaultScene);

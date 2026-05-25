@@ -22,18 +22,13 @@
 
 #include "physics/config.h"
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG
 // =====================================================
 
-#define PHYS_DEBUG_GRAVITY 1
-
-#if PHYS_DEBUG_GRAVITY
-    #define GRAV_LOG(...) std::printf(__VA_ARGS__)
-#else
-    #define GRAV_LOG(...)
-#endif
+#define GRAV_LOG(...) Debug::logThrottled(Debug::Category::Physics, "gravity", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 // =====================================================
 // GRAVITY

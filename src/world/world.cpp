@@ -122,6 +122,7 @@ void World::clear()
     planes.clear();
     mesh = Mesh{};
     collisionMesh.clear();
+    collisionChunks.clear();
 }
 
 void World::finalize()

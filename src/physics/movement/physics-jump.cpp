@@ -37,18 +37,13 @@
 
 #include "physics/config.h"
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG
 // =====================================================
 
-#define PHYS_DEBUG_JUMP 1
-
-#if PHYS_DEBUG_JUMP
-    #define JUMP_LOG(...) std::printf(__VA_ARGS__)
-#else
-    #define JUMP_LOG(...)
-#endif
+#define JUMP_LOG(...) Debug::logThrottled(Debug::Category::Physics, "jump", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 // =====================================================
 // JUMP

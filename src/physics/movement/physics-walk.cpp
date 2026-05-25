@@ -24,18 +24,13 @@
 
 #include "physics/config.h"
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG
 // =====================================================
 
-#define PHYS_DEBUG_WALK 1
-
-#if PHYS_DEBUG_WALK
-    #define WALK_LOG(...) std::printf(__VA_ARGS__)
-#else
-    #define WALK_LOG(...)
-#endif
+#define WALK_LOG(...) Debug::logThrottled(Debug::Category::Physics, "walk", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 // =====================================================
 // WALK

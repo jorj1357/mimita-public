@@ -32,12 +32,12 @@
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
 #include "debug/debug-visuals.h"
+#include "debug/debug-log.h"
 
 #include <cstdio>
 
 int main()
 {
-    setvbuf(stdout, nullptr, _IONBF, 0);
     printf("[MAIN] start\n");
 
     Engine engine;
@@ -53,6 +53,7 @@ int main()
     uiInit(engine.window());
     printf("[MAIN] after uiInit()\n");
     DebugVis::init(engine.window());
+    Debug::startupReport();
     printf("[MAIN] after DebugVis::init()\n");
 
     glEnable(GL_BLEND);
