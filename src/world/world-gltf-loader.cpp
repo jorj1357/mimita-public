@@ -8,8 +8,10 @@
 
 #include "world-gltf-loader.h"
 #include "map/map_loader.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
+#include <cmath>
 #include <glm/geometric.hpp>
 
 namespace {
@@ -64,22 +66,50 @@ void buildCollisionMeshFromRenderMesh(World& world)
     );
 }
 
+glm::ivec3 collisionChunkCoord(const glm::vec3& p, float size)
+{
+    return glm::ivec3(
+        (int)std::floor(p.x / size),
+        (int)std::floor(p.y / size),
+        (int)std::floor(p.z / size)
+    );
+}
+
+void buildCollisionChunks(World& world)
+{
+    world.collisionChunks.clear();
+
+    for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
+    {
+        const CollisionTriangle& tri = world.collisionMesh.triangles[i];
+        glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+        glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+        glm::ivec3 c0 = collisionChunkCoord(mn, world.collisionChunkSize);
+        glm::ivec3 c1 = collisionChunkCoord(mx, world.collisionChunkSize);
+
+        for (int x = c0.x; x <= c1.x; ++x)
+        for (int y = c0.y; y <= c1.y; ++y)
+        for (int z = c0.z; z <= c1.z; ++z)
+            world.collisionChunks[glm::ivec3(x, y, z)].push_back(i);
+    }
+
+    printf("[WORLD GLB COLLISION] chunks=%zu chunkSize=%.2f\n",
+           world.collisionChunks.size(), world.collisionChunkSize);
+}
+
 }
 
 bool loadWorldFromGLB(World& world, const char* path)
 {
     printf("[WORLD GLB] loading %s\n", path);
-    fflush(stdout);
 
     world.clear();
 
-    printf("[WORLD GLB] before loadGLB\n");
-    fflush(stdout);
+    Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
     world.mesh = loadGLB(path);
 
-    printf("[WORLD GLB] after loadGLB\n");
-    fflush(stdout);
+    Debug::log(Debug::Category::GLB, "[WORLD GLB] after loadGLB\n");
 
     printf(
         "[WORLD GLB] verts=%zu triangles=%zu batches=%zu\n",
@@ -87,7 +117,6 @@ bool loadWorldFromGLB(World& world, const char* path)
         world.mesh.verts.size() / 3,
         world.mesh.batches.size()
     );
-    fflush(stdout);
 
     if (world.mesh.verts.empty())
     {
@@ -96,12 +125,11 @@ bool loadWorldFromGLB(World& world, const char* path)
     }
 
     printf("[WORLD GLB] before collision build\n");
-    fflush(stdout);
 
     buildCollisionMeshFromRenderMesh(world);
+    buildCollisionChunks(world);
 
     printf("[WORLD GLB] after collision build\n");
-    fflush(stdout);
 
     return true;
 }

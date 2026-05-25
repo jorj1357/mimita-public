@@ -14,17 +14,12 @@
 
 #include "physics/config.h"
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG TOGGLE
 // =====================================================
-#define PHYS_DEBUG_DASH 1
-
-#if PHYS_DEBUG_DASH
-    #define DASH_LOG(...) std::printf(__VA_ARGS__)
-#else
-    #define DASH_LOG(...)
-#endif
+#define DASH_LOG(...) Debug::logThrottled(Debug::Category::Physics, "dash", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 // =====================================================
 // DASH

@@ -8,6 +8,7 @@
 
 #include <glad/glad.h>
 #include "gui/font-stuff/font-loader.h"
+#include "debug/debug-log.h"
 
 namespace {
 GLFWwindow* gWindow = nullptr;
@@ -20,7 +21,7 @@ GLint gUseTexLoc = -1;
 GLint gTexLoc = -1;
 int gFbW = 1;
 int gFbH = 1;
-bool gDebug = true;
+bool gDebug = false;
 bool gMousePrev = false;
 bool gMouseDown = false;
 bool gMouseClickEdge = false;
@@ -258,13 +259,13 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     glUseProgram(gProgram);
 
     if (gFrame % 120 == 1)
-        printf("[UI] Rendering UI frame %d pass=%s framebuffer=%dx%d\n", gFrame, passName ? passName : "unknown", gFbW, gFbH);
+        Debug::logThrottled(Debug::Category::Render, "ui-frame", DebugConfig::PRINT_INTERVAL, "[UI] Rendering UI frame %d pass=%s framebuffer=%dx%d\n", gFrame, passName ? passName : "unknown", gFbW, gFbH);
 }
 
 void uiEndFrame()
 {
     if (gFrame % 120 == 1)
-        printf("[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
+        Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
     gMousePrev = gMouseDown;
     glUseProgram(0);
     glEnable(GL_DEPTH_TEST);

@@ -19,6 +19,7 @@
 #include "world/texture-store.h"
 #include "audio/audio.h"
 #include "utils/path_utils.h"
+#include "debug/debug-log.h"
 
 // globals (engine-level)
 extern TextureStore gTextures;
@@ -34,6 +35,8 @@ static int    capsuleVertCount = 0;
 static GLuint playerVAO = 0;
 static GLuint playerVBO = 0;
 static size_t playerUploadedVertCount = (size_t)-1;
+static GLuint bodyPartVAO = 0;
+static GLuint bodyPartVBO = 0;
 
 namespace {
 
@@ -89,6 +92,15 @@ glm::vec3 readVec3(const tinygltf::Model& model, const tinygltf::Accessor& acces
     const unsigned char* base = accessorPtr(model, accessor);
     const float* f = reinterpret_cast<const float*>(base + index * accessorStride(model, accessor));
     return {f[0], f[1], f[2]};
+}
+
+glm::vec2 readVec2(const tinygltf::Model& model, const tinygltf::Accessor& accessor, size_t index)
+{
+    if (accessor.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT || accessor.type != TINYGLTF_TYPE_VEC2)
+        return glm::vec2(0.0f);
+    const unsigned char* base = accessorPtr(model, accessor);
+    const float* f = reinterpret_cast<const float*>(base + index * accessorStride(model, accessor));
+    return {f[0], f[1]};
 }
 
 unsigned int readIndex(const tinygltf::Model& model, const tinygltf::Accessor& accessor, size_t i)
@@ -161,6 +173,16 @@ void appendNodeCollider(
             tri.normal = n / len;
             collider.triangles.push_back(tri);
 
+            auto addSample = [&](glm::vec3 p) {
+                for (glm::vec3 existing : collider.samplePoints)
+                    if (glm::length(existing - p) < 0.0001f)
+                        return;
+                collider.samplePoints.push_back(p);
+            };
+            addSample(tri.a);
+            addSample(tri.b);
+            addSample(tri.c);
+
             glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
             glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
             if (!boundsSet)
@@ -176,6 +198,110 @@ void appendNodeCollider(
             }
         }
     }
+}
+
+void appendNodeRenderMesh(
+    const tinygltf::Model& model,
+    int nodeIndex,
+    Mesh& out
+) {
+    const tinygltf::Node& node = model.nodes[nodeIndex];
+    if (node.mesh < 0 || node.mesh >= (int)model.meshes.size())
+        return;
+
+    const tinygltf::Mesh& mesh = model.meshes[node.mesh];
+    for (const tinygltf::Primitive& primitive : mesh.primitives)
+    {
+        if (primitive.mode != TINYGLTF_MODE_TRIANGLES)
+            continue;
+
+        auto posIt = primitive.attributes.find("POSITION");
+        if (posIt == primitive.attributes.end())
+            continue;
+
+        const tinygltf::Accessor& posAccessor = model.accessors[posIt->second];
+        const tinygltf::Accessor* normalAccessor = nullptr;
+        const tinygltf::Accessor* uvAccessor = nullptr;
+
+        auto normalIt = primitive.attributes.find("NORMAL");
+        if (normalIt != primitive.attributes.end())
+            normalAccessor = &model.accessors[normalIt->second];
+
+        auto uvIt = primitive.attributes.find("TEXCOORD_0");
+        if (uvIt != primitive.attributes.end())
+            uvAccessor = &model.accessors[uvIt->second];
+
+        Mesh::Batch batch;
+        batch.materialIndex = primitive.material;
+        batch.materialName = "player_body";
+        batch.texture = gTextures.get("default");
+        batch.first = out.verts.size();
+
+        auto pushVertex = [&](size_t vertexIndex) {
+            Vertex v{};
+            v.pos = readVec3(model, posAccessor, vertexIndex);
+            v.normal = normalAccessor ? readVec3(model, *normalAccessor, vertexIndex) : glm::vec3(0.0f, 0.0f, 1.0f);
+            v.uv = uvAccessor ? readVec2(model, *uvAccessor, vertexIndex) : glm::vec2(0.0f);
+            out.verts.push_back(v);
+        };
+
+        if (primitive.indices >= 0)
+        {
+            const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
+            for (size_t i = 0; i < indexAccessor.count; ++i)
+            {
+                unsigned int vertexIndex = readIndex(model, indexAccessor, i);
+                if (vertexIndex < posAccessor.count)
+                    pushVertex(vertexIndex);
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < posAccessor.count; ++i)
+                pushVertex(i);
+        }
+
+        batch.count = out.verts.size() - batch.first;
+        if (batch.count > 0)
+            out.batches.push_back(batch);
+    }
+}
+
+void uploadBodyPartMesh(const Mesh& mesh)
+{
+    if (!bodyPartVAO) glGenVertexArrays(1, &bodyPartVAO);
+    if (!bodyPartVBO) glGenBuffers(1, &bodyPartVBO);
+
+    glBindVertexArray(bodyPartVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO);
+    glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+    glEnableVertexAttribArray(2);
+}
+
+glm::mat4 poseMatrix(const ProceduralPose& pose)
+{
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), pose.translation);
+    m = glm::rotate(m, glm::radians(pose.rotationEuler.x), glm::vec3(1, 0, 0));
+    m = glm::rotate(m, glm::radians(pose.rotationEuler.y), glm::vec3(0, 1, 0));
+    m = glm::rotate(m, glm::radians(pose.rotationEuler.z), glm::vec3(0, 0, 1));
+    return m;
+}
+
+glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float stiffness, float damping, float dt)
+{
+    float safeDt = std::min(dt, 0.05f);
+    glm::vec3 acceleration = (target - spring.value) * stiffness - spring.velocity * damping;
+    spring.velocity += acceleration * safeDt;
+    spring.value += spring.velocity * safeDt;
+    return spring.value;
 }
 
 void uploadPlayerMeshIfNeeded(const Mesh& mesh)
@@ -440,7 +566,11 @@ bool Player::loadModel(const char* path)
 
     nodes.clear();
     nodes.resize(model.nodes.size());
+    restLocalTransforms.clear();
+    restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
     bodyColliders.clear();
+    bodyParts.clear();
+    bodyPartMeshes.clear();
 
     for (int i = 0; i < (int)model.nodes.size(); ++i)
     {
@@ -448,6 +578,7 @@ bool Player::loadModel(const char* path)
         TransformNode& node = nodes[i];
         node.name = gltfNode.name;
         node.localTransform = nodeMatrix(gltfNode);
+        restLocalTransforms[i] = node.localTransform;
         node.worldTransform = node.localTransform;
         node.children = gltfNode.children;
 
@@ -466,11 +597,26 @@ bool Player::loadModel(const char* path)
         collider.name = name;
         appendNodeCollider(model, i, collider);
         bodyColliders.push_back(collider);
-        printf("[PLAYER GLB] body collider=%s localTriangles=%zu localMin=(%.2f %.2f %.2f) localMax=(%.2f %.2f %.2f)\n",
-               collider.name.c_str(),
-               collider.triangles.size(),
-               collider.localMin.x, collider.localMin.y, collider.localMin.z,
-               collider.localMax.x, collider.localMax.y, collider.localMax.z);
+
+        BodyPart part;
+        part.name = name;
+        part.nodeIndex = i;
+        part.collider = collider;
+        bodyParts.push_back(part);
+
+        Mesh bodyMesh;
+        appendNodeRenderMesh(model, i, bodyMesh);
+        bodyPartMeshes.push_back(bodyMesh);
+
+        Debug::log(
+            Debug::Category::GLB,
+            "[PLAYER GLB] body collider=%s localTriangles=%zu localVerts=%zu localMin=(%.2f %.2f %.2f) localMax=(%.2f %.2f %.2f)\n",
+            collider.name.c_str(),
+            collider.triangles.size(),
+            bodyMesh.verts.size(),
+            collider.localMin.x, collider.localMin.y, collider.localMin.z,
+            collider.localMax.x, collider.localMax.y, collider.localMax.z
+        );
     }
 
     updateModelWorldTransforms();
@@ -492,6 +638,80 @@ void Player::updateModelWorldTransforms()
         else
             nodes[i].worldTransform = nodes[nodes[i].parent].worldTransform * nodes[i].localTransform;
     }
+}
+
+void Player::updateProceduralAnimation(float dt)
+{
+    if (nodes.empty() || restLocalTransforms.size() != nodes.size())
+        return;
+
+    proceduralTime += dt;
+
+    glm::vec2 planarVel = glm::vec2(vel.x, vel.y) + dashVel;
+    float speed = glm::length(planarVel);
+    float move01 = std::min(speed / std::max(PHYS.moveSpeed, 0.001f), 1.6f);
+    float dash01 = std::min(glm::length(dashVel) / std::max(DASH_IMPULSE, 0.001f), 1.0f);
+    glm::vec3 acceleration = (dt > 0.0001f) ? (vel - previousProceduralVelocity) / dt : glm::vec3(0.0f);
+    previousProceduralVelocity = vel;
+
+    float phase = proceduralTime * (5.8f + move01 * 5.5f);
+    float stride = std::sin(phase);
+    float counterStride = std::sin(phase + 3.14159265f);
+    float bob = std::abs(std::sin(phase)) * 0.035f * move01;
+    float air = onGround ? 0.0f : 1.0f;
+    float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
+
+    for (BodyPart& part : bodyParts)
+    {
+        if (part.nodeIndex < 0 || part.nodeIndex >= (int)nodes.size())
+            continue;
+
+        ProceduralPose target;
+
+        if (part.name == "leftLeg")
+        {
+            target.rotationEuler.x = stride * 25.0f * move01 - air * 16.0f;
+            target.translation.z = -bob * 0.35f;
+        }
+        else if (part.name == "rightLeg")
+        {
+            target.rotationEuler.x = counterStride * 25.0f * move01 - air * 16.0f;
+            target.translation.z = -bob * 0.35f;
+        }
+        else if (part.name == "leftArm")
+        {
+            target.rotationEuler.x = counterStride * 20.0f * move01 + air * 12.0f;
+            target.rotationEuler.z = 3.0f * move01;
+        }
+        else if (part.name == "rightArm")
+        {
+            target.rotationEuler.x = stride * 20.0f * move01 + air * 12.0f;
+            target.rotationEuler.z = -3.0f * move01;
+        }
+        else if (part.name == "torso")
+        {
+            target.translation.z = bob;
+            target.rotationEuler.x = -6.0f * move01 - 10.0f * dash01 + accelLean;
+            target.rotationEuler.z = std::clamp(dashVel.x * -0.18f + dashVel.y * 0.08f, -8.0f, 8.0f);
+        }
+        else if (part.name == "head")
+        {
+            target.translation.z = bob * 0.35f;
+            target.rotationEuler.x = 3.0f * move01 + 5.0f * dash01 - accelLean * 0.5f;
+            target.rotationEuler.z = std::clamp(dashVel.x * 0.08f - dashVel.y * 0.04f, -4.0f, 4.0f);
+        }
+
+        if (!onGround)
+            target.translation.z += (part.name == "torso" || part.name == "head") ? 0.015f : 0.0f;
+
+        part.pose.translation = springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
+        part.pose.rotationEuler = springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
+
+        nodes[part.nodeIndex].localTransform =
+            restLocalTransforms[part.nodeIndex] * poseMatrix(part.pose);
+    }
+
+    updateModelWorldTransforms();
 }
 
 Capsule Player::getCapsule() const
@@ -560,6 +780,36 @@ void Player::render(unsigned int shader,
                     const glm::mat4& proj) const
 {
     const_cast<Player*>(this)->updateModelWorldTransforms();
+
+    if (modelLoaded && !bodyParts.empty() && bodyPartMeshes.size() == bodyParts.size())
+    {
+        glUseProgram(shader);
+        glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
+        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
+        glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
+        glUniform1i(glGetUniformLocation(shader,"uTex"),0);
+
+        glActiveTexture(GL_TEXTURE0);
+        for (size_t i = 0; i < bodyParts.size(); ++i)
+        {
+            const BodyPart& part = bodyParts[i];
+            const Mesh& mesh = bodyPartMeshes[i];
+            if (part.nodeIndex < 0 || part.nodeIndex >= (int)nodes.size() || mesh.verts.empty())
+                continue;
+
+            uploadBodyPartMesh(mesh);
+
+            const glm::mat4& model = nodes[part.nodeIndex].worldTransform;
+            glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
+
+            for (const Mesh::Batch& batch : mesh.batches)
+            {
+                glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
+                glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            }
+        }
+        return;
+    }
 
     if (modelLoaded && !renderMesh.verts.empty())
     {

@@ -11,6 +11,7 @@
 #include "entities/player.h"
 #include "renderer/renderer.h"
 #include "world/world.h"
+#include "debug/debug-log.h"
 
 extern Renderer* gRenderer;
 
@@ -43,7 +44,7 @@ bool edge(int idx, int key)
 void setLineState(const Camera& camera, glm::vec4 color)
 {
     if (!gRenderer || !gRenderer->shaderProgram) {
-        printf("[DEBUG WARNING] Cannot draw line: renderer/shader missing\n");
+        Debug::warn(Debug::Category::Render, "[DEBUG WARNING] Cannot draw line: renderer/shader missing\n");
         return;
     }
 
@@ -197,7 +198,16 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                 return node.name == collider.name;
             });
             if (it != player.nodes.end())
+            {
                 drawOrientedBounds(camera, it->worldTransform, collider.localMin, collider.localMax, {1.0f,0.2f,0.9f,0.85f});
+                glm::vec3 origin = glm::vec3(it->worldTransform[3]);
+                glm::vec3 xAxis = glm::normalize(glm::vec3(it->worldTransform[0])) * 0.25f;
+                glm::vec3 yAxis = glm::normalize(glm::vec3(it->worldTransform[1])) * 0.25f;
+                glm::vec3 zAxis = glm::normalize(glm::vec3(it->worldTransform[2])) * 0.25f;
+                drawLine(camera, origin, origin + xAxis, {1.0f,0.1f,0.1f,1.0f});
+                drawLine(camera, origin, origin + yAxis, {0.1f,1.0f,0.1f,1.0f});
+                drawLine(camera, origin, origin + zAxis, {0.1f,0.4f,1.0f,1.0f});
+            }
         }
     }
 
@@ -209,6 +219,24 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         drawBox(camera, player.pos + glm::vec3(0,0,1), {0.55f,0.55f,1.0f}, {1.0f,0.0f,1.0f,1.0f});
         int drawn = 0;
         if (!world.collisionMesh.empty()) {
+            if (!world.collisionChunks.empty() && world.collisionChunkSize > 0.001f) {
+                glm::ivec3 pc(
+                    (int)std::floor(player.pos.x / world.collisionChunkSize),
+                    (int)std::floor(player.pos.y / world.collisionChunkSize),
+                    (int)std::floor(player.pos.z / world.collisionChunkSize)
+                );
+                int chunkDrawn = 0;
+                for (int x = pc.x - 1; x <= pc.x + 1; ++x)
+                for (int y = pc.y - 1; y <= pc.y + 1; ++y)
+                for (int z = pc.z - 1; z <= pc.z + 1; ++z) {
+                    if (world.collisionChunks.find(glm::ivec3(x, y, z)) == world.collisionChunks.end())
+                        continue;
+                    glm::vec3 center = (glm::vec3(x, y, z) + glm::vec3(0.5f)) * world.collisionChunkSize;
+                    drawBox(camera, center, glm::vec3(world.collisionChunkSize * 0.5f), {0.0f,1.0f,0.3f,0.35f});
+                    if (++chunkDrawn >= 16)
+                        break;
+                }
+            }
             for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
                 drawLine(camera, tri.a, tri.b, {1.0f,0.85f,0.0f,0.65f});
                 drawLine(camera, tri.b, tri.c, {1.0f,0.85f,0.0f,0.65f});

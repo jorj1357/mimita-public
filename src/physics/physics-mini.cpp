@@ -116,6 +116,8 @@ static void physicsMainUpdate_Internal(
         p.didLand = true;
     }
 
+    p.updateProceduralAnimation(dt);
+
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {
         applyDebugMovement(
