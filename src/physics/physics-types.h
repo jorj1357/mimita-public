@@ -72,8 +72,31 @@ struct Collider
 {
     std::string name;
     std::vector<CollisionTriangle> triangles;
+    std::vector<glm::vec3> samplePoints;
     glm::vec3 localMin{0.0f};
     glm::vec3 localMax{0.0f};
+};
+
+struct SpringState
+{
+    glm::vec3 value{0.0f};
+    glm::vec3 velocity{0.0f};
+};
+
+struct ProceduralPose
+{
+    glm::vec3 translation{0.0f};
+    glm::vec3 rotationEuler{0.0f};
+};
+
+struct BodyPart
+{
+    std::string name;
+    int nodeIndex = -1;
+    Collider collider;
+    ProceduralPose pose;
+    SpringState translationSpring;
+    SpringState rotationSpring;
 };
 
 struct PhysicsBody

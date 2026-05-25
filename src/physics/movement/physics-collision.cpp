@@ -15,22 +15,18 @@
 #include <vector>
 #include <cmath>
 #include <limits>
+#include <unordered_set>
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG TOGGLE
 // =====================================================
-#define PHYS_DEBUG_COLLISIONS 1
-
-#if PHYS_DEBUG_COLLISIONS
-    #define PHYS_LOG(...) std::printf(__VA_ARGS__)
-#else
-    #define PHYS_LOG(...)
-#endif
+#define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 static bool capsuleTriangleSweep(
     const Capsule& cap,
@@ -125,6 +121,62 @@ static inline bool overlaps(const AABB& a, const AABB& b)
     return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
            (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
            (a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
+
+static inline glm::ivec3 collisionChunkCoord(const glm::vec3& p, float size)
+{
+    return glm::ivec3(
+        (int)std::floor(p.x / size),
+        (int)std::floor(p.y / size),
+        (int)std::floor(p.z / size)
+    );
+}
+
+static void appendChunkTrianglesForAABB(
+    const World& world,
+    const AABB& queryBounds,
+    float expansion,
+    std::vector<int>& out
+) {
+    if (world.collisionChunks.empty() || world.collisionChunkSize <= 0.001f)
+    {
+        for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
+        {
+            AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[i]);
+            triBounds.min -= glm::vec3(expansion);
+            triBounds.max += glm::vec3(expansion);
+            if (overlaps(queryBounds, triBounds))
+                out.push_back(i);
+        }
+        return;
+    }
+
+    glm::ivec3 c0 = collisionChunkCoord(queryBounds.min, world.collisionChunkSize);
+    glm::ivec3 c1 = collisionChunkCoord(queryBounds.max, world.collisionChunkSize);
+    std::unordered_set<int> seen;
+
+    for (int x = c0.x; x <= c1.x; ++x)
+    for (int y = c0.y; y <= c1.y; ++y)
+    for (int z = c0.z; z <= c1.z; ++z)
+    {
+        auto it = world.collisionChunks.find(glm::ivec3(x, y, z));
+        if (it == world.collisionChunks.end())
+            continue;
+
+        for (int triIndex : it->second)
+        {
+            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            if (!seen.insert(triIndex).second)
+                continue;
+
+            AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
+            triBounds.min -= glm::vec3(expansion);
+            triBounds.max += glm::vec3(expansion);
+            if (overlaps(queryBounds, triBounds))
+                out.push_back(triIndex);
+        }
+    }
 }
 
 // =====================================================
@@ -1109,14 +1161,7 @@ static std::vector<int> gatherGLBTriangles(const World& world, const Capsule& ca
 {
     std::vector<int> out;
     AABB sweepBounds = makeSweptCapsuleAABB(cap, move);
-    for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
-    {
-        AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[i]);
-        triBounds.min -= glm::vec3(cap.r);
-        triBounds.max += glm::vec3(cap.r);
-        if (overlaps(sweepBounds, triBounds))
-            out.push_back(i);
-    }
+    appendChunkTrianglesForAABB(world, sweepBounds, cap.r, out);
     return out;
 }
 
@@ -1130,15 +1175,7 @@ static std::vector<int> gatherGLBTrianglesForSphere(
     AABB sweepBounds;
     sweepBounds.min = glm::min(center, center + move) - glm::vec3(radius);
     sweepBounds.max = glm::max(center, center + move) + glm::vec3(radius);
-
-    for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
-    {
-        AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[i]);
-        triBounds.min -= glm::vec3(radius);
-        triBounds.max += glm::vec3(radius);
-        if (overlaps(sweepBounds, triBounds))
-            out.push_back(i);
-    }
+    appendChunkTrianglesForAABB(world, sweepBounds, radius, out);
     return out;
 }
 
@@ -1155,11 +1192,19 @@ static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
             continue;
 
         const glm::mat4& xform = it->worldTransform;
-        for (const CollisionTriangle& tri : collider.triangles)
+        if (!collider.samplePoints.empty())
         {
-            samples.push_back(glm::vec3(xform * glm::vec4(tri.a, 1.0f)));
-            samples.push_back(glm::vec3(xform * glm::vec4(tri.b, 1.0f)));
-            samples.push_back(glm::vec3(xform * glm::vec4(tri.c, 1.0f)));
+            for (glm::vec3 point : collider.samplePoints)
+                samples.push_back(glm::vec3(xform * glm::vec4(point, 1.0f)));
+        }
+        else
+        {
+            for (const CollisionTriangle& tri : collider.triangles)
+            {
+                samples.push_back(glm::vec3(xform * glm::vec4(tri.a, 1.0f)));
+                samples.push_back(glm::vec3(xform * glm::vec4(tri.b, 1.0f)));
+                samples.push_back(glm::vec3(xform * glm::vec4(tri.c, 1.0f)));
+            }
         }
     }
 

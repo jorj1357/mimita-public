@@ -21,22 +21,17 @@ And 5 sec = normal falling velocity i think
 #include <algorithm>
 #include <cmath>
 
-#include "audio/audio.h"
 #include "physics/config.h"
 #include "entities/player.h"
+#include "audio/audio.h"
 #include "physics/movement/physics-freeze.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG
 // =====================================================
 
-#define PHYS_DEBUG_FREEZE 1
-
-#if PHYS_DEBUG_FREEZE
-#define FREEZE_LOG(...) std::printf(__VA_ARGS__)
-#else
-#define FREEZE_LOG(...)
-#endif
+#define FREEZE_LOG(...) Debug::logThrottled(Debug::Category::Physics, "freeze", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 
 // =====================================================

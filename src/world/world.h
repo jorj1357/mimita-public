@@ -129,6 +129,8 @@ struct World {
 
     Mesh mesh;
     CollisionMeshCache collisionMesh;
+    float collisionChunkSize = 6.0f;
+    std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionChunks;
 
     void clear();
     void rebuildChunks();

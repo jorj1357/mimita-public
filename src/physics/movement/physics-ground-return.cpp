@@ -21,18 +21,13 @@
 
 #include "physics/config.h"
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 // =====================================================
 // DEBUG
 // =====================================================
 
-#define PHYS_DEBUG_GROUND_RETURN 1
-
-#if PHYS_DEBUG_GROUND_RETURN
-    #define GR_LOG(...) std::printf(__VA_ARGS__)
-#else
-    #define GR_LOG(...)
-#endif
+#define GR_LOG(...) Debug::logThrottled(Debug::Category::Physics, "ground-return", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 // =====================================================
 // GROUND RETURN

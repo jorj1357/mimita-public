@@ -102,13 +102,19 @@ public:
     Mesh renderMesh;
     bool modelLoaded = false;
     std::vector<TransformNode> nodes;
+    std::vector<glm::mat4> restLocalTransforms;
     std::vector<Collider> bodyColliders;
+    std::vector<BodyPart> bodyParts;
+    std::vector<Mesh> bodyPartMeshes;
+    glm::vec3 previousProceduralVelocity{0.0f};
+    float proceduralTime = 0.0f;
 
     // -------- Construction --------
     Player();
     void reset();
     bool loadModel(const char* path);
     void updateModelWorldTransforms();
+    void updateProceduralAnimation(float dt);
 
     // -------- Queries --------
     Capsule getCapsule() const;
