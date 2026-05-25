@@ -29,6 +29,7 @@
 #include "map/map_common.h"
 
 #include "physics/config.h"
+#include "physics/physics-types.h"
 
 #include <string>
 
@@ -127,6 +128,7 @@ struct World {
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunks;
 
     Mesh mesh;
+    CollisionMeshCache collisionMesh;
 
     void clear();
     void rebuildChunks();

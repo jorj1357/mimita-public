@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <vector>
 #include <cmath>
+#include <limits>
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
@@ -31,6 +32,53 @@
     #define PHYS_LOG(...)
 #endif
 
+static bool capsuleTriangleSweep(
+    const Capsule& cap,
+    const glm::vec3& move,
+    const CollisionTriangle& tri,
+    int triIndex,
+    SweepHit& out
+);
+
+static bool capsuleTriangleContact(
+    const Capsule& cap,
+    const CollisionTriangle& tri,
+    int triIndex,
+    Contact& out
+);
+
+static bool sweepSphereTriangle(
+    glm::vec3 start,
+    glm::vec3 move,
+    float radius,
+    const CollisionTriangle& tri,
+    float& hitTime,
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
+);
+
+static bool sphereTriangleContact(
+    glm::vec3 center,
+    float radius,
+    const CollisionTriangle& tri,
+    Contact& contact
+);
+
+static std::vector<int> gatherGLBTriangles(
+    const World& world,
+    const Capsule& cap,
+    const glm::vec3& move
+);
+
+static std::vector<int> gatherGLBTrianglesForSphere(
+    const World& world,
+    glm::vec3 center,
+    float radius,
+    const glm::vec3& move
+);
+
+static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
+
 // =====================================================
 // AABB helpers (TEMP until capsule collisions v3)
 // =====================================================
@@ -39,6 +87,21 @@ struct AABB {
     glm::vec3 min;
     glm::vec3 max;
 };
+
+static inline AABB makeSweptCapsuleAABB(const Capsule& cap, const glm::vec3& move)
+{
+    glm::vec3 mn = glm::min(glm::min(cap.a, cap.b), glm::min(cap.a + move, cap.b + move));
+    glm::vec3 mx = glm::max(glm::max(cap.a, cap.b), glm::max(cap.a + move, cap.b + move));
+    return {mn - glm::vec3(cap.r), mx + glm::vec3(cap.r)};
+}
+
+static inline AABB makeTriangleAABB(const CollisionTriangle& tri)
+{
+    return {
+        glm::min(glm::min(tri.a, tri.b), tri.c),
+        glm::max(glm::max(tri.a, tri.b), tri.c)
+    };
+}
 
 static inline AABB makePlayerAABB(const Player& p)
 {
@@ -306,6 +369,223 @@ static bool capsuleSweep(
     return sweptAABB(pointBox, move, expanded, hitTime, hitNormal);
 }
 
+static void applyTouchResets(Player& p)
+{
+    p.airJumpsLeft = AIR_JUMPS_MAX;
+    p.dashAvailable = true;
+    p.groundReturnAvailable = true;
+    p.freezeAvailable = true;
+}
+
+static void doGLBTriangleCollisions(
+    Player& p,
+    const World& world,
+    bool& groundedThisFrame,
+    float dt
+) {
+    glm::vec3 move = (p.vel + glm::vec3(p.dashVel, 0.0f)) * dt;
+    p.updateModelWorldTransforms();
+    Capsule cap = p.getCapsule();
+    std::vector<int> candidates = gatherGLBTriangles(world, cap, move);
+    std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
+    constexpr float BODY_SAMPLE_RADIUS = 0.045f;
+    for (glm::vec3 sample : bodySamples)
+    {
+        std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, move);
+        for (int triIndex : sampleCandidates)
+            if (std::find(candidates.begin(), candidates.end(), triIndex) == candidates.end())
+                candidates.push_back(triIndex);
+    }
+
+    static int frameLog = 0;
+    if ((frameLog++ % 60) == 0)
+    {
+        PHYS_LOG(
+            "[PHYS][GLB] tris=%zu candidates=%zu bodySamples=%zu pos=(%.2f %.2f %.2f) move=(%.3f %.3f %.3f)\n",
+            world.collisionMesh.triangles.size(),
+            candidates.size(),
+            bodySamples.size(),
+            p.pos.x, p.pos.y, p.pos.z,
+            move.x, move.y, move.z
+        );
+    }
+
+    constexpr float SURFACE_SLOP = 0.002f;
+
+    for (int iter = 0; iter < 5; ++iter)
+    {
+        SweepHit earliest;
+        earliest.time = 1.0f;
+
+        cap = p.getCapsule();
+        for (int triIndex : candidates)
+        {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            SweepHit hit;
+            if (capsuleTriangleSweep(cap, move, tri, triIndex, hit) && hit.time < earliest.time)
+                earliest = hit;
+        }
+
+        for (glm::vec3 sample : bodySamples)
+        {
+            for (int triIndex : candidates)
+            {
+                float t = 1.0f;
+                glm::vec3 n(0.0f);
+                glm::vec3 point(0.0f);
+                if (sweepSphereTriangle(sample, move, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], t, n, point) && t < earliest.time)
+                {
+                    earliest.hit = true;
+                    earliest.time = t;
+                    earliest.normal = n;
+                    earliest.point = point;
+                    earliest.triangleIndex = triIndex;
+                    earliest.colliderName = "player_body_part";
+                }
+            }
+        }
+
+        glm::vec3 stepMove = move * earliest.time;
+        p.pos += stepMove;
+        p.updateModelWorldTransforms();
+        bodySamples = collectPlayerBodyCollisionSamples(p);
+        cap = p.getCapsule();
+
+        if (!earliest.hit)
+            break;
+
+        p.pos += earliest.normal * SURFACE_SLOP;
+        move -= stepMove;
+
+        if (earliest.normal.z > 0.35f)
+        {
+            groundedThisFrame = true;
+            applyTouchResets(p);
+            if (p.vel.z < 0.0f)
+                p.vel.z = 0.0f;
+        }
+        else if (earliest.normal.z < -0.35f)
+        {
+            if (p.vel.z > 0.0f)
+                p.vel.z = 0.0f;
+        }
+        else
+        {
+            applyTouchResets(p);
+        }
+
+        float vn = glm::dot(move, earliest.normal);
+        if (vn < 0.0f)
+            move -= earliest.normal * vn;
+
+        glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+        float velIntoSurface = glm::dot(totalVel, earliest.normal);
+        if (velIntoSurface < 0.0f)
+        {
+            glm::vec3 resolved = totalVel - earliest.normal * velIntoSurface;
+            p.vel.x = resolved.x;
+            p.vel.y = resolved.y;
+            p.vel.z = resolved.z;
+            p.dashVel = glm::vec2(0.0f);
+        }
+
+        PHYS_LOG(
+            "[PHYS][GLB HIT] tri=%d t=%.3f normal=(%.2f %.2f %.2f) point=(%.2f %.2f %.2f)\n",
+            earliest.triangleIndex,
+            earliest.time,
+            earliest.normal.x,
+            earliest.normal.y,
+            earliest.normal.z,
+            earliest.point.x,
+            earliest.point.y,
+            earliest.point.z
+        );
+
+        if (glm::dot(move, move) < 0.000001f)
+            break;
+    }
+
+    cap = p.getCapsule();
+    p.updateModelWorldTransforms();
+    bodySamples = collectPlayerBodyCollisionSamples(p);
+    candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
+    for (int cleanupIter = 0; cleanupIter < 4; ++cleanupIter)
+    {
+        bool moved = false;
+        cap = p.getCapsule();
+        for (int triIndex : candidates)
+        {
+            Contact contact;
+            if (!capsuleTriangleContact(cap, world.collisionMesh.triangles[triIndex], triIndex, contact))
+                continue;
+
+            glm::vec3 correction = contact.normal * (contact.penetration + SURFACE_SLOP);
+            p.pos += correction;
+            moved = true;
+
+            if (contact.normal.z > 0.35f)
+            {
+                groundedThisFrame = true;
+                applyTouchResets(p);
+                if (p.vel.z < 0.0f)
+                    p.vel.z = 0.0f;
+            }
+            else if (contact.normal.z < -0.35f)
+            {
+                if (p.vel.z > 0.0f)
+                    p.vel.z = 0.0f;
+            }
+
+            PHYS_LOG(
+                "[PHYS][GLB CONTACT] tri=%d pen=%.4f normal=(%.2f %.2f %.2f)\n",
+                contact.triangleIndex,
+                contact.penetration,
+                contact.normal.x,
+                contact.normal.y,
+                contact.normal.z
+            );
+
+            cap = p.getCapsule();
+        }
+
+        for (glm::vec3 sample : bodySamples)
+        {
+            for (int triIndex : candidates)
+            {
+                Contact contact;
+                if (!sphereTriangleContact(sample, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], contact))
+                    continue;
+
+                contact.triangleIndex = triIndex;
+                p.pos += contact.normal * (contact.penetration + SURFACE_SLOP);
+                p.updateModelWorldTransforms();
+                bodySamples = collectPlayerBodyCollisionSamples(p);
+                moved = true;
+
+                if (contact.normal.z > 0.35f)
+                {
+                    groundedThisFrame = true;
+                    applyTouchResets(p);
+                    if (p.vel.z < 0.0f)
+                        p.vel.z = 0.0f;
+                }
+
+                PHYS_LOG(
+                    "[PHYS][BODY CONTACT] tri=%d pen=%.4f normal=(%.2f %.2f %.2f)\n",
+                    contact.triangleIndex,
+                    contact.penetration,
+                    contact.normal.x,
+                    contact.normal.y,
+                    contact.normal.z
+                );
+            }
+        }
+
+        if (!moved)
+            break;
+    }
+}
+
 // =====================================================
 // PUBLIC ENTRY
 // =====================================================
@@ -317,6 +597,12 @@ void doCollisions(
     float dt
 )
 {
+    if (!world.collisionMesh.empty())
+    {
+        doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
+        return;
+    }
+
     // do not set grounded here
     // so that we can actually jump 
     // groundedThisFrame = false;
@@ -569,4 +855,313 @@ void doCollisions(
             cap = p.getCapsule();
         }
     }
+}
+
+static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)
+{
+    glm::vec3 ab = b - a;
+    glm::vec3 ac = c - a;
+    glm::vec3 ap = p - a;
+
+    float d1 = glm::dot(ab, ap);
+    float d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+    glm::vec3 bp = p - b;
+    float d3 = glm::dot(ab, bp);
+    float d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
+
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+    {
+        float v = d1 / (d1 - d3);
+        return a + ab * v;
+    }
+
+    glm::vec3 cp = p - c;
+    float d5 = glm::dot(ab, cp);
+    float d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+    {
+        float w = d2 / (d2 - d6);
+        return a + ac * w;
+    }
+
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+    {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + (c - b) * w;
+    }
+
+    float denom = 1.0f / (va + vb + vc);
+    float v = vb * denom;
+    float w = vc * denom;
+    return a + ab * v + ac * w;
+}
+
+static bool pointInTriangle(glm::vec3 p, const CollisionTriangle& tri)
+{
+    glm::vec3 closest = closestPointOnTriangle(p, tri.a, tri.b, tri.c);
+    glm::vec3 delta = closest - p;
+    return glm::dot(delta, delta) < 0.0001f;
+}
+
+static bool sweepSpherePoint(
+    glm::vec3 start,
+    glm::vec3 move,
+    float radius,
+    glm::vec3 point,
+    float& hitTime,
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
+) {
+    float a = glm::dot(move, move);
+    if (a < ALMOST_ZERO)
+        return false;
+
+    glm::vec3 rel = start - point;
+    float b = 2.0f * glm::dot(rel, move);
+    float c = glm::dot(rel, rel) - radius * radius;
+    float disc = b * b - 4.0f * a * c;
+    if (disc < 0.0f)
+        return false;
+
+    float t = (-b - sqrtf(disc)) / (2.0f * a);
+    if (t < 0.0f || t > 1.0f)
+        return false;
+
+    glm::vec3 center = start + move * t;
+    glm::vec3 n = center - point;
+    if (glm::dot(n, n) < 0.000001f)
+        n = -glm::normalize(move);
+    else
+        n = glm::normalize(n);
+
+    hitTime = t;
+    hitNormal = n;
+    hitPoint = point;
+    return true;
+}
+
+static bool sweepSphereTriangle(
+    glm::vec3 start,
+    glm::vec3 move,
+    float radius,
+    const CollisionTriangle& tri,
+    float& hitTime,
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
+) {
+    float bestT = 1.0f;
+    glm::vec3 bestN(0.0f);
+    glm::vec3 bestP(0.0f);
+    bool hit = false;
+
+    glm::vec3 n = tri.normal;
+    float dist = glm::dot(start - tri.a, n);
+    if (dist < 0.0f)
+    {
+        n = -n;
+        dist = -dist;
+    }
+
+    float denom = glm::dot(move, n);
+    if (denom < -ALMOST_ZERO)
+    {
+        float t = (radius - dist) / denom;
+        if (t >= 0.0f && t <= 1.0f)
+        {
+            glm::vec3 centerAtHit = start + move * t;
+            glm::vec3 planePoint = centerAtHit - n * radius;
+            if (pointInTriangle(planePoint, tri))
+            {
+                bestT = t;
+                bestN = n;
+                bestP = planePoint;
+                hit = true;
+            }
+        }
+    }
+
+    glm::vec3 pts[3] = {tri.a, tri.b, tri.c};
+    for (glm::vec3 pt : pts)
+    {
+        float t = 1.0f;
+        glm::vec3 pn(0.0f);
+        glm::vec3 pp(0.0f);
+        if (sweepSpherePoint(start, move, radius, pt, t, pn, pp) && t < bestT)
+        {
+            bestT = t;
+            bestN = pn;
+            bestP = pp;
+            hit = true;
+        }
+    }
+
+    if (!hit)
+        return false;
+
+    hitTime = bestT;
+    hitNormal = bestN;
+    hitPoint = bestP;
+    return true;
+}
+
+static bool sphereTriangleContact(
+    glm::vec3 center,
+    float radius,
+    const CollisionTriangle& tri,
+    Contact& contact
+) {
+    glm::vec3 closest = closestPointOnTriangle(center, tri.a, tri.b, tri.c);
+    glm::vec3 delta = center - closest;
+    float dist2 = glm::dot(delta, delta);
+    if (dist2 > radius * radius)
+        return false;
+
+    float dist = sqrtf(std::max(dist2, 0.0f));
+    glm::vec3 n = dist > 0.00001f ? delta / dist : tri.normal;
+    if (glm::dot(n, tri.normal) < 0.0f)
+        n = -n;
+
+    contact.point = closest;
+    contact.normal = n;
+    contact.penetration = radius - dist;
+    return true;
+}
+
+static bool capsuleTriangleSweep(
+    const Capsule& cap,
+    const glm::vec3& move,
+    const CollisionTriangle& tri,
+    int triIndex,
+    SweepHit& out
+) {
+    glm::vec3 samples[3] = {cap.a, (cap.a + cap.b) * 0.5f, cap.b};
+    bool hit = false;
+    float bestT = 1.0f;
+    glm::vec3 bestN(0.0f);
+    glm::vec3 bestP(0.0f);
+
+    for (glm::vec3 sample : samples)
+    {
+        float t = 1.0f;
+        glm::vec3 n(0.0f);
+        glm::vec3 p(0.0f);
+        if (sweepSphereTriangle(sample, move, cap.r, tri, t, n, p) && t < bestT)
+        {
+            bestT = t;
+            bestN = n;
+            bestP = p;
+            hit = true;
+        }
+    }
+
+    if (!hit)
+        return false;
+
+    out.hit = true;
+    out.time = bestT;
+    out.normal = bestN;
+    out.point = bestP;
+    out.triangleIndex = triIndex;
+    out.colliderName = "world_glb";
+    return true;
+}
+
+static bool capsuleTriangleContact(
+    const Capsule& cap,
+    const CollisionTriangle& tri,
+    int triIndex,
+    Contact& out
+) {
+    glm::vec3 samples[3] = {cap.a, (cap.a + cap.b) * 0.5f, cap.b};
+    bool hit = false;
+    Contact best;
+
+    for (glm::vec3 sample : samples)
+    {
+        Contact c;
+        if (sphereTriangleContact(sample, cap.r, tri, c))
+        {
+            if (!hit || c.penetration > best.penetration)
+            {
+                best = c;
+                hit = true;
+            }
+        }
+    }
+
+    if (!hit)
+        return false;
+
+    best.triangleIndex = triIndex;
+    out = best;
+    return true;
+}
+
+static std::vector<int> gatherGLBTriangles(const World& world, const Capsule& cap, const glm::vec3& move)
+{
+    std::vector<int> out;
+    AABB sweepBounds = makeSweptCapsuleAABB(cap, move);
+    for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
+    {
+        AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[i]);
+        triBounds.min -= glm::vec3(cap.r);
+        triBounds.max += glm::vec3(cap.r);
+        if (overlaps(sweepBounds, triBounds))
+            out.push_back(i);
+    }
+    return out;
+}
+
+static std::vector<int> gatherGLBTrianglesForSphere(
+    const World& world,
+    glm::vec3 center,
+    float radius,
+    const glm::vec3& move
+) {
+    std::vector<int> out;
+    AABB sweepBounds;
+    sweepBounds.min = glm::min(center, center + move) - glm::vec3(radius);
+    sweepBounds.max = glm::max(center, center + move) + glm::vec3(radius);
+
+    for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
+    {
+        AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[i]);
+        triBounds.min -= glm::vec3(radius);
+        triBounds.max += glm::vec3(radius);
+        if (overlaps(sweepBounds, triBounds))
+            out.push_back(i);
+    }
+    return out;
+}
+
+static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
+{
+    std::vector<glm::vec3> samples;
+
+    for (const Collider& collider : p.bodyColliders)
+    {
+        auto it = std::find_if(p.nodes.begin(), p.nodes.end(), [&](const TransformNode& node) {
+            return node.name == collider.name;
+        });
+        if (it == p.nodes.end())
+            continue;
+
+        const glm::mat4& xform = it->worldTransform;
+        for (const CollisionTriangle& tri : collider.triangles)
+        {
+            samples.push_back(glm::vec3(xform * glm::vec4(tri.a, 1.0f)));
+            samples.push_back(glm::vec3(xform * glm::vec4(tri.b, 1.0f)));
+            samples.push_back(glm::vec3(xform * glm::vec4(tri.c, 1.0f)));
+        }
+    }
+
+    return samples;
 }

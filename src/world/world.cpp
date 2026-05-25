@@ -119,6 +119,9 @@ void World::clear()
     blocks.clear();
     spheres.clear();
     chunks.clear();
+    planes.clear();
+    mesh = Mesh{};
+    collisionMesh.clear();
 }
 
 void World::finalize()
