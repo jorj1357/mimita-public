@@ -28,7 +28,7 @@ export default function ThreeCage() {
           </a>
 
           <a
-            href="https://www.tiktok.com/@3cagev3"
+            href="https://www.tiktok.com/@3cage"
             target="_blank"
             rel="noopener noreferrer"
             className="socialLink"
@@ -44,6 +44,7 @@ export default function ThreeCage() {
           >
             3cage : instagram
           </a>
+
 {/* 
           <a
             href="https://x.com/3cage"
