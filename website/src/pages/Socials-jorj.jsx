@@ -8,8 +8,146 @@ export default function Jorj() {
 
       <div className="socialsPage">
 
-        <h1 className="socialsTitle">
-          jorj1357
+         <h1 className="socialsTitle">
+          jorj1357 socials
+        </h1>
+
+        {/* SOCIAL LINKS */}
+
+        <div className="socialsLinks">
+
+          <a
+            href="https://www.youtube.com/@jorj1357"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : youtube
+          </a>
+
+          <a
+            href="https://open.spotify.com/artist/4Hdu6WV1G7zlNAs22Uv9Qn"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : spotify
+          </a>
+
+           <a
+            href="https://soundcloud.com/user-434584060"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : soundcloud
+          </a>
+
+          <a
+            href="https://discord.com/invite/3tvw4htzkj"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : discord
+          </a>
+
+          <a
+            href="https://www.tiktok.com/@jorj1357v3"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : tiktok
+          </a>
+
+          <a
+            href="https://www.instagram.com/realjorj1357/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : instagram
+               <br></br>
+        
+        <br></br>
+        
+        <br></br>
+          </a>
+
+          <a
+            href="https://x.com/jorj1357/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : X/xitter/twitter/X, The Everything App
+            
+     
+          </a>
+          
+
+           <a
+            href="https://jorj1357.bandcamp.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : bandcamp
+          </a>
+
+           <a
+            href="https://www.patreon.com/c/jorj1357v2"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : patreon (kinda  sucks)
+          </a>
+
+           <a
+            href="https://www.patreon.com/c/jorj1357v2"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : ko-fi (kinda  sucks double)
+          </a>
+
+          <a
+            href="https://osu.ppy.sh/users/15943191"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : osu! (UGHHHHHHHhhhhhhhhhh)
+          </a>
+
+            {/* https://www.patreon.com/c/jorj1357v2 */}
+            {/* https://x.com/jorj1357 */}
+
+           <a
+            href="https://linktr.ee/jorj1357"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="socialLink"
+          >
+            jorj1357 : linktree (thx linktree)
+          </a>
+
+          {/* https://jorj1357.bandcamp.com/ */}
+
+        </div>
+
+       
+
+         <h1 className="socialsTitle">
+             <br></br>
+
+        <br></br>
+        <br></br>
+        <br></br>
+          jorj1357: about
         </h1>
 
         <p
@@ -79,125 +217,6 @@ export default function Jorj() {
           --- --- --- --- --- --- --- --- --- 
           --- --- --- --- --- --- --- --- --- 
         </p>
-
-        {/* SOCIAL LINKS */}
-
-        <div className="socialsLinks">
-
-          <a
-            href="https://www.youtube.com/@jorj1357"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : youtube
-          </a>
-
-          <a
-            href="https://open.spotify.com/artist/4Hdu6WV1G7zlNAs22Uv9Qn"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : spotify
-          </a>
-
-           <a
-            href="https://soundcloud.com/user-434584060"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : soundcloud
-          </a>
-
-          <a
-            href="https://discord.com/invite/3tvw4htzkj"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : discord
-          </a>
-
-          <a
-            href="https://www.tiktok.com/@jorj1357v3"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : tiktok
-          </a>
-
-          <a
-            href="https://www.instagram.com/realjorj1357/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : instagram
-          </a>
-
-          <a
-            href="https://x.com/jorj1357/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : X/xitter/twitter/X, The Everything App
-          </a>
-
-           <a
-            href="https://jorj1357.bandcamp.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : bandcamp
-          </a>
-
-           <a
-            href="https://www.patreon.com/c/jorj1357v2"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : patreon (kinda  sucks)
-          </a>
-
-           <a
-            href="https://www.patreon.com/c/jorj1357v2"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : ko-fi (kinda  sucks double)
-          </a>
-
-          <a
-            href="https://osu.ppy.sh/users/15943191"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : osu! (UGHHHHHHHhhhhhhhhhh)
-          </a>
-
-            {/* https://www.patreon.com/c/jorj1357v2 */}
-            {/* https://x.com/jorj1357 */}
-
-           <a
-            href="https://linktr.ee/jorj1357"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            jorj1357 : linktree (thx linktree)
-          </a>
-
-          {/* https://jorj1357.bandcamp.com/ */}
-
-        </div>
 
       </div>
 

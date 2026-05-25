@@ -8,32 +8,7 @@ export default function ThreeCage() {
 
       <div className="socialsPage">
 
-        <h1 className="socialsTitle">
-          3cage
-        </h1>
-
-      <p
-        className="aboutSmall"
-        style={{
-          maxWidth: "700px",
-          margin: "0 auto 40px auto",
-          textAlign: "center",
-          lineHeight: "1.8"
-        }}
-      >
-
-        3cage is mainly an experiment in learning how to make interactive stuff,
-        <br></br>
-        <br></br>
-        that people genuinely care about at a much larger scale than jorj1357,
-        <br></br>
-        <br></br>
-        while improving at game/system design, content creation, and distribution 
-        <br></br>
-        <br></br>
-        as part of the larger MiMITA project.
-
-      </p>
+     
 
         {/* SOCIAL LINKS */}
 
@@ -53,7 +28,7 @@ export default function ThreeCage() {
           </a>
 
           <a
-            href="https://www.tiktok.com/@3cage"
+            href="https://www.tiktok.com/@3cagev3"
             target="_blank"
             rel="noopener noreferrer"
             className="socialLink"
@@ -62,7 +37,7 @@ export default function ThreeCage() {
           </a>
 
           <a
-            href="https://www.instagram.com/3cage/"
+            href="https://www.instagram.com/prod3cage/"
             target="_blank"
             rel="noopener noreferrer"
             className="socialLink"
@@ -164,6 +139,33 @@ export default function ThreeCage() {
           </div>
 
         </div>
+
+           <h1 className="socialsTitle">
+          3cage: about
+        </h1>
+
+      <p
+        className="aboutSmall"
+        style={{
+          maxWidth: "700px",
+          margin: "0 auto 40px auto",
+          textAlign: "center",
+          lineHeight: "1.8"
+        }}
+      >
+
+        3cage is mainly an experiment in learning how to make interactive stuff,
+        <br></br>
+        <br></br>
+        that people genuinely care about at a much larger scale than jorj1357,
+        <br></br>
+        <br></br>
+        while improving at game/system design, content creation, and distribution 
+        <br></br>
+        <br></br>
+        as part of the larger MiMITA project.
+
+      </p>
 
       </div>
 
