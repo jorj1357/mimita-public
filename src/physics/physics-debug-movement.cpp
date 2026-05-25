@@ -66,7 +66,7 @@ void applyDebugMovement(Player& p, GLFWwindow* win, const Camera& cam, float dt)
 
     // reset position
     if (glfwGetKey(win, GLFW_KEY_R))
-        p.pos = glm::vec3(0.0f, 0.0f, 50.0f);
+        p.pos = glm::vec3(0.0f, 0.0f, 80.0f);
 
     // stop velocity
     if (glfwGetKey(win, GLFW_KEY_V))

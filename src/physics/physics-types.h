@@ -15,10 +15,87 @@
 
 #pragma once
 #include <glm/glm.hpp>
+#include <glm/mat4x4.hpp>
+#include <string>
+#include <vector>
 
 struct Capsule
 {
     glm::vec3 a;
     glm::vec3 b;
     float r;
+};
+
+struct TransformNode
+{
+    std::string name;
+    int parent = -1;
+    std::vector<int> children;
+    glm::mat4 localTransform{1.0f};
+    glm::mat4 worldTransform{1.0f};
+};
+
+struct Force
+{
+    glm::vec3 vector{0.0f};
+    glm::vec3 point{0.0f};
+    float strength = 0.0f;
+};
+
+struct CollisionTriangle
+{
+    glm::vec3 a{0.0f};
+    glm::vec3 b{0.0f};
+    glm::vec3 c{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+};
+
+struct SweepHit
+{
+    bool hit = false;
+    float time = 1.0f;
+    glm::vec3 point{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    int triangleIndex = -1;
+    std::string colliderName;
+};
+
+struct Contact
+{
+    glm::vec3 point{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    float penetration = 0.0f;
+    int triangleIndex = -1;
+};
+
+struct Collider
+{
+    std::string name;
+    std::vector<CollisionTriangle> triangles;
+    glm::vec3 localMin{0.0f};
+    glm::vec3 localMax{0.0f};
+};
+
+struct PhysicsBody
+{
+    TransformNode transform;
+    std::vector<Collider> colliders;
+    std::vector<Force> forces;
+    glm::vec3 velocity{0.0f};
+    float mass = 1.0f;
+};
+
+struct CollisionMeshCache
+{
+    std::vector<CollisionTriangle> triangles;
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+
+    bool empty() const { return triangles.empty(); }
+    void clear()
+    {
+        triangles.clear();
+        boundsMin = glm::vec3(0.0f);
+        boundsMax = glm::vec3(0.0f);
+    }
 };
