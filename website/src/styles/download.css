@@ -1,0 +1,38 @@
+/* =========================
+   DOWNLOAD PAGE
+========================= */
+
+.downloadPage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 3vmin;
+  padding: 5vmin;
+  text-align: center;
+}
+
+.downloadTitle {
+  font-size: clamp(2rem, 5vmin, 6rem);
+  letter-spacing: 0.08em;
+}
+
+.downloadButton {
+  color: black;
+  background: white;
+  text-decoration: none;
+  padding: 1rem 2rem;
+  font-size: clamp(1rem, 2vmin, 2rem);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.downloadButton:hover {
+  opacity: 0.8;
+  transform: scale(1.05);
+}
+
+.downloadInfo {
+  opacity: 0.5;
+  font-size: clamp(0.8rem, 1.2vmin, 1.2rem);
+}

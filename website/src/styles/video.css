@@ -1,0 +1,41 @@
+/* =========================
+   VIDEO / MEDIA
+========================= */
+
+.logoVideo {
+  width: 300px;
+  max-width: 80vw;
+  height: auto;
+  border: 1px solid rgba(255,255,255,0.15);
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+  margin: 0 auto;
+}
+
+.aboutVideo {
+  width: min(90vw, 1100px);
+  margin-bottom: 5vmin;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.donateVideo {
+  width: min(90vw, 900px);
+  margin-bottom: 4vmin;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.downloadGif {
+  width: 360px;
+  max-width: 80vw;
+  height: auto;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  display: block;
+  margin: 0 auto 24px auto;
+}

@@ -1,0 +1,51 @@
+/* =========================
+   MOBILE OVERRIDES
+========================= */
+
+@media (max-width: 700px) {
+  .headerLeft {
+    gap: 0.8rem;
+  }
+
+  .headerMainLink {
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+  }
+
+  .menuButton {
+    font-size: 1.6rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero {
+    padding: 20px;
+  }
+
+  .mainLogo {
+    font-size: 3.2rem;
+  }
+
+  .tagline {
+    font-size: 0.9rem;
+    margin-bottom: 28px;
+  }
+
+  .homeCards {
+    gap: 10px;
+  }
+
+  .homeCard {
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .cardLogo {
+    border-radius: 12px;
+    margin-bottom: 8px;
+  }
+
+  .cardText {
+    font-size: 0.72rem;
+  }
+}

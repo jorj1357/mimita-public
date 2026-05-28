@@ -1,0 +1,19 @@
+/* =========================
+   UTILITIES
+========================= */
+
+.highlight {
+  color: #6aa9ff;
+}
+
+.red {
+  color: #ff6a6a;
+}
+
+.bold {
+  font-weight: 900;
+}
+
+.italic {
+  font-style: italic;
+}

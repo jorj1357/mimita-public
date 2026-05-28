@@ -33,7 +33,7 @@ export default function Home() {
           </h1>
 
           <p className="tagline">
-            movement is more important than aim
+            = "Movement is More Important Than Aim"
           </p>
 
           <div className="homeCards">
@@ -51,6 +51,10 @@ export default function Home() {
               <div className="cardText">
                 infinite dungeon slayer
               </div>
+
+              <div className="cardSubtext">
+                slay lots of monsters • roblox game
+              </div>
             </Link>
 
             <Link
@@ -66,10 +70,14 @@ export default function Home() {
               <div className="cardText">
                 3cage
               </div>
+
+              <div className="cardSubtext">
+                project for the roblox games i make
+              </div>
             </Link>
 
             <Link
-              to="/jorj1357"
+              to="/jorj"
               className="homeCard"
             >
               <img
@@ -80,6 +88,10 @@ export default function Home() {
 
               <div className="cardText">
                 jorj1357
+              </div>
+
+              <div className="cardSubtext">
+                music project / original internet thing
               </div>
             </Link>
 
