@@ -4,8 +4,6 @@ import Layout from "../components/Layout"
 
 import { Link } from "react-router-dom"
 
-import NewsletterBox from "../components/NewsletterBox"
-
 export default function Home() {
   return (
     <Layout>
@@ -13,58 +11,83 @@ export default function Home() {
       <main className="hero">
 
         <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        className="logoVideo"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          className="bgVideo"
         >
-
-        <source
-            src="/mimita-preview-small.mp4"
+          <source
+            src="/untitled-loop-small.mp4"
             type="video/mp4"
-        />
-
+          />
         </video>
 
-        <h1 className="title">
-          MiMITA: v1
-        </h1>
+        <div className="heroOverlay" />
+
+        <div className="heroContent">
+
+          <h1 className="mainLogo">
+            MiMITA
+          </h1>
+
+          <p className="tagline">
+            movement is more important than aim
+          </p>
+
+          <div className="homeCards">
+
+            <Link
+              to="https://www.roblox.com/games/126120811396387"
+              className="homeCard"
+            >
+              <img
+                src="/ids logo v1-optimized.webp"
+                alt="ids"
+                className="cardLogo"
+              />
+
+              <div className="cardText">
+                infinite dungeon slayer
+              </div>
+            </Link>
+
+            <Link
+              to="/3cage"
+              className="homeCard"
+            >
+              <img
+                src="/3cage pfp v2-optimized.webp"
+                alt="3cage"
+                className="cardLogo"
+              />
+
+              <div className="cardText">
+                3cage
+              </div>
+            </Link>
+
+            <Link
+              to="/jorj1357"
+              className="homeCard"
+            >
+              <img
+                src="/fake raptv post jorj rav maybe.png JORJ LOGO v8-optimized.webp"
+                alt="jorj1357"
+                className="cardLogo"
+              />
+
+              <div className="cardText">
+                jorj1357
+              </div>
+            </Link>
+
+          </div>
+
+        </div>
 
       </main>
-
-      <section className="aboutSection">
-
-        <h2 className="aboutBig">
-          movement is more important than aim
-        </h2>
-
-        <p className="aboutSmall">
-          copyleft-enabled experimental game engine
-        </p>
-
-            <div className="linkGroup">
-
-            <Link
-                to="/download"
-                className="bigLink"
-            >
-                download
-            </Link>
-
-            <Link
-                to="/about"
-                className="bigLink"
-            >
-                about
-            </Link>
-
-            </div>
-
-      </section>
-
-      <NewsletterBox />
 
     </Layout>
   )
