@@ -1,0 +1,130 @@
+/* =========================
+   HERO / HOME
+========================= */
+
+.hero {
+  position: relative;
+  flex: 1;
+  min-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 3vmin;
+  padding: 40px;
+}
+
+.logo {
+  width: 40vmin;
+  height: 40vmin;
+  object-fit: contain;
+}
+
+.title {
+  font-size: clamp(3rem, 8vmin, 10rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.bgVideo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.22;
+}
+
+.heroOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,0,0,0.1), rgba(0,0,0,0.75));
+}
+
+.heroContent {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 1100px;
+  text-align: center;
+}
+
+.mainLogo {
+  font-size: clamp(4rem, 10vw, 8rem);
+  font-weight: 900;
+  margin-bottom: 12px;
+  letter-spacing: -0.06em;
+}
+
+.tagline {
+  font-size: 1.15rem;
+  opacity: 0.75;
+  margin-bottom: 56px;
+}
+
+.homeCards {
+  display: grid;
+
+  grid-template-columns: 1fr;
+
+  gap: 28px;
+
+  width: 100%;
+  max-width: 220px;
+
+  margin: 0 auto;
+}
+
+.homeCard {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 30px;
+  padding: 22px;
+  text-decoration: none;
+  color: white;
+  backdrop-filter: blur(12px);
+  transition: transform 0.15s ease, background 0.15s ease, border 0.15s ease;
+}
+
+.homeCard:hover {
+  transform: translateY(-4px) scale(1.02);
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.16);
+}
+
+.cardLogo {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 22px;
+  margin-bottom: 18px;
+  background: rgba(255,255,255,0.04);
+}
+
+.cardText {
+  font-size: 1rem;
+  font-weight: 700;
+  opacity: 0.92;
+}
+
+.cardSubtext {
+  margin-top: 6px;
+
+  font-size: 0.78rem;
+
+  line-height: 1.4;
+
+  opacity: 0.48;
+
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+
+  .cardSubtext {
+    font-size: 0.58rem;
+  }
+
+}

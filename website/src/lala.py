@@ -2,9 +2,19 @@ from PIL import Image
 import os
 
 FILES = [
-    r"C:\important\branding-jorj1357-0mastery\fake raptv post jorj rav maybe.png JORJ LOGO v8.png",
-    r"C:\important\branding-jorj1357-0mastery\3cage pfp v2.png",
-    r"C:\important\branding-jorj1357-0mastery\ids logo v1.png",
+
+    # # main logos
+    # r"C:\important\branding-jorj1357-0mastery\fake raptv post jorj rav maybe.png JORJ LOGO v8.png",
+    # r"C:\important\branding-jorj1357-0mastery\3cage pfp v2.png",
+    # r"C:\important\branding-jorj1357-0mastery\ids logo v1.png",
+
+    # # website icons
+    # r"C:\important\mimita-priv-v8\website\public\tiktok icon v1.png",
+    # r"C:\important\mimita-priv-v8\website\public\instagram icon v1.png",
+    # r"C:\important\mimita-priv-v8\website\public\spotify logo v1.png",
+    # r"C:\important\mimita-priv-v8\website\public\discord icon v1.png",
+    # r"C:\important\mimita-priv-v8\website\public\youtube icon v1.png",
+    r"C:\Users\guita\OneDrive\Desktop\get teh burger thumb v1.png",
 ]
 
 MAX_SIZE = 1024
@@ -17,11 +27,13 @@ for path in FILES:
 
     img = Image.open(path)
 
+    # preserve transparency
     if img.mode not in ("RGBA", "LA"):
         img = img.convert("RGBA")
 
     width, height = img.size
 
+    # resize only if larger than max
     if width > MAX_SIZE or height > MAX_SIZE:
 
         scale = min(MAX_SIZE / width, MAX_SIZE / height)
@@ -56,4 +68,3 @@ for path in FILES:
 
 print()
 print("finished")
-

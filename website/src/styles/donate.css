@@ -1,0 +1,59 @@
+/* =========================
+   DONATE PAGE
+========================= */
+
+.donatePage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 3vmin;
+  padding: 6vmin;
+}
+
+.donateTitle {
+  font-size: clamp(2rem, 6vmin, 6rem);
+  letter-spacing: 0.08em;
+}
+
+.donateText {
+  width: min(90vw, 800px);
+  font-size: clamp(1rem, 1.8vmin, 1.5rem);
+  line-height: 1.8;
+  opacity: 0.9;
+}
+
+.donateButton {
+  display: inline-block;
+  color: white;
+  background: #2a1683;
+  font-weight: 900;
+  text-decoration: none;
+  padding: 1rem 2rem;
+  font-size: clamp(1rem, 2vmin, 2rem);
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.donateButton:hover {
+  opacity: 0.8;
+  background: #9277ff;
+  transform: scale(1.05);
+}
+
+.donateSmall {
+  opacity: 0.5;
+  font-size: clamp(0.8rem, 1.2vmin, 1.1rem);
+  line-height: 1.6;
+}
+
+.contributeSection {
+  margin-top: 70px;
+}
+
+.contributeSection .donateText {
+  margin-top: 18px;
+  margin-bottom: 0px;
+}

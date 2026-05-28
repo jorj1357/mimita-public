@@ -1,0 +1,16 @@
+/* =========================
+   APP LAYOUT
+========================= */
+
+.app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pageContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}

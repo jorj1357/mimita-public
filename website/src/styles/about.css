@@ -1,0 +1,66 @@
+/* =========================
+   ABOUT SECTION + ABOUT PAGE
+========================= */
+
+.aboutSection {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 3vmin;
+  padding-bottom: 12vmin;
+  text-align: center;
+}
+
+.aboutBig {
+  width: min(90vw, 900px);
+  font-size: clamp(2rem, 4vmin, 5rem);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.aboutSmall {
+  font-size: clamp(0.8rem, 1.3vmin, 1.4rem);
+  opacity: 0.6;
+  letter-spacing: 0.15em;
+}
+
+.aboutPage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6vmin;
+  text-align: center;
+}
+
+.aboutPageTitle {
+  font-size: clamp(2rem, 6vmin, 6rem);
+  letter-spacing: 0.08em;
+  margin-bottom: 5vmin;
+}
+
+.aboutPageContent {
+  width: min(90vw, 900px);
+  display: flex;
+  flex-direction: column;
+  gap: 2.5vmin;
+  font-size: clamp(1rem, 1.8vmin, 1.5rem);
+  line-height: 1.8;
+  opacity: 0.9;
+}
+
+.aboutList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1vmin;
+  opacity: 0.75;
+}
+
+.aboutQuote {
+  font-size: clamp(1.2rem, 2.5vmin, 2rem);
+  opacity: 0.9;
+  letter-spacing: 0.05em;
+}

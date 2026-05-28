@@ -8,13 +8,11 @@ export default function ThreeCage() {
 
       <div className="socialsPage">
 
-     
-
-        {/* SOCIAL LINKS */}
-
-          <h1 className="socialsTitle">
+        <h1 className="socialsTitle">
           3cage socials
         </h1>
+
+        {/* SOCIAL LINKS */}
 
         <div className="socialsLinks">
 
@@ -24,7 +22,15 @@ export default function ThreeCage() {
             rel="noopener noreferrer"
             className="socialLink"
           >
-            3cage : youtube
+            <img
+              src="/youtube icon v1-optimized.webp"
+              alt="youtube"
+              className="socialIcon"
+            />
+
+            <span>
+              3cage : youtube
+            </span>
           </a>
 
           <a
@@ -33,7 +39,15 @@ export default function ThreeCage() {
             rel="noopener noreferrer"
             className="socialLink"
           >
-            3cage : tiktok
+            <img
+              src="/tiktok icon v1-optimized.webp"
+              alt="tiktok"
+              className="socialIcon"
+            />
+
+            <span>
+              3cage : tiktok
+            </span>
           </a>
 
           <a
@@ -42,18 +56,16 @@ export default function ThreeCage() {
             rel="noopener noreferrer"
             className="socialLink"
           >
-            3cage : instagram
-          </a>
+            <img
+              src="/instagram icon v1-optimized.webp"
+              alt="instagram"
+              className="socialIcon"
+            />
 
-{/* 
-          <a
-            href="https://x.com/3cage"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="socialLink"
-          >
-            3CAGE : X / TWITTER
-          </a> */}
+            <span>
+              3cage : instagram
+            </span>
+          </a>
 
         </div>
 
@@ -66,7 +78,7 @@ export default function ThreeCage() {
         >
 
           <h2 className="socialsTitle">
-            ROBLOX Projects
+            roblox projects
           </h2>
 
           <div className="socialsLinks">
@@ -77,18 +89,32 @@ export default function ThreeCage() {
               rel="noopener noreferrer"
               className="socialLink"
             >
-              Knife Tag!
+              {/* <img
+                src="/get teh burger thumb v1-optimized.webp"
+                alt="knife tag"
+                className="socialIcon"
+              /> */}
+
+              <span>
+                knife tag!
+              </span>
             </a>
 
             <a
-            // put it as doesnt exist so it goes to the idk what it is page 
-            // not found apge 5 25 2026 
-              href="https://mimita.fun/does-not-exist"              
+              href="https://mimita.fun/does-not-exist"
               target="_blank"
               rel="noopener noreferrer"
               className="socialLink"
             >
-              Get The Burger!!!
+              <img
+                src="/get teh burger thumb v1-optimized.webp"
+                alt="get the burger"
+                className="socialIcon"
+              />
+
+              <span>
+                get the burger!!!
+              </span>
             </a>
 
             <a
@@ -97,14 +123,23 @@ export default function ThreeCage() {
               rel="noopener noreferrer"
               className="socialLink"
             >
-              INFINITE DUNGEON SLAYER!!!!!!
+              <img
+                src="/ids logo v1-optimized.webp"
+                alt="ids"
+                className="socialIcon"
+              />
+
+              <span>
+                infinite dungeon slayer!!!!!!
+              </span>
             </a>
 
           </div>
 
         </div>
 
-        {/* ROBLOX GROUPS */}
+
+        {/* GROUPS */}
 
         <div
           style={{
@@ -114,19 +149,10 @@ export default function ThreeCage() {
         >
 
           <h2 className="socialsTitle">
-            Groups
+            groups
           </h2>
 
           <div className="socialsLinks">
-
-            {/* <a
-              href="https://www.roblox.com/communities/YOUR_GROUP_ID"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="socialLink"
-            >
-              3CAGE GROUP
-            </a> */}
 
             <a
               href="https://www.roblox.com/communities/412637603"
@@ -134,42 +160,48 @@ export default function ThreeCage() {
               rel="noopener noreferrer"
               className="socialLink"
             >
-              "In Slop We Trust"
+              "in slop we trust"
             </a>
 
           </div>
 
         </div>
 
-           <h1 className="socialsTitle">
-          3cage: about
+        {/* ABOUT */}
+
+        <h1 className="socialsTitle">
+          3cage : about
         </h1>
 
-      <p
-        className="aboutSmall"
-        style={{
-          maxWidth: "700px",
-          margin: "0 auto 40px auto",
-          textAlign: "center",
-          lineHeight: "1.8"
-        }}
-      >
+        <p
+          className="aboutSmall"
+          style={{
+            maxWidth: "700px",
+            margin: "0 auto 40px auto",
+            textAlign: "center",
+            lineHeight: "1.8"
+          }}
+        >
 
-        3cage is mainly an experiment in learning how to make interactive stuff,
-        <br></br>
-        <br></br>
-        that people genuinely care about at a much larger scale than jorj1357,
-        <br></br>
-        <br></br>
-        while improving at game/system design, content creation, and distribution 
-        <br></br>
-        <br></br>
-        as part of the larger MiMITA project.
+          3cage is mainly an experiment in learning how to make interactive stuff,
 
-      </p>
+          <br /><br />
+
+          that people genuinely care about at a much larger scale than jorj1357,
+
+          <br /><br />
+
+          while improving at game/system design, content creation, and distribution
+
+          <br /><br />
+
+          as part of the larger MiMITA project.
+
+        </p>
 
       </div>
 
     </Layout>
   )
 }
+

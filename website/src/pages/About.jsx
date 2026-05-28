@@ -40,6 +40,11 @@ export default function About() {
                 editability,
                 and making things that just feel fun.
             </p>
+                <br></br>
+                
+                                <br></br>
+                                
+                                <br></br>
 
             <p>
                 The goal is to create gameplay that is:
@@ -49,11 +54,43 @@ export default function About() {
                 expressive,
                 physical,
                 and satisfying.
+
+                {/* <br></br>
+                Simultaneously, keep the engine open-source and updated so others can use/adapt it to their needs */}
             </p>
+                <br></br>
+                
+                                <br></br>
 
             <p>
                 MiMITA is inspired by games where simple systems create
                 deep emergent gameplay and weird mechanics naturally.
+                <br></br>
+
+                <br></br>
+                Super Smash Brothers Melee is a great example of what is intended:
+                <br></br>
+                                <br></br>
+
+                Wavedashing was never intended to be a mechanic, 
+                                <br></br>
+
+                but because of a short development time (~13 months!)
+                                <br></br>
+
+                and multiple systems interacting together,
+                                <br></br>
+                                <br></br>
+
+                wavedashing was discovered, mastered, and became part of the appeal of SSBM.
+
+                                <br></br>
+                                <br></br>
+                                <br></br>
+                                <br></br>
+                                <br></br>
+
+                {/* and that's what MiMITA aims to do  */}
             </p>
 
             <p>
@@ -67,6 +104,29 @@ export default function About() {
                 experiment,
                 <br></br>
                 and hang out in.
+                
+                                <br></br>
+                                <br></br>
+
+                Play should seamlessly flow into creation,
+                and creation should flow seamlessly into play. Press a button and instantly go into editor mode.
+  <br></br>
+                                <br></br>
+
+                MiMITA should also not stop at just the game engine.
+                  <br></br>
+                                <br></br>
+
+                Music, sound effects, hardware, software, 2d art, 3d art, movies, shows, shorts...
+                                
+                                    <br></br>
+                                                    <br></br>
+                    I believe these should all flow together as well
+                    <br></br>
+                                <br></br>
+
+                Play a game, auto clip a moment, add images/video overlays, auto upload/post in the background, continue playing
+
             </p>
 
             <p>
@@ -88,12 +148,23 @@ export default function About() {
                 anything.
             </p>
 
+
+                                <br></br>
+                                <br></br>
             <p>
-                Ideally,
+                And ideally,
                 people create here because they want to,
                 not because they are forced to survive.
+                                  <br></br>
+                                <br></br>
+
+                Relates to UBI and economics (mimitabux/mimitacoin/etc)
             </p>
 
+
+
+                                <br></br>
+                                <br></br>
             <p>
                 5 25 2026 - 
                 hi
