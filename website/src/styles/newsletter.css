@@ -1,0 +1,85 @@
+/* =========================
+   NEWSLETTER PAGE + NEWSLETTER BOX
+========================= */
+
+.newsletterPage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 3vmin;
+  padding: 6vmin;
+}
+
+.newsletterTitle {
+  font-size: clamp(2rem, 6vmin, 6rem);
+  letter-spacing: 0.08em;
+}
+
+.newsletterText {
+  width: min(90vw, 700px);
+  font-size: clamp(1rem, 1.8vmin, 1.5rem);
+  line-height: 1.8;
+  opacity: 0.9;
+}
+
+.newsletterForm {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 2vmin;
+}
+
+.newsletterInput {
+  width: 320px;
+  max-width: 80vw;
+  background: black;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 14px;
+  min-width: 300px;
+  font-size: 18px;
+  border-radius: 12px;
+}
+
+.newsletterInput::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+
+.newsletterButton {
+  background: white;
+  color: black;
+  border: none;
+  font-weight: 900;
+  padding: 14px 28px;
+  cursor: pointer;
+  font-size: 18px;
+  border-radius: 12px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.newsletterButton:hover {
+  opacity: 0.85;
+  transform: scale(1.03);
+}
+
+.newsletterSmall {
+  opacity: 0.5;
+  line-height: 1.6;
+  font-size: clamp(0.8rem, 1.2vmin, 1.1rem);
+}
+
+.newsletterBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 3px;
+}
+
+.newsletterMessage {
+  min-height: 24px;
+}

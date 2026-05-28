@@ -1,0 +1,41 @@
+/* =========================
+   TERMS PAGE
+========================= */
+
+.termsPage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6vmin;
+  text-align: center;
+}
+
+.termsTitle {
+  font-size: clamp(2rem, 6vmin, 6rem);
+  letter-spacing: 0.08em;
+  margin-bottom: 5vmin;
+}
+
+.termsContent {
+  width: min(90vw, 900px);
+  display: flex;
+  flex-direction: column;
+  gap: 2.5vmin;
+  font-size: clamp(1rem, 1.8vmin, 1.5rem);
+  line-height: 1.8;
+  opacity: 0.9;
+}
+
+.termsList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1vmin;
+  opacity: 0.8;
+}
+
+.termsSmall {
+  opacity: 0.5;
+  margin-top: 2vmin;
+}

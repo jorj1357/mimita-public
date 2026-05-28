@@ -1,0 +1,62 @@
+/* =========================
+   FEEDBACK PAGE
+========================= */
+
+.feedbackPage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 3vmin;
+  padding: 6vmin;
+}
+
+.feedbackTitle {
+  font-size: clamp(2rem, 6vmin, 6rem);
+  letter-spacing: 0.08em;
+}
+
+.feedbackText {
+  width: min(90vw, 700px);
+  font-size: clamp(1rem, 1.8vmin, 1.5rem);
+  line-height: 1.8;
+  opacity: 0.9;
+}
+
+.feedbackBox {
+  width: min(90vw, 900px);
+  height: 300px;
+  background: black;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  resize: vertical;
+  padding: 1.5rem;
+  font-size: clamp(1rem, 1.5vmin, 1.3rem);
+}
+
+.feedbackBox::placeholder {
+  color: rgba(255,255,255,0.35);
+}
+
+.feedbackButton {
+  background: white;
+  color: black;
+  border: none;
+  font-weight: 900;
+  padding: 1rem 2rem;
+  cursor: pointer;
+  font-size: clamp(1rem, 1.5vmin, 1.3rem);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.feedbackButton:hover {
+  opacity: 0.85;
+  transform: scale(1.03);
+}
+
+.feedbackSmall {
+  opacity: 0.5;
+  font-size: clamp(0.8rem, 1.2vmin, 1.1rem);
+}
