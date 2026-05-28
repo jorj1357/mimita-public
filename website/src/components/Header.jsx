@@ -71,6 +71,7 @@ export default function Header() {
 
               <Link to="/contribute" onClick={() => setOpen(false)}>
                 contribute
+                {/* donate */}
               </Link>
 
               <Link to="/download" onClick={() => setOpen(false)}>
@@ -112,7 +113,8 @@ export default function Header() {
         </Link>
 
         <Link className="headerMainLink" to="/contribute">
-          contribute
+          {/* contribute */}
+          donate
         </Link>
 
         <Link className="headerMainLink" to="/socials">

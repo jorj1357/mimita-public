@@ -32,7 +32,7 @@ export default function Contribute() {
 
         <p className="donateText">
 
-          MiMITA is an experimental creative world
+          MiMITA is an experimental creative project
           built around fun, movement, games,
           art, music, systems, and creation.
 
