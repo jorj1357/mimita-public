@@ -39,6 +39,29 @@ export default function Home() {
           <div className="homeCards">
 
             <Link
+              to="https://www.roblox.com/games/86943475641569"
+              className="homeCard"
+            >
+              <img
+                src="/ids pvp v2-compressed.jpg"
+                alt="ids pvp"
+                className="cardLogo"
+              />
+
+              <div className="cardText">
+                IDS: PvP
+              </div>
+
+              <div className="cardSubtext">
+                movement shooter, on roblox, 
+                
+                <br></br>
+                <br></br> 
+                good example of MiMITA PvP i want to make
+              </div>
+            </Link>
+
+            <Link
               to="https://www.roblox.com/games/126120811396387"
               className="homeCard"
             >
