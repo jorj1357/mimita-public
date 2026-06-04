@@ -17,6 +17,9 @@ void playFreezeHoldSound();
 void playFreezeEndSound();
 
 void playSound(const std::string& name, float volume = 1.0f);
+void playEventSound(const std::string& name, float volume = 1.0f);
 void playAirJumpSound();
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume = 1.0f);
 void playRandomFootstep();
+
+void playMenuClick();

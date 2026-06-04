@@ -657,7 +657,7 @@ void Player::updateProceduralAnimation(float dt)
     float phase = proceduralTime * (5.8f + move01 * 5.5f);
     float stride = std::sin(phase);
     float counterStride = std::sin(phase + 3.14159265f);
-    float bob = std::abs(std::sin(phase)) * 0.035f * move01;
+    float bob = std::abs(std::sin(phase)) * 0.055f * move01;
     float air = onGround ? 0.0f : 1.0f;
     float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
 
@@ -670,23 +670,25 @@ void Player::updateProceduralAnimation(float dt)
 
         if (part.name == "leftLeg")
         {
-            target.rotationEuler.x = stride * 25.0f * move01 - air * 16.0f;
+            target.rotationEuler.y = stride * 48.0f * move01 - air * 18.0f;
+            target.rotationEuler.x = -air * 8.0f;
             target.translation.z = -bob * 0.35f;
         }
         else if (part.name == "rightLeg")
         {
-            target.rotationEuler.x = counterStride * 25.0f * move01 - air * 16.0f;
+            target.rotationEuler.y = counterStride * 48.0f * move01 - air * 18.0f;
+            target.rotationEuler.x = -air * 8.0f;
             target.translation.z = -bob * 0.35f;
         }
         else if (part.name == "leftArm")
         {
-            target.rotationEuler.x = counterStride * 20.0f * move01 + air * 12.0f;
-            target.rotationEuler.z = 3.0f * move01;
+            target.rotationEuler.y = counterStride * 58.0f * move01 + air * 14.0f;
+            target.rotationEuler.z = 8.0f * move01;
         }
         else if (part.name == "rightArm")
         {
-            target.rotationEuler.x = stride * 20.0f * move01 + air * 12.0f;
-            target.rotationEuler.z = -3.0f * move01;
+            target.rotationEuler.y = stride * 58.0f * move01 + air * 14.0f;
+            target.rotationEuler.z = -8.0f * move01;
         }
         else if (part.name == "torso")
         {
@@ -740,7 +742,7 @@ OBB Player::getOBB() const
 void Player::updateAudio(float dt)
 {
     // simple and works but annoying  air jump 
-    if (didGroundJump) playSound("entity/player/jump",1.0f);
+    if (didGroundJump) playEventSound("entity/player/jump",1.0f);
     // if (didAirJump)    playSound("entity/player/doublejump",1.0f);
 
     // with 0.5 sec wait time from audio.cpp 
@@ -755,8 +757,8 @@ void Player::updateAudio(float dt)
     // if (didAirJump && !jumpHeldPrev)
     //     playSound("entity/player/doublejump",1.0f);
     
-    if (didDash)       playSound("entity/player/dash",1.0f);
-    if (didLand)       playSound("entity/player/land",1.0f);
+    if (didDash)       playEventSound("entity/player/dash",1.0f);
+    if (didLand)       playEventSound("entity/player/land",1.0f);
 
     glm::vec2 xy = glm::vec2(vel.x,vel.y) + dashVel;
     // if (onGround && glm::length(xy) > 0.1f) {
