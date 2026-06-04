@@ -695,13 +695,21 @@ void Player::updateProceduralAnimation(float dt)
         else if (part.name == "leftArm")
         {
             // target.rotationEuler.y = counterStride * 58.0f * move01 + air * 14.0f;
-            target.rotationEuler.z = counterStride * 58.0f * move01 + air * 14.0f;
+            // target.rotationEuler.z = counterStride * 58.0f * move01 + air * 14.0f;
+            // target.rotationEuler.x = counterStride * 108.0f * move01 + air * 14.0f;
+            // target.rotationEuler.y = counterStride * 108.0f * move01 + air * 14.0f;
+            target.rotationEuler.z = counterStride * 108.0f * move01 + air * 14.0f;
             target.rotationEuler.z = 8.0f * move01;
         }
         else if (part.name == "rightArm")
         {
             // target.rotationEuler.y = stride * 58.0f * move01 + air * 14.0f;
-            target.rotationEuler.z = stride * 58.0f * move01 + air * 14.0f;
+            // target.rotationEuler.z = stride * 58.0f * move01 + air * 14.0f;
+            // target.rotationEuler.x = stride * 108.0f * move01 + air * 14.0f;
+            // x = side to side 6 4 2026 
+            // y = rotating shoudler about shoulder
+            // target.rotationEuler.y = stride * 108.0f * move01 + air * 14.0f;
+            target.rotationEuler.z = stride * 108.0f * move01 + air * 14.0f;
             target.rotationEuler.z = -8.0f * move01;
         }
         else if (part.name == "torso")
