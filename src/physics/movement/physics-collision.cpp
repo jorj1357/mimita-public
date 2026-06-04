@@ -635,6 +635,7 @@ static void doGLBTriangleCollisions(
             cap = p.getCapsule();
         }
 
+        bool restartBodySamplePass = false;
         for (glm::vec3 sample : bodySamples)
         {
             for (int triIndex : candidates)
@@ -647,9 +648,8 @@ static void doGLBTriangleCollisions(
                 glm::vec3 correction = contact.normal * (contact.penetration + SURFACE_SLOP);
                 p.pos += correction;
                 DebugVis::recordDepenetration(p.pos - correction, correction, "body-triangle");
-                p.updateModelWorldTransforms();
-                bodySamples = collectPlayerBodyCollisionSamples(p);
                 moved = true;
+                restartBodySamplePass = true;
                 applyCollisionContact(
                     p,
                     groundedThisFrame,
@@ -668,7 +668,11 @@ static void doGLBTriangleCollisions(
                     contact.normal.y,
                     contact.normal.z
                 );
+                break;
             }
+
+            if (restartBodySamplePass)
+                break;
         }
 
         if (!moved)
