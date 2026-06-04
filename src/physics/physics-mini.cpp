@@ -68,8 +68,7 @@ static void physicsMainUpdate_Internal(
 ){
     dt = std::min(dt, 0.033f);
 
-    // const bool wasOnGround = p.wasOnGround;
-    const bool oldGrounded = p.onGround;
+    const bool wasOnGround = p.wasOnGround;
 
     // reset per-frame flags
     p.didGroundJump = false;
@@ -114,8 +113,6 @@ static void physicsMainUpdate_Internal(
         doCollisions(p, world, groundedThisFrame, subdt);
     }
 
-    p.onGround = groundedThisFrame;
-
     // jump AFTER grounded so we actually know it work
     doJump(p, jumpHeld, dt);
 
@@ -126,28 +123,64 @@ static void physicsMainUpdate_Internal(
     // that just exposes doReset(args)
     // e.g. doReset(freeze function)
     // or doReset(airjump function)
+    // reset dash when touching ground
     if (groundedThisFrame)
     {
         p.dashAvailable = true;
     }
 
-    if (p.onGround)
+    // --------------------------------------------------
+    // stable ground hysteresis
+    // --------------------------------------------------
+
+    // raw ground state from collision system
+    p.onGround = groundedThisFrame;
+
+    // how long since raw contact was lost
+    if (groundedThisFrame)
     {
-        p.airFrames = 0;
+        p.groundLostTimer = 0.0f;
     }
     else
     {
-        p.airFrames++;
+        p.groundLostTimer += dt;
     }
 
-    bool stableGrounded = (p.airFrames < 3);
+    // remain grounded briefly after losing contact
+    // this absorbs:
+    // - seams
+    // - tiny gaps
+    // - neighboring cubes
+    // - triangle switching
+    // - collision jitter
+    p.stableOnGround =
+        groundedThisFrame ||
+        (p.groundLostTimer < 0.08f);
 
-    if (!p.wasOnGround && stableGrounded)
+    // save previous airborne time BEFORE reset
+    float previousAirborneTime = p.airborneTimer;
+
+    // track stable airborne duration
+    if (p.stableOnGround)
     {
+        p.airborneTimer = 0.0f;
+    }
+    else
+    {
+        p.airborneTimer += dt;
+    }
+
+    // landing event only after real airtime
+    if (
+        !wasOnGround &&
+        p.stableOnGround &&
+        previousAirborneTime > 0.08f
+    ){
         p.didLand = true;
     }
 
-    p.wasOnGround = stableGrounded;
+    // store stable state for next frame
+    p.wasOnGround = p.stableOnGround;
 
     updateVisualFacingFromCamera(p, camForward, dt);
 

@@ -94,8 +94,12 @@ public:
 
     // -------- Audio helpers --------
     bool  wasOnGround = false;
+
+    float groundLostTimer = 0.0f;
+    float airborneTimer   = 0.0f;
+    bool  stableOnGround  = true;
+
     float footstepTimer = 0.0f;
-    int airFrames = 0;
 
     // -------- Rendering --------
     glm::vec3 meshScale  {1,1,1};

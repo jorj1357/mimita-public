@@ -148,7 +148,10 @@ int main()
         if (gameState == GAME_PLAYING)
         {
             DebugVis::beginCollisionFrame();
+            printf("lallaa 1 \n");
             physicsMainUpdate(player, world, input, dt);
+                        printf("lallaa 2 \n");
+
 
             applyDebugMovement(player, engine.window(), camera, dt);
 
@@ -161,7 +164,8 @@ int main()
             renderPlayer(player, camera);
             worldPassRan = true;
 
-            drawDebugStuff(player, camera, world);
+            // drawDebugStuff(player, camera, world);
+                        printf("lallaa 3 \n");
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
@@ -186,6 +190,9 @@ int main()
             uiEndFrame();
         }
 
+                                printf("lallaa 4 \n");
+
+
         if (gameState == GAME_MENU)
         {
             guiMain(engine.window(), gameState);
@@ -197,8 +204,11 @@ int main()
         }
 
         engine.endFrame();
+                                printf("lallaa 4 \n");
+
     }
 
     printf("[MAIN] loop ended\n");
+    
     return 0;
 }

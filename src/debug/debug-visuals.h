@@ -80,6 +80,7 @@ namespace DebugVis {
     void recordTriangle(const CollisionTriangle& tri, int triangleIndex = -1, const char* label = "");
 }
 
+
 // goes here or in world.h? idk jan 30 2026 
 struct ChunkDebug {
     glm::vec3 min;
