@@ -672,70 +672,163 @@ void Player::updateProceduralAnimation(float dt)
     float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
 
     for (BodyPart& part : bodyParts)
-    {
-        if (part.nodeIndex < 0 || part.nodeIndex >= (int)nodes.size())
-            continue;
+{
+    if (part.nodeIndex < 0 || part.nodeIndex >= (int)nodes.size())
+        continue;
 
-        ProceduralPose target;
+    ProceduralPose target;
 
         if (part.name == "leftLeg")
         {
+            // legs already work correctly with local Z swing
             // target.rotationEuler.y = stride * 48.0f * move01 - air * 18.0f;
+
             target.rotationEuler.z = stride * 48.0f * move01 - air * 18.0f;
+
+            // slight air tuck
             target.rotationEuler.x = -air * 8.0f;
+
+            // tiny vertical compression while walking
             target.translation.z = -bob * 0.35f;
         }
         else if (part.name == "rightLeg")
         {
             // target.rotationEuler.y = counterStride * 48.0f * move01 - air * 18.0f;
+
             target.rotationEuler.z = counterStride * 48.0f * move01 - air * 18.0f;
+
             target.rotationEuler.x = -air * 8.0f;
+
             target.translation.z = -bob * 0.35f;
         }
         else if (part.name == "leftArm")
         {
+            // IMPORTANT:
+            // arm local axes are different from legs
+            // in this rig X is the proper swing axis
+
+            // old tests:
             // target.rotationEuler.y = counterStride * 58.0f * move01 + air * 14.0f;
             // target.rotationEuler.z = counterStride * 58.0f * move01 + air * 14.0f;
             // target.rotationEuler.x = counterStride * 108.0f * move01 + air * 14.0f;
             // target.rotationEuler.y = counterStride * 108.0f * move01 + air * 14.0f;
-            target.rotationEuler.z = counterStride * 108.0f * move01 + air * 14.0f;
-            target.rotationEuler.z = 8.0f * move01;
+
+            // forward/back arm swing
+            // target.rotationEuler.x =
+            // 6 4  2026
+            // attemtp 2 lalala 
+            // ok this rotates like the shoulder like wagging ur finger left right is what it does
+            // attempt 3  z
+            // target.rotationEuler.y =
+            target.rotationEuler.z =
+                counterStride * 58.0f * move01 +
+                air * 14.0f;
+
+            // tiny outward shoulder angle
+            target.rotationEuler.z += 8.0f * move01;
         }
         else if (part.name == "rightArm")
         {
+            // old tests:
             // target.rotationEuler.y = stride * 58.0f * move01 + air * 14.0f;
             // target.rotationEuler.z = stride * 58.0f * move01 + air * 14.0f;
             // target.rotationEuler.x = stride * 108.0f * move01 + air * 14.0f;
-            // x = side to side 6 4 2026 
-            // y = rotating shoudler about shoulder
+
+            // x = proper arm swing axis on this rig
+            // y = twisting shoulder
+            // z = side lean / flare
+
             // target.rotationEuler.y = stride * 108.0f * move01 + air * 14.0f;
-            target.rotationEuler.z = stride * 108.0f * move01 + air * 14.0f;
-            target.rotationEuler.z = -8.0f * move01;
+
+            // forward/back arm swing
+            // target.rotationEuler.x =
+            // test 2  
+            // 6 4 2026
+            // bc x swings left right across the torso 
+            // target.rotationEuler.y =
+            target.rotationEuler.z =
+                stride * 58.0f * move01 +
+                air * 14.0f;
+
+            // tiny outward shoulder angle
+            target.rotationEuler.z += -8.0f * move01;
         }
         else if (part.name == "torso")
         {
             target.translation.z = bob;
+
+            // old:
             // target.rotationEuler.x = -6.0f * move01 - 10.0f * dash01 + accelLean;
-            target.rotationEuler.z = -6.0f * move01 - 10.0f * dash01 + accelLean;
-            target.rotationEuler.z = std::clamp(dashVel.x * -0.18f + dashVel.y * 0.08f, -8.0f, 8.0f);
+
+            // torso forward lean
+            target.rotationEuler.x =
+                -6.0f * move01 -
+                10.0f * dash01 +
+                accelLean;
+
+            // torso side tilt from dash
+            target.rotationEuler.z +=
+                std::clamp(
+                    dashVel.x * -0.18f +
+                    dashVel.y * 0.08f,
+                    -8.0f,
+                    8.0f
+                );
         }
         else if (part.name == "head")
         {
             target.translation.z = bob * 0.35f;
+
+            // old:
             // target.rotationEuler.x = 3.0f * move01 + 5.0f * dash01 - accelLean * 0.5f;
-            target.rotationEuler.z = 3.0f * move01 + 5.0f * dash01 - accelLean * 0.5f;
-            target.rotationEuler.z = std::clamp(dashVel.x * 0.08f - dashVel.y * 0.04f, -4.0f, 4.0f);
+
+            // slight counterbalance to torso
+            target.rotationEuler.x =
+                3.0f * move01 +
+                5.0f * dash01 -
+                accelLean * 0.5f;
+
+            // subtle side stabilization
+            target.rotationEuler.z +=
+                std::clamp(
+                    dashVel.x * 0.08f -
+                    dashVel.y * 0.04f,
+                    -4.0f,
+                    4.0f
+                );
         }
 
         if (!onGround)
-            target.translation.z += (part.name == "torso" || part.name == "head") ? 0.015f : 0.0f;
+        {
+            target.translation.z +=
+                (part.name == "torso" || part.name == "head")
+                ? 0.015f
+                : 0.0f;
+        }
 
-        part.pose.translation = springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
-        part.pose.rotationEuler = springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
+        part.pose.translation =
+            springVec3(
+                part.translationSpring,
+                target.translation,
+                90.0f,
+                16.0f,
+                dt
+            );
+
+        part.pose.rotationEuler =
+            springVec3(
+                part.rotationSpring,
+                target.rotationEuler,
+                80.0f,
+                14.0f,
+                dt
+            );
 
         nodes[part.nodeIndex].localTransform =
-            restLocalTransforms[part.nodeIndex] * poseMatrix(part.pose);
+            restLocalTransforms[part.nodeIndex] *
+            poseMatrix(part.pose);
     }
+    
 
     updateModelWorldTransforms();
 }
