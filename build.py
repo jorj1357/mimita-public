@@ -15,6 +15,7 @@
 #
 # python build.py
 # python build.py release
+# python build.py build-only
 # python build.py clean
 #
 
@@ -48,9 +49,13 @@ EXE_NAME = "mimita.exe"
 # ============================================================
 
 MODE = "debug"
+RUN_AFTER_BUILD = True
 
 if len(sys.argv) > 1:
     MODE = sys.argv[1].lower()
+    if MODE in ("build-only", "compile-only", "norun", "no-run"):
+        MODE = "debug"
+        RUN_AFTER_BUILD = False
 
 if MODE == "release":
     CXX_FLAGS = [
@@ -316,6 +321,9 @@ print()
 print("Compiled:", compiled_count)
 print("Skipped :", skipped_count)
 print("Time    : %.2f sec" % elapsed)
+
+if not RUN_AFTER_BUILD:
+    sys.exit(0)
 
 print()
 print("Running MiMITA...")

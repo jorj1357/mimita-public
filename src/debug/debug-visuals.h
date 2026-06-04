@@ -43,6 +43,7 @@ namespace DebugVis {
     bool lightingOnly();
     bool texturesOnly();
     bool aoOnly();
+    bool playerArchitecture();
     int shaderDebugView();
 
     const DebugColors& colors();

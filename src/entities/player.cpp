@@ -295,6 +295,16 @@ glm::mat4 poseMatrix(const ProceduralPose& pose)
     return m;
 }
 
+glm::quat yawRotation(float yawDegrees)
+{
+    return glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+}
+
+glm::mat4 transformMatrix(const glm::vec3& position, const glm::quat& rotation)
+{
+    return glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation);
+}
+
 glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float stiffness, float damping, float dt)
 {
     float safeDt = std::min(dt, 0.05f);
@@ -552,6 +562,16 @@ void Player::reset()
         part.translationSpring = SpringState{};
         part.rotationSpring = SpringState{};
     }
+
+    for (PhysicalBodyPart& part : physicalBody.parts)
+    {
+        part.pose = ProceduralPose{};
+        part.translationSpring = SpringState{};
+        part.rotationSpring = SpringState{};
+    }
+
+    syncLegacyStateToLayers();
+    updateModelWorldTransforms();
 }
 
 bool Player::loadModel(const char* path)
@@ -581,6 +601,12 @@ bool Player::loadModel(const char* path)
     bodyColliders.clear();
     bodyParts.clear();
     bodyPartMeshes.clear();
+    perfectPoseSkeleton.nodes.clear();
+    perfectPoseSkeleton.nodes.resize(model.nodes.size());
+    perfectPoseSkeleton.restLocalTransforms.clear();
+    perfectPoseSkeleton.restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
+    physicalBody.parts.clear();
+    physicalBody.partMeshes.clear();
 
     for (int i = 0; i < (int)model.nodes.size(); ++i)
     {
@@ -592,9 +618,19 @@ bool Player::loadModel(const char* path)
         node.worldTransform = node.localTransform;
         node.children = gltfNode.children;
 
+        TransformNode& poseNode = perfectPoseSkeleton.nodes[i];
+        poseNode.name = gltfNode.name;
+        poseNode.localTransform = node.localTransform;
+        poseNode.worldTransform = node.worldTransform;
+        poseNode.children = node.children;
+        perfectPoseSkeleton.restLocalTransforms[i] = node.localTransform;
+
         for (int child : gltfNode.children)
             if (child >= 0 && child < (int)nodes.size())
+            {
                 nodes[child].parent = i;
+                perfectPoseSkeleton.nodes[child].parent = i;
+            }
     }
 
     for (int i = 0; i < (int)model.nodes.size(); ++i)
@@ -614,9 +650,16 @@ bool Player::loadModel(const char* path)
         part.collider = collider;
         bodyParts.push_back(part);
 
+        PhysicalBodyPart physicalPart;
+        physicalPart.name = name;
+        physicalPart.nodeIndex = i;
+        physicalPart.collider = collider;
+        physicalBody.parts.push_back(physicalPart);
+
         Mesh bodyMesh;
         appendNodeRenderMesh(model, i, bodyMesh);
         bodyPartMeshes.push_back(bodyMesh);
+        physicalBody.partMeshes.push_back(bodyMesh);
 
         Debug::log(
             Debug::Category::GLB,
@@ -635,25 +678,63 @@ bool Player::loadModel(const char* path)
     return modelLoaded;
 }
 
+void Player::syncLegacyStateToLayers()
+{
+    origin.position = pos;
+    origin.rotation = yawRotation(yaw);
+
+    movementCapsule.position = origin.position;
+    movementCapsule.rotation = origin.rotation;
+    movementCapsule.velocity = vel;
+    movementCapsule.dashVelocity = dashVel;
+    movementCapsule.radius = PLAYER_RADIUS;
+    movementCapsule.height = PLAYER_HEIGHT;
+    movementCapsule.onGround = onGround;
+}
+
+void Player::syncLayersToLegacyState()
+{
+    pos = origin.position;
+    vel = movementCapsule.velocity;
+    dashVel = movementCapsule.dashVelocity;
+    onGround = movementCapsule.onGround;
+}
+
 void Player::updateModelWorldTransforms()
 {
-    glm::mat4 rootWorld =
-        glm::translate(glm::mat4(1.0f), pos) *
-        glm::rotate(glm::mat4(1.0f), glm::radians(yaw), glm::vec3(0,0,1));
+    syncLegacyStateToLayers();
 
-    for (int i = 0; i < (int)nodes.size(); ++i)
+    glm::mat4 rootWorld = transformMatrix(movementCapsule.position, movementCapsule.rotation);
+
+    for (int i = 0; i < (int)perfectPoseSkeleton.nodes.size(); ++i)
     {
-        if (nodes[i].parent < 0)
-            nodes[i].worldTransform = rootWorld * nodes[i].localTransform;
+        TransformNode& poseNode = perfectPoseSkeleton.nodes[i];
+        if (poseNode.parent < 0)
+            poseNode.worldTransform = rootWorld * poseNode.localTransform;
         else
-            nodes[i].worldTransform = nodes[nodes[i].parent].worldTransform * nodes[i].localTransform;
+            poseNode.worldTransform = perfectPoseSkeleton.nodes[poseNode.parent].worldTransform * poseNode.localTransform;
+
+        if (i < (int)nodes.size())
+        {
+            nodes[i].localTransform = poseNode.localTransform;
+            nodes[i].worldTransform = poseNode.worldTransform;
+        }
+    }
+
+    for (PhysicalBodyPart& part : physicalBody.parts)
+    {
+        if (part.nodeIndex >= 0 && part.nodeIndex < (int)perfectPoseSkeleton.nodes.size())
+            part.worldTransform = perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform;
     }
 }
 
 void Player::updateProceduralAnimation(float dt)
 {
-    if (nodes.empty() || restLocalTransforms.size() != nodes.size())
+    if (perfectPoseSkeleton.nodes.empty() ||
+        perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
         return;
+
+    syncLegacyStateToLayers();
 
     proceduralTime += dt;
 
@@ -671,9 +752,9 @@ void Player::updateProceduralAnimation(float dt)
     float air = onGround ? 0.0f : 1.0f;
     float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
 
-    for (BodyPart& part : bodyParts)
+    for (PhysicalBodyPart& part : physicalBody.parts)
 {
-    if (part.nodeIndex < 0 || part.nodeIndex >= (int)nodes.size())
+    if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size())
         continue;
 
     ProceduralPose target;
@@ -761,8 +842,10 @@ void Player::updateProceduralAnimation(float dt)
             // target.rotationEuler.x = -6.0f * move01 - 10.0f * dash01 + accelLean;
 
             // torso forward lean
-            target.rotationEuler.x =
-                -6.0f * move01 -
+            // target.rotationEuler.x =
+            target.rotationEuler.z =
+                // -6.0f * move01 -
+                -60.0f * move01 -
                 10.0f * dash01 +
                 accelLean;
 
@@ -783,8 +866,10 @@ void Player::updateProceduralAnimation(float dt)
             // target.rotationEuler.x = 3.0f * move01 + 5.0f * dash01 - accelLean * 0.5f;
 
             // slight counterbalance to torso
-            target.rotationEuler.x =
-                3.0f * move01 +
+            // target.rotationEuler.x =
+            target.rotationEuler.z =
+                // 3.0f * move01 +
+                30.0f * move01 +
                 5.0f * dash01 -
                 accelLean * 0.5f;
 
@@ -824,9 +909,19 @@ void Player::updateProceduralAnimation(float dt)
                 dt
             );
 
-        nodes[part.nodeIndex].localTransform =
-            restLocalTransforms[part.nodeIndex] *
+        perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
+            perfectPoseSkeleton.restLocalTransforms[part.nodeIndex] *
             poseMatrix(part.pose);
+
+        for (BodyPart& legacyPart : bodyParts)
+        {
+            if (legacyPart.nodeIndex != part.nodeIndex)
+                continue;
+            legacyPart.pose = part.pose;
+            legacyPart.translationSpring = part.translationSpring;
+            legacyPart.rotationSpring = part.rotationSpring;
+            break;
+        }
     }
     
 
@@ -836,11 +931,15 @@ void Player::updateProceduralAnimation(float dt)
 Capsule Player::getCapsule() const
 {
     Capsule c;
-    c.r = PLAYER_RADIUS;
+    c.r = movementCapsule.radius > 0.0f ? movementCapsule.radius : PLAYER_RADIUS;
 
-    float half = PLAYER_HEIGHT * 0.5f;
-    c.a = pos - glm::vec3(0,0,half - c.r);
-    c.b = pos + glm::vec3(0,0,half - c.r);
+    float height = movementCapsule.height > 0.0f ? movementCapsule.height : PLAYER_HEIGHT;
+    float half = height * 0.5f;
+    glm::vec3 center = movementCapsule.position;
+    if (glm::length(center - pos) > 0.0001f)
+        center = pos;
+    c.a = center - glm::vec3(0,0,half - c.r);
+    c.b = center + glm::vec3(0,0,half - c.r);
 
     return c;
 }
@@ -900,7 +999,7 @@ void Player::render(unsigned int shader,
 {
     const_cast<Player*>(this)->updateModelWorldTransforms();
 
-    if (modelLoaded && !bodyParts.empty() && bodyPartMeshes.size() == bodyParts.size())
+    if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
         glUseProgram(shader);
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
@@ -909,16 +1008,16 @@ void Player::render(unsigned int shader,
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
         glActiveTexture(GL_TEXTURE0);
-        for (size_t i = 0; i < bodyParts.size(); ++i)
+        for (size_t i = 0; i < physicalBody.parts.size(); ++i)
         {
-            const BodyPart& part = bodyParts[i];
-            const Mesh& mesh = bodyPartMeshes[i];
-            if (part.nodeIndex < 0 || part.nodeIndex >= (int)nodes.size() || mesh.verts.empty())
+            const PhysicalBodyPart& part = physicalBody.parts[i];
+            const Mesh& mesh = physicalBody.partMeshes[i];
+            if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
                 continue;
 
             uploadBodyPartMesh(mesh);
 
-            const glm::mat4& model = nodes[part.nodeIndex].worldTransform;
+            const glm::mat4& model = part.worldTransform;
             glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
 
             for (const Mesh::Batch& batch : mesh.batches)
