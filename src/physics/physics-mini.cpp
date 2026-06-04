@@ -68,7 +68,8 @@ static void physicsMainUpdate_Internal(
 ){
     dt = std::min(dt, 0.033f);
 
-    const bool wasOnGround = p.wasOnGround;
+    // const bool wasOnGround = p.wasOnGround;
+    const bool oldGrounded = p.onGround;
 
     // reset per-frame flags
     p.didGroundJump = false;
@@ -130,10 +131,23 @@ static void physicsMainUpdate_Internal(
         p.dashAvailable = true;
     }
 
-    if (!wasOnGround && p.onGround) {
+    if (p.onGround)
+    {
+        p.airFrames = 0;
+    }
+    else
+    {
+        p.airFrames++;
+    }
+
+    bool stableGrounded = (p.airFrames < 3);
+
+    if (!p.wasOnGround && stableGrounded)
+    {
         p.didLand = true;
     }
-    p.wasOnGround = p.onGround;
+
+    p.wasOnGround = stableGrounded;
 
     updateVisualFacingFromCamera(p, camForward, dt);
 
