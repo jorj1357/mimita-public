@@ -146,7 +146,7 @@ int main()
             renderPlayer(player, camera);
             worldPassRan = true;
 
-            // drawDebugStuff(player, camera, world);
+            drawDebugStuff(player, camera, world);
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
