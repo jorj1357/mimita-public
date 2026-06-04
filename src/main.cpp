@@ -164,7 +164,7 @@ int main()
             renderPlayer(player, camera);
             worldPassRan = true;
 
-            // drawDebugStuff(player, camera, world);
+            drawDebugStuff(player, camera, world);
                         printf("lallaa 3 \n");
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
