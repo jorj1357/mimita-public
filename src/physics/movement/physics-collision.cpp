@@ -22,6 +22,7 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
+#include "debug/debug-visuals.h"
 
 // =====================================================
 // DEBUG TOGGLE
@@ -74,6 +75,51 @@ static std::vector<int> gatherGLBTrianglesForSphere(
 );
 
 static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
+static void applyTouchResets(Player& p);
+
+static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
+{
+    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+    float into = glm::dot(totalVel, normal);
+    if (into >= -0.0001f)
+        return;
+
+    glm::vec3 resolved = totalVel - normal * into;
+    p.vel = resolved;
+    p.dashVel = glm::vec2(0.0f);
+}
+
+static inline void applyCollisionContact(
+    Player& p,
+    bool& groundedThisFrame,
+    const glm::vec3& normal,
+    glm::vec3 point,
+    float penetration,
+    int triangleIndex,
+    const char* label
+) {
+    clampVelocityAgainstNormal(p, normal);
+
+    if (normal.z > 0.35f)
+    {
+        groundedThisFrame = true;
+        applyTouchResets(p);
+        if (p.vel.z < 0.0f)
+            p.vel.z = 0.0f;
+        DebugVis::recordGroundNormal(point, normal, label);
+    }
+    else if (normal.z < -0.35f)
+    {
+        if (p.vel.z > 0.0f)
+            p.vel.z = 0.0f;
+    }
+    else
+    {
+        applyTouchResets(p);
+    }
+
+    DebugVis::recordContact(point, normal, penetration, triangleIndex, label);
+}
 
 // =====================================================
 // AABB helpers (TEMP until capsule collisions v3)
@@ -384,9 +430,10 @@ static bool capsuleVsBlock(
         else
             normal = {0,0,1};
 
+        constexpr float PUSH_OUT_MARGIN = 0.002f;
         float penetration = r - dist;
 
-        correction = normal * penetration;
+        correction = normal * (penetration + PUSH_OUT_MARGIN);
 
         // if (normal.z > 0.5f)
         // set to 0.3f to make more things count as grounded? idk mar 7 2026
@@ -470,6 +517,10 @@ static void doGLBTriangleCollisions(
         earliest.time = 1.0f;
 
         cap = p.getCapsule();
+        DebugVis::recordMovement(p.pos, move, "glb-substep-move");
+        DebugVis::recordSweep(cap.a, cap.a + move, "capsule-bottom");
+        DebugVis::recordSweep((cap.a + cap.b) * 0.5f, (cap.a + cap.b) * 0.5f + move, "capsule-mid");
+        DebugVis::recordSweep(cap.b, cap.b + move, "capsule-top");
         for (int triIndex : candidates)
         {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
@@ -507,39 +558,23 @@ static void doGLBTriangleCollisions(
             break;
 
         p.pos += earliest.normal * SURFACE_SLOP;
+        DebugVis::recordHit(earliest.point, earliest.normal, earliest.triangleIndex, earliest.colliderName.c_str());
+        DebugVis::recordTriangle(world.collisionMesh.triangles[earliest.triangleIndex], earliest.triangleIndex, "sweep-hit-triangle");
         move -= stepMove;
-
-        if (earliest.normal.z > 0.35f)
-        {
-            groundedThisFrame = true;
-            applyTouchResets(p);
-            if (p.vel.z < 0.0f)
-                p.vel.z = 0.0f;
-        }
-        else if (earliest.normal.z < -0.35f)
-        {
-            if (p.vel.z > 0.0f)
-                p.vel.z = 0.0f;
-        }
-        else
-        {
-            applyTouchResets(p);
-        }
 
         float vn = glm::dot(move, earliest.normal);
         if (vn < 0.0f)
             move -= earliest.normal * vn;
 
-        glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
-        float velIntoSurface = glm::dot(totalVel, earliest.normal);
-        if (velIntoSurface < 0.0f)
-        {
-            glm::vec3 resolved = totalVel - earliest.normal * velIntoSurface;
-            p.vel.x = resolved.x;
-            p.vel.y = resolved.y;
-            p.vel.z = resolved.z;
-            p.dashVel = glm::vec2(0.0f);
-        }
+        applyCollisionContact(
+            p,
+            groundedThisFrame,
+            earliest.normal,
+            earliest.point,
+            SURFACE_SLOP,
+            earliest.triangleIndex,
+            earliest.colliderName.c_str()
+        );
 
         PHYS_LOG(
             "[PHYS][GLB HIT] tri=%d t=%.3f normal=(%.2f %.2f %.2f) point=(%.2f %.2f %.2f)\n",
@@ -561,10 +596,13 @@ static void doGLBTriangleCollisions(
     p.updateModelWorldTransforms();
     bodySamples = collectPlayerBodyCollisionSamples(p);
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
-    for (int cleanupIter = 0; cleanupIter < 4; ++cleanupIter)
+    for (int cleanupIter = 0; cleanupIter < 8; ++cleanupIter)
     {
         bool moved = false;
+        p.updateModelWorldTransforms();
         cap = p.getCapsule();
+        bodySamples = collectPlayerBodyCollisionSamples(p);
+        candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
         for (int triIndex : candidates)
         {
             Contact contact;
@@ -573,20 +611,17 @@ static void doGLBTriangleCollisions(
 
             glm::vec3 correction = contact.normal * (contact.penetration + SURFACE_SLOP);
             p.pos += correction;
+            DebugVis::recordDepenetration(p.pos - correction, correction, "capsule-triangle");
             moved = true;
-
-            if (contact.normal.z > 0.35f)
-            {
-                groundedThisFrame = true;
-                applyTouchResets(p);
-                if (p.vel.z < 0.0f)
-                    p.vel.z = 0.0f;
-            }
-            else if (contact.normal.z < -0.35f)
-            {
-                if (p.vel.z > 0.0f)
-                    p.vel.z = 0.0f;
-            }
+            applyCollisionContact(
+                p,
+                groundedThisFrame,
+                contact.normal,
+                contact.point,
+                contact.penetration,
+                contact.triangleIndex,
+                "capsule-triangle"
+            );
 
             PHYS_LOG(
                 "[PHYS][GLB CONTACT] tri=%d pen=%.4f normal=(%.2f %.2f %.2f)\n",
@@ -609,18 +644,21 @@ static void doGLBTriangleCollisions(
                     continue;
 
                 contact.triangleIndex = triIndex;
-                p.pos += contact.normal * (contact.penetration + SURFACE_SLOP);
+                glm::vec3 correction = contact.normal * (contact.penetration + SURFACE_SLOP);
+                p.pos += correction;
+                DebugVis::recordDepenetration(p.pos - correction, correction, "body-triangle");
                 p.updateModelWorldTransforms();
                 bodySamples = collectPlayerBodyCollisionSamples(p);
                 moved = true;
-
-                if (contact.normal.z > 0.35f)
-                {
-                    groundedThisFrame = true;
-                    applyTouchResets(p);
-                    if (p.vel.z < 0.0f)
-                        p.vel.z = 0.0f;
-                }
+                applyCollisionContact(
+                    p,
+                    groundedThisFrame,
+                    contact.normal,
+                    contact.point,
+                    contact.penetration,
+                    contact.triangleIndex,
+                    "body-triangle"
+                );
 
                 PHYS_LOG(
                     "[PHYS][BODY CONTACT] tri=%d pen=%.4f normal=(%.2f %.2f %.2f)\n",
@@ -687,6 +725,7 @@ void doCollisions(
     {
         float earliest = 1.0f;
         glm::vec3 hitNormal(0.0f);
+        glm::vec3 sweepStart = p.pos;
 
         for (Block* b : nearbyBlocks)
         {
@@ -709,6 +748,10 @@ void doCollisions(
         }
 
         // move to first hit point (or full move if none)
+        DebugVis::recordMovement(p.pos, move, "block-substep-move");
+        DebugVis::recordSweep(cap.a, cap.a + move, "block-capsule-bottom");
+        DebugVis::recordSweep((cap.a + cap.b) * 0.5f, (cap.a + cap.b) * 0.5f + move, "block-capsule-mid");
+        DebugVis::recordSweep(cap.b, cap.b + move, "block-capsule-top");
         glm::vec3 stepMove = move * earliest;
         p.pos += stepMove;
         cap = p.getCapsule();
@@ -719,6 +762,7 @@ void doCollisions(
 
         // remaining movement after reaching hit point
         move -= stepMove;
+        DebugVis::recordHit(p.pos, hitNormal, -1, "block-sweep");
 
         // idk if we put this here or where wherever idk mar 7 2026 
         // ==========================
@@ -850,6 +894,7 @@ void doCollisions(
 
                 p.vel.z = 0.0f;
             }
+            DebugVis::recordGroundNormal(p.pos, hitNormal, "block-ground");
         }
         else if (hitNormal.z < 0.0f)
         {
@@ -862,8 +907,12 @@ void doCollisions(
         if (vn < 0.0f)
             move -= hitNormal * vn;
 
+        clampVelocityAgainstNormal(p, hitNormal);
+
         // tiny nudge out of the surface to avoid re-hitting the exact same plane
-        p.pos += hitNormal * 0.001f;
+        glm::vec3 nudge = hitNormal * 0.002f;
+        p.pos += nudge;
+        DebugVis::recordDepenetration(sweepStart + stepMove, nudge, "block-sweep-margin");
     }
 
     // fallback overlap cleanup for tiny penetrations / resting contact
@@ -871,41 +920,58 @@ void doCollisions(
     // just put cap mar 7 2026 
     cap = p.getCapsule();
 
-    for (Block* b : nearbyBlocks)
+    for (int recoverIter = 0; recoverIter < 8; ++recoverIter)
     {
-        if (!b || b->isSlope)
-            continue;
+        bool moved = false;
+        cap = p.getCapsule();
 
-        AABB ba = makeBlockAABB(*b);
-
-        glm::vec3 correction;
-        bool grounded = false;
-
-        if (capsuleVsBlock(cap, ba, correction, grounded))
+        for (Block* b : nearbyBlocks)
         {
-            p.pos += correction;
+            if (!b || b->isSlope)
+                continue;
 
-            if (grounded)
+            AABB ba = makeBlockAABB(*b);
+
+            glm::vec3 correction;
+            bool grounded = false;
+
+            if (capsuleVsBlock(cap, ba, correction, grounded))
             {
-                groundedThisFrame = true;
+                glm::vec3 before = p.pos;
+                glm::vec3 normal = glm::length(correction) > 0.000001f ? glm::normalize(correction) : glm::vec3(0,0,1);
+                p.pos += correction;
+                moved = true;
 
-                // --------------------------------------------------
-                // TOUCH OBJECT RESET (overlap correction)
-                // --------------------------------------------------
+                DebugVis::recordDepenetration(before, correction, "block-overlap");
+                DebugVis::recordContact(before + correction, normal, glm::length(correction), -1, "block-overlap");
 
-                p.airJumpsLeft = AIR_JUMPS_MAX;
-                p.dashAvailable = true;
+                if (grounded)
+                {
+                    groundedThisFrame = true;
 
-                // future abilities
-                p.groundReturnAvailable = true;
-                p.freezeAvailable = true;
+                    // --------------------------------------------------
+                    // TOUCH OBJECT RESET (overlap correction)
+                    // --------------------------------------------------
 
-                if (p.vel.z < 0)
-                    p.vel.z = 0;
+                    p.airJumpsLeft = AIR_JUMPS_MAX;
+                    p.dashAvailable = true;
+
+                    // future abilities
+                    p.groundReturnAvailable = true;
+                    p.freezeAvailable = true;
+
+                    if (p.vel.z < 0)
+                        p.vel.z = 0;
+                    DebugVis::recordGroundNormal(before + correction, normal, "block-overlap-ground");
+                }
+
+                clampVelocityAgainstNormal(p, normal);
+                cap = p.getCapsule();
             }
-
-            cap = p.getCapsule();
         }
+
+        if (!moved)
+            break;
     }
 }
 

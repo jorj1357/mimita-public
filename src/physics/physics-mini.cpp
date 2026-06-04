@@ -11,6 +11,7 @@
 // #pragma message("COMPILING physics-mini.cpp")
 
 #include <algorithm>
+#include <cmath>
 
 #include "entities/player.h"
 #include "world/world.h"
@@ -29,6 +30,23 @@
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
 
+static float shortestAngleDegrees(float from, float to)
+{
+    float delta = std::fmod(to - from + 540.0f, 360.0f) - 180.0f;
+    return delta;
+}
+
+static void updateVisualFacingFromCamera(Player& p, const glm::vec3& camForward, float dt)
+{
+    glm::vec2 flat(camForward.x, camForward.y);
+    if (glm::length(flat) < 0.0001f)
+        return;
+
+    flat = glm::normalize(flat);
+    float targetYaw = glm::degrees(std::atan2(flat.y, flat.x));
+    float turn = std::min(1.0f, dt * 18.0f);
+    p.yaw += shortestAngleDegrees(p.yaw, targetYaw) * turn;
+}
 
 // --------------------------------------------------
 // INTERNAL physics function
@@ -50,7 +68,7 @@ static void physicsMainUpdate_Internal(
 ){
     dt = std::min(dt, 0.033f);
 
-    const bool wasOnGround = p.onGround;
+    const bool wasOnGround = p.wasOnGround;
 
     // reset per-frame flags
     p.didGroundJump = false;
@@ -115,6 +133,9 @@ static void physicsMainUpdate_Internal(
     if (!wasOnGround && p.onGround) {
         p.didLand = true;
     }
+    p.wasOnGround = p.onGround;
+
+    updateVisualFacingFromCamera(p, camForward, dt);
 
     p.updateProceduralAnimation(dt);
 

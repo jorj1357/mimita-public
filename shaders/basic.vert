@@ -15,6 +15,7 @@
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec2 aUV;
 layout (location = 2) in vec3 aNormal;
+layout (location = 3) in vec4 aDebugColor;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -24,6 +25,7 @@ out vec2 vUV;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec3 vViewDir;
+out vec4 vDebugColor;
 
 void main() {
     vec4 worldPos = model * vec4(aPos, 1.0);
@@ -34,6 +36,7 @@ void main() {
     // Normals should not use the regular model matrix when scale is non-uniform.
     // The inverse-transpose normal matrix keeps lighting stable when artists scale meshes.
     vNormal = normalize(mat3(transpose(inverse(model))) * aNormal);
+    vDebugColor = aDebugColor;
 
     // Camera-space direction is useful for fresnel/edge darkening in the fragment shader.
     vec3 cameraPos = inverse(view)[3].xyz;

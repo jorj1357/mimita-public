@@ -32,6 +32,7 @@ bool gPhysics = true;
 bool gUi = false;
 bool gRender = true;
 bool gCollision = true;
+bool gCollisionVisuals = true;
 bool gWireframe = false;
 bool gNormals = false;
 bool gBounds = true;
@@ -42,6 +43,7 @@ bool gAoOnly = false;
 bool gPrev[12] = {};
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
+std::vector<DebugVis::CollisionEvent> gCollisionEvents;
 
 
 bool edge(int idx, int key)
@@ -115,7 +117,7 @@ void flushDebugLines(const Camera& camera)
 
     glUniform1i(
         glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"),
-        1
+        2
     );
 
     glBindVertexArray(gLineVao);
@@ -140,9 +142,9 @@ void flushDebugLines(const Camera& camera)
 
     glEnableVertexAttribArray(0);
 
-    // color
+    // per-line debug color
     glVertexAttribPointer(
-        1,
+        3,
         4,
         GL_FLOAT,
         GL_FALSE,
@@ -150,8 +152,9 @@ void flushDebugLines(const Camera& camera)
         (void*)offsetof(DebugLineVertex, color)
     );
 
-    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(3);
 
+    glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
 
     glDrawArrays(GL_LINES, 0, (GLsizei)gLineVerts.size());
@@ -165,6 +168,59 @@ void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
 {
     gLineVerts.push_back({ a, color });
     gLineVerts.push_back({ b, color });
+}
+
+void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color)
+{
+    drawLine(camera, p + glm::vec3(-size, 0, 0), p + glm::vec3(size, 0, 0), color);
+    drawLine(camera, p + glm::vec3(0, -size, 0), p + glm::vec3(0, size, 0), color);
+    drawLine(camera, p + glm::vec3(0, 0, -size), p + glm::vec3(0, 0, size), color);
+}
+
+void drawCollisionEvents(const Camera& camera)
+{
+    if (!gCollisionVisuals)
+        return;
+
+    constexpr int MAX_EVENTS = 512;
+    int drawn = 0;
+    for (const DebugVis::CollisionEvent& event : gCollisionEvents)
+    {
+        if (drawn++ >= MAX_EVENTS)
+            break;
+
+        switch (event.type)
+        {
+            case DebugVis::CollisionEvent::Type::Sweep:
+                drawLine(camera, event.a, event.b, {1.0f, 0.0f, 1.0f, 0.95f});
+                break;
+            case DebugVis::CollisionEvent::Type::Hit:
+                drawPointCross(camera, event.a, 0.06f, {1.0f, 0.0f, 0.0f, 1.0f});
+                drawLine(camera, event.a, event.a + event.normal * 0.45f, {1.0f, 1.0f, 0.0f, 1.0f});
+                break;
+            case DebugVis::CollisionEvent::Type::Contact:
+                drawPointCross(camera, event.a, 0.045f, {1.0f, 0.0f, 0.0f, 0.95f});
+                drawLine(camera, event.a, event.a + event.normal * (0.25f + event.amount), {1.0f, 1.0f, 0.0f, 0.95f});
+                break;
+            case DebugVis::CollisionEvent::Type::Depenetration:
+                drawLine(camera, event.a, event.a + event.b, {1.0f, 0.5f, 0.0f, 1.0f});
+                drawPointCross(camera, event.a + event.b, 0.045f, {1.0f, 0.5f, 0.0f, 1.0f});
+                break;
+            case DebugVis::CollisionEvent::Type::Movement:
+                drawLine(camera, event.a, event.a + event.b, {0.9f, 0.2f, 1.0f, 1.0f});
+                break;
+            case DebugVis::CollisionEvent::Type::GroundNormal:
+                drawLine(camera, event.a, event.a + event.normal * 0.65f, {0.0f, 1.0f, 0.2f, 1.0f});
+                break;
+            case DebugVis::CollisionEvent::Type::Triangle:
+                drawLine(camera, event.a, event.b, {1.0f, 0.85f, 0.0f, 0.65f});
+                drawLine(camera, event.b, event.c, {1.0f, 0.85f, 0.0f, 0.65f});
+                drawLine(camera, event.c, event.a, {1.0f, 0.85f, 0.0f, 0.65f});
+                break;
+            case DebugVis::CollisionEvent::Type::ChunkBounds:
+                break;
+        }
+    }
 }
 
 void drawBox(const Camera& camera, glm::vec3 center, glm::vec3 half, glm::vec4 color)
@@ -217,25 +273,27 @@ void drawCapsuleApprox(const Player& player, const Camera& camera)
 {
     Capsule c = player.getCapsule();
     glm::vec3 z(0,0,1);
-    drawLine(camera, c.a, c.b, {1,0.1f,0.1f,1});
-    drawLine(camera, c.a + glm::vec3(c.r,0,0), c.b + glm::vec3(c.r,0,0), {1,0.1f,0.1f,1});
-    drawLine(camera, c.a - glm::vec3(c.r,0,0), c.b - glm::vec3(c.r,0,0), {1,0.1f,0.1f,1});
-    drawLine(camera, c.a + glm::vec3(0,c.r,0), c.b + glm::vec3(0,c.r,0), {1,0.1f,0.1f,1});
-    drawLine(camera, c.a - glm::vec3(0,c.r,0), c.b - glm::vec3(0,c.r,0), {1,0.1f,0.1f,1});
-    drawLine(camera, c.a - z * c.r, c.a + z * c.r, {1,0.1f,0.1f,1});
-    drawLine(camera, c.b - z * c.r, c.b + z * c.r, {1,0.1f,0.1f,1});
+    glm::vec4 cyan{0.0f, 1.0f, 1.0f, 1.0f};
+    drawLine(camera, c.a, c.b, cyan);
+    drawLine(camera, c.a + glm::vec3(c.r,0,0), c.b + glm::vec3(c.r,0,0), cyan);
+    drawLine(camera, c.a - glm::vec3(c.r,0,0), c.b - glm::vec3(c.r,0,0), cyan);
+    drawLine(camera, c.a + glm::vec3(0,c.r,0), c.b + glm::vec3(0,c.r,0), cyan);
+    drawLine(camera, c.a - glm::vec3(0,c.r,0), c.b - glm::vec3(0,c.r,0), cyan);
+    drawLine(camera, c.a - z * c.r, c.a + z * c.r, cyan);
+    drawLine(camera, c.b - z * c.r, c.b + z * c.r, cyan);
 }
 }
 
 void DebugVis::init(GLFWwindow* win)
 {
     gWindow = win;
-    printf("[DEBUG] DebugVis initialized. F1 physics F2 UI F3 render F4 collision F5 wireframe F6 normals F7 bounds F8 UV F9 light F10 texture F11 AO\n");
+    printf("[DEBUG] DebugVis initialized. 8 collision-vis F1 physics F2 UI F3 render F4 collision-log F5 wireframe F6 normals F7 bounds F8 UV F9 light F10 texture F11 AO\n");
 }
 
 void DebugVis::update()
 {
     if (!gWindow) return;
+    if (edge(0, GLFW_KEY_8)) { gCollisionVisuals = !gCollisionVisuals; printf("[DEBUG] collisionVisuals=%d\n", gCollisionVisuals); }
     if (edge(1, GLFW_KEY_F1)) { gPhysics = !gPhysics; printf("[DEBUG] physics=%d\n", gPhysics); }
     if (edge(2, GLFW_KEY_F2)) { gUi = !gUi; printf("[DEBUG] ui=%d\n", gUi); }
     if (edge(3, GLFW_KEY_F3)) { gRender = !gRender; printf("[DEBUG] render=%d\n", gRender); }
@@ -273,6 +331,96 @@ int DebugVis::shaderDebugView()
 }
 const DebugColors& DebugVis::colors() { return gColors; }
 
+void DebugVis::beginCollisionFrame()
+{
+    gCollisionEvents.clear();
+}
+
+void DebugVis::recordCollisionEvent(const CollisionEvent& event)
+{
+    if (!gCollisionVisuals)
+        return;
+    if (gCollisionEvents.size() >= 1024)
+        return;
+    gCollisionEvents.push_back(event);
+}
+
+void DebugVis::recordSweep(glm::vec3 from, glm::vec3 to, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::Sweep;
+    event.a = from;
+    event.b = to;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
+void DebugVis::recordHit(glm::vec3 point, glm::vec3 normal, int triangleIndex, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::Hit;
+    event.a = point;
+    event.normal = normal;
+    event.triangleIndex = triangleIndex;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
+void DebugVis::recordContact(glm::vec3 point, glm::vec3 normal, float penetration, int triangleIndex, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::Contact;
+    event.a = point;
+    event.normal = normal;
+    event.amount = penetration;
+    event.triangleIndex = triangleIndex;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
+void DebugVis::recordDepenetration(glm::vec3 from, glm::vec3 push, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::Depenetration;
+    event.a = from;
+    event.b = push;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
+void DebugVis::recordMovement(glm::vec3 from, glm::vec3 move, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::Movement;
+    event.a = from;
+    event.b = move;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
+void DebugVis::recordGroundNormal(glm::vec3 point, glm::vec3 normal, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::GroundNormal;
+    event.a = point;
+    event.normal = normal;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
+void DebugVis::recordTriangle(const CollisionTriangle& tri, int triangleIndex, const char* label)
+{
+    CollisionEvent event;
+    event.type = CollisionEvent::Type::Triangle;
+    event.a = tri.a;
+    event.b = tri.b;
+    event.c = tri.c;
+    event.normal = tri.normal;
+    event.triangleIndex = triangleIndex;
+    event.label = label ? label : "";
+    recordCollisionEvent(event);
+}
+
 void drawDebugStuff(const Player& player, const Camera& camera, const World& world)
 {
     if (!DebugVis::enabled()) return;
@@ -298,6 +446,10 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                 drawLine(camera, origin, origin + zAxis, {0.1f,0.4f,1.0f,1.0f});
             }
         }
+    }
+
+    if (DebugVis::collision()) {
+        drawCollisionEvents(camera);
     }
 
     if (DebugVis::render()) {
@@ -348,4 +500,5 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         glUseProgram(gRenderer->shaderProgram);
         glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
     }
+    flushDebugLines(camera);
 }
