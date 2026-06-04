@@ -426,19 +426,15 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
     if (!DebugVis::enabled()) return;
 
     if (DebugVis::physics()) {
-            printf("dbg physics start\n");
         drawCapsuleApprox(player, camera);
         drawLine(camera, player.pos, player.pos + player.vel * 0.25f, {0.0f,1.0f,0.2f,1.0f});
         drawLine(camera, player.pos, player.pos + glm::vec3(0,0,-3), {0.2f,0.5f,1.0f,1.0f});
         drawLine(camera, player.pos, player.pos + glm::vec3(0,0,2), {1.0f,1.0f,0.0f,1.0f});
-            printf("dbg  1\n");
         for (const Collider& collider : player.bodyColliders) {
             auto it = std::find_if(player.nodes.begin(), player.nodes.end(), [&](const TransformNode& node) {
                 return node.name == collider.name;
             });
             if (it != player.nodes.end())
-                        printf("dbg  2\n");
-
             {
                 drawOrientedBounds(camera, it->worldTransform, collider.localMin, collider.localMax, {1.0f,0.2f,0.9f,0.85f});
                 glm::vec3 origin = glm::vec3(it->worldTransform[3]);
@@ -448,8 +444,6 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                 drawLine(camera, origin, origin + xAxis, {1.0f,0.1f,0.1f,1.0f});
                 drawLine(camera, origin, origin + yAxis, {0.1f,1.0f,0.1f,1.0f});
                 drawLine(camera, origin, origin + zAxis, {0.1f,0.4f,1.0f,1.0f});
-                            printf("dbg  3\n");
-
             }
         }
     }
@@ -474,7 +468,6 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
                 );
                 int chunkDrawn = 0;
-                                                printf("dbg  4\n");
 
                 for (int x = pc.x - 1; x <= pc.x + 1; ++x)
                 for (int y = pc.y - 1; y <= pc.y + 1; ++y)
@@ -491,7 +484,6 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                 drawLine(camera, tri.a, tri.b, {1.0f,0.85f,0.0f,0.65f});
                 drawLine(camera, tri.b, tri.c, {1.0f,0.85f,0.0f,0.65f});
                 drawLine(camera, tri.c, tri.a, {1.0f,0.85f,0.0f,0.65f});
-                                                printf("dbg  5\n");
 
                 if (DebugVis::normals()) {
                     glm::vec3 center = (tri.a + tri.b + tri.c) / 3.0f;
@@ -509,7 +501,6 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
     if (gRenderer && gRenderer->shaderProgram) {
         glUseProgram(gRenderer->shaderProgram);
-                                        printf("dbg  6\n");
 
         glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
     }
