@@ -15,6 +15,9 @@
 
 extern Renderer* gRenderer;
 
+// idk where put this 6 3 2026 its for better rendering no crasihng 
+std::vector<DebugLineVertex> gLineVerts;
+
 namespace {
 GLFWwindow* gWindow = nullptr;
 DebugColors gColors;
@@ -32,6 +35,12 @@ bool gAoOnly = false;
 bool gPrev[12] = {};
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
+
+struct DebugLineVertex
+{
+    glm::vec3 pos;
+    glm::vec4 color;
+};
 
 bool edge(int idx, int key)
 {
@@ -71,10 +80,18 @@ void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
     setLineState(camera, color);
     glBindVertexArray(gLineVao);
     glBindBuffer(GL_ARRAY_BUFFER, gLineVbo);
+
     glBufferData(GL_ARRAY_BUFFER, sizeof(pts), pts, GL_DYNAMIC_DRAW);
+    
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+    
     glEnableVertexAttribArray(0);
+
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+        
     glDrawArrays(GL_LINES, 0, 2);
+    
     glEnable(GL_DEPTH_TEST);
 }
 
