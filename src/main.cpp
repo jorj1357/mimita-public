@@ -147,6 +147,7 @@ int main()
 
         if (gameState == GAME_PLAYING)
         {
+            DebugVis::beginCollisionFrame();
             physicsMainUpdate(player, world, input, dt);
 
             applyDebugMovement(player, engine.window(), camera, dt);

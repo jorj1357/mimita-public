@@ -60,6 +60,11 @@ void playSound(const std::string& name, float volume)
     ma_engine_play_sound(&gEngine, path.c_str(), NULL);
 }
 
+void playEventSound(const std::string& name, float volume)
+{
+    playSound(name, volume);
+}
+
 void playAirJumpSound()
 {
     if (airJumpCooldown > 0.0f)
@@ -98,4 +103,9 @@ void playFreezeHoldSound()
 void playFreezeEndSound()
 {
     playSound("entity/player/freezeend", 1.0f);
+}
+
+void playMenuClick()
+{
+    playSound("ui/click", 0.6f);
 }

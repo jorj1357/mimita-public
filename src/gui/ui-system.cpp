@@ -10,6 +10,9 @@
 #include "gui/font-stuff/font-loader.h"
 #include "debug/debug-log.h"
 
+// yay sounds 6 4 2026 
+#include "audio/audio.h"
+
 namespace {
 GLFWwindow* gWindow = nullptr;
 GLuint gProgram = 0;
@@ -472,7 +475,11 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     debugWidget("BUTTON", text, r, s.hovered, s.pressed);
 
     if (s.clicked)
+    {
         printf("[UI] button clicked: %s\n", text);
+        playMenuClick();
+    }
+
     return s;
 }
 

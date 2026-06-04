@@ -15,6 +15,7 @@ in vec2 vUV;
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec3 vViewDir;
+in vec4 vDebugColor;
 
 uniform sampler2D uTex;
 
@@ -77,6 +78,10 @@ void main()
 {
     if (uUseColor == 1) {
         FragColor = uColor;
+        return;
+    }
+    if (uUseColor == 2) {
+        FragColor = vDebugColor;
         return;
     }
 
