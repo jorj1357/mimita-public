@@ -542,6 +542,16 @@ void Player::reset()
     freezeAvailable = true;
     freezeHeldPrev = false;
     freezeHoldSoundPlayed = false;
+
+    previousProceduralVelocity = glm::vec3(0.0f);
+    proceduralTime = 0.0f;
+
+    for (BodyPart& part : bodyParts)
+    {
+        part.pose = ProceduralPose{};
+        part.translationSpring = SpringState{};
+        part.rotationSpring = SpringState{};
+    }
 }
 
 bool Player::loadModel(const char* path)
