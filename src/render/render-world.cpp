@@ -21,14 +21,16 @@ namespace {
 
 glm::vec3 gLightDir = glm::normalize(glm::vec3(-0.45f, -0.35f, -0.85f));
 
-float gAmbientStrength = 0.34f;
+// float gAmbientStrength = 0.34f;
+float gAmbientStrength = 0.7f;
 float gDiffuseStrength = 0.82f;
 float gEdgeDarkness = 0.28f;
 float gEdgeWidth = 1.8f;
 float gAODarkness = 0.22f;
 float gAOContrast = 1.2f;
 float gTextureContrast = 1.12f;
-float gTextureBrightness = 1.0f;
+// float gTextureBrightness = 1.0f;
+float gTextureBrightness = 1.5f;
 
 GLuint gVao = 0;
 GLuint gVbo = 0;
