@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "entities/player.h"
 #include "renderer/renderer.h"
+#include "gui/ui-system.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
 #include <vector>
@@ -20,6 +21,13 @@ struct DebugLineVertex
 {
     glm::vec3 pos;
     glm::vec4 color;
+};
+
+struct DebugTextLabel
+{
+    glm::vec3 worldPos{0.0f};
+    std::string text;
+    glm::vec4 color{1.0f};
 };
 
 // idk where put this 6 3 2026 its for better rendering no crasihng 
@@ -40,10 +48,12 @@ bool gUvChecker = false;
 bool gLightingOnly = false;
 bool gTexturesOnly = false;
 bool gAoOnly = false;
-bool gPrev[12] = {};
+bool gPlayerArchitecture = true;
+bool gPrev[13] = {};
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
 std::vector<DebugVis::CollisionEvent> gCollisionEvents;
+std::vector<DebugTextLabel> gTextLabels;
 
 
 bool edge(int idx, int key)
@@ -177,6 +187,84 @@ void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 col
     drawLine(camera, p + glm::vec3(0, 0, -size), p + glm::vec3(0, 0, size), color);
 }
 
+void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color)
+{
+    if (!text || !*text)
+        return;
+    if (gTextLabels.size() >= 96)
+        return;
+    gTextLabels.push_back({worldPos, text, color});
+}
+
+bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y)
+{
+    if (!gRenderer)
+        return false;
+
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::vec4 clip = proj * view * glm::vec4(worldPos, 1.0f);
+    if (clip.w <= 0.001f)
+        return false;
+
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    if (ndc.x < -1.2f || ndc.x > 1.2f || ndc.y < -1.2f || ndc.y > 1.2f)
+        return false;
+
+    x = (ndc.x * 0.5f + 0.5f) * (float)gRenderer->width;
+    y = (1.0f - (ndc.y * 0.5f + 0.5f)) * (float)gRenderer->height;
+    return true;
+}
+
+void drawTransformAxes(const Camera& camera, const glm::mat4& transform, float scale)
+{
+    glm::vec3 origin = glm::vec3(transform[3]);
+    glm::vec3 xAxis = glm::vec3(transform[0]);
+    glm::vec3 yAxis = glm::vec3(transform[1]);
+    glm::vec3 zAxis = glm::vec3(transform[2]);
+    if (glm::length(xAxis) > 0.0001f) xAxis = glm::normalize(xAxis) * scale;
+    if (glm::length(yAxis) > 0.0001f) yAxis = glm::normalize(yAxis) * scale;
+    if (glm::length(zAxis) > 0.0001f) zAxis = glm::normalize(zAxis) * scale;
+    drawLine(camera, origin, origin + xAxis, {1.0f, 0.1f, 0.1f, 1.0f});
+    drawLine(camera, origin, origin + yAxis, {0.1f, 1.0f, 0.1f, 1.0f});
+    drawLine(camera, origin, origin + zAxis, {0.1f, 0.45f, 1.0f, 1.0f});
+}
+
+void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color)
+{
+    constexpr int segments = 18;
+    constexpr float pi = 3.1415926535f;
+    for (int i = 0; i < segments; ++i)
+    {
+        float a0 = (float)i / (float)segments * pi * 2.0f;
+        float a1 = (float)(i + 1) / (float)segments * pi * 2.0f;
+        drawLine(camera, center + glm::vec3(std::cos(a0), std::sin(a0), 0.0f) * radius,
+                 center + glm::vec3(std::cos(a1), std::sin(a1), 0.0f) * radius, color);
+        drawLine(camera, center + glm::vec3(std::cos(a0), 0.0f, std::sin(a0)) * radius,
+                 center + glm::vec3(std::cos(a1), 0.0f, std::sin(a1)) * radius, color);
+        drawLine(camera, center + glm::vec3(0.0f, std::cos(a0), std::sin(a0)) * radius,
+                 center + glm::vec3(0.0f, std::cos(a1), std::sin(a1)) * radius, color);
+    }
+}
+
+void drawCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color)
+{
+    constexpr int segments = 20;
+    constexpr float pi = 3.1415926535f;
+    drawLine(camera, c.a, c.b, color);
+    for (int i = 0; i < segments; ++i)
+    {
+        float a0 = (float)i / (float)segments * pi * 2.0f;
+        float a1 = (float)(i + 1) / (float)segments * pi * 2.0f;
+        glm::vec3 r0(std::cos(a0) * c.r, std::sin(a0) * c.r, 0.0f);
+        glm::vec3 r1(std::cos(a1) * c.r, std::sin(a1) * c.r, 0.0f);
+        drawLine(camera, c.a + r0, c.a + r1, color);
+        drawLine(camera, c.b + r0, c.b + r1, color);
+        if (i % 5 == 0)
+            drawLine(camera, c.a + r0, c.b + r0, color);
+    }
+}
+
 void drawCollisionEvents(const Camera& camera)
 {
     if (!gCollisionVisuals)
@@ -282,12 +370,89 @@ void drawCapsuleApprox(const Player& player, const Camera& camera)
     drawLine(camera, c.a - z * c.r, c.a + z * c.r, cyan);
     drawLine(camera, c.b - z * c.r, c.b + z * c.r, cyan);
 }
+
+void drawPlayerArchitectureDebug(const Player& player, const Camera& camera)
+{
+    const glm::vec4 green{0.0f, 1.0f, 0.2f, 1.0f};
+    const glm::vec4 cyan{0.0f, 1.0f, 1.0f, 1.0f};
+    const glm::vec4 blue{0.15f, 0.35f, 1.0f, 1.0f};
+    const glm::vec4 red{1.0f, 0.05f, 0.05f, 1.0f};
+    const glm::vec4 yellow{1.0f, 0.9f, 0.0f, 1.0f};
+    const glm::vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+    const glm::vec4 magenta{1.0f, 0.0f, 1.0f, 1.0f};
+
+    glm::mat4 originTransform =
+        glm::translate(glm::mat4(1.0f), player.origin.position) *
+        glm::mat4_cast(player.origin.rotation);
+    drawWireSphere(camera, player.origin.position, 0.12f, green);
+    drawTransformAxes(camera, originTransform, 0.55f);
+    drawWorldLabel(player.origin.position + glm::vec3(0.0f, 0.0f, 0.35f), "PlayerOrigin", green);
+
+    Capsule capsule = player.getCapsule();
+    drawCapsuleWire(camera, capsule, cyan);
+    drawLine(camera, player.movementCapsule.position,
+             player.movementCapsule.position + player.movementCapsule.velocity * 0.25f,
+             {0.0f, 1.0f, 1.0f, 0.85f});
+    drawWorldLabel(player.movementCapsule.position + glm::vec3(0.0f, 0.0f, -0.35f), "MovementCapsule", cyan);
+
+    for (int i = 0; i < (int)player.perfectPoseSkeleton.nodes.size(); ++i)
+    {
+        const TransformNode& node = player.perfectPoseSkeleton.nodes[i];
+        glm::vec3 nodePos = glm::vec3(node.worldTransform[3]);
+        drawWireSphere(camera, nodePos, 0.055f, blue);
+        drawTransformAxes(camera, node.worldTransform, 0.22f);
+
+        if (node.parent >= 0 && node.parent < (int)player.perfectPoseSkeleton.nodes.size())
+        {
+            glm::vec3 parentPos = glm::vec3(player.perfectPoseSkeleton.nodes[node.parent].worldTransform[3]);
+            drawLine(camera, parentPos, nodePos, blue);
+        }
+
+        if (!node.name.empty() && i < 32)
+            drawWorldLabel(nodePos + glm::vec3(0.0f, 0.0f, 0.12f), node.name.c_str(), blue);
+    }
+
+    for (const PhysicalBodyPart& part : player.physicalBody.parts)
+    {
+        glm::vec3 partOrigin = glm::vec3(part.worldTransform[3]);
+        drawPointCross(camera, partOrigin, 0.08f, yellow);
+        drawTransformAxes(camera, part.worldTransform, 0.28f);
+        drawOrientedBounds(camera, part.worldTransform, part.collider.localMin, part.collider.localMax, red);
+        drawWorldLabel(partOrigin + glm::vec3(0.0f, 0.0f, 0.22f), part.name.c_str(), red);
+
+        if (part.nodeIndex >= 0 && part.nodeIndex < (int)player.perfectPoseSkeleton.nodes.size())
+        {
+            glm::vec3 target = glm::vec3(player.perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform[3]);
+            if (glm::length(target - partOrigin) > 0.001f)
+                drawLine(camera, target, partOrigin, magenta);
+        }
+    }
+
+    drawLine(camera, player.origin.position, player.movementCapsule.position, white);
+}
+
+void drawDebugLabels(const Camera& camera)
+{
+    if (gTextLabels.empty() || !gWindow)
+        return;
+
+    uiBeginFrame(gWindow, "player-architecture-labels");
+    for (const DebugTextLabel& label : gTextLabels)
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        if (projectToScreen(camera, label.worldPos, x, y))
+            uiDrawText(label.text.c_str(), x + 4.0f, y - 4.0f, 0.24f, label.color);
+    }
+    uiEndFrame();
+    gTextLabels.clear();
+}
 }
 
 void DebugVis::init(GLFWwindow* win)
 {
     gWindow = win;
-    printf("[DEBUG] DebugVis initialized. 8 collision-vis F1 physics F2 UI F3 render F4 collision-log F5 wireframe F6 normals F7 bounds F8 UV F9 light F10 texture F11 AO\n");
+    printf("[DEBUG] DebugVis initialized. 8 collision-vis 9 player-architecture F1 physics F2 UI F3 render F4 collision-log F5 wireframe F6 normals F7 bounds F8 UV F9 light F10 texture F11 AO\n");
 }
 
 void DebugVis::update()
@@ -305,10 +470,11 @@ void DebugVis::update()
     if (edge(9, GLFW_KEY_F9)) { gLightingOnly = !gLightingOnly; printf("[DEBUG] lightingOnly=%d\n", gLightingOnly); }
     if (edge(10, GLFW_KEY_F10)) { gTexturesOnly = !gTexturesOnly; printf("[DEBUG] texturesOnly=%d\n", gTexturesOnly); }
     if (edge(11, GLFW_KEY_F11)) { gAoOnly = !gAoOnly; printf("[DEBUG] aoOnly=%d\n", gAoOnly); }
+    if (edge(12, GLFW_KEY_9)) { gPlayerArchitecture = !gPlayerArchitecture; printf("[DEBUG] playerArchitecture=%d\n", gPlayerArchitecture); }
     glPolygonMode(GL_FRONT_AND_BACK, gWireframe ? GL_LINE : GL_FILL);
 }
 
-bool DebugVis::enabled() { return gPhysics || gCollision || gBounds || gNormals; }
+bool DebugVis::enabled() { return gPhysics || gCollision || gBounds || gNormals || gPlayerArchitecture; }
 bool DebugVis::physics() { return gPhysics; }
 bool DebugVis::ui() { return gUi; }
 bool DebugVis::render() { return gRender; }
@@ -320,6 +486,7 @@ bool DebugVis::uvChecker() { return gUvChecker; }
 bool DebugVis::lightingOnly() { return gLightingOnly; }
 bool DebugVis::texturesOnly() { return gTexturesOnly; }
 bool DebugVis::aoOnly() { return gAoOnly; }
+bool DebugVis::playerArchitecture() { return gPlayerArchitecture; }
 int DebugVis::shaderDebugView()
 {
     if (gUvChecker) return 1;
@@ -448,6 +615,10 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         }
     }
 
+    if (DebugVis::playerArchitecture()) {
+        drawPlayerArchitectureDebug(player, camera);
+    }
+
     if (DebugVis::collision()) {
         drawCollisionEvents(camera);
     }
@@ -505,4 +676,5 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
     }
     flushDebugLines(camera);
+    drawDebugLabels(camera);
 }

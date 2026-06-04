@@ -4,6 +4,8 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <string>
 #include <vector>
 #include "map/map_common.h"
 #include "physics/physics-types.h"
@@ -28,6 +30,41 @@ struct OBB {
     glm::vec3 center;
     glm::vec3 halfSize;
     glm::mat4 orientation;
+};
+
+struct PlayerOrigin {
+    glm::vec3 position{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+};
+
+struct MovementCapsule {
+    glm::vec3 position{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::vec2 dashVelocity{0.0f};
+    float radius = 0.0f;
+    float height = 0.0f;
+    bool onGround = false;
+};
+
+struct PerfectPoseSkeleton {
+    std::vector<TransformNode> nodes;
+    std::vector<glm::mat4> restLocalTransforms;
+};
+
+struct PhysicalBodyPart {
+    std::string name;
+    int nodeIndex = -1;
+    Collider collider;
+    ProceduralPose pose;
+    SpringState translationSpring;
+    SpringState rotationSpring;
+    glm::mat4 worldTransform{1.0f};
+};
+
+struct PhysicalBody {
+    std::vector<PhysicalBodyPart> parts;
+    std::vector<Mesh> partMeshes;
 };
 
 class Player {
@@ -111,6 +148,10 @@ public:
     std::vector<Collider> bodyColliders;
     std::vector<BodyPart> bodyParts;
     std::vector<Mesh> bodyPartMeshes;
+    PlayerOrigin origin;
+    MovementCapsule movementCapsule;
+    PerfectPoseSkeleton perfectPoseSkeleton;
+    PhysicalBody physicalBody;
     glm::vec3 previousProceduralVelocity{0.0f};
     float proceduralTime = 0.0f;
 
@@ -118,6 +159,8 @@ public:
     Player();
     void reset();
     bool loadModel(const char* path);
+    void syncLegacyStateToLayers();
+    void syncLayersToLegacyState();
     void updateModelWorldTransforms();
     void updateProceduralAnimation(float dt);
 
