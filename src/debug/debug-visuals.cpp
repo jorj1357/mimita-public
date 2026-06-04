@@ -12,8 +12,15 @@
 #include "renderer/renderer.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
+#include <vector>
 
 extern Renderer* gRenderer;
+
+struct DebugLineVertex
+{
+    glm::vec3 pos;
+    glm::vec4 color;
+};
 
 // idk where put this 6 3 2026 its for better rendering no crasihng 
 std::vector<DebugLineVertex> gLineVerts;
@@ -36,11 +43,6 @@ bool gPrev[12] = {};
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
 
-struct DebugLineVertex
-{
-    glm::vec3 pos;
-    glm::vec4 color;
-};
 
 bool edge(int idx, int key)
 {
@@ -68,31 +70,101 @@ void setLineState(const Camera& camera, glm::vec4 color)
     glUniform4fv(glGetUniformLocation(gRenderer->shaderProgram, "uColor"), 1, &color.x);
 }
 
-void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
+void flushDebugLines(const Camera& camera)
 {
-    if (!gLineVao) {
+    if (gLineVerts.empty())
+        return;
+
+    if (!gLineVao)
+    {
         glGenVertexArrays(1, &gLineVao);
         glGenBuffers(1, &gLineVbo);
     }
 
-    glm::vec3 pts[2] = {a, b};
     glDisable(GL_DEPTH_TEST);
-    setLineState(camera, color);
+
+    glUseProgram(gRenderer->shaderProgram);
+
+    glm::mat4 model(1.0f);
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj(
+        (float)gRenderer->width,
+        (float)gRenderer->height
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "model"),
+        1,
+        GL_FALSE,
+        &model[0][0]
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "view"),
+        1,
+        GL_FALSE,
+        &view[0][0]
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+        1,
+        GL_FALSE,
+        &proj[0][0]
+    );
+
+    glUniform1i(
+        glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"),
+        1
+    );
+
     glBindVertexArray(gLineVao);
     glBindBuffer(GL_ARRAY_BUFFER, gLineVbo);
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(pts), pts, GL_DYNAMIC_DRAW);
-    
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-    
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        gLineVerts.size() * sizeof(DebugLineVertex),
+        gLineVerts.data(),
+        GL_DYNAMIC_DRAW
+    );
+
+    // position
+    glVertexAttribPointer(
+        0,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(DebugLineVertex),
+        (void*)offsetof(DebugLineVertex, pos)
+    );
+
     glEnableVertexAttribArray(0);
 
-    glDisableVertexAttribArray(1);
+    // color
+    glVertexAttribPointer(
+        1,
+        4,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(DebugLineVertex),
+        (void*)offsetof(DebugLineVertex, color)
+    );
+
+    glEnableVertexAttribArray(1);
+
     glDisableVertexAttribArray(2);
-        
-    glDrawArrays(GL_LINES, 0, 2);
-    
+
+    glDrawArrays(GL_LINES, 0, (GLsizei)gLineVerts.size());
+
     glEnable(GL_DEPTH_TEST);
+
+    gLineVerts.clear();
+}
+
+void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
+{
+    gLineVerts.push_back({ a, color });
+    gLineVerts.push_back({ b, color });
 }
 
 void drawBox(const Camera& camera, glm::vec3 center, glm::vec3 half, glm::vec4 color)
