@@ -19,18 +19,21 @@ extern TextureStore gTextures;
 
 namespace {
 
-glm::vec3 gLightDir = glm::normalize(glm::vec3(-0.45f, -0.35f, -0.85f));
+// Easy lighting tuning.
+// Shader expects these as uniforms.
+glm::vec3 gLightDir = glm::normalize(glm::vec3(-0.35f, -0.10f, -1.0f));
 
-// float gAmbientStrength = 0.34f;
-float gAmbientStrength = 0.7f;
-float gDiffuseStrength = 0.82f;
-float gEdgeDarkness = 0.28f;
-float gEdgeWidth = 1.8f;
-float gAODarkness = 0.22f;
-float gAOContrast = 1.2f;
-float gTextureContrast = 1.12f;
-// float gTextureBrightness = 1.0f;
-float gTextureBrightness = 1.5f;
+float gAmbientStrength   = 0.72f;
+float gDiffuseStrength   = 0.45f;
+
+float gEdgeDarkness      = 0.10f;
+float gEdgeWidth         = 1.20f;
+
+float gAODarkness        = 0.05f;
+float gAOContrast        = 0.80f;
+
+float gTextureContrast   = 1.02f;
+float gTextureBrightness = 1.35f;
 
 GLuint gVao = 0;
 GLuint gVbo = 0;
@@ -50,13 +53,7 @@ void checkGl(const char* where)
 
 GLint uniformLoc(GLuint shader, const char* name)
 {
-    GLint loc = glGetUniformLocation(shader, name);
-    if (loc == -1)
-    {
-        // Not fatal. Shader compiler can optimize unused uniforms away.
-        printf("[RENDER INFO] uniform missing/optimized out: %s\n", name);
-    }
-    return loc;
+    return glGetUniformLocation(shader, name);
 }
 
 void setMat4(GLuint shader, const char* name, const glm::mat4& m)
@@ -107,14 +104,9 @@ void uploadMeshIfNeeded(const Mesh& mesh)
         return;
 
     printf("[RENDER] uploading GLB world mesh verts=%zu triangles=%zu batches=%zu\n",
-           mesh.verts.size(), mesh.verts.size() / 3, mesh.batches.size());
-
-    // todo replace all printf with debug logging so not so much perofmance issue 
-    printf("[RENDER] after uploading GLB world mesh verts=%zu triangles=%zu batches=%zu\n",
-        mesh.verts.size(),
-        mesh.verts.size() / 3,
-        mesh.batches.size()
-    );
+           mesh.verts.size(),
+           mesh.verts.size() / 3,
+           mesh.batches.size());
 
     if (!gVao)
         glGenVertexArrays(1, &gVao);
@@ -125,9 +117,6 @@ void uploadMeshIfNeeded(const Mesh& mesh)
     glBindVertexArray(gVao);
     glBindBuffer(GL_ARRAY_BUFFER, gVbo);
 
-    printf("[RENDER] glbind bugffer \n");
-
-
     glBufferData(
         GL_ARRAY_BUFFER,
         (GLsizeiptr)(mesh.verts.size() * sizeof(Vertex)),
@@ -135,14 +124,12 @@ void uploadMeshIfNeeded(const Mesh& mesh)
         GL_STATIC_DRAW
     );
 
-        printf("[RENDER] glbufferdata  \n");
-
-
-    // Shader expected layout:
+    // Must match shaders/basic.vert:
     // layout(location = 0) in vec3 aPos;
-    // layout(location = 1) in vec3 aNormal;
-    // layout(location = 2) in vec2 aUV;
+    // layout(location = 1) in vec2 aUV;
+    // layout(location = 2) in vec3 aNormal;
 
+    // position
     glVertexAttribPointer(
         0,
         3,
@@ -153,31 +140,27 @@ void uploadMeshIfNeeded(const Mesh& mesh)
     );
     glEnableVertexAttribArray(0);
 
-            printf("[RENDER] glbufferdata 2  \n");
-
-
+    // UV
     glVertexAttribPointer(
         1,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(Vertex),
-        (void*)offsetof(Vertex, normal)
-    );
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(
-        2,
         2,
         GL_FLOAT,
         GL_FALSE,
         sizeof(Vertex),
         (void*)offsetof(Vertex, uv)
     );
+    glEnableVertexAttribArray(1);
+
+    // normal
+    glVertexAttribPointer(
+        2,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(Vertex),
+        (void*)offsetof(Vertex, normal)
+    );
     glEnableVertexAttribArray(2);
-
-                printf("[RENDER] glbufferdata 3  \n");
-
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -186,8 +169,6 @@ void uploadMeshIfNeeded(const Mesh& mesh)
     gBuiltBatchCount = mesh.batches.size();
 
     checkGl("uploadMeshIfNeeded");
-                    printf("[RENDER] glbufferdata 4 \n");
-
 }
 
 void setUniforms(GLuint shader)
@@ -205,8 +186,6 @@ void setUniforms(GLuint shader)
     setFloat(shader, "uAOContrast", gAOContrast);
     setFloat(shader, "uTextureContrast", gTextureContrast);
     setFloat(shader, "uTextureBrightness", gTextureBrightness);
-                        printf("[RENDER] glbufferdata 5 \n");
-
 }
 
 } // namespace
@@ -231,7 +210,6 @@ void renderWorld(const World& world, const Camera& cam)
     }
 
     uploadMeshIfNeeded(world.mesh);
-                        printf("[RENDER] glbufferdata 6 \n");
 
     GLuint shader = gRenderer->shaderProgram;
     glUseProgram(shader);
@@ -255,7 +233,9 @@ void renderWorld(const World& world, const Camera& cam)
             if (!batchLooksValid(world.mesh, batch))
             {
                 printf("[RENDER WARNING] bad batch skipped first=%zu count=%zu verts=%zu\n",
-                       batch.first, batch.count, world.mesh.verts.size());
+                       batch.first,
+                       batch.count,
+                       world.mesh.verts.size());
                 continue;
             }
 
@@ -263,18 +243,15 @@ void renderWorld(const World& world, const Camera& cam)
             glBindTexture(GL_TEXTURE_2D, tex);
 
             glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
-            checkGl("renderWorld batch draw");
-             printf("[RENDER] glbufferdata 7 \n");
         }
     }
-                           
-
     else
     {
         glBindTexture(GL_TEXTURE_2D, gTextures.get("default"));
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)world.mesh.verts.size());
-        checkGl("renderWorld full draw");
     }
 
     glBindVertexArray(0);
+
+    checkGl("renderWorld");
 }

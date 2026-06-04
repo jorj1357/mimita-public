@@ -12,6 +12,16 @@
     //   render
 // shutdown
 // Everything else lives behind headers.
+// 6 4 2026
+/**
+ * like this is my fav idea
+ * main.cpp calls renderWorld
+ * renderWorld calls renderTextures renderLight renderBlackHoleVisuals etc
+ * and THOSE files call like drawLine, visualRelativity, drawLightSpeed etc
+ * AND THOOOOOSE files call like super basic boring stuff that is fine to call 1 bilion times per frame
+ * and if anything fails, it prints the exact file and place and line etc 
+ * with the debug log function BC WE NOT USING PRINTF DONT USE PRINTF JUTS MAKE UR OWN DEBUG LOG ok 
+ */
 
 #include <cstdio>
 #include "engine/engine.h"
@@ -58,6 +68,10 @@ int main()
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // addd this 6 4 2026     
+    glEnable(GL_DEPTH_TEST);
+
     printf("[MAIN] after glEnable and glBlendFunc()\n");
 
 
