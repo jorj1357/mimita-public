@@ -18,6 +18,7 @@ struct Engine {
     Camera* activeCamera = nullptr;
 
     void init(int w, int h, const char* title);
+    void shutdown();
     bool running() const;
 
     float beginFrame();

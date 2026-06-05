@@ -9,6 +9,7 @@
 #include <glad/glad.h>
 #include "gui/font-stuff/font-loader.h"
 #include "debug/debug-log.h"
+#include "debug/gl-debug.h"
 
 // yay sounds 6 4 2026 
 #include "audio/audio.h"
@@ -99,13 +100,16 @@ int glyphIndex(char c)
 GLuint compile(GLenum type, const char* src, const char* name)
 {
     GLuint s = glCreateShader(type);
-    glShaderSource(s, 1, &src, nullptr);
-    glCompileShader(s);
+    MIMITA_GL_CHECK("ui glCreateShader");
+    if (!s)
+        return 0;
+    MIMITA_GL_CALL(glShaderSource(s, 1, &src, nullptr));
+    MIMITA_GL_CALL(glCompileShader(s));
     GLint ok = 0;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+    MIMITA_GL_CALL(glGetShaderiv(s, GL_COMPILE_STATUS, &ok));
     if (!ok) {
         char log[2048];
-        glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+        MIMITA_GL_CALL(glGetShaderInfoLog(s, sizeof(log), nullptr, log));
         printf("[UI ERROR] shader compile failed: %s\n%s\n", name, log);
     }
     return s;
@@ -146,20 +150,26 @@ void ensureProgram()
         "  }\n"
         "}\n";
 
+    MIMITA_GL_CLEAR_STAGE("ui ensureProgram");
     GLuint vert = compile(GL_VERTEX_SHADER, vs, "ui.vert");
     GLuint frag = compile(GL_FRAGMENT_SHADER, fs, "ui.frag");
+    if (!vert || !frag)
+        return;
     gProgram = glCreateProgram();
-    glAttachShader(gProgram, vert);
-    glAttachShader(gProgram, frag);
-    glLinkProgram(gProgram);
-    glDeleteShader(vert);
-    glDeleteShader(frag);
+    MIMITA_GL_CHECK("ui glCreateProgram");
+    if (!gProgram)
+        return;
+    MIMITA_GL_CALL(glAttachShader(gProgram, vert));
+    MIMITA_GL_CALL(glAttachShader(gProgram, frag));
+    MIMITA_GL_CALL(glLinkProgram(gProgram));
+    MIMITA_GL_CALL(glDeleteShader(vert));
+    MIMITA_GL_CALL(glDeleteShader(frag));
 
     GLint ok = 0;
-    glGetProgramiv(gProgram, GL_LINK_STATUS, &ok);
+    MIMITA_GL_CALL(glGetProgramiv(gProgram, GL_LINK_STATUS, &ok));
     if (!ok) {
         char log[2048];
-        glGetProgramInfoLog(gProgram, sizeof(log), nullptr, log);
+        MIMITA_GL_CALL(glGetProgramInfoLog(gProgram, sizeof(log), nullptr, log));
         printf("[UI ERROR] program link failed\n%s\n", log);
     } else {
         printf("[UI] UI shader linked program=%u\n", gProgram);
@@ -170,15 +180,15 @@ void ensureProgram()
     gUseTexLoc = glGetUniformLocation(gProgram, "uUseTex");
     gTexLoc = glGetUniformLocation(gProgram, "uTex");
 
-    glGenVertexArrays(1, &gVao);
-    glGenBuffers(1, &gVbo);
-    glBindVertexArray(gVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 128, nullptr, GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)(sizeof(float) * 2));
+    MIMITA_GL_CALL(glGenVertexArrays(1, &gVao));
+    MIMITA_GL_CALL(glGenBuffers(1, &gVbo));
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 128, nullptr, GL_DYNAMIC_DRAW));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+    MIMITA_GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)0));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)(sizeof(float) * 2)));
 }
 
 bool pointIn(double mx, double my, UIRect r)
@@ -189,31 +199,35 @@ bool pointIn(double mx, double my, UIRect r)
 void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, GLenum mode)
 {
     ensureProgram();
-    glUseProgram(gProgram);
-    glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
-    glUniform4fv(gColorLoc, 1, &color.x);
-    glUniform1i(gUseTexLoc, 0);
-    glBindVertexArray(gVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW);
-    glDrawArrays(mode, 0, vertCount);
+    if (!gProgram || !gVao || !gVbo || !verts || vertCount <= 0)
+        return;
+    MIMITA_GL_CALL(glUseProgram(gProgram));
+    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
+    MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
+    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 0));
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
+    MIMITA_GL_CALL(glDrawArrays(mode, 0, vertCount));
     ++gDrawCalls;
 }
 
 void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 color)
 {
     ensureProgram();
-    glUseProgram(gProgram);
-    glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
-    glUniform4fv(gColorLoc, 1, &color.x);
-    glUniform1i(gUseTexLoc, 1);
-    glUniform1i(gTexLoc, 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glBindVertexArray(gVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, vertCount);
+    if (!gProgram || !gVao || !gVbo || !verts || !tex || vertCount <= 0)
+        return;
+    MIMITA_GL_CALL(glUseProgram(gProgram));
+    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
+    MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
+    MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 1));
+    MIMITA_GL_CALL(glUniform1i(gTexLoc, 0));
+    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * vertCount, verts, GL_DYNAMIC_DRAW));
+    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vertCount));
     ++gDrawCalls;
 }
 
@@ -253,13 +267,15 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
 
-    glViewport(0, 0, gFbW, gFbH);
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);
+    MIMITA_GL_CLEAR_STAGE("uiBeginFrame");
+    MIMITA_GL_CALL(glViewport(0, 0, gFbW, gFbH));
+    MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+    MIMITA_GL_CALL(glEnable(GL_BLEND));
+    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    MIMITA_GL_CALL(glDisable(GL_CULL_FACE));
     ensureProgram();
-    glUseProgram(gProgram);
+    if (gProgram)
+        MIMITA_GL_CALL(glUseProgram(gProgram));
 
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame", DebugConfig::PRINT_INTERVAL, "[UI] Rendering UI frame %d pass=%s framebuffer=%dx%d\n", gFrame, passName ? passName : "unknown", gFbW, gFbH);
@@ -270,8 +286,8 @@ void uiEndFrame()
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
     gMousePrev = gMouseDown;
-    glUseProgram(0);
-    glEnable(GL_DEPTH_TEST);
+    MIMITA_GL_CALL(glUseProgram(0));
+    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
 }
 
 // 5 23 2026 idk where to put this 

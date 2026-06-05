@@ -4,12 +4,14 @@
 
 #include <cstdio>
 #include <cstddef>
+#include <limits>
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
 #include "camera.h"
 #include "debug/debug-visuals.h"
+#include "debug/gl-debug.h"
 #include "renderer/renderer.h"
 #include "world/world.h"
 #include "world/texture-store.h"
@@ -40,16 +42,6 @@ GLuint gVbo = 0;
 
 size_t gBuiltVertCount = (size_t)-1;
 size_t gBuiltBatchCount = (size_t)-1;
-
-void checkGl(const char* where)
-{
-    GLenum err = glGetError();
-    while (err != GL_NO_ERROR)
-    {
-        printf("[OPENGL ERROR] %s err=0x%X\n", where, err);
-        err = glGetError();
-    }
-}
 
 GLint uniformLoc(GLuint shader, const char* name)
 {
@@ -95,6 +87,12 @@ bool batchLooksValid(const Mesh& mesh, const Mesh::Batch& batch)
     if (batch.first + batch.count > mesh.verts.size())
         return false;
 
+    if (batch.first > (size_t)std::numeric_limits<GLint>::max())
+        return false;
+
+    if (batch.count > (size_t)std::numeric_limits<GLsizei>::max())
+        return false;
+
     return true;
 }
 
@@ -108,21 +106,23 @@ void uploadMeshIfNeeded(const Mesh& mesh)
            mesh.verts.size() / 3,
            mesh.batches.size());
 
+    MIMITA_GL_CLEAR_STAGE("uploadMeshIfNeeded");
+
     if (!gVao)
-        glGenVertexArrays(1, &gVao);
+        MIMITA_GL_CALL(glGenVertexArrays(1, &gVao));
 
     if (!gVbo)
-        glGenBuffers(1, &gVbo);
+        MIMITA_GL_CALL(glGenBuffers(1, &gVbo));
 
-    glBindVertexArray(gVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
 
-    glBufferData(
+    MIMITA_GL_CALL(glBufferData(
         GL_ARRAY_BUFFER,
         (GLsizeiptr)(mesh.verts.size() * sizeof(Vertex)),
         mesh.verts.data(),
         GL_STATIC_DRAW
-    );
+    ));
 
     // Must match shaders/basic.vert:
     // layout(location = 0) in vec3 aPos;
@@ -130,45 +130,45 @@ void uploadMeshIfNeeded(const Mesh& mesh)
     // layout(location = 2) in vec3 aNormal;
 
     // position
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         0,
         3,
         GL_FLOAT,
         GL_FALSE,
         sizeof(Vertex),
         (void*)offsetof(Vertex, pos)
-    );
-    glEnableVertexAttribArray(0);
+    ));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
 
     // UV
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         1,
         2,
         GL_FLOAT,
         GL_FALSE,
         sizeof(Vertex),
         (void*)offsetof(Vertex, uv)
-    );
-    glEnableVertexAttribArray(1);
+    ));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
 
     // normal
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         2,
         3,
         GL_FLOAT,
         GL_FALSE,
         sizeof(Vertex),
         (void*)offsetof(Vertex, normal)
-    );
-    glEnableVertexAttribArray(2);
+    ));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
+    MIMITA_GL_CALL(glBindVertexArray(0));
 
     gBuiltVertCount = mesh.verts.size();
     gBuiltBatchCount = mesh.batches.size();
 
-    checkGl("uploadMeshIfNeeded");
+    MIMITA_GL_CHECK("uploadMeshIfNeeded complete");
 }
 
 void setUniforms(GLuint shader)
@@ -209,10 +209,11 @@ void renderWorld(const World& world, const Camera& cam)
         return;
     }
 
+    MIMITA_GL_CLEAR_STAGE("renderWorld");
     uploadMeshIfNeeded(world.mesh);
 
     GLuint shader = gRenderer->shaderProgram;
-    glUseProgram(shader);
+    MIMITA_GL_CALL(glUseProgram(shader));
 
     glm::mat4 model(1.0f);
     glm::mat4 view = cam.getView();
@@ -223,8 +224,8 @@ void renderWorld(const World& world, const Camera& cam)
     setMat4(shader, "projection", proj);
     setUniforms(shader);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(gVao);
+    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+    MIMITA_GL_CALL(glBindVertexArray(gVao));
 
     if (!world.mesh.batches.empty())
     {
@@ -240,18 +241,25 @@ void renderWorld(const World& world, const Camera& cam)
             }
 
             GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-            glBindTexture(GL_TEXTURE_2D, tex);
+            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
 
-            glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
         }
     }
     else
     {
-        glBindTexture(GL_TEXTURE_2D, gTextures.get("default"));
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)world.mesh.verts.size());
+        if (world.mesh.verts.size() <= (size_t)std::numeric_limits<GLsizei>::max())
+        {
+            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("default")));
+            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)world.mesh.verts.size()));
+        }
+        else
+        {
+            printf("[RENDER WARNING] world mesh too large for glDrawArrays verts=%zu\n", world.mesh.verts.size());
+        }
     }
 
-    glBindVertexArray(0);
+    MIMITA_GL_CALL(glBindVertexArray(0));
 
-    checkGl("renderWorld");
+    MIMITA_GL_CHECK("renderWorld complete");
 }
