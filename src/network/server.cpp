@@ -382,6 +382,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
 int runServer(const LaunchOptions&)
 {
+    setvbuf(stdout, nullptr, _IONBF, 0);
     printf("[SERVER] starting localhost UDP server on port %u\n", DEFAULT_PORT);
     printf("[SERVER] tick rate %.0f Hz\n", SERVER_TICK_RATE);
 

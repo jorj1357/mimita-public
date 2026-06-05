@@ -35,6 +35,7 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
 
 int runClient(const LaunchOptions& options)
 {
+    setvbuf(stdout, nullptr, _IONBF, 0);
     printf("[CLIENT] connecting name=%s target=%s\n", options.name.c_str(), options.connect.c_str());
 
     if (!netStartup())

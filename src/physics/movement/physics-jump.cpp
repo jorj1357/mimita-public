@@ -54,19 +54,13 @@ void doJump(
     bool jumpHeld,
     float dt
 ) {
-    // ---------------- TIMERS ----------------
-    // dont use this? idk mar 7 2026
-    // static bool jumpHeldPrev = false;
-    static float jumpIntentTimer = 0.0f;
-    static float coyoteTimer = 0.0f;
-
     // decrement timers
-    jumpIntentTimer = std::max(0.0f, jumpIntentTimer - dt);
-    coyoteTimer     = std::max(0.0f, coyoteTimer - dt);
+    p.jumpIntentTimer = std::max(0.0f, p.jumpIntentTimer - dt);
+    p.coyoteTimer     = std::max(0.0f, p.coyoteTimer - dt);
 
     // update coyote time
     if (p.onGround) {
-        coyoteTimer = COYOTE_JUMP_TIME;
+        p.coyoteTimer = COYOTE_JUMP_TIME;
     }
 
     // ---------------- INPUT ----------------
@@ -93,7 +87,7 @@ void doJump(
 
     // hold jump keeps the buffer alive
     if (jumpHeld) {
-        jumpIntentTimer = JUMP_BUFFER_TIME;
+        p.jumpIntentTimer = JUMP_BUFFER_TIME;
     }
 
     // detect release
@@ -106,8 +100,8 @@ void doJump(
     p.jumpHeldPrev = jumpHeld;
 
     // ---------------- CAN JUMP ----------------
-    bool canGroundJump = p.onGround || coyoteTimer > 0.0f;
-    bool wantsJump = jumpIntentTimer > 0.0f;
+    bool canGroundJump = p.onGround || p.coyoteTimer > 0.0f;
+    bool wantsJump = p.jumpIntentTimer > 0.0f;
 
     if (!wantsJump) {
         return;
@@ -119,8 +113,8 @@ void doJump(
 
         p.vel.z = PHYS.jumpStrength;
         p.onGround = false;
-        coyoteTimer = 0.0f;
-        jumpIntentTimer = 0.0f;
+        p.coyoteTimer = 0.0f;
+        p.jumpIntentTimer = 0.0f;
 
         // reset air jumps but consume one (the ground jump)
         // p.airJumpsLeft = AIR_JUMPS_MAX - 1;
@@ -173,7 +167,7 @@ void doJump(
         // do NOT set this false, this makes it so we cant hold space to climb wall
         // p.airJumpArmed = false;
         
-        jumpIntentTimer = 0.0f;
+        p.jumpIntentTimer = 0.0f;
 
         p.didAirJump = true;
 
@@ -190,7 +184,7 @@ void doJump(
     JUMP_LOG(
         "[JUMP] BLOCKED | onGround=%d coyote=%.3f airJumps=%d\n",
         p.onGround,
-        coyoteTimer,
+        p.coyoteTimer,
         p.airJumpsLeft
     );
 }

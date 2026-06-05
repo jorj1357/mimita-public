@@ -79,6 +79,21 @@ namespace DebugVis {
     void recordMovement(glm::vec3 from, glm::vec3 move, const char* label = "");
     void recordGroundNormal(glm::vec3 point, glm::vec3 normal, const char* label = "");
     void recordTriangle(const CollisionTriangle& tri, int triangleIndex = -1, const char* label = "");
+
+    struct NpcDebugInfo {
+        glm::vec3 position{0.0f};
+        glm::vec3 velocity{0.0f};
+        glm::vec3 targetPosition{0.0f};
+        glm::vec3 moveDirection{0.0f};
+        glm::vec3 pathTarget{0.0f};
+        std::string action;
+        float difficulty = 0.0f;
+        float awarenessRadius = 0.0f;
+        bool hasTarget = false;
+    };
+
+    void drawNpcDebugStuff(const std::vector<NpcDebugInfo>& npcs,
+                           const Camera& camera);
 }
 
 

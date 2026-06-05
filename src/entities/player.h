@@ -84,6 +84,8 @@ public:
     bool airJumpLocked = false;
     // so we press space to air jump, not let go of space
     bool airJumpArmed = false;
+    float jumpIntentTimer = 0.0f;
+    float coyoteTimer = 0.0f;
 
     // -------- Dash --------
     // mar 8 2026, no dashcharges, its airjump style, touch object = get a dash back
@@ -99,6 +101,7 @@ public:
     // float dashCooldown = 0.0f;
     // no holding it to dash forever 1000/sec
     bool dashHeldPrev = false;
+    bool moveHeldPrev = false;
 
     // reset dash when touching object mar 8 2026
     bool dashAvailable = true;

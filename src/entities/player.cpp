@@ -547,6 +547,10 @@ void Player::reset()
 
     // put this here so idk? mar 7 2026
     jumpHeldPrev = false;
+    moveHeldPrev = false;
+    dashHeldPrev = false;
+    jumpIntentTimer = 0.0f;
+    coyoteTimer = 0.0f;
     airJumpsLeft = 1;
     // dashCharges = DASH_MAX_CHARGES;
     groundReturnCharges = GROUND_RETURN_MAX_CHARGES;
