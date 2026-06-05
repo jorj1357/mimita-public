@@ -85,6 +85,10 @@ INCLUDE_FLAGS = [
     f"-I{GLFW_INCLUDE}",
 ]
 
+DEFINE_FLAGS = [
+    "-DGLM_ENABLE_EXPERIMENTAL",
+]
+
 LIB_FLAGS = [
     f"-L{GLFW_LIB}",
 ]
@@ -119,6 +123,34 @@ def hash_file(path):
 
     return h.hexdigest()
 
+def hash_files(paths):
+    h = hashlib.md5()
+
+    for path in sorted(paths):
+        rel = os.path.relpath(path, ROOT).replace("\\", "/")
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                h.update(chunk)
+
+    return h.hexdigest()
+
+def find_header_files():
+    out = []
+
+    for base in (SRC_DIR, os.path.join(ROOT, "include")):
+        for root, dirs, files in os.walk(base):
+            for f in files:
+                if f.endswith((".h", ".hpp", ".inl")):
+                    out.append(os.path.join(root, f))
+
+    return out
+
 def cache_path(src):
     rel = os.path.relpath(src, ROOT)
     rel = rel.replace("\\", "_").replace("/", "_")
@@ -133,7 +165,7 @@ def obj_path(src):
     return os.path.join(OBJ_DIR, rel + ".o")
 
 def source_changed(src):
-    h = hash_file(src)
+    h = hash_file(src) + ":" + HEADER_HASH
     cp = cache_path(src)
 
     if not os.path.exists(cp):
@@ -144,10 +176,13 @@ def source_changed(src):
     return old != h
 
 def update_cache(src):
-    h = hash_file(src)
+    h = hash_file(src) + ":" + HEADER_HASH
 
-    with open(cache_path(src), "w") as f:
+    cp = cache_path(src)
+    tmp = cp + ".tmp"
+    with open(tmp, "w") as f:
         f.write(h)
+    os.replace(tmp, cp)
 
 def find_cpp_files():
     out = []
@@ -192,6 +227,7 @@ print()
 start_time = time.time()
 
 cpp_files = find_cpp_files()
+HEADER_HASH = hash_files(find_header_files())
 
 # glad.c manually
 glad_path = os.path.join(ROOT, "src", "glad.c")
@@ -227,6 +263,7 @@ for src in cpp_files:
 
     cmd += CXX_FLAGS
     cmd += INCLUDE_FLAGS
+    cmd += DEFINE_FLAGS
 
     result = subprocess.run(cmd)
 
@@ -261,6 +298,7 @@ if source_changed(glad_path) or not os.path.exists(glad_obj):
 
     cmd += CXX_FLAGS
     cmd += INCLUDE_FLAGS
+    cmd += DEFINE_FLAGS
 
     result = subprocess.run(cmd)
 
