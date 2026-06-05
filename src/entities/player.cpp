@@ -20,6 +20,7 @@
 #include "audio/audio.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
+#include "debug/gl-debug.h"
 
 // globals (engine-level)
 extern TextureStore gTextures;
@@ -269,21 +270,22 @@ void appendNodeRenderMesh(
 
 void uploadBodyPartMesh(const Mesh& mesh)
 {
-    if (!bodyPartVAO) glGenVertexArrays(1, &bodyPartVAO);
-    if (!bodyPartVBO) glGenBuffers(1, &bodyPartVBO);
+    MIMITA_GL_CLEAR_STAGE("uploadBodyPartMesh");
+    if (!bodyPartVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAO));
+    if (!bodyPartVBO) MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBO));
 
-    glBindVertexArray(bodyPartVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW);
+    MIMITA_GL_CALL(glBindVertexArray(bodyPartVAO));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW));
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(0);
+    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
 
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glEnableVertexAttribArray(1);
+    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
 
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
+    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 }
 
 glm::mat4 poseMatrix(const ProceduralPose& pose)
@@ -319,21 +321,22 @@ void uploadPlayerMeshIfNeeded(const Mesh& mesh)
     if (playerVAO && playerUploadedVertCount == mesh.verts.size())
         return;
 
-    if (!playerVAO) glGenVertexArrays(1, &playerVAO);
-    if (!playerVBO) glGenBuffers(1, &playerVBO);
+    MIMITA_GL_CLEAR_STAGE("uploadPlayerMeshIfNeeded");
+    if (!playerVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &playerVAO));
+    if (!playerVBO) MIMITA_GL_CALL(glGenBuffers(1, &playerVBO));
 
-    glBindVertexArray(playerVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, playerVBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW);
+    MIMITA_GL_CALL(glBindVertexArray(playerVAO));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, playerVBO));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(0);
+    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
 
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glEnableVertexAttribArray(1);
+    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
 
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
+    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 
     playerUploadedVertCount = mesh.verts.size();
     printf("[PLAYER GLB] uploaded verts=%zu triangles=%zu batches=%zu\n",
@@ -499,25 +502,26 @@ static void initCapsuleMesh()
 
     capsuleVertCount = (int)verts.size();
 
-    glGenVertexArrays(1,&capsuleVAO);
-    glGenBuffers(1,&capsuleVBO);
+    MIMITA_GL_CLEAR_STAGE("initCapsuleMesh");
+    MIMITA_GL_CALL(glGenVertexArrays(1,&capsuleVAO));
+    MIMITA_GL_CALL(glGenBuffers(1,&capsuleVBO));
 
-    glBindVertexArray(capsuleVAO);
-    glBindBuffer(GL_ARRAY_BUFFER,capsuleVBO);
+    MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER,capsuleVBO));
 
-    glBufferData(GL_ARRAY_BUFFER,
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER,
         verts.size()*sizeof(V),
         verts.data(),
-        GL_STATIC_DRAW);
+        GL_STATIC_DRAW));
 
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)0);
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+    MIMITA_GL_CALL(glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)0));
 
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,uv));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+    MIMITA_GL_CALL(glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,uv)));
 
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,normal));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+    MIMITA_GL_CALL(glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,normal)));
 }
 
 // =====================================================
@@ -844,8 +848,8 @@ void Player::updateProceduralAnimation(float dt)
             // torso forward lean
             // target.rotationEuler.x =
             target.rotationEuler.z =
-                // -6.0f * move01 -
-                -60.0f * move01 -
+                -6.0f * move01 -
+                // -60.0f * move01 -
                 10.0f * dash01 +
                 accelLean;
 
@@ -868,8 +872,8 @@ void Player::updateProceduralAnimation(float dt)
             // slight counterbalance to torso
             // target.rotationEuler.x =
             target.rotationEuler.z =
-                // 3.0f * move01 +
-                30.0f * move01 +
+                3.0f * move01 +
+                // 30.0f * move01 +
                 5.0f * dash01 -
                 accelLean * 0.5f;
 
@@ -1001,7 +1005,8 @@ void Player::render(unsigned int shader,
 
     if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
-        glUseProgram(shader);
+        MIMITA_GL_CLEAR_STAGE("Player::render body parts");
+        MIMITA_GL_CALL(glUseProgram(shader));
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
         glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
@@ -1022,8 +1027,8 @@ void Player::render(unsigned int shader,
 
             for (const Mesh::Batch& batch : mesh.batches)
             {
-                glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
-                glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+                MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
+                MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
             }
         }
         return;
@@ -1037,19 +1042,20 @@ void Player::render(unsigned int shader,
             glm::translate(glm::mat4(1.0f), pos) *
             glm::rotate(glm::mat4(1.0f), glm::radians(yaw), glm::vec3(0,0,1));
 
-        glUseProgram(shader);
+        MIMITA_GL_CLEAR_STAGE("Player::render mesh");
+        MIMITA_GL_CALL(glUseProgram(shader));
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
         glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindVertexArray(playerVAO);
+        MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+        MIMITA_GL_CALL(glBindVertexArray(playerVAO));
         for (const Mesh::Batch& batch : renderMesh.batches)
         {
-            glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
-            glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
+            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
         }
         return;
     }
@@ -1058,16 +1064,17 @@ void Player::render(unsigned int shader,
 
     glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
 
-    glUseProgram(shader);
+    MIMITA_GL_CLEAR_STAGE("Player::render capsule");
+    MIMITA_GL_CALL(glUseProgram(shader));
     glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
     glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
     glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1"));
+    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
+    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1")));
 
-    glBindVertexArray(capsuleVAO);
-    glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount);
+    MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
+    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));
 }

@@ -12,12 +12,17 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 
 // need camera here
 #include "camera.h"
+#include "config.h"
 #include "renderer.h"
+#include "stb_image.h"
+#include "utils/path_utils.h"
+#include "debug/gl-debug.h"
 
 static std::string readTextFile(const char* path)
 {
@@ -46,16 +51,20 @@ static std::string readTextFile(const char* path)
 
 static GLuint compileShader(GLenum type, const char* src, const char* debugName)
 {
+    MIMITA_GL_CLEAR_STAGE("compileShader");
     GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &src, nullptr);
-    glCompileShader(shader);
+    MIMITA_GL_CHECK("glCreateShader");
+    if (!shader)
+        return 0;
+    MIMITA_GL_CALL(glShaderSource(shader, 1, &src, nullptr));
+    MIMITA_GL_CALL(glCompileShader(shader));
 
     GLint ok = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    MIMITA_GL_CALL(glGetShaderiv(shader, GL_COMPILE_STATUS, &ok));
 
     if (!ok) {
         char log[2048];
-        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+        MIMITA_GL_CALL(glGetShaderInfoLog(shader, sizeof(log), nullptr, log));
         printf("[RENDERER] Shader compile failed: %s\n%s\n", debugName, log);
     } else {
         printf("[RENDERER] Shader compile OK: %s\n", debugName);
@@ -77,27 +86,55 @@ static GLuint createProgramFromFiles(const char* vertPath, const char* fragPath)
 
     GLuint vs = compileShader(GL_VERTEX_SHADER,   vertText.c_str(), vertPath);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragText.c_str(), fragPath);
+    if (!vs || !fs)
+    {
+        if (vs) MIMITA_GL_CALL(glDeleteShader(vs));
+        if (fs) MIMITA_GL_CALL(glDeleteShader(fs));
+        return 0;
+    }
 
+    MIMITA_GL_CLEAR_STAGE("createProgramFromFiles");
     GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
+    MIMITA_GL_CHECK("glCreateProgram");
+    if (!program)
+    {
+        MIMITA_GL_CALL(glDeleteShader(vs));
+        MIMITA_GL_CALL(glDeleteShader(fs));
+        return 0;
+    }
+    MIMITA_GL_CALL(glAttachShader(program, vs));
+    MIMITA_GL_CALL(glAttachShader(program, fs));
+    MIMITA_GL_CALL(glLinkProgram(program));
 
     GLint ok = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    MIMITA_GL_CALL(glGetProgramiv(program, GL_LINK_STATUS, &ok));
 
     if (!ok) {
         char log[2048];
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+        MIMITA_GL_CALL(glGetProgramInfoLog(program, sizeof(log), nullptr, log));
         printf("[RENDERER] Program link failed:\n%s\n", log);
     } else {
         printf("[RENDERER] Program link OK\n");
     }
 
-    glDeleteShader(vs);
-    glDeleteShader(fs);
+    MIMITA_GL_CALL(glDeleteShader(vs));
+    MIMITA_GL_CALL(glDeleteShader(fs));
 
     return program;
+}
+
+static bool dimensionsAreValidForCursor(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        return false;
+
+    if (width > 256 || height > 256)
+        return false;
+
+    if (width > std::numeric_limits<int>::max() / height / 4)
+        return false;
+
+    return true;
 }
 
 Renderer::Renderer(int w, int h, const char* title) {
@@ -127,6 +164,10 @@ Renderer::Renderer(int w, int h, const char* title) {
         if (cam) cam->updateMouse(x, y);
     });
 
+    if (CursorConfig::CUSTOM_CURSOR_ENABLED) {
+        installCustomCursor(CursorConfig::CUSTOM_CURSOR_PATH, CursorConfig::CUSTOM_CURSOR_HOTSPOT_CENTERED);
+    }
+
     glfwMakeContextCurrent(window);
 
     // this might go here idk ? mar 6 2026
@@ -141,7 +182,8 @@ Renderer::Renderer(int w, int h, const char* title) {
     }
 
     printf("OpenGL %s\n", glGetString(GL_VERSION));
-    glEnable(GL_DEPTH_TEST);
+    MIMITA_GL_CLEAR_STAGE("Renderer::Renderer after GLAD");
+    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
 
     // do this mar 14 2026 dont do direct paths 
     shaderProgram = createProgramFromFiles(
@@ -159,6 +201,95 @@ Renderer::Renderer(int w, int h, const char* title) {
     printf("[RENDERER] shaderProgram=%u\n", shaderProgram);
 }
 
+bool Renderer::installCustomCursor(const char* path, bool centeredHotspot)
+{
+    if (!window) {
+        printf("[CURSOR] failed to install custom cursor: window is null\n");
+        return false;
+    }
+
+    if (!path || !path[0]) {
+        printf("[CURSOR] failed to load cursor.png: empty path\n");
+        return false;
+    }
+
+    std::string resolvedPath = resolveAssetPath(path);
+
+    int width = 0;
+    int height = 0;
+    int sourceChannels = 0;
+    unsigned char* pixels = stbi_load(resolvedPath.c_str(), &width, &height, &sourceChannels, STBI_rgb_alpha);
+    if (!pixels) {
+        const char* reason = stbi_failure_reason();
+        printf("[CURSOR] failed to load cursor.png path=%s reason=%s\n", resolvedPath.c_str(), reason ? reason : "unknown");
+        return false;
+    }
+
+    if (!dimensionsAreValidForCursor(width, height)) {
+        printf("[CURSOR] invalid cursor dimensions %dx%d path=%s\n", width, height, resolvedPath.c_str());
+        stbi_image_free(pixels);
+        return false;
+    }
+
+    GLFWimage image;
+    image.width = width;
+    image.height = height;
+    image.pixels = pixels;
+
+    int hotspotX = centeredHotspot ? width / 2 : 0;
+    int hotspotY = centeredHotspot ? height / 2 : 0;
+    if (hotspotX < 0 || hotspotX >= width || hotspotY < 0 || hotspotY >= height) {
+        printf("[CURSOR] invalid hotspot %d,%d for cursor %dx%d path=%s\n",
+               hotspotX, hotspotY, width, height, resolvedPath.c_str());
+        stbi_image_free(pixels);
+        return false;
+    }
+
+    const char* oldDescription = nullptr;
+    glfwGetError(&oldDescription);
+    GLFWcursor* nextCursor = glfwCreateCursor(&image, hotspotX, hotspotY);
+    stbi_image_free(pixels);
+
+    if (!nextCursor) {
+        const char* description = nullptr;
+        int errorCode = glfwGetError(&description);
+        printf("[CURSOR] cursor creation failed %dx%d hotspot=%d,%d glfwError=%d %s\n",
+               width,
+               height,
+               hotspotX,
+               hotspotY,
+               errorCode,
+               description ? description : "");
+        return false;
+    }
+
+    destroyCustomCursor();
+    customCursor = nextCursor;
+    glfwSetCursor(window, customCursor);
+
+    printf("[CURSOR] loaded custom cursor %dx%d channels=%d hotspot=%d,%d mode=%s\n",
+           width,
+           height,
+           sourceChannels,
+           hotspotX,
+           hotspotY,
+           centeredHotspot ? "centered" : "top-left");
+    return true;
+}
+
+void Renderer::destroyCustomCursor()
+{
+    if (!customCursor)
+        return;
+
+    if (window)
+        glfwSetCursor(window, nullptr);
+
+    glfwDestroyCursor(customCursor);
+    customCursor = nullptr;
+    printf("[CURSOR] destroyed custom cursor\n");
+}
+
 float Renderer::beginFrame() {
     static double last = glfwGetTime();
     double now = glfwGetTime();
@@ -168,9 +299,10 @@ float Renderer::beginFrame() {
     glfwGetFramebufferSize(window, &width, &height);
     if (width <= 0) width = 1;
     if (height <= 0) height = 1;
-    glViewport(0, 0, width, height);
-    glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    MIMITA_GL_CLEAR_STAGE("Renderer::beginFrame");
+    MIMITA_GL_CALL(glViewport(0, 0, width, height));
+    MIMITA_GL_CALL(glClearColor(0.1f, 0.1f, 0.12f, 1.0f));
+    MIMITA_GL_CALL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
     return dt;
 }
@@ -181,13 +313,22 @@ void Renderer::endFrame() {
 }
 
 bool Renderer::shouldClose() {
-    return glfwWindowShouldClose(window);
+    return window && glfwWindowShouldClose(window);
 }
 
 void Renderer::shutdown() {
+    destroyCustomCursor();
+
     if (shaderProgram) {
-        glDeleteProgram(shaderProgram);
+        MIMITA_GL_CLEAR_STAGE("Renderer::shutdown");
+        MIMITA_GL_CALL(glDeleteProgram(shaderProgram));
         shaderProgram = 0;
     }
+
+    if (window) {
+        glfwDestroyWindow(window);
+        window = nullptr;
+    }
+
     glfwTerminate();
 }

@@ -32,10 +32,18 @@
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
 #include "debug/debug-log.h"
+#include "debug/gl-debug.h"
 
 extern TextureStore gTextures;
 
 namespace {
+
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
 
 #define GLB_LOG(...) Debug::logAuto(Debug::Category::GLB, __VA_ARGS__)
 
@@ -189,7 +197,23 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
 {
     if (image.image.empty() || image.width <= 0 || image.height <= 0)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] image %d is empty; using assets/textures/default.png\n", imageIndex);
+        GLB_LOG("[GLB TEXTURE WARNING] image %d invalid data size=%zu dims=%dx%d; using assets/textures/default.png\n",
+                imageIndex, image.image.size(), image.width, image.height);
+        return gTextures.get("default");
+    }
+
+    if (image.component < 1 || image.component > 4)
+    {
+        GLB_LOG("[GLB TEXTURE WARNING] image %d unsupported component count=%d; using default.png\n",
+                imageIndex, image.component);
+        return gTextures.get("default");
+    }
+
+    const size_t expectedBytes = (size_t)image.width * (size_t)image.height * (size_t)image.component;
+    if (expectedBytes == 0 || image.image.size() < expectedBytes)
+    {
+        GLB_LOG("[GLB TEXTURE WARNING] image %d pixel buffer too small bytes=%zu expected=%zu dims=%dx%d components=%d; using default.png\n",
+                imageIndex, image.image.size(), expectedBytes, image.width, image.height, image.component);
         return gTextures.get("default");
     }
 
@@ -199,25 +223,27 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
     // Trilinear filtering blends between mip levels so movement does not pop.
     // Anisotropic filtering helps surfaces viewed at glancing angles, like floors.
     GLuint tex = 0;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
+    MIMITA_GL_CLEAR_STAGE("uploadGLBImage");
+    MIMITA_GL_CALL(glGenTextures(1, &tex));
+    if (!tex)
+    {
+        GLB_LOG("[GLB TEXTURE WARNING] glGenTextures returned 0 for image %d; using default.png\n", imageIndex);
+        return gTextures.get("default");
+    }
+    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
 
     GLenum srcFormat = GL_RGBA;
     if (image.component == 1) srcFormat = GL_RED;
     else if (image.component == 2) srcFormat = GL_RG;
     else if (image.component == 3) srcFormat = GL_RGB;
     else if (image.component == 4) srcFormat = GL_RGBA;
-    else
-    {
-        GLB_LOG("[GLB TEXTURE WARNING] image %d unsupported component count=%d; using default.png\n", imageIndex, image.component);
-        return gTextures.get("default");
-    }
 
     GLB_LOG("[GLB] loaded texture image=%d name=%s size=%dx%d components=%d bytes=%zu tex=%u\n",
            imageIndex, image.name.c_str(), image.width, image.height, image.component, image.image.size(), tex);
     Debug::log(Debug::Category::GLB, "[TEXTURE] Uploading GLB image to GPU and generating mipmaps\n");
 
-    glTexImage2D(
+    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    MIMITA_GL_CALL(glTexImage2D(
         GL_TEXTURE_2D,
         0,
         GL_RGBA,
@@ -227,31 +253,40 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
         srcFormat,
         GL_UNSIGNED_BYTE,
         image.image.data()
-    );
+    ));
 
     // REPEAT lets UVs outside 0..1 tile. This is useful for blockout/material-style maps.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
 
     // Minification = texture is smaller on screen than in memory. Use mipmaps.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
 
     // Magnification = texture is larger on screen than in memory. NEAREST preserves a
     // crisp PS2-ish/pixel edge; switch to GL_LINEAR for smoother texture enlargement.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
 
-    glGenerateMipmap(GL_TEXTURE_2D);
+    MIMITA_GL_CALL(glGenerateMipmap(GL_TEXTURE_2D));
     Debug::log(Debug::Category::GLB, "[TEXTURE] mipmaps generated for GLB texture tex=%u\n", tex);
 
-    GLfloat maxAniso = 1.0f;
-    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
-    if (maxAniso > 1.0f)
+    if (GLDebug::extensionSupported("GL_EXT_texture_filter_anisotropic"))
     {
-        GLfloat useAniso = maxAniso < 4.0f ? maxAniso : 4.0f;
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, useAniso);
-        Debug::log(Debug::Category::GLB, "[TEXTURE] anisotropic filtering %.1fx applied to GLB texture\n", useAniso);
+        GLfloat maxAniso = 1.0f;
+        MIMITA_GL_CALL(glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso));
+        if (maxAniso > 1.0f)
+        {
+            GLfloat useAniso = maxAniso < 4.0f ? maxAniso : 4.0f;
+            MIMITA_GL_CALL(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, useAniso));
+            Debug::log(Debug::Category::GLB, "[TEXTURE] anisotropic filtering %.1fx applied to GLB texture\n", useAniso);
+        }
+    }
+    else
+    {
+        Debug::logOnce(Debug::Category::GLB, "anisotropy-unsupported",
+                       "[TEXTURE] GL_EXT_texture_filter_anisotropic unsupported; anisotropic filtering skipped\n");
     }
 
+    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 4));
     return tex;
 }
 

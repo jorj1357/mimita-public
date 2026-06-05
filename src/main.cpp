@@ -43,11 +43,24 @@
 #include "game/game-state.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
+#include "network/net_mode.h"
 
 #include <cstdio>
 
-int main()
+int main(int argc, char** argv)
 {
+    MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
+    if (launchOptions.server && launchOptions.client)
+    {
+        printf("[MAIN] choose only one mode: --server or --client\n");
+        MimitaNet::printLaunchUsage();
+        return 1;
+    }
+    if (launchOptions.server)
+        return MimitaNet::runServer(launchOptions);
+    if (launchOptions.client)
+        return MimitaNet::runClient(launchOptions);
+
     printf("[MAIN] start\n");
 
     Engine engine;
@@ -209,6 +222,7 @@ int main()
     }
 
     printf("[MAIN] loop ended\n");
+    engine.shutdown();
     
     return 0;
 }

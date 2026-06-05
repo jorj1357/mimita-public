@@ -49,5 +49,17 @@ GLFWwindow* Engine::window() const
 
 bool Engine::running() const
 {
-    return renderer && !renderer->shouldClose();
+    return renderer && renderer->window && !renderer->shouldClose();
+}
+
+void Engine::shutdown()
+{
+    if (!renderer)
+        return;
+
+    Renderer* shuttingDown = renderer;
+    renderer->shutdown();
+    renderer = nullptr;
+    if (gRenderer == shuttingDown)
+        gRenderer = nullptr;
 }
