@@ -11,3 +11,12 @@ namespace DebugConfig
 
     inline float PRINT_INTERVAL = 0.25f;
 }
+
+namespace CursorConfig
+{
+    inline bool CUSTOM_CURSOR_ENABLED = true;
+    inline const char* CUSTOM_CURSOR_PATH = "assets/textures/cursor.png";
+
+    // false = top-left arrow-style hotspot, true = centered crosshair-style hotspot
+    inline bool CUSTOM_CURSOR_HOTSPOT_CENTERED = false;
+}

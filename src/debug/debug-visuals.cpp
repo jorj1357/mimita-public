@@ -13,6 +13,7 @@
 #include "gui/ui-system.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
+#include "debug/gl-debug.h"
 #include <vector>
 
 extern Renderer* gRenderer;
@@ -89,13 +90,15 @@ void flushDebugLines(const Camera& camera)
 
     if (!gLineVao)
     {
-        glGenVertexArrays(1, &gLineVao);
-        glGenBuffers(1, &gLineVbo);
+        MIMITA_GL_CLEAR_STAGE("flushDebugLines init");
+        MIMITA_GL_CALL(glGenVertexArrays(1, &gLineVao));
+        MIMITA_GL_CALL(glGenBuffers(1, &gLineVbo));
     }
 
-    glDisable(GL_DEPTH_TEST);
+    MIMITA_GL_CLEAR_STAGE("flushDebugLines");
+    MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
 
-    glUseProgram(gRenderer->shaderProgram);
+    MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
 
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
@@ -130,46 +133,46 @@ void flushDebugLines(const Camera& camera)
         2
     );
 
-    glBindVertexArray(gLineVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gLineVbo);
+    MIMITA_GL_CALL(glBindVertexArray(gLineVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gLineVbo));
 
-    glBufferData(
+    MIMITA_GL_CALL(glBufferData(
         GL_ARRAY_BUFFER,
         gLineVerts.size() * sizeof(DebugLineVertex),
         gLineVerts.data(),
         GL_DYNAMIC_DRAW
-    );
+    ));
 
     // position
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         0,
         3,
         GL_FLOAT,
         GL_FALSE,
         sizeof(DebugLineVertex),
         (void*)offsetof(DebugLineVertex, pos)
-    );
+    ));
 
-    glEnableVertexAttribArray(0);
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
 
     // per-line debug color
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         3,
         4,
         GL_FLOAT,
         GL_FALSE,
         sizeof(DebugLineVertex),
         (void*)offsetof(DebugLineVertex, color)
-    );
+    ));
 
-    glEnableVertexAttribArray(3);
+    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
 
-    glDisableVertexAttribArray(1);
-    glDisableVertexAttribArray(2);
+    MIMITA_GL_CALL(glDisableVertexAttribArray(1));
+    MIMITA_GL_CALL(glDisableVertexAttribArray(2));
 
-    glDrawArrays(GL_LINES, 0, (GLsizei)gLineVerts.size());
+    MIMITA_GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)gLineVerts.size()));
 
-    glEnable(GL_DEPTH_TEST);
+    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
 
     gLineVerts.clear();
 }

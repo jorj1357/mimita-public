@@ -7,6 +7,7 @@
 
 struct Renderer {
     GLFWwindow* window = nullptr;
+    GLFWcursor* customCursor = nullptr;
     int width = 0;
     int height = 0;
 
@@ -14,6 +15,8 @@ struct Renderer {
     GLuint shaderProgram = 0; 
 
     Renderer(int w, int h, const char* title);
+    bool installCustomCursor(const char* path, bool centeredHotspot);
+    void destroyCustomCursor();
     float beginFrame();
     void endFrame();
     bool shouldClose();

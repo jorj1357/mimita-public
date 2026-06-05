@@ -77,6 +77,16 @@ static std::vector<int> gatherGLBTrianglesForSphere(
 static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
 static void applyTouchResets(Player& p);
 
+struct RecoveryContact
+{
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 point{0.0f};
+    float penetration = 0.0f;
+    int triangleIndex = -1;
+    const Block* block = nullptr;
+    const char* label = "recovery";
+};
+
 static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
 {
     glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
@@ -446,6 +456,297 @@ static bool capsuleVsBlock(
     return false;
 }
 
+static inline Capsule translatedCapsule(const Capsule& cap, const glm::vec3& delta)
+{
+    Capsule out = cap;
+    out.a += delta;
+    out.b += delta;
+    return out;
+}
+
+static bool sphereAABBContact(
+    glm::vec3 center,
+    float radius,
+    const AABB& block,
+    RecoveryContact& out,
+    const Block* sourceBlock,
+    const char* label
+) {
+    glm::vec3 closest;
+    closest.x = glm::clamp(center.x, block.min.x, block.max.x);
+    closest.y = glm::clamp(center.y, block.min.y, block.max.y);
+    closest.z = glm::clamp(center.z, block.min.z, block.max.z);
+
+    glm::vec3 delta = center - closest;
+    float dist2 = glm::dot(delta, delta);
+
+    if (dist2 > radius * radius)
+        return false;
+
+    glm::vec3 normal(0.0f, 0.0f, 1.0f);
+    float penetration = 0.0f;
+
+    if (dist2 > 0.00000001f)
+    {
+        float dist = sqrtf(dist2);
+        normal = delta / dist;
+        penetration = radius - dist;
+    }
+    else
+    {
+        float dNegX = center.x - block.min.x;
+        float dPosX = block.max.x - center.x;
+        float dNegY = center.y - block.min.y;
+        float dPosY = block.max.y - center.y;
+        float dNegZ = center.z - block.min.z;
+        float dPosZ = block.max.z - center.z;
+
+        float best = dNegX;
+        normal = {-1.0f, 0.0f, 0.0f};
+        if (dPosX < best) { best = dPosX; normal = { 1.0f, 0.0f, 0.0f}; }
+        if (dNegY < best) { best = dNegY; normal = {0.0f, -1.0f, 0.0f}; }
+        if (dPosY < best) { best = dPosY; normal = {0.0f,  1.0f, 0.0f}; }
+        if (dNegZ < best) { best = dNegZ; normal = {0.0f, 0.0f, -1.0f}; }
+        if (dPosZ < best) { best = dPosZ; normal = {0.0f, 0.0f,  1.0f}; }
+
+        penetration = radius + std::max(best, 0.0f);
+        closest = center - normal * std::max(best, 0.0f);
+    }
+
+    out.normal = normal;
+    out.point = closest;
+    out.penetration = std::max(penetration, 0.0f);
+    out.block = sourceBlock;
+    out.label = label;
+    return true;
+}
+
+static std::vector<RecoveryContact> collectBlockContactsForCapsule(
+    const Capsule& cap,
+    const std::vector<Block*>& nearbyBlocks
+) {
+    std::vector<RecoveryContact> contacts;
+    constexpr int SAMPLE_COUNT = 5;
+
+    for (Block* b : nearbyBlocks)
+    {
+        if (!b || b->isSlope)
+            continue;
+
+        AABB ba = makeBlockAABB(*b);
+        for (int i = 0; i < SAMPLE_COUNT; ++i)
+        {
+            float t = (SAMPLE_COUNT == 1) ? 0.0f : (float)i / (float)(SAMPLE_COUNT - 1);
+            glm::vec3 sample = cap.a + (cap.b - cap.a) * t;
+            RecoveryContact c;
+            if (sphereAABBContact(sample, cap.r, ba, c, b, "block-overlap"))
+                contacts.push_back(c);
+        }
+    }
+
+    return contacts;
+}
+
+static std::vector<RecoveryContact> collectGLBRecoveryContacts(
+    const World& world,
+    const Capsule& cap,
+    const std::vector<glm::vec3>& bodySamples,
+    const std::vector<int>& candidates,
+    float bodySampleRadius
+) {
+    std::vector<RecoveryContact> contacts;
+
+    for (int triIndex : candidates)
+    {
+        if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+            continue;
+
+        Contact contact;
+        if (capsuleTriangleContact(cap, world.collisionMesh.triangles[triIndex], triIndex, contact))
+        {
+            contacts.push_back({
+                contact.normal,
+                contact.point,
+                contact.penetration,
+                contact.triangleIndex,
+                nullptr,
+                "capsule-triangle"
+            });
+        }
+    }
+
+    for (glm::vec3 sample : bodySamples)
+    {
+        for (int triIndex : candidates)
+        {
+            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+
+            Contact contact;
+            if (!sphereTriangleContact(sample, bodySampleRadius, world.collisionMesh.triangles[triIndex], contact))
+                continue;
+
+            contact.triangleIndex = triIndex;
+            contacts.push_back({
+                contact.normal,
+                contact.point,
+                contact.penetration,
+                contact.triangleIndex,
+                nullptr,
+                "body-triangle"
+            });
+        }
+    }
+
+    return contacts;
+}
+
+static glm::vec3 solveBatchedCorrection(
+    const std::vector<RecoveryContact>& contacts,
+    float slop,
+    float* outMaxPenetration = nullptr,
+    glm::vec3* outWeightedNormal = nullptr
+) {
+    glm::vec3 correction(0.0f);
+    glm::vec3 weightedNormal(0.0f);
+    float maxPenetration = 0.0f;
+
+    for (const RecoveryContact& c : contacts)
+    {
+        maxPenetration = std::max(maxPenetration, c.penetration);
+        weightedNormal += c.normal * std::max(c.penetration + slop, slop);
+    }
+
+    constexpr int SOLVER_PASSES = 6;
+    for (int pass = 0; pass < SOLVER_PASSES; ++pass)
+    {
+        for (const RecoveryContact& c : contacts)
+        {
+            float required = c.penetration + slop;
+            float satisfied = glm::dot(correction, c.normal);
+            if (satisfied < required)
+                correction += c.normal * (required - satisfied);
+        }
+    }
+
+    if (outMaxPenetration)
+        *outMaxPenetration = maxPenetration;
+    if (outWeightedNormal)
+        *outWeightedNormal = weightedNormal;
+
+    return correction;
+}
+
+static bool capsuleHasBlockContactsAfterMove(
+    const Capsule& cap,
+    const std::vector<Block*>& nearbyBlocks,
+    const glm::vec3& correction
+) {
+    return !collectBlockContactsForCapsule(translatedCapsule(cap, correction), nearbyBlocks).empty();
+}
+
+static void addCandidateDirection(std::vector<glm::vec3>& dirs, glm::vec3 dir)
+{
+    float len2 = glm::dot(dir, dir);
+    if (len2 < 0.000001f)
+        return;
+
+    dir /= sqrtf(len2);
+    for (glm::vec3 existing : dirs)
+        if (glm::dot(existing, dir) > 0.98f)
+            return;
+
+    dirs.push_back(dir);
+}
+
+static bool findBlockFallbackEscape(
+    const Capsule& cap,
+    const std::vector<Block*>& nearbyBlocks,
+    const std::vector<RecoveryContact>& contacts,
+    const glm::vec3& weightedNormal,
+    glm::vec3& outCorrection
+) {
+    std::vector<glm::vec3> dirs;
+    addCandidateDirection(dirs, weightedNormal);
+    addCandidateDirection(dirs, { 1.0f, 0.0f, 0.0f});
+    addCandidateDirection(dirs, {-1.0f, 0.0f, 0.0f});
+    addCandidateDirection(dirs, {0.0f,  1.0f, 0.0f});
+    addCandidateDirection(dirs, {0.0f, -1.0f, 0.0f});
+    addCandidateDirection(dirs, {0.0f, 0.0f,  1.0f});
+    addCandidateDirection(dirs, {0.0f, 0.0f, -1.0f});
+
+    for (const RecoveryContact& c : contacts)
+        addCandidateDirection(dirs, c.normal);
+
+    float maxBlockExtent = 1.0f;
+    for (Block* b : nearbyBlocks)
+        if (b && !b->isSlope)
+            maxBlockExtent = std::max(maxBlockExtent, std::max(std::max(b->size.x, b->size.y), b->size.z));
+
+    const float maxEscape = maxBlockExtent + PLAYER_HEIGHT + PLAYER_RADIUS * 4.0f;
+    bool found = false;
+    float bestLen = std::numeric_limits<float>::max();
+    glm::vec3 best(0.0f);
+
+    for (glm::vec3 dir : dirs)
+    {
+        float low = 0.0f;
+        float high = PLAYER_RADIUS * 0.25f + 0.01f;
+        while (high <= maxEscape && capsuleHasBlockContactsAfterMove(cap, nearbyBlocks, dir * high))
+            high *= 2.0f;
+
+        if (high > maxEscape)
+            continue;
+
+        for (int i = 0; i < 12; ++i)
+        {
+            float mid = (low + high) * 0.5f;
+            if (capsuleHasBlockContactsAfterMove(cap, nearbyBlocks, dir * mid))
+                low = mid;
+            else
+                high = mid;
+        }
+
+        if (high < bestLen)
+        {
+            bestLen = high;
+            best = dir * (high + 0.002f);
+            found = true;
+        }
+    }
+
+    if (!found)
+        return false;
+
+    outCorrection = best;
+    return true;
+}
+
+static void applyRecoveryContacts(
+    Player& p,
+    bool& groundedThisFrame,
+    const std::vector<RecoveryContact>& contacts,
+    const glm::vec3& correction,
+    const char* debugLabel
+) {
+    for (const RecoveryContact& c : contacts)
+    {
+        applyCollisionContact(
+            p,
+            groundedThisFrame,
+            c.normal,
+            c.point,
+            c.penetration,
+            c.triangleIndex,
+            c.label
+        );
+    }
+
+    glm::vec3 before = p.pos;
+    p.pos += correction;
+    DebugVis::recordDepenetration(before, correction, debugLabel);
+}
+
 // this is for capsule stuff but idk whre to put it mar 7 2026 
 static bool capsuleSweep(
     const Capsule& cap,
@@ -598,84 +899,53 @@ static void doGLBTriangleCollisions(
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
     for (int cleanupIter = 0; cleanupIter < 8; ++cleanupIter)
     {
-        bool moved = false;
         p.updateModelWorldTransforms();
         cap = p.getCapsule();
         bodySamples = collectPlayerBodyCollisionSamples(p);
         candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
-        for (int triIndex : candidates)
-        {
-            Contact contact;
-            if (!capsuleTriangleContact(cap, world.collisionMesh.triangles[triIndex], triIndex, contact))
-                continue;
 
-            glm::vec3 correction = contact.normal * (contact.penetration + SURFACE_SLOP);
-            p.pos += correction;
-            DebugVis::recordDepenetration(p.pos - correction, correction, "capsule-triangle");
-            moved = true;
-            applyCollisionContact(
-                p,
-                groundedThisFrame,
-                contact.normal,
-                contact.point,
-                contact.penetration,
-                contact.triangleIndex,
-                "capsule-triangle"
-            );
+        std::vector<RecoveryContact> contacts = collectGLBRecoveryContacts(
+            world,
+            cap,
+            bodySamples,
+            candidates,
+            BODY_SAMPLE_RADIUS
+        );
 
-            PHYS_LOG(
-                "[PHYS][GLB CONTACT] tri=%d pen=%.4f normal=(%.2f %.2f %.2f)\n",
-                contact.triangleIndex,
-                contact.penetration,
-                contact.normal.x,
-                contact.normal.y,
-                contact.normal.z
-            );
+        if (contacts.empty())
+            break;
 
-            cap = p.getCapsule();
-        }
+        float maxPenetration = 0.0f;
+        glm::vec3 weightedNormal(0.0f);
+        glm::vec3 correction = solveBatchedCorrection(
+            contacts,
+            SURFACE_SLOP,
+            &maxPenetration,
+            &weightedNormal
+        );
 
-        bool restartBodySamplePass = false;
-        for (glm::vec3 sample : bodySamples)
-        {
-            for (int triIndex : candidates)
-            {
-                Contact contact;
-                if (!sphereTriangleContact(sample, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], contact))
-                    continue;
+        applyRecoveryContacts(
+            p,
+            groundedThisFrame,
+            contacts,
+            correction,
+            "glb-overlap-batch"
+        );
 
-                contact.triangleIndex = triIndex;
-                glm::vec3 correction = contact.normal * (contact.penetration + SURFACE_SLOP);
-                p.pos += correction;
-                DebugVis::recordDepenetration(p.pos - correction, correction, "body-triangle");
-                moved = true;
-                restartBodySamplePass = true;
-                applyCollisionContact(
-                    p,
-                    groundedThisFrame,
-                    contact.normal,
-                    contact.point,
-                    contact.penetration,
-                    contact.triangleIndex,
-                    "body-triangle"
-                );
+        PHYS_LOG(
+            "[PHYS][GLB RECOVERY] iter=%d contacts=%zu maxPen=%.4f correction=(%.4f %.4f %.4f) weighted=(%.4f %.4f %.4f)\n",
+            cleanupIter,
+            contacts.size(),
+            maxPenetration,
+            correction.x,
+            correction.y,
+            correction.z,
+            weightedNormal.x,
+            weightedNormal.y,
+            weightedNormal.z
+        );
 
-                PHYS_LOG(
-                    "[PHYS][BODY CONTACT] tri=%d pen=%.4f normal=(%.2f %.2f %.2f)\n",
-                    contact.triangleIndex,
-                    contact.penetration,
-                    contact.normal.x,
-                    contact.normal.y,
-                    contact.normal.z
-                );
-                break;
-            }
-
-            if (restartBodySamplePass)
-                break;
-        }
-
-        if (!moved)
+        if (glm::dot(correction, correction) < 0.0000001f)
             break;
     }
 }
@@ -723,6 +993,13 @@ void doCollisions(
         if (std::find(nearbyBlocks.begin(), nearbyBlocks.end(), b) == nearbyBlocks.end())
             nearbyBlocks.push_back(b);
     }
+    std::vector<Block*> uniqueNearbyBlocks;
+    for (Block* b : nearbyBlocks)
+    {
+        if (std::find(uniqueNearbyBlocks.begin(), uniqueNearbyBlocks.end(), b) == uniqueNearbyBlocks.end())
+            uniqueNearbyBlocks.push_back(b);
+    }
+    nearbyBlocks = uniqueNearbyBlocks;
 
     // sweep + slide iterations
     for (int i = 0; i < 4; i++)
@@ -924,57 +1201,58 @@ void doCollisions(
     // just put cap mar 7 2026 
     cap = p.getCapsule();
 
-    for (int recoverIter = 0; recoverIter < 8; ++recoverIter)
+    constexpr int MAX_BLOCK_RECOVERY_ITERATIONS = 10;
+    for (int recoverIter = 0; recoverIter < MAX_BLOCK_RECOVERY_ITERATIONS; ++recoverIter)
     {
-        bool moved = false;
         cap = p.getCapsule();
+        std::vector<RecoveryContact> contacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
 
-        for (Block* b : nearbyBlocks)
+        if (contacts.empty())
+            break;
+
+        float maxPenetration = 0.0f;
+        glm::vec3 weightedNormal(0.0f);
+        glm::vec3 correction = solveBatchedCorrection(
+            contacts,
+            0.002f,
+            &maxPenetration,
+            &weightedNormal
+        );
+
+        bool usedFallback = false;
+        if (capsuleHasBlockContactsAfterMove(cap, nearbyBlocks, correction))
         {
-            if (!b || b->isSlope)
-                continue;
-
-            AABB ba = makeBlockAABB(*b);
-
-            glm::vec3 correction;
-            bool grounded = false;
-
-            if (capsuleVsBlock(cap, ba, correction, grounded))
+            glm::vec3 fallback(0.0f);
+            if (findBlockFallbackEscape(cap, nearbyBlocks, contacts, weightedNormal, fallback))
             {
-                glm::vec3 before = p.pos;
-                glm::vec3 normal = glm::length(correction) > 0.000001f ? glm::normalize(correction) : glm::vec3(0,0,1);
-                p.pos += correction;
-                moved = true;
-
-                DebugVis::recordDepenetration(before, correction, "block-overlap");
-                DebugVis::recordContact(before + correction, normal, glm::length(correction), -1, "block-overlap");
-
-                if (grounded)
-                {
-                    groundedThisFrame = true;
-
-                    // --------------------------------------------------
-                    // TOUCH OBJECT RESET (overlap correction)
-                    // --------------------------------------------------
-
-                    p.airJumpsLeft = AIR_JUMPS_MAX;
-                    p.dashAvailable = true;
-
-                    // future abilities
-                    p.groundReturnAvailable = true;
-                    p.freezeAvailable = true;
-
-                    if (p.vel.z < 0)
-                        p.vel.z = 0;
-                    DebugVis::recordGroundNormal(before + correction, normal, "block-overlap-ground");
-                }
-
-                clampVelocityAgainstNormal(p, normal);
-                cap = p.getCapsule();
+                correction = fallback;
+                usedFallback = true;
             }
         }
 
-        if (!moved)
+        applyRecoveryContacts(
+            p,
+            groundedThisFrame,
+            contacts,
+            correction,
+            usedFallback ? "block-overlap-fallback" : "block-overlap-batch"
+        );
+
+        PHYS_LOG(
+            "[PHYS][BLOCK RECOVERY] iter=%d contacts=%zu maxPen=%.4f correction=(%.4f %.4f %.4f) weighted=(%.4f %.4f %.4f) fallback=%d\n",
+            recoverIter,
+            contacts.size(),
+            maxPenetration,
+            correction.x,
+            correction.y,
+            correction.z,
+            weightedNormal.x,
+            weightedNormal.y,
+            weightedNormal.z,
+            usedFallback ? 1 : 0
+        );
+
+        if (glm::dot(correction, correction) < 0.0000001f)
             break;
     }
 }

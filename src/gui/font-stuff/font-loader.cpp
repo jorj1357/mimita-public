@@ -25,6 +25,7 @@ Call them once at startup.
 #include <string>
 #include <unordered_map>
 #include <glad/glad.h>
+#include "debug/gl-debug.h"
 
 // do not define stb image implementation here 
 // it only goes in C:\important\quiet\n\mimita-private-v7-a9358d95ca5050b5d062287dd41ee2e63709f9a5\src\utils\stb_image_impl.cpp
@@ -80,22 +81,31 @@ static GLuint loadFontAtlasPage(const char* path, int pageId)
     int w = 0;
     int h = 0;
     unsigned char* data = stbi_load(path, &w, &h, &channels, 4);
-    if (!data)
+    if (!data || w <= 0 || h <= 0)
     {
         printf("[FONT ERROR] Failed to load atlas page %d: %s\n", pageId, path);
+        if (data)
+            stbi_image_free(data);
         return 0;
     }
 
     GLuint tex = 0;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
+    MIMITA_GL_CLEAR_STAGE("loadFontAtlasPage");
+    MIMITA_GL_CALL(glGenTextures(1, &tex));
+    if (!tex)
+    {
+        stbi_image_free(data);
+        return 0;
+    }
+    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
     // 5 23 2026 fonts not wokring? added this
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 4));
     stbi_image_free(data);
 
     if (pageId >= 0 && pageId < 8)
@@ -125,32 +135,33 @@ void fontInit()
 
     // we must have this stuff below 
     // or else it just draws nothing
-    glGenVertexArrays(1,&guiVAO);
-    glGenBuffers(1,&guiVBO);
+    MIMITA_GL_CLEAR_STAGE("fontInit");
+    MIMITA_GL_CALL(glGenVertexArrays(1,&guiVAO));
+    MIMITA_GL_CALL(glGenBuffers(1,&guiVBO));
 
     // mar 14 2026 this is in font-loader (this file) and gui-label
     // not good? 
-    glBindVertexArray(guiVAO);
-    glBindBuffer(GL_ARRAY_BUFFER,guiVBO);
+    MIMITA_GL_CALL(glBindVertexArray(guiVAO));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER,guiVBO));
 
-    glBufferData(
+    MIMITA_GL_CALL(glBufferData(
         GL_ARRAY_BUFFER,
         sizeof(float)*30,
         nullptr,
         GL_DYNAMIC_DRAW
-    );
+    ));
 
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         0,3,GL_FLOAT,GL_FALSE,
         5*sizeof(float),(void*)0
-    );
-    glEnableVertexAttribArray(0);
+    ));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
 
-    glVertexAttribPointer(
+    MIMITA_GL_CALL(glVertexAttribPointer(
         1,2,GL_FLOAT,GL_FALSE,
         5*sizeof(float),(void*)(3*sizeof(float))
-    );
-    glEnableVertexAttribArray(1);
+    ));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
 
     printf("[FONT] VAO/VBO ready\n");
 }
