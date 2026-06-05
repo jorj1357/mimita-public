@@ -29,6 +29,7 @@
 #include "world/world-loader.h"
 #include "world/world-gltf-loader.h"
 #include "entities/player.h"
+#include "npc/npc.h"
 #include "camera.h"
 #include "input/input-state.h"
 #include "input/input-poll.h"
@@ -102,6 +103,10 @@ int main(int argc, char** argv)
     Player player;
     printf("[MAIN] player made\n");
 
+    NpcSystem npcSystem;
+    bool npcsSpawned = false;
+    printf("[MAIN] npc system made\n");
+
     Camera camera;
     printf("[MAIN] camera made\n");
 
@@ -147,6 +152,12 @@ int main(int argc, char** argv)
                     worldLoaded = true;
                     printf("[MAIN] world load complete blocks=%zu spheres=%zu\n", world.blocks.size(), world.spheres.size());
                 }
+                if (!npcsSpawned)
+                {
+                    npcSystem.spawnPrototypeScene();
+                    npcsSpawned = true;
+                    printf("[MAIN] NPC prototype scene spawned count=%zu\n", npcSystem.all().size());
+                }
                 glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             }
             else
@@ -163,6 +174,7 @@ int main(int argc, char** argv)
             DebugVis::beginCollisionFrame();
             printf("lallaa 1 \n");
             physicsMainUpdate(player, world, input, dt);
+            npcSystem.update(world, player, dt);
                         printf("lallaa 2 \n");
 
 
@@ -175,8 +187,10 @@ int main(int argc, char** argv)
 
             renderWorld(world, camera);
             renderPlayer(player, camera);
+            npcSystem.render(camera);
             worldPassRan = true;
 
+            npcSystem.drawDebug(camera);
             drawDebugStuff(player, camera, world);
                         printf("lallaa 3 \n");
 
@@ -190,6 +204,11 @@ int main(int argc, char** argv)
                 char speedText[64];
                 snprintf(speedText, sizeof(speedText), "Speed: %.2f m/s", speed);
                 uiDrawText(speedText, 24, 144, 0.38f, {0.75f, 0.9f, 1.0f, 1.0f});
+            }
+            {
+                char npcText[96];
+                snprintf(npcText, sizeof(npcText), "NPCs: %zu difficulties 1/3/5/7/10", npcSystem.all().size());
+                uiDrawText(npcText, 24, 168, 0.32f, {1.0f, 0.82f, 0.38f, 1.0f});
             }
             if (DebugVis::render())
             {

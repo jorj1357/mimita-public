@@ -36,12 +36,10 @@ void doDash(
     // PLAYER INPUT CANCELS DASH (NEW INPUT ONLY)
     // --------------------------------------------------
 
-    static bool moveHeldPrev = false;
-
     bool moveHeld = glm::length(wishMoveXY) > 0.01f;
-    bool moveJustPressed = moveHeld && !moveHeldPrev;
+    bool moveJustPressed = moveHeld && !p.moveHeldPrev;
 
-    moveHeldPrev = moveHeld;
+    p.moveHeldPrev = moveHeld;
 
     // only cancel dash if a NEW movement press occurs
     if (moveJustPressed && glm::length(p.dashVel) > 0.0f)
