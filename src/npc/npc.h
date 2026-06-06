@@ -71,10 +71,16 @@ public:
     float actionTimer = 0.0f;
     float wanderTimer = 0.0f;
     float dashCooldown = 0.0f;
+    bool dashCommandConsumed = false;
     float attackCooldown = 0.0f;
     float lastTargetLogDistance = -1.0f;
     glm::vec3 wanderDirection{1.0f, 0.0f, 0.0f};
     glm::vec3 previousPosition{0.0f};
+    glm::vec2 lastMoveInput{0.0f};
+    glm::vec3 lastAcceleration{0.0f};
+    float lastGravityDelta = 0.0f;
+    float lastFrictionDelta = 0.0f;
+    float lastFinalSpeed = 0.0f;
     float stuckTimer = 0.0f;
     unsigned int rngState = 1;
 

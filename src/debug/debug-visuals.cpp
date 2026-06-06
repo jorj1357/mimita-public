@@ -633,21 +633,29 @@ const DebugColors& DebugVis::colors() { return gColors; }
 void DebugVis::drawNpcDebugStuff(const std::vector<NpcDebugInfo>& npcs,
                                  const Camera& camera)
 {
-    if (!DebugVis::enabled())
+    if (!DebugVis::masterEnabled() || !DebugConfig::DEBUG_NPC)
         return;
 
     const glm::vec4 awarenessColor{1.0f, 0.35f, 0.05f, 0.28f};
     const glm::vec4 moveColor{0.15f, 1.0f, 0.35f, 0.95f};
     const glm::vec4 targetColor{1.0f, 0.12f, 0.12f, 0.9f};
     const glm::vec4 pathColor{0.2f, 0.6f, 1.0f, 0.95f};
-    const glm::vec4 textColor{1.0f, 0.86f, 0.35f, 1.0f};
+    const glm::vec4 groundedColor{0.1f, 1.0f, 0.25f, 1.0f};
+    const glm::vec4 airborneColor{1.0f, 0.25f, 0.1f, 1.0f};
 
     for (const NpcDebugInfo& npc : npcs)
     {
         drawWireSphere(camera, npc.position, npc.awarenessRadius, awarenessColor);
         drawLine(camera, npc.position, npc.position + npc.velocity * 0.20f, {0.0f, 1.0f, 1.0f, 0.9f});
+        drawLine(camera, npc.position, npc.position + npc.acceleration * 0.02f, {1.0f, 0.2f, 1.0f, 0.9f});
         drawLine(camera, npc.position, npc.position + npc.moveDirection * 2.0f, moveColor);
         drawLine(camera, npc.position, npc.pathTarget, pathColor);
+        drawWireSphere(
+            camera,
+            npc.position + glm::vec3(0.0f, 0.0f, 0.15f),
+            0.18f,
+            npc.grounded ? groundedColor : airborneColor
+        );
 
         if (npc.hasTarget)
             drawLine(camera, npc.position + glm::vec3(0.0f, 0.0f, 1.2f),
@@ -655,11 +663,16 @@ void DebugVis::drawNpcDebugStuff(const std::vector<NpcDebugInfo>& npcs,
                      targetColor);
 
         char label[160];
-        snprintf(label, sizeof(label), "NPC d=%.1f %s v=%.1f",
+        snprintf(label, sizeof(label), "NPC d=%.1f %s speed=%.1f %s",
                  npc.difficulty,
                  npc.action.c_str(),
-                 glm::length(npc.velocity));
-        drawWorldLabel(npc.position + glm::vec3(0.0f, 0.0f, 2.25f), label, textColor);
+                 npc.finalSpeed,
+                 npc.grounded ? "grounded" : "airborne");
+        drawWorldLabel(
+            npc.position + glm::vec3(0.0f, 0.0f, 2.25f),
+            label,
+            npc.grounded ? groundedColor : airborneColor
+        );
     }
 }
 

@@ -17,10 +17,14 @@ struct PhysicsConfig {
 };
 
 inline PhysicsConfig PHYS = {
-    -28.0f, // gravity
+    // -28.0f, // gravity
+    -58.0f, // gravity
     20.0f, // move speed
+    // 30.0f, // move speed
     12.0f, // jump strength
-    1.1f // amount of whatever gained in air feb 10 2026
+    // 22.0f, // jump strength
+    // 1.1f // amount of whatever gained in air feb 10 2026
+    // 1.0f // amount of whatever gained in air feb 10 2026
 };
 
 // explain what this does even 
@@ -117,12 +121,15 @@ inline float MAX_PLAYER_MOVE_SPEED = PHYS.moveSpeed * 100;
 // External momentum is intentionally separate from normal movement speed.
 inline float MAX_EXTERNAL_IMPULSE_SPEED = 120.0f;
 // inline float EXTERNAL_IMPULSE_DECAY = 0.6f;
+inline float EXTERNAL_IMPULSE_DECAY = 3.0f;
 // inline float EXTERNAL_IMPULSE_DECAY = 0.9f;
 // inline float EXTERNAL_IMPULSE_DECAY = 1.1f;
 // inline float EXTERNAL_IMPULSE_DECAY = 10.1f;
-inline float EXTERNAL_IMPULSE_DECAY = 5.0f;
-inline float EXTERNAL_IMPULSE_STEER_RATE = 4.0f;
-inline float EXTERNAL_IMPULSE_BRAKE_RATE = 2.5f;
+// inline float EXTERNAL_IMPULSE_DECAY = 5.0f;
+// inline float EXTERNAL_IMPULSE_STEER_RATE = 4.0f;
+inline float EXTERNAL_IMPULSE_STEER_RATE = 40.0f;
+// inline float EXTERNAL_IMPULSE_BRAKE_RATE = 2.5f;
+inline float EXTERNAL_IMPULSE_BRAKE_RATE = 20.0f;
 
 // for blender to map stuff that isnt broken 
 inline float ROTATION_SNAP = 15.0f;

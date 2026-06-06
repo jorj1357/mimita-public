@@ -207,6 +207,23 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "debug.npc",
+        "Toggle NPC physics logs and visualization (0=off, 1=on)",
+        "debug.npc <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_NPC = !DebugConfig::DEBUG_NPC;
+            } else {
+                DebugConfig::DEBUG_NPC = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_NPC
+                ? "[OK] NPC physics debug enabled"
+                : "[OK] NPC physics debug disabled");
+        }
+    });
+
+    registerCommand({
         "debug.reset",
         "Reset all debug flags to defaults",
         "debug.reset",

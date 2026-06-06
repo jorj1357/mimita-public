@@ -509,52 +509,30 @@ static bool capsuleVsCapsule(
     bool& groundedA
 )
 {
-    // Sample points along each capsule
-    constexpr int SAMPLES = 5;
-    float minDist = FLT_MAX;
-    glm::vec3 bestNormal(0.0f, 0.0f, 1.0f);
-    bool hit = false;
-
-    for (int i = 0; i < SAMPLES; ++i)
-    {
-        float tA = (SAMPLES == 1) ? 0.0f : (float)i / (float)(SAMPLES - 1);
-        glm::vec3 pA = capA.a + (capA.b - capA.a) * tA;
-
-        for (int j = 0; j < SAMPLES; ++j)
-        {
-            float tB = (SAMPLES == 1) ? 0.0f : (float)j / (float)(SAMPLES - 1);
-            glm::vec3 pB = capB.a + (capB.b - capB.a) * tB;
-
-            glm::vec3 delta = pA - pB;
-            float dist2 = glm::dot(delta, delta);
-            float combinedR = capA.r + capB.r;
-
-            if (dist2 >= combinedR * combinedR)
-                continue;
-
-            hit = true;
-            float dist = sqrtf(dist2);
-
-            if (dist < minDist)
-            {
-                minDist = dist;
-                if (dist > 0.00001f)
-                    bestNormal = delta / dist;
-                else
-                    bestNormal = {0.0f, 0.0f, 1.0f};
-            }
-        }
-    }
-
-    if (!hit)
+    float aMinZ = std::min(capA.a.z, capA.b.z) - capA.r;
+    float aMaxZ = std::max(capA.a.z, capA.b.z) + capA.r;
+    float bMinZ = std::min(capB.a.z, capB.b.z) - capB.r;
+    float bMaxZ = std::max(capB.a.z, capB.b.z) + capB.r;
+    if (aMaxZ <= bMinZ || bMaxZ <= aMinZ)
         return false;
 
-    constexpr float PUSH_OUT_MARGIN = 0.002f;
-    float penetration = (capA.r + capB.r) - minDist;
-    correction = bestNormal * (penetration + PUSH_OUT_MARGIN);
+    glm::vec2 centerA = glm::vec2(capA.a.x + capA.b.x, capA.a.y + capA.b.y) * 0.5f;
+    glm::vec2 centerB = glm::vec2(capB.a.x + capB.b.x, capB.a.y + capB.b.y) * 0.5f;
+    glm::vec2 delta = centerA - centerB;
+    float dist = glm::length(delta);
+    float combinedR = capA.r + capB.r;
+    if (dist >= combinedR)
+        return false;
 
-    if (bestNormal.z > 0.3f)
-        groundedA = true;
+    glm::vec2 planarNormal =
+        dist > 0.00001f
+        ? delta / dist
+        : glm::vec2(1.0f, 0.0f);
+
+    constexpr float PUSH_OUT_MARGIN = 0.002f;
+    float penetration = combinedR - dist;
+    correction = glm::vec3(planarNormal * (penetration + PUSH_OUT_MARGIN), 0.0f);
+    groundedA = false;
 
     return true;
 }
