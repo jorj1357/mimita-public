@@ -1,9 +1,8 @@
 #include "dev-overlay.h"
-#include "dev-config.h"
 #include "gui/ui-system.h"
 #include <GLFW/glfw3.h>
-#include <sstream>
 #include <cstdio>
+#include <algorithm>
 
 DevOverlay& DevOverlay::instance() {
     static DevOverlay sInstance;
@@ -12,82 +11,55 @@ DevOverlay& DevOverlay::instance() {
 
 void DevOverlay::init(GLFWwindow* window) {
     mWindow = window;
-    rebuildHelpText();
     printf("[DEV OVERLAY] Initialized\n");
 }
 
-void DevOverlay::rebuildHelpText() {
-    const auto& bindings = DevConfig::instance().bindings();
-    mHelpLines.clear();
-    
-    for (const auto& b : bindings) {
-        char line[128];
-        snprintf(line, sizeof(line), "%s = %s", 
-                 [b]() -> const char* {
-                     switch (b.key) {
-                         case GLFW_KEY_F1: return "F1";
-                         case GLFW_KEY_F2: return "F2";
-                         case GLFW_KEY_F3: return "F3";
-                         case GLFW_KEY_F4: return "F4";
-                         case GLFW_KEY_F5: return "F5";
-                         case GLFW_KEY_F6: return "F6";
-                         case GLFW_KEY_F7: return "F7";
-                         case GLFW_KEY_F8: return "F8";
-                         case GLFW_KEY_F9: return "F9";
-                         case GLFW_KEY_F10: return "F10";
-                         case GLFW_KEY_F11: return "F11";
-                         case GLFW_KEY_F12: return "F12";
-                         case GLFW_KEY_ESCAPE: return "ESC";
-                         case GLFW_KEY_TAB: return "TAB";
-                         case GLFW_KEY_SPACE: return "SPACE";
-                         case GLFW_KEY_ENTER: return "ENTER";
-                         case GLFW_KEY_GRAVE_ACCENT: return "`";
-                         default:
-                             if (b.key >= GLFW_KEY_A && b.key <= GLFW_KEY_Z)
-                                 return (std::string(1, char('A' + (b.key - GLFW_KEY_A)))).c_str();
-                             if (b.key >= GLFW_KEY_0 && b.key <= GLFW_KEY_9)
-                                 return (std::string(1, char('0' + (b.key - GLFW_KEY_0)))).c_str();
-                             return "?";
-                     }
-                 }(),
-                 b.description.c_str());
-        mHelpLines.push_back(line);
-    }
-    
-    mHelpLines.push_back("F12 = Reload config");
-    printf("[DEV OVERLAY] Rebuilt help text (%zu lines)\n", mHelpLines.size());
+void DevOverlay::showNotification(const std::string& message, float duration) {
+    Notification n;
+    n.message = message;
+    n.timer = duration;
+    n.duration = duration;
+    mNotifications.push_back(n);
+    printf("[DEV OVERLAY] Notification: %s\n", message.c_str());
 }
 
-void DevOverlay::update() {
+void DevOverlay::update(float dt) {
     if (!mWindow) return;
     
-    bool f12Down = glfwGetKey(mWindow, GLFW_KEY_F12) == GLFW_PRESS;
-    if (f12Down && !mF12Prev) {
-        DevConfig::instance().reload();
-        rebuildHelpText();
+    for (auto& n : mNotifications) {
+        n.timer -= dt;
     }
-    mF12Prev = f12Down;
+    mNotifications.erase(
+        std::remove_if(mNotifications.begin(), mNotifications.end(),
+            [](const Notification& n) { return n.timer <= 0.0f; }),
+        mNotifications.end()
+    );
 }
 
 void DevOverlay::render() {
-    if (!mVisible || !mWindow) return;
+    if (!mWindow || mNotifications.empty()) return;
     
-    uiBeginFrame(mWindow, "dev-overlay");
+    uiBeginFrame(mWindow, "dev-overlay-notifications");
     
-    const float lineHeight = 18.0f;
-    const float padding = 10.0f;
-    const float width = 380.0f;
-    const float height = padding * 2 + 24.0f + mHelpLines.size() * lineHeight;
+    const float lineHeight = 24.0f;
+    const float padding = 12.0f;
+    const float width = 420.0f;
+    const float startY = 60.0f;
     
-    uiDrawRect({padding, padding, width, height}, {0.0f, 0.0f, 0.0f, 0.75f}, "dev-overlay-bg");
-    uiDrawRectOutline({padding, padding, width, height}, {1.0f, 1.0f, 0.5f, 0.8f}, "dev-overlay-border");
-    
-    uiDrawText("DEV CONTROLS", padding + 10, padding + 8, 0.38f, {1.0f, 1.0f, 0.5f, 1.0f});
-    
-    float y = padding + 30;
-    for (const auto& line : mHelpLines) {
-        uiDrawText(line.c_str(), padding + 10, y, 0.30f, {0.85f, 0.95f, 1.0f, 1.0f});
-        y += lineHeight;
+    float y = startY;
+    for (const auto& n : mNotifications) {
+        float alpha = std::min(1.0f, n.timer / 0.5f); // Fade out in last 0.5s
+        float bgAlpha = 0.85f * alpha;
+        
+        float textWidth = n.message.size() * 10.0f; // approximate
+        float height = lineHeight + padding * 0.5f;
+        
+        uiDrawRect({padding, y, width, height}, {0.0f, 0.0f, 0.0f, bgAlpha}, "dev-notif-bg");
+        uiDrawRectOutline({padding, y, width, height}, {1.0f, 1.0f, 0.5f, 0.8f * alpha}, "dev-notif-border");
+        
+        uiDrawText(n.message.c_str(), padding + 10, y + 6, 0.35f, {1.0f, 1.0f, 0.5f, alpha});
+        
+        y += height + 6.0f;
     }
     
     uiEndFrame();
