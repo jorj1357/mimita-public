@@ -117,6 +117,10 @@ InputCommandSystem& InputCommandSystem::instance() {
 }
 
 void InputCommandSystem::init(GLFWwindow* window) {
+    if (mWindow && !mActionToKey.empty()) {
+        mWindow = window;
+        return;
+    }
     mWindow = window;
     setupDefaultBinds();
     printf("[INPUT COMMANDS] Initialized\n");
@@ -137,6 +141,7 @@ void InputCommandSystem::setupDefaultBinds() {
     bindAction("dash", GLFW_KEY_LEFT_SHIFT);
     bindAction("ground_return", GLFW_KEY_B);
     bindAction("freeze", GLFW_KEY_G);
+    bindAction("reload", GLFW_KEY_R);
     
     // Initialize states
     mActionStates["walkforward"] = {};
@@ -147,6 +152,7 @@ void InputCommandSystem::setupDefaultBinds() {
     mActionStates["dash"] = {};
     mActionStates["ground_return"] = {};
     mActionStates["freeze"] = {};
+    mActionStates["reload"] = {};
 }
 
 void InputCommandSystem::update(float dt) {

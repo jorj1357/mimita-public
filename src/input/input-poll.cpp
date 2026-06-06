@@ -96,10 +96,14 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     if (cmd.getState("walkback").held)    { frame.moveX -= f.x; frame.moveY -= f.y; }
     if (cmd.getState("walkright").held)   { frame.moveX += r.x; frame.moveY += r.y; }
     if (cmd.getState("walkleft").held)    { frame.moveX -= r.x; frame.moveY -= r.y; }
+    frame.movementPressed =
+        cmd.getState("walkforward").pressed || cmd.getState("walkback").pressed ||
+        cmd.getState("walkleft").pressed || cmd.getState("walkright").pressed;
 
     frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
     frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;
     frame.dashPressed = cmd.isDashPressed() || gTerminalInputOverride.dashPressed;
+    frame.reloadPressed = cmd.getState("reload").pressed || gTerminalInputOverride.reloadPressed;
     frame.groundReturnPressed = cmd.isGroundReturnPressed() || gTerminalInputOverride.groundReturnPressed;
     frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
 

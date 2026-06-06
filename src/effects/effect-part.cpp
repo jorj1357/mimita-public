@@ -4,6 +4,8 @@
 #include "camera.h"
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
+#include "audio/audio.h"
 
 EffectPartSystem& EffectPartSystem::instance() {
     static EffectPartSystem sInstance;
@@ -17,8 +19,10 @@ void EffectPartSystem::init() {
 void EffectPartSystem::update(float dt) {
     for (auto& effect : mEffects) {
         effect.lifetime += dt;
-        effect.position += effect.velocity * dt;
-        effect.velocity.z -= 4.0f * dt;
+        if (!effect.sticky)
+            effect.position += effect.velocity * dt;
+        if (effect.affectedByGravity)
+            effect.velocity.z -= 4.0f * dt;
         if (effect.lifetime >= effect.maxLifetime) {
             effect.alive = false;
         }
@@ -42,19 +46,56 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
 }
 
 void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float amount) {
-    int count = std::clamp((int)(amount * 8.0f), 2, 14);
-    glm::vec3 base = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1,0,0);
-    for (int i = 0; i < count; ++i) {
-        float side = ((i % 3) - 1) * 0.22f;
+    spawnStickyBlood(position, -direction, amount);
+}
+
+void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId) {
+    bool highForce = force >= 0.55f;
+    int bigCount = highForce ? 5 : 1;
+    int smallCount = highForce ? 25 : 5;
+    glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
+    glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
+                                                             : glm::cross(n, glm::vec3(0,1,0)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+    for (int i = 0; i < bigCount + smallCount; ++i) {
+        bool big = i < bigCount;
+        float angle = i * 2.399963f;
+        float radius = big ? 0.08f * i : 0.12f + 0.025f * (i - bigCount);
         EffectPart e;
-        e.position = position;
-        e.velocity = base * (1.5f + amount * 3.0f + i * 0.08f) + glm::vec3(-base.y, base.x, 0.3f) * side;
+        e.position = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius + n * 0.003f;
+        e.normal = n;
         e.color = {0.75f, 0.0f, 0.02f};
-        e.maxLifetime = 0.5f + amount * 0.5f;
-        e.scale = 0.035f + amount * 0.04f;
+        e.maxLifetime = 30.0f;
+        e.scale = big ? (0.18f + force * 0.14f) : (0.035f + force * 0.045f);
+        e.endScale = e.scale;
         e.billboardText = false;
+        e.sticky = true;
+        e.flatDecal = true;
+        e.ownerId = ownerId;
+        e.debugVisual = true;
         spawn(e);
     }
+}
+
+EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal) {
+    EffectPart e;
+    e.position = position;
+    e.normal = normal;
+    e.color = {0.55f, 0.55f, 0.55f};
+    e.maxLifetime = 0.5f;
+    e.scale = 0.1f;
+    e.endScale = 0.5f;
+    e.alpha = 0.5f;
+    e.billboardText = false;
+    e.sticky = true;
+    EffectPart* spawned = spawn(e);
+    AudioManager::instance().play({"world_impact", AudioCategory::Impacts, true, position, 0.7f, 1.0f, 30.0f});
+    return spawned;
+}
+
+void EffectPartSystem::destroyOwner(unsigned int ownerId) {
+    mEffects.erase(std::remove_if(mEffects.begin(), mEffects.end(),
+        [ownerId](const EffectPart& e) { return e.ownerId == ownerId; }), mEffects.end());
 }
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
@@ -129,13 +170,31 @@ void EffectPartSystem::render(const Camera& camera) const {
     // Render spheres for each effect
     for (const auto& effect : mEffects) {
         if (!effect.alive) continue;
+        if (effect.debugVisual && !DebugVis::masterEnabled()) continue;
         
-        float alpha = 1.0f - (effect.lifetime / effect.maxLifetime);
+        float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
+        float alpha = effect.alpha * (1.0f - t);
         alpha = std::max(0.0f, alpha);
+        float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
         // Draw sphere using debug visuals
-        DebugVis::drawWireSphere(camera, effect.position, effect.scale, 
-            {effect.color.x, effect.color.y, effect.color.z, alpha});
+        glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
+        if (effect.flatDecal) {
+            glm::vec3 n = glm::length(effect.normal) > 0.001f ? glm::normalize(effect.normal) : glm::vec3(0,0,1);
+            glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
+                                                                     : glm::cross(n, glm::vec3(0,1,0)));
+            glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+            constexpr int SEGMENTS = 12;
+            for (int i = 0; i < SEGMENTS; ++i) {
+                float a0 = 6.2831853f * i / SEGMENTS;
+                float a1 = 6.2831853f * (i + 1) / SEGMENTS;
+                glm::vec3 p0 = effect.position + (tangent * std::cos(a0) + bitangent * std::sin(a0)) * drawScale;
+                glm::vec3 p1 = effect.position + (tangent * std::cos(a1) + bitangent * std::sin(a1)) * drawScale;
+                DebugVis::drawLine(camera, p0, p1, drawColor);
+            }
+        } else {
+            DebugVis::drawWireSphere(camera, effect.position, drawScale, drawColor);
+        }
         
         // Draw billboard text label
         if (effect.billboardText && !effect.label.empty()) {

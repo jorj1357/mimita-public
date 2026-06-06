@@ -88,6 +88,7 @@ void RevolverSystem::update(const Camera& camera, Player& player, float dt)
                         - mForward * (mRecoil * 0.025f + mDisturbance * 0.05f);
     mPosition = glm::mix(mPosition, targetPos, std::clamp(follow, 0.0f, 1.0f));
     mMuzzle = mPosition + mForward * 0.72f;
+    DebugVis::recordMovement(player.pos, player.externalImpulse * 0.1f, "weapon-recoil-impulse");
     if (player.equippedSlot == 1) {
         for (PhysicalBodyPart& part : player.physicalBody.parts) {
             if (part.name == "rightArm") {
@@ -172,7 +173,8 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
         result.damage = (float)rounded;
 
         EffectPartSystem::instance().spawnDamage(result.end, victim->body.username, rounded);
-        EffectPartSystem::instance().spawnBlood(result.end, mForward, std::clamp(damage / 100.0f, 0.1f, 1.0f));
+        EffectPartSystem::instance().spawnStickyBlood(
+            result.end, hitNormal, std::clamp(damage / 100.0f, 0.1f, 1.0f), victim->id);
         float hurt01 = std::clamp(damage / 100.0f, 0.0f, 1.0f);
         playWorldSound("gethurt", result.end, 0.35f + hurt01 * 0.65f, 1.35f - hurt01 * 0.55f, 35.0f);
 
@@ -188,11 +190,13 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
             addKill(line);
             Terminal::instance().addLog(line);
         }
+    } else {
+        EffectPartSystem::instance().spawnWorldImpact(result.end, -mForward);
     }
 
     const PlayerSettings& cfg = GetPlayerSettings();
     float recoil = cfg.weaponRecoilStrength;
-    shooter.vel -= mForward * recoil;
+    shooter.externalImpulse -= mForward * recoil;
     mRecoil = std::min(mRecoil + recoil * 0.12f, 5.0f);
     mDisturbance += 0.6f;
     return result;

@@ -58,6 +58,8 @@ bool LoadPlayerSettings(const std::string& account)
         readValue(j, "weapon_aim_follow_speed", gSettings.weaponAimFollowSpeed);
         readValue(j, "weapon_recoil_strength", gSettings.weaponRecoilStrength);
         readValue(j, "weapon_weight", gSettings.weaponWeight);
+        readValue(j, "weapon_recoil_decay", gSettings.weaponRecoilDecay);
+        readValue(j, "freecam_speed", gSettings.freecamSpeed);
         readValue(j, "debug_combat", gSettings.debugCombat);
 
         gSettings.fov = std::clamp(gSettings.fov, 60.0f, 140.0f);
@@ -102,6 +104,8 @@ bool SavePlayerSettings(const std::string& account)
     j["weapon_aim_follow_speed"] = gSettings.weaponAimFollowSpeed;
     j["weapon_recoil_strength"] = gSettings.weaponRecoilStrength;
     j["weapon_weight"] = gSettings.weaponWeight;
+    j["weapon_recoil_decay"] = gSettings.weaponRecoilDecay;
+    j["freecam_speed"] = gSettings.freecamSpeed;
     j["debug_combat"] = gSettings.debugCombat;
 
     const std::string temporary = path + ".tmp";

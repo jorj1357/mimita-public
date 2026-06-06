@@ -94,7 +94,7 @@ void doFreeze(
         p.freezeAvailable = false;
         p.freezeHoldSoundPlayed = false;
 
-        playSound("entity/player/freezebegin");
+        playWorldSound("entity/player/freezebegin", p.pos, 1.0f, 1.0f, 30.0f);
 
         FREEZE_LOG("[FREEZE] begin\n");
     }
@@ -110,7 +110,7 @@ void doFreeze(
 
         FREEZE_LOG("[FREEZE] end\n");
 
-        playSound("entity/player/freezeend");
+        playWorldSound("entity/player/freezeend", p.pos, 1.0f, 1.0f, 30.0f);
     }
 
 
@@ -130,7 +130,7 @@ void doFreeze(
     // this is annouing so never plau it
     if (!p.freezeHoldSoundPlayed && p.freezeTimer >= 999.0f)
     {
-        playSound("entity/player/freezehold");
+        playWorldSound("entity/player/freezehold", p.pos, 0.7f, 1.0f, 24.0f);
         p.freezeHoldSoundPlayed = true;
     }
 

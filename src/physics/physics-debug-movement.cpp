@@ -12,29 +12,12 @@
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include <cstdio>
+#include "../config.h"
 
 void applyDebugMovement(Player& p, GLFWwindow* win, const Camera& cam, float dt)
 {
     static bool debugEnabled = false;
-    static bool keyHeldPrev = false;
-
-    // --------------------------------------------------
-    // TOGGLE WITH 9
-    // --------------------------------------------------
-
-    bool keyHeld = glfwGetKey(win, GLFW_KEY_9) == GLFW_PRESS;
-
-    if (keyHeld && !keyHeldPrev)
-    {
-        debugEnabled = !debugEnabled;
-
-        if (debugEnabled)
-            printf("[DEBUG MOVEMENT] ENABLED\n");
-        else
-            printf("[DEBUG MOVEMENT] DISABLED\n");
-    }
-
-    keyHeldPrev = keyHeld;
+    debugEnabled = DebugConfig::DEBUG_MOVEMENT;
 
     // --------------------------------------------------
     // DO NOTHING IF DEBUG MODE OFF

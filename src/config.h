@@ -31,6 +31,7 @@ namespace DebugConfig
     inline bool DEBUG_INPUT = false;
     inline bool DEBUG_COMMANDS = false;
     inline bool DEBUG_NPC = false;
+    inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
     {

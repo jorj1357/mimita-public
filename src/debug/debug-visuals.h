@@ -30,6 +30,8 @@ struct DebugColors {
 
 namespace DebugVis {
     void init(GLFWwindow* win);
+    void setMasterEnabled(bool enabled);
+    bool masterEnabled();
     void update();                 // applies wireframe mode from config
     bool enabled();
     bool physics();
