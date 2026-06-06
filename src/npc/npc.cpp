@@ -250,7 +250,8 @@ InputState inputFromAction(Npc& npc, NpcAction action)
         action.direction = rotatePlanar(action.direction, error);
     }
 
-    float moveScale = std::clamp(0.35f + npc.tuning.movementPrecision * 0.65f, 0.0f, 1.0f);
+    // float moveScale = std::clamp(0.35f + npc.tuning.movementPrecision * 0.65f, 0.0f, 1.0f);
+    float moveScale = std::clamp(0.35f + npc.tuning.movementPrecision * 0.65f, 0.0f, 0.3f);
     input.wishMoveXY = glm::vec2(action.direction.x, action.direction.y) * moveScale;
     input.jumpHeld = action.jumpHeld;
     input.dashPressed = action.dashPressed;

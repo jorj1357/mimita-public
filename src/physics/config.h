@@ -114,6 +114,13 @@ inline float MAX_FALL_SPEED = 20.0f * 20;
 // max speed is 100x the plr default move speed
 inline float MAX_PLAYER_MOVE_SPEED = PHYS.moveSpeed * 100; 
 
+// External momentum is intentionally separate from normal movement speed.
+inline float MAX_EXTERNAL_IMPULSE_SPEED = 120.0f;
+// inline float EXTERNAL_IMPULSE_DECAY = 0.6f;
+inline float EXTERNAL_IMPULSE_DECAY = 0.9f;
+inline float EXTERNAL_IMPULSE_STEER_RATE = 4.0f;
+inline float EXTERNAL_IMPULSE_BRAKE_RATE = 2.5f;
+
 // for blender to map stuff that isnt broken 
 inline float ROTATION_SNAP = 15.0f;
 inline float POSITION_SNAP = 0.1f;
