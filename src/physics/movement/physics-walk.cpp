@@ -53,8 +53,15 @@ void doWalk(
         // grounded stop should be quick but not destructive
         if (p.stableOnGround)
         {
-            p.vel.x *= 0.80f;
-            p.vel.y *= 0.80f;
+            // p.vel.x *= 0.80f;
+            // p.vel.y *= 0.80f;
+
+            // 6 6 2026 aoaakka 
+            // float stopDrag = std::exp(-8.0f * dt);
+            float stopDrag = std::exp(-30.0f * dt);
+
+            p.vel.x *= stopDrag;
+            p.vel.y *= stopDrag;
 
             if (std::abs(p.vel.x) < 0.01f) p.vel.x = 0.0f;
             if (std::abs(p.vel.y) < 0.01f) p.vel.y = 0.0f;
@@ -67,6 +74,9 @@ void doWalk(
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
+
+    // ---------------- GROUND ----------------
+    // ---------------- GROUND ----------------
     // ---------------- GROUND ----------------
     if (p.stableOnGround)
     {
@@ -75,58 +85,90 @@ void doWalk(
         glm::vec2 targetVel =
             wishDir * targetSpeed;
 
-        float accel = 42.0f;
-        float t = std::min(1.0f, accel * dt);
+        // very fast response
+        float groundResponse = 28.0f;
 
+        float t =
+            std::min(1.0f, groundResponse * dt);
+
+        glm::vec2 currentVel = velXY;
+
+        // --------------------------------------
+        // MOVEMENT CAN OVERRIDE DASH MOMENTUM
+        // --------------------------------------
+
+        float impulseLen =
+            glm::length(glm::vec2(
+                p.externalImpulse.x,
+                p.externalImpulse.y
+            ));
+
+        if (impulseLen > 0.001f)
+        {
+            glm::vec2 moveDir =
+                glm::normalize(wishDir);
+
+            glm::vec2 impulseDir =
+                glm::normalize(glm::vec2(
+                    p.externalImpulse.x,
+                    p.externalImpulse.y
+                ));
+
+            float d =
+                glm::dot(moveDir, impulseDir);
+
+            // opposite direction kills dash hard
+            if (d < 0.0f)
+            {
+                p.externalImpulse.x *= 0.10f;
+                p.externalImpulse.y *= 0.10f;
+            }
+            // sharp turn weakens dash
+            else if (d < 0.5f)
+            {
+                p.externalImpulse.x *= 0.50f;
+                p.externalImpulse.y *= 0.50f;
+            }
+        }
+            
         glm::vec2 newVel =
-            glm::mix(velXY, targetVel, t);
-
-        WALK_LOG(
-            "[WALK][GROUND] vel(%.2f %.2f) -> (%.2f %.2f)\n",
-            velXY.x,
-            velXY.y,
-            newVel.x,
-            newVel.y
-        );
+            glm::mix(currentVel, targetVel, t);
 
         p.vel.x = newVel.x;
         p.vel.y = newVel.y;
+
+        WALK_LOG(
+            "[WALK][GROUND] speed=%.2f\n",
+            glm::length(newVel)
+        );
 
         return;
     }
 
     // ---------------- AIR ----------------
     {
-        float airSteer = AIR_ACCEL_AMOUNT;
-        float t = std::min(1.0f, airSteer * dt);
+        glm::vec2 currentVel = velXY;
 
-        float baseSpeed = PHYS.moveSpeed;
-        float maxAirSpeed =
-            PHYS.moveSpeed * PHYS.airGain;
+        float airSpeed =
+            PHYS.moveSpeed;
 
-        float speed = glm::length(velXY);
+        glm::vec2 targetVel =
+            wishDir * airSpeed;
 
-        if (speed < baseSpeed)
-            speed = baseSpeed;
+        float airResponse = 8.0f;
 
-        float boostedSpeed =
-            std::min(speed * PHYS.airGain, maxAirSpeed);
-
-        glm::vec2 target =
-            wishDir * boostedSpeed;
+        float t =
+            std::min(1.0f, airResponse * dt);
 
         glm::vec2 newVel =
-            glm::mix(velXY, target, t);
-
-        WALK_LOG(
-            "[WALK][AIR] vel(%.2f %.2f) -> (%.2f %.2f)\n",
-            velXY.x,
-            velXY.y,
-            newVel.x,
-            newVel.y
-        );
+            glm::mix(currentVel, targetVel, t);
 
         p.vel.x = newVel.x;
         p.vel.y = newVel.y;
+
+        WALK_LOG(
+            "[WALK][AIR] speed=%.2f\n",
+            glm::length(newVel)
+        );
     }
 }

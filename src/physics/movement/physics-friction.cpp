@@ -70,15 +70,39 @@ void doFriction(
         );
     }
 
-    glm::vec2 xy(p.vel.x, p.vel.y);
-    float totalSpeed = glm::length(xy);
+    // ---------------------------------------------
+    // TOTAL SPEED CLAMP
+    // includes movement + dash momentum together
+    // ---------------------------------------------
+
+    glm::vec2 totalXY(
+        p.vel.x + p.externalImpulse.x,
+        p.vel.y + p.externalImpulse.y
+    );
+
+    float totalSpeed =
+        glm::length(totalXY);
 
     if (totalSpeed > MAX_PLAYER_MOVE_SPEED)
     {
         glm::vec2 clamped =
-            (xy / totalSpeed) * MAX_PLAYER_MOVE_SPEED;
+            (totalXY / totalSpeed) *
+            MAX_PLAYER_MOVE_SPEED;
 
-        p.vel.x = clamped.x;
-        p.vel.y = clamped.y;
+        // preserve impulse layer
+        glm::vec2 correctedMove =
+            clamped -
+            glm::vec2(
+                p.externalImpulse.x,
+                p.externalImpulse.y
+            );
+
+        p.vel.x = correctedMove.x;
+        p.vel.y = correctedMove.y;
+
+        FRICTION_LOG(
+            "[FRICTION][CLAMP] total speed capped %.2f\n",
+            totalSpeed
+        );
     }
 }
