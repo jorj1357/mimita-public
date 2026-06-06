@@ -47,19 +47,19 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
 
     const auto& cmd = InputCommandSystem::instance();
     
-    if (cmd.getState("move_forward").held) {
+    if (cmd.getState("walkforward").held) {
         wish.x += f.x;
         wish.y += f.y;
     }
-    if (cmd.getState("move_back").held) {
+    if (cmd.getState("walkback").held) {
         wish.x -= f.x;
         wish.y -= f.y;
     }
-    if (cmd.getState("move_right").held) {
+    if (cmd.getState("walkright").held) {
         wish.x += r.x;
         wish.y += r.y;
     }
-    if (cmd.getState("move_left").held) {
+    if (cmd.getState("walkleft").held) {
         wish.x -= r.x;
         wish.y -= r.y;
     }
@@ -91,10 +91,10 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     glm::vec3 r = glm::normalize(glm::cross(f, glm::vec3(0,0,1)));
 
     InputFrame frame;
-    if (cmd.getState("move_forward").held) { frame.moveX += f.x; frame.moveY += f.y; }
-    if (cmd.getState("move_back").held)    { frame.moveX -= f.x; frame.moveY -= f.y; }
-    if (cmd.getState("move_right").held)   { frame.moveX += r.x; frame.moveY += r.y; }
-    if (cmd.getState("move_left").held)    { frame.moveX -= r.x; frame.moveY -= r.y; }
+    if (cmd.getState("walkforward").held) { frame.moveX += f.x; frame.moveY += f.y; }
+    if (cmd.getState("walkback").held)    { frame.moveX -= f.x; frame.moveY -= f.y; }
+    if (cmd.getState("walkright").held)   { frame.moveX += r.x; frame.moveY += r.y; }
+    if (cmd.getState("walkleft").held)    { frame.moveX -= r.x; frame.moveY -= r.y; }
 
     frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
     frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;

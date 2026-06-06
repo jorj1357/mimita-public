@@ -10,6 +10,13 @@
 // Exposes:
 //   doCollisions(...)
 
+/**
+ * 6 6 2026
+ * possible to split this file into other smaller bits?
+ * but might not be necsary
+ * idk i  jorj lke to have files be 100 lines or less but if its works its works
+ */
+
 #include <algorithm>
 #include <cstdio>
 #include <vector>
@@ -108,6 +115,10 @@ static inline void applyCollisionContact(
     int triangleIndex,
     const char* label
 ) {
+    if (DebugConfig::COLLISION_VERBOSE)
+        Debug::log(Debug::Category::Collision,
+                   "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
+                   label, triangleIndex, normal.x, normal.y, normal.z, penetration);
     clampVelocityAgainstNormal(p, normal);
 
     if (normal.z > 0.35f)
@@ -1057,8 +1068,8 @@ static void doGLBTriangleCollisions(
                 float distToGround = feetZ - bestGroundZ;
                 if (distToGround > 0.0f && distToGround < GROUND_SNAP_DISTANCE)
                 {
-                    float snapAmount = distToGround + 0.001f;
-                    p.pos.z += snapAmount;
+                    float snapAmount = distToGround;
+                    p.pos.z -= snapAmount;
                     groundedThisFrame = true;
                     
                     if (p.vel.z < 0.0f)
@@ -1105,9 +1116,8 @@ static void doGLBTriangleCollisions(
     // If deep penetration persists after all depen + snap corrections,
     // search outward for a free position to prevent permanent trapping.
     {
-        constexpr float STUCK_THRESHOLD = 0.7f * 0.6f;
-        constexpr float EMERGENCY_SEARCH_RADIUS = 0.7f * 1.5f;
-        static int stuckFrames = 0;
+        constexpr float STUCK_THRESHOLD = 0.05f;
+        const float EMERGENCY_SEARCH_RADIUS = PLAYER_HEIGHT + PLAYER_RADIUS * 4.0f;
 
         // Only check capsule contacts (the primary hitbox)
         p.updateModelWorldTransforms();
@@ -1123,11 +1133,11 @@ static void doGLBTriangleCollisions(
 
         if (worstPen > STUCK_THRESHOLD)
         {
-            stuckFrames++;
-            if (stuckFrames >= 3)
+            p.collisionStuckFrames++;
+            if (p.collisionStuckFrames >= 3)
             {
                 PHYS_LOG("[PHYS][EMERGENCY] Deep penetration %.4f for %d frames. Searching escape.\n",
-                         worstPen, stuckFrames);
+                         worstPen, p.collisionStuckFrames);
 
                 // Search outward in cardinal + diagonal directions for free space
                 const glm::vec3 searchDirs[] = {
@@ -1194,13 +1204,13 @@ static void doGLBTriangleCollisions(
                     // Clamp velocity to zero to prevent re-entering geometry
                     p.vel = glm::vec3(0.0f);
                     p.dashVel = glm::vec2(0.0f);
-                    stuckFrames = 0;
+                    p.collisionStuckFrames = 0;
                 }
             }
         }
         else
         {
-            stuckFrames = 0;
+            p.collisionStuckFrames = 0;
         }
     }
 
@@ -1555,6 +1565,26 @@ void doCollisions(
             break;
     }
 
+    cap = p.getCapsule();
+    {
+        std::vector<RecoveryContact> remaining = collectBlockContactsForCapsule(cap, nearbyBlocks);
+        if (!remaining.empty()) {
+            glm::vec3 weightedNormal(0.0f);
+            for (const RecoveryContact& c : remaining)
+                weightedNormal += c.normal * std::max(c.penetration, BLOCK_DEPEN_SLOP);
+            glm::vec3 escape(0.0f);
+            if (findBlockFallbackEscape(cap, nearbyBlocks, remaining, weightedNormal, escape)) {
+                glm::vec3 before = p.pos;
+                p.pos += escape;
+                p.vel = glm::vec3(0.0f);
+                p.dashVel = glm::vec2(0.0f);
+                DebugVis::recordDepenetration(before, escape, "block-overlap-escape");
+                PHYS_LOG("[PHYS][BLOCK ESCAPE] contacts=%zu correction=(%.4f %.4f %.4f)\n",
+                         remaining.size(), escape.x, escape.y, escape.z);
+            }
+        }
+    }
+
     // Ground snap for blocks: if player is very close to block top and not jumping up, snap to ground
     {
         constexpr float GROUND_SNAP_DISTANCE = 0.08f;
@@ -1587,8 +1617,8 @@ void doCollisions(
                 float distToGround = feetZ - bestGroundZ;
                 if (distToGround > 0.0f && distToGround < GROUND_SNAP_DISTANCE)
                 {
-                    float snapAmount = distToGround + 0.001f;
-                    p.pos.z += snapAmount;
+                    float snapAmount = distToGround;
+                    p.pos.z -= snapAmount;
                     groundedThisFrame = true;
                     
                     if (p.vel.z < 0.0f)

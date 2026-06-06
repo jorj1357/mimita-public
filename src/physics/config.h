@@ -17,7 +17,7 @@ struct PhysicsConfig {
 };
 
 inline PhysicsConfig PHYS = {
-    -25.0f, // gravity
+    -28.0f, // gravity
     20.0f, // move speed
     12.0f, // jump strength
     1.1f // amount of whatever gained in air feb 10 2026

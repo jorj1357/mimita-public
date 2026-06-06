@@ -23,7 +23,8 @@
 enum GuiMenuState
 {
     GUI_MENU_MAIN,
-    GUI_MENU_SETTINGS
+    GUI_MENU_SETTINGS,
+    GUI_MENU_SERVERS
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
@@ -40,12 +41,15 @@ void guiMain(GLFWwindow* win, GameState& state)
 
             if (r.goPlay)
             {
-                printf("[GUI MAIN] PLAY -> GAME_PLAYING\n");
-                state = GAME_PLAYING;
+                gGuiMenuState = GUI_MENU_SERVERS;
             }
             else if (r.goSettings)
             {
                 gGuiMenuState = GUI_MENU_SETTINGS;
+            }
+            else if (r.startSandbox)
+            {
+                state = GAME_PLAYING;
             }
             break;
         }
@@ -58,6 +62,16 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 gGuiMenuState = GUI_MENU_MAIN;
             }
+            break;
+        }
+
+        case GUI_MENU_SERVERS:
+        {
+            PlayMenuResult r = drawPlayMenu(win);
+            if (r.startSandbox)
+                state = GAME_PLAYING;
+            else if (r.goBack)
+                gGuiMenuState = GUI_MENU_MAIN;
             break;
         }
     }

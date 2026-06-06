@@ -45,8 +45,12 @@ void doWalk(
 
     float wishLen = glm::length(wishMoveXY);
 
-    // No input → do nothing (friction handled elsewhere)
+    // Ground control is exact: release means stop on this tick.
     if (wishLen < 0.0001f) {
+        if (p.onGround) {
+            p.vel.x = 0.0f;
+            p.vel.y = 0.0f;
+        }
         WALK_LOG("[WALK] No input\n");
         return;
     }
@@ -56,11 +60,7 @@ void doWalk(
 
     // ---------------- GROUND ----------------
     if (p.onGround) {
-        float curSpeed = glm::length(velXY);
-
-        // Preserve momentum if already faster
-        float targetSpeed = std::max(curSpeed, PHYS.moveSpeed);
-
+        float targetSpeed = PHYS.moveSpeed;
         glm::vec2 newVel = wishDir * targetSpeed;
 
         WALK_LOG(

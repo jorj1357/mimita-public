@@ -12,6 +12,7 @@
 #include "physics/movement/physics-collision.h"
 #include "render/render-player.h"
 #include "world/world.h"
+#include "config.h"
 
 namespace {
 
@@ -120,6 +121,8 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     glm::vec3 moved = npc.body.pos - npc.previousPosition;
     bool tryingMove = glm::dot(npc.chosenAction.direction, npc.chosenAction.direction) > 0.01f;
     sensors.likelyBlocked = tryingMove && dt > 0.0f && glm::length(moved) < 0.03f && sensors.grounded;
+    npc.stuckTimer = sensors.likelyBlocked ? npc.stuckTimer + dt : 0.0f;
+    sensors.likelyBlocked = sensors.likelyBlocked && npc.stuckTimer > 0.20f;
 
     npc.previousPosition = npc.body.pos;
     npc.sensors = sensors;
@@ -208,7 +211,7 @@ NpcAction chooseAction(Npc& npc, float dt)
         close01 * (0.25f + npc.tuning.dodgeChance * 0.55f) + speedThreat * npc.tuning.dodgeChance
     ));
 
-    if (s.likelyBlocked || (s.grounded && random01(npc.rngState) < (0.04f + d * 0.10f) * dt))
+    if (s.likelyBlocked || (s.grounded && random01(npc.rngState) < (0.16f + d * 0.20f) * dt))
     {
         NpcAction jump = makeAction(NpcActionType::Jump, chaseDir, s.predictedTarget, s.likelyBlocked ? 0.95f : 0.38f + d * 0.20f);
         jump.jumpHeld = true;
@@ -313,6 +316,13 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
         if (npc.reactionTimer <= 0.0f && npc.actionTimer <= 0.0f)
         {
             NpcAction next = chooseAction(npc, dt);
+            if (npc.sensors.likelyBlocked) {
+                next.direction = randomPlanarDirection(npc.rngState);
+                next.jumpHeld = true;
+                next.dashPressed = npc.dashCooldown <= 0.0f;
+                next.name = "unstuck";
+                next.score = 2.0f;
+            }
             logActionChange(npc, next);
             npc.chosenAction = next;
             npc.reactionTimer = npc.tuning.reactionDelay;
@@ -320,6 +330,10 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
         }
 
         InputState input = inputFromAction(npc, npc.chosenAction);
+        if (DebugConfig::DEBUG_NPC)
+            Debug::log(Debug::Category::General, "[NPC COMMAND] id=%u action=%s jump=%d dash=%d move=(%.2f %.2f)\n",
+                       npc.id, npc.chosenAction.name.c_str(), (int)input.jumpHeld,
+                       (int)input.dashPressed, input.wishMoveXY.x, input.wishMoveXY.y);
         physicsMainUpdate(npc.body, world, input, dt);
 
         if (npc.chosenAction.dashPressed && npc.body.didDash)

@@ -39,16 +39,18 @@ void printv(const char* level, Debug::Category category, const char* fmt, va_lis
 
 bool Debug::enabled(Category category)
 {
-    if (!DebugConfig::ENABLE_DEBUG_LOGS)
-        return false;
-
     switch (category)
     {
-        case Category::GLB: return DebugConfig::GLB_VERBOSE;
+        case Category::GLB: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::GLB_VERBOSE;
         case Category::Collision: return DebugConfig::COLLISION_VERBOSE;
         case Category::Physics: return DebugConfig::PHYSICS_VERBOSE;
-        case Category::Render: return DebugConfig::RENDER_VERBOSE;
-        default: return true;
+        case Category::Render: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::RENDER_VERBOSE;
+        default:
+            return DebugConfig::ENABLE_DEBUG_LOGS ||
+                   DebugConfig::DEBUG_TICKS ||
+                   DebugConfig::DEBUG_INPUT ||
+                   DebugConfig::DEBUG_COMMANDS ||
+                   DebugConfig::DEBUG_NPC;
     }
 }
 
