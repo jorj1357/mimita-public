@@ -209,7 +209,7 @@ static void physicsMainUpdate_Internal(
 
     updateVisualFacingFromCamera(p, camForward, dt);
 
-    p.updateProceduralAnimation(dt);
+    p.updateProceduralAnimation(dt, camForward, debugCamera ? debugCamera->pos : p.pos);
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {

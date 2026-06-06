@@ -103,6 +103,13 @@ namespace DebugVis {
     void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
     void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color);
     void drawWireBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color);
+
+    // Solid filled decal (not gated behind masterEnabled — for production particles/blood)
+    // Changed from debug-only wireframe to solid triangle decal, jun 6 2026
+    void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal, float radius, glm::vec4 color);
+    
+    // Solid filled sphere (for production particles — footsteps, dash)
+    void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
     
     // World to screen projection
     bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
