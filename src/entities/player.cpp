@@ -740,15 +740,23 @@ void Player::updateModelWorldTransforms()
     }
 }
 
-void Player::updateProceduralAnimation(float dt)
+void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos)
 {
     if (perfectPoseSkeleton.nodes.empty() ||
         perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
         return;
 
+    // Store aim data for weapon positioning
+    if (glm::length(camForward) > 0.001f) {
+        aimDirection = glm::normalize(camForward);
+        aimPosition = camPos;
+        hasAimData = true;
+    }
+
     syncLegacyStateToLayers();
 
     proceduralTime += dt;
+    weaponSwayTime += dt;
 
     glm::vec2 planarVel = glm::vec2(vel.x, vel.y) + dashVel;
     float speed = glm::length(planarVel);
@@ -763,6 +771,32 @@ void Player::updateProceduralAnimation(float dt)
     float bob = std::abs(std::sin(phase)) * 0.055f * move01;
     float air = onGround ? 0.0f : 1.0f;
     float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
+
+    // Weapon sway (applied to arms when weapon equipped)
+    bool weaponEquipped = (equippedSlot == 1);
+    float swayAmount = weaponEquipped ? 0.15f + move01 * 0.1f : 0.0f;
+    float swayPhase = weaponSwayTime * 8.0f;
+    float swayX = std::sin(swayPhase) * swayAmount;
+    float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
+    float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
+
+    // Upper body aim rotation (torso + arms rotate toward aim direction)
+    float aimYaw = 0.0f;
+    float aimPitch = 0.0f;
+    if (hasAimData && weaponEquipped) {
+        glm::vec3 flatAim = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.0f));
+        glm::vec3 flatForward = glm::normalize(glm::vec3(movementCapsule.rotation * glm::vec3(0,1,0)));
+        // Only yaw in XY plane
+        aimYaw = std::atan2(flatAim.y, flatAim.x) - std::atan2(flatForward.y, flatForward.x);
+        // Normalize to -PI..PI
+        while (aimYaw > 3.14159265f) aimYaw -= 2.0f * 3.14159265f;
+        while (aimYaw < -3.14159265f) aimYaw += 2.0f * 3.14159265f;
+        aimYaw = std::clamp(aimYaw, -1.0f, 1.0f); // Limit to ~57 degrees
+        
+        // Pitch for up/down aim
+        aimPitch = std::asin(std::clamp(aimDirection.z, -1.0f, 1.0f));
+        aimPitch = std::clamp(aimPitch, -0.8f, 0.8f); // Limit pitch
+    }
 
     for (PhysicalBodyPart& part : physicalBody.parts)
 {
@@ -819,6 +853,20 @@ void Player::updateProceduralAnimation(float dt)
 
             // tiny outward shoulder angle
             target.rotationEuler.z += 8.0f * move01;
+
+            // Weapon hold pose (left hand supporting)
+            if (weaponEquipped) {
+                // Raise arm to hold weapon
+                target.rotationEuler.z += -45.0f; // Raise up
+                target.rotationEuler.x += -20.0f; // Bring forward
+                target.rotationEuler.y += 15.0f;  // Rotate inward
+                target.translation.z += 0.15f;    // Lift slightly
+                
+                // Weapon sway on left arm (supporting hand)
+                target.rotationEuler.z += swayZ * 0.5f;
+                target.rotationEuler.x += swayX * 0.3f;
+                target.rotationEuler.y += swayY * 0.3f;
+            }
         }
         else if (part.name == "rightArm")
         {
@@ -845,6 +893,21 @@ void Player::updateProceduralAnimation(float dt)
 
             // tiny outward shoulder angle
             target.rotationEuler.z += -8.0f * move01;
+
+            // Weapon hold pose (right hand - primary grip)
+            if (weaponEquipped) {
+                // Raise arm to hold weapon forward
+                target.rotationEuler.z += -55.0f; // Raise up
+                target.rotationEuler.x += -25.0f; // Bring forward
+                target.rotationEuler.y += -10.0f; // Rotate outward slightly
+                target.translation.z += 0.18f;    // Lift slightly
+                target.translation.x += 0.08f;    // Offset to side
+                
+                // Weapon sway on right arm (trigger hand)
+                target.rotationEuler.z += swayZ;
+                target.rotationEuler.x += swayX * 0.5f;
+                target.rotationEuler.y += swayY * 0.5f;
+            }
         }
         else if (part.name == "torso")
         {
@@ -869,6 +932,13 @@ void Player::updateProceduralAnimation(float dt)
                     -8.0f,
                     8.0f
                 );
+
+            // Upper body aim rotation (yaw toward aim direction)
+            if (weaponEquipped && hasAimData) {
+                // Convert aimYaw from radians to degrees for rotationEuler
+                target.rotationEuler.y += aimYaw * 57.29578f * 0.6f; // 60% of aim yaw applied to torso
+                target.rotationEuler.x += aimPitch * 57.29578f * 0.3f; // 30% of pitch to torso
+            }
         }
         else if (part.name == "head")
         {
@@ -1085,4 +1155,37 @@ void Player::render(unsigned int shader,
 
     MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));
+}
+
+void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce)
+{
+    if (damage <= 0) return;
+    
+    int oldHp = currentHp;
+    currentHp = std::max(0, currentHp - damage);
+    int actualDamage = oldHp - currentHp;
+    
+    if (actualDamage <= 0) return;
+    
+    // Play hurt sound with volume/pitch based on damage
+    float hurt01 = std::clamp(actualDamage / 100.0f, 0.0f, 1.0f);
+    float volume = 0.3f + hurt01 * 0.7f;      // 0.3 - 1.0
+    float pitch = 1.1f - hurt01 * 0.2f;       // 1.1 - 0.9
+    
+    playWorldSound("player_hurt", pos, volume, pitch, 35.0f);
+    
+    // Apply knockback
+    if (knockbackForce > 0.0f && glm::length(knockbackDir) > 0.001f) {
+        vel += glm::normalize(knockbackDir) * knockbackForce;
+        vel.z += knockbackForce * 0.2f; // Slight upward knockback
+    }
+    
+    // Spawn blood effect at player position
+    EffectPartSystem::instance().spawnDamage(pos, username, actualDamage);
+    EffectPartSystem::instance().spawnStickyBlood(pos, glm::vec3(0,0,1), std::clamp(actualDamage / 100.0f, 0.1f, 1.0f), 0);
+    
+    if (DebugConfig::DEBUG_COMMANDS) {
+        Debug::log(Debug::Category::General, "[PLAYER HURT] damage=%d hp=%d/%d vol=%.2f pitch=%.2f\n",
+                   actualDamage, currentHp, maxHp, volume, pitch);
+    }
 }

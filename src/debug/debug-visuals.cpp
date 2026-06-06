@@ -35,11 +35,24 @@ struct DebugTextLabel
 // idk where put this 6 3 2026 its for better rendering no crasihng 
 std::vector<DebugLineVertex> gLineVerts;
 
+// CHANGED: Added solid triangle buffer for filled decals (blood splats), jun 6 2026
+// Previously blood was drawn as wireframe lines via DebugVis::drawLine
+struct DebugTriVertex
+{
+    glm::vec3 pos;
+    glm::vec4 color;
+};
+
+std::vector<DebugTriVertex> gTriVerts;
+
 namespace {
 GLFWwindow* gWindow = nullptr;
 DebugColors gColors;
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
+// CHANGED: Added triangle VAO/VBO for solid decals, jun 6 2026
+GLuint gTriVao = 0;
+GLuint gTriVbo = 0;
 std::vector<DebugVis::CollisionEvent> gCollisionEvents;
 std::vector<DebugTextLabel> gTextLabels;
 
@@ -155,6 +168,101 @@ void flushDebugLines(const Camera& camera)
     gLineVerts.clear();
 }
 
+// CHANGED: New triangle flush for solid decals (blood splats), jun 6 2026
+void flushDebugTris(const Camera& camera)
+{
+    if (gTriVerts.empty())
+        return;
+
+    if (!gTriVao)
+    {
+        MIMITA_GL_CLEAR_STAGE("flushDebugTris init");
+        MIMITA_GL_CALL(glGenVertexArrays(1, &gTriVao));
+        MIMITA_GL_CALL(glGenBuffers(1, &gTriVbo));
+    }
+
+    MIMITA_GL_CLEAR_STAGE("flushDebugTris");
+    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+    MIMITA_GL_CALL(glEnable(GL_BLEND));
+    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
+    MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+
+    glm::mat4 model(1.0f);
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj(
+        (float)gRenderer->width,
+        (float)gRenderer->height
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "model"),
+        1,
+        GL_FALSE,
+        &model[0][0]
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "view"),
+        1,
+        GL_FALSE,
+        &view[0][0]
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+        1,
+        GL_FALSE,
+        &proj[0][0]
+    );
+
+    glUniform1i(
+        glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"),
+        2
+    );
+
+    MIMITA_GL_CALL(glBindVertexArray(gTriVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gTriVbo));
+
+    MIMITA_GL_CALL(glBufferData(
+        GL_ARRAY_BUFFER,
+        gTriVerts.size() * sizeof(DebugTriVertex),
+        gTriVerts.data(),
+        GL_DYNAMIC_DRAW
+    ));
+
+    // position
+    MIMITA_GL_CALL(glVertexAttribPointer(
+        0,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(DebugTriVertex),
+        (void*)offsetof(DebugTriVertex, pos)
+    ));
+
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+
+    // per-vertex color
+    MIMITA_GL_CALL(glVertexAttribPointer(
+        3,
+        4,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(DebugTriVertex),
+        (void*)offsetof(DebugTriVertex, color)
+    ));
+
+    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
+
+    MIMITA_GL_CALL(glDisableVertexAttribArray(1));
+    MIMITA_GL_CALL(glDisableVertexAttribArray(2));
+
+    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTriVerts.size()));
+
+    gTriVerts.clear();
+}
+
 void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
 {
     gLineVerts.push_back({ a, color });
@@ -225,6 +333,59 @@ void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::v
                  center + glm::vec3(std::cos(a1), 0.0f, std::sin(a1)) * radius, color);
         drawLine(camera, center + glm::vec3(0.0f, std::cos(a0), std::sin(a0)) * radius,
                  center + glm::vec3(0.0f, std::cos(a1), std::sin(a1)) * radius, color);
+    }
+}
+
+// CHANGED: Solid filled decal for blood splats, jun 6 2026
+void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal, float radius, glm::vec4 color)
+{
+    constexpr int SEGMENTS = 20;
+    glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
+    glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
+                                                             : glm::cross(n, glm::vec3(0,1,0)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+    for (int i = 0; i < SEGMENTS; ++i)
+    {
+        float a0 = 6.2831853f * i / SEGMENTS;
+        float a1 = 6.2831853f * ((i + 1) % SEGMENTS) / SEGMENTS;
+        glm::vec3 p0 = position + (tangent * std::cos(a0) + bitangent * std::sin(a0)) * radius;
+        glm::vec3 p1 = position + (tangent * std::cos(a1) + bitangent * std::sin(a1)) * radius;
+        gTriVerts.push_back({position, color});
+        gTriVerts.push_back({p0, color});
+        gTriVerts.push_back({p1, color});
+    }
+}
+
+// Solid filled sphere for production particles (footsteps, dash)
+void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color)
+{
+    (void)camera;
+    constexpr int LAT_SEGMENTS = 8;
+    constexpr int LON_SEGMENTS = 12;
+    for (int lat = 0; lat < LAT_SEGMENTS; ++lat)
+    {
+        float a0 = 3.14159265f * (float)lat / (float)LAT_SEGMENTS;
+        float a1 = 3.14159265f * (float)(lat + 1) / (float)LAT_SEGMENTS;
+        float y0 = std::cos(a0);
+        float y1 = std::cos(a1);
+        float r0 = std::sin(a0);
+        float r1 = std::sin(a1);
+        for (int lon = 0; lon < LON_SEGMENTS; ++lon)
+        {
+            float b0 = 6.2831853f * (float)lon / (float)LON_SEGMENTS;
+            float b1 = 6.2831853f * (float)(lon + 1) / (float)LON_SEGMENTS;
+            glm::vec3 p00 = center + glm::vec3(r0 * std::cos(b0), r0 * std::sin(b0), y0) * radius;
+            glm::vec3 p01 = center + glm::vec3(r0 * std::cos(b1), r0 * std::sin(b1), y0) * radius;
+            glm::vec3 p10 = center + glm::vec3(r1 * std::cos(b0), r1 * std::sin(b0), y1) * radius;
+            glm::vec3 p11 = center + glm::vec3(r1 * std::cos(b1), r1 * std::sin(b1), y1) * radius;
+            // Two triangles per quad
+            gTriVerts.push_back({p00, color});
+            gTriVerts.push_back({p10, color});
+            gTriVerts.push_back({p01, color});
+            gTriVerts.push_back({p01, color});
+            gTriVerts.push_back({p10, color});
+            gTriVerts.push_back({p11, color});
+        }
     }
 }
 
@@ -680,6 +841,7 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
         glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
     }
+    flushDebugTris(camera);
     flushDebugLines(camera);
     drawDebugLabels(camera);
 }
@@ -688,6 +850,16 @@ namespace DebugVis {
     void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
         if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawWireSphere(camera, center, radius, color);
+    }
+
+    // CHANGED: Not gated behind masterEnabled — intended for production particles/blood, jun 6 2026
+    void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal, float radius, glm::vec4 color) {
+        ::drawFilledDecal(camera, position, normal, radius, color);
+    }
+    
+    // Not gated behind masterEnabled — intended for production particles
+    void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
+        ::drawFilledSphere(camera, center, radius, color);
     }
     
     void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {

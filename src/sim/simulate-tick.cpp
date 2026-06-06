@@ -8,6 +8,7 @@
 #include "world/world.h"
 #include "config.h"
 #include "debug/debug-log.h"
+#include "combat/weapon-hit.h"
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -65,6 +66,15 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         bool groundedPlayer = false;
         bool groundedNpc = false;
         resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
+    }
+
+    // Resolve NPC melee attacks on player
+    for (auto& npc : sim.npcSystem->all())
+    {
+        if (npc.chosenAction.attackPressed && npc.body.currentHp > 0)
+        {
+            weaponHit(npc.body, *sim.player);
+        }
     }
 
     if (DebugConfig::DEBUG_TICKS)

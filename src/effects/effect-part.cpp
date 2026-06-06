@@ -2,9 +2,11 @@
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
 #include "camera.h"
+#include "world/world.h"
 #include <algorithm>
 #include <cstdio>
 #include <cmath>
+#include <cstring>
 #include "audio/audio.h"
 
 EffectPartSystem& EffectPartSystem::instance() {
@@ -66,15 +68,102 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.normal = n;
         e.color = {0.75f, 0.0f, 0.02f};
         e.maxLifetime = 30.0f;
-        e.scale = big ? (0.18f + force * 0.14f) : (0.035f + force * 0.045f);
+        // CHANGED: Increased scale for bigger blood splats, jun 6 2026
+        e.scale = big ? (0.5f + force * 0.5f) : (0.1f + force * 0.15f);
         e.endScale = e.scale;
         e.billboardText = false;
         e.sticky = true;
         e.flatDecal = true;
         e.ownerId = ownerId;
-        e.debugVisual = true;
+        // CHANGED: No longer debug-only — renders always as solid decal, jun 6 2026
+        e.debugVisual = false;
         spawn(e);
     }
+}
+
+void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const World& world) {
+    // Calculate force from damage, distance, body part lethality
+    float bodyPartLethality = 1.0f;
+    if (bodyPart == "head") bodyPartLethality = 2.0f;
+    else if (bodyPart.find("Arm") != std::string::npos) bodyPartLethality = 0.6f;
+    else if (bodyPart.find("Leg") != std::string::npos) bodyPartLethality = 0.7f;
+    else if (bodyPart == "torso") bodyPartLethality = 1.2f;
+    
+    float distanceFactor = std::clamp(1.0f - distance / 110.0f, 0.1f, 1.0f);
+    float force = std::clamp(damage / 100.0f * bodyPartLethality * distanceFactor, 0.1f, 1.0f);
+    
+    // Raycast from hit position forward into world to find surfaces behind target
+    const float RAY_LENGTH = 3.0f;
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0,0,-1);
+    glm::vec3 rayStart = hitPosition + dir * 0.1f;
+    
+    std::vector<glm::vec3> hitPoints;
+    std::vector<glm::vec3> hitNormals;
+    
+    // Check world collision mesh triangles
+    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+        glm::vec3 e1 = tri.b - tri.a;
+        glm::vec3 e2 = tri.c - tri.a;
+        glm::vec3 p = glm::cross(dir, e2);
+        float det = glm::dot(e1, p);
+        if (std::fabs(det) < 0.000001f) continue;
+        float inv = 1.0f / det;
+        glm::vec3 tVec = rayStart - tri.a;
+        float u = glm::dot(tVec, p) * inv;
+        if (u < 0.0f || u > 1.0f) continue;
+        glm::vec3 q = glm::cross(tVec, e1);
+        float v = glm::dot(dir, q) * inv;
+        if (v < 0.0f || u + v > 1.0f) continue;
+        float t = glm::dot(e2, q) * inv;
+        if (t > 0.001f && t < RAY_LENGTH) {
+            hitPoints.push_back(rayStart + dir * t);
+            hitNormals.push_back(tri.normal);
+        }
+    }
+    
+    // Check AABB blocks
+    for (const Block& block : world.blocks) {
+        glm::vec3 mn = block.pos - block.size * 0.5f;
+        glm::vec3 mx = block.pos + block.size * 0.5f;
+        float tmin = 0.0f;
+        float tmax = RAY_LENGTH;
+        glm::vec3 normal(0.0f);
+        bool hit = true;
+        for (int axis = 0; axis < 3; ++axis) {
+            if (std::fabs(dir[axis]) < 0.000001f) {
+                if (rayStart[axis] < mn[axis] || rayStart[axis] > mx[axis]) { hit = false; break; }
+                continue;
+            }
+            float invD = 1.0f / dir[axis];
+            float a = (mn[axis] - rayStart[axis]) * invD;
+            float b = (mx[axis] - rayStart[axis]) * invD;
+            float sign = -1.0f;
+            if (a > b) { std::swap(a, b); sign = 1.0f; }
+            if (a > tmin) { tmin = a; normal = glm::vec3(0.0f); normal[axis] = sign; }
+            tmax = std::min(tmax, b);
+            if (tmin > tmax) { hit = false; break; }
+        }
+        if (hit && tmin > 0.001f && tmin < RAY_LENGTH) {
+            hitPoints.push_back(rayStart + dir * tmin);
+            hitNormals.push_back(normal);
+        }
+    }
+    
+    // Fallback: if no surface found, use hit position
+    if (hitPoints.empty()) {
+        hitPoints.push_back(hitPosition);
+        hitNormals.push_back(glm::vec3(0, 0, 1));
+    }
+    
+    // Spawn blood on all hit surfaces
+    for (size_t s = 0; s < hitPoints.size(); ++s) {
+        glm::vec3 n = glm::normalize(hitNormals[s]);
+        glm::vec3 pos = hitPoints[s] + n * 0.01f;
+        spawnStickyBlood(pos, n, force, 0);
+    }
+    
+    // Also spawn some blood at original hit point
+    spawnStickyBlood(hitPosition + glm::vec3(0, 0, 0.01f), glm::vec3(0, 0, 1), force * 0.5f, 0);
 }
 
 EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal) {
@@ -108,9 +197,11 @@ EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position) {
     e.position = position;
     e.color = {1.0f, 1.0f, 1.0f};
     e.maxLifetime = 0.5f;
-    e.label = "walk()";
-    e.scale = 0.15f;
-    e.billboardText = true;
+    e.scale = 0.18f;
+    e.endScale = 0.06f;
+    e.billboardText = false;
+    e.flatDecal = false;
+    e.sticky = true;
     return spawn(e);
 }
 
@@ -119,9 +210,11 @@ EffectPart* EffectPartSystem::spawnDash(glm::vec3 position) {
     e.position = position;
     e.color = {0.2f, 0.6f, 1.0f};
     e.maxLifetime = 0.8f;
-    e.label = "dash()";
-    e.scale = 0.25f;
-    e.billboardText = true;
+    e.scale = 0.35f;
+    e.endScale = 0.1f;
+    e.billboardText = false;
+    e.flatDecal = false;
+    e.sticky = true;
     return spawn(e);
 }
 
@@ -177,23 +270,19 @@ void EffectPartSystem::render(const Camera& camera) const {
         alpha = std::max(0.0f, alpha);
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
-        // Draw sphere using debug visuals
         glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
-        if (effect.flatDecal) {
-            glm::vec3 n = glm::length(effect.normal) > 0.001f ? glm::normalize(effect.normal) : glm::vec3(0,0,1);
-            glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
-                                                                     : glm::cross(n, glm::vec3(0,1,0)));
-            glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
-            constexpr int SEGMENTS = 12;
-            for (int i = 0; i < SEGMENTS; ++i) {
-                float a0 = 6.2831853f * i / SEGMENTS;
-                float a1 = 6.2831853f * (i + 1) / SEGMENTS;
-                glm::vec3 p0 = effect.position + (tangent * std::cos(a0) + bitangent * std::sin(a0)) * drawScale;
-                glm::vec3 p1 = effect.position + (tangent * std::cos(a1) + bitangent * std::sin(a1)) * drawScale;
-                DebugVis::drawLine(camera, p0, p1, drawColor);
-            }
-        } else {
-            DebugVis::drawWireSphere(camera, effect.position, drawScale, drawColor);
+        
+        // Cylinder-style blood decal — filled decal aligned to surface normal
+        if (effect.cylinderDecal) {
+            DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
+        }
+        // Flat decal (blood splats on surfaces)
+        else if (effect.flatDecal) {
+            DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
+        }
+        // Solid filled sphere (footsteps, dash effects)
+        else {
+            DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
         }
         
         // Draw billboard text label

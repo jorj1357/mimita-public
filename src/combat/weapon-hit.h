@@ -18,3 +18,4 @@
 struct Player;
 
 void weaponHit(Player& attacker);
+void weaponHit(Player& attacker, Player& target);

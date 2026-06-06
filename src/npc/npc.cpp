@@ -380,7 +380,8 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 
         if (npc.chosenAction.attackPressed && npc.attackCooldown <= 0.0f)
         {
-            weaponHit(npc.body);
+            // Note: player is passed from main.cpp or sim context
+            // NPC melee attack will be resolved in simulate-tick where we have player access
             npc.attackCooldown = 1.35f - difficulty01(npc.difficulty) * 1.05f;
             Debug::log(Debug::Category::General,
                        "[NPC] id=%u attack chosen difficulty=%.1f distance=%.2f\n",

@@ -23,6 +23,9 @@ struct EffectPart
     bool flatDecal = false;
     bool debugVisual = false;
     bool alive = true;
+    // Cylinder rendering for blood splatter
+    bool cylinderDecal = false;
+    float cylinderHeight = 0.0f;
 };
 
 class EffectPartSystem
@@ -43,6 +46,8 @@ public:
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
     void spawnBlood(glm::vec3 position, glm::vec3 direction, float amount);
     void spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId = 0);
+    // Blood projection: raycast from hit point along direction, project blood onto surfaces behind target
+    void spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const class World& world);
     EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
