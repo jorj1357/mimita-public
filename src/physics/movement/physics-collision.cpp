@@ -120,6 +120,7 @@ static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal
     reflectVelocityAgainstNormal(p, normal, 0.0f);
 }
 
+// CHANGED: Simplified collision contact. Removed dashVel, bounce only for walls, jun 6 2026
 static inline void applyCollisionContact(
     Player& p,
     bool& groundedThisFrame,
@@ -133,56 +134,32 @@ static inline void applyCollisionContact(
         Debug::log(Debug::Category::Collision,
                    "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
                    label, triangleIndex, normal.x, normal.y, normal.z, penetration);
-    
-    // Debug logging for dash collisions
-    if (DebugConfig::DEBUG_INPUT && glm::length(p.dashVel) > 1.0f) {
-        Debug::log(Debug::Category::Collision,
-            "[DASH COLLISION] dashVel=(%.2f %.2f) normal=(%.2f %.2f %.2f) speed=%.2f\n",
-            p.dashVel.x, p.dashVel.y, normal.x, normal.y, normal.z,
-            glm::length(p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse));
-    }
 
-    glm::vec3 incoming = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
+    glm::vec3 incoming = p.vel + p.externalImpulse;
     float speed = glm::length(incoming);
     float into = glm::dot(incoming, normal);
     const PlayerSettings& cfg = GetPlayerSettings();
-    
-    bool isDashing = glm::length(p.dashVel) > 1.0f;
-    bool isWallHit = std::fabs(normal.z) < 0.45f;
-    float bounceMultiplier = isDashing ? 0.1f : (cfg.collisionBounceStrength * (isDashing ? 1.8f : 1.0f));
-    
-    // Cancel dash velocity on wall collision while dashing
-    if (isDashing && isWallHit && into < 0.0f) {
-        cancelDashVelocity(p);
-    }
-    
-    if (p.collisionBounceCooldown <= 0.0f &&
-        std::fabs(normal.z) < 0.45f &&
-        into < 0.0f &&
-        speed >= cfg.collisionBounceMinSpeed) {
-        
-        // Reflect: R = V - 2 * (V·N) * N
-        glm::vec3 reflected = incoming - 2.0f * into * normal;
-        
-        // Apply weak bounce (0.1x for dash, normal strength otherwise)
-        glm::vec3 bounced = reflected * bounceMultiplier;
-        
-        float bouncedSpeed = std::min(glm::length(bounced), cfg.collisionBounceMaxSpeed);
-        if (glm::length(bounced) > 0.001f)
-            bounced = glm::normalize(bounced) * bouncedSpeed;
-        
-        p.externalImpulse += bounced - incoming;
-        p.collisionBounceCooldown = 0.08f;
-        
-        if (DebugConfig::DEBUG_INPUT) {
-            Debug::log(Debug::Category::Collision,
-                "[BOUNCE] reflected=(%.2f %.2f %.2f) bounced=(%.2f %.2f %.2f) mult=%.2f\n",
-                reflected.x, reflected.y, reflected.z,
-                bounced.x, bounced.y, bounced.z, bounceMultiplier);
+
+    // Only bounce off wall-like normals, not floors/ceilings
+    bool isWall = std::fabs(normal.z) < 0.45f;
+    if (isWall)
+    {
+        if (p.collisionBounceCooldown <= 0.0f &&
+            into < 0.0f &&
+            speed >= cfg.collisionBounceMinSpeed)
+        {
+            glm::vec3 reflected = incoming - 2.0f * into * normal;
+            glm::vec3 bounced = reflected * cfg.collisionBounceStrength;
+            float bouncedSpeed = std::min(glm::length(bounced), cfg.collisionBounceMaxSpeed);
+            if (glm::length(bounced) > 0.001f)
+                bounced = glm::normalize(bounced) * bouncedSpeed;
+            p.externalImpulse += bounced - incoming;
+            p.collisionBounceCooldown = 0.08f;
         }
-    } else {
-        // For dash collisions, use weak bounce; for others just clamp
-        reflectVelocityAgainstNormal(p, normal, isDashing ? 0.1f : 0.0f);
+        else
+        {
+            reflectVelocityAgainstNormal(p, normal, 0.0f);
+        }
     }
 
     if (normal.z > 0.35f)
@@ -994,7 +971,8 @@ static void doGLBTriangleCollisions(
     constexpr float MAX_CORRECTION = 2.0f;
     constexpr float BODY_SAMPLE_RADIUS = 0.045f;
 
-    glm::vec3 totalMove = (p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse) * dt;
+    // CHANGED: No dashVel — dash is now in vel, jun 6 2026
+    glm::vec3 totalMove = (p.vel + p.externalImpulse) * dt;
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
 
@@ -1338,9 +1316,8 @@ static void doGLBTriangleCollisions(
                              bestPos.x - p.pos.x, bestPos.y - p.pos.y, bestPos.z - p.pos.z);
                     p.pos = bestPos;
 
-                    // Clamp velocity to zero to prevent re-entering geometry
+                    // CHANGED: No dashVel, jun 6 2026
                     p.vel = glm::vec3(0.0f);
-                    p.dashVel = glm::vec2(0.0f);
                     p.collisionStuckFrames = 0;
                 }
             }
@@ -1351,7 +1328,7 @@ static void doGLBTriangleCollisions(
         }
     }
 
-    // Phase 3: Project velocity against all remaining contacts
+    // CHANGED: Phase 3 velocity projection — no dashVel, skip floor normals, jun 6 2026
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
@@ -1361,14 +1338,17 @@ static void doGLBTriangleCollisions(
         world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
     );
 
-    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
+    glm::vec3 totalVel = p.vel + p.externalImpulse;
     for (const RecoveryContact& c : finalContacts)
     {
+        // Only project against wall-like normals — floors should never cancel horizontal velocity
+        if (std::fabs(c.normal.z) > 0.35f)
+            continue;
         float into = glm::dot(totalVel, c.normal);
         if (into < 0.0f)
             totalVel -= c.normal * into;
     }
-    p.vel = totalVel - glm::vec3(p.dashVel, 0.0f) - p.externalImpulse;
+    p.vel = totalVel - p.externalImpulse;
 
     // Overlapping geometry debug detection:
     // If candidate triangles have normals pointing in strongly divergent
@@ -1438,8 +1418,8 @@ void doCollisions(
 
     // glm::vec3 move = p.vel * dt;
 
-    // this kind includes dash movement, for sweeps 
-    glm::vec3 move = (p.vel + glm::vec3(p.dashVel,0.0f) + p.externalImpulse) * dt;
+    // CHANGED: No dashVel, jun 6 2026
+    glm::vec3 move = (p.vel + p.externalImpulse) * dt;
 
     Capsule cap = p.getCapsule();
 
@@ -1713,8 +1693,8 @@ void doCollisions(
             if (findBlockFallbackEscape(cap, nearbyBlocks, remaining, weightedNormal, escape)) {
                 glm::vec3 before = p.pos;
                 p.pos += escape;
+                // CHANGED: No dashVel, jun 6 2026
                 p.vel = glm::vec3(0.0f);
-                p.dashVel = glm::vec2(0.0f);
                 DebugVis::recordDepenetration(before, escape, "block-overlap-escape");
                 PHYS_LOG("[PHYS][BLOCK ESCAPE] contacts=%zu correction=(%.4f %.4f %.4f)\n",
                          remaining.size(), escape.x, escape.y, escape.z);
@@ -1785,17 +1765,19 @@ void doCollisions(
         }
     }
 
-    // Project velocity against all block contacts
+    // CHANGED: Project velocity against block contacts — skip floor normals, no dashVel, jun 6 2026
     cap = p.getCapsule();
     std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
-    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
+    glm::vec3 totalVel = p.vel + p.externalImpulse;
     for (const RecoveryContact& c : blockContacts)
     {
+        if (std::fabs(c.normal.z) > 0.35f)
+            continue;
         float into = glm::dot(totalVel, c.normal);
         if (into < 0.0f)
             totalVel -= c.normal * into;
     }
-    p.vel = totalVel - glm::vec3(p.dashVel, 0.0f) - p.externalImpulse;
+    p.vel = totalVel - p.externalImpulse;
 }
 
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)

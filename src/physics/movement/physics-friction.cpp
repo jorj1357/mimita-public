@@ -109,12 +109,12 @@ void doFriction(
     // --------------------------------------------------
     // SAFETY CLAMP (RUNAWAY PREVENTION)
     // --------------------------------------------------
-    glm::vec2 velXY(p.vel.x, p.vel.y);
-    float totalSpeed = glm::length(velXY);
+    glm::vec2 xy(p.vel.x, p.vel.y);
+    float totalSpeed = glm::length(xy);
 
     if (totalSpeed > MAX_PLAYER_MOVE_SPEED)
     {
-        glm::vec2 clamped = (velXY / totalSpeed) * MAX_PLAYER_MOVE_SPEED;
+        glm::vec2 clamped = (xy / totalSpeed) * MAX_PLAYER_MOVE_SPEED;
         p.vel.x = clamped.x;
         p.vel.y = clamped.y;
 
