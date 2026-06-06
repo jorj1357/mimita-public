@@ -74,6 +74,35 @@ void doWalk(
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
+    glm::vec2 impulseXY(
+        p.externalImpulse.x,
+        p.externalImpulse.y
+    );
+    float impulseSpeed = glm::length(impulseXY);
+    if (impulseSpeed > 0.001f)
+    {
+        glm::vec2 impulseDir = impulseXY / impulseSpeed;
+        float alignment = glm::dot(wishDir, impulseDir);
+
+        float steerT =
+            std::min(1.0f, EXTERNAL_IMPULSE_STEER_RATE * dt);
+        glm::vec2 steeredDir =
+            glm::mix(impulseDir, wishDir, steerT);
+
+        if (glm::length(steeredDir) > 0.001f)
+            impulseDir = glm::normalize(steeredDir);
+
+        if (alignment < 0.0f)
+        {
+            float brake =
+                std::exp(-EXTERNAL_IMPULSE_BRAKE_RATE * -alignment * dt);
+            impulseSpeed *= brake;
+        }
+
+        impulseXY = impulseDir * impulseSpeed;
+        p.externalImpulse.x = impulseXY.x;
+        p.externalImpulse.y = impulseXY.y;
+    }
 
     // ---------------- GROUND ----------------
     // ---------------- GROUND ----------------
@@ -93,44 +122,6 @@ void doWalk(
 
         glm::vec2 currentVel = velXY;
 
-        // --------------------------------------
-        // MOVEMENT CAN OVERRIDE DASH MOMENTUM
-        // --------------------------------------
-
-        float impulseLen =
-            glm::length(glm::vec2(
-                p.externalImpulse.x,
-                p.externalImpulse.y
-            ));
-
-        if (impulseLen > 0.001f)
-        {
-            glm::vec2 moveDir =
-                glm::normalize(wishDir);
-
-            glm::vec2 impulseDir =
-                glm::normalize(glm::vec2(
-                    p.externalImpulse.x,
-                    p.externalImpulse.y
-                ));
-
-            float d =
-                glm::dot(moveDir, impulseDir);
-
-            // opposite direction kills dash hard
-            if (d < 0.0f)
-            {
-                p.externalImpulse.x *= 0.10f;
-                p.externalImpulse.y *= 0.10f;
-            }
-            // sharp turn weakens dash
-            else if (d < 0.5f)
-            {
-                p.externalImpulse.x *= 0.50f;
-                p.externalImpulse.y *= 0.50f;
-            }
-        }
-            
         glm::vec2 newVel =
             glm::mix(currentVel, targetVel, t);
 

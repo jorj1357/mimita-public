@@ -96,8 +96,8 @@ struct RecoveryContact
     const char* label = "recovery";
 };
 
-// CHANGED: Removed dashVel references, jun 6 2026
-// Dash is now part of vel, so bounce applies to vel naturally.
+// Project each velocity contributor independently so wall-normal momentum
+// stays removed without sacrificing tangent velocity.
 static inline void projectVelocityAgainstNormal(
     Player& p,
     const glm::vec3& normal
@@ -128,7 +128,7 @@ static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal
     projectVelocityAgainstNormal(p, normal);
 }
 
-// CHANGED: Simplified collision contact. Removed dashVel, bounce only for walls, jun 6 2026
+// CHANGED: Simplified collision contact. Walls slide instead of bounce, jun 6 2026
 static inline void applyCollisionContact(
     Player& p,
     bool& groundedThisFrame,
@@ -1331,17 +1331,13 @@ static void doGLBTriangleCollisions(
         world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
     );
 
-    glm::vec3 totalVel = p.vel + p.externalImpulse;
     for (const RecoveryContact& c : finalContacts)
     {
         // Only project against wall-like normals — floors should never cancel horizontal velocity
         if (std::fabs(c.normal.z) > 0.35f)
             continue;
-        float into = glm::dot(totalVel, c.normal);
-        if (into < 0.0f)
-            totalVel -= c.normal * into;
+        projectVelocityAgainstNormal(p, c.normal);
     }
-    p.vel = totalVel - p.externalImpulse;
 
     // Overlapping geometry debug detection:
     // If candidate triangles have normals pointing in strongly divergent
@@ -1761,16 +1757,12 @@ void doCollisions(
     // CHANGED: Project velocity against block contacts — skip floor normals, no dashVel, jun 6 2026
     cap = p.getCapsule();
     std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
-    glm::vec3 totalVel = p.vel + p.externalImpulse;
     for (const RecoveryContact& c : blockContacts)
     {
         if (std::fabs(c.normal.z) > 0.35f)
             continue;
-        float into = glm::dot(totalVel, c.normal);
-        if (into < 0.0f)
-            totalVel -= c.normal * into;
+        projectVelocityAgainstNormal(p, c.normal);
     }
-    p.vel = totalVel - p.externalImpulse;
 }
 
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)
