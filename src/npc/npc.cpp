@@ -111,10 +111,10 @@ void logActionChange(const Npc& npc, const NpcAction& next)
 void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
-    sensors.selfVel = npc.body.vel;
+    sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
     sensors.grounded = npc.body.onGround;
     sensors.targetPos = player.pos;
-    sensors.targetVel = player.vel;
+    sensors.targetVel = player.vel + player.externalImpulse;
     sensors.toTarget = player.pos - npc.body.pos;
     sensors.targetDistance = glm::length(sensors.toTarget);
     sensors.hasTarget = npc.difficulty > 0.05f && sensors.targetDistance <= npc.tuning.awarenessRange;
@@ -150,7 +150,10 @@ NpcAction makeAction(NpcActionType type, glm::vec3 direction, glm::vec3 pathTarg
     NpcAction action;
     action.type = type;
     action.name = actionName(type);
-    action.direction = safePlanarNormal(direction, {1.0f, 0.0f, 0.0f});
+    action.direction =
+        type == NpcActionType::Idle
+        ? glm::vec3(0.0f)
+        : safePlanarNormal(direction, {1.0f, 0.0f, 0.0f});
     action.pathTarget = pathTarget;
     action.score = score;
     return action;
@@ -250,11 +253,14 @@ InputState inputFromAction(Npc& npc, NpcAction action)
         action.direction = rotatePlanar(action.direction, error);
     }
 
-    // float moveScale = std::clamp(0.35f + npc.tuning.movementPrecision * 0.65f, 0.0f, 1.0f);
-    float moveScale = std::clamp(0.35f + npc.tuning.movementPrecision * 0.65f, 0.0f, 0.3f);
-    input.wishMoveXY = glm::vec2(action.direction.x, action.direction.y) * moveScale;
+    glm::vec2 move(action.direction.x, action.direction.y);
+    if (glm::length(move) > 0.0001f)
+        move = glm::normalize(move);
+
+    input.wishMoveXY = move;
+    input.movementPressed = glm::length(move) > 0.0001f;
     input.jumpHeld = action.jumpHeld;
-    input.dashPressed = action.dashPressed;
+    input.dashPressed = action.dashPressed && !npc.dashCommandConsumed;
     input.groundReturnPressed = false;
     input.freezeHeld = false;
     input.camForward = safePlanarNormal(action.direction, {1.0f, 0.0f, 0.0f});
@@ -358,16 +364,73 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
             }
             logActionChange(npc, next);
             npc.chosenAction = next;
+            npc.dashCommandConsumed = false;
             npc.reactionTimer = npc.tuning.reactionDelay;
             npc.actionTimer = npc.tuning.actionInterval;
         }
 
         InputState input = inputFromAction(npc, npc.chosenAction);
+        if (input.dashPressed)
+            npc.dashCommandConsumed = true;
+
+        glm::vec3 velocityBefore = npc.body.vel;
+        float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
+
         if (DebugConfig::DEBUG_NPC)
-            Debug::log(Debug::Category::General, "[NPC COMMAND] id=%u action=%s jump=%d dash=%d move=(%.2f %.2f)\n",
-                       npc.id, npc.chosenAction.name.c_str(), (int)input.jumpHeld,
-                       (int)input.dashPressed, input.wishMoveXY.x, input.wishMoveXY.y);
+        {
+            std::string commandLogKey = "npc-command-" + std::to_string(npc.id);
+            Debug::logThrottled(
+                Debug::Category::General,
+                commandLogKey.c_str(),
+                DebugConfig::PRINT_INTERVAL,
+                "[NPC COMMAND] id=%u action=%s jump=%d dash=%d move=(%.2f %.2f)\n",
+                npc.id,
+                npc.chosenAction.name.c_str(),
+                (int)input.jumpHeld,
+                (int)input.dashPressed,
+                input.wishMoveXY.x,
+                input.wishMoveXY.y
+            );
+        }
         physicsMainUpdate(npc.body, world, input, dt);
+
+        float safeDt = std::max(dt, 0.0001f);
+        float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
+        npc.lastMoveInput = input.wishMoveXY;
+        npc.lastAcceleration = (npc.body.vel - velocityBefore) / safeDt;
+        npc.lastGravityDelta = npc.body.vel.z - velocityBefore.z;
+        npc.lastFrictionDelta =
+            input.movementPressed
+            ? 0.0f
+            : planarSpeedAfter - planarSpeedBefore;
+        npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
+
+        if (DebugConfig::DEBUG_NPC)
+        {
+            std::string logKey = "npc-physics-" + std::to_string(npc.id);
+            Debug::logThrottled(
+                Debug::Category::General,
+                logKey.c_str(),
+                DebugConfig::PRINT_INTERVAL,
+                "[NPC PHYSICS] id=%u grounded=%d stable=%d input=(%.2f %.2f) "
+                "vel=(%.2f %.2f %.2f) accel=(%.2f %.2f %.2f) "
+                "gravityDelta=%.3f frictionDelta=%.3f finalSpeed=%.2f\n",
+                npc.id,
+                (int)npc.body.onGround,
+                (int)npc.body.stableOnGround,
+                input.wishMoveXY.x,
+                input.wishMoveXY.y,
+                npc.body.vel.x,
+                npc.body.vel.y,
+                npc.body.vel.z,
+                npc.lastAcceleration.x,
+                npc.lastAcceleration.y,
+                npc.lastAcceleration.z,
+                npc.lastGravityDelta,
+                npc.lastFrictionDelta,
+                npc.lastFinalSpeed
+            );
+        }
 
         if (npc.chosenAction.dashPressed && npc.body.didDash)
         {
@@ -425,13 +488,16 @@ std::vector<DebugVis::NpcDebugInfo> NpcSystem::debugInfo() const
     {
         DebugVis::NpcDebugInfo info;
         info.position = npc.body.pos;
-        info.velocity = npc.body.vel;
+        info.velocity = npc.body.vel + npc.body.externalImpulse;
+        info.acceleration = npc.lastAcceleration;
         info.targetPosition = npc.sensors.targetPos;
-        info.moveDirection = npc.chosenAction.direction;
+        info.moveDirection = glm::vec3(npc.lastMoveInput, 0.0f);
         info.pathTarget = npc.chosenAction.pathTarget;
         info.action = npc.chosenAction.name;
         info.difficulty = npc.difficulty;
         info.awarenessRadius = npc.tuning.awarenessRange;
+        info.finalSpeed = npc.lastFinalSpeed;
+        info.grounded = npc.body.stableOnGround;
         info.hasTarget = npc.sensors.hasTarget;
         out.push_back(info);
     }

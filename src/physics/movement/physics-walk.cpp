@@ -146,7 +146,8 @@ void doWalk(
         glm::vec2 targetVel =
             wishDir * airSpeed;
 
-        float airResponse = 8.0f;
+        // same as ground response value 6 6 2026 
+        float airResponse = 28.0f;
 
         float t =
             std::min(1.0f, airResponse * dt);

@@ -85,12 +85,15 @@ namespace DebugVis {
     struct NpcDebugInfo {
         glm::vec3 position{0.0f};
         glm::vec3 velocity{0.0f};
+        glm::vec3 acceleration{0.0f};
         glm::vec3 targetPosition{0.0f};
         glm::vec3 moveDirection{0.0f};
         glm::vec3 pathTarget{0.0f};
         std::string action;
         float difficulty = 0.0f;
         float awarenessRadius = 0.0f;
+        float finalSpeed = 0.0f;
+        bool grounded = false;
         bool hasTarget = false;
     };
 
