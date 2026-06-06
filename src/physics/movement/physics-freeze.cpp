@@ -6,18 +6,19 @@
  * exposes doFreeze(args)
  * like this 
  * Hold G = 
-At 0 seconds
-Ur velocity is 0 
-At 5 seconds
-Ur velocity is back to normal gravity
-Make it so seconds 0 to 2.5 is like 
-0 velocity , 0.5 velocity, 1.2 velocity, super small
-Then 2.5 and above is like
-1.2 , 2.8, 3.9, 5.9, 10.5, increase faster as it gets to 5 sec
-And 5 sec = normal falling velocity i think 
- */
+ * At 0 seconds
+ * Ur velocity is 0 
+ * At 5 seconds
+ * Ur velocity is back to normal gravity
+ * Make it so seconds 0 to 2.5 is like 
+ * 0 velocity , 0.5 velocity, 1.2 velocity, super small
+ * Then 2.5 and above is like
+ * 1.2 , 2.8, 3.9, 5.9, 10.5, increase faster as it gets to 5 sec
+ * And 5 sec = normal falling velocity i think 
+ *  */
 
 #include <cstdio>
+#include "effects/effect-part.h"
 #include <algorithm>
 #include <cmath>
 
@@ -121,6 +122,9 @@ void doFreeze(
         return;
 
     p.freezeTimer += dt;
+
+    // Spawn freeze effect (updates label with current duration)
+    EffectPartSystem::instance().spawnFreeze(p.pos, p.freezeTimer);
 
     // if (!p.freezeHoldSoundPlayed && p.freezeTimer >= 0.5f)
     // this is annouing so never plau it

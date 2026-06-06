@@ -16,3 +16,6 @@ class Camera;
 
 InputState pollInput(GLFWwindow* win, const Camera& cam);
 InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam);
+
+extern InputFrame gTerminalInputOverride;
+void consumeTerminalInputOverride();
