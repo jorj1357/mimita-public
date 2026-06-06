@@ -292,6 +292,12 @@ void NpcSystem::clear()
     npcs.clear();
 }
 
+void NpcSystem::spawnNpc(float difficulty, glm::vec3 spawnPos)
+{
+    uint32_t id = nextNpcId();
+    npcs.emplace_back(id, difficulty, spawnPos);
+}
+
 void NpcSystem::update(const World& world, const Player& player, float dt)
 {
     for (Npc& npc : npcs)
