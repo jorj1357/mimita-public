@@ -154,6 +154,12 @@ public:
 
     float footstepTimer = 0.0f;
 
+    // -------- Weapon / Aiming --------
+    glm::vec3 aimDirection{0.0f, 1.0f, 0.0f};  // Camera forward for aiming
+    glm::vec3 aimPosition{0.0f};                // Camera position for aim origin
+    bool hasAimData = false;
+    float weaponSwayTime = 0.0f;
+
     // -------- Rendering --------
     glm::vec3 meshScale  {1,1,1};
     glm::vec3 meshOffset {0,0,0};
@@ -178,7 +184,7 @@ public:
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
-    void updateProceduralAnimation(float dt);
+    void updateProceduralAnimation(float dt, const glm::vec3& camForward = glm::vec3(0,1,0), const glm::vec3& camPos = glm::vec3(0));
 
     // -------- Queries --------
     Capsule getCapsule() const;
@@ -189,4 +195,7 @@ public:
     void render(unsigned int shader,
                 const glm::mat4& view,
                 const glm::mat4& proj) const;
+
+    // -------- Combat --------
+    void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);
 };

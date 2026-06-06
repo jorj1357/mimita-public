@@ -14,11 +14,47 @@
  */
 
 #include "weapon-hit.h"
+#include "entities/player.h"
+#include "debug/debug-log.h"
+#include "audio/audio.h"
+#include "effects/effect-part.h"
 #include <cstdio>
+#include <glm/glm.hpp>
 
-void weaponHit(Player& attacker)
+// NPC melee attack on player
+void weaponHit(Player& attacker, Player& target)
 {
-    printf("[COMBAT WEAPON HIT] begin\n");
-    printf("[COMBAT WEAPON HIT] TODO knife object collision -> hp + knockback\n");
-    printf("[COMBAT WEAPON HIT] end\n");
+    const float MELEE_RANGE = 2.5f;
+    const float MELEE_DAMAGE = 25.0f;
+    const float MELEE_KNOCKBACK = 15.0f;
+    
+    float distance = glm::length(target.pos - attacker.pos);
+    if (distance > MELEE_RANGE) {
+        if (DebugConfig::DEBUG_COMMANDS) {
+            Debug::log(Debug::Category::General, "[MELEE MISS] distance=%.2f range=%.2f\n", distance, MELEE_RANGE);
+        }
+        return;
+    }
+    
+    // Check if target is in front of attacker (within 90 degree cone)
+    glm::vec3 toTarget = glm::normalize(target.pos - attacker.pos);
+    glm::vec3 attackerForward = attacker.movementCapsule.rotation * glm::vec3(0, 1, 0);
+    float dot = glm::dot(toTarget, attackerForward);
+    
+    if (dot < 0.0f) { // Behind attacker
+        if (DebugConfig::DEBUG_COMMANDS) {
+            Debug::log(Debug::Category::General, "[MELEE MISS] behind attacker dot=%.2f\n", dot);
+        }
+        return;
+    }
+    
+    // Hit!
+    glm::vec3 knockbackDir = toTarget;
+    knockbackDir.z = 0.3f; // Slight upward
+    
+    target.takeDamage((int)MELEE_DAMAGE, knockbackDir, MELEE_KNOCKBACK);
+    
+    if (DebugConfig::DEBUG_COMMANDS) {
+        Debug::log(Debug::Category::General, "[MELEE HIT] damage=%.0f knockback=%.1f\n", MELEE_DAMAGE, MELEE_KNOCKBACK);
+    }
 }

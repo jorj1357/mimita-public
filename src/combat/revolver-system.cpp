@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <limits>
 
@@ -89,11 +90,20 @@ void RevolverSystem::update(const Camera& camera, Player& player, float dt)
     mPosition = glm::mix(mPosition, targetPos, std::clamp(follow, 0.0f, 1.0f));
     mMuzzle = mPosition + mForward * 0.72f;
     DebugVis::recordMovement(player.pos, player.externalImpulse * 0.1f, "weapon-recoil-impulse");
-    if (player.equippedSlot == 1) {
+    
+    // Apply recoil to player procedural animation (additive)
+    if (player.equippedSlot == 1 && mRecoil > 0.01f) {
         for (PhysicalBodyPart& part : player.physicalBody.parts) {
             if (part.name == "rightArm") {
-                part.pose.rotationEuler = {-55.0f - mRecoil * 4.0f, 0.0f, -15.0f};
-                part.pose.translation = {0.0f, -mRecoil * 0.015f, mRecoil * 0.02f};
+                // Additive recoil on top of procedural pose
+                part.pose.rotationEuler.x -= mRecoil * 4.0f;
+                part.pose.translation.y -= mRecoil * 0.015f;
+                part.pose.translation.z += mRecoil * 0.02f;
+                break;
+            }
+            if (part.name == "leftArm") {
+                part.pose.rotationEuler.x -= mRecoil * 2.0f;
+                part.pose.translation.z += mRecoil * 0.01f;
                 break;
             }
         }
@@ -124,7 +134,10 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
     result.fired = true;
     result.start = mMuzzle;
     shooter.revolverCylinder--;
-    playWorldSound("revolvershoot", mMuzzle, 1.0f, 1.0f, 80.0f);
+    // Random pitch ±1% and volume ±1% to avoid robotic identical playback
+    float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);  // 0.99 - 1.01
+    float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f); // 0.99 - 1.01
+    playWorldSound("revolvershoot", mMuzzle, rndVolume, rndPitch, 80.0f);
 
     float nearest = 100.0f;
     for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
@@ -173,8 +186,8 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
         result.damage = (float)rounded;
 
         EffectPartSystem::instance().spawnDamage(result.end, victim->body.username, rounded);
-        EffectPartSystem::instance().spawnStickyBlood(
-            result.end, hitNormal, std::clamp(damage / 100.0f, 0.1f, 1.0f), victim->id);
+        // Use projected blood instead of old sticky blood
+        EffectPartSystem::instance().spawnProjectedBlood(result.end, mForward, rounded, nearest, hitPart, world);
         float hurt01 = std::clamp(damage / 100.0f, 0.0f, 1.0f);
         playWorldSound("gethurt", result.end, 0.35f + hurt01 * 0.65f, 1.35f - hurt01 * 0.55f, 35.0f);
 
