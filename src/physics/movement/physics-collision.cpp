@@ -30,6 +30,8 @@
 #include "entities/player.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "config/player-settings.h"
+#include "devtools/terminal.h"
 
 // =====================================================
 // DEBUG TOGGLE
@@ -119,7 +121,27 @@ static inline void applyCollisionContact(
         Debug::log(Debug::Category::Collision,
                    "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
                    label, triangleIndex, normal.x, normal.y, normal.z, penetration);
-    clampVelocityAgainstNormal(p, normal);
+    glm::vec3 incoming = p.vel + glm::vec3(p.dashVel, 0.0f);
+    float speed = glm::length(incoming);
+    float into = glm::dot(incoming, normal);
+    const PlayerSettings& cfg = GetPlayerSettings();
+    if (p.collisionBounceCooldown <= 0.0f &&
+        std::fabs(normal.z) < 0.45f &&
+        into < 0.0f &&
+        speed >= cfg.collisionBounceMinSpeed) {
+        glm::vec3 reflected = incoming - 2.0f * into * normal;
+        float dashFactor = glm::length(p.dashVel) > 1.0f ? 1.8f : 1.0f;
+        float strength = std::clamp(cfg.collisionBounceStrength * dashFactor, 0.0f, 0.8f);
+        glm::vec3 bounced = glm::mix(incoming, reflected, strength);
+        float bouncedSpeed = std::min(glm::length(bounced), cfg.collisionBounceMaxSpeed);
+        if (glm::length(bounced) > 0.001f)
+            bounced = glm::normalize(bounced) * bouncedSpeed;
+        p.vel = bounced;
+        p.dashVel = glm::vec2(0.0f);
+        p.collisionBounceCooldown = 0.08f;
+    } else {
+        clampVelocityAgainstNormal(p, normal);
+    }
 
     if (normal.z > 0.35f)
     {
@@ -674,13 +696,87 @@ static glm::vec3 solveBatchedCorrection(
     const std::vector<RecoveryContact>& contacts,
     float slop,
     float* outMaxPenetration = nullptr,
-    glm::vec3* outWeightedNormal = nullptr
+    glm::vec3* outWeightedNormal = nullptr,
+    glm::vec3 intendedMove = glm::vec3(0.0f),
+    glm::vec3 debugPosition = glm::vec3(0.0f)
 ) {
+    const PlayerSettings& cfg = GetPlayerSettings();
+    std::vector<RecoveryContact> manifold;
+    std::vector<RecoveryContact> discarded;
+    for (const RecoveryContact& contact : contacts) {
+        RecoveryContact merged = contact;
+        bool found = false;
+        for (RecoveryContact& existing : manifold) {
+            float alignment = glm::dot(existing.normal, contact.normal);
+            if (alignment >= 1.0f - cfg.collisionSeamTolerance) {
+                float totalWeight = std::max(existing.penetration, slop) + std::max(contact.penetration, slop);
+                existing.normal = glm::normalize(existing.normal * std::max(existing.penetration, slop)
+                                               + contact.normal * std::max(contact.penetration, slop));
+                existing.point = (existing.point + contact.point) * 0.5f;
+                existing.penetration = std::max(existing.penetration, contact.penetration);
+                (void)totalWeight;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            manifold.push_back(merged);
+    }
+
+    if (glm::dot(intendedMove, intendedMove) > 0.000001f && manifold.size() > 1) {
+        glm::vec3 moveDir = glm::normalize(intendedMove);
+        size_t preferred = 0;
+        float preferredScore = -std::numeric_limits<float>::max();
+        for (size_t i = 0; i < manifold.size(); ++i) {
+            float blocks = std::max(0.0f, -glm::dot(moveDir, manifold[i].normal));
+            float score = manifold[i].penetration - blocks * cfg.collisionMovementBias;
+            if (score > preferredScore) {
+                preferredScore = score;
+                preferred = i;
+            }
+        }
+        std::vector<RecoveryContact> filtered;
+        for (size_t i = 0; i < manifold.size(); ++i) {
+            bool shallowSeam = i != preferred &&
+                manifold[i].penetration <= cfg.collisionSeamTolerance &&
+                std::fabs(manifold[i].normal.z) < 0.45f;
+            if (shallowSeam)
+                discarded.push_back(manifold[i]);
+            else
+                filtered.push_back(manifold[i]);
+        }
+        manifold.swap(filtered);
+
+        static int seamLogCooldown = 0;
+        seamLogCooldown = std::max(0, seamLogCooldown - 1);
+        if (!discarded.empty() && seamLogCooldown == 0) {
+            const RecoveryContact& chosen = manifold.front();
+            char line[512];
+            snprintf(line, sizeof(line),
+                     "[COLLISION SEAM] pos=(%.3f %.3f %.3f) move=(%.3f %.3f %.3f) chosen=(%.3f %.3f %.3f) discarded=%zu",
+                     debugPosition.x, debugPosition.y, debugPosition.z,
+                     intendedMove.x, intendedMove.y, intendedMove.z,
+                     chosen.normal.x, chosen.normal.y, chosen.normal.z, discarded.size());
+            Terminal::instance().addLog(line);
+            for (const RecoveryContact& c : manifold) {
+                snprintf(line, sizeof(line), "  contact normal=(%.3f %.3f %.3f) penetration=%.4f",
+                         c.normal.x, c.normal.y, c.normal.z, c.penetration);
+                Terminal::instance().addLog(line);
+            }
+            for (const RecoveryContact& c : discarded) {
+                snprintf(line, sizeof(line), "  discarded normal=(%.3f %.3f %.3f) penetration=%.4f",
+                         c.normal.x, c.normal.y, c.normal.z, c.penetration);
+                Terminal::instance().addLog(line);
+            }
+            seamLogCooldown = 30;
+        }
+    }
+
     glm::vec3 correction(0.0f);
     glm::vec3 weightedNormal(0.0f);
     float maxPenetration = 0.0f;
 
-    for (const RecoveryContact& c : contacts)
+    for (const RecoveryContact& c : manifold)
     {
         maxPenetration = std::max(maxPenetration, c.penetration);
         weightedNormal += c.normal * std::max(c.penetration + slop, slop);
@@ -689,7 +785,7 @@ static glm::vec3 solveBatchedCorrection(
     constexpr int SOLVER_PASSES = 6;
     for (int pass = 0; pass < SOLVER_PASSES; ++pass)
     {
-        for (const RecoveryContact& c : contacts)
+        for (const RecoveryContact& c : manifold)
         {
             float required = c.penetration + slop;
             float satisfied = glm::dot(correction, c.normal);
@@ -857,7 +953,6 @@ static void doGLBTriangleCollisions(
     constexpr float BODY_SAMPLE_RADIUS = 0.045f;
 
     glm::vec3 totalMove = (p.vel + glm::vec3(p.dashVel, 0.0f)) * dt;
-
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
 
@@ -995,7 +1090,7 @@ static void doGLBTriangleCollisions(
         // This iteratively solves all contact constraints simultaneously,
         // preventing contradictory normals from fighting each other
         float iterMaxPen = 0.0f;
-        glm::vec3 correction = solveBatchedCorrection(contacts, SURFACE_SLOP, &iterMaxPen, nullptr);
+        glm::vec3 correction = solveBatchedCorrection(contacts, SURFACE_SLOP, &iterMaxPen, nullptr, totalMove, p.pos);
         maxPenetrationSeen = std::max(maxPenetrationSeen, iterMaxPen);
 
         // Clamp correction magnitude to prevent explosive escapes
@@ -1289,6 +1384,7 @@ void doCollisions(
     float dt
 )
 {
+    p.collisionBounceCooldown = std::max(0.0f, p.collisionBounceCooldown - dt);
     if (!world.collisionMesh.empty())
     {
         doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
@@ -1537,7 +1633,7 @@ void doCollisions(
             break;
 
         // Use batched correction instead of sequential pushes
-        glm::vec3 correction = solveBatchedCorrection(contacts, BLOCK_DEPEN_SLOP, nullptr, nullptr);
+        glm::vec3 correction = solveBatchedCorrection(contacts, BLOCK_DEPEN_SLOP, nullptr, nullptr, move, p.pos);
         float corrLen = glm::length(correction);
         if (corrLen > BLOCK_MAX_CORRECTION)
             correction *= BLOCK_MAX_CORRECTION / corrLen;

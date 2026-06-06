@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstdio>
+#include <functional>
 
 // And make sure this exists in ONE cpp: feb 9 2026 
 TextureStore gTextures;
@@ -39,4 +40,19 @@ GLuint TextureStore::get(const std::string& name) {
     map[key] = tex;
     Debug::logOnce(Debug::Category::Render, key.c_str(), "[TEXTURE] Registered texture name=%s tex=%u\n", key.c_str(), tex);
     return tex;
+}
+
+GLuint TextureStore::getPath(const std::string& path, bool reload)
+{
+    std::string normalized = path;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    const std::string key = "path:" + normalized;
+    auto it = map.find(key);
+    if (it != map.end() && !reload)
+        return it->second;
+    if (it != map.end() && reload && it->second)
+        glDeleteTextures(1, &it->second);
+    GLuint texture = loadTexture(normalized.c_str());
+    map[key] = texture;
+    return texture;
 }

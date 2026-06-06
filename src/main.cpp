@@ -64,6 +64,9 @@
 #include "replay/replay.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
+#include "combat/revolver-system.h"
+#include "config/player-settings.h"
+#include "render/outfit-atlas.h"
 
 struct RevolverTracer {
     glm::vec3 start{0.0f};
@@ -151,6 +154,9 @@ int main(int argc, char** argv)
             Terminal::instance().handleKey(key, mods);
         }
     });
+    glfwSetScrollCallback(engine.window(), [](GLFWwindow*, double, double yOffset) {
+        Terminal::instance().handleScroll(yOffset);
+    });
 
     printf("[MAIN] after glfwSetInputMode\n");
 
@@ -196,6 +202,8 @@ int main(int argc, char** argv)
     printf("[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first\n");
 
     Player player;
+    player.equippedSlot = GetPlayerSettings().equippedSlot;
+    OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath);
     printf("[MAIN] player made\n");
 
     NpcSystem npcSystem;
@@ -220,6 +228,7 @@ int main(int argc, char** argv)
     std::string activeGameMode = "sandbox";
     int selectedEditorObject = -1;
     std::vector<RevolverTracer> revolverTracers;
+    RevolverSystem revolver;
 
     // Gameplay terminal commands
     auto registerActionCommand = [](const char* name, const char* description) {
@@ -259,7 +268,7 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "shoot", "Fire weapon", "shoot",
-        [&player, &camera, &world, &revolverTracers](const std::vector<std::string>&) {
+        [&player, &npcSystem, &world, &revolverTracers, &revolver](const std::vector<std::string>&) {
             if (player.equippedSlot != 1) {
                 Terminal::instance().addLog("[REVOLVER] slot 1 is not equipped");
                 return;
@@ -268,8 +277,10 @@ int main(int argc, char** argv)
                 Terminal::instance().addLog("[REVOLVER] empty; use reload");
                 return;
             }
-            player.revolverCylinder--;
-            revolverTracers.push_back({camera.pos, castWorldRay(world, camera.pos, camera.front), 3.0f});
+            RevolverShotResult shot = revolver.fire(player, npcSystem, world);
+            if (!shot.fired)
+                return;
+            revolverTracers.push_back({shot.start, shot.end, 3.0f});
             Terminal::instance().addLog("[REVOLVER] fired");
         }
     });
@@ -279,8 +290,12 @@ int main(int argc, char** argv)
         [&player](const std::vector<std::string>&) {
             int needed = 6 - player.revolverCylinder;
             int loaded = std::min(needed, player.revolverReserve);
+            playEventSound("revolverpullback", 0.8f);
+            for (int i = 0; i < loaded; ++i)
+                playEventSound("revolverbulletadd", 0.65f);
             player.revolverCylinder += loaded;
             player.revolverReserve -= loaded;
+            playEventSound("revolverchamber", 0.9f);
             Terminal::instance().addLog("[GAMEPLAY] revolver reloaded");
         }
     });
@@ -300,10 +315,58 @@ int main(int argc, char** argv)
             name, "Equip inventory slot " + std::to_string(slot), name,
             [&player, slot](const std::vector<std::string>&) {
                 player.equippedSlot = slot;
+                GetPlayerSettings().equippedSlot = slot;
+                SavePlayerSettings();
+                if (slot == 1)
+                    playEventSound("revolverequip", 0.85f);
                 Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
             }
         });
     }
+
+    Terminal::instance().registerCommand({
+        "setoutfit", "Set and save the player outfit PNG", "setoutfit <path>",
+        [&player](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: setoutfit <path>");
+                return;
+            }
+            if (OutfitAtlas::instance().apply(player, args[0])) {
+                GetPlayerSettings().outfitPath = args[0];
+                SavePlayerSettings();
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "reloadoutfit", "Reload the current outfit PNG from disk", "reloadoutfit",
+        [&player](const std::vector<std::string>&) {
+            OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath, true);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "outfitdebug", "Print outfit atlas region mapping", "outfitdebug",
+        [](const std::vector<std::string>&) { OutfitAtlas::instance().printDebug(); }
+    });
+    Terminal::instance().registerCommand({
+        "killfeed", "Show recent kills", "killfeed",
+        [&revolver](const std::vector<std::string>&) {
+            if (revolver.killfeed().empty()) {
+                Terminal::instance().addLog("[KILLFEED] no kills");
+                return;
+            }
+            for (const std::string& line : revolver.killfeed())
+                Terminal::instance().addLog("[KILLFEED] " + line);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "debug_combat", "Enable combat calculation logging", "debug_combat <true|false>",
+        [](const std::vector<std::string>& args) {
+            bool& enabled = GetPlayerSettings().debugCombat;
+            enabled = args.empty() ? !enabled : (args[0] == "true" || args[0] == "1");
+            SavePlayerSettings();
+            Terminal::instance().addLog(std::string("[DEBUG] debug_combat=") + (enabled ? "true" : "false"));
+        }
+    });
 
     Terminal::instance().registerCommand({
         "serverconnect", "Print a server connection request", "serverconnect <ip> [args...]",
@@ -588,12 +651,16 @@ int main(int argc, char** argv)
 
             // Process NPC spawn commands (from console or F2) — after sim tick
             ProcessNpcSpawnCommands(npcSystem, camera, world, player);
-            HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
+            if (!Terminal::instance().isOpen())
+                HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
 
-            applyDebugMovement(player, engine.window(), camera, dt);
+            if (!Terminal::instance().isOpen())
+                applyDebugMovement(player, engine.window(), camera, dt);
 
             camera.updateVectors();
             camera.follow(player.pos);
+            setAudioListener(camera.pos, camera.front);
+            revolver.update(camera, player, dt);
 
             player.updateAudio(dt);
 
@@ -632,6 +699,8 @@ int main(int argc, char** argv)
             renderWorld(world, camera);
             renderPlayer(player, camera);
             npcSystem.render(camera);
+            if (player.equippedSlot == 1)
+                revolver.render(camera, world);
             
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
@@ -676,6 +745,28 @@ int main(int argc, char** argv)
                 }
                 if (player.inventoryOpen)
                     uiDrawText("INVENTORY: [1] Revolver [2-10] Empty", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
+            }
+            {
+                const float normalSize = 44.0f;
+                const float gap = 7.0f;
+                const float totalWidth = normalSize * 10.0f + gap * 9.0f;
+                float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
+                float y = uiScreenH() - 70.0f;
+                for (int slot = 1; slot <= 10; ++slot) {
+                    bool equipped = player.equippedSlot == slot;
+                    float size = equipped ? normalSize * 1.2f : normalSize;
+                    float offset = (size - normalSize) * 0.5f;
+                    UIRect rect{x - offset, y - offset, size, size};
+                    uiDrawRect(rect, slot == 1 ? glm::vec4(0.32f,0.32f,0.36f,0.95f)
+                                               : glm::vec4(0.12f,0.12f,0.14f,0.92f), "hotbar-slot");
+                    uiDrawRectOutline(rect, equipped ? glm::vec4(1,1,1,1)
+                                                     : glm::vec4(0.45f,0.45f,0.48f,1), "hotbar-border");
+                    std::string label = slot == 10 ? "0" : std::to_string(slot);
+                    uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
+                    uiDrawText(slot == 1 ? "REV" : "-", rect.x + 13, rect.y + 34, 0.20f,
+                               slot == 1 ? glm::vec4(1,0.85f,0.35f,1) : glm::vec4(0.55f,0.55f,0.58f,1));
+                    x += normalSize + gap;
+                }
             }
             {
                 float nameX = 0.0f, nameY = 0.0f;

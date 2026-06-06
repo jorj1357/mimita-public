@@ -278,7 +278,13 @@ void InputCommandSystem::loadBinds(const std::string& path) {
 }
 
 void InputCommandSystem::saveBinds(const std::string& path) const {
-    json j;
+    json j = json::object();
+    {
+        std::ifstream existing(path);
+        if (existing.is_open()) {
+            try { existing >> j; } catch (...) { j = json::object(); }
+        }
+    }
     json bindsJson = json::object();
     
     for (const auto& [action, key] : mActionToKey) {

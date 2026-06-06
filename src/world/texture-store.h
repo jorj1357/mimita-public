@@ -17,6 +17,7 @@ struct TextureStore {
     std::unordered_map<std::string, GLuint> map;
 
     GLuint get(const std::string& name);
+    GLuint getPath(const std::string& path, bool reload = false);
 };
 
 extern TextureStore gTextures;

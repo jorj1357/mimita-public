@@ -8,6 +8,8 @@
 
 #include "settings-menu.h"
 #include "../ui-system.h"
+#include "camera.h"
+#include "config/player-settings.h"
 
 #include <cstdio>
 
@@ -15,8 +17,7 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
 {
     SettingsMenuResult r{};
 
-    static float volume = 75.0f;
-    static float fov = 100.0f;
+    PlayerSettings& settings = GetPlayerSettings();
 
     static bool fullscreen = false;
     static bool physicsDebug = true;
@@ -95,23 +96,38 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
 
     float gap = uiScaleY(36);
 
-    uiSlider(
+    if (uiSlider(
         win,
-        "VOLUME",
+        "MASTER VOLUME",
         uiRow(leftX, y, sliderW, uiScaleY(28), gap),
-        &volume,
+        &settings.masterVolume,
         0.0f,
-        100.0f
-    );
+        1.0f
+    )) SavePlayerSettings();
 
-    uiSlider(
+    if (uiSlider(
         win,
         "FOV",
         uiRow(leftX, y, sliderW, uiScaleY(28), gap),
-        &fov,
+        &settings.fov,
         60.0f,
         140.0f
-    );
+    )) {
+        CAMERA_FOV = settings.fov;
+        SavePlayerSettings();
+    }
+
+    if (uiSlider(
+        win,
+        "SENSITIVITY",
+        uiRow(leftX, y, sliderW, uiScaleY(28), gap),
+        &settings.sensitivity,
+        0.01f,
+        1.0f
+    )) {
+        CAMERA_SENS = settings.sensitivity;
+        SavePlayerSettings();
+    }
 
     y += uiScaleY(12);
 

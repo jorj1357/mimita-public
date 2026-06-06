@@ -265,6 +265,8 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     tuning = tuningForDifficulty(difficulty);
     rngState = 0x9e3779b9u ^ (id * 747796405u);
     body.reset();
+    body.username = "npc-" + std::to_string(id);
+    body.currentHp = body.maxHp;
     body.pos = spawn;
     body.vel = {0.0f, 0.0f, 0.0f};
     body.dashVel = {0.0f, 0.0f};
@@ -306,6 +308,11 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 {
     for (Npc& npc : npcs)
     {
+        if (npc.body.currentHp <= 0) {
+            npc.body.vel = glm::vec3(0.0f);
+            npc.body.dashVel = glm::vec2(0.0f);
+            continue;
+        }
         npc.reactionTimer -= dt;
         npc.actionTimer -= dt;
         npc.dashCooldown = std::max(0.0f, npc.dashCooldown - dt);
@@ -362,7 +369,8 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 void NpcSystem::render(const Camera& camera) const
 {
     for (const Npc& npc : npcs)
-        renderPlayer(npc.body, camera);
+        if (npc.body.currentHp > 0)
+            renderPlayer(npc.body, camera);
 }
 
 void NpcSystem::drawDebug(const Camera& camera) const

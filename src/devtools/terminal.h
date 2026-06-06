@@ -24,6 +24,7 @@ public:
 
     void handleChar(unsigned int codepoint);
     void handleKey(int key, int mods);
+    void handleScroll(double yOffset);
 
     void render();
 
@@ -48,6 +49,7 @@ private:
     std::unordered_map<std::string, ConsoleCommand> mCommands;
 
     float mCursorBlink = 0.0f;
+    int mScrollOffset = 0;
 
     static constexpr int MAX_SCROLLBACK = 256;
     static constexpr int MAX_HISTORY = 64;
