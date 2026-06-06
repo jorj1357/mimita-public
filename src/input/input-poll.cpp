@@ -24,6 +24,7 @@ void consumeTerminalInputOverride() {
 static void ensureInputInit(GLFWwindow* win) {
     if (!gInputInitialized) {
         InputCommandSystem::instance().init(win);
+        InputCommandSystem::instance().loadBinds("config/accounts/default.json");
         gInputInitialized = true;
     }
 }

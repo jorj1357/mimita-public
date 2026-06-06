@@ -688,6 +688,10 @@ namespace DebugVis {
     void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {
         ::drawLine(camera, a, b, color);
     }
+
+    void drawWireBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color) {
+        ::drawBox(camera, center, halfSize, color);
+    }
     
     void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color) {
         ::drawWorldLabel(worldPos, text, color);

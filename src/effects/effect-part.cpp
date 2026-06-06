@@ -17,6 +17,8 @@ void EffectPartSystem::init() {
 void EffectPartSystem::update(float dt) {
     for (auto& effect : mEffects) {
         effect.lifetime += dt;
+        effect.position += effect.velocity * dt;
+        effect.velocity.z -= 4.0f * dt;
         if (effect.lifetime >= effect.maxLifetime) {
             effect.alive = false;
         }
@@ -27,6 +29,32 @@ void EffectPartSystem::update(float dt) {
             [](const EffectPart& e) { return !e.alive; }),
         mEffects.end()
     );
+}
+
+EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string& victim, int damage) {
+    EffectPart e;
+    e.position = position;
+    e.color = {1.0f, 0.0f, 0.0f};
+    e.maxLifetime = 1.0f;
+    e.label = victim + " took " + std::to_string(damage) + " damage!!";
+    e.scale = 0.24f;
+    return spawn(e);
+}
+
+void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float amount) {
+    int count = std::clamp((int)(amount * 8.0f), 2, 14);
+    glm::vec3 base = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1,0,0);
+    for (int i = 0; i < count; ++i) {
+        float side = ((i % 3) - 1) * 0.22f;
+        EffectPart e;
+        e.position = position;
+        e.velocity = base * (1.5f + amount * 3.0f + i * 0.08f) + glm::vec3(-base.y, base.x, 0.3f) * side;
+        e.color = {0.75f, 0.0f, 0.02f};
+        e.maxLifetime = 0.5f + amount * 0.5f;
+        e.scale = 0.035f + amount * 0.04f;
+        e.billboardText = false;
+        spawn(e);
+    }
 }
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {

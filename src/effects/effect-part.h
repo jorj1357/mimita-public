@@ -8,6 +8,7 @@ struct EffectPart
 {
     glm::vec3 position{0.0f};
     glm::vec3 color{1.0f, 1.0f, 1.0f};
+    glm::vec3 velocity{0.0f};
     float lifetime = 0.0f;
     float maxLifetime = 1.0f;
     std::string label;
@@ -31,6 +32,8 @@ public:
     EffectPart* spawnDash(glm::vec3 position);
     EffectPart* spawnFreeze(glm::vec3 position, float freezeDuration);
     EffectPart* spawnImpact(glm::vec3 position, glm::vec3 color, const char* label);
+    EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
+    void spawnBlood(glm::vec3 position, glm::vec3 direction, float amount);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
     
     // Clear all effects
