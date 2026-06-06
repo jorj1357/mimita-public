@@ -783,15 +783,20 @@ static void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
-    glm::vec3 move = (p.vel + glm::vec3(p.dashVel, 0.0f)) * dt;
+    constexpr float SURFACE_SLOP = 0.002f;
+    constexpr float MAX_CORRECTION = 2.0f;
+    constexpr float BODY_SAMPLE_RADIUS = 0.045f;
+
+    glm::vec3 totalMove = (p.vel + glm::vec3(p.dashVel, 0.0f)) * dt;
+
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
-    std::vector<int> candidates = gatherGLBTriangles(world, cap, move);
+
+    std::vector<int> candidates = gatherGLBTriangles(world, cap, totalMove);
     std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
-    constexpr float BODY_SAMPLE_RADIUS = 0.045f;
     for (glm::vec3 sample : bodySamples)
     {
-        std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, move);
+        std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, totalMove);
         for (int triIndex : sampleCandidates)
             if (std::find(candidates.begin(), candidates.end(), triIndex) == candidates.end())
                 candidates.push_back(triIndex);
@@ -806,27 +811,27 @@ static void doGLBTriangleCollisions(
             candidates.size(),
             bodySamples.size(),
             p.pos.x, p.pos.y, p.pos.z,
-            move.x, move.y, move.z
+            totalMove.x, totalMove.y, totalMove.z
         );
     }
 
-    constexpr float SURFACE_SLOP = 0.002f;
-
+    // Phase 1: Sweep + slide movement (5 iterations)
+    glm::vec3 remainingMove = totalMove;
     for (int iter = 0; iter < 5; ++iter)
     {
         SweepHit earliest;
         earliest.time = 1.0f;
 
         cap = p.getCapsule();
-        DebugVis::recordMovement(p.pos, move, "glb-substep-move");
-        DebugVis::recordSweep(cap.a, cap.a + move, "capsule-bottom");
-        DebugVis::recordSweep((cap.a + cap.b) * 0.5f, (cap.a + cap.b) * 0.5f + move, "capsule-mid");
-        DebugVis::recordSweep(cap.b, cap.b + move, "capsule-top");
+        DebugVis::recordMovement(p.pos, remainingMove, "glb-substep-move");
+        DebugVis::recordSweep(cap.a, cap.a + remainingMove, "capsule-bottom");
+        DebugVis::recordSweep((cap.a + cap.b) * 0.5f, (cap.a + cap.b) * 0.5f + remainingMove, "capsule-mid");
+        DebugVis::recordSweep(cap.b, cap.b + remainingMove, "capsule-top");
         for (int triIndex : candidates)
         {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             SweepHit hit;
-            if (capsuleTriangleSweep(cap, move, tri, triIndex, hit) && hit.time < earliest.time)
+            if (capsuleTriangleSweep(cap, remainingMove, tri, triIndex, hit) && hit.time < earliest.time)
                 earliest = hit;
         }
 
@@ -837,7 +842,7 @@ static void doGLBTriangleCollisions(
                 float t = 1.0f;
                 glm::vec3 n(0.0f);
                 glm::vec3 point(0.0f);
-                if (sweepSphereTriangle(sample, move, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], t, n, point) && t < earliest.time)
+                if (sweepSphereTriangle(sample, remainingMove, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], t, n, point) && t < earliest.time)
                 {
                     earliest.hit = true;
                     earliest.time = t;
@@ -849,7 +854,7 @@ static void doGLBTriangleCollisions(
             }
         }
 
-        glm::vec3 stepMove = move * earliest.time;
+        glm::vec3 stepMove = remainingMove * earliest.time;
         p.pos += stepMove;
         p.updateModelWorldTransforms();
         bodySamples = collectPlayerBodyCollisionSamples(p);
@@ -861,11 +866,11 @@ static void doGLBTriangleCollisions(
         p.pos += earliest.normal * SURFACE_SLOP;
         DebugVis::recordHit(earliest.point, earliest.normal, earliest.triangleIndex, earliest.colliderName.c_str());
         DebugVis::recordTriangle(world.collisionMesh.triangles[earliest.triangleIndex], earliest.triangleIndex, "sweep-hit-triangle");
-        move -= stepMove;
+        remainingMove -= stepMove;
 
-        float vn = glm::dot(move, earliest.normal);
+        float vn = glm::dot(remainingMove, earliest.normal);
         if (vn < 0.0f)
-            move -= earliest.normal * vn;
+            remainingMove -= earliest.normal * vn;
 
         applyCollisionContact(
             p,
@@ -889,15 +894,17 @@ static void doGLBTriangleCollisions(
             earliest.point.z
         );
 
-        if (glm::dot(move, move) < 0.000001f)
+        if (glm::dot(remainingMove, remainingMove) < 0.000001f)
             break;
     }
 
-    cap = p.getCapsule();
+    // Phase 2: Gather ALL contacts at final position, depenetrate iteratively
     p.updateModelWorldTransforms();
+    cap = p.getCapsule();
     bodySamples = collectPlayerBodyCollisionSamples(p);
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
-    for (int cleanupIter = 0; cleanupIter < 8; ++cleanupIter)
+
+    for (int depenIter = 0; depenIter < 4; ++depenIter)
     {
         p.updateModelWorldTransforms();
         cap = p.getCapsule();
@@ -905,49 +912,61 @@ static void doGLBTriangleCollisions(
         candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
 
         std::vector<RecoveryContact> contacts = collectGLBRecoveryContacts(
-            world,
-            cap,
-            bodySamples,
-            candidates,
-            BODY_SAMPLE_RADIUS
+            world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
         );
 
         if (contacts.empty())
             break;
 
-        float maxPenetration = 0.0f;
-        glm::vec3 weightedNormal(0.0f);
-        glm::vec3 correction = solveBatchedCorrection(
-            contacts,
-            SURFACE_SLOP,
-            &maxPenetration,
-            &weightedNormal
-        );
+        glm::vec3 totalCorrection(0.0f);
 
-        applyRecoveryContacts(
-            p,
-            groundedThisFrame,
-            contacts,
-            correction,
-            "glb-overlap-batch"
-        );
+        // Sequentially depenetrate each contact
+        for (const RecoveryContact& c : contacts)
+        {
+            float pushDist = c.penetration + SURFACE_SLOP;
+            pushDist = std::min(pushDist, MAX_CORRECTION);
+            glm::vec3 push = c.normal * pushDist;
+            p.pos += push;
+            totalCorrection += push;
+
+            applyCollisionContact(
+                p, groundedThisFrame,
+                c.normal, c.point, c.penetration,
+                c.triangleIndex, c.label
+            );
+        }
+
+        DebugVis::recordDepenetration(p.pos - totalCorrection, totalCorrection, "glb-iterative-depen");
 
         PHYS_LOG(
-            "[PHYS][GLB RECOVERY] iter=%d contacts=%zu maxPen=%.4f correction=(%.4f %.4f %.4f) weighted=(%.4f %.4f %.4f)\n",
-            cleanupIter,
-            contacts.size(),
-            maxPenetration,
-            correction.x,
-            correction.y,
-            correction.z,
-            weightedNormal.x,
-            weightedNormal.y,
-            weightedNormal.z
+            "[PHYS][GLB DEPEN] iter=%d contacts=%zu correction=(%.4f %.4f %.4f)\n",
+            depenIter, contacts.size(),
+            totalCorrection.x, totalCorrection.y, totalCorrection.z
         );
 
-        if (glm::dot(correction, correction) < 0.0000001f)
+        if (glm::dot(totalCorrection, totalCorrection) < 0.0000001f)
             break;
     }
+
+    // Phase 3: Project velocity against all remaining contacts
+    p.updateModelWorldTransforms();
+    cap = p.getCapsule();
+    candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
+    bodySamples = collectPlayerBodyCollisionSamples(p);
+
+    std::vector<RecoveryContact> finalContacts = collectGLBRecoveryContacts(
+        world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
+    );
+
+    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+    for (const RecoveryContact& c : finalContacts)
+    {
+        float into = glm::dot(totalVel, c.normal);
+        if (into < 0.0f)
+            totalVel -= c.normal * into;
+    }
+    p.vel = totalVel;
+    p.dashVel = glm::vec2(0.0f);
 }
 
 // =====================================================
@@ -1196,12 +1215,10 @@ void doCollisions(
         DebugVis::recordDepenetration(sweepStart + stepMove, nudge, "block-sweep-margin");
     }
 
-    // fallback overlap cleanup for tiny penetrations / resting contact
-    // dont call capsule cap 
-    // just put cap mar 7 2026 
-    cap = p.getCapsule();
-
-    constexpr int MAX_BLOCK_RECOVERY_ITERATIONS = 10;
+    // Iterative depenetration for overlap recovery
+    constexpr float BLOCK_DEPEN_SLOP = 0.002f;
+    constexpr float BLOCK_MAX_CORRECTION = 2.0f;
+    constexpr int MAX_BLOCK_RECOVERY_ITERATIONS = 6;
     for (int recoverIter = 0; recoverIter < MAX_BLOCK_RECOVERY_ITERATIONS; ++recoverIter)
     {
         cap = p.getCapsule();
@@ -1210,51 +1227,45 @@ void doCollisions(
         if (contacts.empty())
             break;
 
-        float maxPenetration = 0.0f;
-        glm::vec3 weightedNormal(0.0f);
-        glm::vec3 correction = solveBatchedCorrection(
-            contacts,
-            0.002f,
-            &maxPenetration,
-            &weightedNormal
-        );
-
-        bool usedFallback = false;
-        if (capsuleHasBlockContactsAfterMove(cap, nearbyBlocks, correction))
+        glm::vec3 totalCorrection(0.0f);
+        for (const RecoveryContact& c : contacts)
         {
-            glm::vec3 fallback(0.0f);
-            if (findBlockFallbackEscape(cap, nearbyBlocks, contacts, weightedNormal, fallback))
-            {
-                correction = fallback;
-                usedFallback = true;
-            }
+            float pushDist = std::min(c.penetration + BLOCK_DEPEN_SLOP, BLOCK_MAX_CORRECTION);
+            glm::vec3 push = c.normal * pushDist;
+            p.pos += push;
+            totalCorrection += push;
+
+            applyCollisionContact(
+                p, groundedThisFrame,
+                c.normal, c.point, c.penetration,
+                c.triangleIndex, c.label
+            );
         }
 
-        applyRecoveryContacts(
-            p,
-            groundedThisFrame,
-            contacts,
-            correction,
-            usedFallback ? "block-overlap-fallback" : "block-overlap-batch"
-        );
+        DebugVis::recordDepenetration(p.pos - totalCorrection, totalCorrection, "block-iterative-depen");
 
         PHYS_LOG(
-            "[PHYS][BLOCK RECOVERY] iter=%d contacts=%zu maxPen=%.4f correction=(%.4f %.4f %.4f) weighted=(%.4f %.4f %.4f) fallback=%d\n",
-            recoverIter,
-            contacts.size(),
-            maxPenetration,
-            correction.x,
-            correction.y,
-            correction.z,
-            weightedNormal.x,
-            weightedNormal.y,
-            weightedNormal.z,
-            usedFallback ? 1 : 0
+            "[PHYS][BLOCK DEPEN] iter=%d contacts=%zu correction=(%.4f %.4f %.4f)\n",
+            recoverIter, contacts.size(),
+            totalCorrection.x, totalCorrection.y, totalCorrection.z
         );
 
-        if (glm::dot(correction, correction) < 0.0000001f)
+        if (glm::dot(totalCorrection, totalCorrection) < 0.0000001f)
             break;
     }
+
+    // Project velocity against all block contacts
+    cap = p.getCapsule();
+    std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
+    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+    for (const RecoveryContact& c : blockContacts)
+    {
+        float into = glm::dot(totalVel, c.normal);
+        if (into < 0.0f)
+            totalVel -= c.normal * into;
+    }
+    p.vel = totalVel;
+    p.dashVel = glm::vec2(0.0f);
 }
 
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)

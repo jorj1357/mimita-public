@@ -14,6 +14,7 @@
 #include "world/world.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
+#include "config.h"
 #include <vector>
 
 extern Renderer* gRenderer;
@@ -37,33 +38,10 @@ std::vector<DebugLineVertex> gLineVerts;
 namespace {
 GLFWwindow* gWindow = nullptr;
 DebugColors gColors;
-bool gPhysics = true;
-bool gUi = false;
-bool gRender = true;
-bool gCollision = true;
-bool gCollisionVisuals = true;
-bool gWireframe = false;
-bool gNormals = false;
-bool gBounds = true;
-bool gUvChecker = false;
-bool gLightingOnly = false;
-bool gTexturesOnly = false;
-bool gAoOnly = false;
-bool gPlayerArchitecture = true;
-bool gPrev[13] = {};
 GLuint gLineVao = 0;
 GLuint gLineVbo = 0;
 std::vector<DebugVis::CollisionEvent> gCollisionEvents;
 std::vector<DebugTextLabel> gTextLabels;
-
-
-bool edge(int idx, int key)
-{
-    bool down = glfwGetKey(gWindow, key) == GLFW_PRESS;
-    bool hit = down && !gPrev[idx];
-    gPrev[idx] = down;
-    return hit;
-}
 
 void setLineState(const Camera& camera, glm::vec4 color)
 {
@@ -270,7 +248,7 @@ void drawCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color)
 
 void drawCollisionEvents(const Camera& camera)
 {
-    if (!gCollisionVisuals)
+    if (!DebugConfig::DEBUG_COLLISION_VISUALS)
         return;
 
     constexpr int MAX_EVENTS = 512;
@@ -455,48 +433,35 @@ void drawDebugLabels(const Camera& camera)
 void DebugVis::init(GLFWwindow* win)
 {
     gWindow = win;
-    printf("[DEBUG] DebugVis initialized. 8 collision-vis 9 player-architecture F1 physics F2 UI F3 render F4 collision-log F5 wireframe F6 normals F7 bounds F8 UV F9 light F10 texture F11 AO\n");
+    printf("[DEBUG] DebugVis initialized.\n");
 }
 
 void DebugVis::update()
 {
     if (!gWindow) return;
-    if (edge(0, GLFW_KEY_8)) { gCollisionVisuals = !gCollisionVisuals; printf("[DEBUG] collisionVisuals=%d\n", gCollisionVisuals); }
-    if (edge(1, GLFW_KEY_F1)) { gPhysics = !gPhysics; printf("[DEBUG] physics=%d\n", gPhysics); }
-    if (edge(2, GLFW_KEY_F2)) { gUi = !gUi; printf("[DEBUG] ui=%d\n", gUi); }
-    if (edge(3, GLFW_KEY_F3)) { gRender = !gRender; printf("[DEBUG] render=%d\n", gRender); }
-    if (edge(4, GLFW_KEY_F4)) { gCollision = !gCollision; printf("[DEBUG] collision=%d\n", gCollision); }
-    if (edge(5, GLFW_KEY_F5)) { gWireframe = !gWireframe; printf("[DEBUG] wireframe=%d\n", gWireframe); }
-    if (edge(6, GLFW_KEY_F6)) { gNormals = !gNormals; printf("[DEBUG] normals=%d\n", gNormals); }
-    if (edge(7, GLFW_KEY_F7)) { gBounds = !gBounds; printf("[DEBUG] bounds=%d\n", gBounds); }
-    if (edge(8, GLFW_KEY_F8)) { gUvChecker = !gUvChecker; printf("[DEBUG] uvChecker=%d\n", gUvChecker); }
-    if (edge(9, GLFW_KEY_F9)) { gLightingOnly = !gLightingOnly; printf("[DEBUG] lightingOnly=%d\n", gLightingOnly); }
-    if (edge(10, GLFW_KEY_F10)) { gTexturesOnly = !gTexturesOnly; printf("[DEBUG] texturesOnly=%d\n", gTexturesOnly); }
-    if (edge(11, GLFW_KEY_F11)) { gAoOnly = !gAoOnly; printf("[DEBUG] aoOnly=%d\n", gAoOnly); }
-    if (edge(12, GLFW_KEY_9)) { gPlayerArchitecture = !gPlayerArchitecture; printf("[DEBUG] playerArchitecture=%d\n", gPlayerArchitecture); }
-    glPolygonMode(GL_FRONT_AND_BACK, gWireframe ? GL_LINE : GL_FILL);
+    glPolygonMode(GL_FRONT_AND_BACK, DebugConfig::DEBUG_WIREFRAME ? GL_LINE : GL_FILL);
 }
 
-bool DebugVis::enabled() { return gPhysics || gCollision || gBounds || gNormals || gPlayerArchitecture; }
-bool DebugVis::physics() { return gPhysics; }
-bool DebugVis::ui() { return gUi; }
-bool DebugVis::render() { return gRender; }
-bool DebugVis::collision() { return gCollision; }
-bool DebugVis::wireframe() { return gWireframe; }
-bool DebugVis::normals() { return gNormals; }
-bool DebugVis::bounds() { return gBounds; }
-bool DebugVis::uvChecker() { return gUvChecker; }
-bool DebugVis::lightingOnly() { return gLightingOnly; }
-bool DebugVis::texturesOnly() { return gTexturesOnly; }
-bool DebugVis::aoOnly() { return gAoOnly; }
-bool DebugVis::playerArchitecture() { return gPlayerArchitecture; }
+bool DebugVis::enabled() { return DebugConfig::DEBUG_PHYSICS || DebugConfig::DEBUG_COLLISION || DebugConfig::DEBUG_BOUNDS || DebugConfig::DEBUG_NORMALS || DebugConfig::DEBUG_PLAYERARCH; }
+bool DebugVis::physics() { return DebugConfig::DEBUG_PHYSICS; }
+bool DebugVis::ui() { return DebugConfig::DEBUG_UI; }
+bool DebugVis::render() { return DebugConfig::DEBUG_RENDER; }
+bool DebugVis::collision() { return DebugConfig::DEBUG_COLLISION; }
+bool DebugVis::wireframe() { return DebugConfig::DEBUG_WIREFRAME; }
+bool DebugVis::normals() { return DebugConfig::DEBUG_NORMALS; }
+bool DebugVis::bounds() { return DebugConfig::DEBUG_BOUNDS; }
+bool DebugVis::uvChecker() { return DebugConfig::DEBUG_UVCHECKER; }
+bool DebugVis::lightingOnly() { return DebugConfig::DEBUG_LIGHTING_ONLY; }
+bool DebugVis::texturesOnly() { return DebugConfig::DEBUG_TEXTURES_ONLY; }
+bool DebugVis::aoOnly() { return DebugConfig::DEBUG_AO_ONLY; }
+bool DebugVis::playerArchitecture() { return DebugConfig::DEBUG_PLAYERARCH; }
 int DebugVis::shaderDebugView()
 {
-    if (gUvChecker) return 1;
-    if (gLightingOnly) return 2;
-    if (gTexturesOnly) return 3;
-    if (gAoOnly) return 4;
-    if (gNormals) return 5;
+    if (DebugConfig::DEBUG_UVCHECKER) return 1;
+    if (DebugConfig::DEBUG_LIGHTING_ONLY) return 2;
+    if (DebugConfig::DEBUG_TEXTURES_ONLY) return 3;
+    if (DebugConfig::DEBUG_AO_ONLY) return 4;
+    if (DebugConfig::DEBUG_NORMALS) return 5;
     return 0;
 }
 const DebugColors& DebugVis::colors() { return gColors; }
@@ -541,7 +506,7 @@ void DebugVis::beginCollisionFrame()
 
 void DebugVis::recordCollisionEvent(const CollisionEvent& event)
 {
-    if (!gCollisionVisuals)
+    if (!DebugConfig::DEBUG_COLLISION_VISUALS)
         return;
     if (gCollisionEvents.size() >= 1024)
         return;

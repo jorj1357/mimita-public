@@ -10,6 +10,42 @@ namespace DebugConfig
     inline bool RENDER_VERBOSE = false;
 
     inline float PRINT_INTERVAL = 0.25f;
+
+    // Runtime debug toggles (controlled via terminal)
+    inline bool DEBUG_COLLISION = false;
+    inline bool DEBUG_MOVEMENT = false;
+    inline bool DEBUG_PHYSICS = true;
+    inline bool DEBUG_SOUND = false;
+    inline bool DEBUG_RENDER = true;
+    inline bool DEBUG_PLAYERARCH = true;
+    inline bool DEBUG_WIREFRAME = false;
+    inline bool DEBUG_NORMALS = false;
+    inline bool DEBUG_BOUNDS = true;
+    inline bool DEBUG_UVCHECKER = false;
+    inline bool DEBUG_LIGHTING_ONLY = false;
+    inline bool DEBUG_TEXTURES_ONLY = false;
+    inline bool DEBUG_AO_ONLY = false;
+    inline bool DEBUG_COLLISION_VISUALS = true;
+    inline bool DEBUG_UI = false;
+
+    inline void ResetAll()
+    {
+        DEBUG_COLLISION = false;
+        DEBUG_MOVEMENT = false;
+        DEBUG_PHYSICS = true;
+        DEBUG_SOUND = false;
+        DEBUG_RENDER = true;
+        DEBUG_PLAYERARCH = true;
+        DEBUG_WIREFRAME = false;
+        DEBUG_NORMALS = false;
+        DEBUG_BOUNDS = true;
+        DEBUG_UVCHECKER = false;
+        DEBUG_LIGHTING_ONLY = false;
+        DEBUG_TEXTURES_ONLY = false;
+        DEBUG_AO_ONLY = false;
+        DEBUG_COLLISION_VISUALS = true;
+        DEBUG_UI = false;
+    }
 }
 
 namespace CursorConfig

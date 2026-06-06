@@ -30,7 +30,7 @@ struct DebugColors {
 
 namespace DebugVis {
     void init(GLFWwindow* win);
-    void update();                 // handles F1-F7 hotkey toggles
+    void update();                 // applies wireframe mode from config
     bool enabled();
     bool physics();
     bool ui();
