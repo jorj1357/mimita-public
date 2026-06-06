@@ -456,6 +456,64 @@ static bool capsuleVsBlock(
     return false;
 }
 
+// Capsule vs Capsule collision - for NPC vs Player
+static bool capsuleVsCapsule(
+    const Capsule& capA,
+    const Capsule& capB,
+    glm::vec3& correction,
+    bool& groundedA
+)
+{
+    // Sample points along each capsule
+    constexpr int SAMPLES = 5;
+    float minDist = FLT_MAX;
+    glm::vec3 bestNormal(0.0f, 0.0f, 1.0f);
+    bool hit = false;
+
+    for (int i = 0; i < SAMPLES; ++i)
+    {
+        float tA = (SAMPLES == 1) ? 0.0f : (float)i / (float)(SAMPLES - 1);
+        glm::vec3 pA = capA.a + (capA.b - capA.a) * tA;
+
+        for (int j = 0; j < SAMPLES; ++j)
+        {
+            float tB = (SAMPLES == 1) ? 0.0f : (float)j / (float)(SAMPLES - 1);
+            glm::vec3 pB = capB.a + (capB.b - capB.a) * tB;
+
+            glm::vec3 delta = pA - pB;
+            float dist2 = glm::dot(delta, delta);
+            float combinedR = capA.r + capB.r;
+
+            if (dist2 >= combinedR * combinedR)
+                continue;
+
+            hit = true;
+            float dist = sqrtf(dist2);
+
+            if (dist < minDist)
+            {
+                minDist = dist;
+                if (dist > 0.00001f)
+                    bestNormal = delta / dist;
+                else
+                    bestNormal = {0.0f, 0.0f, 1.0f};
+            }
+        }
+    }
+
+    if (!hit)
+        return false;
+
+    constexpr float PUSH_OUT_MARGIN = 0.002f;
+    float penetration = (capA.r + capB.r) - minDist;
+    correction = bestNormal * (penetration + PUSH_OUT_MARGIN);
+
+    if (bestNormal.z > 0.3f)
+        groundedA = true;
+
+    return true;
+}
+
 static inline Capsule translatedCapsule(const Capsule& cap, const glm::vec3& delta)
 {
     Capsule out = cap;
@@ -899,10 +957,14 @@ static void doGLBTriangleCollisions(
     }
 
     // Phase 2: Gather ALL contacts at final position, depenetrate iteratively
+    // Uses batched manifold solving instead of sequential per-contact pushes
+    // This correctly handles contradictory normals (corners, edges, seams)
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
     bodySamples = collectPlayerBodyCollisionSamples(p);
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
+
+    float maxPenetrationSeen = 0.0f;
 
     for (int depenIter = 0; depenIter < 4; ++depenIter)
     {
@@ -918,17 +980,22 @@ static void doGLBTriangleCollisions(
         if (contacts.empty())
             break;
 
-        glm::vec3 totalCorrection(0.0f);
+        // Use batched correction solver instead of sequential pushes
+        // This iteratively solves all contact constraints simultaneously,
+        // preventing contradictory normals from fighting each other
+        float iterMaxPen = 0.0f;
+        glm::vec3 correction = solveBatchedCorrection(contacts, SURFACE_SLOP, &iterMaxPen, nullptr);
+        maxPenetrationSeen = std::max(maxPenetrationSeen, iterMaxPen);
 
-        // Sequentially depenetrate each contact
+        // Clamp correction magnitude to prevent explosive escapes
+        float corrLen = glm::length(correction);
+        if (corrLen > MAX_CORRECTION)
+            correction *= MAX_CORRECTION / corrLen;
+
+        p.pos += correction;
+
         for (const RecoveryContact& c : contacts)
         {
-            float pushDist = c.penetration + SURFACE_SLOP;
-            pushDist = std::min(pushDist, MAX_CORRECTION);
-            glm::vec3 push = c.normal * pushDist;
-            p.pos += push;
-            totalCorrection += push;
-
             applyCollisionContact(
                 p, groundedThisFrame,
                 c.normal, c.point, c.penetration,
@@ -936,20 +1003,21 @@ static void doGLBTriangleCollisions(
             );
         }
 
-        DebugVis::recordDepenetration(p.pos - totalCorrection, totalCorrection, "glb-iterative-depen");
+        DebugVis::recordDepenetration(p.pos - correction, correction, "glb-batched-depen");
 
         PHYS_LOG(
-            "[PHYS][GLB DEPEN] iter=%d contacts=%zu correction=(%.4f %.4f %.4f)\n",
-            depenIter, contacts.size(),
-            totalCorrection.x, totalCorrection.y, totalCorrection.z
+            "[PHYS][GLB DEPEN] iter=%d contacts=%zu maxPen=%.4f correction=(%.4f %.4f %.4f)\n",
+            depenIter, contacts.size(), iterMaxPen,
+            correction.x, correction.y, correction.z
         );
 
-        if (glm::dot(totalCorrection, totalCorrection) < 0.0000001f)
+        if (glm::dot(correction, correction) < 0.0000001f)
             break;
     }
 
     // Ground snap: if player is very close to ground and not jumping up, snap to ground
     // This prevents hovering and flickering grounded state
+    // IMPORTANT: After snapping, re-check for wall penetration
     {
         constexpr float GROUND_SNAP_DISTANCE = 0.08f;
         constexpr float MAX_UPWARD_VEL_FOR_SNAP = 0.5f;
@@ -997,8 +1065,142 @@ static void doGLBTriangleCollisions(
                         p.vel.z = 0.0f;
                     
                     PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to ground at %.2f\n", snapAmount, bestGroundZ);
+
+                    // SAFETY: After ground snap, re-check for wall penetration
+                    // Snapping upward can push player into adjacent walls
+                    {
+                        p.updateModelWorldTransforms();
+                        Capsule postSnapCap = p.getCapsule();
+                        std::vector<int> postSnapCandidates = gatherGLBTriangles(world, postSnapCap, glm::vec3(0.0f));
+                        std::vector<glm::vec3> postSnapSamples = collectPlayerBodyCollisionSamples(p);
+                        std::vector<RecoveryContact> postSnapContacts = collectGLBRecoveryContacts(
+                            world, postSnapCap, postSnapSamples, postSnapCandidates, BODY_SAMPLE_RADIUS
+                        );
+
+                        if (!postSnapContacts.empty())
+                        {
+                            glm::vec3 snapCorrection = solveBatchedCorrection(postSnapContacts, SURFACE_SLOP, nullptr, nullptr);
+                            float snapCorrLen = glm::length(snapCorrection);
+                            if (snapCorrLen > MAX_CORRECTION)
+                                snapCorrection *= MAX_CORRECTION / snapCorrLen;
+                            p.pos += snapCorrection;
+                            DebugVis::recordDepenetration(p.pos - snapCorrection, snapCorrection, "post-snap-wall-fix");
+
+                            for (const RecoveryContact& c : postSnapContacts)
+                            {
+                                applyCollisionContact(
+                                    p, groundedThisFrame,
+                                    c.normal, c.point, c.penetration,
+                                    c.triangleIndex, c.label
+                                );
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    // Emergency stuck prevention:
+    // If deep penetration persists after all depen + snap corrections,
+    // search outward for a free position to prevent permanent trapping.
+    {
+        constexpr float STUCK_THRESHOLD = 0.7f * 0.6f;
+        constexpr float EMERGENCY_SEARCH_RADIUS = 0.7f * 1.5f;
+        static int stuckFrames = 0;
+
+        // Only check capsule contacts (the primary hitbox)
+        p.updateModelWorldTransforms();
+        Capsule stuckCheckCap = p.getCapsule();
+        std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f));
+        std::vector<RecoveryContact> stuckContacts = collectGLBRecoveryContacts(
+            world, stuckCheckCap, collectPlayerBodyCollisionSamples(p), stuckCandidates, BODY_SAMPLE_RADIUS
+        );
+
+        float worstPen = 0.0f;
+        for (const auto& c : stuckContacts)
+            worstPen = std::max(worstPen, c.penetration);
+
+        if (worstPen > STUCK_THRESHOLD)
+        {
+            stuckFrames++;
+            if (stuckFrames >= 3)
+            {
+                PHYS_LOG("[PHYS][EMERGENCY] Deep penetration %.4f for %d frames. Searching escape.\n",
+                         worstPen, stuckFrames);
+
+                // Search outward in cardinal + diagonal directions for free space
+                const glm::vec3 searchDirs[] = {
+                    { 1, 0, 0}, {-1, 0, 0}, { 0, 1, 0}, { 0,-1, 0},
+                    { 0, 0, 1}, { 1, 1, 0}, { 1,-1, 0}, {-1, 1, 0}, {-1,-1, 0},
+                    { 1, 0, 1}, {-1, 0, 1}, { 0, 1, 1}, { 0,-1, 1}
+                };
+
+                glm::vec3 bestPos = p.pos;
+                float bestPen = worstPen;
+                bool foundFree = false;
+
+                for (glm::vec3 dir : searchDirs)
+                {
+                    if (glm::length(dir) > 0.001f)
+                        dir = glm::normalize(dir);
+
+                    for (float dist = 0.05f; dist <= EMERGENCY_SEARCH_RADIUS; dist += 0.05f)
+                    {
+                        glm::vec3 testPos = p.pos + dir * dist;
+                        Player testP = p;
+                        testP.pos = testPos;
+                        Capsule testCap = testP.getCapsule();
+                        std::vector<int> testCandidates = gatherGLBTriangles(world, testCap, glm::vec3(0.0f));
+
+                        // Check capsule at test position
+                        std::vector<RecoveryContact> testContacts;
+                        {
+                            std::vector<int> triCandidates = testCandidates;
+                            std::vector<glm::vec3> emptySamples;
+                            testContacts = collectGLBRecoveryContacts(
+                                world, testCap, emptySamples, triCandidates, BODY_SAMPLE_RADIUS
+                            );
+                        }
+
+                        float testPen = 0.0f;
+                        for (const auto& tc : testContacts)
+                            testPen = std::max(testPen, tc.penetration);
+
+                        if (testPen < 0.01f)
+                        {
+                            bestPos = testPos;
+                            bestPen = testPen;
+                            foundFree = true;
+                            break;
+                        }
+                        if (testPen < bestPen)
+                        {
+                            bestPos = testPos;
+                            bestPen = testPen;
+                        }
+                    }
+                    if (foundFree) break;
+                }
+
+                if (foundFree || bestPen < worstPen)
+                {
+                    DebugVis::recordDepenetration(p.pos, bestPos - p.pos, "emergency-stuck-escape");
+                    PHYS_LOG("[PHYS][EMERGENCY] Escaped: pen %.4f -> %.4f, move=(%.4f %.4f %.4f)\n",
+                             worstPen, bestPen,
+                             bestPos.x - p.pos.x, bestPos.y - p.pos.y, bestPos.z - p.pos.z);
+                    p.pos = bestPos;
+
+                    // Clamp velocity to zero to prevent re-entering geometry
+                    p.vel = glm::vec3(0.0f);
+                    p.dashVel = glm::vec2(0.0f);
+                    stuckFrames = 0;
+                }
+            }
+        }
+        else
+        {
+            stuckFrames = 0;
         }
     }
 
@@ -1021,6 +1223,49 @@ static void doGLBTriangleCollisions(
     }
     p.vel = totalVel;
     p.dashVel = glm::vec2(0.0f);
+
+    // Overlapping geometry debug detection:
+    // If candidate triangles have normals pointing in strongly divergent
+    // directions while being close together, log a warning for the developer.
+    {
+        static int overlapWarnCooldown = 0;
+        overlapWarnCooldown--;
+        if (candidates.size() >= 3 && overlapWarnCooldown <= 0)
+        {
+            glm::vec3 avgPos = p.pos;
+            int opposingPairs = 0;
+            for (size_t i = 0; i < candidates.size() && i < 20; ++i)
+            {
+                for (size_t j = i + 1; j < candidates.size() && j < 20; ++j)
+                {
+                    const CollisionTriangle& ti = world.collisionMesh.triangles[candidates[i]];
+                    const CollisionTriangle& tj = world.collisionMesh.triangles[candidates[j]];
+                    float dotNormals = glm::dot(ti.normal, tj.normal);
+                    if (dotNormals < -0.5f) // Nearly opposing normals
+                    {
+                        opposingPairs++;
+                        if (opposingPairs <= 3)
+                        {
+                            glm::vec3 tiCenter = (ti.a + ti.b + ti.c) / 3.0f;
+                            glm::vec3 tjCenter = (tj.a + tj.b + tj.c) / 3.0f;
+                            float triDist = glm::distance(tiCenter, tjCenter);
+                            if (triDist < PLAYER_RADIUS * 2.0f)
+                            {
+                                DebugVis::recordTriangle(ti, candidates[i], "overlap-warn-tri-A");
+                                DebugVis::recordTriangle(tj, candidates[j], "overlap-warn-tri-B");
+                            }
+                        }
+                    }
+                }
+            }
+            if (opposingPairs > 0)
+            {
+                PHYS_LOG("[PHYS][OVERLAP WARN] %d opposing normal pairs near player. pos=(%.2f %.2f %.2f)\n",
+                         opposingPairs, p.pos.x, p.pos.y, p.pos.z);
+                overlapWarnCooldown = 30; // Log at most every 30 frames
+            }
+        }
+    }
 }
 
 // =====================================================
@@ -1269,7 +1514,7 @@ void doCollisions(
         DebugVis::recordDepenetration(sweepStart + stepMove, nudge, "block-sweep-margin");
     }
 
-    // Iterative depenetration for overlap recovery
+    // Iterative depenetration for overlap recovery (batched solver)
     constexpr float BLOCK_DEPEN_SLOP = 0.002f;
     constexpr float BLOCK_MAX_CORRECTION = 2.0f;
     constexpr int MAX_BLOCK_RECOVERY_ITERATIONS = 6;
@@ -1281,14 +1526,16 @@ void doCollisions(
         if (contacts.empty())
             break;
 
-        glm::vec3 totalCorrection(0.0f);
+        // Use batched correction instead of sequential pushes
+        glm::vec3 correction = solveBatchedCorrection(contacts, BLOCK_DEPEN_SLOP, nullptr, nullptr);
+        float corrLen = glm::length(correction);
+        if (corrLen > BLOCK_MAX_CORRECTION)
+            correction *= BLOCK_MAX_CORRECTION / corrLen;
+
+        p.pos += correction;
+
         for (const RecoveryContact& c : contacts)
         {
-            float pushDist = std::min(c.penetration + BLOCK_DEPEN_SLOP, BLOCK_MAX_CORRECTION);
-            glm::vec3 push = c.normal * pushDist;
-            p.pos += push;
-            totalCorrection += push;
-
             applyCollisionContact(
                 p, groundedThisFrame,
                 c.normal, c.point, c.penetration,
@@ -1296,15 +1543,15 @@ void doCollisions(
             );
         }
 
-        DebugVis::recordDepenetration(p.pos - totalCorrection, totalCorrection, "block-iterative-depen");
+        DebugVis::recordDepenetration(p.pos - correction, correction, "block-batched-depen");
 
         PHYS_LOG(
             "[PHYS][BLOCK DEPEN] iter=%d contacts=%zu correction=(%.4f %.4f %.4f)\n",
             recoverIter, contacts.size(),
-            totalCorrection.x, totalCorrection.y, totalCorrection.z
+            correction.x, correction.y, correction.z
         );
 
-        if (glm::dot(totalCorrection, totalCorrection) < 0.0000001f)
+        if (glm::dot(correction, correction) < 0.0000001f)
             break;
     }
 
@@ -1348,6 +1595,24 @@ void doCollisions(
                         p.vel.z = 0.0f;
                     
                     PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to block ground at %.2f\n", snapAmount, bestGroundZ);
+
+                    // SAFETY: After ground snap, re-check for wall penetration
+                    {
+                        Capsule postSnapCap = p.getCapsule();
+                        std::vector<RecoveryContact> snapContacts = collectBlockContactsForCapsule(postSnapCap, nearbyBlocks);
+                        if (!snapContacts.empty())
+                        {
+                            glm::vec3 snapCorrection = solveBatchedCorrection(snapContacts, BLOCK_DEPEN_SLOP, nullptr, nullptr);
+                            float snapCorrLen = glm::length(snapCorrection);
+                            if (snapCorrLen > BLOCK_MAX_CORRECTION)
+                                snapCorrection *= BLOCK_MAX_CORRECTION / snapCorrLen;
+                            p.pos += snapCorrection;
+                            DebugVis::recordDepenetration(p.pos - snapCorrection, snapCorrection, "block-post-snap-wall-fix");
+
+                            for (const RecoveryContact& c : snapContacts)
+                                applyCollisionContact(p, groundedThisFrame, c.normal, c.point, c.penetration, c.triangleIndex, c.label);
+                        }
+                    }
                 }
             }
         }
@@ -1667,4 +1932,39 @@ static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
     }
 
     return samples;
+}
+
+// Resolve collision between two capsules (e.g., player vs NPC)
+bool resolveCapsuleVsCapsule(
+    Player& a,
+    Player& b,
+    bool& groundedA,
+    bool& groundedB
+)
+{
+    Capsule capA = a.getCapsule();
+    Capsule capB = b.getCapsule();
+
+    glm::vec3 correctionA;
+    bool grounded = false;
+    if (!capsuleVsCapsule(capA, capB, correctionA, grounded))
+        return false;
+
+    // Split correction between both bodies (mass-based or 50/50)
+    // For now, push each away from each other equally
+    glm::vec3 correctionB = -correctionA;
+
+    constexpr float SPLIT_RATIO = 0.5f;
+    a.pos += correctionA * SPLIT_RATIO;
+    b.pos += correctionB * SPLIT_RATIO;
+
+    groundedA = grounded;
+    groundedB = grounded;
+
+    // Clamp velocities against collision normal
+    glm::vec3 normal = glm::normalize(correctionA);
+    clampVelocityAgainstNormal(a, normal);
+    clampVelocityAgainstNormal(b, -normal);
+
+    return true;
 }

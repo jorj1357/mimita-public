@@ -21,6 +21,7 @@
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
+#include "effects/effect-part.h"
 
 // globals (engine-level)
 extern TextureStore gTextures;
@@ -970,7 +971,11 @@ void Player::updateAudio(float dt)
     if (didAirJump)
         playAirJumpSound();
 
-    if (didDash)       playEventSound("entity/player/dash",1.0f);
+    if (didDash) {
+        playEventSound("entity/player/dash",1.0f);
+        // Spawn dash effect at player position
+        EffectPartSystem::instance().spawnDash(pos);
+    }
 
     // Only trigger land sound on stable air->ground transition
     // Use stableOnGround to avoid flickering from collision jitter
@@ -983,6 +988,11 @@ void Player::updateAudio(float dt)
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
             playRandomFootstep();
+            // Spawn footstep effect at feet position
+            Capsule cap = getCapsule();
+            glm::vec3 footPos = cap.a;
+            footPos.z -= cap.r; // bottom of capsule
+            EffectPartSystem::instance().spawnFootstep(footPos);
             footstepTimer = 0.35f;
         }
     } else {

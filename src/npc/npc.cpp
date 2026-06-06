@@ -9,6 +9,7 @@
 #include "debug/debug-log.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
+#include "physics/movement/physics-collision.h"
 #include "render/render-player.h"
 #include "world/world.h"
 
@@ -338,6 +339,10 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
                        npc.id, npc.difficulty, npc.sensors.targetDistance);
         }
     }
+
+    // Resolve NPC vs Player collisions after all physics updates
+    // Note: player is const here, but we need to modify it for collision resolution
+    // This will be handled in main.cpp where we have non-const access to player
 }
 
 void NpcSystem::render(const Camera& camera) const
