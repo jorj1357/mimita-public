@@ -15,6 +15,11 @@
 #include "camera.h"
 
 static bool gInputInitialized = false;
+InputFrame gTerminalInputOverride;
+
+void consumeTerminalInputOverride() {
+    gTerminalInputOverride = InputFrame{};
+}
 
 static void ensureInputInit(GLFWwindow* win) {
     if (!gInputInitialized) {
@@ -91,14 +96,20 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     if (cmd.getState("move_right").held)   { frame.moveX += r.x; frame.moveY += r.y; }
     if (cmd.getState("move_left").held)    { frame.moveX -= r.x; frame.moveY -= r.y; }
 
-    frame.jump = cmd.isJumpHeld();
-    frame.jumpPressed = cmd.getState("jump").pressed;
-    frame.dashPressed = cmd.isDashPressed();
-    frame.groundReturnPressed = cmd.isGroundReturnPressed();
-    frame.freezeHeld = cmd.isFreezeHeld();
+    frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
+    frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;
+    frame.dashPressed = cmd.isDashPressed() || gTerminalInputOverride.dashPressed;
+    frame.groundReturnPressed = cmd.isGroundReturnPressed() || gTerminalInputOverride.groundReturnPressed;
+    frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
 
-    frame.lookYaw = cam.yaw;
-    frame.lookPitch = cam.pitch;
+    if (gTerminalInputOverride.moveX != 0.0f || gTerminalInputOverride.moveY != 0.0f) {
+        frame.moveX = gTerminalInputOverride.moveX;
+        frame.moveY = gTerminalInputOverride.moveY;
+    }
 
+    frame.lookYaw = (gTerminalInputOverride.lookYaw != 0.0f) ? gTerminalInputOverride.lookYaw : cam.yaw;
+    frame.lookPitch = (gTerminalInputOverride.lookPitch != 0.0f) ? gTerminalInputOverride.lookPitch : cam.pitch;
+
+    consumeTerminalInputOverride();
     return frame;
 }

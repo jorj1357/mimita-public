@@ -9,12 +9,15 @@
 //
 // Exposes:
 //   doCollisions(...)
+//   resolveCapsuleVsCapsule(...)
 
 // purpose:
 // declaration for solid world collision resolution
 // implementation lives in physics-collision.cpp
 
 #pragma once
+
+#include "physics/physics-types.h"
 
 class Player;
 class World;
@@ -28,4 +31,14 @@ void doCollisions(
     const World& world,
     bool& groundedThisFrame,
     float dt
+);
+
+// Resolve collision between two capsules (e.g., player vs NPC)
+// - Mutates positions of both capsules
+// - Returns true if collision was resolved
+bool resolveCapsuleVsCapsule(
+    Player& a,
+    Player& b,
+    bool& groundedA,
+    bool& groundedB
 );

@@ -696,4 +696,8 @@ namespace DebugVis {
     void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color) {
         ::drawPointCross(camera, p, size, color);
     }
+    
+    bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y) {
+        return ::projectToScreen(camera, worldPos, x, y);
+    }
 }

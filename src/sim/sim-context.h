@@ -5,6 +5,7 @@
 struct Player;
 struct World;
 class NpcSystem;
+struct InputFrame;
 
 struct SimContext {
     Player* player = nullptr;
@@ -13,3 +14,5 @@ struct SimContext {
     float randomSeed = 0.0f;
     uint64_t tick = 0;
 };
+
+void simulateTick(SimContext& sim, const InputFrame& frame);
