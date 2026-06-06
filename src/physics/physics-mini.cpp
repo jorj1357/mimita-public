@@ -60,6 +60,7 @@ static void physicsMainUpdate_Internal(
     const glm::vec2& wishMoveXY,
     bool jumpHeld,
     bool dashPressed,
+    bool movementPressed,
     bool groundReturnPressed,
     const glm::vec3& camForward,
     float dt,
@@ -92,7 +93,10 @@ static void physicsMainUpdate_Internal(
     if (p.didDash && DebugConfig::DEBUG_INPUT)
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) velocity=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.dashVel.x, p.dashVel.y);
-    doWalk(p, wishMoveXY, dt);
+    if (movementPressed && glm::length(p.dashVel) > ALMOST_ZERO)
+        p.dashVel = glm::vec2(0.0f);
+    if (glm::length(p.dashVel) <= ALMOST_ZERO || movementPressed)
+        doWalk(p, wishMoveXY, dt);
 
     // testing 4 substeps so we have even more collision checsk
     int steps = 4; // small substep count
@@ -235,6 +239,7 @@ void physicsMainUpdate(
         input.wishMoveXY,
         input.jumpHeld,
         input.dashPressed,
+        input.movementPressed,
         input.groundReturnPressed,
         input.camForward,
         dt,

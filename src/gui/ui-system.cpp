@@ -472,6 +472,13 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     s.hovered = pointIn(mx, my, r);
     s.pressed = s.hovered && gMouseDown;
     s.clicked = s.hovered && gMouseClickEdge;
+    static std::string lastHovered;
+    if (s.hovered && lastHovered != text) {
+        playMenuHover();
+        lastHovered = text;
+    } else if (!s.hovered && lastHovered == text) {
+        lastHovered.clear();
+    }
 
     glm::vec4 c = color;
     if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);

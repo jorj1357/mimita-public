@@ -45,10 +45,12 @@ struct ActiveSound {
     float pitch = 1.0f;
     float maxDistance = 0.0f;
     float createdTime = 0.0f;
+    unsigned int ownerId = 0;
 };
 static std::vector<std::unique_ptr<ActiveSound>> gActiveSounds;
 static void initAudioOnce();
 static float gAudioTime = 0.0f;
+static bool gSoundDebug = false;
 
 static std::string soundPath(const std::string& name)
 {
@@ -63,6 +65,10 @@ static std::string soundPath(const std::string& name)
     if (name == "revolverchamber" || name == "revolverpullback")
         return "assets/sound/weapon/revolver/revolverreload.wav";
     if (name == "gethurt") return "assets/sound/U mimita sound effects.wav - hitting not sure low.wav";
+    if (name == "npc_spawn") return "assets/sound/U mimita sound effects.wav - item get.mp3";
+    if (name == "npc_death") return "assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3";
+    if (name == "world_impact") return "assets/sound/U mimita sound effects.wav  - hit low 1.wav";
+    if (name == "ui/hover") return "assets/sound/ui/click.wav";
     if (name.find("revolver") == 0) return "assets/sound/ui/click.wav";
     return path;
 }
@@ -74,10 +80,23 @@ static void startSound(const std::string& name, float volume, float pitch,
     if (!gAudioInit) return;
     auto active = std::make_unique<ActiveSound>();
     std::string path = soundPath(name);
-    if (ma_sound_init_from_file(&gEngine, path.c_str(), 0, nullptr, nullptr, &active->sound) != MA_SUCCESS) {
-        printf("[AUDIO] failed to load %s\n", path.c_str());
+    if (!std::filesystem::exists(path)) {
+        if (gSoundDebug) printf("[SOUND] invalid path event=%s path=%s\n", name.c_str(), path.c_str());
         return;
     }
+    if (!position) {
+        ma_result result = ma_engine_play_sound(&gEngine, path.c_str(), nullptr);
+        if (gSoundDebug)
+            printf(result == MA_SUCCESS ? "[SOUND] playing event=%s category=2D path=%s\n"
+                                        : "[SOUND] failed event=%s path=%s\n",
+                   name.c_str(), path.c_str());
+        return;
+    }
+    if (ma_sound_init_from_file(&gEngine, path.c_str(), 0, nullptr, nullptr, &active->sound) != MA_SUCCESS) {
+        if (gSoundDebug) printf("[SOUND] failed event=%s path=%s\n", name.c_str(), path.c_str());
+        return;
+    }
+    if (gSoundDebug) printf("[SOUND] loaded event=%s path=%s\n", name.c_str(), path.c_str());
     active->initialized = true;
     active->name = name;
     active->position = position ? *position : glm::vec3(0.0f);
@@ -96,6 +115,7 @@ static void startSound(const std::string& name, float volume, float pitch,
         ma_sound_set_max_distance(&active->sound, std::max(1.0f, maxDistance));
     }
     ma_sound_start(&active->sound);
+    if (gSoundDebug) printf("[SOUND] playing event=%s category=3D path=%s\n", name.c_str(), path.c_str());
     gActiveSounds.push_back(std::move(active));
 }
 
@@ -123,6 +143,8 @@ void audioUpdate(float dt)
             if (!active || !active->initialized || ma_sound_at_end(&active->sound)) {
                 if (active && active->initialized)
                     ma_sound_uninit(&active->sound);
+                if (gSoundDebug && active)
+                    printf("[SOUND] stopped event=%s\n", active->name.c_str());
                 return true;
             }
             return false;
@@ -130,9 +152,44 @@ void audioUpdate(float dt)
         gActiveSounds.end());
 }
 
+AudioManager& AudioManager::instance()
+{
+    static AudioManager manager;
+    return manager;
+}
+
+void AudioManager::update(float dt) { audioUpdate(dt); }
+void AudioManager::setListener(glm::vec3 pos, glm::vec3 forward) { setAudioListener(pos, forward); }
+void AudioManager::setDebug(bool enabled) { gSoundDebug = enabled; }
+bool AudioManager::debug() const { return gSoundDebug; }
+
+void AudioManager::play(const AudioEvent& event)
+{
+    if (event.world) {
+        startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance);
+        if (!gActiveSounds.empty())
+            gActiveSounds.back()->ownerId = event.ownerId;
+    } else {
+        startSound(event.name, event.volume, event.pitch, nullptr, 0.0f);
+    }
+}
+
+void AudioManager::stopOwner(unsigned int ownerId)
+{
+    if (ownerId == 0) return;
+    gActiveSounds.erase(
+        std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [ownerId](const std::unique_ptr<ActiveSound>& active) {
+            if (!active || active->ownerId != ownerId) return false;
+            if (active->initialized) ma_sound_uninit(&active->sound);
+            if (gSoundDebug) printf("[SOUND] stopped event=%s owner=%u\n", active->name.c_str(), ownerId);
+            return true;
+        }),
+        gActiveSounds.end());
+}
+
 void playSound(const std::string& name, float volume)
 {
-    startSound(name, volume, 1.0f, nullptr, 0.0f);
+    AudioManager::instance().play({name, AudioCategory::Movement, false, {}, volume});
 }
 
 void playEventSound(const std::string& name, float volume)
@@ -147,7 +204,8 @@ void playSoundPitched(const std::string& name, float volume, float pitch)
 
 void playWorldSound(const std::string& name, glm::vec3 pos, float volume, float pitch, float maxDistance)
 {
-    startSound(name, volume, pitch, &pos, maxDistance);
+    AudioEvent event{name, AudioCategory::Impacts, true, pos, volume, pitch, maxDistance};
+    AudioManager::instance().play(event);
 }
 
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume)
@@ -206,5 +264,10 @@ void playFreezeEndSound()
 
 void playMenuClick()
 {
-    playSound("ui/click", 0.6f);
+    AudioManager::instance().play({"ui/click", AudioCategory::UI, false, {}, 0.6f});
+}
+
+void playMenuHover()
+{
+    AudioManager::instance().play({"ui/hover", AudioCategory::UI, false, {}, 0.18f, 1.15f});
 }

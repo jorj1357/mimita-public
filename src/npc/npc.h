@@ -85,6 +85,8 @@ class NpcSystem {
 public:
     void spawnPrototypeScene();
     void clear();
+    void destroySelected(const std::vector<std::uint32_t>& ids);
+    void destroyAll();
     void update(const World& world, const Player& player, float dt);
     void render(const Camera& camera) const;
     void drawDebug(const Camera& camera) const;
@@ -93,8 +95,9 @@ public:
     std::vector<Npc>& all() { return npcs; }
     
     void spawnNpc(float difficulty, glm::vec3 spawnPos);
-    uint32_t nextNpcId() const { return (uint32_t)npcs.size() + 100; }
+    uint32_t nextNpcId() { return nextId++; }
 
 private:
     std::vector<Npc> npcs;
+    uint32_t nextId = 100;
 };

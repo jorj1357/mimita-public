@@ -17,6 +17,7 @@ struct InputState {
     glm::vec2 wishMoveXY{0};
     bool jumpHeld = false;
     bool dashPressed = false;
+    bool movementPressed = false;
     bool groundReturnPressed = false;
     bool freezeHeld = false;
     glm::vec3 camForward{0,0,1};

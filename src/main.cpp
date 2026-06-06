@@ -64,7 +64,7 @@
 #include "replay/replay.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
-#include "combat/revolver-system.h"
+#include "combat/weapon-manager.h"
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
 
@@ -174,6 +174,8 @@ int main(int argc, char** argv)
     DevOverlay::instance().showNotification("Dev mode enabled. Press ` to open console.", 5.0f);
     CreateDefaultAccountConfig();
     LoadAccountConfig("default");
+    InputCommandSystem::instance().init(engine.window());
+    InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
     Terminal::instance().init(engine.window());
     
@@ -228,7 +230,8 @@ int main(int argc, char** argv)
     std::string activeGameMode = "sandbox";
     int selectedEditorObject = -1;
     std::vector<RevolverTracer> revolverTracers;
-    RevolverSystem revolver;
+    WeaponManager weapons;
+    bool freecamEnabled = false;
 
     // Gameplay terminal commands
     auto registerActionCommand = [](const char* name, const char* description) {
@@ -268,18 +271,12 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "shoot", "Fire weapon", "shoot",
-        [&player, &npcSystem, &world, &revolverTracers, &revolver](const std::vector<std::string>&) {
-            if (player.equippedSlot != 1) {
-                Terminal::instance().addLog("[REVOLVER] slot 1 is not equipped");
+        [&player, &npcSystem, &world, &revolverTracers, &weapons](const std::vector<std::string>&) {
+            RevolverShotResult shot = weapons.fire(player, npcSystem, world);
+            if (!shot.fired) {
+                Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
             }
-            if (player.revolverCylinder <= 0) {
-                Terminal::instance().addLog("[REVOLVER] empty; use reload");
-                return;
-            }
-            RevolverShotResult shot = revolver.fire(player, npcSystem, world);
-            if (!shot.fired)
-                return;
             revolverTracers.push_back({shot.start, shot.end, 3.0f});
             Terminal::instance().addLog("[REVOLVER] fired");
         }
@@ -287,16 +284,12 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "reload", "Reload weapon", "reload",
-        [&player](const std::vector<std::string>&) {
-            int needed = 6 - player.revolverCylinder;
-            int loaded = std::min(needed, player.revolverReserve);
-            playEventSound("revolverpullback", 0.8f);
-            for (int i = 0; i < loaded; ++i)
-                playEventSound("revolverbulletadd", 0.65f);
-            player.revolverCylinder += loaded;
-            player.revolverReserve -= loaded;
-            playEventSound("revolverchamber", 0.9f);
-            Terminal::instance().addLog("[GAMEPLAY] revolver reloaded");
+        [&player, &weapons](const std::vector<std::string>&) {
+            bool loaded = weapons.reload(player);
+            if (DebugConfig::DEBUG_INPUT)
+                Debug::log(Debug::Category::General, "[INPUT] action=reload command=reload weapon=%s\n",
+                           loaded ? "executed" : "ignored");
+            Terminal::instance().addLog(loaded ? "[WEAPON] reload complete" : "[WEAPON] reload unavailable");
         }
     });
 
@@ -313,12 +306,10 @@ int main(int argc, char** argv)
         std::string name = "equipslot" + std::to_string(keySlot);
         Terminal::instance().registerCommand({
             name, "Equip inventory slot " + std::to_string(slot), name,
-            [&player, slot](const std::vector<std::string>&) {
-                player.equippedSlot = slot;
+            [&player, &weapons, slot](const std::vector<std::string>&) {
+                weapons.equip(player, slot);
                 GetPlayerSettings().equippedSlot = slot;
                 SavePlayerSettings();
-                if (slot == 1)
-                    playEventSound("revolverequip", 0.85f);
                 Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
             }
         });
@@ -349,12 +340,12 @@ int main(int argc, char** argv)
     });
     Terminal::instance().registerCommand({
         "killfeed", "Show recent kills", "killfeed",
-        [&revolver](const std::vector<std::string>&) {
-            if (revolver.killfeed().empty()) {
+        [&weapons](const std::vector<std::string>&) {
+            if (weapons.killfeed().empty()) {
                 Terminal::instance().addLog("[KILLFEED] no kills");
                 return;
             }
-            for (const std::string& line : revolver.killfeed())
+            for (const std::string& line : weapons.killfeed())
                 Terminal::instance().addLog("[KILLFEED] " + line);
         }
     });
@@ -365,6 +356,80 @@ int main(int argc, char** argv)
             enabled = args.empty() ? !enabled : (args[0] == "true" || args[0] == "1");
             SavePlayerSettings();
             Terminal::instance().addLog(std::string("[DEBUG] debug_combat=") + (enabled ? "true" : "false"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "sound_debug", "Toggle centralized sound logs", "sound_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            bool enabled = args.empty() ? !AudioManager::instance().debug() : args[0] != "0";
+            AudioManager::instance().setDebug(enabled);
+            Terminal::instance().addLog(std::string("[SOUND] debug ") + (enabled ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "dbgvis", "Master toggle for all debug visuals", "dbgvis <0|1>",
+        [](const std::vector<std::string>& args) {
+            bool enabled = args.empty() ? !DebugVis::masterEnabled() : args[0] != "0";
+            DebugVis::setMasterEnabled(enabled);
+            Terminal::instance().addLog(std::string("[DEBUG VISUALS] ") + (enabled ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "freecam", "Detach or attach the gameplay camera", "freecam <0|1>",
+        [&freecamEnabled, &camera, &player](const std::vector<std::string>& args) {
+            freecamEnabled = args.empty() ? !freecamEnabled : args[0] != "0";
+            if (freecamEnabled)
+                camera.pos = player.pos + glm::vec3(0, 0, 2.0f);
+            Terminal::instance().addLog(std::string("[FREECAM] ") + (freecamEnabled ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "freecam_speed", "Set freecam speed in meters per second", "freecam_speed <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: freecam_speed <number>");
+                return;
+            }
+            GetPlayerSettings().freecamSpeed = std::clamp(std::stof(args[0]), 0.1f, 500.0f);
+            SavePlayerSettings();
+            Terminal::instance().addLog("[FREECAM] speed=" + std::to_string(GetPlayerSettings().freecamSpeed));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "weapon_inspect", "Print active weapon module state", "weapon_inspect",
+        [&weapons](const std::vector<std::string>&) { weapons.inspect(); }
+    });
+    Terminal::instance().registerCommand({
+        "npc_spawn", "Spawn NPCs in front of the camera", "npc_spawn <count>",
+        [&npcSystem, &camera, &player](const std::vector<std::string>& args) {
+            int count = args.empty() ? 1 : std::clamp(std::stoi(args[0]), 1, 100);
+            for (int i = 0; i < count; ++i)
+                npcSystem.spawnNpc(1.0f, camera.pos + camera.front * (5.0f + i * 1.5f) + glm::vec3(0,0,1));
+            Terminal::instance().addLog("[NPC COMMAND] npc_spawn count=" + std::to_string(count));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_select_all", "Select every NPC", "npc_select_all",
+        [&npcSystem](const std::vector<std::string>&) {
+            NpcSelectionManager::instance().selectAll(npcSystem);
+            Terminal::instance().addLog("[NPC COMMAND] npc_select_all");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_delete_selected", "Delete selected NPCs", "npc_delete_selected",
+        [&npcSystem](const std::vector<std::string>&) {
+            std::vector<std::uint32_t> ids(
+                NpcSelectionManager::instance().selectedIds().begin(),
+                NpcSelectionManager::instance().selectedIds().end());
+            npcSystem.destroySelected(ids);
+            Terminal::instance().addLog("[NPC COMMAND] npc_delete_selected");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_delete_all", "Delete every NPC", "npc_delete_all",
+        [&npcSystem](const std::vector<std::string>&) {
+            npcSystem.destroyAll();
+            Terminal::instance().addLog("[NPC COMMAND] npc_delete_all");
         }
     });
 
@@ -636,6 +701,11 @@ int main(int argc, char** argv)
                     // Live input: build InputFrame from keyboard + terminal override
                     InputCommandSystem::instance().setKeyboardEnabled(!Terminal::instance().isOpen());
                     tickFrame = buildInputFrame(engine.window(), camera);
+                    if (tickFrame.reloadPressed) {
+                        if (DebugConfig::DEBUG_INPUT)
+                            Debug::log(Debug::Category::General, "[INPUT] key -> action=reload -> command=reload\n");
+                        Terminal::instance().execute("reload");
+                    }
                 }
 
                 // Record to replay
@@ -644,7 +714,8 @@ int main(int argc, char** argv)
                 }
 
                 // Run simulation for this tick
-                simulateTick(simContext, tickFrame);
+                if (!freecamEnabled)
+                    simulateTick(simContext, tickFrame);
 
                 simAccumulator -= SIM_DT;
             }
@@ -658,9 +729,25 @@ int main(int argc, char** argv)
                 applyDebugMovement(player, engine.window(), camera, dt);
 
             camera.updateVectors();
-            camera.follow(player.pos);
+            if (freecamEnabled && !Terminal::instance().isOpen()) {
+                glm::vec3 flatForward = camera.front;
+                flatForward.z = 0.0f;
+                if (glm::length(flatForward) > 0.001f) flatForward = glm::normalize(flatForward);
+                glm::vec3 flatRight = glm::normalize(glm::cross(flatForward, glm::vec3(0,0,1)));
+                glm::vec3 move(0.0f);
+                if (glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS) move += flatForward;
+                if (glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS) move -= flatForward;
+                if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) move += flatRight;
+                if (glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS) move -= flatRight;
+                if (glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS) move.z += 1.0f;
+                if (glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
+                if (glm::length(move) > 0.001f)
+                    camera.pos += glm::normalize(move) * GetPlayerSettings().freecamSpeed * dt;
+            } else {
+                camera.follow(player.pos);
+            }
             setAudioListener(camera.pos, camera.front);
-            revolver.update(camera, player, dt);
+            weapons.update(camera, player, dt);
 
             player.updateAudio(dt);
 
@@ -700,7 +787,7 @@ int main(int argc, char** argv)
             renderPlayer(player, camera);
             npcSystem.render(camera);
             if (player.equippedSlot == 1)
-                revolver.render(camera, world);
+                weapons.render(camera, world);
             
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
@@ -778,6 +865,21 @@ int main(int argc, char** argv)
                     uiDrawText(player.username.c_str(), nameX - 35, nameY - 32, 0.32f, {1,1,1,1});
                     uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
                 }
+            }
+            for (const Npc& npc : npcSystem.all()) {
+                float x = 0.0f, y = 0.0f;
+                glm::vec3 headPos = npc.body.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.72f);
+                float distance = glm::length(camera.pos - headPos);
+                if (distance > 80.0f || !DebugVis::projectToScreen(camera, headPos, x, y))
+                    continue;
+                float fade = std::clamp(1.0f - distance / 90.0f, 0.25f, 1.0f);
+                float ratio = npc.body.maxHp > 0 ? (float)npc.body.currentHp / npc.body.maxHp : 0.0f;
+                uiDrawRect({x - 65, y - 8, 130, 11}, {0.55f,0.03f,0.03f,0.9f * fade}, "npc-hp-bg");
+                uiDrawRect({x - 65, y - 8, 130 * ratio, 11}, {0.05f,0.8f,0.15f,0.9f * fade}, "npc-hp-current");
+                uiDrawText(npc.body.username.c_str(), x - 40, y - 31, 0.28f, {1,1,1,fade});
+                char npcHp[48];
+                snprintf(npcHp, sizeof(npcHp), "%d/%d", npc.body.currentHp, npc.body.maxHp);
+                uiDrawText(npcHp, x - 24, y + 8, 0.25f, {1,1,1,fade});
             }
             {
                 char npcText[96];

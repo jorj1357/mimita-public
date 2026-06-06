@@ -21,6 +21,8 @@ struct PlayerSettings {
     float weaponAimFollowSpeed = 12.0f;
     float weaponRecoilStrength = 22.0f;
     float weaponWeight = 1.0f;
+    float weaponRecoilDecay = 5.0f;
+    float freecamSpeed = 18.0f;
 
     bool debugCombat = false;
 };

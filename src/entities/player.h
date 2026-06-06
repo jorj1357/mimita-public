@@ -80,6 +80,8 @@ public:
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     glm::vec2 dashVel{0.0f};
+    glm::vec3 externalImpulse{0.0f};
+    glm::vec2 dashLockedDirection{0.0f};
 
     bool onGround = false;
     float yaw = 0.0f;

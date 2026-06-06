@@ -56,6 +56,7 @@ void doDash(
         dashDir = glm::normalize(glm::vec2(camForward.x, camForward.y));
     else
         dashDir = glm::normalize(dashDir);
+    p.dashLockedDirection = dashDir;
 
     // --------------------------------------------------
     // SPEED BASE
