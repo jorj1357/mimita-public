@@ -79,7 +79,7 @@ void RevolverSystem::update(const Camera& camera, Player& player, float dt)
     mTime += dt;
     glm::vec3 right = glm::normalize(glm::cross(camera.front, glm::vec3(0,0,1)));
     glm::vec3 up = glm::normalize(glm::cross(right, camera.front));
-    float speed = glm::length(player.vel + glm::vec3(player.dashVel, 0.0f));
+    float speed = glm::length(player.vel);
     float sway = cfg.weaponSwayStrength * (0.25f + std::min(speed / 20.0f, 2.0f));
     glm::vec3 targetForward = glm::normalize(camera.front + right * std::sin(mTime * 5.0f) * sway * 0.12f
                                              + up * (std::cos(mTime * 7.0f) * sway * 0.08f + mRecoil * 0.03f));

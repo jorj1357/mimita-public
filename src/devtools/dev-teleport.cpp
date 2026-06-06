@@ -11,7 +11,6 @@ void TeleportSelectedToTarget(const std::vector<const Npc*>& npcs, const glm::ve
         Npc* mutableNpc = const_cast<Npc*>(npc);
         mutableNpc->body.pos = targetPos;
         mutableNpc->body.vel = {0.0f, 0.0f, 0.0f};
-        mutableNpc->body.dashVel = {0.0f, 0.0f};
         mutableNpc->body.syncLegacyStateToLayers();
         
         Debug::log(Debug::Category::General, 
