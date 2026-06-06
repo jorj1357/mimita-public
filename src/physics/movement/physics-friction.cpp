@@ -8,7 +8,6 @@
 #include "physics/config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
-#include "config/player-settings.h"
 
 #define FRICTION_LOG(...) Debug::logThrottled(Debug::Category::Physics, "friction", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
@@ -50,14 +49,23 @@ void doFriction(
         p.vel.y = velXY.y;
     }
 
-    // external impulses still decay
+    // External momentum fades slowly and independently of walk friction.
     float impulseDecay =
-        expDecay(GetPlayerSettings().weaponRecoilDecay, dt);
+        expDecay(EXTERNAL_IMPULSE_DECAY, dt);
 
     p.externalImpulse *= impulseDecay;
 
     if (glm::length(p.externalImpulse) < ALMOST_ZERO)
         p.externalImpulse = glm::vec3(0.0f);
+
+    glm::vec2 impulseXY(p.externalImpulse.x, p.externalImpulse.y);
+    float impulseSpeed = glm::length(impulseXY);
+    if (impulseSpeed > MAX_EXTERNAL_IMPULSE_SPEED)
+    {
+        impulseXY *= MAX_EXTERNAL_IMPULSE_SPEED / impulseSpeed;
+        p.externalImpulse.x = impulseXY.x;
+        p.externalImpulse.y = impulseXY.y;
+    }
 
     if (speedBefore > ALMOST_ZERO)
     {
@@ -70,39 +78,4 @@ void doFriction(
         );
     }
 
-    // ---------------------------------------------
-    // TOTAL SPEED CLAMP
-    // includes movement + dash momentum together
-    // ---------------------------------------------
-
-    glm::vec2 totalXY(
-        p.vel.x + p.externalImpulse.x,
-        p.vel.y + p.externalImpulse.y
-    );
-
-    float totalSpeed =
-        glm::length(totalXY);
-
-    if (totalSpeed > MAX_PLAYER_MOVE_SPEED)
-    {
-        glm::vec2 clamped =
-            (totalXY / totalSpeed) *
-            MAX_PLAYER_MOVE_SPEED;
-
-        // preserve impulse layer
-        glm::vec2 correctedMove =
-            clamped -
-            glm::vec2(
-                p.externalImpulse.x,
-                p.externalImpulse.y
-            );
-
-        p.vel.x = correctedMove.x;
-        p.vel.y = correctedMove.y;
-
-        FRICTION_LOG(
-            "[FRICTION][CLAMP] total speed capped %.2f\n",
-            totalSpeed
-        );
-    }
 }

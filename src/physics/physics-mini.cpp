@@ -181,24 +181,6 @@ static void physicsMainUpdate_Internal(
     // ok now do friction after other stuff 6 6 2026 
     doFriction(p, p.stableOnGround, dt);
 
-    // decay external impulses separately from movement
-
-    float impulseDecay =
-        p.stableOnGround
-        ? 14.0f
-        : 5.0f;
-
-    float drag =
-        std::exp(-impulseDecay * dt);
-
-    p.externalImpulse *= drag;
-
-    // tiny cleanup
-    if (glm::length(p.externalImpulse) < 0.01f)
-    {
-        p.externalImpulse = glm::vec3(0.0f);
-    }
-
     // save previous airborne time BEFORE reset
     float previousAirborneTime = p.airborneTimer;
 

@@ -8,10 +8,9 @@
 // - No collisions
 // - Heavy debug logging (but guarded)
 
-// CHANGED: Dash is now a single-frame impulse on vel, jun 6 2026
+// CHANGED: Dash is now a single-frame additive external impulse, jun 6 2026
 // Removed: dashVel, dashLockedDirection, cancelDashVelocity
-// Dash adds impulse directly to p.vel once on press frame.
-// Subsequent frames: friction + walk naturally take over.
+// Subsequent frames preserve, steer, and slowly decay that momentum.
 
 #include <cstdio>
 #include <cmath>
@@ -61,7 +60,7 @@ void doDash(
         dashDir = glm::normalize(dashDir);
 
     // --------------------------------------------------
-    // SINGLE-FRAME IMPULSE to vel
+    // SINGLE-FRAME ADDITIVE IMPULSE
     // --------------------------------------------------
 
     glm::vec2 impulse =
@@ -81,7 +80,7 @@ void doDash(
         glm::length(impulseXY);
 
     float maxImpulseSpeed =
-        MAX_PLAYER_MOVE_SPEED;
+        MAX_EXTERNAL_IMPULSE_SPEED;
 
     if (impulseSpeed > maxImpulseSpeed)
     {

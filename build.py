@@ -40,7 +40,6 @@ GLFW_LIB = r"C:\important\glfw-3.4.bin.WIN64\lib-mingw-w64"
 SRC_DIR = os.path.join(ROOT, "src")
 BUILD_DIR = os.path.join(ROOT, "build")
 OBJ_DIR = os.path.join(BUILD_DIR, "obj")
-CACHE_DIR = os.path.join(BUILD_DIR, "cache")
 
 EXE_NAME = "mimita.exe"
 
@@ -63,6 +62,8 @@ if MODE == "release":
         "-O2",
         "-march=native",
         "-pipe",
+        "-MMD",
+        "-MP",
     ]
 else:
     MODE = "debug"
@@ -73,6 +74,8 @@ else:
         "-Og",
         "-g",
         "-pipe",
+        "-MMD",
+        "-MP",
     ]
 
 # ============================================================
@@ -109,7 +112,6 @@ LINK_LIBS = [
 def ensure_dirs():
     os.makedirs(BUILD_DIR, exist_ok=True)
     os.makedirs(OBJ_DIR, exist_ok=True)
-    os.makedirs(CACHE_DIR, exist_ok=True)
 
 def hash_file(path):
     h = hashlib.md5()
@@ -154,7 +156,14 @@ def find_header_files():
 def cache_path(src):
     rel = os.path.relpath(src, ROOT)
     rel = rel.replace("\\", "_").replace("/", "_")
-    return os.path.join(CACHE_DIR, rel + ".hash")
+
+def dep_path(src):
+    rel = os.path.relpath(src, SRC_DIR)
+    rel = os.path.splitext(rel)[0]
+
+    rel = rel.replace("\\", "_").replace("/", "_")
+
+    return os.path.join(OBJ_DIR, rel + ".d")
 
 def obj_path(src):
     rel = os.path.relpath(src, SRC_DIR)
@@ -165,15 +174,37 @@ def obj_path(src):
     return os.path.join(OBJ_DIR, rel + ".o")
 
 def source_changed(src):
-    h = hash_file(src) + ":" + HEADER_HASH
-    cp = cache_path(src)
+    obj = obj_path(src)
+    dep = dep_path(src)
 
-    if not os.path.exists(cp):
+    # no object/dependency yet
+    if not os.path.exists(obj) or not os.path.exists(dep):
         return True
 
-    old = open(cp, "r").read().strip()
+    obj_time = os.path.getmtime(obj)
 
-    return old != h
+    # read dependency file
+    with open(dep, "r") as f:
+        content = f.read()
+
+    # parse paths from .d file
+    parts = content.replace("\\\n", " ").split()
+
+    dependencies = []
+
+    for p in parts[1:]:
+        if p.endswith(":"):
+            continue
+
+        dependencies.append(p)
+
+    # if any dependency newer than object -> rebuild
+    for depfile in dependencies:
+        if os.path.exists(depfile):
+            if os.path.getmtime(depfile) > obj_time:
+                return True
+
+    return False
 
 def update_cache(src):
     h = hash_file(src) + ":" + HEADER_HASH
