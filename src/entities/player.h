@@ -41,7 +41,6 @@ struct MovementCapsule {
     glm::vec3 position{0.0f};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 velocity{0.0f};
-    glm::vec2 dashVelocity{0.0f};
     float radius = 0.0f;
     float height = 0.0f;
     bool onGround = false;
@@ -79,9 +78,7 @@ public:
     // -------- Core State --------
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
-    glm::vec2 dashVel{0.0f};
     glm::vec3 externalImpulse{0.0f};
-    glm::vec2 dashLockedDirection{0.0f};
 
     bool onGround = false;
     float yaw = 0.0f;

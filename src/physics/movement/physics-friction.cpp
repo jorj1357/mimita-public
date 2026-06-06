@@ -107,63 +107,16 @@ void doFriction(
     }
 
     // --------------------------------------------------
-    // DASH DRAG (SEPARATE)
-    // --------------------------------------------------
-    if (glm::length(p.dashVel) > ALMOST_ZERO) {
-
-        float dashFriction = onGround
-            ? GROUND_FRICTION_AMOUNT * 0.75f
-            : AIR_FRICTION_AMOUNT * DRAG_FRICTION_MULTIPLIER;
-        float dashDecay = expDecay(dashFriction, dt);
-
-        float dashBefore = glm::length(p.dashVel);
-
-        p.dashVel *= dashDecay;
-
-        if (glm::length(p.dashVel) < ALMOST_ZERO) {
-            p.dashVel = glm::vec2(0.0f);
-        }
-
-        FRICTION_LOG(
-            "[FRICTION][DASH] decay=%.3f speed %.3f -> %.3f\n",
-            dashDecay,
-            dashBefore,
-            glm::length(p.dashVel)
-        );
-    }
-
-    // --------------------------------------------------
     // SAFETY CLAMP (RUNAWAY PREVENTION)
     // --------------------------------------------------
-    glm::vec2 totalXY = glm::vec2(p.vel.x, p.vel.y) + p.dashVel;
-    float totalSpeed = glm::length(totalXY);
+    glm::vec2 velXY(p.vel.x, p.vel.y);
+    float totalSpeed = glm::length(velXY);
 
-    if (totalSpeed > MAX_PLAYER_MOVE_SPEED) {
-        glm::vec2 clamped = (totalXY / totalSpeed) * MAX_PLAYER_MOVE_SPEED;
-
-        // Preserve dash ratio
-        // glm::vec2 dashDir =
-        //     glm::length(p.dashVel) > ALMOST_ZERO
-        //         ? glm::normalize(p.dashVel)
-        //         : glm::vec2(0.0f);
-
-        // better version? idk
-        glm::vec2 totalXY = glm::vec2(p.vel.x, p.vel.y) + p.dashVel;
-        float totalSpeed = glm::length(totalXY);
-
-        if (totalSpeed > MAX_PLAYER_MOVE_SPEED)
-        {
-            float scale = MAX_PLAYER_MOVE_SPEED / totalSpeed;
-
-            p.vel.x *= scale;
-            p.vel.y *= scale;
-            p.dashVel *= scale;
-        }
-
-        // dont need? idk mar 8 2026 
-        // p.dashVel = dashDir * glm::length(p.dashVel);
-        p.vel.x = clamped.x - p.dashVel.x;
-        p.vel.y = clamped.y - p.dashVel.y;
+    if (totalSpeed > MAX_PLAYER_MOVE_SPEED)
+    {
+        glm::vec2 clamped = (velXY / totalSpeed) * MAX_PLAYER_MOVE_SPEED;
+        p.vel.x = clamped.x;
+        p.vel.y = clamped.y;
 
         FRICTION_LOG(
             "[FRICTION][CLAMP] speed capped to %.2f\n",
