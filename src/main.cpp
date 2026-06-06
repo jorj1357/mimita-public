@@ -45,6 +45,12 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "network/net_mode.h"
+#include "devtools/dev-config.h"
+#include "devtools/dev-overlay.h"
+#include "devtools/dev-menu.h"
+#include "devtools/dev-npc-selection.h"
+#include "devtools/dev-teleport.h"
+#include "devtools/dev-commands.h"
 
 #include <cstdio>
 
@@ -79,6 +85,12 @@ int main(int argc, char** argv)
     DebugVis::init(engine.window());
     Debug::startupReport();
     printf("[MAIN] after DebugVis::init()\n");
+
+    // Dev tools init
+    DevConfig::instance().load("config/dev_controls.txt");
+    DevOverlay::instance().init(engine.window());
+    RegisterTeleportCommands();
+    printf("[MAIN] dev tools initialized\n");
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -169,6 +181,20 @@ int main(int argc, char** argv)
 
         InputState input = pollInput(engine.window(), camera);
 
+        // Dev tools update
+        DevOverlay::instance().update();
+        NpcSelectionManager::instance().update();
+
+        // Dev menu toggle (F1)
+        static bool f1Prev = false;
+        bool f1Down = glfwGetKey(engine.window(), GLFW_KEY_F1) == GLFW_PRESS;
+        static bool devMenuOpen = false;
+        if (f1Down && !f1Prev) {
+            devMenuOpen = !devMenuOpen;
+            printf("[DEV] Dev menu %s\n", devMenuOpen ? "opened" : "closed");
+        }
+        f1Prev = f1Down;
+
         if (gameState == GAME_PLAYING)
         {
             DebugVis::beginCollisionFrame();
@@ -193,6 +219,11 @@ int main(int argc, char** argv)
             npcSystem.drawDebug(camera);
             drawDebugStuff(player, camera, world);
                         printf("lallaa 3 \n");
+
+            // Draw NPC selection debug visuals
+            if (DebugVis::enabled()) {
+                NpcSelectionManager::instance().drawSelection(npcSystem, camera);
+            }
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
@@ -220,6 +251,17 @@ int main(int argc, char** argv)
             }
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
+
+            // Dev overlay (always visible)
+            DevOverlay::instance().render();
+
+            // Dev menu (when open)
+            if (devMenuOpen) {
+                DevMenuResult r = drawDevMenu(engine.window(), npcSystem, player);
+                if (r.goBack) {
+                    devMenuOpen = false;
+                }
+            }
         }
 
                                 printf("lallaa 4 \n");

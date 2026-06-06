@@ -89,6 +89,9 @@ public:
     void drawDebug(const Camera& camera) const;
     std::vector<DebugVis::NpcDebugInfo> debugInfo() const;
     const std::vector<Npc>& all() const { return npcs; }
+    
+    void spawnNpc(float difficulty, glm::vec3 spawnPos);
+    uint32_t nextNpcId() const { return (uint32_t)npcs.size() + 100; }
 
 private:
     std::vector<Npc> npcs;

@@ -94,6 +94,12 @@ namespace DebugVis {
 
     void drawNpcDebugStuff(const std::vector<NpcDebugInfo>& npcs,
                            const Camera& camera);
+
+    // Debug drawing primitives (for dev tools)
+    void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
+    void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color);
+    void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
+    void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color);
 }
 
 
