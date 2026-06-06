@@ -65,7 +65,18 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
         wish.y -= r.y;
     }
 
+    // 6 6 2026 also add this for normaliz 
+    if (glm::length(wish) > 0.0001f)
+        wish = glm::normalize(wish);
+
     in.wishMoveXY = wish;
+
+    // 6 6 2026 for fixing cam moving with wads but not moving walk diection ? 
+    in.movementPressed =
+        cmd.getState("walkforward").held ||
+        cmd.getState("walkback").held ||
+        cmd.getState("walkleft").held ||
+        cmd.getState("walkright").held;
     
     in.jumpHeld = cmd.isJumpHeld();
     in.dashPressed = cmd.isDashPressed();
@@ -92,13 +103,32 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     glm::vec3 r = glm::normalize(glm::cross(f, glm::vec3(0,0,1)));
 
     InputFrame frame;
+
+    // 6 6 2026 normalize again 
+    glm::vec2 move(frame.moveX, frame.moveY);
+
+    if (glm::length(move) > 0.0001f)
+    {
+        move = glm::normalize(move);
+
+        frame.moveX = move.x;
+        frame.moveY = move.y;
+    }
+
     if (cmd.getState("walkforward").held) { frame.moveX += f.x; frame.moveY += f.y; }
     if (cmd.getState("walkback").held)    { frame.moveX -= f.x; frame.moveY -= f.y; }
     if (cmd.getState("walkright").held)   { frame.moveX += r.x; frame.moveY += r.y; }
     if (cmd.getState("walkleft").held)    { frame.moveX -= r.x; frame.moveY -= r.y; }
+    // frame.movementPressed =
+    //     cmd.getState("walkforward").pressed || cmd.getState("walkback").pressed ||
+    //     cmd.getState("walkleft").pressed || cmd.getState("walkright").pressed;
+
+    // new better with held 6 6 2026 
     frame.movementPressed =
-        cmd.getState("walkforward").pressed || cmd.getState("walkback").pressed ||
-        cmd.getState("walkleft").pressed || cmd.getState("walkright").pressed;
+        cmd.getState("walkforward").held ||
+        cmd.getState("walkback").held ||
+        cmd.getState("walkleft").held ||
+        cmd.getState("walkright").held;
 
     frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
     frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;
