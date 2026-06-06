@@ -1,3 +1,31 @@
 node_modules
 dist
 .env
+
+# Build
+build/
+bin/
+out/
+
+# Compiled
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.ilk
+*.pdb
+
+# Website deps
+website/node_modules/
+
+# Logs
+*.log
+
+# Temp
+tmp/
+temp/
+
+# OS
+.DS_Store
+Thumbs.db
