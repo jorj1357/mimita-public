@@ -948,6 +948,60 @@ static void doGLBTriangleCollisions(
             break;
     }
 
+    // Ground snap: if player is very close to ground and not jumping up, snap to ground
+    // This prevents hovering and flickering grounded state
+    {
+        constexpr float GROUND_SNAP_DISTANCE = 0.08f;
+        constexpr float MAX_UPWARD_VEL_FOR_SNAP = 0.5f;
+        
+        if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
+        {
+            Capsule checkCap = p.getCapsule();
+            float feetZ = checkCap.a.z - checkCap.r;
+            
+            // Check for ground directly below within snap distance
+            std::vector<int> groundCandidates = gatherGLBTriangles(world, checkCap, {0, 0, -GROUND_SNAP_DISTANCE});
+            float bestGroundZ = -FLT_MAX;
+            
+            for (int triIndex : groundCandidates)
+            {
+                const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+                if (tri.normal.z < 0.5f) continue; // Only upward-facing surfaces
+                
+                // Check if triangle is horizontally aligned with player
+                float triMinX = std::min({tri.a.x, tri.b.x, tri.c.x});
+                float triMaxX = std::max({tri.a.x, tri.b.x, tri.c.x});
+                float triMinY = std::min({tri.a.y, tri.b.y, tri.c.y});
+                float triMaxY = std::max({tri.a.y, tri.b.y, tri.c.y});
+                
+                if (checkCap.a.x + checkCap.r >= triMinX && checkCap.a.x - checkCap.r <= triMaxX &&
+                    checkCap.a.y + checkCap.r >= triMinY && checkCap.a.y - checkCap.r <= triMaxY)
+                {
+                    // Triangle is roughly under player - check Z
+                    float triCenterZ = (tri.a.z + tri.b.z + tri.c.z) / 3.0f;
+                    if (triCenterZ < feetZ && triCenterZ > bestGroundZ)
+                        bestGroundZ = triCenterZ;
+                }
+            }
+            
+            if (bestGroundZ > -FLT_MAX)
+            {
+                float distToGround = feetZ - bestGroundZ;
+                if (distToGround > 0.0f && distToGround < GROUND_SNAP_DISTANCE)
+                {
+                    float snapAmount = distToGround + 0.001f;
+                    p.pos.z += snapAmount;
+                    groundedThisFrame = true;
+                    
+                    if (p.vel.z < 0.0f)
+                        p.vel.z = 0.0f;
+                    
+                    PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to ground at %.2f\n", snapAmount, bestGroundZ);
+                }
+            }
+        }
+    }
+
     // Phase 3: Project velocity against all remaining contacts
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
@@ -1252,6 +1306,51 @@ void doCollisions(
 
         if (glm::dot(totalCorrection, totalCorrection) < 0.0000001f)
             break;
+    }
+
+    // Ground snap for blocks: if player is very close to block top and not jumping up, snap to ground
+    {
+        constexpr float GROUND_SNAP_DISTANCE = 0.08f;
+        constexpr float MAX_UPWARD_VEL_FOR_SNAP = 0.5f;
+        
+        if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
+        {
+            Capsule checkCap = p.getCapsule();
+            float feetZ = checkCap.a.z - checkCap.r;
+            
+            float bestGroundZ = -FLT_MAX;
+            for (Block* b : nearbyBlocks)
+            {
+                if (!b || b->isSlope) continue;
+                
+                AABB ba = makeBlockAABB(*b);
+                float blockTopZ = ba.max.z;
+                
+                // Check horizontal overlap
+                if (checkCap.a.x + checkCap.r >= ba.min.x && checkCap.a.x - checkCap.r <= ba.max.x &&
+                    checkCap.a.y + checkCap.r >= ba.min.y && checkCap.a.y - checkCap.r <= ba.max.y)
+                {
+                    if (blockTopZ < feetZ && blockTopZ > bestGroundZ)
+                        bestGroundZ = blockTopZ;
+                }
+            }
+            
+            if (bestGroundZ > -FLT_MAX)
+            {
+                float distToGround = feetZ - bestGroundZ;
+                if (distToGround > 0.0f && distToGround < GROUND_SNAP_DISTANCE)
+                {
+                    float snapAmount = distToGround + 0.001f;
+                    p.pos.z += snapAmount;
+                    groundedThisFrame = true;
+                    
+                    if (p.vel.z < 0.0f)
+                        p.vel.z = 0.0f;
+                    
+                    PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to block ground at %.2f\n", snapAmount, bestGroundZ);
+                }
+            }
+        }
     }
 
     // Project velocity against all block contacts

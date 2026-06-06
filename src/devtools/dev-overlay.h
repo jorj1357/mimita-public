@@ -1,6 +1,5 @@
 #pragma once
 
-#include "dev-types.h"
 #include <string>
 #include <vector>
 
@@ -11,17 +10,20 @@ public:
     static DevOverlay& instance();
     
     void init(GLFWwindow* window);
-    void update();
+    void update(float dt);
     void render();
-    void toggle() { mVisible = !mVisible; }
-    bool visible() const { return mVisible; }
-    void rebuildHelpText();
+    
+    // Show temporary notification (auto-fades)
+    void showNotification(const std::string& message, float duration = 3.0f);
     
 private:
     DevOverlay() = default;
     GLFWwindow* mWindow = nullptr;
-    bool mVisible = true;
-    bool mF12Prev = false;
-    std::string mHelpText;
-    std::vector<std::string> mHelpLines;
+    
+    struct Notification {
+        std::string message;
+        float timer = 0.0f;
+        float duration = 3.0f;
+    };
+    std::vector<Notification> mNotifications;
 };
