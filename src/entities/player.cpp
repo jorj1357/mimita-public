@@ -541,9 +541,12 @@ void Player::reset()
     // debug test
     // pos = {1,5,2};
     // debug test 2 for the ctf map
-    pos = {1,5,30};
+    // pos = {1,5,30};
+    pos = {1,5,60};
     vel = {0,0,0};
     dashVel = {0,0};
+    externalImpulse = {0,0,0};
+    dashLockedDirection = {0,0};
     onGround = false;
 
     // put this here so idk? mar 7 2026
@@ -966,13 +969,13 @@ OBB Player::getOBB() const
 
 void Player::updateAudio(float dt)
 {
-    if (didGroundJump) playEventSound("entity/player/jump",1.0f);
+    if (didGroundJump) playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
 
     if (didAirJump)
         playAirJumpSound();
 
     if (didDash) {
-        playEventSound("entity/player/dash",1.0f);
+        playWorldSound("entity/player/dash", pos, 1.0f, 1.0f, 36.0f);
         // Spawn dash effect at player position
         EffectPartSystem::instance().spawnDash(pos);
     }
@@ -980,14 +983,14 @@ void Player::updateAudio(float dt)
     // Only trigger land sound on stable air->ground transition
     // Use stableOnGround to avoid flickering from collision jitter
     if (!wasStableGroundedLastFrame && stableOnGround)
-        playEventSound("entity/player/land",1.0f);
+        playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
     wasStableGroundedLastFrame = stableOnGround;
 
     glm::vec2 xy = glm::vec2(vel.x,vel.y) + dashVel;
     if (stableOnGround && glm::length(xy) > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
-            playRandomFootstep();
+            playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
             // Spawn footstep effect at feet position
             Capsule cap = getCapsule();
             glm::vec3 footPos = cap.a;

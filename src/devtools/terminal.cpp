@@ -482,9 +482,9 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
-        "spawn.npc",
-        "Spawn NPC at cursor or position",
-        "spawn.npc [cursor|<x> <y> <z>] [difficulty]",
+        "npc_spawn_legacy",
+        "Legacy NPC spawn position command",
+        "npc_spawn_legacy [cursor|<x> <y> <z>] [difficulty]",
         [](const std::vector<std::string>& args) {
             // This will be handled by the game system - we just queue the command
             // The actual spawn happens in the game loop

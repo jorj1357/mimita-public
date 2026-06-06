@@ -13,6 +13,9 @@
 #include "render/render-player.h"
 #include "world/world.h"
 #include "config.h"
+#include "audio/audio.h"
+#include "effects/effect-part.h"
+#include "devtools/dev-npc-selection.h"
 
 namespace {
 
@@ -295,14 +298,38 @@ void NpcSystem::spawnPrototypeScene()
 
 void NpcSystem::clear()
 {
+    for (const Npc& npc : npcs) {
+        AudioManager::instance().stopOwner(npc.id);
+        EffectPartSystem::instance().destroyOwner(npc.id);
+        Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
+    }
     npcs.clear();
+    NpcSelectionManager::instance().clear();
+    Debug::log(Debug::Category::General, "[NPC] cleanup complete\n");
 }
 
 void NpcSystem::spawnNpc(float difficulty, glm::vec3 spawnPos)
 {
     uint32_t id = nextNpcId();
     npcs.emplace_back(id, difficulty, spawnPos);
+    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    Debug::log(Debug::Category::General, "[NPC] spawned id=%u\n", id);
 }
+
+void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)
+{
+    npcs.erase(std::remove_if(npcs.begin(), npcs.end(), [&](const Npc& npc) {
+        if (std::find(ids.begin(), ids.end(), npc.id) == ids.end()) return false;
+        AudioManager::instance().stopOwner(npc.id);
+        EffectPartSystem::instance().destroyOwner(npc.id);
+        NpcSelectionManager::instance().deselect(npc.id);
+        Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
+        return true;
+    }), npcs.end());
+    Debug::log(Debug::Category::General, "[NPC] cleanup complete\n");
+}
+
+void NpcSystem::destroyAll() { clear(); }
 
 void NpcSystem::update(const World& world, const Player& player, float dt)
 {
@@ -360,6 +387,17 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
                        npc.id, npc.difficulty, npc.sensors.targetDistance);
         }
     }
+
+    npcs.erase(std::remove_if(npcs.begin(), npcs.end(), [](const Npc& npc) {
+        if (npc.body.currentHp > 0) return false;
+        AudioManager::instance().play({"npc_death", AudioCategory::NPC, true, npc.body.pos, 1.0f, 0.9f, 45.0f, 0});
+        AudioManager::instance().stopOwner(npc.id);
+        EffectPartSystem::instance().destroyOwner(npc.id);
+        NpcSelectionManager::instance().deselect(npc.id);
+        Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
+        Debug::log(Debug::Category::General, "[NPC] cleanup complete id=%u\n", npc.id);
+        return true;
+    }), npcs.end());
 
     // Resolve NPC vs Player collisions after all physics updates
     // Note: player is const here, but we need to modify it for collision resolution

@@ -9,6 +9,30 @@
 #include <string>
 #include <glm/glm.hpp>
 
+enum class AudioCategory { Movement, UI, Weapons, NPC, Impacts, Ambient };
+
+struct AudioEvent {
+    std::string name;
+    AudioCategory category = AudioCategory::Impacts;
+    bool world = false;
+    glm::vec3 position{0.0f};
+    float volume = 1.0f;
+    float pitch = 1.0f;
+    float maxDistance = 30.0f;
+    unsigned int ownerId = 0;
+};
+
+class AudioManager {
+public:
+    static AudioManager& instance();
+    void update(float dt);
+    void setListener(glm::vec3 pos, glm::vec3 forward);
+    void play(const AudioEvent& event);
+    void stopOwner(unsigned int ownerId);
+    void setDebug(bool enabled);
+    bool debug() const;
+};
+
 void audioUpdate(float dt);
 
 void playFreezeBeginSound();
@@ -26,3 +50,4 @@ void playSoundAt(const std::string& name, glm::vec3 pos, float volume = 1.0f);
 void playRandomFootstep();
 
 void playMenuClick();
+void playMenuHover();

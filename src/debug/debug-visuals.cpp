@@ -436,13 +436,16 @@ void DebugVis::init(GLFWwindow* win)
     printf("[DEBUG] DebugVis initialized.\n");
 }
 
+void DebugVis::setMasterEnabled(bool enabled) { DebugConfig::DEBUG_VISUALS_MASTER = enabled; }
+bool DebugVis::masterEnabled() { return DebugConfig::DEBUG_VISUALS_MASTER; }
+
 void DebugVis::update()
 {
     if (!gWindow) return;
     glPolygonMode(GL_FRONT_AND_BACK, DebugConfig::DEBUG_WIREFRAME ? GL_LINE : GL_FILL);
 }
 
-bool DebugVis::enabled() { return DebugConfig::DEBUG_PHYSICS || DebugConfig::DEBUG_COLLISION || DebugConfig::DEBUG_BOUNDS || DebugConfig::DEBUG_NORMALS || DebugConfig::DEBUG_PLAYERARCH; }
+bool DebugVis::enabled() { return DebugConfig::DEBUG_VISUALS_MASTER && (DebugConfig::DEBUG_PHYSICS || DebugConfig::DEBUG_COLLISION || DebugConfig::DEBUG_BOUNDS || DebugConfig::DEBUG_NORMALS || DebugConfig::DEBUG_PLAYERARCH); }
 bool DebugVis::physics() { return DebugConfig::DEBUG_PHYSICS; }
 bool DebugVis::ui() { return DebugConfig::DEBUG_UI; }
 bool DebugVis::render() { return DebugConfig::DEBUG_RENDER; }
@@ -506,6 +509,7 @@ void DebugVis::beginCollisionFrame()
 
 void DebugVis::recordCollisionEvent(const CollisionEvent& event)
 {
+    if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
     if (!DebugConfig::DEBUG_COLLISION_VISUALS)
         return;
     if (gCollisionEvents.size() >= 1024)
@@ -682,22 +686,27 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
 namespace DebugVis {
     void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
+        if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawWireSphere(camera, center, radius, color);
     }
     
     void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {
+        if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawLine(camera, a, b, color);
     }
 
     void drawWireBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color) {
+        if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawBox(camera, center, halfSize, color);
     }
     
     void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color) {
+        if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawWorldLabel(worldPos, text, color);
     }
     
     void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color) {
+        if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawPointCross(camera, p, size, color);
     }
     

@@ -46,6 +46,7 @@
 #include "physics/config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
+#include "config/player-settings.h"
 
 // =====================================================
 // DEBUG
@@ -90,6 +91,11 @@ void doFriction(
     p.vel.x = velXY.x;
     p.vel.y = velXY.y;
 
+    float impulseDecay = expDecay(GetPlayerSettings().weaponRecoilDecay, dt);
+    p.externalImpulse *= impulseDecay;
+    if (glm::length(p.externalImpulse) < ALMOST_ZERO)
+        p.externalImpulse = glm::vec3(0.0f);
+
     if (speedBefore > ALMOST_ZERO) {
         FRICTION_LOG(
             "[FRICTION][BASE] %s decay=%.3f speed %.3f -> %.3f\n",
@@ -105,8 +111,10 @@ void doFriction(
     // --------------------------------------------------
     if (glm::length(p.dashVel) > ALMOST_ZERO) {
 
-        float dashDecay =
-            expDecay(GROUND_FRICTION_AMOUNT * DRAG_FRICTION_MULTIPLIER, dt);
+        float dashFriction = onGround
+            ? GROUND_FRICTION_AMOUNT * 0.75f
+            : AIR_FRICTION_AMOUNT * DRAG_FRICTION_MULTIPLIER;
+        float dashDecay = expDecay(dashFriction, dt);
 
         float dashBefore = glm::length(p.dashVel);
 

@@ -98,14 +98,13 @@ struct RecoveryContact
 
 static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
 {
-    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
     float into = glm::dot(totalVel, normal);
     if (into >= -0.0001f)
         return;
 
     glm::vec3 resolved = totalVel - normal * into;
-    p.vel = resolved;
-    p.dashVel = glm::vec2(0.0f);
+    p.externalImpulse += resolved - totalVel;
 }
 
 static inline void applyCollisionContact(
@@ -121,7 +120,7 @@ static inline void applyCollisionContact(
         Debug::log(Debug::Category::Collision,
                    "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
                    label, triangleIndex, normal.x, normal.y, normal.z, penetration);
-    glm::vec3 incoming = p.vel + glm::vec3(p.dashVel, 0.0f);
+    glm::vec3 incoming = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
     float speed = glm::length(incoming);
     float into = glm::dot(incoming, normal);
     const PlayerSettings& cfg = GetPlayerSettings();
@@ -136,8 +135,7 @@ static inline void applyCollisionContact(
         float bouncedSpeed = std::min(glm::length(bounced), cfg.collisionBounceMaxSpeed);
         if (glm::length(bounced) > 0.001f)
             bounced = glm::normalize(bounced) * bouncedSpeed;
-        p.vel = bounced;
-        p.dashVel = glm::vec2(0.0f);
+        p.externalImpulse += bounced - incoming;
         p.collisionBounceCooldown = 0.08f;
     } else {
         clampVelocityAgainstNormal(p, normal);
@@ -952,7 +950,7 @@ static void doGLBTriangleCollisions(
     constexpr float MAX_CORRECTION = 2.0f;
     constexpr float BODY_SAMPLE_RADIUS = 0.045f;
 
-    glm::vec3 totalMove = (p.vel + glm::vec3(p.dashVel, 0.0f)) * dt;
+    glm::vec3 totalMove = (p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse) * dt;
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
 
@@ -1319,15 +1317,14 @@ static void doGLBTriangleCollisions(
         world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
     );
 
-    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
     for (const RecoveryContact& c : finalContacts)
     {
         float into = glm::dot(totalVel, c.normal);
         if (into < 0.0f)
             totalVel -= c.normal * into;
     }
-    p.vel = totalVel;
-    p.dashVel = glm::vec2(0.0f);
+    p.vel = totalVel - glm::vec3(p.dashVel, 0.0f) - p.externalImpulse;
 
     // Overlapping geometry debug detection:
     // If candidate triangles have normals pointing in strongly divergent
@@ -1398,7 +1395,7 @@ void doCollisions(
     // glm::vec3 move = p.vel * dt;
 
     // this kind includes dash movement, for sweeps 
-    glm::vec3 move = (p.vel + glm::vec3(p.dashVel,0.0f)) * dt;
+    glm::vec3 move = (p.vel + glm::vec3(p.dashVel,0.0f) + p.externalImpulse) * dt;
 
     Capsule cap = p.getCapsule();
 
@@ -1747,15 +1744,14 @@ void doCollisions(
     // Project velocity against all block contacts
     cap = p.getCapsule();
     std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
-    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f);
+    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
     for (const RecoveryContact& c : blockContacts)
     {
         float into = glm::dot(totalVel, c.normal);
         if (into < 0.0f)
             totalVel -= c.normal * into;
     }
-    p.vel = totalVel;
-    p.dashVel = glm::vec2(0.0f);
+    p.vel = totalVel - glm::vec3(p.dashVel, 0.0f) - p.externalImpulse;
 }
 
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)

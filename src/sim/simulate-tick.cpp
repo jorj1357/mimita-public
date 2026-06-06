@@ -19,6 +19,7 @@ static InputState inputStateFromFrame(const InputFrame& frame)
     state.wishMoveXY = {frame.moveX, frame.moveY};
     state.jumpHeld = frame.jump;
     state.dashPressed = frame.dashPressed;
+    state.movementPressed = frame.movementPressed;
     state.groundReturnPressed = frame.groundReturnPressed;
     state.freezeHeld = frame.freezeHeld;
 
