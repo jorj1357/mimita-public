@@ -98,26 +98,34 @@ struct RecoveryContact
 
 // CHANGED: Removed dashVel references, jun 6 2026
 // Dash is now part of vel, so bounce applies to vel naturally.
-static inline void reflectVelocityAgainstNormal(Player& p, const glm::vec3& normal, float bounceMultiplier = 0.1f)
+static inline void projectVelocityAgainstNormal(
+    Player& p,
+    const glm::vec3& normal
+)
 {
-    glm::vec3 totalVel = p.vel + p.externalImpulse;
-    float into = glm::dot(totalVel, normal);
-    if (into >= -0.0001f)
-        return;
+        glm::vec3* velocities[] =
+    {
+        &p.vel,
+        &p.externalImpulse
+    };
 
-    // Reflect: R = V - 2 * (V·N) * N
-    glm::vec3 reflected = totalVel - 2.0f * into * normal;
-    
-    // Apply weak bounce multiplier
-    glm::vec3 bounced = reflected * bounceMultiplier;
-    
-    // Store the change in externalImpulse
-    p.externalImpulse += bounced - totalVel;
+    for (glm::vec3* v : velocities)
+    {
+        float into =
+            glm::dot(*v, normal);
+
+        // already moving away
+        if (into >= 0.0f)
+            continue;
+
+        // remove ONLY component into wall
+        *v -= normal * into;
+    }
 }
 
 static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
 {
-    reflectVelocityAgainstNormal(p, normal, 0.0f);
+    projectVelocityAgainstNormal(p, normal);
 }
 
 // CHANGED: Simplified collision contact. Removed dashVel, bounce only for walls, jun 6 2026
@@ -144,29 +152,9 @@ static inline void applyCollisionContact(
     bool isWall = std::fabs(normal.z) < 0.45f;
     if (isWall)
     {
-        if (p.collisionBounceCooldown <= 0.0f &&
-            into < 0.0f &&
-            speed >= cfg.collisionBounceMinSpeed)
-        {
-            glm::vec3 reflected = incoming - 2.0f * into * normal;
-            glm::vec3 bounced = reflected * cfg.collisionBounceStrength;
-            float bouncedSpeed = std::min(glm::length(bounced), cfg.collisionBounceMaxSpeed);
-            if (glm::length(bounced) > 0.001f)
-                bounced = glm::normalize(bounced) * bouncedSpeed;
-            p.externalImpulse += bounced - incoming;
-            p.collisionBounceCooldown = 0.08f;
-        }
-        // else
-        // {
-        //     reflectVelocityAgainstNormal(p, normal, 0.0f);
-        // }
-
-        else if (std::fabs(normal.z) < 0.35f)
-        {
-            reflectVelocityAgainstNormal(p, normal, 0.0f);
-        }
+        projectVelocityAgainstNormal(p, normal);
     }
-
+    
     if (normal.z > 0.35f)
     {
         groundedThisFrame = true;

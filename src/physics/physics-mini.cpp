@@ -82,18 +82,20 @@ static void physicsMainUpdate_Internal(
 
     doGravity(p, dt);
 
-
     // freeze is after gravit and friction, but before everthing else
     doFreeze(p, freezeHeld, dt);
 
     doGroundReturn(p, groundReturnPressed, dt);
-    doDash(p, wishMoveXY, dashPressed, camForward, dt);
+    // doDash(p, wishMoveXY, dashPressed, camForward, dt);
     // CHANGED: No dashVel — walk always runs when there's movement input, jun 6 2026
     if (p.didDash && DebugConfig::DEBUG_INPUT)
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
     if (movementPressed)
         doWalk(p, wishMoveXY, dt);
+
+    // dash after walk? 6 6 2026 
+    doDash(p, wishMoveXY, dashPressed, camForward, dt);
 
     // testing 4 substeps so we have even more collision checsk
     int steps = 4; // small substep count
@@ -178,6 +180,24 @@ static void physicsMainUpdate_Internal(
 
     // ok now do friction after other stuff 6 6 2026 
     doFriction(p, p.stableOnGround, dt);
+
+    // decay external impulses separately from movement
+
+    float impulseDecay =
+        p.stableOnGround
+        ? 14.0f
+        : 5.0f;
+
+    float drag =
+        std::exp(-impulseDecay * dt);
+
+    p.externalImpulse *= drag;
+
+    // tiny cleanup
+    if (glm::length(p.externalImpulse) < 0.01f)
+    {
+        p.externalImpulse = glm::vec3(0.0f);
+    }
 
     // save previous airborne time BEFORE reset
     float previousAirborneTime = p.airborneTimer;
