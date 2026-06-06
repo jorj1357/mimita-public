@@ -1,5 +1,15 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+
+// winsock FIRST
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+// windows AFTER
+#include <windows.h>
+
 // STL
 #include <vector>
 #include <string>
@@ -8,9 +18,6 @@
 #include <algorithm>
 #include <functional>
 #include <optional>
-
-// Windows
-#include <windows.h>
 
 // OpenGL
 #include <glad/glad.h>
