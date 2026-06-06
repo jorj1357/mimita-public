@@ -95,7 +95,9 @@ static void physicsMainUpdate_Internal(
         doWalk(p, wishMoveXY, dt);
 
     // dash after walk? 6 6 2026 
-    doDash(p, wishMoveXY, dashPressed, camForward, dt);
+    // doDash(p, wishMoveXY, dashPressed, camForward, dt);
+    // dont do dash at all 6 6 2026 ? 
+    // fast push should be from gun pushing me? idk 
 
     // testing 4 substeps so we have even more collision checsk
     int steps = 4; // small substep count
