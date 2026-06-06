@@ -36,30 +36,7 @@
 // WALK
 // =====================================================
 
-// Check if movement input should cancel stale dash velocity
-static inline void checkDashDirectionCancel(Player& p, const glm::vec2& wishMoveXY)
-{
-    float wishLen = glm::length(wishMoveXY);
-    float dashLen = glm::length(p.dashVel);
-    
-    if (wishLen < 0.001f || dashLen < 0.001f)
-        return;
-    
-    glm::vec2 wishDir = wishMoveXY / wishLen;
-    glm::vec2 dashDir = p.dashVel / dashLen;
-    
-    float dot = glm::dot(wishDir, dashDir);
-    
-    // If moving more than 90 degrees away from dash direction, cancel dash
-    if (dot < 0.0f) {
-        if (DebugConfig::DEBUG_INPUT) {
-            Debug::log(Debug::Category::Physics,
-                "[DASH CANCEL] wishDir=(%.2f %.2f) dashDir=(%.2f %.2f) dot=%.2f\n",
-                wishDir.x, wishDir.y, dashDir.x, dashDir.y, dot);
-        }
-        p.dashVel = glm::vec2(0.0f);
-    }
-}
+// CHANGED: Removed checkDashDirectionCancel — dash is now a single impulse in vel, jun 6 2026
 
 void doWalk(
     Player& p,
@@ -80,9 +57,7 @@ void doWalk(
         return;
     }
     
-    // Cancel stale dash velocity if moving in different direction
-    checkDashDirectionCancel(p, wishMoveXY);
-
+    // CHANGED: No dash cancel needed — dash is now in vel, jun 6 2026
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
