@@ -22,9 +22,10 @@
 import os
 import sys
 import subprocess
-import hashlib
 import shutil
 import time
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ============================================================
 # CONFIG
@@ -42,6 +43,9 @@ BUILD_DIR = os.path.join(ROOT, "build")
 OBJ_DIR = os.path.join(BUILD_DIR, "obj")
 
 EXE_NAME = "mimita.exe"
+
+PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
+PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
 
 # ============================================================
 # BUILD MODE
@@ -113,49 +117,8 @@ def ensure_dirs():
     os.makedirs(BUILD_DIR, exist_ok=True)
     os.makedirs(OBJ_DIR, exist_ok=True)
 
-def hash_file(path):
-    h = hashlib.md5()
 
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(8192)
-            if not chunk:
-                break
-            h.update(chunk)
 
-    return h.hexdigest()
-
-def hash_files(paths):
-    h = hashlib.md5()
-
-    for path in sorted(paths):
-        rel = os.path.relpath(path, ROOT).replace("\\", "/")
-        h.update(rel.encode("utf-8"))
-        h.update(b"\0")
-
-        with open(path, "rb") as f:
-            while True:
-                chunk = f.read(8192)
-                if not chunk:
-                    break
-                h.update(chunk)
-
-    return h.hexdigest()
-
-def find_header_files():
-    out = []
-
-    for base in (SRC_DIR, os.path.join(ROOT, "include")):
-        for root, dirs, files in os.walk(base):
-            for f in files:
-                if f.endswith((".h", ".hpp", ".inl")):
-                    out.append(os.path.join(root, f))
-
-    return out
-
-def cache_path(src):
-    rel = os.path.relpath(src, ROOT)
-    rel = rel.replace("\\", "_").replace("/", "_")
 
 def dep_path(src):
     rel = os.path.relpath(src, SRC_DIR)
@@ -201,19 +164,10 @@ def source_changed(src):
     # if any dependency newer than object -> rebuild
     for depfile in dependencies:
         if os.path.exists(depfile):
-            if os.path.getmtime(depfile) > obj_time:
+            if os.path.getmtime(depfile) >= obj_time:
                 return True
 
     return False
-
-def update_cache(src):
-    h = hash_file(src) + ":" + HEADER_HASH
-
-    cp = cache_path(src)
-    tmp = cp + ".tmp"
-    with open(tmp, "w") as f:
-        f.write(h)
-    os.replace(tmp, cp)
 
 def find_cpp_files():
     out = []
@@ -258,38 +212,30 @@ print()
 start_time = time.time()
 
 cpp_files = find_cpp_files()
-HEADER_HASH = hash_files(find_header_files())
-
-# glad.c manually
-glad_path = os.path.join(ROOT, "src", "glad.c")
-
-object_files = []
-
-compiled_count = 0
-skipped_count = 0
 
 # ============================================================
-# COMPILE CPP FILES
+# BUILD PCH
 # ============================================================
 
-for src in cpp_files:
+pch_needs_build = (
+    not os.path.exists(PCH_OUTPUT)
+    or os.path.getmtime(PCH_HEADER) >= os.path.getmtime(PCH_OUTPUT)
+)
 
-    obj = obj_path(src)
-    object_files.append(obj)
+if pch_needs_build:
 
-    if not source_changed(src) and os.path.exists(obj):
-        print("[SKIP]", os.path.relpath(src, ROOT))
-        skipped_count += 1
-        continue
-
-    print("[CXX ]", os.path.relpath(src, ROOT))
+    print("[PCH ]", os.path.relpath(PCH_HEADER, ROOT))
 
     cmd = [
         COMPILER,
-        "-c",
-        src,
+
+        "-x",
+        "c++-header",
+
+        PCH_HEADER,
+
         "-o",
-        obj,
+        PCH_OUTPUT,
     ]
 
     cmd += CXX_FLAGS
@@ -301,12 +247,93 @@ for src in cpp_files:
     if result.returncode != 0:
         print()
         print("==================================================")
-        print(" BUILD FAILED")
+        print(" PCH BUILD FAILED")
         print("==================================================")
         sys.exit(1)
 
-    update_cache(src)
-    compiled_count += 1
+# glad.c manually
+glad_path = os.path.join(ROOT, "src", "glad.c")
+
+object_files = []
+
+compiled_count = 0
+skipped_count = 0
+
+# ============================================================
+# COMPILE SINGLE FILE
+# ============================================================
+
+def compile_cpp_file(src):
+
+    obj = obj_path(src)
+
+    if not source_changed(src):
+        return ("skip", src)
+
+    print("[CXX ]", os.path.relpath(src, ROOT))
+
+    cmd = [
+        COMPILER,
+
+        "-c",
+        src,
+
+        "-o",
+        obj,
+    ]
+
+    cmd += CXX_FLAGS
+    cmd += INCLUDE_FLAGS
+    cmd += DEFINE_FLAGS
+
+    cmd += [
+        "-include",
+        "pch.h",
+    ]
+
+    result = subprocess.run(cmd)
+
+    if result.returncode != 0:
+        return ("fail", src)
+
+    return ("compiled", src)
+
+# ============================================================
+# PARALLEL COMPILE CPP FILES
+# ============================================================
+
+with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+
+    futures = []
+
+    for src in cpp_files:
+
+        obj = obj_path(src)
+        object_files.append(obj)
+
+        futures.append(
+            executor.submit(compile_cpp_file, src)
+        )
+
+    for future in as_completed(futures):
+
+        status, src = future.result()
+
+        if status == "skip":
+            print("[SKIP]", os.path.relpath(src, ROOT))
+            skipped_count += 1
+
+        elif status == "compiled":
+            compiled_count += 1
+
+        elif status == "fail":
+
+            print()
+            print("==================================================")
+            print(" BUILD FAILED")
+            print("==================================================")
+
+            sys.exit(1)
 
 # ============================================================
 # COMPILE GLAD.C
@@ -315,7 +342,7 @@ for src in cpp_files:
 glad_obj = os.path.join(OBJ_DIR, "glad.o")
 object_files.append(glad_obj)
 
-if source_changed(glad_path) or not os.path.exists(glad_obj):
+if source_changed(glad_path):
 
     print("[CC  ] src/glad.c")
 
@@ -340,12 +367,30 @@ if source_changed(glad_path) or not os.path.exists(glad_obj):
         print("==================================================")
         sys.exit(1)
 
-    update_cache(glad_path)
     compiled_count += 1
 
 else:
     print("[SKIP] src/glad.c")
     skipped_count += 1
+
+if compiled_count == 0:
+    print()
+    print("Nothing changed.")
+    print()
+
+    elapsed = time.time() - start_time
+
+    print("Time    : %.2f sec" % elapsed)
+
+    if RUN_AFTER_BUILD:
+        print()
+        print("Running MiMITA...")
+        print()
+
+        exe_path = os.path.join(ROOT, EXE_NAME)
+        subprocess.run([exe_path])
+
+    sys.exit(0)
 
 # ============================================================
 # LINK
