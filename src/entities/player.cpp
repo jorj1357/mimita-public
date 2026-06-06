@@ -965,29 +965,19 @@ OBB Player::getOBB() const
 
 void Player::updateAudio(float dt)
 {
-    // simple and works but annoying  air jump 
     if (didGroundJump) playEventSound("entity/player/jump",1.0f);
-    // if (didAirJump)    playSound("entity/player/doublejump",1.0f);
 
-    // with 0.5 sec wait time from audio.cpp 
     if (didAirJump)
         playAirJumpSound();
 
-    // // testing this so that we stop spamming air jump
-    // if (didGroundJump && !jumpHeldPrev)
-    //     playSound("entity/player/jump",1.0f);
-
-    // // this one spams so much we attempt fix 1 mar 7 2026 
-    // if (didAirJump && !jumpHeldPrev)
-    //     playSound("entity/player/doublejump",1.0f);
-    
     if (didDash)       playEventSound("entity/player/dash",1.0f);
-    if (didLand)       playEventSound("entity/player/land",1.0f);
+
+    // Only trigger land sound on air->ground transition
+    if (!wasGroundedLastFrame && onGround)
+        playEventSound("entity/player/land",1.0f);
+    wasGroundedLastFrame = onGround;
 
     glm::vec2 xy = glm::vec2(vel.x,vel.y) + dashVel;
-    // if (onGround && glm::length(xy) > 0.1f) {
-    // > 0.1f was old, mar 8 2026
-    // setting it to be 0.5f so i stop playing the sound so much
     if (onGround && glm::length(xy) > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {

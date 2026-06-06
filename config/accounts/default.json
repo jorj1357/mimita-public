@@ -1,0 +1,9 @@
+{
+  "name": "default",
+  "binds": {},
+  "debug": {
+    "collision": false,
+    "movement": false,
+    "physics": false
+  }
+}

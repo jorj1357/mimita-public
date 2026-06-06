@@ -51,8 +51,7 @@
 #include "devtools/dev-npc-selection.h"
 #include "devtools/dev-teleport.h"
 #include "devtools/dev-commands.h"
-
-#include <cstdio>
+#include "devtools/terminal.h"
 
 int main(int argc, char** argv)
 {
@@ -76,6 +75,19 @@ int main(int argc, char** argv)
     printf("[MAIN] after engine.init\n");
 
     glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
+    // Terminal character input callback
+    glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
+        Terminal::instance().handleChar(codepoint);
+    });
+    // Terminal key input callback
+    glfwSetKeyCallback(engine.window(), [](GLFWwindow*, int key, int scancode, int action, int mods) {
+        (void)scancode;
+        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            Terminal::instance().handleKey(key, mods);
+        }
+    });
+
     printf("[MAIN] after glfwSetInputMode\n");
 
     fontInit();   // load .fnt + png
@@ -90,6 +102,7 @@ int main(int argc, char** argv)
     DevConfig::instance().load("config/dev_controls.txt");
     DevOverlay::instance().init(engine.window());
     RegisterTeleportCommands();
+    Terminal::instance().init(engine.window());
     printf("[MAIN] dev tools initialized\n");
 
     glEnable(GL_BLEND);
@@ -185,23 +198,19 @@ int main(int argc, char** argv)
         DevOverlay::instance().update();
         NpcSelectionManager::instance().update();
 
-        // Dev menu toggle (F1)
-        static bool f1Prev = false;
-        bool f1Down = glfwGetKey(engine.window(), GLFW_KEY_F1) == GLFW_PRESS;
-        static bool devMenuOpen = false;
-        if (f1Down && !f1Prev) {
-            devMenuOpen = !devMenuOpen;
-            printf("[DEV] Dev menu %s\n", devMenuOpen ? "opened" : "closed");
+        // Terminal toggle on grave accent (`/~)
+        static bool gravePrev = false;
+        bool graveDown = glfwGetKey(engine.window(), GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS;
+        if (graveDown && !gravePrev) {
+            Terminal::instance().toggle();
         }
-        f1Prev = f1Down;
+        gravePrev = graveDown;
 
         if (gameState == GAME_PLAYING)
         {
             DebugVis::beginCollisionFrame();
-            printf("lallaa 1 \n");
             physicsMainUpdate(player, world, input, dt);
             npcSystem.update(world, player, dt);
-                        printf("lallaa 2 \n");
 
 
             applyDebugMovement(player, engine.window(), camera, dt);
@@ -218,7 +227,6 @@ int main(int argc, char** argv)
 
             npcSystem.drawDebug(camera);
             drawDebugStuff(player, camera, world);
-                        printf("lallaa 3 \n");
 
             // Draw NPC selection debug visuals
             if (DebugVis::enabled()) {
@@ -254,18 +262,7 @@ int main(int argc, char** argv)
 
             // Dev overlay (always visible)
             DevOverlay::instance().render();
-
-            // Dev menu (when open)
-            if (devMenuOpen) {
-                DevMenuResult r = drawDevMenu(engine.window(), npcSystem, player);
-                if (r.goBack) {
-                    devMenuOpen = false;
-                }
-            }
         }
-
-                                printf("lallaa 4 \n");
-
 
         if (gameState == GAME_MENU)
         {
@@ -274,11 +271,17 @@ int main(int argc, char** argv)
 
         if (glfwGetKey(engine.window(), GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {
-            gameState = GAME_MENU;
+            if (Terminal::instance().isOpen()) {
+                Terminal::instance().toggle();
+            } else {
+                gameState = GAME_MENU;
+            }
         }
 
+        // Terminal rendering (on top of everything)
+        Terminal::instance().render();
+
         engine.endFrame();
-                                printf("lallaa 4 \n");
 
     }
 
