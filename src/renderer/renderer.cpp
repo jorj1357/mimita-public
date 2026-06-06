@@ -161,7 +161,12 @@ Renderer::Renderer(int w, int h, const char* title) {
     [](GLFWwindow* win, double x, double y)
     {
         Camera* cam = reinterpret_cast<Camera*>(glfwGetWindowUserPointer(win));
-        if (cam) cam->updateMouse(x, y);
+        if (!cam) return;
+        if (glfwGetInputMode(win, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
+            cam->firstMouse = true;
+            return;
+        }
+        cam->updateMouse(x, y);
     });
 
     if (CursorConfig::CUSTOM_CURSOR_ENABLED) {

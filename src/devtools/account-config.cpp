@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <GLFW/glfw3.h>
 #include <nlohmann/json.hpp>
+#include "config/player-settings.h"
 
 using json = nlohmann::json;
 
@@ -163,6 +164,7 @@ bool LoadAccountConfig(const std::string& account) {
         
         DevOverlay::instance().showNotification("Loaded config: " + accountName, 3.0f);
         printf("[ACCOUNT CONFIG] Loaded %zu binds from %s\n", bindsJson.size(), path.c_str());
+        LoadPlayerSettings(account);
         return true;
         
     } catch (const std::exception& e) {
@@ -185,6 +187,16 @@ bool SaveAccountConfig(const std::string& account) {
     }
     j["binds"] = bindsJson;
     
+    std::ifstream existing(path);
+    if (existing.is_open()) {
+        try {
+            json previous;
+            existing >> previous;
+            if (previous.contains("settings"))
+                j["settings"] = previous["settings"];
+        } catch (...) {}
+    }
+
     std::ofstream file(path);
     if (!file.is_open()) {
         printf("[ACCOUNT CONFIG] Failed to open %s for writing\n", path.c_str());
@@ -193,7 +205,8 @@ bool SaveAccountConfig(const std::string& account) {
     
     file << j.dump(4);
     printf("[ACCOUNT CONFIG] Saved %zu binds to %s\n", bindings.size(), path.c_str());
-    return true;
+    file.close();
+    return SavePlayerSettings(account);
 }
 
 void CreateDefaultAccountConfig() {

@@ -450,6 +450,7 @@ void Terminal::init(GLFWwindow* window) {
             }
             
             InputCommandSystem::instance().bindAction(action, key);
+            InputCommandSystem::instance().saveBinds("config/accounts/default.json");
             DevOverlay::instance().showNotification("Input bind: " + action + " = " + keyStr, 3.0f);
             Terminal::instance().addLog("[OK] Input bind updated: " + action + " = " + keyStr);
         }
@@ -542,6 +543,7 @@ void Terminal::toggle() {
     if (mOpen) {
         mInputLine.clear();
         mHistoryIndex = -1;
+        mScrollOffset = 0;
         printf("[TERMINAL] opened\n");
     } else {
         printf("[TERMINAL] closed\n");
@@ -552,6 +554,8 @@ void Terminal::addLog(const std::string& text) {
     mScrollback.push_back(text);
     if ((int)mScrollback.size() > MAX_SCROLLBACK)
         mScrollback.erase(mScrollback.begin());
+    if (mScrollOffset > 0)
+        mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
 }
 
 void Terminal::addHistory(const std::string& input) {
@@ -616,13 +620,23 @@ void Terminal::handleChar(unsigned int codepoint) {
 void Terminal::handleKey(int key, int mods) {
     if (!mOpen) return;
 
-    (void)mods;
-
     if (key == GLFW_KEY_ENTER) {
         executeCurrent();
     } else if (key == GLFW_KEY_BACKSPACE) {
         if (!mInputLine.empty())
             mInputLine.pop_back();
+    } else if ((mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_UP) {
+        mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
+    } else if ((mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_DOWN) {
+        mScrollOffset = std::max(0, mScrollOffset - 1);
+    } else if ((mods & GLFW_MOD_ALT) && key == GLFW_KEY_UP) {
+        mScrollOffset = std::min(mScrollOffset + 10, std::max(0, (int)mScrollback.size() - 1));
+    } else if ((mods & GLFW_MOD_ALT) && key == GLFW_KEY_DOWN) {
+        mScrollOffset = std::max(0, mScrollOffset - 10);
+    } else if (key == GLFW_KEY_PAGE_UP) {
+        mScrollOffset = std::min(mScrollOffset + 10, std::max(0, (int)mScrollback.size() - 1));
+    } else if (key == GLFW_KEY_PAGE_DOWN) {
+        mScrollOffset = std::max(0, mScrollOffset - 10);
     } else if (key == GLFW_KEY_UP) {
         if (!mHistory.empty()) {
             if (mHistoryIndex == -1)
@@ -667,6 +681,18 @@ void Terminal::handleKey(int key, int mods) {
     }
 }
 
+void Terminal::handleScroll(double yOffset)
+{
+    if (!mOpen)
+        return;
+    int lines = (int)std::round(std::fabs(yOffset) * 3.0);
+    if (lines < 1) lines = 1;
+    if (yOffset > 0.0)
+        mScrollOffset = std::min(mScrollOffset + lines, std::max(0, (int)mScrollback.size() - 1));
+    else if (yOffset < 0.0)
+        mScrollOffset = std::max(0, mScrollOffset - lines);
+}
+
 void Terminal::render() {
     if (!mOpen || !mWindow) return;
 
@@ -687,10 +713,11 @@ void Terminal::render() {
     float startY = inputLineY - 12.0f - lineHeight;
 
     int visibleLines = (int)(startY / lineHeight);
-    int scrollStart = std::max(0, (int)mScrollback.size() - visibleLines);
+    int endExclusive = std::max(0, (int)mScrollback.size() - mScrollOffset);
+    int scrollStart = std::max(0, endExclusive - visibleLines);
 
-    float y = startY - lineHeight * ((int)mScrollback.size() - scrollStart);
-    for (int i = scrollStart; i < (int)mScrollback.size(); i++) {
+    float y = startY - lineHeight * (endExclusive - scrollStart - 1);
+    for (int i = scrollStart; i < endExclusive; i++) {
         const std::string& line = mScrollback[i];
         glm::vec4 color = {0.7f, 0.8f, 0.9f, 1.0f};
         if (line.find("[OK]") == 0)
@@ -704,6 +731,11 @@ void Terminal::render() {
 
         uiDrawText(line.c_str(), 16.0f, y, 0.38f, color);
         y += lineHeight;
+    }
+    if (mScrollOffset > 0) {
+        char scrollText[64];
+        snprintf(scrollText, sizeof(scrollText), "[SCROLLBACK: %d lines above newest]", mScrollOffset);
+        uiDrawText(scrollText, fbW - 330.0f, 20.0f, 0.30f, {1.0f, 0.8f, 0.25f, 1.0f});
     }
 
     // Input line background
