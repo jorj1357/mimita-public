@@ -26,3 +26,6 @@ void doDash(
     const glm::vec3& camForward,
     float dt
 );
+
+// Cancel dash velocity - called on wall collision or direction change
+void cancelDashVelocity(Player& p);
