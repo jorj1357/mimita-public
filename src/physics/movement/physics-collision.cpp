@@ -32,7 +32,6 @@
 #include "debug/debug-visuals.h"
 #include "config/player-settings.h"
 #include "devtools/terminal.h"
-#include "physics/movement/physics-dash.h"
 
 // =====================================================
 // DEBUG TOGGLE
@@ -97,9 +96,11 @@ struct RecoveryContact
     const char* label = "recovery";
 };
 
+// CHANGED: Removed dashVel references, jun 6 2026
+// Dash is now part of vel, so bounce applies to vel naturally.
 static inline void reflectVelocityAgainstNormal(Player& p, const glm::vec3& normal, float bounceMultiplier = 0.1f)
 {
-    glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
+    glm::vec3 totalVel = p.vel + p.externalImpulse;
     float into = glm::dot(totalVel, normal);
     if (into >= -0.0001f)
         return;
@@ -112,13 +113,6 @@ static inline void reflectVelocityAgainstNormal(Player& p, const glm::vec3& norm
     
     // Store the change in externalImpulse
     p.externalImpulse += bounced - totalVel;
-    
-    // Also cancel dash velocity in the hit normal direction
-    // This prevents the dash from continuing to push into the wall
-    float dashIntoNormal = glm::dot(glm::vec3(p.dashVel, 0.0f), normal);
-    if (dashIntoNormal < 0.0f) {
-        p.dashVel -= glm::vec2(normal.x, normal.y) * dashIntoNormal;
-    }
 }
 
 static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)

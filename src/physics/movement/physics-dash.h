@@ -13,12 +13,9 @@
 
 class Player;
 
-// Dash logic only.
-// - No collisions
-// - No gravity
-// - No friction (handled elsewhere)
-// - No audio
-// - Config-driven
+// CHANGED: Dash is now a single-frame impulse applied directly to vel, jun 6 2026
+// No persistent dashVel state, no cancelDashVelocity needed.
+// Friction and walk naturally take over on subsequent frames.
 void doDash(
     Player& p,
     const glm::vec2& wishMoveXY,
@@ -26,6 +23,3 @@ void doDash(
     const glm::vec3& camForward,
     float dt
 );
-
-// Cancel dash velocity - called on wall collision or direction change
-void cancelDashVelocity(Player& p);
