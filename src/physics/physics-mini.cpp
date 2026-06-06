@@ -70,6 +70,7 @@ static void physicsMainUpdate_Internal(
     bool freezeHeld
 ){
     dt = std::min(dt, 0.033f);
+    p.inputWishMove = wishMoveXY;
 
     const bool wasOnGround = p.wasOnGround;
 
@@ -81,8 +82,6 @@ static void physicsMainUpdate_Internal(
 
     doGravity(p, dt);
 
-    // now we have friction
-    doFriction(p, p.onGround, dt);
 
     // freeze is after gravit and friction, but before everthing else
     doFreeze(p, freezeHeld, dt);
@@ -176,6 +175,9 @@ static void physicsMainUpdate_Internal(
     p.stableOnGround =
         groundedThisFrame ||
         (p.groundLostTimer < 0.08f);
+
+    // ok now do friction after other stuff 6 6 2026 
+    doFriction(p, p.stableOnGround, dt);
 
     // save previous airborne time BEFORE reset
     float previousAirborneTime = p.airborneTimer;

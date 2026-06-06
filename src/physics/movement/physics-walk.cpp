@@ -47,34 +47,51 @@ void doWalk(
 
     float wishLen = glm::length(wishMoveXY);
 
-    // Ground control is exact: release means stop on this tick.
-    if (wishLen < 0.0001f) {
-        if (p.onGround) {
-            p.vel.x = 0.0f;
-            p.vel.y = 0.0f;
+    // no movement input
+    if (wishLen < 0.0001f)
+    {
+        // grounded stop should be quick but not destructive
+        if (p.stableOnGround)
+        {
+            p.vel.x *= 0.80f;
+            p.vel.y *= 0.80f;
+
+            if (std::abs(p.vel.x) < 0.01f) p.vel.x = 0.0f;
+            if (std::abs(p.vel.y) < 0.01f) p.vel.y = 0.0f;
         }
+
         WALK_LOG("[WALK] No input\n");
         return;
     }
-    
-    // CHANGED: No dash cancel needed — dash is now in vel, jun 6 2026
+
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
     // ---------------- GROUND ----------------
-    if (p.onGround) {
+    if (p.stableOnGround)
+    {
         float targetSpeed = PHYS.moveSpeed;
-        glm::vec2 newVel = wishDir * targetSpeed;
+
+        glm::vec2 targetVel =
+            wishDir * targetSpeed;
+
+        float accel = 42.0f;
+        float t = std::min(1.0f, accel * dt);
+
+        glm::vec2 newVel =
+            glm::mix(velXY, targetVel, t);
 
         WALK_LOG(
-            "[WALK][GROUND] vel(%.2f, %.2f) -> (%.2f, %.2f) speed=%.2f\n",
-            velXY.x, velXY.y,
-            newVel.x, newVel.y,
-            targetSpeed
+            "[WALK][GROUND] vel(%.2f %.2f) -> (%.2f %.2f)\n",
+            velXY.x,
+            velXY.y,
+            newVel.x,
+            newVel.y
         );
 
         p.vel.x = newVel.x;
         p.vel.y = newVel.y;
+
         return;
     }
 
@@ -84,29 +101,29 @@ void doWalk(
         float t = std::min(1.0f, airSteer * dt);
 
         float baseSpeed = PHYS.moveSpeed;
-        // feb 10 2026 todo just define this as 1 value in config.h
-        // not a mult thing
-        float maxAirSpeed = PHYS.moveSpeed * PHYS.airGain;
+        float maxAirSpeed =
+            PHYS.moveSpeed * PHYS.airGain;
 
         float speed = glm::length(velXY);
 
-        if (speed < baseSpeed) {
+        if (speed < baseSpeed)
             speed = baseSpeed;
-        }
 
         float boostedSpeed =
             std::min(speed * PHYS.airGain, maxAirSpeed);
 
-        glm::vec2 target = wishDir * boostedSpeed;
-        glm::vec2 newVel = glm::mix(velXY, target, t);
+        glm::vec2 target =
+            wishDir * boostedSpeed;
+
+        glm::vec2 newVel =
+            glm::mix(velXY, target, t);
 
         WALK_LOG(
-            "[WALK][AIR] vel(%.2f, %.2f) -> (%.2f, %.2f) "
-            "t=%.3f boosted=%.2f\n",
-            velXY.x, velXY.y,
-            newVel.x, newVel.y,
-            t,
-            boostedSpeed
+            "[WALK][AIR] vel(%.2f %.2f) -> (%.2f %.2f)\n",
+            velXY.x,
+            velXY.y,
+            newVel.x,
+            newVel.y
         );
 
         p.vel.x = newVel.x;

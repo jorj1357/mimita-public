@@ -156,7 +156,12 @@ static inline void applyCollisionContact(
             p.externalImpulse += bounced - incoming;
             p.collisionBounceCooldown = 0.08f;
         }
-        else
+        // else
+        // {
+        //     reflectVelocityAgainstNormal(p, normal, 0.0f);
+        // }
+
+        else if (std::fabs(normal.z) < 0.35f)
         {
             reflectVelocityAgainstNormal(p, normal, 0.0f);
         }
