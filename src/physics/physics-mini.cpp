@@ -29,6 +29,8 @@
 
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
+#include "config.h"
+#include "debug/debug-log.h"
 
 static float shortestAngleDegrees(float from, float to)
 {
@@ -69,6 +71,7 @@ static void physicsMainUpdate_Internal(
     dt = std::min(dt, 0.033f);
 
     const bool wasOnGround = p.wasOnGround;
+    const bool hadDashMomentum = glm::length(p.dashVel) > ALMOST_ZERO;
 
     // reset per-frame flags
     p.didGroundJump = false;
@@ -86,6 +89,9 @@ static void physicsMainUpdate_Internal(
 
     doGroundReturn(p, groundReturnPressed, dt);
     doDash(p, wishMoveXY, dashPressed, camForward, dt);
+    if (p.didDash && DebugConfig::DEBUG_INPUT)
+        Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) velocity=(%.2f %.2f)\n",
+                   wishMoveXY.x, wishMoveXY.y, p.dashVel.x, p.dashVel.y);
     doWalk(p, wishMoveXY, dt);
 
     // testing 4 substeps so we have even more collision checsk
@@ -115,6 +121,18 @@ static void physicsMainUpdate_Internal(
 
     // jump AFTER grounded so we actually know it work
     doJump(p, jumpHeld, dt);
+    if (DebugConfig::DEBUG_INPUT) {
+        if (p.didGroundJump)
+            Debug::log(Debug::Category::General, "[JUMP] start ground velocityZ=%.2f\n", p.vel.z);
+        else if (p.didAirJump)
+            Debug::log(Debug::Category::General, "[JUMP] start air velocityZ=%.2f remaining=%d\n",
+                       p.vel.z, p.airJumpsLeft);
+        else if (jumpHeld)
+            Debug::log(Debug::Category::General,
+                       "[JUMP] fail onGround=%d coyote=%.3f airJumps=%d locked=%d armed=%d\n",
+                       (int)p.onGround, p.coyoteTimer, p.airJumpsLeft,
+                       (int)p.airJumpLocked, (int)p.airJumpArmed);
+    }
 
     // this resets ur dash so u can do it again after ur grounded?
     // mar 8 2026 we reset dash in like phsics mini, or dash file, or etc
@@ -181,6 +199,9 @@ static void physicsMainUpdate_Internal(
 
     // store stable state for next frame
     p.wasOnGround = p.stableOnGround;
+
+    if (hadDashMomentum && glm::length(p.dashVel) <= ALMOST_ZERO && DebugConfig::DEBUG_INPUT)
+        Debug::log(Debug::Category::General, "[DASH] end\n");
 
     updateVisualFacingFromCamera(p, camForward, dt);
 

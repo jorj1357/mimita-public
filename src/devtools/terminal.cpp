@@ -80,14 +80,16 @@ void Terminal::init(GLFWwindow* window) {
         "List all available commands",
         "help",
         [this](const std::vector<std::string>&) {
-            std::string list;
-            for (const auto& pair : mCommands) {
-                list += pair.second.name + "\n";
-            }
+            std::vector<const ConsoleCommand*> commands;
+            commands.reserve(mCommands.size());
+            for (const auto& pair : mCommands) commands.push_back(&pair.second);
+            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                return a->name < b->name;
+            });
             addLog("Available commands:");
-            for (const auto& pair : mCommands) {
+            for (const ConsoleCommand* command : commands) {
                 char buf[256];
-                snprintf(buf, sizeof(buf), "  %-24s %s", pair.second.name.c_str(), pair.second.description.c_str());
+                snprintf(buf, sizeof(buf), "  %-24s %s", command->name.c_str(), command->description.c_str());
                 addLog(buf);
             }
         }
@@ -359,10 +361,10 @@ void Terminal::init(GLFWwindow* window) {
         [](const std::vector<std::string>&) {
             const auto& cmd = InputCommandSystem::instance();
             Terminal::instance().addLog("Current input binds:");
-            Terminal::instance().addLog("  move_forward  = " + glfwToKeyName(cmd.getKeyForAction("move_forward")));
-            Terminal::instance().addLog("  move_back     = " + glfwToKeyName(cmd.getKeyForAction("move_back")));
-            Terminal::instance().addLog("  move_left     = " + glfwToKeyName(cmd.getKeyForAction("move_left")));
-            Terminal::instance().addLog("  move_right    = " + glfwToKeyName(cmd.getKeyForAction("move_right")));
+            Terminal::instance().addLog("  walkforward = " + glfwToKeyName(cmd.getKeyForAction("walkforward")));
+            Terminal::instance().addLog("  walkback    = " + glfwToKeyName(cmd.getKeyForAction("walkback")));
+            Terminal::instance().addLog("  walkleft    = " + glfwToKeyName(cmd.getKeyForAction("walkleft")));
+            Terminal::instance().addLog("  walkright   = " + glfwToKeyName(cmd.getKeyForAction("walkright")));
             Terminal::instance().addLog("  jump          = " + glfwToKeyName(cmd.getKeyForAction("jump")));
             Terminal::instance().addLog("  dash          = " + glfwToKeyName(cmd.getKeyForAction("dash")));
             Terminal::instance().addLog("  ground_return = " + glfwToKeyName(cmd.getKeyForAction("ground_return")));
@@ -621,8 +623,6 @@ void Terminal::handleKey(int key, int mods) {
     } else if (key == GLFW_KEY_BACKSPACE) {
         if (!mInputLine.empty())
             mInputLine.pop_back();
-    } else if (key == GLFW_KEY_ESCAPE) {
-        toggle();
     } else if (key == GLFW_KEY_UP) {
         if (!mHistory.empty()) {
             if (mHistoryIndex == -1)

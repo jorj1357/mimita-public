@@ -33,6 +33,8 @@ public:
     
     void init(GLFWwindow* window);
     void update(float dt);
+    void pulseAction(const std::string& actionName);
+    void setKeyboardEnabled(bool enabled) { mKeyboardEnabled = enabled; }
     
     // Query command state
     const InputCommandState& getState(InputAction action) const;
@@ -68,6 +70,8 @@ private:
     std::unordered_map<std::string, int> mActionToKey;
     std::unordered_map<int, std::string> mKeyToAction;
     bool mPrevKeyStates[512] = {false};
+    std::unordered_map<std::string, bool> mPendingPulses;
+    bool mKeyboardEnabled = true;
 };
 
 const char* inputActionToString(InputAction action);

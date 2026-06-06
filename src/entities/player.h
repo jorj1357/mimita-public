@@ -69,6 +69,13 @@ struct PhysicalBody {
 
 class Player {
 public:
+    std::string username = "admin";
+    int currentHp = 100;
+    int maxHp = 100;
+    bool inventoryOpen = false;
+    int equippedSlot = 1;
+    int revolverCylinder = 6;
+    int revolverReserve = 1337;
     // -------- Core State --------
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
@@ -140,6 +147,7 @@ public:
     float groundLostTimer = 0.0f;
     float airborneTimer   = 0.0f;
     bool  stableOnGround  = true;
+    int collisionStuckFrames = 0;
 
     float footstepTimer = 0.0f;
 

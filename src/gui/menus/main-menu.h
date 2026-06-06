@@ -20,6 +20,7 @@ struct MainMenuResult
 {
     bool goPlay = false;
     bool goSettings = false;
+    bool startSandbox = false;
 };
 
 MainMenuResult drawMainMenu(GLFWwindow* win);
