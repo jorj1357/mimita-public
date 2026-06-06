@@ -79,6 +79,7 @@ public:
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     glm::vec3 externalImpulse{0.0f};
+    glm::vec2 inputWishMove{0.0f};
 
     bool onGround = false;
     float yaw = 0.0f;
