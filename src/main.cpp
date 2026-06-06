@@ -52,6 +52,8 @@
 #include "devtools/dev-teleport.h"
 #include "devtools/dev-commands.h"
 #include "devtools/terminal.h"
+#include "devtools/account-config.h"
+#include "devtools/npc-spawn-commands.h"
 
 int main(int argc, char** argv)
 {
@@ -101,6 +103,9 @@ int main(int argc, char** argv)
     // Dev tools init
     DevConfig::instance().load("config/dev_controls.txt");
     DevOverlay::instance().init(engine.window());
+    DevOverlay::instance().showNotification("Dev mode enabled. Press ` to open console.", 5.0f);
+    CreateDefaultAccountConfig();
+    LoadAccountConfig("default");
     RegisterTeleportCommands();
     Terminal::instance().init(engine.window());
     printf("[MAIN] dev tools initialized\n");
@@ -195,7 +200,7 @@ int main(int argc, char** argv)
         InputState input = pollInput(engine.window(), camera);
 
         // Dev tools update
-        DevOverlay::instance().update();
+        DevOverlay::instance().update(dt);
         NpcSelectionManager::instance().update();
 
         // Terminal toggle on grave accent (`/~)
@@ -212,6 +217,9 @@ int main(int argc, char** argv)
             physicsMainUpdate(player, world, input, dt);
             npcSystem.update(world, player, dt);
 
+            // Process NPC spawn commands (from console or F2)
+            ProcessNpcSpawnCommands(npcSystem, camera, world, player);
+            HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
 
             applyDebugMovement(player, engine.window(), camera, dt);
 
@@ -260,7 +268,7 @@ int main(int argc, char** argv)
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
 
-            // Dev overlay (always visible)
+            // Dev overlay notifications (temporary)
             DevOverlay::instance().render();
         }
 

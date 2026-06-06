@@ -972,13 +972,14 @@ void Player::updateAudio(float dt)
 
     if (didDash)       playEventSound("entity/player/dash",1.0f);
 
-    // Only trigger land sound on air->ground transition
-    if (!wasGroundedLastFrame && onGround)
+    // Only trigger land sound on stable air->ground transition
+    // Use stableOnGround to avoid flickering from collision jitter
+    if (!wasStableGroundedLastFrame && stableOnGround)
         playEventSound("entity/player/land",1.0f);
-    wasGroundedLastFrame = onGround;
+    wasStableGroundedLastFrame = stableOnGround;
 
     glm::vec2 xy = glm::vec2(vel.x,vel.y) + dashVel;
-    if (onGround && glm::length(xy) > 0.5f) {
+    if (stableOnGround && glm::length(xy) > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
             playRandomFootstep();
