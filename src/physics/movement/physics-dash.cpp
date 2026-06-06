@@ -104,3 +104,12 @@ void doDash(
         p.dashVel.x, p.dashVel.y
     );
 }
+
+// Cancel dash velocity - called on wall collision or direction change
+void cancelDashVelocity(Player& p)
+{
+    if (glm::length(p.dashVel) > 0.001f) {
+        DASH_LOG("[DASH CANCEL] dashVel=(%.2f %.2f) -> zero\n", p.dashVel.x, p.dashVel.y);
+        p.dashVel = glm::vec2(0.0f);
+    }
+}

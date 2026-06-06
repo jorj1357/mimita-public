@@ -32,6 +32,7 @@
 #include "debug/debug-visuals.h"
 #include "config/player-settings.h"
 #include "devtools/terminal.h"
+#include "physics/movement/physics-dash.h"
 
 // =====================================================
 // DEBUG TOGGLE
@@ -96,15 +97,33 @@ struct RecoveryContact
     const char* label = "recovery";
 };
 
-static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
+static inline void reflectVelocityAgainstNormal(Player& p, const glm::vec3& normal, float bounceMultiplier = 0.1f)
 {
     glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
     float into = glm::dot(totalVel, normal);
     if (into >= -0.0001f)
         return;
 
-    glm::vec3 resolved = totalVel - normal * into;
-    p.externalImpulse += resolved - totalVel;
+    // Reflect: R = V - 2 * (V·N) * N
+    glm::vec3 reflected = totalVel - 2.0f * into * normal;
+    
+    // Apply weak bounce multiplier
+    glm::vec3 bounced = reflected * bounceMultiplier;
+    
+    // Store the change in externalImpulse
+    p.externalImpulse += bounced - totalVel;
+    
+    // Also cancel dash velocity in the hit normal direction
+    // This prevents the dash from continuing to push into the wall
+    float dashIntoNormal = glm::dot(glm::vec3(p.dashVel, 0.0f), normal);
+    if (dashIntoNormal < 0.0f) {
+        p.dashVel -= glm::vec2(normal.x, normal.y) * dashIntoNormal;
+    }
+}
+
+static inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
+{
+    reflectVelocityAgainstNormal(p, normal, 0.0f);
 }
 
 static inline void applyCollisionContact(
@@ -120,25 +139,56 @@ static inline void applyCollisionContact(
         Debug::log(Debug::Category::Collision,
                    "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
                    label, triangleIndex, normal.x, normal.y, normal.z, penetration);
+    
+    // Debug logging for dash collisions
+    if (DebugConfig::DEBUG_INPUT && glm::length(p.dashVel) > 1.0f) {
+        Debug::log(Debug::Category::Collision,
+            "[DASH COLLISION] dashVel=(%.2f %.2f) normal=(%.2f %.2f %.2f) speed=%.2f\n",
+            p.dashVel.x, p.dashVel.y, normal.x, normal.y, normal.z,
+            glm::length(p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse));
+    }
+
     glm::vec3 incoming = p.vel + glm::vec3(p.dashVel, 0.0f) + p.externalImpulse;
     float speed = glm::length(incoming);
     float into = glm::dot(incoming, normal);
     const PlayerSettings& cfg = GetPlayerSettings();
+    
+    bool isDashing = glm::length(p.dashVel) > 1.0f;
+    bool isWallHit = std::fabs(normal.z) < 0.45f;
+    float bounceMultiplier = isDashing ? 0.1f : (cfg.collisionBounceStrength * (isDashing ? 1.8f : 1.0f));
+    
+    // Cancel dash velocity on wall collision while dashing
+    if (isDashing && isWallHit && into < 0.0f) {
+        cancelDashVelocity(p);
+    }
+    
     if (p.collisionBounceCooldown <= 0.0f &&
         std::fabs(normal.z) < 0.45f &&
         into < 0.0f &&
         speed >= cfg.collisionBounceMinSpeed) {
+        
+        // Reflect: R = V - 2 * (V·N) * N
         glm::vec3 reflected = incoming - 2.0f * into * normal;
-        float dashFactor = glm::length(p.dashVel) > 1.0f ? 1.8f : 1.0f;
-        float strength = std::clamp(cfg.collisionBounceStrength * dashFactor, 0.0f, 0.8f);
-        glm::vec3 bounced = glm::mix(incoming, reflected, strength);
+        
+        // Apply weak bounce (0.1x for dash, normal strength otherwise)
+        glm::vec3 bounced = reflected * bounceMultiplier;
+        
         float bouncedSpeed = std::min(glm::length(bounced), cfg.collisionBounceMaxSpeed);
         if (glm::length(bounced) > 0.001f)
             bounced = glm::normalize(bounced) * bouncedSpeed;
+        
         p.externalImpulse += bounced - incoming;
         p.collisionBounceCooldown = 0.08f;
+        
+        if (DebugConfig::DEBUG_INPUT) {
+            Debug::log(Debug::Category::Collision,
+                "[BOUNCE] reflected=(%.2f %.2f %.2f) bounced=(%.2f %.2f %.2f) mult=%.2f\n",
+                reflected.x, reflected.y, reflected.z,
+                bounced.x, bounced.y, bounced.z, bounceMultiplier);
+        }
     } else {
-        clampVelocityAgainstNormal(p, normal);
+        // For dash collisions, use weak bounce; for others just clamp
+        reflectVelocityAgainstNormal(p, normal, isDashing ? 0.1f : 0.0f);
     }
 
     if (normal.z > 0.35f)
