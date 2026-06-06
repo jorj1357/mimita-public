@@ -13,7 +13,6 @@ struct PhysicsConfig {
     float gravity;
     float moveSpeed;
     float jumpStrength;
-    float airGain;
 };
 
 inline PhysicsConfig PHYS = {
@@ -21,8 +20,11 @@ inline PhysicsConfig PHYS = {
     -58.0f, // gravity
     20.0f, // move speed
     // 30.0f, // move speed
-    12.0f, // jump strength
+    // 12.0f, // jump strength
     // 22.0f, // jump strength
+    19.0f, // jump strength
+    // 22.0f, // jump strength
+    // 6 6 2026 these values dont even do antthing its just 3  not 4 
     // 1.1f // amount of whatever gained in air feb 10 2026
     // 1.0f // amount of whatever gained in air feb 10 2026
 };
@@ -120,8 +122,8 @@ inline float MAX_PLAYER_MOVE_SPEED = PHYS.moveSpeed * 100;
 
 // External momentum is intentionally separate from normal movement speed.
 inline float MAX_EXTERNAL_IMPULSE_SPEED = 120.0f;
-// inline float EXTERNAL_IMPULSE_DECAY = 0.6f;
-inline float EXTERNAL_IMPULSE_DECAY = 3.0f;
+inline float EXTERNAL_IMPULSE_DECAY = 0.6f;
+// inline float EXTERNAL_IMPULSE_DECAY = 3.0f;
 // inline float EXTERNAL_IMPULSE_DECAY = 0.9f;
 // inline float EXTERNAL_IMPULSE_DECAY = 1.1f;
 // inline float EXTERNAL_IMPULSE_DECAY = 10.1f;

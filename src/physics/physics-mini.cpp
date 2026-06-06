@@ -91,6 +91,13 @@ static void physicsMainUpdate_Internal(
     if (p.didDash && DebugConfig::DEBUG_INPUT)
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
+    // instant movement override kills momentum
+    if (movementPressed)
+    {
+        p.externalImpulse.x = 0.0f;
+        p.externalImpulse.y = 0.0f;
+    }
+
     if (movementPressed)
         doWalk(p, wishMoveXY, dt);
 

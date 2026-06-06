@@ -209,7 +209,20 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
 
     const PlayerSettings& cfg = GetPlayerSettings();
     float recoil = cfg.weaponRecoilStrength;
-    shooter.externalImpulse -= mForward * recoil;
+    // shooter.externalImpulse -= mForward * recoil;
+    // dont push me in air so much 6 6 2026 when shooting 
+    glm::vec3 recoilDir =
+        glm::vec3(
+            -mForward.x,
+            -mForward.y,
+            0.0f
+        );
+
+    if (glm::length(recoilDir) > 0.001f)
+        recoilDir = glm::normalize(recoilDir);
+
+    shooter.externalImpulse += recoilDir * recoil;
+    
     mRecoil = std::min(mRecoil + recoil * 0.12f, 5.0f);
     mDisturbance += 0.6f;
     return result;
