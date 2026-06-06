@@ -714,3 +714,21 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
     flushDebugLines(camera);
     drawDebugLabels(camera);
 }
+
+namespace DebugVis {
+    void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
+        ::drawWireSphere(camera, center, radius, color);
+    }
+    
+    void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {
+        ::drawLine(camera, a, b, color);
+    }
+    
+    void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color) {
+        ::drawWorldLabel(worldPos, text, color);
+    }
+    
+    void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color) {
+        ::drawPointCross(camera, p, size, color);
+    }
+}

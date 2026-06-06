@@ -1,0 +1,16 @@
+# Dev Controls Config
+# Format: KEY = action_name # Description
+# Reload with F12 in-game
+
+F1 = toggle_npc_menu        # Toggle NPC Dev Menu
+F2 = spawn_npc              # Spawn NPC at cursor
+F3 = teleport_selected_to_player  # Teleport selected NPCs to player
+F4 = select_all_npcs        # Select all NPCs
+F5 = clear_selection        # Clear NPC selection
+F6 = teleport_selected_to_coords  # Teleport selected to coordinates
+F7 = npc_menu_select_next   # Cycle NPC selection next
+F8 = npc_menu_select_prev   # Cycle NPC selection prev
+F9 = spawn_npc_diff_1       # Spawn NPC difficulty 1
+F10 = spawn_npc_diff_5      # Spawn NPC difficulty 5
+F11 = spawn_npc_diff_10     # Spawn NPC difficulty 10
+F12 = reload_dev_config     # Reload this config file
