@@ -20,28 +20,14 @@
 
 PlayMenuResult drawPlayMenu(GLFWwindow* win)
 {
-    printf("[PLAY MENU] begin\n");
-
     PlayMenuResult r{};
 
-    guiLabel("Play", 860, 220);
+    guiLabel("Community Servers (placeholder)", 720, 220);
 
-    if (guiButton(win, "Sandbox", 800, 360, 320, 70, {0.2f,0.7f,1.0f,1.0f}))
+    if (guiButton(win, "Dummy Server: localhost", 760, 360, 400, 70, {0.2f,0.7f,1.0f,1.0f}))
     {
-        printf("[PLAY MENU] Sandbox pressed\n");
+        printf("[PLAY MENU] Dummy server selected\n");
         r.startSandbox = true;
-    }
-
-    if (guiButton(win, "Time Trials", 800, 450, 320, 70, {0.7f,0.5f,1.0f,1.0f}))
-    {
-        printf("[PLAY MENU] Time Trials pressed\n");
-        r.startTimeTrials = true;
-    }
-
-    if (guiButton(win, "Practice", 800, 540, 320, 70, {0.7f,0.7f,0.7f,1.0f}))
-    {
-        printf("[PLAY MENU] Practice pressed\n");
-        r.startPractice = true;
     }
 
     if (guiBackButton(win))
@@ -50,6 +36,5 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
         r.goBack = true;
     }
 
-    printf("[PLAY MENU] end\n");
     return r;
 }

@@ -129,20 +129,20 @@ void InputCommandSystem::setupDefaultBinds() {
     mActionStates.clear();
     
     // Default binds
-    bindAction("move_forward", GLFW_KEY_W);
-    bindAction("move_back", GLFW_KEY_S);
-    bindAction("move_left", GLFW_KEY_A);
-    bindAction("move_right", GLFW_KEY_D);
+    bindAction("walkforward", GLFW_KEY_W);
+    bindAction("walkback", GLFW_KEY_S);
+    bindAction("walkleft", GLFW_KEY_A);
+    bindAction("walkright", GLFW_KEY_D);
     bindAction("jump", GLFW_KEY_SPACE);
     bindAction("dash", GLFW_KEY_LEFT_SHIFT);
     bindAction("ground_return", GLFW_KEY_B);
     bindAction("freeze", GLFW_KEY_G);
     
     // Initialize states
-    mActionStates["move_forward"] = {};
-    mActionStates["move_back"] = {};
-    mActionStates["move_left"] = {};
-    mActionStates["move_right"] = {};
+    mActionStates["walkforward"] = {};
+    mActionStates["walkback"] = {};
+    mActionStates["walkleft"] = {};
+    mActionStates["walkright"] = {};
     mActionStates["jump"] = {};
     mActionStates["dash"] = {};
     mActionStates["ground_return"] = {};
@@ -158,16 +158,30 @@ void InputCommandSystem::update(float dt) {
         if (it == mActionToKey.end()) continue;
         
         int key = it->second;
-        bool currDown = glfwGetKey(mWindow, key) == GLFW_PRESS;
+        bool currDown = mKeyboardEnabled && glfwGetKey(mWindow, key) == GLFW_PRESS;
         bool prevDown = mPrevKeyStates[key];
         
         state.pressed = currDown && !prevDown;
         state.released = !currDown && prevDown;
         state.held = currDown;
         state.value = currDown ? 1.0f : 0.0f;
+
+        auto pulse = mPendingPulses.find(actionName);
+        if (pulse != mPendingPulses.end() && pulse->second) {
+            state.pressed = true;
+            state.held = true;
+            state.value = 1.0f;
+            pulse->second = false;
+        }
         
         mPrevKeyStates[key] = currDown;
     }
+}
+
+void InputCommandSystem::pulseAction(const std::string& actionName) {
+    if (mActionStates.find(actionName) == mActionStates.end())
+        mActionStates[actionName] = {};
+    mPendingPulses[actionName] = true;
 }
 
 const InputCommandState& InputCommandSystem::getState(InputAction action) const {
@@ -281,10 +295,10 @@ void InputCommandSystem::saveBinds(const std::string& path) const {
 
 const char* inputActionToString(InputAction action) {
     switch (action) {
-        case InputAction::MoveForward: return "move_forward";
-        case InputAction::MoveBack: return "move_back";
-        case InputAction::MoveLeft: return "move_left";
-        case InputAction::MoveRight: return "move_right";
+        case InputAction::MoveForward: return "walkforward";
+        case InputAction::MoveBack: return "walkback";
+        case InputAction::MoveLeft: return "walkleft";
+        case InputAction::MoveRight: return "walkright";
         case InputAction::Jump: return "jump";
         case InputAction::Dash: return "dash";
         case InputAction::GroundReturn: return "ground_return";
@@ -294,10 +308,10 @@ const char* inputActionToString(InputAction action) {
 }
 
 InputAction stringToInputAction(const std::string& str) {
-    if (str == "move_forward") return InputAction::MoveForward;
-    if (str == "move_back") return InputAction::MoveBack;
-    if (str == "move_left") return InputAction::MoveLeft;
-    if (str == "move_right") return InputAction::MoveRight;
+    if (str == "walkforward" || str == "move_forward") return InputAction::MoveForward;
+    if (str == "walkback" || str == "move_back") return InputAction::MoveBack;
+    if (str == "walkleft" || str == "move_left") return InputAction::MoveLeft;
+    if (str == "walkright" || str == "move_right") return InputAction::MoveRight;
     if (str == "jump") return InputAction::Jump;
     if (str == "dash") return InputAction::Dash;
     if (str == "ground_return") return InputAction::GroundReturn;

@@ -75,6 +75,7 @@ public:
     float lastTargetLogDistance = -1.0f;
     glm::vec3 wanderDirection{1.0f, 0.0f, 0.0f};
     glm::vec3 previousPosition{0.0f};
+    float stuckTimer = 0.0f;
     unsigned int rngState = 1;
 
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);

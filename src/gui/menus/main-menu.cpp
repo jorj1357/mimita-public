@@ -41,5 +41,8 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
         r.goSettings = true;
     }
 
+    if (uiButton(win, "SANDBOX", {cx - 125.0f, cy + 159.0f, 250.0f, 58.0f}, {0.25f,0.55f,0.95f,1.0f}).clicked)
+        r.startSandbox = true;
+
     return r;
 }

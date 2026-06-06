@@ -27,6 +27,10 @@ namespace DebugConfig
     inline bool DEBUG_AO_ONLY = false;
     inline bool DEBUG_COLLISION_VISUALS = true;
     inline bool DEBUG_UI = false;
+    inline bool DEBUG_TICKS = false;
+    inline bool DEBUG_INPUT = false;
+    inline bool DEBUG_COMMANDS = false;
+    inline bool DEBUG_NPC = false;
 
     inline void ResetAll()
     {
@@ -45,6 +49,10 @@ namespace DebugConfig
         DEBUG_AO_ONLY = false;
         DEBUG_COLLISION_VISUALS = true;
         DEBUG_UI = false;
+        DEBUG_TICKS = false;
+        DEBUG_INPUT = false;
+        DEBUG_COMMANDS = false;
+        DEBUG_NPC = false;
     }
 }
 

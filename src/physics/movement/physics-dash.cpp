@@ -32,30 +32,9 @@ void doDash(
     const glm::vec3& camForward,
     float dt
 ) {
-    // --------------------------------------------------
-    // PLAYER INPUT CANCELS DASH (NEW INPUT ONLY)
-    // --------------------------------------------------
-
     bool moveHeld = glm::length(wishMoveXY) > 0.01f;
-    bool moveJustPressed = moveHeld && !p.moveHeldPrev;
-
     p.moveHeldPrev = moveHeld;
-
-    // only cancel dash if a NEW movement press occurs
-    if (moveJustPressed && glm::length(p.dashVel) > 0.0f)
-    {
-        p.dashVel = glm::vec2(0.0f);
-
-        DASH_LOG("[DASH] cancelled by new movement input\n");
-    }
-    // --------------------------------------------------
-    // EDGE DETECT DASH PRESS
-    // --------------------------------------------------
-
-    bool dashJustPressed = dashPressed && !p.dashHeldPrev;
-    p.dashHeldPrev = dashPressed;
-
-    if (!dashJustPressed)
+    if (!dashPressed)
         return;
 
     if (!p.dashAvailable)
