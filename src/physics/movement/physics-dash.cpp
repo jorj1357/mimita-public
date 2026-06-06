@@ -64,21 +64,35 @@ void doDash(
     // SINGLE-FRAME IMPULSE to vel
     // --------------------------------------------------
 
-    glm::vec2 impulse = dashDir * DASH_IMPULSE;
+    glm::vec2 impulse =
+    dashDir * DASH_IMPULSE;
 
-    p.vel.x += impulse.x;
-    p.vel.y += impulse.y;
+    // add dash as EXTERNAL physics force
+    p.externalImpulse.x += impulse.x;
+    p.externalImpulse.y += impulse.y;
 
-    // Clamp total horizontal speed
-    glm::vec2 totalXY(p.vel.x, p.vel.y);
-    float totalSpeed = glm::length(totalXY);
-    if (totalSpeed > MAX_PLAYER_MOVE_SPEED)
+    // clamp ONLY external impulse
+    glm::vec2 impulseXY(
+        p.externalImpulse.x,
+        p.externalImpulse.y
+    );
+
+    float impulseSpeed =
+        glm::length(impulseXY);
+
+    float maxImpulseSpeed =
+        MAX_PLAYER_MOVE_SPEED;
+
+    if (impulseSpeed > maxImpulseSpeed)
     {
-        glm::vec2 clamped = (totalXY / totalSpeed) * MAX_PLAYER_MOVE_SPEED;
-        p.vel.x = clamped.x;
-        p.vel.y = clamped.y;
-    }
+        glm::vec2 clamped =
+            (impulseXY / impulseSpeed) *
+            maxImpulseSpeed;
 
+        p.externalImpulse.x = clamped.x;
+        p.externalImpulse.y = clamped.y;
+    }
+    
     // consume dash
     p.dashAvailable = false;
 
