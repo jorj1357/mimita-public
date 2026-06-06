@@ -117,7 +117,10 @@ inline float MAX_PLAYER_MOVE_SPEED = PHYS.moveSpeed * 100;
 // External momentum is intentionally separate from normal movement speed.
 inline float MAX_EXTERNAL_IMPULSE_SPEED = 120.0f;
 // inline float EXTERNAL_IMPULSE_DECAY = 0.6f;
-inline float EXTERNAL_IMPULSE_DECAY = 0.9f;
+// inline float EXTERNAL_IMPULSE_DECAY = 0.9f;
+// inline float EXTERNAL_IMPULSE_DECAY = 1.1f;
+// inline float EXTERNAL_IMPULSE_DECAY = 10.1f;
+inline float EXTERNAL_IMPULSE_DECAY = 5.0f;
 inline float EXTERNAL_IMPULSE_STEER_RATE = 4.0f;
 inline float EXTERNAL_IMPULSE_BRAKE_RATE = 2.5f;
 
