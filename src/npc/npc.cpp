@@ -111,10 +111,10 @@ void logActionChange(const Npc& npc, const NpcAction& next)
 void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
-    sensors.selfVel = npc.body.vel + glm::vec3(npc.body.dashVel.x, npc.body.dashVel.y, 0.0f);
+    sensors.selfVel = npc.body.vel;
     sensors.grounded = npc.body.onGround;
     sensors.targetPos = player.pos;
-    sensors.targetVel = player.vel + glm::vec3(player.dashVel.x, player.dashVel.y, 0.0f);
+    sensors.targetVel = player.vel;
     sensors.toTarget = player.pos - npc.body.pos;
     sensors.targetDistance = glm::length(sensors.toTarget);
     sensors.hasTarget = npc.difficulty > 0.05f && sensors.targetDistance <= npc.tuning.awarenessRange;
@@ -272,7 +272,6 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     body.currentHp = body.maxHp;
     body.pos = spawn;
     body.vel = {0.0f, 0.0f, 0.0f};
-    body.dashVel = {0.0f, 0.0f};
     body.syncLegacyStateToLayers();
     previousPosition = body.pos;
     wanderDirection = randomPlanarDirection(rngState);
@@ -337,7 +336,6 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
     {
         if (npc.body.currentHp <= 0) {
             npc.body.vel = glm::vec3(0.0f);
-            npc.body.dashVel = glm::vec2(0.0f);
             continue;
         }
         npc.reactionTimer -= dt;
@@ -426,7 +424,7 @@ std::vector<DebugVis::NpcDebugInfo> NpcSystem::debugInfo() const
     {
         DebugVis::NpcDebugInfo info;
         info.position = npc.body.pos;
-        info.velocity = npc.body.vel + glm::vec3(npc.body.dashVel.x, npc.body.dashVel.y, 0.0f);
+        info.velocity = npc.body.vel;
         info.targetPosition = npc.sensors.targetPos;
         info.moveDirection = npc.chosenAction.direction;
         info.pathTarget = npc.chosenAction.pathTarget;

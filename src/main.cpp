@@ -813,7 +813,7 @@ int main(int argc, char** argv)
             snprintf(hpText, sizeof(hpText), "HP: %d/%d", player.currentHp, player.maxHp);
             uiDrawText(hpText, 24, 116, 0.38f, {0.35f, 1.0f, 0.45f, 1.0f});
             {
-                glm::vec3 totalVel = player.vel + glm::vec3(player.dashVel.x, player.dashVel.y, 0.0f);
+                glm::vec3 totalVel = player.vel;
                 float speed = glm::length(totalVel);
                 char speedText[64];
                 snprintf(speedText, sizeof(speedText), "Speed: %.2f m/s", speed);

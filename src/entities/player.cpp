@@ -12,7 +12,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
-#include "physics/config.h"
 #include "map/map_loader.h"
 #include "tinygltf/tiny_gltf.h"
 #include "renderer/renderer.h"
@@ -20,6 +19,7 @@
 #include "audio/audio.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
+#include "physics/config.h"
 #include "debug/gl-debug.h"
 #include "effects/effect-part.h"
 
@@ -544,9 +544,7 @@ void Player::reset()
     // pos = {1,5,30};
     pos = {1,5,60};
     vel = {0,0,0};
-    dashVel = {0,0};
     externalImpulse = {0,0,0};
-    dashLockedDirection = {0,0};
     onGround = false;
 
     // put this here so idk? mar 7 2026
@@ -698,7 +696,6 @@ void Player::syncLegacyStateToLayers()
     movementCapsule.position = origin.position;
     movementCapsule.rotation = origin.rotation;
     movementCapsule.velocity = vel;
-    movementCapsule.dashVelocity = dashVel;
     movementCapsule.radius = PLAYER_RADIUS;
     movementCapsule.height = PLAYER_HEIGHT;
     movementCapsule.onGround = onGround;
@@ -708,7 +705,6 @@ void Player::syncLayersToLegacyState()
 {
     pos = origin.position;
     vel = movementCapsule.velocity;
-    dashVel = movementCapsule.dashVelocity;
     onGround = movementCapsule.onGround;
 }
 
@@ -758,10 +754,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     proceduralTime += dt;
     weaponSwayTime += dt;
 
-    glm::vec2 planarVel = glm::vec2(vel.x, vel.y) + dashVel;
+    glm::vec2 planarVel = glm::vec2(vel.x, vel.y);
     float speed = glm::length(planarVel);
     float move01 = std::min(speed / std::max(PHYS.moveSpeed, 0.001f), 1.6f);
-    float dash01 = std::min(glm::length(dashVel) / std::max(DASH_IMPULSE, 0.001f), 1.0f);
+    float dash01 = 0.0f;
     glm::vec3 acceleration = (dt > 0.0001f) ? (vel - previousProceduralVelocity) / dt : glm::vec3(0.0f);
     previousProceduralVelocity = vel;
 
@@ -927,8 +923,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // torso side tilt from dash
             target.rotationEuler.z +=
                 std::clamp(
-                    dashVel.x * -0.18f +
-                    dashVel.y * 0.08f,
+                    0.0f,
                     -8.0f,
                     8.0f
                 );
@@ -958,8 +953,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // subtle side stabilization
             target.rotationEuler.z +=
                 std::clamp(
-                    dashVel.x * 0.08f -
-                    dashVel.y * 0.04f,
+                    0.0f,
                     -4.0f,
                     4.0f
                 );
@@ -1056,7 +1050,7 @@ void Player::updateAudio(float dt)
         playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
     wasStableGroundedLastFrame = stableOnGround;
 
-    glm::vec2 xy = glm::vec2(vel.x,vel.y) + dashVel;
+    glm::vec2 xy = glm::vec2(vel.x,vel.y);
     if (stableOnGround && glm::length(xy) > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {

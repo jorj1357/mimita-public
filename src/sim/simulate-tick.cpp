@@ -79,12 +79,11 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 
     if (DebugConfig::DEBUG_TICKS)
         Debug::log(Debug::Category::General,
-                   "[PLAYER] tick=%llu pos=(%.3f %.3f %.3f) grounded=%d vel=(%.3f %.3f %.3f) dash=(%.3f %.3f)\n",
+                   "[PLAYER] tick=%llu pos=(%.3f %.3f %.3f) grounded=%d vel=(%.3f %.3f %.3f)\n",
                    (unsigned long long)sim.tick,
                    sim.player->pos.x, sim.player->pos.y, sim.player->pos.z,
                    (int)sim.player->onGround,
-                   sim.player->vel.x, sim.player->vel.y, sim.player->vel.z,
-                   sim.player->dashVel.x, sim.player->dashVel.y);
+                   sim.player->vel.x, sim.player->vel.y, sim.player->vel.z);
 
     sim.tick++;
 }

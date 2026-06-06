@@ -72,7 +72,6 @@ static void physicsMainUpdate_Internal(
     dt = std::min(dt, 0.033f);
 
     const bool wasOnGround = p.wasOnGround;
-    const bool hadDashMomentum = glm::length(p.dashVel) > ALMOST_ZERO;
 
     // reset per-frame flags
     p.didGroundJump = false;
@@ -90,12 +89,11 @@ static void physicsMainUpdate_Internal(
 
     doGroundReturn(p, groundReturnPressed, dt);
     doDash(p, wishMoveXY, dashPressed, camForward, dt);
+    // CHANGED: No dashVel — walk always runs when there's movement input, jun 6 2026
     if (p.didDash && DebugConfig::DEBUG_INPUT)
-        Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) velocity=(%.2f %.2f)\n",
-                   wishMoveXY.x, wishMoveXY.y, p.dashVel.x, p.dashVel.y);
-    if (movementPressed && glm::length(p.dashVel) > ALMOST_ZERO)
-        p.dashVel = glm::vec2(0.0f);
-    if (glm::length(p.dashVel) <= ALMOST_ZERO || movementPressed)
+        Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
+                   wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
+    if (movementPressed)
         doWalk(p, wishMoveXY, dt);
 
     // testing 4 substeps so we have even more collision checsk
@@ -204,8 +202,7 @@ static void physicsMainUpdate_Internal(
     // store stable state for next frame
     p.wasOnGround = p.stableOnGround;
 
-    if (hadDashMomentum && glm::length(p.dashVel) <= ALMOST_ZERO && DebugConfig::DEBUG_INPUT)
-        Debug::log(Debug::Category::General, "[DASH] end\n");
+    // CHANGED: No dashVel tracking, jun 6 2026
 
     updateVisualFacingFromCamera(p, camForward, dt);
 
