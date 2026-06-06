@@ -159,8 +159,16 @@ static inline void applyCollisionContact(
     {
         groundedThisFrame = true;
         applyTouchResets(p);
+
         if (p.vel.z < 0.0f)
             p.vel.z = 0.0f;
+
+        if (p.vel.z > 0.0f)
+            p.vel.z = 0.0f;
+
+        if (p.externalImpulse.z > 0.0f)
+            p.externalImpulse.z = 0.0f;
+
         DebugVis::recordGroundNormal(point, normal, label);
     }
     else if (normal.z < -0.35f)
@@ -1018,7 +1026,17 @@ static void doGLBTriangleCollisions(
         if (!earliest.hit)
             break;
 
-        p.pos += earliest.normal * SURFACE_SLOP;
+        // p.pos += earliest.normal * SURFACE_SLOP;
+        glm::vec3 depen = earliest.normal;
+
+        // prevent wedges from pushing upward
+        if (depen.z > 0.0f && depen.z < 0.7f)
+            depen.z = 0.0f;
+
+        if (glm::length(depen) > 0.0001f)
+            depen = glm::normalize(depen);
+
+        p.pos += depen * SURFACE_SLOP;
         DebugVis::recordHit(earliest.point, earliest.normal, earliest.triangleIndex, earliest.colliderName.c_str());
         DebugVis::recordTriangle(world.collisionMesh.triangles[earliest.triangleIndex], earliest.triangleIndex, "sweep-hit-triangle");
         remainingMove -= stepMove;
@@ -1314,7 +1332,19 @@ static void doGLBTriangleCollisions(
         // Only project against wall-like normals — floors should never cancel horizontal velocity
         if (std::fabs(c.normal.z) > 0.35f)
             continue;
-        projectVelocityAgainstNormal(p, c.normal);
+        // projectVelocityAgainstNormal(p, c.normal);
+        glm::vec3 wallNormal = c.normal;
+
+        // walls only
+        if (std::fabs(wallNormal.z) < 0.45f)
+        {
+            wallNormal.z = 0.0f;
+
+            if (glm::length(wallNormal) > 0.0001f)
+                wallNormal = glm::normalize(wallNormal);
+
+            projectVelocityAgainstNormal(p, wallNormal);
+        }
     }
 
     // Overlapping geometry debug detection:
@@ -1739,7 +1769,19 @@ void doCollisions(
     {
         if (std::fabs(c.normal.z) > 0.35f)
             continue;
-        projectVelocityAgainstNormal(p, c.normal);
+        // projectVelocityAgainstNormal(p, c.normal);
+        glm::vec3 wallNormal = c.normal;
+
+        // walls only
+        if (std::fabs(wallNormal.z) < 0.45f)
+        {
+            wallNormal.z = 0.0f;
+
+            if (glm::length(wallNormal) > 0.0001f)
+                wallNormal = glm::normalize(wallNormal);
+
+            projectVelocityAgainstNormal(p, wallNormal);
+        }
     }
 }
 
