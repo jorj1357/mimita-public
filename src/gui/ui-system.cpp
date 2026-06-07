@@ -10,6 +10,7 @@
 #include "gui/font-stuff/font-loader.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
+#include "world/texture-store.h"
 
 // yay sounds 6 4 2026 
 #include "audio/audio.h"
@@ -455,6 +456,20 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
         }
         cursor += 6.0f * (cell + gap);
     }
+}
+
+void uiDrawImage(const char* path, UIRect r, glm::vec4 color)
+{
+    if (!path || r.w <= 0.0f || r.h <= 0.0f)
+        return;
+    GLuint texture = gTextures.getPath(path);
+    if (!texture)
+        return;
+    float verts[] = {
+        r.x, r.y, 0, 0, r.x + r.w, r.y, 1, 0, r.x + r.w, r.y + r.h, 1, 1,
+        r.x, r.y, 0, 0, r.x + r.w, r.y + r.h, 1, 1, r.x, r.y + r.h, 0, 1
+    };
+    drawTexturedQuad(verts, 6, texture, color);
 }
 
 void uiDrawWarning(const char* text, float x, float y)
