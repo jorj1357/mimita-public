@@ -42,13 +42,17 @@ void WeaponManager::render(const Camera& camera, const Player& player) const
 
 RevolverShotResult WeaponManager::fire(const Camera& camera, Player& player, NpcSystem& npcs, const World& world)
 {
-    if (player.dead)
+    if (player.dead) {
+        Terminal::instance().addLog("[WEAPON] cannot fire — player is dead");
         return {};
+    }
     if (player.equippedSlot != revolverDefinition.slot) {
+        Terminal::instance().addLog("[WEAPON] cannot fire — equipped slot " + std::to_string(player.equippedSlot) + " != revolver slot " + std::to_string(revolverDefinition.slot));
         AudioManager::instance().play({"ui/click", AudioCategory::Weapons, false, {}, 0.2f, 0.65f});
         return {};
     }
     if (reloadTimer > 0.0f || shotCooldown > 0.0f || player.revolverCylinder <= 0) {
+        Terminal::instance().addLog("[WEAPON] cannot fire — reload=" + std::to_string(reloadTimer) + " cooldown=" + std::to_string(shotCooldown) + " ammo=" + std::to_string(player.revolverCylinder));
         AudioManager::instance().play({"ui/click", AudioCategory::Weapons, false, {}, 0.25f, 0.55f});
         return {};
     }
