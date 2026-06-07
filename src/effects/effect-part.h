@@ -37,6 +37,7 @@ struct EffectPart
     bool alive = false;
     // Cylinder rendering for blood splatter
     bool cylinderDecal = false;
+    bool mergeableBlood = false;
     float cylinderHeight = 0.0f;
     bool beam = false;
     bool box = false;
@@ -94,6 +95,18 @@ private:
     EffectPartSystem() = default;
 
     static constexpr unsigned int POOL_SIZE = 4096;
+    static constexpr unsigned int MAX_STICKY_BLOOD = 256;
+    static constexpr unsigned int MAX_BLOOD_DEBUG_SEGMENTS = 256;
+
+    struct BloodDebugSegment {
+        glm::vec3 from{0.0f};
+        glm::vec3 to{0.0f};
+        glm::vec3 normal{0.0f};
+        bool hit = false;
+    };
+
     std::array<EffectPart, POOL_SIZE> mPool{};
+    std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;
+    unsigned int mBloodDebugSegmentCount = 0;
 };

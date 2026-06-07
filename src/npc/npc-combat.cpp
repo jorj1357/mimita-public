@@ -127,6 +127,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         npc.body.username, player.username);
     EffectPartSystem::instance().spawnEntityImpact(
         hitPoint, -aimDir, npc.body.username, player.username);
+    EffectPartSystem::instance().spawnProjectedBlood(
+        hitPoint, aimDir, (float)dmg, dist, "torso", world);
     EffectPartSystem::instance().spawnMuzzleFlash(npcPos, npc.body.username);
     EffectPartSystem::instance().spawnTracer(npcPos, hitPoint, npc.body.username);
     AudioManager::instance().play(
