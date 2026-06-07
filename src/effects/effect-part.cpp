@@ -96,7 +96,6 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
 }
 
 void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const World& world) {
-    // Calculate force from damage, distance, body part lethality
     float bodyPartLethality = 1.0f;
     if (bodyPart == "head") bodyPartLethality = 2.0f;
     else if (bodyPart.find("Arm") != std::string::npos) bodyPartLethality = 0.6f;
@@ -106,107 +105,143 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     float distanceFactor = std::clamp(1.0f - distance / 110.0f, 0.1f, 1.0f);
     float force = std::clamp(damage / 100.0f * bodyPartLethality * distanceFactor, 0.35f, 1.5f);
     
-    // Raycast from hit position forward into world to find surfaces behind target
-    const float RAY_LENGTH = 3.0f;
     glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0,0,-1);
-    glm::vec3 rayStart = hitPosition + dir * 0.1f;
+    glm::vec3 rayStart = hitPosition + dir * 0.25f;
     
-    std::vector<glm::vec3> hitPoints;
-    std::vector<glm::vec3> hitNormals;
+    constexpr float MAX_RAY = 25.0f;
+    constexpr int CONE_RAYS = 12;
+    constexpr float CONE_ANGLE = 0.35f;
     
-    // Check world collision mesh triangles
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        glm::vec3 e1 = tri.b - tri.a;
-        glm::vec3 e2 = tri.c - tri.a;
-        glm::vec3 p = glm::cross(dir, e2);
-        float det = glm::dot(e1, p);
-        if (std::fabs(det) < 0.000001f) continue;
-        float inv = 1.0f / det;
-        glm::vec3 tVec = rayStart - tri.a;
-        float u = glm::dot(tVec, p) * inv;
-        if (u < 0.0f || u > 1.0f) continue;
-        glm::vec3 q = glm::cross(tVec, e1);
-        float v = glm::dot(dir, q) * inv;
-        if (v < 0.0f || u + v > 1.0f) continue;
-        float t = glm::dot(e2, q) * inv;
-        if (t > 0.001f && t < RAY_LENGTH) {
-            hitPoints.push_back(rayStart + dir * t);
-            hitNormals.push_back(tri.normal);
-        }
-    }
-    
-    // Check AABB blocks
-    for (const Block& block : world.blocks) {
-        glm::vec3 mn = block.pos - block.size * 0.5f;
-        glm::vec3 mx = block.pos + block.size * 0.5f;
-        float tmin = 0.0f;
-        float tmax = RAY_LENGTH;
-        glm::vec3 normal(0.0f);
-        bool hit = true;
-        for (int axis = 0; axis < 3; ++axis) {
-            if (std::fabs(dir[axis]) < 0.000001f) {
-                if (rayStart[axis] < mn[axis] || rayStart[axis] > mx[axis]) { hit = false; break; }
-                continue;
-            }
-            float invD = 1.0f / dir[axis];
-            float a = (mn[axis] - rayStart[axis]) * invD;
-            float b = (mx[axis] - rayStart[axis]) * invD;
-            float sign = -1.0f;
-            if (a > b) { std::swap(a, b); sign = 1.0f; }
-            if (a > tmin) { tmin = a; normal = glm::vec3(0.0f); normal[axis] = sign; }
-            tmax = std::min(tmax, b);
-            if (tmin > tmax) { hit = false; break; }
-        }
-        if (hit && tmin > 0.001f && tmin < RAY_LENGTH) {
-            hitPoints.push_back(rayStart + dir * tmin);
-            hitNormals.push_back(normal);
-        }
-    }
-    
-    // Fallback: search a short cone around the bullet direction for nearby world geometry.
-    if (hitPoints.empty()) {
-        const glm::vec3 offsets[] = {
-            glm::vec3(0.25f, 0, 0), glm::vec3(-0.25f, 0, 0),
-            glm::vec3(0, 0.25f, 0), glm::vec3(0, -0.25f, 0),
-            glm::vec3(0, 0, 0.25f), glm::vec3(0, 0, -0.25f)
-        };
-        float bestDistance = 2.5f;
+    auto traceRay = [&](glm::vec3 origin, glm::vec3 d, float& outT, glm::vec3& outNormal) -> bool {
+        float bestT = MAX_RAY;
+        bool hit = false;
+        glm::vec3 bestNormal;
         for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-            glm::vec3 triCenter = (tri.a + tri.b + tri.c) / 3.0f;
-            for (const glm::vec3& offset : offsets) {
-                float candidateDistance = glm::length(triCenter - (hitPosition + offset));
-                if (candidateDistance < bestDistance) {
-                    bestDistance = candidateDistance;
-                    hitPoints = {triCenter};
-                    hitNormals = {tri.normal};
+            glm::vec3 e1 = tri.b - tri.a;
+            glm::vec3 e2 = tri.c - tri.a;
+            glm::vec3 p = glm::cross(d, e2);
+            float det = glm::dot(e1, p);
+            if (std::fabs(det) < 0.000001f) continue;
+            float inv = 1.0f / det;
+            glm::vec3 tVec = origin - tri.a;
+            float u = glm::dot(tVec, p) * inv;
+            if (u < 0.0f || u > 1.0f) continue;
+            glm::vec3 q = glm::cross(tVec, e1);
+            float v = glm::dot(d, q) * inv;
+            if (v < 0.0f || u + v > 1.0f) continue;
+            float t = glm::dot(e2, q) * inv;
+            if (t > 0.01f && t < bestT) {
+                bestT = t;
+                bestNormal = tri.normal;
+                hit = true;
+            }
+        }
+        for (const Block& block : world.blocks) {
+            glm::vec3 mn = block.pos - block.size * 0.5f;
+            glm::vec3 mx = block.pos + block.size * 0.5f;
+            float tmin = 0.0f, tmax = MAX_RAY;
+            glm::vec3 normal(0.0f);
+            bool h = true;
+            for (int axis = 0; axis < 3; ++axis) {
+                if (std::fabs(d[axis]) < 0.000001f) {
+                    if (origin[axis] < mn[axis] || origin[axis] > mx[axis]) { h = false; break; }
+                    continue;
                 }
+                float invD = 1.0f / d[axis];
+                float a = (mn[axis] - origin[axis]) * invD;
+                float b = (mx[axis] - origin[axis]) * invD;
+                float sign = -1.0f;
+                if (a > b) { std::swap(a, b); sign = 1.0f; }
+                if (a > tmin) { tmin = a; normal = glm::vec3(0.0f); normal[axis] = sign; }
+                tmax = std::min(tmax, b);
+                if (tmin > tmax) { h = false; break; }
+            }
+            if (h && tmin > 0.01f && tmin < bestT) {
+                bestT = tmin;
+                bestNormal = normal;
+                hit = true;
             }
         }
-    }
-
-    if (hitPoints.size() > 1) {
-        size_t nearestIndex = 0;
-        float nearestDistance = glm::length(hitPoints[0] - rayStart);
-        for (size_t i = 1; i < hitPoints.size(); ++i) {
-            float candidateDistance = glm::length(hitPoints[i] - rayStart);
-            if (candidateDistance < nearestDistance) {
-                nearestDistance = candidateDistance;
-                nearestIndex = i;
-            }
-        }
-        glm::vec3 nearestPoint = hitPoints[nearestIndex];
-        glm::vec3 nearestNormal = hitNormals[nearestIndex];
-        hitPoints = {nearestPoint};
-        hitNormals = {nearestNormal};
-    }
-
-    // Spawn blood on all hit surfaces
-    for (size_t s = 0; s < hitPoints.size(); ++s) {
-        glm::vec3 n = glm::normalize(hitNormals[s]);
-        glm::vec3 pos = hitPoints[s] + n * 0.01f;
-        spawnStickyBlood(pos, n, force, 0);
+        outT = bestT;
+        outNormal = bestNormal;
+        return hit;
+    };
+    
+    // Primary ray
+    glm::vec3 primaryNormal;
+    float primaryT;
+    if (traceRay(rayStart, dir, primaryT, primaryNormal)) {
+        glm::vec3 n = glm::normalize(primaryNormal);
+        spawnStickyBlood(rayStart + dir * primaryT + n * 0.01f, n, force * 0.7f, 0);
     }
     
+    // Cone rays for corner spread
+    float seed = (float)(rand() % 10000) / 10000.0f;
+    for (int i = 0; i < CONE_RAYS; ++i) {
+        float angle1 = seed + (float)i * 2.399963f;
+        float angle2 = seed + (float)(i * 7) * 0.618034f;
+        glm::vec3 coneDir = dir;
+        coneDir.x += std::cos(angle1) * std::sin(angle2) * CONE_ANGLE;
+        coneDir.y += std::sin(angle1) * std::sin(angle2) * CONE_ANGLE;
+        coneDir.z += (std::cos(angle2) - 1.0f) * CONE_ANGLE;
+        coneDir = glm::normalize(coneDir);
+        
+        float t;
+        glm::vec3 normal;
+        if (traceRay(rayStart, coneDir, t, normal)) {
+            glm::vec3 n = glm::normalize(normal);
+            float spreadForce = force * (0.4f + (rand() % 1001) / 1000.0f * 0.6f);
+            spawnStickyBlood(rayStart + coneDir * t + n * 0.01f, n, spreadForce, 0);
+        }
+    }
+}
+
+void EffectPartSystem::spawnBloodSphereBurst(
+    glm::vec3 hitPoint,
+    glm::vec3 shotDirection,
+    float force,
+    const std::string& sourceActorId,
+    const std::string& targetActorId)
+{
+    force = std::clamp(force, 0.1f, 2.0f);
+    int count;
+    if (force < 0.4f)
+        count = 3 + rand() % 3;        // 3-5
+    else if (force < 0.9f)
+        count = 8 + rand() % 5;        // 8-12
+    else
+        count = 16 + rand() % 9;       // 16-24
+
+    glm::vec3 dir = glm::length(shotDirection) > 0.001f
+        ? glm::normalize(shotDirection)
+        : glm::vec3(0.0f, 0.0f, -1.0f);
+
+    for (int i = 0; i < count; ++i) {
+        glm::vec3 spread{
+            (rand() % 2001 - 1000) / 1000.0f,
+            (rand() % 2001 - 1000) / 1000.0f,
+            (rand() % 2001 - 1000) / 1000.0f
+        };
+        glm::vec3 velDir = glm::normalize(dir + spread * (0.3f + force * 0.5f));
+        velDir.z = std::max(velDir.z, 0.1f);
+
+        EffectPart p;
+        p.position = hitPoint;
+        p.replayType = "blood_sphere_particle";
+        p.velocity = velDir * (1.5f + force * 4.0f + (rand() % 2001) / 1000.0f);
+        p.color = {0.85f, 0.0f, 0.015f};
+        p.maxLifetime = 2.5f + (rand() % 1001) / 1000.0f;
+        p.lifetime = -((float)(rand() % 101) / 1000.0f);
+        p.scale = 0.05f + force * 0.06f + (rand() % 51) / 1000.0f;
+        p.endScale = p.scale * 0.2f;
+        p.alpha = 1.0f;
+        p.gravity = 9.81f;
+        p.affectedByGravity = true;
+        p.billboardText = false;
+        p.sourceActorId = sourceActorId;
+        p.targetActorId = targetActorId;
+        spawn(p);
+    }
 }
 
 void EffectPartSystem::spawnBloodSpurt(

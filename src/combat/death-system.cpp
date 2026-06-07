@@ -69,8 +69,6 @@ bool DeathSystem::kill(
     victim.dead = true;
     victim.respawnTimer = RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
-    victim.vel = glm::vec3(0.0f);
-    victim.externalImpulse = glm::vec3(0.0f);
 
     if (actorType == "npc")
         AudioManager::instance().play(
@@ -131,28 +129,27 @@ void DeathSystem::update(
     for (CorpseActor& corpse : mCorpses) {
         corpse.age += dt;
         corpse.blackness = std::clamp(corpse.age / BLACK_FADE_SECONDS, 0.0f, 1.0f);
-        corpse.collidable = corpse.age < BLACK_FADE_SECONDS;
         corpse.fade = std::clamp(
             (corpse.age - BLACK_FADE_SECONDS) /
             (CORPSE_LIFETIME_SECONDS - BLACK_FADE_SECONDS),
             0.0f,
             1.0f);
-
-        if (corpse.collidable) {
-            InputState input;
-            input.camForward = glm::vec3(0.0f, 1.0f, 0.0f);
-            physicsMainUpdate(corpse.body, world, input, dt);
-
-            if (!player.dead) {
-                bool playerGrounded = false;
-                bool corpseGrounded = false;
-                resolveCapsuleVsCapsule(player, corpse.body, playerGrounded, corpseGrounded);
-            }
-            for (Npc& npc : npcs.all()) {
-                if (npc.body.dead) continue;
-                bool npcGrounded = false;
-                bool corpseGrounded = false;
-                resolveCapsuleVsCapsule(npc.body, corpse.body, npcGrounded, corpseGrounded);
+        corpse.collidable = false;
+        // Sync corpse position from living dead body for replay accuracy
+        if (corpse.id.find(player.username) == 0 && player.dead) {
+            corpse.body.pos = player.pos;
+            corpse.body.vel = player.vel;
+            corpse.body.yaw = player.yaw;
+            corpse.body.onGround = player.onGround;
+        }
+        for (const Npc& npc : npcs.all()) {
+            std::string expectedId = "npc_" + std::to_string(npc.id);
+            if (corpse.id.find(expectedId) == 0 && npc.body.dead) {
+                corpse.body.pos = npc.body.pos;
+                corpse.body.vel = npc.body.vel;
+                corpse.body.yaw = npc.body.yaw;
+                corpse.body.onGround = npc.body.onGround;
+                break;
             }
         }
     }
@@ -179,9 +176,6 @@ void DeathSystem::update(
 
 void DeathSystem::render(const Camera& camera) const
 {
-    for (const CorpseActor& corpse : mCorpses)
-        if (corpse.fade < 1.0f)
-            renderPlayer(corpse.body, camera);
 }
 
 void DeathSystem::appendReplayActors(std::vector<ReplayActorState>& actors) const

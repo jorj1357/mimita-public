@@ -34,7 +34,8 @@ from mathutils import Vector
 
 # config v3  6 7 2026
 # MAX_FRAMES = 120
-MAX_FRAMES = 12003
+# MAX_FRAMES = 12003
+MAX_FRAMES = 1000
 
 IMPORT_EFFECTS = True
 IMPORT_SOUNDS = True
@@ -44,7 +45,24 @@ IMPORT_NPCS = True
 IMPORT_MAP = True
 IMPORT_PLAYER = True
 
+# KEYFRAME_EVERY_N_TICKS = 1
+# KEYFRAME_EVERY_N_TICKS = 10
 KEYFRAME_EVERY_N_TICKS = 1
+
+IMPORT_INDEX = 0
+# IMPORT_BATCH_SIZE = 8
+IMPORT_BATCH_SIZE = 2
+
+SCENE_FRAMES_GLOBAL = []
+FPS_GLOBAL = 60
+CAMERA_GLOBAL = None
+OUTFIT_PATH_GLOBAL = None
+DEFAULT_WEAPON_PATH_GLOBAL = None
+SEEN_EFFECTS = set()
+EFFECT_SERIAL = 0
+MAX_TICK = 0
+
+
 
 REPLAY_JSON_PATH = (
     r"C:\important\mimita-priv-v8\replays\06-07-2026\13-44-33-replay.json"
@@ -703,6 +721,9 @@ def configure_camera(camera, state, frame):
     )
 
 def main():
+    global CAMERA_GLOBAL
+    global OUTFIT_PATH_GLOBAL
+    global DEFAULT_WEAPON_PATH_GLOBAL
     replay_path = resolve_path(REPLAY_JSON_PATH)
     if replay_path is None:
         raise FileNotFoundError(REPLAY_JSON_PATH)
@@ -746,106 +767,92 @@ def main():
         if map_root:
             log(f"Imported map: {map_path} ({len(map_parts)} objects)")
 
-    outfit_path = find_asset(
+    OUTFIT_PATH_GLOBAL = find_asset(
         lambda asset: asset.get("source") == "outfit"
         or asset.get("id") == "texture:outfit"
     )
-    default_weapon_path = find_asset(
+    DEFAULT_WEAPON_PATH_GLOBAL = find_asset(
         lambda asset: asset.get("id") == "model:revolver"
         or asset.get("type") == "weapon_glb"
     )
 
     camera_data = bpy.data.cameras.new("MimitaCamera")
-    camera = bpy.data.objects.new("MimitaCamera", camera_data)
-    bpy.data.collections["Mimita_Cameras"].objects.link(camera)
-    scene.camera = camera
+    CAMERA_GLOBAL = bpy.data.objects.new(
+        "MimitaCamera",
+        camera_data
+    )    
+    bpy.data.collections["Mimita_Cameras"].objects.link(CAMERA_GLOBAL)
+    scene.camera = CAMERA_GLOBAL
 
     scene_frames = replay.get("sceneFrames", [])
     max_tick = 0
     seen_effects = set()
     effect_serial = 0
-    for scene_frame in scene_frames[:MAX_FRAMES]:
+    global SCENE_FRAMES_GLOBAL
+    global FPS_GLOBAL
+
+    SCENE_FRAMES_GLOBAL = scene_frames[:MAX_FRAMES]
+    FPS_GLOBAL = fps
+
+    bpy.app.timers.register(process_import_batch)
+
+def process_import_batch():
+
+    global IMPORT_INDEX
+    global EFFECT_SERIAL
+    global MAX_TICK
+
+    scene = bpy.context.scene
+
+    end_index = min(
+        IMPORT_INDEX + IMPORT_BATCH_SIZE,
+        len(SCENE_FRAMES_GLOBAL)
+    )
+
+    for scene_frame in SCENE_FRAMES_GLOBAL[IMPORT_INDEX:end_index]:
+
         tick = int(scene_frame.get("tick", 0))
 
         if tick % KEYFRAME_EVERY_N_TICKS != 0:
             continue
-        max_tick = max(max_tick, tick)
+
+        MAX_TICK = max(MAX_TICK, tick)
+
         frame = tick + 1
+
         scene.frame_set(frame)
 
         camera_state = scene_frame.get("camera")
+
         if camera_state:
-            configure_camera(camera, camera_state, frame)
+            configure_camera(CAMERA_GLOBAL, camera_state, frame)
 
         for actor_state in scene_frame.get("actors", []):
 
             actor_type = actor_state.get("type", "")
 
-            # skip NPCs if disabled
             if actor_type == "npc" and not IMPORT_NPCS:
                 continue
 
-            # skip player if disabled
             if actor_type == "player" and not IMPORT_PLAYER:
                 continue
 
             actor_id = str(actor_state.get("id", "unknown"))
 
-            actor_record = ensure_actor(actor_state, outfit_path)
-
-            # todo 1 normalize function all glbs go thru 
-            # or just idk
-            # when exporting from blender its done better or idfrent or idk 
-            # if actor_state.get("type") == "player":
-            #     actor_record["root"].rotation_euler.rotate_axis(
-            #         "X",
-            #         math.radians(-90.0)
-            #     )
+            actor_record = ensure_actor(
+                actor_state,
+                OUTFIT_PATH_GLOBAL
+            )
 
             set_transform(actor_record["root"], actor_state)
 
             keyframe_transform(actor_record["root"], frame)
 
-            apply_limb_transforms(actor_record, actor_state, frame)
-
-            actor_alpha = 1.0 - float(actor_state.get("fade", 0.0))
-            actor_blackness = float(actor_state.get("blackness", 0.0))
-            for material in actor_record["materials"]:
-                keyframe_material_fade(
-                    material, frame, actor_alpha, actor_blackness
-                )
-
-            # optional weapon import
-            if IMPORT_WEAPONS:
-
-                actor_weapon_path = (
-                    resolve_path(actor_state.get("weaponModelPath", ""))
-                    or default_weapon_path
-                )
-
-                weapon = ensure_weapon(
-                    actor_id,
-                    actor_record,
-                    actor_weapon_path
-                )
-
-                weapon_visible = (
-                    actor_state.get("weaponName") == "revolver"
-                    and float(actor_state.get("fade", 0.0)) < 1.0
-                )
-
-                keyframe_visibility(
-                    weapon["root"],
-                    frame,
-                    weapon_visible
-                )
-
-                for weapon_part in weapon["parts"]:
-                    keyframe_visibility(
-                        weapon_part,
-                        frame,
-                        weapon_visible
-                    )
+            apply_limb_transforms(
+                actor_record,
+                actor_state,
+                frame
+            )
 
         if IMPORT_EFFECTS:
 
@@ -859,25 +866,33 @@ def main():
                     tuple(effect.get("to", ())),
                 )
 
-                if signature in seen_effects:
+                if signature in SEEN_EFFECTS:
                     continue
 
-                seen_effects.add(signature)
+                SEEN_EFFECTS.add(signature)
 
-                create_effect(effect, fps, effect_serial)
+                create_effect(
+                    effect,
+                    FPS_GLOBAL,
+                    EFFECT_SERIAL
+                )
 
-                effect_serial += 1
+                EFFECT_SERIAL += 1
 
-    if IMPORT_SOUNDS:
-        import_sounds(replay.get("soundEvents", []))
-    scene.frame_start = 1
-    scene.frame_end = max_tick + 1
-    scene.frame_set(1)
-    log(
-        f"Done: {len(scene_frames)} scene frames, {len(ACTORS)} actors, "
-        f"{effect_serial} effects, {len(replay.get('soundEvents', []))} sounds, "
-        f"{fps} FPS"
-    )
+    IMPORT_INDEX = end_index
+
+    print(f"Imported {IMPORT_INDEX}/{len(SCENE_FRAMES_GLOBAL)}")
+
+    if IMPORT_INDEX >= len(SCENE_FRAMES_GLOBAL):
+
+        scene.frame_start = 1
+        scene.frame_end = MAX_TICK + 1
+
+        print("Replay import complete.")
+
+        return None
+
+    return 0.01
 
 
 main()

@@ -311,15 +311,12 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
 
+        EffectPartSystem::instance().spawnBloodSphereBurst(
+            result.end, shotDirection, (float)rounded / 60.0f,
+            shooter.username, "npc_" + std::to_string(victim->id));
         EffectPartSystem::instance().spawnDamage(result.end, victim->body.username, rounded);
         EffectPartSystem::instance().spawnEntityImpact(
             result.end, hitNormal, shooter.username, "npc_" + std::to_string(victim->id));
-        EffectPartSystem::instance().spawnStickyBlood(
-            result.end,
-            -shotDirection,
-            std::clamp((float)rounded / 100.0f, 0.35f, 1.5f),
-            victim->id);
-        // Use projected blood instead of old sticky blood
         EffectPartSystem::instance().spawnProjectedBlood(result.end, shotDirection, rounded, nearest, hitPart, world);
         EffectPartSystem::instance().spawnBloodSpurt(
             result.end, shotDirection, shooter.username, "npc_" + std::to_string(victim->id));
