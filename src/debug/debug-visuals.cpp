@@ -389,6 +389,65 @@ void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm:
     }
 }
 
+void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color)
+{
+    (void)camera;
+    constexpr int SEGMENTS = 16;
+    glm::vec3 n = glm::length(axis) > 0.001f ? glm::normalize(axis) : glm::vec3(0, 0, 1);
+    glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0, 0, 1))
+                                                             : glm::cross(n, glm::vec3(0, 1, 0)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+    glm::vec3 topCenter = center + n * (height * 0.5f);
+    glm::vec3 bottomCenter = center - n * (height * 0.5f);
+
+    for (int i = 0; i < SEGMENTS; ++i)
+    {
+        float a0 = 6.2831853f * (float)i / (float)SEGMENTS;
+        float a1 = 6.2831853f * (float)(i + 1) / (float)SEGMENTS;
+        glm::vec3 radial0 = (tangent * std::cos(a0) + bitangent * std::sin(a0)) * radius;
+        glm::vec3 radial1 = (tangent * std::cos(a1) + bitangent * std::sin(a1)) * radius;
+        glm::vec3 top0 = topCenter + radial0;
+        glm::vec3 top1 = topCenter + radial1;
+        glm::vec3 bottom0 = bottomCenter + radial0;
+        glm::vec3 bottom1 = bottomCenter + radial1;
+
+        gTriVerts.push_back({topCenter, color});
+        gTriVerts.push_back({top0, color});
+        gTriVerts.push_back({top1, color});
+        gTriVerts.push_back({bottomCenter, color});
+        gTriVerts.push_back({bottom1, color});
+        gTriVerts.push_back({bottom0, color});
+        gTriVerts.push_back({top0, color});
+        gTriVerts.push_back({bottom0, color});
+        gTriVerts.push_back({top1, color});
+        gTriVerts.push_back({top1, color});
+        gTriVerts.push_back({bottom0, color});
+        gTriVerts.push_back({bottom1, color});
+    }
+}
+
+void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color)
+{
+    (void)camera;
+    glm::vec3 v[8] = {
+        center + glm::vec3(-halfSize.x, -halfSize.y, -halfSize.z),
+        center + glm::vec3( halfSize.x, -halfSize.y, -halfSize.z),
+        center + glm::vec3( halfSize.x,  halfSize.y, -halfSize.z),
+        center + glm::vec3(-halfSize.x,  halfSize.y, -halfSize.z),
+        center + glm::vec3(-halfSize.x, -halfSize.y,  halfSize.z),
+        center + glm::vec3( halfSize.x, -halfSize.y,  halfSize.z),
+        center + glm::vec3( halfSize.x,  halfSize.y,  halfSize.z),
+        center + glm::vec3(-halfSize.x,  halfSize.y,  halfSize.z)
+    };
+    const int triangles[36] = {
+        0,2,1, 0,3,2, 4,5,6, 4,6,7,
+        0,1,5, 0,5,4, 1,2,6, 1,6,5,
+        2,3,7, 2,7,6, 3,0,4, 3,4,7
+    };
+    for (int index : triangles)
+        gTriVerts.push_back({v[index], color});
+}
+
 void drawCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color)
 {
     constexpr int segments = 20;
@@ -873,6 +932,21 @@ namespace DebugVis {
     // Not gated behind masterEnabled — intended for production particles
     void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
         ::drawFilledSphere(camera, center, radius, color);
+    }
+
+    void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color) {
+        ::drawFilledCylinder(camera, center, axis, radius, height, color);
+    }
+
+    void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color) {
+        glm::vec3 delta = end - start;
+        float length = glm::length(delta);
+        if (length > 0.001f)
+            ::drawFilledCylinder(camera, (start + end) * 0.5f, delta / length, thickness * 0.5f, length, color);
+    }
+
+    void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color) {
+        ::drawFilledBox(camera, center, halfSize, color);
     }
     
     void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {

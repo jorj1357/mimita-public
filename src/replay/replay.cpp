@@ -73,6 +73,9 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
         f["dashPressed"] = rf.inputs.dashPressed;
         f["groundReturnPressed"] = rf.inputs.groundReturnPressed;
         f["freezeHeld"] = rf.inputs.freezeHeld;
+        // ADD THESE 6 7 2026 
+        f["movementPressed"] = rf.inputs.movementPressed;
+        f["reloadPressed"] = rf.inputs.reloadPressed;
         f["lookYaw"] = rf.inputs.lookYaw;
         f["lookPitch"] = rf.inputs.lookPitch;
         framesJson.push_back(f);
@@ -145,6 +148,9 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
             rf.inputs.dashPressed = f.value("dashPressed", false);
             rf.inputs.groundReturnPressed = f.value("groundReturnPressed", false);
             rf.inputs.freezeHeld = f.value("freezeHeld", false);
+            // ADD THESE
+            rf.inputs.movementPressed = f.value("movementPressed", false);
+            rf.inputs.reloadPressed = f.value("reloadPressed", false);
             rf.inputs.lookYaw = f.value("lookYaw", 0.0f);
             rf.inputs.lookPitch = f.value("lookPitch", 0.0f);
             mFrames.push_back(rf);
