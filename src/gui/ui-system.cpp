@@ -472,6 +472,27 @@ void uiDrawImage(const char* path, UIRect r, glm::vec4 color)
     drawTexturedQuad(verts, 6, texture, color);
 }
 
+void uiDrawImageRotated(const char* path, float cx, float cy, float halfSize, float angleDeg, glm::vec4 color)
+{
+    if (!path || halfSize <= 0.0f) return;
+    GLuint texture = gTextures.getPath(path);
+    if (!texture) return;
+
+    float rad = angleDeg * 3.14159265f / 180.0f;
+    float cosA = cosf(rad), sinA = sinf(rad);
+
+    // 4 corners of a square centered at (cx,cy), rotated by angleDeg
+    float verts[] = {
+        cx + (-halfSize)*cosA - (-halfSize)*sinA, cy + (-halfSize)*sinA + (-halfSize)*cosA, 0, 0,
+        cx + ( halfSize)*cosA - (-halfSize)*sinA, cy + ( halfSize)*sinA + (-halfSize)*cosA, 1, 0,
+        cx + ( halfSize)*cosA - ( halfSize)*sinA, cy + ( halfSize)*sinA + ( halfSize)*cosA, 1, 1,
+        cx + (-halfSize)*cosA - (-halfSize)*sinA, cy + (-halfSize)*sinA + (-halfSize)*cosA, 0, 0,
+        cx + ( halfSize)*cosA - ( halfSize)*sinA, cy + ( halfSize)*sinA + ( halfSize)*cosA, 1, 1,
+        cx + (-halfSize)*cosA - ( halfSize)*sinA, cy + (-halfSize)*sinA + ( halfSize)*cosA, 0, 1,
+    };
+    drawTexturedQuad(verts, 6, texture, color);
+}
+
 void uiDrawWarning(const char* text, float x, float y)
 {
     uiDrawRect({x - 8.0f, y - 8.0f, 560.0f, 34.0f}, {0.6f, 0.0f, 0.0f, 0.85f}, "warning-bg");
