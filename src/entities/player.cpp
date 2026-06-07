@@ -45,6 +45,26 @@ static size_t playerUploadedVertCount = (size_t)-1;
 static GLuint bodyPartVAO = 0;
 static GLuint bodyPartVBO = 0;
 
+void uploadBodyPartMesh(const Mesh& mesh)
+{
+    MIMITA_GL_CLEAR_STAGE("uploadBodyPartMesh");
+    if (!bodyPartVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAO));
+    if (!bodyPartVBO) MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBO));
+
+    MIMITA_GL_CALL(glBindVertexArray(bodyPartVAO));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW));
+
+    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+
+    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+
+    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+}
+
 namespace {
 
 const char* PLAYER_GLB_PATH = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
@@ -383,26 +403,6 @@ void appendNodeRenderMesh(
         if (batch.count > 0)
             out.batches.push_back(batch);
     }
-}
-
-void uploadBodyPartMesh(const Mesh& mesh)
-{
-    MIMITA_GL_CLEAR_STAGE("uploadBodyPartMesh");
-    if (!bodyPartVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAO));
-    if (!bodyPartVBO) MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBO));
-
-    MIMITA_GL_CALL(glBindVertexArray(bodyPartVAO));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW));
-
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-
-    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 }
 
 glm::mat4 poseMatrix(const ProceduralPose& pose)

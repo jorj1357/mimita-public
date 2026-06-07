@@ -279,7 +279,33 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
 
     for (int i = 0; i < bigCount + smallCount && stickyCount < MAX_STICKY_BLOOD; ++i) {
         const bool big = i < bigCount;
-        const glm::vec3 newPos = position + n * (0.012f + (rand() % 5) * 0.001f);
+        // const glm::vec3 newPos = position + n * (0.012f + (rand() % 5) * 0.001f);
+        // randomized stuff 6 7 2026 
+        glm::vec3 tangent =
+        glm::normalize(
+            std::abs(n.z) < 0.9f
+                ? glm::cross(n, glm::vec3(0,0,1))
+                : glm::cross(n, glm::vec3(0,1,0)));
+
+        glm::vec3 bitangent =
+            glm::normalize(glm::cross(n, tangent));
+
+        float randomAngle =
+            ((float)(rand() % 6283) / 1000.0f);
+
+        float radius =
+            big
+                ? ((rand() % 1001) / 1000.0f) * 0.08f
+                : ((rand() % 1001) / 1000.0f) * 0.45f;
+
+        glm::vec3 offset =
+            tangent * std::cos(randomAngle) * radius +
+            bitangent * std::sin(randomAngle) * radius;
+
+        const glm::vec3 newPos =
+            position +
+            offset +
+            n * (0.012f + (rand() % 5) * 0.001f);
 
         bool merged = false;
         if (big) {
