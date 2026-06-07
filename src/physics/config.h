@@ -228,9 +228,10 @@ inline float SLOPE_SKIN = 0.02f;
 // 3.0f is so much so idk make smaller? 
 // inline float MAX_STEP_HEIGHT = 0.1f;
 // 0.1f not tall enoughso we try 0.25f mar 7 2026
-// inline float MAX_STEP_HEIGHT = 0.25f;
+inline float MAX_STEP_HEIGHT = 0.25f;
 // 6 7 2026 testing 
-inline float MAX_STEP_HEIGHT = 0.75f;
+// 6 7 2026 too much 
+// inline float MAX_STEP_HEIGHT = 0.75f;
 
 // this was for pushing me up when im on a slope? idk 
 inline float SLOPE_VELOCITY_PUSHUP_MULT = 1.01f;
