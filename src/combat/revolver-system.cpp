@@ -6,6 +6,11 @@
 #include <cstdio>
 #include <limits>
 
+#include <glad/glad.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+
 #include "audio/audio.h"
 #include "camera.h"
 #include "config/player-settings.h"
@@ -13,11 +18,20 @@
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
 #include "entities/player.h"
+#include "map/map_loader.h"
 #include "npc/npc.h"
 #include "physics/config.h"
+#include "renderer/renderer.h"
+#include "world/texture-store.h"
 #include "world/world.h"
 
+extern Renderer* gRenderer;
+extern TextureStore gTextures;
+
 namespace {
+constexpr const char* REVOLVER_MODEL_PATH = "assets/objects/weapons/mimita-revolver-v1.glb";
+constexpr float MAX_SHOT_DISTANCE = 100.0f;
+
 bool rayTriangle(glm::vec3 origin, glm::vec3 direction, const CollisionTriangle& tri, float& distance)
 {
     glm::vec3 e1 = tri.b - tri.a;
@@ -73,22 +87,80 @@ float pointBlankDamage(const std::string& part, float height)
 }
 }
 
+RevolverSystem::RevolverSystem() = default;
+
+void RevolverSystem::loadHeldModel()
+{
+    if (mModelLoadAttempted)
+        return;
+    mModelLoadAttempted = true;
+    mHeldMesh = loadGLB(REVOLVER_MODEL_PATH);
+    if (mHeldMesh.verts.empty()) {
+        printf("[REVOLVER] held model failed to load: %s\n", REVOLVER_MODEL_PATH);
+        return;
+    }
+
+    glm::vec3 boundsMin = mHeldMesh.verts.front().pos;
+    glm::vec3 boundsMax = boundsMin;
+    for (const Vertex& vertex : mHeldMesh.verts) {
+        boundsMin = glm::min(boundsMin, vertex.pos);
+        boundsMax = glm::max(boundsMax, vertex.pos);
+    }
+    glm::vec3 size = boundsMax - boundsMin;
+    int axis = size.y > size.x ? 1 : 0;
+    if (size.z > size[axis])
+        axis = 2;
+    glm::vec3 center = (boundsMin + boundsMax) * 0.5f;
+    mModelGrip = center;
+    mModelMuzzle = center;
+    mModelGrip[axis] = boundsMin[axis];
+    mModelMuzzle[axis] = boundsMax[axis];
+
+    glGenVertexArrays(1, &mVao);
+    glGenBuffers(1, &mVbo);
+    glBindVertexArray(mVao);
+    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
+    glBufferData(GL_ARRAY_BUFFER, mHeldMesh.verts.size() * sizeof(Vertex), mHeldMesh.verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+    glBindVertexArray(0);
+    printf("[REVOLVER] held model loaded verts=%zu\n", mHeldMesh.verts.size());
+}
+
 void RevolverSystem::update(const Camera& camera, Player& player, float dt)
 {
-    const PlayerSettings& cfg = GetPlayerSettings();
+    loadHeldModel();
     mTime += dt;
-    glm::vec3 right = glm::normalize(glm::cross(camera.front, glm::vec3(0,0,1)));
-    glm::vec3 up = glm::normalize(glm::cross(right, camera.front));
-    float speed = glm::length(player.vel);
-    float sway = cfg.weaponSwayStrength * (0.25f + std::min(speed / 20.0f, 2.0f));
-    glm::vec3 targetForward = glm::normalize(camera.front + right * std::sin(mTime * 5.0f) * sway * 0.12f
-                                             + up * (std::cos(mTime * 7.0f) * sway * 0.08f + mRecoil * 0.03f));
-    float follow = 1.0f - std::exp(-cfg.weaponAimFollowSpeed * dt / std::max(cfg.weaponWeight, 0.1f));
-    mForward = glm::normalize(glm::mix(mForward, targetForward, std::clamp(follow, 0.0f, 1.0f)));
-    glm::vec3 targetPos = camera.pos + camera.front * 0.75f + right * 0.42f - up * 0.35f
-                        - mForward * (mRecoil * 0.025f + mDisturbance * 0.05f);
-    mPosition = glm::mix(mPosition, targetPos, std::clamp(follow, 0.0f, 1.0f));
-    mMuzzle = mPosition + mForward * 0.72f;
+    player.updateModelWorldTransforms();
+    for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+        if (part.name != "rightArm")
+            continue;
+
+        glm::vec3 boundsSize = part.collider.localMax - part.collider.localMin;
+        int axis = boundsSize.y > boundsSize.x ? 1 : 0;
+        if (boundsSize.z > boundsSize[axis])
+            axis = 2;
+        glm::vec3 handPoint = (part.collider.localMin + part.collider.localMax) * 0.5f;
+        float minDistance = std::fabs(part.collider.localMin[axis]);
+        float maxDistance = std::fabs(part.collider.localMax[axis]);
+        handPoint[axis] = maxDistance >= minDistance ? part.collider.localMax[axis] : part.collider.localMin[axis];
+        glm::vec3 handDirection(0.0f);
+        handDirection[axis] = handPoint[axis] >= 0.0f ? 1.0f : -1.0f;
+
+        glm::vec3 modelDirection = glm::normalize(mModelMuzzle - mModelGrip);
+        glm::quat gripRotation = glm::rotation(modelDirection, handDirection);
+        mWeaponTransform = part.worldTransform *
+                           glm::translate(glm::mat4(1.0f), handPoint) *
+                           glm::mat4_cast(gripRotation) *
+                           glm::translate(glm::mat4(1.0f), -mModelGrip);
+        mMuzzle = glm::vec3(mWeaponTransform * glm::vec4(mModelMuzzle, 1.0f));
+        mForward = glm::normalize(glm::vec3(mWeaponTransform * glm::vec4(modelDirection, 0.0f)));
+        break;
+    }
     DebugVis::recordMovement(player.pos, player.externalImpulse * 0.1f, "weapon-recoil-impulse");
     
     // Apply recoil to player procedural animation (additive)
@@ -112,21 +184,30 @@ void RevolverSystem::update(const Camera& camera, Player& player, float dt)
     mDisturbance = std::max(0.0f, mDisturbance - dt * 4.0f);
 }
 
-void RevolverSystem::render(const Camera& camera, const World& world) const
+void RevolverSystem::render(const Camera& camera, const Player& player) const
 {
-    glm::vec3 center = mPosition + mForward * 0.32f;
-    DebugVis::drawWireBox(camera, center, {0.12f, 0.12f, 0.42f}, {0.55f,0.55f,0.58f,1.0f});
-    DebugVis::drawWireSphere(camera, mMuzzle, 0.10f, {1.0f,1.0f,1.0f,1.0f});
-    float nearest = 100.0f;
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        float distance = 0.0f;
-        if (rayTriangle(mMuzzle, mForward, tri, distance))
-            nearest = std::min(nearest, distance);
+    if (player.equippedSlot != 1 || !gRenderer || !gRenderer->shaderProgram || !mVao || mHeldMesh.verts.empty())
+        return;
+
+    const unsigned int shader = gRenderer->shaderProgram;
+    glm::mat4 view = camera.getView();
+    glm::mat4 projection = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glUseProgram(shader);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &mWeaponTransform[0][0]);
+    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(mVao);
+    for (const Mesh::Batch& batch : mHeldMesh.batches) {
+        glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
+        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
     }
-    DebugVis::drawLine(camera, mMuzzle, mMuzzle + mForward * nearest, {1.0f,0.25f,0.1f,0.85f});
+    glBindVertexArray(0);
 }
 
-RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const World& world)
+RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, NpcSystem& npcs, const World& world)
 {
     RevolverShotResult result;
     if (shooter.equippedSlot != 1 || shooter.revolverCylinder <= 0)
@@ -139,11 +220,42 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
     float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f); // 0.99 - 1.01
     playWorldSound("revolvershoot", mMuzzle, rndVolume, rndPitch, 80.0f);
 
-    float nearest = 100.0f;
+    float cameraNearest = MAX_SHOT_DISTANCE;
     for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
         float distance = 0.0f;
-        if (rayTriangle(mMuzzle, mForward, tri, distance))
-            nearest = std::min(nearest, distance);
+        if (rayTriangle(camera.pos, camera.front, tri, distance))
+            cameraNearest = std::min(cameraNearest, distance);
+    }
+    for (Npc& npc : npcs.all()) {
+        if (npc.body.currentHp <= 0) continue;
+        npc.body.updateModelWorldTransforms();
+        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
+            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+            glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+            float distance = 0.0f;
+            glm::vec3 normal;
+            if (rayAabb(camera.pos, camera.front, center - half, center + half, distance, normal))
+                cameraNearest = std::min(cameraNearest, distance);
+        }
+    }
+    glm::vec3 cameraTarget = camera.pos + camera.front * cameraNearest;
+    glm::vec3 shotDirection = cameraTarget - mMuzzle;
+    if (glm::length(shotDirection) <= 0.001f)
+        shotDirection = camera.front;
+    shotDirection = glm::normalize(shotDirection);
+    mForward = shotDirection;
+
+    float nearest = MAX_SHOT_DISTANCE;
+    bool hitWorld = false;
+    glm::vec3 worldNormal = -shotDirection;
+    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+        float distance = 0.0f;
+        if (rayTriangle(mMuzzle, shotDirection, tri, distance) && distance < nearest) {
+            nearest = distance;
+            hitWorld = true;
+            worldNormal = tri.normal;
+        }
     }
 
     Npc* victim = nullptr;
@@ -160,36 +272,40 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
             half = glm::max(half, glm::vec3(0.12f));
             float distance = 0.0f;
             glm::vec3 normal;
-            if (rayAabb(mMuzzle, mForward, center - half, center + half, distance, normal) && distance < nearest) {
+            if (rayAabb(mMuzzle, shotDirection, center - half, center + half, distance, normal) && distance < nearest) {
                 nearest = distance;
+                hitWorld = false;
                 victim = &npc;
                 hitPart = part.name;
                 hitNormal = normal;
-                glm::vec3 hit = mMuzzle + mForward * distance;
+                glm::vec3 hit = mMuzzle + shotDirection * distance;
                 localHeight = std::clamp((hit.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
             }
         }
     }
 
-    result.end = mMuzzle + mForward * nearest;
+    result.end = mMuzzle + shotDirection * nearest;
+    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle);
+    EffectPartSystem::instance().spawnTracer(mMuzzle, result.end);
+    EffectPartSystem::instance().spawnBulletImpact(result.end);
     if (victim) {
         float base = pointBlankDamage(hitPart, localHeight);
         float distanceFactor = std::clamp(1.0f - nearest / 110.0f, 0.10f, 1.0f);
-        float angleFactor = std::clamp(std::fabs(glm::dot(-mForward, hitNormal)), 0.15f, 1.0f);
+        float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, hitNormal)), 0.15f, 1.0f);
         float damage = std::min(base, std::max(base * distanceFactor * angleFactor, nearest >= 100.0f ? 10.0f : 1.0f));
         int rounded = std::max(1, (int)std::round(damage));
         float knockback = damage * distanceFactor * (0.08f + angleFactor * 0.12f);
         victim->body.currentHp = std::max(0, victim->body.currentHp - rounded);
-        victim->body.vel += mForward * knockback + glm::vec3(0,0,knockback * 0.12f);
+        victim->body.vel += shotDirection * knockback + glm::vec3(0,0,knockback * 0.12f);
         result.hitEntity = true;
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
 
         EffectPartSystem::instance().spawnDamage(result.end, victim->body.username, rounded);
         // Use projected blood instead of old sticky blood
-        EffectPartSystem::instance().spawnProjectedBlood(result.end, mForward, rounded, nearest, hitPart, world);
-        float hurt01 = std::clamp(damage / 100.0f, 0.0f, 1.0f);
-        playWorldSound("gethurt", result.end, 0.35f + hurt01 * 0.65f, 1.35f - hurt01 * 0.55f, 35.0f);
+        EffectPartSystem::instance().spawnProjectedBlood(result.end, shotDirection, rounded, nearest, hitPart, world);
+        playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
+        playWorldSound("player_hurt", result.end, 0.85f, 1.0f, 35.0f);
 
         char debug[320];
         snprintf(debug, sizeof(debug),
@@ -203,8 +319,10 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
             addKill(line);
             Terminal::instance().addLog(line);
         }
-    } else {
-        EffectPartSystem::instance().spawnWorldImpact(result.end, -mForward);
+    } else if (hitWorld) {
+        EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
+        EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal);
+        playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
     }
 
     const PlayerSettings& cfg = GetPlayerSettings();
@@ -213,8 +331,8 @@ RevolverShotResult RevolverSystem::fire(Player& shooter, NpcSystem& npcs, const 
     // dont push me in air so much 6 6 2026 when shooting 
     glm::vec3 recoilDir =
         glm::vec3(
-            -mForward.x,
-            -mForward.y,
+            -shotDirection.x,
+            -shotDirection.y,
             0.0f
         );
 

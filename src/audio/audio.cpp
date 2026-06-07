@@ -66,6 +66,7 @@ static std::string soundPath(const std::string& name)
         return "assets/sound/weapon/revolver/revolverreload.wav";
     if (name == "gethurt") return "assets/sound/U mimita sound effects.wav - hitting not sure low.wav";
     if (name == "player_hurt") return "assets/sound/entity/player/hurtsmall.wav";
+    if (name == "hitworld") return "assets/sound/hitworld.mp3";
     if (name == "npc_spawn") return "assets/sound/U mimita sound effects.wav - item get.mp3";
     if (name == "npc_death") return "assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3";
     if (name == "world_impact") return "assets/sound/U mimita sound effects.wav  - hit low 1.wav";

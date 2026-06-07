@@ -21,6 +21,8 @@ void EffectPartSystem::init() {
 void EffectPartSystem::update(float dt) {
     for (auto& effect : mEffects) {
         effect.lifetime += dt;
+        if (effect.lifetime < 0.0f)
+            continue;
         if (!effect.sticky)
             effect.position += effect.velocity * dt;
         if (effect.affectedByGravity)
@@ -52,28 +54,32 @@ void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float
 }
 
 void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId) {
-    bool highForce = force >= 0.55f;
-    int bigCount = highForce ? 5 : 1;
-    int smallCount = highForce ? 25 : 5;
+    force = std::clamp(force, 0.35f, 1.5f);
+    bool highForce = force >= 0.7f;
+    int bigCount = highForce ? 8 : 4;
+    int smallCount = highForce ? 36 : 18;
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
     glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
                                                              : glm::cross(n, glm::vec3(0,1,0)));
     glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
     for (int i = 0; i < bigCount + smallCount; ++i) {
         bool big = i < bigCount;
-        float angle = i * 2.399963f;
-        float radius = big ? 0.08f * i : 0.12f + 0.025f * (i - bigCount);
+        float angle = i * 2.399963f + ((rand() % 1000) / 1000.0f - 0.5f) * 0.8f;
+        float radius = (big ? 0.16f * i : 0.35f + 0.08f * (i - bigCount));
+        radius *= 0.8f + (rand() % 401) / 1000.0f;
         EffectPart e;
-        e.position = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius + n * 0.003f;
+        e.position = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius
+                   + n * (0.006f + (rand() % 8) * 0.001f);
         e.normal = n;
-        e.color = {0.75f, 0.0f, 0.02f};
+        e.color = {1.0f, 0.015f, 0.025f};
         e.maxLifetime = 30.0f;
-        // CHANGED: Increased scale for bigger blood splats, jun 6 2026
-        e.scale = big ? (0.5f + force * 0.5f) : (0.1f + force * 0.15f);
+        e.lifetime = -(0.01f + (rand() % 91) * 0.001f);
+        e.scale = big ? (0.65f + force * 0.55f) : (0.18f + force * 0.22f);
         e.endScale = e.scale;
         e.billboardText = false;
         e.sticky = true;
-        e.flatDecal = true;
+        e.cylinderDecal = true;
+        e.cylinderHeight = 0.01f;
         e.ownerId = ownerId;
         // CHANGED: No longer debug-only — renders always as solid decal, jun 6 2026
         e.debugVisual = false;
@@ -90,7 +96,7 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     else if (bodyPart == "torso") bodyPartLethality = 1.2f;
     
     float distanceFactor = std::clamp(1.0f - distance / 110.0f, 0.1f, 1.0f);
-    float force = std::clamp(damage / 100.0f * bodyPartLethality * distanceFactor, 0.1f, 1.0f);
+    float force = std::clamp(damage / 100.0f * bodyPartLethality * distanceFactor, 0.35f, 1.5f);
     
     // Raycast from hit position forward into world to find surfaces behind target
     const float RAY_LENGTH = 3.0f;
@@ -149,12 +155,43 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
         }
     }
     
-    // Fallback: if no surface found, use hit position
+    // Fallback: search a short cone around the bullet direction for nearby world geometry.
     if (hitPoints.empty()) {
-        hitPoints.push_back(hitPosition);
-        hitNormals.push_back(glm::vec3(0, 0, 1));
+        const glm::vec3 offsets[] = {
+            glm::vec3(0.25f, 0, 0), glm::vec3(-0.25f, 0, 0),
+            glm::vec3(0, 0.25f, 0), glm::vec3(0, -0.25f, 0),
+            glm::vec3(0, 0, 0.25f), glm::vec3(0, 0, -0.25f)
+        };
+        float bestDistance = 2.5f;
+        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+            glm::vec3 triCenter = (tri.a + tri.b + tri.c) / 3.0f;
+            for (const glm::vec3& offset : offsets) {
+                float candidateDistance = glm::length(triCenter - (hitPosition + offset));
+                if (candidateDistance < bestDistance) {
+                    bestDistance = candidateDistance;
+                    hitPoints = {triCenter};
+                    hitNormals = {tri.normal};
+                }
+            }
+        }
     }
-    
+
+    if (hitPoints.size() > 1) {
+        size_t nearestIndex = 0;
+        float nearestDistance = glm::length(hitPoints[0] - rayStart);
+        for (size_t i = 1; i < hitPoints.size(); ++i) {
+            float candidateDistance = glm::length(hitPoints[i] - rayStart);
+            if (candidateDistance < nearestDistance) {
+                nearestDistance = candidateDistance;
+                nearestIndex = i;
+            }
+        }
+        glm::vec3 nearestPoint = hitPoints[nearestIndex];
+        glm::vec3 nearestNormal = hitNormals[nearestIndex];
+        hitPoints = {nearestPoint};
+        hitNormals = {nearestNormal};
+    }
+
     // Spawn blood on all hit surfaces
     for (size_t s = 0; s < hitPoints.size(); ++s) {
         glm::vec3 n = glm::normalize(hitNormals[s]);
@@ -162,8 +199,6 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
         spawnStickyBlood(pos, n, force, 0);
     }
     
-    // Also spawn some blood at original hit point
-    spawnStickyBlood(hitPosition + glm::vec3(0, 0, 0.01f), glm::vec3(0, 0, 1), force * 0.5f, 0);
 }
 
 EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal) {
@@ -178,8 +213,68 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     e.billboardText = false;
     e.sticky = true;
     EffectPart* spawned = spawn(e);
-    AudioManager::instance().play({"world_impact", AudioCategory::Impacts, true, position, 0.7f, 1.0f, 30.0f});
     return spawned;
+}
+
+EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position) {
+    EffectPart e;
+    e.position = position;
+    e.color = {1.0f, 1.0f, 1.0f};
+    e.maxLifetime = 0.1f;
+    e.scale = 0.5f;
+    e.endScale = 0.35f;
+    e.billboardText = false;
+    e.sticky = true;
+    return spawn(e);
+}
+
+EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end) {
+    EffectPart e;
+    e.position = start;
+    e.endPosition = end;
+    e.color = {1.0f, 0.82f, 0.05f};
+    e.maxLifetime = 0.5f;
+    e.scale = 0.1f;
+    e.billboardText = false;
+    e.sticky = true;
+    e.beam = true;
+    return spawn(e);
+}
+
+EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
+    EffectPart e;
+    e.position = position;
+    e.color = {0.55f, 0.55f, 0.58f};
+    e.maxLifetime = 0.25f;
+    e.scale = 0.1f;
+    e.endScale = 1.0f;
+    e.billboardText = false;
+    e.sticky = true;
+    return spawn(e);
+}
+
+void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
+    glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0, 0, 1);
+    for (int i = 0; i < 5; ++i) {
+        glm::vec3 randomDir{
+            (rand() % 2001 - 1000) / 1000.0f,
+            (rand() % 2001 - 1000) / 1000.0f,
+            0.35f + (rand() % 651) / 1000.0f
+        };
+        randomDir = glm::normalize(randomDir + n * 0.8f);
+        EffectPart e;
+        e.position = position + n * 0.04f;
+        e.velocity = randomDir * (1.5f + (rand() % 2001) / 1000.0f);
+        e.color = {0.42f, 0.40f, 0.38f};
+        e.maxLifetime = 1.0f;
+        e.alpha = 1.0f;
+        float size = 0.035f + (rand() % 51) / 1000.0f;
+        e.halfSize = glm::vec3(size);
+        e.billboardText = false;
+        e.affectedByGravity = true;
+        e.box = true;
+        spawn(e);
+    }
 }
 
 void EffectPartSystem::destroyOwner(unsigned int ownerId) {
@@ -263,6 +358,7 @@ void EffectPartSystem::render(const Camera& camera) const {
     // Render spheres for each effect
     for (const auto& effect : mEffects) {
         if (!effect.alive) continue;
+        if (effect.lifetime < 0.0f) continue;
         if (effect.debugVisual && !DebugVis::masterEnabled()) continue;
         
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
@@ -273,8 +369,14 @@ void EffectPartSystem::render(const Camera& camera) const {
         glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
         
         // Cylinder-style blood decal — filled decal aligned to surface normal
-        if (effect.cylinderDecal) {
-            DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
+        if (effect.beam) {
+            DebugVis::drawFilledBeam(camera, effect.position, effect.endPosition, drawScale, drawColor);
+        }
+        else if (effect.box) {
+            DebugVis::drawFilledBox(camera, effect.position, effect.halfSize, drawColor);
+        }
+        else if (effect.cylinderDecal) {
+            DebugVis::drawFilledCylinder(camera, effect.position, effect.normal, drawScale, effect.cylinderHeight, drawColor);
         }
         // Flat decal (blood splats on surfaces)
         else if (effect.flatDecal) {

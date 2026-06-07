@@ -68,12 +68,6 @@
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
 
-struct RevolverTracer {
-    glm::vec3 start{0.0f};
-    glm::vec3 end{0.0f};
-    float remaining = 0.0f;
-};
-
 static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
                         const CollisionTriangle& tri, float& distance)
 {
@@ -229,7 +223,6 @@ int main(int argc, char** argv)
     bool editorMode = false;
     std::string activeGameMode = "sandbox";
     int selectedEditorObject = -1;
-    std::vector<RevolverTracer> revolverTracers;
     WeaponManager weapons;
     bool freecamEnabled = false;
 
@@ -271,13 +264,12 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "shoot", "Fire weapon", "shoot",
-        [&player, &npcSystem, &world, &revolverTracers, &weapons](const std::vector<std::string>&) {
-            RevolverShotResult shot = weapons.fire(player, npcSystem, world);
+        [&camera, &player, &npcSystem, &world, &weapons](const std::vector<std::string>&) {
+            RevolverShotResult shot = weapons.fire(camera, player, npcSystem, world);
             if (!shot.fired) {
                 Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
             }
-            revolverTracers.push_back({shot.start, shot.end, 3.0f});
             Terminal::instance().addLog("[REVOLVER] fired");
         }
     });
@@ -776,25 +768,14 @@ int main(int argc, char** argv)
                     Terminal::instance().execute("equipslot" + std::to_string(keySlot));
                 slotPrev[keySlot] = down;
             }
-            for (RevolverTracer& tracer : revolverTracers)
-                tracer.remaining -= dt;
-            revolverTracers.erase(
-                std::remove_if(revolverTracers.begin(), revolverTracers.end(),
-                               [](const RevolverTracer& t) { return t.remaining <= 0.0f; }),
-                revolverTracers.end());
-
             renderWorld(world, camera);
             renderPlayer(player, camera);
             npcSystem.render(camera);
             if (player.equippedSlot == 1)
-                weapons.render(camera, world);
+                weapons.render(camera, player);
             
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
-            for (const RevolverTracer& tracer : revolverTracers) {
-                float alpha = std::clamp(tracer.remaining / 3.0f, 0.0f, 1.0f);
-                DebugVis::drawLine(camera, tracer.start, tracer.end, {1.0f, 0.75f, 0.15f, alpha});
-            }
             
             worldPassRan = true;
 
@@ -807,6 +788,21 @@ int main(int argc, char** argv)
             }
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
+            if (player.equippedSlot == 1) {
+                const char* crosshairPath = "assets/crosshair/crosshairready.png";
+                switch (weapons.crosshairState(player)) {
+                    case WeaponCrosshairState::Reloading:
+                        crosshairPath = "assets/crosshair/crosshairreloading.png";
+                        break;
+                    case WeaponCrosshairState::Delay:
+                        crosshairPath = "assets/crosshair/crosshairdelay.png";
+                        break;
+                    case WeaponCrosshairState::Ready:
+                        break;
+                }
+                uiDrawImage(crosshairPath,
+                            {uiScreenW() * 0.5f - 50.0f, uiScreenH() * 0.5f - 50.0f, 100.0f, 100.0f});
+            }
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
             uiDrawText(player.username.c_str(), 24, 88, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
             char hpText[64];
