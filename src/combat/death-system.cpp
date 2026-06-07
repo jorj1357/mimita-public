@@ -14,8 +14,9 @@
 
 namespace {
 constexpr float RESPAWN_SECONDS = 3.0f;
-constexpr float BLACK_FADE_SECONDS = 0.5f;
-constexpr float CORPSE_LIFETIME_SECONDS = 8.0f;
+constexpr float CORPSE_STAGE1_SECONDS = 5.0f;
+constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
+constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
 constexpr float CORPSE_DRAG = 3.0f;
 
 void emitLifecycleEvent(const char* type,
@@ -65,6 +66,7 @@ bool DeathSystem::kill(
     corpse.body.vel.z += std::abs(lethalForce * 0.15f);
     corpse.body.syncLegacyStateToLayers();
     corpse.body.updateModelWorldTransforms();
+    corpse.stage = CorpseStage::RAGDOLL;
     mCorpses.push_back(std::move(corpse));
 
     victim.currentHp = 0;
@@ -130,37 +132,37 @@ void DeathSystem::update(
 
     for (CorpseActor& corpse : mCorpses) {
         corpse.age += dt;
-        corpse.blackness = std::clamp(corpse.age / BLACK_FADE_SECONDS, 0.0f, 1.0f);
-        corpse.fade = std::clamp(
-            (corpse.age - BLACK_FADE_SECONDS) /
-            (CORPSE_LIFETIME_SECONDS - BLACK_FADE_SECONDS),
-            0.0f,
-            1.0f);
-        corpse.collidable = false;
-        // Apply drag so corpse slides to a stop
-        corpse.body.vel *= std::max(0.0f, 1.0f - CORPSE_DRAG * dt);
-        // Sync corpse position from living dead body for replay accuracy
-        if (corpse.id.find(player.username) == 0 && player.dead) {
-            corpse.body.pos = player.pos;
-            corpse.body.vel = player.vel + corpse.body.vel * 0.5f;
-            corpse.body.yaw = player.yaw;
-            corpse.body.onGround = player.onGround;
-        }
-        for (const Npc& npc : npcs.all()) {
-            std::string expectedId = "npc_" + std::to_string(npc.id);
-            if (corpse.id.find(expectedId) == 0 && npc.body.dead) {
-                corpse.body.pos = npc.body.pos;
-                corpse.body.vel = npc.body.vel;
-                corpse.body.yaw = npc.body.yaw;
-                corpse.body.onGround = npc.body.onGround;
-                break;
+
+        if (corpse.stage == CorpseStage::RAGDOLL) {
+            corpse.blackness = std::clamp(corpse.age / CORPSE_STAGE1_SECONDS, 0.0f, 1.0f);
+            corpse.fade = 0.0f;
+            corpse.collidable = true;
+
+            InputState corpseInput;
+            corpseInput.camForward = glm::vec3(0.0f, 1.0f, 0.0f);
+            physicsMainUpdate(corpse.body, world, corpseInput, dt);
+            corpse.body.syncLegacyStateToLayers();
+            corpse.body.updateModelWorldTransforms();
+
+            corpse.body.vel *= std::max(0.0f, 1.0f - CORPSE_DRAG * dt);
+
+            if (corpse.age >= CORPSE_STAGE1_SECONDS) {
+                corpse.stage = CorpseStage::FADE_OUT;
+                corpse.collidable = false;
             }
+        }
+        else {
+            corpse.blackness = 1.0f;
+            corpse.fade = std::clamp(
+                (corpse.age - CORPSE_STAGE1_SECONDS) / CORPSE_STAGE2_SECONDS,
+                0.0f, 1.0f);
+            corpse.collidable = false;
         }
     }
 
     mCorpses.erase(
         std::remove_if(mCorpses.begin(), mCorpses.end(), [](const CorpseActor& corpse) {
-            return corpse.age >= CORPSE_LIFETIME_SECONDS;
+            return corpse.age >= CORPSE_TOTAL_SECONDS;
         }),
         mCorpses.end());
 

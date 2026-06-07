@@ -258,12 +258,7 @@ void NpcSystem::update(const World& world, Player& player, float dt)
 
 void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)
 {
-    // Dead NPCs just simulate physics (ragdoll)
     if (npc.body.dead) {
-        InputState deadInput;
-        deadInput.camForward = glm::vec3(0.0f, 1.0f, 0.0f);
-        physicsMainUpdate(npc.body, world, deadInput, dt);
-        npc.body.syncLegacyStateToLayers();
         npc.body.updateModelWorldTransforms();
         return;
     }

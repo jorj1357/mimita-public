@@ -10,6 +10,8 @@ class Camera;
 class NpcSystem;
 struct World;
 
+enum class CorpseStage { RAGDOLL, FADE_OUT };
+
 struct CorpseActor {
     explicit CorpseActor(const Player& source) : body(source) {}
 
@@ -20,6 +22,7 @@ struct CorpseActor {
     float blackness = 0.0f;
     float fade = 0.0f;
     bool collidable = true;
+    CorpseStage stage = CorpseStage::RAGDOLL;
 };
 
 class DeathSystem {

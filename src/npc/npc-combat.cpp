@@ -57,7 +57,9 @@ bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
         if (v < 0.0f || u + v > 1.0f) continue;
 
         float t = glm::dot(e2, qVec) * invDet;
-        if (t > 0.1f && t < maxDist - 0.3f)
+        // if (t > 0.1f && t < maxDist - 0.3f)
+        // v2 test if LOS disable is bad thsi mroe forgivig 
+        if (t > 0.1f && t < maxDist - 1.5f)
             return false;
     }
     return true;
@@ -107,8 +109,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     glm::vec3 predictedTarget = npcPos + aimDir * dist;
 
     // Line of sight check
-    if (!lineOfSight(npcPos, predictedTarget, world))
-        return false;
+    // testing commented off 6 7 2026 
+    // if (!lineOfSight(npcPos, predictedTarget, world))
+    //     return false;
 
     float d01 = difficulty01(npc.difficulty);
     float baseDmg = 6.0f + d01 * 14.0f;
@@ -131,8 +134,15 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     player.takeDamage(dmg, knockbackDir, 8.0f);
 
-    float cd = 1.2f - d01 * 0.9f;
-    cd = std::max(cd, 0.3f);
+    // float cd = 1.2f - d01 * 0.9f;
+    // cd = std::max(cd, 0.3f);
+
+    // buffed 6 7 2026 
+    float cd =
+        0.45f -
+        d01 * 0.35f;
+
+    cd = std::max(cd, 0.06f);
     npc.attackCooldown = cd;
 
     return true;
