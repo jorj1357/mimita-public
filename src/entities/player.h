@@ -75,6 +75,11 @@ public:
     int equippedSlot = 1;
     int revolverCylinder = 6;
     int revolverReserve = 1337;
+    bool dead = false;
+    bool proceduralFrozen = false;
+    float respawnTimer = 0.0f;
+    glm::vec3 respawnPosition{1.0f, 5.0f, 60.0f};
+    std::string killedBy;
     // -------- Core State --------
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};

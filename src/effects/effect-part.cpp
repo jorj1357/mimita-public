@@ -27,7 +27,7 @@ void EffectPartSystem::update(float dt) {
         if (!effect.sticky)
             effect.position += effect.velocity * dt;
         if (effect.affectedByGravity)
-            effect.velocity.z -= 4.0f * dt;
+            effect.velocity.z -= (effect.gravity > 0.0f ? effect.gravity : 9.81f) * dt;
         if (effect.lifetime >= effect.maxLifetime) {
             effect.alive = false;
         }
@@ -73,7 +73,12 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.position = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius
                    + n * (0.006f + (rand() % 8) * 0.001f);
         e.normal = n;
-        e.replayType = "blood";
+        e.rotation = {
+            (float)(rand() % 721 - 360),
+            (float)(rand() % 721 - 360),
+            (float)(rand() % 721 - 360)
+        };
+        e.replayType = "blood_cylinder";
         e.color = {1.0f, 0.015f, 0.025f};
         e.maxLifetime = 30.0f;
         e.lifetime = -(0.01f + (rand() % 91) * 0.001f);
@@ -204,15 +209,83 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     
 }
 
+void EffectPartSystem::spawnBloodSpurt(
+    glm::vec3 position,
+    glm::vec3 direction,
+    const std::string& sourceActorId,
+    const std::string& targetActorId)
+{
+    glm::vec3 forward = glm::length(direction) > 0.001f
+        ? glm::normalize(direction)
+        : glm::vec3(0.0f, 1.0f, 0.0f);
+
+    ReplayEffectEvent emitter;
+    emitter.type = "blood_spurt_emitter";
+    emitter.position = position;
+    emitter.direction = forward;
+    emitter.lifetime = 0.2f;
+    emitter.color = glm::vec4(0.85f, 0.0f, 0.015f, 1.0f);
+    emitter.sourceActorId = sourceActorId;
+    emitter.targetActorId = targetActorId;
+    captureReplayEffect(emitter);
+
+    for (int i = 0; i < 2; ++i) {
+        glm::vec3 randomSpread{
+            (rand() % 2001 - 1000) / 2200.0f,
+            (rand() % 2001 - 1000) / 2200.0f,
+            0.25f + (rand() % 751) / 1000.0f
+        };
+        glm::vec3 velocityDirection = glm::normalize(forward * 0.75f + randomSpread);
+
+        EffectPart particle;
+        particle.position = position;
+        particle.replayType = "blood_sphere_particle";
+        particle.velocity = velocityDirection * (2.5f + (rand() % 2501) / 1000.0f);
+        particle.color = {0.85f, 0.0f, 0.015f};
+        particle.maxLifetime = 3.0f;
+        particle.lifetime = -0.1f * (float)i;
+        particle.scale = 0.075f + (rand() % 41) / 1000.0f;
+        particle.endScale = particle.scale * 0.35f;
+        particle.alpha = 1.0f;
+        particle.gravity = 9.81f;
+        particle.affectedByGravity = true;
+        particle.billboardText = false;
+        particle.sourceActorId = sourceActorId;
+        particle.targetActorId = targetActorId;
+        spawn(particle);
+    }
+}
+
+EffectPart* EffectPartSystem::spawnEntityImpact(
+    glm::vec3 position,
+    glm::vec3 normal,
+    const std::string& sourceActorId,
+    const std::string& targetActorId)
+{
+    EffectPart effect;
+    effect.position = position;
+    effect.normal = normal;
+    effect.replayType = "impact_entity";
+    effect.color = {0.9f, 0.02f, 0.02f};
+    effect.maxLifetime = 0.18f;
+    effect.scale = 0.12f;
+    effect.endScale = 0.4f;
+    effect.billboardText = false;
+    effect.sticky = true;
+    effect.sourceActorId = sourceActorId;
+    effect.targetActorId = targetActorId;
+    return spawn(effect);
+}
+
 EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal) {
     EffectPart e;
     e.position = position;
     e.normal = normal;
-    e.replayType = "world_impact";
+    e.replayType = "impact_world";
     e.color = {0.55f, 0.55f, 0.55f};
     e.maxLifetime = 0.5f;
     e.scale = 0.1f;
-    e.endScale = 0.5f;
+    e.endScale = 5.0f;
     e.alpha = 0.5f;
     e.billboardText = false;
     e.sticky = true;
@@ -220,7 +293,7 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     return spawned;
 }
 
-EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position) {
+EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId) {
     EffectPart e;
     e.position = position;
     e.replayType = "muzzle_flash";
@@ -230,27 +303,32 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position) {
     e.endScale = 0.35f;
     e.billboardText = false;
     e.sticky = true;
+    e.sourceActorId = sourceActorId;
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end) {
+EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId) {
     EffectPart e;
     e.position = start;
     e.replayType = "tracer";
     e.endPosition = end;
     e.color = {1.0f, 0.82f, 0.05f};
     e.maxLifetime = 0.5f;
-    e.scale = 0.1f;
+    e.scale = 0.2f;
+    e.endScale = 0.0f;
+    e.thickness = 0.2f;
+    e.endThickness = 0.0f;
     e.billboardText = false;
     e.sticky = true;
     e.beam = true;
+    e.sourceActorId = sourceActorId;
     return spawn(e);
 }
 
 EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
     EffectPart e;
     e.position = position;
-    e.replayType = "bullet_impact";
+    e.replayType = "impact_sphere";
     e.color = {0.55f, 0.55f, 0.58f};
     e.maxLifetime = 0.25f;
     e.scale = 0.1f;
@@ -262,7 +340,7 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
 
 void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0, 0, 1);
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 12; ++i) {
         glm::vec3 randomDir{
             (rand() % 2001 - 1000) / 1000.0f,
             (rand() % 2001 - 1000) / 1000.0f,
@@ -271,14 +349,20 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
         randomDir = glm::normalize(randomDir + n * 0.8f);
         EffectPart e;
         e.position = position + n * 0.04f;
-        e.replayType = "world_debris";
+        e.replayType = "debris_block";
         e.velocity = randomDir * (1.5f + (rand() % 2001) / 1000.0f);
         e.color = {0.42f, 0.40f, 0.38f};
         e.maxLifetime = 1.0f;
         e.alpha = 1.0f;
-        float size = 0.035f + (rand() % 51) / 1000.0f;
+        float size = 0.35f + (rand() % 501) / 1000.0f;
         e.halfSize = glm::vec3(size);
+        e.rotation = {
+            (float)(rand() % 721 - 360),
+            (float)(rand() % 721 - 360),
+            (float)(rand() % 721 - 360)
+        };
         e.billboardText = false;
+        e.gravity = 9.81f;
         e.affectedByGravity = true;
         e.box = true;
         spawn(e);
@@ -296,14 +380,23 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     event.position = effect.position;
     event.from = effect.position;
     event.to = effect.endPosition;
+    event.rotation = effect.rotation;
     event.scale = effect.box ? effect.halfSize * 2.0f : glm::vec3(effect.scale);
     event.endScale = glm::vec3(effect.endScale);
-    event.color = effect.color;
+    event.color = glm::vec4(effect.color, effect.alpha);
     event.velocity = effect.velocity;
     event.normal = effect.normal;
+    event.direction = glm::length(effect.endPosition - effect.position) > 0.001f
+        ? glm::normalize(effect.endPosition - effect.position)
+        : glm::vec3(0.0f);
     event.lifetime = effect.maxLifetime;
     event.startDelay = std::max(0.0f, -effect.lifetime);
     event.alpha = effect.alpha;
+    event.thickness = effect.thickness;
+    event.endThickness = effect.endThickness;
+    event.gravity = effect.gravity;
+    event.sourceActorId = effect.sourceActorId;
+    event.targetActorId = effect.targetActorId;
     event.texturePath = effect.texturePath;
     event.materialName = effect.materialName;
     captureReplayEffect(event);

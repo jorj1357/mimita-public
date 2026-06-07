@@ -9,6 +9,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "combat/weapon-hit.h"
+#include "combat/death-system.h"
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -57,7 +58,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     }
 
     InputState input = inputStateFromFrame(frame);
-    physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
+    if (!sim.player->dead)
+        physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
     sim.npcSystem->update(*sim.world, *sim.player, TICK_DT);
 
     // Resolve NPC vs Player collisions
@@ -65,17 +67,21 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     {
         bool groundedPlayer = false;
         bool groundedNpc = false;
-        resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
+        if (!sim.player->dead && !npc.body.dead)
+            resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
     }
 
     // Resolve NPC melee attacks on player
     for (auto& npc : sim.npcSystem->all())
     {
-        if (npc.chosenAction.attackPressed && npc.body.currentHp > 0)
+        if (!sim.player->dead && npc.chosenAction.attackPressed && npc.body.currentHp > 0)
         {
             weaponHit(npc.body, *sim.player);
         }
     }
+
+    DeathSystem::instance().update(
+        *sim.world, *sim.player, *sim.npcSystem, frame.jumpPressed, TICK_DT);
 
     if (DebugConfig::DEBUG_TICKS)
         Debug::log(Debug::Category::General,

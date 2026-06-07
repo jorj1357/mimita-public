@@ -662,6 +662,12 @@ void Player::reset()
     vel = {0,0,0};
     externalImpulse = {0,0,0};
     onGround = false;
+    currentHp = maxHp;
+    dead = false;
+    proceduralFrozen = false;
+    respawnTimer = 0.0f;
+    killedBy.clear();
+    respawnPosition = pos;
 
     // put this here so idk? mar 7 2026
     jumpHeldPrev = false;
@@ -859,6 +865,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (perfectPoseSkeleton.nodes.empty() ||
         perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
         return;
+    if (proceduralFrozen) {
+        updateModelWorldTransforms();
+        return;
+    }
 
     // Store aim data for weapon positioning
     if (glm::length(camForward) > 0.001f) {
