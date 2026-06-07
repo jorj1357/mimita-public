@@ -19,17 +19,32 @@ from mathutils import Vector
 # KEYFRAME_EVERY_N_TICKS = 4
 
 # config v2  6 7 2026
-MAX_FRAMES = 120
+# MAX_FRAMES = 120
+# MAX_FRAMES = 1200
 
-IMPORT_EFFECTS = False
-IMPORT_SOUNDS = False
-IMPORT_WEAPONS = False
-IMPORT_NPCS = False
+# IMPORT_EFFECTS = False
+# IMPORT_SOUNDS = False
+# IMPORT_WEAPONS = False
+# IMPORT_NPCS = False
+
+# IMPORT_MAP = True
+# IMPORT_PLAYER = True
+
+# KEYFRAME_EVERY_N_TICKS = 6
+
+# config v3  6 7 2026
+# MAX_FRAMES = 120
+MAX_FRAMES = 1200
+
+IMPORT_EFFECTS = True
+IMPORT_SOUNDS = True
+IMPORT_WEAPONS = True
+IMPORT_NPCS = True
 
 IMPORT_MAP = True
 IMPORT_PLAYER = True
 
-KEYFRAME_EVERY_N_TICKS = 6
+KEYFRAME_EVERY_N_TICKS = 1
 
 REPLAY_JSON_PATH = (
     r"C:\important\mimita-priv-v8\replays\06-07-2026\11-12-39-replay.json"
@@ -529,19 +544,66 @@ def import_sounds(sound_events):
 
 
 def configure_camera(camera, state, frame):
-    camera.location = Vector(state.get("position", (0.0, 0.0, 0.0)))
-    rotation = state.get("rotation", (0.0, 0.0, 0.0))
-    camera.rotation_mode = "XYZ"
-    camera.rotation_euler = tuple(math.radians(value) for value in rotation)
-    camera.rotation_euler.rotate_axis("Z", math.radians(180.0))
-    camera.rotation_euler.rotate_axis("X", math.radians(90.0))
-    keyframe_transform(camera, frame)
-    fov_radians = math.radians(float(state.get("fov", 70.0)))
-    camera.data.lens = camera.data.sensor_width / (
-        2.0 * math.tan(max(fov_radians, 0.001) * 0.5)
-    )
-    camera.data.keyframe_insert(data_path="lens", frame=frame)
 
+    camera.location = Vector(
+        state.get(
+            "position",
+            (0.0, 0.0, 0.0)
+        )
+    )
+
+    rotation = state.get(
+        "rotation",
+        (0.0, 0.0, 0.0)
+    )
+
+    camera.rotation_mode = "XYZ"
+
+    camera.rotation_euler = (
+        math.radians(rotation[0]),
+        math.radians(rotation[1]),
+        math.radians(rotation[2]),
+    )
+
+    # mimita -> blender camera correction
+    # camera.rotation_euler.rotate_axis(
+    #     "Z",
+    #     math.radians(0.0)
+    # )
+
+    camera.rotation_euler.rotate_axis(
+        "X",
+        math.radians(130.0)
+    )
+
+
+    camera.rotation_euler.rotate_axis(
+        "Y",
+        math.radians(-90.0)
+    )
+
+    keyframe_transform(camera, frame)
+
+    fov_radians = math.radians(
+        float(
+            state.get("fov", 110.0)
+        )
+    )
+
+    camera.data.lens = (
+        camera.data.sensor_width /
+        (
+            2.0 *
+            math.tan(
+                max(fov_radians, 0.001) * 0.5
+            )
+        )
+    )
+
+    camera.data.keyframe_insert(
+        data_path="lens",
+        frame=frame
+    )
 
 def main():
     replay_path = resolve_path(REPLAY_JSON_PATH)
