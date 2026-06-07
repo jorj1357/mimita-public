@@ -237,6 +237,14 @@ def set_transform(obj, state):
     )
 
 
+def set_local_transform(obj, state):
+    obj.location = Vector(state.get("position", (0.0, 0.0, 0.0)))
+    rotation = state.get("rotation", (0.0, 0.0, 0.0))
+    obj.rotation_mode = "XYZ"
+    obj.rotation_euler = tuple(math.radians(value) for value in rotation)
+    obj.scale = Vector(state.get("scale", (1.0, 1.0, 1.0)))
+
+
 def keyframe_transform(obj, frame):
     obj.keyframe_insert(data_path="location", frame=frame)
     obj.keyframe_insert(data_path="rotation_euler", frame=frame)
@@ -270,6 +278,28 @@ def material_with_color(name, color, emission=0.0):
             bsdf.inputs["Emission"].default_value = (*color[:3], color[3])
             bsdf.inputs["Emission Strength"].default_value = emission
     return material
+
+
+def keyframe_material_fade(material, frame, alpha, blackness=0.0):
+    material.use_nodes = True
+    material.diffuse_color[3] = alpha
+    try:
+        material.surface_render_method = "DITHERED"
+    except Exception:
+        material.blend_method = "BLEND"
+    bsdf = material.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        base = bsdf.inputs["Base Color"].default_value
+        original = material.get("mimita_original_color")
+        if original is None:
+            original = tuple(base[:3])
+            material["mimita_original_color"] = original
+        color = tuple(component * (1.0 - blackness) for component in original)
+        bsdf.inputs["Base Color"].default_value = (*color, alpha)
+        bsdf.inputs["Alpha"].default_value = alpha
+        bsdf.inputs["Base Color"].keyframe_insert("default_value", frame=frame)
+        bsdf.inputs["Alpha"].keyframe_insert("default_value", frame=frame)
+    material.keyframe_insert(data_path="diffuse_color", frame=frame)
 
 
 def apply_outfit_texture(objects, texture_path):
@@ -355,7 +385,25 @@ def ensure_actor(actor_state, outfit_path):
     if actor_state.get("type") == "player":
         apply_outfit_texture(parts, outfit_path)
 
-    record = {"root": root, "parts": parts, "part_lookup": {}}
+    materials = []
+    for part in parts:
+        if part.type != "MESH" or part.data is None:
+            continue
+        part.data = part.data.copy()
+        for slot_index, source_material in enumerate(list(part.data.materials)):
+            if source_material is None:
+                continue
+            material = source_material.copy()
+            material.name = f"{actor_id}_{source_material.name}"
+            part.data.materials[slot_index] = material
+            materials.append(material)
+
+    record = {
+        "root": root,
+        "parts": parts,
+        "part_lookup": {},
+        "materials": materials,
+    }
     for part in parts:
         record["part_lookup"][normalized_name(part.name)] = part
     ACTORS[actor_id] = record
@@ -411,7 +459,7 @@ def apply_limb_transforms(actor_record, actor_state, frame):
                 None,
             )
         if target and isinstance(transform, dict):
-            set_transform(target, transform)
+            set_local_transform(target, transform)
             keyframe_transform(target, frame)
 
 
@@ -441,13 +489,30 @@ def orient_beam(obj, start, end, width):
         obj.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
 
 
+def animate_ballistic(obj, effect, spawn_frame, end_frame, fps):
+    start = Vector(effect.get("position", (0.0, 0.0, 0.0)))
+    velocity = Vector(effect.get("velocity", (0.0, 0.0, 0.0)))
+    gravity = float(effect.get("gravity", 0.0))
+    for frame in range(spawn_frame, end_frame + 1):
+        elapsed = (frame - spawn_frame) / max(fps, 1)
+        obj.location = start + velocity * elapsed + Vector(
+            (0.0, 0.0, -0.5 * gravity * elapsed * elapsed)
+        )
+        obj.keyframe_insert(data_path="location", frame=frame)
+
+
 def create_effect(effect, fps, serial):
     effect_type = str(effect.get("type", "")).lower()
-    spawn_frame = int(effect.get("spawnTick", 0)) + 1
+    start_delay = float(effect.get("startDelay", 0.0))
+    spawn_frame = int(effect.get("spawnTick", 0)) + 1 + round(start_delay * fps)
     lifetime = float(effect.get("lifetime", effect.get("lifetimeSeconds", 0.1)))
     end_frame = spawn_frame + max(1, round(lifetime * fps))
     position = effect.get("position", effect.get("from", (0.0, 0.0, 0.0)))
     initial_scale = effect.get("scale", (0.1, 0.1, 0.1))
+    raw_color = list(effect.get("color", (1.0, 1.0, 1.0, 1.0)))
+    while len(raw_color) < 4:
+        raw_color.append(1.0)
+    event_color = tuple(raw_color[:4])
     collection = bpy.data.collections["Mimita_Effects"]
     obj = None
 
@@ -456,44 +521,62 @@ def create_effect(effect, fps, serial):
             "sphere", f"MuzzleFlash_{serial}", collection, position, initial_scale
         )
         obj.data.materials.append(
-            material_with_color("Mimita_MuzzleFlash", (1.0, 0.72, 0.12, 1.0), 12.0)
+            material_with_color(f"Mimita_MuzzleFlash_{serial}", event_color, 12.0)
         )
     elif effect_type in ("tracer", "bullettracer", "bullet_tracer"):
         obj = add_primitive(
             "cylinder", f"Tracer_{serial}", collection, position, (0.02, 0.02, 1.0)
         )
-        orient_beam(
-            obj, effect.get("from", position), effect.get("to", position), 0.025
-        )
+        thickness = float(effect.get("thickness", 0.2))
+        orient_beam(obj, effect.get("from", position), effect.get("to", position), thickness)
         obj.data.materials.append(
-            material_with_color("Mimita_Tracer", (1.0, 0.8, 0.05, 1.0), 8.0)
+            material_with_color(f"Mimita_Tracer_{serial}", event_color, 8.0)
         )
-    elif effect_type in ("blood", "bloodsplatter", "blood_splatter"):
+    elif effect_type in (
+        "blood", "bloodsplatter", "blood_splatter", "blood_cylinder"
+    ):
         obj = add_primitive(
             "cylinder", f"Blood_{serial}", collection, position, initial_scale
         )
         obj.scale.z = min(obj.scale.z, 0.025)
+        rotation = effect.get("rotation", (0.0, 0.0, 0.0))
+        obj.rotation_euler = tuple(math.radians(value) for value in rotation)
+        obj.rotation_euler.rotate_axis("X", math.radians(90.0))
         obj.data.materials.append(
-            material_with_color("Mimita_Blood", (0.45, 0.005, 0.01, 1.0))
+            material_with_color(f"Mimita_Blood_{serial}", event_color)
         )
-    elif effect_type in ("impact", "bullet_impact", "world_impact"):
+    elif effect_type in (
+        "impact", "bullet_impact", "world_impact", "impact_world",
+        "impact_entity", "impact_sphere"
+    ):
         obj = add_primitive(
             "sphere", f"Impact_{serial}", collection, position, initial_scale
         )
         obj.data.materials.append(
-            material_with_color("Mimita_Impact", (0.35, 0.35, 0.35, 1.0))
+            material_with_color(f"Mimita_Impact_{serial}", event_color)
         )
-    elif effect_type in ("debris", "world_debris"):
+    elif effect_type in ("debris", "world_debris", "debris_block"):
         obj = add_primitive(
             "cube", f"Debris_{serial}", collection, position, initial_scale
         )
         obj.data.materials.append(
-            material_with_color("Mimita_Debris", (0.25, 0.22, 0.18, 1.0))
+            material_with_color(f"Mimita_Debris_{serial}", event_color)
         )
-        velocity = Vector(effect.get("velocity", (0.0, 0.0, 0.0)))
-        obj.keyframe_insert(data_path="location", frame=spawn_frame)
-        obj.location += velocity * lifetime
-        obj.keyframe_insert(data_path="location", frame=end_frame)
+        rotation = effect.get("rotation", (0.0, 0.0, 0.0))
+        obj.rotation_euler = tuple(math.radians(value) for value in rotation)
+        obj.keyframe_insert(data_path="rotation_euler", frame=spawn_frame)
+        animate_ballistic(obj, effect, spawn_frame, end_frame, fps)
+    elif effect_type == "blood_sphere_particle":
+        obj = add_primitive(
+            "sphere", f"BloodParticle_{serial}", collection, position, initial_scale
+        )
+        material = material_with_color(
+            f"Mimita_BloodParticle_{serial}", event_color
+        )
+        obj.data.materials.append(material)
+        animate_ballistic(obj, effect, spawn_frame, end_frame, fps)
+        keyframe_material_fade(material, spawn_frame, 1.0)
+        keyframe_material_fade(material, end_frame, 0.0)
     elif effect_type == "footstep":
         obj = add_primitive(
             "cylinder", f"Footstep_{serial}", collection, position, initial_scale
@@ -506,7 +589,21 @@ def create_effect(effect, fps, serial):
 
     keyframe_visibility(obj, max(1, spawn_frame - 1), False)
     keyframe_visibility(obj, spawn_frame, effect_type != "footstep")
-    if effect.get("endScale"):
+    for material in obj.data.materials if obj.type == "MESH" else []:
+        keyframe_material_fade(
+            material, spawn_frame, float(effect.get("alpha", event_color[3]))
+        )
+        keyframe_material_fade(material, end_frame, 0.0)
+    if effect_type in ("tracer", "bullettracer", "bullet_tracer"):
+        length_scale = obj.scale.z
+        obj.keyframe_insert(data_path="scale", frame=spawn_frame)
+        obj.scale = (
+            float(effect.get("endThickness", 0.0)),
+            float(effect.get("endThickness", 0.0)),
+            length_scale,
+        )
+        obj.keyframe_insert(data_path="scale", frame=end_frame)
+    elif effect.get("endScale"):
         obj.keyframe_insert(data_path="scale", frame=spawn_frame)
         obj.scale = Vector(effect["endScale"])
         obj.keyframe_insert(data_path="scale", frame=end_frame)
@@ -711,6 +808,13 @@ def main():
 
             apply_limb_transforms(actor_record, actor_state, frame)
 
+            actor_alpha = 1.0 - float(actor_state.get("fade", 0.0))
+            actor_blackness = float(actor_state.get("blackness", 0.0))
+            for material in actor_record["materials"]:
+                keyframe_material_fade(
+                    material, frame, actor_alpha, actor_blackness
+                )
+
             # optional weapon import
             if IMPORT_WEAPONS:
 
@@ -727,6 +831,7 @@ def main():
 
                 weapon_visible = (
                     actor_state.get("weaponName") == "revolver"
+                    and float(actor_state.get("fade", 0.0)) < 1.0
                 )
 
                 keyframe_visibility(

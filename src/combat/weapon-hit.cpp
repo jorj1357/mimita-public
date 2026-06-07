@@ -14,6 +14,7 @@
  */
 
 #include "weapon-hit.h"
+#include "combat/death-system.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 #include "audio/audio.h"
@@ -53,6 +54,14 @@ void weaponHit(Player& attacker, Player& target)
     knockbackDir.z = 0.3f; // Slight upward
     
     target.takeDamage((int)MELEE_DAMAGE, knockbackDir, MELEE_KNOCKBACK);
+    EffectPartSystem::instance().spawnEntityImpact(
+        target.pos, -toTarget, attacker.username, target.username);
+    EffectPartSystem::instance().spawnBloodSpurt(
+        target.pos, toTarget, attacker.username, target.username);
+    if (target.currentHp <= 0) {
+        DeathSystem::instance().kill(
+            target, target.username, "player", attacker.username, toTarget, MELEE_KNOCKBACK);
+    }
     
     if (DebugConfig::DEBUG_COMMANDS) {
         Debug::log(Debug::Category::General, "[MELEE HIT] damage=%.0f knockback=%.1f\n", MELEE_DAMAGE, MELEE_KNOCKBACK);

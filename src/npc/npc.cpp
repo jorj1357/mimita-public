@@ -278,6 +278,7 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     body.username = "npc-" + std::to_string(id);
     body.currentHp = body.maxHp;
     body.pos = spawn;
+    body.respawnPosition = spawn;
     body.vel = {0.0f, 0.0f, 0.0f};
     body.syncLegacyStateToLayers();
     previousPosition = body.pos;
@@ -450,17 +451,6 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
                        npc.id, npc.difficulty, npc.sensors.targetDistance);
         }
     }
-
-    npcs.erase(std::remove_if(npcs.begin(), npcs.end(), [](const Npc& npc) {
-        if (npc.body.currentHp > 0) return false;
-        AudioManager::instance().play({"npc_death", AudioCategory::NPC, true, npc.body.pos, 1.0f, 0.9f, 45.0f, 0});
-        AudioManager::instance().stopOwner(npc.id);
-        EffectPartSystem::instance().destroyOwner(npc.id);
-        NpcSelectionManager::instance().deselect(npc.id);
-        Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
-        Debug::log(Debug::Category::General, "[NPC] cleanup complete id=%u\n", npc.id);
-        return true;
-    }), npcs.end());
 
     // Resolve NPC vs Player collisions after all physics updates
     // Note: player is const here, but we need to modify it for collision resolution

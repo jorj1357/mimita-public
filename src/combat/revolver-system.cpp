@@ -12,6 +12,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "audio/audio.h"
+#include "combat/death-system.h"
 #include "camera.h"
 #include "config/player-settings.h"
 #include "debug/debug-visuals.h"
@@ -22,6 +23,7 @@
 #include "npc/npc.h"
 #include "physics/config.h"
 #include "renderer/renderer.h"
+#include "replay/replay.h"
 #include "world/texture-store.h"
 #include "world/world.h"
 
@@ -285,9 +287,17 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
     }
 
     result.end = mMuzzle + shotDirection * nearest;
-    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle);
-    EffectPartSystem::instance().spawnTracer(mMuzzle, result.end);
-    EffectPartSystem::instance().spawnBulletImpact(result.end);
+    ReplayEffectEvent gunshotEvent;
+    gunshotEvent.type = "gunshot";
+    gunshotEvent.position = mMuzzle;
+    gunshotEvent.direction = shotDirection;
+    gunshotEvent.from = mMuzzle;
+    gunshotEvent.to = result.end;
+    gunshotEvent.sourceActorId = shooter.username;
+    captureReplayEffect(gunshotEvent);
+
+    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle, shooter.username);
+    EffectPartSystem::instance().spawnTracer(mMuzzle, result.end, shooter.username);
     if (victim) {
         float base = pointBlankDamage(hitPart, localHeight);
         float distanceFactor = std::clamp(1.0f - nearest / 110.0f, 0.10f, 1.0f);
@@ -302,9 +312,17 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         result.damage = (float)rounded;
 
         EffectPartSystem::instance().spawnDamage(result.end, victim->body.username, rounded);
+        EffectPartSystem::instance().spawnEntityImpact(
+            result.end, hitNormal, shooter.username, "npc_" + std::to_string(victim->id));
+        EffectPartSystem::instance().spawnStickyBlood(
+            result.end,
+            -shotDirection,
+            std::clamp((float)rounded / 100.0f, 0.35f, 1.5f),
+            victim->id);
         // Use projected blood instead of old sticky blood
         EffectPartSystem::instance().spawnProjectedBlood(result.end, shotDirection, rounded, nearest, hitPart, world);
-        playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
+        EffectPartSystem::instance().spawnBloodSpurt(
+            result.end, shotDirection, shooter.username, "npc_" + std::to_string(victim->id));
         playWorldSound("player_hurt", result.end, 0.85f, 1.0f, 35.0f);
 
         char debug[320];
@@ -315,12 +333,20 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             Terminal::instance().addLog(debug);
 
         if (victim->body.currentHp <= 0) {
+            DeathSystem::instance().kill(
+                victim->body,
+                "npc_" + std::to_string(victim->id),
+                "npc",
+                shooter.username,
+                shotDirection,
+                18.0f);
             std::string line = shooter.username + " killed " + victim->body.username + " with Revolver";
             addKill(line);
             Terminal::instance().addLog(line);
         }
     } else if (hitWorld) {
         EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
+        EffectPartSystem::instance().spawnBulletImpact(result.end);
         EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal);
         playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
     }

@@ -65,6 +65,7 @@
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
 #include "combat/weapon-manager.h"
+#include "combat/death-system.h"
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
 #include "render/lighting-config.h"
@@ -843,6 +844,8 @@ int main(int argc, char** argv)
                     playerActor.health = player.currentHp;
                     playerActor.maxHealth = player.maxHp;
                     playerActor.grounded = player.onGround;
+                    playerActor.collidable = !player.dead;
+                    playerActor.fade = player.dead ? 1.0f : 0.0f;
                     playerActor.weaponName = player.equippedSlot == 1 ? "revolver" : "none";
                     playerActor.weaponModelPath = player.equippedSlot == 1
                         ? "assets/objects/weapons/mimita-revolver-v1.glb"
@@ -852,6 +855,7 @@ int main(int argc, char** argv)
                     playerActor.animationState = player.onGround
                         ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
                         : "air";
+                    playerActor.bodyParts = captureReplayBodyParts(player);
                     sceneFrame.actors.push_back(playerActor);
 
                     // NPCs
@@ -867,10 +871,14 @@ int main(int argc, char** argv)
                         npcActor.health = npc.body.currentHp;
                         npcActor.maxHealth = npc.body.maxHp;
                         npcActor.grounded = npc.body.onGround;
+                        npcActor.collidable = !npc.body.dead;
+                        npcActor.fade = npc.body.dead ? 1.0f : 0.0f;
                         npcActor.weaponName = "none";
                         npcActor.animationState = npc.chosenAction.name;
+                        npcActor.bodyParts = captureReplayBodyParts(npc.body);
                         sceneFrame.actors.push_back(npcActor);
                     }
+                    DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
                     gReplayRecorder.recordSceneFrame(sceneFrame);
                 }
@@ -942,8 +950,10 @@ int main(int argc, char** argv)
                 slotPrev[keySlot] = down;
             }
             renderWorld(world, camera);
-            renderPlayer(player, camera);
+            if (!player.dead)
+                renderPlayer(player, camera);
             npcSystem.render(camera);
+            DeathSystem::instance().render(camera);
             if (player.equippedSlot == 1)
                 weapons.render(camera, player);
             
@@ -993,6 +1003,26 @@ int main(int argc, char** argv)
             char hpText[64];
             snprintf(hpText, sizeof(hpText), "HP: %d/%d", player.currentHp, player.maxHp);
             uiDrawText(hpText, 24, 116, 0.38f, {0.35f, 1.0f, 0.45f, 1.0f});
+            if (player.dead) {
+                const float centerX = uiScreenW() * 0.5f;
+                const float centerY = uiScreenH() * 0.5f;
+                std::string deathText = "you died to " +
+                    (player.killedBy.empty() ? std::string("unknown") : player.killedBy);
+                char respawnText[128];
+                snprintf(respawnText, sizeof(respawnText),
+                         "respawning automatically in %.3f...", player.respawnTimer);
+                uiDrawRect(
+                    {centerX - 270.0f, centerY - 80.0f, 540.0f, 160.0f},
+                    {0.0f, 0.0f, 0.0f, 0.75f},
+                    "death-overlay");
+                uiDrawText(deathText.c_str(), centerX - 150.0f, centerY - 42.0f,
+                           0.55f, {1.0f, 0.15f, 0.15f, 1.0f});
+                uiDrawText(respawnText, centerX - 205.0f, centerY + 2.0f,
+                           0.38f, {1.0f, 1.0f, 1.0f, 1.0f});
+                uiDrawText("press space to respawn instantly",
+                           centerX - 190.0f, centerY + 42.0f,
+                           0.38f, {0.85f, 0.9f, 1.0f, 1.0f});
+            }
             {
                 glm::vec3 totalVel = player.vel;
                 float speed = glm::length(totalVel);
