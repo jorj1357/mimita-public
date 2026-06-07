@@ -65,8 +65,13 @@ void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float
 void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId) {
     force = std::clamp(force, 0.35f, 1.5f);
     bool highForce = force >= 0.7f;
-    int bigCount = highForce ? 16 : 8;
-    int smallCount = 0;
+    // int bigCount = highForce ? 16 : 8;
+    // int smallCount = 0;
+    // int bigCount = highForce ? 5 : 3;
+    int bigCount = highForce ? 5 : 2;
+    // int smallCount = highForce ? 40 : 20;
+    int smallCount = highForce ? 10 : 4;
+
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
     glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
                                                              : glm::cross(n, glm::vec3(0,1,0)));
@@ -109,7 +114,26 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.maxLifetime = 30.0f;
         // e.maxLifetime = 5.0f;
         e.lifetime = -(0.01f + (rand() % 91) * 0.001f);
-        e.scale = big ? (0.65f + force * 0.55f) : (0.18f + force * 0.22f);
+        // e.scale = big ? (0.65f + force * 0.55f) : (0.18f + force * 0.22f);
+
+        // new scale for big and small splats 6 7 2026 
+        float bigScale =
+            // 0.65f +
+            0.05f +
+            force * 0.55f;
+
+        float smallScale =
+            bigScale *
+            // (0.08f + (rand() % 60) / 1000.0f);
+            // (0.18f + (rand() % 60) / 1000.0f);
+            (0.48f + (rand() % 60) / 1000.0f);
+            // (0.18f + (rand() % 60) / 100.0f);
+            
+        e.scale =
+            big
+            ? bigScale
+            : smallScale;
+
         e.endScale = e.scale;
         e.billboardText = false;
         e.sticky = true;
@@ -117,6 +141,12 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.cylinderHeight = 0.01f;
         e.ownerId = ownerId;
         e.debugVisual = false;
+
+        // and big is dark and small isi light 6 7 2026 
+        if (big)
+            e.color = {0.65f, 0.01f, 0.02f};
+        else
+            e.color = {0.7f, 0.02f, 0.03f};
         spawn(e);
     }
 }
