@@ -67,6 +67,10 @@
 #include "combat/weapon-manager.h"
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
+#include "render/lighting-config.h"
+
+// todo sort 6 7 2026 alphabetical
+#include "game/duel.h"
 
 static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
                         const CollisionTriangle& tri, float& distance)
@@ -218,6 +222,14 @@ int main(int argc, char** argv)
     // Global replay recorder/player
     static ReplayRecorder gReplayRecorder;
     static ReplayPlayer gReplayPlayer;
+
+    // also duels
+    // todo later, make just like a game mode manager, and make configs
+    // using the settings in the game mode manager
+    // like number of plrs/npcs, duel time, how much HP, gravity, walkspeed, etc
+    static DuelManager gDuelManager;
+    static DuelConfig gDuelConfig;
+
     GameState gameState = GAME_MENU;
     GameState prevState = GAME_MENU;
     bool editorMode = false;
@@ -522,12 +534,53 @@ int main(int argc, char** argv)
     // Replay terminal commands
     Terminal::instance().registerCommand({
         "replay.record", "Start replay recording", "replay.record",
-        [](const std::vector<std::string>&) {
+        [&world](const std::vector<std::string>&) {
             if (gReplayRecorder.isRecording()) {
                 Terminal::instance().addLog("[REPLAY] Already recording");
                 return;
             }
             gReplayRecorder.beginRecording(0.0f, "mimita");
+
+            const std::string mapPath = "assets/maps/mimita-aabb-only-interior-small-v4.glb";
+            const std::string playerPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+            const std::string revolverPath = "assets/objects/weapons/mimita-revolver-v1.glb";
+            gReplayRecorder.registerAsset("map:mimita", "map_glb", mapPath, {}, "basic", "world");
+            gReplayRecorder.registerAsset("model:player", "actor_glb", playerPath, {}, "basic", "player");
+            gReplayRecorder.registerAsset("model:revolver", "weapon_glb", revolverPath, {}, "basic", "weapon");
+            gReplayRecorder.registerAsset("texture:outfit", "texture", GetPlayerSettings().outfitPath, {}, {}, "outfit");
+            gReplayRecorder.registerAsset("texture:crosshair-ready", "texture", "assets/crosshair/crosshairready.png", {}, {}, "ui");
+            gReplayRecorder.registerAsset("texture:crosshair-delay", "texture", "assets/crosshair/crosshairdelay.png", {}, {}, "ui");
+            gReplayRecorder.registerAsset("texture:crosshair-reloading", "texture", "assets/crosshair/crosshairreloading.png", {}, {}, "ui");
+
+            ReplayWorldMetadata replayWorld;
+            replayWorld.mapAssetId = "map:mimita";
+            replayWorld.mapPath = mapPath;
+            for (const Mesh::Batch& batch : world.mesh.batches) {
+                const std::string materialName = batch.materialName.empty() ? "default" : batch.materialName;
+                bool alreadyRegistered = false;
+                for (const ReplayMaterialReference& material : replayWorld.materials) {
+                    if (material.materialName == materialName) {
+                        alreadyRegistered = true;
+                        break;
+                    }
+                }
+                if (!alreadyRegistered)
+                    replayWorld.materials.push_back({materialName, "", "basic"});
+            }
+            gReplayRecorder.setWorldMetadata(replayWorld);
+
+            ReplayLightingState replayLighting;
+            replayLighting.directionalLight = gLighting.lightDir;
+            replayLighting.ambientStrength = gLighting.ambientStrength;
+            replayLighting.diffuseStrength = gLighting.diffuseStrength;
+            replayLighting.edgeDarkness = gLighting.edgeDarkness;
+            replayLighting.edgeWidth = gLighting.edgeWidth;
+            replayLighting.aoDarkness = gLighting.aoDarkness;
+            replayLighting.aoContrast = gLighting.aoContrast;
+            replayLighting.textureContrast = gLighting.textureContrast;
+            replayLighting.textureBrightness = gLighting.textureBrightness;
+            gReplayRecorder.setLighting(replayLighting);
+
             Terminal::instance().addLog("[REPLAY] Recording started");
         }
     });
@@ -537,7 +590,13 @@ int main(int argc, char** argv)
         [](const std::vector<std::string>&) {
             if (gReplayRecorder.isRecording()) {
                 gReplayRecorder.stopRecording();
-                Terminal::instance().addLog("[REPLAY] Recording stopped");
+                const std::string path = generateReplayExportPath();
+                const bool exported = gReplayRecorder.exportToJSON(path);
+                Terminal::instance().addLog(
+                    exported
+                        ? "[REPLAY] Recording stopped and saved to " + path
+                        : "[ERROR] Replay stopped but export failed: " + path
+                );
             }
             if (gReplayPlayer.isPlaying()) {
                 gReplayPlayer.stopPlayback();
@@ -556,8 +615,11 @@ int main(int argc, char** argv)
             std::string path = args[0];
             if (path.find('.') == std::string::npos)
                 path += ".json";
-            gReplayRecorder.exportToJSON(path);
-            Terminal::instance().addLog("[REPLAY] Exported to " + path);
+            const bool exported = gReplayRecorder.exportToJSON(path);
+            Terminal::instance().addLog(
+                exported ? "[REPLAY] Exported to " + path
+                         : "[ERROR] Failed to export replay to " + path
+            );
         }
     });
 
@@ -594,6 +656,37 @@ int main(int argc, char** argv)
                      (int)gReplayRecorder.isRecording(), (int)gReplayPlayer.isPlaying(),
                      gReplayPlayer.totalTicks());
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    // 6 7 2026 omg todo
+    // put ALL these commands into terminal folder like by itself
+    Terminal::instance().registerCommand({
+        "duel.start",
+        "Start duel mode",
+        "duel.start [npcCount]",
+        [&player, &npcSystem](const std::vector<std::string>& args)
+        {
+            DuelConfig cfg;
+
+            cfg.numNpcs =
+                args.empty()
+                ? 3
+                : std::clamp(std::stoi(args[0]), 1, 10);
+
+            cfg.killsToWin = 10;
+            cfg.duelLengthSeconds = 300;
+            cfg.enabled = true;
+
+            gDuelConfig = cfg;
+
+            gDuelManager.start(
+                gDuelConfig,
+                player,
+                npcSystem);
+
+            Terminal::instance().addLog(
+                "[DUEL] started");
         }
     });
 
@@ -692,7 +785,24 @@ int main(int argc, char** argv)
                 if (!gReplayPlayer.isPlaying()) {
                     // Live input: build InputFrame from keyboard + terminal override
                     InputCommandSystem::instance().setKeyboardEnabled(!Terminal::instance().isOpen());
+                    // tickFrame = buildInputFrame(engine.window(), camera);
+
+                    // lock mvoemnet if countdown in duels 6 7 2026 
                     tickFrame = buildInputFrame(engine.window(), camera);
+
+                    if (gDuelManager.phase() == DuelPhase::Countdown)
+                    {
+                        tickFrame.moveX = 0.0f;
+                        tickFrame.moveY = 0.0f;
+
+                        tickFrame.jump = false;
+                        tickFrame.jumpPressed = false;
+
+                        tickFrame.dashPressed = false;
+                        tickFrame.freezeHeld = false;
+
+                        tickFrame.reloadPressed = false;
+                    }
                     if (tickFrame.reloadPressed) {
                         if (DebugConfig::DEBUG_INPUT)
                             Debug::log(Debug::Category::General, "[INPUT] key -> action=reload -> command=reload\n");
@@ -700,14 +810,70 @@ int main(int argc, char** argv)
                     }
                 }
 
-                // Record to replay
-                if (gReplayRecorder.isRecording()) {
+                const bool recordingReplayTick = gReplayRecorder.isRecording();
+                uint32_t replayTick = 0;
+                if (recordingReplayTick) {
+                    replayTick = gReplayRecorder.currentTick();
                     gReplayRecorder.recordFrame(tickFrame);
                 }
 
                 // Run simulation for this tick
                 if (!freecamEnabled)
                     simulateTick(simContext, tickFrame);
+
+                if (recordingReplayTick) {
+                    ReplaySceneFrame sceneFrame;
+                    sceneFrame.tick = (int)replayTick;
+                    sceneFrame.time = (float)sceneFrame.tick / 60.0f;
+
+                    // Camera
+                    sceneFrame.camera.position = camera.pos;
+                    sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, camera.yaw);
+                    sceneFrame.camera.fov = 70.0f;
+
+                    // Player
+                    ReplayActorState playerActor;
+                    playerActor.id = player.username.empty() ? "admin" : player.username;
+                    playerActor.name = player.username;
+                    playerActor.type = "player";
+                    playerActor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                    playerActor.position = player.pos;
+                    playerActor.rotation = glm::vec3(0.0f, 0.0f, player.yaw);
+                    playerActor.velocity = player.vel;
+                    playerActor.health = player.currentHp;
+                    playerActor.maxHealth = player.maxHp;
+                    playerActor.grounded = player.onGround;
+                    playerActor.weaponName = player.equippedSlot == 1 ? "revolver" : "none";
+                    playerActor.weaponModelPath = player.equippedSlot == 1
+                        ? "assets/objects/weapons/mimita-revolver-v1.glb"
+                        : "";
+                    playerActor.reloading = weapons.isReloading();
+                    playerActor.shooting = weapons.isShooting();
+                    playerActor.animationState = player.onGround
+                        ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
+                        : "air";
+                    sceneFrame.actors.push_back(playerActor);
+
+                    // NPCs
+                    for (const Npc& npc : npcSystem.all()) {
+                        ReplayActorState npcActor;
+                        npcActor.id = "npc_" + std::to_string(npc.id);
+                        npcActor.name = npc.body.username;
+                        npcActor.type = "npc";
+                        npcActor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+                        npcActor.position = npc.body.pos;
+                        npcActor.rotation = glm::vec3(0.0f, 0.0f, npc.body.yaw);
+                        npcActor.velocity = npc.body.vel;
+                        npcActor.health = npc.body.currentHp;
+                        npcActor.maxHealth = npc.body.maxHp;
+                        npcActor.grounded = npc.body.onGround;
+                        npcActor.weaponName = "none";
+                        npcActor.animationState = npc.chosenAction.name;
+                        sceneFrame.actors.push_back(npcActor);
+                    }
+
+                    gReplayRecorder.recordSceneFrame(sceneFrame);
+                }
 
                 simAccumulator -= SIM_DT;
             }
@@ -740,6 +906,13 @@ int main(int argc, char** argv)
             }
             setAudioListener(camera.pos, camera.front);
             weapons.update(camera, player, dt);
+
+            gDuelManager.update(
+                dt,
+                player,
+                npcSystem,
+                world,
+                camera);
 
             player.updateAudio(dt);
 
@@ -788,6 +961,18 @@ int main(int argc, char** argv)
             }
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
+            if (gReplayRecorder.isRecording()) {
+                const float overlayX = uiScreenW() - 230.0f;
+                uiDrawRect({overlayX - 18.0f, 20.0f, 12.0f, 12.0f},
+                           {1.0f, 0.05f, 0.05f, 1.0f}, "replay-record-dot");
+                uiDrawText("[REPLAY REC]", overlayX, 30.0f, 0.34f,
+                           {1.0f, 0.12f, 0.12f, 1.0f});
+                char replayTickText[64];
+                snprintf(replayTickText, sizeof(replayTickText), "tick: %u",
+                         gReplayRecorder.currentTick());
+                uiDrawText(replayTickText, overlayX, 58.0f, 0.30f,
+                           {1.0f, 0.12f, 0.12f, 1.0f});
+            }
             if (player.equippedSlot == 1) {
                 const char* crosshairPath = "assets/crosshair/crosshairready.png";
                 switch (weapons.crosshairState(player)) {
@@ -890,6 +1075,7 @@ int main(int argc, char** argv)
                          camera.pos.x, camera.pos.y, camera.pos.z);
                 uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
             }
+            gDuelManager.renderHud();
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
 
