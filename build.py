@@ -373,7 +373,18 @@ else:
     print("[SKIP] src/glad.c")
     skipped_count += 1
 
-if compiled_count == 0:
+# ============================================================
+# DETERMINE IF LINK NEEDED
+# ============================================================
+
+exe_path = os.path.join(ROOT, EXE_NAME)
+
+needs_link = (
+    compiled_count > 0 or
+    not os.path.exists(exe_path)
+)  
+
+if not needs_link:
     print()
     print("Nothing changed.")
     print()
@@ -388,7 +399,10 @@ if compiled_count == 0:
         print()
 
         exe_path = os.path.join(ROOT, EXE_NAME)
-        subprocess.run([exe_path])
+        if os.path.exists(exe_path):
+            subprocess.run([exe_path])
+        else:
+            print("[ERROR] mimita.exe missing")
 
     sys.exit(0)
 
@@ -446,4 +460,7 @@ print()
 
 exe_path = os.path.join(ROOT, EXE_NAME)
 
-subprocess.run([exe_path])
+if os.path.exists(exe_path):
+    subprocess.run([exe_path])
+else:
+    print("[ERROR] mimita.exe missing 2")
