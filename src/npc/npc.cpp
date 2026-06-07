@@ -231,13 +231,22 @@ NpcAction chooseAction(Npc& npc, float dt)
         actions.push_back(dash);
     }
 
-    if (npc.attackCooldown <= 0.0f && attackRange01 > 0.0f)
+    float meleeRange01 = 1.0f - clamp01((s.targetDistance - 2.4f) / 2.8f);
+    float rangedRange01 = 1.0f - clamp01((s.targetDistance - 3.0f) / 25.0f);
+    if (npc.attackCooldown <= 0.0f)
     {
-        NpcAction attack = makeAction(NpcActionType::Attack, chaseDir + lateral * (1.0f - npc.tuning.movementPrecision) * 0.35f, s.targetPos, attackRange01 * (0.55f + npc.tuning.aggression * 0.70f));
-        attack.attackPressed = true;
-        if (npc.dashCooldown <= 0.0f && npc.tuning.aggression > 0.55f)
-            attack.dashPressed = true;
-        actions.push_back(attack);
+        if (meleeRange01 > 0.0f) {
+            NpcAction attack = makeAction(NpcActionType::Attack, chaseDir + lateral * (1.0f - npc.tuning.movementPrecision) * 0.35f, s.targetPos, meleeRange01 * (0.55f + npc.tuning.aggression * 0.70f));
+            attack.attackPressed = true;
+            if (npc.dashCooldown <= 0.0f && npc.tuning.aggression > 0.55f)
+                attack.dashPressed = true;
+            actions.push_back(attack);
+        }
+        if (rangedRange01 > 0.0f && s.targetDistance > 3.0f) {
+            NpcAction ranged = makeAction(NpcActionType::Attack, chaseDir * 0.3f + lateral * 0.7f, s.targetPos, rangedRange01 * (0.40f + npc.tuning.aggression * 0.50f));
+            ranged.attackPressed = true;
+            actions.push_back(ranged);
+        }
     }
 
     return *std::max_element(actions.begin(), actions.end(), [](const NpcAction& a, const NpcAction& b) { return a.score < b.score; });
@@ -263,7 +272,12 @@ InputState inputFromAction(Npc& npc, NpcAction action)
     input.dashPressed = action.dashPressed && !npc.dashCommandConsumed;
     input.groundReturnPressed = false;
     input.freezeHeld = false;
-    input.camForward = safePlanarNormal(action.direction, {1.0f, 0.0f, 0.0f});
+    if (action.type == NpcActionType::Attack && npc.sensors.hasTarget) {
+        glm::vec3 toTarget = npc.sensors.predictedTarget - npc.body.pos;
+        input.camForward = safePlanarNormal(toTarget, {1.0f, 0.0f, 0.0f});
+    } else {
+        input.camForward = safePlanarNormal(action.direction, {1.0f, 0.0f, 0.0f});
+    }
     return input;
 }
 
@@ -342,8 +356,12 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 {
     for (Npc& npc : npcs)
     {
-        if (npc.body.currentHp <= 0) {
-            npc.body.vel = glm::vec3(0.0f);
+        if (npc.body.dead) {
+            InputState deadInput;
+            deadInput.camForward = glm::vec3(0.0f, 1.0f, 0.0f);
+            physicsMainUpdate(npc.body, world, deadInput, dt);
+            npc.body.syncLegacyStateToLayers();
+            npc.body.updateModelWorldTransforms();
             continue;
         }
         npc.reactionTimer -= dt;
@@ -443,12 +461,61 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 
         if (npc.chosenAction.attackPressed && npc.attackCooldown <= 0.0f)
         {
-            // Note: player is passed from main.cpp or sim context
-            // NPC melee attack will be resolved in simulate-tick where we have player access
-            npc.attackCooldown = 1.35f - difficulty01(npc.difficulty) * 1.05f;
+            float dist = npc.sensors.targetDistance;
+            float cd = 1.35f - difficulty01(npc.difficulty) * 1.05f;
+            // Ranged attack if distance > 3m, else melee
+            if (dist > 3.0f && npc.sensors.visibleTarget) {
+                glm::vec3 npcPos = npc.body.pos;
+                npcPos.z += 0.8f;
+                glm::vec3 toTarget = npc.sensors.predictedTarget - npcPos;
+                float aimDist = glm::length(toTarget);
+                if (aimDist > 0.1f) {
+                    glm::vec3 aimDir = glm::normalize(toTarget);
+                    float aimErr = (random01(npc.rngState) * 2.0f - 1.0f) * npc.tuning.aimErrorRadians;
+                    aimDir = rotatePlanar(aimDir, aimErr);
+                    // Check line of sight: ray from NPC to target
+                    bool obstructed = false;
+                    glm::vec3 rayStart = npcPos;
+                    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+                        glm::vec3 e1 = tri.b - tri.a;
+                        glm::vec3 e2 = tri.c - tri.a;
+                        glm::vec3 pVec = glm::cross(aimDir, e2);
+                        float det = glm::dot(e1, pVec);
+                        if (std::fabs(det) < 0.0001f) continue;
+                        float invDet = 1.0f / det;
+                        glm::vec3 tVec = rayStart - tri.a;
+                        float u = glm::dot(tVec, pVec) * invDet;
+                        if (u < 0.0f || u > 1.0f) continue;
+                        glm::vec3 qVec = glm::cross(tVec, e1);
+                        float v = glm::dot(aimDir, qVec) * invDet;
+                        if (v < 0.0f || u + v > 1.0f) continue;
+                        float t = glm::dot(e2, qVec) * invDet;
+                        if (t > 0.1f && t < aimDist - 0.5f) { obstructed = true; break; }
+                    }
+                    if (!obstructed) {
+                        float baseDmg = 8.0f + difficulty01(npc.difficulty) * 12.0f;
+                        int dmg = std::max(1, (int)(baseDmg + (rand() % 11) - 5));
+                        glm::vec3 knockbackDir = toTarget;
+                        knockbackDir.z = 0.2f;
+                        glm::vec3 hitPoint = npcPos + aimDir * aimDist;
+                        EffectPartSystem::instance().spawnBloodSphereBurst(
+                            hitPoint, aimDir, (float)dmg / 60.0f,
+                            npc.body.username, player.username);
+                        EffectPartSystem::instance().spawnEntityImpact(
+                            hitPoint, -aimDir, npc.body.username, player.username);
+                        EffectPartSystem::instance().spawnMuzzleFlash(npcPos, npc.body.username);
+                        EffectPartSystem::instance().spawnTracer(npcPos, hitPoint, npc.body.username);
+                        AudioManager::instance().play(
+                            {"revolvershoot", AudioCategory::Weapons, true, npcPos, 0.5f, 0.9f, 40.0f, npc.id});
+                        const_cast<Player&>(player).takeDamage(dmg, knockbackDir, 8.0f);
+                    }
+                }
+                cd = std::max(cd, 1.0f);
+            }
+            npc.attackCooldown = cd;
             Debug::log(Debug::Category::General,
-                       "[NPC] id=%u attack chosen difficulty=%.1f distance=%.2f\n",
-                       npc.id, npc.difficulty, npc.sensors.targetDistance);
+                       "[NPC] id=%u attack difficulty=%.1f distance=%.2f cooldown=%.2f\n",
+                       npc.id, npc.difficulty, dist, cd);
         }
     }
 
@@ -460,8 +527,7 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 void NpcSystem::render(const Camera& camera) const
 {
     for (const Npc& npc : npcs)
-        if (npc.body.currentHp > 0)
-            renderPlayer(npc.body, camera);
+        renderPlayer(npc.body, camera);
 }
 
 void NpcSystem::drawDebug(const Camera& camera) const

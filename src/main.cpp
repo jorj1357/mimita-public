@@ -845,7 +845,7 @@ int main(int argc, char** argv)
                     playerActor.maxHealth = player.maxHp;
                     playerActor.grounded = player.onGround;
                     playerActor.collidable = !player.dead;
-                    playerActor.fade = player.dead ? 1.0f : 0.0f;
+                    playerActor.fade = 0.0f;
                     playerActor.weaponName = player.equippedSlot == 1 ? "revolver" : "none";
                     playerActor.weaponModelPath = player.equippedSlot == 1
                         ? "assets/objects/weapons/mimita-revolver-v1.glb"
@@ -863,7 +863,7 @@ int main(int argc, char** argv)
                         ReplayActorState npcActor;
                         npcActor.id = "npc_" + std::to_string(npc.id);
                         npcActor.name = npc.body.username;
-                        npcActor.type = "npc";
+                        npcActor.type = npc.body.dead ? "corpse" : "npc";
                         npcActor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
                         npcActor.position = npc.body.pos;
                         npcActor.rotation = glm::vec3(0.0f, 0.0f, npc.body.yaw);
@@ -872,7 +872,7 @@ int main(int argc, char** argv)
                         npcActor.maxHealth = npc.body.maxHp;
                         npcActor.grounded = npc.body.onGround;
                         npcActor.collidable = !npc.body.dead;
-                        npcActor.fade = npc.body.dead ? 1.0f : 0.0f;
+                        npcActor.fade = 0.0f;
                         npcActor.weaponName = "none";
                         npcActor.animationState = npc.chosenAction.name;
                         npcActor.bodyParts = captureReplayBodyParts(npc.body);
@@ -950,8 +950,7 @@ int main(int argc, char** argv)
                 slotPrev[keySlot] = down;
             }
             renderWorld(world, camera);
-            if (!player.dead)
-                renderPlayer(player, camera);
+            renderPlayer(player, camera);
             npcSystem.render(camera);
             DeathSystem::instance().render(camera);
             if (player.equippedSlot == 1)

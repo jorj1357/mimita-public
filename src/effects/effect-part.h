@@ -63,6 +63,9 @@ public:
     void spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const class World& world);
     void spawnBloodSpurt(glm::vec3 position, glm::vec3 direction,
                         const std::string& sourceActorId, const std::string& targetActorId);
+    // New: Blood sphere burst at hit point with force-based particle count
+    void spawnBloodSphereBurst(glm::vec3 hitPoint, glm::vec3 shotDirection, float force,
+                               const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal);
