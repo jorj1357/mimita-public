@@ -65,7 +65,7 @@ MAX_TICK = 0
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-07-2026\13-44-33-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-07-2026\14-33-30-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
