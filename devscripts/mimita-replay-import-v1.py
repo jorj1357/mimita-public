@@ -34,7 +34,7 @@ from mathutils import Vector
 
 # config v3  6 7 2026
 # MAX_FRAMES = 120
-MAX_FRAMES = 1200
+MAX_FRAMES = 12003
 
 IMPORT_EFFECTS = True
 IMPORT_SOUNDS = True
@@ -47,7 +47,7 @@ IMPORT_PLAYER = True
 KEYFRAME_EVERY_N_TICKS = 1
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-07-2026\11-12-39-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-07-2026\13-44-33-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
