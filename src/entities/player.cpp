@@ -6,11 +6,16 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
+#include <nlohmann/json.hpp>
 
 #include "map/map_loader.h"
 #include "tinygltf/tiny_gltf.h"
@@ -43,6 +48,117 @@ static GLuint bodyPartVBO = 0;
 namespace {
 
 const char* PLAYER_GLB_PATH = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+const char* PLAYER_PROCEDURAL_CONFIG_PATH = "config/player-procedural.json";
+
+struct PlayerProceduralConfig
+{
+    float leftArmRaise;
+    float leftArmForward;
+    float leftArmTwist;
+
+    float rightArmRaise;
+    float rightArmForward;
+    float rightArmTwist;
+
+    float weaponSwayAmount;
+    float weaponSwaySpeed;
+
+    float torsoAimYawStrength;
+    float torsoAimPitchStrength;
+
+    float armAimYawStrength;
+    float armAimPitchStrength;
+};
+
+PlayerProceduralConfig gPlayerProcedural{
+    -45.0f,
+    -20.0f,
+    15.0f,
+    -55.0f,
+    -25.0f,
+    -10.0f,
+    0.15f,
+    8.0f,
+    0.6f,
+    0.3f,
+    0.25f,
+    0.45f
+};
+float gPlayerProceduralReloadTimer = 0.25f;
+std::filesystem::file_time_type gPlayerProceduralLastWrite{};
+std::chrono::steady_clock::time_point gPlayerProceduralLastCheck{};
+
+template<typename T>
+void readJsonValue(
+    const nlohmann::json& j,
+    const char* key,
+    T& value
+)
+{
+    if (j.contains(key))
+        value = j[key].get<T>();
+}
+
+bool reloadPlayerProceduralConfig()
+{
+    std::ifstream file(PLAYER_PROCEDURAL_CONFIG_PATH);
+    if (!file.is_open())
+        return false;
+
+    try
+    {
+        nlohmann::json j;
+        file >> j;
+
+        PlayerProceduralConfig loaded = gPlayerProcedural;
+        readJsonValue(j, "leftArmRaise", loaded.leftArmRaise);
+        readJsonValue(j, "leftArmForward", loaded.leftArmForward);
+        readJsonValue(j, "leftArmTwist", loaded.leftArmTwist);
+        readJsonValue(j, "rightArmRaise", loaded.rightArmRaise);
+        readJsonValue(j, "rightArmForward", loaded.rightArmForward);
+        readJsonValue(j, "rightArmTwist", loaded.rightArmTwist);
+        readJsonValue(j, "weaponSwayAmount", loaded.weaponSwayAmount);
+        readJsonValue(j, "weaponSwaySpeed", loaded.weaponSwaySpeed);
+        readJsonValue(j, "torsoAimYawStrength", loaded.torsoAimYawStrength);
+        readJsonValue(j, "torsoAimPitchStrength", loaded.torsoAimPitchStrength);
+        readJsonValue(j, "armAimYawStrength", loaded.armAimYawStrength);
+        readJsonValue(j, "armAimPitchStrength", loaded.armAimPitchStrength);
+
+        gPlayerProcedural = loaded;
+        printf("[HOT RELOAD] player procedural config reloaded\n");
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        printf("[HOT RELOAD] player procedural config reload failed: %s\n", e.what());
+        return false;
+    }
+}
+
+void updatePlayerProceduralHotReload(float dt)
+{
+    gPlayerProceduralReloadTimer += dt;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (gPlayerProceduralReloadTimer < 0.25f ||
+        (gPlayerProceduralLastCheck.time_since_epoch().count() != 0 &&
+         now - gPlayerProceduralLastCheck < std::chrono::milliseconds(250)))
+        return;
+
+    gPlayerProceduralReloadTimer = 0.0f;
+    gPlayerProceduralLastCheck = now;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(PLAYER_PROCEDURAL_CONFIG_PATH, ec) || ec)
+        return;
+
+    const auto writeTime = std::filesystem::last_write_time(PLAYER_PROCEDURAL_CONFIG_PATH, ec);
+    if (ec || writeTime == gPlayerProceduralLastWrite)
+        return;
+
+    gPlayerProceduralLastWrite = writeTime;
+    reloadPlayerProceduralConfig();
+}
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
 {
@@ -738,6 +854,8 @@ void Player::updateModelWorldTransforms()
 
 void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos)
 {
+    updatePlayerProceduralHotReload(dt);
+
     if (perfectPoseSkeleton.nodes.empty() ||
         perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
         return;
@@ -770,8 +888,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     // Weapon sway (applied to arms when weapon equipped)
     bool weaponEquipped = (equippedSlot == 1);
-    float swayAmount = weaponEquipped ? 0.15f + move01 * 0.1f : 0.0f;
-    float swayPhase = weaponSwayTime * 8.0f;
+    float swayAmount = weaponEquipped ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
+    float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
     float swayX = std::sin(swayPhase) * swayAmount;
     float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
     float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
@@ -853,10 +971,13 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // Weapon hold pose (left hand supporting)
             if (weaponEquipped) {
                 // Raise arm to hold weapon
-                target.rotationEuler.z += -45.0f; // Raise up
-                target.rotationEuler.x += -20.0f; // Bring forward
-                target.rotationEuler.y += 15.0f;  // Rotate inward
+                target.rotationEuler.z += gPlayerProcedural.leftArmRaise;
+                target.rotationEuler.x += gPlayerProcedural.leftArmForward;
+                target.rotationEuler.y += gPlayerProcedural.leftArmTwist;
                 target.translation.z += 0.15f;    // Lift slightly
+
+                target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
+                target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
                 
                 // Weapon sway on left arm (supporting hand)
                 target.rotationEuler.z += swayZ * 0.5f;
@@ -893,11 +1014,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // Weapon hold pose (right hand - primary grip)
             if (weaponEquipped) {
                 // Raise arm to hold weapon forward
-                target.rotationEuler.z += -55.0f; // Raise up
-                target.rotationEuler.x += -25.0f; // Bring forward
-                target.rotationEuler.y += -10.0f; // Rotate outward slightly
+                target.rotationEuler.z += gPlayerProcedural.rightArmRaise;
+                target.rotationEuler.x += gPlayerProcedural.rightArmForward;
+                target.rotationEuler.y += gPlayerProcedural.rightArmTwist;
                 target.translation.z += 0.18f;    // Lift slightly
                 target.translation.x += 0.08f;    // Offset to side
+
+                target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
+                target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
                 
                 // Weapon sway on right arm (trigger hand)
                 target.rotationEuler.z += swayZ;
@@ -931,8 +1055,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // Upper body aim rotation (yaw toward aim direction)
             if (weaponEquipped && hasAimData) {
                 // Convert aimYaw from radians to degrees for rotationEuler
-                target.rotationEuler.y += aimYaw * 57.29578f * 0.6f; // 60% of aim yaw applied to torso
-                target.rotationEuler.x += aimPitch * 57.29578f * 0.3f; // 30% of pitch to torso
+                target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.torsoAimYawStrength;
+                target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.torsoAimPitchStrength;
             }
         }
         else if (part.name == "head")
