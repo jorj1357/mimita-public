@@ -14,6 +14,10 @@
 #include <ctime>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtx/quaternion.hpp>
+
+#include "entities/player.h"
 
 using json = nlohmann::json;
 
@@ -23,6 +27,11 @@ ReplayRecorder* gActiveReplayRecorder = nullptr;
 json vec3Json(const glm::vec3& value)
 {
     return {value.x, value.y, value.z};
+}
+
+json vec4Json(const glm::vec4& value)
+{
+    return {value.x, value.y, value.z, value.w};
 }
 
 json materialJson(const ReplayMaterialReference& material)
@@ -39,11 +48,13 @@ json effectJson(const ReplayEffectEvent& effect)
     return {
         {"type", effect.type},
         {"position", vec3Json(effect.position)},
+        {"direction", vec3Json(effect.direction)},
         {"from", vec3Json(effect.from)},
         {"to", vec3Json(effect.to)},
+        {"rotation", vec3Json(effect.rotation)},
         {"scale", vec3Json(effect.scale)},
         {"endScale", vec3Json(effect.endScale)},
-        {"color", vec3Json(effect.color)},
+        {"color", vec4Json(effect.color)},
         {"velocity", vec3Json(effect.velocity)},
         {"normal", vec3Json(effect.normal)},
         {"spawnTick", effect.spawnTick},
@@ -51,6 +62,15 @@ json effectJson(const ReplayEffectEvent& effect)
         {"startDelay", effect.startDelay},
         {"lifetime", effect.lifetime},
         {"alpha", effect.alpha},
+        {"radius", effect.radius},
+        {"thickness", effect.thickness},
+        {"endThickness", effect.endThickness},
+        {"gravity", effect.gravity},
+        {"assetId", effect.assetId},
+        {"assetPath", effect.assetPath},
+        {"soundPath", effect.soundPath},
+        {"sourceActorId", effect.sourceActorId},
+        {"targetActorId", effect.targetActorId},
         {"texturePath", effect.texturePath},
         {"material", effect.materialName}
     };
@@ -72,6 +92,40 @@ void captureReplaySound(const ReplaySoundEvent& event)
 {
     if (gActiveReplayRecorder && gActiveReplayRecorder->isRecording())
         gActiveReplayRecorder->recordSoundEvent(event);
+}
+
+std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
+{
+    std::vector<ReplayBodyPartState> states;
+    states.reserve(player.physicalBody.parts.size());
+
+    glm::mat4 root = glm::translate(glm::mat4(1.0f), player.pos) *
+                     glm::mat4_cast(player.movementCapsule.rotation);
+    glm::mat4 inverseRoot = glm::inverse(root);
+
+    for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+        if (part.name != "head" && part.name != "torso" &&
+            part.name != "leftArm" && part.name != "rightArm" &&
+            part.name != "leftLeg" && part.name != "rightLeg")
+            continue;
+
+        glm::vec3 scale(1.0f);
+        glm::quat orientation;
+        glm::vec3 translation(0.0f);
+        glm::vec3 skew(0.0f);
+        glm::vec4 perspective(0.0f);
+        glm::decompose(inverseRoot * part.worldTransform,
+                       scale, orientation, translation, skew, perspective);
+
+        ReplayBodyPartState state;
+        state.name = part.name;
+        state.position = translation;
+        state.rotation = glm::degrees(glm::eulerAngles(glm::normalize(orientation)));
+        state.scale = scale;
+        states.push_back(state);
+    }
+
+    return states;
 }
 
 std::string generateReplayExportPath()
@@ -274,17 +328,37 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
     j["lighting"]["textureBrightness"] = mLighting.textureBrightness;
 
     j["soundEvents"] = json::array();
+    j["events"] = json::array();
+    json eventCounts = json::object();
     for (const ReplaySoundEvent& sound : mSoundEvents) {
-        j["soundEvents"].push_back({
+        json soundJson = {
+            {"type", "sound"},
             {"tick", sound.tick},
+            {"spawnTick", sound.tick},
             {"soundPath", sound.soundPath},
             {"world", sound.world},
             {"position", vec3Json(sound.position)},
             {"volume", sound.volume},
             {"pitch", sound.pitch},
             {"maxDistance", sound.maxDistance}
-        });
+        };
+        j["soundEvents"].push_back(soundJson);
+        j["events"].push_back(soundJson);
+        eventCounts["sound"] = eventCounts.value("sound", 0) + 1;
     }
+    for (const ReplaySceneFrame& sceneFrame : mSceneFrames) {
+        for (const ReplayEffectEvent& effect : sceneFrame.effects) {
+            json event = effectJson(effect);
+            event["tick"] = effect.spawnTick;
+            j["events"].push_back(event);
+            eventCounts[effect.type] = eventCounts.value(effect.type, 0) + 1;
+        }
+    }
+    std::sort(j["events"].begin(), j["events"].end(), [](const json& a, const json& b) {
+        return a.value("tick", a.value("spawnTick", 0)) <
+               b.value("tick", b.value("spawnTick", 0));
+    });
+    j["eventCounts"] = eventCounts;
 
     // Frames
     json framesJson = json::array();
@@ -363,7 +437,18 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             a["shooting"] = actor.shooting;
             a["reloading"] = actor.reloading;
             a["grounded"] = actor.grounded;
+            a["collidable"] = actor.collidable;
+            a["fade"] = actor.fade;
+            a["blackness"] = actor.blackness;
             a["animationState"] = actor.animationState;
+            a["bodyParts"] = json::object();
+            for (const ReplayBodyPartState& part : actor.bodyParts) {
+                a["bodyParts"][part.name] = {
+                    {"position", vec3Json(part.position)},
+                    {"rotation", vec3Json(part.rotation)},
+                    {"scale", vec3Json(part.scale)}
+                };
+            }
 
             actorsJson.push_back(a);
         }

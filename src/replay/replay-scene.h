@@ -60,6 +60,13 @@ struct ReplaySoundEvent {
     float maxDistance = 0.0f;
 };
 
+struct ReplayBodyPartState {
+    std::string name;
+    glm::vec3 position{};
+    glm::vec3 rotation{};
+    glm::vec3 scale{1.0f};
+};
+
 struct ReplayActorState {
     std::string id;
     std::string name;
@@ -79,21 +86,28 @@ struct ReplayActorState {
     bool shooting = false;
     bool reloading = false;
     bool grounded = false;
+    bool collidable = true;
+
+    float fade = 0.0f;
+    float blackness = 0.0f;
 
     std::string weaponName;
     std::string animationState;
+    std::vector<ReplayBodyPartState> bodyParts;
 };
 
 struct ReplayEffectEvent {
     std::string type;
 
     glm::vec3 position {};
+    glm::vec3 direction {};
     glm::vec3 from {};
     glm::vec3 to {};
 
+    glm::vec3 rotation {};
     glm::vec3 scale {1.0f};
     glm::vec3 endScale {1.0f};
-    glm::vec3 color {1.0f};
+    glm::vec4 color {1.0f};
     glm::vec3 velocity {};
     glm::vec3 normal {0.0f, 0.0f, 1.0f};
 
@@ -102,6 +116,15 @@ struct ReplayEffectEvent {
     float startDelay = 0.0f;
     float lifetime = 0.0f;
     float alpha = 1.0f;
+    float radius = 0.0f;
+    float thickness = 0.0f;
+    float endThickness = 0.0f;
+    float gravity = 0.0f;
+    std::string assetId;
+    std::string assetPath;
+    std::string soundPath;
+    std::string sourceActorId;
+    std::string targetActorId;
     std::string texturePath;
     std::string materialName;
 };

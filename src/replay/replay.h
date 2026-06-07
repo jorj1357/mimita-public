@@ -15,6 +15,8 @@
 
 #include <string>
 
+class Player;
+
 struct ReplayFrame {
     uint32_t tick = 0;
     InputFrame inputs;
@@ -136,3 +138,4 @@ std::string generateReplayExportPath();
 void setActiveReplayRecorder(ReplayRecorder* recorder);
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
+std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player);

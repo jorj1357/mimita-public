@@ -42,6 +42,8 @@ void WeaponManager::render(const Camera& camera, const Player& player) const
 
 RevolverShotResult WeaponManager::fire(const Camera& camera, Player& player, NpcSystem& npcs, const World& world)
 {
+    if (player.dead)
+        return {};
     if (player.equippedSlot != revolverDefinition.slot) {
         AudioManager::instance().play({"ui/click", AudioCategory::Weapons, false, {}, 0.2f, 0.65f});
         return {};

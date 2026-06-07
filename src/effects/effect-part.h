@@ -10,6 +10,7 @@ struct EffectPart
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     glm::vec3 velocity{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 rotation{0.0f};
     glm::vec3 endPosition{0.0f};
     glm::vec3 halfSize{0.1f};
     float lifetime = 0.0f;
@@ -22,6 +23,11 @@ struct EffectPart
     float scale = 1.0f;
     float endScale = 1.0f;
     float alpha = 1.0f;
+    float gravity = 0.0f;
+    float thickness = 0.0f;
+    float endThickness = 0.0f;
+    std::string sourceActorId;
+    std::string targetActorId;
     unsigned int ownerId = 0;
     bool affectedByGravity = false;
     bool sticky = false;
@@ -55,9 +61,13 @@ public:
     void spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId = 0);
     // Blood projection: raycast from hit point along direction, project blood onto surfaces behind target
     void spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const class World& world);
+    void spawnBloodSpurt(glm::vec3 position, glm::vec3 direction,
+                        const std::string& sourceActorId, const std::string& targetActorId);
+    EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
+                                  const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal);
-    EffectPart* spawnMuzzleFlash(glm::vec3 position);
-    EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end);
+    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {});
+    EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position);
     void spawnWorldDebris(glm::vec3 position, glm::vec3 normal);
     void destroyOwner(unsigned int ownerId);
