@@ -15,6 +15,9 @@ struct EffectPart
     float lifetime = 0.0f;
     float maxLifetime = 1.0f;
     std::string label;
+    std::string replayType = "effect";
+    std::string texturePath;
+    std::string materialName;
     bool billboardText = true;
     float scale = 1.0f;
     float endScale = 1.0f;

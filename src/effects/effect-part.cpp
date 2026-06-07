@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include "audio/audio.h"
+#include "replay/replay.h"
 
 EffectPartSystem& EffectPartSystem::instance() {
     static EffectPartSystem sInstance;
@@ -45,6 +46,7 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
     e.color = {1.0f, 0.0f, 0.0f};
     e.maxLifetime = 1.0f;
     e.label = victim + " took " + std::to_string(damage) + " damage!!";
+    e.replayType = "damage_number";
     e.scale = 0.24f;
     return spawn(e);
 }
@@ -71,6 +73,7 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.position = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius
                    + n * (0.006f + (rand() % 8) * 0.001f);
         e.normal = n;
+        e.replayType = "blood";
         e.color = {1.0f, 0.015f, 0.025f};
         e.maxLifetime = 30.0f;
         e.lifetime = -(0.01f + (rand() % 91) * 0.001f);
@@ -205,6 +208,7 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     EffectPart e;
     e.position = position;
     e.normal = normal;
+    e.replayType = "world_impact";
     e.color = {0.55f, 0.55f, 0.55f};
     e.maxLifetime = 0.5f;
     e.scale = 0.1f;
@@ -219,6 +223,7 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
 EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position) {
     EffectPart e;
     e.position = position;
+    e.replayType = "muzzle_flash";
     e.color = {1.0f, 1.0f, 1.0f};
     e.maxLifetime = 0.1f;
     e.scale = 0.5f;
@@ -231,6 +236,7 @@ EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position) {
 EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end) {
     EffectPart e;
     e.position = start;
+    e.replayType = "tracer";
     e.endPosition = end;
     e.color = {1.0f, 0.82f, 0.05f};
     e.maxLifetime = 0.5f;
@@ -244,6 +250,7 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end) {
 EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
     EffectPart e;
     e.position = position;
+    e.replayType = "bullet_impact";
     e.color = {0.55f, 0.55f, 0.58f};
     e.maxLifetime = 0.25f;
     e.scale = 0.1f;
@@ -264,6 +271,7 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
         randomDir = glm::normalize(randomDir + n * 0.8f);
         EffectPart e;
         e.position = position + n * 0.04f;
+        e.replayType = "world_debris";
         e.velocity = randomDir * (1.5f + (rand() % 2001) / 1000.0f);
         e.color = {0.42f, 0.40f, 0.38f};
         e.maxLifetime = 1.0f;
@@ -283,6 +291,23 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
 }
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
+    ReplayEffectEvent event;
+    event.type = effect.replayType;
+    event.position = effect.position;
+    event.from = effect.position;
+    event.to = effect.endPosition;
+    event.scale = effect.box ? effect.halfSize * 2.0f : glm::vec3(effect.scale);
+    event.endScale = glm::vec3(effect.endScale);
+    event.color = effect.color;
+    event.velocity = effect.velocity;
+    event.normal = effect.normal;
+    event.lifetime = effect.maxLifetime;
+    event.startDelay = std::max(0.0f, -effect.lifetime);
+    event.alpha = effect.alpha;
+    event.texturePath = effect.texturePath;
+    event.materialName = effect.materialName;
+    captureReplayEffect(event);
+
     mEffects.push_back(effect);
     return &mEffects.back();
 }
@@ -290,6 +315,7 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
 EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position) {
     EffectPart e;
     e.position = position;
+    e.replayType = "footstep";
     e.color = {1.0f, 1.0f, 1.0f};
     e.maxLifetime = 0.5f;
     e.scale = 0.18f;
@@ -303,6 +329,7 @@ EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position) {
 EffectPart* EffectPartSystem::spawnDash(glm::vec3 position) {
     EffectPart e;
     e.position = position;
+    e.replayType = "dash";
     e.color = {0.2f, 0.6f, 1.0f};
     e.maxLifetime = 0.8f;
     e.scale = 0.35f;
@@ -316,6 +343,7 @@ EffectPart* EffectPartSystem::spawnDash(glm::vec3 position) {
 EffectPart* EffectPartSystem::spawnFreeze(glm::vec3 position, float freezeDuration) {
     EffectPart e;
     e.position = position;
+    e.replayType = "freeze";
     e.color = {0.2f, 1.0f, 0.3f};
     e.maxLifetime = 0.1f;
     char buf[64];
@@ -329,6 +357,7 @@ EffectPart* EffectPartSystem::spawnFreeze(glm::vec3 position, float freezeDurati
 EffectPart* EffectPartSystem::spawnImpact(glm::vec3 position, glm::vec3 color, const char* label) {
     EffectPart e;
     e.position = position;
+    e.replayType = label ? label : "impact";
     e.color = color;
     e.maxLifetime = 1.0f;
     e.label = label;
@@ -340,6 +369,7 @@ EffectPart* EffectPartSystem::spawnImpact(glm::vec3 position, glm::vec3 color, c
 EffectPart* EffectPartSystem::spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label) {
     EffectPart e;
     e.position = position;
+    e.replayType = label ? label : "custom";
     e.color = color;
     e.maxLifetime = lifetime;
     e.label = label;

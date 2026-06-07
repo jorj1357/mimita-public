@@ -35,11 +35,14 @@ public:
     void inspect() const;
     const std::vector<std::string>& killfeed() const;
     WeaponCrosshairState crosshairState(const Player& player) const;
+    bool isReloading() const { return reloadTimer > 0.0f; }
+    bool isShooting() const { return shootingTimer > 0.0f; }
 
 private:
     WeaponDefinition revolverDefinition;
     RevolverSystem revolver;
     float shotCooldown = 0.0f;
     float reloadTimer = 0.0f;
+    float shootingTimer = 0.0f;
     int pendingReloadRounds = 0;
 };

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "config/player-settings.h"
+#include "replay/replay.h"
 
 static ma_engine gEngine;
 static bool gAudioInit = false;
@@ -167,6 +168,15 @@ bool AudioManager::debug() const { return gSoundDebug; }
 
 void AudioManager::play(const AudioEvent& event)
 {
+    ReplaySoundEvent replayEvent;
+    replayEvent.soundPath = soundPath(event.name);
+    replayEvent.world = event.world;
+    replayEvent.position = event.position;
+    replayEvent.volume = event.volume;
+    replayEvent.pitch = event.pitch;
+    replayEvent.maxDistance = event.maxDistance;
+    captureReplaySound(replayEvent);
+
     if (event.world) {
         startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance);
         if (!gActiveSounds.empty())
@@ -201,7 +211,7 @@ void playEventSound(const std::string& name, float volume)
 
 void playSoundPitched(const std::string& name, float volume, float pitch)
 {
-    startSound(name, volume, pitch, nullptr, 0.0f);
+    AudioManager::instance().play({name, AudioCategory::Movement, false, {}, volume, pitch});
 }
 
 void playWorldSound(const std::string& name, glm::vec3 pos, float volume, float pitch, float maxDistance)
