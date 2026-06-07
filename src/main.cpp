@@ -929,8 +929,6 @@ int main(int argc, char** argv)
             // Update effect parts
             EffectPartSystem::instance().update(dt);
 
-            drawHitmarker(dt);
-
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             if (!Terminal::instance().isOpen() && mouseDown && !mousePrev) {
@@ -974,6 +972,7 @@ int main(int argc, char** argv)
             }
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
+            drawHitmarker(dt);
             if (gReplayRecorder.isRecording()) {
                 const float overlayX = uiScreenW() - 230.0f;
                 uiDrawRect({overlayX - 18.0f, 20.0f, 12.0f, 12.0f},
