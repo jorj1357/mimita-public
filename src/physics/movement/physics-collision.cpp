@@ -1027,6 +1027,74 @@ static void doGLBTriangleCollisions(
             break;
 
         // p.pos += earliest.normal * SURFACE_SLOP;
+        // =====================================================
+        // GLB STEP UP
+        // =====================================================
+
+        if (std::fabs(earliest.normal.z) < 0.2f)
+        {
+            float feetZ = cap.a.z - cap.r;
+
+            float stepTopZ = earliest.point.z;
+            float stepHeight = stepTopZ - feetZ;
+
+            if (stepHeight > 0.0f &&
+                stepHeight <= MAX_STEP_HEIGHT)
+            {
+                glm::vec3 originalPos = p.pos;
+
+                // lift player upward
+                p.pos.z += stepHeight + 0.01f;
+
+                p.updateModelWorldTransforms();
+
+                Capsule stepCap = p.getCapsule();
+
+                bool blocked = false;
+
+                // recheck nearby triangles for head collision
+                for (int triIndex : candidates)
+                {
+                    const CollisionTriangle& tri =
+                        world.collisionMesh.triangles[triIndex];
+
+                    Contact c;
+
+                    if (capsuleTriangleContact(
+                        stepCap,
+                        tri,
+                        triIndex,
+                        c))
+                    {
+                        // ignore floor-like contacts
+                        if (c.normal.z < 0.5f)
+                        {
+                            blocked = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!blocked)
+                {
+                    groundedThisFrame = true;
+
+                    if (p.vel.z < 0.0f)
+                        p.vel.z = 0.0f;
+
+                    PHYS_LOG(
+                        "[GLB STEP] stepped up %.3f\n",
+                        stepHeight
+                    );
+
+                    continue;
+                }
+
+                // failed
+                p.pos = originalPos;
+                p.updateModelWorldTransforms();
+            }
+        }
         glm::vec3 depen = earliest.normal;
 
         // prevent wedges from pushing upward
