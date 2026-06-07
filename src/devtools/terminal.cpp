@@ -637,6 +637,24 @@ void Terminal::handleChar(unsigned int codepoint) {
 void Terminal::handleKey(int key, int mods) {
     if (!mOpen) return;
 
+    if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) {
+        const char* clip = glfwGetClipboardString(mWindow);
+        if (clip) mInputLine += clip;
+        return;
+    }
+    if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C) {
+        if (!mInputLine.empty())
+            glfwSetClipboardString(mWindow, mInputLine.c_str());
+        return;
+    }
+    if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_X) {
+        if (!mInputLine.empty()) {
+            glfwSetClipboardString(mWindow, mInputLine.c_str());
+            mInputLine.clear();
+        }
+        return;
+    }
+
     if (key == GLFW_KEY_ENTER) {
         executeCurrent();
     } else if (key == GLFW_KEY_BACKSPACE) {
