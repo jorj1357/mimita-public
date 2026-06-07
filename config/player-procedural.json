@@ -1,0 +1,18 @@
+{
+  "leftArmRaise": 70,
+  "leftArmForward": 10,
+  "leftArmTwist": -20,
+
+  "rightArmRaise": 70,
+  "rightArmForward": 10,
+  "rightArmTwist": 20,
+
+  "weaponSwayAmount": 0.15,
+  "weaponSwaySpeed": 8.0,
+
+  "torsoAimYawStrength": 0.1,
+  "torsoAimPitchStrength": 0.05,
+
+  "armAimYawStrength": 0.25,
+  "armAimPitchStrength": 0.45
+}
