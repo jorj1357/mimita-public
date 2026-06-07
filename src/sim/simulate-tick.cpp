@@ -76,15 +76,6 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
     }
 
-    // Resolve NPC melee attacks on player
-    for (auto& npc : sim.npcSystem->all())
-    {
-        if (!sim.player->dead && npc.chosenAction.attackPressed && npc.body.currentHp > 0)
-        {
-            weaponHit(npc.body, *sim.player);
-        }
-    }
-
     DeathSystem::instance().update(
         *sim.world, *sim.player, *sim.npcSystem, frame.jumpPressed, TICK_DT);
 

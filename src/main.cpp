@@ -439,6 +439,31 @@ int main(int argc, char** argv)
             Terminal::instance().addLog("[NPC COMMAND] npc_delete_all");
         }
     });
+    Terminal::instance().registerCommand({
+        "npc_difficulty_all", "Set difficulty for all NPCs (1-10)", "npc_difficulty_all <1-10>",
+        [&npcSystem](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[NPC COMMAND] usage: npc_difficulty_all <1-10> (current: " + std::to_string((int)npcSystem.globalDifficulty()) + ")");
+                return;
+            }
+            float d = std::clamp(std::stof(args[0]), 1.0f, 10.0f);
+            npcSystem.setGlobalDifficulty(d);
+            Terminal::instance().addLog("[NPC COMMAND] npc_difficulty_all set to " + std::to_string((int)d));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_debug", "Toggle NPC debug overlay (0=off, 1=on)", "npc_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_NPC = !DebugConfig::DEBUG_NPC;
+            } else {
+                DebugConfig::DEBUG_NPC = args[0] != "0";
+            }
+            Terminal::instance().addLog(DebugConfig::DEBUG_NPC
+                ? "[OK] NPC debug enabled"
+                : "[OK] NPC debug disabled");
+        }
+    });
 
     Terminal::instance().registerCommand({
         "serverconnect", "Print a server connection request", "serverconnect <ip> [args...]",
@@ -876,7 +901,7 @@ int main(int argc, char** argv)
                         npcActor.collidable = !npc.body.dead;
                         npcActor.fade = 0.0f;
                         npcActor.weaponName = "none";
-                        npcActor.animationState = npc.chosenAction.name;
+                        npcActor.animationState = npcStateName(npc.stateMachine.currentState);
                         npcActor.bodyParts = captureReplayBodyParts(npc.body);
                         sceneFrame.actors.push_back(npcActor);
                     }

@@ -16,6 +16,9 @@
 #include "audio/audio.h"
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
+#include "npc/npc-navigation.h"
+#include "npc/npc-combat.h"
+#include "npc/npc-state-machine.h"
 
 namespace {
 
@@ -76,38 +79,6 @@ glm::vec3 rotatePlanar(glm::vec3 v, float radians)
     };
 }
 
-const char* actionName(NpcActionType type)
-{
-    switch (type)
-    {
-        case NpcActionType::Wander: return "wander";
-        case NpcActionType::Chase: return "chase";
-        case NpcActionType::Strafe: return "strafe";
-        case NpcActionType::Evade: return "evade";
-        case NpcActionType::Jump: return "jump";
-        case NpcActionType::Dash: return "dash";
-        case NpcActionType::Attack: return "attack";
-        default: return "idle";
-    }
-}
-
-void logActionChange(const Npc& npc, const NpcAction& next)
-{
-    if (npc.chosenAction.type == next.type)
-        return;
-
-    Debug::log(
-        Debug::Category::General,
-        "[NPC] id=%u difficulty=%.1f action=%s score=%.2f target=%d dist=%.2f\n",
-        npc.id,
-        npc.difficulty,
-        next.name.c_str(),
-        next.score,
-        (int)npc.sensors.hasTarget,
-        npc.sensors.targetDistance
-    );
-}
-
 void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
@@ -118,17 +89,21 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     sensors.toTarget = player.pos - npc.body.pos;
     sensors.targetDistance = glm::length(sensors.toTarget);
     sensors.hasTarget = npc.difficulty > 0.05f && sensors.targetDistance <= npc.tuning.awarenessRange;
-    sensors.visibleTarget = sensors.hasTarget;
     sensors.predictedTarget = sensors.targetPos + sensors.targetVel * (0.10f + npc.tuning.prediction * 0.55f);
-
-    glm::vec3 moved = npc.body.pos - npc.previousPosition;
-    bool tryingMove = glm::dot(npc.chosenAction.direction, npc.chosenAction.direction) > 0.01f;
-    sensors.likelyBlocked = tryingMove && dt > 0.0f && glm::length(moved) < 0.03f && sensors.grounded;
-    npc.stuckTimer = sensors.likelyBlocked ? npc.stuckTimer + dt : 0.0f;
-    sensors.likelyBlocked = sensors.likelyBlocked && npc.stuckTimer > 0.20f;
 
     npc.previousPosition = npc.body.pos;
     npc.sensors = sensors;
+
+    // Track last known target
+    if (sensors.hasTarget)
+    {
+        npc.stateMachine.lastKnownTarget = sensors.targetPos;
+        npc.stateMachine.lastKnownAge = 0.0f;
+    }
+    else
+    {
+        npc.stateMachine.lastKnownAge += dt;
+    }
 
     if (sensors.hasTarget && npc.lastTargetLogDistance < 0.0f)
     {
@@ -145,143 +120,47 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     npc.lastTargetLogDistance = sensors.hasTarget ? sensors.targetDistance : -1.0f;
 }
 
-NpcAction makeAction(NpcActionType type, glm::vec3 direction, glm::vec3 pathTarget, float score)
+void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
 {
-    NpcAction action;
-    action.type = type;
-    action.name = actionName(type);
-    action.direction =
-        type == NpcActionType::Idle
-        ? glm::vec3(0.0f)
-        : safePlanarNormal(direction, {1.0f, 0.0f, 0.0f});
-    action.pathTarget = pathTarget;
-    action.score = score;
-    return action;
+    if (oldState == newState)
+        return;
+    Debug::log(
+        Debug::Category::General,
+        "[NPC] id=%u difficulty=%.1f %s -> %s target=%d dist=%.2f\n",
+        npc.id,
+        npc.difficulty,
+        npcStateName(oldState).c_str(),
+        npcStateName(newState).c_str(),
+        (int)npc.sensors.hasTarget,
+        npc.sensors.targetDistance
+    );
 }
 
-NpcAction chooseAction(Npc& npc, float dt)
-{
-    const NpcSensorContext& s = npc.sensors;
-    float d = difficulty01(npc.difficulty);
-
-    if (npc.difficulty <= 0.05f)
-        return makeAction(NpcActionType::Idle, {0.0f, 0.0f, 0.0f}, npc.body.pos, 1.0f);
-
-    npc.wanderTimer -= dt;
-    if (npc.wanderTimer <= 0.0f)
-    {
-        npc.wanderTimer = 1.0f + random01(npc.rngState) * (3.5f - d * 2.2f);
-        npc.wanderDirection = randomPlanarDirection(npc.rngState);
-    }
-
-    std::vector<NpcAction> actions;
-    actions.push_back(makeAction(
-        NpcActionType::Wander,
-        npc.wanderDirection,
-        npc.body.pos + npc.wanderDirection * 6.0f,
-        0.18f + (1.0f - d) * 0.35f
-    ));
-
-    if (!s.hasTarget)
-        return *std::max_element(actions.begin(), actions.end(), [](const NpcAction& a, const NpcAction& b) { return a.score < b.score; });
-
-    glm::vec3 toPredicted = s.predictedTarget - npc.body.pos;
-    glm::vec3 chaseDir = safePlanarNormal(toPredicted, npc.wanderDirection);
-    glm::vec3 lateral{-chaseDir.y, chaseDir.x, 0.0f};
-    if ((npc.id % 2u) == 0u)
-        lateral = -lateral;
-
-    float close01 = 1.0f - clamp01((s.targetDistance - 2.0f) / 16.0f);
-    float far01 = clamp01((s.targetDistance - 4.0f) / 24.0f);
-    float attackRange01 = 1.0f - clamp01((s.targetDistance - 2.4f) / 2.8f);
-    float speedThreat = clamp01(glm::length(s.targetVel) / 45.0f);
-
-    actions.push_back(makeAction(
-        NpcActionType::Chase,
-        chaseDir,
-        s.predictedTarget,
-        0.35f + far01 * (0.55f + npc.tuning.aggression * 0.35f)
-    ));
-
-    actions.push_back(makeAction(
-        NpcActionType::Strafe,
-        chaseDir * 0.45f + lateral * 0.90f,
-        s.targetPos + lateral * 5.0f,
-        0.20f + close01 * (0.40f + d * 0.30f)
-    ));
-
-    actions.push_back(makeAction(
-        NpcActionType::Evade,
-        -chaseDir + lateral * 0.65f,
-        npc.body.pos - chaseDir * 5.0f + lateral * 3.0f,
-        close01 * (0.25f + npc.tuning.dodgeChance * 0.55f) + speedThreat * npc.tuning.dodgeChance
-    ));
-
-    if (s.likelyBlocked || (s.grounded && random01(npc.rngState) < (0.16f + d * 0.20f) * dt))
-    {
-        NpcAction jump = makeAction(NpcActionType::Jump, chaseDir, s.predictedTarget, s.likelyBlocked ? 0.95f : 0.38f + d * 0.20f);
-        jump.jumpHeld = true;
-        actions.push_back(jump);
-    }
-
-    if (npc.dashCooldown <= 0.0f && s.targetDistance > 3.5f)
-    {
-        NpcAction dash = makeAction(NpcActionType::Dash, chaseDir, s.predictedTarget, far01 * (0.25f + npc.tuning.aggression * 0.75f));
-        dash.dashPressed = true;
-        actions.push_back(dash);
-    }
-
-    float meleeRange01 = 1.0f - clamp01((s.targetDistance - 2.4f) / 2.8f);
-    float rangedRange01 = 1.0f - clamp01((s.targetDistance - 3.0f) / 25.0f);
-    if (npc.attackCooldown <= 0.0f)
-    {
-        if (meleeRange01 > 0.0f) {
-            NpcAction attack = makeAction(NpcActionType::Attack, chaseDir + lateral * (1.0f - npc.tuning.movementPrecision) * 0.35f, s.targetPos, meleeRange01 * (0.55f + npc.tuning.aggression * 0.70f));
-            attack.attackPressed = true;
-            if (npc.dashCooldown <= 0.0f && npc.tuning.aggression > 0.55f)
-                attack.dashPressed = true;
-            actions.push_back(attack);
-        }
-        if (rangedRange01 > 0.0f && s.targetDistance > 3.0f) {
-            NpcAction ranged = makeAction(NpcActionType::Attack, chaseDir * 0.3f + lateral * 0.7f, s.targetPos, rangedRange01 * (0.40f + npc.tuning.aggression * 0.50f));
-            ranged.attackPressed = true;
-            actions.push_back(ranged);
-        }
-    }
-
-    return *std::max_element(actions.begin(), actions.end(), [](const NpcAction& a, const NpcAction& b) { return a.score < b.score; });
-}
-
-InputState inputFromAction(Npc& npc, NpcAction action)
+InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack)
 {
     InputState input;
-
-    if (npc.tuning.aimErrorRadians > 0.001f)
-    {
-        float error = (random01(npc.rngState) * 2.0f - 1.0f) * npc.tuning.aimErrorRadians;
-        action.direction = rotatePlanar(action.direction, error);
-    }
-
-    glm::vec2 move(action.direction.x, action.direction.y);
-    if (glm::length(move) > 0.0001f)
-        move = glm::normalize(move);
-
-    input.wishMoveXY = move;
-    input.movementPressed = glm::length(move) > 0.0001f;
-    input.jumpHeld = action.jumpHeld;
-    input.dashPressed = action.dashPressed && !npc.dashCommandConsumed;
+    input.wishMoveXY = {moveDir.x, moveDir.y};
+    input.movementPressed = glm::length(moveDir) > 0.001f;
+    input.jumpHeld = jump;
+    input.dashPressed = dash;
     input.groundReturnPressed = false;
     input.freezeHeld = false;
-    if (action.type == NpcActionType::Attack && npc.sensors.hasTarget) {
+
+    // Face movement direction or target
+    if (npc.sensors.hasTarget)
+    {
         glm::vec3 toTarget = npc.sensors.predictedTarget - npc.body.pos;
         input.camForward = safePlanarNormal(toTarget, {1.0f, 0.0f, 0.0f});
-    } else {
-        input.camForward = safePlanarNormal(action.direction, {1.0f, 0.0f, 0.0f});
     }
+    else
+    {
+        input.camForward = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
+    }
+
     return input;
 }
 
-}
+} // anonymous namespace
 
 Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     : id(npcId), difficulty(std::clamp(npcDifficulty, 0.0f, 10.0f))
@@ -296,7 +175,12 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     body.vel = {0.0f, 0.0f, 0.0f};
     body.syncLegacyStateToLayers();
     previousPosition = body.pos;
-    wanderDirection = randomPlanarDirection(rngState);
+
+    stateMachine.nextDecisionTime = 0.5f + random01(rngState) * 1.5f;
+    stateMachine.wanderTarget = spawn + randomPlanarDirection(rngState) * 5.0f;
+    stateMachine.wanderTimer = 2.0f + random01(rngState) * 3.0f;
+    stateMachine.orbitAngle = random01(rngState) * glm::two_pi<float>();
+    stateMachine.orbitSwapTimer = 0.5f + random01(rngState) * 2.0f;
 
     Debug::log(Debug::Category::General,
                "[NPC] spawned id=%u difficulty=%.1f reaction=%.2f aggression=%.2f awareness=%.1f\n",
@@ -331,10 +215,11 @@ void NpcSystem::clear()
 
 void NpcSystem::spawnNpc(float difficulty, glm::vec3 spawnPos)
 {
+    float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     uint32_t id = nextNpcId();
-    npcs.emplace_back(id, difficulty, spawnPos);
+    npcs.emplace_back(id, d, spawnPos);
     AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
-    Debug::log(Debug::Category::General, "[NPC] spawned id=%u\n", id);
+    Debug::log(Debug::Category::General, "[NPC] spawned id=%u (global diff=%.1f)\n", id, d);
 }
 
 void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)
@@ -352,192 +237,181 @@ void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)
 
 void NpcSystem::destroyAll() { clear(); }
 
-void NpcSystem::update(const World& world, const Player& player, float dt)
+void NpcSystem::setGlobalDifficulty(float d)
 {
+    globalDifficulty_ = std::clamp(d, 1.0f, 10.0f);
+    // Update tuning for all existing NPCs
     for (Npc& npc : npcs)
     {
-        if (npc.body.dead) {
-            InputState deadInput;
-            deadInput.camForward = glm::vec3(0.0f, 1.0f, 0.0f);
-            physicsMainUpdate(npc.body, world, deadInput, dt);
-            npc.body.syncLegacyStateToLayers();
-            npc.body.updateModelWorldTransforms();
-            continue;
-        }
-        npc.reactionTimer -= dt;
-        npc.actionTimer -= dt;
-        npc.dashCooldown = std::max(0.0f, npc.dashCooldown - dt);
-        npc.attackCooldown = std::max(0.0f, npc.attackCooldown - dt);
+        npc.difficulty = globalDifficulty_;
+        npc.tuning = tuningForDifficulty(globalDifficulty_);
+    }
+    Debug::log(Debug::Category::General, "[NPC] global difficulty set to %.1f for %zu NPCs\n",
+               globalDifficulty_, npcs.size());
+}
 
-        senseWorld(npc, player, dt);
+void NpcSystem::update(const World& world, Player& player, float dt)
+{
+    for (Npc& npc : npcs)
+        updateOneNpc(npc, world, player, dt);
+}
 
-        // Force re-evaluation when hit
-        if (npc.hitReactionTimer > 0.0f) {
-            npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - dt);
-            if (npc.reactionTimer <= 0.0f) {
-                npc.actionTimer = 0.0f;
-            }
-        }
-
-        if (npc.reactionTimer <= 0.0f && npc.actionTimer <= 0.0f)
-        {
-            NpcAction next = chooseAction(npc, dt);
-            if (npc.sensors.likelyBlocked) {
-                next.direction = randomPlanarDirection(npc.rngState);
-                next.jumpHeld = true;
-                next.dashPressed = npc.dashCooldown <= 0.0f;
-                next.name = "unstuck";
-                next.score = 2.0f;
-            }
-            logActionChange(npc, next);
-            npc.chosenAction = next;
-            npc.dashCommandConsumed = false;
-            npc.reactionTimer = npc.tuning.reactionDelay;
-            npc.actionTimer = npc.tuning.actionInterval;
-        }
-
-        InputState input = inputFromAction(npc, npc.chosenAction);
-        if (input.dashPressed)
-            npc.dashCommandConsumed = true;
-
-        glm::vec3 velocityBefore = npc.body.vel;
-        float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
-
-        if (DebugConfig::DEBUG_NPC)
-        {
-            std::string commandLogKey = "npc-command-" + std::to_string(npc.id);
-            Debug::logThrottled(
-                Debug::Category::General,
-                commandLogKey.c_str(),
-                DebugConfig::PRINT_INTERVAL,
-                "[NPC COMMAND] id=%u action=%s jump=%d dash=%d move=(%.2f %.2f)\n",
-                npc.id,
-                npc.chosenAction.name.c_str(),
-                (int)input.jumpHeld,
-                (int)input.dashPressed,
-                input.wishMoveXY.x,
-                input.wishMoveXY.y
-            );
-        }
-        physicsMainUpdate(npc.body, world, input, dt);
-
-        float safeDt = std::max(dt, 0.0001f);
-        float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
-        npc.lastMoveInput = input.wishMoveXY;
-        npc.lastAcceleration = (npc.body.vel - velocityBefore) / safeDt;
-        npc.lastGravityDelta = npc.body.vel.z - velocityBefore.z;
-        npc.lastFrictionDelta =
-            input.movementPressed
-            ? 0.0f
-            : planarSpeedAfter - planarSpeedBefore;
-        npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
-
-        if (DebugConfig::DEBUG_NPC)
-        {
-            std::string logKey = "npc-physics-" + std::to_string(npc.id);
-            Debug::logThrottled(
-                Debug::Category::General,
-                logKey.c_str(),
-                DebugConfig::PRINT_INTERVAL,
-                "[NPC PHYSICS] id=%u grounded=%d stable=%d input=(%.2f %.2f) "
-                "vel=(%.2f %.2f %.2f) accel=(%.2f %.2f %.2f) "
-                "gravityDelta=%.3f frictionDelta=%.3f finalSpeed=%.2f\n",
-                npc.id,
-                (int)npc.body.onGround,
-                (int)npc.body.stableOnGround,
-                input.wishMoveXY.x,
-                input.wishMoveXY.y,
-                npc.body.vel.x,
-                npc.body.vel.y,
-                npc.body.vel.z,
-                npc.lastAcceleration.x,
-                npc.lastAcceleration.y,
-                npc.lastAcceleration.z,
-                npc.lastGravityDelta,
-                npc.lastFrictionDelta,
-                npc.lastFinalSpeed
-            );
-        }
-
-        if (npc.chosenAction.dashPressed && npc.body.didDash)
-        {
-            npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
-            Debug::log(Debug::Category::General,
-                       "[NPC] id=%u dash chosen difficulty=%.1f\n",
-                       npc.id, npc.difficulty);
-        }
-
-        if (npc.chosenAction.attackPressed && npc.attackCooldown <= 0.0f)
-        {
-            float dist = npc.sensors.targetDistance;
-            float cd = 1.35f - difficulty01(npc.difficulty) * 1.05f;
-            bool fired = false;
-            // Ranged attack if distance > 3m, else melee
-            if (dist > 3.0f && npc.sensors.visibleTarget) {
-                glm::vec3 npcPos = npc.body.pos;
-                npcPos.z += 0.8f;
-                glm::vec3 toTarget = npc.sensors.predictedTarget - npcPos;
-                float aimDist = glm::length(toTarget);
-                if (aimDist > 0.1f) {
-                    glm::vec3 aimDir = glm::normalize(toTarget);
-                    float aimErr = (random01(npc.rngState) * 2.0f - 1.0f) * npc.tuning.aimErrorRadians;
-                    aimDir = rotatePlanar(aimDir, aimErr);
-                    // Check line of sight: ray from NPC to target
-                    bool obstructed = false;
-                    glm::vec3 rayStart = npcPos;
-                    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-                        glm::vec3 e1 = tri.b - tri.a;
-                        glm::vec3 e2 = tri.c - tri.a;
-                        glm::vec3 pVec = glm::cross(aimDir, e2);
-                        float det = glm::dot(e1, pVec);
-                        if (std::fabs(det) < 0.0001f) continue;
-                        float invDet = 1.0f / det;
-                        glm::vec3 tVec = rayStart - tri.a;
-                        float u = glm::dot(tVec, pVec) * invDet;
-                        if (u < 0.0f || u > 1.0f) continue;
-                        glm::vec3 qVec = glm::cross(tVec, e1);
-                        float v = glm::dot(aimDir, qVec) * invDet;
-                        if (v < 0.0f || u + v > 1.0f) continue;
-                        float t = glm::dot(e2, qVec) * invDet;
-                        if (t > 0.1f && t < aimDist - 0.5f) { obstructed = true; break; }
-                    }
-                    if (!obstructed) {
-                        float baseDmg = 8.0f + difficulty01(npc.difficulty) * 12.0f;
-                        int dmg = std::max(1, (int)(baseDmg + (rand() % 11) - 5));
-                        glm::vec3 knockbackDir = toTarget;
-                        knockbackDir.z = 0.2f;
-                        glm::vec3 hitPoint = npcPos + aimDir * aimDist;
-                        EffectPartSystem::instance().spawnBloodSphereBurst(
-                            hitPoint, aimDir, (float)dmg / 60.0f,
-                            npc.body.username, player.username);
-                        EffectPartSystem::instance().spawnEntityImpact(
-                            hitPoint, -aimDir, npc.body.username, player.username);
-                        EffectPartSystem::instance().spawnMuzzleFlash(npcPos, npc.body.username);
-                        EffectPartSystem::instance().spawnTracer(npcPos, hitPoint, npc.body.username);
-                        AudioManager::instance().play(
-                            {"revolvershoot", AudioCategory::Weapons, true, npcPos, 0.5f, 0.9f, 40.0f, npc.id});
-                        const_cast<Player&>(player).takeDamage(dmg, knockbackDir, 8.0f);
-                        fired = true;
-                        npc.hitReactionTimer = 0.0f;
-                    }
-                }
-                cd = std::max(cd, 1.0f);
-            }
-            npc.attackCooldown = cd;
-            // Force re-evaluation after firing so NPC can chase/strafe immediately
-            if (fired) {
-                npc.reactionTimer = 0.0f;
-                npc.actionTimer = 0.0f;
-            }
-            Debug::log(Debug::Category::General,
-                       "[NPC] id=%u attack difficulty=%.1f distance=%.2f cooldown=%.2f\n",
-                       npc.id, npc.difficulty, dist, cd);
-        }
+void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)
+{
+    // Dead NPCs just simulate physics (ragdoll)
+    if (npc.body.dead) {
+        InputState deadInput;
+        deadInput.camForward = glm::vec3(0.0f, 1.0f, 0.0f);
+        physicsMainUpdate(npc.body, world, deadInput, dt);
+        npc.body.syncLegacyStateToLayers();
+        npc.body.updateModelWorldTransforms();
+        return;
     }
 
-    // Resolve NPC vs Player collisions after all physics updates
-    // Note: player is const here, but we need to modify it for collision resolution
-    // This will be handled in main.cpp where we have non-const access to player
+    float safeDt = std::max(dt, 0.0001f);
+
+    // Update timers
+    npc.dashCooldown = std::max(0.0f, npc.dashCooldown - safeDt);
+    npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
+    npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - safeDt);
+    npc.stateMachine.stateTimer += safeDt;
+    npc.stateMachine.nextDecisionTime -= safeDt;
+    npc.stateMachine.retreatTimer += safeDt;
+
+    // Sense the world
+    senseWorld(npc, player, safeDt);
+
+    // Handle hit reaction
+    if (npc.hitReactionTimer > 0.0f)
+    {
+        npc.stateMachine.currentState = NpcState::Recover;
+        npc.stateMachine.recoverTimer = npc.hitReactionTimer;
+        // Force re-decision after recover
+        npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, npc.hitReactionTimer + 0.1f);
+    }
+
+    // Decision time: pick next state
+    if (npc.stateMachine.nextDecisionTime <= 0.0f)
+    {
+        NpcState oldState = npc.stateMachine.currentState;
+        NpcState newState = pickNextState(npc);
+
+        // If switching to retreat, reset the retreat timer
+        if (newState == NpcState::Retreat && oldState != NpcState::Retreat)
+            npc.stateMachine.retreatTimer = 0.0f;
+
+        // If switching to recover, set recover timer
+        if (newState == NpcState::Recover)
+            npc.stateMachine.recoverTimer = 0.2f + random01(npc.rngState) * 0.3f;
+
+        // Reset orbit swap timer when entering Circle
+        if (newState == NpcState::Circle && oldState != NpcState::Circle)
+        {
+            npc.stateMachine.orbitSwapTimer = 0.1f + random01(npc.rngState) * 1.5f;
+            npc.stateMachine.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+            npc.stateMachine.orbitDistance = 1.0f + random01(npc.rngState) * 9.0f;
+        }
+
+        // Reset strafe direction when entering Strafe
+        if (newState == NpcState::Strafe && oldState != NpcState::Strafe)
+        {
+            npc.stateMachine.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+            npc.stateMachine.strafeSwapTimer = 0.3f + random01(npc.rngState) * 2.0f;
+        }
+
+        logStateChange(npc, oldState, newState);
+        npc.stateMachine.previousState = oldState;
+        npc.stateMachine.currentState = newState;
+        npc.stateMachine.stateTimer = 0.0f;
+
+        // Set next decision time (randomized for organic feel)
+        float minT = stateMinTime(newState, difficulty01(npc.difficulty));
+        float maxT = stateMaxTime(newState, difficulty01(npc.difficulty));
+        npc.stateMachine.nextDecisionTime = minT + random01(npc.rngState) * (maxT - minT);
+    }
+
+    // Compute movement from current state
+    glm::vec3 moveDir;
+    bool jump, dash, attack;
+    computeStateMovement(npc, moveDir, jump, dash, attack);
+
+    // Apply wall avoidance
+    if (glm::length(moveDir) > 0.001f)
+        moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world);
+
+    // Stuck detection override
+    if (NpcNavigation::isStuck(npc))
+    {
+        npc.stateMachine.stuckTimer += safeDt;
+        if (npc.stateMachine.stuckTimer > 0.3f)
+        {
+            // Force unstuck: pick a free direction and jump
+            moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world);
+            jump = true;
+            dash = npc.dashCooldown <= 0.0f;
+            // Force re-evaluation soon
+            npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+        }
+    }
+    else
+    {
+        npc.stateMachine.stuckTimer = 0.0f;
+    }
+
+    // Build input
+    InputState input = buildInputState(npc, moveDir, jump, dash, attack);
+    if (input.dashPressed)
+        npc.dashCommandConsumed = true;
+
+    // Physics update (uses same player movement system)
+    glm::vec3 velocityBefore = npc.body.vel;
+    float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
+
+    physicsMainUpdate(npc.body, world, input, safeDt);
+
+    // Track physics stats
+    float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
+    npc.lastMoveInput = input.wishMoveXY;
+    npc.lastAcceleration = (npc.body.vel - velocityBefore) / safeDt;
+    npc.lastGravityDelta = npc.body.vel.z - velocityBefore.z;
+    npc.lastFrictionDelta = input.movementPressed ? 0.0f : planarSpeedAfter - planarSpeedBefore;
+    npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
+
+    // Debug logging
+    if (DebugConfig::DEBUG_NPC)
+    {
+        std::string cmdKey = "npc-cmd-" + std::to_string(npc.id);
+        Debug::logThrottled(Debug::Category::General, cmdKey.c_str(), DebugConfig::PRINT_INTERVAL,
+            "[NPC] id=%u state=%s jump=%d dash=%d move=(%.2f %.2f)\n",
+            npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
+            (int)input.jumpHeld, (int)input.dashPressed,
+            input.wishMoveXY.x, input.wishMoveXY.y);
+
+        std::string physKey = "npc-phys-" + std::to_string(npc.id);
+        Debug::logThrottled(Debug::Category::General, physKey.c_str(), DebugConfig::PRINT_INTERVAL,
+            "[NPC PHYS] id=%u grounded=%d vel=(%.2f %.2f %.2f) finalSpeed=%.2f\n",
+            npc.id, (int)npc.body.onGround,
+            npc.body.vel.x, npc.body.vel.y, npc.body.vel.z,
+            npc.lastFinalSpeed);
+    }
+
+    // Dash cooldown
+    if (input.dashPressed && npc.body.didDash)
+    {
+        npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
+        Debug::log(Debug::Category::General, "[NPC] id=%u dashed\n", npc.id);
+    }
+
+    // Attack
+    if (attack && npc.attackCooldown <= 0.0f)
+    {
+        bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
+        if (fired)
+        {
+            // Force immediate re-evaluation after firing
+            npc.stateMachine.nextDecisionTime = 0.0f;
+        }
+    }
 }
 
 void NpcSystem::render(const Camera& camera) const
@@ -564,8 +438,8 @@ std::vector<DebugVis::NpcDebugInfo> NpcSystem::debugInfo() const
         info.acceleration = npc.lastAcceleration;
         info.targetPosition = npc.sensors.targetPos;
         info.moveDirection = glm::vec3(npc.lastMoveInput, 0.0f);
-        info.pathTarget = npc.chosenAction.pathTarget;
-        info.action = npc.chosenAction.name;
+        info.pathTarget = npc.stateMachine.wanderTarget;
+        info.action = npcStateName(npc.stateMachine.currentState);
         info.difficulty = npc.difficulty;
         info.awarenessRadius = npc.tuning.awarenessRange;
         info.finalSpeed = npc.lastFinalSpeed;
