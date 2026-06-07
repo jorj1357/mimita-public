@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -33,12 +34,21 @@ struct EffectPart
     bool sticky = false;
     bool flatDecal = false;
     bool debugVisual = false;
-    bool alive = true;
+    bool alive = false;
     // Cylinder rendering for blood splatter
     bool cylinderDecal = false;
     float cylinderHeight = 0.0f;
     bool beam = false;
     bool box = false;
+
+    void resetStrings() {
+        label.clear(); label.shrink_to_fit();
+        replayType = "effect";
+        texturePath.clear(); texturePath.shrink_to_fit();
+        materialName.clear(); materialName.shrink_to_fit();
+        sourceActorId.clear(); sourceActorId.shrink_to_fit();
+        targetActorId.clear(); targetActorId.shrink_to_fit();
+    }
 };
 
 class EffectPartSystem
@@ -50,7 +60,6 @@ public:
     void update(float dt);
     void render(const class Camera& camera) const;
     
-    // Spawn effect parts
     EffectPart* spawn(const EffectPart& effect);
     EffectPart* spawnFootstep(glm::vec3 position);
     EffectPart* spawnDash(glm::vec3 position);
@@ -59,11 +68,9 @@ public:
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
     void spawnBlood(glm::vec3 position, glm::vec3 direction, float amount);
     void spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId = 0);
-    // Blood projection: raycast from hit point along direction, project blood onto surfaces behind target
     void spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const class World& world);
     void spawnBloodSpurt(glm::vec3 position, glm::vec3 direction,
                         const std::string& sourceActorId, const std::string& targetActorId);
-    // New: Blood sphere burst at hit point with force-based particle count
     void spawnBloodSphereBurst(glm::vec3 hitPoint, glm::vec3 shotDirection, float force,
                                const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
@@ -76,12 +83,17 @@ public:
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
     
-    // Clear all effects
     void clear();
     
-    const std::vector<EffectPart>& getEffects() const { return mEffects; }
+    unsigned int activeCount() const { return mActiveCount; }
+
+    // Legacy API for code that still uses getEffects()
+    const EffectPart* poolData() const { return mPool.data(); }
     
 private:
     EffectPartSystem() = default;
-    std::vector<EffectPart> mEffects;
+
+    static constexpr unsigned int POOL_SIZE = 4096;
+    std::array<EffectPart, POOL_SIZE> mPool{};
+    unsigned int mActiveCount = 0;
 };
