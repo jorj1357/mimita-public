@@ -52,7 +52,16 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
 }
 
 void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float amount) {
-    spawnStickyBlood(position, -direction, amount);
+    // melee hits: wider spread by using softer normal derived from direction
+    glm::vec3 n = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0,0,1);
+    // add randomization to avoid same-plane z-fighting
+    n += glm::vec3(
+        (rand() % 201 - 100) / 1000.0f,
+        (rand() % 201 - 100) / 1000.0f,
+        (rand() % 201 - 100) / 1000.0f
+    );
+    n = glm::normalize(n);
+    spawnStickyBlood(position, -n, amount * 1.2f);
 }
 
 void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId) {
@@ -71,7 +80,7 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         radius *= 0.8f + (rand() % 401) / 1000.0f;
         EffectPart e;
         e.position = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius
-                   + n * (0.006f + (rand() % 8) * 0.001f);
+                   + n * (0.015f + (rand() % 12) * 0.002f);
         e.normal = n;
         e.rotation = {
             (float)(rand() % 721 - 360),
@@ -109,8 +118,8 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     glm::vec3 rayStart = hitPosition + dir * 0.25f;
     
     constexpr float MAX_RAY = 25.0f;
-    constexpr int CONE_RAYS = 12;
-    constexpr float CONE_ANGLE = 0.35f;
+    constexpr int CONE_RAYS = 24;
+    constexpr float CONE_ANGLE = 0.6f;
     
     auto traceRay = [&](glm::vec3 origin, glm::vec3 d, float& outT, glm::vec3& outNormal) -> bool {
         float bestT = MAX_RAY;
@@ -172,7 +181,7 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     float primaryT;
     if (traceRay(rayStart, dir, primaryT, primaryNormal)) {
         glm::vec3 n = glm::normalize(primaryNormal);
-        spawnStickyBlood(rayStart + dir * primaryT + n * 0.01f, n, force * 0.7f, 0);
+        spawnStickyBlood(rayStart + dir * primaryT + n * 0.02f, n, force * 0.7f, 0);
     }
     
     // Cone rays for corner spread
@@ -191,7 +200,7 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
         if (traceRay(rayStart, coneDir, t, normal)) {
             glm::vec3 n = glm::normalize(normal);
             float spreadForce = force * (0.4f + (rand() % 1001) / 1000.0f * 0.6f);
-            spawnStickyBlood(rayStart + coneDir * t + n * 0.01f, n, spreadForce, 0);
+            spawnStickyBlood(rayStart + coneDir * t + n * 0.025f, n, spreadForce, 0);
         }
     }
 }
@@ -206,11 +215,11 @@ void EffectPartSystem::spawnBloodSphereBurst(
     force = std::clamp(force, 0.1f, 2.0f);
     int count;
     if (force < 0.4f)
-        count = 3 + rand() % 3;        // 3-5
+        count = 30 + rand() % 20;        // 30-50
     else if (force < 0.9f)
-        count = 8 + rand() % 5;        // 8-12
+        count = 80 + rand() % 40;        // 80-120
     else
-        count = 16 + rand() % 9;       // 16-24
+        count = 160 + rand() % 80;       // 160-240
 
     glm::vec3 dir = glm::length(shotDirection) > 0.001f
         ? glm::normalize(shotDirection)
@@ -226,16 +235,16 @@ void EffectPartSystem::spawnBloodSphereBurst(
         velDir.z = std::max(velDir.z, 0.1f);
 
         EffectPart p;
-        p.position = hitPoint;
+        p.position = hitPoint + velDir * (0.05f + (rand() % 51) / 1000.0f);
         p.replayType = "blood_sphere_particle";
-        p.velocity = velDir * (1.5f + force * 4.0f + (rand() % 2001) / 1000.0f);
-        p.color = {0.85f, 0.0f, 0.015f};
-        p.maxLifetime = 2.5f + (rand() % 1001) / 1000.0f;
+        p.velocity = velDir * (10.0f + force * 8.0f + (rand() % 3001) / 1000.0f);
+        p.color = {0.82f, 0.0f, 0.02f};
+        p.maxLifetime = 1.5f + (rand() % 1501) / 1000.0f;
         p.lifetime = -((float)(rand() % 101) / 1000.0f);
-        p.scale = 0.05f + force * 0.06f + (rand() % 51) / 1000.0f;
-        p.endScale = p.scale * 0.2f;
+        p.scale = 0.08f + force * 0.12f + (rand() % 101) / 1000.0f;
+        p.endScale = p.scale * 0.5f;
         p.alpha = 1.0f;
-        p.gravity = 9.81f;
+        p.gravity = 4.0f;
         p.affectedByGravity = true;
         p.billboardText = false;
         p.sourceActorId = sourceActorId;
@@ -375,7 +384,7 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
 
 void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0, 0, 1);
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < 16; ++i) {
         glm::vec3 randomDir{
             (rand() % 2001 - 1000) / 1000.0f,
             (rand() % 2001 - 1000) / 1000.0f,
@@ -383,14 +392,16 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
         };
         randomDir = glm::normalize(randomDir + n * 0.8f);
         EffectPart e;
-        e.position = position + n * 0.04f;
+        e.position = position + n * 0.04f + randomDir * (0.02f + (rand() % 51) / 1000.0f);
         e.replayType = "debris_block";
-        e.velocity = randomDir * (1.5f + (rand() % 2001) / 1000.0f);
+        e.velocity = randomDir * (2.0f + (rand() % 3001) / 1000.0f);
         e.color = {0.42f, 0.40f, 0.38f};
-        e.maxLifetime = 1.0f;
+        e.maxLifetime = 1.5f + (rand() % 1001) / 1000.0f;
         e.alpha = 1.0f;
-        float size = 0.35f + (rand() % 501) / 1000.0f;
-        e.halfSize = glm::vec3(size);
+        float sx = 0.12f + (rand() % 501) / 1000.0f;
+        float sy = 0.12f + (rand() % 501) / 1000.0f;
+        float sz = 0.12f + (rand() % 501) / 1000.0f;
+        e.halfSize = {sx, sy, sz};
         e.rotation = {
             (float)(rand() % 721 - 360),
             (float)(rand() % 721 - 360),
@@ -399,6 +410,7 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
         e.billboardText = false;
         e.gravity = 9.81f;
         e.affectedByGravity = true;
+        e.lifetime = -((float)(rand() % 51) / 1000.0f);
         e.box = true;
         spawn(e);
     }

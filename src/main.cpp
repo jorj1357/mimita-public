@@ -60,6 +60,7 @@
 #include "devtools/terminal.h"
 #include "devtools/account-config.h"
 #include "devtools/npc-spawn-commands.h"
+#include "ui/hitmarker.h"
 #include "effects/effect-part.h"
 #include "replay/replay.h"
 #include "sim/sim-context.h"
@@ -103,6 +104,7 @@ static glm::vec3 castWorldRay(const World& world, glm::vec3 origin, glm::vec3 di
     }
     return origin + direction * nearest;
 }
+
 
 static int selectWorldTriangle(const World& world, glm::vec3 origin, glm::vec3 direction)
 {
@@ -926,6 +928,8 @@ int main(int argc, char** argv)
 
             // Update effect parts
             EffectPartSystem::instance().update(dt);
+
+            drawHitmarker(dt);
 
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
