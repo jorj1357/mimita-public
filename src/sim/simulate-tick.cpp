@@ -58,8 +58,13 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     }
 
     InputState input = inputStateFromFrame(frame);
-    if (!sim.player->dead)
+    if (sim.player->dead) {
+        InputState deadInput;
+        deadInput.camForward = input.camForward;
+        physicsMainUpdate(*sim.player, *sim.world, deadInput, TICK_DT);
+    } else {
         physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
+    }
     sim.npcSystem->update(*sim.world, *sim.player, TICK_DT);
 
     // Resolve NPC vs Player collisions
