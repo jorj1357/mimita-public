@@ -19,6 +19,7 @@ WeaponManager::WeaponManager()
 void WeaponManager::update(const Camera& camera, Player& player, float dt)
 {
     shotCooldown = std::max(0.0f, shotCooldown - dt);
+    shootingTimer = std::max(0.0f, shootingTimer - dt);
     if (reloadTimer > 0.0f) {
         reloadTimer = std::max(0.0f, reloadTimer - dt);
         if (reloadTimer <= 0.0f && pendingReloadRounds > 0) {
@@ -50,8 +51,10 @@ RevolverShotResult WeaponManager::fire(const Camera& camera, Player& player, Npc
         return {};
     }
     RevolverShotResult result = revolver.fire(camera, player, npcs, world);
-    if (result.fired)
+    if (result.fired) {
         shotCooldown = REVOLVER_SHOT_COOLDOWN;
+        shootingTimer = 0.1f;
+    }
     return result;
 }
 
