@@ -31,6 +31,10 @@ namespace DebugConfig
     inline bool DEBUG_INPUT = false;
     inline bool DEBUG_COMMANDS = false;
     inline bool DEBUG_NPC = false;
+    inline bool DEBUG_RAGDOLL = false;
+    inline bool DEBUG_BLOOD_RAYS = false;
+    inline bool DEBUG_BLOOD_HITS = false;
+    inline bool DEBUG_BLOOD_FORCE = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
@@ -54,6 +58,9 @@ namespace DebugConfig
         DEBUG_INPUT = false;
         DEBUG_COMMANDS = false;
         DEBUG_NPC = false;
+        DEBUG_BLOOD_RAYS = false;
+        DEBUG_BLOOD_HITS = false;
+        DEBUG_BLOOD_FORCE = false;
     }
 }
 

@@ -8,7 +8,188 @@
 #include <cmath>
 #include <cstring>
 #include "audio/audio.h"
+#include "config.h"
 #include "replay/replay.h"
+
+namespace {
+
+struct BloodWorldHit {
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    const char* surfaceType = "none";
+    float distance = 0.0f;
+};
+
+bool rayTriangleSegment(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float maxDistance,
+    const CollisionTriangle& tri,
+    float& distance)
+{
+    const glm::vec3 e1 = tri.b - tri.a;
+    const glm::vec3 e2 = tri.c - tri.a;
+    const glm::vec3 p = glm::cross(direction, e2);
+    const float determinant = glm::dot(e1, p);
+    if (std::fabs(determinant) < 0.000001f)
+        return false;
+
+    const float inverseDeterminant = 1.0f / determinant;
+    const glm::vec3 offset = origin - tri.a;
+    const float u = glm::dot(offset, p) * inverseDeterminant;
+    if (u < 0.0f || u > 1.0f)
+        return false;
+
+    const glm::vec3 q = glm::cross(offset, e1);
+    const float v = glm::dot(direction, q) * inverseDeterminant;
+    if (v < 0.0f || u + v > 1.0f)
+        return false;
+
+    distance = glm::dot(e2, q) * inverseDeterminant;
+    return distance >= 0.0f && distance <= maxDistance;
+}
+
+bool rayAabbSegment(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float maxDistance,
+    const glm::vec3& minimum,
+    const glm::vec3& maximum,
+    float& distance,
+    glm::vec3& normal)
+{
+    float minimumTime = 0.0f;
+    float maximumTime = maxDistance;
+    normal = glm::vec3(0.0f);
+
+    for (int axis = 0; axis < 3; ++axis) {
+        if (std::fabs(direction[axis]) < 0.000001f) {
+            if (origin[axis] < minimum[axis] || origin[axis] > maximum[axis])
+                return false;
+            continue;
+        }
+
+        const float inverseDirection = 1.0f / direction[axis];
+        float nearTime = (minimum[axis] - origin[axis]) * inverseDirection;
+        float farTime = (maximum[axis] - origin[axis]) * inverseDirection;
+        float normalSign = -1.0f;
+        if (nearTime > farTime) {
+            std::swap(nearTime, farTime);
+            normalSign = 1.0f;
+        }
+        if (nearTime > minimumTime) {
+            minimumTime = nearTime;
+            normal = glm::vec3(0.0f);
+            normal[axis] = normalSign;
+        }
+        maximumTime = std::min(maximumTime, farTime);
+        if (minimumTime > maximumTime)
+            return false;
+    }
+
+    distance = minimumTime;
+    return distance >= 0.0f && distance <= maxDistance;
+}
+
+bool raySphereSegment(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float maxDistance,
+    const Sphere& sphere,
+    float& distance,
+    glm::vec3& normal)
+{
+    const glm::vec3 offset = origin - sphere.pos;
+    const float b = glm::dot(offset, direction);
+    const float c = glm::dot(offset, offset) - sphere.radius * sphere.radius;
+    const float discriminant = b * b - c;
+    if (discriminant < 0.0f)
+        return false;
+
+    distance = -b - std::sqrt(discriminant);
+    if (distance < 0.0f || distance > maxDistance)
+        return false;
+    normal = glm::normalize(origin + direction * distance - sphere.pos);
+    return true;
+}
+
+bool traceBloodSegment(
+    const World& world,
+    const glm::vec3& from,
+    const glm::vec3& to,
+    BloodWorldHit& hit)
+{
+    const glm::vec3 delta = to - from;
+    const float segmentLength = glm::length(delta);
+    if (segmentLength < 0.0001f)
+        return false;
+
+    const glm::vec3 direction = delta / segmentLength;
+    float nearest = segmentLength;
+    bool found = false;
+
+    for (const CollisionTriangle& triangle : world.collisionMesh.triangles) {
+        float distance = 0.0f;
+        if (!rayTriangleSegment(from, direction, nearest, triangle, distance))
+            continue;
+        nearest = distance;
+        hit.normal = triangle.normal;
+        hit.surfaceType = "triangle";
+        found = true;
+    }
+
+    for (const Block& block : world.blocks) {
+        float distance = 0.0f;
+        glm::vec3 normal(0.0f);
+        const glm::vec3 halfSize = block.size * 0.5f;
+        if (!rayAabbSegment(
+                from, direction, nearest,
+                block.pos - halfSize, block.pos + halfSize,
+                distance, normal))
+            continue;
+        nearest = distance;
+        hit.normal = normal;
+        hit.surfaceType = "block";
+        found = true;
+    }
+
+    for (const Sphere& sphere : world.spheres) {
+        float distance = 0.0f;
+        glm::vec3 normal(0.0f);
+        if (!raySphereSegment(from, direction, nearest, sphere, distance, normal))
+            continue;
+        nearest = distance;
+        hit.normal = normal;
+        hit.surfaceType = "sphere";
+        found = true;
+    }
+
+    if (!found)
+        return false;
+
+    hit.position = from + direction * nearest;
+    hit.distance = nearest;
+    if (glm::dot(hit.normal, direction) > 0.0f)
+        hit.normal = -hit.normal;
+    hit.normal = glm::normalize(hit.normal);
+    return true;
+}
+
+unsigned int bloodGridHash(const glm::ivec3& cell)
+{
+    const unsigned int x = (unsigned int)cell.x * 73856093u;
+    const unsigned int y = (unsigned int)cell.y * 19349663u;
+    const unsigned int z = (unsigned int)cell.z * 83492791u;
+    return (x ^ y ^ z) & 511u;
+}
+
+glm::ivec3 bloodGridCell(const glm::vec3& position)
+{
+    constexpr float CELL_SIZE = 0.5f;
+    return glm::ivec3(glm::floor(position / CELL_SIZE));
+}
+
+}
 
 EffectPartSystem& EffectPartSystem::instance() {
     static EffectPartSystem sInstance;
@@ -52,54 +233,78 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
 }
 
 void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float amount) {
-    glm::vec3 n = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0,0,1);
-    n += glm::vec3(
-        (rand() % 201 - 100) / 1000.0f,
-        (rand() % 201 - 100) / 1000.0f,
-        (rand() % 201 - 100) / 1000.0f
-    );
-    n = glm::normalize(n);
-    spawnStickyBlood(position, -n, amount * 1.2f);
+    glm::vec3 velocity = glm::length(direction) > 0.001f
+        ? glm::normalize(direction)
+        : glm::vec3(0.0f, 0.0f, 1.0f);
+    EffectPart particle;
+    particle.position = position;
+    particle.velocity = velocity * (5.0f + std::max(amount, 0.0f) * 4.0f);
+    particle.replayType = "blood_sphere_particle";
+    particle.color = {0.35f, 0.005f, 0.01f};
+    particle.scale = 0.06f;
+    particle.endScale = 0.02f;
+    particle.maxLifetime = 1.0f;
+    particle.gravity = 25.0f;
+    particle.affectedByGravity = true;
+    particle.billboardText = false;
+    spawn(particle);
 }
 
 void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId) {
     force = std::clamp(force, 0.35f, 1.5f);
     bool highForce = force >= 0.7f;
-    // int bigCount = highForce ? 16 : 8;
-    // int smallCount = 0;
-    // int bigCount = highForce ? 5 : 3;
-    int bigCount = highForce ? 5 : 2;
-    // int smallCount = highForce ? 40 : 20;
-    int smallCount = highForce ? 10 : 4;
+    const int bigCount = 1;
+    const int smallCount = highForce ? 10 : 7;
 
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
-    glm::vec3 tangent = glm::normalize(std::fabs(n.z) < 0.9f ? glm::cross(n, glm::vec3(0,0,1))
-                                                             : glm::cross(n, glm::vec3(0,1,0)));
-    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
-
     constexpr float MERGE_RADIUS = 0.3f;
+    constexpr unsigned int GRID_BUCKETS = 512;
+    std::array<int, GRID_BUCKETS> bucketHeads{};
+    std::array<int, POOL_SIZE> bucketNext{};
+    bucketHeads.fill(-1);
+    bucketNext.fill(-1);
 
-    for (int i = 0; i < bigCount + smallCount; ++i) {
-        bool big = i < bigCount;
-        float angle = i * 2.399963f + ((rand() % 1000) / 1000.0f - 0.5f) * 0.8f;
-        float radius = (big ? 0.16f * i : 0.35f + 0.08f * (i - bigCount));
-        radius *= 0.8f + (rand() % 401) / 1000.0f;
-        glm::vec3 newPos = position + tangent * std::cos(angle) * radius + bitangent * std::sin(angle) * radius
-                   + n * (0.015f + (rand() % 12) * 0.002f);
+    unsigned int stickyCount = 0;
+    for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        const EffectPart& existing = mPool[i];
+        if (!existing.alive || !existing.cylinderDecal)
+            continue;
+        ++stickyCount;
+        if (!existing.mergeableBlood)
+            continue;
+        const unsigned int bucket = bloodGridHash(bloodGridCell(existing.position));
+        bucketNext[i] = bucketHeads[bucket];
+        bucketHeads[bucket] = (int)i;
+    }
+
+    for (int i = 0; i < bigCount + smallCount && stickyCount < MAX_STICKY_BLOOD; ++i) {
+        const bool big = i < bigCount;
+        const glm::vec3 newPos = position + n * (0.012f + (rand() % 5) * 0.001f);
 
         bool merged = false;
-        for (auto& existing : mPool) {
-            if (!existing.alive || !existing.cylinderDecal) continue;
-            if (existing.ownerId != ownerId) continue;
-            float dist = glm::length(existing.position - newPos);
-            if (dist < MERGE_RADIUS && glm::dot(existing.normal, n) > 0.9f) {
-                existing.scale *= 1.12f;
-                existing.position = (existing.position + newPos) * 0.5f;
-                merged = true;
-                break;
+        if (big) {
+            const glm::ivec3 centerCell = bloodGridCell(newPos);
+            for (int z = -1; z <= 1 && !merged; ++z)
+            for (int y = -1; y <= 1 && !merged; ++y)
+            for (int x = -1; x <= 1 && !merged; ++x) {
+                const unsigned int bucket = bloodGridHash(centerCell + glm::ivec3(x, y, z));
+                for (int index = bucketHeads[bucket]; index >= 0; index = bucketNext[index]) {
+                    EffectPart& existing = mPool[(unsigned int)index];
+                    if (!existing.alive || !existing.mergeableBlood || existing.ownerId != ownerId)
+                        continue;
+                    if (glm::length(existing.position - newPos) >= MERGE_RADIUS)
+                        continue;
+                    if (glm::dot(existing.normal, n) <= 0.9f)
+                        continue;
+                    existing.scale = std::min(existing.scale * 1.12f, 2.5f);
+                    existing.endScale = existing.scale;
+                    merged = true;
+                    break;
+                }
             }
         }
-        if (merged) continue;
+        if (merged)
+            continue;
 
         EffectPart e;
         e.position = newPos;
@@ -110,44 +315,27 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
             (float)(rand() % 721 - 360)
         };
         e.replayType = "blood_cylinder";
-        e.color = {1.0f, 0.015f, 0.025f};
-        e.maxLifetime = 30.0f;
-        // e.maxLifetime = 5.0f;
-        e.lifetime = -(0.01f + (rand() % 91) * 0.001f);
-        // e.scale = big ? (0.65f + force * 0.55f) : (0.18f + force * 0.22f);
-
-        // new scale for big and small splats 6 7 2026 
-        float bigScale =
-            // 0.65f +
-            0.05f +
-            force * 0.55f;
-
-        float smallScale =
-            bigScale *
-            // (0.08f + (rand() % 60) / 1000.0f);
-            // (0.18f + (rand() % 60) / 1000.0f);
-            (0.48f + (rand() % 60) / 1000.0f);
-            // (0.18f + (rand() % 60) / 100.0f);
-            
-        e.scale =
-            big
-            ? bigScale
-            : smallScale;
-
+        e.maxLifetime = big ? 30.0f : 5.0f;
+        e.lifetime = 0.0f;
+        const float variation = 0.85f + (rand() % 301) / 1000.0f;
+        const float bigScale = (0.28f + force * 0.42f) * variation;
+        e.scale = big ? bigScale : bigScale * 0.125f;
         e.endScale = e.scale;
         e.billboardText = false;
         e.sticky = true;
         e.cylinderDecal = true;
+        e.mergeableBlood = big;
         e.cylinderHeight = 0.01f;
         e.ownerId = ownerId;
         e.debugVisual = false;
+        e.color = big
+            ? glm::vec3(0.32f, 0.004f, 0.008f)
+            : glm::vec3(0.68f, 0.012f, 0.02f);
 
-        // and big is dark and small isi light 6 7 2026 
-        if (big)
-            e.color = {0.65f, 0.01f, 0.02f};
-        else
-            e.color = {0.7f, 0.02f, 0.03f};
-        spawn(e);
+        EffectPart* spawned = spawn(e);
+        if (!spawned)
+            break;
+        ++stickyCount;
     }
 }
 
@@ -158,94 +346,106 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     else if (bodyPart.find("Leg") != std::string::npos) bodyPartLethality = 0.7f;
     else if (bodyPart == "torso") bodyPartLethality = 1.2f;
     
-    float distanceFactor = std::clamp(1.0f - distance / 110.0f, 0.1f, 1.0f);
-    float force = std::clamp(damage / 100.0f * bodyPartLethality * distanceFactor, 0.35f, 1.5f);
-    
-    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0,0,-1);
-    glm::vec3 rayStart = hitPosition + dir * 0.25f;
-    
-    constexpr float MAX_RAY = 25.0f;
-    constexpr int CONE_RAYS = 24;
-    constexpr float CONE_ANGLE = 0.6f;
-    
-    auto traceRay = [&](glm::vec3 origin, glm::vec3 d, float& outT, glm::vec3& outNormal) -> bool {
-        float bestT = MAX_RAY;
-        bool hit = false;
-        glm::vec3 bestNormal;
-        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-            glm::vec3 e1 = tri.b - tri.a;
-            glm::vec3 e2 = tri.c - tri.a;
-            glm::vec3 p = glm::cross(d, e2);
-            float det = glm::dot(e1, p);
-            if (std::fabs(det) < 0.000001f) continue;
-            float inv = 1.0f / det;
-            glm::vec3 tVec = origin - tri.a;
-            float u = glm::dot(tVec, p) * inv;
-            if (u < 0.0f || u > 1.0f) continue;
-            glm::vec3 q = glm::cross(tVec, e1);
-            float v = glm::dot(d, q) * inv;
-            if (v < 0.0f || u + v > 1.0f) continue;
-            float t = glm::dot(e2, q) * inv;
-            if (t > 0.01f && t < bestT) {
-                bestT = t;
-                bestNormal = tri.normal;
-                hit = true;
-            }
-        }
-        for (const Block& block : world.blocks) {
-            glm::vec3 mn = block.pos - block.size * 0.5f;
-            glm::vec3 mx = block.pos + block.size * 0.5f;
-            float tmin = 0.0f, tmax = MAX_RAY;
-            glm::vec3 normal(0.0f);
-            bool h = true;
-            for (int axis = 0; axis < 3; ++axis) {
-                if (std::fabs(d[axis]) < 0.000001f) {
-                    if (origin[axis] < mn[axis] || origin[axis] > mx[axis]) { h = false; break; }
-                    continue;
-                }
-                float invD = 1.0f / d[axis];
-                float a = (mn[axis] - origin[axis]) * invD;
-                float b = (mx[axis] - origin[axis]) * invD;
-                float sign = -1.0f;
-                if (a > b) { std::swap(a, b); sign = 1.0f; }
-                if (a > tmin) { tmin = a; normal = glm::vec3(0.0f); normal[axis] = sign; }
-                tmax = std::min(tmax, b);
-                if (tmin > tmax) { h = false; break; }
-            }
-            if (h && tmin > 0.01f && tmin < bestT) {
-                bestT = tmin;
-                bestNormal = normal;
-                hit = true;
-            }
-        }
-        outT = bestT;
-        outNormal = bestNormal;
-        return hit;
-    };
-    
-    glm::vec3 primaryNormal;
-    float primaryT;
-    if (traceRay(rayStart, dir, primaryT, primaryNormal)) {
-        glm::vec3 n = glm::normalize(primaryNormal);
-        spawnStickyBlood(rayStart + dir * primaryT + n * 0.02f, n, force * 0.7f, 0);
+    const float distanceMultiplier = std::clamp(1.0f - distance / 110.0f, 0.15f, 1.0f);
+    const float force = std::clamp(
+        damage / 100.0f * bodyPartLethality * distanceMultiplier,
+        0.2f,
+        1.5f);
+    const glm::vec3 forward = glm::length(direction) > 0.001f
+        ? glm::normalize(direction)
+        : glm::vec3(0.0f, 0.0f, -1.0f);
+    const glm::vec3 tangent = glm::normalize(
+        std::fabs(forward.z) < 0.9f
+            ? glm::cross(forward, glm::vec3(0.0f, 0.0f, 1.0f))
+            : glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+    const glm::vec3 bitangent = glm::normalize(glm::cross(forward, tangent));
+
+    constexpr int SUBSTEPS = 32;
+    constexpr float STEP_DT = 1.0f / 30.0f;
+    constexpr float BLOOD_GRAVITY = 24.0f;
+    const int trajectoryCount = force >= 0.7f ? 5 : 3;
+    const float launchSpeed = 7.0f + force * 18.0f;
+    const float coneSpread = 0.08f + force * 0.24f;
+
+    mBloodDebugSegmentCount = 0;
+    if (DebugConfig::DEBUG_BLOOD_FORCE) {
+        printf(
+            "[BLOOD FORCE] damage=%.1f part=%s partMult=%.2f distance=%.2f "
+            "distanceMult=%.2f force=%.3f speed=%.2f trajectories=%d\n",
+            damage,
+            bodyPart.c_str(),
+            bodyPartLethality,
+            distance,
+            distanceMultiplier,
+            force,
+            launchSpeed,
+            trajectoryCount);
     }
-    
-    float seed = (float)(rand() % 10000) / 10000.0f;
-    for (int i = 0; i < CONE_RAYS; ++i) {
-        float angle1 = seed + (float)i * 2.399963f;
-        float angle2 = seed + (float)(i * 7) * 0.618034f;
-        glm::vec3 coneDir = dir;
-        coneDir.x += std::cos(angle1) * std::sin(angle2) * CONE_ANGLE;
-        coneDir.y += std::sin(angle1) * std::sin(angle2) * CONE_ANGLE;
-        coneDir.z += (std::cos(angle2) - 1.0f) * CONE_ANGLE;
-        coneDir = glm::normalize(coneDir);
-        
-        float t;
-        glm::vec3 normal;
-        if (traceRay(rayStart, coneDir, t, normal)) {
-            glm::vec3 n = glm::normalize(normal);
-            float spreadForce = force * (0.4f + (rand() % 1001) / 1000.0f * 0.6f);
-            spawnStickyBlood(rayStart + coneDir * t + n * 0.025f, n, spreadForce, 0);
+
+    for (int trajectory = 0; trajectory < trajectoryCount; ++trajectory) {
+        const float randomAngle = (float)(rand() % 6284) / 1000.0f;
+        const float randomRadius = trajectory == 0
+            ? 0.0f
+            : ((float)(rand() % 1001) / 1000.0f) * coneSpread;
+        glm::vec3 launchDirection =
+            forward +
+            tangent * std::cos(randomAngle) * randomRadius +
+            bitangent * std::sin(randomAngle) * randomRadius;
+        launchDirection = glm::normalize(launchDirection);
+
+        glm::vec3 position = hitPosition + forward * 0.08f;
+        glm::vec3 velocity = launchDirection * launchSpeed;
+        float totalDistance = 0.0f;
+        bool placedDecal = false;
+
+        for (int step = 0; step < SUBSTEPS; ++step) {
+            const glm::vec3 nextPosition = position + velocity * STEP_DT;
+            BloodWorldHit worldHit;
+            const bool hitWorld = traceBloodSegment(world, position, nextPosition, worldHit);
+
+            if (mBloodDebugSegmentCount < MAX_BLOOD_DEBUG_SEGMENTS) {
+                BloodDebugSegment& debug = mBloodDebugSegments[mBloodDebugSegmentCount++];
+                debug.from = position;
+                debug.to = hitWorld ? worldHit.position : nextPosition;
+                debug.normal = hitWorld ? worldHit.normal : glm::vec3(0.0f);
+                debug.hit = hitWorld;
+            }
+
+            totalDistance += hitWorld
+                ? glm::length(worldHit.position - position)
+                : glm::length(nextPosition - position);
+
+            if (hitWorld) {
+                const bool gravityFloorImpact =
+                    worldHit.normal.z > 0.65f && velocity.z < 0.0f;
+                spawnStickyBlood(
+                    worldHit.position + worldHit.normal * 0.012f,
+                    worldHit.normal,
+                    force * (0.75f + (rand() % 501) / 1000.0f),
+                    0);
+                if (DebugConfig::DEBUG_BLOOD_HITS) {
+                    printf(
+                        "[BLOOD HIT] surface=%s normal=(%.3f %.3f %.3f) "
+                        "travel=%.3f gravityFloor=%d\n",
+                        worldHit.surfaceType,
+                        worldHit.normal.x,
+                        worldHit.normal.y,
+                        worldHit.normal.z,
+                        totalDistance,
+                        (int)gravityFloorImpact);
+                }
+                placedDecal = true;
+                break;
+            }
+
+            position = nextPosition;
+            velocity.z -= BLOOD_GRAVITY * STEP_DT;
+        }
+
+        if (!placedDecal && DebugConfig::DEBUG_BLOOD_HITS) {
+            printf(
+                "[BLOOD HIT] surface=none travel=%.3f decal=aborted\n",
+                totalDistance);
         }
     }
 }
@@ -291,7 +491,7 @@ void EffectPartSystem::spawnBloodSphereBurst(
         p.velocity = velDir * (14.0f + force * 10.0f + (rand() % 4001) / 1000.0f);
         p.color = {0.35f, 0.01f, 0.02f};
         p.maxLifetime = 0.6f + (rand() % 401) / 1000.0f;
-        p.lifetime = -((float)(rand() % 101) / 1000.0f);
+        p.lifetime = 0.0f;
         p.scale = 0.04f + force * 0.06f + (rand() % 51) / 1000.0f;
         p.endScale = p.scale * 0.5f;
         p.alpha = 1.0f;
@@ -338,7 +538,7 @@ void EffectPartSystem::spawnBloodSpurt(
         particle.velocity = velocityDirection * (2.5f + (rand() % 2501) / 1000.0f);
         particle.color = {0.85f, 0.0f, 0.015f};
         particle.maxLifetime = 3.0f;
-        particle.lifetime = -0.1f * (float)i;
+        particle.lifetime = 0.0f;
         particle.scale = 0.075f + (rand() % 41) / 1000.0f;
         particle.endScale = particle.scale * 0.35f;
         particle.alpha = 1.0f;
@@ -461,7 +661,7 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
         e.billboardText = false;
         e.gravity = 9.81f;
         e.affectedByGravity = true;
-        e.lifetime = -((float)(rand() % 51) / 1000.0f);
+        e.lifetime = 0.0f;
         e.box = true;
         spawn(e);
     }
@@ -590,6 +790,7 @@ void EffectPartSystem::clear() {
         }
     }
     mActiveCount = 0;
+    mBloodDebugSegmentCount = 0;
 }
 
 void EffectPartSystem::render(const Camera& camera) const {
@@ -631,6 +832,32 @@ void EffectPartSystem::render(const Camera& camera) const {
                 glm::vec4 textColor = {effect.color.x, effect.color.y, effect.color.z, alpha};
                 uiDrawText(effect.label.c_str(), x, y, 0.3f * effect.scale, textColor);
             }
+        }
+    }
+
+    if (DebugConfig::DEBUG_BLOOD_RAYS) {
+        for (unsigned int i = 0; i < mBloodDebugSegmentCount; ++i) {
+            const BloodDebugSegment& segment = mBloodDebugSegments[i];
+            DebugVis::drawLine(
+                camera,
+                segment.from,
+                segment.to,
+                segment.hit
+                    ? glm::vec4(1.0f, 0.25f, 0.05f, 1.0f)
+                    : glm::vec4(0.8f, 0.02f, 0.04f, 0.85f));
+        }
+    }
+    if (DebugConfig::DEBUG_BLOOD_HITS) {
+        for (unsigned int i = 0; i < mBloodDebugSegmentCount; ++i) {
+            const BloodDebugSegment& segment = mBloodDebugSegments[i];
+            if (!segment.hit)
+                continue;
+            DebugVis::drawPointCross(camera, segment.to, 0.12f, {1.0f, 1.0f, 0.0f, 1.0f});
+            DebugVis::drawLine(
+                camera,
+                segment.to,
+                segment.to + segment.normal * 0.5f,
+                {0.2f, 1.0f, 0.2f, 1.0f});
         }
     }
 }
