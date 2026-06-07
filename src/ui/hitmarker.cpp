@@ -14,7 +14,7 @@
 
 namespace
 {
-constexpr float HITMARKER_DURATION = 0.20f;
+constexpr float HITMARKER_DURATION = 0.5f;
 }
 
 float gHitmarkerTimer = 0.0f;
@@ -43,10 +43,6 @@ void drawHitmarker(float dt)
     float cx = uiScreenW() * 0.5f;
     float cy = uiScreenH() * 0.5f;
 
-    float gap = 10.0f;
-    float len = 18.0f;
-    float thick = 4.0f;
-
     glm::vec4 color =
     {
         1.0f,
@@ -55,43 +51,6 @@ void drawHitmarker(float dt)
         hmT
     };
 
-    uiDrawRect(
-        {
-            cx - gap - len,
-            cy - thick * 0.5f,
-            len,
-            thick
-        },
-        color,
-        "hitmarker-left");
-
-    uiDrawRect(
-        {
-            cx + gap,
-            cy - thick * 0.5f,
-            len,
-            thick
-        },
-        color,
-        "hitmarker-right");
-
-    uiDrawRect(
-        {
-            cx - thick * 0.5f,
-            cy - gap - len,
-            thick,
-            len
-        },
-        color,
-        "hitmarker-top");
-
-    uiDrawRect(
-        {
-            cx - thick * 0.5f,
-            cy + gap,
-            thick,
-            len
-        },
-        color,
-        "hitmarker-bottom");
+    // uiDrawImageRotated("assets/crosshair/crosshairhit.png", cx, cy, 28.0f, 45.0f, color);
+    uiDrawImageRotated("assets/crosshair/crosshairhit.png", cx, cy, 28.0f, 0.0f, color);
 }
