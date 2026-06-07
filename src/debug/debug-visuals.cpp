@@ -78,6 +78,10 @@ void flushDebugLines(const Camera& camera)
 {
     if (gLineVerts.empty())
         return;
+    if (!gRenderer || !gRenderer->shaderProgram) {
+        gLineVerts.clear();
+        return;
+    }
 
     if (!gLineVao)
     {
@@ -173,6 +177,10 @@ void flushDebugTris(const Camera& camera)
 {
     if (gTriVerts.empty())
         return;
+    if (!gRenderer || !gRenderer->shaderProgram) {
+        gTriVerts.clear();
+        return;
+    }
 
     if (!gTriVao)
     {
@@ -653,15 +661,29 @@ void drawDebugLabels(const Camera& camera)
 void DebugVis::init(GLFWwindow* win)
 {
     gWindow = win;
-    printf("[DEBUG] DebugVis initialized.\n");
+    printf("[DBGVIS] init\n");
 }
 
-void DebugVis::setMasterEnabled(bool enabled) { DebugConfig::DEBUG_VISUALS_MASTER = enabled; }
+void DebugVis::setMasterEnabled(bool enabled) {
+    if (enabled == DebugConfig::DEBUG_VISUALS_MASTER)
+        return;
+    DebugConfig::DEBUG_VISUALS_MASTER = enabled;
+    if (!enabled) {
+        gLineVerts.clear();
+        gTriVerts.clear();
+        gCollisionEvents.clear();
+        gTextLabels.clear();
+        printf("[DBGVIS] clear\n");
+    } else {
+        printf("[DBGVIS] enable\n");
+    }
+}
 bool DebugVis::masterEnabled() { return DebugConfig::DEBUG_VISUALS_MASTER; }
 
 void DebugVis::update()
 {
     if (!gWindow) return;
+    if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
     glPolygonMode(GL_FRONT_AND_BACK, DebugConfig::DEBUG_WIREFRAME ? GL_LINE : GL_FILL);
 }
 

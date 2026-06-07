@@ -27,6 +27,8 @@
 #include "world/texture-store.h"
 #include "world/world.h"
 
+#include "ui/hitmarker.h"
+
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
@@ -182,8 +184,8 @@ void RevolverSystem::update(const Camera& camera, Player& player, float dt)
             }
         }
     }
-    mRecoil = std::max(0.0f, mRecoil - dt * 7.0f);
-    mDisturbance = std::max(0.0f, mDisturbance - dt * 4.0f);
+    mRecoil = std::max(0.0f, mRecoil - dt * 15.0f);
+    mDisturbance = std::max(0.0f, mDisturbance - dt * 8.0f);
 }
 
 void RevolverSystem::render(const Camera& camera, const Player& player) const
@@ -217,6 +219,8 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
     result.fired = true;
     result.start = mMuzzle;
     shooter.revolverCylinder--;
+    hitmarker();
+    Terminal::instance().addLog("[HITMARKER] triggered on fired shot");
     // Random pitch ±1% and volume ±1% to avoid robotic identical playback
     float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);  // 0.99 - 1.01
     float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f); // 0.99 - 1.01
@@ -307,7 +311,9 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         float knockback = damage * distanceFactor * (0.08f + angleFactor * 0.12f);
         victim->body.currentHp = std::max(0, victim->body.currentHp - rounded);
         victim->body.vel += shotDirection * knockback + glm::vec3(0,0,knockback * 0.12f);
+        victim->hitReactionTimer = 0.3f;
         result.hitEntity = true;
+        hitmarker();
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
 
@@ -364,8 +370,8 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
 
     shooter.externalImpulse += recoilDir * recoil;
     
-    mRecoil = std::min(mRecoil + recoil * 0.12f, 5.0f);
-    mDisturbance += 0.6f;
+    mRecoil = std::min(mRecoil + recoil * 0.25f, 8.0f);
+    mDisturbance += 1.2f;
     return result;
 }
 

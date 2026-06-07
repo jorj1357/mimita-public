@@ -371,6 +371,14 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
 
         senseWorld(npc, player, dt);
 
+        // Force re-evaluation when hit
+        if (npc.hitReactionTimer > 0.0f) {
+            npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - dt);
+            if (npc.reactionTimer <= 0.0f) {
+                npc.actionTimer = 0.0f;
+            }
+        }
+
         if (npc.reactionTimer <= 0.0f && npc.actionTimer <= 0.0f)
         {
             NpcAction next = chooseAction(npc, dt);
@@ -463,6 +471,7 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
         {
             float dist = npc.sensors.targetDistance;
             float cd = 1.35f - difficulty01(npc.difficulty) * 1.05f;
+            bool fired = false;
             // Ranged attack if distance > 3m, else melee
             if (dist > 3.0f && npc.sensors.visibleTarget) {
                 glm::vec3 npcPos = npc.body.pos;
@@ -508,11 +517,18 @@ void NpcSystem::update(const World& world, const Player& player, float dt)
                         AudioManager::instance().play(
                             {"revolvershoot", AudioCategory::Weapons, true, npcPos, 0.5f, 0.9f, 40.0f, npc.id});
                         const_cast<Player&>(player).takeDamage(dmg, knockbackDir, 8.0f);
+                        fired = true;
+                        npc.hitReactionTimer = 0.0f;
                     }
                 }
                 cd = std::max(cd, 1.0f);
             }
             npc.attackCooldown = cd;
+            // Force re-evaluation after firing so NPC can chase/strafe immediately
+            if (fired) {
+                npc.reactionTimer = 0.0f;
+                npc.actionTimer = 0.0f;
+            }
             Debug::log(Debug::Category::General,
                        "[NPC] id=%u attack difficulty=%.1f distance=%.2f cooldown=%.2f\n",
                        npc.id, npc.difficulty, dist, cd);

@@ -99,10 +99,6 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
     std::vector<ReplayBodyPartState> states;
     states.reserve(player.physicalBody.parts.size());
 
-    glm::mat4 root = glm::translate(glm::mat4(1.0f), player.pos) *
-                     glm::mat4_cast(player.movementCapsule.rotation);
-    glm::mat4 inverseRoot = glm::inverse(root);
-
     for (const PhysicalBodyPart& part : player.physicalBody.parts) {
         if (part.name != "head" && part.name != "torso" &&
             part.name != "leftArm" && part.name != "rightArm" &&
@@ -114,13 +110,16 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
         glm::vec3 translation(0.0f);
         glm::vec3 skew(0.0f);
         glm::vec4 perspective(0.0f);
-        glm::decompose(inverseRoot * part.worldTransform,
+        glm::decompose(part.worldTransform,
                        scale, orientation, translation, skew, perspective);
 
         ReplayBodyPartState state;
         state.name = part.name;
         state.position = translation;
-        state.rotation = glm::degrees(glm::eulerAngles(glm::normalize(orientation)));
+        // Exaggerate rotations by 1.5x for more readable slow-mo playback
+        glm::vec3 euler = glm::degrees(glm::eulerAngles(glm::normalize(orientation)));
+        euler *= 1.5f;
+        state.rotation = euler;
         state.scale = scale;
         states.push_back(state);
     }
