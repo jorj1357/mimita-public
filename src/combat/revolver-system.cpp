@@ -219,8 +219,6 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
     result.fired = true;
     result.start = mMuzzle;
     shooter.revolverCylinder--;
-    hitmarker();
-    Terminal::instance().addLog("[HITMARKER] triggered on fired shot");
     // Random pitch ±1% and volume ±1% to avoid robotic identical playback
     float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);  // 0.99 - 1.01
     float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f); // 0.99 - 1.01
