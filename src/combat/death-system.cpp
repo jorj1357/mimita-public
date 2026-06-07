@@ -16,13 +16,13 @@
 #include "world/texture-store.h"
 #include "world/world.h"
 
+extern Renderer* gRenderer;
+
 namespace {
 constexpr float RESPAWN_SECONDS = 3.0f;
 constexpr float CORPSE_STAGE1_SECONDS = 5.0f;
 constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
 constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
-
-extern Renderer* gRenderer;
 
 void emitLifecycleEvent(const char* type,
                         const Player& actor,
