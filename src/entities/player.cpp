@@ -1310,7 +1310,6 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     
     // Spawn blood effect at player position
     EffectPartSystem::instance().spawnDamage(pos, username, actualDamage);
-    EffectPartSystem::instance().spawnStickyBlood(pos, glm::vec3(0,0,1), std::clamp(actualDamage / 100.0f, 0.1f, 1.0f), 0);
     
     if (DebugConfig::DEBUG_COMMANDS) {
         Debug::log(Debug::Category::General, "[PLAYER HURT] damage=%d hp=%d/%d vol=%.2f pitch=%.2f\n",

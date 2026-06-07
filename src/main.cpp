@@ -466,6 +466,20 @@ int main(int argc, char** argv)
     });
 
     Terminal::instance().registerCommand({
+        "ragdoll_debug", "Toggle ragdoll debug (0=off, 1=on)", "ragdoll_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_RAGDOLL = !DebugConfig::DEBUG_RAGDOLL;
+            } else {
+                DebugConfig::DEBUG_RAGDOLL = args[0] != "0";
+            }
+            Terminal::instance().addLog(DebugConfig::DEBUG_RAGDOLL
+                ? "[OK] Ragdoll debug enabled"
+                : "[OK] Ragdoll debug disabled");
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "serverconnect", "Print a server connection request", "serverconnect <ip> [args...]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
@@ -558,6 +572,9 @@ int main(int argc, char** argv)
     registerDebugToggle("debug_collision", DebugConfig::COLLISION_VERBOSE);
     registerDebugToggle("debug_npc", DebugConfig::DEBUG_NPC);
     registerDebugToggle("debug_commands", DebugConfig::DEBUG_COMMANDS);
+    registerDebugToggle("debug_blood_rays", DebugConfig::DEBUG_BLOOD_RAYS);
+    registerDebugToggle("debug_blood_hits", DebugConfig::DEBUG_BLOOD_HITS);
+    registerDebugToggle("debug_blood_force", DebugConfig::DEBUG_BLOOD_FORCE);
 
     // Replay terminal commands
     Terminal::instance().registerCommand({

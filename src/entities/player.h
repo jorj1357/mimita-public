@@ -199,6 +199,9 @@ public:
                 const glm::mat4& view,
                 const glm::mat4& proj) const;
 
-    // -------- Combat --------
+        // -------- Combat --------
     void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);
 };
+
+// Upload mesh to shared body-part VAO for ragdoll rendering
+void uploadBodyPartMesh(const Mesh& mesh);

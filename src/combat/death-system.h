@@ -10,19 +10,24 @@ class Camera;
 class NpcSystem;
 struct World;
 
-enum class CorpseStage { RAGDOLL, FADE_OUT };
+struct RagdollPart {
+    std::string name;
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 angularVelocity{0.0f};
+    float radius = 0.25f;
+    glm::mat4 worldTransform{1.0f};
+};
 
-struct CorpseActor {
-    explicit CorpseActor(const Player& source) : body(source) {}
-
+struct RagdollCorpse {
+    std::vector<RagdollPart> parts;
+    std::vector<Mesh> partMeshes;
     std::string id;
     std::string name;
-    Player body;
     float age = 0.0f;
     float blackness = 0.0f;
     float fade = 0.0f;
-    bool collidable = true;
-    CorpseStage stage = CorpseStage::RAGDOLL;
 };
 
 class DeathSystem {
@@ -41,11 +46,14 @@ public:
     void render(const Camera& camera) const;
     void appendReplayActors(std::vector<ReplayActorState>& actors) const;
 
-    const std::vector<CorpseActor>& corpses() const { return mCorpses; }
+    const std::vector<RagdollCorpse>& corpses() const { return mCorpses; }
 
 private:
     void respawn(Player& actor, const std::string& actorId);
+    void updateRagdollPhysics(RagdollPart& part, const World& world, float dt);
 
-    std::vector<CorpseActor> mCorpses;
+    static glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c);
+
+    std::vector<RagdollCorpse> mCorpses;
     unsigned int mCorpseSerial = 0;
 };
