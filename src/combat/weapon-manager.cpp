@@ -7,8 +7,8 @@
 #include "entities/player.h"
 
 namespace {
-constexpr float REVOLVER_SHOT_COOLDOWN = 0.32f;
-constexpr float REVOLVER_RELOAD_TIME = 1.15f;
+constexpr float REVOLVER_SHOT_COOLDOWN = 0.08f;
+constexpr float REVOLVER_RELOAD_TIME = 1.0f;
 }
 
 WeaponManager::WeaponManager()

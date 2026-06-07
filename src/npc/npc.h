@@ -82,6 +82,7 @@ public:
     float lastFrictionDelta = 0.0f;
     float lastFinalSpeed = 0.0f;
     float stuckTimer = 0.0f;
+    float hitReactionTimer = 0.0f;
     unsigned int rngState = 1;
 
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);

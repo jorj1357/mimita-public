@@ -7,7 +7,8 @@ draw = ImageDraw.Draw(img)
 
 center = SIZE // 2
 
-bar_length = 40
+# bar_length = 40
+bar_length = 15
 bar_width = 2
 gap = 8
 

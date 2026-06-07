@@ -15,7 +15,8 @@
 namespace {
 constexpr float RESPAWN_SECONDS = 3.0f;
 constexpr float BLACK_FADE_SECONDS = 0.5f;
-constexpr float CORPSE_LIFETIME_SECONDS = 5.0f;
+constexpr float CORPSE_LIFETIME_SECONDS = 8.0f;
+constexpr float CORPSE_DRAG = 3.0f;
 
 void emitLifecycleEvent(const char* type,
                         const Player& actor,
@@ -61,6 +62,7 @@ bool DeathSystem::kill(
         ? glm::normalize(shotDirection)
         : glm::vec3(0.0f);
     corpse.body.vel = victim.vel + direction * lethalForce;
+    corpse.body.vel.z += std::abs(lethalForce * 0.15f);
     corpse.body.syncLegacyStateToLayers();
     corpse.body.updateModelWorldTransforms();
     mCorpses.push_back(std::move(corpse));
@@ -122,7 +124,7 @@ void DeathSystem::update(
                 "npc",
                 "unknown",
                 npc.body.vel,
-                12.0f);
+                18.0f);
         }
     }
 
@@ -135,10 +137,12 @@ void DeathSystem::update(
             0.0f,
             1.0f);
         corpse.collidable = false;
+        // Apply drag so corpse slides to a stop
+        corpse.body.vel *= std::max(0.0f, 1.0f - CORPSE_DRAG * dt);
         // Sync corpse position from living dead body for replay accuracy
         if (corpse.id.find(player.username) == 0 && player.dead) {
             corpse.body.pos = player.pos;
-            corpse.body.vel = player.vel;
+            corpse.body.vel = player.vel + corpse.body.vel * 0.5f;
             corpse.body.yaw = player.yaw;
             corpse.body.onGround = player.onGround;
         }
