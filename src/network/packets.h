@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 3;
+constexpr uint16_t PROTOCOL_VERSION = 4;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 96;
 constexpr int MAX_NAME_BYTES = 32;
@@ -69,6 +69,12 @@ struct InputPacket
     float camForwardY = 0.0f;
     float camForwardZ = 0.0f;
     float yaw = 0.0f;
+    float clientPx = 0.0f;
+    float clientPy = 0.0f;
+    float clientPz = 0.0f;
+    float clientVx = 0.0f;
+    float clientVy = 0.0f;
+    float clientVz = 0.0f;
     uint8_t jumpHeld = 0;
     uint8_t dashPressed = 0;
     uint8_t attackPressed = 0;

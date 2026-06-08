@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server/server.js",
+    "migrate": "node server/migrate.js",
+    "test": "node --test server/*.test.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

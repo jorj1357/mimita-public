@@ -193,16 +193,20 @@ bool DeathSystem::kill(
 
     emitLifecycleEvent("death", victim, actorId, killer);
 
-    victim.pos = glm::vec3(0.0f, 0.0f, -1000.0f);
+    // DISABLE alive body at its current position — DO NOT teleport to void.
+    // The camera follows player.pos; teleporting to (0,0,-1000) causes
+    // the camera to snap underground and the ragdoll to feel disconnected.
     victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);
     victim.inputWishMove = glm::vec2(0.0f);
-    victim.onGround = false;
     victim.currentHp = 0;
     victim.dead = true;
     victim.respawnTimer = RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
     victim.syncLegacyStateToLayers();
+
+    printf("[RAGDOLL DEATH] playerPos=(%.2f %.2f %.2f) aliveBodyDisabled=1 teleportHackDetected=0\n",
+           victimPos.x, victimPos.y, victimPos.z);
 
     printf("[RAGDOLL SPAWN] ragdollPos=(%.2f %.2f %.2f) parts=%zu impulse=(%.2f %.2f %.2f)\n",
            corpse.spawnPosition.x, corpse.spawnPosition.y, corpse.spawnPosition.z,
@@ -364,12 +368,21 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
     // --- STEP 0: Pre-penetration resolution ---
     // Push part out of world BEFORE integration to prevent spawn-in-floor jitter.
     // Use multiple passes for deep penetrations.
-    for (int ppPass = 0; ppPass < 3; ++ppPass) {
+    for (int ppPass = 0; ppPass < 4; ++ppPass) {
         for (const auto& tri : triangles) {
             glm::vec3 closest = closestPointOnTriangle(part.position, tri.a, tri.b, tri.c);
             glm::vec3 diff = part.position - closest;
             float dist = glm::length(diff);
-            if (dist < part.radius && dist > 0.0001f) {
+
+            if (dist < 0.0001f) {
+                // Part center is exactly on triangle surface — use triangle normal
+                glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
+                part.position += triNormal * (part.radius + 0.03f);
+                float vDotN = glm::dot(part.velocity, triNormal);
+                if (vDotN < 0.0f) {
+                    part.velocity -= vDotN * triNormal * 1.2f;
+                }
+            } else if (dist < part.radius) {
                 float penetration = (part.radius - dist) + 0.02f;
                 glm::vec3 normal = diff / dist;
                 part.position += normal * penetration;
@@ -583,19 +596,30 @@ void DeathSystem::resolveGroundPenetration(RagdollCorpse& corpse, const World& w
         return;
     }
 
-    RAGDOLL_LOG("Resolving ground penetration for corpse '%s'", corpse.id.c_str());
+    RAGDOLL_LOG("Resolving ground penetration for corpse '%s' (%zu parts, %zu triangles)",
+                corpse.id.c_str(), corpse.parts.size(), triangles.size());
 
     for (auto& part : corpse.parts) {
-        for (int pass = 0; pass < 5; ++pass) {
+        for (int pass = 0; pass < 10; ++pass) {
             float maxPenetration = 0.0f;
             glm::vec3 resolveDir(0.0f);
+            bool insideSurface = false;
 
             for (const auto& tri : triangles) {
                 glm::vec3 closest = closestPointOnTriangle(part.position, tri.a, tri.b, tri.c);
                 glm::vec3 diff = part.position - closest;
                 float dist = glm::length(diff);
 
-                if (dist < part.radius && dist > 0.0001f) {
+                if (dist < 0.0001f) {
+                    // Part center is ON the surface — use triangle normal as resolve direction
+                    glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
+                    float pen = part.radius + 0.05f;
+                    if (pen > maxPenetration) {
+                        maxPenetration = pen;
+                        resolveDir = triNormal;
+                        insideSurface = true;
+                    }
+                } else if (dist < part.radius) {
                     float penetration = part.radius - dist;
                     if (penetration > maxPenetration) {
                         maxPenetration = penetration;
@@ -605,10 +629,11 @@ void DeathSystem::resolveGroundPenetration(RagdollCorpse& corpse, const World& w
             }
 
             if (maxPenetration > 0.001f) {
-                part.position += resolveDir * (maxPenetration + 0.02f);
-                PENETRATION_LOG("Part '%s' pass %d: pushed %.3f along (%.2f %.2f %.2f)",
-                                part.name.c_str(), pass, maxPenetration + 0.02f,
-                                resolveDir.x, resolveDir.y, resolveDir.z);
+                float pushDist = maxPenetration + 0.03f;
+                part.position += resolveDir * pushDist;
+                PENETRATION_LOG("Part '%s' pass %d: pushed %.3f along (%.2f %.2f %.2f) inside=%d",
+                                part.name.c_str(), pass, pushDist,
+                                resolveDir.x, resolveDir.y, resolveDir.z, (int)insideSurface);
             } else {
                 break;
             }
@@ -620,8 +645,13 @@ void DeathSystem::resolveGroundPenetration(RagdollCorpse& corpse, const World& w
             glm::vec3 diff = part.position - closest;
             float dist = glm::length(diff);
 
-            if (dist < part.radius + 0.05f && dist > 0.0001f) {
-                glm::vec3 normal = diff / dist;
+            if (dist < part.radius + 0.05f) {
+                glm::vec3 normal;
+                if (dist > 0.0001f) {
+                    normal = diff / dist;
+                } else {
+                    normal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
+                }
                 float vDotN = glm::dot(part.velocity, normal);
                 if (vDotN < 0.0f) {
                     part.velocity -= vDotN * normal;
