@@ -4,6 +4,7 @@
 #include "account-config.h"
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
+#include "game/duel.h"
 #include <fstream>
 #include <sstream>
 #include <cstdio>
@@ -235,4 +236,73 @@ void CreateDefaultAccountConfig() {
         file << j.dump(4);
         printf("[ACCOUNT CONFIG] Created default config at %s\n", path.c_str());
     }
+}
+
+static DuelStats gDuelStats;
+
+DuelStats& GetDuelStats() { return gDuelStats; }
+
+bool LoadDuelStats(const std::string& account) {
+    std::string path = getAccountConfigPath(account);
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+
+    try {
+        json root;
+        file >> root;
+        if (root.contains("duelStats")) {
+            const json& j = root["duelStats"];
+            if (j.contains("kills")) gDuelStats.kills = j["kills"].get<int>();
+            if (j.contains("deaths")) gDuelStats.deaths = j["deaths"].get<int>();
+            if (j.contains("points")) gDuelStats.points = j["points"].get<int>();
+            if (j.contains("xp")) gDuelStats.xp = j["xp"].get<int>();
+            if (j.contains("roundsWon")) gDuelStats.roundsWon = j["roundsWon"].get<int>();
+            if (j.contains("matchesWon")) gDuelStats.matchesWon = j["matchesWon"].get<int>();
+        }
+        printf("[DUEL STATS] loaded kills=%d deaths=%d points=%d xp=%d\n",
+               gDuelStats.kills, gDuelStats.deaths, gDuelStats.points, gDuelStats.xp);
+        return true;
+    } catch (const std::exception& e) {
+        printf("[DUEL STATS] load failed: %s\n", e.what());
+        return false;
+    }
+}
+
+bool SaveDuelStats(const std::string& account) {
+    ensureConfigDir();
+    std::string path = getAccountConfigPath(account);
+
+    json root;
+    {
+        std::ifstream input(path);
+        if (input.is_open()) {
+            try { input >> root; } catch (...) { root = json::object(); }
+        }
+    }
+
+    json& j = root["duelStats"];
+    j["kills"] = gDuelStats.kills;
+    j["deaths"] = gDuelStats.deaths;
+    j["points"] = gDuelStats.points;
+    j["xp"] = gDuelStats.xp;
+    j["roundsWon"] = gDuelStats.roundsWon;
+    j["matchesWon"] = gDuelStats.matchesWon;
+
+    const std::string temporary = path + ".tmp";
+    std::ofstream output(temporary, std::ios::trunc);
+    if (!output.is_open()) return false;
+    output << root.dump(4);
+    output.close();
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    ec.clear();
+    std::filesystem::rename(temporary, path, ec);
+    if (ec) {
+        printf("[DUEL STATS] save failed: %s\n", ec.message().c_str());
+        return false;
+    }
+    printf("[DUEL STATS] saved kills=%d deaths=%d points=%d xp=%d\n",
+           gDuelStats.kills, gDuelStats.deaths, gDuelStats.points, gDuelStats.xp);
+    return true;
 }

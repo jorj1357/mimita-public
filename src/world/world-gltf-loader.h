@@ -15,3 +15,5 @@ bool loadWorldFromGLB(
     World& world,
     const char* path
 );
+
+void extractSpawnPointsFromGLB(World& world, const char* path);

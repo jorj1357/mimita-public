@@ -9,10 +9,15 @@
 #include "world-gltf-loader.h"
 #include "map/map_loader.h"
 #include "debug/debug-log.h"
+#include "utils/path_utils.h"
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/geometric.hpp>
+
+#include <tinygltf/tiny_gltf.h>
 
 namespace {
 
@@ -132,4 +137,77 @@ bool loadWorldFromGLB(World& world, const char* path)
     printf("[WORLD GLB] after collision build\n");
 
     return true;
+}
+
+void extractSpawnPointsFromGLB(World& world, const char* path)
+{
+    world.spawnPoints.clear();
+
+    tinygltf::TinyGLTF loader;
+    tinygltf::Model model;
+    std::string err, warn;
+    std::string resolvedPath = resolveAssetPath(path);
+
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, resolvedPath)) {
+        printf("[SPAWN GLB] failed to load %s: %s\n", path, err.c_str());
+        return;
+    }
+
+    std::function<void(int, const glm::mat4&, int)> walkForSpawns =
+        [&](int nodeIndex, const glm::mat4& parent, int depth) {
+            if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size()) return;
+            if (depth > 128) return;
+
+            const tinygltf::Node& node = model.nodes[nodeIndex];
+
+            glm::mat4 local(1.0f);
+            if (node.matrix.size() == 16) {
+                local = glm::make_mat4(node.matrix.data());
+            } else {
+                glm::vec3 T(0.0f);
+                glm::quat R(1.0f, 0.0f, 0.0f, 0.0f);
+                glm::vec3 S(1.0f);
+                if (node.translation.size() == 3)
+                    T = glm::vec3(node.translation[0], node.translation[1], node.translation[2]);
+                if (node.rotation.size() == 4)
+                    R = glm::quat((float)node.rotation[3], (float)node.rotation[0],
+                                  (float)node.rotation[1], (float)node.rotation[2]);
+                if (node.scale.size() == 3)
+                    S = glm::vec3(node.scale[0], node.scale[1], node.scale[2]);
+                local = glm::translate(glm::mat4(1.0f), T)
+                      * glm::mat4_cast(R)
+                      * glm::scale(glm::mat4(1.0f), S);
+            }
+            glm::mat4 worldXform = parent * local;
+
+            const std::string& name = node.name;
+            if (name.rfind("spawnLocation", 0) == 0) {
+                SpawnPoint sp;
+                sp.position = glm::vec3(worldXform[3]);
+                sp.position.z += 1.0f;
+                sp.tag = name;
+                sp.arenaIndex = -1;
+
+                size_t arenaPos = name.find("arena_");
+                if (arenaPos != std::string::npos) {
+                    const char* numStart = name.c_str() + arenaPos + 6;
+                    sp.arenaIndex = std::atoi(numStart);
+                }
+
+                world.spawnPoints.push_back(sp);
+                printf("[SPAWN GLB] extracted spawn: %s pos=(%.1f %.1f %.1f) arena=%d\n",
+                       name.c_str(), sp.position.x, sp.position.y, sp.position.z, sp.arenaIndex);
+            }
+
+            for (int child : node.children)
+                walkForSpawns(child, worldXform, depth + 1);
+        };
+
+    int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
+    if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size()) {
+        for (int node : model.scenes[sceneIndex].nodes)
+            walkForSpawns(node, glm::mat4(1.0f), 0);
+    }
+
+    printf("[SPAWN GLB] total spawn points extracted: %zu\n", world.spawnPoints.size());
 }
