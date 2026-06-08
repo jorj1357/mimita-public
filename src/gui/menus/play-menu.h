@@ -23,6 +23,7 @@ struct PlayMenuResult
     bool startDuel = false;
     bool startServer = false;
     bool connectToServer = false;
+    bool joinByIp = false;
     bool goBack = false;
 };
 

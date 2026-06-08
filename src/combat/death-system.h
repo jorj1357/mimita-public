@@ -17,11 +17,19 @@ struct RagdollPart {
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 angularVelocity{0.0f};
     float radius = 0.25f;
+    float mass = 1.0f;
     glm::mat4 worldTransform{1.0f};
+};
+
+struct RagdollConstraint {
+    int partA = -1;
+    int partB = -1;
+    float restDist = 0.0f;
 };
 
 struct RagdollCorpse {
     std::vector<RagdollPart> parts;
+    std::vector<RagdollConstraint> constraints;
     std::vector<Mesh> partMeshes;
     std::string id;
     std::string name;

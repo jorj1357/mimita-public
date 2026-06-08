@@ -36,12 +36,15 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
         r.startServer = true;
     }
 
-    if (guiButton(win, "Connect to Server", cx - 200.0f, 330.0f, 400.0f, 70.0f, {0.2f,0.7f,1.0f,1.0f}))
+    if (guiButton(win, "Join localhost", cx - 200.0f, 330.0f, 400.0f, 60.0f, {0.2f,0.7f,1.0f,1.0f}))
     {
         r.connectToServer = true;
     }
 
-    if (guiButton(win, "Duel Mode", cx - 200.0f, 420.0f, 400.0f, 70.0f, {0.9f,0.3f,0.1f,1.0f}))
+    if (guiButton(win, "Join by IP", cx - 200.0f, 405.0f, 400.0f, 60.0f, {0.38f,0.52f,0.9f,1.0f}))
+        r.joinByIp = true;
+
+    if (guiButton(win, "Duel Mode", cx - 200.0f, 480.0f, 400.0f, 60.0f, {0.9f,0.3f,0.1f,1.0f}))
     {
         r.startDuel = true;
     }

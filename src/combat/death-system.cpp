@@ -1,6 +1,7 @@
 #include "combat/death-system.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <glad/glad.h>
 #include "debug/gl-debug.h"
@@ -45,6 +46,13 @@ DeathSystem& DeathSystem::instance()
     return system;
 }
 
+static int findPartIndex(const std::vector<RagdollPart>& parts, const std::string& name) {
+    for (int i = 0; i < (int)parts.size(); ++i) {
+        if (parts[i].name == name) return i;
+    }
+    return -1;
+}
+
 bool DeathSystem::kill(
     Player& victim,
     const std::string& actorId,
@@ -82,13 +90,25 @@ bool DeathSystem::kill(
         part.radius = std::max({size.x, size.y, size.z}) * 0.5f;
         part.radius = std::max(part.radius, 0.1f);
 
+        float vol = size.x * size.y * size.z;
+        part.mass = std::max(vol * 100.0f, 0.5f);
+
         part.rotation = glm::quat_cast(src.worldTransform);
 
-        part.velocity = baseVel + direction * lethalForce * 0.5f;
-        part.velocity.z += std::abs(lethalForce * 0.15f);
-
+        // Velocity: more spread across parts, not uniform
         glm::vec3 offset = part.position - victimPos;
-        part.angularVelocity = glm::cross(direction * lethalForce * 0.3f, offset);
+        float offsetDist = glm::length(offset);
+        glm::vec3 offsetDir = offsetDist > 0.001f ? offset / offsetDist : glm::vec3(0.0f, 0.0f, 1.0f);
+        float partFactor = 0.5f + 0.5f * std::max(0.0f, glm::dot(direction, offsetDir));
+        part.velocity = baseVel + direction * lethalForce * 0.3f * partFactor;
+        part.velocity.z += std::abs(lethalForce * 0.1f);
+
+        // Angular velocity: reduced to prevent jitter
+        part.angularVelocity = glm::cross(direction * lethalForce * 0.15f, offset);
+        float angSpeed = glm::length(part.angularVelocity);
+        if (angSpeed > 8.0f) {
+            part.angularVelocity = (part.angularVelocity / angSpeed) * 8.0f;
+        }
 
         part.worldTransform = glm::translate(glm::mat4(1.0f), part.position) * glm::mat4_cast(part.rotation);
 
@@ -102,8 +122,27 @@ bool DeathSystem::kill(
         root.velocity = baseVel + direction * lethalForce;
         root.velocity.z += std::abs(lethalForce * 0.15f);
         root.radius = 0.5f;
+        root.mass = 10.0f;
         root.worldTransform = glm::translate(glm::mat4(1.0f), root.position);
         corpse.parts.push_back(std::move(root));
+    }
+
+    // Build constraints between connected body parts
+    int torsoIdx = findPartIndex(corpse.parts, "torso");
+    if (torsoIdx >= 0) {
+        static const char* limbNames[] = {"head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+        for (const char* limbName : limbNames) {
+            int limbIdx = findPartIndex(corpse.parts, limbName);
+            if (limbIdx >= 0) {
+                RagdollConstraint c;
+                c.partA = torsoIdx;
+                c.partB = limbIdx;
+                c.restDist = glm::length(corpse.parts[limbIdx].position - corpse.parts[torsoIdx].position);
+                if (c.restDist > 0.01f) {
+                    corpse.constraints.push_back(c);
+                }
+            }
+        }
     }
 
     victim.externalImpulse = glm::vec3(0.0f);
@@ -199,40 +238,76 @@ glm::vec3 DeathSystem::closestPointOnTriangle(const glm::vec3& p, const glm::vec
     return a + v * ab + w * ac;
 }
 
+static void enforceConstraint(RagdollPart& a, RagdollPart& b, float restDist, float dt) {
+    glm::vec3 delta = b.position - a.position;
+    float dist = glm::length(delta);
+    if (dist < 0.001f) return;
+
+    float error = dist - restDist;
+    if (std::fabs(error) < 0.02f) return;
+
+    glm::vec3 dir = delta / dist;
+    float totalMass = a.mass + b.mass;
+    if (totalMass < 0.001f) return;
+    float aWeight = b.mass / totalMass;
+    float bWeight = a.mass / totalMass;
+
+    // Positional correction (soft, not 100%)
+    float stiffness = 0.85f;
+    float correction = error * stiffness;
+    a.position += dir * correction * aWeight;
+    b.position -= dir * correction * bWeight;
+
+    // Velocity damping along constraint axis
+    glm::vec3 relVel = b.velocity - a.velocity;
+    float radialVel = glm::dot(relVel, dir);
+    float damping = 0.6f;
+    if (radialVel > 0.0f) { // separating
+        glm::vec3 impulse = dir * radialVel * damping;
+        a.velocity += impulse * aWeight;
+        b.velocity -= impulse * bWeight;
+    }
+}
+
 void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, float dt)
 {
     constexpr float GRAVITY = 9.81f;
-    constexpr float DRAG = 2.0f;
-    constexpr float ANGULAR_DRAG = 4.0f;
-    constexpr float BOUNCE = 0.2f;
-    constexpr float FRICTION = 0.5f;
+    constexpr float DRAG = 0.5f;
+    constexpr float ANGULAR_DRAG = 3.0f;
+    constexpr float BOUNCE = 0.15f;
+    constexpr float FRICTION = 0.4f;
 
-    float safeDt = std::min(dt, 0.05f);
+    float safeDt = std::min(dt, 0.033f);
 
+    // Gravity
     part.velocity.z -= GRAVITY * safeDt;
 
-    part.angularVelocity *= std::max(0.0f, 1.0f - ANGULAR_DRAG * safeDt);
+    // Linear drag
+    part.velocity *= std::max(0.0f, 1.0f - DRAG * safeDt);
 
-    if (glm::length(part.angularVelocity) > 0.0001f) {
-        float angSpeed = glm::length(part.angularVelocity);
-        glm::quat deltaRot = glm::angleAxis(angSpeed * safeDt, part.angularVelocity / angSpeed);
+    // Angular velocity damping
+    float angSpeed = glm::length(part.angularVelocity);
+    if (angSpeed > 0.001f) {
+        part.angularVelocity *= std::max(0.0f, 1.0f - ANGULAR_DRAG * safeDt);
+        glm::quat deltaRot = glm::angleAxis(
+            std::min(angSpeed * safeDt, 0.5f),
+            part.angularVelocity / angSpeed);
         part.rotation = glm::normalize(deltaRot * part.rotation);
     }
 
-    part.velocity *= std::max(0.0f, 1.0f - DRAG * safeDt);
-
-    const auto& triangles = world.collisionMesh.triangles;
-
+    // Integrate position
     glm::vec3 move = part.velocity * safeDt;
     float moveLen = glm::length(move);
 
+    // World collision
+    const auto& triangles = world.collisionMesh.triangles;
     if (moveLen > 0.0001f) {
         glm::vec3 moveDir = move / moveLen;
         float remaining = moveLen;
-        constexpr int MAX_STEPS = 4;
+        constexpr int MAX_STEPS = 3;
 
         for (int step = 0; step < MAX_STEPS && remaining > 0.0001f; ++step) {
-            float stepDist = std::min(remaining, part.radius * 0.8f);
+            float stepDist = std::min(remaining, part.radius * 0.7f);
             glm::vec3 newPos = part.position + moveDir * stepDist;
 
             bool hit = false;
@@ -276,8 +351,7 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
                     }
                 }
 
-                float newRemaining = remaining * (1.0f - stepDist / moveLen);
-                remaining = std::min(remaining * 0.5f, newRemaining);
+                remaining *= 0.4f;
             } else {
                 part.position = newPos;
                 remaining -= stepDist;
@@ -317,8 +391,22 @@ void DeathSystem::update(
             corpse.blackness = std::clamp(corpse.age / CORPSE_STAGE1_SECONDS, 0.0f, 1.0f);
             corpse.fade = 0.0f;
 
+            // Step 1: Update individual part physics
             for (RagdollPart& part : corpse.parts) {
                 updateRagdollPhysics(part, world, dt);
+            }
+
+            // Step 2: Enforce constraints between parts (multiple iterations for stability)
+            constexpr int CONSTRAINT_ITERS = 3;
+            float subDt = dt / (float)CONSTRAINT_ITERS;
+            for (int iter = 0; iter < CONSTRAINT_ITERS; ++iter) {
+                for (const RagdollConstraint& c : corpse.constraints) {
+                    if (c.partA >= 0 && c.partA < (int)corpse.parts.size() &&
+                        c.partB >= 0 && c.partB < (int)corpse.parts.size()) {
+                        enforceConstraint(corpse.parts[c.partA], corpse.parts[c.partB],
+                                          c.restDist, subDt);
+                    }
+                }
             }
         } else {
             corpse.blackness = 1.0f;

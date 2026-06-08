@@ -25,6 +25,7 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <string>
 #include <vector>
@@ -66,12 +67,16 @@
 #include "replay/replay.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
-#include "combat/weapon-manager.h"
+#include "combat/weapon-system.h"
+#include "combat/weapon-registry.h"
 #include "combat/death-system.h"
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
 #include "render/lighting-config.h"
 #include "hot-reload/hot-reload-system.h"
+#include "profile/local-profile-system.h"
+#include "gui/menus/sign-in-menu.h"
+#include "gui/menus/server-info-menu.h"
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -126,7 +131,10 @@ static int selectWorldTriangle(const World& world, glm::vec3 origin, glm::vec3 d
 
 int main(int argc, char** argv)
 {
+    LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
+    if (launchOptions.name.empty())
+        launchOptions.name = LocalProfileSystem::instance().currentUsername();
     if (launchOptions.server && launchOptions.client)
     {
         printf("[MAIN] choose only one mode: --server or --client\n");
@@ -149,12 +157,16 @@ int main(int argc, char** argv)
 
     // Terminal character input callback
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
+        signInMenuHandleChar(codepoint);
+        serverInfoMenuHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
     });
     // Terminal key input callback
     glfwSetKeyCallback(engine.window(), [](GLFWwindow*, int key, int scancode, int action, int mods) {
         (void)scancode;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            signInMenuHandleKey(key, action);
+            serverInfoMenuHandleKey(key, action);
             Terminal::instance().handleKey(key, mods);
         }
     });
@@ -210,6 +222,7 @@ int main(int argc, char** argv)
     printf("[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first\n");
 
     Player player;
+    player.username = LocalProfileSystem::instance().currentUsername();
     player.equippedSlot = GetPlayerSettings().equippedSlot;
     OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath);
     printf("[MAIN] player made\n");
@@ -245,7 +258,7 @@ int main(int argc, char** argv)
     bool editorMode = false;
     std::string activeGameMode = "sandbox";
     int selectedEditorObject = -1;
-    WeaponManager weapons;
+    WeaponSystem weapons;
     bool freecamEnabled = false;
 
     // Gameplay terminal commands
@@ -804,6 +817,7 @@ int main(int argc, char** argv)
                 {
                     MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
                     if (mci.shouldConnect) {
+                        player.username = LocalProfileSystem::instance().currentUsername();
                         if (MimitaNet::mpInit(mpContext, mci.address, player.username)) {
                             printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
                             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -961,14 +975,18 @@ int main(int argc, char** argv)
                 simAccumulator -= SIM_DT;
             }
 
-            // Process NPC spawn commands (from console or F2) — after sim tick
-            ProcessNpcSpawnCommands(npcSystem, camera, world, player);
-            if (!Terminal::instance().isOpen())
-                HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
+            // Process local NPC commands only outside authoritative multiplayer.
+            if (!mpContext.active) {
+                ProcessNpcSpawnCommands(npcSystem, camera, world, player);
+                if (!Terminal::instance().isOpen())
+                    HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
+            }
 
             // Multiplayer tick - receive snapshots
             if (mpContext.active) {
                 MimitaNet::mpTick(mpContext, player.username, dt);
+                if (!mpContext.approvedLocalName.empty())
+                    player.username = mpContext.approvedLocalName;
 
                 // Send input to server if we have an assigned ID
                 if (mpContext.localPlayerId != 0) {
@@ -991,6 +1009,13 @@ int main(int argc, char** argv)
                            (sockaddr*)&mpContext.serverAddr, sizeof(mpContext.serverAddr));
                     ++mpContext.packetsSent;
                 }
+
+                static bool mpF2Prev = false;
+                bool mpF2Down = glfwGetKey(engine.window(), GLFW_KEY_F2) == GLFW_PRESS;
+                if (!Terminal::instance().isOpen() && mpF2Down && !mpF2Prev)
+                    MimitaNet::mpRequestNpcSpawn(
+                        mpContext, player.pos + camera.front * 3.0f);
+                mpF2Prev = mpF2Down;
 
                 // TAB player list
                 mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
@@ -1024,7 +1049,7 @@ int main(int argc, char** argv)
                 camera.follow(player.pos);
             }
             setAudioListener(camera.pos, camera.front);
-            weapons.update(camera, player, dt);
+            weapons.update(camera, player, npcSystem, dt);
 
             gDuelManager.update(
                 dt,
@@ -1068,10 +1093,14 @@ int main(int argc, char** argv)
                     renderPlayer(kv.second, camera);
                 }
             }
-            npcSystem.render(camera);
+            if (mpContext.active) {
+                for (auto& kv : mpContext.remoteNpcs)
+                    renderPlayer(kv.second, camera);
+            } else {
+                npcSystem.render(camera);
+            }
             DeathSystem::instance().render(camera);
-            if (player.equippedSlot == 1)
-                weapons.render(camera, player);
+            weapons.render(camera, player);
             
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
@@ -1156,15 +1185,19 @@ int main(int argc, char** argv)
                 if (mpContext.active) {
                     char mpText[128];
                     snprintf(mpText, sizeof(mpText), "MP id=%u players=%zu server=%s",
-                             mpContext.localPlayerId, mpContext.remotePlayers.size() + 1,
+                             mpContext.localPlayerId,
+                             mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1 : 0),
                              mpContext.serverAddress.c_str());
                     uiDrawText(mpText, 24, 232, 0.32f, {0.7f, 0.9f, 1.0f, 1.0f});
                 }
-                if (player.equippedSlot == 1) {
-                    char ammoText[96];
-                    snprintf(ammoText, sizeof(ammoText), "Revolver: %d / %d",
-                             player.revolverCylinder, player.revolverReserve);
-                    uiDrawText(ammoText, 24, 232, 0.42f, {1.0f, 0.82f, 0.3f, 1.0f});
+                {
+                    auto it = player.weaponRuntimes.find("revolver");
+                    if (it != player.weaponRuntimes.end()) {
+                        char ammoText[96];
+                        snprintf(ammoText, sizeof(ammoText), "Revolver: %d / %d",
+                                 it->second.currentAmmo, it->second.reserveAmmo);
+                        uiDrawText(ammoText, 24, 232, 0.42f, {1.0f, 0.82f, 0.3f, 1.0f});
+                    }
                 }
                 if (player.inventoryOpen)
                     uiDrawText("INVENTORY: [1] Revolver [2-10] Empty", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
@@ -1186,8 +1219,22 @@ int main(int argc, char** argv)
                                                      : glm::vec4(0.45f,0.45f,0.48f,1), "hotbar-border");
                     std::string label = slot == 10 ? "0" : std::to_string(slot);
                     uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
-                    uiDrawText(slot == 1 ? "REV" : "-", rect.x + 13, rect.y + 34, 0.20f,
-                               slot == 1 ? glm::vec4(1,0.85f,0.35f,1) : glm::vec4(0.55f,0.55f,0.58f,1));
+                    // Show weapon name for this slot
+                    const WeaponDefinition* slotDef = nullptr;
+                    for (const auto& pair : WeaponRegistry::instance().all()) {
+                        if (pair.second.slot == slot) {
+                            slotDef = &pair.second;
+                            break;
+                        }
+                    }
+                    if (slotDef) {
+                        std::string shortName = slotDef->id.substr(0, 3);
+                        std::transform(shortName.begin(), shortName.end(), shortName.begin(), ::toupper);
+                        uiDrawText(shortName.c_str(), rect.x + 13, rect.y + 34, 0.20f,
+                                   equipped ? glm::vec4(1,0.85f,0.35f,1) : glm::vec4(0.55f,0.55f,0.58f,1));
+                    } else {
+                        uiDrawText("-", rect.x + 13, rect.y + 34, 0.20f, glm::vec4(0.55f,0.55f,0.58f,1));
+                    }
                     x += normalSize + gap;
                 }
             }
@@ -1242,8 +1289,8 @@ int main(int argc, char** argv)
                 float headerH = 30.0f;
 
                 // Count all players (local + remote)
-                size_t totalPlayers = mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1 : 0);
-                float listH = headerH + totalPlayers * lineH + 10.0f;
+                size_t totalPlayers = mpContext.playerRegistry.size();
+                float listH = headerH + (totalPlayers + 1) * lineH + 10.0f;
 
                 uiDrawRect({listX, listY, listW, listH}, {0.0f, 0.0f, 0.0f, 0.85f}, "player-list-bg");
                 uiDrawRectOutline({listX, listY, listW, listH}, {0.5f, 0.6f, 0.8f, 1.0f}, "player-list-border");
@@ -1251,13 +1298,17 @@ int main(int argc, char** argv)
                 float y = listY + 8.0f;
                 uiDrawText("PLAYERS", listX + 10.0f, y, 0.36f, {0.8f, 0.9f, 1.0f, 1.0f});
                 y += headerH;
+                uiDrawText("ID   NAME                         PING",
+                           listX + 10.0f, y, 0.28f, {0.65f, 0.75f, 0.9f, 1.0f});
+                y += lineH;
 
                 // Local player
                 if (mpContext.localPlayerId)
                 {
                     const char* localName = player.username.empty() ? "you" : player.username.c_str();
                     char localLine[128];
-                    snprintf(localLine, sizeof(localLine), "%s (you)", localName);
+                    snprintf(localLine, sizeof(localLine), "%u   %s   %dms (you)",
+                             mpContext.localPlayerId, localName, 0);
                     uiDrawText(localLine, listX + 10.0f, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
                     y += lineH;
                 }
@@ -1269,7 +1320,8 @@ int main(int argc, char** argv)
                         continue;
                     const char* pname = kv.second.name.c_str();
                     char remoteLine[128];
-                    snprintf(remoteLine, sizeof(remoteLine), "%s", pname);
+                    snprintf(remoteLine, sizeof(remoteLine), "%u  %s  %dms",
+                             kv.first, pname, kv.second.pingMs);
                     uiDrawText(remoteLine, listX + 10.0f, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
                     y += lineH;
                 }

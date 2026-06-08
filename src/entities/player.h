@@ -7,8 +7,11 @@
 #include <glm/gtc/quaternion.hpp>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include "map/map_common.h"
 #include "physics/physics-types.h"
+
+#include "combat/weapon-types.h"
 
 // ---------------- Player ----------------
 //
@@ -199,7 +202,10 @@ public:
                 const glm::mat4& view,
                 const glm::mat4& proj) const;
 
-        // -------- Combat --------
+    // -------- Weapon system --------
+    std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
+
+    // -------- Combat --------
     void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);
 };
 

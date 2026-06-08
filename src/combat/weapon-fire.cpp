@@ -10,12 +10,14 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "audio/audio.h"
+#include "camera.h"
 #include "combat/death-system.h"
 #include "config/player-settings.h"
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
 #include "entities/player.h"
+#include "world/world.h"
 #include "npc/npc.h"
 #include "replay/replay.h"
 #include "ui/hitmarker.h"
@@ -143,7 +145,7 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
     if (victim.body.currentHp <= 0) {
         DeathSystem::instance().kill(
             victim.body,
-            "npc_" + std::to_string(victim->id),
+            "npc_" + std::to_string(victim.id),
             "npc",
             shooter.username,
             shotDirection,

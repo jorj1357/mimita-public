@@ -1,11 +1,16 @@
 #pragma once
 
 #include "weapon-types.h"
+#include "physics/physics-types.h"
 
 class Camera;
 class Player;
+class Npc;
 class NpcSystem;
 struct World;
+
+struct DamageContext;
+struct WeaponRuntime;
 
 namespace WeaponFire {
 
@@ -34,9 +39,9 @@ glm::vec3 computeSpreadDirection(
     unsigned int& rngState
 );
 
-void applyDamageToEntity(
+int applyDamageToEntity(
     const DamageContext& ctx,
-    class Npc& victim,
+    Npc& victim,
     const WeaponDefinition& def,
     Player& shooter,
     NpcSystem& npcs,

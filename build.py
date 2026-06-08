@@ -42,7 +42,7 @@ SRC_DIR = os.path.join(ROOT, "src")
 BUILD_DIR = os.path.join(ROOT, "build")
 OBJ_DIR = os.path.join(BUILD_DIR, "obj")
 
-EXE_NAME = "mimita.exe"
+EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
 PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
@@ -386,6 +386,7 @@ exe_path = os.path.join(ROOT, EXE_NAME)
 
 needs_link = (
     compiled_count > 0 or
+    os.environ.get("MIMITA_FORCE_LINK") == "1" or
     not os.path.exists(exe_path)
 )  
 
