@@ -45,15 +45,14 @@ void spawnBall(GodballPhysics& phys, const WeaponDefinition& def, const Player& 
     glm::vec3 handPos = getHandPosition(owner);
     phys.position = handPos;
     phys.velocity = owner.vel * 1.2f;
-    phys.prevHandPos = handPos;
-    phys.prevHandValid = true;
+    phys.angularVelocity = glm::vec3(0.0f);
     phys.active = true;
     phys.radius = def.customParams.count("ballRadius") ? def.customParams.at("ballRadius") : 0.5f;
     phys.mass = def.customParams.count("ballMass") ? def.customParams.at("ballMass") : 0.1f;
-    phys.ropeLength = def.customParams.count("ropeLength") ? def.customParams.at("ropeLength") : 2.0f;
+    phys.ropeLength = def.customParams.count("ropeLength") ? def.customParams.at("ropeLength") : 2.5f;
     phys.ropeStiffness = def.customParams.count("ropeStiffness") ? def.customParams.at("ropeStiffness") : 50.0f;
     phys.ropeDamping = def.customParams.count("ropeDamping") ? def.customParams.at("ropeDamping") : 2.0f;
-    phys.linearDamping = def.customParams.count("linearDamping") ? def.customParams.at("linearDamping") : 0.02f;
+    phys.linearDamping = def.customParams.count("linearDamping") ? def.customParams.at("linearDamping") : 0.005f;
     phys.ropeTension = 0.0f;
     phys.constraintDist = 0.0f;
 
@@ -75,37 +74,28 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
 
     float safeDt = std::min(dt, 0.033f);
 
-    glm::vec3 handPos = getHandPosition(owner);
+    // The ball is a pure physics object. The ONLY connection to the
+    // player is the tether constraint below. No direct velocity
+    // injection, no hand-momentum inherit — the ball moves only
+    // through gravity, damping, and the tether pulling it back.
 
-    // === 1. MOMENTUM TRANSFER FROM HAND TRAJECTORY ===
-    // Track hand velocity to transfer orbital/linear momentum to the ball.
-    // This naturally handles both player translation AND rotation.
-    if (phys.prevHandValid) {
-        glm::vec3 handVel = (handPos - phys.prevHandPos) / std::max(safeDt, 0.0001f);
-        float handSpeed = glm::length(handVel);
-        if (handSpeed > 40.0f) handVel = (handVel / handSpeed) * 40.0f;
-        phys.velocity += handVel * 0.35f;
-    }
-    phys.prevHandPos = handPos;
-    phys.prevHandValid = true;
+    // === 1. GRAVITY (half Earth, weighted feel) ===
+    phys.velocity.z -= 5.0f * safeDt;
 
-    // === 2. LIGHT GRAVITY (weighted feel, not floaty) ===
-    phys.velocity.z -= 3.0f * safeDt;
-
-    // === 3. DAMPING (very gentle — let the ball swing) ===
+    // === 2. AIR RESISTANCE / DAMPING (extremely light — let the ball sing) ===
     phys.velocity *= std::max(0.0f, 1.0f - phys.linearDamping * safeDt * 60.0f);
 
-    // === 4. SPEED CLAMP ===
+    // === 3. SPEED CLAMP ===
     float speed = glm::length(phys.velocity);
     if (speed > MAX_GODBALL_SPEED) {
         phys.velocity = (phys.velocity / speed) * MAX_GODBALL_SPEED;
     }
 
-    // === 5. INTEGRATE POSITION ===
+    // === 4. INTEGRATE POSITION (semi-implicit Euler) ===
     phys.position += phys.velocity * safeDt;
 
-    // === 6. ROPE CONSTRAINT (POSITIONAL CORRECTION) ===
-    glm::vec3 toHand = handPos - phys.position;
+    // === 5. ROPE CONSTRAINT (POSITION-BASED, SOFT) ===
+    glm::vec3 toHand = getHandPosition(owner) - phys.position;
     float dist = glm::length(toHand);
     phys.constraintDist = dist;
     phys.ropeTension = 0.0f;
@@ -115,20 +105,31 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
         float error = dist - phys.ropeLength;
         phys.ropeTension = error * phys.ropeStiffness;
 
-        // Positional correction: pull ball back onto constraint sphere
-        phys.position += dir * error;
+        // Strong positional correction: keep ball close to constraint sphere.
+        // This ensures energy from player movement transfers to the ball.
+        float correctionFactor = 0.80f;
+        phys.position += dir * error * correctionFactor;
 
-        // Velocity correction: remove outward radial component,
-        // preserve tangential component for orbiting.
+        // Velocity correction: kill only a tiny fraction of outward radial
+        // velocity.  Most outward inertia becomes tangential after the
+        // positional correction, preserving orbital energy.
         float radialVel = glm::dot(phys.velocity, dir);
         if (radialVel > 0.0f) {
-            phys.velocity -= dir * radialVel;
-            phys.velocity -= dir * radialVel * 0.15f;
+            phys.velocity -= dir * radialVel * 0.10f;
         }
     }
 
-    // === 7. SOFT PUSH FROM PLAYER BODY ===
-    // Prevent ball from clipping through the player without hard snapping.
+    // === 6. ANGULAR VELOCITY FROM ORBITAL MOTION ===
+    // Compute natural spin from the cross product of rope direction
+    // and linear velocity.  Blend smoothly to avoid noise.
+    if (dist > 0.1f) {
+        glm::vec3 ropeDir = (getHandPosition(owner) - phys.position) / dist;
+        glm::vec3 orbitalAngVel = glm::cross(ropeDir, phys.velocity) / dist;
+        phys.angularVelocity += (orbitalAngVel - phys.angularVelocity) * 0.15f;
+        phys.angularVelocity *= std::max(0.0f, 1.0f - 0.5f * safeDt * 60.0f);
+    }
+
+    // === 7. PLAYER BODY AVOIDANCE ===
     glm::vec3 ballToOwner = phys.position - owner.pos;
     float ownerDist = glm::length(ballToOwner);
     float minOwnerDist = 0.7f;
@@ -145,10 +146,11 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
     runtime.godball.ballPosition = phys.position;
     runtime.godball.ballVelocity = phys.velocity;
 
-    printf("[GODBALL] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) speed=%.2f dist=%.2f tension=%.1f\n",
+    printf("[GODBALL] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) speed=%.2f dist=%.2f tension=%.1f angVel=(%.2f %.2f %.2f)\n",
            phys.position.x, phys.position.y, phys.position.z,
            phys.velocity.x, phys.velocity.y, phys.velocity.z,
-           speed, dist, phys.ropeTension);
+           speed, dist, phys.ropeTension,
+           phys.angularVelocity.x, phys.angularVelocity.y, phys.angularVelocity.z);
 }
 
 void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
@@ -205,15 +207,16 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                    npcId, rounded, glm::length(phys.velocity));
 
             // === BLOOD EFFECTS ===
-            glm::vec3 hitPos = phys.position;
-            float intensity = std::min((float)rounded / 30.0f, 1.5f);
+            glm::vec3 hitPos = npc.body.pos + glm::vec3(0, 0, 0.8f);
+            float ballSpeed = glm::length(phys.velocity);
+            float intensity = std::min((float)rounded / 20.0f, 2.0f);
 
-            // Damage popup
+            // Damage popup at NPC position (not ball position)
             EffectPartSystem::instance().spawnDamage(
-                hitPos + glm::vec3(0, 0, 0.5f),
+                hitPos,
                 npc.body.username, rounded);
 
-            // Blood sphere burst (scaled by damage)
+            // Blood sphere burst (scaled by damage and speed)
             EffectPartSystem::instance().spawnBloodSphereBurst(
                 hitPos, knockbackDir, intensity,
                 owner.username, "npc_" + std::to_string(npcId));
@@ -227,6 +230,10 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
             EffectPartSystem::instance().spawnEntityImpact(
                 hitPos, knockbackDir,
                 owner.username, "npc_" + std::to_string(npcId));
+
+            printf("[GODBALL HIT] target=%s damage=%d vel=%.1f speedMult=%.2f\n",
+                   npc.body.username.c_str(), rounded, ballSpeed,
+                   1.0f + (ballSpeed / 10.0f) * 3.0f);
 
             // Set cooldown
             cooldowns[npcId] = tickInterval;
@@ -356,13 +363,21 @@ void renderDebug(const Camera& camera, const GodballPhysics& phys,
         DebugVis::drawLine(camera, phys.position, velEnd, {1.0f, 0.0f, 1.0f, 1.0f});
     }
 
+    // Angular velocity axis (cyan)
+    float angSpeed = glm::length(phys.angularVelocity);
+    if (angSpeed > 0.1f) {
+        glm::vec3 angEnd = phys.position + glm::normalize(phys.angularVelocity) * std::min(angSpeed * 0.1f, 1.0f);
+        DebugVis::drawLine(camera, phys.position, angEnd, {0.0f, 1.0f, 1.0f, 0.8f});
+    }
+
     // Overlap sphere (cyan, translucent)
     DebugVis::drawWireSphere(camera, phys.position, phys.radius + 0.5f, {0.0f, 1.0f, 1.0f, 0.4f});
 
     // Labels
     char label[128];
-    snprintf(label, sizeof(label), "GODBALL %.1f m/s  T=%.1f  D=%.2f/%.1f",
-             speed, phys.ropeTension, phys.constraintDist, phys.ropeLength);
+    float angSpd = glm::length(phys.angularVelocity);
+    snprintf(label, sizeof(label), "GODBALL %.1f m/s  T=%.1f  D=%.2f/%.1f  W=%.1f",
+             speed, phys.ropeTension, phys.constraintDist, phys.ropeLength, angSpd);
     DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 0.5f),
                               label, {1.0f, 1.0f, 1.0f, 1.0f});
 

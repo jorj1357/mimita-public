@@ -48,7 +48,7 @@ def snap_tick_to_keyframe(tick, interval):
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-08-2026\08-42-34-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-08-2026\10-14-46-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():

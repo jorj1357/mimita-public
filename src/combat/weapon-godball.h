@@ -15,16 +15,15 @@ struct WeaponRuntime;
 struct GodballPhysics {
     glm::vec3 position{0.0f};
     glm::vec3 velocity{0.0f};
-    glm::vec3 prevHandPos{0.0f};
+    glm::vec3 angularVelocity{0.0f};
     float radius = 0.5f;
     float mass = 0.1f;
     bool active = false;
-    bool prevHandValid = false;
 
-    float ropeLength = 2.0f;
+    float ropeLength = 2.5f;
     float ropeStiffness = 50.0f;
     float ropeDamping = 2.0f;
-    float linearDamping = 0.02f;
+    float linearDamping = 0.005f;
 
     // Debug info
     float ropeTension = 0.0f;

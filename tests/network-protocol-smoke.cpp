@@ -81,6 +81,30 @@ bool pump(TestClient& client, uint64_t deadline)
     return false;
 }
 
+void sendAttack(TestClient& client, const sockaddr_in& server, bool pressed)
+{
+    MimitaNet::InputPacket input{};
+    input.header.type = MimitaNet::PACKET_INPUT;
+    input.header.playerId = client.id;
+    input.camForwardX = 1.0f;
+    input.attackPressed = pressed ? 1 : 0;
+    sendto(client.socket, (const char*)&input, sizeof(input), 0,
+           (const sockaddr*)&server, sizeof(server));
+}
+
+int entityHealth(const TestClient& client, uint32_t entityId)
+{
+    for (uint32_t i = 0;
+         i < client.snapshot.entityCount &&
+         i < MimitaNet::MAX_SNAPSHOT_ENTITIES;
+         ++i)
+    {
+        if (client.snapshot.entities[i].networkEntityId == entityId)
+            return client.snapshot.entities[i].health;
+    }
+    return -1;
+}
+
 void disconnect(TestClient& client, const sockaddr_in& server)
 {
     if (client.id)
@@ -143,15 +167,50 @@ int main()
         secondSawSpawn = second.snapshot.npcCount >= 4;
     }
 
+    bool sawDeath = false;
+    for (int shot = 0; shot < 4 && !sawDeath; ++shot)
+    {
+        sendAttack(first, server, true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        pump(first, MimitaNet::nowMs() + 80);
+        pump(second, MimitaNet::nowMs() + 80);
+        sendAttack(first, server, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        pump(first, MimitaNet::nowMs() + 80);
+        pump(second, MimitaNet::nowMs() + 80);
+        sawDeath = entityHealth(first, second.id) == 0 ||
+                   entityHealth(second, second.id) == 0;
+    }
+    const uint64_t deathDeadline = MimitaNet::nowMs() + 1000;
+    while (!sawDeath && MimitaNet::nowMs() < deathDeadline)
+    {
+        pump(first, MimitaNet::nowMs() + 30);
+        pump(second, MimitaNet::nowMs() + 30);
+        sawDeath = entityHealth(first, second.id) == 0 ||
+                   entityHealth(second, second.id) == 0;
+    }
+
+    bool sawRespawn = false;
+    const uint64_t respawnDeadline = MimitaNet::nowMs() + 3500;
+    while (sawDeath && !sawRespawn && MimitaNet::nowMs() < respawnDeadline)
+    {
+        pump(first, MimitaNet::nowMs() + 30);
+        pump(second, MimitaNet::nowMs() + 30);
+        sawRespawn = entityHealth(first, second.id) == 100 &&
+                     entityHealth(second, second.id) == 100;
+    }
+
     std::printf(
-        "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u spawned=%d/%d\n",
+        "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u "
+        "spawned=%d/%d combatDeath=%d respawn=%d targetHealth=%d\n",
         first.id, first.approvedName.c_str(),
         second.id, second.approvedName.c_str(),
         first.snapshot.playerCount, first.snapshot.npcCount,
-        (int)firstSawSpawn, (int)secondSawSpawn);
+        (int)firstSawSpawn, (int)secondSawSpawn,
+        (int)sawDeath, (int)sawRespawn, entityHealth(first, second.id));
 
     disconnect(first, server);
     disconnect(second, server);
     MimitaNet::netShutdown();
-    return firstSawSpawn && secondSawSpawn ? 0 : 6;
+    return firstSawSpawn && secondSawSpawn && sawDeath && sawRespawn ? 0 : 6;
 }
