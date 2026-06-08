@@ -203,6 +203,11 @@ if MODE == "clean":
 
 ensure_dirs()
 
+game_dll_build = subprocess.run([sys.executable, os.path.join(ROOT, "build_game_dll.py")])
+if game_dll_build.returncode != 0:
+    print("[HOT RELOAD] reload failed")
+    sys.exit(game_dll_build.returncode)
+
 print("==================================================")
 print(" MiMITA Build System")
 print("==================================================")
