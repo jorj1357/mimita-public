@@ -14,6 +14,7 @@
 
 #pragma once
 #include <GLFW/glfw3.h>
+#include <string>
 
 struct PlayMenuResult
 {
@@ -22,9 +23,13 @@ struct PlayMenuResult
     bool startPractice = false;
     bool startDuel = false;
     bool startServer = false;
+    bool stopServer = false;
     bool connectToServer = false;
-    bool joinByIp = false;
+    std::string connectAddress;
     bool goBack = false;
 };
 
 PlayMenuResult drawPlayMenu(GLFWwindow* win);
+void playMenuSetActive(bool active);
+void playMenuHandleChar(unsigned int codepoint);
+void playMenuHandleKey(int key, int action);

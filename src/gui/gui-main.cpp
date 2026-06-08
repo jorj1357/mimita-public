@@ -58,6 +58,7 @@ void guiMain(GLFWwindow* win, GameState& state)
 
             if (r.goPlay)
             {
+                playMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_SERVERS;
             }
             else if (r.goSettings)
@@ -90,20 +91,23 @@ void guiMain(GLFWwindow* win, GameState& state)
         case GUI_MENU_SERVERS:
         {
             PlayMenuResult r = drawPlayMenu(win);
-            if (r.startServer || r.joinByIp) {
-                serverInfoMenuSetActive(true);
-                gGuiMenuState = GUI_MENU_SERVER_INFO;
-            }
-            else if (r.connectToServer)
+            if (r.connectToServer)
             {
                 gPendingConnect.shouldConnect = true;
-                gPendingConnect.address = gServerAddress;
+                gPendingConnect.address = r.connectAddress;
+                playMenuSetActive(false);
                 state = GAME_PLAYING;
             }
             else if (r.startDuel)
+            {
+                playMenuSetActive(false);
                 gGuiMenuState = GUI_MENU_DUEL_CONFIG;
+            }
             else if (r.goBack)
+            {
+                playMenuSetActive(false);
                 gGuiMenuState = GUI_MENU_MAIN;
+            }
             break;
         }
 
@@ -116,7 +120,7 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.goBack)
             {
-                serverInfoMenuSetActive(false);
+                playMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_SERVERS;
             }
             break;

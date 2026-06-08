@@ -77,6 +77,7 @@
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
+#include "gui/menus/play-menu.h"
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -159,6 +160,7 @@ int main(int argc, char** argv)
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
         signInMenuHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
+        playMenuHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
     });
     // Terminal key input callback
@@ -167,6 +169,7 @@ int main(int argc, char** argv)
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             signInMenuHandleKey(key, action);
             serverInfoMenuHandleKey(key, action);
+            playMenuHandleKey(key, action);
             Terminal::instance().handleKey(key, mods);
         }
     });
@@ -1110,6 +1113,53 @@ int main(int argc, char** argv)
             npcSystem.drawDebug(camera);
             drawDebugStuff(player, camera, world);
 
+            if (mpContext.active && mpContext.showDebugOverlay)
+            {
+                const glm::vec4 predictedColor{0.1f, 1.0f, 0.25f, 1.0f};
+                const glm::vec4 serverColor{1.0f, 0.15f, 0.1f, 1.0f};
+                const glm::vec4 remoteColor{0.15f, 0.55f, 1.0f, 1.0f};
+                const glm::vec4 npcColor{0.1f, 1.0f, 0.9f, 1.0f};
+
+                DebugVis::drawWireSphere(camera, player.pos, 0.72f, predictedColor);
+                DebugVis::drawWorldLabel(
+                    player.pos + glm::vec3(0.0f, 0.0f, 2.0f),
+                    "LOCAL PREDICTED", predictedColor);
+                if (mpContext.hasLocalServerPosition)
+                {
+                    DebugVis::drawWireSphere(
+                        camera, mpContext.localServerPosition, 0.78f, serverColor);
+                    DebugVis::drawLine(
+                        camera, player.pos, mpContext.localServerPosition, serverColor);
+                    char serverLabel[128];
+                    snprintf(serverLabel, sizeof(serverLabel),
+                             "SERVER id=%u error=%.2fm",
+                             mpContext.localPlayerId,
+                             glm::length(player.pos - mpContext.localServerPosition));
+                    DebugVis::drawWorldLabel(
+                        mpContext.localServerPosition + glm::vec3(0.0f, 0.0f, 2.3f),
+                        serverLabel, serverColor);
+                }
+
+                for (const auto& kv : mpContext.remotePlayers)
+                {
+                    DebugVis::drawWireSphere(camera, kv.second.pos, 0.76f, remoteColor);
+                    char label[128];
+                    snprintf(label, sizeof(label), "REMOTE id=%u interp=100ms", kv.first);
+                    DebugVis::drawWorldLabel(
+                        kv.second.pos + glm::vec3(0.0f, 0.0f, 2.0f),
+                        label, remoteColor);
+                }
+                for (const auto& kv : mpContext.remoteNpcs)
+                {
+                    DebugVis::drawWireSphere(camera, kv.second.pos, 0.76f, npcColor);
+                    char label[128];
+                    snprintf(label, sizeof(label), "NPC id=%u interp=100ms", kv.first);
+                    DebugVis::drawWorldLabel(
+                        kv.second.pos + glm::vec3(0.0f, 0.0f, 2.0f),
+                        label, npcColor);
+                }
+            }
+
             // Draw NPC selection debug visuals
             if (DebugVis::enabled()) {
                 NpcSelectionManager::instance().drawSelection(npcSystem, camera);
@@ -1117,6 +1167,18 @@ int main(int argc, char** argv)
 
             uiBeginFrame(engine.window(), "game-debug-overlay");
             drawHitmarker(dt);
+            if (mpContext.active && !mpContext.connected)
+            {
+                const float boxW = 360.0f;
+                const float boxX = (uiScreenW() - boxW) * 0.5f;
+                uiDrawRect({boxX, 32.0f, boxW, 58.0f},
+                           {0.02f, 0.025f, 0.035f, 0.92f}, "connection-status");
+                uiDrawText(mpContext.connectionStatus.c_str(), boxX + 18.0f, 54.0f,
+                           0.4f,
+                           mpContext.connectFailed
+                               ? glm::vec4(1.0f, 0.25f, 0.2f, 1.0f)
+                               : glm::vec4(0.3f, 0.75f, 1.0f, 1.0f));
+            }
             if (gReplayRecorder.isRecording()) {
                 const float overlayX = uiScreenW() - 230.0f;
                 uiDrawRect({overlayX - 18.0f, 20.0f, 12.0f, 12.0f},
@@ -1334,55 +1396,75 @@ int main(int argc, char** argv)
                 float dbgY = 20.0f;
                 float lineH = 18.0f;
                 float dbgW = 340.0f;
-                float dbgH = 14 * lineH + 10.0f;
+                float dbgH = (12.0f + (float)mpContext.remotePlayers.size()) * lineH + 10.0f;
 
                 uiDrawRect({dbgX, dbgY, dbgW, dbgH}, {0.0f, 0.0f, 0.0f, 0.8f}, "net-debug-bg");
 
                 float y = dbgY + 6.0f;
                 char buf[256];
 
+                snprintf(buf, sizeof(buf), "STATUS: %s", mpContext.connectionStatus.c_str());
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f,
+                           mpContext.connected ? glm::vec4(0.3f, 1.0f, 0.4f, 1.0f)
+                                               : glm::vec4(1.0f, 0.55f, 0.2f, 1.0f));
+                y += lineH;
+
                 snprintf(buf, sizeof(buf), "LOCAL PLAYER ID: %u", mpContext.localPlayerId);
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.3f, 1.0f, 0.4f, 1.0f}); y += lineH;
 
-                snprintf(buf, sizeof(buf), "REMOTE PLAYERS: %zu", mpContext.remotePlayers.size());
+                snprintf(buf, sizeof(buf), "ENTITIES: %zu (PLAYERS %zu / NPCS %zu)",
+                         mpContext.remotePlayers.size() + mpContext.remoteNpcs.size() +
+                             (mpContext.localPlayerId ? 1u : 0u),
+                         mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1u : 0u),
+                         mpContext.remoteNpcs.size());
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
 
-                snprintf(buf, sizeof(buf), "PLAYER REGISTRY: %zu", mpContext.playerRegistry.size());
+                snprintf(buf, sizeof(buf), "TICK CLIENT %u / SERVER %llu",
+                         mpContext.tick, (unsigned long long)mpContext.lastSnapshotTick);
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
 
-                snprintf(buf, sizeof(buf), "CLIENT TICK: %u", mpContext.tick);
-                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
-
-                snprintf(buf, sizeof(buf), "LAST SNAPSHOT TICK: %u", mpContext.lastSnapshotTick);
-                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
-
-                snprintf(buf, sizeof(buf), "PACKETS SENT: %llu", (unsigned long long)mpContext.packetsSent);
+                const uint64_t snapshotAge = mpContext.lastSnapshotReceivedMs
+                    ? MimitaNet::nowMs() - mpContext.lastSnapshotReceivedMs
+                    : 0;
+                snprintf(buf, sizeof(buf), "SNAPSHOT AGE: %llums  INTERP: 100ms",
+                         (unsigned long long)snapshotAge);
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
 
-                snprintf(buf, sizeof(buf), "PACKETS RECV: %llu", (unsigned long long)mpContext.packetsReceived);
+                const uint64_t snapshotTotal =
+                    mpContext.snapshotsReceived + mpContext.snapshotsMissed;
+                const float lossPercent = snapshotTotal
+                    ? 100.0f * (float)mpContext.snapshotsMissed / (float)snapshotTotal
+                    : 0.0f;
+                snprintf(buf, sizeof(buf), "SNAPSHOT LOSS: %.1f%% (%llu missed)",
+                         lossPercent, (unsigned long long)mpContext.snapshotsMissed);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "PACKETS TX/RX: %llu / %llu",
+                         (unsigned long long)mpContext.packetsSent,
+                         (unsigned long long)mpContext.packetsReceived);
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
 
                 snprintf(buf, sizeof(buf), "SERVER: %s", mpContext.serverAddress.c_str());
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.75f, 0.85f, 1.0f}); y += lineH;
 
-                auto localIt = mpContext.remotePlayers.find(mpContext.localPlayerId);
-                if (localIt != mpContext.remotePlayers.end())
+                snprintf(buf, sizeof(buf), "LOCAL POS: %.1f %.1f %.1f HP=%d",
+                         player.pos.x, player.pos.y, player.pos.z,
+                         mpContext.localServerHealth);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f,
+                           {0.35f, 1.0f, 0.45f, 1.0f});
+                y += lineH;
+
+                if (mpContext.hasLocalServerPosition)
                 {
-                    snprintf(buf, sizeof(buf), "LOCAL POS: %.1f %.1f %.1f",
-                             localIt->second.pos.x, localIt->second.pos.y, localIt->second.pos.z);
-                    uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.35f, 1.0f, 0.45f, 1.0f});
-                }
-                else
-                {
-                    snprintf(buf, sizeof(buf), "LOCAL POS: (predicted)");
-                    uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.6f, 0.3f, 1.0f});
+                    snprintf(buf, sizeof(buf), "SERVER POS ERROR: %.2fm",
+                             glm::length(player.pos - mpContext.localServerPosition));
+                    uiDrawText(buf, dbgX + 8.0f, y, 0.28f,
+                               {1.0f, 0.35f, 0.25f, 1.0f});
                 }
                 y += lineH;
 
-                // List each remote player
                 for (const auto& kv : mpContext.remotePlayers)
                 {
-                    if (kv.first == mpContext.localPlayerId) continue;
                     const Player& rp = kv.second;
                     auto nameIt = mpContext.playerRegistry.find(kv.first);
                     const char* rname = (nameIt != mpContext.playerRegistry.end()) ? nameIt->second.name.c_str() : "?";

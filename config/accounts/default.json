@@ -13,7 +13,7 @@
     "collision_movement_bias": 0.75,
     "collision_seam_tolerance": 0.03500000014901161,
     "debug_combat": false,
-    "equipped_slot": 3,
+    "equipped_slot": 1,
     "fov": 101.55555725097656,
     "freecam_speed": 18.0,
     "master_volume": 0.371111124753952,
