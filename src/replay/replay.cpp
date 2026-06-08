@@ -99,18 +99,27 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
     std::vector<ReplayBodyPartState> states;
     states.reserve(player.physicalBody.parts.size());
 
+    // Compute player root world transform: T(pos) * R_z(yaw)
+    glm::mat4 rootWorld = glm::translate(glm::mat4(1.0f), player.pos)
+        * glm::mat4_cast(glm::angleAxis(glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f)));
+    glm::mat4 invRootWorld = glm::inverse(rootWorld);
+
     for (const PhysicalBodyPart& part : player.physicalBody.parts) {
         if (part.name != "head" && part.name != "torso" &&
             part.name != "leftArm" && part.name != "rightArm" &&
             part.name != "leftLeg" && part.name != "rightLeg")
             continue;
 
+        // Convert from world-space to local-space relative to player root,
+        // so Blender can apply them as proper local transforms under the actor root.
+        glm::mat4 localTransform = invRootWorld * part.worldTransform;
+
         glm::vec3 scale(1.0f);
         glm::quat orientation;
         glm::vec3 translation(0.0f);
         glm::vec3 skew(0.0f);
         glm::vec4 perspective(0.0f);
-        glm::decompose(part.worldTransform,
+        glm::decompose(localTransform,
                        scale, orientation, translation, skew, perspective);
 
         ReplayBodyPartState state;

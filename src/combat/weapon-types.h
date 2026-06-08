@@ -1,0 +1,121 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <glm/glm.hpp>
+
+class Camera;
+class Player;
+class NpcSystem;
+struct World;
+
+enum class WeaponBehaviorType {
+    Hitscan,
+    Projectile,
+    Godball,
+    Melee
+};
+
+enum class WeaponFireMode {
+    SemiAuto,
+    Automatic,
+    Charge
+};
+
+struct WeaponDefinition {
+    std::string id;
+    std::string displayName;
+    int slot = 0;
+
+    std::string modelPath;
+    glm::vec3 viewModelOffset{0.0f};
+    glm::vec3 viewModelRotation{0.0f};
+    float weaponScale = 1.0f;
+
+    float damage = 0.0f;
+    float headshotMultiplier = 2.0f;
+    float fireDelay = 0.1f;
+    float reloadTime = 1.0f;
+    int magazineSize = 6;
+    int pelletCount = 1;
+
+    float spread = 0.0f;
+    float recoil = 0.0f;
+    float projectileSpeed = 0.0f;
+    float projectileRadius = 0.0f;
+    float projectileLifetime = 5.0f;
+
+    WeaponFireMode fireMode = WeaponFireMode::SemiAuto;
+    WeaponBehaviorType behaviorType = WeaponBehaviorType::Hitscan;
+    bool hitscan = true;
+    bool usesPhysicsProjectile = false;
+
+    std::string soundShoot;
+    std::string soundReload;
+    std::string soundHit;
+    std::string soundDryFire;
+    std::string soundEquip;
+
+    std::unordered_map<std::string, float> customParams;
+
+    bool validate() const;
+};
+
+struct WeaponRuntime {
+    int currentAmmo = 0;
+    int reserveAmmo = 0;
+
+    float fireCooldown = 0.0f;
+    float reloadTimer = 0.0f;
+    float shootEffectTimer = 0.0f;
+
+    bool isReloading = false;
+    bool isCharging = false;
+    float chargeAmount = 0.0f;
+
+    struct GodballState {
+        uint32_t ballEntityId = 0;
+        glm::vec3 ballPosition{0.0f};
+        glm::vec3 ballVelocity{0.0f};
+        bool ballSpawned = false;
+        float overlapDamageTimer = 0.0f;
+        std::unordered_map<uint32_t, float> targetCooldowns;
+    } godball;
+
+    std::unordered_map<std::string, float> customFloats;
+    std::unordered_map<std::string, glm::vec3> customVec3s;
+
+    void reset(const WeaponDefinition& def);
+};
+
+struct RevolverShotResult {
+    bool fired = false;
+    bool hitEntity = false;
+    glm::vec3 start{0.0f};
+    glm::vec3 end{0.0f};
+    std::string bodyPart;
+    float damage = 0.0f;
+    uint32_t targetId = 0;
+};
+
+struct DamageContext {
+    float baseDamage;
+    float distance;
+    float angleFactor;
+    std::string bodyPart;
+    glm::vec3 hitPosition;
+    glm::vec3 hitNormal;
+    glm::vec3 shotDirection;
+    uint32_t shooterId;
+    std::string shooterName;
+};
+
+enum class AudioEventType {
+    Shoot,
+    Reload,
+    DryFire,
+    Equip,
+    HitWorld,
+    HitEntity
+};

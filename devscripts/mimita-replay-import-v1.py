@@ -8,33 +8,6 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-# config v1 6 7 2026
-# MAX_FRAMES = 300
-# IMPORT_EFFECTS = False
-# IMPORT_SOUNDS = False
-# IMPORT_WEAPONS = False
-# IMPORT_NPCS = False
-# IMPORT_MAP = True
-# IMPORT_PLAYER = True
-# KEYFRAME_EVERY_N_TICKS = 4
-
-# config v2  6 7 2026
-# MAX_FRAMES = 120
-# MAX_FRAMES = 1200
-
-# IMPORT_EFFECTS = False
-# IMPORT_SOUNDS = False
-# IMPORT_WEAPONS = False
-# IMPORT_NPCS = False
-
-# IMPORT_MAP = True
-# IMPORT_PLAYER = True
-
-# KEYFRAME_EVERY_N_TICKS = 6
-
-# config v3  6 7 2026
-# MAX_FRAMES = 120
-# MAX_FRAMES = 12003
 MAX_FRAMES = 1000
 
 IMPORT_EFFECTS = True
@@ -45,13 +18,12 @@ IMPORT_NPCS = True
 IMPORT_MAP = True
 IMPORT_PLAYER = True
 
-# KEYFRAME_EVERY_N_TICKS = 1
-# KEYFRAME_EVERY_N_TICKS = 10
+# Set >1 for sparse keyframes (e.g. 10 = 1 blender keyframe per 10 game ticks).
+# Effects and sounds snap to the nearest lower keyframe tick.
 KEYFRAME_EVERY_N_TICKS = 1
 
 IMPORT_INDEX = 0
-# IMPORT_BATCH_SIZE = 8
-IMPORT_BATCH_SIZE = 2
+IMPORT_BATCH_SIZE = 8
 
 SCENE_FRAMES_GLOBAL = []
 FPS_GLOBAL = 60
@@ -62,10 +34,21 @@ SEEN_EFFECTS = set()
 EFFECT_SERIAL = 0
 MAX_TICK = 0
 
+SHARED_SPHERE_MESH = None
+SHARED_CYLINDER_MESH = None
+SHARED_CUBE_MESH = None
+
+
+def snap_tick_to_keyframe(tick, interval):
+    if interval <= 1:
+        return tick
+    return (tick // interval) * interval
+
+
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-07-2026\14-33-30-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-08-2026\08-42-34-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
@@ -256,10 +239,14 @@ def set_transform(obj, state):
 
 
 def set_local_transform(obj, state):
-    obj.location = Vector(state.get("position", (0.0, 0.0, 0.0)))
+    pos = Vector(state.get("position", (0.0, 0.0, 0.0)))
+    # Undo parent's R_x(-90°): R_x(90°) maps (x,y,z) -> (x, -z, y)
+    obj.location = Vector((pos.x, -pos.z, pos.y))
     rotation = state.get("rotation", (0.0, 0.0, 0.0))
     obj.rotation_mode = "XYZ"
-    obj.rotation_euler = tuple(math.radians(value) for value in rotation)
+    obj.rotation_euler = (math.radians(rotation[0]), math.radians(rotation[1]), math.radians(rotation[2]))
+    # Undo parent's R_x(-90°) on rotation: R_x(90°) cancels the parent's R_x(-90°)
+    obj.rotation_euler.rotate_axis("X", math.radians(90.0))
     obj.scale = Vector(state.get("scale", (1.0, 1.0, 1.0)))
 
 
@@ -481,14 +468,43 @@ def apply_limb_transforms(actor_record, actor_state, frame):
             keyframe_transform(target, frame)
 
 
-def add_primitive(kind, name, collection, location, scale):
+def _ensure_shared_mesh(kind):
+    global SHARED_SPHERE_MESH, SHARED_CYLINDER_MESH, SHARED_CUBE_MESH
     if kind == "sphere":
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=6)
+        if SHARED_SPHERE_MESH is None:
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=6, ring_count=4)
+            obj = bpy.context.active_object
+            SHARED_SPHERE_MESH = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+        return SHARED_SPHERE_MESH
     elif kind == "cylinder":
-        bpy.ops.mesh.primitive_cylinder_add(vertices=12)
+        if SHARED_CYLINDER_MESH is None:
+            bpy.ops.mesh.primitive_cylinder_add(vertices=8)
+            obj = bpy.context.active_object
+            SHARED_CYLINDER_MESH = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+        return SHARED_CYLINDER_MESH
     else:
-        bpy.ops.mesh.primitive_cube_add()
-    obj = bpy.context.active_object
+        if SHARED_CUBE_MESH is None:
+            bpy.ops.mesh.primitive_cube_add()
+            obj = bpy.context.active_object
+            SHARED_CUBE_MESH = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+        return SHARED_CUBE_MESH
+
+
+def add_primitive(kind, name, collection, location, scale, shared=True):
+    mesh_template = _ensure_shared_mesh(kind) if shared else None
+    if mesh_template:
+        obj = bpy.data.objects.new(name, mesh_template.copy())
+    else:
+        if kind == "sphere":
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=6, ring_count=4)
+        elif kind == "cylinder":
+            bpy.ops.mesh.primitive_cylinder_add(vertices=8)
+        else:
+            bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.active_object
     obj.name = name
     obj.location = Vector(location)
     obj.scale = Vector(scale)
@@ -519,10 +535,13 @@ def animate_ballistic(obj, effect, spawn_frame, end_frame, fps):
         obj.keyframe_insert(data_path="location", frame=frame)
 
 
-def create_effect(effect, fps, serial):
+def create_effect(effect, fps, serial, snapped_tick=None):
     effect_type = str(effect.get("type", "")).lower()
     start_delay = float(effect.get("startDelay", 0.0))
-    spawn_frame = int(effect.get("spawnTick", 0)) + 1 + round(start_delay * fps)
+    raw_tick = int(effect.get("spawnTick", 0))
+    if snapped_tick is not None:
+        raw_tick = snapped_tick
+    spawn_frame = raw_tick + 1 + round(start_delay * fps)
     lifetime = float(effect.get("lifetime", effect.get("lifetimeSeconds", 0.1)))
     end_frame = spawn_frame + max(1, round(lifetime * fps))
     position = effect.get("position", effect.get("from", (0.0, 0.0, 0.0)))
@@ -536,14 +555,14 @@ def create_effect(effect, fps, serial):
 
     if effect_type in ("muzzle_flash", "muzzleflash"):
         obj = add_primitive(
-            "sphere", f"MuzzleFlash_{serial}", collection, position, initial_scale
+            "sphere", f"MuzzleFlash_{serial}", collection, position, initial_scale, shared=True
         )
         obj.data.materials.append(
             material_with_color(f"Mimita_MuzzleFlash_{serial}", event_color, 12.0)
         )
     elif effect_type in ("tracer", "bullettracer", "bullet_tracer"):
         obj = add_primitive(
-            "cylinder", f"Tracer_{serial}", collection, position, (0.02, 0.02, 1.0)
+            "cylinder", f"Tracer_{serial}", collection, position, (0.02, 0.02, 1.0), shared=True
         )
         thickness = float(effect.get("thickness", 0.2))
         orient_beam(obj, effect.get("from", position), effect.get("to", position), thickness)
@@ -554,7 +573,7 @@ def create_effect(effect, fps, serial):
         "blood", "bloodsplatter", "blood_splatter", "blood_cylinder"
     ):
         obj = add_primitive(
-            "cylinder", f"Blood_{serial}", collection, position, initial_scale
+            "cylinder", f"Blood_{serial}", collection, position, initial_scale, shared=True
         )
         obj.scale.z = min(obj.scale.z, 0.025)
         rotation = effect.get("rotation", (0.0, 0.0, 0.0))
@@ -568,14 +587,14 @@ def create_effect(effect, fps, serial):
         "impact_entity", "impact_sphere"
     ):
         obj = add_primitive(
-            "sphere", f"Impact_{serial}", collection, position, initial_scale
+            "sphere", f"Impact_{serial}", collection, position, initial_scale, shared=True
         )
         obj.data.materials.append(
             material_with_color(f"Mimita_Impact_{serial}", event_color)
         )
     elif effect_type in ("debris", "world_debris", "debris_block"):
         obj = add_primitive(
-            "cube", f"Debris_{serial}", collection, position, initial_scale
+            "cube", f"Debris_{serial}", collection, position, initial_scale, shared=True
         )
         obj.data.materials.append(
             material_with_color(f"Mimita_Debris_{serial}", event_color)
@@ -586,7 +605,7 @@ def create_effect(effect, fps, serial):
         animate_ballistic(obj, effect, spawn_frame, end_frame, fps)
     elif effect_type == "blood_sphere_particle":
         obj = add_primitive(
-            "sphere", f"BloodParticle_{serial}", collection, position, initial_scale
+            "sphere", f"BloodParticle_{serial}", collection, position, initial_scale, shared=True
         )
         material = material_with_color(
             f"Mimita_BloodParticle_{serial}", event_color
@@ -597,7 +616,7 @@ def create_effect(effect, fps, serial):
         keyframe_material_fade(material, end_frame, 0.0)
     elif effect_type == "footstep":
         obj = add_primitive(
-            "cylinder", f"Footstep_{serial}", collection, position, initial_scale
+            "cylinder", f"Footstep_{serial}", collection, position, initial_scale, shared=True
         )
         obj.scale.z = 0.01
         obj.display_type = "WIRE"
@@ -629,7 +648,7 @@ def create_effect(effect, fps, serial):
     keyframe_visibility(obj, end_frame + 1, False)
 
 
-def import_sounds(sound_events):
+def import_sounds(sound_events, snap_interval=1):
     scene = bpy.context.scene
     if scene.sequence_editor is None:
         scene.sequence_editor_create()
@@ -638,7 +657,10 @@ def import_sounds(sound_events):
         path = resolve_path(event.get("soundPath", ""))
         if path is None and event.get("assetId"):
             path = resolve_path(ASSETS_BY_ID.get(event["assetId"], {}).get("path", ""))
-        frame = int(event.get("tick", 0)) + 1
+        raw_tick = int(event.get("tick", 0))
+        if snap_interval > 1:
+            raw_tick = snap_tick_to_keyframe(raw_tick, snap_interval)
+        frame = raw_tick + 1
         label = path.name if path else event.get("assetId", "missing sound")
         try:
             if path is None:
@@ -790,11 +812,16 @@ def main():
     effect_serial = 0
     global SCENE_FRAMES_GLOBAL
     global FPS_GLOBAL
-
     SCENE_FRAMES_GLOBAL = scene_frames[:MAX_FRAMES]
     FPS_GLOBAL = fps
 
+    if IMPORT_SOUNDS:
+        sound_events = replay.get("soundEvents", [])
+        import_sounds(sound_events, snap_interval=KEYFRAME_EVERY_N_TICKS)
+        log(f"Imported {len(sound_events)} sound events (snapped to {KEYFRAME_EVERY_N_TICKS}-tick interval)")
+
     bpy.app.timers.register(process_import_batch)
+
 
 def process_import_batch():
 
@@ -812,48 +839,48 @@ def process_import_batch():
     for scene_frame in SCENE_FRAMES_GLOBAL[IMPORT_INDEX:end_index]:
 
         tick = int(scene_frame.get("tick", 0))
-
-        if tick % KEYFRAME_EVERY_N_TICKS != 0:
-            continue
-
         MAX_TICK = max(MAX_TICK, tick)
+        snapped_tick = snap_tick_to_keyframe(tick, KEYFRAME_EVERY_N_TICKS)
 
-        frame = tick + 1
+        # Process actors/camera only on keyframe ticks
+        if tick % KEYFRAME_EVERY_N_TICKS == 0:
 
-        scene.frame_set(frame)
+            frame = tick + 1
+            scene.frame_set(frame)
 
-        camera_state = scene_frame.get("camera")
+            camera_state = scene_frame.get("camera")
 
-        if camera_state:
-            configure_camera(CAMERA_GLOBAL, camera_state, frame)
+            if camera_state:
+                configure_camera(CAMERA_GLOBAL, camera_state, frame)
 
-        for actor_state in scene_frame.get("actors", []):
+            for actor_state in scene_frame.get("actors", []):
 
-            actor_type = actor_state.get("type", "")
+                actor_type = actor_state.get("type", "")
 
-            if actor_type == "npc" and not IMPORT_NPCS:
-                continue
+                if actor_type == "npc" and not IMPORT_NPCS:
+                    continue
 
-            if actor_type == "player" and not IMPORT_PLAYER:
-                continue
+                if actor_type == "player" and not IMPORT_PLAYER:
+                    continue
 
-            actor_id = str(actor_state.get("id", "unknown"))
+                actor_id = str(actor_state.get("id", "unknown"))
 
-            actor_record = ensure_actor(
-                actor_state,
-                OUTFIT_PATH_GLOBAL
-            )
+                actor_record = ensure_actor(
+                    actor_state,
+                    OUTFIT_PATH_GLOBAL
+                )
 
-            set_transform(actor_record["root"], actor_state)
+                set_transform(actor_record["root"], actor_state)
 
-            keyframe_transform(actor_record["root"], frame)
+                keyframe_transform(actor_record["root"], frame)
 
-            apply_limb_transforms(
-                actor_record,
-                actor_state,
-                frame
-            )
+                apply_limb_transforms(
+                    actor_record,
+                    actor_state,
+                    frame
+                )
 
+        # Process effects on EVERY tick, snapping to nearest keyframe
         if IMPORT_EFFECTS:
 
             for effect in scene_frame.get("effects", []):
@@ -874,7 +901,8 @@ def process_import_batch():
                 create_effect(
                     effect,
                     FPS_GLOBAL,
-                    EFFECT_SERIAL
+                    EFFECT_SERIAL,
+                    snapped_tick=snapped_tick,
                 )
 
                 EFFECT_SERIAL += 1

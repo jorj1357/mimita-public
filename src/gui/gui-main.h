@@ -16,9 +16,18 @@
 #pragma once
 #include <GLFW/glfw3.h>
 #include "game/game-state.h"
+#include <string>
 
 struct DuelConfigResult;
 
 void guiMain(GLFWwindow* win, GameState& state);
 DuelConfigResult getPendingDuelConfig();
 void clearPendingDuelConfig();
+
+struct MultiplayerConnectInfo
+{
+    bool shouldConnect = false;
+    std::string address = "127.0.0.1:1357";
+};
+MultiplayerConnectInfo getPendingMultiplayerConnect();
+void clearPendingMultiplayerConnect();

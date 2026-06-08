@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 1;
+constexpr uint16_t PROTOCOL_VERSION = 2;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_NAME_BYTES = 32;
 constexpr int MAX_SNAPSHOT_PLAYERS = 32;
@@ -17,7 +17,8 @@ enum PacketType : uint8_t
     PACKET_INPUT = 3,
     PACKET_SNAPSHOT = 4,
     PACKET_DISCONNECT = 5,
-    PACKET_PING = 6
+    PACKET_PING = 6,
+    PACKET_PLAYER_LIST = 7
 };
 
 #pragma pack(push, 1)
@@ -73,7 +74,7 @@ struct SnapshotPlayer
     int32_t health = 100;
     uint8_t onGround = 0;
     uint8_t active = 0;
-    uint16_t reserved = 0;
+    char name[MAX_NAME_BYTES];
 };
 
 struct SnapshotPacket
