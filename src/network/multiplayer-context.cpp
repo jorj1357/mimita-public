@@ -133,6 +133,11 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;
+    ctx.lastLocalCorrectionLogMs = 0;
+    ctx.pendingTeleportPosition = glm::vec3(0.0f);
+    ctx.pendingTeleportSentMs = 0;
+    ctx.awaitingTeleportAck = false;
+    ctx.awaitingExplodeDeath = false;
     ctx.localServerVelocity = glm::vec3(0.0f);
     ctx.localServerYaw = 0.0f;
     ctx.localServerOnGround = false;
@@ -172,6 +177,11 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.playerRegistry.clear();
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;
+    ctx.lastLocalCorrectionLogMs = 0;
+    ctx.pendingTeleportPosition = glm::vec3(0.0f);
+    ctx.pendingTeleportSentMs = 0;
+    ctx.awaitingTeleportAck = false;
+    ctx.awaitingExplodeDeath = false;
     ctx.connected = false;
     ctx.connectFailed = false;
     ctx.connectionStatus.clear();
@@ -286,6 +296,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                     ctx.localServerOnGround = entity.onGround != 0;
                     ctx.hasLocalServerPosition = true;
                     ctx.localServerHealth = entity.health;
+                    if (ctx.awaitingTeleportAck &&
+                        glm::length(
+                            ctx.localServerPosition -
+                            ctx.pendingTeleportPosition) <= 1.0f)
+                    {
+                        ctx.awaitingTeleportAck = false;
+                    }
+                    if (ctx.awaitingExplodeDeath && entity.health <= 0)
+                        ctx.awaitingExplodeDeath = false;
                     ctx.playerRegistry[entity.networkEntityId] = {
                         entity.displayName, entity.networkEntityId, 0
                     };
@@ -415,27 +434,54 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
 
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
 {
+    (void)dt;
     if (!ctx.connected || !ctx.hasLocalServerPosition)
         return;
 
+    const glm::vec3 clientPosition = player.pos;
     const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);
-    const bool logCorrection = !ctx.localPlayerReconciled || error > 1.0f;
-    const bool hardCorrection =
-        !ctx.localPlayerReconciled || error > 1.0f || ctx.localServerHealth <= 0;
+    constexpr float CATASTROPHIC_DIVERGENCE = 12.0f;
+    constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
+    constexpr uint64_t TELEPORT_ACK_TIMEOUT_MS = 1500;
+    const uint64_t currentMs = nowMs();
+    if (ctx.awaitingTeleportAck &&
+        currentMs - ctx.pendingTeleportSentMs > TELEPORT_ACK_TIMEOUT_MS)
+    {
+        ctx.awaitingTeleportAck = false;
+    }
+    const bool initialSpawn = !ctx.localPlayerReconciled;
+    const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
+    const bool serverRespawnedPlayer =
+        ctx.localServerHealth > 0 && player.dead && !ctx.awaitingExplodeDeath;
+    const bool catastrophicDivergence =
+        error > CATASTROPHIC_DIVERGENCE &&
+        !ctx.awaitingTeleportAck &&
+        !player.dead;
+    const bool applyPosition =
+        initialSpawn || serverRespawnedPlayer || catastrophicDivergence;
 
-    if (hardCorrection)
+    if (applyPosition)
+    {
         player.pos = ctx.localServerPosition;
-    else
-        player.pos += correction * std::min(1.0f, std::max(0.0f, dt) * 12.0f);
+        player.vel = ctx.localServerVelocity;
+        player.yaw = ctx.localServerYaw;
+        player.onGround = ctx.localServerOnGround;
+        player.externalImpulse = glm::vec3(0.0f);
+        player.syncLegacyStateToLayers();
+        player.updateModelWorldTransforms();
+    }
 
-    player.vel = ctx.localServerVelocity;
-    player.yaw = ctx.localServerYaw;
-    player.onGround = ctx.localServerOnGround;
     player.currentHp = ctx.localServerHealth;
-    player.dead = ctx.localServerHealth <= 0;
-    if (player.dead)
-        player.vel = glm::vec3(0.0f);
+    if (serverKilledPlayer)
+        player.currentHp = 0;
+    if (serverRespawnedPlayer)
+    {
+        player.dead = false;
+        player.proceduralFrozen = false;
+        player.respawnTimer = 0.0f;
+        player.killedBy.clear();
+    }
 
     if (!player.dead)
     {
@@ -489,16 +535,27 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         }
     }
 
-    if (logCorrection)
+    const bool logCorrection =
+        initialSpawn || applyPosition || error >= CORRECTION_LOG_DISTANCE;
+    if (logCorrection &&
+        (applyPosition || currentMs - ctx.lastLocalCorrectionLogMs >= 500))
     {
-        printf("[CLIENT LOCAL RECONCILE] entityId=%u mode=%s error=%.2f "
-               "serverPos=(%.2f,%.2f,%.2f)\n",
-               ctx.localPlayerId,
-               ctx.localPlayerReconciled ? "hard-snap" : "initial-spawn",
+        printf("[LOCAL CORRECTION] distance=%.3f "
+               "serverPos=(%.2f,%.2f,%.2f) clientPos=(%.2f,%.2f,%.2f) "
+               "applied=%d reason=%s\n",
                error,
                ctx.localServerPosition.x,
                ctx.localServerPosition.y,
-               ctx.localServerPosition.z);
+               ctx.localServerPosition.z,
+               clientPosition.x,
+               clientPosition.y,
+               clientPosition.z,
+               (int)applyPosition,
+               initialSpawn ? "initial-spawn" :
+               serverRespawnedPlayer ? "server-respawn" :
+               catastrophicDivergence ? "catastrophic-divergence" :
+               serverKilledPlayer ? "server-death" : "within-tolerance");
+        ctx.lastLocalCorrectionLogMs = currentMs;
     }
     ctx.localPlayerReconciled = true;
 }
@@ -515,6 +572,41 @@ void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position)
     request.px = position.x;
     request.py = position.y;
     request.pz = position.z;
+    sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
+           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    ++ctx.packetsSent;
+}
+
+void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    TeleportRequestPacket request{};
+    request.header.type = PACKET_TELEPORT_REQUEST;
+    request.header.tick = ctx.tick;
+    request.header.playerId = ctx.localPlayerId;
+    request.px = position.x;
+    request.py = position.y;
+    request.pz = position.z;
+    ctx.pendingTeleportPosition = position;
+    ctx.pendingTeleportSentMs = nowMs();
+    ctx.awaitingTeleportAck = true;
+    sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
+           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    ++ctx.packetsSent;
+}
+
+void mpRequestExplode(MultiplayerContext& ctx)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    ExplodeRequestPacket request{};
+    request.header.type = PACKET_EXPLODE_REQUEST;
+    request.header.tick = ctx.tick;
+    request.header.playerId = ctx.localPlayerId;
+    ctx.awaitingExplodeDeath = true;
     sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
            (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
     ++ctx.packetsSent;

@@ -64,6 +64,11 @@ struct MultiplayerContext
     bool localServerOnGround = false;
     bool hasLocalServerPosition = false;
     bool localPlayerReconciled = false;
+    uint64_t lastLocalCorrectionLogMs = 0;
+    glm::vec3 pendingTeleportPosition{0.0f};
+    uint64_t pendingTeleportSentMs = 0;
+    bool awaitingTeleportAck = false;
+    bool awaitingExplodeDeath = false;
     int localServerHealth = 100;
     std::string approvedLocalName;
     std::string serverAddress = "127.0.0.1:1357";
@@ -79,5 +84,7 @@ void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position);
+void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
+void mpRequestExplode(MultiplayerContext& ctx);
 
 } // namespace MimitaNet

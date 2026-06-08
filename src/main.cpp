@@ -102,6 +102,30 @@ static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
     return distance > 0.0f;
 }
 
+static bool parseTeleportPosition(
+    const std::vector<std::string>& args,
+    glm::vec3& position)
+{
+    if (args.size() == 1)
+        return std::sscanf(
+            args[0].c_str(), "%f,%f,%f",
+            &position.x, &position.y, &position.z) == 3;
+    if (args.size() == 3)
+    {
+        try
+        {
+            position = {
+                std::stof(args[0]), std::stof(args[1]), std::stof(args[2])};
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+    return false;
+}
+
 static glm::vec3 castWorldRay(const World& world, glm::vec3 origin, glm::vec3 direction)
 {
     direction = glm::normalize(direction);
@@ -194,6 +218,21 @@ int main(int argc, char** argv)
     CreateDefaultAccountConfig();
     LoadAccountConfig("default");
     LoadDuelStats("default");
+
+    {
+        const std::string& res = GetPlayerSettings().resolution;
+        int resW = 0, resH = 0;
+        if (sscanf(res.c_str(), "%dx%d", &resW, &resH) == 2 && resW > 0 && resH > 0)
+        {
+            printf("[MAIN] Applying resolution: %s\n", res.c_str());
+            glfwSetWindowSize(engine.window(), resW, resH);
+            if (engine.renderer)
+            {
+                engine.renderer->width = resW;
+                engine.renderer->height = resH;
+            }
+        }
+    }
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
@@ -282,6 +321,64 @@ int main(int argc, char** argv)
     registerActionCommand("walkright", "Move right for one simulation tick");
     registerActionCommand("jump", "Execute a jump action");
     registerActionCommand("dash", "Execute a dash action");
+
+    Terminal::instance().registerCommand({
+        "teleport", "Teleport the local player", "teleport x,y,z",
+        [&player, &mpContext](const std::vector<std::string>& args) {
+            glm::vec3 destination(0.0f);
+            if (!parseTeleportPosition(args, destination) ||
+                !std::isfinite(destination.x) ||
+                !std::isfinite(destination.y) ||
+                !std::isfinite(destination.z))
+            {
+                Terminal::instance().addLog("[ERROR] Usage: teleport x,y,z");
+                return;
+            }
+
+            player.pos = destination;
+            player.vel = glm::vec3(0.0f);
+            player.externalImpulse = glm::vec3(0.0f);
+            player.inputWishMove = glm::vec2(0.0f);
+            player.onGround = false;
+            player.jumpHeldPrev = false;
+            player.moveHeldPrev = false;
+            player.dashHeldPrev = false;
+            player.freezeHeldPrev = false;
+            player.syncLegacyStateToLayers();
+            player.updateModelWorldTransforms();
+
+            if (mpContext.active)
+                MimitaNet::mpRequestTeleport(mpContext, destination);
+
+            char line[128];
+            snprintf(line, sizeof(line),
+                     "[GAMEPLAY] teleported to %.2f,%.2f,%.2f",
+                     destination.x, destination.y, destination.z);
+            Terminal::instance().addLog(line);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "explode", "Instantly kill the local player", "explode",
+        [&player, &mpContext](const std::vector<std::string>&) {
+            if (player.dead)
+            {
+                Terminal::instance().addLog("[GAMEPLAY] already dead");
+                return;
+            }
+
+            DeathSystem::instance().kill(
+                player,
+                player.username,
+                "player",
+                "explode",
+                glm::vec3(0.0f, 0.0f, 1.0f),
+                24.0f);
+            if (mpContext.active)
+                MimitaNet::mpRequestExplode(mpContext);
+            Terminal::instance().addLog("[GAMEPLAY] explode");
+        }
+    });
 
     Terminal::instance().registerCommand({
         "freeze", "Toggle freeze", "freeze",

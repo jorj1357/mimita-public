@@ -10,8 +10,68 @@
 #include "../ui-system.h"
 #include "camera.h"
 #include "config/player-settings.h"
+#include "renderer/renderer.h"
 
 #include <cstdio>
+#include <cstring>
+#include <cstdlib>
+
+extern Renderer* gRenderer;
+
+static const char* kResolutions[] = {
+    "800x600",
+    "1024x768",
+    "1280x960",
+    "1920x1080"
+};
+static const int kNumResolutions = 4;
+
+static const char* kGraphicsPresets[] = {
+    "Minimal",
+    "Low",
+    "Medium",
+    "High",
+    "Max"
+};
+static const int kNumGraphicsPresets = 5;
+
+static void applyResolution(const char* resStr)
+{
+    if (!gRenderer || !gRenderer->window) return;
+    int w = 0, h = 0;
+    if (sscanf(resStr, "%dx%d", &w, &h) != 2) return;
+    if (w <= 0 || h <= 0) return;
+    glfwSetWindowSize(gRenderer->window, w, h);
+    gRenderer->width = w;
+    gRenderer->height = h;
+    printf("[SETTINGS] Resolution applied: %dx%d\n", w, h);
+}
+
+static int uiOptionDropdown(GLFWwindow* win, const char* label,
+                            float x, float& y, float w, float h, float gap,
+                            const char** options, int numOptions, int currentIndex)
+{
+    uiDrawText(label, x, y, 0.38f, {0.8f, 0.9f, 1.0f, 1.0f});
+    y += gap * 0.5f;
+
+    int result = -1;
+    for (int i = 0; i < numOptions; ++i)
+    {
+        float optY = y;
+        UIRect r = {x, optY, w, h};
+        glm::vec4 color = (i == currentIndex)
+            ? glm::vec4{0.3f, 0.7f, 1.0f, 1.0f}
+            : glm::vec4{0.15f, 0.2f, 0.3f, 1.0f};
+        uiDrawRect(r, color, label);
+        if (i == currentIndex)
+            uiDrawRectOutline(r, {0.5f, 0.9f, 1.0f, 1.0f}, label);
+        uiDrawText(options[i], x + uiScaleX(8), optY + uiScaleY(4), 0.32f, {1.0f, 1.0f, 1.0f, 1.0f});
+        if (uiButton(win, "", r, color).clicked)
+            result = i;
+        y += h + gap * 0.3f;
+    }
+    return result;
+}
 
 SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
 {
@@ -151,6 +211,39 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         uiRow(leftX, y, uiScaleX(96), uiScaleY(42), gap),
         &renderDebug
     );
+
+    y += uiScaleY(16);
+
+    {
+        int idx = -1;
+        for (int i = 0; i < kNumResolutions; ++i)
+            if (settings.resolution == kResolutions[i]) { idx = i; break; }
+        if (idx < 0) idx = 0;
+        int next = uiOptionDropdown(win, "RESOLUTION",
+            leftX, y, uiScaleX(200), uiScaleY(26), uiScaleY(20),
+            kResolutions, kNumResolutions, idx);
+        if (next >= 0 && next != idx)
+        {
+            settings.resolution = kResolutions[next];
+            applyResolution(settings.resolution.c_str());
+            SavePlayerSettings();
+        }
+    }
+
+    {
+        int idx = -1;
+        for (int i = 0; i < kNumGraphicsPresets; ++i)
+            if (settings.graphicsPreset == kGraphicsPresets[i]) { idx = i; break; }
+        if (idx < 0) idx = 2;
+        int next = uiOptionDropdown(win, "GRAPHICS PRESET",
+            leftX, y, uiScaleX(200), uiScaleY(26), uiScaleY(20),
+            kGraphicsPresets, kNumGraphicsPresets, idx);
+        if (next >= 0 && next != idx)
+        {
+            settings.graphicsPreset = kGraphicsPresets[next];
+            SavePlayerSettings();
+        }
+    }
 
     //--------------------------------------------------
     // RIGHT COLUMN

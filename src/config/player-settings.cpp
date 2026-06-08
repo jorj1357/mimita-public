@@ -61,6 +61,8 @@ bool LoadPlayerSettings(const std::string& account)
         readValue(j, "weapon_recoil_decay", gSettings.weaponRecoilDecay);
         readValue(j, "freecam_speed", gSettings.freecamSpeed);
         readValue(j, "debug_combat", gSettings.debugCombat);
+        readValue(j, "resolution", gSettings.resolution);
+        readValue(j, "graphics_preset", gSettings.graphicsPreset);
 
         gSettings.fov = std::clamp(gSettings.fov, 60.0f, 140.0f);
         gSettings.sensitivity = std::clamp(gSettings.sensitivity, 0.01f, 2.0f);
@@ -107,6 +109,8 @@ bool SavePlayerSettings(const std::string& account)
     j["weapon_recoil_decay"] = gSettings.weaponRecoilDecay;
     j["freecam_speed"] = gSettings.freecamSpeed;
     j["debug_combat"] = gSettings.debugCombat;
+    j["resolution"] = gSettings.resolution;
+    j["graphics_preset"] = gSettings.graphicsPreset;
 
     const std::string temporary = path + ".tmp";
     std::ofstream output(temporary, std::ios::trunc);

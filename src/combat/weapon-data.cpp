@@ -83,11 +83,11 @@ WeaponDefinition createGodballDefinition() {
     def.soundEquip = "";
 
     def.customParams["ballRadius"] = 0.5f;
-    def.customParams["ballMass"] = 0.12f;
+    def.customParams["ballMass"] = 0.18f;
     def.customParams["ropeLength"] = 2.8f;
-    def.customParams["ropeStiffness"] = 35.0f;
+    def.customParams["ropeStiffness"] = 50.0f;
     def.customParams["ropeDamping"] = 1.0f;
-    def.customParams["linearDamping"] = 0.00005f;
+    def.customParams["linearDamping"] = 0.0f;
     def.customParams["baseDamagePerTick"] = 10.0f;
     def.customParams["damageTickInterval"] = 0.15f;
     def.customParams["speedDamageFactor"] = 3.0f;
