@@ -28,6 +28,9 @@ struct PlayerSettings {
     float freecamSpeed = 18.0f;
 
     bool debugCombat = false;
+
+    std::string resolution = "1280x960";
+    std::string graphicsPreset = "High";
 };
 
 PlayerSettings& GetPlayerSettings();

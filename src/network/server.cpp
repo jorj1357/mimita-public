@@ -780,6 +780,51 @@ int runServer(const LaunchOptions& options)
                 printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f)\n",
                        serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z);
             }
+            else if (header->type == PACKET_TELEPORT_REQUEST &&
+                     bytes >= (int)sizeof(TeleportRequestPacket))
+            {
+                TeleportRequestPacket* request =
+                    reinterpret_cast<TeleportRequestPacket*>(buffer);
+                auto it = players.find(request->header.playerId);
+                if (it == players.end() || it->second.dead)
+                    continue;
+
+                const glm::vec3 requestedPosition{
+                    request->px, request->py, request->pz};
+                if (!std::isfinite(requestedPosition.x) ||
+                    !std::isfinite(requestedPosition.y) ||
+                    !std::isfinite(requestedPosition.z))
+                {
+                    printf("%s [SERVER TELEPORT] playerId=%u rejected=non-finite\n",
+                           serverTimestamp(), request->header.playerId);
+                    continue;
+                }
+
+                ServerPlayer& p = it->second;
+                p.pos = glm::clamp(
+                    requestedPosition,
+                    world.boundsMin - glm::vec3(2.0f),
+                    world.boundsMax + glm::vec3(2.0f));
+                p.vel = glm::vec3(0.0f);
+                p.onGround = false;
+                printf("%s [SERVER TELEPORT] playerId=%u position=(%.2f,%.2f,%.2f)\n",
+                       serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z);
+            }
+            else if (header->type == PACKET_EXPLODE_REQUEST &&
+                     bytes >= (int)sizeof(ExplodeRequestPacket))
+            {
+                auto it = players.find(header->playerId);
+                if (it == players.end() || it->second.dead)
+                    continue;
+
+                ServerPlayer& p = it->second;
+                p.health = 0;
+                p.dead = true;
+                p.respawnSeconds = 2.0f;
+                p.vel = glm::vec3(0.0f);
+                printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=2.0s\n",
+                       serverTimestamp(), p.id);
+            }
         }
 
         // Timeout disconnected clients
