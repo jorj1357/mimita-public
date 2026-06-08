@@ -56,7 +56,7 @@ struct ServerPlayer
     int health = 100;
     bool onGround = false;
     bool dashAvailable = true;
-    bool attackWasPressed = false;
+    bool attackQueued = false;
     bool dead = false;
     float respawnSeconds = 0.0f;
     uint64_t lastHeardMs = 0;
@@ -432,9 +432,8 @@ void simulateCombat(std::unordered_map<uint32_t, ServerPlayer>& players)
     for (auto& shooterEntry : players)
     {
         ServerPlayer& shooter = shooterEntry.second;
-        const bool attackStarted =
-            shooter.input.attackPressed && !shooter.attackWasPressed;
-        shooter.attackWasPressed = shooter.input.attackPressed;
+        const bool attackStarted = shooter.attackQueued;
+        shooter.attackQueued = false;
         if (!attackStarted || shooter.dead)
             continue;
 
@@ -738,7 +737,10 @@ int runServer(const LaunchOptions& options)
                 p.input.yaw = in->yaw;
                 p.input.jumpHeld = in->jumpHeld != 0;
                 p.input.dashPressed = in->dashPressed != 0;
-                p.input.attackPressed = in->attackPressed != 0;
+                const bool attackPressed = in->attackPressed != 0;
+                if (attackPressed && !p.input.attackPressed)
+                    p.attackQueued = true;
+                p.input.attackPressed = attackPressed;
                 p.input.freezeHeld = in->freezeHeld != 0;
                 p.input.tick = in->header.tick;
                 if (in->spawnNpcPressed)

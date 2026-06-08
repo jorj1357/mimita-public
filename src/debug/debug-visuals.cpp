@@ -941,6 +941,18 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 }
 
 namespace DebugVis {
+    void drawDiagnosticWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
+        ::drawWireSphere(camera, center, radius, color);
+    }
+
+    void drawDiagnosticLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {
+        ::drawLine(camera, a, b, color);
+    }
+
+    void drawDiagnosticWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color) {
+        ::drawWorldLabel(worldPos, text, color);
+    }
+
     void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
         if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
         ::drawWireSphere(camera, center, radius, color);

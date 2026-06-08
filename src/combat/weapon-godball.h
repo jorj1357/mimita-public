@@ -25,9 +25,16 @@ struct GodballPhysics {
     float ropeDamping = 2.0f;
     float linearDamping = 0.005f;
 
+    // Hand tracking for energy transfer
+    glm::vec3 prevHandPos{0.0f};
+    bool hasPrevHandPos = false;
+
     // Debug info
     float ropeTension = 0.0f;
     float constraintDist = 0.0f;
+    float handedEnergy = 0.0f;
+    float radialVel = 0.0f;
+    float tangentialSpeed = 0.0f;
 };
 
 namespace WeaponGodball {
