@@ -158,15 +158,21 @@ def import_glb_source(path):
 def duplicate_glb(path, name, collection):
     source = import_glb_source(path)
     if source is None:
-        return None, []
+        return None, None, []
 
-    instance_root = create_empty(name, collection)
-    # fix rotationsnsnsnssnn 6 7 2026 
-    instance_root.rotation_euler = (
+    correction_root = create_empty(f"{name}_correction", collection)
+    correction_root.rotation_euler = (
         math.radians(-90.0),
         0.0,
         0.0
     )
+
+    actor_root = create_empty(name, collection)
+    actor_root.parent = correction_root
+    actor_root.location = (0.0, 0.0, 0.0)
+    actor_root.rotation_euler = (0.0, 0.0, 0.0)
+    actor_root.scale = (1.0, 1.0, 1.0)
+
     source_objects = source["objects"]
     source_set = set(source_objects)
     duplicates = {}
@@ -182,15 +188,10 @@ def duplicate_glb(path, name, collection):
         if original.parent in source_set:
             duplicate.parent = duplicates[original.parent]
         else:
-            duplicate.parent = instance_root
+            duplicate.parent = actor_root
         duplicate.matrix_local = original.matrix_local.copy()
 
-        # duplicate.rotation_euler.rotate_axis(
-        #     "X",
-        #     math.radians(90.0)
-        # )
-
-    return instance_root, list(duplicates.values())
+    return correction_root, actor_root, list(duplicates.values())
 
 
 def create_placeholder(name, collection):
@@ -223,13 +224,6 @@ def set_transform(obj, state):
         math.radians(rotation[2]),
     )
 
-    # player model correction
-    # mimita player GLB is sideways in Blender
-    obj.rotation_euler.rotate_axis(
-        "X",
-        math.radians(-90.0)
-    )
-
     obj.scale = Vector(
         state.get(
             "scale",
@@ -239,14 +233,10 @@ def set_transform(obj, state):
 
 
 def set_local_transform(obj, state):
-    pos = Vector(state.get("position", (0.0, 0.0, 0.0)))
-    # Undo parent's R_x(-90°): R_x(90°) maps (x,y,z) -> (x, -z, y)
-    obj.location = Vector((pos.x, -pos.z, pos.y))
+    obj.location = Vector(state.get("position", (0.0, 0.0, 0.0)))
     rotation = state.get("rotation", (0.0, 0.0, 0.0))
     obj.rotation_mode = "XYZ"
     obj.rotation_euler = (math.radians(rotation[0]), math.radians(rotation[1]), math.radians(rotation[2]))
-    # Undo parent's R_x(-90°) on rotation: R_x(90°) cancels the parent's R_x(-90°)
-    obj.rotation_euler.rotate_axis("X", math.radians(90.0))
     obj.scale = Vector(state.get("scale", (1.0, 1.0, 1.0)))
 
 
@@ -376,14 +366,15 @@ def ensure_actor(actor_state, outfit_path):
         return ACTORS[actor_id]
 
     model_path = resolve_path(actor_state.get("modelPath", ""))
+    correction_root = None
     if model_path:
-        root, parts = duplicate_glb(
+        correction_root, root, parts = duplicate_glb(
             model_path, actor_id, bpy.data.collections["Mimita_Actors"]
         )
     else:
-        root, parts = (None, [])
+        correction_root, root, parts = None, None, []
     if root is None:
-        root, parts = create_placeholder(
+        correction_root, root, parts = None, *create_placeholder(
             actor_id, bpy.data.collections["Mimita_Actors"]
         )
 
@@ -404,6 +395,7 @@ def ensure_actor(actor_state, outfit_path):
             materials.append(material)
 
     record = {
+        "correction_root": correction_root,
         "root": root,
         "parts": parts,
         "part_lookup": {},
@@ -419,24 +411,24 @@ def ensure_weapon(actor_id, actor_record, weapon_path):
     if actor_id in WEAPONS:
         return WEAPONS[actor_id]
     if weapon_path:
-        root, parts = duplicate_glb(
+        weapon_correction, weapon_root, parts = duplicate_glb(
             weapon_path,
             f"{actor_id}_revolver",
             bpy.data.collections["Mimita_Weapons"],
         )
     else:
-        root, parts = (None, [])
-    if root is None:
-        root, parts = create_placeholder(
+        weapon_correction, weapon_root, parts = None, None, []
+    if weapon_root is None:
+        weapon_correction, weapon_root, parts = None, *create_placeholder(
             f"{actor_id}_revolver", bpy.data.collections["Mimita_Weapons"]
         )
 
     right_hand = find_right_hand(actor_record["parts"])
-    root.parent = right_hand or actor_record["root"]
-    root.location = (0.0, 0.0, 0.0) if right_hand else (0.35, 0.0, 0.9)
-    root.rotation_euler = (0.0, 0.0, 0.0)
-    root.scale = (1.0, 1.0, 1.0)
-    WEAPONS[actor_id] = {"root": root, "parts": parts}
+    weapon_correction.parent = right_hand or actor_record["root"]
+    weapon_correction.location = (0.0, 0.0, 0.0) if right_hand else (0.35, 0.0, 0.9)
+    weapon_correction.rotation_euler = (0.0, 0.0, 0.0)
+    weapon_correction.scale = (1.0, 1.0, 1.0)
+    WEAPONS[actor_id] = {"root": weapon_correction, "parts": parts}
     log(
         f"Attached revolver for {actor_id} to "
         f"{right_hand.name if right_hand else 'actor root fallback'}"
@@ -783,7 +775,7 @@ def main():
             or asset.get("id") == "map:mimita"
         )
     if map_path:
-        map_root, map_parts = duplicate_glb(
+        map_correction, map_root, map_parts = duplicate_glb(
             map_path, "Mimita_Map_Root", bpy.data.collections["Mimita_Map"]
         )
         if map_root:

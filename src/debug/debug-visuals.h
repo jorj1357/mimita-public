@@ -104,6 +104,9 @@ namespace DebugVis {
     void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
     void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color);
     void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
+    void drawDiagnosticWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
+    void drawDiagnosticLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color);
+    void drawDiagnosticWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
     void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color);
     void drawWireBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color);
 
