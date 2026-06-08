@@ -56,6 +56,9 @@ struct ServerPlayer
     int health = 100;
     bool onGround = false;
     bool dashAvailable = true;
+    bool attackWasPressed = false;
+    bool dead = false;
+    float respawnSeconds = 0.0f;
     uint64_t lastHeardMs = 0;
     ServerInput input;
 };
@@ -347,6 +350,8 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
         ++b;
         for (; b != players.end(); ++b)
         {
+            if (a->second.dead || b->second.dead)
+                continue;
             glm::vec2 delta = glm::vec2(a->second.pos - b->second.pos);
             float dist = glm::length(delta);
             float minDist = PLAYER_RADIUS * 2.0f;
@@ -362,6 +367,21 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
+    if (p.dead)
+    {
+        p.vel = glm::vec3(0.0f);
+        p.respawnSeconds -= SERVER_DT;
+        if (p.respawnSeconds <= 0.0f)
+        {
+            p.dead = false;
+            p.health = 100;
+            p.pos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
+            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f)\n",
+                   serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z);
+        }
+        return;
+    }
+
     glm::vec2 wish = p.input.wish;
     float wishLen = glm::length(wish);
     if (wishLen > 1.0f)
@@ -401,6 +421,71 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     resolveWorldCollision(p, world);
     if (p.onGround)
         p.dashAvailable = true;
+}
+
+void simulateCombat(std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    constexpr float MAX_RANGE = 60.0f;
+    constexpr float HIT_RADIUS = 0.85f;
+    constexpr int DAMAGE = 25;
+
+    for (auto& shooterEntry : players)
+    {
+        ServerPlayer& shooter = shooterEntry.second;
+        const bool attackStarted =
+            shooter.input.attackPressed && !shooter.attackWasPressed;
+        shooter.attackWasPressed = shooter.input.attackPressed;
+        if (!attackStarted || shooter.dead)
+            continue;
+
+        glm::vec3 direction = shooter.input.camForward;
+        const float directionLength = glm::length(direction);
+        if (directionLength < 0.001f)
+            continue;
+        direction /= directionLength;
+
+        ServerPlayer* closest = nullptr;
+        float closestDistance = MAX_RANGE;
+        const glm::vec3 origin = shooter.pos + glm::vec3(0.0f, 0.0f, 1.2f);
+        for (auto& targetEntry : players)
+        {
+            ServerPlayer& target = targetEntry.second;
+            if (target.id == shooter.id || target.dead)
+                continue;
+
+            const glm::vec3 toTarget =
+                target.pos + glm::vec3(0.0f, 0.0f, 1.2f) - origin;
+            const float alongRay = glm::dot(toTarget, direction);
+            if (alongRay <= 0.0f || alongRay >= closestDistance)
+                continue;
+            const float distanceFromRay =
+                glm::length(toTarget - direction * alongRay);
+            if (distanceFromRay <= HIT_RADIUS)
+            {
+                closest = &target;
+                closestDistance = alongRay;
+            }
+        }
+
+        if (!closest)
+        {
+            printf("%s [SERVER COMBAT] shooter=%u miss\n",
+                   serverTimestamp(), shooter.id);
+            continue;
+        }
+
+        closest->health = std::max(0, closest->health - DAMAGE);
+        printf("%s [SERVER COMBAT] shooter=%u target=%u damage=%d health=%d\n",
+               serverTimestamp(), shooter.id, closest->id, DAMAGE, closest->health);
+        if (closest->health == 0)
+        {
+            closest->dead = true;
+            closest->respawnSeconds = 2.0f;
+            closest->vel = glm::vec3(0.0f);
+            printf("%s [SERVER DEATH] playerId=%u respawn=2.0s\n",
+                   serverTimestamp(), closest->id);
+        }
+    }
 }
 
 void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
@@ -643,6 +728,11 @@ int runServer(const LaunchOptions& options)
                     continue;
                 ServerPlayer& p = it->second;
                 p.lastHeardMs = nowMs();
+                if (p.dead)
+                {
+                    p.input.attackPressed = false;
+                    continue;
+                }
                 p.input.wish = {in->wishX, in->wishY};
                 p.input.camForward = {in->camForwardX, in->camForwardY, in->camForwardZ};
                 p.input.yaw = in->yaw;
@@ -707,6 +797,7 @@ int runServer(const LaunchOptions& options)
         for (auto& kv : players)
             simulatePlayer(kv.second, world);
         resolvePlayerCollision(players);
+        simulateCombat(players);
         for (auto& kv : npcs)
             simulateNpc(kv.second, players);
 

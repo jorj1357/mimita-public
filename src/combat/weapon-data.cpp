@@ -84,10 +84,10 @@ WeaponDefinition createGodballDefinition() {
 
     def.customParams["ballRadius"] = 0.5f;
     def.customParams["ballMass"] = 0.1f;
-    def.customParams["ropeLength"] = 2.0f;
+    def.customParams["ropeLength"] = 2.5f;
     def.customParams["ropeStiffness"] = 50.0f;
     def.customParams["ropeDamping"] = 2.0f;
-    def.customParams["linearDamping"] = 0.005f;
+    def.customParams["linearDamping"] = 0.003f;
     def.customParams["baseDamagePerTick"] = 10.0f;
     def.customParams["damageTickInterval"] = 0.15f;
     def.customParams["speedDamageFactor"] = 3.0f;
