@@ -24,7 +24,7 @@ void renderPlayer(const Player& player, const Camera& cam)
         return;
     }
 
-    printf("[RENDER] shaderProgram=%u\n", gRenderer->shaderProgram);
+    // printf("[RENDER] shaderProgram=%u\n", gRenderer->shaderProgram);
 
     glm::mat4 view = cam.getView();
     glm::mat4 proj = cam.getProj((float)gRenderer->width, (float)gRenderer->height);

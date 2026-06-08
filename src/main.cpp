@@ -70,6 +70,7 @@
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
 #include "render/lighting-config.h"
+#include "hot-reload/hot-reload-system.h"
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -184,6 +185,7 @@ int main(int argc, char** argv)
     
     // Effect part system init
     EffectPartSystem::instance().init();
+    HotReloadSystem::instance().loadGameDLL();
     printf("[MAIN] dev tools initialized\n");
 
     glEnable(GL_BLEND);
@@ -748,8 +750,9 @@ int main(int argc, char** argv)
     constexpr double SIM_DT = 1.0 / 60.0;
     double simAccumulator = 0.0;
 
-        while (engine.running())
+    while (engine.running())
     {
+        HotReloadSystem::instance().reloadGameDLLIfChanged();
         float dt = engine.beginFrame();
         bool worldPassRan = false;
 
@@ -1198,6 +1201,7 @@ int main(int argc, char** argv)
     }
 
     printf("[MAIN] loop ended\n");
+    HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
     
     return 0;

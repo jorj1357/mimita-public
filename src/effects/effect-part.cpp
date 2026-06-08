@@ -1,3 +1,71 @@
+#if defined(MIMITA_GAME_DLL)
+
+#include "hot-reload/game-api.h"
+
+#include <algorithm>
+
+namespace {
+
+bool MIMITA_GAME_CALL gameOnReload(GameMemory* memory)
+{
+    return memory && memory->apiVersion == MIMITA_GAME_API_VERSION;
+}
+
+void MIMITA_GAME_CALL gameBeforeUnload(GameMemory*)
+{
+}
+
+void MIMITA_GAME_CALL gameUpdateEffects(
+    GameMemory*,
+    GameEffectPartState* effects,
+    std::uint32_t effectCount,
+    float dt)
+{
+    if (!effects || dt <= 0.0f)
+        return;
+
+    dt = (std::min)(dt, 0.1f);
+    for (std::uint32_t i = 0; i < effectCount; ++i) {
+        GameEffectPartState& effect = effects[i];
+        if (!effect.alive)
+            continue;
+
+        effect.lifetime += dt;
+        if (effect.lifetime < 0.0f)
+            continue;
+
+        if (!effect.sticky) {
+            effect.position[0] += effect.velocity[0] * dt;
+            effect.position[1] += effect.velocity[1] * dt;
+            effect.position[2] += effect.velocity[2] * dt;
+        }
+        if (effect.affectedByGravity)
+            effect.velocity[2] -= (effect.gravity > 0.0f ? effect.gravity : 9.81f) * dt;
+        if (effect.lifetime >= effect.maxLifetime)
+            effect.alive = 0;
+    }
+}
+
+}
+
+MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
+    std::uint32_t requestedVersion,
+    GameAPI* outAPI)
+{
+    if (!outAPI || requestedVersion != MIMITA_GAME_API_VERSION)
+        return false;
+
+    *outAPI = {};
+    outAPI->version = MIMITA_GAME_API_VERSION;
+    outAPI->structSize = sizeof(GameAPI);
+    outAPI->onReload = gameOnReload;
+    outAPI->beforeUnload = gameBeforeUnload;
+    outAPI->updateEffects = gameUpdateEffects;
+    return true;
+}
+
+#else
+
 #include "effect-part.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
@@ -10,6 +78,7 @@
 #include "audio/audio.h"
 #include "config.h"
 #include "replay/replay.h"
+#include "hot-reload/hot-reload-system.h"
 
 namespace {
 
@@ -204,6 +273,46 @@ void EffectPartSystem::init() {
 }
 
 void EffectPartSystem::update(float dt) {
+    const GameAPI* gameAPI = HotReloadSystem::instance().gameAPI();
+    if (gameAPI && gameAPI->updateEffects) {
+        std::array<GameEffectPartState, POOL_SIZE> states{};
+        for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+            const EffectPart& effect = mPool[i];
+            GameEffectPartState& state = states[i];
+            state.position[0] = effect.position.x;
+            state.position[1] = effect.position.y;
+            state.position[2] = effect.position.z;
+            state.velocity[0] = effect.velocity.x;
+            state.velocity[1] = effect.velocity.y;
+            state.velocity[2] = effect.velocity.z;
+            state.lifetime = effect.lifetime;
+            state.maxLifetime = effect.maxLifetime;
+            state.gravity = effect.gravity;
+            state.alive = effect.alive;
+            state.sticky = effect.sticky;
+            state.affectedByGravity = effect.affectedByGravity;
+        }
+
+        gameAPI->updateEffects(
+            &HotReloadSystem::instance().gameMemory(), states.data(), POOL_SIZE, dt);
+
+        for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+            EffectPart& effect = mPool[i];
+            const GameEffectPartState& state = states[i];
+            if (!effect.alive)
+                continue;
+            effect.position = {state.position[0], state.position[1], state.position[2]};
+            effect.velocity = {state.velocity[0], state.velocity[1], state.velocity[2]};
+            effect.lifetime = state.lifetime;
+            if (!state.alive) {
+                effect.alive = false;
+                effect.resetStrings();
+                --mActiveCount;
+            }
+        }
+        return;
+    }
+
     for (auto& fx : mPool) {
         if (!fx.alive) continue;
         fx.lifetime += dt;
@@ -562,6 +671,7 @@ void EffectPartSystem::spawnBloodSphereBurst(
                 (rand() % 4001) / 1000.0f
             );
         p.color = {0.35f, 0.01f, 0.02f};
+        // p.color = {0.95f, 0.01f, 0.02f};
         p.maxLifetime = 0.6f + (rand() % 401) / 1000.0f;
         p.lifetime = 0.0f;
         p.scale = 0.04f + force * 0.06f + (rand() % 51) / 1000.0f;
@@ -936,3 +1046,5 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
     }
 }
+
+#endif
