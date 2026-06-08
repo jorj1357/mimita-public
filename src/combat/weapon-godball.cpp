@@ -342,30 +342,36 @@ void renderDebug(const Camera& camera, const GodballPhysics& phys,
                   const WeaponRuntime& runtime, const glm::vec3& handPos) {
     if (!phys.active) return;
 
-    // Velocity vector
     float speed = glm::length(phys.velocity);
+
+    // Rope line (yellow, visible even without debug mode)
+    DebugVis::drawLine(camera, handPos, phys.position, {1.0f, 1.0f, 0.0f, 0.8f});
+
+    // Tether anchor at hand
+    DebugVis::drawWireSphere(camera, handPos, 0.1f, {1.0f, 1.0f, 0.0f, 1.0f});
+
+    // Velocity vector (magenta)
     if (speed > 0.1f) {
         glm::vec3 velEnd = phys.position + glm::normalize(phys.velocity) * std::min(speed * 0.3f, 5.0f);
         DebugVis::drawLine(camera, phys.position, velEnd, {1.0f, 0.0f, 1.0f, 1.0f});
     }
 
-    // Overlap sphere
-    DebugVis::drawWireSphere(camera, phys.position, phys.radius + 0.4f, {0.0f, 1.0f, 1.0f, 0.5f});
+    // Overlap sphere (cyan, translucent)
+    DebugVis::drawWireSphere(camera, phys.position, phys.radius + 0.5f, {0.0f, 1.0f, 1.0f, 0.4f});
 
-    // Rope line
-    DebugVis::drawLine(camera, handPos, phys.position, {1.0f, 1.0f, 0.0f, 0.8f});
+    // Labels
+    char label[128];
+    snprintf(label, sizeof(label), "GODBALL %.1f m/s  T=%.1f  D=%.2f/%.1f",
+             speed, phys.ropeTension, phys.constraintDist, phys.ropeLength);
+    DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 0.5f),
+                              label, {1.0f, 1.0f, 1.0f, 1.0f});
 
-    // Label
-    char label[64];
-    snprintf(label, sizeof(label), "GODBALL %.1f m/s", speed);
-    DebugVis::drawWorldLabel(phys.position, label, {1.0f, 1.0f, 1.0f, 1.0f});
-
-    // Overlap target labels
+    // Overlap target cooldown labels
     for (const auto& pair : runtime.godball.targetCooldowns) {
         if (pair.second > 0.0f) {
             char cdLabel[32];
             snprintf(cdLabel, sizeof(cdLabel), "CD:%.2f", pair.second);
-            DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 0.5f),
+            DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 1.0f),
                                       cdLabel, {0.0f, 1.0f, 0.0f, 1.0f});
         }
     }
