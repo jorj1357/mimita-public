@@ -252,9 +252,15 @@ void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float
 
 void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId) {
     force = std::clamp(force, 0.35f, 1.5f);
-    bool highForce = force >= 0.7f;
-    const int bigCount = 1;
-    const int smallCount = highForce ? 10 : 7;
+    // bool highForce = force >= 0.7f;
+    // const int bigCount = 1;
+    // const int smallCount = highForce ? 10 : 7;
+
+    const int bigCount =
+        1 + (int)(force * 3.0f);
+
+    const int smallCount =
+        4 + (int)(force * 18.0f);
 
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
     constexpr float MERGE_RADIUS = 0.3f;
@@ -293,10 +299,19 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         float randomAngle =
             ((float)(rand() % 6283) / 1000.0f);
 
+        // float radius =
+        //     big
+        //         ? ((rand() % 1001) / 1000.0f) * 0.08f
+        //         : ((rand() % 1001) / 1000.0f) * 0.45f;
+    
+        // better for higher force = more bloods 
+        float spread =
+            0.08f + force * 0.85f;
+
         float radius =
             big
-                ? ((rand() % 1001) / 1000.0f) * 0.08f
-                : ((rand() % 1001) / 1000.0f) * 0.45f;
+                ? ((rand() % 1001) / 1000.0f) * spread * 0.2f
+                : ((rand() % 1001) / 1000.0f) * spread;
 
         glm::vec3 offset =
             tangent * std::cos(randomAngle) * radius +
@@ -390,8 +405,22 @@ void EffectPartSystem::spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 dire
     constexpr float STEP_DT = 1.0f / 30.0f;
     constexpr float BLOOD_GRAVITY = 24.0f;
     const int trajectoryCount = force >= 0.7f ? 5 : 3;
-    const float launchSpeed = 7.0f + force * 18.0f;
-    const float coneSpread = 0.08f + force * 0.24f;
+    // const float launchSpeed = 7.0f + force * 18.0f;
+
+    // 6 7 2026 istol /
+    /**
+     * ow:
+
+        pistol weak shot → nearby floor
+        shotgun close range → entire wall painted
+     */
+    const float launchSpeed =
+        4.0f + force * 42.0f;
+    // const float coneSpread = 0.08f + force * 0.24f;
+
+    // 6 7 2026 
+    const float coneSpread =
+        0.04f + force * 0.65f;
 
     mBloodDebugSegmentCount = 0;
     if (DebugConfig::DEBUG_BLOOD_FORCE) {
@@ -490,7 +519,12 @@ void EffectPartSystem::spawnBloodSphereBurst(
     else if (force < 0.7f)
         count = 8 + rand() % 7;
     else
-        count = 18 + rand() % 11;
+        // count = 18 + rand() % 11;
+        // 6 7 2026 
+        count =
+            12 +
+            (int)(force * 60.0f) +
+            rand() % 20;
 
     glm::vec3 dir = glm::length(shotDirection) > 0.001f
         ? glm::normalize(shotDirection)
@@ -514,14 +548,29 @@ void EffectPartSystem::spawnBloodSphereBurst(
         EffectPart p;
         p.position = hitPoint + velDir * (0.03f + (rand() % 31) / 1000.0f);
         p.replayType = "blood_sphere_particle";
-        p.velocity = velDir * (14.0f + force * 10.0f + (rand() % 4001) / 1000.0f);
+        // p.velocity = velDir * (14.0f + force * 10.0f + (rand() % 4001) / 1000.0f);
+
+        // 6 7 2026 
+        // aww its like 
+        // p.anchored = true
+        // p.color = color3.new(0,1,1)
+        p.velocity =
+            velDir *
+            (
+                6.0f +
+                force * 35.0f +
+                (rand() % 4001) / 1000.0f
+            );
         p.color = {0.35f, 0.01f, 0.02f};
         p.maxLifetime = 0.6f + (rand() % 401) / 1000.0f;
         p.lifetime = 0.0f;
         p.scale = 0.04f + force * 0.06f + (rand() % 51) / 1000.0f;
         p.endScale = p.scale * 0.5f;
         p.alpha = 1.0f;
-        p.gravity = 25.0f;
+        // p.gravity = 25.0f;
+        // 6 7 2026 
+        p.gravity =
+            40.0f - force * 18.0f;
         p.affectedByGravity = true;
         p.billboardText = false;
         p.sourceActorId = sourceActorId;
