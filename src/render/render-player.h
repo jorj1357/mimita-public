@@ -11,7 +11,14 @@
 
 #pragma once
 
+#include <cstdint>
+
 struct Player;
 class Camera;
 
 void renderPlayer(const Player& player, const Camera& cam);
+void renderNetworkPlayer(
+    const Player& player,
+    const Camera& cam,
+    uint32_t networkEntityId,
+    bool isLocal);

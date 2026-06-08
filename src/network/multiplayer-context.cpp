@@ -132,6 +132,10 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.playerRegistry.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
+    ctx.localPlayerReconciled = false;
+    ctx.localServerVelocity = glm::vec3(0.0f);
+    ctx.localServerYaw = 0.0f;
+    ctx.localServerOnGround = false;
     ctx.localServerHealth = 100;
     ctx.connected = false;
     ctx.connectFailed = false;
@@ -166,6 +170,8 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
     ctx.playerRegistry.clear();
+    ctx.hasLocalServerPosition = false;
+    ctx.localPlayerReconciled = false;
     ctx.connected = false;
     ctx.connectFailed = false;
     ctx.connectionStatus.clear();
@@ -275,6 +281,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 if (isLocal)
                 {
                     ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+                    ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
+                    ctx.localServerYaw = entity.yaw;
+                    ctx.localServerOnGround = entity.onGround != 0;
                     ctx.hasLocalServerPosition = true;
                     ctx.localServerHealth = entity.health;
                     ctx.playerRegistry[entity.networkEntityId] = {
@@ -328,6 +337,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 {
                     OutfitAtlas::instance().apply(p, GetPlayerSettings().outfitPath);
                     interpolation.renderRegistered = true;
+                    printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
+                           "mesh=%s position=(%.2f,%.2f,%.2f)\n",
+                           entity.networkEntityId, typeName, entity.ownerClientId,
+                           p.modelLoaded ? "player-glb" : "fallback-capsule",
+                           entity.px, entity.py, entity.pz);
                 }
 
                 pushInterpolationTarget(interpolation, entity, snapshot->header.tick);
@@ -336,11 +350,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 (*seen)[entity.networkEntityId] = true;
 
                 if (isNew || logSnapshot)
+                {
                     printf("[CLIENT ENTITY] entityId=%u type=%s ownerId=%u isLocal=0 existsBefore=%d "
                            "createdReplica=%d renderRegistered=%d position=(%.2f,%.2f,%.2f) rotation=%.2f\n",
                            entity.networkEntityId, typeName, entity.ownerClientId,
                            (int)existsBefore, (int)isNew, (int)interpolation.renderRegistered,
                            entity.px, entity.py, entity.pz, entity.yaw);
+                    printf("[INTERPOLATION] entityId=%u snapshotCount=%d renderPos=(%.2f,%.2f,%.2f) "
+                           "targetPos=(%.2f,%.2f,%.2f)\n",
+                           entity.networkEntityId,
+                           interpolation.hasPrevious && interpolation.hasTarget ? 2 : 1,
+                           p.pos.x, p.pos.y, p.pos.z,
+                           interpolation.target.position.x,
+                           interpolation.target.position.y,
+                           interpolation.target.position.z);
+                }
             }
 
             for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
@@ -348,10 +372,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 if (!seenPlayers[it->first])
                 {
                     const uint32_t entityId = it->first;
-                    printf("[NET DESPAWN] remote player id=%u name=\"%s\" removed\n",
+                    printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=Player name=\"%s\"\n",
                            it->first, ctx.playerRegistry[it->first].name.c_str());
                     it = ctx.remotePlayers.erase(it);
                     ctx.remotePlayerInterpolation.erase(entityId);
+                    ctx.playerRegistry.erase(entityId);
                 }
                 else
                     ++it;
@@ -361,7 +386,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 if (!seenNpcs[it->first])
                 {
                     const uint32_t entityId = it->first;
-                    printf("[NET DESPAWN] NPC entityId=%u name=\"%s\" removed\n",
+                    printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=NPC name=\"%s\"\n",
                            it->first, it->second.username.c_str());
                     it = ctx.remoteNpcs.erase(it);
                     ctx.remoteNpcInterpolation.erase(entityId);
@@ -386,6 +411,96 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
     }
 
     ++ctx.tick;
+}
+
+void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
+{
+    if (!ctx.connected || !ctx.hasLocalServerPosition)
+        return;
+
+    const glm::vec3 correction = ctx.localServerPosition - player.pos;
+    const float error = glm::length(correction);
+    const bool logCorrection = !ctx.localPlayerReconciled || error > 1.0f;
+    const bool hardCorrection =
+        !ctx.localPlayerReconciled || error > 1.0f || ctx.localServerHealth <= 0;
+
+    if (hardCorrection)
+        player.pos = ctx.localServerPosition;
+    else
+        player.pos += correction * std::min(1.0f, std::max(0.0f, dt) * 12.0f);
+
+    player.vel = ctx.localServerVelocity;
+    player.yaw = ctx.localServerYaw;
+    player.onGround = ctx.localServerOnGround;
+    player.currentHp = ctx.localServerHealth;
+    player.dead = ctx.localServerHealth <= 0;
+    if (player.dead)
+        player.vel = glm::vec3(0.0f);
+
+    if (!player.dead)
+    {
+        const Capsule localCapsule = player.getCapsule();
+        for (const auto& entry : ctx.remotePlayers)
+        {
+            const Player& remote = entry.second;
+            if (remote.dead)
+                continue;
+
+            const Capsule remoteCapsule = remote.getCapsule();
+            const float localBottom = localCapsule.a.z - localCapsule.r;
+            const float localTop = localCapsule.b.z + localCapsule.r;
+            const float remoteBottom = remoteCapsule.a.z - remoteCapsule.r;
+            const float remoteTop = remoteCapsule.b.z + remoteCapsule.r;
+            if (localTop <= remoteBottom || remoteTop <= localBottom)
+                continue;
+
+            glm::vec2 delta(player.pos.x - remote.pos.x, player.pos.y - remote.pos.y);
+            float distance = glm::length(delta);
+            const float minimumDistance = localCapsule.r + remoteCapsule.r;
+            if (distance >= minimumDistance)
+                continue;
+
+            glm::vec2 normal(1.0f, 0.0f);
+            if (distance > 0.0001f)
+                normal = delta / distance;
+            const float penetration = minimumDistance - distance;
+            player.pos += glm::vec3(normal * penetration, 0.0f);
+
+            glm::vec2 planarVelocity(player.vel.x, player.vel.y);
+            const float intoRemote = glm::dot(planarVelocity, normal);
+            if (intoRemote < 0.0f)
+            {
+                planarVelocity -= normal * intoRemote;
+                player.vel.x = planarVelocity.x;
+                player.vel.y = planarVelocity.y;
+            }
+
+            static uint64_t lastCollisionLogMs = 0;
+            const uint64_t collisionNowMs = nowMs();
+            if (collisionNowMs - lastCollisionLogMs >= 250)
+            {
+                printf("[CLIENT PLAYER COLLISION] localId=%u remoteId=%u penetration=%.3f "
+                       "localPos=(%.2f,%.2f,%.2f) remotePos=(%.2f,%.2f,%.2f)\n",
+                       ctx.localPlayerId, entry.first, penetration,
+                       player.pos.x, player.pos.y, player.pos.z,
+                       remote.pos.x, remote.pos.y, remote.pos.z);
+                lastCollisionLogMs = collisionNowMs;
+            }
+        }
+    }
+
+    if (logCorrection)
+    {
+        printf("[CLIENT LOCAL RECONCILE] entityId=%u mode=%s error=%.2f "
+               "serverPos=(%.2f,%.2f,%.2f)\n",
+               ctx.localPlayerId,
+               ctx.localPlayerReconciled ? "hard-snap" : "initial-spawn",
+               error,
+               ctx.localServerPosition.x,
+               ctx.localServerPosition.y,
+               ctx.localServerPosition.z);
+    }
+    ctx.localPlayerReconciled = true;
 }
 
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position)

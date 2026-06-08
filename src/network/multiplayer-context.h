@@ -59,7 +59,11 @@ struct MultiplayerContext
     std::unordered_map<uint32_t, EntityInterpolationState> remoteNpcInterpolation;
     std::unordered_map<uint32_t, PlayerInfo> playerRegistry;
     glm::vec3 localServerPosition{0.0f};
+    glm::vec3 localServerVelocity{0.0f};
+    float localServerYaw = 0.0f;
+    bool localServerOnGround = false;
     bool hasLocalServerPosition = false;
+    bool localPlayerReconciled = false;
     int localServerHealth = 100;
     std::string approvedLocalName;
     std::string serverAddress = "127.0.0.1:1357";
@@ -73,6 +77,7 @@ struct MultiplayerContext
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt);
+void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position);
 
 } // namespace MimitaNet

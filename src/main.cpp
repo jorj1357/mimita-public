@@ -990,13 +990,7 @@ int main(int argc, char** argv)
                 MimitaNet::mpTick(mpContext, player.username, dt);
                 if (!mpContext.approvedLocalName.empty())
                     player.username = mpContext.approvedLocalName;
-                if (mpContext.connected)
-                {
-                    player.currentHp = mpContext.localServerHealth;
-                    player.dead = mpContext.localServerHealth <= 0;
-                    if (player.dead)
-                        player.vel = glm::vec3(0.0f);
-                }
+                MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
 
                 // Send input to server if we have an assigned ID
                 if (mpContext.localPlayerId != 0) {
@@ -1081,7 +1075,7 @@ int main(int argc, char** argv)
                     Terminal::instance().addLog(selectedEditorObject >= 0
                         ? "[EDITOR] selected triangle id " + std::to_string(selectedEditorObject)
                         : "[EDITOR] no object selected");
-                } else {
+                } else if (!mpContext.active) {
                     Terminal::instance().execute("shoot");
                 }
             }
@@ -1100,14 +1094,35 @@ int main(int argc, char** argv)
             // Render remote players from server snapshots
             if (mpContext.active) {
                 for (auto& kv : mpContext.remotePlayers) {
-                    renderPlayer(kv.second, camera);
+                    renderNetworkPlayer(kv.second, camera, kv.first, false);
                 }
             }
             if (mpContext.active) {
                 for (auto& kv : mpContext.remoteNpcs)
-                    renderPlayer(kv.second, camera);
+                    renderNetworkPlayer(kv.second, camera, kv.first, false);
             } else {
                 npcSystem.render(camera);
+            }
+            if (mpContext.active)
+            {
+                static uint64_t lastReplicaRenderLogMs = 0;
+                const uint64_t renderLogNow = MimitaNet::nowMs();
+                if (renderLogNow - lastReplicaRenderLogMs >= 1000)
+                {
+                    for (const auto& kv : mpContext.remotePlayers)
+                        printf("[CLIENT RENDER ENTITY] entityId=%u type=Player visible=%d mesh=%s "
+                               "position=(%.2f,%.2f,%.2f)\n",
+                               kv.first, (int)!kv.second.dead,
+                               kv.second.modelLoaded ? "player-glb" : "fallback-capsule",
+                               kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+                    for (const auto& kv : mpContext.remoteNpcs)
+                        printf("[CLIENT RENDER ENTITY] entityId=%u type=NPC visible=%d mesh=%s "
+                               "position=(%.2f,%.2f,%.2f)\n",
+                               kv.first, (int)!kv.second.dead,
+                               kv.second.modelLoaded ? "player-glb" : "fallback-capsule",
+                               kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+                    lastReplicaRenderLogMs = renderLogNow;
+                }
             }
             DeathSystem::instance().render(camera);
             weapons.render(camera, player);
@@ -1126,6 +1141,18 @@ int main(int argc, char** argv)
                 const glm::vec4 serverColor{1.0f, 0.15f, 0.1f, 1.0f};
                 const glm::vec4 remoteColor{0.15f, 0.55f, 1.0f, 1.0f};
                 const glm::vec4 npcColor{0.1f, 1.0f, 0.9f, 1.0f};
+                const auto drawReplicaCapsule =
+                    [&camera](const Player& replica, const glm::vec4& color)
+                    {
+                        const Capsule capsule = replica.getCapsule();
+                        const float giantRadius = capsule.r * 1.8f;
+                        DebugVis::drawDiagnosticWireSphere(
+                            camera, capsule.a, giantRadius, color);
+                        DebugVis::drawDiagnosticWireSphere(
+                            camera, capsule.b, giantRadius, color);
+                        DebugVis::drawDiagnosticLine(
+                            camera, capsule.a, capsule.b, color);
+                    };
 
                 DebugVis::drawWireSphere(camera, player.pos, 0.72f, predictedColor);
                 DebugVis::drawWorldLabel(
@@ -1149,19 +1176,39 @@ int main(int argc, char** argv)
 
                 for (const auto& kv : mpContext.remotePlayers)
                 {
-                    DebugVis::drawWireSphere(camera, kv.second.pos, 0.76f, remoteColor);
+                    drawReplicaCapsule(kv.second, remoteColor);
+                    const auto interpolation = mpContext.remotePlayerInterpolation.find(kv.first);
+                    if (interpolation != mpContext.remotePlayerInterpolation.end() &&
+                        interpolation->second.hasTarget)
+                    {
+                        DebugVis::drawDiagnosticWireSphere(
+                            camera, interpolation->second.target.position, 0.36f, serverColor);
+                        DebugVis::drawDiagnosticLine(
+                            camera, kv.second.pos, interpolation->second.target.position, serverColor);
+                    }
                     char label[128];
-                    snprintf(label, sizeof(label), "REMOTE id=%u interp=100ms", kv.first);
-                    DebugVis::drawWorldLabel(
-                        kv.second.pos + glm::vec3(0.0f, 0.0f, 2.0f),
+                    snprintf(label, sizeof(label), "REMOTE PLAYER id=%u HP=%d interp=100ms",
+                             kv.first, kv.second.currentHp);
+                    DebugVis::drawDiagnosticWorldLabel(
+                        kv.second.pos + glm::vec3(0.0f, 0.0f, 3.2f),
                         label, remoteColor);
                 }
                 for (const auto& kv : mpContext.remoteNpcs)
                 {
-                    DebugVis::drawWireSphere(camera, kv.second.pos, 0.76f, npcColor);
+                    drawReplicaCapsule(kv.second, npcColor);
+                    const auto interpolation = mpContext.remoteNpcInterpolation.find(kv.first);
+                    if (interpolation != mpContext.remoteNpcInterpolation.end() &&
+                        interpolation->second.hasTarget)
+                    {
+                        DebugVis::drawDiagnosticWireSphere(
+                            camera, interpolation->second.target.position, 0.36f, serverColor);
+                        DebugVis::drawDiagnosticLine(
+                            camera, kv.second.pos, interpolation->second.target.position, serverColor);
+                    }
                     char label[128];
-                    snprintf(label, sizeof(label), "NPC id=%u interp=100ms", kv.first);
-                    DebugVis::drawWorldLabel(
+                    snprintf(label, sizeof(label), "NPC id=%u HP=%d interp=100ms",
+                             kv.first, kv.second.currentHp);
+                    DebugVis::drawDiagnosticWorldLabel(
                         kv.second.pos + glm::vec3(0.0f, 0.0f, 2.0f),
                         label, npcColor);
                 }

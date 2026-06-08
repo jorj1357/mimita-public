@@ -36,6 +36,13 @@ struct RagdollCorpse {
     float age = 0.0f;
     float blackness = 0.0f;
     float fade = 0.0f;
+    bool sleeping = false;
+    float sleepTimer = 0.0f;
+    bool groundResolved = false;
+
+    glm::vec3 spawnPosition{0.0f};
+    glm::vec3 transferredVelocity{0.0f};
+    glm::vec3 deathImpulse{0.0f};
 };
 
 class DeathSystem {
@@ -59,6 +66,11 @@ public:
 private:
     void respawn(Player& actor, const std::string& actorId, const World& world);
     void updateRagdollPhysics(RagdollPart& part, const World& world, float dt);
+    static void resolveSelfCollisions(RagdollCorpse& corpse);
+    static bool trySleepCorpse(RagdollCorpse& corpse, float dt);
+    static bool underworldCheck(RagdollCorpse& corpse, float worldFloor);
+    static void resolveGroundPenetration(RagdollCorpse& corpse, const World& world);
+    static void clampVelocities(RagdollPart& part);
 
     static glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c);
 
