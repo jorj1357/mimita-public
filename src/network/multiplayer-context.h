@@ -13,6 +13,7 @@ struct PlayerInfo
 {
     std::string name;
     uint32_t id = 0;
+    int pingMs = 0;
 };
 
 struct MultiplayerContext
@@ -27,7 +28,11 @@ struct MultiplayerContext
     uint64_t packetsSent = 0;
     uint64_t packetsReceived = 0;
     std::unordered_map<uint32_t, Player> remotePlayers;
+    std::unordered_map<uint32_t, Player> remoteNpcs;
     std::unordered_map<uint32_t, PlayerInfo> playerRegistry;
+    glm::vec3 localServerPosition{0.0f};
+    bool hasLocalServerPosition = false;
+    std::string approvedLocalName;
     std::string serverAddress = "127.0.0.1:1357";
     bool showPlayerList = false;
     bool showDebugOverlay = false;
@@ -36,5 +41,6 @@ struct MultiplayerContext
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt);
+void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position);
 
 } // namespace MimitaNet

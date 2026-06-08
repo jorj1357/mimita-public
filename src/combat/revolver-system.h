@@ -4,21 +4,13 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
+#include "combat/weapon-types.h"
 #include "map/map_common.h"
 
 class Camera;
 class Player;
 class NpcSystem;
 struct World;
-
-struct RevolverShotResult {
-    bool fired = false;
-    bool hitEntity = false;
-    glm::vec3 start{0.0f};
-    glm::vec3 end{0.0f};
-    std::string bodyPart;
-    float damage = 0.0f;
-};
 
 class RevolverSystem {
 public:

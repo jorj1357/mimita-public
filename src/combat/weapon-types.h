@@ -89,15 +89,7 @@ struct WeaponRuntime {
     void reset(const WeaponDefinition& def);
 };
 
-struct RevolverShotResult {
-    bool fired = false;
-    bool hitEntity = false;
-    glm::vec3 start{0.0f};
-    glm::vec3 end{0.0f};
-    std::string bodyPart;
-    float damage = 0.0f;
-    uint32_t targetId = 0;
-};
+
 
 struct DamageContext {
     float baseDamage;
@@ -118,4 +110,14 @@ enum class AudioEventType {
     Equip,
     HitWorld,
     HitEntity
+};
+
+struct RevolverShotResult {
+    bool fired = false;
+    bool hitEntity = false;
+    glm::vec3 start{0.0f};
+    glm::vec3 end{0.0f};
+    std::string bodyPart;
+    float damage = 0.0f;
+    uint32_t targetId = 0;
 };

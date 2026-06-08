@@ -4,6 +4,7 @@
 #include "../gui-label.h"
 #include "../ui-system.h"
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #ifdef _WIN32
@@ -40,8 +41,50 @@ static bool launchServerProcess()
 static bool launchServerProcess() { return false; }
 #endif
 
+namespace {
+
+bool addressInputActive = false;
+char* activeAddress = nullptr;
+
+}
+
+void serverInfoMenuSetActive(bool active)
+{
+    addressInputActive = active;
+    if (!active)
+        activeAddress = nullptr;
+}
+
+void serverInfoMenuHandleChar(unsigned int codepoint)
+{
+    if (!addressInputActive || !activeAddress)
+        return;
+    const bool allowed =
+        (codepoint >= '0' && codepoint <= '9') ||
+        codepoint == '.' || codepoint == ':';
+    const size_t length = std::strlen(activeAddress);
+    if (allowed && length < 63)
+    {
+        activeAddress[length] = (char)codepoint;
+        activeAddress[length + 1] = '\0';
+    }
+}
+
+void serverInfoMenuHandleKey(int key, int action)
+{
+    if (!addressInputActive || !activeAddress ||
+        (action != GLFW_PRESS && action != GLFW_REPEAT))
+        return;
+    if (key == GLFW_KEY_BACKSPACE)
+    {
+        const size_t length = std::strlen(activeAddress);
+        if (length)
+            activeAddress[length - 1] = '\0';
+    }
+}
+
 ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
-                                    const char* serverAddress,
+                                    char* serverAddress,
                                     bool serverRunning)
 {
     ServerInfoResult r{};
@@ -49,13 +92,16 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
     int w = 0, h = 0;
     glfwGetFramebufferSize(win, &w, &h);
     float cx = w * 0.5f;
+    activeAddress = serverAddress;
 
     uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "server-info-bg");
 
     guiLabel("Host Server", cx - 80.0f, 140.0f);
 
     uiDrawText("Address:", cx - 200.0f, 240.0f, 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
-    uiDrawText(serverAddress, cx - 100.0f, 240.0f, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
+    uiDrawRect({cx - 100.0f, 220.0f, 300.0f, 48.0f},
+               {0.12f,0.14f,0.18f,1.0f}, "server-address-input");
+    uiDrawText(serverAddress, cx - 88.0f, 240.0f, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
 
     uiDrawText("Port: 1357", cx - 200.0f, 280.0f, 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
 

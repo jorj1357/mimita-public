@@ -92,6 +92,8 @@ int runClient(const LaunchOptions& options)
     uint64_t packetsReceived = 0;
     uint32_t lastSnapshotTick = 0;
     std::unordered_map<uint32_t, Player> players;
+    std::unordered_map<uint32_t, Player> npcs;
+    std::string approvedName = options.name;
 
     while (engine.running())
     {
@@ -112,7 +114,7 @@ int runClient(const LaunchOptions& options)
             printf("[CLIENT] hello sent to %s\n", options.connect.c_str());
         }
 
-        char buffer[4096];
+        char buffer[16384];
         for (;;)
         {
             sockaddr_in from{};
@@ -130,6 +132,7 @@ int runClient(const LaunchOptions& options)
             {
                 WelcomePacket* welcome = reinterpret_cast<WelcomePacket*>(buffer);
                 localPlayerId = welcome->assignedPlayerId;
+                approvedName = welcome->approvedName;
                 printf("[CLIENT] connected assigned player id=%u serverTick=%u tickRate=%.0f\n",
                        localPlayerId, welcome->header.tick, welcome->tickRate);
             }
@@ -137,25 +140,75 @@ int runClient(const LaunchOptions& options)
             {
                 SnapshotPacket* snapshot = reinterpret_cast<SnapshotPacket*>(buffer);
                 lastSnapshotTick = snapshot->header.tick;
-                uint32_t count = std::min(snapshot->playerCount, (uint32_t)MAX_SNAPSHOT_PLAYERS);
-                std::unordered_map<uint32_t, bool> seen;
+                uint32_t count = std::min(snapshot->entityCount, (uint32_t)MAX_SNAPSHOT_ENTITIES);
+                const bool logSnapshot = snapshot->header.tick % 60 == 0;
+                if (logSnapshot)
+                    printf("[CLIENT SNAPSHOT RECV] localClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",
+                           localPlayerId, bytes, snapshot->entityCount,
+                           snapshot->playerCount, snapshot->npcCount);
+                std::unordered_map<uint32_t, bool> seenPlayers;
+                std::unordered_map<uint32_t, bool> seenNpcs;
                 for (uint32_t i = 0; i < count; ++i)
                 {
-                    const SnapshotPlayer& sp = snapshot->players[i];
-                    if (!sp.active || sp.playerId == 0)
+                    const SnapshotEntity& entity = snapshot->entities[i];
+                    if (!entity.active || entity.networkEntityId == 0)
+                    {
+                        printf("[CLIENT ENTITY SKIP] entityId=%u reason=inactive-or-zero-id\n",
+                               entity.networkEntityId);
                         continue;
-                    Player& p = players[sp.playerId];
-                    p.pos = {sp.px, sp.py, sp.pz};
-                    p.vel = {sp.vx, sp.vy, sp.vz};
-                    p.yaw = sp.yaw;
-                    p.onGround = sp.onGround != 0;
+                    }
+
+                    std::unordered_map<uint32_t, Player>* replicas = nullptr;
+                    std::unordered_map<uint32_t, bool>* seen = nullptr;
+                    const char* typeName = nullptr;
+                    if (entity.entityType == ENTITY_PLAYER)
+                    {
+                        replicas = &players;
+                        seen = &seenPlayers;
+                        typeName = "Player";
+                    }
+                    else if (entity.entityType == ENTITY_NPC)
+                    {
+                        replicas = &npcs;
+                        seen = &seenNpcs;
+                        typeName = "NPC";
+                    }
+                    else
+                    {
+                        printf("[CLIENT ENTITY SKIP] entityId=%u reason=unknown-entity-type-%u\n",
+                               entity.networkEntityId, entity.entityType);
+                        continue;
+                    }
+
+                    bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+                    Player& p = (*replicas)[entity.networkEntityId];
+                    p.pos = {entity.px, entity.py, entity.pz};
+                    p.vel = {entity.vx, entity.vy, entity.vz};
+                    p.yaw = entity.yaw;
+                    p.onGround = entity.onGround != 0;
+                    p.currentHp = entity.health;
+                    p.username = entity.displayName;
                     p.updateProceduralAnimation(dt);
-                    seen[sp.playerId] = true;
+                    (*seen)[entity.networkEntityId] = true;
+                    if (!existsBefore || logSnapshot)
+                        printf("[CLIENT ENTITY APPLY] entityId=%u type=%s isLocal=%d existsBefore=%d "
+                               "createdNow=%d position=(%.2f,%.2f,%.2f) renderRegistered=1\n",
+                               entity.networkEntityId, typeName,
+                               (int)(entity.ownerClientId == localPlayerId),
+                               (int)existsBefore, (int)!existsBefore,
+                               entity.px, entity.py, entity.pz);
                 }
                 for (auto it = players.begin(); it != players.end(); )
                 {
-                    if (!seen[it->first])
+                    if (!seenPlayers[it->first])
                         it = players.erase(it);
+                    else
+                        ++it;
+                }
+                for (auto it = npcs.begin(); it != npcs.end(); )
+                {
+                    if (!seenNpcs[it->first])
+                        it = npcs.erase(it);
                     else
                         ++it;
                 }
@@ -193,11 +246,14 @@ int runClient(const LaunchOptions& options)
         renderWorld(world, camera);
         for (auto& kv : players)
             renderPlayer(kv.second, camera);
+        for (auto& kv : npcs)
+            renderPlayer(kv.second, camera);
 
         uiBeginFrame(engine.window(), "multiplayer-debug-overlay");
         uiDrawRect({14, 78, 330, 118}, {0.0f, 0.0f, 0.0f, 0.56f}, "mp-hud-bg");
         char line[160];
-        snprintf(line, sizeof(line), "MP id=%u players=%zu", localPlayerId, players.size());
+        snprintf(line, sizeof(line), "MP id=%u name=%s players=%zu npcs=%zu",
+                 localPlayerId, approvedName.c_str(), players.size(), npcs.size());
         uiDrawText(line, 24, 88, 0.38f, {0.95f, 0.98f, 1.0f, 1.0f});
         snprintf(line, sizeof(line), "snapshot tick=%u sent=%llu recv=%llu", lastSnapshotTick,
                  (unsigned long long)packetsSent, (unsigned long long)packetsReceived);

@@ -9,5 +9,8 @@ struct ServerInfoResult
 };
 
 ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
-                                    const char* serverAddress,
+                                    char* serverAddress,
                                     bool serverRunning);
+void serverInfoMenuSetActive(bool active);
+void serverInfoMenuHandleChar(unsigned int codepoint);
+void serverInfoMenuHandleKey(int key, int action);

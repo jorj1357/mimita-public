@@ -60,6 +60,18 @@ struct ServerPlayer
     ServerInput input;
 };
 
+struct ServerNpc
+{
+    uint32_t entityId = 0;
+    std::string name;
+    glm::vec3 pos{0.0f};
+    glm::vec3 vel{0.0f};
+    float yaw = 0.0f;
+    int health = 100;
+    bool onGround = false;
+    float phase = 0.0f;
+};
+
 static char gTimestampBuf[64];
 
 static const char* serverTimestamp()
@@ -397,9 +409,100 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
     std::strncpy(dst, name.c_str(), sizeof(dst) - 1);
 }
 
+std::string uniquePlayerName(
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::string& requested,
+    uint32_t ownId)
+{
+    const std::string base = requested.empty() ? "player" + std::to_string(ownId) : requested;
+    std::string candidate = base;
+    int suffix = 2;
+    for (;;)
+    {
+        bool used = false;
+        for (const auto& kv : players)
+        {
+            if (kv.first != ownId && kv.second.name == candidate)
+            {
+                used = true;
+                break;
+            }
+        }
+        if (!used)
+            return candidate;
+        candidate = base + "(" + std::to_string(suffix++) + ")";
+    }
+}
+
+void simulateNpc(ServerNpc& npc, const std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    npc.phase += SERVER_DT * 0.65f;
+    glm::vec3 target(1.0f, 5.0f, 30.0f);
+    if (!players.empty())
+        target = players.begin()->second.pos;
+
+    glm::vec2 delta(target.x - npc.pos.x, target.y - npc.pos.y);
+    if (glm::length(delta) > 2.5f)
+    {
+        glm::vec2 direction = glm::normalize(delta);
+        npc.vel.x = direction.x * 3.5f;
+        npc.vel.y = direction.y * 3.5f;
+        npc.yaw = glm::degrees(std::atan2(direction.y, direction.x));
+    }
+    else
+    {
+        npc.vel.x = std::cos(npc.phase) * 1.5f;
+        npc.vel.y = std::sin(npc.phase) * 1.5f;
+    }
+    npc.pos += npc.vel * SERVER_DT;
+}
+
+SnapshotEntity makePlayerEntity(const ServerPlayer& player)
+{
+    SnapshotEntity out{};
+    out.networkEntityId = player.id;
+    out.entityType = ENTITY_PLAYER;
+    out.active = 1;
+    out.ownerClientId = player.id;
+    out.px = player.pos.x; out.py = player.pos.y; out.pz = player.pos.z;
+    out.vx = player.vel.x; out.vy = player.vel.y; out.vz = player.vel.z;
+    out.yaw = player.yaw;
+    out.health = player.health;
+    out.onGround = player.onGround ? 1 : 0;
+    copyName(out.displayName, player.name);
+    return out;
+}
+
+SnapshotEntity makeNpcEntity(const ServerNpc& npc)
+{
+    SnapshotEntity out{};
+    out.networkEntityId = npc.entityId;
+    out.entityType = ENTITY_NPC;
+    out.active = 1;
+    out.ownerClientId = 0;
+    out.px = npc.pos.x; out.py = npc.pos.y; out.pz = npc.pos.z;
+    out.vx = npc.vel.x; out.vy = npc.vel.y; out.vz = npc.vel.z;
+    out.yaw = npc.yaw;
+    out.health = npc.health;
+    out.onGround = npc.onGround ? 1 : 0;
+    copyName(out.displayName, npc.name);
+    return out;
+}
+
+void logSnapshotEntity(const SnapshotEntity& entity)
+{
+    printf("  entityId=%u type=%s ownerClientId=%u position=(%.2f,%.2f,%.2f) "
+           "rotation=%.2f health=%d\n",
+           entity.networkEntityId,
+           entity.entityType == ENTITY_PLAYER ? "Player" : "NPC",
+           entity.ownerClientId,
+           entity.px, entity.py, entity.pz,
+           entity.yaw, entity.health);
+}
+
 } // namespace
 
-int runServer(const LaunchOptions&)
+int runServer(const LaunchOptions& options)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
 
@@ -437,15 +540,19 @@ int runServer(const LaunchOptions&)
     setNonBlocking(sock);
 
     sockaddr_in bindAddr{};
-    bindAddr.sin_family = AF_INET;
-    bindAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    bindAddr.sin_port = htons(DEFAULT_PORT);
+    if (!parseAddress(options.connect, bindAddr))
+    {
+        bindAddr.sin_family = AF_INET;
+        bindAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        bindAddr.sin_port = htons(DEFAULT_PORT);
+    }
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
     {
         int err = WSAGetLastError();
         printf("%s [SERVER] FATAL: bind() failed error=%d\n", serverTimestamp(), err);
         if (err == WSAEADDRINUSE)
-            printf("%s [SERVER] HINT: Port %u is already in use. Is another server already running?\n", serverTimestamp(), DEFAULT_PORT);
+            printf("%s [SERVER] HINT: Address %s is already in use. Is another server already running?\n",
+                   serverTimestamp(), addressToString(bindAddr).c_str());
         closesocket(sock);
         netShutdown();
         return 1;
@@ -455,11 +562,23 @@ int runServer(const LaunchOptions&)
     printf("%s [SERVER] waiting for connections...\n", serverTimestamp());
 
     std::unordered_map<uint32_t, ServerPlayer> players;
+    std::unordered_map<uint32_t, ServerNpc> npcs;
     uint32_t nextPlayerId = 1;
+    uint32_t nextEntityId = 1000;
     uint32_t tick = 0;
     uint64_t lastLog = nowMs();
     uint64_t totalPacketsIn = 0;
     uint64_t totalPacketsOut = 0;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        ServerNpc npc;
+        npc.entityId = nextEntityId++;
+        npc.name = "NPC " + std::to_string(i + 1);
+        npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+        npc.phase = i * 2.0f;
+        npcs[npc.entityId] = npc;
+    }
 
     while (true)
     {
@@ -496,9 +615,8 @@ int runServer(const LaunchOptions&)
                 p.id = id;
                 p.addr = from;
                 p.lastHeardMs = nowMs();
-                p.name = reinterpret_cast<HelloPacket*>(buffer)->name;
-                if (p.name.empty())
-                    p.name = "player" + std::to_string(id);
+                p.name = uniquePlayerName(
+                    players, reinterpret_cast<HelloPacket*>(buffer)->name, id);
 
                 if (!existingId)
                 {
@@ -513,6 +631,7 @@ int runServer(const LaunchOptions&)
                 welcome.header.playerId = id;
                 welcome.assignedPlayerId = id;
                 welcome.tickRate = SERVER_TICK_RATE;
+                copyName(welcome.approvedName, p.name);
                 sendto(sock, (const char*)&welcome, sizeof(welcome), 0, (sockaddr*)&from, sizeof(from));
                 ++totalPacketsOut;
             }
@@ -532,6 +651,16 @@ int runServer(const LaunchOptions&)
                 p.input.attackPressed = in->attackPressed != 0;
                 p.input.freezeHeld = in->freezeHeld != 0;
                 p.input.tick = in->header.tick;
+                if (in->spawnNpcPressed)
+                {
+                    ServerNpc npc;
+                    npc.entityId = nextEntityId++;
+                    npc.name = "NPC " + std::to_string(npc.entityId);
+                    npc.pos = p.pos + glm::vec3(2.0f, 0.0f, 0.0f);
+                    npcs[npc.entityId] = npc;
+                    printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f)\n",
+                           serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z);
+                }
             }
             else if (header->type == PACKET_DISCONNECT)
             {
@@ -542,6 +671,22 @@ int runServer(const LaunchOptions&)
                            serverTimestamp(), it->second.id, it->second.name.c_str());
                     players.erase(it);
                 }
+            }
+            else if (header->type == PACKET_SPAWN_NPC_REQUEST &&
+                     bytes >= (int)sizeof(SpawnNpcRequestPacket))
+            {
+                SpawnNpcRequestPacket* request =
+                    reinterpret_cast<SpawnNpcRequestPacket*>(buffer);
+                if (players.find(request->header.playerId) == players.end())
+                    continue;
+
+                ServerNpc npc;
+                npc.entityId = nextEntityId++;
+                npc.name = "NPC " + std::to_string(npc.entityId);
+                npc.pos = {request->px, request->py, request->pz};
+                npcs[npc.entityId] = npc;
+                printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f)\n",
+                       serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z);
             }
         }
 
@@ -562,33 +707,48 @@ int runServer(const LaunchOptions&)
         for (auto& kv : players)
             simulatePlayer(kv.second, world);
         resolvePlayerCollision(players);
+        for (auto& kv : npcs)
+            simulateNpc(kv.second, players);
 
         // Build and send snapshot to every connected client
         SnapshotPacket snapshot{};
         snapshot.header.type = PACKET_SNAPSHOT;
         snapshot.header.tick = tick;
-        snapshot.playerCount = (uint32_t)std::min((size_t)MAX_SNAPSHOT_PLAYERS, players.size());
         uint32_t index = 0;
         for (const auto& kv : players)
         {
-            if (index >= MAX_SNAPSHOT_PLAYERS)
+            if (index >= MAX_SNAPSHOT_ENTITIES)
                 break;
-            const ServerPlayer& p = kv.second;
-            SnapshotPlayer& out = snapshot.players[index++];
-            out.playerId = p.id;
-            out.px = p.pos.x; out.py = p.pos.y; out.pz = p.pos.z;
-            out.vx = p.vel.x; out.vy = p.vel.y; out.vz = p.vel.z;
-            out.yaw = p.yaw;
-            out.health = p.health;
-            out.onGround = p.onGround ? 1 : 0;
-            out.active = 1;
-            copyName(out.name, p.name);
+            snapshot.entities[index++] = makePlayerEntity(kv.second);
+            ++snapshot.playerCount;
+        }
+        for (const auto& kv : npcs)
+        {
+            if (index >= MAX_SNAPSHOT_ENTITIES)
+                break;
+            snapshot.entities[index++] = makeNpcEntity(kv.second);
+            ++snapshot.npcCount;
+        }
+        snapshot.entityCount = index;
+
+        if (tick % 60 == 0)
+        {
+            printf("%s [SERVER SNAPSHOT BUILD] tick=%u playersIncluded=%u npcsIncluded=%u entitiesIncluded=%u\n",
+                   serverTimestamp(), tick, snapshot.playerCount, snapshot.npcCount, snapshot.entityCount);
+            for (uint32_t i = 0; i < snapshot.entityCount; ++i)
+                logSnapshotEntity(snapshot.entities[i]);
         }
 
         for (const auto& kv : players)
         {
-            sendto(sock, (const char*)&snapshot, sizeof(snapshot), 0, (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            const int bytesSent = sendto(
+                sock, (const char*)&snapshot, sizeof(snapshot), 0,
+                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
             ++totalPacketsOut;
+            if (tick % 60 == 0)
+                printf("%s [SERVER SNAPSHOT SEND] toClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",
+                       serverTimestamp(), kv.first, bytesSent, snapshot.entityCount,
+                       snapshot.playerCount, snapshot.npcCount);
         }
 
         // Status log every second

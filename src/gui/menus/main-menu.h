@@ -20,6 +20,7 @@ struct MainMenuResult
 {
     bool goPlay = false;
     bool goSettings = false;
+    bool goSignIn = false;
     bool startSandbox = false;
 };
 
