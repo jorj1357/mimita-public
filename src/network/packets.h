@@ -22,7 +22,9 @@ enum PacketType : uint8_t
     PACKET_PROFILE = 8,
     PACKET_ENTITY_SPAWN = 9,
     PACKET_ENTITY_DESPAWN = 10,
-    PACKET_SPAWN_NPC_REQUEST = 11
+    PACKET_SPAWN_NPC_REQUEST = 11,
+    PACKET_TELEPORT_REQUEST = 12,
+    PACKET_EXPLODE_REQUEST = 13
 };
 
 enum EntityType : uint8_t
@@ -133,6 +135,19 @@ struct SpawnNpcRequestPacket
     float px = 0.0f;
     float py = 0.0f;
     float pz = 0.0f;
+};
+
+struct TeleportRequestPacket
+{
+    PacketHeader header;
+    float px = 0.0f;
+    float py = 0.0f;
+    float pz = 0.0f;
+};
+
+struct ExplodeRequestPacket
+{
+    PacketHeader header;
 };
 
 struct DisconnectPacket
