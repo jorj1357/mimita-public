@@ -80,6 +80,7 @@ void updateRenderedReplica(
     player.vel = interpolation.target.velocity;
     player.yaw = angleLerpDegrees(interpolation.previous.yaw, interpolation.target.yaw, t);
     player.currentHp = interpolation.target.health;
+    player.dead = interpolation.target.health <= 0;
     player.onGround = interpolation.target.onGround;
     player.username = interpolation.displayName;
     player.updateProceduralAnimation(dt);

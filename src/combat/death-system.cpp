@@ -96,19 +96,19 @@ bool DeathSystem::kill(
 
         part.rotation = glm::quat_cast(src.worldTransform);
 
-        // Velocity: more spread across parts, not uniform
+        // Velocity: spread across parts based on hit direction
         glm::vec3 offset = part.position - victimPos;
         float offsetDist = glm::length(offset);
         glm::vec3 offsetDir = offsetDist > 0.001f ? offset / offsetDist : glm::vec3(0.0f, 0.0f, 1.0f);
         float partFactor = 0.5f + 0.5f * std::max(0.0f, glm::dot(direction, offsetDir));
-        part.velocity = baseVel + direction * lethalForce * 0.3f * partFactor;
-        part.velocity.z += std::abs(lethalForce * 0.1f);
+        part.velocity = baseVel + direction * lethalForce * 0.6f * partFactor;
+        part.velocity.z += std::abs(lethalForce * 0.15f);
 
-        // Angular velocity: reduced to prevent jitter
-        part.angularVelocity = glm::cross(direction * lethalForce * 0.15f, offset);
+        // Angular velocity: stronger for visible tumbling
+        part.angularVelocity = glm::cross(direction * lethalForce * 0.25f, offset);
         float angSpeed = glm::length(part.angularVelocity);
-        if (angSpeed > 8.0f) {
-            part.angularVelocity = (part.angularVelocity / angSpeed) * 8.0f;
+        if (angSpeed > 15.0f) {
+            part.angularVelocity = (part.angularVelocity / angSpeed) * 15.0f;
         }
 
         part.worldTransform = glm::translate(glm::mat4(1.0f), part.position) * glm::mat4_cast(part.rotation);
@@ -146,6 +146,17 @@ bool DeathSystem::kill(
         }
     }
 
+    // Capture death state BEFORE disabling the alive body
+    glm::vec3 deathPos = victim.pos;
+    glm::vec3 deathVel = victim.vel;
+
+    // Emit lifecycle events BEFORE moving body underground
+    emitLifecycleEvent("death", victim, actorId, killer);
+
+    // Disable alive body immediately: send it far below world so it
+    // cannot overlap with the ragdoll or cause phantom collisions.
+    victim.pos = glm::vec3(0.0f, 0.0f, -1000.0f);
+    victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);
     victim.currentHp = 0;
     victim.dead = true;
@@ -154,13 +165,11 @@ bool DeathSystem::kill(
 
     if (actorType == "npc")
         AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, victim.pos, 1.0f, 0.9f, 45.0f, 0});
-
-    emitLifecycleEvent("death", victim, actorId, killer);
+            {"npc_death", AudioCategory::NPC, true, deathPos, 1.0f, 0.9f, 45.0f, 0});
 
     ReplayEffectEvent corpseEvent;
     corpseEvent.type = "corpse_spawn";
-    corpseEvent.position = victim.pos;
+    corpseEvent.position = deathPos;
     corpseEvent.direction = direction;
     corpseEvent.velocity = baseVel;
     corpseEvent.sourceActorId = actorId;
@@ -253,17 +262,17 @@ static void enforceConstraint(RagdollPart& a, RagdollPart& b, float restDist, fl
     float aWeight = b.mass / totalMass;
     float bWeight = a.mass / totalMass;
 
-    // Positional correction (soft, not 100%)
-    float stiffness = 0.85f;
+    // Soft positional correction — avoid 100% snap which causes jitter
+    float stiffness = 0.50f;
     float correction = error * stiffness;
     a.position += dir * correction * aWeight;
     b.position -= dir * correction * bWeight;
 
-    // Velocity damping along constraint axis
+    // Velocity damping along constraint axis (stronger to kill oscillation)
     glm::vec3 relVel = b.velocity - a.velocity;
     float radialVel = glm::dot(relVel, dir);
-    float damping = 0.6f;
-    if (radialVel > 0.0f) { // separating
+    float damping = 0.8f;
+    if (radialVel > 0.0f) {
         glm::vec3 impulse = dir * radialVel * damping;
         a.velocity += impulse * aWeight;
         b.velocity -= impulse * bWeight;
@@ -273,12 +282,34 @@ static void enforceConstraint(RagdollPart& a, RagdollPart& b, float restDist, fl
 void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, float dt)
 {
     constexpr float GRAVITY = 9.81f;
-    constexpr float DRAG = 0.5f;
+    constexpr float DRAG = 0.3f;
     constexpr float ANGULAR_DRAG = 3.0f;
-    constexpr float BOUNCE = 0.15f;
-    constexpr float FRICTION = 0.4f;
+    constexpr float BOUNCE = 0.05f;
+    constexpr float FRICTION = 0.2f;
 
     float safeDt = std::min(dt, 0.033f);
+
+    const auto& triangles = world.collisionMesh.triangles;
+
+    // --- STEP 0: Pre-penetration resolution ---
+    // Push part out of world BEFORE integration to prevent spawn-in-floor jitter.
+    // Use multiple passes for deep penetrations.
+    for (int ppPass = 0; ppPass < 2; ++ppPass) {
+        for (const auto& tri : triangles) {
+            glm::vec3 closest = closestPointOnTriangle(part.position, tri.a, tri.b, tri.c);
+            glm::vec3 diff = part.position - closest;
+            float dist = glm::length(diff);
+            if (dist < part.radius && dist > 0.0001f) {
+                float penetration = (part.radius - dist) + 0.01f;
+                glm::vec3 normal = diff / dist;
+                part.position += normal * penetration;
+                float vDotN = glm::dot(part.velocity, -normal);
+                if (vDotN < 0.0f) {
+                    part.velocity -= vDotN * (-normal) * 1.5f;
+                }
+            }
+        }
+    }
 
     // Gravity
     part.velocity.z -= GRAVITY * safeDt;
@@ -300,15 +331,14 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
     glm::vec3 move = part.velocity * safeDt;
     float moveLen = glm::length(move);
 
-    // World collision
-    const auto& triangles = world.collisionMesh.triangles;
+    // World collision during movement
     if (moveLen > 0.0001f) {
         glm::vec3 moveDir = move / moveLen;
         float remaining = moveLen;
         constexpr int MAX_STEPS = 3;
 
         for (int step = 0; step < MAX_STEPS && remaining > 0.0001f; ++step) {
-            float stepDist = std::min(remaining, part.radius * 0.7f);
+            float stepDist = std::min(remaining, part.radius * 0.6f);
             glm::vec3 newPos = part.position + moveDir * stepDist;
 
             bool hit = false;
@@ -352,7 +382,7 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
                     }
                 }
 
-                remaining *= 0.4f;
+                remaining *= 0.3f;
             } else {
                 part.position = newPos;
                 remaining -= stepDist;

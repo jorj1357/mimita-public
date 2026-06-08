@@ -990,6 +990,13 @@ int main(int argc, char** argv)
                 MimitaNet::mpTick(mpContext, player.username, dt);
                 if (!mpContext.approvedLocalName.empty())
                     player.username = mpContext.approvedLocalName;
+                if (mpContext.connected)
+                {
+                    player.currentHp = mpContext.localServerHealth;
+                    player.dead = mpContext.localServerHealth <= 0;
+                    if (player.dead)
+                        player.vel = glm::vec3(0.0f);
+                }
 
                 // Send input to server if we have an assigned ID
                 if (mpContext.localPlayerId != 0) {
