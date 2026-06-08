@@ -21,6 +21,8 @@ struct PlayMenuResult
     bool startTimeTrials = false;
     bool startPractice = false;
     bool startDuel = false;
+    bool startServer = false;
+    bool connectToServer = false;
     bool goBack = false;
 };
 

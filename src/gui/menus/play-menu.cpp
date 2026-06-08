@@ -16,29 +16,38 @@
 #include "../gui-button.h"
 #include "../gui-back.h"
 #include "../gui-label.h"
+#include "../ui-system.h"
 #include <cstdio>
 
 PlayMenuResult drawPlayMenu(GLFWwindow* win)
 {
     PlayMenuResult r{};
 
-    guiLabel("Community Servers", 720, 180);
+    int w = 0, h = 0;
+    glfwGetFramebufferSize(win, &w, &h);
+    float cx = w * 0.5f;
 
-    if (guiButton(win, "Dummy Server: localhost", 760, 300, 400, 70, {0.2f,0.7f,1.0f,1.0f}))
+    uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "play-menu-bg");
+
+    guiLabel("Multiplayer", cx - 80.0f, 140.0f);
+
+    if (guiButton(win, "Start Server", cx - 200.0f, 240.0f, 400.0f, 70.0f, {0.2f,0.8f,0.3f,1.0f}))
     {
-        printf("[PLAY MENU] Dummy server selected\n");
-        r.startSandbox = true;
+        r.startServer = true;
     }
 
-    if (guiButton(win, "Duel Mode", 760, 390, 400, 70, {0.9f,0.3f,0.1f,1.0f}))
+    if (guiButton(win, "Connect to Server", cx - 200.0f, 330.0f, 400.0f, 70.0f, {0.2f,0.7f,1.0f,1.0f}))
     {
-        printf("[PLAY MENU] Duel Mode selected\n");
+        r.connectToServer = true;
+    }
+
+    if (guiButton(win, "Duel Mode", cx - 200.0f, 420.0f, 400.0f, 70.0f, {0.9f,0.3f,0.1f,1.0f}))
+    {
         r.startDuel = true;
     }
 
     if (guiBackButton(win))
     {
-        printf("[PLAY MENU] Back pressed\n");
         r.goBack = true;
     }
 

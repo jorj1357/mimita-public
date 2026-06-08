@@ -18,6 +18,7 @@
 #include "menus/settings-menu.h"
 #include "menus/debug-menu.h"
 #include "menus/duel-config-menu.h"
+#include "menus/server-info-menu.h"
 #include "ui-system.h"
 #include <cstdio>
 
@@ -26,15 +27,22 @@ enum GuiMenuState
     GUI_MENU_MAIN,
     GUI_MENU_SETTINGS,
     GUI_MENU_SERVERS,
-    GUI_MENU_DUEL_CONFIG
+    GUI_MENU_DUEL_CONFIG,
+    GUI_MENU_SERVER_INFO
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
 
 static DuelConfigResult gPendingDuelConfig{};
+static bool gServerRunning = false;
+static char gServerAddress[64] = "127.0.0.1:1357";
+static MultiplayerConnectInfo gPendingConnect{};
 
 DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
 void clearPendingDuelConfig() { gPendingDuelConfig = DuelConfigResult{}; }
+
+MultiplayerConnectInfo getPendingMultiplayerConnect() { return gPendingConnect; }
+void clearPendingMultiplayerConnect() { gPendingConnect = {}; }
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
@@ -75,8 +83,14 @@ void guiMain(GLFWwindow* win, GameState& state)
         case GUI_MENU_SERVERS:
         {
             PlayMenuResult r = drawPlayMenu(win);
-            if (r.startSandbox)
+            if (r.startServer)
+                gGuiMenuState = GUI_MENU_SERVER_INFO;
+            else if (r.connectToServer)
+            {
+                gPendingConnect.shouldConnect = true;
+                gPendingConnect.address = gServerAddress;
                 state = GAME_PLAYING;
+            }
             else if (r.startDuel)
                 gGuiMenuState = GUI_MENU_DUEL_CONFIG;
             else if (r.goBack)
@@ -89,6 +103,22 @@ void guiMain(GLFWwindow* win, GameState& state)
             DuelConfigResult r = drawDuelConfigMenu(win);
             if (r.startDuel) {
                 gPendingDuelConfig = r;
+                state = GAME_PLAYING;
+            }
+            else if (r.goBack)
+                gGuiMenuState = GUI_MENU_SERVERS;
+            break;
+        }
+
+        case GUI_MENU_SERVER_INFO:
+        {
+            ServerInfoResult r = drawServerInfoMenu(win, gServerAddress, gServerRunning);
+            if (r.startServer)
+                gServerRunning = true;
+            if (r.connect)
+            {
+                gPendingConnect.shouldConnect = true;
+                gPendingConnect.address = gServerAddress;
                 state = GAME_PLAYING;
             }
             else if (r.goBack)

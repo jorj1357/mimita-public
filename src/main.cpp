@@ -51,6 +51,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "network/net_mode.h"
+#include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/dev-menu.h"
@@ -236,6 +237,8 @@ int main(int argc, char** argv)
     // like number of plrs/npcs, duel time, how much HP, gravity, walkspeed, etc
     static DuelManager gDuelManager;
     static DuelConfig gDuelConfig;
+
+    static MimitaNet::MultiplayerContext mpContext;
 
     GameState gameState = GAME_MENU;
     GameState prevState = GAME_MENU;
@@ -797,6 +800,17 @@ int main(int argc, char** argv)
                         clearPendingDuelConfig();
                     }
                 }
+                // Handle multiplayer connect from menu
+                {
+                    MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
+                    if (mci.shouldConnect) {
+                        if (MimitaNet::mpInit(mpContext, mci.address, player.username)) {
+                            printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
+                            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                        }
+                        clearPendingMultiplayerConnect();
+                    }
+                }
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
                     Terminal::instance().isOpen() ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
             }
@@ -952,6 +966,42 @@ int main(int argc, char** argv)
             if (!Terminal::instance().isOpen())
                 HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
 
+            // Multiplayer tick - receive snapshots
+            if (mpContext.active) {
+                MimitaNet::mpTick(mpContext, player.username, dt);
+
+                // Send input to server if we have an assigned ID
+                if (mpContext.localPlayerId != 0) {
+                    InputFrame mpInput = buildInputFrame(engine.window(), camera);
+                    MimitaNet::InputPacket in{};
+                    in.header.type = MimitaNet::PACKET_INPUT;
+                    in.header.tick = mpContext.tick;
+                    in.header.playerId = mpContext.localPlayerId;
+                    in.wishX = mpInput.moveX;
+                    in.wishY = mpInput.moveY;
+                    in.camForwardX = camera.front.x;
+                    in.camForwardY = camera.front.y;
+                    in.camForwardZ = camera.front.z;
+                    in.yaw = camera.yaw;
+                    in.jumpHeld = mpInput.jump ? 1 : 0;
+                    in.dashPressed = mpInput.dashPressed ? 1 : 0;
+                    in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;
+                    in.freezeHeld = mpInput.freezeHeld ? 1 : 0;
+                    sendto(mpContext.sock, (const char*)&in, sizeof(in), 0,
+                           (sockaddr*)&mpContext.serverAddr, sizeof(mpContext.serverAddr));
+                    ++mpContext.packetsSent;
+                }
+
+                // TAB player list
+                mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
+                // F3 debug overlay
+                static bool f3Prev = false;
+                bool f3Down = glfwGetKey(engine.window(), GLFW_KEY_F3) == GLFW_PRESS;
+                if (f3Down && !f3Prev)
+                    mpContext.showDebugOverlay = !mpContext.showDebugOverlay;
+                f3Prev = f3Down;
+            }
+
             if (!Terminal::instance().isOpen())
                 applyDebugMovement(player, engine.window(), camera, dt);
 
@@ -1012,6 +1062,12 @@ int main(int argc, char** argv)
             }
             renderWorld(world, camera);
             renderPlayer(player, camera);
+            // Render remote players from server snapshots
+            if (mpContext.active) {
+                for (auto& kv : mpContext.remotePlayers) {
+                    renderPlayer(kv.second, camera);
+                }
+            }
             npcSystem.render(camera);
             DeathSystem::instance().render(camera);
             if (player.equippedSlot == 1)
@@ -1096,6 +1152,14 @@ int main(int argc, char** argv)
                 snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
                          editorMode ? "EDITOR" : "PLAYING", activeGameMode.c_str(), player.equippedSlot);
                 uiDrawText(modeText, 24, 208, 0.32f, {0.8f, 0.85f, 1.0f, 1.0f});
+                // Multiplayer HUD
+                if (mpContext.active) {
+                    char mpText[128];
+                    snprintf(mpText, sizeof(mpText), "MP id=%u players=%zu server=%s",
+                             mpContext.localPlayerId, mpContext.remotePlayers.size() + 1,
+                             mpContext.serverAddress.c_str());
+                    uiDrawText(mpText, 24, 232, 0.32f, {0.7f, 0.9f, 1.0f, 1.0f});
+                }
                 if (player.equippedSlot == 1) {
                     char ammoText[96];
                     snprintf(ammoText, sizeof(ammoText), "Revolver: %d / %d",
@@ -1167,6 +1231,116 @@ int main(int argc, char** argv)
                 uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
             }
             gDuelManager.renderHud();
+
+            // TAB Player List overlay
+            if (mpContext.active && mpContext.showPlayerList)
+            {
+                float listX = uiScreenW() * 0.5f - 160.0f;
+                float listY = uiScreenH() * 0.25f;
+                float listW = 320.0f;
+                float lineH = 24.0f;
+                float headerH = 30.0f;
+
+                // Count all players (local + remote)
+                size_t totalPlayers = mpContext.remotePlayers.size() + (mpContext.localPlayerId ? 1 : 0);
+                float listH = headerH + totalPlayers * lineH + 10.0f;
+
+                uiDrawRect({listX, listY, listW, listH}, {0.0f, 0.0f, 0.0f, 0.85f}, "player-list-bg");
+                uiDrawRectOutline({listX, listY, listW, listH}, {0.5f, 0.6f, 0.8f, 1.0f}, "player-list-border");
+
+                float y = listY + 8.0f;
+                uiDrawText("PLAYERS", listX + 10.0f, y, 0.36f, {0.8f, 0.9f, 1.0f, 1.0f});
+                y += headerH;
+
+                // Local player
+                if (mpContext.localPlayerId)
+                {
+                    const char* localName = player.username.empty() ? "you" : player.username.c_str();
+                    char localLine[128];
+                    snprintf(localLine, sizeof(localLine), "%s (you)", localName);
+                    uiDrawText(localLine, listX + 10.0f, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
+                    y += lineH;
+                }
+
+                // Remote players
+                for (const auto& kv : mpContext.playerRegistry)
+                {
+                    if (kv.first == mpContext.localPlayerId)
+                        continue;
+                    const char* pname = kv.second.name.c_str();
+                    char remoteLine[128];
+                    snprintf(remoteLine, sizeof(remoteLine), "%s", pname);
+                    uiDrawText(remoteLine, listX + 10.0f, y, 0.32f, {0.9f, 0.95f, 1.0f, 1.0f});
+                    y += lineH;
+                }
+            }
+
+            // F3 Networking Debug Overlay
+            if (mpContext.active && mpContext.showDebugOverlay)
+            {
+                float dbgX = uiScreenW() - 360.0f;
+                float dbgY = 20.0f;
+                float lineH = 18.0f;
+                float dbgW = 340.0f;
+                float dbgH = 14 * lineH + 10.0f;
+
+                uiDrawRect({dbgX, dbgY, dbgW, dbgH}, {0.0f, 0.0f, 0.0f, 0.8f}, "net-debug-bg");
+
+                float y = dbgY + 6.0f;
+                char buf[256];
+
+                snprintf(buf, sizeof(buf), "LOCAL PLAYER ID: %u", mpContext.localPlayerId);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.3f, 1.0f, 0.4f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "REMOTE PLAYERS: %zu", mpContext.remotePlayers.size());
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "PLAYER REGISTRY: %zu", mpContext.playerRegistry.size());
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "CLIENT TICK: %u", mpContext.tick);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "LAST SNAPSHOT TICK: %u", mpContext.lastSnapshotTick);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.9f, 0.95f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "PACKETS SENT: %llu", (unsigned long long)mpContext.packetsSent);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "PACKETS RECV: %llu", (unsigned long long)mpContext.packetsReceived);
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.8f, 1.0f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "SERVER: %s", mpContext.serverAddress.c_str());
+                uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.75f, 0.85f, 1.0f}); y += lineH;
+
+                auto localIt = mpContext.remotePlayers.find(mpContext.localPlayerId);
+                if (localIt != mpContext.remotePlayers.end())
+                {
+                    snprintf(buf, sizeof(buf), "LOCAL POS: %.1f %.1f %.1f",
+                             localIt->second.pos.x, localIt->second.pos.y, localIt->second.pos.z);
+                    uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.35f, 1.0f, 0.45f, 1.0f});
+                }
+                else
+                {
+                    snprintf(buf, sizeof(buf), "LOCAL POS: (predicted)");
+                    uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.7f, 0.6f, 0.3f, 1.0f});
+                }
+                y += lineH;
+
+                // List each remote player
+                for (const auto& kv : mpContext.remotePlayers)
+                {
+                    if (kv.first == mpContext.localPlayerId) continue;
+                    const Player& rp = kv.second;
+                    auto nameIt = mpContext.playerRegistry.find(kv.first);
+                    const char* rname = (nameIt != mpContext.playerRegistry.end()) ? nameIt->second.name.c_str() : "?";
+                    snprintf(buf, sizeof(buf), "  %s id=%u pos=(%.1f,%.1f,%.1f)",
+                             rname, kv.first, rp.pos.x, rp.pos.y, rp.pos.z);
+                    uiDrawText(buf, dbgX + 8.0f, y, 0.26f, {0.6f, 0.85f, 1.0f, 1.0f});
+                    y += lineH;
+                }
+            }
+
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
 
@@ -1188,6 +1362,10 @@ int main(int argc, char** argv)
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
                     gameState == GAME_PLAYING ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
             } else {
+                // Disconnect from multiplayer if active
+                if (mpContext.active) {
+                    MimitaNet::mpShutdown(mpContext);
+                }
                 gameState = GAME_MENU;
             }
         }
@@ -1201,6 +1379,7 @@ int main(int argc, char** argv)
     }
 
     printf("[MAIN] loop ended\n");
+    MimitaNet::mpShutdown(mpContext);
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
     
