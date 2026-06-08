@@ -117,6 +117,16 @@ struct Plane {
 };
 
 // --------------------
+// Spawn Points
+// --------------------
+
+struct SpawnPoint {
+    glm::vec3 position{0.0f};
+    std::string tag;
+    int arenaIndex = -1;
+};
+
+// --------------------
 // World
 // --------------------
 
@@ -132,6 +142,8 @@ struct World {
     float collisionChunkSize = 6.0f;
     std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionChunks;
 
+    std::vector<SpawnPoint> spawnPoints;
+
     void clear();
     void rebuildChunks();
 
@@ -140,6 +152,8 @@ struct World {
         std::vector<Block*>& outBlocks,
         std::vector<Sphere*>& outSpheres
     ) const;
+
+    SpawnPoint* pickSpawnPoint(const std::string& tag = "", int arenaIndex = -1);
 
     std::vector<Plane> planes;
 

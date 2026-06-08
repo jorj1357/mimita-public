@@ -6,7 +6,7 @@
  * drawPlayMenu(args)
  *
  * this file DOES:
- * - draw sandbox / time trials / practice / back
+ * - draw sandbox / time trials / practice / duel / back
  *
  * this file DOES NOT:
  * - mutate global state directly
@@ -22,12 +22,18 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
 {
     PlayMenuResult r{};
 
-    guiLabel("Community Servers (placeholder)", 720, 220);
+    guiLabel("Community Servers", 720, 180);
 
-    if (guiButton(win, "Dummy Server: localhost", 760, 360, 400, 70, {0.2f,0.7f,1.0f,1.0f}))
+    if (guiButton(win, "Dummy Server: localhost", 760, 300, 400, 70, {0.2f,0.7f,1.0f,1.0f}))
     {
         printf("[PLAY MENU] Dummy server selected\n");
         r.startSandbox = true;
+    }
+
+    if (guiButton(win, "Duel Mode", 760, 390, 400, 70, {0.9f,0.3f,0.1f,1.0f}))
+    {
+        printf("[PLAY MENU] Duel Mode selected\n");
+        r.startDuel = true;
     }
 
     if (guiBackButton(win))

@@ -20,6 +20,7 @@
 #include "physics/config.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 // --------------------
 // Helpers
@@ -120,15 +121,27 @@ void World::clear()
     spheres.clear();
     chunks.clear();
     planes.clear();
+    spawnPoints.clear();
     mesh = Mesh{};
     collisionMesh.clear();
     collisionChunks.clear();
 }
 
+SpawnPoint* World::pickSpawnPoint(const std::string& tag, int arenaIndex)
+{
+    std::vector<SpawnPoint*> candidates;
+    for (auto& sp : spawnPoints) {
+        if (!tag.empty() && sp.tag != tag) continue;
+        if (arenaIndex >= 0 && sp.arenaIndex != arenaIndex) continue;
+        candidates.push_back(&sp);
+    }
+    if (candidates.empty()) return nullptr;
+    return candidates[rand() % candidates.size()];
+}
+
 void World::finalize()
 {
     for (auto& b : blocks) {
-        // U BETTER NOT frick:)  EVERTHING UP DEC 24 2025 JORJ bc rotations
         b.rot = eulerXYZDegToMat3(b.rotEuler);
     }
 }

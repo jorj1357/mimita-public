@@ -20,6 +20,7 @@ struct PlayMenuResult
     bool startSandbox = false;
     bool startTimeTrials = false;
     bool startPractice = false;
+    bool startDuel = false;
     bool goBack = false;
 };
 
