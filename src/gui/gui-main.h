@@ -17,4 +17,8 @@
 #include <GLFW/glfw3.h>
 #include "game/game-state.h"
 
+struct DuelConfigResult;
+
 void guiMain(GLFWwindow* win, GameState& state);
+DuelConfigResult getPendingDuelConfig();
+void clearPendingDuelConfig();

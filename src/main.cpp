@@ -73,6 +73,7 @@
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
+#include "gui/menus/duel-config-menu.h"
 
 static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
                         const CollisionTriangle& tri, float& distance)
@@ -175,6 +176,7 @@ int main(int argc, char** argv)
     DevOverlay::instance().showNotification("Dev mode enabled. Press ` to open console.", 5.0f);
     CreateDefaultAccountConfig();
     LoadAccountConfig("default");
+    LoadDuelStats("default");
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
@@ -710,7 +712,7 @@ int main(int argc, char** argv)
         "duel.start",
         "Start duel mode",
         "duel.start [npcCount]",
-        [&player, &npcSystem](const std::vector<std::string>& args)
+        [&player, &npcSystem, &world](const std::vector<std::string>& args)
         {
             DuelConfig cfg;
 
@@ -728,7 +730,8 @@ int main(int argc, char** argv)
             gDuelManager.start(
                 gDuelConfig,
                 player,
-                npcSystem);
+                npcSystem,
+                world);
 
             Terminal::instance().addLog(
                 "[DUEL] started");
@@ -762,15 +765,12 @@ int main(int argc, char** argv)
                 if (!worldLoaded)
                 {
                     printf("[MAIN] PLAY requested; loading existing world now\n");
-                    // loadWorldFromJSON(
-                    //     world,
-                    //     "assets/maps/json-converts/mimita-aabb-only-interior-small-v2-converted-v2.json"
-                    // );
                     // 5 23 2026 using gltf glb stuff for better strucutres mhm 
                     loadWorldFromGLB(
                         world,
                         "assets/maps/mimita-aabb-only-interior-small-v4.glb"
                     );
+                    extractSpawnPointsFromGLB(world, "assets/maps/mimita-aabb-only-interior-small-v4.glb");
                     worldLoaded = true;
                     printf("[MAIN] world load complete blocks=%zu spheres=%zu\n", world.blocks.size(), world.spheres.size());
                 }
@@ -779,6 +779,20 @@ int main(int argc, char** argv)
                     npcSystem.spawnPrototypeScene();
                     npcsSpawned = true;
                     printf("[MAIN] NPC prototype scene spawned count=%zu\n", npcSystem.all().size());
+                }
+                // Handle duel config from menu
+                {
+                    DuelConfigResult dcr = getPendingDuelConfig();
+                    if (dcr.startDuel) {
+                        DuelConfig cfg;
+                        cfg.numNpcs = dcr.numNpcs;
+                        cfg.killsToWin = dcr.killsToWin;
+                        cfg.duelLengthSeconds = dcr.duelLengthSeconds;
+                        cfg.npcDifficulty = dcr.npcDifficulty;
+                        cfg.enabled = true;
+                        gDuelManager.start(cfg, player, npcSystem, world);
+                        clearPendingDuelConfig();
+                    }
                 }
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
                     Terminal::instance().isOpen() ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);

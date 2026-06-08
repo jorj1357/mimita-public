@@ -17,6 +17,7 @@
 #include "menus/play-menu.h"
 #include "menus/settings-menu.h"
 #include "menus/debug-menu.h"
+#include "menus/duel-config-menu.h"
 #include "ui-system.h"
 #include <cstdio>
 
@@ -24,10 +25,16 @@ enum GuiMenuState
 {
     GUI_MENU_MAIN,
     GUI_MENU_SETTINGS,
-    GUI_MENU_SERVERS
+    GUI_MENU_SERVERS,
+    GUI_MENU_DUEL_CONFIG
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
+
+static DuelConfigResult gPendingDuelConfig{};
+
+DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
+void clearPendingDuelConfig() { gPendingDuelConfig = DuelConfigResult{}; }
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
@@ -70,8 +77,22 @@ void guiMain(GLFWwindow* win, GameState& state)
             PlayMenuResult r = drawPlayMenu(win);
             if (r.startSandbox)
                 state = GAME_PLAYING;
+            else if (r.startDuel)
+                gGuiMenuState = GUI_MENU_DUEL_CONFIG;
             else if (r.goBack)
                 gGuiMenuState = GUI_MENU_MAIN;
+            break;
+        }
+
+        case GUI_MENU_DUEL_CONFIG:
+        {
+            DuelConfigResult r = drawDuelConfigMenu(win);
+            if (r.startDuel) {
+                gPendingDuelConfig = r;
+                state = GAME_PLAYING;
+            }
+            else if (r.goBack)
+                gGuiMenuState = GUI_MENU_SERVERS;
             break;
         }
     }

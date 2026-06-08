@@ -132,9 +132,16 @@ bool DeathSystem::kill(
     return true;
 }
 
-void DeathSystem::respawn(Player& actor, const std::string& actorId)
+void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
 {
-    actor.pos = actor.respawnPosition;
+    SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
+    if (sp) {
+        actor.pos = sp->position;
+        actor.respawnPosition = sp->position;
+    } else {
+        actor.pos = actor.respawnPosition;
+    }
+
     actor.vel = glm::vec3(0.0f);
     actor.externalImpulse = glm::vec3(0.0f);
     actor.currentHp = actor.maxHp;
@@ -216,7 +223,6 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
 
     const auto& triangles = world.collisionMesh.triangles;
 
-    glm::vec3 posBefore = part.position;
     glm::vec3 move = part.velocity * safeDt;
     float moveLen = glm::length(move);
 
@@ -331,14 +337,14 @@ void DeathSystem::update(
     if (player.dead) {
         player.respawnTimer = std::max(0.0f, player.respawnTimer - dt);
         if (instantRespawnPressed || player.respawnTimer <= 0.0f)
-            respawn(player, player.username);
+            respawn(player, player.username, world);
     }
 
     for (Npc& npc : npcs.all()) {
         if (!npc.body.dead) continue;
         npc.body.respawnTimer = std::max(0.0f, npc.body.respawnTimer - dt);
         if (npc.body.respawnTimer <= 0.0f)
-            respawn(npc.body, "npc_" + std::to_string(npc.id));
+            respawn(npc.body, "npc_" + std::to_string(npc.id), world);
     }
 }
 
