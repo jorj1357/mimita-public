@@ -11,7 +11,6 @@ import {
     hashPassword,
     hashToken,
     normalizeEmail,
-    normalizeUsername,
     usernameKey,
     validateEmail,
     validatePassword,
