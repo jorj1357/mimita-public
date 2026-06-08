@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <glad/glad.h>
+#include "debug/debug-visuals.h"
 #include "debug/gl-debug.h"
 #include "camera.h"
 #include "audio/audio.h"
@@ -468,6 +469,28 @@ void DeathSystem::render(const Camera& camera) const
             for (const Mesh::Batch& batch : mesh.batches) {
                 glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
                 glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            }
+        }
+
+        // Debug rendering for ragdoll constraints
+        if (DebugVis::enabled()) {
+            for (const RagdollConstraint& c : corpse.constraints) {
+                if (c.partA >= 0 && c.partA < (int)corpse.parts.size() &&
+                    c.partB >= 0 && c.partB < (int)corpse.parts.size()) {
+                    const RagdollPart& a = corpse.parts[c.partA];
+                    const RagdollPart& b = corpse.parts[c.partB];
+                    // Constraint line
+                    DebugVis::drawLine(camera, a.position, b.position, {0.0f, 1.0f, 0.0f, 0.7f});
+                    // Part markers
+                    DebugVis::drawWireSphere(camera, a.position, 0.08f, {0.0f, 1.0f, 0.0f, 1.0f});
+                    DebugVis::drawWireSphere(camera, b.position, 0.08f, {1.0f, 0.5f, 0.0f, 1.0f});
+                    // Velocity vectors
+                    float aSpeed = glm::length(a.velocity);
+                    if (aSpeed > 0.5f) {
+                        glm::vec3 velEnd = a.position + glm::normalize(a.velocity) * std::min(aSpeed * 0.1f, 2.0f);
+                        DebugVis::drawLine(camera, a.position, velEnd, {1.0f, 0.0f, 1.0f, 0.6f});
+                    }
+                }
             }
         }
     }
