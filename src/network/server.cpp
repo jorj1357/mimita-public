@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <limits>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -743,6 +744,46 @@ int runServer(const LaunchOptions& options)
                 p.input.attackPressed = attackPressed;
                 p.input.freezeHeld = in->freezeHeld != 0;
                 p.input.tick = in->header.tick;
+
+                const glm::vec3 reportedPosition{
+                    in->clientPx, in->clientPy, in->clientPz};
+                const glm::vec3 reportedVelocity{
+                    in->clientVx, in->clientVy, in->clientVz};
+                constexpr float MAX_CLIENT_STATE_DELTA = 30.0f;
+                constexpr float MAX_CLIENT_REPORTED_SPEED = 180.0f;
+                const bool finiteState =
+                    std::isfinite(reportedPosition.x) &&
+                    std::isfinite(reportedPosition.y) &&
+                    std::isfinite(reportedPosition.z) &&
+                    std::isfinite(reportedVelocity.x) &&
+                    std::isfinite(reportedVelocity.y) &&
+                    std::isfinite(reportedVelocity.z);
+                const float stateDelta = finiteState
+                    ? glm::length(reportedPosition - p.pos)
+                    : std::numeric_limits<float>::infinity();
+                const float reportedSpeed = finiteState
+                    ? glm::length(reportedVelocity)
+                    : std::numeric_limits<float>::infinity();
+                if (finiteState &&
+                    stateDelta <= MAX_CLIENT_STATE_DELTA &&
+                    reportedSpeed <= MAX_CLIENT_REPORTED_SPEED)
+                {
+                    p.pos = reportedPosition;
+                    p.vel = reportedVelocity;
+                }
+                else
+                {
+                    static uint64_t lastRejectedStateLogMs = 0;
+                    const uint64_t rejectNowMs = nowMs();
+                    if (rejectNowMs - lastRejectedStateLogMs >= 500)
+                    {
+                        printf("%s [SERVER MOVEMENT REJECT] playerId=%u "
+                               "distance=%.2f speed=%.2f finite=%d\n",
+                               serverTimestamp(), p.id, stateDelta,
+                               reportedSpeed, (int)finiteState);
+                        lastRejectedStateLogMs = rejectNowMs;
+                    }
+                }
                 if (in->spawnNpcPressed)
                 {
                     ServerNpc npc;

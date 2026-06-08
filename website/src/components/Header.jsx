@@ -120,6 +120,14 @@ export default function Header() {
         <Link className="headerMainLink" to="/socials">
           socials
         </Link>
+
+        <Link className="headerMainLink" to="/signin">
+          sign in
+        </Link>
+
+        <Link className="headerMainLink" to="/account">
+          account
+        </Link>
 {/* 
         <Link className="headerMainLink" to="/3cage">
           3cage

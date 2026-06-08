@@ -441,7 +441,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     const glm::vec3 clientPosition = player.pos;
     const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);
-    constexpr float CATASTROPHIC_DIVERGENCE = 12.0f;
+    constexpr float CATASTROPHIC_DIVERGENCE = 100.0f;
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
     constexpr uint64_t TELEPORT_ACK_TIMEOUT_MS = 1500;
     const uint64_t currentMs = nowMs();

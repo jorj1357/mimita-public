@@ -25,8 +25,6 @@ import Contribute from "./pages/Contribute"
 
 import Newsletter from "./pages/Newsletter"
 
-import Feedback from "./pages/Feedback"
-
 import Terms from "./pages/Terms"
 
 // its actuallt 3cage but cant put numbers so whatever 5 25 2026
@@ -36,6 +34,11 @@ import ThreeCage from "./pages/Socials-Threecage"
 import Jorj from "./pages/Socials-jorj"
 
 import NotFound from "./pages/NotFound"
+import Auth from "./pages/Auth"
+import Account from "./pages/Account"
+import PasswordChange from "./pages/PasswordChange"
+import UserProfile from "./pages/UserProfile"
+import PasswordPrinciples from "./pages/PasswordPrinciples"
 
 /* =========================
    APP
@@ -91,6 +94,36 @@ ReactDOM.createRoot(
         <Route
           path="/terms"
           element={<Terms />}
+        />
+
+        <Route
+          path="/signup"
+          element={<Auth mode="signup" />}
+        />
+
+        <Route
+          path="/signin"
+          element={<Auth mode="signin" />}
+        />
+
+        <Route
+          path="/account"
+          element={<Account />}
+        />
+
+        <Route
+          path="/change-password"
+          element={<PasswordChange />}
+        />
+
+        <Route
+          path="/password-principles"
+          element={<PasswordPrinciples />}
+        />
+
+        <Route
+          path="/users/:username"
+          element={<UserProfile />}
         />
 
         <Route

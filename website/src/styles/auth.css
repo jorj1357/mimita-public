@@ -1,0 +1,101 @@
+.authPage,
+.profilePage {
+  width: min(680px, 100%);
+  margin: 0 auto;
+  padding: 4rem 1.25rem;
+}
+
+.authCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 2rem;
+  text-align: left;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.025);
+}
+
+.authCard h1,
+.profilePage h1 {
+  margin: 0 0 1rem;
+  color: white;
+  font-size: clamp(2rem, 7vw, 3.5rem);
+}
+
+.authCard form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.authCard input,
+.authCard textarea {
+  width: 100%;
+  padding: 0.85rem;
+  color: white;
+  background: black;
+  border: 1px solid rgba(255,255,255,0.22);
+}
+
+.authCard textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+.authCard button,
+.authAction {
+  display: inline-block;
+  padding: 0.85rem 1rem;
+  color: black;
+  background: white;
+  border: 0;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.authCard button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.authHint,
+.authSwitch,
+.authMessage {
+  color: rgba(255,255,255,0.7);
+}
+
+.authCard a {
+  color: white;
+}
+
+.authToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+}
+
+.authToggle input {
+  width: auto;
+}
+
+.dangerZone {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #7f1d1d;
+}
+
+.dangerZone button {
+  color: white;
+  background: #7f1d1d;
+}
+
+.profilePage {
+  text-align: left;
+}
+
+.profilePage p {
+  white-space: pre-wrap;
+  line-height: 1.7;
+}

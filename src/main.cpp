@@ -302,6 +302,7 @@ int main(int argc, char** argv)
     int selectedEditorObject = -1;
     WeaponSystem weapons;
     bool freecamEnabled = false;
+    glm::vec3 deathPosition{0.0f};
 
     // Gameplay terminal commands
     auto registerActionCommand = [](const char* name, const char* description) {
@@ -324,7 +325,7 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "teleport", "Teleport the local player", "teleport x,y,z",
-        [&player, &mpContext](const std::vector<std::string>& args) {
+        [&player](const std::vector<std::string>& args) {
             glm::vec3 destination(0.0f);
             if (!parseTeleportPosition(args, destination) ||
                 !std::isfinite(destination.x) ||
@@ -360,7 +361,7 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "explode", "Instantly kill the local player", "explode",
-        [&player, &mpContext](const std::vector<std::string>&) {
+        [&player](const std::vector<std::string>&) {
             if (player.dead)
             {
                 Terminal::instance().addLog("[GAMEPLAY] already dead");
@@ -1011,6 +1012,13 @@ int main(int argc, char** argv)
                 if (!freecamEnabled)
                     simulateTick(simContext, tickFrame);
 
+                // Capture death position for camera orbit (player.pos stays at death location)
+                if (player.dead && glm::length(deathPosition) < 0.1f)
+                    deathPosition = player.pos;
+                // Reset death position on respawn
+                if (!player.dead)
+                    deathPosition = glm::vec3(0.0f);
+
                 if (recordingReplayTick) {
                     ReplaySceneFrame sceneFrame;
                     sceneFrame.tick = (int)replayTick;
@@ -1102,6 +1110,12 @@ int main(int argc, char** argv)
                     in.camForwardY = camera.front.y;
                     in.camForwardZ = camera.front.z;
                     in.yaw = camera.yaw;
+                    in.clientPx = player.pos.x;
+                    in.clientPy = player.pos.y;
+                    in.clientPz = player.pos.z;
+                    in.clientVx = player.vel.x;
+                    in.clientVy = player.vel.y;
+                    in.clientVz = player.vel.z;
                     in.jumpHeld = mpInput.jump ? 1 : 0;
                     in.dashPressed = mpInput.dashPressed ? 1 : 0;
                     in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;
