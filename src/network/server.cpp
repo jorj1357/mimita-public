@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -58,6 +59,17 @@ struct ServerPlayer
     uint64_t lastHeardMs = 0;
     ServerInput input;
 };
+
+static char gTimestampBuf[64];
+
+static const char* serverTimestamp()
+{
+    time_t now = time(nullptr);
+    struct tm* t = localtime(&now);
+    snprintf(gTimestampBuf, sizeof(gTimestampBuf), "[%02d:%02d:%02d]",
+             t->tm_hour, t->tm_min, t->tm_sec);
+    return gTimestampBuf;
+}
 
 bool sameAddress(const sockaddr_in& a, const sockaddr_in& b)
 {
@@ -209,8 +221,8 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     std::string warn;
     std::string resolved = resolveAssetPath(path);
     bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, resolved);
-    if (!warn.empty()) printf("[SERVER WORLD WARNING] %s\n", warn.c_str());
-    if (!err.empty()) printf("[SERVER WORLD ERROR] %s\n", err.c_str());
+    if (!warn.empty()) printf("%s [SERVER WORLD WARNING] %s\n", serverTimestamp(), warn.c_str());
+    if (!err.empty()) printf("%s [SERVER WORLD ERROR] %s\n", serverTimestamp(), err.c_str());
     if (!ok)
         return false;
 
@@ -219,8 +231,9 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
         for (int node : model.scenes[sceneIndex].nodes)
             walkNode(model, node, glm::mat4(1.0f), world);
 
-    printf("[SERVER WORLD] collision triangles=%zu bounds min=(%.2f %.2f %.2f) max=(%.2f %.2f %.2f)\n",
-           world.triangles.size(), world.boundsMin.x, world.boundsMin.y, world.boundsMin.z,
+    printf("%s [SERVER WORLD] loaded map collision triangles=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+           serverTimestamp(), world.triangles.size(),
+           world.boundsMin.x, world.boundsMin.y, world.boundsMin.z,
            world.boundsMax.x, world.boundsMax.y, world.boundsMax.z);
     return !world.triangles.empty();
 }
@@ -248,7 +261,7 @@ glm::vec3 closestPointTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 
     float d6 = glm::dot(ac, cp);
     if (d6 >= 0.0f && d5 <= d6) return c;
     float vb = d5 * d2 - d1 * d6;
-    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+    if (vb <= 0.0f && d2 >= 0.0f && d6 >= 0.0f)
     {
         float w = d2 / (d2 - d6);
         return a + w * ac;
@@ -378,28 +391,49 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         p.dashAvailable = true;
 }
 
+void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
+{
+    std::memset(dst, 0, sizeof(dst));
+    std::strncpy(dst, name.c_str(), sizeof(dst) - 1);
+}
+
 } // namespace
 
 int runServer(const LaunchOptions&)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    printf("[SERVER] starting localhost UDP server on port %u\n", DEFAULT_PORT);
-    printf("[SERVER] tick rate %.0f Hz\n", SERVER_TICK_RATE);
+
+    printf("%s [SERVER] ========================================\n", serverTimestamp());
+    printf("%s [SERVER] MiMITA Dedicated Server\n", serverTimestamp());
+    printf("%s [SERVER] protocol version=%u\n", serverTimestamp(), PROTOCOL_VERSION);
+    printf("%s [SERVER] tick rate=%.0f Hz\n", serverTimestamp(), SERVER_TICK_RATE);
+    printf("%s [SERVER] max players=%d\n", serverTimestamp(), MAX_PLAYERS);
+    printf("%s [SERVER] timeout=%llums\n", serverTimestamp(), (unsigned long long)CLIENT_TIMEOUT_MS);
+    printf("%s [SERVER] ========================================\n", serverTimestamp());
 
     HeadlessWorld world;
     if (!loadHeadlessWorld("assets/maps/mimita-aabb-only-interior-small-v4.glb", world))
-        printf("[SERVER WARNING] headless GLB collision load failed; using floor fallback only\n");
+        printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback only\n", serverTimestamp());
 
     if (!netStartup())
+    {
+        printf("%s [SERVER] FATAL: WSAStartup failed\n", serverTimestamp());
         return 1;
+    }
 
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == INVALID_SOCKET)
     {
-        printf("[SERVER] socket failed error=%d\n", WSAGetLastError());
+        printf("%s [SERVER] FATAL: socket() failed error=%d\n", serverTimestamp(), WSAGetLastError());
         netShutdown();
         return 1;
     }
+
+    // Allow address reuse to avoid WSAEADDRINUSE (error 10048)
+    int reuseAddr = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR)
+        printf("%s [SERVER] WARNING: setsockopt SO_REUSEADDR failed error=%d (non-fatal)\n", serverTimestamp(), WSAGetLastError());
+
     setNonBlocking(sock);
 
     sockaddr_in bindAddr{};
@@ -408,16 +442,24 @@ int runServer(const LaunchOptions&)
     bindAddr.sin_port = htons(DEFAULT_PORT);
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
     {
-        printf("[SERVER] bind failed error=%d\n", WSAGetLastError());
+        int err = WSAGetLastError();
+        printf("%s [SERVER] FATAL: bind() failed error=%d\n", serverTimestamp(), err);
+        if (err == WSAEADDRINUSE)
+            printf("%s [SERVER] HINT: Port %u is already in use. Is another server already running?\n", serverTimestamp(), DEFAULT_PORT);
         closesocket(sock);
         netShutdown();
         return 1;
     }
 
+    printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(bindAddr).c_str());
+    printf("%s [SERVER] waiting for connections...\n", serverTimestamp());
+
     std::unordered_map<uint32_t, ServerPlayer> players;
     uint32_t nextPlayerId = 1;
     uint32_t tick = 0;
     uint64_t lastLog = nowMs();
+    uint64_t totalPacketsIn = 0;
+    uint64_t totalPacketsOut = 0;
 
     while (true)
     {
@@ -425,15 +467,22 @@ int runServer(const LaunchOptions&)
         char buffer[2048];
         sockaddr_in from{};
         int fromLen = sizeof(from);
+
+        // Drain all pending packets
         for (;;)
         {
             int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromLen);
             if (bytes <= 0)
                 break;
+            ++totalPacketsIn;
 
             PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
             if (bytes < (int)sizeof(PacketHeader) || header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
+            {
+                printf("%s [SERVER PACKET] rejected invalid header magic=0x%08x ver=%u\n",
+                       serverTimestamp(), header->magic, header->version);
                 continue;
+            }
 
             if (header->type == PACKET_HELLO && bytes >= (int)sizeof(HelloPacket))
             {
@@ -448,10 +497,14 @@ int runServer(const LaunchOptions&)
                 p.addr = from;
                 p.lastHeardMs = nowMs();
                 p.name = reinterpret_cast<HelloPacket*>(buffer)->name;
+                if (p.name.empty())
+                    p.name = "player" + std::to_string(id);
+
                 if (!existingId)
                 {
                     p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
-                    printf("[SERVER] client connected id=%u name=%s addr=%s\n", id, p.name.c_str(), addressToString(from).c_str());
+                    printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s\n",
+                           serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
                 }
 
                 WelcomePacket welcome{};
@@ -461,6 +514,7 @@ int runServer(const LaunchOptions&)
                 welcome.assignedPlayerId = id;
                 welcome.tickRate = SERVER_TICK_RATE;
                 sendto(sock, (const char*)&welcome, sizeof(welcome), 0, (sockaddr*)&from, sizeof(from));
+                ++totalPacketsOut;
             }
             else if (header->type == PACKET_INPUT && bytes >= (int)sizeof(InputPacket))
             {
@@ -478,37 +532,38 @@ int runServer(const LaunchOptions&)
                 p.input.attackPressed = in->attackPressed != 0;
                 p.input.freezeHeld = in->freezeHeld != 0;
                 p.input.tick = in->header.tick;
-                if ((tick % 60) == 0 || p.input.dashPressed || p.input.attackPressed)
-                    printf("[SERVER] input id=%u tick=%u wish=(%.2f %.2f) jump=%d dash=%d attack=%d\n",
-                           p.id, in->header.tick, p.input.wish.x, p.input.wish.y,
-                           p.input.jumpHeld ? 1 : 0, p.input.dashPressed ? 1 : 0, p.input.attackPressed ? 1 : 0);
             }
             else if (header->type == PACKET_DISCONNECT)
             {
                 auto it = players.find(header->playerId);
                 if (it != players.end())
                 {
-                    printf("[SERVER] client disconnected id=%u name=%s\n", it->second.id, it->second.name.c_str());
+                    printf("%s [SERVER LEAVE] id=%u name=\"%s\"\n",
+                           serverTimestamp(), it->second.id, it->second.name.c_str());
                     players.erase(it);
                 }
             }
         }
 
+        // Timeout disconnected clients
         for (auto it = players.begin(); it != players.end(); )
         {
             if (nowMs() - it->second.lastHeardMs > CLIENT_TIMEOUT_MS)
             {
-                printf("[SERVER] client timed out id=%u name=%s\n", it->second.id, it->second.name.c_str());
+                printf("%s [SERVER TIMEOUT] id=%u name=\"%s\"\n",
+                       serverTimestamp(), it->second.id, it->second.name.c_str());
                 it = players.erase(it);
             }
             else
                 ++it;
         }
 
+        // Simulate all players
         for (auto& kv : players)
             simulatePlayer(kv.second, world);
         resolvePlayerCollision(players);
 
+        // Build and send snapshot to every connected client
         SnapshotPacket snapshot{};
         snapshot.header.type = PACKET_SNAPSHOT;
         snapshot.header.tick = tick;
@@ -527,18 +582,25 @@ int runServer(const LaunchOptions&)
             out.health = p.health;
             out.onGround = p.onGround ? 1 : 0;
             out.active = 1;
+            copyName(out.name, p.name);
         }
 
         for (const auto& kv : players)
+        {
             sendto(sock, (const char*)&snapshot, sizeof(snapshot), 0, (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            ++totalPacketsOut;
+        }
 
+        // Status log every second
         if (nowMs() - lastLog >= 1000)
         {
-            printf("[SERVER] tick=%u rate=%.0f players=%zu\n", tick, SERVER_TICK_RATE, players.size());
+            printf("%s [SERVER STATUS] tick=%u players=%zu packetsIn=%llu packetsOut=%llu\n",
+                   serverTimestamp(), tick, players.size(),
+                   (unsigned long long)totalPacketsIn, (unsigned long long)totalPacketsOut);
             for (const auto& kv : players)
-                printf("[SERVER] player id=%u pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
-                       kv.second.id, kv.second.pos.x, kv.second.pos.y, kv.second.pos.z,
-                       kv.second.vel.x, kv.second.vel.y, kv.second.vel.z);
+                printf("%s [SERVER PLAYER] id=%u name=\"%s\" pos=(%.1f,%.1f,%.1f)\n",
+                       serverTimestamp(), kv.second.id, kv.second.name.c_str(),
+                       kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
             lastLog = nowMs();
         }
 
