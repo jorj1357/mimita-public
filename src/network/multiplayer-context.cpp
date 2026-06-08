@@ -53,7 +53,10 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.packetsSent = 0;
     ctx.packetsReceived = 0;
     ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
     ctx.playerRegistry.clear();
+    ctx.approvedLocalName.clear();
+    ctx.hasLocalServerPosition = false;
 
     printf("[NET CONNECT] connecting to %s as \"%s\"\n", address.c_str(), playerName.c_str());
     return true;
@@ -80,6 +83,7 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.active = false;
     ctx.localPlayerId = 0;
     ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
     ctx.playerRegistry.clear();
     netShutdown();
     printf("[NET DISCONNECT] shutdown complete\n");
@@ -110,7 +114,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
     }
 
     // Receive packets
-    char buffer[4096];
+    char buffer[16384];
     for (;;)
     {
         sockaddr_in from{};
@@ -131,6 +135,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
         {
             WelcomePacket* welcome = reinterpret_cast<WelcomePacket*>(buffer);
             ctx.localPlayerId = welcome->assignedPlayerId;
+            ctx.approvedLocalName = welcome->approvedName;
+            ctx.playerRegistry[ctx.localPlayerId] = {
+                ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
+                ctx.localPlayerId,
+                0
+            };
             printf("[NET SPAWN] assigned player id=%u serverTick=%u tickRate=%.0f\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate);
         }
@@ -138,55 +148,101 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
         {
             SnapshotPacket* snapshot = reinterpret_cast<SnapshotPacket*>(buffer);
             ctx.lastSnapshotTick = snapshot->header.tick;
-            uint32_t count = std::min(snapshot->playerCount, (uint32_t)MAX_SNAPSHOT_PLAYERS);
+            uint32_t count = std::min(snapshot->entityCount, (uint32_t)MAX_SNAPSHOT_ENTITIES);
+            const bool logSnapshot = snapshot->header.tick % 60 == 0;
 
-            std::unordered_map<uint32_t, bool> seen;
+            if (logSnapshot)
+                printf("[CLIENT SNAPSHOT RECV] localClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",
+                       ctx.localPlayerId, bytes, snapshot->entityCount,
+                       snapshot->playerCount, snapshot->npcCount);
+
+            std::unordered_map<uint32_t, bool> seenPlayers;
+            std::unordered_map<uint32_t, bool> seenNpcs;
             for (uint32_t i = 0; i < count; ++i)
             {
-                const SnapshotPlayer& sp = snapshot->players[i];
-                if (!sp.active || sp.playerId == 0)
-                    continue;
-
-                // Update player registry (names)
-                ctx.playerRegistry[sp.playerId].id = sp.playerId;
-                if (sp.name[0] != '\0')
-                    ctx.playerRegistry[sp.playerId].name = sp.name;
-                else if (ctx.playerRegistry[sp.playerId].name.empty())
-                    ctx.playerRegistry[sp.playerId].name = "player" + std::to_string(sp.playerId);
-
-                // Skip our own player - we render our local player separately
-                if (sp.playerId == ctx.localPlayerId)
+                const SnapshotEntity& entity = snapshot->entities[i];
+                if (!entity.active || entity.networkEntityId == 0)
                 {
-                    seen[sp.playerId] = true;
+                    printf("[CLIENT ENTITY SKIP] entityId=%u reason=inactive-or-zero-id\n",
+                           entity.networkEntityId);
                     continue;
                 }
 
-                // Create or update remote player
-                bool isNew = ctx.remotePlayers.find(sp.playerId) == ctx.remotePlayers.end();
-                Player& p = ctx.remotePlayers[sp.playerId];
+                const bool isLocal =
+                    entity.entityType == ENTITY_PLAYER &&
+                    entity.ownerClientId == ctx.localPlayerId;
+                if (isLocal)
+                {
+                    ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+                    ctx.hasLocalServerPosition = true;
+                    ctx.playerRegistry[entity.networkEntityId] = {
+                        entity.displayName, entity.networkEntityId, 0
+                    };
+                    if (logSnapshot)
+                    {
+                        printf("[CLIENT ENTITY APPLY] entityId=%u type=Player isLocal=1 existsBefore=1 "
+                               "createdNow=0 position=(%.2f,%.2f,%.2f) renderRegistered=1\n",
+                               entity.networkEntityId, entity.px, entity.py, entity.pz);
+                        printf("[CLIENT ENTITY SKIP] entityId=%u reason=local-prediction-keeps-transform\n",
+                               entity.networkEntityId);
+                    }
+                    continue;
+                }
 
+                std::unordered_map<uint32_t, Player>* replicas = nullptr;
+                std::unordered_map<uint32_t, bool>* seen = nullptr;
+                const char* typeName = nullptr;
+                if (entity.entityType == ENTITY_PLAYER)
+                {
+                    replicas = &ctx.remotePlayers;
+                    seen = &seenPlayers;
+                    typeName = "Player";
+                    ctx.playerRegistry[entity.networkEntityId] = {
+                        entity.displayName, entity.networkEntityId, 0
+                    };
+                }
+                else if (entity.entityType == ENTITY_NPC)
+                {
+                    replicas = &ctx.remoteNpcs;
+                    seen = &seenNpcs;
+                    typeName = "NPC";
+                }
+                else
+                {
+                    printf("[CLIENT ENTITY SKIP] entityId=%u reason=unknown-entity-type-%u\n",
+                           entity.networkEntityId, entity.entityType);
+                    continue;
+                }
+
+                bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+                Player& p = (*replicas)[entity.networkEntityId];
+                bool isNew = !existsBefore;
                 if (isNew)
                 {
-                    // Apply outfit to new remote player
                     OutfitAtlas::instance().apply(p, GetPlayerSettings().outfitPath);
-                    printf("[NET SPAWN] remote player id=%u name=\"%s\" spawned\n",
-                           sp.playerId, ctx.playerRegistry[sp.playerId].name.c_str());
                 }
 
-                p.pos = {sp.px, sp.py, sp.pz};
-                p.vel = {sp.vx, sp.vy, sp.vz};
-                p.yaw = sp.yaw;
-                p.onGround = sp.onGround != 0;
-                p.currentHp = sp.health;
-                p.username = ctx.playerRegistry[sp.playerId].name;
+                p.pos = {entity.px, entity.py, entity.pz};
+                p.vel = {entity.vx, entity.vy, entity.vz};
+                p.yaw = entity.yaw;
+                p.onGround = entity.onGround != 0;
+                p.currentHp = entity.health;
+                p.username = entity.displayName[0]
+                    ? entity.displayName
+                    : std::string(typeName) + std::to_string(entity.networkEntityId);
                 p.updateProceduralAnimation(dt);
-                seen[sp.playerId] = true;
+                (*seen)[entity.networkEntityId] = true;
+
+                if (isNew || logSnapshot)
+                    printf("[CLIENT ENTITY APPLY] entityId=%u type=%s isLocal=0 existsBefore=%d "
+                           "createdNow=%d position=(%.2f,%.2f,%.2f) renderRegistered=1\n",
+                           entity.networkEntityId, typeName, (int)existsBefore, (int)isNew,
+                           entity.px, entity.py, entity.pz);
             }
 
-            // Remove players that disappeared
             for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
             {
-                if (!seen[it->first])
+                if (!seenPlayers[it->first])
                 {
                     printf("[NET DESPAWN] remote player id=%u name=\"%s\" removed\n",
                            it->first, ctx.playerRegistry[it->first].name.c_str());
@@ -195,10 +251,38 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 else
                     ++it;
             }
+            for (auto it = ctx.remoteNpcs.begin(); it != ctx.remoteNpcs.end(); )
+            {
+                if (!seenNpcs[it->first])
+                {
+                    printf("[NET DESPAWN] NPC entityId=%u name=\"%s\" removed\n",
+                           it->first, it->second.username.c_str());
+                    it = ctx.remoteNpcs.erase(it);
+                }
+                else
+                    ++it;
+            }
         }
     }
 
     ++ctx.tick;
+}
+
+void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    SpawnNpcRequestPacket request{};
+    request.header.type = PACKET_SPAWN_NPC_REQUEST;
+    request.header.tick = ctx.tick;
+    request.header.playerId = ctx.localPlayerId;
+    request.px = position.x;
+    request.py = position.y;
+    request.pz = position.z;
+    sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
+           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    ++ctx.packetsSent;
 }
 
 } // namespace MimitaNet

@@ -19,6 +19,7 @@
 #include "menus/debug-menu.h"
 #include "menus/duel-config-menu.h"
 #include "menus/server-info-menu.h"
+#include "menus/sign-in-menu.h"
 #include "ui-system.h"
 #include <cstdio>
 
@@ -28,7 +29,8 @@ enum GuiMenuState
     GUI_MENU_SETTINGS,
     GUI_MENU_SERVERS,
     GUI_MENU_DUEL_CONFIG,
-    GUI_MENU_SERVER_INFO
+    GUI_MENU_SERVER_INFO,
+    GUI_MENU_SIGN_IN
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
@@ -62,6 +64,11 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 gGuiMenuState = GUI_MENU_SETTINGS;
             }
+            else if (r.goSignIn)
+            {
+                signInMenuSetActive(true);
+                gGuiMenuState = GUI_MENU_SIGN_IN;
+            }
             else if (r.startSandbox)
             {
                 state = GAME_PLAYING;
@@ -83,8 +90,10 @@ void guiMain(GLFWwindow* win, GameState& state)
         case GUI_MENU_SERVERS:
         {
             PlayMenuResult r = drawPlayMenu(win);
-            if (r.startServer)
+            if (r.startServer || r.joinByIp) {
+                serverInfoMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_SERVER_INFO;
+            }
             else if (r.connectToServer)
             {
                 gPendingConnect.shouldConnect = true;
@@ -106,7 +115,10 @@ void guiMain(GLFWwindow* win, GameState& state)
                 state = GAME_PLAYING;
             }
             else if (r.goBack)
+            {
+                serverInfoMenuSetActive(false);
                 gGuiMenuState = GUI_MENU_SERVERS;
+            }
             break;
         }
 
@@ -117,12 +129,24 @@ void guiMain(GLFWwindow* win, GameState& state)
                 gServerRunning = true;
             if (r.connect)
             {
+                serverInfoMenuSetActive(false);
                 gPendingConnect.shouldConnect = true;
                 gPendingConnect.address = gServerAddress;
                 state = GAME_PLAYING;
             }
             else if (r.goBack)
                 gGuiMenuState = GUI_MENU_SERVERS;
+            break;
+        }
+
+        case GUI_MENU_SIGN_IN:
+        {
+            SignInMenuResult r = drawSignInMenu(win);
+            if (r.signedIn || r.goBack)
+            {
+                signInMenuSetActive(false);
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
             break;
         }
     }

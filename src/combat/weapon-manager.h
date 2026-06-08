@@ -4,23 +4,13 @@
 #include <vector>
 
 #include "combat/revolver-system.h"
+#include "combat/weapon-types.h"
+#include "combat/weapon-system.h"
 
 class Camera;
 class Player;
 class NpcSystem;
 struct World;
-
-enum class WeaponCrosshairState {
-    Ready,
-    Delay,
-    Reloading
-};
-
-struct WeaponDefinition {
-    std::string id;
-    int slot = 0;
-    int cylinderCapacity = 0;
-};
 
 class WeaponManager {
 public:

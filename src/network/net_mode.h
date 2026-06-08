@@ -9,7 +9,7 @@ struct LaunchOptions
     bool server = false;
     bool client = false;
     std::string connect = "127.0.0.1:1357";
-    std::string name = "client";
+    std::string name;
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);
