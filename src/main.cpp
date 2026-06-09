@@ -85,6 +85,12 @@
 #include "game/duel.h"
 #include "gui/menus/duel-config-menu.h"
 
+// 6 9 2026 sort and be more aweosme
+// duelamanger should be  a game manager, with specific modes in it
+// not all in main todo 
+DuelManager gDuelManager;
+
+
 static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
                         const CollisionTriangle& tri, float& distance)
 {
@@ -296,6 +302,7 @@ int main(int argc, char** argv)
     // using the settings in the game mode manager
     // like number of plrs/npcs, duel time, how much HP, gravity, walkspeed, etc
     static DuelManager gDuelManager;
+    // 6 9 2026 todo duel manager needs to be in game manager and not like in main bruh 
     static DuelConfig gDuelConfig;
 
     static MimitaNet::MultiplayerContext mpContext;
@@ -585,7 +592,7 @@ int main(int argc, char** argv)
     });
     Terminal::instance().registerCommand({
         "npc_spawn", "Spawn NPCs in front of the camera", "npc_spawn <count>",
-        [&npcSystem, &camera, &player, &mpContext](const std::vector<std::string>& args) {
+        [&npcSystem, &camera, &player](const std::vector<std::string>& args) {
             int count = args.empty() ? 1 : std::clamp(std::stoi(args[0]), 1, 100);
             for (int i = 0; i < count; ++i) {
                 glm::vec3 spawnPos = camera.pos + camera.front * (5.0f + i * 1.5f) + glm::vec3(0,0,1);
