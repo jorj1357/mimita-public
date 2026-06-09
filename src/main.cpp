@@ -1123,6 +1123,19 @@ int main(int argc, char** argv)
             prevState = gameState;
         }
 
+        // Update cursor mode when duel phase changes (e.g. Active → MatchEnd)
+        {
+            static DuelPhase prevDuelPhase = DuelPhase::Off;
+            if (gDuelManager.phase() != prevDuelPhase) {
+                prevDuelPhase = gDuelManager.phase();
+                bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
+                glfwSetInputMode(engine.window(), GLFW_CURSOR,
+                    gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !duelMatchOver
+                        ? GLFW_CURSOR_DISABLED
+                        : GLFW_CURSOR_NORMAL);
+            }
+        }
+
         // Dev tools update
         DevOverlay::instance().update(dt);
         NpcSelectionManager::instance().update();
@@ -2115,14 +2128,16 @@ int main(int argc, char** argv)
         {
             if (Terminal::instance().isOpen()) {
                 Terminal::instance().toggle();
+                bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                    gameState == GAME_PLAYING ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+                    gameState == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
             } else {
                 // Disconnect from multiplayer if active
                 if (mpContext.active) {
                     MimitaNet::mpShutdown(mpContext);
                 }
                 gameState = GAME_MENU;
+                glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             }
         }
         escapePrev = escapeDown;
