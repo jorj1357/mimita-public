@@ -28,7 +28,9 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
     timer = 0.0f;
     currentRound = 1;
     currentMapIndex = 0;
-
+    playerRoundsWon_ = 0;
+    npcRoundsWon_ = 0;
+    
     playerKills = 0;
     npcKills.assign(config.numNpcs, 0);
     alivePlayerCount = 1;
@@ -59,6 +61,30 @@ void DuelManager::startCountdown()
     timer = 0.0f;
     playerKills = 0;
     npcKills.assign(config.numNpcs, 0);
+    alivePlayerCount = 1;
+    aliveNpcCount = config.numNpcs;
+}
+
+void DuelManager::resetRoundEntities(
+    Player& player,
+    NpcSystem& npcs,
+    World& world)
+{
+    npcs.destroyAll();
+
+    player.dead = false;
+    player.currentHp = 100.0f;
+    player.vel = glm::vec3(0.0f);
+    player.externalImpulse = glm::vec3(0.0f);
+
+    SpawnPoint* sp = world.pickSpawnPoint();
+
+    if (sp)
+    {
+        player.pos = sp->position;
+        player.respawnPosition = sp->position;
+    }
+
     alivePlayerCount = 1;
     aliveNpcCount = config.numNpcs;
 }
@@ -112,6 +138,8 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
             roundEndTimer -= dt;
             if (roundEndTimer <= 0.0f) {
                 currentRound++;
+
+                resetRoundEntities(player, npcs, world);
                 startCountdown();
             }
             break;
@@ -185,8 +213,14 @@ void DuelManager::endRound(DuelTeam winner)
     currentPhase = DuelPhase::RoundEnd;
     roundEndTimer = 3.0f;
 
-    if (winner == DuelTeam::Player) {
+    if (winner == DuelTeam::Player)
+    {
+        playerRoundsWon_++;
         playerStats.roundsWon++;
+    }
+    else
+    {
+        npcRoundsWon_++;
     }
 
     printf(
@@ -195,6 +229,18 @@ void DuelManager::endRound(DuelTeam winner)
         (int)winner,
         playerKills
     );
+
+    if (playerRoundsWon_ >= config.killsToWin)
+    {
+        endMatch();
+        return;
+    }
+
+    if (npcRoundsWon_ >= config.killsToWin)
+    {
+        endMatch();
+        return;
+    }
 }
 
 void DuelManager::endMatch()
@@ -234,7 +280,12 @@ void DuelManager::renderHud()
 
     if (currentPhase == DuelPhase::Active) {
         char scoreText[64];
-        snprintf(scoreText, sizeof(scoreText), "%d - %d", playerKills, config.killsToWin);
+        snprintf(
+            scoreText,
+            sizeof(scoreText),
+            "%d - %d",
+            playerRoundsWon_,
+            npcRoundsWon_);
         uiDrawText(scoreText, cx - 60.0f, 40.0f, 0.8f, {1, 0.85f, 0.25f, 1});
 
         float remaining = std::max(0.0f, (float)config.duelLengthSeconds - timer);
