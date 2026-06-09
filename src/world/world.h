@@ -32,6 +32,8 @@
 #include "physics/physics-types.h"
 
 #include <string>
+#include <cstdint>
+#include <glm/gtc/quaternion.hpp>
 
 struct Triangle;
 
@@ -122,6 +124,7 @@ struct Plane {
 
 struct SpawnPoint {
     glm::vec3 position{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     std::string tag;
     int arenaIndex = -1;
 };
@@ -143,6 +146,8 @@ struct World {
     std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionChunks;
 
     std::vector<SpawnPoint> spawnPoints;
+    int selectedSpawnIndex = -1;
+    std::uint64_t renderRevision = 0;
 
     void clear();
     void rebuildChunks();

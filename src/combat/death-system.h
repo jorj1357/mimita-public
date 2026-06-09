@@ -10,27 +10,29 @@ class Camera;
 class NpcSystem;
 struct World;
 
-struct RagdollPart {
-    std::string name;
+// Single rigid dead body — replaces multi-part ragdoll for stability.
+// The body is ONE physics object with a frozen skeleton pose.
+struct DeadBody {
+    // Physics state (single rigid object)
     glm::vec3 position{0.0f};
     glm::vec3 velocity{0.0f};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 angularVelocity{0.0f};
-    float radius = 0.25f;
-    float mass = 1.0f;
-    glm::mat4 worldTransform{1.0f};
-};
 
-struct RagdollConstraint {
-    int partA = -1;
-    int partB = -1;
-    float restDist = 0.0f;
-};
+    // Capsule collider (matches player dimensions)
+    float capsuleRadius = 0.7f;
+    float capsuleHeight = 3.6f;
 
-struct RagdollCorpse {
-    std::vector<RagdollPart> parts;
-    std::vector<RagdollConstraint> constraints;
+    // Frozen skeleton pose — captured at death, rendered relative to root
+    struct FrozenPart {
+        std::string name;
+        int nodeIndex = -1;
+        glm::mat4 worldTransform{1.0f};
+    };
+    std::vector<FrozenPart> frozenParts;
     std::vector<Mesh> partMeshes;
+
+    // Corpse metadata
     std::string id;
     std::string name;
     float age = 0.0f;
@@ -38,7 +40,6 @@ struct RagdollCorpse {
     float fade = 0.0f;
     bool sleeping = false;
     float sleepTimer = 0.0f;
-    bool groundResolved = false;
 
     glm::vec3 spawnPosition{0.0f};
     glm::vec3 transferredVelocity{0.0f};
@@ -61,19 +62,13 @@ public:
     void render(const Camera& camera) const;
     void appendReplayActors(std::vector<ReplayActorState>& actors) const;
 
-    const std::vector<RagdollCorpse>& corpses() const { return mCorpses; }
+    const std::vector<DeadBody>& corpses() const { return mCorpses; }
 
 private:
     void respawn(Player& actor, const std::string& actorId, const World& world);
-    void updateRagdollPhysics(RagdollPart& part, const World& world, float dt);
-    static void resolveSelfCollisions(RagdollCorpse& corpse);
-    static bool trySleepCorpse(RagdollCorpse& corpse, float dt);
-    static bool underworldCheck(RagdollCorpse& corpse, float worldFloor);
-    static void resolveGroundPenetration(RagdollCorpse& corpse, const World& world);
-    static void clampVelocities(RagdollPart& part);
+    static void updateDeadBodyPhysics(DeadBody& body, const World& world, float dt);
+    static bool trySleepBody(DeadBody& body, float dt);
 
-    static glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c);
-
-    std::vector<RagdollCorpse> mCorpses;
+    std::vector<DeadBody> mCorpses;
     unsigned int mCorpseSerial = 0;
 };

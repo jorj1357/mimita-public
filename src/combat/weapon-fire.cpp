@@ -165,7 +165,8 @@ RevolverShotResult tryFireHitscan(
     NpcSystem& npcs,
     const World& world,
     const glm::vec3& muzzlePos,
-    const glm::vec3& muzzleDir)
+    const glm::vec3& muzzleDir,
+    const std::unordered_map<uint32_t, Player>* remotePlayers)
 {
     RevolverShotResult result;
 
@@ -199,6 +200,25 @@ RevolverShotResult tryFireHitscan(
                 cameraNearest = std::min(cameraNearest, distance);
         }
     }
+    if (remotePlayers) {
+        for (const auto& entry : *remotePlayers) {
+            const Player& remote = entry.second;
+            if (remote.dead || remote.currentHp <= 0) continue;
+            const Capsule capsule = remote.getCapsule();
+            const glm::vec3 mn(
+                remote.pos.x - capsule.r,
+                remote.pos.y - capsule.r,
+                capsule.a.z - capsule.r);
+            const glm::vec3 mx(
+                remote.pos.x + capsule.r,
+                remote.pos.y + capsule.r,
+                capsule.b.z + capsule.r);
+            float distance = 0.0f;
+            glm::vec3 normal;
+            if (rayAabb(camera.pos, camera.front, mn, mx, distance, normal))
+                cameraNearest = std::min(cameraNearest, distance);
+        }
+    }
 
     glm::vec3 cameraTarget = camera.pos + camera.front * cameraNearest;
     glm::vec3 shotDirection = cameraTarget - muzzlePos;
@@ -225,6 +245,8 @@ RevolverShotResult tryFireHitscan(
     std::string hitPart;
     glm::vec3 hitNormal{0.0f};
     float localHeight = 0.5f;
+    uint32_t remoteTargetId = 0;
+    const Player* remoteVictim = nullptr;
     for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
         npc.body.updateModelWorldTransforms();
@@ -246,8 +268,41 @@ RevolverShotResult tryFireHitscan(
             }
         }
     }
+    if (remotePlayers) {
+        for (const auto& entry : *remotePlayers) {
+            const Player& remote = entry.second;
+            if (remote.dead || remote.currentHp <= 0) continue;
+            const Capsule capsule = remote.getCapsule();
+            const glm::vec3 mn(
+                remote.pos.x - capsule.r,
+                remote.pos.y - capsule.r,
+                capsule.a.z - capsule.r);
+            const glm::vec3 mx(
+                remote.pos.x + capsule.r,
+                remote.pos.y + capsule.r,
+                capsule.b.z + capsule.r);
+            float distance = 0.0f;
+            glm::vec3 normal;
+            if (rayAabb(muzzlePos, shotDirection, mn, mx, distance, normal) &&
+                distance < nearest) {
+                nearest = distance;
+                hitWorld = false;
+                victim = nullptr;
+                remoteVictim = &remote;
+                remoteTargetId = entry.first;
+                hitNormal = normal;
+                glm::vec3 hit = muzzlePos + shotDirection * distance;
+                localHeight = std::clamp(
+                    (hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f),
+                    0.0f, 1.0f);
+                hitPart = localHeight > 0.78f ? "head" :
+                    localHeight > 0.32f ? "torso" : "leg";
+            }
+        }
+    }
 
     result.end = muzzlePos + shotDirection * nearest;
+    result.hitNormal = victim || remoteVictim ? hitNormal : worldNormal;
 
     ReplayEffectEvent gunshotEvent;
     gunshotEvent.type = "gunshot";
@@ -279,6 +334,11 @@ RevolverShotResult tryFireHitscan(
         result.bodyPart = hitPart;
         result.damage = (float)totalDamage;
         result.targetId = victim->id;
+        {
+            float df = std::clamp(1.0f - nearest / 110.0f, 0.10f, 1.0f);
+            float kn = (float)totalDamage * df * (0.08f + ctx.angleFactor * 0.12f);
+            result.knockbackImpulse = shotDirection * kn + glm::vec3(0, 0, kn * 0.12f);
+        }
         hitmarker();
 
         EffectPartSystem::instance().spawnBloodSphereBurst(
@@ -290,10 +350,48 @@ RevolverShotResult tryFireHitscan(
         EffectPartSystem::instance().spawnBloodSpurt(
             result.end, shotDirection, shooter.username, "npc_" + std::to_string(victim->id));
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
+    } else if (remoteVictim) {
+        float damage = def.damage;
+        if (hitPart == "head")
+            damage *= def.headshotMultiplier;
+        else if (hitPart == "leg")
+            damage *= 0.5f;
+
+        const float falloffStart = def.customParams.count("distanceFalloffStart")
+            ? def.customParams.at("distanceFalloffStart") : 110.0f;
+        const float minFraction = def.customParams.count("minDamageFraction")
+            ? def.customParams.at("minDamageFraction") : 0.1f;
+        damage *= std::clamp(
+            1.0f - nearest / falloffStart, minFraction, 1.0f);
+        const int totalDamage = std::max(1, (int)std::round(damage));
+
+        result.hitEntity = true;
+        result.targetIsRemotePlayer = true;
+        result.bodyPart = hitPart;
+        result.damage = (float)totalDamage;
+        result.targetId = remoteTargetId;
+        {
+            float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+            float kn = (float)totalDamage * df * 0.15f;
+            result.knockbackImpulse = shotDirection * kn;
+        }
+        hitmarker();
+        EffectPartSystem::instance().spawnDamage(
+            result.end, remoteVictim->username, totalDamage);
+        EffectPartSystem::instance().spawnBloodSphereBurst(
+            result.end, shotDirection, (float)totalDamage / 60.0f,
+            shooter.username, remoteVictim->username);
+        EffectPartSystem::instance().spawnEntityImpact(
+            result.end, hitNormal, shooter.username, remoteVictim->username);
+        EffectPartSystem::instance().spawnBloodSpurt(
+            result.end, shotDirection, shooter.username, remoteVictim->username);
+        playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
     } else if (hitWorld) {
+        result.hitWorld = true;
+        float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
         EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
         EffectPartSystem::instance().spawnBulletImpact(result.end);
-        EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal);
+        EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal, debrisForce);
         playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
     }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include "weapon-types.h"
 #include "physics/physics-types.h"
 
@@ -22,7 +24,8 @@ RevolverShotResult tryFireHitscan(
     NpcSystem& npcs,
     const World& world,
     const glm::vec3& muzzlePos,
-    const glm::vec3& muzzleDir
+    const glm::vec3& muzzleDir,
+    const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr
 );
 
 void applyRecoil(

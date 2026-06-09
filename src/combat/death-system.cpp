@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <sstream>
 
 #include <glad/glad.h>
 #include "config.h"
@@ -28,37 +27,23 @@ constexpr float CORPSE_STAGE1_SECONDS = 5.0f;
 constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
 constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
 
-// Ragdoll physics tuning
-constexpr float RAGDOLL_GRAVITY = 15.0f;
-constexpr float RAGDOLL_DRAG = 0.8f;
-constexpr float RAGDOLL_ANGULAR_DRAG = 4.0f;
-constexpr float RAGDOLL_BOUNCE = 0.03f;
-constexpr float RAGDOLL_FRICTION = 0.4f;
-constexpr float RAGDOLL_MAX_LINEAR_VELOCITY = 20.0f;
-constexpr float RAGDOLL_MAX_ANGULAR_VELOCITY = 15.0f;
-constexpr float RAGDOLL_MAX_CONSTRAINT_IMPULSE = 30.0f;
-constexpr float RAGDOLL_CONSTRAINT_STIFFNESS = 0.25f;
-constexpr float RAGDOLL_CONSTRAINT_DAMPING = 0.9f;
-constexpr float RAGDOLL_SLEEP_VELOCITY = 0.15f;
-constexpr float RAGDOLL_SLEEP_ANGULAR = 0.08f;
-constexpr float RAGDOLL_SLEEP_TIME = 0.5f;
-constexpr float RAGDOLL_WORLD_FLOOR = -500.0f;
+// Dead body physics tuning
+constexpr float DEAD_GRAVITY = 20.0f;
+constexpr float DEAD_DRAG = 0.6f;
+constexpr float DEAD_ANGULAR_DRAG = 3.0f;
+constexpr float DEAD_BOUNCE = 0.15f;
+constexpr float DEAD_FRICTION = 0.8f;
+constexpr float DEAD_MAX_LINEAR_VELOCITY = 30.0f;
+constexpr float DEAD_MAX_ANGULAR_VELOCITY = 12.0f;
+constexpr float DEAD_SLEEP_VELOCITY = 0.1f;
+constexpr float DEAD_SLEEP_ANGULAR = 0.05f;
+constexpr float DEAD_SLEEP_TIME = 0.4f;
+constexpr float DEAD_WORLD_FLOOR = -500.0f;
+constexpr float DEAD_COLLISION_SKIN = 0.02f;
 
-#define RAGDOLL_LOG(fmt, ...) \
+#define DEAD_LOG(fmt, ...) \
     do { if (DebugConfig::DEBUG_RAGDOLL) \
-        printf("[RAGDOLL] " fmt "\n", ##__VA_ARGS__); } while(0)
-
-#define CONSTRAINT_LOG(fmt, ...) \
-    do { if (DebugConfig::DEBUG_RAGDOLL) \
-        printf("[CONSTRAINT] " fmt "\n", ##__VA_ARGS__); } while(0)
-
-#define PENETRATION_LOG(fmt, ...) \
-    do { if (DebugConfig::DEBUG_RAGDOLL) \
-        printf("[PENETRATION] " fmt "\n", ##__VA_ARGS__); } while(0)
-
-#define SELFCOLLISION_LOG(fmt, ...) \
-    do { if (DebugConfig::DEBUG_RAGDOLL) \
-        printf("[SELF COLLISION] " fmt "\n", ##__VA_ARGS__); } while(0)
+        printf("[DEAD] " fmt "\n", ##__VA_ARGS__); } while(0)
 
 void emitLifecycleEvent(const char* type,
                         const Player& actor,
@@ -73,194 +58,8 @@ void emitLifecycleEvent(const char* type,
     event.targetActorId = actorId;
     captureReplayEffect(event);
 }
-}
 
-DeathSystem& DeathSystem::instance()
-{
-    static DeathSystem system;
-    return system;
-}
-
-static int findPartIndex(const std::vector<RagdollPart>& parts, const std::string& name) {
-    for (int i = 0; i < (int)parts.size(); ++i) {
-        if (parts[i].name == name) return i;
-    }
-    return -1;
-}
-
-bool DeathSystem::kill(
-    Player& victim,
-    const std::string& actorId,
-    const std::string& actorType,
-    const std::string& killer,
-    const glm::vec3& shotDirection,
-    float lethalForce)
-{
-    if (victim.dead)
-        return false;
-
-    glm::vec3 direction = glm::length(shotDirection) > 0.001f
-        ? glm::normalize(shotDirection)
-        : glm::vec3(0.0f, 0.0f, -1.0f);
-
-    victim.updateModelWorldTransforms();
-
-    glm::vec3 victimPos = victim.pos;
-    glm::vec3 linearVel = victim.vel;
-    glm::vec3 externalVel = victim.externalImpulse;
-
-    printf("[RAGDOLL TRANSITION] alivePos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) externalImpulse=(%.2f %.2f %.2f) shotDir=(%.2f %.2f %.2f) force=%.1f\n",
-           victimPos.x, victimPos.y, victimPos.z,
-           linearVel.x, linearVel.y, linearVel.z,
-           externalVel.x, externalVel.y, externalVel.z,
-           direction.x, direction.y, direction.z,
-           lethalForce);
-
-    RagdollCorpse corpse;
-    corpse.id = actorId + "_corpse_" + std::to_string(++mCorpseSerial);
-    corpse.name = victim.username + " corpse";
-    corpse.partMeshes = victim.physicalBody.partMeshes;
-    corpse.spawnPosition = victimPos;
-    corpse.transferredVelocity = linearVel;
-    corpse.deathImpulse = direction * lethalForce;
-
-    for (size_t i = 0; i < victim.physicalBody.parts.size(); ++i) {
-        const auto& src = victim.physicalBody.parts[i];
-        RagdollPart part;
-        part.name = src.name;
-
-        part.position = glm::vec3(src.worldTransform[3]);
-
-        glm::vec3 size = src.collider.localMax - src.collider.localMin;
-        part.radius = std::max({size.x, size.y, size.z}) * 0.5f;
-        part.radius = std::max(part.radius, 0.1f);
-
-        float vol = size.x * size.y * size.z;
-        part.mass = std::max(vol * 100.0f, 0.5f);
-
-        part.rotation = glm::quat_cast(src.worldTransform);
-
-        glm::vec3 impulse = linearVel + externalVel + direction * lethalForce;
-
-        glm::vec3 offset = part.position - victimPos;
-        float offsetDist = glm::length(offset);
-        if (offsetDist > 0.001f) {
-            glm::vec3 offsetDir = offset / offsetDist;
-            float alignment = glm::max(0.0f, glm::dot(direction, offsetDir));
-            impulse += direction * lethalForce * alignment * 0.3f;
-        }
-
-        part.velocity = impulse;
-
-        part.angularVelocity = glm::cross(direction * lethalForce * 0.3f, offset);
-        float angSpeed = glm::length(part.angularVelocity);
-        if (angSpeed > 20.0f) {
-            part.angularVelocity = (part.angularVelocity / angSpeed) * 20.0f;
-        }
-
-        part.worldTransform = glm::translate(glm::mat4(1.0f), part.position) * glm::mat4_cast(part.rotation);
-
-        corpse.parts.push_back(std::move(part));
-    }
-
-    if (corpse.parts.empty()) {
-        RagdollPart root;
-        root.name = "root";
-        root.position = victimPos;
-        root.velocity = linearVel + externalVel + direction * lethalForce;
-        root.radius = 0.5f;
-        root.mass = 10.0f;
-        root.worldTransform = glm::translate(glm::mat4(1.0f), root.position);
-        corpse.parts.push_back(std::move(root));
-    }
-
-    int torsoIdx = findPartIndex(corpse.parts, "torso");
-    if (torsoIdx >= 0) {
-        static const char* limbNames[] = {"head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
-        for (const char* limbName : limbNames) {
-            int limbIdx = findPartIndex(corpse.parts, limbName);
-            if (limbIdx >= 0) {
-                RagdollConstraint c;
-                c.partA = torsoIdx;
-                c.partB = limbIdx;
-                c.restDist = glm::length(corpse.parts[limbIdx].position - corpse.parts[torsoIdx].position);
-                if (c.restDist > 0.01f) {
-                    corpse.constraints.push_back(c);
-                }
-            }
-        }
-    }
-
-    emitLifecycleEvent("death", victim, actorId, killer);
-
-    // DISABLE alive body at its current position — DO NOT teleport to void.
-    // The camera follows player.pos; teleporting to (0,0,-1000) causes
-    // the camera to snap underground and the ragdoll to feel disconnected.
-    victim.vel = glm::vec3(0.0f);
-    victim.externalImpulse = glm::vec3(0.0f);
-    victim.inputWishMove = glm::vec2(0.0f);
-    victim.currentHp = 0;
-    victim.dead = true;
-    victim.respawnTimer = RESPAWN_SECONDS;
-    victim.killedBy = killer.empty() ? "unknown" : killer;
-    victim.syncLegacyStateToLayers();
-
-    printf("[RAGDOLL DEATH] playerPos=(%.2f %.2f %.2f) aliveBodyDisabled=1 teleportHackDetected=0\n",
-           victimPos.x, victimPos.y, victimPos.z);
-
-    printf("[RAGDOLL SPAWN] ragdollPos=(%.2f %.2f %.2f) parts=%zu impulse=(%.2f %.2f %.2f)\n",
-           corpse.spawnPosition.x, corpse.spawnPosition.y, corpse.spawnPosition.z,
-           corpse.parts.size(),
-           corpse.deathImpulse.x, corpse.deathImpulse.y, corpse.deathImpulse.z);
-
-    if (!corpse.parts.empty()) {
-        printf("[RAGDOLL IMPULSE] rootVel=(%.2f %.2f %.2f) rootAngVel=(%.2f %.2f %.2f)\n",
-               corpse.parts[0].velocity.x, corpse.parts[0].velocity.y, corpse.parts[0].velocity.z,
-               corpse.parts[0].angularVelocity.x, corpse.parts[0].angularVelocity.y, corpse.parts[0].angularVelocity.z);
-    }
-
-    if (actorType == "npc")
-        AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, victimPos, 1.0f, 0.9f, 45.0f, 0});
-
-    ReplayEffectEvent corpseEvent;
-    corpseEvent.type = "corpse_spawn";
-    corpseEvent.position = victimPos;
-    corpseEvent.direction = direction;
-    corpseEvent.velocity = linearVel;
-    corpseEvent.sourceActorId = actorId;
-    corpseEvent.targetActorId = corpse.id;
-    captureReplayEffect(corpseEvent);
-
-    mCorpses.push_back(std::move(corpse));
-
-    return true;
-}
-
-void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
-{
-    SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
-    if (sp) {
-        actor.pos = sp->position;
-        actor.respawnPosition = sp->position;
-    } else {
-        actor.pos = actor.respawnPosition;
-    }
-
-    actor.vel = glm::vec3(0.0f);
-    actor.externalImpulse = glm::vec3(0.0f);
-    actor.currentHp = actor.maxHp;
-    actor.dead = false;
-    actor.proceduralFrozen = false;
-    actor.respawnTimer = 0.0f;
-    actor.killedBy.clear();
-    actor.onGround = false;
-    actor.syncLegacyStateToLayers();
-    actor.updateModelWorldTransforms();
-    emitLifecycleEvent("respawn", actor, actorId, actorId);
-}
-
-glm::vec3 DeathSystem::closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
+glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
 {
     glm::vec3 ab = b - a;
     glm::vec3 ac = c - a;
@@ -304,131 +103,201 @@ glm::vec3 DeathSystem::closestPointOnTriangle(const glm::vec3& p, const glm::vec
     return a + v * ab + w * ac;
 }
 
-static void enforceConstraint(RagdollPart& a, RagdollPart& b, float restDist, float dt) {
-    glm::vec3 delta = b.position - a.position;
-    float dist = glm::length(delta);
-    if (dist < 0.001f) return;
-
-    float error = dist - restDist;
-    if (std::fabs(error) < 0.005f) return;
-
-    glm::vec3 dir = delta / dist;
-    float totalMass = a.mass + b.mass;
-    if (totalMass < 0.001f) return;
-    float aWeight = b.mass / totalMass;
-    float bWeight = a.mass / totalMass;
-
-    // Soft positional correction — reduced stiffness to prevent jitter
-    float correction = error * RAGDOLL_CONSTRAINT_STIFFNESS;
-    glm::vec3 posCorr = dir * correction;
-    a.position += posCorr * aWeight;
-    b.position -= posCorr * bWeight;
-
-    // Velocity damping along constraint axis (both expansion and compression)
-    glm::vec3 relVel = b.velocity - a.velocity;
-    float radialVel = glm::dot(relVel, dir);
-    glm::vec3 impulse = dir * radialVel * RAGDOLL_CONSTRAINT_DAMPING;
-
-    // Clamp impulse to prevent explosive correction
-    float impulseMag = glm::length(impulse);
-    if (impulseMag > RAGDOLL_MAX_CONSTRAINT_IMPULSE) {
-        impulse = (impulse / impulseMag) * RAGDOLL_MAX_CONSTRAINT_IMPULSE;
-    }
-
-    a.velocity += impulse * aWeight;
-    b.velocity -= impulse * bWeight;
-
-    CONSTRAINT_LOG("error=%.3f correction=%.3f impulse=%.1f dist=%.2f rest=%.2f",
-                   error, glm::length(posCorr), glm::length(impulse), dist, restDist);
+// Find closest point on a line segment to a point
+glm::vec3 closestPointOnSegment(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b) {
+    glm::vec3 ab = b - a;
+    float len2 = glm::dot(ab, ab);
+    if (len2 < 0.0001f) return a;
+    float t = glm::clamp(glm::dot(p - a, ab) / len2, 0.0f, 1.0f);
+    return a + ab * t;
+}
 }
 
-void DeathSystem::clampVelocities(RagdollPart& part)
+DeathSystem& DeathSystem::instance()
 {
-    float speed = glm::length(part.velocity);
-    if (speed > RAGDOLL_MAX_LINEAR_VELOCITY) {
-        RAGDOLL_LOG("Clamping linear velocity %.1f -> %.1f for '%s'",
-                    speed, RAGDOLL_MAX_LINEAR_VELOCITY, part.name.c_str());
-        part.velocity = (part.velocity / speed) * RAGDOLL_MAX_LINEAR_VELOCITY;
-    }
-
-    float angSpeed = glm::length(part.angularVelocity);
-    if (angSpeed > RAGDOLL_MAX_ANGULAR_VELOCITY) {
-        RAGDOLL_LOG("Clamping angular velocity %.1f -> %.1f for '%s'",
-                    angSpeed, RAGDOLL_MAX_ANGULAR_VELOCITY, part.name.c_str());
-        part.angularVelocity = (part.angularVelocity / angSpeed) * RAGDOLL_MAX_ANGULAR_VELOCITY;
-    }
+    static DeathSystem system;
+    return system;
 }
 
-void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, float dt)
+bool DeathSystem::kill(
+    Player& victim,
+    const std::string& actorId,
+    const std::string& actorType,
+    const std::string& killer,
+    const glm::vec3& shotDirection,
+    float lethalForce)
+{
+    if (victim.dead)
+        return false;
+
+    glm::vec3 direction = glm::length(shotDirection) > 0.001f
+        ? glm::normalize(shotDirection)
+        : glm::vec3(0.0f, 0.0f, -1.0f);
+
+    // Capture final body state BEFORE disabling the player
+    victim.updateModelWorldTransforms();
+
+    glm::vec3 victimPos = victim.pos;
+    glm::vec3 linearVel = victim.vel;
+    glm::vec3 externalVel = victim.externalImpulse;
+    glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
+
+    printf("[DEATH TRANSITION] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) externalImpulse=(%.2f %.2f %.2f) shotDir=(%.2f %.2f %.2f) force=%.1f\n",
+           victimPos.x, victimPos.y, victimPos.z,
+           linearVel.x, linearVel.y, linearVel.z,
+           externalVel.x, externalVel.y, externalVel.z,
+           direction.x, direction.y, direction.z,
+           lethalForce);
+
+    DeadBody body;
+    body.id = actorId + "_corpse_" + std::to_string(++mCorpseSerial);
+    body.name = victim.username + " corpse";
+    body.spawnPosition = victimPos;
+    body.transferredVelocity = linearVel;
+    body.deathImpulse = direction * lethalForce;
+
+    // Single physics body at the player's death position
+    body.position = victimPos;
+    body.rotation = victimRotation;
+
+    // Capsule dimensions matching the player
+    body.capsuleRadius = PLAYER_RADIUS;
+    body.capsuleHeight = PLAYER_HEIGHT;
+
+    // Inherit velocity — clamped to prevent launch, preserve momentum feel
+    float velMag = glm::length(linearVel + externalVel);
+    float maxInherit = 8.0f;
+    if (velMag > maxInherit) {
+        body.velocity = (linearVel + externalVel) * (maxInherit / velMag);
+    } else {
+        body.velocity = linearVel + externalVel;
+    }
+
+    // Small death impulse — enough for natural slump, not enough for launch
+    body.velocity += direction * std::min(lethalForce * 0.3f, 5.0f);
+
+    // Gentle angular velocity from the shot direction
+    body.angularVelocity = glm::cross(direction * lethalForce * 0.05f, glm::vec3(0.0f, 0.0f, 1.0f));
+    float angSpeed = glm::length(body.angularVelocity);
+    if (angSpeed > 3.0f) {
+        body.angularVelocity = (body.angularVelocity / angSpeed) * 3.0f;
+    }
+
+    // Freeze skeleton pose from current physical body transforms
+    body.frozenParts.reserve(victim.physicalBody.parts.size());
+    body.partMeshes = victim.physicalBody.partMeshes;
+    for (size_t i = 0; i < victim.physicalBody.parts.size(); ++i) {
+        DeadBody::FrozenPart fp;
+        fp.name = victim.physicalBody.parts[i].name;
+        fp.nodeIndex = victim.physicalBody.parts[i].nodeIndex;
+        fp.worldTransform = victim.physicalBody.parts[i].worldTransform;
+        body.frozenParts.push_back(std::move(fp));
+    }
+
+    emitLifecycleEvent("death", victim, actorId, killer);
+
+    // DISABLE alive body
+    victim.vel = glm::vec3(0.0f);
+    victim.externalImpulse = glm::vec3(0.0f);
+    victim.inputWishMove = glm::vec2(0.0f);
+    victim.currentHp = 0;
+    victim.dead = true;
+    victim.respawnTimer = RESPAWN_SECONDS;
+    victim.killedBy = killer.empty() ? "unknown" : killer;
+    victim.syncLegacyStateToLayers();
+
+    printf("[DEATH SPAWN] bodyPos=(%.2f %.2f %.2f) frozenParts=%zu vel=(%.2f %.2f %.2f) angVel=(%.2f %.2f %.2f)\n",
+           body.position.x, body.position.y, body.position.z,
+           body.frozenParts.size(),
+           body.velocity.x, body.velocity.y, body.velocity.z,
+           body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+
+    if (actorType == "npc")
+        AudioManager::instance().play(
+            {"npc_death", AudioCategory::NPC, true, victimPos, 1.0f, 0.9f, 45.0f, 0});
+
+    ReplayEffectEvent corpseEvent;
+    corpseEvent.type = "corpse_spawn";
+    corpseEvent.position = victimPos;
+    corpseEvent.direction = direction;
+    corpseEvent.velocity = linearVel;
+    corpseEvent.sourceActorId = actorId;
+    corpseEvent.targetActorId = body.id;
+    captureReplayEffect(corpseEvent);
+
+    mCorpses.push_back(std::move(body));
+
+    return true;
+}
+
+void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
+{
+    SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
+    if (sp) {
+        actor.pos = sp->position;
+        actor.respawnPosition = sp->position;
+    } else {
+        actor.pos = actor.respawnPosition;
+    }
+
+    actor.vel = glm::vec3(0.0f);
+    actor.externalImpulse = glm::vec3(0.0f);
+    actor.currentHp = actor.maxHp;
+    actor.dead = false;
+    actor.proceduralFrozen = false;
+    actor.respawnTimer = 0.0f;
+    actor.killedBy.clear();
+    actor.onGround = false;
+    actor.syncLegacyStateToLayers();
+    actor.updateModelWorldTransforms();
+    emitLifecycleEvent("respawn", actor, actorId, actorId);
+}
+
+void DeathSystem::updateDeadBodyPhysics(DeadBody& body, const World& world, float dt)
 {
     float safeDt = std::min(dt, 0.033f);
-
     const auto& triangles = world.collisionMesh.triangles;
-
-    // --- STEP 0: Pre-penetration resolution ---
-    // Push part out of world BEFORE integration to prevent spawn-in-floor jitter.
-    // Use multiple passes for deep penetrations.
-    for (int ppPass = 0; ppPass < 4; ++ppPass) {
-        for (const auto& tri : triangles) {
-            glm::vec3 closest = closestPointOnTriangle(part.position, tri.a, tri.b, tri.c);
-            glm::vec3 diff = part.position - closest;
-            float dist = glm::length(diff);
-
-            if (dist < 0.0001f) {
-                // Part center is exactly on triangle surface — use triangle normal
-                glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
-                part.position += triNormal * (part.radius + 0.03f);
-                float vDotN = glm::dot(part.velocity, triNormal);
-                if (vDotN < 0.0f) {
-                    part.velocity -= vDotN * triNormal * 1.2f;
-                }
-            } else if (dist < part.radius) {
-                float penetration = (part.radius - dist) + 0.02f;
-                glm::vec3 normal = diff / dist;
-                part.position += normal * penetration;
-                float vDotN = glm::dot(part.velocity, -normal);
-                if (vDotN < 0.0f) {
-                    part.velocity -= vDotN * (-normal) * 1.2f;
-                }
-            }
-        }
-    }
-
-    // Clamp velocities BEFORE integration
-    clampVelocities(part);
+    float radius = body.capsuleRadius;
 
     // Gravity
-    part.velocity.z -= RAGDOLL_GRAVITY * safeDt;
+    body.velocity.z -= DEAD_GRAVITY * safeDt;
 
-    // Linear drag (higher to kill vibration)
-    part.velocity *= std::max(0.0f, 1.0f - RAGDOLL_DRAG * safeDt);
+    // Linear drag
+    body.velocity *= std::max(0.0f, 1.0f - DEAD_DRAG * safeDt);
 
     // Angular velocity damping
-    float angSpeed = glm::length(part.angularVelocity);
+    float angSpeed = glm::length(body.angularVelocity);
     if (angSpeed > 0.001f) {
-        part.angularVelocity *= std::max(0.0f, 1.0f - RAGDOLL_ANGULAR_DRAG * safeDt);
+        body.angularVelocity *= std::max(0.0f, 1.0f - DEAD_ANGULAR_DRAG * safeDt);
         glm::quat deltaRot = glm::angleAxis(
             std::min(angSpeed * safeDt, 0.5f),
-            part.angularVelocity / angSpeed);
-        part.rotation = glm::normalize(deltaRot * part.rotation);
+            body.angularVelocity / angSpeed);
+        body.rotation = glm::normalize(deltaRot * body.rotation);
     }
 
-    // Clamp velocities AFTER integration too (safety net)
-    clampVelocities(part);
+    // Clamp velocities
+    float speed = glm::length(body.velocity);
+    if (speed > DEAD_MAX_LINEAR_VELOCITY) {
+        body.velocity = (body.velocity / speed) * DEAD_MAX_LINEAR_VELOCITY;
+    }
+    angSpeed = glm::length(body.angularVelocity);
+    if (angSpeed > DEAD_MAX_ANGULAR_VELOCITY) {
+        body.angularVelocity = (body.angularVelocity / angSpeed) * DEAD_MAX_ANGULAR_VELOCITY;
+    }
 
     // Integrate position
-    glm::vec3 move = part.velocity * safeDt;
+    glm::vec3 move = body.velocity * safeDt;
     float moveLen = glm::length(move);
 
-    // World collision during movement
+    // Collision: step-based sphere-vs-triangle
     if (moveLen > 0.0001f) {
         glm::vec3 moveDir = move / moveLen;
         float remaining = moveLen;
         constexpr int MAX_STEPS = 4;
 
         for (int step = 0; step < MAX_STEPS && remaining > 0.0001f; ++step) {
-            float stepDist = std::min(remaining, part.radius * 0.5f);
-            glm::vec3 newPos = part.position + moveDir * stepDist;
+            float stepDist = std::min(remaining, radius * 0.5f);
+            glm::vec3 newPos = body.position + moveDir * stepDist;
 
             bool hit = false;
             float bestPenetration = 0.0f;
@@ -439,15 +308,17 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
                 glm::vec3 diff = newPos - closest;
                 float dist = glm::length(diff);
 
-                if (dist < part.radius) {
+                if (dist < radius) {
+                    glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
                     glm::vec3 normal;
                     if (dist > 0.0001f) {
-                        normal = diff / dist;
+                        float belowPlane = glm::dot(diff, triNormal);
+                        normal = (belowPlane < 0.0f) ? triNormal : diff / dist;
                     } else {
-                        normal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
+                        normal = triNormal;
                     }
 
-                    float penetration = part.radius - dist;
+                    float penetration = radius - dist;
                     if (penetration > bestPenetration) {
                         bestPenetration = penetration;
                         bestNormal = normal;
@@ -457,214 +328,82 @@ void DeathSystem::updateRagdollPhysics(RagdollPart& part, const World& world, fl
             }
 
             if (hit) {
-                part.position += bestNormal * bestPenetration;
+                body.position += bestNormal * (bestPenetration + DEAD_COLLISION_SKIN);
 
-                float vDotN = glm::dot(part.velocity, bestNormal);
+                float vDotN = glm::dot(body.velocity, bestNormal);
                 if (vDotN < 0.0f) {
-                    part.velocity -= (1.0f + RAGDOLL_BOUNCE) * vDotN * bestNormal;
+                    body.velocity -= (1.0f + DEAD_BOUNCE) * vDotN * bestNormal;
 
-                    glm::vec3 tangential = part.velocity - glm::dot(part.velocity, bestNormal) * bestNormal;
+                    // Friction on tangential component
+                    glm::vec3 tangential = body.velocity - glm::dot(body.velocity, bestNormal) * bestNormal;
                     float tangLen = glm::length(tangential);
                     if (tangLen > 0.001f) {
-                        tangential *= std::max(0.0f, 1.0f - RAGDOLL_FRICTION * safeDt);
-                        part.velocity = glm::dot(part.velocity, bestNormal) * bestNormal + tangential;
+                        tangential *= std::max(0.0f, 1.0f - DEAD_FRICTION * safeDt);
+                        body.velocity = glm::dot(body.velocity, bestNormal) * bestNormal + tangential;
                     }
                 }
 
                 remaining *= 0.3f;
             } else {
-                part.position = newPos;
+                body.position = newPos;
                 remaining -= stepDist;
             }
         }
     }
 
-    // Clamp velocities again after collision
-    clampVelocities(part);
+    // Post-movement ground proximity check — zero slow downward velocity near surfaces
+    for (const auto& tri : triangles) {
+        glm::vec3 closest = closestPointOnTriangle(body.position, tri.a, tri.b, tri.c);
+        glm::vec3 diff = body.position - closest;
+        float dist = glm::length(diff);
 
-    part.worldTransform = glm::translate(glm::mat4(1.0f), part.position) * glm::mat4_cast(part.rotation);
-}
-
-void DeathSystem::resolveSelfCollisions(RagdollCorpse& corpse)
-{
-    auto& parts = corpse.parts;
-    const auto& constraints = corpse.constraints;
-
-    // Build constrained pair lookup
-    std::vector<std::pair<int,int>> constrainedPairs;
-    for (const auto& c : constraints) {
-        if (c.partA >= 0 && c.partB >= 0) {
-            constrainedPairs.emplace_back(c.partA, c.partB);
-            constrainedPairs.emplace_back(c.partB, c.partA);
-        }
-    }
-
-    auto isConstrained = [&](int i, int j) -> bool {
-        for (const auto& p : constrainedPairs) {
-            if (p.first == i && p.second == j) return true;
-        }
-        return false;
-    };
-
-    for (size_t i = 0; i < parts.size(); ++i) {
-        for (size_t j = i + 1; j < parts.size(); ++j) {
-            if (isConstrained((int)i, (int)j)) continue;
-
-            const auto& a = parts[i];
-            const auto& b = parts[j];
-
-            glm::vec3 delta = b.position - a.position;
-            float dist = glm::length(delta);
-            float minDist = a.radius + b.radius;
-
-            if (dist < minDist && dist > 0.0001f) {
-                float penetration = minDist - dist;
-                glm::vec3 dir = delta / dist;
-                float totalMass = a.mass + b.mass;
-                if (totalMass < 0.001f) continue;
-                float aWeight = b.mass / totalMass;
-                float bWeight = a.mass / totalMass;
-
-                // Position correction: push apart
-                parts[i].position -= dir * penetration * aWeight;
-                parts[j].position += dir * penetration * bWeight;
-
-                // Velocity correction: damp relative motion toward each other
-                glm::vec3 relVel = b.velocity - a.velocity;
-                float radialVel = glm::dot(relVel, dir);
-                if (radialVel < 0.0f) {
-                    glm::vec3 impulse = dir * radialVel * 0.4f; // 40% restitution
-                    parts[i].velocity += impulse * aWeight;
-                    parts[j].velocity -= impulse * bWeight;
-                }
-
-                SELFCOLLISION_LOG("'%s' <-> '%s' penetration=%.3f dist=%.2f minDist=%.2f",
-                                  a.name.c_str(), b.name.c_str(), penetration, dist, minDist);
+        if (dist < radius * 2.0f && dist > 0.0001f) {
+            glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
+            float vDotN = glm::dot(body.velocity, triNormal);
+            if (vDotN < 0.0f && vDotN > -1.5f) {
+                body.velocity -= vDotN * triNormal;
             }
         }
     }
-}
 
-bool DeathSystem::trySleepCorpse(RagdollCorpse& corpse, float dt)
-{
-    if (corpse.sleeping) return true;
-
-    float maxSpeed = 0.0f;
-    float maxAngSpeed = 0.0f;
-    for (const auto& part : corpse.parts) {
-        maxSpeed = std::max(maxSpeed, glm::length(part.velocity));
-        maxAngSpeed = std::max(maxAngSpeed, glm::length(part.angularVelocity));
+    // Clamp again after all corrections
+    speed = glm::length(body.velocity);
+    if (speed > DEAD_MAX_LINEAR_VELOCITY) {
+        body.velocity = (body.velocity / speed) * DEAD_MAX_LINEAR_VELOCITY;
     }
 
-    if (maxSpeed < RAGDOLL_SLEEP_VELOCITY && maxAngSpeed < RAGDOLL_SLEEP_ANGULAR) {
-        corpse.sleepTimer += dt;
-        if (corpse.sleepTimer >= RAGDOLL_SLEEP_TIME) {
-            corpse.sleeping = true;
-            // Zero out all velocities to prevent micro-oscillation
-            for (auto& part : corpse.parts) {
-                part.velocity = glm::vec3(0.0f);
-                part.angularVelocity = glm::vec3(0.0f);
-            }
-            RAGDOLL_LOG("Corpse '%s' is now sleeping", corpse.id.c_str());
+    DEAD_LOG("pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) speed=%.2f",
+             body.position.x, body.position.y, body.position.z,
+             body.velocity.x, body.velocity.y, body.velocity.z,
+             speed);
+}
+
+bool DeathSystem::trySleepBody(DeadBody& body, float dt)
+{
+    if (body.sleeping) return true;
+
+    float speed = glm::length(body.velocity);
+    float angSpeed = glm::length(body.angularVelocity);
+
+    if (speed < DEAD_SLEEP_VELOCITY && angSpeed < DEAD_SLEEP_ANGULAR) {
+        body.sleepTimer += dt;
+        if (body.sleepTimer >= DEAD_SLEEP_TIME) {
+            body.sleeping = true;
+            body.velocity = glm::vec3(0.0f);
+            body.angularVelocity = glm::vec3(0.0f);
+            DEAD_LOG("Body '%s' sleeping at pos=(%.2f %.2f %.2f)",
+                     body.id.c_str(), body.position.x, body.position.y, body.position.z);
             return true;
+        }
+        // Pre-sleep damping
+        if (body.sleepTimer > DEAD_SLEEP_TIME * 0.5f) {
+            body.velocity *= 0.9f;
+            body.angularVelocity *= 0.9f;
         }
     } else {
-        corpse.sleepTimer = 0.0f;
+        body.sleepTimer = 0.0f;
     }
     return false;
-}
-
-bool DeathSystem::underworldCheck(RagdollCorpse& corpse, float worldFloor)
-{
-    for (auto& part : corpse.parts) {
-        if (part.position.z < worldFloor) {
-            RAGDOLL_LOG("[RAGDOLL UNDERWORLD] Corpse '%s' part '%s' at z=%.1f below floor %.1f",
-                        corpse.id.c_str(), part.name.c_str(), part.position.z, worldFloor);
-            return true;
-        }
-    }
-    return false;
-}
-
-void DeathSystem::resolveGroundPenetration(RagdollCorpse& corpse, const World& world)
-{
-    if (corpse.groundResolved) return;
-
-    const auto& triangles = world.collisionMesh.triangles;
-    if (triangles.empty()) {
-        corpse.groundResolved = true;
-        return;
-    }
-
-    RAGDOLL_LOG("Resolving ground penetration for corpse '%s' (%zu parts, %zu triangles)",
-                corpse.id.c_str(), corpse.parts.size(), triangles.size());
-
-    for (auto& part : corpse.parts) {
-        for (int pass = 0; pass < 10; ++pass) {
-            float maxPenetration = 0.0f;
-            glm::vec3 resolveDir(0.0f);
-            bool insideSurface = false;
-
-            for (const auto& tri : triangles) {
-                glm::vec3 closest = closestPointOnTriangle(part.position, tri.a, tri.b, tri.c);
-                glm::vec3 diff = part.position - closest;
-                float dist = glm::length(diff);
-
-                if (dist < 0.0001f) {
-                    // Part center is ON the surface — use triangle normal as resolve direction
-                    glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
-                    float pen = part.radius + 0.05f;
-                    if (pen > maxPenetration) {
-                        maxPenetration = pen;
-                        resolveDir = triNormal;
-                        insideSurface = true;
-                    }
-                } else if (dist < part.radius) {
-                    float penetration = part.radius - dist;
-                    if (penetration > maxPenetration) {
-                        maxPenetration = penetration;
-                        resolveDir = diff / dist;
-                    }
-                }
-            }
-
-            if (maxPenetration > 0.001f) {
-                float pushDist = maxPenetration + 0.03f;
-                part.position += resolveDir * pushDist;
-                PENETRATION_LOG("Part '%s' pass %d: pushed %.3f along (%.2f %.2f %.2f) inside=%d",
-                                part.name.c_str(), pass, pushDist,
-                                resolveDir.x, resolveDir.y, resolveDir.z, (int)insideSurface);
-            } else {
-                break;
-            }
-        }
-
-        // Zero velocity pointing into any surface
-        for (const auto& tri : triangles) {
-            glm::vec3 closest = closestPointOnTriangle(part.position, tri.a, tri.b, tri.c);
-            glm::vec3 diff = part.position - closest;
-            float dist = glm::length(diff);
-
-            if (dist < part.radius + 0.05f) {
-                glm::vec3 normal;
-                if (dist > 0.0001f) {
-                    normal = diff / dist;
-                } else {
-                    normal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
-                }
-                float vDotN = glm::dot(part.velocity, normal);
-                if (vDotN < 0.0f) {
-                    part.velocity -= vDotN * normal;
-                    PENETRATION_LOG("Part '%s' velocity zeroed along normal (%.2f %.2f %.2f)",
-                                    part.name.c_str(), normal.x, normal.y, normal.z);
-                }
-            }
-        }
-
-        part.worldTransform = glm::translate(glm::mat4(1.0f), part.position) * glm::mat4_cast(part.rotation);
-    }
-
-    corpse.groundResolved = true;
 }
 
 void DeathSystem::update(
@@ -674,6 +413,7 @@ void DeathSystem::update(
     bool instantRespawnPressed,
     float dt)
 {
+    // Kill any entity that just reached 0 HP
     if (player.currentHp <= 0 && !player.dead) {
         kill(player, player.username, "player", "unknown", player.vel, 12.0f);
     }
@@ -689,71 +429,44 @@ void DeathSystem::update(
         }
     }
 
-    for (RagdollCorpse& corpse : mCorpses) {
-        corpse.age += dt;
+    // Update all dead bodies
+    for (DeadBody& body : mCorpses) {
+        body.age += dt;
 
-        // --- Underworld safety check ---
-        if (underworldCheck(corpse, RAGDOLL_WORLD_FLOOR)) {
-            RAGDOLL_LOG("[RAGDOLL UNDERWORLD] Cleaning up corpse '%s'", corpse.id.c_str());
-            corpse.age = CORPSE_TOTAL_SECONDS;
+        // Underworld safety
+        if (body.position.z < DEAD_WORLD_FLOOR) {
+            DEAD_LOG("[UNDERWORLD] Body '%s' at z=%.1f, cleaning up",
+                     body.id.c_str(), body.position.z);
+            body.age = CORPSE_TOTAL_SECONDS;
             continue;
         }
 
-        if (corpse.age < CORPSE_STAGE1_SECONDS) {
-            corpse.blackness = std::clamp(corpse.age / CORPSE_STAGE1_SECONDS, 0.0f, 1.0f);
-            corpse.fade = 0.0f;
+        if (body.age < CORPSE_STAGE1_SECONDS) {
+            body.blackness = std::clamp(body.age / CORPSE_STAGE1_SECONDS, 0.0f, 1.0f);
+            body.fade = 0.0f;
 
-            // --- Ground penetration fix (first frame only) ---
-            resolveGroundPenetration(corpse, world);
-
-            // --- Sleep check ---
-            if (trySleepCorpse(corpse, dt)) {
-                // Corpse is sleeping; just update transforms
-                for (RagdollPart& part : corpse.parts) {
-                    part.worldTransform = glm::translate(glm::mat4(1.0f), part.position) * glm::mat4_cast(part.rotation);
-                }
+            // Sleep check
+            if (trySleepBody(body, dt))
                 continue;
-            }
 
-            // Step 1: Update individual part physics
-            for (RagdollPart& part : corpse.parts) {
-                updateRagdollPhysics(part, world, dt);
-            }
-
-            // Step 2: Self-collision between non-connected parts
-            resolveSelfCollisions(corpse);
-
-            // Step 3: Enforce constraints between parts (multiple iterations for stability)
-            constexpr int CONSTRAINT_ITERS = 5;
-            float subDt = dt / (float)CONSTRAINT_ITERS;
-            for (int iter = 0; iter < CONSTRAINT_ITERS; ++iter) {
-                for (const RagdollConstraint& c : corpse.constraints) {
-                    if (c.partA >= 0 && c.partA < (int)corpse.parts.size() &&
-                        c.partB >= 0 && c.partB < (int)corpse.parts.size()) {
-                        enforceConstraint(corpse.parts[c.partA], corpse.parts[c.partB],
-                                          c.restDist, subDt);
-                    }
-                }
-            }
-
-            // Step 4: Clamp velocities once more after all corrections
-            for (RagdollPart& part : corpse.parts) {
-                clampVelocities(part);
-            }
+            // Physics update — single body, no constraints
+            updateDeadBodyPhysics(body, world, dt);
         } else {
-            corpse.blackness = 1.0f;
-            corpse.fade = std::clamp(
-                (corpse.age - CORPSE_STAGE1_SECONDS) / CORPSE_STAGE2_SECONDS,
+            body.blackness = 1.0f;
+            body.fade = std::clamp(
+                (body.age - CORPSE_STAGE1_SECONDS) / CORPSE_STAGE2_SECONDS,
                 0.0f, 1.0f);
         }
     }
 
+    // Remove expired corpses
     mCorpses.erase(
-        std::remove_if(mCorpses.begin(), mCorpses.end(), [](const RagdollCorpse& corpse) {
-            return corpse.age >= CORPSE_TOTAL_SECONDS;
+        std::remove_if(mCorpses.begin(), mCorpses.end(), [](const DeadBody& body) {
+            return body.age >= CORPSE_TOTAL_SECONDS;
         }),
         mCorpses.end());
 
+    // Respawn logic
     if (player.dead) {
         player.respawnTimer = std::max(0.0f, player.respawnTimer - dt);
         if (instantRespawnPressed || player.respawnTimer <= 0.0f)
@@ -777,22 +490,44 @@ void DeathSystem::render(const Camera& camera) const
     glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
     GLuint shader = gRenderer->shaderProgram;
 
-    for (const RagdollCorpse& corpse : mCorpses) {
-        if (corpse.fade >= 1.0f)
+    for (const DeadBody& body : mCorpses) {
+        if (body.fade >= 1.0f)
             continue;
 
-        for (size_t i = 0; i < corpse.parts.size() && i < corpse.partMeshes.size(); ++i) {
-            const RagdollPart& part = corpse.parts[i];
-            const Mesh& mesh = corpse.partMeshes[i];
+        // Build root transform from dead body physics state
+        glm::mat4 rootTransform = glm::translate(glm::mat4(1.0f), body.position)
+                                * glm::mat4_cast(body.rotation);
+
+        // Render each frozen body part using cached mesh + frozen world transform
+        // The frozen transforms are in world space from death moment.
+        // We compute the offset from spawn position, then apply current root.
+        for (size_t i = 0; i < body.frozenParts.size() && i < body.partMeshes.size(); ++i) {
+            const DeadBody::FrozenPart& fp = body.frozenParts[i];
+            const Mesh& mesh = body.partMeshes[i];
             if (mesh.verts.empty())
                 continue;
+
+            // Compute relative transform from spawn position
+            // frozen world = spawnRoot * relativeLocal
+            // current world = currentRoot * relativeLocal
+            // relativeLocal = inv(spawnRoot) * frozenWorld
+            glm::mat4 spawnRoot = glm::translate(glm::mat4(1.0f), body.spawnPosition);
+            // For simplicity: offset = frozenWorld - spawnPosition, applied to current position
+            // This preserves the death pose orientation relative to the body
+            glm::vec3 frozenPos = glm::vec3(fp.worldTransform[3]);
+            glm::vec3 offset = frozenPos - body.spawnPosition;
+            glm::vec3 currentPartPos = body.position + offset;
+
+            // Use frozen rotation directly (body rotation is already applied via angular velocity)
+            glm::mat4 partTransform = glm::translate(glm::mat4(1.0f), currentPartPos)
+                                    * glm::mat4_cast(glm::quat_cast(fp.worldTransform));
 
             uploadBodyPartMesh(mesh);
 
             MIMITA_GL_CALL(glUseProgram(shader));
             glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &view[0][0]);
             glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &proj[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &part.worldTransform[0][0]);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &partTransform[0][0]);
             glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
             glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
 
@@ -803,87 +538,100 @@ void DeathSystem::render(const Camera& camera) const
             }
         }
 
-        // Debug rendering for ragdoll constraints and death data
+        // Debug visualizations
         if (DebugVis::enabled() || DebugConfig::DEBUG_RAGDOLL) {
-            if (corpse.age < 0.5f) {
-                glm::vec3 spawnEnd = corpse.spawnPosition + glm::vec3(0.0f, 0.0f, 0.5f);
-                DebugVis::drawWireSphere(camera, corpse.spawnPosition, 0.15f, {1.0f, 1.0f, 0.0f, 1.0f});
+            // Spawn position marker
+            if (body.age < 0.5f) {
+                DebugVis::drawWireSphere(camera, body.spawnPosition, 0.15f, {1.0f, 1.0f, 0.0f, 1.0f});
 
-                if (glm::length(corpse.deathImpulse) > 0.01f) {
-                    float impLen = glm::length(corpse.deathImpulse);
-                    glm::vec3 impEnd = corpse.spawnPosition + glm::normalize(corpse.deathImpulse) * std::min(impLen * 0.05f, 3.0f);
-                    DebugVis::drawLine(camera, corpse.spawnPosition, impEnd, {1.0f, 0.0f, 0.0f, 1.0f});
+                if (glm::length(body.deathImpulse) > 0.01f) {
+                    float impLen = glm::length(body.deathImpulse);
+                    glm::vec3 impEnd = body.spawnPosition + glm::normalize(body.deathImpulse) * std::min(impLen * 0.1f, 3.0f);
+                    DebugVis::drawLine(camera, body.spawnPosition, impEnd, {1.0f, 0.0f, 0.0f, 1.0f});
                 }
 
-                if (glm::length(corpse.transferredVelocity) > 0.1f) {
-                    float velLen = glm::length(corpse.transferredVelocity);
-                    glm::vec3 velEnd = corpse.spawnPosition + glm::normalize(corpse.transferredVelocity) * std::min(velLen * 0.05f, 3.0f);
-                    DebugVis::drawLine(camera, corpse.spawnPosition, velEnd, {0.0f, 0.5f, 1.0f, 1.0f});
-                }
-            }
-
-            for (const RagdollConstraint& c : corpse.constraints) {
-                if (c.partA >= 0 && c.partA < (int)corpse.parts.size() &&
-                    c.partB >= 0 && c.partB < (int)corpse.parts.size()) {
-                    const RagdollPart& a = corpse.parts[c.partA];
-                    const RagdollPart& b = corpse.parts[c.partB];
-                    DebugVis::drawLine(camera, a.position, b.position, {0.0f, 1.0f, 0.0f, 0.7f});
-                    DebugVis::drawWireSphere(camera, a.position, 0.08f, {0.0f, 1.0f, 0.0f, 1.0f});
-                    DebugVis::drawWireSphere(camera, b.position, 0.08f, {1.0f, 0.5f, 0.0f, 1.0f});
-                    float aSpeed = glm::length(a.velocity);
-                    if (aSpeed > 0.5f) {
-                        glm::vec3 velEnd = a.position + glm::normalize(a.velocity) * std::min(aSpeed * 0.1f, 2.0f);
-                        DebugVis::drawLine(camera, a.position, velEnd, {1.0f, 0.0f, 1.0f, 0.6f});
-                    }
+                if (glm::length(body.transferredVelocity) > 0.1f) {
+                    float velLen = glm::length(body.transferredVelocity);
+                    glm::vec3 velEnd = body.spawnPosition + glm::normalize(body.transferredVelocity) * std::min(velLen * 0.1f, 3.0f);
+                    DebugVis::drawLine(camera, body.spawnPosition, velEnd, {0.0f, 0.5f, 1.0f, 1.0f});
                 }
             }
         }
 
-            // Additional debug visuals when DEBUG_RAGDOLL is on
-            if (DebugConfig::DEBUG_RAGDOLL) {
-                for (const RagdollPart& part : corpse.parts) {
-                    DebugVis::drawWireSphere(camera, part.position, part.radius, {0.0f, 0.5f, 1.0f, 0.3f});
-                    DebugVis::drawPointCross(camera, part.position, 0.04f, {1.0f, 1.0f, 0.0f, 0.8f});
-                    float speed = glm::length(part.velocity);
-                    if (speed > 0.1f) {
-                        glm::vec3 velEnd = part.position + glm::normalize(part.velocity) * std::min(speed * 0.15f, 3.0f);
-                        DebugVis::drawLine(camera, part.position, velEnd, {1.0f, 0.3f, 0.3f, 0.7f});
-                    }
-                }
+        if (DebugConfig::DEBUG_RAGDOLL) {
+            // Sleep state
+            if (body.sleeping) {
+                DebugVis::drawWireSphere(camera, body.position, 0.2f, {0.0f, 1.0f, 0.0f, 1.0f});
+                DebugVis::drawPointCross(camera, body.position, 0.08f, {0.0f, 1.0f, 0.0f, 1.0f});
+            } else {
+                float sleepProgress = body.sleepTimer / DEAD_SLEEP_TIME;
+                glm::vec4 sleepColor = {1.0f - sleepProgress, sleepProgress, 0.0f, 0.5f};
+                DebugVis::drawWireSphere(camera, body.position, 0.2f, sleepColor);
             }
+
+            // Root anchor: spawn to current
+            if (glm::length(body.spawnPosition - body.position) > 0.05f) {
+                DebugVis::drawLine(camera, body.spawnPosition, body.position,
+                                  {0.5f, 0.5f, 0.5f, 0.6f});
+            }
+
+            // Capsule collider wireframe
+            float halfH = body.capsuleHeight * 0.5f - body.capsuleRadius;
+            glm::vec3 capsuleBottom = body.position - glm::vec3(0.0f, 0.0f, halfH);
+            glm::vec3 capsuleTop = body.position + glm::vec3(0.0f, 0.0f, halfH);
+            DebugVis::drawWireSphere(camera, capsuleBottom, body.capsuleRadius, {0.0f, 0.5f, 1.0f, 0.3f});
+            DebugVis::drawWireSphere(camera, capsuleTop, body.capsuleRadius, {0.0f, 0.5f, 1.0f, 0.3f});
+            DebugVis::drawLine(camera, capsuleBottom, capsuleTop, {0.0f, 0.5f, 1.0f, 0.3f});
+
+            // Velocity vector
+            float speed = glm::length(body.velocity);
+            if (speed > 0.1f) {
+                glm::vec3 velEnd = body.position + glm::normalize(body.velocity) * std::min(speed * 0.15f, 3.0f);
+                DebugVis::drawLine(camera, body.position, velEnd, {1.0f, 0.3f, 0.3f, 0.7f});
+            }
+
+            // Angular velocity indicator
+            float angSpeed = glm::length(body.angularVelocity);
+            if (angSpeed > 0.1f) {
+                glm::vec3 angEnd = body.position + glm::normalize(body.angularVelocity) * std::min(angSpeed * 0.1f, 1.5f);
+                DebugVis::drawLine(camera, body.position, angEnd, {0.0f, 0.8f, 0.8f, 0.5f});
+            }
+        }
     }
 }
 
 void DeathSystem::appendReplayActors(std::vector<ReplayActorState>& actors) const
 {
-    for (const RagdollCorpse& corpse : mCorpses) {
+    for (const DeadBody& body : mCorpses) {
         ReplayActorState actor;
-        actor.id = corpse.id;
-        actor.name = corpse.name;
+        actor.id = body.id;
+        actor.name = body.name;
         actor.type = "corpse";
         actor.modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
-        if (!corpse.parts.empty()) {
-            actor.position = corpse.parts[0].position;
-            glm::vec3 euler = glm::eulerAngles(corpse.parts[0].rotation);
-            actor.rotation = glm::degrees(euler);
-            actor.velocity = corpse.parts[0].velocity;
-        }
+        actor.position = body.position;
+        glm::vec3 euler = glm::eulerAngles(body.rotation);
+        actor.rotation = glm::degrees(euler);
+        actor.velocity = body.velocity;
         actor.health = 0;
         actor.maxHealth = 100;
         actor.grounded = false;
         actor.collidable = true;
-        actor.fade = corpse.fade;
-        actor.blackness = corpse.blackness;
+        actor.fade = body.fade;
+        actor.blackness = body.blackness;
         actor.animationState = "dead";
-        for (const auto& part : corpse.parts) {
+
+        // Report frozen body parts relative to current position
+        for (const auto& fp : body.frozenParts) {
             ReplayBodyPartState bp;
-            bp.name = part.name;
-            bp.position = part.position;
-            glm::vec3 euler = glm::eulerAngles(part.rotation);
-            bp.rotation = glm::degrees(euler);
+            bp.name = fp.name;
+            glm::vec3 frozenPos = glm::vec3(fp.worldTransform[3]);
+            bp.position = body.position + (frozenPos - body.spawnPosition);
+            glm::vec3 euler2 = glm::eulerAngles(glm::quat_cast(fp.worldTransform));
+            bp.rotation = glm::degrees(euler2);
             bp.scale = glm::vec3(1.0f);
             actor.bodyParts.push_back(bp);
         }
+
         actors.push_back(actor);
     }
 }

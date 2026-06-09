@@ -434,19 +434,37 @@ void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, 
     }
 }
 
-void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color)
+glm::mat4 eulerToMat4(const glm::vec3& euler)
+{
+    float cx = std::cos(euler.x), sx = std::sin(euler.x);
+    float cy = std::cos(euler.y), sy = std::sin(euler.y);
+    float cz = std::cos(euler.z), sz = std::sin(euler.z);
+    glm::mat4 m(1.0f);
+    m[0][0] = cy * cz;               m[0][1] = cy * sz;               m[0][2] = -sy;
+    m[1][0] = sx * sy * cz - cx * sz; m[1][1] = sx * sy * sz + cx * cz; m[1][2] = sx * cy;
+    m[2][0] = cx * sy * cz + sx * sz; m[2][1] = cx * sy * sz - sx * cz; m[2][2] = cx * cy;
+    return m;
+}
+
+void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler)
 {
     (void)camera;
-    glm::vec3 v[8] = {
-        center + glm::vec3(-halfSize.x, -halfSize.y, -halfSize.z),
-        center + glm::vec3( halfSize.x, -halfSize.y, -halfSize.z),
-        center + glm::vec3( halfSize.x,  halfSize.y, -halfSize.z),
-        center + glm::vec3(-halfSize.x,  halfSize.y, -halfSize.z),
-        center + glm::vec3(-halfSize.x, -halfSize.y,  halfSize.z),
-        center + glm::vec3( halfSize.x, -halfSize.y,  halfSize.z),
-        center + glm::vec3( halfSize.x,  halfSize.y,  halfSize.z),
-        center + glm::vec3(-halfSize.x,  halfSize.y,  halfSize.z)
+    glm::mat4 rotMat = glm::mat4(1.0f);
+    if (glm::length(rotationEuler) > 0.001f)
+        rotMat = eulerToMat4(rotationEuler);
+    glm::vec3 corners[8] = {
+        glm::vec3(-halfSize.x, -halfSize.y, -halfSize.z),
+        glm::vec3( halfSize.x, -halfSize.y, -halfSize.z),
+        glm::vec3( halfSize.x,  halfSize.y, -halfSize.z),
+        glm::vec3(-halfSize.x,  halfSize.y, -halfSize.z),
+        glm::vec3(-halfSize.x, -halfSize.y,  halfSize.z),
+        glm::vec3( halfSize.x, -halfSize.y,  halfSize.z),
+        glm::vec3( halfSize.x,  halfSize.y,  halfSize.z),
+        glm::vec3(-halfSize.x,  halfSize.y,  halfSize.z)
     };
+    glm::vec3 v[8];
+    for (int i = 0; i < 8; ++i)
+        v[i] = center + glm::vec3(rotMat * glm::vec4(corners[i], 1.0f));
     const int triangles[36] = {
         0,2,1, 0,3,2, 4,5,6, 4,6,7,
         0,1,5, 0,5,4, 1,2,6, 1,6,5,
@@ -885,6 +903,37 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
     if (DebugVis::render()) {
         drawLine(camera, camera.pos, camera.pos + camera.front * 5.0f, {0.2f,0.8f,1.0f,1.0f});
+
+        for (size_t i = 0; i < world.spawnPoints.size(); ++i)
+        {
+            const SpawnPoint& spawn = world.spawnPoints[i];
+            const bool selected = (int)i == world.selectedSpawnIndex;
+            const glm::vec4 color = selected
+                ? glm::vec4(1.0f, 0.85f, 0.1f, 1.0f)
+                : glm::vec4(0.2f, 1.0f, 0.55f, 1.0f);
+            const float radius = selected ? 0.55f : 0.35f;
+
+            DebugVis::drawWireSphere(camera, spawn.position, radius, color);
+            DebugVis::drawPointCross(camera, spawn.position, radius * 1.4f, color);
+            DebugVis::drawLine(
+                camera, spawn.position,
+                spawn.position + glm::vec3(0.0f, 0.0f, 1.5f), color);
+
+            const glm::vec3 forward = spawn.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+            DebugVis::drawLine(
+                camera, spawn.position,
+                spawn.position + forward * 1.2f,
+                {0.25f, 0.65f, 1.0f, 1.0f});
+
+            char label[192];
+            snprintf(label, sizeof(label),
+                     "SPAWN %zu%s %s (%.2f %.2f %.2f)",
+                     i, selected ? " SELECTED" : "", spawn.tag.c_str(),
+                     spawn.position.x, spawn.position.y, spawn.position.z);
+            DebugVis::drawWorldLabel(
+                spawn.position + glm::vec3(0.0f, 0.0f, 1.7f),
+                label, color);
+        }
     }
 
     if (DebugVis::bounds()) {
@@ -979,8 +1028,8 @@ namespace DebugVis {
             ::drawFilledCylinder(camera, (start + end) * 0.5f, delta / length, thickness * 0.5f, length, color);
     }
 
-    void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color) {
-        ::drawFilledBox(camera, center, halfSize, color);
+    void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler) {
+        ::drawFilledBox(camera, center, halfSize, color, rotationEuler);
     }
     
     void drawLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color) {

@@ -120,4 +120,8 @@ struct RevolverShotResult {
     std::string bodyPart;
     float damage = 0.0f;
     uint32_t targetId = 0;
+    bool targetIsRemotePlayer = false;
+    bool hitWorld = false;
+    glm::vec3 hitNormal{0.0f};
+    glm::vec3 knockbackImpulse{0.0f};
 };

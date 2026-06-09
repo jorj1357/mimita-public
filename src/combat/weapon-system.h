@@ -25,7 +25,16 @@ public:
 
     void update(const Camera& camera, Player& player, NpcSystem& npcs, float dt);
     void render(const Camera& camera, const Player& player) const;
-    RevolverShotResult fire(const Camera& camera, Player& player, NpcSystem& npcs, const World& world);
+    RevolverShotResult fire(
+        const Camera& camera,
+        Player& player,
+        NpcSystem& npcs,
+        const World& world,
+        const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr);
+    std::vector<RevolverShotResult> collectRemoteGodballHits(
+        Player& player,
+        const std::unordered_map<uint32_t, Player>& remotePlayers,
+        float dt);
     bool reload(Player& player);
     void equip(Player& player, int slot);
     void unequip(Player& player);
@@ -56,9 +65,15 @@ private:
     int mCurrentSlot = 0;
 
     std::vector<std::string> mKillfeed;
+    std::unordered_map<uint32_t, float> mRemoteGodballCooldowns;
     void addKillLine(const std::string& line);
 
-    RevolverShotResult fireHitscan(const Camera& camera, Player& player, NpcSystem& npcs, const World& world);
+    RevolverShotResult fireHitscan(
+        const Camera& camera,
+        Player& player,
+        NpcSystem& npcs,
+        const World& world,
+        const std::unordered_map<uint32_t, Player>* remotePlayers);
     void fireGodball(const Camera& camera, Player& player, NpcSystem& npcs, const World& world);
 
     const WeaponDefinition* getDefForSlot(int slot) const;

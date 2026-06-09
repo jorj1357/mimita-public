@@ -42,6 +42,7 @@ GLuint gVbo = 0;
 
 size_t gBuiltVertCount = (size_t)-1;
 size_t gBuiltBatchCount = (size_t)-1;
+std::uint64_t gBuiltRevision = (std::uint64_t)-1;
 
 GLint uniformLoc(GLuint shader, const char* name)
 {
@@ -96,10 +97,14 @@ bool batchLooksValid(const Mesh& mesh, const Mesh::Batch& batch)
     return true;
 }
 
-void uploadMeshIfNeeded(const Mesh& mesh)
+void uploadMeshIfNeeded(const World& world)
 {
+    const Mesh& mesh = world.mesh;
     if (gVao && gBuiltVertCount == mesh.verts.size() && gBuiltBatchCount == mesh.batches.size())
-        return;
+    {
+        if (gBuiltRevision == world.renderRevision)
+            return;
+    }
 
     printf("[RENDER] uploading GLB world mesh verts=%zu triangles=%zu batches=%zu\n",
            mesh.verts.size(),
@@ -167,6 +172,7 @@ void uploadMeshIfNeeded(const Mesh& mesh)
 
     gBuiltVertCount = mesh.verts.size();
     gBuiltBatchCount = mesh.batches.size();
+    gBuiltRevision = world.renderRevision;
 
     MIMITA_GL_CHECK("uploadMeshIfNeeded complete");
 }
@@ -210,7 +216,7 @@ void renderWorld(const World& world, const Camera& cam)
     }
 
     MIMITA_GL_CLEAR_STAGE("renderWorld");
-    uploadMeshIfNeeded(world.mesh);
+    uploadMeshIfNeeded(world);
 
     GLuint shader = gRenderer->shaderProgram;
     MIMITA_GL_CALL(glUseProgram(shader));

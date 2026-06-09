@@ -47,6 +47,7 @@
 #include "audio/audio.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
+#include "gui/hud/player-nameplates.h"
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
 #include "debug/debug-visuals.h"
@@ -299,6 +300,9 @@ int main(int argc, char** argv)
     GameState prevState = GAME_MENU;
     bool editorMode = false;
     std::string activeGameMode = "sandbox";
+    const std::string defaultMapPath =
+        "assets/maps/mimita-aabb-only-interior-small-v4.glb";
+    std::string activeMapPath;
     int selectedEditorObject = -1;
     WeaponSystem weapons;
     bool freecamEnabled = false;
@@ -401,10 +405,49 @@ int main(int argc, char** argv)
     Terminal::instance().registerCommand({
         "shoot", "Fire weapon", "shoot",
         [&camera, &player, &npcSystem, &world, &weapons](const std::vector<std::string>&) {
-            RevolverShotResult shot = weapons.fire(camera, player, npcSystem, world);
+            const auto* remotePlayers = mpContext.active
+                ? &mpContext.remotePlayers
+                : nullptr;
+            RevolverShotResult shot = weapons.fire(
+                camera, player, npcSystem, world, remotePlayers);
             if (!shot.fired) {
                 Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
+            }
+            if (mpContext.active) {
+                const glm::vec3 direction = glm::length(shot.end - shot.start) > 0.001f
+                    ? glm::normalize(shot.end - shot.start)
+                    : camera.front;
+                uint16_t effectFlags =
+                    MimitaNet::SHOT_EFFECT_MUZZLE |
+                    MimitaNet::SHOT_EFFECT_TRACER |
+                    MimitaNet::SHOT_EFFECT_SHOOT_SOUND |
+                    MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER;
+                uint8_t impactType = MimitaNet::SHOT_IMPACT_NONE;
+                uint32_t targetId = 0;
+                int damage = 0;
+                if (shot.targetIsRemotePlayer) {
+                    impactType = MimitaNet::SHOT_IMPACT_ENTITY;
+                    targetId = shot.targetId;
+                    damage = (int)shot.damage;
+                    effectFlags |=
+                        MimitaNet::SHOT_EFFECT_ENTITY_IMPACT |
+                        MimitaNet::SHOT_EFFECT_BLOOD |
+                        MimitaNet::SHOT_EFFECT_HIT_SOUND;
+                } else if (shot.hitWorld) {
+                    impactType = MimitaNet::SHOT_IMPACT_WORLD;
+                    effectFlags |=
+                        MimitaNet::SHOT_EFFECT_WORLD_IMPACT |
+                        MimitaNet::SHOT_EFFECT_DEBRIS |
+                        MimitaNet::SHOT_EFFECT_HIT_SOUND;
+                }
+                MimitaNet::mpSendShotEvent(
+                    mpContext, targetId, damage, shot.damage,
+                    effectFlags,
+                    MimitaNet::NETWORK_WEAPON_REVOLVER,
+                    impactType,
+                    shot.start, shot.end, direction, shot.hitNormal,
+                    shot.knockbackImpulse);
             }
             Terminal::instance().addLog("[REVOLVER] fired");
         }
@@ -696,21 +739,79 @@ int main(int argc, char** argv)
     registerDebugToggle("debug_blood_rays", DebugConfig::DEBUG_BLOOD_RAYS);
     registerDebugToggle("debug_blood_hits", DebugConfig::DEBUG_BLOOD_HITS);
     registerDebugToggle("debug_blood_force", DebugConfig::DEBUG_BLOOD_FORCE);
+    registerDebugToggle("debug_debris", DebugConfig::DEBUG_DEBRIS);
+
+    Terminal::instance().registerCommand({
+        "fakelag_mode", "Set fake lag mode (0=off, 1=random, 2=static)",
+        "fakelag_mode <0|1|2>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[FAKELAG] mode=" + std::to_string(mpContext.fakeLagMode));
+                return;
+            }
+            MimitaNet::mpSetFakeLagMode(mpContext, std::stoi(args[0]));
+            Terminal::instance().addLog(
+                "[FAKELAG] mode=" + std::to_string(mpContext.fakeLagMode));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "fakelag_amount_static", "Set static fake lag in milliseconds",
+        "fakelag_amount_static <ms>",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty())
+                MimitaNet::mpSetFakeLagStatic(mpContext, std::stoi(args[0]));
+            Terminal::instance().addLog(
+                "[FAKELAG] static=" + std::to_string(mpContext.fakeLagStaticMs));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "fakelag_amount_min", "Set random fake lag minimum",
+        "fakelag_amount_min <ms>",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty()) {
+                mpContext.fakeLagMinMs = std::clamp(std::stoi(args[0]), 0, 5000);
+                if (mpContext.fakeLagMaxMs < mpContext.fakeLagMinMs)
+                    mpContext.fakeLagMaxMs = mpContext.fakeLagMinMs;
+                mpContext.fakeLagNextRandomizeMs = 0;
+            }
+            Terminal::instance().addLog(
+                "[FAKELAG] min=" + std::to_string(mpContext.fakeLagMinMs));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "fakelag_amount_max", "Set random fake lag maximum",
+        "fakelag_amount_max <ms>",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty()) {
+                mpContext.fakeLagMaxMs = std::clamp(std::stoi(args[0]), 0, 5000);
+                if (mpContext.fakeLagMinMs > mpContext.fakeLagMaxMs)
+                    mpContext.fakeLagMinMs = mpContext.fakeLagMaxMs;
+                mpContext.fakeLagNextRandomizeMs = 0;
+            }
+            Terminal::instance().addLog(
+                "[FAKELAG] max=" + std::to_string(mpContext.fakeLagMaxMs));
+        }
+    });
 
     // Replay terminal commands
     Terminal::instance().registerCommand({
         "replay.record", "Start replay recording", "replay.record",
-        [&world](const std::vector<std::string>&) {
+        [&world, &activeMapPath](const std::vector<std::string>&) {
             if (gReplayRecorder.isRecording()) {
                 Terminal::instance().addLog("[REPLAY] Already recording");
                 return;
             }
+            if (activeMapPath.empty()) {
+                Terminal::instance().addLog("[REPLAY] No active map is loaded");
+                return;
+            }
             gReplayRecorder.beginRecording(0.0f, "mimita");
 
-            const std::string mapPath = "assets/maps/mimita-aabb-only-interior-small-v4.glb";
+            const std::string mapPath = activeMapPath;
             const std::string playerPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
             const std::string revolverPath = "assets/objects/weapons/mimita-revolver-v1.glb";
-            gReplayRecorder.registerAsset("map:mimita", "map_glb", mapPath, {}, "basic", "world");
+            gReplayRecorder.registerAsset("map:active", "map_glb", mapPath, {}, "basic", "world");
             gReplayRecorder.registerAsset("model:player", "actor_glb", playerPath, {}, "basic", "player");
             gReplayRecorder.registerAsset("model:revolver", "weapon_glb", revolverPath, {}, "basic", "weapon");
             gReplayRecorder.registerAsset("texture:outfit", "texture", GetPlayerSettings().outfitPath, {}, {}, "outfit");
@@ -719,7 +820,7 @@ int main(int argc, char** argv)
             gReplayRecorder.registerAsset("texture:crosshair-reloading", "texture", "assets/crosshair/crosshairreloading.png", {}, {}, "ui");
 
             ReplayWorldMetadata replayWorld;
-            replayWorld.mapAssetId = "map:mimita";
+            replayWorld.mapAssetId = "map:active";
             replayWorld.mapPath = mapPath;
             for (const Mesh::Batch& batch : world.mesh.batches) {
                 const std::string materialName = batch.materialName.empty() ? "default" : batch.materialName;
@@ -882,19 +983,74 @@ int main(int argc, char** argv)
             printf("[MAIN] gameState changed %d -> %d\n", (int)prevState, (int)gameState);
             if (gameState == GAME_PLAYING)
             {
-                if (!worldLoaded)
+                SandboxMapSelection sandboxSelection =
+                    getPendingSandboxMapSelection();
+                if (sandboxSelection.shouldStart)
                 {
-                    printf("[MAIN] PLAY requested; loading existing world now\n");
-                    // 5 23 2026 using gltf glb stuff for better strucutres mhm 
-                    loadWorldFromGLB(
-                        world,
-                        "assets/maps/mimita-aabb-only-interior-small-v4.glb"
-                    );
-                    extractSpawnPointsFromGLB(world, "assets/maps/mimita-aabb-only-interior-small-v4.glb");
-                    worldLoaded = true;
-                    printf("[MAIN] world load complete blocks=%zu spheres=%zu\n", world.blocks.size(), world.spheres.size());
+                    const std::string selectedPath = sandboxSelection.mapPath;
+                    clearPendingSandboxMapSelection();
+                    printf("[SANDBOX MAP] selected path=%s\n", selectedPath.c_str());
+
+                    if (!loadWorldFromGLB(world, selectedPath.c_str()))
+                    {
+                        const std::string message =
+                            "Failed to load: " + selectedPath;
+                        printf("[SANDBOX MAP ERROR] %s\n", message.c_str());
+                        reportSandboxMapLoadResult(message, false);
+                        gameState = GAME_MENU;
+                    }
+                    else
+                    {
+                        activeMapPath = selectedPath;
+                        worldLoaded = true;
+                        npcSystem.destroyAll();
+                        npcsSpawned = false;
+                        player.reset();
+
+                        if (!world.spawnPoints.empty())
+                        {
+                            world.selectedSpawnIndex = 0;
+                            const SpawnPoint& spawn = world.spawnPoints[0];
+                            player.pos = spawn.position;
+                            player.respawnPosition = spawn.position;
+                            printf("[SANDBOX SPAWN] selected index=0 name=%s world=(%.3f %.3f %.3f)\n",
+                                   spawn.tag.c_str(), spawn.position.x,
+                                   spawn.position.y, spawn.position.z);
+                        }
+                        else
+                        {
+                            world.selectedSpawnIndex = -1;
+                            const glm::vec3 fallback{1.0f, 5.0f, 60.0f};
+                            player.pos = fallback;
+                            player.respawnPosition = fallback;
+                            printf("[SANDBOX SPAWN WARNING] no GLB spawns; fallback=(%.1f %.1f %.1f)\n",
+                                   fallback.x, fallback.y, fallback.z);
+                        }
+
+                        reportSandboxMapLoadResult(
+                            "Loaded: " + selectedPath, true);
+                        printf("[SANDBOX MAP] load success path=%s spawns=%zu\n",
+                               activeMapPath.c_str(), world.spawnPoints.size());
+                    }
                 }
-                if (!npcsSpawned)
+
+                if (gameState == GAME_PLAYING && !worldLoaded)
+                {
+                    printf("[MAIN] PLAY requested without sandbox selection; loading default world\n");
+                    if (loadWorldFromGLB(world, defaultMapPath.c_str()))
+                    {
+                        worldLoaded = true;
+                        activeMapPath = defaultMapPath;
+                    }
+                    else
+                    {
+                        printf("[MAIN ERROR] default world failed to load: %s\n",
+                               defaultMapPath.c_str());
+                        gameState = GAME_MENU;
+                    }
+                }
+
+                if (gameState == GAME_PLAYING && !npcsSpawned)
                 {
                     npcSystem.spawnPrototypeScene();
                     npcsSpawned = true;
@@ -911,6 +1067,8 @@ int main(int argc, char** argv)
                         cfg.npcDifficulty = dcr.npcDifficulty;
                         cfg.enabled = true;
                         gDuelManager.start(cfg, player, npcSystem, world);
+                        activeMapPath = cfg.mapPath;
+                        worldLoaded = !world.mesh.verts.empty();
                         clearPendingDuelConfig();
                     }
                 }
@@ -918,6 +1076,14 @@ int main(int argc, char** argv)
                 {
                     MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
                     if (mci.shouldConnect) {
+                        if (activeMapPath != defaultMapPath &&
+                            loadWorldFromGLB(world, defaultMapPath.c_str()))
+                        {
+                            activeMapPath = defaultMapPath;
+                            worldLoaded = true;
+                            printf("[MAIN NET] restored server-compatible map=%s\n",
+                                   activeMapPath.c_str());
+                        }
                         player.username = LocalProfileSystem::instance().currentUsername();
                         if (MimitaNet::mpInit(mpContext, mci.address, player.username)) {
                             printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
@@ -927,7 +1093,9 @@ int main(int argc, char** argv)
                     }
                 }
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                    Terminal::instance().isOpen() ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                    gameState == GAME_PLAYING && !Terminal::instance().isOpen()
+                        ? GLFW_CURSOR_DISABLED
+                        : GLFW_CURSOR_NORMAL);
             }
             else
             {
@@ -1095,6 +1263,183 @@ int main(int argc, char** argv)
                 MimitaNet::mpTick(mpContext, player.username, dt);
                 if (!mpContext.approvedLocalName.empty())
                     player.username = mpContext.approvedLocalName;
+
+                for (const MimitaNet::NetworkShotEvent& event : mpContext.shotEvents)
+                {
+                    const bool localShooter =
+                        event.shooterPlayerId == mpContext.localPlayerId;
+                    const bool localTarget =
+                        event.targetPlayerId == mpContext.localPlayerId;
+                    const auto shooterInfo =
+                        mpContext.playerRegistry.find(event.shooterPlayerId);
+                    const auto targetInfo =
+                        mpContext.playerRegistry.find(event.targetPlayerId);
+                    const std::string shooterName =
+                        shooterInfo != mpContext.playerRegistry.end()
+                        ? shooterInfo->second.name
+                        : "player_" + std::to_string(event.shooterPlayerId);
+                    const std::string targetName =
+                        targetInfo != mpContext.playerRegistry.end()
+                        ? targetInfo->second.name
+                        : "player_" + std::to_string(event.targetPlayerId);
+
+                    printf("[NET SHOT APPLY] shooter=%u serial=%u target=%u "
+                           "damage=%d weapon=%u impact=%u damageConfirmed=%d\n",
+                           event.shooterPlayerId, event.shotSerial,
+                           event.targetPlayerId, event.damage, event.weapon,
+                           event.impactType, (int)event.damageConfirmed);
+
+                    if (event.damageConfirmed && localTarget)
+                    {
+                        player.currentHp = event.targetHealth;
+                        mpContext.localServerHealth = event.targetHealth;
+                    }
+                    else if (event.damageConfirmed)
+                    {
+                        auto remote = mpContext.remotePlayers.find(
+                            event.targetPlayerId);
+                        if (remote != mpContext.remotePlayers.end())
+                            remote->second.currentHp = event.targetHealth;
+                        auto interpolation =
+                            mpContext.remotePlayerInterpolation.find(
+                                event.targetPlayerId);
+                        if (interpolation !=
+                            mpContext.remotePlayerInterpolation.end())
+                            interpolation->second.target.health =
+                                event.targetHealth;
+                    }
+
+                    if (!localShooter && glm::length(event.knockback) > 0.001f)
+                    {
+                        if (localTarget)
+                            player.vel += event.knockback;
+                        else
+                        {
+                            auto remote = mpContext.remotePlayers.find(
+                                event.targetPlayerId);
+                            if (remote != mpContext.remotePlayers.end())
+                                remote->second.vel += event.knockback;
+                        }
+                    }
+
+                    if (!localShooter)
+                    {
+                        auto remoteShooter = mpContext.remotePlayers.find(
+                            event.shooterPlayerId);
+                        if (remoteShooter != mpContext.remotePlayers.end() &&
+                            (event.effectFlags &
+                             MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER))
+                        {
+                            remoteShooter->second.networkShootEffectTimer = 0.1f;
+                            remoteShooter->second.networkWeaponState |= 1u;
+                        }
+
+                        if (event.weapon ==
+                            MimitaNet::NETWORK_WEAPON_REVOLVER)
+                        {
+                            ReplayEffectEvent gunshotEvent;
+                            gunshotEvent.type = "gunshot";
+                            gunshotEvent.position = event.origin;
+                            gunshotEvent.direction = event.direction;
+                            gunshotEvent.from = event.origin;
+                            gunshotEvent.to = event.hit;
+                            gunshotEvent.normal = event.normal;
+                            gunshotEvent.sourceActorId = shooterName;
+                            captureReplayEffect(gunshotEvent);
+                        }
+
+                        if (event.effectFlags & MimitaNet::SHOT_EFFECT_MUZZLE)
+                            EffectPartSystem::instance().spawnMuzzleFlash(
+                                event.origin, shooterName);
+                        if (event.effectFlags & MimitaNet::SHOT_EFFECT_TRACER)
+                            EffectPartSystem::instance().spawnTracer(
+                                event.origin, event.hit, shooterName);
+                        if (event.effectFlags &
+                            MimitaNet::SHOT_EFFECT_SHOOT_SOUND)
+                        {
+                            playWorldSound(
+                                "revolvershoot", event.origin,
+                                1.0f, 1.0f, 80.0f);
+                        }
+
+                        if (event.effectFlags &
+                            MimitaNet::SHOT_EFFECT_WORLD_IMPACT)
+                        {
+                            EffectPartSystem::instance().spawnWorldImpact(
+                                event.hit, event.normal);
+                            EffectPartSystem::instance().spawnBulletImpact(
+                                event.hit);
+                        }
+                        if (event.effectFlags & MimitaNet::SHOT_EFFECT_DEBRIS) {
+                            float debrisForce = std::clamp(event.power / 40.0f, 0.1f, 5.0f);
+                            EffectPartSystem::instance().spawnWorldDebris(
+                                event.hit, event.normal, debrisForce);
+                        }
+                        if (event.effectFlags &
+                            MimitaNet::SHOT_EFFECT_ENTITY_IMPACT)
+                        {
+                            EffectPartSystem::instance().spawnEntityImpact(
+                                event.hit, event.normal,
+                                shooterName, targetName);
+                        }
+                        if (event.effectFlags & MimitaNet::SHOT_EFFECT_BLOOD)
+                        {
+                            EffectPartSystem::instance().spawnDamage(
+                                event.hit, targetName, event.damage);
+                            EffectPartSystem::instance().spawnBloodSphereBurst(
+                                event.hit, event.direction,
+                                std::min(event.power / 40.0f, 2.0f),
+                                shooterName, targetName);
+                            EffectPartSystem::instance().spawnBloodSpurt(
+                                event.hit, event.direction,
+                                shooterName, targetName);
+                            EffectPartSystem::instance().spawnProjectedBlood(
+                                event.hit, event.direction,
+                                event.power,
+                                glm::length(event.hit - event.origin),
+                                "torso", world);
+                        }
+                        if (event.effectFlags &
+                            MimitaNet::SHOT_EFFECT_HIT_SOUND)
+                        {
+                            playWorldSound(
+                                event.impactType == MimitaNet::SHOT_IMPACT_WORLD
+                                    ? "hitworld" : "player_hurt",
+                                event.hit, 0.9f, 1.0f, 40.0f);
+                        }
+                        printf("[NET SHOT RECONSTRUCT] shooter=%u serial=%u "
+                               "localShooter=0 impact=%u origin=(%.2f %.2f %.2f) "
+                               "hit=(%.2f %.2f %.2f)\n",
+                               event.shooterPlayerId, event.shotSerial,
+                               event.impactType,
+                               event.origin.x, event.origin.y, event.origin.z,
+                               event.hit.x, event.hit.y, event.hit.z);
+                    }
+                    else
+                    {
+                        printf("[NET SHOT OWNERSHIP] shooter=%u serial=%u "
+                               "visualsSkipped=1 reason=local-prediction\n",
+                               event.shooterPlayerId, event.shotSerial);
+                    }
+
+                    if (event.damageConfirmed && event.killed && !localTarget)
+                    {
+                        auto remote = mpContext.remotePlayers.find(
+                            event.targetPlayerId);
+                        if (remote != mpContext.remotePlayers.end())
+                        {
+                            DeathSystem::instance().kill(
+                                remote->second,
+                                "net_player_" + std::to_string(event.targetPlayerId),
+                                "player",
+                                shooterName,
+                                event.direction,
+                                event.weapon == MimitaNet::NETWORK_WEAPON_GODBALL
+                                    ? 18.0f : 12.0f);
+                        }
+                    }
+                }
+                mpContext.shotEvents.clear();
                 MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
 
                 // Send input to server if we have an assigned ID
@@ -1116,13 +1461,16 @@ int main(int argc, char** argv)
                     in.clientVx = player.vel.x;
                     in.clientVy = player.vel.y;
                     in.clientVz = player.vel.z;
+                    in.equippedSlot = (int16_t)player.equippedSlot;
+                    in.weaponState =
+                        (weapons.isShooting() ? 1u : 0u) |
+                        (weapons.isReloading() ? 2u : 0u);
+                    in.clientPingMs = mpContext.localPingMs;
                     in.jumpHeld = mpInput.jump ? 1 : 0;
                     in.dashPressed = mpInput.dashPressed ? 1 : 0;
-                    in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;
+                    in.attackPressed = 0;
                     in.freezeHeld = mpInput.freezeHeld ? 1 : 0;
-                    sendto(mpContext.sock, (const char*)&in, sizeof(in), 0,
-                           (sockaddr*)&mpContext.serverAddr, sizeof(mpContext.serverAddr));
-                    ++mpContext.packetsSent;
+                    MimitaNet::mpSendPacket(mpContext, &in, sizeof(in));
                 }
 
                 static bool mpF2Prev = false;
@@ -1165,6 +1513,28 @@ int main(int argc, char** argv)
             }
             setAudioListener(camera.pos, camera.front);
             weapons.update(camera, player, npcSystem, dt);
+            if (mpContext.active)
+            {
+                const std::vector<RevolverShotResult> godballHits =
+                    weapons.collectRemoteGodballHits(
+                        player, mpContext.remotePlayers, dt);
+                for (const RevolverShotResult& hit : godballHits)
+                {
+                    const glm::vec3 direction =
+                        glm::length(hit.end - hit.start) > 0.001f
+                        ? glm::normalize(hit.end - hit.start)
+                        : glm::vec3(0.0f, 1.0f, 0.0f);
+                    MimitaNet::mpSendShotEvent(
+                        mpContext, hit.targetId, (int)hit.damage, hit.damage,
+                        MimitaNet::SHOT_EFFECT_ENTITY_IMPACT |
+                            MimitaNet::SHOT_EFFECT_BLOOD |
+                            MimitaNet::SHOT_EFFECT_HIT_SOUND,
+                        MimitaNet::NETWORK_WEAPON_GODBALL,
+                        MimitaNet::SHOT_IMPACT_ENTITY,
+                        hit.start, hit.end, direction, -direction,
+                        hit.knockbackImpulse);
+                }
+            }
 
             gDuelManager.update(
                 dt,
@@ -1186,7 +1556,7 @@ int main(int argc, char** argv)
                     Terminal::instance().addLog(selectedEditorObject >= 0
                         ? "[EDITOR] selected triangle id " + std::to_string(selectedEditorObject)
                         : "[EDITOR] no object selected");
-                } else if (!mpContext.active) {
+                } else {
                     Terminal::instance().execute("shoot");
                 }
             }
@@ -1288,6 +1658,15 @@ int main(int argc, char** argv)
                 for (const auto& kv : mpContext.remotePlayers)
                 {
                     drawReplicaCapsule(kv.second, remoteColor);
+                    bool usedHeadTransform = false;
+                    const glm::vec3 healthbarAnchor =
+                        playerHealthbarAnchor(
+                            kv.second, &usedHeadTransform);
+                    DebugVis::drawDiagnosticWireSphere(
+                        camera, healthbarAnchor, 0.16f,
+                        usedHeadTransform
+                            ? glm::vec4(1.0f, 0.75f, 0.1f, 1.0f)
+                            : glm::vec4(1.0f, 0.2f, 0.8f, 1.0f));
                     const auto interpolation = mpContext.remotePlayerInterpolation.find(kv.first);
                     if (interpolation != mpContext.remotePlayerInterpolation.end() &&
                         interpolation->second.hasTarget)
@@ -1298,10 +1677,13 @@ int main(int argc, char** argv)
                             camera, kv.second.pos, interpolation->second.target.position, serverColor);
                     }
                     char label[128];
-                    snprintf(label, sizeof(label), "REMOTE PLAYER id=%u HP=%d interp=100ms",
-                             kv.first, kv.second.currentHp);
+                    snprintf(
+                        label, sizeof(label),
+                        "REMOTE PLAYER id=%u HP=%d anchor=%s interp=100ms",
+                        kv.first, kv.second.currentHp,
+                        usedHeadTransform ? "head" : "fallback");
                     DebugVis::drawDiagnosticWorldLabel(
-                        kv.second.pos + glm::vec3(0.0f, 0.0f, 3.2f),
+                        healthbarAnchor + glm::vec3(0.0f, 0.0f, 0.25f),
                         label, remoteColor);
                 }
                 for (const auto& kv : mpContext.remoteNpcs)
@@ -1476,20 +1858,41 @@ int main(int argc, char** argv)
                     uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
                 }
             }
-            for (const Npc& npc : npcSystem.all()) {
-                float x = 0.0f, y = 0.0f;
-                glm::vec3 headPos = npc.body.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.72f);
-                float distance = glm::length(camera.pos - headPos);
-                if (distance > 80.0f || !DebugVis::projectToScreen(camera, headPos, x, y))
-                    continue;
-                float fade = std::clamp(1.0f - distance / 90.0f, 0.25f, 1.0f);
-                float ratio = npc.body.maxHp > 0 ? (float)npc.body.currentHp / npc.body.maxHp : 0.0f;
-                uiDrawRect({x - 65, y - 8, 130, 11}, {0.55f,0.03f,0.03f,0.9f * fade}, "npc-hp-bg");
-                uiDrawRect({x - 65, y - 8, 130 * ratio, 11}, {0.05f,0.8f,0.15f,0.9f * fade}, "npc-hp-current");
-                uiDrawText(npc.body.username.c_str(), x - 40, y - 31, 0.28f, {1,1,1,fade});
-                char npcHp[48];
-                snprintf(npcHp, sizeof(npcHp), "%d/%d", npc.body.currentHp, npc.body.maxHp);
-                uiDrawText(npcHp, x - 24, y + 8, 0.25f, {1,1,1,fade});
+            for (const Npc& npc : npcSystem.all())
+                drawPlayerHealthbar(npc.body, camera, "npc-hp");
+
+            if (mpContext.active)
+            {
+                static uint64_t lastHealthbarLogMs = 0;
+                const uint64_t healthbarNowMs = MimitaNet::nowMs();
+                const bool logHealthbars =
+                    mpContext.showDebugOverlay &&
+                    healthbarNowMs - lastHealthbarLogMs >= 1000;
+
+                for (const auto& kv : mpContext.remotePlayers)
+                {
+                    const HealthbarRenderResult result =
+                        drawPlayerHealthbar(
+                            kv.second, camera, "network-player-hp");
+                    if (logHealthbars)
+                    {
+                        printf(
+                            "[NET HEALTHBAR] entityId=%u owner=remote "
+                            "health=%d/%d anchor=%s "
+                            "world=(%.2f %.2f %.2f) screen=(%.1f %.1f) "
+                            "distance=%.1f rendered=%d cull=%s\n",
+                            kv.first,
+                            kv.second.currentHp, kv.second.maxHp,
+                            result.usedHeadTransform ? "head" : "fallback",
+                            result.anchor.x, result.anchor.y, result.anchor.z,
+                            result.screen.x, result.screen.y,
+                            result.distance, (int)result.rendered,
+                            healthbarCullReasonName(result.cullReason));
+                    }
+                }
+
+                if (logHealthbars)
+                    lastHealthbarLogMs = healthbarNowMs;
             }
             {
                 char npcText[96];
@@ -1535,7 +1938,7 @@ int main(int argc, char** argv)
                     const char* localName = player.username.empty() ? "you" : player.username.c_str();
                     char localLine[128];
                     snprintf(localLine, sizeof(localLine), "%u   %s   %dms (you)",
-                             mpContext.localPlayerId, localName, 0);
+                             mpContext.localPlayerId, localName, mpContext.localPingMs);
                     uiDrawText(localLine, listX + 10.0f, y, 0.32f, {0.3f, 1.0f, 0.4f, 1.0f});
                     y += lineH;
                 }
@@ -1561,7 +1964,7 @@ int main(int argc, char** argv)
                 float dbgY = 20.0f;
                 float lineH = 18.0f;
                 float dbgW = 340.0f;
-                float dbgH = (12.0f + (float)mpContext.remotePlayers.size()) * lineH + 10.0f;
+                float dbgH = (13.0f + (float)mpContext.remotePlayers.size()) * lineH + 10.0f;
 
                 uiDrawRect({dbgX, dbgY, dbgW, dbgH}, {0.0f, 0.0f, 0.0f, 0.8f}, "net-debug-bg");
 
@@ -1576,6 +1979,16 @@ int main(int argc, char** argv)
 
                 snprintf(buf, sizeof(buf), "LOCAL PLAYER ID: %u", mpContext.localPlayerId);
                 uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.3f, 1.0f, 0.4f, 1.0f}); y += lineH;
+
+                snprintf(buf, sizeof(buf), "PING: %dms  FAKELAG: mode %d delay %dms queue %zu",
+                         mpContext.localPingMs,
+                         mpContext.fakeLagMode,
+                         mpContext.fakeLagMode == 1
+                            ? mpContext.fakeLagCurrentMs
+                            : mpContext.fakeLagStaticMs,
+                         mpContext.outgoingQueue.size());
+                uiDrawText(buf, dbgX + 8.0f, y, 0.26f, {0.75f, 0.85f, 1.0f, 1.0f});
+                y += lineH;
 
                 snprintf(buf, sizeof(buf), "ENTITIES: %zu (PLAYERS %zu / NPCS %zu)",
                          mpContext.remotePlayers.size() + mpContext.remoteNpcs.size() +

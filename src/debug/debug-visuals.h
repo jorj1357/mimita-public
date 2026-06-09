@@ -118,7 +118,7 @@ namespace DebugVis {
     void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
     void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color);
     void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color);
-    void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color);
+    void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler = glm::vec3(0.0f));
     
     // World to screen projection
     bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
