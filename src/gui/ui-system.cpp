@@ -35,6 +35,14 @@ int gDrawCalls = 0;
 int gWidgets = 0;
 std::vector<std::string> gWarnings;
 
+bool uiCanPlayUISound() {
+    if (!gWindow) return false;
+    if (glfwGetWindowAttrib(gWindow, GLFW_FOCUSED) == 0) return false;
+    if (glfwGetWindowAttrib(gWindow, GLFW_ICONIFIED) != 0) return false;
+    if (glfwGetInputMode(gWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED) return false;
+    return true;
+}
+
 const unsigned char FONT5X7[44][7] = {
     {0,0,0,0,0,0,0},       // space
     {14,17,19,21,25,17,14},// 0
@@ -508,13 +516,24 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     s.hovered = pointIn(mx, my, r);
     s.pressed = s.hovered && gMouseDown;
     s.clicked = s.hovered && gMouseClickEdge;
-    static std::string lastHovered;
-    if (s.hovered && lastHovered != text) {
-        playMenuHover();
-        lastHovered = text;
-    } else if (!s.hovered && lastHovered == text) {
-        lastHovered.clear();
+
+    static const char* lastHoveredText = nullptr;
+    static bool wasHovered = false;
+
+    bool isHoveredNow = s.hovered;
+    bool hoverEntered = isHoveredNow && !wasHovered;
+    bool hoverExited = !isHoveredNow && wasHovered;
+
+    if (hoverEntered && lastHoveredText != text) {
+        if (uiCanPlayUISound()) {
+            playMenuHover();
+        }
+        lastHoveredText = text;
+    } else if (hoverExited && lastHoveredText == text) {
+        lastHoveredText = nullptr;
     }
+
+    wasHovered = isHoveredNow;
 
     glm::vec4 c = color;
     if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);
@@ -536,7 +555,9 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     if (s.clicked)
     {
         printf("[UI] button clicked: %s\n", text);
-        playMenuClick();
+        if (uiCanPlayUISound()) {
+            playMenuClick();
+        }
     }
 
     return s;
