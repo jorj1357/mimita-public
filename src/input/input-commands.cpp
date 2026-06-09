@@ -139,8 +139,8 @@ void InputCommandSystem::setupDefaultBinds() {
     bindAction("walkright", GLFW_KEY_D);
     bindAction("jump", GLFW_KEY_SPACE);
     bindAction("dash", GLFW_KEY_LEFT_SHIFT);
-    bindAction("ground_return", GLFW_KEY_B);
-    bindAction("freeze", GLFW_KEY_G);
+    bindAction("down_dash", GLFW_KEY_Q);
+    bindAction("freeze", GLFW_KEY_E);
     bindAction("reload", GLFW_KEY_R);
     
     // Initialize states
@@ -150,7 +150,7 @@ void InputCommandSystem::setupDefaultBinds() {
     mActionStates["walkright"] = {};
     mActionStates["jump"] = {};
     mActionStates["dash"] = {};
-    mActionStates["ground_return"] = {};
+    mActionStates["down_dash"] = {};
     mActionStates["freeze"] = {};
     mActionStates["reload"] = {};
 }
@@ -214,6 +214,10 @@ bool InputCommandSystem::isDashPressed() const {
 
 bool InputCommandSystem::isGroundReturnPressed() const {
     return getState("ground_return").pressed;
+}
+
+bool InputCommandSystem::isDownDashPressed() const {
+    return getState("down_dash").pressed;
 }
 
 bool InputCommandSystem::isFreezeHeld() const {
@@ -315,6 +319,7 @@ const char* inputActionToString(InputAction action) {
         case InputAction::Dash: return "dash";
         case InputAction::GroundReturn: return "ground_return";
         case InputAction::Freeze: return "freeze";
+        case InputAction::DownDash: return "down_dash";
         default: return "unknown";
     }
 }
@@ -327,6 +332,7 @@ InputAction stringToInputAction(const std::string& str) {
     if (str == "jump") return InputAction::Jump;
     if (str == "dash") return InputAction::Dash;
     if (str == "ground_return") return InputAction::GroundReturn;
+    if (str == "down_dash") return InputAction::DownDash;
     if (str == "freeze") return InputAction::Freeze;
     return InputAction::Count;
 }

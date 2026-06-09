@@ -20,9 +20,11 @@ static InputState inputStateFromFrame(const InputFrame& frame)
     InputState state;
     state.wishMoveXY = {frame.moveX, frame.moveY};
     state.jumpHeld = frame.jump;
+    state.jumpPressed = frame.jumpPressed;
     state.dashPressed = frame.dashPressed;
     state.movementPressed = frame.movementPressed;
     state.groundReturnPressed = frame.groundReturnPressed;
+    state.downDashPressed = frame.downDashPressed;
     state.freezeHeld = frame.freezeHeld;
 
     float yawRad = glm::radians(frame.lookYaw);

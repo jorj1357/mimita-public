@@ -12,6 +12,7 @@ struct InputFrame {
     bool movementPressed = false;
     bool reloadPressed = false;
     bool groundReturnPressed = false;
+    bool downDashPressed = false;
     bool freezeHeld = false;
     float lookYaw = 0.0f;
     float lookPitch = 0.0f;

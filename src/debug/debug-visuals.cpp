@@ -1007,6 +1007,10 @@ namespace DebugVis {
         ::drawWireSphere(camera, center, radius, color);
     }
 
+    void flushTris(const Camera& camera) {
+        ::flushDebugTris(camera);
+    }
+
     // CHANGED: Not gated behind masterEnabled — intended for production particles/blood, jun 6 2026
     void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal, float radius, glm::vec4 color) {
         ::drawFilledDecal(camera, position, normal, radius, color);

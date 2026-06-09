@@ -29,6 +29,49 @@
 // DASH
 // =====================================================
 
+// =====================================================
+// AIR DASH
+// =====================================================
+
+void doAirDash(
+    Player& p,
+    const glm::vec2& wishMoveXY,
+    bool jumpPressed,
+    bool movementPressed,
+    bool airborne,
+    float dt
+) {
+    (void)dt;
+
+    if (!jumpPressed) return;
+    if (!airborne) return;
+    if (!movementPressed) return;
+    if (!p.dashAvailable) return;
+    if (p.freezeActive) return;
+
+    glm::vec2 wishLen = wishMoveXY;
+    if (glm::length(wishLen) < 0.001f)
+        return;
+
+    glm::vec2 dashDir = glm::normalize(wishLen);
+
+    // weaker directional impulse applied directly to vel
+    p.vel.x += dashDir.x * AIR_DASH_IMPULSE;
+    p.vel.y += dashDir.y * AIR_DASH_IMPULSE;
+
+    p.dashAvailable = false;
+    p.didDash = true;
+
+    // prevent air jump on same frame
+    p.airJumpsLeft = 0;
+
+    DASH_LOG(
+        "[AIR_DASH] dir=(%.2f %.2f) impulse=%.1f vel=(%.2f %.2f)\n",
+        dashDir.x, dashDir.y, AIR_DASH_IMPULSE,
+        p.vel.x, p.vel.y
+    );
+}
+
 void doDash(
     Player& p,
     const glm::vec2& wishMoveXY,

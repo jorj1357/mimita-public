@@ -23,3 +23,14 @@ void doDash(
     const glm::vec3& camForward,
     float dt
 );
+
+// Air dash: weaker directional impulse triggered by Space+WASD while airborne
+// Preserves full air control - applied directly to vel, not externalImpulse
+void doAirDash(
+    Player& p,
+    const glm::vec2& wishMoveXY,
+    bool jumpPressed,
+    bool movementPressed,
+    bool airborne,
+    float dt
+);

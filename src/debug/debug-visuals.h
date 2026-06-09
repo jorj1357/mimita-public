@@ -120,6 +120,10 @@ namespace DebugVis {
     void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color);
     void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler = glm::vec3(0.0f));
     
+    // Flush production VFX triangles (beams, blood, impacts, debris)
+    // NOT gated behind debug flags — always renders
+    void flushTris(const Camera& camera);
+
     // World to screen projection
     bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
 }

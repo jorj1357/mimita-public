@@ -5,9 +5,11 @@
 void WeaponRuntimeHelper::initRuntime(WeaponRuntime& rt, const WeaponDefinition& def) {
     rt.currentAmmo = def.magazineSize;
     rt.reserveAmmo = 1337;
+    rt.pendingReloadRounds = 0;
     rt.fireCooldown = 0.0f;
     rt.reloadTimer = 0.0f;
     rt.shootEffectTimer = 0.0f;
+    rt.reloadBufferTimer = 0.0f;
     rt.isReloading = false;
     rt.isCharging = false;
     rt.chargeAmount = 0.0f;

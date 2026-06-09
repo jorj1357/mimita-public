@@ -17,6 +17,7 @@ enum class InputAction {
     Dash,
     GroundReturn,
     Freeze,
+    DownDash,
     Count
 };
 
@@ -45,6 +46,7 @@ public:
     bool isJumpHeld() const;
     bool isDashPressed() const;
     bool isGroundReturnPressed() const;
+    bool isDownDashPressed() const;
     bool isFreezeHeld() const;
     
     // Bind action to key (runtime)

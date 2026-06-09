@@ -41,7 +41,7 @@ public:
     void inspect() const;
 
     WeaponCrosshairState crosshairState(const Player& player) const;
-    bool isReloading() const { return mIsReloading; }
+    bool isReloading(const Player& player) const;
     bool isShooting() const { return mShootingTimer > 0.0f; }
 
     const std::vector<std::string>& killfeed() const { return mKillfeed; }
@@ -54,11 +54,7 @@ private:
     WeaponViewModel mViewModels[MAX_SLOTS];
     GodballPhysics mGodballPhys;
     float mShotCooldown = 0.0f;
-    float mReloadTimer = 0.0f;
-    float mReloadBufferTimer = 0.0f;
     float mShootingTimer = 0.0f;
-    int mPendingReloadRounds = 0;
-    bool mIsReloading = false;
     float mRecoilValue = 0.0f;
     float mDisturbance = 0.0f;
 

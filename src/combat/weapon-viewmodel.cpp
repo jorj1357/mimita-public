@@ -85,9 +85,11 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt, con
 
         glm::vec3 modelDirection = glm::normalize(modelMuzzle - modelGrip);
         glm::quat gripRotation = glm::rotation(modelDirection, handDirection);
+        glm::vec3 offset = def ? def->viewModelOffset : glm::vec3(0.0f);
         weaponTransform = part.worldTransform *
                            glm::translate(glm::mat4(1.0f), handPoint) *
                            glm::mat4_cast(gripRotation) *
+                           glm::translate(glm::mat4(1.0f), offset) *
                            glm::translate(glm::mat4(1.0f), -modelGrip);
         muzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));
         forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));

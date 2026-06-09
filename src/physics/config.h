@@ -190,6 +190,12 @@ inline float OPPOSITE_FRICTION_AMOUNT = 0.99f;
 // imsetting it to like 100.0f bc 50 too low mar 8 2026
 inline float DASH_IMPULSE = 100.0f;
 
+// air dash impulse (weaker than ground dash)
+inline float AIR_DASH_IMPULSE = 50.0f;
+
+// down dash slam speed (Q key)
+constexpr float DOWN_DASH_SPEED = -100.0f;
+
 // how many dash charges u got
 constexpr int   DASH_MAX_CHARGES   = 3;
 

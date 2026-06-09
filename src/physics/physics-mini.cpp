@@ -23,6 +23,7 @@
 #include "physics/movement/physics-jump.h"
 #include "physics/movement/physics-dash.h"
 #include "physics/movement/physics-ground-return.h"
+#include "physics/movement/physics-down-dash.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
@@ -59,9 +60,11 @@ static void physicsMainUpdate_Internal(
     const World& world,
     const glm::vec2& wishMoveXY,
     bool jumpHeld,
+    bool jumpPressed,
     bool dashPressed,
     bool movementPressed,
     bool groundReturnPressed,
+    bool downDashPressed,
     const glm::vec3& camForward,
     float dt,
     bool debugEnabled,
@@ -130,6 +133,12 @@ static void physicsMainUpdate_Internal(
 
         doCollisions(p, world, groundedThisFrame, subdt);
     }
+
+    // air dash: Space+WASD while airborne (use raw grounded state from collision)
+    doAirDash(p, wishMoveXY, jumpPressed, movementPressed, !groundedThisFrame, dt);
+
+    // down dash: Q key, always works regardless of grounded state
+    doDownDash(p, downDashPressed, dt);
 
     // jump AFTER grounded so we actually know it work
     doJump(p, jumpHeld, dt);
@@ -248,9 +257,11 @@ void physicsMainUpdate(
         world,
         input.wishMoveXY,
         input.jumpHeld,
+        input.jumpPressed,
         input.dashPressed,
         input.movementPressed,
         input.groundReturnPressed,
+        input.downDashPressed,
         input.camForward,
         dt,
         false,

@@ -57,6 +57,9 @@ public:
     float hitReactionTimer = 0.0f;
     unsigned int rngState = 1;
 
+    // Training mode: 0=idle, 1=flee, 2=attack
+    int trainingMode = 0;
+
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);
 };
 
