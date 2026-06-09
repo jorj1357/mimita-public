@@ -53,11 +53,15 @@ glm::vec3 right{1, 0, 0};
 
 float yaw = -90.0f;
 float pitch = 10.0f;
+float punchPitch = 0.0f;
+float punchYaw = 0.0f;
 bool firstMouse = true;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;
 
 void updateVectors(); 
+void decayPunch(float dt);
+void addPunch(float pitchAmount, float yawAmount);
 void updateMouse(double xpos, double ypos);
 void follow(const glm::vec3& target);
 glm::mat4 getView() const;

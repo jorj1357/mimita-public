@@ -36,6 +36,8 @@ namespace DebugConfig
     inline bool DEBUG_BLOOD_HITS = false;
     inline bool DEBUG_BLOOD_FORCE = false;
     inline bool DEBUG_DEBRIS = false;
+    inline bool DEBUG_RECOIL = false;
+    inline bool DEBUG_RELOAD = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
@@ -63,6 +65,8 @@ namespace DebugConfig
         DEBUG_BLOOD_HITS = false;
         DEBUG_BLOOD_FORCE = false;
         DEBUG_DEBRIS = false;
+        DEBUG_RECOIL = false;
+        DEBUG_RELOAD = false;
     }
 }
 
