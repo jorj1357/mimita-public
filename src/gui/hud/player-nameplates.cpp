@@ -12,8 +12,8 @@
 
 namespace {
 
-constexpr float MAX_HEALTHBAR_DISTANCE = 80.0f;
-constexpr float FADE_DISTANCE = 90.0f;
+constexpr float MAX_HEALTHBAR_DISTANCE = 50.0f;
+constexpr float FADE_DISTANCE = 60.0f;
 
 } // namespace
 

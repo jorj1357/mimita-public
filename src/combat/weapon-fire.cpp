@@ -12,7 +12,9 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/death-system.h"
+#include "config.h"
 #include "config/player-settings.h"
+#include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -102,7 +104,16 @@ void applyRecoil(Player& shooter, const WeaponDefinition& def,
     if (glm::length(recoilDir) > 0.001f)
         recoilDir = glm::normalize(recoilDir);
     shooter.externalImpulse += recoilDir * recoilStrength;
+    shooter.externalImpulse.z += recoilStrength * cfg.weaponRecoilUpKick * 0.01f;
     inOutRecoil = std::min(inOutRecoil + def.recoil * 0.25f, 8.0f);
+
+    if (DebugConfig::DEBUG_RECOIL)
+        Debug::log(Debug::Category::General,
+            "[RECOIL] impulse=(%.3f %.3f %.3f) mag=%.1f\n",
+            recoilDir.x * recoilStrength,
+            recoilDir.y * recoilStrength,
+            recoilStrength * cfg.weaponRecoilUpKick * 0.01f,
+            recoilStrength);
 }
 
 int applyDamageToEntity(const DamageContext& ctx, Npc& victim,

@@ -79,15 +79,18 @@ MapCatalogResult scanMapCatalog(const std::string& assetDirectory)
     {
         const std::filesystem::directory_entry& file = *iterator;
         std::error_code fileError;
-        if (file.is_regular_file(fileError) && !fileError &&
-            lowerCopy(file.path().extension().string()) == ".glb")
+        if (file.is_regular_file(fileError) && !fileError)
         {
-            MapCatalogEntry entry;
-            entry.assetPath =
-                (std::filesystem::path(assetDirectory) / file.path().filename())
-                    .lexically_normal().generic_string();
-            entry.displayName = cleanDisplayName(file.path().stem().string());
-            result.maps.push_back(std::move(entry));
+            std::string ext = lowerCopy(file.path().extension().string());
+            if (ext == ".glb" || ext == ".gltf")
+            {
+                MapCatalogEntry entry;
+                entry.assetPath =
+                    (std::filesystem::path(assetDirectory) / file.path().filename())
+                        .lexically_normal().generic_string();
+                entry.displayName = cleanDisplayName(file.path().stem().string());
+                result.maps.push_back(std::move(entry));
+            }
         }
         iterator.increment(error);
     }
