@@ -661,9 +661,12 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.updateModelWorldTransforms();
     }
 
-    player.currentHp = ctx.localServerHealth;
-    if (serverKilledPlayer)
+    if (serverRespawnedPlayer)
+        player.currentHp = ctx.localServerHealth;
+    else if (serverKilledPlayer)
         player.currentHp = 0;
+    else
+        player.currentHp = std::min(player.currentHp, ctx.localServerHealth);
     if (serverRespawnedPlayer)
     {
         player.dead = false;
@@ -749,7 +752,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     ctx.localPlayerReconciled = true;
 }
 
-void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position)
+void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return;
@@ -761,6 +764,7 @@ void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position)
     request.px = position.x;
     request.py = position.y;
     request.pz = position.z;
+    request.difficulty = difficulty;
     mpSendPacket(ctx, &request, sizeof(request));
 }
 

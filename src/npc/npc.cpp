@@ -222,6 +222,14 @@ void NpcSystem::spawnNpc(float difficulty, glm::vec3 spawnPos)
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u (global diff=%.1f)\n", id, d);
 }
 
+void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)
+{
+    float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
+    npcs.emplace_back(id, d, spawnPos);
+    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    Debug::log(Debug::Category::General, "[NPC] spawned id=%u (network, diff=%.1f)\n", id, d);
+}
+
 void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)
 {
     npcs.erase(std::remove_if(npcs.begin(), npcs.end(), [&](const Npc& npc) {

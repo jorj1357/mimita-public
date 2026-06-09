@@ -128,7 +128,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
-void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position);
+void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty = 1.0f);
 void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
 void mpRequestExplode(MultiplayerContext& ctx);
 uint32_t mpSendShotEvent(
