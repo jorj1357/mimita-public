@@ -18,6 +18,8 @@
 #include "world/texture-store.h"
 #include "world/world.h"
 
+
+
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
@@ -85,7 +87,20 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt, con
 
         glm::vec3 modelDirection = glm::normalize(modelMuzzle - modelGrip);
         glm::quat gripRotation = glm::rotation(modelDirection, handDirection);
-        glm::vec3 offset = def ? def->viewModelOffset : glm::vec3(0.0f);
+        glm::vec3 offset(0.0f);
+        if (def) {
+            if (def->id == "revolver") {
+                offset = glm::vec3(gPlayerProcedural.revolverOffsetX,
+                                   gPlayerProcedural.revolverOffsetY,
+                                   gPlayerProcedural.revolverOffsetZ);
+            } else if (def->id == "shotgun") {
+                offset = glm::vec3(gPlayerProcedural.shotgunOffsetX,
+                                   gPlayerProcedural.shotgunOffsetY,
+                                   gPlayerProcedural.shotgunOffsetZ);
+            } else {
+                offset = def->viewModelOffset;
+            }
+        }
         weaponTransform = part.worldTransform *
                            glm::translate(glm::mat4(1.0f), handPoint) *
                            glm::mat4_cast(gripRotation) *

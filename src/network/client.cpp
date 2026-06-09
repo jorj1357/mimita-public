@@ -241,6 +241,7 @@ int runClient(const LaunchOptions& options)
         {
             camera.updateVectors();
             camera.follow(localIt->second.pos);
+            camera.smoothCollision(localIt->second.pos, world.collisionMesh.triangles, 1.0f / 60.0f);
         }
 
         renderWorld(world, camera);

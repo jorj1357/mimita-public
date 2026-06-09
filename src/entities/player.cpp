@@ -70,40 +70,6 @@ namespace {
 const char* PLAYER_GLB_PATH = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
 const char* PLAYER_PROCEDURAL_CONFIG_PATH = "config/player-procedural.json";
 
-struct PlayerProceduralConfig
-{
-    float leftArmRaise;
-    float leftArmForward;
-    float leftArmTwist;
-
-    float rightArmRaise;
-    float rightArmForward;
-    float rightArmTwist;
-
-    float weaponSwayAmount;
-    float weaponSwaySpeed;
-
-    float torsoAimYawStrength;
-    float torsoAimPitchStrength;
-
-    float armAimYawStrength;
-    float armAimPitchStrength;
-};
-
-PlayerProceduralConfig gPlayerProcedural{
-    -45.0f,
-    -20.0f,
-    15.0f,
-    -55.0f,
-    -25.0f,
-    -10.0f,
-    0.15f,
-    8.0f,
-    0.6f,
-    0.3f,
-    0.25f,
-    0.45f
-};
 float gPlayerProceduralReloadTimer = 0.25f;
 std::filesystem::file_time_type gPlayerProceduralLastWrite{};
 std::chrono::steady_clock::time_point gPlayerProceduralLastCheck{};
@@ -143,6 +109,22 @@ bool reloadPlayerProceduralConfig()
         readJsonValue(j, "torsoAimPitchStrength", loaded.torsoAimPitchStrength);
         readJsonValue(j, "armAimYawStrength", loaded.armAimYawStrength);
         readJsonValue(j, "armAimPitchStrength", loaded.armAimPitchStrength);
+
+        readJsonValue(j, "armSwingAmount", loaded.armSwingAmount);
+        readJsonValue(j, "legSwingAmount", loaded.legSwingAmount);
+        readJsonValue(j, "torsoLeanAmount", loaded.torsoLeanAmount);
+        readJsonValue(j, "headCounterAmount", loaded.headCounterAmount);
+        readJsonValue(j, "bobHeight", loaded.bobHeight);
+        readJsonValue(j, "walkFrequency", loaded.walkFrequency);
+        readJsonValue(j, "walkFrequencyMultiplier", loaded.walkFrequencyMultiplier);
+        readJsonValue(j, "reloadArmLowerZ", loaded.reloadArmLowerZ);
+        readJsonValue(j, "reloadArmLowerX", loaded.reloadArmLowerX);
+        readJsonValue(j, "revolverOffsetX", loaded.revolverOffsetX);
+        readJsonValue(j, "revolverOffsetY", loaded.revolverOffsetY);
+        readJsonValue(j, "revolverOffsetZ", loaded.revolverOffsetZ);
+        readJsonValue(j, "shotgunOffsetX", loaded.shotgunOffsetX);
+        readJsonValue(j, "shotgunOffsetY", loaded.shotgunOffsetY);
+        readJsonValue(j, "shotgunOffsetZ", loaded.shotgunOffsetZ);
 
         gPlayerProcedural = loaded;
         printf("[HOT RELOAD] player procedural config reloaded\n");
@@ -461,6 +443,36 @@ void uploadPlayerMeshIfNeeded(const Mesh& mesh)
 }
 
 }
+
+PlayerProceduralConfig gPlayerProcedural{
+    -45.0f,
+    -20.0f,
+    15.0f,
+    -55.0f,
+    -25.0f,
+    -10.0f,
+    0.15f,
+    8.0f,
+    0.6f,
+    0.3f,
+    0.25f,
+    0.45f,
+    75.0f,
+    65.0f,
+    -20.0f,
+    12.0f,
+    0.12f,
+    6.5f,
+    6.0f,
+    -15.0f,
+    -8.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    0.5f
+};
 
 static void initCapsuleMesh()
 {
@@ -834,6 +846,10 @@ void Player::updateModelWorldTransforms()
 {
     syncLegacyStateToLayers();
 
+    // Save previous transforms for limb sweep collision
+    for (PhysicalBodyPart& part : physicalBody.parts)
+        part.previousWorldTransform = part.worldTransform;
+
     glm::mat4 rootWorld = transformMatrix(movementCapsule.position, movementCapsule.rotation);
 
     for (int i = 0; i < (int)perfectPoseSkeleton.nodes.size(); ++i)
@@ -879,7 +895,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     syncLegacyStateToLayers();
 
-    proceduralTime += dt;
     weaponSwayTime += dt;
 
     glm::vec2 planarVel = glm::vec2(vel.x, vel.y);
@@ -889,12 +904,31 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     glm::vec3 acceleration = (dt > 0.0001f) ? (vel - previousProceduralVelocity) / dt : glm::vec3(0.0f);
     previousProceduralVelocity = vel;
 
-    float phase = proceduralTime * (5.8f + move01 * 5.5f);
+    // Phase jump: on first frame of movement, snap to extreme sprint pose
+    bool wasIdle = previousMove01 < 0.01f;
+    bool nowMoving = move01 > 0.01f;
+    if (wasIdle && nowMoving) {
+        proceduralTime = (3.14159265f * 0.5f) / (gPlayerProcedural.walkFrequency + move01 * gPlayerProcedural.walkFrequencyMultiplier);
+    } else {
+        proceduralTime += dt;
+    }
+    previousMove01 = move01;
+
+    float phase = proceduralTime * (gPlayerProcedural.walkFrequency + move01 * gPlayerProcedural.walkFrequencyMultiplier);
     float stride = std::sin(phase);
     float counterStride = std::sin(phase + 3.14159265f);
-    float bob = std::abs(std::sin(phase)) * 0.055f * move01;
+    float bob = std::abs(std::sin(phase)) * gPlayerProcedural.bobHeight * move01;
     float air = onGround ? 0.0f : 1.0f;
     float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
+
+    // Reload state: lower arms during reload
+    bool isReloading = false;
+    for (const auto& pair : weaponRuntimes) {
+        if (pair.second.isReloading) {
+            isReloading = true;
+            break;
+        }
+    }
 
     // Weapon sway (applied to arms when weapon equipped)
     bool weaponEquipped = (equippedSlot >= 1);
@@ -931,65 +965,34 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         if (part.name == "leftLeg")
         {
-            // legs already work correctly with local Z swing
-            // target.rotationEuler.y = stride * 48.0f * move01 - air * 18.0f;
-
-            target.rotationEuler.z = stride * 48.0f * move01 - air * 18.0f;
-
-            // slight air tuck
+            target.rotationEuler.z = stride * gPlayerProcedural.legSwingAmount * move01 - air * 18.0f;
             target.rotationEuler.x = -air * 8.0f;
-
-            // tiny vertical compression while walking
             target.translation.z = -bob * 0.35f;
         }
         else if (part.name == "rightLeg")
         {
-            // target.rotationEuler.y = counterStride * 48.0f * move01 - air * 18.0f;
-
-            target.rotationEuler.z = counterStride * 48.0f * move01 - air * 18.0f;
-
+            target.rotationEuler.z = counterStride * gPlayerProcedural.legSwingAmount * move01 - air * 18.0f;
             target.rotationEuler.x = -air * 8.0f;
-
             target.translation.z = -bob * 0.35f;
         }
         else if (part.name == "leftArm")
         {
-            // IMPORTANT:
-            // arm local axes are different from legs
-            // in this rig X is the proper swing axis
-
-            // old tests:
-            // target.rotationEuler.y = counterStride * 58.0f * move01 + air * 14.0f;
-            // target.rotationEuler.z = counterStride * 58.0f * move01 + air * 14.0f;
-            // target.rotationEuler.x = counterStride * 108.0f * move01 + air * 14.0f;
-            // target.rotationEuler.y = counterStride * 108.0f * move01 + air * 14.0f;
-
-            // forward/back arm swing
-            // target.rotationEuler.x =
-            // 6 4  2026
-            // attemtp 2 lalala 
-            // ok this rotates like the shoulder like wagging ur finger left right is what it does
-            // attempt 3  z
-            // target.rotationEuler.y =
-            target.rotationEuler.z =
-                counterStride * 58.0f * move01 +
-                air * 14.0f;
-
-            // tiny outward shoulder angle
+            target.rotationEuler.z = counterStride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f;
             target.rotationEuler.z += 8.0f * move01;
 
-            // Weapon hold pose (left hand supporting)
             if (weaponEquipped) {
-                // Raise arm to hold weapon
-                target.rotationEuler.z += gPlayerProcedural.leftArmRaise;
+                float reloadDrop = isReloading ? gPlayerProcedural.reloadArmLowerZ : 0.0f;
+                target.rotationEuler.z += gPlayerProcedural.leftArmRaise + reloadDrop;
                 target.rotationEuler.x += gPlayerProcedural.leftArmForward;
                 target.rotationEuler.y += gPlayerProcedural.leftArmTwist;
-                target.translation.z += 0.15f;    // Lift slightly
+                target.translation.z += 0.15f;
+
+                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX : 0.0f;
+                target.rotationEuler.x += reloadLower;
 
                 target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
                 target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
                 
-                // Weapon sway on left arm (supporting hand)
                 target.rotationEuler.z += swayZ * 0.5f;
                 target.rotationEuler.x += swayX * 0.3f;
                 target.rotationEuler.y += swayY * 0.3f;
@@ -997,43 +1000,23 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
         else if (part.name == "rightArm")
         {
-            // old tests:
-            // target.rotationEuler.y = stride * 58.0f * move01 + air * 14.0f;
-            // target.rotationEuler.z = stride * 58.0f * move01 + air * 14.0f;
-            // target.rotationEuler.x = stride * 108.0f * move01 + air * 14.0f;
-
-            // x = proper arm swing axis on this rig
-            // y = twisting shoulder
-            // z = side lean / flare
-
-            // target.rotationEuler.y = stride * 108.0f * move01 + air * 14.0f;
-
-            // forward/back arm swing
-            // target.rotationEuler.x =
-            // test 2  
-            // 6 4 2026
-            // bc x swings left right across the torso 
-            // target.rotationEuler.y =
-            target.rotationEuler.z =
-                stride * 58.0f * move01 +
-                air * 14.0f;
-
-            // tiny outward shoulder angle
+            target.rotationEuler.z = stride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f;
             target.rotationEuler.z += -8.0f * move01;
 
-            // Weapon hold pose (right hand - primary grip)
             if (weaponEquipped) {
-                // Raise arm to hold weapon forward
-                target.rotationEuler.z += gPlayerProcedural.rightArmRaise;
+                float reloadDrop = isReloading ? gPlayerProcedural.reloadArmLowerZ : 0.0f;
+                target.rotationEuler.z += gPlayerProcedural.rightArmRaise + reloadDrop;
                 target.rotationEuler.x += gPlayerProcedural.rightArmForward;
                 target.rotationEuler.y += gPlayerProcedural.rightArmTwist;
-                target.translation.z += 0.18f;    // Lift slightly
-                target.translation.x += 0.08f;    // Offset to side
+                target.translation.z += 0.18f;
+                target.translation.x += 0.08f;
+
+                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX : 0.0f;
+                target.rotationEuler.x += reloadLower;
 
                 target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
                 target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
                 
-                // Weapon sway on right arm (trigger hand)
                 target.rotationEuler.z += swayZ;
                 target.rotationEuler.x += swayX * 0.5f;
                 target.rotationEuler.y += swayY * 0.5f;
@@ -1042,29 +1025,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         else if (part.name == "torso")
         {
             target.translation.z = bob;
+            target.rotationEuler.z = gPlayerProcedural.torsoLeanAmount * move01 + 10.0f * dash01 + accelLean;
+            target.rotationEuler.z += std::clamp(0.0f, -8.0f, 8.0f);
 
-            // old:
-            // target.rotationEuler.x = -6.0f * move01 - 10.0f * dash01 + accelLean;
-
-            // torso forward lean
-            // target.rotationEuler.x =
-            target.rotationEuler.z =
-                -6.0f * move01 -
-                // -60.0f * move01 -
-                10.0f * dash01 +
-                accelLean;
-
-            // torso side tilt from dash
-            target.rotationEuler.z +=
-                std::clamp(
-                    0.0f,
-                    -8.0f,
-                    8.0f
-                );
-
-            // Upper body aim rotation (yaw toward aim direction)
             if (weaponEquipped && hasAimData) {
-                // Convert aimYaw from radians to degrees for rotationEuler
                 target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.torsoAimYawStrength;
                 target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.torsoAimPitchStrength;
             }
@@ -1072,25 +1036,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         else if (part.name == "head")
         {
             target.translation.z = bob * 0.35f;
-
-            // old:
-            // target.rotationEuler.x = 3.0f * move01 + 5.0f * dash01 - accelLean * 0.5f;
-
-            // slight counterbalance to torso
-            // target.rotationEuler.x =
-            target.rotationEuler.z =
-                3.0f * move01 +
-                // 30.0f * move01 +
-                5.0f * dash01 -
-                accelLean * 0.5f;
-
-            // subtle side stabilization
-            target.rotationEuler.z +=
-                std::clamp(
-                    0.0f,
-                    -4.0f,
-                    4.0f
-                );
+            target.rotationEuler.z = gPlayerProcedural.headCounterAmount * move01 + 5.0f * dash01 - accelLean * 0.5f;
+            target.rotationEuler.z += std::clamp(0.0f, -4.0f, 4.0f);
         }
 
         if (!onGround)

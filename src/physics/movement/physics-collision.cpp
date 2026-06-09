@@ -958,13 +958,27 @@ static void doGLBTriangleCollisions(
 
     std::vector<int> candidates = gatherGLBTriangles(world, cap, totalMove);
     std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
-    for (glm::vec3 sample : bodySamples)
+
+    // Compute per-sample limb motion deltas for sweep collision
+    // delta = current sample position - previous frame sample position
+    // This captures animation-driven limb motion between frames
+    std::vector<glm::vec3> bodyDeltas(bodySamples.size(), glm::vec3(0.0f));
+    for (size_t si = 0; si < bodySamples.size() && si < p.previousBodySamplePositions.size(); ++si)
+        bodyDeltas[si] = bodySamples[si] - p.previousBodySamplePositions[si];
+
+    // Gather candidate triangles using the swept volume (current position + player move + limb delta)
+    for (size_t si = 0; si < bodySamples.size(); ++si)
     {
-        std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, totalMove);
+        glm::vec3 sample = bodySamples[si];
+        glm::vec3 sampleMove = totalMove + bodyDeltas[si];
+        std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, sampleMove);
         for (int triIndex : sampleCandidates)
             if (std::find(candidates.begin(), candidates.end(), triIndex) == candidates.end())
                 candidates.push_back(triIndex);
     }
+
+    // Save current samples as previous for next frame
+    p.previousBodySamplePositions = bodySamples;
 
     static int frameLog = 0;
     if ((frameLog++ % 60) == 0)
@@ -999,14 +1013,19 @@ static void doGLBTriangleCollisions(
                 earliest = hit;
         }
 
-        for (glm::vec3 sample : bodySamples)
+        for (size_t si = 0; si < bodySamples.size(); ++si)
         {
+            glm::vec3 sample = bodySamples[si];
+            // On first iteration, include limb animation delta in the sweep
+            glm::vec3 sampleMove = (iter == 0 && si < bodyDeltas.size())
+                ? remainingMove + bodyDeltas[si]
+                : remainingMove;
             for (int triIndex : candidates)
             {
                 float t = 1.0f;
                 glm::vec3 n(0.0f);
                 glm::vec3 point(0.0f);
-                if (sweepSphereTriangle(sample, remainingMove, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], t, n, point) && t < earliest.time)
+                if (sweepSphereTriangle(sample, sampleMove, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], t, n, point) && t < earliest.time)
                 {
                     earliest.hit = true;
                     earliest.time = t;

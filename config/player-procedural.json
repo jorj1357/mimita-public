@@ -14,5 +14,24 @@
   "torsoAimPitchStrength": 0.05,
 
   "armAimYawStrength": 0.25,
-  "armAimPitchStrength": 0.45
+  "armAimPitchStrength": 0.45,
+
+  "armSwingAmount": 75.0,
+  "legSwingAmount": 65.0,
+  "torsoLeanAmount": -20.0,
+  "headCounterAmount": 12.0,
+  "bobHeight": 0.12,
+  "walkFrequency": 6.5,
+  "walkFrequencyMultiplier": 6.0,
+
+  "reloadArmLowerZ": -15.0,
+  "reloadArmLowerX": -8.0,
+
+  "revolverOffsetX": 0.0,
+  "revolverOffsetY": 0.0,
+  "revolverOffsetZ": 0.0,
+
+  "shotgunOffsetX": 0.0,
+  "shotgunOffsetY": 0.0,
+  "shotgunOffsetZ": 0.5
 }
