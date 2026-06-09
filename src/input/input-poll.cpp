@@ -81,6 +81,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.jumpHeld = cmd.isJumpHeld();
     in.dashPressed = cmd.isDashPressed();
     in.groundReturnPressed = cmd.isGroundReturnPressed();
+    in.downDashPressed = cmd.isDownDashPressed();
     in.freezeHeld = cmd.isFreezeHeld();
 
     if (in.dashPressed)
@@ -135,6 +136,7 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.dashPressed = cmd.isDashPressed() || gTerminalInputOverride.dashPressed;
     frame.reloadPressed = cmd.getState("reload").pressed || gTerminalInputOverride.reloadPressed;
     frame.groundReturnPressed = cmd.isGroundReturnPressed() || gTerminalInputOverride.groundReturnPressed;
+    frame.downDashPressed = cmd.isDownDashPressed() || gTerminalInputOverride.downDashPressed;
     frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
 
     if (gTerminalInputOverride.moveX != 0.0f || gTerminalInputOverride.moveY != 0.0f) {

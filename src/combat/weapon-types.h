@@ -65,10 +65,12 @@ struct WeaponDefinition {
 struct WeaponRuntime {
     int currentAmmo = 0;
     int reserveAmmo = 0;
+    int pendingReloadRounds = 0;
 
     float fireCooldown = 0.0f;
     float reloadTimer = 0.0f;
     float shootEffectTimer = 0.0f;
+    float reloadBufferTimer = 0.0f;
 
     bool isReloading = false;
     bool isCharging = false;

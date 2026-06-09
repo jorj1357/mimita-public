@@ -289,48 +289,56 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         npc.stateMachine.currentState = NpcState::Recover;
         npc.stateMachine.recoverTimer = npc.hitReactionTimer;
-        // Force re-decision after recover
         npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, npc.hitReactionTimer + 0.1f);
     }
 
-    // Decision time: pick next state
-    if (npc.stateMachine.nextDecisionTime <= 0.0f)
-    {
-        NpcState oldState = npc.stateMachine.currentState;
-        NpcState newState = pickNextState(npc);
-
-        // If switching to retreat, reset the retreat timer
-        if (newState == NpcState::Retreat && oldState != NpcState::Retreat)
+    // Training mode overrides
+    if (npc.trainingMode != 2) {
+        if (npc.trainingMode == 0) {
+            // Idle: stand still, never attack
+            npc.stateMachine.currentState = NpcState::Idle;
+            npc.stateMachine.nextDecisionTime = 2.0f;
+        } else if (npc.trainingMode == 1) {
+            // Flee: always retreat away from player, never attack
+            npc.stateMachine.currentState = NpcState::Retreat;
             npc.stateMachine.retreatTimer = 0.0f;
-
-        // If switching to recover, set recover timer
-        if (newState == NpcState::Recover)
-            npc.stateMachine.recoverTimer = 0.2f + random01(npc.rngState) * 0.3f;
-
-        // Reset orbit swap timer when entering Circle
-        if (newState == NpcState::Circle && oldState != NpcState::Circle)
-        {
-            npc.stateMachine.orbitSwapTimer = 0.1f + random01(npc.rngState) * 1.5f;
-            npc.stateMachine.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
-            npc.stateMachine.orbitDistance = 1.0f + random01(npc.rngState) * 9.0f;
+            npc.stateMachine.nextDecisionTime = 0.3f;
         }
-
-        // Reset strafe direction when entering Strafe
-        if (newState == NpcState::Strafe && oldState != NpcState::Strafe)
+    } else {
+        // trainingMode == 2: normal AI decision
+        if (npc.stateMachine.nextDecisionTime <= 0.0f)
         {
-            npc.stateMachine.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
-            npc.stateMachine.strafeSwapTimer = 0.3f + random01(npc.rngState) * 2.0f;
+            NpcState oldState = npc.stateMachine.currentState;
+            NpcState newState = pickNextState(npc);
+
+            if (newState == NpcState::Retreat && oldState != NpcState::Retreat)
+                npc.stateMachine.retreatTimer = 0.0f;
+
+            if (newState == NpcState::Recover)
+                npc.stateMachine.recoverTimer = 0.2f + random01(npc.rngState) * 0.3f;
+
+            if (newState == NpcState::Circle && oldState != NpcState::Circle)
+            {
+                npc.stateMachine.orbitSwapTimer = 0.1f + random01(npc.rngState) * 1.5f;
+                npc.stateMachine.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                npc.stateMachine.orbitDistance = 1.0f + random01(npc.rngState) * 9.0f;
+            }
+
+            if (newState == NpcState::Strafe && oldState != NpcState::Strafe)
+            {
+                npc.stateMachine.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                npc.stateMachine.strafeSwapTimer = 0.3f + random01(npc.rngState) * 2.0f;
+            }
+
+            logStateChange(npc, oldState, newState);
+            npc.stateMachine.previousState = oldState;
+            npc.stateMachine.currentState = newState;
+            npc.stateMachine.stateTimer = 0.0f;
+
+            float minT = stateMinTime(newState, difficulty01(npc.difficulty));
+            float maxT = stateMaxTime(newState, difficulty01(npc.difficulty));
+            npc.stateMachine.nextDecisionTime = minT + random01(npc.rngState) * (maxT - minT);
         }
-
-        logStateChange(npc, oldState, newState);
-        npc.stateMachine.previousState = oldState;
-        npc.stateMachine.currentState = newState;
-        npc.stateMachine.stateTimer = 0.0f;
-
-        // Set next decision time (randomized for organic feel)
-        float minT = stateMinTime(newState, difficulty01(npc.difficulty));
-        float maxT = stateMaxTime(newState, difficulty01(npc.difficulty));
-        npc.stateMachine.nextDecisionTime = minT + random01(npc.rngState) * (maxT - minT);
     }
 
     // Compute movement from current state
@@ -405,8 +413,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         Debug::log(Debug::Category::General, "[NPC] id=%u dashed\n", npc.id);
     }
 
-    // Attack
-    if (attack && npc.attackCooldown <= 0.0f)
+    // Attack (disabled for training modes 0 idle and 1 flee)
+    if (attack && npc.attackCooldown <= 0.0f && npc.trainingMode == 2)
     {
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
         if (fired)

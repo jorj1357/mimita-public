@@ -1249,7 +1249,7 @@ int main(int argc, char** argv)
                     playerActor.weaponModelPath = player.equippedSlot == 1
                         ? "assets/objects/weapons/mimita-revolver-v1.glb"
                         : "";
-                    playerActor.reloading = weapons.isReloading();
+                    playerActor.reloading = weapons.isReloading(player);
                     playerActor.shooting = weapons.isShooting();
                     playerActor.animationState = player.onGround
                         ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
@@ -1288,6 +1288,7 @@ int main(int argc, char** argv)
             // Process local NPC commands only outside authoritative multiplayer.
             if (!mpContext.active) {
                 ProcessNpcSpawnCommands(npcSystem, camera, world, player);
+                ProcessNpcTrainingSpawnCommands(npcSystem, camera, world, player);
             }
 
             // Multiplayer tick - receive snapshots
@@ -1519,7 +1520,7 @@ int main(int argc, char** argv)
                     in.equippedSlot = (int16_t)player.equippedSlot;
                     in.weaponState =
                         (weapons.isShooting() ? 1u : 0u) |
-                        (weapons.isReloading() ? 2u : 0u);
+                        (weapons.isReloading(player) ? 2u : 0u);
                     in.clientPingMs = mpContext.localPingMs;
                     in.jumpHeld = mpInput.jump ? 1 : 0;
                     in.dashPressed = mpInput.dashPressed ? 1 : 0;
@@ -1656,6 +1657,7 @@ int main(int argc, char** argv)
             
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
+            DebugVis::flushTris(camera);
             
             worldPassRan = true;
 
@@ -1784,7 +1786,7 @@ int main(int argc, char** argv)
                 uiDrawText(replayTickText, overlayX, 58.0f, 0.30f,
                            {1.0f, 0.12f, 0.12f, 1.0f});
             }
-            if (player.equippedSlot == 1) {
+            if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
                 const char* crosshairPath = "assets/crosshair/crosshairready.png";
                 switch (weapons.crosshairState(player)) {
                     case WeaponCrosshairState::Reloading:
@@ -1796,8 +1798,11 @@ int main(int argc, char** argv)
                     case WeaponCrosshairState::Ready:
                         break;
                 }
+                float size = 100.0f;
+                if (player.equippedSlot == 3)
+                    size = 140.0f;
                 uiDrawImage(crosshairPath,
-                            {uiScreenW() * 0.5f - 50.0f, uiScreenH() * 0.5f - 50.0f, 100.0f, 100.0f});
+                            {uiScreenW() * 0.5f - size * 0.5f, uiScreenH() * 0.5f - size * 0.5f, size, size});
             }
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
             uiDrawText(player.username.c_str(), 24, 88, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
@@ -1846,12 +1851,32 @@ int main(int argc, char** argv)
                     uiDrawText(mpText, 24, 232, 0.32f, {0.7f, 0.9f, 1.0f, 1.0f});
                 }
                 {
-                    auto it = player.weaponRuntimes.find("revolver");
-                    if (it != player.weaponRuntimes.end()) {
-                        char ammoText[96];
-                        snprintf(ammoText, sizeof(ammoText), "Revolver: %d / %d",
-                                 it->second.currentAmmo, it->second.reserveAmmo);
-                        uiDrawText(ammoText, 24, 232, 0.42f, {1.0f, 0.82f, 0.3f, 1.0f});
+                    const WeaponDefinition* curDef = nullptr;
+                    for (const auto& pair : WeaponRegistry::instance().all()) {
+                        if (pair.second.slot == player.equippedSlot) {
+                            curDef = &pair.second;
+                            break;
+                        }
+                    }
+                    if (curDef) {
+                        auto it = player.weaponRuntimes.find(curDef->id);
+                        if (it != player.weaponRuntimes.end()) {
+                            const WeaponRuntime& rt = it->second;
+                            char ammoText[96];
+                            int displayReserve = std::max(0, rt.reserveAmmo);
+                            snprintf(ammoText, sizeof(ammoText), "%s: %d / %d",
+                                     curDef->displayName.c_str(),
+                                     rt.currentAmmo, displayReserve);
+                            uiDrawText(ammoText, 24, 232, 0.42f, {1.0f, 0.82f, 0.3f, 1.0f});
+
+                            if (rt.isReloading) {
+                                char reloadText[96];
+                                snprintf(reloadText, sizeof(reloadText),
+                                         "no bullets! reloading... %.2f",
+                                         std::max(0.0f, rt.reloadTimer));
+                                uiDrawText(reloadText, 24, 248, 0.36f, {1.0f, 0.5f, 0.2f, 1.0f});
+                            }
+                        }
                     }
                 }
                 if (player.inventoryOpen)

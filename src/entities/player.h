@@ -133,6 +133,9 @@ public:
     // new cool mar 8 2026 reset when touching smth 
     bool groundReturnAvailable = true;
 
+    // -------- Down Dash --------
+    bool downDashAvailable = true;
+
     // -------- Freeze --------
     bool freezeAvailable = true;
     bool freezeHeldPrev = false;

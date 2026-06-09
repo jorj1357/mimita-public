@@ -98,10 +98,54 @@ WeaponDefinition createGodballDefinition() {
     return def;
 }
 
+WeaponDefinition createShotgunDefinition() {
+    WeaponDefinition def;
+    def.id = "shotgun";
+    def.displayName = "Shotgun";
+    def.slot = 3;
+
+    def.modelPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
+    def.viewModelOffset = {0.0f, 0.0f, 0.5f};
+    def.viewModelRotation = {0.0f, 0.0f, 0.0f};
+    def.weaponScale = 1.0f;
+
+    def.damage = 12.0f;
+    def.headshotMultiplier = 2.0f;
+    def.fireDelay = 0.25f;
+    def.reloadTime = 1.5f;
+    def.magazineSize = 2;
+    def.pelletCount = 15;
+
+    def.spread = 3.0f;
+    def.recoil = 130.0f;
+    def.projectileSpeed = 0.0f;
+    def.projectileRadius = 0.0f;
+    def.projectileLifetime = 0.0f;
+
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::Hitscan;
+    def.hitscan = true;
+    def.usesPhysicsProjectile = false;
+
+    def.soundShoot = "revolvershoot";
+    def.soundReload = "revolverreload";
+    def.soundHit = "player_hurt";
+    def.soundDryFire = "ui/click";
+    def.soundEquip = "revolverequip";
+
+    def.customParams["distanceFalloffStart"] = 60.0f;
+    def.customParams["minDamageFraction"] = 0.05f;
+    def.customParams["minAngleFactor"] = 0.15f;
+    def.customParams["gridSpreadDegrees"] = 3.0f;
+
+    return def;
+}
+
 void registerBuiltinWeapons() {
     WeaponRegistry::instance().registerWeapon(createRevolverDefinition());
     WeaponRegistry::instance().registerWeapon(createGodballDefinition());
-    printf("[WEAPON] Registered builtin weapons: revolver, godball\n");
+    WeaponRegistry::instance().registerWeapon(createShotgunDefinition());
+    printf("[WEAPON] Registered builtin weapons: revolver, godball, shotgun\n");
 }
 
 } // namespace WeaponData

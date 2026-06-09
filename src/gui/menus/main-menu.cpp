@@ -76,8 +76,8 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
                  {0.58f,0.44f,0.2f,1.0f}).clicked)
         openMimitaWebsite();
     if (uiButton(win, "HELP", {cx + 170.0f, accountY, 80.0f, 44.0f},
-                 {0.4f,0.42f,0.48f,1.0f}).clicked)
-        openMimitaWebsite();
+                 {0.55f,0.35f,0.75f,1.0f}).clicked)
+        r.goHelp = true;
 
     return r;
 }

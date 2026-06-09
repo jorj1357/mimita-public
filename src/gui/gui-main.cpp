@@ -21,6 +21,7 @@
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
 #include "menus/sandbox-map-menu.h"
+#include "menus/help-menu.h"
 #include "ui-system.h"
 #include <cstdio>
 
@@ -32,7 +33,8 @@ enum GuiMenuState
     GUI_MENU_SERVERS,
     GUI_MENU_DUEL_CONFIG,
     GUI_MENU_SERVER_INFO,
-    GUI_MENU_SIGN_IN
+    GUI_MENU_SIGN_IN,
+    GUI_MENU_HELP
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
@@ -83,6 +85,10 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 sandboxMapMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_SANDBOX_MAPS;
+            }
+            else if (r.goHelp)
+            {
+                gGuiMenuState = GUI_MENU_HELP;
             }
             break;
         }
@@ -179,6 +185,14 @@ void guiMain(GLFWwindow* win, GameState& state)
                 signInMenuSetActive(false);
                 gGuiMenuState = GUI_MENU_MAIN;
             }
+            break;
+        }
+
+        case GUI_MENU_HELP:
+        {
+            HelpMenuResult r = drawHelpMenu(win);
+            if (r.goBack)
+                gGuiMenuState = GUI_MENU_MAIN;
             break;
         }
     }

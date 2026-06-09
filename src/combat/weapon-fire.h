@@ -28,6 +28,19 @@ RevolverShotResult tryFireHitscan(
     const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr
 );
 
+void fireMultiPellet(
+    const WeaponDefinition& def,
+    WeaponRuntime& runtime,
+    const Camera& camera,
+    Player& shooter,
+    NpcSystem& npcs,
+    const World& world,
+    const glm::vec3& muzzlePos,
+    const glm::vec3& muzzleDir,
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    RevolverShotResult& outResult
+);
+
 void applyRecoil(
     Player& shooter,
     const WeaponDefinition& def,
