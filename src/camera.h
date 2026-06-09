@@ -2,9 +2,12 @@
 
 #pragma once
 
+#include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
+
+struct CollisionTriangle;
 
 /**
  * dec 3 2025 todo backup
@@ -59,11 +62,15 @@ bool firstMouse = true;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;
 
-void updateVectors(); 
-void decayPunch(float dt);
-void addPunch(float pitchAmount, float yawAmount);
-void updateMouse(double xpos, double ypos);
-void follow(const glm::vec3& target);
-glm::mat4 getView() const;
-glm::mat4 getProj(float width, float height) const;
+    void updateVectors(); 
+    void decayPunch(float dt);
+    void addPunch(float pitchAmount, float yawAmount);
+    void updateMouse(double xpos, double ypos);
+    void follow(const glm::vec3& target);
+    void smoothCollision(const glm::vec3& playerPos, const std::vector<CollisionTriangle>& triangles, float dt);
+    glm::mat4 getView() const;
+    glm::mat4 getProj(float width, float height) const;
+
+private:
+    glm::vec3 mPrevCollisionPos{0.0f};
 };
