@@ -1110,8 +1110,9 @@ int main(int argc, char** argv)
                         clearPendingMultiplayerConnect();
                     }
                 }
+                bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                    gameState == GAME_PLAYING && !Terminal::instance().isOpen()
+                    gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !duelMatchOver
                         ? GLFW_CURSOR_DISABLED
                         : GLFW_CURSOR_NORMAL);
             }
@@ -1131,9 +1132,10 @@ int main(int argc, char** argv)
         bool graveDown = glfwGetKey(engine.window(), GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS;
         if (graveDown && !gravePrev) {
             Terminal::instance().toggle();
+            bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
                 Terminal::instance().isOpen() ? GLFW_CURSOR_NORMAL :
-                (gameState == GAME_PLAYING ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
+                (gameState == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
         }
         gravePrev = graveDown;
 
@@ -1167,7 +1169,8 @@ int main(int argc, char** argv)
                     // lock mvoemnet if countdown in duels 6 7 2026 
                     tickFrame = buildInputFrame(engine.window(), camera);
 
-                    if (gDuelManager.phase() == DuelPhase::Countdown)
+                    if (gDuelManager.phase() == DuelPhase::Countdown ||
+                        gDuelManager.phase() == DuelPhase::MatchEnd)
                     {
                         tickFrame.moveX = 0.0f;
                         tickFrame.moveY = 0.0f;
@@ -1541,6 +1544,8 @@ int main(int argc, char** argv)
                 if (glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
                 if (glm::length(move) > 0.001f)
                     camera.pos += glm::normalize(move) * GetPlayerSettings().freecamSpeed * dt;
+            } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
+                camera.follow(gDuelManager.winnerCameraTarget());
             } else {
                 camera.follow(player.pos);
             }
@@ -1786,7 +1791,7 @@ int main(int argc, char** argv)
             char hpText[64];
             snprintf(hpText, sizeof(hpText), "HP: %d/%d", player.currentHp, player.maxHp);
             uiDrawText(hpText, 24, 116, 0.38f, {0.35f, 1.0f, 0.45f, 1.0f});
-            if (player.dead) {
+            if (player.dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
                 const float centerX = uiScreenW() * 0.5f;
                 const float centerY = uiScreenH() * 0.5f;
                 std::string deathText = "you died to " +
@@ -1935,7 +1940,18 @@ int main(int argc, char** argv)
                          camera.pos.x, camera.pos.y, camera.pos.z);
                 uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
             }
-            gDuelManager.renderHud();
+            if (gDuelManager.phase() == DuelPhase::MatchEnd) {
+                DuelMenuAction action = gDuelManager.renderMatchOverScreen(engine.window());
+                if (action == DuelMenuAction::PlayAgain) {
+                    gDuelManager.restartDuel(player, npcSystem, world);
+                } else if (action == DuelMenuAction::ExitToMenu) {
+                    gDuelManager.stopDuel();
+                    npcSystem.destroyAll();
+                    gameState = GAME_MENU;
+                }
+            } else {
+                gDuelManager.renderHud();
+            }
 
             // TAB Player List overlay
             if (mpContext.active && mpContext.showPlayerList)

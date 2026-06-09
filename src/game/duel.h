@@ -11,6 +11,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+struct GLFWwindow;
 class Player;
 class NpcSystem;
 struct World;
@@ -27,6 +28,12 @@ enum class DuelPhase {
 enum class DuelTeam {
     Player,
     NPC
+};
+
+enum class DuelMenuAction {
+    None,
+    PlayAgain,
+    ExitToMenu
 };
 
 enum class MapRotationMode {
@@ -68,6 +75,7 @@ public:
     void start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, World& world);
     void update(float dt, Player& player, NpcSystem& npcs, World& world, Camera& camera);
     void renderHud();
+    DuelMenuAction renderMatchOverScreen(GLFWwindow* win);
 
     void onPlayerKill(int npcIndex);
     void onNpcKill(int npcIndex);
@@ -79,6 +87,14 @@ public:
     int playerRoundsWon() const { return playerRoundsWon_; }
     int npcRoundsWon() const { return npcRoundsWon_; }
     bool isDuelFrozen() const { return duelFrozen_; }
+
+    DuelTeam matchWinner() const { return matchWinner_; }
+    float matchOverRemaining() const { return matchOverTimer; }
+    bool matchOverButtonsVisible() const { return matchOverButtonsShown; }
+    glm::vec3 winnerCameraTarget() const { return matchOverCameraTarget; }
+
+    void restartDuel(Player& player, NpcSystem& npcs, World& world);
+    void stopDuel();
 
     void setMapList(const std::vector<std::string>& maps);
     void rotateMap(World& world);
@@ -104,6 +120,13 @@ private:
 
     DuelStats playerStats;
     std::vector<std::string> mapList;
+
+    // Match-over state
+    DuelTeam matchWinner_ = DuelTeam::Player;
+    float matchOverTimer = 0.0f;
+    bool matchOverButtonsShown = false;
+    bool matchOverCaptured = false;
+    glm::vec3 matchOverCameraTarget{0.0f};
 
     void beginFight(Player& player, NpcSystem& npcs, World& world);
     void endRound(DuelTeam winner);
