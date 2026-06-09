@@ -344,6 +344,11 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     if (currentPhase != DuelPhase::MatchEnd)
         return DuelMenuAction::None;
 
+    // Force cursor unlocked so UI hover/click works.
+    // This runs AFTER gDuelManager.update() changes phase to MatchEnd,
+    // so the start-of-frame duel phase check hasn't unlocked it yet.
+    glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
     float cx = uiScreenW() * 0.5f;
     float cy = uiScreenH() * 0.5f;
 
