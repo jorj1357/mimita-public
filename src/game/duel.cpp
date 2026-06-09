@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <GLFW/glfw3.h>
+
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "world/world.h"
@@ -36,6 +38,10 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
     alivePlayerCount = 1;
     aliveNpcCount = config.numNpcs;
     playerStats = DuelStats{};
+
+    matchOverCaptured = false;
+    matchOverButtonsShown = false;
+    matchOverTimer = 0.0f;
 
     npcs.destroyAll();
 
@@ -145,6 +151,16 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
             break;
 
         case DuelPhase::MatchEnd:
+            if (!matchOverCaptured) {
+                matchOverCameraTarget = player.pos;
+                matchOverCaptured = true;
+            }
+            if (!matchOverButtonsShown) {
+                matchOverTimer -= dt;
+                if (matchOverTimer <= 0.0f) {
+                    matchOverButtonsShown = true;
+                }
+            }
             break;
     }
 }
@@ -247,7 +263,18 @@ void DuelManager::endMatch()
 {
     currentPhase = DuelPhase::MatchEnd;
     playerStats.matchesWon++;
-    printf("[DUEL] match ended totalKills=%d totalDeaths=%d\n",
+
+    if (playerRoundsWon_ >= config.killsToWin)
+        matchWinner_ = DuelTeam::Player;
+    else
+        matchWinner_ = DuelTeam::NPC;
+
+    matchOverTimer = 4.0f;
+    matchOverButtonsShown = false;
+    matchOverCaptured = false;
+
+    printf("[DUEL] match ended winner=%s totalKills=%d totalDeaths=%d\n",
+           matchWinner_ == DuelTeam::Player ? "PLAYER" : "NPC",
            playerStats.kills, playerStats.deaths);
 }
 
@@ -308,10 +335,102 @@ void DuelManager::renderHud()
     }
 
     if (currentPhase == DuelPhase::MatchEnd) {
-        uiDrawText("MATCH OVER", cx - 110.0f, uiScreenH() * 0.5f - 60.0f, 0.8f, {1, 0.85f, 0.25f, 1});
-        char statsText[128];
-        snprintf(statsText, sizeof(statsText), "Kills: %d | Deaths: %d | Points: %d | XP: %d",
-                 playerStats.kills, playerStats.deaths, playerStats.points, playerStats.xp);
-        uiDrawText(statsText, cx - 200.0f, uiScreenH() * 0.5f, 0.38f, {1, 1, 1, 1});
+        return;
     }
+}
+
+DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
+{
+    if (currentPhase != DuelPhase::MatchEnd)
+        return DuelMenuAction::None;
+
+    float cx = uiScreenW() * 0.5f;
+    float cy = uiScreenH() * 0.5f;
+
+    // Winner announcement
+    const char* winnerText = (matchWinner_ == DuelTeam::Player) ? "YOU WIN!" : "NPC WINS!";
+    glm::vec4 winnerColor = (matchWinner_ == DuelTeam::Player)
+        ? glm::vec4(0.3f, 1.0f, 0.3f, 1.0f)
+        : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
+    uiDrawText(winnerText, cx - 100.0f, cy - 140.0f, 1.0f, winnerColor);
+
+    // Score
+    char scoreText[32];
+    snprintf(scoreText, sizeof(scoreText), "%d - %d", playerRoundsWon_, npcRoundsWon_);
+    uiDrawText(scoreText, cx - 30.0f, cy - 60.0f, 0.6f, {1, 0.85f, 0.25f, 1});
+
+    // Stats
+    char statsText[128];
+    snprintf(statsText, sizeof(statsText), "Kills: %d | Deaths: %d | Points: %d | XP: %d",
+             playerStats.kills, playerStats.deaths, playerStats.points, playerStats.xp);
+    uiDrawText(statsText, cx - 200.0f, cy - 20.0f, 0.38f, {1, 1, 1, 1});
+
+    if (!matchOverButtonsShown) {
+        char countdownText[64];
+        snprintf(countdownText, sizeof(countdownText), "Match ends in %.0f...", std::ceil(matchOverTimer));
+        uiDrawText(countdownText, cx - 100.0f, cy + 40.0f, 0.38f, {1, 1, 1, 0.7f});
+        return DuelMenuAction::None;
+    }
+
+    // Buttons
+    float btnW = 280.0f;
+    float btnH = 54.0f;
+    float btnX = cx - btnW * 0.5f;
+    float btnY = cy + 60.0f;
+    float gap = 20.0f;
+
+    if (uiButton(win, "Play Again", {btnX, btnY, btnW, btnH}, {0.24f, 0.82f, 0.48f, 1.0f}).clicked)
+        return DuelMenuAction::PlayAgain;
+
+    if (uiButton(win, "Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH}, {0.86f, 0.3f, 0.3f, 1.0f}).clicked)
+        return DuelMenuAction::ExitToMenu;
+
+    return DuelMenuAction::None;
+}
+
+void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
+{
+    printf("[DUEL] restarting duel with same config\n");
+
+    npcs.destroyAll();
+    player.dead = false;
+    player.currentHp = 100.0f;
+    player.vel = glm::vec3(0.0f);
+    player.externalImpulse = glm::vec3(0.0f);
+    player.respawnTimer = 0.0f;
+    player.killedBy.clear();
+
+    currentPhase = DuelPhase::Countdown;
+    countdown = 3.0f;
+    timer = 0.0f;
+    currentRound = 1;
+    playerRoundsWon_ = 0;
+    npcRoundsWon_ = 0;
+    playerKills = 0;
+    npcKills.assign(config.numNpcs, 0);
+    alivePlayerCount = 1;
+    aliveNpcCount = config.numNpcs;
+    playerStats = DuelStats{};
+    matchOverCaptured = false;
+    matchOverButtonsShown = false;
+    matchOverTimer = 0.0f;
+
+    SpawnPoint* sp = world.pickSpawnPoint();
+    if (sp) {
+        player.pos = sp->position;
+        player.respawnPosition = sp->position;
+    }
+
+    printf("[DUEL] restart complete\n");
+}
+
+void DuelManager::stopDuel()
+{
+    printf("[DUEL] stopping duel\n");
+    currentPhase = DuelPhase::Off;
+    config.enabled = false;
+    playerStats = DuelStats{};
+    matchOverCaptured = false;
+    matchOverButtonsShown = false;
+    matchOverTimer = 0.0f;
 }

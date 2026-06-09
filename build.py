@@ -17,6 +17,7 @@
 # python build.py release
 # python build.py build-only
 # python build.py clean
+# python build.py auto-close
 #
 
 import os
@@ -53,12 +54,20 @@ PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
 
 MODE = "debug"
 RUN_AFTER_BUILD = True
+AUTO_CLOSE_SECONDS = 0
 
 if len(sys.argv) > 1:
-    MODE = sys.argv[1].lower()
-    if MODE in ("build-only", "compile-only", "norun", "no-run"):
-        MODE = "debug"
-        RUN_AFTER_BUILD = False
+    for arg in sys.argv[1:]:
+        a = arg.lower()
+        if a in ("build-only", "compile-only", "norun", "no-run"):
+            MODE = "debug"
+            RUN_AFTER_BUILD = False
+        elif a in ("auto-close", "timeout"):
+            AUTO_CLOSE_SECONDS = 5
+        elif a == "release":
+            MODE = "release"
+        elif a == "clean":
+            MODE = "clean"
 
 if MODE == "release":
     CXX_FLAGS = [
@@ -467,6 +476,14 @@ print()
 exe_path = os.path.join(ROOT, EXE_NAME)
 
 if os.path.exists(exe_path):
-    subprocess.run([exe_path])
+    if AUTO_CLOSE_SECONDS > 0:
+        print("(auto-close in %d seconds)" % AUTO_CLOSE_SECONDS)
+        try:
+            subprocess.run([exe_path], timeout=AUTO_CLOSE_SECONDS)
+        except subprocess.TimeoutExpired:
+            print()
+            print("(auto-closed after %d seconds)" % AUTO_CLOSE_SECONDS)
+    else:
+        subprocess.run([exe_path])
 else:
     print("[ERROR] mimita.exe missing 2")
