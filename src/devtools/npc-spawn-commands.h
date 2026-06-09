@@ -11,4 +11,3 @@ struct GLFWwindow;
 
 void QueueNpcSpawnCommand(const std::vector<std::string>& args);
 void ProcessNpcSpawnCommands(NpcSystem& npcSystem, const Camera& camera, const World& world, const Player& player);
-void HandleF2SpawnNpc(NpcSystem& npcSystem, const Camera& camera, const World& world, const Player& player, GLFWwindow* window);

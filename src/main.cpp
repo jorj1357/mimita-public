@@ -585,10 +585,14 @@ int main(int argc, char** argv)
     });
     Terminal::instance().registerCommand({
         "npc_spawn", "Spawn NPCs in front of the camera", "npc_spawn <count>",
-        [&npcSystem, &camera, &player](const std::vector<std::string>& args) {
+        [&npcSystem, &camera, &player, &mpContext](const std::vector<std::string>& args) {
             int count = args.empty() ? 1 : std::clamp(std::stoi(args[0]), 1, 100);
-            for (int i = 0; i < count; ++i)
-                npcSystem.spawnNpc(1.0f, camera.pos + camera.front * (5.0f + i * 1.5f) + glm::vec3(0,0,1));
+            for (int i = 0; i < count; ++i) {
+                glm::vec3 spawnPos = camera.pos + camera.front * (5.0f + i * 1.5f) + glm::vec3(0,0,1);
+                npcSystem.spawnNpc(1.0f, spawnPos);
+                if (mpContext.active)
+                    MimitaNet::mpRequestNpcSpawn(mpContext, spawnPos, 1.0f);
+            }
             Terminal::instance().addLog("[NPC COMMAND] npc_spawn count=" + std::to_string(count));
         }
     });
@@ -1064,12 +1068,6 @@ int main(int argc, char** argv)
                     }
                 }
 
-                if (gameState == GAME_PLAYING && !npcsSpawned)
-                {
-                    npcSystem.spawnPrototypeScene();
-                    npcsSpawned = true;
-                    printf("[MAIN] NPC prototype scene spawned count=%zu\n", npcSystem.all().size());
-                }
                 // Handle duel config from menu
                 {
                     DuelConfigResult dcr = getPendingDuelConfig();
@@ -1268,8 +1266,6 @@ int main(int argc, char** argv)
             // Process local NPC commands only outside authoritative multiplayer.
             if (!mpContext.active) {
                 ProcessNpcSpawnCommands(npcSystem, camera, world, player);
-                if (!Terminal::instance().isOpen())
-                    HandleF2SpawnNpc(npcSystem, camera, world, player, engine.window());
             }
 
             // Multiplayer tick - receive snapshots
@@ -1457,6 +1453,28 @@ int main(int argc, char** argv)
                 mpContext.shotEvents.clear();
                 MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
 
+                // Sync server NPCs to local NpcSystem for AI
+                {
+                    static std::unordered_set<uint32_t> spawnedNpcIds;
+                    for (const auto& kv : mpContext.remoteNpcs) {
+                        const uint32_t entityId = kv.first;
+                        if (spawnedNpcIds.find(entityId) == spawnedNpcIds.end()) {
+                            spawnedNpcIds.insert(entityId);
+                            float diff = 1.0f;
+                            npcSystem.spawnNpc(entityId, diff, kv.second.pos);
+                        }
+                    }
+                    // Remove local NPCs whose server entity no longer exists
+                    for (auto it = spawnedNpcIds.begin(); it != spawnedNpcIds.end(); ) {
+                        if (mpContext.remoteNpcs.find(*it) == mpContext.remoteNpcs.end()) {
+                            npcSystem.destroySelected({*it});
+                            it = spawnedNpcIds.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+                }
+
                 // Send input to server if we have an assigned ID
                 if (mpContext.localPlayerId != 0) {
                     InputFrame mpInput = buildInputFrame(engine.window(), camera);
@@ -1487,13 +1505,6 @@ int main(int argc, char** argv)
                     in.freezeHeld = mpInput.freezeHeld ? 1 : 0;
                     MimitaNet::mpSendPacket(mpContext, &in, sizeof(in));
                 }
-
-                static bool mpF2Prev = false;
-                bool mpF2Down = glfwGetKey(engine.window(), GLFW_KEY_F2) == GLFW_PRESS;
-                if (!Terminal::instance().isOpen() && mpF2Down && !mpF2Prev)
-                    MimitaNet::mpRequestNpcSpawn(
-                        mpContext, player.pos + camera.front * 3.0f);
-                mpF2Prev = mpF2Down;
 
                 // TAB player list
                 mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
@@ -1594,12 +1605,7 @@ int main(int argc, char** argv)
                     renderNetworkPlayer(kv.second, camera, kv.first, false);
                 }
             }
-            if (mpContext.active) {
-                for (auto& kv : mpContext.remoteNpcs)
-                    renderNetworkPlayer(kv.second, camera, kv.first, false);
-            } else {
-                npcSystem.render(camera);
-            }
+            npcSystem.render(camera);
             if (mpContext.active)
             {
                 static uint64_t lastReplicaRenderLogMs = 0;

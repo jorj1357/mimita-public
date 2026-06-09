@@ -178,6 +178,7 @@ struct SpawnNpcRequestPacket
     float px = 0.0f;
     float py = 0.0f;
     float pz = 0.0f;
+    float difficulty = 1.0f;
 };
 
 struct TeleportRequestPacket

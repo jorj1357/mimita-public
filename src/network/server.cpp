@@ -80,6 +80,8 @@ struct ServerNpc
     int health = 100;
     bool onGround = false;
     float phase = 0.0f;
+    float difficulty = 1.0f;
+    float lastAttackTime = 0.0f;
 };
 
 static char gTimestampBuf[64];
@@ -777,9 +779,10 @@ int runServer(const LaunchOptions& options)
                 npc.entityId = nextEntityId++;
                 npc.name = "NPC " + std::to_string(npc.entityId);
                 npc.pos = {request->px, request->py, request->pz};
+                npc.difficulty = request->difficulty;
                 npcs[npc.entityId] = npc;
-                printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f)\n",
-                       serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z);
+                printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f) difficulty=%.1f\n",
+                       serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z, npc.difficulty);
             }
             else if (header->type == PACKET_TELEPORT_REQUEST &&
                      bytes >= (int)sizeof(TeleportRequestPacket))
