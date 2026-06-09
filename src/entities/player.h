@@ -62,12 +62,46 @@ struct PhysicalBodyPart {
     SpringState translationSpring;
     SpringState rotationSpring;
     glm::mat4 worldTransform{1.0f};
+    glm::mat4 previousWorldTransform{1.0f};
 };
 
 struct PhysicalBody {
     std::vector<PhysicalBodyPart> parts;
     std::vector<Mesh> partMeshes;
 };
+
+struct PlayerProceduralConfig
+{
+    float leftArmRaise;
+    float leftArmForward;
+    float leftArmTwist;
+    float rightArmRaise;
+    float rightArmForward;
+    float rightArmTwist;
+    float weaponSwayAmount;
+    float weaponSwaySpeed;
+    float torsoAimYawStrength;
+    float torsoAimPitchStrength;
+    float armAimYawStrength;
+    float armAimPitchStrength;
+    float armSwingAmount;
+    float legSwingAmount;
+    float torsoLeanAmount;
+    float headCounterAmount;
+    float bobHeight;
+    float walkFrequency;
+    float walkFrequencyMultiplier;
+    float reloadArmLowerZ;
+    float reloadArmLowerX;
+    float revolverOffsetX;
+    float revolverOffsetY;
+    float revolverOffsetZ;
+    float shotgunOffsetX;
+    float shotgunOffsetY;
+    float shotgunOffsetZ;
+};
+
+extern PlayerProceduralConfig gPlayerProcedural;
 
 class Player {
 public:
@@ -187,6 +221,7 @@ public:
     PhysicalBody physicalBody;
     glm::vec3 previousProceduralVelocity{0.0f};
     float proceduralTime = 0.0f;
+    float previousMove01 = 0.0f;
 
     // -------- Construction --------
     Player();
@@ -209,6 +244,9 @@ public:
 
     // -------- Weapon system --------
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
+
+    // Previous frame body sample positions for limb sweep collisions
+    std::vector<glm::vec3> previousBodySamplePositions;
 
     // -------- Combat --------
     void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);

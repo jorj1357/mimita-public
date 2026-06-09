@@ -26,6 +26,53 @@
 
 namespace WeaponFire {
 
+AimTarget computeAimTarget(
+    const Camera& camera,
+    const World& world,
+    NpcSystem& npcs,
+    const std::unordered_map<uint32_t, Player>* remotePlayers)
+{
+    constexpr float MAX_SHOT_DISTANCE = 100.0f;
+    float cameraNearest = MAX_SHOT_DISTANCE;
+
+    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+        float d = 0.0f;
+        if (rayTriangle(camera.pos, camera.front, tri, d))
+            cameraNearest = std::min(cameraNearest, d);
+    }
+    for (Npc& npc : npcs.all()) {
+        if (npc.body.currentHp <= 0) continue;
+        npc.body.updateModelWorldTransforms();
+        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
+            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+            glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+            float d = 0.0f;
+            glm::vec3 nml;
+            if (rayAabb(camera.pos, camera.front, center - half, center + half, d, nml))
+                cameraNearest = std::min(cameraNearest, d);
+        }
+    }
+    if (remotePlayers) {
+        for (const auto& entry : *remotePlayers) {
+            const Player& remote = entry.second;
+            if (remote.dead || remote.currentHp <= 0) continue;
+            const Capsule capsule = remote.getCapsule();
+            const glm::vec3 mn(remote.pos.x - capsule.r, remote.pos.y - capsule.r, capsule.a.z - capsule.r);
+            const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);
+            float d = 0.0f;
+            glm::vec3 nml;
+            if (rayAabb(camera.pos, camera.front, mn, mx, d, nml))
+                cameraNearest = std::min(cameraNearest, d);
+        }
+    }
+
+    AimTarget result;
+    result.worldPoint = camera.pos + camera.front * cameraNearest;
+    result.cameraDistance = cameraNearest;
+    return result;
+}
+
 bool rayTriangle(const glm::vec3& origin, const glm::vec3& direction,
                  const CollisionTriangle& tri, float& distance) {
     glm::vec3 e1 = tri.b - tri.a;
@@ -190,49 +237,8 @@ RevolverShotResult tryFireHitscan(
     result.fired = true;
     result.start = muzzlePos;
 
-    constexpr float MAX_SHOT_DISTANCE = 100.0f;
-
-    float cameraNearest = MAX_SHOT_DISTANCE;
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        float distance = 0.0f;
-        if (rayTriangle(camera.pos, camera.front, tri, distance))
-            cameraNearest = std::min(cameraNearest, distance);
-    }
-    for (Npc& npc : npcs.all()) {
-        if (npc.body.currentHp <= 0) continue;
-        npc.body.updateModelWorldTransforms();
-        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
-            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-            glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
-            float distance = 0.0f;
-            glm::vec3 normal;
-            if (rayAabb(camera.pos, camera.front, center - half, center + half, distance, normal))
-                cameraNearest = std::min(cameraNearest, distance);
-        }
-    }
-    if (remotePlayers) {
-        for (const auto& entry : *remotePlayers) {
-            const Player& remote = entry.second;
-            if (remote.dead || remote.currentHp <= 0) continue;
-            const Capsule capsule = remote.getCapsule();
-            const glm::vec3 mn(
-                remote.pos.x - capsule.r,
-                remote.pos.y - capsule.r,
-                capsule.a.z - capsule.r);
-            const glm::vec3 mx(
-                remote.pos.x + capsule.r,
-                remote.pos.y + capsule.r,
-                capsule.b.z + capsule.r);
-            float distance = 0.0f;
-            glm::vec3 normal;
-            if (rayAabb(camera.pos, camera.front, mn, mx, distance, normal))
-                cameraNearest = std::min(cameraNearest, distance);
-        }
-    }
-
-    glm::vec3 cameraTarget = camera.pos + camera.front * cameraNearest;
-    glm::vec3 shotDirection = cameraTarget - muzzlePos;
+    AimTarget aim = computeAimTarget(camera, world, npcs, remotePlayers);
+    glm::vec3 shotDirection = aim.worldPoint - muzzlePos;
     if (glm::length(shotDirection) <= 0.001f)
         shotDirection = camera.front;
     shotDirection = glm::normalize(shotDirection);
@@ -240,6 +246,7 @@ RevolverShotResult tryFireHitscan(
     static unsigned int spreadRng = 1;
     shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
 
+    constexpr float MAX_SHOT_DISTANCE = 100.0f;
     float nearest = MAX_SHOT_DISTANCE;
     bool hitWorld = false;
     glm::vec3 worldNormal = -shotDirection;
@@ -427,68 +434,27 @@ void fireMultiPellet(
         playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
     }
 
-    constexpr float MAX_SHOT_DISTANCE = 100.0f;
     float spreadDeg = def.spread;
     auto it = def.customParams.find("gridSpreadDegrees");
     if (it != def.customParams.end()) spreadDeg = it->second;
     spreadDeg = std::max(0.1f, spreadDeg);
 
-    // Compute nearest obstacle distance along camera center ray
-    float cameraNearest = MAX_SHOT_DISTANCE;
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        float d = 0.0f;
-        if (rayTriangle(camera.pos, camera.front, tri, d))
-            cameraNearest = std::min(cameraNearest, d);
-    }
-    for (Npc& npc : npcs.all()) {
-        if (npc.body.currentHp <= 0) continue;
-        npc.body.updateModelWorldTransforms();
-        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
-            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-            glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
-            float d = 0.0f;
-            glm::vec3 nml;
-            if (rayAabb(camera.pos, camera.front, center - half, center + half, d, nml))
-                cameraNearest = std::min(cameraNearest, d);
-        }
-    }
-    if (remotePlayers) {
-        for (const auto& entry : *remotePlayers) {
-            const Player& remote = entry.second;
-            if (remote.dead || remote.currentHp <= 0) continue;
-            const Capsule capsule = remote.getCapsule();
-            const glm::vec3 mn(remote.pos.x - capsule.r, remote.pos.y - capsule.r, capsule.a.z - capsule.r);
-            const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);
-            float d = 0.0f;
-            glm::vec3 nml;
-            if (rayAabb(camera.pos, camera.front, mn, mx, d, nml))
-                cameraNearest = std::min(cameraNearest, d);
-        }
-    }
+    AimTarget aim = computeAimTarget(camera, world, npcs, remotePlayers);
+    glm::vec3 baseDir = glm::normalize(aim.worldPoint - muzzlePos);
 
-    // Base target direction (aim point)
-    glm::vec3 cameraTarget = camera.pos + camera.front * cameraNearest;
-    glm::vec3 baseDir = glm::normalize(cameraTarget - muzzlePos);
-
-    // Build perpendicular basis for spread grid
     glm::vec3 up(0.0f, 0.0f, 1.0f);
     if (std::fabs(glm::dot(baseDir, up)) > 0.99f)
         up = glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
     glm::vec3 localUp = glm::normalize(glm::cross(right, baseDir));
 
-    // Spread radius at target distance
     float halfAngleRad = glm::radians(spreadDeg * 0.5f);
-    float spreadRadius = std::tan(halfAngleRad) * cameraNearest;
-    float colStep = spreadRadius / 2.0f;
-    float rowStep = spreadRadius / 1.0f;
 
-    // Pellet grid: 3 rows x 5 cols = 15 pellets
     constexpr int COLS = 5;
     constexpr int ROWS = 3;
     int totalPellets = 0;
     float accumulatedDamage = 0.0f;
+    constexpr float MAX_SHOT_DISTANCE = 100.0f;
     glm::vec3 lastPelletEnd = muzzlePos + baseDir * MAX_SHOT_DISTANCE;
     glm::vec3 lastHitNormal(0.0f);
     bool anyHitEntity = false;
@@ -500,10 +466,12 @@ void fireMultiPellet(
     for (int row = -1; row <= 1; ++row) {
         for (int col = -2; col <= 2; ++col) {
             totalPellets++;
-            glm::vec3 targetPoint = cameraTarget + right * (col * colStep) + localUp * (row * rowStep);
-            glm::vec3 pelletDir = glm::normalize(targetPoint - muzzlePos);
 
-            // Raycast this pellet against world
+            float hAngle = halfAngleRad * (col / 2.0f);
+            float vAngle = halfAngleRad * (row / 1.0f);
+            glm::quat rot = glm::angleAxis(hAngle, localUp) * glm::angleAxis(vAngle, right);
+            glm::vec3 pelletDir = glm::normalize(rot * baseDir);
+
             float pelletNearest = MAX_SHOT_DISTANCE;
             glm::vec3 worldNml = -pelletDir;
             bool hitW = false;

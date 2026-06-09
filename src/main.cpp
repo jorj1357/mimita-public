@@ -1560,8 +1560,10 @@ int main(int argc, char** argv)
                     camera.pos += glm::normalize(move) * GetPlayerSettings().freecamSpeed * dt;
             } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
                 camera.follow(gDuelManager.winnerCameraTarget());
+                camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt);
             } else {
                 camera.follow(player.pos);
+                camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt);
             }
             setAudioListener(camera.pos, camera.front);
             weapons.update(camera, player, npcSystem, dt);

@@ -16,6 +16,18 @@ struct WeaponRuntime;
 
 namespace WeaponFire {
 
+struct AimTarget {
+    glm::vec3 worldPoint;
+    float cameraDistance;
+};
+
+AimTarget computeAimTarget(
+    const Camera& camera,
+    const World& world,
+    NpcSystem& npcs,
+    const std::unordered_map<uint32_t, Player>* remotePlayers
+);
+
 RevolverShotResult tryFireHitscan(
     const WeaponDefinition& def,
     WeaponRuntime& runtime,
