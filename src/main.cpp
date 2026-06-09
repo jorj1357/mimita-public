@@ -301,7 +301,6 @@ int main(int argc, char** argv)
     // todo later, make just like a game mode manager, and make configs
     // using the settings in the game mode manager
     // like number of plrs/npcs, duel time, how much HP, gravity, walkspeed, etc
-    static DuelManager gDuelManager;
     // 6 9 2026 todo duel manager needs to be in game manager and not like in main bruh 
     static DuelConfig gDuelConfig;
 

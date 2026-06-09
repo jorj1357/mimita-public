@@ -478,17 +478,55 @@ void DeathSystem::update(
         mCorpses.end());
 
     // Respawn logic
-    if (player.dead) {
-        player.respawnTimer = std::max(0.0f, player.respawnTimer - dt);
-        if (instantRespawnPressed || player.respawnTimer <= 0.0f)
-            respawn(player, player.username, world);
+    if (player.dead)
+    {
+        player.respawnTimer =
+            std::max(0.0f, player.respawnTimer - dt);
+
+        bool duelModeActive =
+            gDuelManager.phase() != DuelPhase::Off;
+
+        bool shouldRespawn =
+            !duelModeActive;
+
+        if (shouldRespawn)
+        {
+            if (instantRespawnPressed ||
+                player.respawnTimer <= 0.0f)
+            {
+                respawn(
+                    player,
+                    player.username,
+                    world);
+            }
+        }
     }
 
-    for (Npc& npc : npcs.all()) {
-        if (!npc.body.dead) continue;
-        npc.body.respawnTimer = std::max(0.0f, npc.body.respawnTimer - dt);
-        if (npc.body.respawnTimer <= 0.0f)
-            respawn(npc.body, "npc_" + std::to_string(npc.id), world);
+    for (Npc& npc : npcs.all())
+    {
+        if (!npc.body.dead)
+            continue;
+
+        npc.body.respawnTimer =
+            std::max(0.0f,
+            npc.body.respawnTimer - dt);
+
+        bool duelModeActive =
+            gDuelManager.phase() != DuelPhase::Off;
+
+        bool shouldRespawn =
+            !duelModeActive;
+
+        if (shouldRespawn)
+        {
+            if (npc.body.respawnTimer <= 0.0f)
+            {
+                respawn(
+                    npc.body,
+                    "npc_" + std::to_string(npc.id),
+                    world);
+            }
+        }
     }
 }
 
