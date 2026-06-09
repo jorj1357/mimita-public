@@ -503,10 +503,50 @@ void Terminal::init(GLFWwindow* window) {
         "Legacy NPC spawn position command",
         "npc_spawn_legacy [cursor|<x> <y> <z>] [difficulty]",
         [](const std::vector<std::string>& args) {
-            // This will be handled by the game system - we just queue the command
-            // The actual spawn happens in the game loop
             extern void QueueNpcSpawnCommand(const std::vector<std::string>& args);
             QueueNpcSpawnCommand(args);
+        }
+    });
+
+    registerCommand({
+        "npc_spawn_training",
+        "Spawn a training NPC",
+        "npc_spawn_training [cursor|<x> <y> <z>] [difficulty]",
+        [](const std::vector<std::string>& args) {
+            extern void QueueNpcTrainingSpawnCommand(const std::vector<std::string>& args);
+            QueueNpcTrainingSpawnCommand(args);
+        }
+    });
+
+    registerCommand({
+        "npc_spawn_training_mode",
+        "Set training NPC mode: 0=idle, 1=flee, 2=attack",
+        "npc_spawn_training_mode <0|1|2>",
+        [](const std::vector<std::string>& args) {
+            extern int gNpcTrainingMode;
+            if (args.empty()) {
+                Terminal::instance().addLog("Current training mode: " + std::to_string(gNpcTrainingMode));
+                return;
+            }
+            int mode = std::clamp(std::stoi(args[0]), 0, 2);
+            gNpcTrainingMode = mode;
+            Terminal::instance().addLog("Training mode set to " + std::to_string(mode));
+        }
+    });
+
+    registerCommand({
+        "npc_training_health",
+        "Set training NPC health (applies to future spawns)",
+        "npc_training_health <number>",
+        [](const std::vector<std::string>& args) {
+            extern int gNpcTrainingHealth;
+            if (args.empty()) {
+                Terminal::instance().addLog("Current training health: " + std::to_string(gNpcTrainingHealth));
+                return;
+            }
+            int hp = std::max(1, std::stoi(args[0]));
+            gNpcTrainingHealth = hp;
+            Terminal::instance().addLog("Training health set to " + std::to_string(hp));
         }
     });
 

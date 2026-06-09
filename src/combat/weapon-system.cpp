@@ -65,29 +65,28 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
 
     if (def && rt) {
         if (rt->isReloading) {
-            mReloadTimer = std::max(0.0f, mReloadTimer - dt);
-            if (mReloadTimer <= 0.0f && mPendingReloadRounds > 0) {
-                for (int i = 0; i < mPendingReloadRounds; ++i) {
+            rt->reloadTimer = std::max(0.0f, rt->reloadTimer - dt);
+            if (rt->reloadTimer <= 0.0f && rt->pendingReloadRounds > 0) {
+                for (int i = 0; i < rt->pendingReloadRounds; ++i) {
                     playWorldSound("revolverbulletadd", player.pos, 0.65f, 1.0f, 10.0f);
                 }
-                rt->currentAmmo += mPendingReloadRounds;
-                rt->reserveAmmo -= mPendingReloadRounds;
-                mPendingReloadRounds = 0;
+                rt->currentAmmo += rt->pendingReloadRounds;
+                rt->reserveAmmo -= rt->pendingReloadRounds;
+                rt->pendingReloadRounds = 0;
                 rt->isReloading = false;
-                mIsReloading = false;
                 playWorldSound("revolverchamber", player.pos, 0.9f, 1.0f, 10.0f);
             }
         }
 
-        if (mReloadBufferTimer > 0.0f) {
+        if (rt->reloadBufferTimer > 0.0f) {
             if (!rt->isReloading) {
-                mReloadBufferTimer = 0.0f;
+                rt->reloadBufferTimer = 0.0f;
                 if (DebugConfig::DEBUG_RELOAD)
                     Debug::log(Debug::Category::General, "[RELOAD] buffer consumed -> auto-start\n");
                 reload(player);
             } else {
-                mReloadBufferTimer = std::max(0.0f, mReloadBufferTimer - dt);
-                if (mReloadBufferTimer <= 0.0f && DebugConfig::DEBUG_RELOAD)
+                rt->reloadBufferTimer = std::max(0.0f, rt->reloadBufferTimer - dt);
+                if (rt->reloadBufferTimer <= 0.0f && DebugConfig::DEBUG_RELOAD)
                     Debug::log(Debug::Category::General, "[RELOAD] buffer expired\n");
             }
         }
@@ -171,6 +170,9 @@ RevolverShotResult WeaponSystem::fire(
     if (rt->currentAmmo <= 0) {
         WeaponAudio::playDryFireSound(*def);
         Terminal::instance().addLog("[WEAPON] out of ammo");
+        if (!rt->isReloading && rt->reserveAmmo > 0) {
+            reload(player);
+        }
         return {};
     }
 
@@ -197,9 +199,17 @@ RevolverShotResult WeaponSystem::fireHitscan(
     glm::vec3 muzzlePos = vm.muzzle;
     glm::vec3 muzzleDir = vm.forward;
 
-    RevolverShotResult result = WeaponFire::tryFireHitscan(
-        *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
-        remotePlayers);
+    RevolverShotResult result;
+
+    if (def->pelletCount > 1) {
+        WeaponFire::fireMultiPellet(
+            *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
+            remotePlayers, result);
+    } else {
+        result = WeaponFire::tryFireHitscan(
+            *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
+            remotePlayers);
+    }
 
     WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
     mDisturbance += 1.2f;
@@ -287,7 +297,7 @@ bool WeaponSystem::reload(Player& player) {
     if (!def || !rt) return false;
 
     if (rt->isReloading) {
-        mReloadBufferTimer = 0.4f;
+        rt->reloadBufferTimer = 0.4f;
         if (DebugConfig::DEBUG_RELOAD)
             Debug::log(Debug::Category::General, "[RELOAD] buffered (already reloading)\n");
         return false;
@@ -302,11 +312,10 @@ bool WeaponSystem::reload(Player& player) {
     }
 
     WeaponAudio::playReloadSound(*def);
-    mPendingReloadRounds = loaded;
-    mReloadTimer = def->reloadTime;
+    rt->pendingReloadRounds = loaded;
+    rt->reloadTimer = def->reloadTime;
     rt->isReloading = true;
-    mIsReloading = true;
-    mReloadBufferTimer = 0.0f;
+    rt->reloadBufferTimer = 0.0f;
     if (DebugConfig::DEBUG_RELOAD)
         Debug::log(Debug::Category::General, "[RELOAD] started: %d rounds, timer=%.2f\n",
                    loaded, def->reloadTime);
@@ -349,11 +358,23 @@ void WeaponSystem::inspect() const {
     }
 }
 
+bool WeaponSystem::isReloading(const Player& player) const {
+    const WeaponDefinition* def = getCurrentDef(player);
+    if (!def) return false;
+    auto it = player.weaponRuntimes.find(def->id);
+    return it != player.weaponRuntimes.end() && it->second.isReloading;
+}
+
 WeaponCrosshairState WeaponSystem::crosshairState(const Player& player) const {
-    if (mReloadTimer > 0.0f)
-        return WeaponCrosshairState::Reloading;
-    if (mShotCooldown > 0.0f)
-        return WeaponCrosshairState::Delay;
+    const WeaponDefinition* def = getCurrentDef(player);
+    if (!def) return WeaponCrosshairState::Ready;
+    auto it = player.weaponRuntimes.find(def->id);
+    if (it != player.weaponRuntimes.end()) {
+        if (it->second.isReloading)
+            return WeaponCrosshairState::Reloading;
+        if (it->second.fireCooldown > 0.0f)
+            return WeaponCrosshairState::Delay;
+    }
     return WeaponCrosshairState::Ready;
 }
 

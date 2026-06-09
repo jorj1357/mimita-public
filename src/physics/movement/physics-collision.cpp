@@ -937,6 +937,7 @@ static void applyTouchResets(Player& p)
     p.airJumpsLeft = AIR_JUMPS_MAX;
     p.dashAvailable = true;
     p.groundReturnAvailable = true;
+    p.downDashAvailable = true;
     p.freezeAvailable = true;
 }
 

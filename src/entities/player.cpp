@@ -897,7 +897,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
 
     // Weapon sway (applied to arms when weapon equipped)
-    bool weaponEquipped = (equippedSlot == 1);
+    bool weaponEquipped = (equippedSlot >= 1);
     float swayAmount = weaponEquipped ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
     float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
     float swayX = std::sin(swayPhase) * swayAmount;
