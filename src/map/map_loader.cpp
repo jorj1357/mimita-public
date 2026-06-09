@@ -832,6 +832,11 @@ Mesh loadGLB(const std::string& path)
     }
 
     Mesh mesh;
+    for (GLuint texture : imageTextures)
+    {
+        if (texture)
+            mesh.ownedTextures.push_back(texture);
+    }
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
     if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size())
     {
@@ -875,4 +880,16 @@ Mesh loadGLB(const std::string& path)
 
     GLB_LOG("[GLB] verts=%zu triangles=%zu batches=%zu\n", mesh.verts.size(), mesh.verts.size() / 3, mesh.batches.size());
     return mesh;
+}
+
+void releaseMeshGLResources(Mesh& mesh)
+{
+    if (!mesh.ownedTextures.empty())
+    {
+        glDeleteTextures(
+            (GLsizei)mesh.ownedTextures.size(),
+            mesh.ownedTextures.data());
+        GLB_LOG("[GLB] released owned textures=%zu\n", mesh.ownedTextures.size());
+    }
+    mesh.ownedTextures.clear();
 }

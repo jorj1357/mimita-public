@@ -31,6 +31,7 @@ struct Mesh {
     };
 
     std::vector<Batch> batches;
+    std::vector<GLuint> ownedTextures;
 };
 
 // do NOT define struct chunk here

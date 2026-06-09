@@ -6,11 +6,19 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace MimitaNet {
 
 namespace {
+
+bool isSameAddress(const sockaddr_in& a, const sockaddr_in& b)
+{
+    return a.sin_family == b.sin_family &&
+        a.sin_port == b.sin_port &&
+        a.sin_addr.s_addr == b.sin_addr.s_addr;
+}
 
 void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
 {
@@ -26,6 +34,10 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.yaw = entity.yaw;
     transform.health = entity.health;
     transform.onGround = entity.onGround != 0;
+    transform.equippedSlot = entity.equippedSlot;
+    transform.weaponState = entity.weaponState;
+    transform.aimDirection = {entity.aimX, entity.aimY, entity.aimZ};
+    transform.pingMs = entity.pingMs;
     transform.receivedMs = nowMs();
     return transform;
 }
@@ -82,11 +94,99 @@ void updateRenderedReplica(
     player.currentHp = interpolation.target.health;
     player.dead = interpolation.target.health <= 0;
     player.onGround = interpolation.target.onGround;
+    player.equippedSlot = interpolation.target.equippedSlot;
+    player.networkShootEffectTimer =
+        std::max(0.0f, player.networkShootEffectTimer - dt);
+    player.networkWeaponState = interpolation.target.weaponState;
+    if (player.networkShootEffectTimer > 0.0f)
+        player.networkWeaponState |= 1u;
+    player.aimDirection = interpolation.target.aimDirection;
+    player.hasAimData = glm::length(player.aimDirection) > 0.001f;
     player.username = interpolation.displayName;
     player.updateProceduralAnimation(dt);
 }
 
 } // namespace
+
+void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
+{
+    if (!ctx.active || ctx.sock == INVALID_SOCKET || !data || bytes <= 0)
+        return;
+
+    int delayMs = 0;
+    if (ctx.fakeLagMode == 1)
+        delayMs = ctx.fakeLagCurrentMs;
+    else if (ctx.fakeLagMode == 2)
+        delayMs = ctx.fakeLagStaticMs;
+
+    if (delayMs <= 0)
+    {
+        sendto(ctx.sock, (const char*)data, bytes, 0,
+               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        ++ctx.packetsSent;
+        return;
+    }
+
+    QueuedPacket queued;
+    queued.bytes.assign((const char*)data, (const char*)data + bytes);
+    queued.deliverAtMs = nowMs() + (uint64_t)delayMs;
+    ctx.outgoingQueue.push_back(std::move(queued));
+    const uint64_t currentMs = nowMs();
+    if (currentMs - ctx.lastFakeLagLogMs >= 250)
+    {
+        printf("[FAKELAG] mode=%d delay=%d packetQueued=%zu\n",
+               ctx.fakeLagMode, delayMs, ctx.outgoingQueue.size());
+        ctx.lastFakeLagLogMs = currentMs;
+    }
+}
+
+static void flushOutgoingPackets(MultiplayerContext& ctx)
+{
+    const uint64_t currentMs = nowMs();
+    for (size_t i = 0; i < ctx.outgoingQueue.size(); )
+    {
+        QueuedPacket& queued = ctx.outgoingQueue[i];
+        if (queued.deliverAtMs > currentMs)
+        {
+            ++i;
+            continue;
+        }
+
+        sendto(ctx.sock, queued.bytes.data(), (int)queued.bytes.size(), 0,
+               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        ++ctx.packetsSent;
+        ctx.outgoingQueue.erase(ctx.outgoingQueue.begin() + i);
+    }
+}
+
+void mpSetFakeLagMode(MultiplayerContext& ctx, int mode)
+{
+    ctx.fakeLagMode = std::clamp(mode, 0, 2);
+    ctx.fakeLagNextRandomizeMs = 0;
+    if (ctx.fakeLagMode == 0)
+    {
+        ctx.fakeLagCurrentMs = 0;
+        for (QueuedPacket& queued : ctx.outgoingQueue)
+            queued.deliverAtMs = 0;
+        flushOutgoingPackets(ctx);
+    }
+}
+
+void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds)
+{
+    ctx.fakeLagStaticMs = std::clamp(milliseconds, 0, 5000);
+}
+
+void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs)
+{
+    minimumMs = std::clamp(minimumMs, 0, 5000);
+    maximumMs = std::clamp(maximumMs, 0, 5000);
+    if (minimumMs > maximumMs)
+        std::swap(minimumMs, maximumMs);
+    ctx.fakeLagMinMs = minimumMs;
+    ctx.fakeLagMaxMs = maximumMs;
+    ctx.fakeLagNextRandomizeMs = 0;
+}
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName)
 {
@@ -145,6 +245,13 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.connected = false;
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
+    ctx.outgoingQueue.clear();
+    ctx.shotEvents.clear();
+    ctx.lastReceivedShotSerial.clear();
+    ctx.nextLocalShotSerial = 1;
+    ctx.lastPingSentMs = 0;
+    ctx.localPingMs = 0;
+    ctx.lastFakeLagLogMs = 0;
 
     printf("[NET CONNECT] connecting to %s as \"%s\"\n", address.c_str(), playerName.c_str());
     return true;
@@ -185,6 +292,9 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.connected = false;
     ctx.connectFailed = false;
     ctx.connectionStatus.clear();
+    ctx.outgoingQueue.clear();
+    ctx.shotEvents.clear();
+    ctx.lastReceivedShotSerial.clear();
     netShutdown();
     printf("[NET DISCONNECT] shutdown complete\n");
 }
@@ -195,6 +305,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
         return;
 
     uint64_t currentMs = nowMs();
+    if (ctx.fakeLagMode == 1 &&
+        (ctx.fakeLagNextRandomizeMs == 0 ||
+         currentMs >= ctx.fakeLagNextRandomizeMs))
+    {
+        const int span = std::max(0, ctx.fakeLagMaxMs - ctx.fakeLagMinMs);
+        ctx.fakeLagCurrentMs = ctx.fakeLagMinMs +
+            (span > 0 ? std::rand() % (span + 1) : 0);
+        ctx.fakeLagNextRandomizeMs = currentMs + 1000;
+        printf("[FAKELAG] mode=1 delay=%d packetQueued=%zu\n",
+               ctx.fakeLagCurrentMs, ctx.outgoingQueue.size());
+    }
+    flushOutgoingPackets(ctx);
     if (!ctx.connected && !ctx.connectFailed && currentMs - ctx.connectStartMs > 6000)
     {
         ctx.connectFailed = true;
@@ -211,9 +333,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
             hello.header.type = PACKET_HELLO;
             hello.header.tick = ctx.tick;
             copyName(hello.name, playerName);
-            sendto(ctx.sock, (const char*)&hello, sizeof(hello), 0,
-                   (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-            ++ctx.packetsSent;
+            mpSendPacket(ctx, &hello, sizeof(hello));
             ctx.lastHelloMs = currentMs;
             printf("[NET CONNECT] hello sent to %s\n", ctx.serverAddress.c_str());
         }
@@ -230,6 +350,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
         if (bytes <= 0)
             break;
         ++ctx.packetsReceived;
+        if (!isSameAddress(from, ctx.serverAddr))
+        {
+            printf("[NET PACKET FILTER] accepted=0 reason=not-server from=%s\n",
+                   addressToString(from).c_str());
+            continue;
+        }
 
         PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
         if (bytes < (int)sizeof(PacketHeader) ||
@@ -296,6 +422,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                     ctx.localServerOnGround = entity.onGround != 0;
                     ctx.hasLocalServerPosition = true;
                     ctx.localServerHealth = entity.health;
+                    ctx.localPingMs = entity.pingMs;
                     if (ctx.awaitingTeleportAck &&
                         glm::length(
                             ctx.localServerPosition -
@@ -306,7 +433,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                     if (ctx.awaitingExplodeDeath && entity.health <= 0)
                         ctx.awaitingExplodeDeath = false;
                     ctx.playerRegistry[entity.networkEntityId] = {
-                        entity.displayName, entity.networkEntityId, 0
+                        entity.displayName, entity.networkEntityId, entity.pingMs
                     };
                     if (logSnapshot)
                     {
@@ -331,7 +458,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                     seen = &seenPlayers;
                     typeName = "Player";
                     ctx.playerRegistry[entity.networkEntityId] = {
-                        entity.displayName, entity.networkEntityId, 0
+                        entity.displayName, entity.networkEntityId, entity.pingMs
                     };
                 }
                 else if (entity.entityType == ENTITY_NPC)
@@ -414,6 +541,57 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                     ++it;
             }
         }
+        else if (header->type == PACKET_SHOT_EVENT &&
+                 bytes >= (int)sizeof(ShotEventPacket))
+        {
+            const ShotEventPacket* event =
+                reinterpret_cast<const ShotEventPacket*>(buffer);
+            uint32_t& lastSerial =
+                ctx.lastReceivedShotSerial[event->shooterPlayerId];
+            if (lastSerial != 0 &&
+                (int32_t)(event->shotSerial - lastSerial) <= 0)
+            {
+                printf("[NET SHOT RECV] shooter=%u serial=%u skipped=duplicate last=%u\n",
+                       event->shooterPlayerId, event->shotSerial, lastSerial);
+                continue;
+            }
+            lastSerial = event->shotSerial;
+
+            NetworkShotEvent out;
+            out.shotSerial = event->shotSerial;
+            out.clientTimeMs = event->clientTimeMs;
+            out.shooterPlayerId = event->shooterPlayerId;
+            out.targetPlayerId = event->targetPlayerId;
+            out.damage = event->damage;
+            out.targetHealth = event->targetHealth;
+            out.power = event->power;
+            out.effectFlags = event->effectFlags;
+            out.weapon = event->weapon;
+            out.impactType = event->impactType;
+            out.killed = event->killed != 0;
+            out.damageConfirmed = event->damageConfirmed != 0;
+            out.origin = {event->originX, event->originY, event->originZ};
+            out.hit = {event->hitX, event->hitY, event->hitZ};
+            out.direction = {event->dirX, event->dirY, event->dirZ};
+            out.normal = {event->normalX, event->normalY, event->normalZ};
+            out.knockback = {event->knockX, event->knockY, event->knockZ};
+            ctx.shotEvents.push_back(out);
+            printf("[NET SHOT RECV] shooter=%u serial=%u weapon=%u impact=%u "
+                   "flags=0x%03x damageConfirmed=%d origin=(%.2f %.2f %.2f) "
+                   "hit=(%.2f %.2f %.2f)\n",
+                   out.shooterPlayerId, out.shotSerial, out.weapon,
+                   out.impactType, out.effectFlags, (int)out.damageConfirmed,
+                   out.origin.x, out.origin.y, out.origin.z,
+                   out.hit.x, out.hit.y, out.hit.z);
+        }
+        else if (header->type == PACKET_PING &&
+                 bytes >= (int)sizeof(PingPacket))
+        {
+            const PingPacket* ping =
+                reinterpret_cast<const PingPacket*>(buffer);
+            ctx.localPingMs = (int)std::min<uint64_t>(
+                9999, nowMs() - ping->clientTimeMs);
+        }
     }
 
     for (auto& kv : ctx.remotePlayers)
@@ -427,6 +605,17 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
         auto interpolation = ctx.remoteNpcInterpolation.find(kv.first);
         if (interpolation != ctx.remoteNpcInterpolation.end())
             updateRenderedReplica(kv.second, interpolation->second, dt);
+    }
+
+    if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)
+    {
+        PingPacket ping{};
+        ping.header.type = PACKET_PING;
+        ping.header.tick = ctx.tick;
+        ping.header.playerId = ctx.localPlayerId;
+        ping.clientTimeMs = currentMs;
+        mpSendPacket(ctx, &ping, sizeof(ping));
+        ctx.lastPingSentMs = currentMs;
     }
 
     ++ctx.tick;
@@ -572,9 +761,7 @@ void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position)
     request.px = position.x;
     request.py = position.y;
     request.pz = position.z;
-    sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
-           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-    ++ctx.packetsSent;
+    mpSendPacket(ctx, &request, sizeof(request));
 }
 
 void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position)
@@ -592,9 +779,7 @@ void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position)
     ctx.pendingTeleportPosition = position;
     ctx.pendingTeleportSentMs = nowMs();
     ctx.awaitingTeleportAck = true;
-    sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
-           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-    ++ctx.packetsSent;
+    mpSendPacket(ctx, &request, sizeof(request));
 }
 
 void mpRequestExplode(MultiplayerContext& ctx)
@@ -607,9 +792,53 @@ void mpRequestExplode(MultiplayerContext& ctx)
     request.header.tick = ctx.tick;
     request.header.playerId = ctx.localPlayerId;
     ctx.awaitingExplodeDeath = true;
-    sendto(ctx.sock, (const char*)&request, sizeof(request), 0,
-           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-    ++ctx.packetsSent;
+    mpSendPacket(ctx, &request, sizeof(request));
+}
+
+uint32_t mpSendShotEvent(
+    MultiplayerContext& ctx,
+    uint32_t targetPlayerId,
+    int damage,
+    float power,
+    uint16_t effectFlags,
+    uint8_t weapon,
+    uint8_t impactType,
+    const glm::vec3& origin,
+    const glm::vec3& hit,
+    const glm::vec3& direction,
+    const glm::vec3& normal,
+    const glm::vec3& knockbackImpulse)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return 0;
+
+    ShotRequestPacket packet{};
+    packet.header.type = PACKET_SHOT_REQUEST;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.shotSerial = ctx.nextLocalShotSerial++;
+    if (ctx.nextLocalShotSerial == 0)
+        ctx.nextLocalShotSerial = 1;
+    packet.clientTimeMs = nowMs();
+    packet.targetPlayerId = targetPlayerId;
+    packet.damage = damage;
+    packet.power = power;
+    packet.effectFlags = effectFlags;
+    packet.weapon = weapon;
+    packet.impactType = impactType;
+    packet.originX = origin.x; packet.originY = origin.y; packet.originZ = origin.z;
+    packet.hitX = hit.x; packet.hitY = hit.y; packet.hitZ = hit.z;
+    packet.dirX = direction.x; packet.dirY = direction.y; packet.dirZ = direction.z;
+    packet.normalX = normal.x; packet.normalY = normal.y; packet.normalZ = normal.z;
+    packet.knockX = knockbackImpulse.x; packet.knockY = knockbackImpulse.y; packet.knockZ = knockbackImpulse.z;
+    mpSendPacket(ctx, &packet, sizeof(packet));
+    printf("[NET SHOT SEND] shooter=%u serial=%u weapon=%u impact=%u "
+           "flags=0x%03x target=%u damage=%d origin=(%.2f %.2f %.2f) "
+           "hit=(%.2f %.2f %.2f)\n",
+           ctx.localPlayerId, packet.shotSerial, weapon, impactType,
+           effectFlags, targetPlayerId, damage,
+           origin.x, origin.y, origin.z, hit.x, hit.y, hit.z);
+    return packet.shotSerial;
 }
 
 } // namespace MimitaNet

@@ -309,6 +309,8 @@ void EffectPartSystem::update(float dt) {
                 effect.resetStrings();
                 --mActiveCount;
             }
+            if (glm::length(effect.angularVelocity) > 0.0f)
+                effect.rotation += effect.angularVelocity * dt;
         }
         return;
     }
@@ -322,6 +324,8 @@ void EffectPartSystem::update(float dt) {
             fx.position += fx.velocity * dt;
         if (fx.affectedByGravity)
             fx.velocity.z -= (fx.gravity > 0.0f ? fx.gravity : 9.81f) * dt;
+        if (glm::length(fx.angularVelocity) > 0.0f)
+            fx.rotation += fx.angularVelocity * dt;
         if (fx.lifetime >= fx.maxLifetime) {
             fx.alive = false;
             fx.resetStrings();
@@ -349,7 +353,7 @@ void EffectPartSystem::spawnBlood(glm::vec3 position, glm::vec3 direction, float
     particle.position = position;
     particle.velocity = velocity * (5.0f + std::max(amount, 0.0f) * 4.0f);
     particle.replayType = "blood_sphere_particle";
-    particle.color = {0.35f, 0.005f, 0.01f};
+        particle.color = {0.92f, 0.02f, 0.04f};
     particle.scale = 0.06f;
     particle.endScale = 0.02f;
     particle.maxLifetime = 1.0f;
@@ -369,7 +373,7 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         1 + (int)(force * 3.0f);
 
     const int smallCount =
-        4 + (int)(force * 18.0f);
+        6 + (int)(force * 24.0f);
 
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0,0,1);
     constexpr float MERGE_RADIUS = 0.3f;
@@ -415,7 +419,7 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
     
         // better for higher force = more bloods 
         float spread =
-            0.08f + force * 0.85f;
+            0.15f + force * 1.2f;
 
         float radius =
             big
@@ -468,7 +472,7 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.maxLifetime = big ? 30.0f : 5.0f;
         e.lifetime = 0.0f;
         const float variation = 0.85f + (rand() % 301) / 1000.0f;
-        const float bigScale = (0.28f + force * 0.42f) * variation;
+        const float bigScale = (0.5f + force * 0.7f) * variation;
         e.scale = big ? bigScale : bigScale * 0.125f;
         e.endScale = e.scale;
         e.billboardText = false;
@@ -479,8 +483,8 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
         e.ownerId = ownerId;
         e.debugVisual = false;
         e.color = big
-            ? glm::vec3(0.32f, 0.004f, 0.008f)
-            : glm::vec3(0.68f, 0.012f, 0.02f);
+            ? glm::vec3(0.85f, 0.02f, 0.04f)
+            : glm::vec3(0.95f, 0.04f, 0.06f);
 
         EffectPart* spawned = spawn(e);
         if (!spawned)
@@ -631,28 +635,28 @@ void EffectPartSystem::spawnBloodSphereBurst(
         // count = 18 + rand() % 11;
         // 6 7 2026 
         count =
-            12 +
-            (int)(force * 60.0f) +
-            rand() % 20;
+            18 +
+            (int)(force * 80.0f) +
+            rand() % 30;
 
     glm::vec3 dir = glm::length(shotDirection) > 0.001f
         ? glm::normalize(shotDirection)
         : glm::vec3(0.0f, 0.0f, -1.0f);
 
     glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
-    glm::vec3 perpendicular = glm::normalize(glm::cross(dir, worldUp));
-    if (glm::length(perpendicular) < 0.001f)
-        perpendicular = glm::normalize(glm::cross(dir, glm::vec3(1.0f, 0.0f, 0.0f)));
+    glm::vec3 right = glm::normalize(glm::cross(dir, worldUp));
+    if (glm::length(right) < 0.001f)
+        right = glm::normalize(glm::cross(dir, glm::vec3(1.0f, 0.0f, 0.0f)));
+    glm::vec3 up = glm::normalize(glm::cross(right, dir));
 
     for (int i = 0; i < count; ++i) {
-        float coneAngle = 0.4f + force * 0.3f;
+        float coneAngle = 0.8f + force * 1.3f;
         float randomAngle = (float)(rand() % 6283) / 1000.0f;
         float randomRadius = ((float)(rand() % 1001) / 1000.0f) * coneAngle;
         glm::vec3 velDir = dir
-            + perpendicular * std::cos(randomAngle) * randomRadius
-            + worldUp * std::sin(randomAngle) * randomRadius;
+            + right * std::cos(randomAngle) * randomRadius
+            + up * std::sin(randomAngle) * randomRadius;
         velDir = glm::normalize(velDir);
-        velDir.z = std::max(velDir.z, 0.15f);
 
         EffectPart p;
         p.position = hitPoint + velDir * (0.03f + (rand() % 31) / 1000.0f);
@@ -670,11 +674,10 @@ void EffectPartSystem::spawnBloodSphereBurst(
                 force * 35.0f +
                 (rand() % 4001) / 1000.0f
             );
-        p.color = {0.35f, 0.01f, 0.02f};
-        // p.color = {0.95f, 0.01f, 0.02f};
+        p.color = {0.90f, 0.03f, 0.05f};
         p.maxLifetime = 0.6f + (rand() % 401) / 1000.0f;
         p.lifetime = 0.0f;
-        p.scale = 0.04f + force * 0.06f + (rand() % 51) / 1000.0f;
+        p.scale = 0.08f + force * 0.15f + (rand() % 51) / 1000.0f;
         p.endScale = p.scale * 0.5f;
         p.alpha = 1.0f;
         // p.gravity = 25.0f;
@@ -704,15 +707,16 @@ void EffectPartSystem::spawnBloodSpurt(
     emitter.position = position;
     emitter.direction = forward;
     emitter.lifetime = 0.2f;
-    emitter.color = glm::vec4(0.85f, 0.0f, 0.015f, 1.0f);
+    emitter.color = glm::vec4(0.95f, 0.02f, 0.04f, 1.0f);
     emitter.sourceActorId = sourceActorId;
     emitter.targetActorId = targetActorId;
     captureReplayEffect(emitter);
 
-    for (int i = 0; i < 2; ++i) {
+    int spurtCount = 8 + rand() % 5;
+    for (int i = 0; i < spurtCount; ++i) {
         glm::vec3 randomSpread{
-            (rand() % 2001 - 1000) / 2200.0f,
-            (rand() % 2001 - 1000) / 2200.0f,
+            (rand() % 2001 - 1000) / 700.0f,
+            (rand() % 2001 - 1000) / 700.0f,
             0.25f + (rand() % 751) / 1000.0f
         };
         glm::vec3 velocityDirection = glm::normalize(forward * 0.75f + randomSpread);
@@ -720,8 +724,8 @@ void EffectPartSystem::spawnBloodSpurt(
         EffectPart particle;
         particle.position = position;
         particle.replayType = "blood_sphere_particle";
-        particle.velocity = velocityDirection * (2.5f + (rand() % 2501) / 1000.0f);
-        particle.color = {0.85f, 0.0f, 0.015f};
+        particle.velocity = velocityDirection * (4.0f + (rand() % 5001) / 1000.0f);
+        particle.color = {0.95f, 0.02f, 0.04f};
         particle.maxLifetime = 3.0f;
         particle.lifetime = 0.0f;
         particle.scale = 0.075f + (rand() % 41) / 1000.0f;
@@ -818,25 +822,46 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
     return spawn(e);
 }
 
-void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
+void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force) {
+    force = std::max(force, 0.1f);
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0, 0, 1);
-    for (int i = 0; i < 16; ++i) {
-        glm::vec3 randomDir{
-            (rand() % 2001 - 1000) / 1000.0f,
-            (rand() % 2001 - 1000) / 1000.0f,
-            0.35f + (rand() % 651) / 1000.0f
-        };
-        randomDir = glm::normalize(randomDir + n * 0.8f);
+
+    glm::vec3 tangent = glm::normalize(
+        std::abs(n.z) < 0.9f
+            ? glm::cross(n, glm::vec3(0, 0, 1))
+            : glm::cross(n, glm::vec3(0, 1, 0)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+
+    const int count = 24 + (int)(force * 8.0f) + rand() % 8;
+    const float coneSpread = 0.8f + force * 1.0f;
+    const float baseSpeed = 4.0f + force * 12.0f;
+    const float lifetimeBase = 0.5f + force * 0.15f;
+
+    for (int i = 0; i < count; ++i) {
+        float randomAngle = (float)(rand() % 6283) / 1000.0f;
+        float randomRadius = ((float)(rand() % 1001) / 1000.0f) * coneSpread;
+        glm::vec3 dir = n
+            + tangent * std::cos(randomAngle) * randomRadius
+            + bitangent * std::sin(randomAngle) * randomRadius;
+        dir = glm::normalize(dir);
+
+        float speed = baseSpeed + (rand() % 5001) / 1000.0f;
+        float sx = 0.04f + force * 0.04f + (rand() % 501) / 3000.0f;
+        float sy = 0.04f + force * 0.04f + (rand() % 501) / 3000.0f;
+        float sz = 0.04f + force * 0.04f + (rand() % 501) / 3000.0f;
+
         EffectPart e;
-        e.position = position + n * 0.04f + randomDir * (0.02f + (rand() % 51) / 1000.0f);
+        e.position = position + n * 0.04f + dir * (0.02f + (rand() % 51) / 1000.0f);
         e.replayType = "debris_block";
-        e.velocity = randomDir * (2.0f + (rand() % 3001) / 1000.0f);
+        e.velocity = dir * speed;
+        e.angularVelocity = {
+            (float)(rand() % 2001 - 1000) / 80.0f * (1.0f + force * 0.5f),
+            (float)(rand() % 2001 - 1000) / 80.0f * (1.0f + force * 0.5f),
+            (float)(rand() % 2001 - 1000) / 80.0f * (1.0f + force * 0.5f)
+        };
         e.color = {0.42f, 0.40f, 0.38f};
-        e.maxLifetime = 1.5f + (rand() % 1001) / 1000.0f;
+        e.maxLifetime = lifetimeBase + (rand() % 501) / 1000.0f;
         e.alpha = 1.0f;
-        float sx = 0.12f + (rand() % 501) / 1000.0f;
-        float sy = 0.12f + (rand() % 501) / 1000.0f;
-        float sz = 0.12f + (rand() % 501) / 1000.0f;
         e.halfSize = {sx, sy, sz};
         e.rotation = {
             (float)(rand() % 721 - 360),
@@ -844,7 +869,7 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal) {
             (float)(rand() % 721 - 360)
         };
         e.billboardText = false;
-        e.gravity = 9.81f;
+        e.gravity = 15.0f;
         e.affectedByGravity = true;
         e.lifetime = 0.0f;
         e.box = true;
@@ -999,7 +1024,7 @@ void EffectPartSystem::render(const Camera& camera) const {
             DebugVis::drawFilledBeam(camera, effect.position, effect.endPosition, drawScale, drawColor);
         }
         else if (effect.box) {
-            DebugVis::drawFilledBox(camera, effect.position, effect.halfSize, drawColor);
+            DebugVis::drawFilledBox(camera, effect.position, effect.halfSize, drawColor, effect.rotation);
         }
         else if (effect.cylinderDecal) {
             DebugVis::drawFilledCylinder(camera, effect.position, effect.normal, drawScale, effect.cylinderHeight, drawColor);
@@ -1043,6 +1068,32 @@ void EffectPartSystem::render(const Camera& camera) const {
                 segment.to,
                 segment.to + segment.normal * 0.5f,
                 {0.2f, 1.0f, 0.2f, 1.0f});
+        }
+    }
+
+    if (DebugConfig::DEBUG_DEBRIS) {
+        int debrisCount = 0;
+        glm::vec3 centroid{0.0f};
+        for (const auto& effect : mPool) {
+            if (!effect.alive || !effect.box)
+                continue;
+            centroid += effect.position;
+            ++debrisCount;
+            float velLen = glm::length(effect.velocity);
+            if (velLen > 0.01f) {
+                DebugVis::drawLine(
+                    camera,
+                    effect.position,
+                    effect.position + glm::normalize(effect.velocity) * std::min(velLen * 0.15f, 2.0f),
+                    {1.0f, 0.9f, 0.0f, 0.85f});
+            }
+            DebugVis::drawPointCross(camera, effect.position, 0.04f, {1.0f, 0.6f, 0.0f, 0.8f});
+        }
+        if (debrisCount > 0) {
+            centroid /= (float)debrisCount;
+            char dbgLabel[64];
+            snprintf(dbgLabel, sizeof(dbgLabel), "debris:%d", debrisCount);
+            DebugVis::drawWorldLabel(centroid + glm::vec3(0, 0, 0.3f), dbgLabel, {1.0f, 0.9f, 0.0f, 1.0f});
         }
     }
 }

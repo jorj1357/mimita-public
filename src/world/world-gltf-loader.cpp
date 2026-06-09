@@ -14,6 +14,10 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <chrono>
+#include <cctype>
+#include <unordered_map>
+#include <unordered_set>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/geometric.hpp>
 
@@ -106,36 +110,51 @@ void buildCollisionChunks(World& world)
 
 bool loadWorldFromGLB(World& world, const char* path)
 {
+    const auto loadStarted = std::chrono::steady_clock::now();
     printf("[WORLD GLB] loading %s\n", path);
 
-    world.clear();
+    World candidate;
+    candidate.renderRevision = world.renderRevision + 1;
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
-    world.mesh = loadGLB(path);
+    candidate.mesh = loadGLB(path);
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] after loadGLB\n");
 
     printf(
         "[WORLD GLB] verts=%zu triangles=%zu batches=%zu\n",
-        world.mesh.verts.size(),
-        world.mesh.verts.size() / 3,
-        world.mesh.batches.size()
+        candidate.mesh.verts.size(),
+        candidate.mesh.verts.size() / 3,
+        candidate.mesh.batches.size()
     );
 
-    if (world.mesh.verts.empty())
+    if (candidate.mesh.verts.empty())
     {
         printf("[WORLD GLB ERROR] GLB produced no renderable vertices\n");
+        releaseMeshGLResources(candidate.mesh);
         return false;
     }
 
     printf("[WORLD GLB] before collision build\n");
 
-    buildCollisionMeshFromRenderMesh(world);
-    buildCollisionChunks(world);
+    buildCollisionMeshFromRenderMesh(candidate);
+    buildCollisionChunks(candidate);
+    extractSpawnPointsFromGLB(candidate, path);
 
     printf("[WORLD GLB] after collision build\n");
 
+    const auto unloadStarted = std::chrono::steady_clock::now();
+    releaseMeshGLResources(world.mesh);
+    world = std::move(candidate);
+    const auto finished = std::chrono::steady_clock::now();
+    const double unloadMs =
+        std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
+    const double loadMs =
+        std::chrono::duration<double, std::milli>(finished - loadStarted).count();
+    printf("[WORLD GLB] load success path=%s revision=%llu spawns=%zu unloadMs=%.2f totalMs=%.2f\n",
+           path, (unsigned long long)world.renderRevision,
+           world.spawnPoints.size(), unloadMs, loadMs);
     return true;
 }
 
@@ -153,10 +172,19 @@ void extractSpawnPointsFromGLB(World& world, const char* path)
         return;
     }
 
+    std::unordered_map<std::string, int> spawnNameCounts;
+    std::unordered_set<int> activeNodes;
     std::function<void(int, const glm::mat4&, int)> walkForSpawns =
         [&](int nodeIndex, const glm::mat4& parent, int depth) {
             if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size()) return;
-            if (depth > 128) return;
+            if (depth > 128) {
+                printf("[SPAWN GLB WARNING] traversal depth exceeded node=%d\n", nodeIndex);
+                return;
+            }
+            if (!activeNodes.insert(nodeIndex).second) {
+                printf("[SPAWN GLB WARNING] cyclic node hierarchy node=%d\n", nodeIndex);
+                return;
+            }
 
             const tinygltf::Node& node = model.nodes[nodeIndex];
 
@@ -181,26 +209,61 @@ void extractSpawnPointsFromGLB(World& world, const char* path)
             glm::mat4 worldXform = parent * local;
 
             const std::string& name = node.name;
-            if (name.rfind("spawnLocation", 0) == 0) {
+            std::string lowerName = name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            if (lowerName.find("spawn") != std::string::npos) {
+                const glm::vec3 worldPosition = glm::vec3(worldXform[3]);
+                const glm::vec3 xAxis = glm::vec3(worldXform[0]);
+                const glm::vec3 yAxis = glm::vec3(worldXform[1]);
+                const glm::vec3 zAxis = glm::vec3(worldXform[2]);
+                const bool validPosition =
+                    std::isfinite(worldPosition.x) &&
+                    std::isfinite(worldPosition.y) &&
+                    std::isfinite(worldPosition.z);
+                const bool finiteBasis =
+                    std::isfinite(xAxis.x) && std::isfinite(xAxis.y) && std::isfinite(xAxis.z) &&
+                    std::isfinite(yAxis.x) && std::isfinite(yAxis.y) && std::isfinite(yAxis.z) &&
+                    std::isfinite(zAxis.x) && std::isfinite(zAxis.y) && std::isfinite(zAxis.z);
+                const bool validBasis =
+                    finiteBasis &&
+                    glm::length(xAxis) > 0.000001f &&
+                    glm::length(yAxis) > 0.000001f &&
+                    glm::length(zAxis) > 0.000001f;
+                if (!validPosition || !validBasis) {
+                    printf("[SPAWN GLB WARNING] rejected invalid transform node=%s index=%d\n",
+                           name.c_str(), nodeIndex);
+                } else {
                 SpawnPoint sp;
-                sp.position = glm::vec3(worldXform[3]);
-                sp.position.z += 1.0f;
+                sp.position = worldPosition;
+                const glm::mat3 rotationBasis(
+                    glm::normalize(xAxis),
+                    glm::normalize(yAxis),
+                    glm::normalize(zAxis));
+                sp.rotation = glm::normalize(glm::quat_cast(rotationBasis));
                 sp.tag = name;
                 sp.arenaIndex = -1;
 
-                size_t arenaPos = name.find("arena_");
+                size_t arenaPos = lowerName.find("arena_");
                 if (arenaPos != std::string::npos) {
-                    const char* numStart = name.c_str() + arenaPos + 6;
+                    const char* numStart = lowerName.c_str() + arenaPos + 6;
                     sp.arenaIndex = std::atoi(numStart);
                 }
 
+                const int duplicateCount = ++spawnNameCounts[lowerName];
+                if (duplicateCount > 1)
+                    printf("[SPAWN GLB WARNING] duplicate name=%s occurrence=%d\n",
+                           name.c_str(), duplicateCount);
                 world.spawnPoints.push_back(sp);
-                printf("[SPAWN GLB] extracted spawn: %s pos=(%.1f %.1f %.1f) arena=%d\n",
-                       name.c_str(), sp.position.x, sp.position.y, sp.position.z, sp.arenaIndex);
+                printf("[SPAWN GLB] extracted index=%zu name=%s pos=(%.3f %.3f %.3f) arena=%d\n",
+                       world.spawnPoints.size() - 1, name.c_str(),
+                       sp.position.x, sp.position.y, sp.position.z, sp.arenaIndex);
+                }
             }
 
             for (int child : node.children)
                 walkForSpawns(child, worldXform, depth + 1);
+            activeNodes.erase(nodeIndex);
         };
 
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;

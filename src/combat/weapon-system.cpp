@@ -6,6 +6,7 @@
 #include "weapon-runtime.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -14,8 +15,10 @@
 #include "config/player-settings.h"
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
+#include "effects/effect-part.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "ui/hitmarker.h"
 
 WeaponSystem::WeaponSystem() {
     WeaponData::registerBuiltinWeapons();
@@ -121,7 +124,12 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
     }
 }
 
-RevolverShotResult WeaponSystem::fire(const Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
+RevolverShotResult WeaponSystem::fire(
+    const Camera& camera,
+    Player& player,
+    NpcSystem& npcs,
+    const World& world,
+    const std::unordered_map<uint32_t, Player>* remotePlayers) {
     if (player.dead) {
         Terminal::instance().addLog("[WEAPON] cannot fire - player is dead");
         return {};
@@ -151,10 +159,15 @@ RevolverShotResult WeaponSystem::fire(const Camera& camera, Player& player, NpcS
         return {};
     }
 
-    return fireHitscan(camera, player, npcs, world);
+    return fireHitscan(camera, player, npcs, world, remotePlayers);
 }
 
-RevolverShotResult WeaponSystem::fireHitscan(const Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
+RevolverShotResult WeaponSystem::fireHitscan(
+    const Camera& camera,
+    Player& player,
+    NpcSystem& npcs,
+    const World& world,
+    const std::unordered_map<uint32_t, Player>* remotePlayers) {
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return {};
@@ -169,7 +182,9 @@ RevolverShotResult WeaponSystem::fireHitscan(const Camera& camera, Player& playe
     glm::vec3 muzzlePos = vm.muzzle;
     glm::vec3 muzzleDir = vm.forward;
 
-    RevolverShotResult result = WeaponFire::tryFireHitscan(*def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir);
+    RevolverShotResult result = WeaponFire::tryFireHitscan(
+        *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
+        remotePlayers);
 
     WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
     mDisturbance += 1.2f;
@@ -178,6 +193,72 @@ RevolverShotResult WeaponSystem::fireHitscan(const Camera& camera, Player& playe
            def->slot, def->id.c_str(), rt->currentAmmo);
 
     return result;
+}
+
+std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
+    Player& player,
+    const std::unordered_map<uint32_t, Player>& remotePlayers,
+    float dt)
+{
+    std::vector<RevolverShotResult> hits;
+    const WeaponDefinition* def = getCurrentDef(player);
+    if (!def || def->behaviorType != WeaponBehaviorType::Godball ||
+        !mGodballPhys.active)
+        return hits;
+
+    for (auto& entry : mRemoteGodballCooldowns)
+        entry.second = std::max(0.0f, entry.second - dt);
+
+    const float tickInterval = def->customParams.count("damageTickInterval")
+        ? def->customParams.at("damageTickInterval") : 0.1f;
+
+    for (const auto& entry : remotePlayers)
+    {
+        const uint32_t targetId = entry.first;
+        const Player& target = entry.second;
+        if (target.dead || target.currentHp <= 0 ||
+            mRemoteGodballCooldowns[targetId] > 0.0f)
+            continue;
+
+        const glm::vec3 toTarget = target.pos - mGodballPhys.position;
+        const float distance = glm::length(toTarget);
+        if (distance >= mGodballPhys.radius + 0.65f)
+            continue;
+
+        const glm::vec3 direction = distance > 0.001f
+            ? toTarget / distance
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        const int damage = std::clamp(
+            (int)std::round(WeaponGodball::computeDamage(
+                mGodballPhys, *def, player, target,
+                mGodballPhys.position + direction * mGodballPhys.radius)),
+            1, 200);
+
+        RevolverShotResult hit;
+        hit.fired = true;
+        hit.hitEntity = true;
+        hit.targetIsRemotePlayer = true;
+        hit.targetId = targetId;
+        hit.damage = (float)damage;
+        hit.start = WeaponGodball::getHandPosition(player);
+        hit.end = target.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+        hits.push_back(hit);
+        mRemoteGodballCooldowns[targetId] = tickInterval;
+
+        hitmarker();
+        EffectPartSystem::instance().spawnDamage(hit.end, target.username, damage);
+        EffectPartSystem::instance().spawnBloodSphereBurst(
+            hit.end, direction, std::min(hit.damage / 20.0f, 2.0f),
+            player.username, target.username);
+        EffectPartSystem::instance().spawnBloodSpurt(
+            hit.end, direction, player.username, target.username);
+        EffectPartSystem::instance().spawnEntityImpact(
+            hit.end, direction, player.username, target.username);
+        WeaponAudio::playGodballImpact(
+            hit.end, std::clamp(hit.damage / 100.0f, 0.0f, 1.0f));
+    }
+
+    return hits;
 }
 
 void WeaponSystem::fireGodball(const Camera& camera, Player& player, NpcSystem& npcs, const World& world) {

@@ -38,7 +38,6 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
     if (!mapList.empty()) {
         config.mapPath = mapList[0];
         loadWorldFromGLB(world, config.mapPath.c_str());
-        extractSpawnPointsFromGLB(world, config.mapPath.c_str());
     }
 
     SpawnPoint* sp = world.pickSpawnPoint();
@@ -176,7 +175,6 @@ void DuelManager::rotateMap(World& world)
     currentMapIndex = (currentMapIndex + 1) % mapList.size();
     config.mapPath = mapList[currentMapIndex];
     loadWorldFromGLB(world, config.mapPath.c_str());
-    extractSpawnPointsFromGLB(world, config.mapPath.c_str());
     printf("[DUEL] rotated to map: %s\n", config.mapPath.c_str());
 }
 

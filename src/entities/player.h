@@ -76,6 +76,8 @@ public:
     int maxHp = 100;
     bool inventoryOpen = false;
     int equippedSlot = 1;
+    uint8_t networkWeaponState = 0;
+    float networkShootEffectTimer = 0.0f;
     int revolverCylinder = 6;
     int revolverReserve = 1337;
     bool dead = false;
