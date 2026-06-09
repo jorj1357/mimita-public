@@ -18,6 +18,9 @@
 #include "replay/replay.h"
 #include "world/texture-store.h"
 #include "world/world.h"
+#include "game/duel.h"
+
+extern DuelManager gDuelManager;
 
 extern Renderer* gRenderer;
 
@@ -202,6 +205,14 @@ bool DeathSystem::kill(
     victim.inputWishMove = glm::vec2(0.0f);
     victim.currentHp = 0;
     victim.dead = true;
+    if (actorType == "player")
+    {
+        gDuelManager.onEntityDeath(DuelTeam::Player);
+    }
+    else if (actorType == "npc")
+    {
+        gDuelManager.onEntityDeath(DuelTeam::NPC);
+    }
     victim.respawnTimer = RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
     victim.syncLegacyStateToLayers();

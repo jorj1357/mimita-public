@@ -31,6 +31,8 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
 
     playerKills = 0;
     npcKills.assign(config.numNpcs, 0);
+    alivePlayerCount = 1;
+    aliveNpcCount = config.numNpcs;
     playerStats = DuelStats{};
 
     npcs.destroyAll();
@@ -57,6 +59,8 @@ void DuelManager::startCountdown()
     timer = 0.0f;
     playerKills = 0;
     npcKills.assign(config.numNpcs, 0);
+    alivePlayerCount = 1;
+    aliveNpcCount = config.numNpcs;
 }
 
 void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
@@ -95,22 +99,15 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
         case DuelPhase::Active:
             timer += dt;
 
-            if (config.duelLengthSeconds > 0 && timer >= config.duelLengthSeconds) {
-                endRound();
+            // timeout = enemies win
+            if (config.duelLengthSeconds > 0 &&
+                timer >= config.duelLengthSeconds)
+            {
+                endRound(DuelTeam::NPC);
                 return;
             }
-            if (playerKills >= config.killsToWin) {
-                endRound();
-                return;
-            }
-            for (int kills : npcKills) {
-                if (kills >= config.killsToWin) {
-                    endRound();
-                    return;
-                }
-            }
-            break;
 
+            break;
         case DuelPhase::RoundEnd:
             roundEndTimer -= dt;
             if (roundEndTimer <= 0.0f) {
@@ -148,12 +145,56 @@ void DuelManager::onNpcKill(int npcIndex)
     printf("[DUEL] npc kill npc=%d\n", npcIndex);
 }
 
-void DuelManager::endRound()
+void DuelManager::onEntityDeath(DuelTeam team)
+{
+    if (currentPhase != DuelPhase::Active)
+        return;
+
+    if (team == DuelTeam::Player)
+    {
+        alivePlayerCount--;
+
+        printf(
+            "[DUEL] player died alivePlayerCount=%d\n",
+            alivePlayerCount
+        );
+
+        if (alivePlayerCount <= 0)
+        {
+            endRound(DuelTeam::NPC);
+        }
+    }
+    else if (team == DuelTeam::NPC)
+    {
+        aliveNpcCount--;
+
+        printf(
+            "[DUEL] npc died aliveNpcCount=%d\n",
+            aliveNpcCount
+        );
+
+        if (aliveNpcCount <= 0)
+        {
+            endRound(DuelTeam::Player);
+        }
+    }
+}
+
+void DuelManager::endRound(DuelTeam winner)
 {
     currentPhase = DuelPhase::RoundEnd;
     roundEndTimer = 3.0f;
-    playerStats.roundsWon++;
-    printf("[DUEL] round %d ended playerKills=%d\n", currentRound, playerKills);
+
+    if (winner == DuelTeam::Player) {
+        playerStats.roundsWon++;
+    }
+
+    printf(
+        "[DUEL] round %d ended winner=%d playerKills=%d\n",
+        currentRound,
+        (int)winner,
+        playerKills
+    );
 }
 
 void DuelManager::endMatch()
