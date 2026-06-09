@@ -55,6 +55,7 @@ private:
     GodballPhysics mGodballPhys;
     float mShotCooldown = 0.0f;
     float mReloadTimer = 0.0f;
+    float mReloadBufferTimer = 0.0f;
     float mShootingTimer = 0.0f;
     int mPendingReloadRounds = 0;
     bool mIsReloading = false;

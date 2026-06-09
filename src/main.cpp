@@ -29,6 +29,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <random>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -287,6 +288,9 @@ int main(int argc, char** argv)
     static ReplayRecorder gReplayRecorder;
     static ReplayPlayer gReplayPlayer;
 
+    // Random number generator for spawn selection
+    static std::mt19937 rng(std::random_device{}());
+
     // also duels
     // todo later, make just like a game mode manager, and make configs
     // using the settings in the game mode manager
@@ -414,6 +418,15 @@ int main(int argc, char** argv)
                 Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
             }
+
+            {
+                float pitchKick = GetPlayerSettings().weaponRecoilCameraPitch;
+                camera.addPunch(pitchKick, 0.0f);
+                if (DebugConfig::DEBUG_RECOIL)
+                    Debug::log(Debug::Category::General, "[RECOIL] camera punch=%.2f pitch=%.2f\n",
+                               pitchKick, camera.punchPitch);
+            }
+
             if (mpContext.active) {
                 const glm::vec3 direction = glm::length(shot.end - shot.start) > 0.001f
                     ? glm::normalize(shot.end - shot.start)
@@ -1009,12 +1022,13 @@ int main(int argc, char** argv)
 
                         if (!world.spawnPoints.empty())
                         {
-                            world.selectedSpawnIndex = 0;
-                            const SpawnPoint& spawn = world.spawnPoints[0];
+                            std::uniform_int_distribution<size_t> dist(0, world.spawnPoints.size() - 1);
+                            world.selectedSpawnIndex = (int)dist(rng);
+                            const SpawnPoint& spawn = world.spawnPoints[world.selectedSpawnIndex];
                             player.pos = spawn.position;
                             player.respawnPosition = spawn.position;
-                            printf("[SANDBOX SPAWN] selected index=0 name=%s world=(%.3f %.3f %.3f)\n",
-                                   spawn.tag.c_str(), spawn.position.x,
+                            printf("[SANDBOX SPAWN] selected index=%d name=%s world=(%.3f %.3f %.3f)\n",
+                                   world.selectedSpawnIndex, spawn.tag.c_str(), spawn.position.x,
                                    spawn.position.y, spawn.position.z);
                         }
                         else
@@ -1428,6 +1442,7 @@ int main(int argc, char** argv)
                             event.targetPlayerId);
                         if (remote != mpContext.remotePlayers.end())
                         {
+                            remote->second.dead = false;
                             DeathSystem::instance().kill(
                                 remote->second,
                                 "net_player_" + std::to_string(event.targetPlayerId),
@@ -1493,6 +1508,7 @@ int main(int argc, char** argv)
             if (!Terminal::instance().isOpen())
                 applyDebugMovement(player, engine.window(), camera, dt);
 
+            camera.decayPunch(dt);
             camera.updateVectors();
             if (freecamEnabled && !Terminal::instance().isOpen()) {
                 glm::vec3 flatForward = camera.front;

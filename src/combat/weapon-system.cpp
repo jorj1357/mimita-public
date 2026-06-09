@@ -12,7 +12,9 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "config.h"
 #include "config/player-settings.h"
+#include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -74,6 +76,19 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
                 rt->isReloading = false;
                 mIsReloading = false;
                 playWorldSound("revolverchamber", player.pos, 0.9f, 1.0f, 10.0f);
+            }
+        }
+
+        if (mReloadBufferTimer > 0.0f) {
+            if (!rt->isReloading) {
+                mReloadBufferTimer = 0.0f;
+                if (DebugConfig::DEBUG_RELOAD)
+                    Debug::log(Debug::Category::General, "[RELOAD] buffer consumed -> auto-start\n");
+                reload(player);
+            } else {
+                mReloadBufferTimer = std::max(0.0f, mReloadBufferTimer - dt);
+                if (mReloadBufferTimer <= 0.0f && DebugConfig::DEBUG_RELOAD)
+                    Debug::log(Debug::Category::General, "[RELOAD] buffer expired\n");
             }
         }
 
@@ -271,7 +286,12 @@ bool WeaponSystem::reload(Player& player) {
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return false;
 
-    if (rt->isReloading) return false;
+    if (rt->isReloading) {
+        mReloadBufferTimer = 0.4f;
+        if (DebugConfig::DEBUG_RELOAD)
+            Debug::log(Debug::Category::General, "[RELOAD] buffered (already reloading)\n");
+        return false;
+    }
     if (def->behaviorType == WeaponBehaviorType::Godball) return false;
 
     int needed = def->magazineSize - rt->currentAmmo;
@@ -286,7 +306,10 @@ bool WeaponSystem::reload(Player& player) {
     mReloadTimer = def->reloadTime;
     rt->isReloading = true;
     mIsReloading = true;
-    printf("[WEAPON] reload: loading %d rounds, timer=%.2f\n", loaded, def->reloadTime);
+    mReloadBufferTimer = 0.0f;
+    if (DebugConfig::DEBUG_RELOAD)
+        Debug::log(Debug::Category::General, "[RELOAD] started: %d rounds, timer=%.2f\n",
+                   loaded, def->reloadTime);
     return true;
 }
 
