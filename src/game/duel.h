@@ -24,6 +24,11 @@ enum class DuelPhase {
     MatchEnd
 };
 
+enum class DuelTeam {
+    Player,
+    NPC
+};
+
 enum class MapRotationMode {
     PerDeath,
     PerRound
@@ -50,6 +55,14 @@ struct DuelStats {
     int matchesWon = 0;
 };
 
+struct DuelRoundResult {
+    DuelTeam winningTeam = DuelTeam::Player;
+    int playerRoundsWon = 0;
+    int npcRoundsWon = 0;
+    bool matchEnded = false;
+    DuelTeam matchWinner = DuelTeam::Player;
+};
+
 class DuelManager {
 public:
     void start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, World& world);
@@ -58,10 +71,14 @@ public:
 
     void onPlayerKill(int npcIndex);
     void onNpcKill(int npcIndex);
+    void onEntityDeath(DuelTeam team);
 
     bool enabled() const { return config.enabled; }
     DuelPhase phase() const { return currentPhase; }
     const DuelStats& stats() const { return playerStats; }
+    int playerRoundsWon() const { return playerRoundsWon_; }
+    int npcRoundsWon() const { return npcRoundsWon_; }
+    bool isDuelFrozen() const { return duelFrozen_; }
 
     void setMapList(const std::vector<std::string>& maps);
     void rotateMap(World& world);
@@ -79,11 +96,21 @@ private:
     int playerKills = 0;
     std::vector<int> npcKills;
 
+    int alivePlayerCount = 1;
+    int aliveNpcCount = 0;
+    int playerRoundsWon_ = 0;
+    int npcRoundsWon_ = 0;
+    bool duelFrozen_ = false;
+
     DuelStats playerStats;
     std::vector<std::string> mapList;
 
     void beginFight(Player& player, NpcSystem& npcs, World& world);
-    void endRound();
+    void endRound(DuelTeam winner);
     void endMatch();
     void startCountdown();
+    void freezeAll(Player& player, NpcSystem& npcs);
+    void unfreezeAll(Player& player, NpcSystem& npcs);
+    void resetRoundEntities(Player& player, NpcSystem& npcs, World& world);
+    bool checkRoundEnd();
 };

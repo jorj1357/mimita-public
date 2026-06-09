@@ -74,6 +74,7 @@ public:
     std::vector<Npc>& all() { return npcs; }
 
     void spawnNpc(float difficulty, glm::vec3 spawnPos);
+    void spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos);
     uint32_t nextNpcId() { return nextId++; }
 
     void setGlobalDifficulty(float d);

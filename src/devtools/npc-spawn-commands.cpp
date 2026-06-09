@@ -79,15 +79,3 @@ void ProcessNpcSpawnCommands(NpcSystem& npcSystem, const Camera& camera, const W
     }
     gPendingNpcSpawnCommands.clear();
 }
-
-// Also handle F2 key for spawn at cursor
-void HandleF2SpawnNpc(NpcSystem& npcSystem, const Camera& camera, const World& world, const Player& player, GLFWwindow* window) {
-    static bool f2Prev = false;
-    bool f2Down = glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
-    if (f2Down && !f2Prev) {
-        // Spawn at cursor with default difficulty
-        std::vector<std::string> args = {"cursor", "1"};
-        QueueNpcSpawnCommand(args);
-    }
-    f2Prev = f2Down;
-}
