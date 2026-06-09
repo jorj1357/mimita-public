@@ -20,6 +20,7 @@
 #include "menus/duel-config-menu.h"
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
+#include "menus/sandbox-map-menu.h"
 #include "ui-system.h"
 #include <cstdio>
 
@@ -27,6 +28,7 @@ enum GuiMenuState
 {
     GUI_MENU_MAIN,
     GUI_MENU_SETTINGS,
+    GUI_MENU_SANDBOX_MAPS,
     GUI_MENU_SERVERS,
     GUI_MENU_DUEL_CONFIG,
     GUI_MENU_SERVER_INFO,
@@ -39,12 +41,19 @@ static DuelConfigResult gPendingDuelConfig{};
 static bool gServerRunning = false;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
+static SandboxMapSelection gPendingSandboxMap{};
 
 DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
 void clearPendingDuelConfig() { gPendingDuelConfig = DuelConfigResult{}; }
 
 MultiplayerConnectInfo getPendingMultiplayerConnect() { return gPendingConnect; }
 void clearPendingMultiplayerConnect() { gPendingConnect = {}; }
+SandboxMapSelection getPendingSandboxMapSelection() { return gPendingSandboxMap; }
+void clearPendingSandboxMapSelection() { gPendingSandboxMap = {}; }
+void reportSandboxMapLoadResult(const std::string& message, bool success)
+{
+    sandboxMapMenuSetLoadResult(message, success);
+}
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
@@ -72,7 +81,26 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.startSandbox)
             {
+                sandboxMapMenuSetActive(true);
+                gGuiMenuState = GUI_MENU_SANDBOX_MAPS;
+            }
+            break;
+        }
+
+        case GUI_MENU_SANDBOX_MAPS:
+        {
+            SandboxMapMenuResult r = drawSandboxMapMenu(win);
+            if (r.startSandbox)
+            {
+                gPendingSandboxMap.shouldStart = true;
+                gPendingSandboxMap.mapPath = r.mapPath;
+                sandboxMapMenuSetActive(false);
                 state = GAME_PLAYING;
+            }
+            else if (r.goBack)
+            {
+                sandboxMapMenuSetActive(false);
+                gGuiMenuState = GUI_MENU_MAIN;
             }
             break;
         }

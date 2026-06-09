@@ -314,7 +314,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         hitmarker();
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
-
+        result.knockbackImpulse = shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
         EffectPartSystem::instance().spawnBloodSphereBurst(
             result.end, shotDirection, (float)rounded / 60.0f,
             shooter.username, "npc_" + std::to_string(victim->id));

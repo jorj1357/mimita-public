@@ -24,6 +24,15 @@ void guiMain(GLFWwindow* win, GameState& state);
 DuelConfigResult getPendingDuelConfig();
 void clearPendingDuelConfig();
 
+struct SandboxMapSelection
+{
+    bool shouldStart = false;
+    std::string mapPath;
+};
+SandboxMapSelection getPendingSandboxMapSelection();
+void clearPendingSandboxMapSelection();
+void reportSandboxMapLoadResult(const std::string& message, bool success);
+
 struct MultiplayerConnectInfo
 {
     bool shouldConnect = false;

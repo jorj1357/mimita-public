@@ -6,3 +6,4 @@
 
 Mesh loadOBJ(const std::string& path);
 Mesh loadGLB(const std::string& path);
+void releaseMeshGLResources(Mesh& mesh);

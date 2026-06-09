@@ -32,6 +32,7 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
 void uiDrawImage(const char* path, UIRect r, glm::vec4 color = glm::vec4(1.0f));
 void uiDrawImageRotated(const char* path, float cx, float cy, float halfSize, float angleDeg, glm::vec4 color = glm::vec4(1.0f));
 void uiDrawWarning(const char* text, float x, float y);
+float uiMeasureText(const char* text, float scale);
 
 UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color);
 bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value);

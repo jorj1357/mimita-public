@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 4;
+constexpr uint16_t PROTOCOL_VERSION = 6;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 96;
 constexpr int MAX_NAME_BYTES = 32;
@@ -24,7 +24,9 @@ enum PacketType : uint8_t
     PACKET_ENTITY_DESPAWN = 10,
     PACKET_SPAWN_NPC_REQUEST = 11,
     PACKET_TELEPORT_REQUEST = 12,
-    PACKET_EXPLODE_REQUEST = 13
+    PACKET_EXPLODE_REQUEST = 13,
+    PACKET_SHOT_REQUEST = 14,
+    PACKET_SHOT_EVENT = 15
 };
 
 enum EntityType : uint8_t
@@ -32,6 +34,33 @@ enum EntityType : uint8_t
     ENTITY_NONE = 0,
     ENTITY_PLAYER = 1,
     ENTITY_NPC = 2
+};
+
+enum NetworkWeaponType : uint8_t
+{
+    NETWORK_WEAPON_NONE = 0,
+    NETWORK_WEAPON_REVOLVER = 1,
+    NETWORK_WEAPON_GODBALL = 2
+};
+
+enum ShotImpactType : uint8_t
+{
+    SHOT_IMPACT_NONE = 0,
+    SHOT_IMPACT_WORLD = 1,
+    SHOT_IMPACT_ENTITY = 2
+};
+
+enum ShotEffectFlags : uint16_t
+{
+    SHOT_EFFECT_MUZZLE = 1 << 0,
+    SHOT_EFFECT_TRACER = 1 << 1,
+    SHOT_EFFECT_SHOOT_SOUND = 1 << 2,
+    SHOT_EFFECT_WORLD_IMPACT = 1 << 3,
+    SHOT_EFFECT_DEBRIS = 1 << 4,
+    SHOT_EFFECT_ENTITY_IMPACT = 1 << 5,
+    SHOT_EFFECT_BLOOD = 1 << 6,
+    SHOT_EFFECT_HIT_SOUND = 1 << 7,
+    SHOT_EFFECT_WEAPON_TRIGGER = 1 << 8
 };
 
 #pragma pack(push, 1)
@@ -75,6 +104,10 @@ struct InputPacket
     float clientVx = 0.0f;
     float clientVy = 0.0f;
     float clientVz = 0.0f;
+    int16_t equippedSlot = 0;
+    uint8_t weaponState = 0;
+    uint8_t reservedWeapon = 0;
+    int32_t clientPingMs = 0;
     uint8_t jumpHeld = 0;
     uint8_t dashPressed = 0;
     uint8_t attackPressed = 0;
@@ -107,8 +140,12 @@ struct SnapshotEntity
     float yaw = 0.0f;
     int32_t health = 100;
     uint8_t onGround = 0;
-    uint8_t reserved1 = 0;
-    uint16_t reserved2 = 0;
+    int16_t equippedSlot = 0;
+    uint8_t weaponState = 0;
+    float aimX = 1.0f;
+    float aimY = 0.0f;
+    float aimZ = 0.0f;
+    int32_t pingMs = 0;
     char displayName[MAX_NAME_BYTES];
 };
 
@@ -156,6 +193,72 @@ struct ExplodeRequestPacket
     PacketHeader header;
 };
 
+struct PingPacket
+{
+    PacketHeader header;
+    uint64_t clientTimeMs = 0;
+};
+
+struct ShotRequestPacket
+{
+    PacketHeader header;
+    uint32_t shotSerial = 0;
+    uint64_t clientTimeMs = 0;
+    uint32_t targetPlayerId = 0;
+    int32_t damage = 0;
+    float power = 0.0f;
+    uint16_t effectFlags = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t impactType = SHOT_IMPACT_NONE;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float dirX = 0.0f;
+    float dirY = 0.0f;
+    float dirZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+};
+
+struct ShotEventPacket
+{
+    PacketHeader header;
+    uint32_t shotSerial = 0;
+    uint64_t clientTimeMs = 0;
+    uint32_t shooterPlayerId = 0;
+    uint32_t targetPlayerId = 0;
+    int32_t damage = 0;
+    int32_t targetHealth = 0;
+    float power = 0.0f;
+    uint16_t effectFlags = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t impactType = SHOT_IMPACT_NONE;
+    uint8_t killed = 0;
+    uint8_t damageConfirmed = 0;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float dirX = 0.0f;
+    float dirY = 0.0f;
+    float dirZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+};
+
 struct DisconnectPacket
 {
     PacketHeader header;
@@ -164,6 +267,8 @@ struct DisconnectPacket
 #pragma pack(pop)
 
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
+static_assert(sizeof(ShotRequestPacket) <= 128, "ShotRequestPacket is too large");
+static_assert(sizeof(ShotEventPacket) <= 128, "ShotEventPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

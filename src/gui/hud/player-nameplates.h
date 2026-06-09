@@ -1,25 +1,36 @@
-
-// C:\important\quiet\n\mimita-priv-v7\src\gui\hud\player-nameplates.h
-// mar 8 2026
-/**
- * purpose
- * expose ONE function:
- * drawPlayerNameplates(args)
- *
- * this file DOES:
- * - draw player/enemy name + hp labels
- *
- * this file DOES NOT:
- * - own player data
- * - apply damage
- */
-
 #pragma once
 
-struct World;
-struct Camera;
+#include <cstdint>
+#include <glm/glm.hpp>
 
-void drawPlayerNameplates(
-    const World& world,
-    const Camera& camera
-);
+struct Camera;
+class Player;
+
+enum class HealthbarCullReason : uint8_t
+{
+    None,
+    Dead,
+    TooFar,
+    Offscreen
+};
+
+struct HealthbarRenderResult
+{
+    glm::vec3 anchor{0.0f};
+    glm::vec2 screen{0.0f};
+    float distance = 0.0f;
+    bool usedHeadTransform = false;
+    bool rendered = false;
+    HealthbarCullReason cullReason = HealthbarCullReason::None;
+};
+
+glm::vec3 playerHealthbarAnchor(
+    const Player& player,
+    bool* usedHeadTransform = nullptr);
+
+HealthbarRenderResult drawPlayerHealthbar(
+    const Player& player,
+    const Camera& camera,
+    const char* debugPrefix);
+
+const char* healthbarCullReasonName(HealthbarCullReason reason);

@@ -2,6 +2,7 @@
 
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "physics/config.h"
 #include "physics/physics-types.h"
 #include "utils/path_utils.h"
 #include "tinygltf/tiny_gltf.h"
@@ -61,6 +62,11 @@ struct ServerPlayer
     bool dead = false;
     float respawnSeconds = 0.0f;
     uint64_t lastHeardMs = 0;
+    bool clientStateUpdated = false;
+    int equippedSlot = 0;
+    uint8_t weaponState = 0;
+    int pingMs = 0;
+    uint32_t lastShotSerial = 0;
     ServerInput input;
 };
 
@@ -383,12 +389,19 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         return;
     }
 
+    if (p.clientStateUpdated)
+    {
+        p.clientStateUpdated = false;
+        resolveWorldCollision(p, world);
+        return;
+    }
+
     glm::vec2 wish = p.input.wish;
     float wishLen = glm::length(wish);
     if (wishLen > 1.0f)
         wish /= wishLen;
 
-    const float maxSpeed = 8.0f;
+    const float maxSpeed = PHYS.moveSpeed;
     const float accel = p.onGround ? 55.0f : 22.0f;
     glm::vec2 horiz(p.vel.x, p.vel.y);
     glm::vec2 target = wish * maxSpeed;
@@ -398,11 +411,11 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
     p.vel.x = horiz.x;
     p.vel.y = horiz.y;
-    p.vel.z -= 28.0f * SERVER_DT;
+    p.vel.z += PHYS.gravity * SERVER_DT;
 
     if (p.input.jumpHeld && p.onGround)
     {
-        p.vel.z = 10.5f;
+        p.vel.z = PHYS.jumpStrength;
         p.onGround = false;
     }
 
@@ -411,8 +424,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         glm::vec2 dashDir = wishLen > 0.01f ? wish : glm::normalize(glm::vec2(p.input.camForward.x, p.input.camForward.y));
         if (glm::length(dashDir) > 0.01f)
         {
-            p.vel.x += dashDir.x * 16.0f;
-            p.vel.y += dashDir.y * 16.0f;
+            p.vel.x += dashDir.x * DASH_IMPULSE;
+            p.vel.y += dashDir.y * DASH_IMPULSE;
             p.dashAvailable = false;
         }
     }
@@ -422,70 +435,6 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     resolveWorldCollision(p, world);
     if (p.onGround)
         p.dashAvailable = true;
-}
-
-void simulateCombat(std::unordered_map<uint32_t, ServerPlayer>& players)
-{
-    constexpr float MAX_RANGE = 60.0f;
-    constexpr float HIT_RADIUS = 0.85f;
-    constexpr int DAMAGE = 25;
-
-    for (auto& shooterEntry : players)
-    {
-        ServerPlayer& shooter = shooterEntry.second;
-        const bool attackStarted = shooter.attackQueued;
-        shooter.attackQueued = false;
-        if (!attackStarted || shooter.dead)
-            continue;
-
-        glm::vec3 direction = shooter.input.camForward;
-        const float directionLength = glm::length(direction);
-        if (directionLength < 0.001f)
-            continue;
-        direction /= directionLength;
-
-        ServerPlayer* closest = nullptr;
-        float closestDistance = MAX_RANGE;
-        const glm::vec3 origin = shooter.pos + glm::vec3(0.0f, 0.0f, 1.2f);
-        for (auto& targetEntry : players)
-        {
-            ServerPlayer& target = targetEntry.second;
-            if (target.id == shooter.id || target.dead)
-                continue;
-
-            const glm::vec3 toTarget =
-                target.pos + glm::vec3(0.0f, 0.0f, 1.2f) - origin;
-            const float alongRay = glm::dot(toTarget, direction);
-            if (alongRay <= 0.0f || alongRay >= closestDistance)
-                continue;
-            const float distanceFromRay =
-                glm::length(toTarget - direction * alongRay);
-            if (distanceFromRay <= HIT_RADIUS)
-            {
-                closest = &target;
-                closestDistance = alongRay;
-            }
-        }
-
-        if (!closest)
-        {
-            printf("%s [SERVER COMBAT] shooter=%u miss\n",
-                   serverTimestamp(), shooter.id);
-            continue;
-        }
-
-        closest->health = std::max(0, closest->health - DAMAGE);
-        printf("%s [SERVER COMBAT] shooter=%u target=%u damage=%d health=%d\n",
-               serverTimestamp(), shooter.id, closest->id, DAMAGE, closest->health);
-        if (closest->health == 0)
-        {
-            closest->dead = true;
-            closest->respawnSeconds = 2.0f;
-            closest->vel = glm::vec3(0.0f);
-            printf("%s [SERVER DEATH] playerId=%u respawn=2.0s\n",
-                   serverTimestamp(), closest->id);
-        }
-    }
 }
 
 void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
@@ -554,6 +503,12 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.yaw = player.yaw;
     out.health = player.health;
     out.onGround = player.onGround ? 1 : 0;
+    out.equippedSlot = (int16_t)player.equippedSlot;
+    out.weaponState = player.weaponState;
+    out.aimX = player.input.camForward.x;
+    out.aimY = player.input.camForward.y;
+    out.aimZ = player.input.camForward.z;
+    out.pingMs = player.pingMs;
     copyName(out.displayName, player.name);
     return out;
 }
@@ -700,6 +655,7 @@ int runServer(const LaunchOptions& options)
                 p.id = id;
                 p.addr = from;
                 p.lastHeardMs = nowMs();
+                p.lastShotSerial = 0;
                 p.name = uniquePlayerName(
                     players, reinterpret_cast<HelloPacket*>(buffer)->name, id);
 
@@ -744,6 +700,9 @@ int runServer(const LaunchOptions& options)
                 p.input.attackPressed = attackPressed;
                 p.input.freezeHeld = in->freezeHeld != 0;
                 p.input.tick = in->header.tick;
+                p.equippedSlot = in->equippedSlot;
+                p.weaponState = in->weaponState;
+                p.pingMs = std::clamp(in->clientPingMs, 0, 9999);
 
                 const glm::vec3 reportedPosition{
                     in->clientPx, in->clientPy, in->clientPz};
@@ -770,6 +729,7 @@ int runServer(const LaunchOptions& options)
                 {
                     p.pos = reportedPosition;
                     p.vel = reportedVelocity;
+                    p.clientStateUpdated = true;
                 }
                 else
                 {
@@ -866,6 +826,221 @@ int runServer(const LaunchOptions& options)
                 printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=2.0s\n",
                        serverTimestamp(), p.id);
             }
+            else if (header->type == PACKET_SHOT_REQUEST &&
+                     bytes >= (int)sizeof(ShotRequestPacket))
+            {
+                const ShotRequestPacket* shot =
+                    reinterpret_cast<const ShotRequestPacket*>(buffer);
+                auto shooterIt = players.find(shot->header.playerId);
+                const bool ownsShooter =
+                    shooterIt != players.end() &&
+                    sameAddress(shooterIt->second.addr, from);
+                if (!ownsShooter)
+                {
+                    printf("%s [NET SHOT OWNERSHIP] claimedShooter=%u "
+                           "accepted=0 reason=sender-address-mismatch\n",
+                           serverTimestamp(), shot->header.playerId);
+                    continue;
+                }
+
+                ServerPlayer& shooter = shooterIt->second;
+                if (shooter.dead ||
+                    (shooter.lastShotSerial != 0 &&
+                     (int32_t)(shot->shotSerial - shooter.lastShotSerial) <= 0))
+                {
+                    printf("%s [NET SHOT FILTER] shooter=%u serial=%u "
+                           "accepted=0 reason=%s lastSerial=%u\n",
+                           serverTimestamp(), shooter.id, shot->shotSerial,
+                           shooter.dead ? "dead" : "duplicate-or-stale",
+                           shooter.lastShotSerial);
+                    continue;
+                }
+
+                const bool validWeapon =
+                    shot->weapon == NETWORK_WEAPON_REVOLVER ||
+                    shot->weapon == NETWORK_WEAPON_GODBALL;
+                const bool validImpact =
+                    shot->impactType <= SHOT_IMPACT_ENTITY;
+                const glm::vec3 origin{
+                    shot->originX, shot->originY, shot->originZ};
+                const glm::vec3 position{
+                    shot->hitX, shot->hitY, shot->hitZ};
+                const glm::vec3 direction{
+                    shot->dirX, shot->dirY, shot->dirZ};
+                const glm::vec3 normal{
+                    shot->normalX, shot->normalY, shot->normalZ};
+                const bool finite =
+                    std::isfinite(origin.x) && std::isfinite(origin.y) &&
+                    std::isfinite(origin.z) && std::isfinite(position.x) &&
+                    std::isfinite(position.y) && std::isfinite(position.z) &&
+                    std::isfinite(direction.x) && std::isfinite(direction.y) &&
+                    std::isfinite(direction.z) &&
+                    std::isfinite(normal.x) && std::isfinite(normal.y) &&
+                    std::isfinite(normal.z) && std::isfinite(shot->power);
+                const float shotDistance = finite
+                    ? glm::length(position - origin)
+                    : std::numeric_limits<float>::infinity();
+                const float originDistance = finite
+                    ? glm::length(origin - shooter.pos)
+                    : std::numeric_limits<float>::infinity();
+                const float directionLength = finite
+                    ? glm::length(direction)
+                    : 0.0f;
+                const bool validGeometry =
+                    finite && shotDistance <= 150.0f &&
+                    originDistance <= 8.0f &&
+                    directionLength >= 0.5f && directionLength <= 1.5f;
+                if (!validWeapon || !validImpact || !validGeometry ||
+                    shot->shotSerial == 0)
+                {
+                    printf("%s [NET SHOT FILTER] shooter=%u serial=%u "
+                           "accepted=0 weapon=%u impact=%u finite=%d "
+                           "distance=%.2f originDistance=%.2f dirLength=%.2f\n",
+                           serverTimestamp(), shooter.id, shot->shotSerial,
+                           shot->weapon, shot->impactType, (int)finite,
+                           shotDistance, originDistance, directionLength);
+                    continue;
+                }
+                shooter.lastShotSerial = shot->shotSerial;
+
+                constexpr uint16_t ALLOWED_EFFECT_FLAGS =
+                    SHOT_EFFECT_MUZZLE |
+                    SHOT_EFFECT_TRACER |
+                    SHOT_EFFECT_SHOOT_SOUND |
+                    SHOT_EFFECT_WORLD_IMPACT |
+                    SHOT_EFFECT_DEBRIS |
+                    SHOT_EFFECT_ENTITY_IMPACT |
+                    SHOT_EFFECT_BLOOD |
+                    SHOT_EFFECT_HIT_SOUND |
+                    SHOT_EFFECT_WEAPON_TRIGGER;
+
+                ShotEventPacket event{};
+                event.header.type = PACKET_SHOT_EVENT;
+                event.header.tick = tick;
+                event.header.playerId = shooter.id;
+                event.shotSerial = shot->shotSerial;
+                event.clientTimeMs = shot->clientTimeMs;
+                event.shooterPlayerId = shooter.id;
+                event.targetPlayerId = shot->targetPlayerId;
+                event.power = std::clamp(shot->power, 0.0f, 200.0f);
+                event.effectFlags = shot->effectFlags & ALLOWED_EFFECT_FLAGS;
+                event.weapon = shot->weapon;
+                event.impactType = shot->impactType;
+                if (event.weapon == NETWORK_WEAPON_GODBALL)
+                {
+                    event.effectFlags &= ~(
+                        SHOT_EFFECT_MUZZLE |
+                        SHOT_EFFECT_TRACER |
+                        SHOT_EFFECT_SHOOT_SOUND |
+                        SHOT_EFFECT_WEAPON_TRIGGER);
+                }
+                if (event.impactType == SHOT_IMPACT_NONE)
+                {
+                    event.effectFlags &= ~(
+                        SHOT_EFFECT_WORLD_IMPACT |
+                        SHOT_EFFECT_DEBRIS |
+                        SHOT_EFFECT_ENTITY_IMPACT |
+                        SHOT_EFFECT_BLOOD |
+                        SHOT_EFFECT_HIT_SOUND);
+                }
+                else if (event.impactType == SHOT_IMPACT_WORLD)
+                {
+                    event.effectFlags &= ~(
+                        SHOT_EFFECT_ENTITY_IMPACT |
+                        SHOT_EFFECT_BLOOD);
+                }
+                else
+                {
+                    event.effectFlags &= ~(
+                        SHOT_EFFECT_WORLD_IMPACT |
+                        SHOT_EFFECT_DEBRIS);
+                }
+                event.originX = origin.x;
+                event.originY = origin.y;
+                event.originZ = origin.z;
+                event.hitX = position.x;
+                event.hitY = position.y;
+                event.hitZ = position.z;
+                const glm::vec3 normalizedDirection =
+                    glm::normalize(direction);
+                event.dirX = normalizedDirection.x;
+                event.dirY = normalizedDirection.y;
+                event.dirZ = normalizedDirection.z;
+                const glm::vec3 normalizedNormal =
+                    glm::length(normal) > 0.001f
+                    ? glm::normalize(normal)
+                    : -normalizedDirection;
+                event.normalX = normalizedNormal.x;
+                event.normalY = normalizedNormal.y;
+                event.normalZ = normalizedNormal.z;
+                event.knockX = shot->knockX;
+                event.knockY = shot->knockY;
+                event.knockZ = shot->knockZ;
+
+                auto targetIt = players.find(shot->targetPlayerId);
+                const float targetHitDistance =
+                    targetIt != players.end()
+                    ? glm::length(
+                        position -
+                        (targetIt->second.pos + glm::vec3(0.0f, 0.0f, 0.8f)))
+                    : std::numeric_limits<float>::infinity();
+                const bool validTarget =
+                    shot->impactType == SHOT_IMPACT_ENTITY &&
+                    targetIt != players.end() &&
+                    shooterIt != targetIt &&
+                    !targetIt->second.dead &&
+                    targetHitDistance <= 2.5f;
+                const bool damageConfirmed =
+                    validTarget && shot->damage > 0 && shot->damage <= 200;
+                if (damageConfirmed)
+                {
+                    ServerPlayer& target = targetIt->second;
+                    event.damage = shot->damage;
+                    target.health = std::max(0, target.health - shot->damage);
+                    event.targetHealth = target.health;
+                    event.damageConfirmed = 1;
+                    if (target.health == 0)
+                    {
+                        target.dead = true;
+                        target.respawnSeconds = 2.0f;
+                        target.vel = glm::vec3(0.0f);
+                        event.killed = 1;
+                    }
+                }
+                else if (event.impactType == SHOT_IMPACT_ENTITY)
+                {
+                    event.targetPlayerId = 0;
+                    event.impactType = SHOT_IMPACT_NONE;
+                    event.effectFlags &= ~(
+                        SHOT_EFFECT_ENTITY_IMPACT |
+                        SHOT_EFFECT_BLOOD |
+                        SHOT_EFFECT_HIT_SOUND);
+                }
+
+                printf("%s [NET SHOT RELAY] shooter=%u serial=%u target=%u "
+                       "weapon=%u impact=%u flags=0x%03x damageConfirmed=%d\n",
+                       serverTimestamp(), shooter.id, event.shotSerial,
+                       event.targetPlayerId, event.weapon, event.impactType,
+                       event.effectFlags, (int)event.damageConfirmed);
+
+                for (const auto& playerEntry : players)
+                {
+                    sendto(sock, (const char*)&event, sizeof(event), 0,
+                           (sockaddr*)&playerEntry.second.addr,
+                           sizeof(playerEntry.second.addr));
+                    ++totalPacketsOut;
+                }
+            }
+            else if (header->type == PACKET_PING &&
+                     bytes >= (int)sizeof(PingPacket))
+            {
+                PingPacket pong =
+                    *reinterpret_cast<const PingPacket*>(buffer);
+                pong.header.tick = tick;
+                sendto(sock, (const char*)&pong, sizeof(pong), 0,
+                       (sockaddr*)&from, sizeof(from));
+                ++totalPacketsOut;
+            }
         }
 
         // Timeout disconnected clients
@@ -885,7 +1060,6 @@ int runServer(const LaunchOptions& options)
         for (auto& kv : players)
             simulatePlayer(kv.second, world);
         resolvePlayerCollision(players);
-        simulateCombat(players);
         for (auto& kv : npcs)
             simulateNpc(kv.second, players);
 

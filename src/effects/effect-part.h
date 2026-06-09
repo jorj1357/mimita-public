@@ -12,6 +12,7 @@ struct EffectPart
     glm::vec3 velocity{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
     glm::vec3 rotation{0.0f};
+    glm::vec3 angularVelocity{0.0f};
     glm::vec3 endPosition{0.0f};
     glm::vec3 halfSize{0.1f};
     float lifetime = 0.0f;
@@ -80,7 +81,7 @@ public:
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {});
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position);
-    void spawnWorldDebris(glm::vec3 position, glm::vec3 normal);
+    void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
     
