@@ -73,6 +73,7 @@ const char* PLAYER_PROCEDURAL_CONFIG_PATH = "config/player-procedural.json";
 float gPlayerProceduralReloadTimer = 0.25f;
 std::filesystem::file_time_type gPlayerProceduralLastWrite{};
 std::chrono::steady_clock::time_point gPlayerProceduralLastCheck{};
+} // anonymous namespace
 
 template<typename T>
 void readJsonValue(
@@ -145,15 +146,15 @@ bool reloadPlayerProceduralConfig()
 
 void updatePlayerProceduralHotReload(float dt)
 {
-    gPlayerProceduralReloadTimer += dt;
-
+    (void)dt;
+    // Use wall-clock throttling so this can be called from main loop too
     const auto now = std::chrono::steady_clock::now();
-    if (gPlayerProceduralReloadTimer < 0.25f ||
-        (gPlayerProceduralLastCheck.time_since_epoch().count() != 0 &&
-         now - gPlayerProceduralLastCheck < std::chrono::milliseconds(250)))
+    if (gPlayerProceduralLastCheck.time_since_epoch().count() == 0) {
+        gPlayerProceduralLastCheck = now;
         return;
-
-    gPlayerProceduralReloadTimer = 0.0f;
+    }
+    if (now - gPlayerProceduralLastCheck < std::chrono::milliseconds(250))
+        return;
     gPlayerProceduralLastCheck = now;
 
     std::error_code ec;
@@ -165,7 +166,9 @@ void updatePlayerProceduralHotReload(float dt)
         return;
 
     gPlayerProceduralLastWrite = writeTime;
-    reloadPlayerProceduralConfig();
+    if (reloadPlayerProceduralConfig()) {
+        printf("[PROC HOT RELOAD] config reloaded: writeTime changed\n");
+    }
 }
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
@@ -446,8 +449,6 @@ void uploadPlayerMeshIfNeeded(const Mesh& mesh)
     playerUploadedVertCount = mesh.verts.size();
     printf("[PLAYER GLB] uploaded verts=%zu triangles=%zu batches=%zu\n",
            mesh.verts.size(), mesh.verts.size() / 3, mesh.batches.size());
-}
-
 }
 
 PlayerProceduralConfig gPlayerProcedural{
