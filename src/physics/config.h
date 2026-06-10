@@ -225,6 +225,7 @@ inline float SLOPE_SKIN = 0.02f;
 
 // radius for body part collision sweeps (arms, legs, etc.)
 // larger = more solid limbs, but more collision checks
+// keep single definition only
 constexpr float BODY_SAMPLE_RADIUS = 0.12f;
 
 // max step heihgt

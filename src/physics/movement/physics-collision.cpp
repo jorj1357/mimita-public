@@ -28,6 +28,7 @@
 #include "physics/config.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "config/player-settings.h"
@@ -156,7 +157,7 @@ static inline void applyCollisionContact(
     }
     
     // Ground: slope is walkable
-    if (normal.z >= MAX_WALKABLE_SLOPE_DOT)
+    if (normal.z > MAX_WALKABLE_SLOPE_DOT)
     {
         groundedThisFrame = true;
         applyTouchResets(p);
@@ -1432,13 +1433,14 @@ static void doGLBTriangleCollisions(
 
     for (const RecoveryContact& c : finalContacts)
     {
-        // Only project against wall-like normals — floors should never cancel horizontal velocity
-        if (std::fabs(c.normal.z) > 0.35f)
+        // Skip walkable surfaces and steep slopes (they handle their own velocity)
+        if (std::fabs(c.normal.z) >= MAX_WALKABLE_SLOPE_DOT * 0.9f)
             continue;
-        // projectVelocityAgainstNormal(p, c.normal);
-        glm::vec3 wallNormal = c.normal;
+        if (c.normal.z > 0.0f)
+            continue;
 
-        // walls only
+        // Project only against truly wall-like normals
+        glm::vec3 wallNormal = c.normal;
         if (std::fabs(wallNormal.z) < 0.45f)
         {
             wallNormal.z = 0.0f;
@@ -1490,6 +1492,22 @@ static void doGLBTriangleCollisions(
                          opposingPairs, p.pos.x, p.pos.y, p.pos.z);
                 overlapWarnCooldown = 30; // Log at most every 30 frames
             }
+        }
+    }
+
+    // collision_debug: record additional contact visualization events
+    // (actual drawing happens in drawDebugStuff with the camera)
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+    {
+        Capsule debugCap = p.getCapsule();
+        std::vector<int> debugCandidates = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f));
+        std::vector<glm::vec3> debugSamples = collectPlayerBodyCollisionSamples(p);
+        std::vector<RecoveryContact> debugContacts = collectGLBRecoveryContacts(
+            world, debugCap, debugSamples, debugCandidates, BODY_SAMPLE_RADIUS
+        );
+        for (const RecoveryContact& c : debugContacts)
+        {
+            DebugVis::recordContact(c.point, c.normal, c.penetration, c.triangleIndex, c.label);
         }
     }
 }
@@ -1865,17 +1883,17 @@ void doCollisions(
         }
     }
 
-    // CHANGED: Project velocity against block contacts — skip floor normals, no dashVel, jun 6 2026
+    // CHANGED: Project velocity against block contacts — skip walkable normals
     cap = p.getCapsule();
     std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
     for (const RecoveryContact& c : blockContacts)
     {
-        if (std::fabs(c.normal.z) > 0.35f)
+        if (std::fabs(c.normal.z) >= MAX_WALKABLE_SLOPE_DOT * 0.9f)
             continue;
-        // projectVelocityAgainstNormal(p, c.normal);
-        glm::vec3 wallNormal = c.normal;
+        if (c.normal.z > 0.0f)
+            continue;
 
-        // walls only
+        glm::vec3 wallNormal = c.normal;
         if (std::fabs(wallNormal.z) < 0.45f)
         {
             wallNormal.z = 0.0f;
@@ -2056,9 +2074,15 @@ static bool sphereTriangleContact(
         return false;
 
     float dist = sqrtf(std::max(dist2, 0.0f));
-    glm::vec3 n = dist > 0.00001f ? delta / dist : tri.normal;
-    if (glm::dot(n, tri.normal) < 0.0f)
-        n = -n;
+    glm::vec3 n;
+    if (dist > 0.00001f) {
+        n = delta / dist;
+    } else {
+        // Sphere center is exactly on the triangle surface
+        // Push out toward the side the sphere center is on
+        float side = glm::dot(center - tri.a, tri.normal);
+        n = (side >= 0.0f) ? tri.normal : -tri.normal;
+    }
 
     contact.point = closest;
     contact.normal = n;

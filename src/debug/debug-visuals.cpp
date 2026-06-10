@@ -8,6 +8,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "camera.h"
+#include "physics/config.h"
 #include "entities/player.h"
 #include "renderer/renderer.h"
 #include "gui/ui-system.h"
@@ -899,6 +900,54 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
     if (DebugVis::collision()) {
         drawCollisionEvents(camera);
+    }
+
+    // collision_debug gated visualization
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
+        drawCollisionEvents(camera);
+
+        // Grounded state label above player
+        char info[128];
+        if (player.stableOnGround) {
+            snprintf(info, sizeof(info), "GROUNDED stable=%d lostTimer=%.3f",
+                     (int)player.onGround, player.groundLostTimer);
+        } else {
+            snprintf(info, sizeof(info), "AIR vel.z=%.2f",
+                     player.vel.z);
+        }
+        drawWorldLabel(player.pos + glm::vec3(0, 0, PLAYER_HEIGHT + 0.8f), info, {0.0f, 1.0f, 0.0f, 1.0f});
+
+        // Limb collider wireframes
+        const glm::vec4 limbColor{0.8f, 0.4f, 0.1f, 0.8f};
+        for (const Collider& collider : player.bodyColliders)
+        {
+            auto it = std::find_if(player.nodes.begin(), player.nodes.end(), [&](const TransformNode& node) {
+                return node.name == collider.name;
+            });
+            if (it == player.nodes.end()) continue;
+
+            const glm::mat4& xform = it->worldTransform;
+            if (!collider.samplePoints.empty())
+            {
+                for (glm::vec3 point : collider.samplePoints)
+                {
+                    glm::vec3 worldPt = glm::vec3(xform * glm::vec4(point, 1.0f));
+                    drawWireSphere(camera, worldPt, BODY_SAMPLE_RADIUS, limbColor);
+                }
+            }
+            if (!collider.triangles.empty())
+            {
+                for (const CollisionTriangle& tri : collider.triangles)
+                {
+                    glm::vec3 wa = glm::vec3(xform * glm::vec4(tri.a, 1.0f));
+                    glm::vec3 wb = glm::vec3(xform * glm::vec4(tri.b, 1.0f));
+                    glm::vec3 wc = glm::vec3(xform * glm::vec4(tri.c, 1.0f));
+                    drawLine(camera, wa, wb, limbColor);
+                    drawLine(camera, wb, wc, limbColor);
+                    drawLine(camera, wc, wa, limbColor);
+                }
+            }
+        }
     }
 
     if (DebugVis::render()) {
