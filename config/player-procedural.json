@@ -22,7 +22,7 @@
   "headCounterAmount": -6.0,
   "bobHeight": 0.12,
   "walkFrequency": 1.0,
-  "walkFrequencyMultiplier": 6.0,
+  "walkFrequencyMultiplier": 1.0,
 
   "reloadArmLowerZ": -15.0,
   "reloadArmLowerX": -8.0,
@@ -49,15 +49,16 @@
   "animationStateTransitionFrames": 1,
 
   "axisLocks": {
-    "leftArm": { "rotation": [true, false, false] },
-    "rightArm": { "rotation": [true, false, false] },
-    "leftLeg": { "rotation": [true, false, false] },
-    "rightLeg": { "rotation": [true, false, false] }
+    "leftArm": { "rotation": [true, true, true] },
+    "rightArm": { "rotation": [true, true, true] },
+    "leftLeg": { "rotation": [true, true, true] },
+    "rightLeg": { "rotation": [true, true, true] }
+    
   },
 
   "layers": {
     "animations": {
-      "idle": {
+     "idle": {
         "durationTicks": 60,
         "loop": true,
         "speedScaleFromVelocity": false,
@@ -79,12 +80,12 @@
             "tick": 30,
             "parts": {
               "torso": {
-                "translation": [0.03, 0, 0.02],
-                "rotation": [0, 0, -1.0]
+                "translation": [0.05, 0, 0],
+                "rotation": [0, 0, -2]
               },
               "head": {
-                "translation": [0, 0, 0.01],
-                "rotation": [0, 0, -0.5]
+                "translation": [0.05, 0, 0],
+                "rotation": [0, 0, -1]
               }
             }
           },
@@ -104,6 +105,7 @@
         ]
       },
 
+      
       "walk": {
         "durationTicks": 30,
         "loop": true,
@@ -113,28 +115,28 @@
             "tick": 0,
             "parts": {
               "torso": {
-                "translation": [0.5, 0, 0],
-                "rotation": [-30, 0, 0]
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, -40]
               },
               "head": {
-                "translation": [1, 0, 0],
-                "rotation": [-15, 0, 0]
+                "translation": [0.15, 0, 0],
+                "rotation": [0, 0, 0]
               },
               "leftArm": {
                 "translation": [0, 0, 0],
-                "rotation": [90, 0, 0]
+                "rotation": [0, 0, 80]
               },
               "rightArm": {
-                "translation": [0, 0, 0],
-                "rotation": [-45, 0, 0]
+                "translation": [0.3, 0, 0],
+                "rotation": [0, 0, -80]
               },
               "leftLeg": {
                 "translation": [0, 0, 0],
-                "rotation": [-90, 0, 0]
+                "rotation": [0, 0, -80]
               },
               "rightLeg": {
                 "translation": [0, 0, 0],
-                "rotation": [90, 0, 0]
+                "rotation": [0, 0, 80]
               }
             }
           },
@@ -142,28 +144,28 @@
             "tick": 15,
             "parts": {
               "torso": {
-                "translation": [0, 0, 0],
-                "rotation": [30, 0, 0]
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, -40]
               },
               "head": {
-                "translation": [0, 0, 0],
-                "rotation": [15, 0, 0]
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, -20]
               },
               "leftArm": {
                 "translation": [0, 0, 0],
-                "rotation": [-45, 0, 0]
+                "rotation": [0, 0, -80]
               },
               "rightArm": {
-                "translation": [0, 0, 0],
-                "rotation": [90, 0, 0]
+                "translation": [0.3, 0, 0],
+                "rotation": [0, 0, 80]
               },
               "leftLeg": {
                 "translation": [0, 0, 0],
-                "rotation": [90, 0, 0]
+                "rotation": [0, 0, 80]
               },
               "rightLeg": {
                 "translation": [0, 0, 0],
-                "rotation": [-90, 0, 0]
+                "rotation": [0, 0, -80]
               }
             }
           },
@@ -171,28 +173,28 @@
             "tick": 30,
             "parts": {
               "torso": {
-                "translation": [0, 0, 0],
-                "rotation": [-30, 0, 0]
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, -20]
               },
               "head": {
-                "translation": [0, 0, 0],
-                "rotation": [-15, 0, 0]
+                "translation": [0.15, 0, 0],
+                "rotation": [0, 0, -20]
               },
               "leftArm": {
-                "translation": [0, 0, 0],
-                "rotation": [90, 0, 0]
+                "translation": [0.2, 0, 0],
+                "rotation": [0, 0, 80]
               },
               "rightArm": {
-                "translation": [0, 0, 0],
-                "rotation": [-45, 0, 0]
+                "translation": [0.3, 0, 0],
+                "rotation": [0, 0, -80]
               },
               "leftLeg": {
                 "translation": [0, 0, 0],
-                "rotation": [-90, 0, 0]
+                "rotation": [0, 0, -80]
               },
               "rightLeg": {
                 "translation": [0, 0, 0],
-                "rotation": [90, 0, 0]
+                "rotation": [0, 0, 80]
               }
             }
           }

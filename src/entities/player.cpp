@@ -24,6 +24,7 @@
 #include "audio/audio.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
+#include "config.h"
 #include "physics/config.h"
 #include "debug/gl-debug.h"
 #include "effects/effect-part.h"
@@ -1110,6 +1111,18 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         float animSpeedScale = 1.0f;
         if (animIt->second.speedScaleFromVelocity)
             animSpeedScale = 0.3f + move01 * 1.2f;
+
+        float playbackMultiplier = std::max(0.01f,
+            gPlayerProcedural.walkFrequency *
+            gPlayerProcedural.walkFrequencyMultiplier);
+        animSpeedScale *= playbackMultiplier;
+
+        if (DebugConfig::DEBUG_ANIMATION) {
+            printf("[ANIM] walkFrequency=%.2f finalSpeed=%.2f\n",
+                   gPlayerProcedural.walkFrequency,
+                   animSpeedScale);
+        }
+
         animOverlay = interpolateAnimClip(animIt->second, animStateTime, animSpeedScale);
     }
 
