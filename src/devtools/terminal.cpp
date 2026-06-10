@@ -224,6 +224,23 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "swordsword_debug",
+        "Toggle swordsword debug visualization (0=off, 1=on)",
+        "swordsword_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_SWORDSWORD = !DebugConfig::DEBUG_SWORDSWORD;
+            } else {
+                DebugConfig::DEBUG_SWORDSWORD = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_SWORDSWORD
+                ? "[OK] swordsword debug enabled"
+                : "[OK] swordsword debug disabled");
+        }
+    });
+
+    registerCommand({
         "debug.reset",
         "Reset all debug flags to defaults",
         "debug.reset",

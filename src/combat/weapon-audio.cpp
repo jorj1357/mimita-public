@@ -10,26 +10,32 @@ void playShootSound(const WeaponDefinition& def, const glm::vec3& position) {
     if (def.soundShoot.empty()) return;
     float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
     float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+    printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
+           def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
     playWorldSound(def.soundShoot, position, rndVolume, rndPitch, 80.0f);
 }
 
 void playReloadSound(const WeaponDefinition& def) {
     if (def.soundReload.empty()) return;
+    printf("[SOUND] weapon=%s event=reload path=%s\n", def.id.c_str(), def.soundReload.c_str());
     playSound(def.soundReload, 0.8f);
 }
 
 void playDryFireSound(const WeaponDefinition& def) {
     if (def.soundDryFire.empty()) return;
+    printf("[SOUND] weapon=%s event=dry_fire path=%s\n", def.id.c_str(), def.soundDryFire.c_str());
     playSound(def.soundDryFire, 0.25f);
 }
 
 void playEquipSound(const WeaponDefinition& def) {
     if (def.soundEquip.empty()) return;
+    printf("[SOUND] weapon=%s event=equip path=%s\n", def.id.c_str(), def.soundEquip.c_str());
     playSound(def.soundEquip, 0.85f);
 }
 
 void playHitSound(const WeaponDefinition& def, const glm::vec3& position) {
     if (def.soundHit.empty()) return;
+    printf("[SOUND] weapon=%s event=hit_entity path=%s\n", def.id.c_str(), def.soundHit.c_str());
     playWorldSound(def.soundHit, position, 0.85f, 1.0f, 35.0f);
 }
 
@@ -41,10 +47,25 @@ void playGodballWhoosh(const glm::vec3& position, float speed01) {
 }
 
 void playGodballImpact(const glm::vec3& position, float damageFraction) {
-    float clamped = std::min(damageFraction, 1.0f);
-    float volume = 0.3f + clamped * 0.6f;
-    float pitch = 0.8f + clamped * 0.4f;
-    playWorldSound("player_hurt", position, volume, pitch, 25.0f);
+    float clamped = std::clamp(damageFraction, 0.0f, 1.0f);
+    float volume = 0.1f + clamped * 0.9f;
+    float pitch = 1.4f - clamped * 0.9f;
+    pitch = std::clamp(pitch, 0.5f, 1.4f);
+    printf("[SOUND] weapon=godball event=hit damageFrac=%.2f pitch=%.2f volume=%.2f\n",
+           damageFraction, pitch, volume);
+    playWorldSound("godballhit", position, volume, pitch, 25.0f);
+}
+
+void playSwordswordHitSound(const glm::vec3& position, float strength01) {
+    float clamped = std::clamp(strength01, 0.0f, 1.0f);
+    int r = rand() % 4 + 1;
+    std::string name = "swordswordhit" + std::to_string(r);
+    float volume = 0.1f + clamped * 0.9f;
+    float pitch = 1.4f - clamped * 0.9f;
+    pitch = std::clamp(pitch, 0.5f, 1.4f);
+    printf("[SOUND] weapon=swordsword event=hit variant=%d strength=%.2f pitch=%.2f volume=%.2f\n",
+           r, strength01, pitch, volume);
+    playWorldSound(name, position, volume, pitch, 35.0f);
 }
 
 } // namespace WeaponAudio

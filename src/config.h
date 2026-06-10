@@ -38,6 +38,8 @@ namespace DebugConfig
     inline bool DEBUG_DEBRIS = false;
     inline bool DEBUG_RECOIL = false;
     inline bool DEBUG_RELOAD = false;
+    inline bool DEBUG_SWORDSWORD = false;
+    inline bool DEBUG_GODBALL = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
@@ -67,6 +69,7 @@ namespace DebugConfig
         DEBUG_DEBRIS = false;
         DEBUG_RECOIL = false;
         DEBUG_RELOAD = false;
+        DEBUG_SWORDSWORD = false;
     }
 }
 

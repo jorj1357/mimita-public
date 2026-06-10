@@ -67,14 +67,12 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
         if (rt->isReloading) {
             rt->reloadTimer = std::max(0.0f, rt->reloadTimer - dt);
             if (rt->reloadTimer <= 0.0f && rt->pendingReloadRounds > 0) {
-                for (int i = 0; i < rt->pendingReloadRounds; ++i) {
-                    playWorldSound("revolverbulletadd", player.pos, 0.65f, 1.0f, 10.0f);
-                }
                 rt->currentAmmo += rt->pendingReloadRounds;
                 rt->reserveAmmo -= rt->pendingReloadRounds;
                 rt->pendingReloadRounds = 0;
                 rt->isReloading = false;
-                playWorldSound("revolverchamber", player.pos, 0.9f, 1.0f, 10.0f);
+                if (def && !def->soundReload.empty())
+                    playWorldSound(def->soundReload, player.pos, 0.9f, 1.0f, 10.0f);
             }
         }
 
@@ -104,6 +102,8 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
             WeaponGodball::updatePhysics(mGodballPhys, *def, *rt, player, camera, dt);
             // Continuous overlap damage every frame, not just on fire input
             WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::Swordsword) {
+            WeaponSwordsword::update(mSwordswordState, *def, *rt, player, camera, npcs, dt);
         } else {
             if (mGodballPhys.active) {
                 WeaponGodball::despawnBall(mGodballPhys);
@@ -128,12 +128,17 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
     if (def->behaviorType == WeaponBehaviorType::Godball && mGodballPhys.active) {
         glm::vec3 handPos = WeaponGodball::getHandPosition(player);
         WeaponGodball::render(camera, mGodballPhys, handPos);
-        if (DebugVis::enabled()) {
-            // Need non-const access for runtime - use const_cast for render only
+        if (DebugVis::enabled() || DebugConfig::DEBUG_GODBALL) {
             auto it = player.weaponRuntimes.find(def->id);
             if (it != player.weaponRuntimes.end()) {
                 WeaponGodball::renderDebug(camera, mGodballPhys, it->second, handPos);
             }
+        }
+    }
+    if (def->behaviorType == WeaponBehaviorType::Swordsword) {
+        WeaponSwordsword::render(camera, mSwordswordState, mSwordswordState.handPos);
+        if (DebugConfig::DEBUG_SWORDSWORD) {
+            WeaponSwordsword::renderDebug(camera, mSwordswordState, mSwordswordState.handPos);
         }
     }
 }
@@ -160,6 +165,11 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::Godball) {
         fireGodball(camera, player, npcs, world);
+        return {};
+    }
+
+    if (def->behaviorType == WeaponBehaviorType::Swordsword) {
+        fireSwordsword(camera, player, npcs);
         return {};
     }
 
@@ -291,6 +301,59 @@ void WeaponSystem::fireGodball(const Camera& camera, Player& player, NpcSystem& 
     // Fire input is a no-op for godball (always "automatic").
 }
 
+void WeaponSystem::fireSwordsword(const Camera& camera, Player& player, NpcSystem& npcs) {
+    const WeaponDefinition* def = getCurrentDef(player);
+    WeaponRuntime* rt = getCurrentRuntime(player);
+    if (!def || !rt) return;
+
+    if (rt->isReloading || rt->fireCooldown > 0.0f) return;
+
+    if (mSwordswordState.currentAttack != SwordswordState::AttackType::None) return;
+
+    rt->fireCooldown = def->fireDelay;
+    mShotCooldown = def->fireDelay;
+
+    WeaponSwordsword::startSlash(mSwordswordState, *def, player, camera);
+
+    if (!def->soundShoot.empty()) {
+        WeaponAudio::playShootSound(*def, player.pos);
+    }
+}
+
+RevolverShotResult WeaponSystem::fireAlt(
+    const Camera& camera,
+    Player& player,
+    NpcSystem& npcs,
+    const World& world) {
+    if (player.dead) return {};
+
+    const WeaponDefinition* def = getCurrentDef(player);
+    if (!def) return {};
+
+    if (def->behaviorType != WeaponBehaviorType::Swordsword) return {};
+
+    WeaponRuntime* rt = getCurrentRuntime(player);
+    if (!rt) return {};
+
+    if (rt->isReloading || rt->fireCooldown > 0.0f) return {};
+
+    if (mSwordswordState.currentAttack != SwordswordState::AttackType::None) return {};
+
+    rt->fireCooldown = def->customParams.count("lungeCooldown")
+        ? def->customParams.at("lungeCooldown") : 0.5f;
+    mShotCooldown = rt->fireCooldown;
+
+    WeaponSwordsword::startLunge(mSwordswordState, *def, player, camera);
+
+    if (!def->soundShoot.empty()) {
+        WeaponAudio::playShootSound(*def, player.pos);
+    }
+
+    RevolverShotResult res;
+    res.fired = true;
+    return res;
+}
+
 bool WeaponSystem::reload(Player& player) {
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
@@ -302,7 +365,8 @@ bool WeaponSystem::reload(Player& player) {
             Debug::log(Debug::Category::General, "[RELOAD] buffered (already reloading)\n");
         return false;
     }
-    if (def->behaviorType == WeaponBehaviorType::Godball) return false;
+    if (def->behaviorType == WeaponBehaviorType::Godball ||
+        def->behaviorType == WeaponBehaviorType::Swordsword) return false;
 
     int needed = def->magazineSize - rt->currentAmmo;
     int loaded = std::min(needed, rt->reserveAmmo);
@@ -344,6 +408,7 @@ void WeaponSystem::unequip(Player& player) {
     if (mGodballPhys.active) {
         WeaponGodball::despawnBall(mGodballPhys);
     }
+    mSwordswordState = SwordswordState{};
 }
 
 void WeaponSystem::inspect() const {

@@ -69,8 +69,8 @@
             "tick": 30,
             "parts": {
               "torso": {
-                "translation": [0, 0, 0.02],
-                "rotation": [0, 0, 1.0]
+                "translation": [0.03, 0, 0.02],
+                "rotation": [0, 0, -1.0]
               },
               "head": {
                 "translation": [0, 0, 0.01],
@@ -103,28 +103,28 @@
             "tick": 0,
             "parts": {
               "torso": {
-                "translation": [0, 0, -0.05],
+                "translation": [0.5, 0, 0],
                 "rotation": [-30, 0, 0]
               },
               "head": {
-                "translation": [0, 0, -0.03],
+                "translation": [1, 0, 0],
                 "rotation": [-15, 0, 0]
               },
               "leftArm": {
-                "translation": [0, 0.15, 0],
-                "rotation": [80, 15, -30]
+                "translation": [0, 0, 0],
+                "rotation": [90, 0, 0]
               },
               "rightArm": {
-                "translation": [0, -0.15, 0],
-                "rotation": [-50, 0, 20]
+                "translation": [0, 0, 0],
+                "rotation": [-45, 0, 0]
               },
               "leftLeg": {
-                "translation": [0, -0.1, 0],
-                "rotation": [-65, 0, 0]
+                "translation": [0, 0, 0],
+                "rotation": [-90, 0, 0]
               },
               "rightLeg": {
-                "translation": [0, 0.1, 0],
-                "rotation": [65, 0, 0]
+                "translation": [0, 0, 0],
+                "rotation": [90, 0, 0]
               }
             }
           },
@@ -132,28 +132,28 @@
             "tick": 15,
             "parts": {
               "torso": {
-                "translation": [0, 0, 0.05],
-                "rotation": [30, 0, 3]
+                "translation": [0, 0, 0],
+                "rotation": [30, 0, 0]
               },
               "head": {
-                "translation": [0, 0, 0.03],
-                "rotation": [15, 0, -2]
+                "translation": [0, 0, 0],
+                "rotation": [15, 0, 0]
               },
               "leftArm": {
-                "translation": [0, -0.15, 0],
-                "rotation": [-50, 0, 15]
+                "translation": [0, 0, 0],
+                "rotation": [-45, 0, 0]
               },
               "rightArm": {
-                "translation": [0, 0.15, 0],
-                "rotation": [80, 15, -30]
+                "translation": [0, 0, 0],
+                "rotation": [90, 0, 0]
               },
               "leftLeg": {
-                "translation": [0, 0.1, 0],
-                "rotation": [65, 0, 0]
+                "translation": [0, 0, 0],
+                "rotation": [90, 0, 0]
               },
               "rightLeg": {
-                "translation": [0, -0.1, 0],
-                "rotation": [-65, 0, 0]
+                "translation": [0, 0, 0],
+                "rotation": [-90, 0, 0]
               }
             }
           },
@@ -161,28 +161,28 @@
             "tick": 30,
             "parts": {
               "torso": {
-                "translation": [0, 0, -0.05],
+                "translation": [0, 0, 0],
                 "rotation": [-30, 0, 0]
               },
               "head": {
-                "translation": [0, 0, -0.03],
+                "translation": [0, 0, 0],
                 "rotation": [-15, 0, 0]
               },
               "leftArm": {
-                "translation": [0, 0.15, 0],
-                "rotation": [80, 15, -30]
+                "translation": [0, 0, 0],
+                "rotation": [90, 0, 0]
               },
               "rightArm": {
-                "translation": [0, -0.15, 0],
-                "rotation": [-50, 0, 20]
+                "translation": [0, 0, 0],
+                "rotation": [-45, 0, 0]
               },
               "leftLeg": {
-                "translation": [0, -0.1, 0],
-                "rotation": [-65, 0, 0]
+                "translation": [0, 0, 0],
+                "rotation": [-90, 0, 0]
               },
               "rightLeg": {
-                "translation": [0, 0.1, 0],
-                "rotation": [65, 0, 0]
+                "translation": [0, 0, 0],
+                "rotation": [90, 0, 0]
               }
             }
           }
