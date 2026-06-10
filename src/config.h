@@ -39,6 +39,7 @@ namespace DebugConfig
     inline bool DEBUG_RECOIL = false;
     inline bool DEBUG_RELOAD = false;
     inline bool DEBUG_SWORDSWORD = false;
+    inline bool DEBUG_ANIMATION = false;
     inline bool DEBUG_GODBALL = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
