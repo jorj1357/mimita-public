@@ -122,9 +122,15 @@ bool reloadPlayerProceduralConfig()
         readJsonValue(j, "revolverOffsetX", loaded.revolverOffsetX);
         readJsonValue(j, "revolverOffsetY", loaded.revolverOffsetY);
         readJsonValue(j, "revolverOffsetZ", loaded.revolverOffsetZ);
+        readJsonValue(j, "revolverRotX", loaded.revolverRotX);
+        readJsonValue(j, "revolverRotY", loaded.revolverRotY);
+        readJsonValue(j, "revolverRotZ", loaded.revolverRotZ);
         readJsonValue(j, "shotgunOffsetX", loaded.shotgunOffsetX);
         readJsonValue(j, "shotgunOffsetY", loaded.shotgunOffsetY);
         readJsonValue(j, "shotgunOffsetZ", loaded.shotgunOffsetZ);
+        readJsonValue(j, "shotgunRotX", loaded.shotgunRotX);
+        readJsonValue(j, "shotgunRotY", loaded.shotgunRotY);
+        readJsonValue(j, "shotgunRotZ", loaded.shotgunRotZ);
 
         gPlayerProcedural = loaded;
         printf("[HOT RELOAD] player procedural config reloaded\n");
@@ -471,7 +477,13 @@ PlayerProceduralConfig gPlayerProcedural{
     0.0f,
     0.0f,
     0.0f,
-    0.5f
+    0.0f,
+    0.0f,
+    0.0f,
+    0.5f,
+    0.0f,
+    0.0f,
+    0.0f
 };
 
 static void initCapsuleMesh()

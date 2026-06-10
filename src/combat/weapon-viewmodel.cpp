@@ -88,22 +88,36 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt, con
         glm::vec3 modelDirection = glm::normalize(modelMuzzle - modelGrip);
         glm::quat gripRotation = glm::rotation(modelDirection, handDirection);
         glm::vec3 offset(0.0f);
+        glm::vec3 rotEuler(0.0f);
         if (def) {
             if (def->id == "revolver") {
                 offset = glm::vec3(gPlayerProcedural.revolverOffsetX,
                                    gPlayerProcedural.revolverOffsetY,
                                    gPlayerProcedural.revolverOffsetZ);
+                rotEuler = glm::vec3(gPlayerProcedural.revolverRotX,
+                                     gPlayerProcedural.revolverRotY,
+                                     gPlayerProcedural.revolverRotZ);
             } else if (def->id == "shotgun") {
                 offset = glm::vec3(gPlayerProcedural.shotgunOffsetX,
                                    gPlayerProcedural.shotgunOffsetY,
                                    gPlayerProcedural.shotgunOffsetZ);
+                rotEuler = glm::vec3(gPlayerProcedural.shotgunRotX,
+                                     gPlayerProcedural.shotgunRotY,
+                                     gPlayerProcedural.shotgunRotZ);
             } else {
                 offset = def->viewModelOffset;
             }
         }
+        glm::mat4 customRot(1.0f);
+        if (glm::length(rotEuler) > 0.001f) {
+            customRot = glm::rotate(customRot, glm::radians(rotEuler.x), glm::vec3(1,0,0));
+            customRot = glm::rotate(customRot, glm::radians(rotEuler.y), glm::vec3(0,1,0));
+            customRot = glm::rotate(customRot, glm::radians(rotEuler.z), glm::vec3(0,0,1));
+        }
         weaponTransform = part.worldTransform *
                            glm::translate(glm::mat4(1.0f), handPoint) *
                            glm::mat4_cast(gripRotation) *
+                           customRot *
                            glm::translate(glm::mat4(1.0f), offset) *
                            glm::translate(glm::mat4(1.0f), -modelGrip);
         muzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));

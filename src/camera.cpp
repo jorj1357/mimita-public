@@ -37,12 +37,8 @@ void Camera::updateMouse(double xpos, double ypos) {
 }
 
 void Camera::follow(const glm::vec3& target) {
-    // Calculate right vector from camera front and up
     glm::vec3 right = glm::normalize(glm::cross(front, up));
-
-    // Set camera position behind and slightly right of the target
-    // z is up dec 19 2025 
-    pos = target
+    mDesiredPos = target
         - front * CAMERA_DISTANCE
         + glm::vec3(0, 0, CAMERA_HEIGHT)
         + right * CAMERA_SHOULDER_OFFSET;
@@ -88,34 +84,85 @@ glm::mat4 Camera::getProj(float width, float height) const {
     return glm::perspective(glm::radians(CAMERA_FOV), width / height, 0.1f, 500.0f);
 }
 
-void Camera::smoothCollision(const glm::vec3& playerPos, const std::vector<CollisionTriangle>& triangles, float dt) {
+void Camera::smoothCollision(
+    const glm::vec3& playerPos,
+    const std::vector<CollisionTriangle>& triangles,
+    float dt
+) {
+    // First frame: snap instantly
+    if (mFirstFrame) {
+        pos = mDesiredPos;
+        mPrevCollisionPos = pos;
+        mFirstFrame = false;
+        return;
+    }
+
+    // FOLLOW POSITION
+    if (smoothness <= 0.0f) {
+        pos = mDesiredPos;
+    } else {
+        float followSpeed = 20.0f - smoothness * 1.8f;
+        followSpeed = std::max(0.5f, followSpeed);
+
+        pos = glm::mix(
+            pos,
+            mDesiredPos,
+            std::min(1.0f, followSpeed * dt)
+        );
+    }
+
+    // CAMERA COLLISION
     glm::vec3 dir = pos - playerPos;
     float dist = glm::length(dir);
+
     if (dist < 0.01f) {
         mPrevCollisionPos = pos;
         return;
     }
+
     dir /= dist;
 
     float hitDist = dist;
     bool hit = false;
+
     for (const CollisionTriangle& tri : triangles) {
         float d = 0.0f;
-        if (WeaponFire::rayTriangle(playerPos, dir, tri, d) && d > 0.2f && d < hitDist) {
+
+        if (WeaponFire::rayTriangle(playerPos, dir, tri, d)
+            && d > 0.2f
+            && d < hitDist)
+        {
             hitDist = d;
             hit = true;
         }
     }
 
     glm::vec3 targetPos = pos;
+
     if (hit) {
-        targetPos = playerPos + dir * std::max(hitDist - 0.3f, 0.3f);
+        targetPos =
+            playerPos +
+            dir * std::max(hitDist - 0.3f, 0.3f);
     }
 
-    if (glm::length(mPrevCollisionPos) < 0.001f)
-        mPrevCollisionPos = pos;
+    // IMPORTANT:
+    // smoothness 0 = COMPLETELY LOCKED
+    // no smoothing whatsoever
+    if (smoothness <= 0.0f) {
+        pos = targetPos;
+        mPrevCollisionPos = targetPos;
+    } else {
+        if (glm::length(mPrevCollisionPos) < 0.001f)
+            mPrevCollisionPos = pos;
 
-    float speed = hit ? 12.0f : 7.0f;
-    mPrevCollisionPos = glm::mix(mPrevCollisionPos, targetPos, std::min(1.0f, speed * dt));
-    pos = mPrevCollisionPos;
+        float speed = hit ? 12.0f : 7.0f;
+
+        mPrevCollisionPos = glm::mix(
+            mPrevCollisionPos,
+            targetPos,
+            std::min(1.0f, speed * dt)
+        );
+
+        pos = mPrevCollisionPos;
+    }
 }
