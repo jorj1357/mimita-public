@@ -45,6 +45,16 @@
   "shotgunRotY": 10.0,
   "shotgunRotZ": -90.0,
 
+  "walkStartTickOnEnter": 7,
+  "animationStateTransitionFrames": 1,
+
+  "axisLocks": {
+    "leftArm": { "rotation": [true, false, false] },
+    "rightArm": { "rotation": [true, false, false] },
+    "leftLeg": { "rotation": [true, false, false] },
+    "rightLeg": { "rotation": [true, false, false] }
+  },
+
   "layers": {
     "animations": {
       "idle": {

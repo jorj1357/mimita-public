@@ -71,6 +71,7 @@ namespace DebugConfig
         DEBUG_RECOIL = false;
         DEBUG_RELOAD = false;
         DEBUG_SWORDSWORD = false;
+        DEBUG_ANIMATION = false;
     }
 }
 
