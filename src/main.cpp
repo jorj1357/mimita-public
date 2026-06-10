@@ -599,6 +599,20 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "scm", "Shorter version of settings_camera_smoothness, camera follow smoothness 0-10 (0=locked 5=default 10=floaty)",
+        "settings_camera_smoothness <0-10>",
+        [&camera](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("camera_smoothness = " + std::to_string(camera.smoothness));
+                return;
+            }
+            float val = std::clamp(std::stof(args[0]), 0.0f, 10.0f);
+            camera.smoothness = val;
+            Terminal::instance().addLog("camera_smoothness set to " + std::to_string(val));
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "weapon_inspect", "Print active weapon module state", "weapon_inspect",
         [&weapons](const std::vector<std::string>&) { weapons.inspect(); }
     });
