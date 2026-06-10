@@ -53,7 +53,6 @@ void spawnBall(GodballPhysics& phys, const WeaponDefinition& def, const Player& 
     phys.ropeDamping = def.customParams.count("ropeDamping") ? def.customParams.at("ropeDamping") : 2.0f;
     phys.linearDamping = def.customParams.count("linearDamping") ? def.customParams.at("linearDamping") : 0.005f;
 
-    // Spawn ball hanging below hand with a slight sideways nudge for initial swing
     float yawRad = glm::radians(owner.yaw);
     glm::vec3 ownerForward = glm::vec3(std::cos(yawRad), std::sin(yawRad), 0.0f);
     glm::vec3 right = glm::normalize(glm::cross(ownerForward, glm::vec3(0.0f, 0.0f, 1.0f)));
@@ -73,6 +72,8 @@ void spawnBall(GodballPhysics& phys, const WeaponDefinition& def, const Player& 
     phys.tangentialSpeed = 0.0f;
     phys.lastFrameHit = false;
     phys.lastHitNormal = glm::vec3(0.0f);
+    phys.impactEvents.clear();
+    phys.hitstopTimer = 0.0f;
 
     if (DebugConfig::DEBUG_GODBALL) {
         printf("[GODBALL] spawned at (%.2f, %.2f, %.2f) vel (%.2f, %.2f, %.2f) rope=%.2f radius=%.2f\n",
@@ -93,6 +94,12 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
                     WeaponRuntime& runtime, Player& owner,
                     const Camera& camera, float dt) {
     if (!phys.active) return;
+
+    // Hitstop: freeze physics during hitstop (godball_hitstop_debug)
+    if (phys.hitstopTimer > 0.0f) {
+        phys.hitstopTimer -= dt;
+        return;
+    }
 
     float safeDt = std::min(dt, 0.033f);
 
@@ -121,26 +128,16 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
     // === 3. GRAVITY ===
     phys.velocity.z -= GODBALL_GRAVITY * safeDt;
 
-    // === 4. SUBTLE HAND DRAG (only when rope taut) ===
-    // A tiny fraction of hand velocity transfers to the ball
-    // to simulate drag from the rope anchor moving.
-    // Most flail energy comes from anchor movement -> constraint correction.
+    // === 4. SUBTLE HAND DRAG ===
     if (ropeTaut && handSpeed > 0.5f) {
         float dragFactor = phys.ropeDamping * 0.015f;
         phys.velocity += handVel * std::min(dragFactor, 0.05f);
     }
 
-    // === 5. INTEGRATE POSITION (semi-implicit Euler) ===
+    // === 5. INTEGRATE POSITION ===
     phys.position += phys.velocity * safeDt;
 
-    // === 6. HARD ROPE CONSTRAINT WITH VELOCITY CORRECTION ===
-    // The constraint pulls the ball back to the rope sphere.
-    // Velocity correction converts constraint energy into ball momentum,
-    // creating natural swing when the anchor (hand) moves.
-    //
-    // Key: inward velocity (toward hand) is preserved. Only outward
-    // velocity (away from hand) is removed. This lets the ball build
-    // orbital momentum and swing naturally past the hand.
+    // === 6. HARD ROPE CONSTRAINT ===
     toHand = handPos - phys.position;
     dist = glm::length(toHand);
     phys.constraintDist = dist;
@@ -150,14 +147,11 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
         float overshoot = dist - phys.ropeLength;
         phys.ropeTension = overshoot * phys.ropeStiffness;
 
-        // Hard positional snap to rope sphere
         phys.position = handPos - dir * phys.ropeLength;
 
-        // Velocity correction: constraint force feeds inward momentum
         glm::vec3 correction = dir * overshoot;
         phys.velocity += correction / safeDt;
 
-        // Remove any residual outward velocity (ball moving away from hand)
         float radialVel = glm::dot(phys.velocity, dir);
         if (radialVel < 0.0f) {
             phys.velocity -= dir * radialVel;
@@ -224,13 +218,12 @@ void updatePhysics(GodballPhysics& phys, const WeaponDefinition& def,
 
 static bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPos,
                                  float radius, const glm::vec3& targetPos, float targetRadius,
-                                 glm::vec3& hitPoint, glm::vec3& hitNormal) {
-    // Segment from prev to current ball position
+                                 glm::vec3& hitPoint, glm::vec3& hitNormal,
+                                 glm::vec3* outClosest = nullptr) {
     glm::vec3 seg = currPos - prevPos;
     float segLen = glm::length(seg);
 
     if (segLen < 0.001f) {
-        // Stationary: simple distance check
         glm::vec3 diff = targetPos - currPos;
         float dist = glm::length(diff);
         if (dist < radius + targetRadius) {
@@ -240,19 +233,22 @@ static bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPo
                 hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);
             }
             hitPoint = currPos + hitNormal * radius;
+            if (outClosest) *outClosest = currPos;
             return true;
         }
+        if (outClosest) *outClosest = currPos;
         return false;
     }
 
     glm::vec3 segDir = seg / segLen;
     glm::vec3 toTarget = targetPos - prevPos;
 
-    // Project target center onto segment
     float t = glm::dot(toTarget, segDir);
     t = std::clamp(t, 0.0f, segLen);
 
     glm::vec3 closestOnSeg = prevPos + segDir * t;
+    if (outClosest) *outClosest = closestOnSeg;
+
     glm::vec3 diff = targetPos - closestOnSeg;
     float dist = glm::length(diff);
     float overlap = (radius + targetRadius) - dist;
@@ -269,6 +265,18 @@ static bool sweptSphereOverlap(const glm::vec3& prevPos, const glm::vec3& currPo
     return false;
 }
 
+// Age out old impact events
+static void tickImpactEvents(GodballPhysics& phys, float dt) {
+    for (auto it = phys.impactEvents.begin(); it != phys.impactEvents.end(); ) {
+        it->age += dt;
+        if (it->age > 1.0f) {
+            it = phys.impactEvents.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                     WeaponRuntime& runtime, Player& owner,
                     NpcSystem& npcs, const Camera& camera, float dt) {
@@ -276,19 +284,18 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 
     phys.lastFrameHit = false;
     phys.lastHitNormal = glm::vec3(0.0f);
+    phys.npcCollisions.clear();
+    tickImpactEvents(phys, dt);
 
     float safeDt = std::min(dt, 0.05f);
     float tickInterval = def.customParams.count("damageTickInterval")
         ? def.customParams.at("damageTickInterval") : 0.1f;
 
     runtime.godball.overlapDamageTimer -= safeDt;
-    if (runtime.godball.overlapDamageTimer > 0.0f) {
-        for (auto& pair : runtime.godball.targetCooldowns) {
-            if (pair.second > 0.0f) pair.second -= safeDt;
-        }
-        return;
+    bool tickReady = runtime.godball.overlapDamageTimer <= 0.0f;
+    if (tickReady) {
+        runtime.godball.overlapDamageTimer = tickInterval;
     }
-    runtime.godball.overlapDamageTimer = tickInterval;
 
     const float npcCollisionRadius = 0.5f;
     glm::vec3 currPos = phys.position;
@@ -299,35 +306,82 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         if (npc.body.currentHp <= 0) continue;
         uint32_t npcId = npc.id;
 
+        GodballPhysics::NpcCollisionDebug cd;
+        cd.npcId = npcId;
+        cd.ballSpeed = ballSpeed;
+        cd.npcPos = npc.body.pos;
+
+        glm::vec3 toTarget = npc.body.pos - currPos;
+        cd.distanceToTarget = glm::length(toTarget);
+        if (cd.distanceToTarget > 0.001f) {
+            cd.angleDot = glm::dot(toTarget / cd.distanceToTarget,
+                ballSpeed > 0.001f ? glm::normalize(phys.velocity) : glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        // Check cooldown
         auto& cooldowns = runtime.godball.targetCooldowns;
         auto cooldownIt = cooldowns.find(npcId);
         if (cooldownIt != cooldowns.end() && cooldownIt->second > 0.0f) {
+            cd.cooldownActive = true;
+            cd.rejected = true;
+            cd.rejectReason = "cooldown";
+            if (DebugConfig::DEBUG_GODBALL) {
+                printf("[GODBALL] npc=%u cooldown=%.3f -> skip\n",
+                       npcId, cooldownIt->second);
+            }
+            phys.npcCollisions.push_back(cd);
+            continue;
+        }
+        cd.cooldownActive = false;
+
+        if (!tickReady) {
+            cd.rejected = true;
+            cd.rejectReason = "notTickReady";
+            phys.npcCollisions.push_back(cd);
             continue;
         }
 
         // Swept sphere overlap check
-        glm::vec3 hitPoint, hitNormal;
+        glm::vec3 hitPoint, hitNormal, closestOnSeg;
+        cd.overlapCheck = true;
         bool hit = sweptSphereOverlap(
             prevPos, currPos, phys.radius,
             npc.body.pos, npcCollisionRadius,
-            hitPoint, hitNormal);
+            hitPoint, hitNormal, &closestOnSeg);
 
-        if (!hit) continue;
+        cd.sweptHit = hit;
+        cd.hitPoint = hitPoint;
+        cd.hitNormal = hitNormal;
+        cd.sweepClosest = closestOnSeg;
 
-        // Hit detected!
+        float totalRadius = phys.radius + npcCollisionRadius;
+        cd.overlapAmount = totalRadius - cd.distanceToTarget;
+
+        if (!hit) {
+            cd.rejected = true;
+            cd.rejectReason = "noIntersection";
+            if (DebugConfig::DEBUG_GODBALL) {
+                printf("[GODBALL] npc=%u noIntersection dist=%.2f overlap=%.2f "
+                       "sweepClosest=(%.2f,%.2f,%.2f)\n",
+                       npcId, cd.distanceToTarget, totalRadius - cd.distanceToTarget,
+                       closestOnSeg.x, closestOnSeg.y, closestOnSeg.z);
+            }
+            phys.npcCollisions.push_back(cd);
+            continue;
+        }
+
+        // Hit detected! Apply damage.
         phys.lastFrameHit = true;
         phys.lastHitNormal = hitNormal;
 
-        float damage = computeDamage(phys, def, owner, npc.body,
-            hitPoint);
+        float damage = computeDamage(phys, def, owner, npc.body, hitPoint);
         int rounded = std::max(1, (int)std::round(damage));
+        cd.computedDamage = damage;
 
         // === PHYSICS-DRIVEN KNOCKBACK ===
-        // Knockback direction: blend of ball velocity and hit normal
         glm::vec3 kbDir;
         if (ballSpeed > 0.5f) {
             glm::vec3 velDir = glm::normalize(phys.velocity);
-            // More velocity-driven the faster the ball moves
             float velInfluence = std::min(ballSpeed / 15.0f, 1.0f);
             kbDir = glm::normalize(glm::mix(hitNormal, velDir, velInfluence));
         } else {
@@ -336,7 +390,6 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         if (glm::length(kbDir) < 0.001f)
             kbDir = glm::vec3(0.0f, 1.0f, 0.0f);
 
-        // Knockback scales with impact speed and damage
         float impactSpeed = std::max(ballSpeed, 1.0f);
         float knockbackBase = damage * 0.02f;
         float speedScale = impactSpeed / 10.0f;
@@ -346,29 +399,43 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         npc.body.vel += kbDir * knockbackForce + glm::vec3(0, 0, knockbackForce * 0.4f);
         npc.hitReactionTimer = 0.25f + std::min(ballSpeed * 0.005f, 0.15f);
 
+        // Record impact event
+        {
+            GodballPhysics::ImpactEvent ev;
+            ev.position = npc.body.pos + glm::vec3(0, 0, 0.8f);
+            ev.normal = kbDir;
+            ev.damage = (float)rounded;
+            ev.velocity = ballSpeed;
+            ev.age = 0.0f;
+            phys.impactEvents.push_back(ev);
+            // Cap events
+            if (phys.impactEvents.size() > 16)
+                phys.impactEvents.erase(phys.impactEvents.begin());
+        }
+
+        // Hitstop for debug
+        if (DebugConfig::DEBUG_GODBALL_HITSTOP) {
+            phys.hitstopTimer = 0.08f;
+        }
+
         if (DebugConfig::DEBUG_GODBALL) {
-            printf("[GODBALL OVERLAP] npc=%u damage=%d vel=%.1f kb=%.2f\n",
-                   npcId, rounded, ballSpeed, knockbackForce);
+            printf("[GODBALL OVERLAP] npc=%u damage=%d vel=%.1f kb=%.2f "
+                   "dist=%.2f overlap=%.2f\n",
+                   npcId, rounded, ballSpeed, knockbackForce,
+                   cd.distanceToTarget, cd.overlapAmount);
         }
 
         // === BLOOD EFFECTS ===
         glm::vec3 hitPos = npc.body.pos + glm::vec3(0, 0, 0.8f);
         float intensity = std::min((float)rounded / 20.0f, 2.0f);
 
-        EffectPartSystem::instance().spawnDamage(
-            hitPos, npc.body.username, rounded);
-
+        EffectPartSystem::instance().spawnDamage(hitPos, npc.body.username, rounded);
         EffectPartSystem::instance().spawnBloodSphereBurst(
-            hitPos, kbDir, intensity,
-            owner.username, "npc_" + std::to_string(npcId));
-
+            hitPos, kbDir, intensity, owner.username, "npc_" + std::to_string(npcId));
         EffectPartSystem::instance().spawnBloodSpurt(
-            hitPos, kbDir,
-            owner.username, "npc_" + std::to_string(npcId));
-
+            hitPos, kbDir, owner.username, "npc_" + std::to_string(npcId));
         EffectPartSystem::instance().spawnEntityImpact(
-            hitPos, kbDir,
-            owner.username, "npc_" + std::to_string(npcId));
+            hitPos, kbDir, owner.username, "npc_" + std::to_string(npcId));
 
         {
             float maxPossibleDamage = def.customParams.count("maxDamageCap")
@@ -378,8 +445,10 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         }
 
         if (DebugConfig::DEBUG_GODBALL) {
-            printf("[GODBALL HIT] target=%s damage=%d vel=%.1f\n",
-                   npc.body.username.c_str(), rounded, ballSpeed);
+            printf("[GODBALL HIT] target=%s damage=%d vel=%.1f "
+                   "speedMult=%.2f angleDot=%.2f overlap=%.2f\n",
+                   npc.body.username.c_str(), rounded, ballSpeed,
+                   1.0f + (ballSpeed / 10.0f) * 3.0f, cd.angleDot, cd.overlapAmount);
         }
 
         cooldowns[npcId] = tickInterval;
@@ -387,19 +456,20 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 
         if (npc.body.currentHp <= 0) {
             DeathSystem::instance().kill(
-                npc.body,
-                "npc_" + std::to_string(npcId),
-                "npc",
-                owner.username,
-                kbDir,
-                8.0f + ballSpeed * 0.15f);
+                npc.body, "npc_" + std::to_string(npcId), "npc",
+                owner.username, kbDir, 8.0f + ballSpeed * 0.15f);
             std::string line = owner.username + " killed " + npc.body.username + " with Godball";
             Terminal::instance().addLog(line);
         }
+
+        phys.npcCollisions.push_back(cd);
     }
 
-    for (auto& pair : runtime.godball.targetCooldowns) {
-        if (pair.second > 0.0f) pair.second -= tickInterval;
+    // Cooldown decrement
+    if (tickReady) {
+        for (auto& pair : runtime.godball.targetCooldowns) {
+            if (pair.second > 0.0f) pair.second -= tickInterval;
+        }
     }
 }
 
@@ -416,7 +486,6 @@ float computeDamage(const GodballPhysics& phys, const WeaponDefinition& def,
     float ballSpeed = glm::length(phys.velocity);
     float speedMultiplier = 1.0f + (ballSpeed / 10.0f) * speedFactor;
 
-    // Impact angle: dot(ball_vel, target_to_ball)
     glm::vec3 toTarget = target.pos - phys.position;
     float dist = glm::length(toTarget);
     float angleFactor = 1.0f;
@@ -426,14 +495,12 @@ float computeDamage(const GodballPhysics& phys, const WeaponDefinition& def,
             glm::dot(glm::normalize(phys.velocity), dirToTarget));
     }
 
-    // Relative velocity bonus
     float relativeFactor = def.customParams.count("relativeVelocityFactor")
         ? def.customParams.at("relativeVelocityFactor") : 2.0f;
     glm::vec3 relativeVel = phys.velocity - target.vel;
     float relativeSpeed = glm::length(relativeVel);
     float relativeMultiplier = 1.0f + (relativeSpeed / 15.0f) * relativeFactor;
 
-    // Swing direction bonus
     float swingFactor = def.customParams.count("swingDirectionFactor")
         ? def.customParams.at("swingDirectionFactor") : 2.0f;
     glm::vec3 ownerToBall = phys.position - owner.pos;
@@ -497,52 +564,192 @@ void renderDebug(const Camera& camera, const GodballPhysics& phys,
     float speed = glm::length(phys.velocity);
 
     if (DebugConfig::DEBUG_GODBALL) {
-        // === GODBALL_DEBUG VISUALIZATION SPEC ===
-        // Yellow line = rope
-        // Green sphere = valid hit, Red sphere = no collision
-        // Blue line = hit normal
-        // White text = velocity magnitude
+        // ============================================================
+        // GODBALL_DEBUG: COMPREHENSIVE COLLISION VISUALIZATION
+        // ============================================================
 
-        // Rope line (yellow)
-        DebugVis::drawLine(camera, handPos, phys.position, {1.0f, 1.0f, 0.0f, 0.9f});
+        // --- 1. ROPE (yellow thick line) ---
+        DebugVis::drawLine(camera, handPos, phys.position, {1.0f, 1.0f, 0.0f, 1.0f});
+        DebugVis::drawFilledBeam(camera, handPos, phys.position, 0.03f,
+                                 {1.0f, 1.0f, 0.0f, 0.4f});
 
-        // Ball collision sphere: green if last frame was a hit, red otherwise
-        glm::vec4 sphereColor = phys.lastFrameHit
-            ? glm::vec4(0.0f, 1.0f, 0.0f, 0.5f)
-            : glm::vec4(1.0f, 0.0f, 0.0f, 0.35f);
-        DebugVis::drawWireSphere(camera, phys.position, phys.radius, sphereColor);
+        // --- 2. TETHER ANCHOR AT HAND (yellow sphere) ---
+        DebugVis::drawFilledSphere(camera, handPos, 0.1f, {1.0f, 1.0f, 0.0f, 0.8f});
 
-        // Also draw the overlap radius in faint version of same color
-        DebugVis::drawWireSphere(camera, phys.position, phys.radius + 0.5f,
-            phys.lastFrameHit
-                ? glm::vec4(0.0f, 1.0f, 0.0f, 0.25f)
-                : glm::vec4(1.0f, 0.0f, 0.0f, 0.15f));
-
-        // Hit normal (blue line from impact point)
-        if (phys.lastFrameHit && glm::length(phys.lastHitNormal) > 0.001f) {
-            glm::vec3 normalEnd = phys.position + phys.lastHitNormal * 1.5f;
-            DebugVis::drawLine(camera, phys.position, normalEnd, {0.0f, 0.0f, 1.0f, 1.0f});
+        // --- 3. SWEEP PATH (blue beam from prevPos to currPos) ---
+        if (glm::length(phys.position - phys.prevPosition) > 0.001f) {
+            DebugVis::drawFilledBeam(camera, phys.prevPosition, phys.position,
+                                     0.06f, {0.0f, 0.0f, 1.0f, 0.5f});
+            DebugVis::drawLine(camera, phys.prevPosition, phys.position,
+                               {0.0f, 0.5f, 1.0f, 0.9f});
+            // Sweep path endpoints
+            DebugVis::drawWireSphere(camera, phys.prevPosition, 0.08f,
+                                     {0.0f, 0.5f, 1.0f, 0.6f});
         }
 
-        // White text label with velocity magnitude
-        char label[64];
-        snprintf(label, sizeof(label), "%.1f m/s", speed);
-        DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 0.4f),
-                                  label, {1.0f, 1.0f, 1.0f, 1.0f});
+        // --- 4. COLLISION SPHERE - ACTUAL RADIUS ---
+        // Cyan = physics position (collision), White = render position
+        glm::vec3 sphereColor = phys.lastFrameHit
+            ? glm::vec3(0.0f, 1.0f, 0.0f)
+            : glm::vec3(1.0f, 0.3f, 0.0f);
 
-        // Velocity vector (magenta)
+        // Physics collision sphere (thick wireframe)
+        DebugVis::drawWireSphere(camera, phys.position, phys.radius,
+                                 {sphereColor.x, sphereColor.y, sphereColor.z, 0.9f});
+
+        // Filled collision sphere (translucent)
+        DebugVis::drawFilledSphere(camera, phys.position, phys.radius,
+                                   {sphereColor.x, sphereColor.y, sphereColor.z, 0.15f});
+
+        // --- 5. DAMAGE / OVERLAP RADIUS (larger faint sphere) ---
+        float overlapRadius = phys.radius + 0.5f;
+        glm::vec4 overlapColor = phys.lastFrameHit
+            ? glm::vec4(0.0f, 1.0f, 0.0f, 0.2f)
+            : glm::vec4(1.0f, 0.0f, 0.0f, 0.12f);
+        DebugVis::drawWireSphere(camera, phys.position, overlapRadius, overlapColor);
+
+        // --- 6. VISUAL vs PHYSICS POSITION CHECK ---
+        // White sphere = where it renders
+        // Cyan sphere = physics collision position
+        // If they differ, we see the mismatch
+        DebugVis::drawFilledSphere(camera, phys.position, 0.06f,
+                                   {1.0f, 1.0f, 1.0f, 0.9f});
+
+        // --- 7. VELOCITY VECTOR (magenta arrow) ---
         if (speed > 0.1f) {
             glm::vec3 velEnd = phys.position + glm::normalize(phys.velocity) * std::min(speed * 0.3f, 5.0f);
-            DebugVis::drawLine(camera, phys.position, velEnd, {1.0f, 0.0f, 1.0f, 1.0f});
+            DebugVis::drawFilledBeam(camera, phys.position, velEnd, 0.03f,
+                                     {1.0f, 0.0f, 1.0f, 0.7f});
+            DebugVis::drawLine(camera, phys.position, velEnd,
+                               {1.0f, 0.0f, 1.0f, 1.0f});
+            // Arrow tip sphere
+            DebugVis::drawFilledSphere(camera, velEnd, 0.08f,
+                                       {1.0f, 0.0f, 1.0f, 0.9f});
         }
-    }
 
-    // Always show basic debug info if master debug visuals are on
-    if (DebugVis::enabled() && !DebugConfig::DEBUG_GODBALL) {
-        // Rope line (yellow)
+        // --- 8. HIT NORMAL (blue line from ball surface) ---
+        if (phys.lastFrameHit && glm::length(phys.lastHitNormal) > 0.001f) {
+            glm::vec3 normalStart = phys.position + phys.lastHitNormal * phys.radius;
+            glm::vec3 normalEnd = normalStart + phys.lastHitNormal * 1.5f;
+            DebugVis::drawFilledBeam(camera, normalStart, normalEnd, 0.04f,
+                                     {0.0f, 0.0f, 1.0f, 0.8f});
+            DebugVis::drawLine(camera, normalStart, normalEnd,
+                               {0.0f, 0.0f, 1.0f, 1.0f});
+        }
+
+        // --- 9. ENEMY HURTBOXES ---
+        // For each NPC, draw their collision capsule/sphere, colored by overlap status
+        for (const auto& cd : phys.npcCollisions) {
+            glm::vec3 npcPos = cd.npcPos;
+            float npcRadius = 0.5f;
+
+            glm::vec4 hurtColor;
+            if (cd.rejected) {
+                // Red = no valid collision
+                hurtColor = glm::vec4(1.0f, 0.0f, 0.0f, 0.4f);
+            } else if (cd.sweptHit) {
+                // Green = hit detected
+                hurtColor = glm::vec4(0.0f, 1.0f, 0.0f, 0.8f);
+            } else {
+                // Yellow = overlap but invalid (shouldn't happen here)
+                hurtColor = glm::vec4(1.0f, 1.0f, 0.0f, 0.4f);
+            }
+
+            // Enemy hurtbox sphere
+            DebugVis::drawWireSphere(camera, npcPos, npcRadius, hurtColor);
+            DebugVis::drawFilledSphere(camera, npcPos, npcRadius,
+                                       {hurtColor.x, hurtColor.y, hurtColor.z, hurtColor.w * 0.3f});
+
+            // Line from ball to NPC
+            DebugVis::drawLine(camera, phys.position, npcPos,
+                               {hurtColor.x, hurtColor.y, hurtColor.z, 0.3f});
+
+            // Sweep closest point on segment
+            if (glm::length(cd.sweepClosest) > 0.001f) {
+                glm::vec4 scColor = cd.sweptHit
+                    ? glm::vec4(0.0f, 1.0f, 0.0f, 0.8f)
+                    : glm::vec4(1.0f, 0.5f, 0.0f, 0.6f);
+                DebugVis::drawFilledSphere(camera, cd.sweepClosest, 0.1f, scColor);
+            }
+
+            // --- 10. PER-NPC LABEL ---
+            char npcLabel[256];
+            if (cd.rejected) {
+                snprintf(npcLabel, sizeof(npcLabel),
+                    "[GODBALL] npc=%u reject=%s dist=%.2f",
+                    cd.npcId, cd.rejectReason.c_str(), cd.distanceToTarget);
+            } else {
+                snprintf(npcLabel, sizeof(npcLabel),
+                    "[GODBALL] npc=%u speed=%.1f damage=%.0f "
+                    "overlap=%.2f angleDot=%.2f",
+                    cd.npcId, cd.ballSpeed, cd.computedDamage,
+                    cd.overlapAmount, cd.angleDot);
+            }
+            DebugVis::drawWorldLabel(npcPos + glm::vec3(0.0f, 0.0f, npcRadius + 0.5f),
+                                      npcLabel, {1.0f, 1.0f, 1.0f, 0.9f});
+        }
+
+        // --- 11. IMPACT EVENTS (flash, damage number, velocity) ---
+        for (const auto& ev : phys.impactEvents) {
+            float alpha = std::max(0.0f, 1.0f - ev.age);
+            float scale = 1.0f + ev.age * 2.0f;
+
+            // Flash sphere
+            DebugVis::drawFilledSphere(camera, ev.position, 0.3f * scale,
+                                       {1.0f, 0.8f, 0.0f, alpha * 0.5f});
+            DebugVis::drawWireSphere(camera, ev.position, 0.4f * scale,
+                                     {1.0f, 0.8f, 0.0f, alpha * 0.8f});
+
+            // Impact normal
+            DebugVis::drawFilledBeam(camera, ev.position,
+                                     ev.position + ev.normal * 1.0f * scale,
+                                     0.05f, {1.0f, 0.5f, 0.0f, alpha});
+
+            // Damage number
+            char dmgLabel[64];
+            snprintf(dmgLabel, sizeof(dmgLabel), "DMG: %.0f  VEL: %.1f",
+                     ev.damage, ev.velocity);
+            DebugVis::drawWorldLabel(ev.position + glm::vec3(0.0f, 0.0f, 0.6f * scale),
+                                      dmgLabel, {1.0f, 1.0f, 0.0f, alpha});
+
+            // Temporary overlap shape (growing wire sphere)
+            float overlapVisual = phys.radius + 0.5f;
+            DebugVis::drawWireSphere(camera, ev.position, overlapVisual * scale * 0.5f,
+                                     {0.0f, 1.0f, 0.0f, alpha * 0.4f});
+        }
+
+        // --- 12. MAIN BALL LABEL ---
+        char label[256];
+        snprintf(label, sizeof(label),
+                 "GODBALL: %.1f m/s  T=%.1f  D=%.2f/%.1f  "
+                 "rad=%.2f  tan=%.1f  hits=%zu",
+                 speed, phys.ropeTension, phys.constraintDist, phys.ropeLength,
+                 phys.radialVel, phys.tangentialSpeed, phys.impactEvents.size());
+        DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 0.8f),
+                                  label, {1.0f, 1.0f, 1.0f, 1.0f});
+
+        // Velocity label near velocity arrow tip
+        if (speed > 0.1f) {
+            char velLabel[32];
+            snprintf(velLabel, sizeof(velLabel), "%.1f m/s", speed);
+            glm::vec3 velTip = phys.position + glm::normalize(phys.velocity)
+                * std::min(speed * 0.3f, 5.0f);
+            DebugVis::drawWorldLabel(velTip + glm::vec3(0.0f, 0.0f, 0.2f),
+                                      velLabel, {1.0f, 0.0f, 1.0f, 0.9f});
+        }
+
+        // --- 13. HITSTOP INDICATOR ---
+        if (phys.hitstopTimer > 0.0f) {
+            char hsLabel[64];
+            snprintf(hsLabel, sizeof(hsLabel), "HITSTOP: %.3f", phys.hitstopTimer);
+            DebugVis::drawWorldLabel(phys.position + glm::vec3(0, 0, phys.radius + 1.8f),
+                                      hsLabel, {0.0f, 1.0f, 1.0f, 1.0f});
+        }
+
+    } else if (DebugVis::enabled()) {
+        // Minimal debug when godball_debug is OFF but master debug is ON
         DebugVis::drawLine(camera, handPos, phys.position, {1.0f, 1.0f, 0.0f, 0.8f});
 
-        // Basic info label
         char label[128];
         snprintf(label, sizeof(label),
                  "GODBALL %.1f m/s  T=%.1f  D=%.2f/%.1f",
