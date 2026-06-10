@@ -497,10 +497,17 @@ int main(int argc, char** argv)
         Terminal::instance().registerCommand({
             name, "Equip inventory slot " + std::to_string(slot), name,
             [&player, &weapons, slot](const std::vector<std::string>&) {
-                weapons.equip(player, slot);
-                GetPlayerSettings().equippedSlot = slot;
-                SavePlayerSettings();
-                Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
+                if (player.equippedSlot == slot && player.hasValidWeapon) {
+                    weapons.unequip(player);
+                    GetPlayerSettings().equippedSlot = 0;
+                    SavePlayerSettings();
+                    Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
+                } else {
+                    weapons.equip(player, slot);
+                    GetPlayerSettings().equippedSlot = slot;
+                    SavePlayerSettings();
+                    Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
+                }
             }
         });
     }

@@ -26,6 +26,10 @@
 
   "reloadArmLowerZ": -15.0,
   "reloadArmLowerX": -8.0,
+  "reloadHandLower": -5.0,
+  "armInfluenceMultiplier": 0.06,
+  "idleSwayAmount": 0.05,
+  "idleSwaySpeed": 3.0,
 
   "revolverOffsetX": 0.0,
   "revolverOffsetY": 0.0,
@@ -39,5 +43,188 @@
   "shotgunOffsetZ": -2.0,
   "shotgunRotX": 0.0,
   "shotgunRotY": 10.0,
-  "shotgunRotZ": -90.0
+  "shotgunRotZ": -90.0,
+
+  "layers": {
+    "animations": {
+      "idle": {
+        "durationTicks": 60,
+        "loop": true,
+        "speedScaleFromVelocity": false,
+        "keyframes": [
+          {
+            "tick": 0,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "head": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              }
+            }
+          },
+          {
+            "tick": 30,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, 0.02],
+                "rotation": [0, 0, 1.0]
+              },
+              "head": {
+                "translation": [0, 0, 0.01],
+                "rotation": [0, 0, -0.5]
+              }
+            }
+          },
+          {
+            "tick": 60,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "head": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              }
+            }
+          }
+        ]
+      },
+
+      "walk": {
+        "durationTicks": 30,
+        "loop": true,
+        "speedScaleFromVelocity": true,
+        "keyframes": [
+          {
+            "tick": 0,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, -0.05],
+                "rotation": [-30, 0, 0]
+              },
+              "head": {
+                "translation": [0, 0, -0.03],
+                "rotation": [-15, 0, 0]
+              },
+              "leftArm": {
+                "translation": [0, 0.15, 0],
+                "rotation": [80, 15, -30]
+              },
+              "rightArm": {
+                "translation": [0, -0.15, 0],
+                "rotation": [-50, 0, 20]
+              },
+              "leftLeg": {
+                "translation": [0, -0.1, 0],
+                "rotation": [-65, 0, 0]
+              },
+              "rightLeg": {
+                "translation": [0, 0.1, 0],
+                "rotation": [65, 0, 0]
+              }
+            }
+          },
+          {
+            "tick": 15,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, 0.05],
+                "rotation": [30, 0, 3]
+              },
+              "head": {
+                "translation": [0, 0, 0.03],
+                "rotation": [15, 0, -2]
+              },
+              "leftArm": {
+                "translation": [0, -0.15, 0],
+                "rotation": [-50, 0, 15]
+              },
+              "rightArm": {
+                "translation": [0, 0.15, 0],
+                "rotation": [80, 15, -30]
+              },
+              "leftLeg": {
+                "translation": [0, 0.1, 0],
+                "rotation": [65, 0, 0]
+              },
+              "rightLeg": {
+                "translation": [0, -0.1, 0],
+                "rotation": [-65, 0, 0]
+              }
+            }
+          },
+          {
+            "tick": 30,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, -0.05],
+                "rotation": [-30, 0, 0]
+              },
+              "head": {
+                "translation": [0, 0, -0.03],
+                "rotation": [-15, 0, 0]
+              },
+              "leftArm": {
+                "translation": [0, 0.15, 0],
+                "rotation": [80, 15, -30]
+              },
+              "rightArm": {
+                "translation": [0, -0.15, 0],
+                "rotation": [-50, 0, 20]
+              },
+              "leftLeg": {
+                "translation": [0, -0.1, 0],
+                "rotation": [-65, 0, 0]
+              },
+              "rightLeg": {
+                "translation": [0, 0.1, 0],
+                "rotation": [65, 0, 0]
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    "weaponOverlays": {
+      "revolver": {
+        "armInfluenceMultiplier": 0.08,
+        "idleSwayAmount": 0.03,
+        "parts": {
+          "leftArm": {
+            "translation": [0, 0, 0],
+            "rotation": [70, 10, -20]
+          },
+          "rightArm": {
+            "translation": [0, 0, 0],
+            "rotation": [70, 10, 20]
+          }
+        }
+      },
+
+      "shotgun": {
+        "armInfluenceMultiplier": 0.05,
+        "idleSwayAmount": 0.025,
+        "parts": {
+          "leftArm": {
+            "translation": [0, 0, 0],
+            "rotation": [75, 10, -25]
+          },
+          "rightArm": {
+            "translation": [0, 0, 0],
+            "rotation": [72, 10, 20]
+          }
+        }
+      }
+    },
+
+    "reloadOverlay": {
+      "translation": [0, 0, 0],
+      "rotation": [-15, 0, 0]
+    }
+  }
 }

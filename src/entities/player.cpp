@@ -120,6 +120,10 @@ bool reloadPlayerProceduralConfig()
         readJsonValue(j, "walkFrequencyMultiplier", loaded.walkFrequencyMultiplier);
         readJsonValue(j, "reloadArmLowerZ", loaded.reloadArmLowerZ);
         readJsonValue(j, "reloadArmLowerX", loaded.reloadArmLowerX);
+        readJsonValue(j, "reloadHandLower", loaded.reloadHandLower);
+        readJsonValue(j, "armInfluenceMultiplier", loaded.armInfluenceMultiplier);
+        readJsonValue(j, "idleSwayAmount", loaded.idleSwayAmount);
+        readJsonValue(j, "idleSwaySpeed", loaded.idleSwaySpeed);
         readJsonValue(j, "revolverOffsetX", loaded.revolverOffsetX);
         readJsonValue(j, "revolverOffsetY", loaded.revolverOffsetY);
         readJsonValue(j, "revolverOffsetZ", loaded.revolverOffsetZ);
@@ -133,6 +137,63 @@ bool reloadPlayerProceduralConfig()
         readJsonValue(j, "shotgunRotY", loaded.shotgunRotY);
         readJsonValue(j, "shotgunRotZ", loaded.shotgunRotZ);
 
+        // Parse layered animation config
+        if (j.contains("animations")) {
+            const auto& anims = j["animations"];
+            for (auto it = anims.begin(); it != anims.end(); ++it) {
+                AnimClip clip;
+                clip.durationTicks = it->value("durationTicks", 60);
+                clip.loop = it->value("loop", true);
+                clip.speedScaleFromVelocity = it->value("speedScaleFromVelocity", true);
+                if (it->contains("keyframes")) {
+                    for (const auto& kf : it->at("keyframes")) {
+                        AnimKeyframe keyframe;
+                        keyframe.tick = kf.value("tick", 0);
+                        if (kf.contains("parts")) {
+                            for (auto p = kf["parts"].begin(); p != kf["parts"].end(); ++p) {
+                                AnimKeyframePart part;
+                                if (p->contains("translation") && p->at("translation").size() >= 3)
+                                    part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
+                                if (p->contains("rotation") && p->at("rotation").size() >= 3)
+                                    part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
+                                keyframe.parts[p.key()] = part;
+                            }
+                        }
+                        clip.keyframes.push_back(keyframe);
+                    }
+                }
+                loaded.layers.animations[it.key()] = clip;
+            }
+        }
+
+        if (j.contains("weaponOverlays")) {
+            const auto& overlays = j["weaponOverlays"];
+            for (auto it = overlays.begin(); it != overlays.end(); ++it) {
+                WeaponOverlay overlay;
+                overlay.armInfluenceMultiplier = it->value("armInfluenceMultiplier", 0.08f);
+                overlay.idleSwayAmount = it->value("idleSwayAmount", 0.03f);
+                if (it->contains("parts")) {
+                    for (auto p = it->at("parts").begin(); p != it->at("parts").end(); ++p) {
+                        AnimKeyframePart part;
+                        if (p->contains("translation") && p->at("translation").size() >= 3)
+                            part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
+                        if (p->contains("rotation") && p->at("rotation").size() >= 3)
+                            part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
+                        overlay.parts[p.key()] = part;
+                    }
+                }
+                loaded.layers.weaponOverlays[it.key()] = overlay;
+            }
+        }
+
+        if (j.contains("reloadOverlay")) {
+            const auto& ro = j["reloadOverlay"];
+            if (ro.contains("translation") && ro["translation"].size() >= 3)
+                loaded.layers.reloadOverlay.translation = glm::vec3(ro["translation"][0], ro["translation"][1], ro["translation"][2]);
+            if (ro.contains("rotation") && ro["rotation"].size() >= 3)
+                loaded.layers.reloadOverlay.rotation = glm::vec3(ro["rotation"][0], ro["rotation"][1], ro["rotation"][2]);
+        }
+
         gPlayerProcedural = loaded;
         printf("[HOT RELOAD] player procedural config reloaded\n");
         return true;
@@ -142,6 +203,53 @@ bool reloadPlayerProceduralConfig()
         printf("[HOT RELOAD] player procedural config reload failed: %s\n", e.what());
         return false;
     }
+}
+
+struct AnimOverlayResult {
+    glm::vec3 translation{0.0f};
+    glm::vec3 rotation{0.0f};
+};
+
+static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
+    const AnimClip& clip, float timeSeconds)
+{
+    std::unordered_map<std::string, AnimOverlayResult> result;
+    if (clip.keyframes.empty()) return result;
+
+    float tickTime = timeSeconds * 60.0f;
+    float duration = (float)clip.durationTicks;
+    if (duration <= 0.0f) duration = 1.0f;
+
+    float loopedTick = clip.loop ? std::fmod(tickTime, duration) : std::min(tickTime, duration - 1.0f);
+    if (loopedTick < 0.0f) loopedTick += duration;
+
+    const AnimKeyframe* prev = &clip.keyframes[0];
+    const AnimKeyframe* next = &clip.keyframes[0];
+
+    for (size_t i = 0; i < clip.keyframes.size(); ++i) {
+        if ((float)clip.keyframes[i].tick <= loopedTick) prev = &clip.keyframes[i];
+        if ((float)clip.keyframes[i].tick >= loopedTick) { next = &clip.keyframes[i]; break; }
+    }
+
+    float range = (float)(next->tick - prev->tick);
+    float t = (range > 0.001f) ? (loopedTick - (float)prev->tick) / range : 0.0f;
+    t = std::clamp(t, 0.0f, 1.0f);
+
+    for (const auto& partEntry : next->parts) {
+        const std::string& partName = partEntry.first;
+        AnimOverlayResult overlay;
+        auto prevIt = prev->parts.find(partName);
+        if (prevIt != prev->parts.end()) {
+            overlay.translation = glm::mix(prevIt->second.translation, partEntry.second.translation, t);
+            overlay.rotation = glm::mix(prevIt->second.rotation, partEntry.second.rotation, t);
+        } else {
+            overlay.translation = partEntry.second.translation;
+            overlay.rotation = partEntry.second.rotation;
+        }
+        result[partName] = overlay;
+    }
+
+    return result;
 }
 
 void updatePlayerProceduralHotReload(float dt)
@@ -473,6 +581,11 @@ PlayerProceduralConfig gPlayerProcedural{
     6.0f,
     -15.0f,
     -8.0f,
+    -5.0f,
+    0.06f,
+    0.05f,
+    3.0f,
+    0.0f,
     0.0f,
     0.0f,
     0.0f,
@@ -484,7 +597,7 @@ PlayerProceduralConfig gPlayerProcedural{
     0.5f,
     0.0f,
     0.0f,
-    0.0f
+    {}
 };
 
 static void initCapsuleMesh()
@@ -937,19 +1050,25 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     // Reload state: lower arms during reload
     bool isReloading = false;
     for (const auto& pair : weaponRuntimes) {
-        if (pair.second.isReloading) {
-            isReloading = true;
-            break;
+        if (pair.first == "revolver" || pair.first == "shotgun") {
+            if (pair.second.isReloading) {
+                isReloading = true;
+                break;
+            }
         }
     }
 
     // Weapon sway (applied to arms when weapon equipped)
-    bool weaponEquipped = (equippedSlot >= 1);
+    bool weaponEquipped = hasValidWeapon && (equippedSlot >= 1);
+    float armInfluence = weaponEquipped ? gPlayerProcedural.armInfluenceMultiplier : 1.0f;
     float swayAmount = weaponEquipped ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
     float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
     float swayX = std::sin(swayPhase) * swayAmount;
     float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
     float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
+
+    // Idle weapon sway (present even when standing still)
+    float idleSway = weaponEquipped ? std::sin(weaponSwayTime * gPlayerProcedural.idleSwaySpeed) * gPlayerProcedural.idleSwayAmount : 0.0f;
 
     // Upper body aim rotation (torso + arms rotate toward aim direction)
     float aimYaw = 0.0f;
@@ -967,6 +1086,29 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         // Pitch for up/down aim
         aimPitch = std::asin(std::clamp(aimDirection.z, -1.0f, 1.0f));
         aimPitch = std::clamp(aimPitch, -0.8f, 0.8f); // Limit pitch
+    }
+
+    // Compute layered animation overlays
+    std::string activeAnim = (move01 < 0.01f) ? "idle" : "walk";
+    auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
+    std::unordered_map<std::string, AnimOverlayResult> animOverlay;
+    if (animIt != gPlayerProcedural.layers.animations.end())
+        animOverlay = interpolateAnimClip(animIt->second, proceduralTime);
+
+    // Weapon overlay for current weapon
+    std::string weaponId;
+    for (const auto& pair : weaponRuntimes) {
+        weaponId = pair.first;
+        break;
+    }
+    bool hasWeaponOverlay = false;
+    WeaponOverlay* weaponOverlay = nullptr;
+    if (weaponEquipped) {
+        auto woIt = gPlayerProcedural.layers.weaponOverlays.find(weaponId);
+        if (woIt != gPlayerProcedural.layers.weaponOverlays.end()) {
+            hasWeaponOverlay = true;
+            weaponOverlay = &woIt->second;
+        }
     }
 
     for (PhysicalBodyPart& part : physicalBody.parts)
@@ -990,18 +1132,16 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
         else if (part.name == "leftArm")
         {
-            target.rotationEuler.z = counterStride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f;
-            target.rotationEuler.z += 8.0f * move01;
+            target.rotationEuler.z = (counterStride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f) * armInfluence;
+            target.rotationEuler.z += 8.0f * move01 * armInfluence;
 
             if (weaponEquipped) {
                 float reloadDrop = isReloading ? gPlayerProcedural.reloadArmLowerZ : 0.0f;
-                target.rotationEuler.z += gPlayerProcedural.leftArmRaise + reloadDrop;
-                target.rotationEuler.x += gPlayerProcedural.leftArmForward;
+                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX + gPlayerProcedural.reloadHandLower : 0.0f;
+                target.rotationEuler.z += gPlayerProcedural.leftArmRaise + reloadDrop + idleSway;
+                target.rotationEuler.x += gPlayerProcedural.leftArmForward + reloadLower;
                 target.rotationEuler.y += gPlayerProcedural.leftArmTwist;
                 target.translation.z += 0.15f;
-
-                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX : 0.0f;
-                target.rotationEuler.x += reloadLower;
 
                 target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
                 target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
@@ -1013,19 +1153,17 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
         else if (part.name == "rightArm")
         {
-            target.rotationEuler.z = stride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f;
-            target.rotationEuler.z += -8.0f * move01;
+            target.rotationEuler.z = (stride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f) * armInfluence;
+            target.rotationEuler.z += -8.0f * move01 * armInfluence;
 
             if (weaponEquipped) {
                 float reloadDrop = isReloading ? gPlayerProcedural.reloadArmLowerZ : 0.0f;
-                target.rotationEuler.z += gPlayerProcedural.rightArmRaise + reloadDrop;
-                target.rotationEuler.x += gPlayerProcedural.rightArmForward;
+                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX + gPlayerProcedural.reloadHandLower : 0.0f;
+                target.rotationEuler.z += gPlayerProcedural.rightArmRaise + reloadDrop + idleSway;
+                target.rotationEuler.x += gPlayerProcedural.rightArmForward + reloadLower;
                 target.rotationEuler.y += gPlayerProcedural.rightArmTwist;
                 target.translation.z += 0.18f;
                 target.translation.x += 0.08f;
-
-                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX : 0.0f;
-                target.rotationEuler.x += reloadLower;
 
                 target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
                 target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
@@ -1059,6 +1197,32 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 (part.name == "torso" || part.name == "head")
                 ? 0.015f
                 : 0.0f;
+        }
+
+        // Apply keyframe animation overlay (additive to base procedural pose)
+        {
+            auto ovIt = animOverlay.find(part.name);
+            if (ovIt != animOverlay.end()) {
+                target.translation += ovIt->second.translation;
+                target.rotationEuler += ovIt->second.rotation;
+            }
+        }
+
+        // Apply weapon overlay (replaces arm-specific values)
+        if (hasWeaponOverlay && weaponOverlay) {
+            auto woIt = weaponOverlay->parts.find(part.name);
+            if (woIt != weaponOverlay->parts.end() && (part.name == "leftArm" || part.name == "rightArm")) {
+                target.rotationEuler.x = woIt->second.rotation.x;
+                target.rotationEuler.y = woIt->second.rotation.y;
+                target.rotationEuler.z = woIt->second.rotation.z;
+                target.translation += woIt->second.translation;
+            }
+        }
+
+        // Apply reload overlay (additive, mostly arm lowering)
+        if (isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
+            target.rotationEuler += gPlayerProcedural.layers.reloadOverlay.rotation;
+            target.translation += gPlayerProcedural.layers.reloadOverlay.translation;
         }
 
         part.pose.translation =
