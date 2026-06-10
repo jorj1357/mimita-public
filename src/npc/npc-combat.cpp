@@ -109,9 +109,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     glm::vec3 predictedTarget = npcPos + aimDir * dist;
 
     // Line of sight check
-    // testing commented off 6 7 2026 
-    // if (!lineOfSight(npcPos, predictedTarget, world))
-    //     return false;
+    if (!lineOfSight(npcPos, predictedTarget, world))
+        return false;
 
     float d01 = difficulty01(npc.difficulty);
     float baseDmg = 6.0f + d01 * 14.0f;
