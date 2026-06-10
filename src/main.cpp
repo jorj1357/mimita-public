@@ -798,6 +798,7 @@ int main(int argc, char** argv)
     registerDebugToggle("debug_blood_force", DebugConfig::DEBUG_BLOOD_FORCE);
     registerDebugToggle("debug_debris", DebugConfig::DEBUG_DEBRIS);
     registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
+    registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
 
     Terminal::instance().registerCommand({
         "fakelag_mode", "Set fake lag mode (0=off, 1=random, 2=static)",

@@ -224,6 +224,40 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "godball_debug",
+        "Toggle godball collision debug visualization (0=off, 1=on)",
+        "godball_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_GODBALL = !DebugConfig::DEBUG_GODBALL;
+            } else {
+                DebugConfig::DEBUG_GODBALL = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_GODBALL
+                ? "[OK] godball debug enabled"
+                : "[OK] godball debug disabled");
+        }
+    });
+
+    registerCommand({
+        "godball_hitstop_debug",
+        "Toggle godball hitstop/slowmo on impact (0=off, 1=on)",
+        "godball_hitstop_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_GODBALL_HITSTOP = !DebugConfig::DEBUG_GODBALL_HITSTOP;
+            } else {
+                DebugConfig::DEBUG_GODBALL_HITSTOP = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_GODBALL_HITSTOP
+                ? "[OK] godball hitstop enabled"
+                : "[OK] godball hitstop disabled");
+        }
+    });
+
+    registerCommand({
         "swordsword_debug",
         "Toggle swordsword debug visualization (0=off, 1=on)",
         "swordsword_debug <0|1>",
