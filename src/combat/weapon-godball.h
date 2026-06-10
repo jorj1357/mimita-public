@@ -14,6 +14,7 @@ struct WeaponRuntime;
 
 struct GodballPhysics {
     glm::vec3 position{0.0f};
+    glm::vec3 prevPosition{0.0f};
     glm::vec3 velocity{0.0f};
     glm::vec3 angularVelocity{0.0f};
     float radius = 0.5f;
@@ -25,9 +26,13 @@ struct GodballPhysics {
     float ropeDamping = 2.0f;
     float linearDamping = 0.005f;
 
-    // Hand tracking for energy transfer
+    // Hand tracking
     glm::vec3 prevHandPos{0.0f};
     bool hasPrevHandPos = false;
+
+    // Hit tracking for debug visualization
+    bool lastFrameHit = false;
+    glm::vec3 lastHitNormal{0.0f};
 
     // Debug info
     float ropeTension = 0.0f;

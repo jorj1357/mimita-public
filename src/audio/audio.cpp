@@ -51,7 +51,7 @@ struct ActiveSound {
 static std::vector<std::unique_ptr<ActiveSound>> gActiveSounds;
 static void initAudioOnce();
 static float gAudioTime = 0.0f;
-static bool gSoundDebug = false;
+static bool gSoundDebug = true;
 
 static std::string soundPath(const std::string& name)
 {
@@ -62,9 +62,16 @@ static std::string soundPath(const std::string& name)
         return path;
 
     if (name == "revolvershoot") return "assets/sound/weapon/revolver/revolvershoot.wav";
-    if (name == "revolverbulletadd") return "assets/sound/weapon/revolver/revolverbulletadd.wav";
+    if (name == "revolverreload") return "assets/sound/weapon/revolver/revolverreload.wav";
     if (name == "revolverchamber" || name == "revolverpullback")
         return "assets/sound/weapon/revolver/revolverreload.wav";
+    if (name == "shotgunshoot") return "assets/sound/weapon/shotgun/shotgunshoot.wav";
+    if (name == "shotgunreload") return "assets/sound/weapon/shotgun/shotgunreload.wav";
+    if (name == "godballhit") return "assets/sound/weapon/godball/godballhit.wav";
+    if (name == "swordswordhit1") return "assets/sound/weapon/swordsword/swordswordhit1.wav";
+    if (name == "swordswordhit2") return "assets/sound/weapon/swordsword/swordswordhit2.wav";
+    if (name == "swordswordhit3") return "assets/sound/weapon/swordsword/swordswordhit3.wav";
+    if (name == "swordswordhit4") return "assets/sound/weapon/swordsword/swordswordhit4.wav";
     if (name == "gethurt") return "assets/sound/U mimita sound effects.wav - hitting not sure low.wav";
     if (name == "player_hurt") return "assets/sound/entity/player/hurtsmall.wav";
     if (name == "hitworld") return "assets/sound/hitworld.mp3";
@@ -72,7 +79,6 @@ static std::string soundPath(const std::string& name)
     if (name == "npc_death") return "assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3";
     if (name == "world_impact") return "assets/sound/U mimita sound effects.wav  - hit low 1.wav";
     if (name == "ui/hover") return "assets/sound/ui/click.wav";
-    if (name.find("revolver") == 0) return "assets/sound/ui/click.wav";
     return path;
 }
 

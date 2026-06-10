@@ -231,6 +231,8 @@ RevolverShotResult tryFireHitscan(
     if (!def.soundShoot.empty()) {
         float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
         float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+        printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
+               def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
         playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
     }
 
@@ -367,6 +369,8 @@ RevolverShotResult tryFireHitscan(
         EffectPartSystem::instance().spawnProjectedBlood(result.end, shotDirection, (float)totalDamage, nearest, hitPart, world);
         EffectPartSystem::instance().spawnBloodSpurt(
             result.end, shotDirection, shooter.username, "npc_" + std::to_string(victim->id));
+        printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
+               def.id.c_str(), hitPart.c_str(), result.damage);
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
     } else if (remoteVictim) {
         float damage = def.damage;
@@ -431,6 +435,8 @@ void fireMultiPellet(
     if (!def.soundShoot.empty()) {
         float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
         float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+        printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
+               def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
         playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
     }
 

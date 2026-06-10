@@ -78,7 +78,7 @@ WeaponDefinition createGodballDefinition() {
 
     def.soundShoot = "";
     def.soundReload = "";
-    def.soundHit = "player_hurt";
+    def.soundHit = "godballhit";
     def.soundDryFire = "";
     def.soundEquip = "";
 
@@ -127,11 +127,11 @@ WeaponDefinition createShotgunDefinition() {
     def.hitscan = true;
     def.usesPhysicsProjectile = false;
 
-    def.soundShoot = "revolvershoot";
-    def.soundReload = "revolverreload";
+    def.soundShoot = "shotgunshoot";
+    def.soundReload = "shotgunreload";
     def.soundHit = "player_hurt";
     def.soundDryFire = "ui/click";
-    def.soundEquip = "revolverequip";
+    def.soundEquip = "shotgunequip";
 
     def.customParams["distanceFalloffStart"] = 60.0f;
     def.customParams["minDamageFraction"] = 0.05f;
@@ -141,11 +141,64 @@ WeaponDefinition createShotgunDefinition() {
     return def;
 }
 
+WeaponDefinition createSwordswordDefinition() {
+    WeaponDefinition def;
+    def.id = "swordsword";
+    def.displayName = "Swordsword";
+    def.slot = 4;
+
+    def.modelPath = "";
+    def.viewModelOffset = {0.5f, 0.8f, 0.3f};
+    def.viewModelRotation = {0.0f, 0.0f, 0.0f};
+    def.weaponScale = 1.0f;
+
+    def.damage = 35.0f;
+    def.headshotMultiplier = 1.5f;
+    def.fireDelay = 0.3f;
+    def.reloadTime = 0.0f;
+    def.magazineSize = 0;
+    def.pelletCount = 1;
+
+    def.spread = 0.0f;
+    def.recoil = 10.0f;
+    def.projectileSpeed = 0.0f;
+    def.projectileRadius = 0.0f;
+    def.projectileLifetime = 0.0f;
+
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::Swordsword;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+
+    def.soundShoot = "";
+    def.soundReload = "";
+    def.soundHit = "";
+    def.soundDryFire = "";
+    def.soundEquip = "";
+
+    def.customParams["range"] = 4.0f;
+    def.customParams["arcDegrees"] = 120.0f;
+    def.customParams["slashDamage"] = 35.0f;
+    def.customParams["slashKnockback"] = 25.0f;
+    def.customParams["slashSpeed"] = 22.0f;
+    def.customParams["slashDuration"] = 0.25f;
+    def.customParams["lungeDamage"] = 55.0f;
+    def.customParams["lungeKnockback"] = 40.0f;
+    def.customParams["lungeSpeed"] = 35.0f;
+    def.customParams["lungeDuration"] = 0.3f;
+    def.customParams["lungeRange"] = 6.0f;
+    def.customParams["lungeCooldown"] = 0.5f;
+    def.customParams["bladeLength"] = 1.5f;
+
+    return def;
+}
+
 void registerBuiltinWeapons() {
     WeaponRegistry::instance().registerWeapon(createRevolverDefinition());
     WeaponRegistry::instance().registerWeapon(createGodballDefinition());
     WeaponRegistry::instance().registerWeapon(createShotgunDefinition());
-    printf("[WEAPON] Registered builtin weapons: revolver, godball, shotgun\n");
+    WeaponRegistry::instance().registerWeapon(createSwordswordDefinition());
+    printf("[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword\n");
 }
 
 } // namespace WeaponData
