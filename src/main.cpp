@@ -1022,6 +1022,7 @@ int main(int argc, char** argv)
     {
         HotReloadSystem::instance().reloadGameDLLIfChanged();
         float dt = engine.beginFrame();
+        updatePlayerProceduralHotReload(dt);
         bool worldPassRan = false;
 
         audioUpdate(dt);

@@ -109,6 +109,11 @@ struct PlayerProceduralConfig
 
 extern PlayerProceduralConfig gPlayerProcedural;
 
+// Poll config/player-procedural.json for changes.
+// Call each frame from main loop to ensure hot reload works regardless of physics state.
+// Uses wall-clock 250ms throttle internally.
+void updatePlayerProceduralHotReload(float dt);
+
 class Player {
 public:
     std::string username = "admin";
