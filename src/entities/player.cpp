@@ -136,6 +136,22 @@ bool reloadPlayerProceduralConfig()
         readJsonValue(j, "shotgunRotX", loaded.shotgunRotX);
         readJsonValue(j, "shotgunRotY", loaded.shotgunRotY);
         readJsonValue(j, "shotgunRotZ", loaded.shotgunRotZ);
+        readJsonValue(j, "walkStartTickOnEnter", loaded.walkStartTickOnEnter);
+        readJsonValue(j, "animationStateTransitionFrames", loaded.animationStateTransitionFrames);
+
+        // Parse axis locks
+        if (j.contains("axisLocks")) {
+            const auto& locks = j["axisLocks"];
+            for (auto it = locks.begin(); it != locks.end(); ++it) {
+                AxisLock lock;
+                if (it->contains("rotation") && it->at("rotation").size() >= 3) {
+                    lock.x = it->at("rotation")[0].get<bool>();
+                    lock.y = it->at("rotation")[1].get<bool>();
+                    lock.z = it->at("rotation")[2].get<bool>();
+                }
+                loaded.axisLocks[it.key()] = lock;
+            }
+        }
 
         // Parse layered animation config (under "layers" key)
         if (j.contains("layers")) {
@@ -854,6 +870,8 @@ void Player::reset()
 
     previousProceduralVelocity = glm::vec3(0.0f);
     proceduralTime = 0.0f;
+    animStateTime = 0.0f;
+    currentAnimName = "idle";
 
     for (BodyPart& part : bodyParts)
     {
@@ -865,6 +883,7 @@ void Player::reset()
     for (PhysicalBodyPart& part : physicalBody.parts)
     {
         part.pose = ProceduralPose{};
+        part.perfectPose = ProceduralPose{};
         part.translationSpring = SpringState{};
         part.rotationSpring = SpringState{};
     }
@@ -1029,6 +1048,15 @@ void Player::updateModelWorldTransforms()
     }
 }
 
+static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
+{
+    auto it = gPlayerProcedural.axisLocks.find(partName);
+    if (it == gPlayerProcedural.axisLocks.end()) return;
+    if (!it->second.x) pose.rotationEuler.x = 0.0f;
+    if (!it->second.y) pose.rotationEuler.y = 0.0f;
+    if (!it->second.z) pose.rotationEuler.z = 0.0f;
+}
+
 void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos)
 {
     updatePlayerProceduralHotReload(dt);
@@ -1049,34 +1077,43 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     syncLegacyStateToLayers();
-
     weaponSwayTime += dt;
 
     glm::vec2 planarVel = glm::vec2(vel.x, vel.y);
     float speed = glm::length(planarVel);
     float move01 = std::min(speed / std::max(PHYS.moveSpeed, 0.001f), 1.6f);
-    float dash01 = 0.0f;
-    glm::vec3 acceleration = (dt > 0.0001f) ? (vel - previousProceduralVelocity) / dt : glm::vec3(0.0f);
     previousProceduralVelocity = vel;
 
-    // Phase jump: on first frame of movement, snap to extreme sprint pose
-    bool wasIdle = previousMove01 < 0.01f;
-    bool nowMoving = move01 > 0.01f;
-    if (wasIdle && nowMoving) {
-        proceduralTime = (3.14159265f * 0.5f) / (gPlayerProcedural.walkFrequency + move01 * gPlayerProcedural.walkFrequencyMultiplier);
-    } else {
-        proceduralTime += dt;
-    }
+    // === INSTANT ANIMATION STATE TRANSITIONS ===
+    bool wasMoving = previousMove01 >= 0.01f;
+    bool nowMoving = move01 >= 0.01f;
     previousMove01 = move01;
 
-    float phase = proceduralTime * (gPlayerProcedural.walkFrequency + move01 * gPlayerProcedural.walkFrequencyMultiplier);
-    float stride = std::sin(phase);
-    float counterStride = std::sin(phase + 3.14159265f);
-    float bob = std::abs(std::sin(phase)) * gPlayerProcedural.bobHeight * move01;
-    float air = onGround ? 0.0f : 1.0f;
-    float accelLean = std::clamp(acceleration.z * -0.03f, -8.0f, 8.0f);
+    std::string activeAnim = nowMoving ? "walk" : "idle";
 
-    // Reload state: lower arms during reload
+    // On state change: reset timer and optionally snap to a start tick
+    if (activeAnim != currentAnimName) {
+        currentAnimName = activeAnim;
+        if (activeAnim == "walk") {
+            animStateTime = (float)gPlayerProcedural.walkStartTickOnEnter / 60.0f;
+        } else {
+            animStateTime = 0.0f;
+        }
+    }
+
+    animStateTime += dt;
+
+    // === COMPUTE JSON KEYFRAME ANIMATION ===
+    auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
+    std::unordered_map<std::string, AnimOverlayResult> animOverlay;
+    if (animIt != gPlayerProcedural.layers.animations.end()) {
+        float animSpeedScale = 1.0f;
+        if (animIt->second.speedScaleFromVelocity)
+            animSpeedScale = 0.3f + move01 * 1.2f;
+        animOverlay = interpolateAnimClip(animIt->second, animStateTime, animSpeedScale);
+    }
+
+    // Reload state
     bool isReloading = false;
     for (const auto& pair : weaponRuntimes) {
         if (pair.first == "revolver" || pair.first == "shotgun") {
@@ -1087,67 +1124,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // Weapon sway (applied to arms when weapon equipped)
+    // Weapon state
     bool weaponEquipped = hasValidWeapon && (equippedSlot >= 1);
-    float armInfluence = weaponEquipped ? gPlayerProcedural.armInfluenceMultiplier : 1.0f;
-    float swayAmount = weaponEquipped ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
-    float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
-    float swayX = std::sin(swayPhase) * swayAmount;
-    float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
-    float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
-
-    // Idle weapon sway (present even when standing still)
-    float idleSway = weaponEquipped ? std::sin(weaponSwayTime * gPlayerProcedural.idleSwaySpeed) * gPlayerProcedural.idleSwayAmount : 0.0f;
-
-    // Upper body aim rotation (torso + arms rotate toward aim direction)
-    float aimYaw = 0.0f;
-    float aimPitch = 0.0f;
-    if (hasAimData && weaponEquipped) {
-        glm::vec3 flatAim = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.0f));
-        glm::vec3 flatForward = glm::normalize(glm::vec3(movementCapsule.rotation * glm::vec3(0,1,0)));
-        // Only yaw in XY plane
-        aimYaw = std::atan2(flatAim.y, flatAim.x) - std::atan2(flatForward.y, flatForward.x);
-        // Normalize to -PI..PI
-        while (aimYaw > 3.14159265f) aimYaw -= 2.0f * 3.14159265f;
-        while (aimYaw < -3.14159265f) aimYaw += 2.0f * 3.14159265f;
-        aimYaw = std::clamp(aimYaw, -1.0f, 1.0f); // Limit to ~57 degrees
-        
-        // Pitch for up/down aim
-        aimPitch = std::asin(std::clamp(aimDirection.z, -1.0f, 1.0f));
-        aimPitch = std::clamp(aimPitch, -0.8f, 0.8f); // Limit pitch
-    }
-
-    // Compute layered animation overlays
-    std::string activeAnim = (move01 < 0.01f) ? "idle" : "walk";
-    auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
-    std::unordered_map<std::string, AnimOverlayResult> animOverlay;
-    if (animIt != gPlayerProcedural.layers.animations.end()) {
-        float animSpeedScale = 1.0f;
-        if (animIt->second.speedScaleFromVelocity)
-            animSpeedScale = 0.3f + move01 * 1.2f;
-        animOverlay = interpolateAnimClip(animIt->second, proceduralTime, animSpeedScale);
-    }
-
-    // Debug: print animation state once per second
-    {
-        static float debugTimer = 0.0f;
-        debugTimer -= dt;
-        if (debugTimer <= 0.0f) {
-            debugTimer = 1.0f;
-            float tickTime = proceduralTime * 60.0f;
-            printf("[ANIM DEBUG] anim=%s proceduralTime=%.2f tickTime=%.2f move01=%.2f keyframes=%zu\n",
-                   activeAnim.c_str(), proceduralTime, tickTime, move01,
-                   animIt != gPlayerProcedural.layers.animations.end() ? animIt->second.keyframes.size() : 0);
-            auto torsoIt = animOverlay.find("torso");
-            if (torsoIt != animOverlay.end()) {
-                printf("[ANIM DEBUG]   torso trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
-                       torsoIt->second.translation.x, torsoIt->second.translation.y, torsoIt->second.translation.z,
-                       torsoIt->second.rotation.x, torsoIt->second.rotation.y, torsoIt->second.rotation.z);
-            }
-        }
-    }
-
-    // Weapon overlay for current weapon
     std::string weaponId;
     for (const auto& pair : weaponRuntimes) {
         weaponId = pair.first;
@@ -1163,142 +1141,79 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    // Weapon sway computation (arms only, when weapon equipped)
+    float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
+    float swayAmount = weaponEquipped ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
+    float swayX = std::sin(swayPhase) * swayAmount;
+    float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
+    float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
+    float idleSway = weaponEquipped ? std::sin(weaponSwayTime * gPlayerProcedural.idleSwaySpeed) * gPlayerProcedural.idleSwayAmount : 0.0f;
+
+    // Aim tracking for weapon-equipped upper body
+    float aimYaw = 0.0f, aimPitch = 0.0f;
+    if (hasAimData && weaponEquipped) {
+        glm::vec3 flatAim = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.0f));
+        glm::vec3 flatForward = glm::normalize(glm::vec3(movementCapsule.rotation * glm::vec3(0,1,0)));
+        aimYaw = std::atan2(flatAim.y, flatAim.x) - std::atan2(flatForward.y, flatForward.x);
+        while (aimYaw > 3.14159265f) aimYaw -= 2.0f * 3.14159265f;
+        while (aimYaw < -3.14159265f) aimYaw += 2.0f * 3.14159265f;
+        aimYaw = std::clamp(aimYaw, -1.0f, 1.0f);
+        aimPitch = std::asin(std::clamp(aimDirection.z, -1.0f, 1.0f));
+        aimPitch = std::clamp(aimPitch, -0.8f, 0.8f);
+    }
+
+    // === PERFECT POSE GENERATION ===
+    // JSON keyframes are the SOURCE OF TRUTH for perfect pose.
+    // No extra procedural noise is added to body part rotations.
     for (PhysicalBodyPart& part : physicalBody.parts)
-{
-    if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size())
-        continue;
+    {
+        if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size())
+            continue;
 
-    ProceduralPose target;
+        ProceduralPose target;
 
-        if (part.name == "leftLeg")
-        {
-            target.rotationEuler.z = stride * gPlayerProcedural.legSwingAmount * move01 - air * 18.0f;
-            target.rotationEuler.x = -air * 8.0f;
-            target.translation.z = -bob * 0.35f;
-        }
-        else if (part.name == "rightLeg")
-        {
-            target.rotationEuler.z = counterStride * gPlayerProcedural.legSwingAmount * move01 - air * 18.0f;
-            target.rotationEuler.x = -air * 8.0f;
-            target.translation.z = -bob * 0.35f;
-        }
-        else if (part.name == "leftArm")
-        {
-            target.rotationEuler.z = (counterStride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f) * armInfluence;
-            target.rotationEuler.z += 8.0f * move01 * armInfluence;
-
-            if (weaponEquipped) {
-                float reloadDrop = isReloading ? gPlayerProcedural.reloadArmLowerZ : 0.0f;
-                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX + gPlayerProcedural.reloadHandLower : 0.0f;
-                target.rotationEuler.z += gPlayerProcedural.leftArmRaise + reloadDrop + idleSway;
-                target.rotationEuler.x += gPlayerProcedural.leftArmForward + reloadLower;
-                target.rotationEuler.y += gPlayerProcedural.leftArmTwist;
-                target.translation.z += 0.15f;
-
-                target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
-                target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
-                
-                target.rotationEuler.z += swayZ * 0.5f;
-                target.rotationEuler.x += swayX * 0.3f;
-                target.rotationEuler.y += swayY * 0.3f;
-            }
-        }
-        else if (part.name == "rightArm")
-        {
-            target.rotationEuler.z = (stride * gPlayerProcedural.armSwingAmount * move01 + air * 14.0f) * armInfluence;
-            target.rotationEuler.z += -8.0f * move01 * armInfluence;
-
-            if (weaponEquipped) {
-                float reloadDrop = isReloading ? gPlayerProcedural.reloadArmLowerZ : 0.0f;
-                float reloadLower = isReloading ? gPlayerProcedural.reloadArmLowerX + gPlayerProcedural.reloadHandLower : 0.0f;
-                target.rotationEuler.z += gPlayerProcedural.rightArmRaise + reloadDrop + idleSway;
-                target.rotationEuler.x += gPlayerProcedural.rightArmForward + reloadLower;
-                target.rotationEuler.y += gPlayerProcedural.rightArmTwist;
-                target.translation.z += 0.18f;
-                target.translation.x += 0.08f;
-
-                target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.armAimYawStrength;
-                target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.armAimPitchStrength;
-                
-                target.rotationEuler.z += swayZ;
-                target.rotationEuler.x += swayX * 0.5f;
-                target.rotationEuler.y += swayY * 0.5f;
-            }
-        }
-        else if (part.name == "torso")
-        {
-            target.translation.z = bob;
-            target.rotationEuler.z = gPlayerProcedural.torsoLeanAmount * move01 + 10.0f * dash01 + accelLean;
-            target.rotationEuler.z += std::clamp(0.0f, -8.0f, 8.0f);
-
-            if (weaponEquipped && hasAimData) {
-                target.rotationEuler.y += aimYaw * 57.29578f * gPlayerProcedural.torsoAimYawStrength;
-                target.rotationEuler.x += aimPitch * 57.29578f * gPlayerProcedural.torsoAimPitchStrength;
-            }
-        }
-        else if (part.name == "head")
-        {
-            target.translation.z = bob * 0.35f;
-            target.rotationEuler.z = gPlayerProcedural.headCounterAmount * move01 + 5.0f * dash01 - accelLean * 0.5f;
-            target.rotationEuler.z += std::clamp(0.0f, -4.0f, 4.0f);
-        }
-
-        if (!onGround)
-        {
-            target.translation.z +=
-                (part.name == "torso" || part.name == "head")
-                ? 0.015f
-                : 0.0f;
-        }
-
-        // Apply keyframe animation overlay (additive to base procedural pose)
+        // JSON keyframe values are the base target
         {
             auto ovIt = animOverlay.find(part.name);
             if (ovIt != animOverlay.end()) {
-                target.translation += ovIt->second.translation;
-                target.rotationEuler += ovIt->second.rotation;
+                target.translation = ovIt->second.translation;
+                target.rotationEuler = ovIt->second.rotation;
             }
         }
 
-        // Apply weapon overlay (replaces arm-specific values)
+        // Weapon overlay replaces arm rotation entirely when a weapon is equipped
         if (hasWeaponOverlay && weaponOverlay) {
             auto woIt = weaponOverlay->parts.find(part.name);
             if (woIt != weaponOverlay->parts.end() && (part.name == "leftArm" || part.name == "rightArm")) {
-                target.rotationEuler.x = woIt->second.rotation.x;
-                target.rotationEuler.y = woIt->second.rotation.y;
-                target.rotationEuler.z = woIt->second.rotation.z;
+                target.rotationEuler = woIt->second.rotation;
                 target.translation += woIt->second.translation;
             }
         }
 
-        // Apply reload overlay (additive, mostly arm lowering)
+        // Reload overlay (additive arm lowering)
         if (isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
             target.rotationEuler += gPlayerProcedural.layers.reloadOverlay.rotation;
             target.translation += gPlayerProcedural.layers.reloadOverlay.translation;
         }
 
+        // Axis locks: clamp unwanted axes to 0
+        applyAxisLocks(target, part.name);
+
+        // Store the clean perfect pose (exact JSON target, no smoothing)
+        part.perfectPose = target;
+
+        // Physical body follows perfect pose with spring smoothing
         part.pose.translation =
-            springVec3(
-                part.translationSpring,
-                target.translation,
-                90.0f,
-                16.0f,
-                dt
-            );
-
+            springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
         part.pose.rotationEuler =
-            springVec3(
-                part.rotationSpring,
-                target.rotationEuler,
-                80.0f,
-                14.0f,
-                dt
-            );
+            springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
 
+        // Apply to skeleton for rendering
         perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
             perfectPoseSkeleton.restLocalTransforms[part.nodeIndex] *
             poseMatrix(part.pose);
 
+        // Sync legacy body parts
         for (BodyPart& legacyPart : bodyParts)
         {
             if (legacyPart.nodeIndex != part.nodeIndex)
@@ -1309,7 +1224,29 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             break;
         }
     }
-    
+
+    // Debug logging (enable with `animation_debug 1`)
+    if (DebugConfig::DEBUG_ANIMATION) {
+        static float debugTimer = 0.0f;
+        debugTimer -= dt;
+        if (debugTimer <= 0.0f) {
+            debugTimer = 1.0f;
+            float tickTime = animStateTime * 60.0f;
+            printf("[ANIM] state=%s tick=%.2f move01=%.2f keyframes=%zu\n",
+                   activeAnim.c_str(), tickTime, move01,
+                   animIt != gPlayerProcedural.layers.animations.end() ? animIt->second.keyframes.size() : 0);
+            for (const PhysicalBodyPart& part : physicalBody.parts) {
+                printf("[ANIM]   perfectPose %s trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       part.name.c_str(),
+                       part.perfectPose.translation.x, part.perfectPose.translation.y, part.perfectPose.translation.z,
+                       part.perfectPose.rotationEuler.x, part.perfectPose.rotationEuler.y, part.perfectPose.rotationEuler.z);
+                printf("[ANIM]   physical  %s trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       part.name.c_str(),
+                       part.pose.translation.x, part.pose.translation.y, part.pose.translation.z,
+                       part.pose.rotationEuler.x, part.pose.rotationEuler.y, part.pose.rotationEuler.z);
+            }
+        }
+    }
 
     updateModelWorldTransforms();
 }
