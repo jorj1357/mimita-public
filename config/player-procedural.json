@@ -36,7 +36,7 @@
   "revolverOffsetZ": 0.0,
   "revolverRotX": 0.0,
   "revolverRotY": 0.0,
-  "revolverRotZ": 0.0,
+  "revolverRotZ": -90.0,
 
   "shotgunOffsetX": 0.0,
   "shotgunOffsetY": 0.2,

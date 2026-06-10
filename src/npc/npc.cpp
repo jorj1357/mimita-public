@@ -136,7 +136,7 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
     );
 }
 
-InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack)
+InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack, bool downDash)
 {
     InputState input;
     input.wishMoveXY = {moveDir.x, moveDir.y};
@@ -144,6 +144,7 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
     input.jumpHeld = jump;
     input.dashPressed = dash;
     input.groundReturnPressed = false;
+    input.downDashPressed = downDash;
     input.freezeHeld = false;
 
     // Face movement direction or target
@@ -275,6 +276,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     // Update timers
     npc.dashCooldown = std::max(0.0f, npc.dashCooldown - safeDt);
+    npc.downDashCooldown = std::max(0.0f, npc.downDashCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
     npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - safeDt);
     npc.stateMachine.stateTimer += safeDt;
@@ -283,6 +285,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     // Sense the world
     senseWorld(npc, player, safeDt);
+
+    // Down dash decision: slam down when airborne above the target
+    bool wantDownDash = false;
+    if (npc.sensors.hasTarget && !npc.sensors.grounded && npc.downDashCooldown <= 0.0f)
+    {
+        float heightAbove = npc.body.pos.z - npc.sensors.targetPos.z;
+        if (heightAbove > 3.0f)
+            wantDownDash = true;
+    }
 
     // Handle hit reaction
     if (npc.hitReactionTimer > 0.0f)
@@ -370,13 +381,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
 
     // Build input
-    InputState input = buildInputState(npc, moveDir, jump, dash, attack);
+    InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash);
     if (input.dashPressed)
         npc.dashCommandConsumed = true;
 
     // Physics update (uses same player movement system)
     glm::vec3 velocityBefore = npc.body.vel;
     float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
+    bool downDashAvailableBefore = npc.body.downDashAvailable;
 
     physicsMainUpdate(npc.body, world, input, safeDt);
 
@@ -411,6 +423,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
         Debug::log(Debug::Category::General, "[NPC] id=%u dashed\n", npc.id);
+    }
+
+    // Down dash cooldown: detect if down dash was consumed this frame
+    if (wantDownDash && downDashAvailableBefore && !npc.body.downDashAvailable)
+    {
+        npc.downDashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.50f;
+        Debug::log(Debug::Category::General, "[NPC] id=%u down-dashed\n", npc.id);
     }
 
     // Attack (disabled for training modes 0 idle and 1 flee)

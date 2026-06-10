@@ -2,6 +2,11 @@
 # MiMITA incremental build system
 # 5 23 2026
 #
+# !!! AI AGENTS: DO NOT USE THIS FILE DIRECTLY !!!
+# Use build_agent.py instead (python build_agent.py).
+# build.py auto-runs the game after linking, blocking the terminal
+# until you close the game window. build_agent.py just builds.
+#
 # goals:
 # - MUCH faster rebuilds
 # - only rebuild changed cpp files

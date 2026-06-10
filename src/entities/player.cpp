@@ -137,61 +137,64 @@ bool reloadPlayerProceduralConfig()
         readJsonValue(j, "shotgunRotY", loaded.shotgunRotY);
         readJsonValue(j, "shotgunRotZ", loaded.shotgunRotZ);
 
-        // Parse layered animation config
-        if (j.contains("animations")) {
-            const auto& anims = j["animations"];
-            for (auto it = anims.begin(); it != anims.end(); ++it) {
-                AnimClip clip;
-                clip.durationTicks = it->value("durationTicks", 60);
-                clip.loop = it->value("loop", true);
-                clip.speedScaleFromVelocity = it->value("speedScaleFromVelocity", true);
-                if (it->contains("keyframes")) {
-                    for (const auto& kf : it->at("keyframes")) {
-                        AnimKeyframe keyframe;
-                        keyframe.tick = kf.value("tick", 0);
-                        if (kf.contains("parts")) {
-                            for (auto p = kf["parts"].begin(); p != kf["parts"].end(); ++p) {
-                                AnimKeyframePart part;
-                                if (p->contains("translation") && p->at("translation").size() >= 3)
-                                    part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
-                                if (p->contains("rotation") && p->at("rotation").size() >= 3)
-                                    part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
-                                keyframe.parts[p.key()] = part;
+        // Parse layered animation config (under "layers" key)
+        if (j.contains("layers")) {
+            const auto& layers = j["layers"];
+            if (layers.contains("animations")) {
+                const auto& anims = layers["animations"];
+                for (auto it = anims.begin(); it != anims.end(); ++it) {
+                    AnimClip clip;
+                    clip.durationTicks = it->value("durationTicks", 60);
+                    clip.loop = it->value("loop", true);
+                    clip.speedScaleFromVelocity = it->value("speedScaleFromVelocity", true);
+                    if (it->contains("keyframes")) {
+                        for (const auto& kf : it->at("keyframes")) {
+                            AnimKeyframe keyframe;
+                            keyframe.tick = kf.value("tick", 0);
+                            if (kf.contains("parts")) {
+                                for (auto p = kf["parts"].begin(); p != kf["parts"].end(); ++p) {
+                                    AnimKeyframePart part;
+                                    if (p->contains("translation") && p->at("translation").size() >= 3)
+                                        part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
+                                    if (p->contains("rotation") && p->at("rotation").size() >= 3)
+                                        part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
+                                    keyframe.parts[p.key()] = part;
+                                }
                             }
+                            clip.keyframes.push_back(keyframe);
                         }
-                        clip.keyframes.push_back(keyframe);
                     }
+                    loaded.layers.animations[it.key()] = clip;
                 }
-                loaded.layers.animations[it.key()] = clip;
             }
-        }
 
-        if (j.contains("weaponOverlays")) {
-            const auto& overlays = j["weaponOverlays"];
-            for (auto it = overlays.begin(); it != overlays.end(); ++it) {
-                WeaponOverlay overlay;
-                overlay.armInfluenceMultiplier = it->value("armInfluenceMultiplier", 0.08f);
-                overlay.idleSwayAmount = it->value("idleSwayAmount", 0.03f);
-                if (it->contains("parts")) {
-                    for (auto p = it->at("parts").begin(); p != it->at("parts").end(); ++p) {
-                        AnimKeyframePart part;
-                        if (p->contains("translation") && p->at("translation").size() >= 3)
-                            part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
-                        if (p->contains("rotation") && p->at("rotation").size() >= 3)
-                            part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
-                        overlay.parts[p.key()] = part;
+            if (layers.contains("weaponOverlays")) {
+                const auto& overlays = layers["weaponOverlays"];
+                for (auto it = overlays.begin(); it != overlays.end(); ++it) {
+                    WeaponOverlay overlay;
+                    overlay.armInfluenceMultiplier = it->value("armInfluenceMultiplier", 0.08f);
+                    overlay.idleSwayAmount = it->value("idleSwayAmount", 0.03f);
+                    if (it->contains("parts")) {
+                        for (auto p = it->at("parts").begin(); p != it->at("parts").end(); ++p) {
+                            AnimKeyframePart part;
+                            if (p->contains("translation") && p->at("translation").size() >= 3)
+                                part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
+                            if (p->contains("rotation") && p->at("rotation").size() >= 3)
+                                part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
+                            overlay.parts[p.key()] = part;
+                        }
                     }
+                    loaded.layers.weaponOverlays[it.key()] = overlay;
                 }
-                loaded.layers.weaponOverlays[it.key()] = overlay;
             }
-        }
 
-        if (j.contains("reloadOverlay")) {
-            const auto& ro = j["reloadOverlay"];
-            if (ro.contains("translation") && ro["translation"].size() >= 3)
-                loaded.layers.reloadOverlay.translation = glm::vec3(ro["translation"][0], ro["translation"][1], ro["translation"][2]);
-            if (ro.contains("rotation") && ro["rotation"].size() >= 3)
-                loaded.layers.reloadOverlay.rotation = glm::vec3(ro["rotation"][0], ro["rotation"][1], ro["rotation"][2]);
+            if (layers.contains("reloadOverlay")) {
+                const auto& ro = layers["reloadOverlay"];
+                if (ro.contains("translation") && ro["translation"].size() >= 3)
+                    loaded.layers.reloadOverlay.translation = glm::vec3(ro["translation"][0], ro["translation"][1], ro["translation"][2]);
+                if (ro.contains("rotation") && ro["rotation"].size() >= 3)
+                    loaded.layers.reloadOverlay.rotation = glm::vec3(ro["rotation"][0], ro["rotation"][1], ro["rotation"][2]);
+            }
         }
 
         gPlayerProcedural = loaded;
