@@ -241,6 +241,33 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "animation_debug",
+        "Toggle animation debug logging (0=off, 1=on)",
+        "animation_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_ANIMATION = !DebugConfig::DEBUG_ANIMATION;
+            } else {
+                DebugConfig::DEBUG_ANIMATION = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_ANIMATION
+                ? "[OK] animation debug enabled"
+                : "[OK] animation debug disabled");
+        }
+    });
+
+    registerCommand({
+        "animation_dump_pose",
+        "Dump all body part perfectPose and physical pose to console once",
+        "animation_dump_pose",
+        [](const std::vector<std::string>&) {
+            DebugConfig::DEBUG_ANIMATION = true;
+            Terminal::instance().addLog("[OK] animation dump queued (will print next frame)");
+        }
+    });
+
+    registerCommand({
         "debug.reset",
         "Reset all debug flags to defaults",
         "debug.reset",
