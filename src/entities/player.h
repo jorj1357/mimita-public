@@ -96,9 +96,15 @@ struct PlayerProceduralConfig
     float revolverOffsetX;
     float revolverOffsetY;
     float revolverOffsetZ;
+    float revolverRotX;
+    float revolverRotY;
+    float revolverRotZ;
     float shotgunOffsetX;
     float shotgunOffsetY;
     float shotgunOffsetZ;
+    float shotgunRotX;
+    float shotgunRotY;
+    float shotgunRotZ;
 };
 
 extern PlayerProceduralConfig gPlayerProcedural;
