@@ -70,6 +70,35 @@ struct PhysicalBody {
     std::vector<Mesh> partMeshes;
 };
 
+struct AnimKeyframePart {
+    glm::vec3 translation{0.0f};
+    glm::vec3 rotation{0.0f};
+};
+
+struct AnimKeyframe {
+    int tick = 0;
+    std::unordered_map<std::string, AnimKeyframePart> parts;
+};
+
+struct AnimClip {
+    int durationTicks = 60;
+    bool loop = true;
+    bool speedScaleFromVelocity = true;
+    std::vector<AnimKeyframe> keyframes;
+};
+
+struct WeaponOverlay {
+    float armInfluenceMultiplier = 0.08f;
+    float idleSwayAmount = 0.03f;
+    std::unordered_map<std::string, AnimKeyframePart> parts;
+};
+
+struct LayeredAnimConfig {
+    std::unordered_map<std::string, AnimClip> animations;
+    std::unordered_map<std::string, WeaponOverlay> weaponOverlays;
+    AnimKeyframePart reloadOverlay;
+};
+
 struct PlayerProceduralConfig
 {
     float leftArmRaise;
@@ -93,6 +122,10 @@ struct PlayerProceduralConfig
     float walkFrequencyMultiplier;
     float reloadArmLowerZ;
     float reloadArmLowerX;
+    float reloadHandLower;
+    float armInfluenceMultiplier;
+    float idleSwayAmount;
+    float idleSwaySpeed;
     float revolverOffsetX;
     float revolverOffsetY;
     float revolverOffsetZ;
@@ -105,6 +138,7 @@ struct PlayerProceduralConfig
     float shotgunRotX;
     float shotgunRotY;
     float shotgunRotZ;
+    LayeredAnimConfig layers;
 };
 
 extern PlayerProceduralConfig gPlayerProcedural;
@@ -121,6 +155,7 @@ public:
     int maxHp = 100;
     bool inventoryOpen = false;
     int equippedSlot = 1;
+    bool hasValidWeapon = false;
     uint8_t networkWeaponState = 0;
     float networkShootEffectTimer = 0.0f;
     int revolverCylinder = 6;

@@ -323,23 +323,24 @@ bool WeaponSystem::reload(Player& player) {
 }
 
 void WeaponSystem::equip(Player& player, int slot) {
-    player.equippedSlot = slot;
-    mCurrentSlot = slot;
-
     const WeaponDefinition* def = getDefForSlot(slot);
     if (def) {
+        player.equippedSlot = slot;
+        player.hasValidWeapon = true;
+        mCurrentSlot = slot;
         mCurrentWeaponId = def->id;
         WeaponAudio::playEquipSound(*def);
         printf("[WEAPON] equipped '%s' slot %d\n", def->id.c_str(), slot);
     } else {
-        mCurrentWeaponId.clear();
-        printf("[WEAPON] equipped slot %d (no weapon)\n", slot);
+        unequip(player);
     }
 }
 
 void WeaponSystem::unequip(Player& player) {
     player.equippedSlot = 0;
+    player.hasValidWeapon = false;
     mCurrentSlot = 0;
+    mCurrentWeaponId.clear();
     if (mGodballPhys.active) {
         WeaponGodball::despawnBall(mGodballPhys);
     }
