@@ -20,6 +20,44 @@
 #include "camera.h"
 #include "gui/ui-system.h"
 
+// -------------------------------------------------------
+// Duel spawn pair selection
+//
+// Rules:
+//   0 spawnpoints  -> player at hardcoded pos, NPCs circle around player
+//   1 spawnpoint   -> player at spawnPoints[0], NPCs circle around player
+//   2+ spawnpoints -> player at spawnPoints[0], NPCs at spawnPoints[1..N]
+// -------------------------------------------------------
+static void getDuelSpawnPositions(
+    const World& world,
+    glm::vec3& outPlayerPos,
+    std::vector<glm::vec3>& outNpcPositions,
+    int numNpcs)
+{
+    outNpcPositions.clear();
+    outPlayerPos = glm::vec3(1.0f, 5.0f, 60.0f);
+
+    if (world.spawnPoints.empty()) {
+        for (int i = 0; i < numNpcs; ++i) {
+            float angle = (6.2831853f * i) / std::max(1, numNpcs);
+            outNpcPositions.push_back(outPlayerPos + glm::vec3(cosf(angle) * 8.0f, sinf(angle) * 8.0f, 1.0f));
+        }
+        return;
+    }
+
+    outPlayerPos = world.spawnPoints[0].position;
+
+    for (int i = 0; i < numNpcs; ++i) {
+        int idx = 1 + i;
+        if (idx < (int)world.spawnPoints.size()) {
+            outNpcPositions.push_back(world.spawnPoints[idx].position);
+        } else {
+            float angle = (6.2831853f * i) / std::max(1, numNpcs);
+            outNpcPositions.push_back(outPlayerPos + glm::vec3(cosf(angle) * 4.0f, sinf(angle) * 4.0f, 1.0f));
+        }
+    }
+}
+
 void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, World& world)
 {
     config = cfg;
@@ -50,10 +88,12 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
         loadWorldFromGLB(world, config.mapPath.c_str());
     }
 
-    SpawnPoint* sp = world.pickSpawnPoint();
-    if (sp) {
-        player.pos = sp->position;
-        player.respawnPosition = sp->position;
+    {
+        glm::vec3 playerSpawn;
+        std::vector<glm::vec3> npcSpawns;
+        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
+        player.pos = playerSpawn;
+        player.respawnPosition = playerSpawn;
     }
 
     printf("[DUEL] started npcs=%d killsToWin=%d map=%s\n",
@@ -83,12 +123,12 @@ void DuelManager::resetRoundEntities(
     player.vel = glm::vec3(0.0f);
     player.externalImpulse = glm::vec3(0.0f);
 
-    SpawnPoint* sp = world.pickSpawnPoint();
-
-    if (sp)
     {
-        player.pos = sp->position;
-        player.respawnPosition = sp->position;
+        glm::vec3 playerSpawn;
+        std::vector<glm::vec3> npcSpawns;
+        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
+        player.pos = playerSpawn;
+        player.respawnPosition = playerSpawn;
     }
 
     alivePlayerCount = 1;
@@ -100,14 +140,18 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
     currentPhase = DuelPhase::Active;
     timer = 0.0f;
 
-    for (int i = 0; i < config.numNpcs; ++i) {
-        SpawnPoint* sp = world.pickSpawnPoint();
-        glm::vec3 pos = sp ? sp->position
-            : player.pos + glm::vec3(
-                cosf((6.2831853f * i) / std::max(1, config.numNpcs)) * 8.0f,
-                sinf((6.2831853f * i) / std::max(1, config.numNpcs)) * 8.0f,
-                1.0f);
-        npcs.spawnNpc(config.npcDifficulty, pos);
+    {
+        glm::vec3 playerSpawn;
+        std::vector<glm::vec3> npcSpawns;
+        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
+        for (int i = 0; i < config.numNpcs; ++i) {
+            glm::vec3 pos = i < (int)npcSpawns.size() ? npcSpawns[i]
+                : player.pos + glm::vec3(
+                    cosf((6.2831853f * i) / std::max(1, config.numNpcs)) * 8.0f,
+                    sinf((6.2831853f * i) / std::max(1, config.numNpcs)) * 8.0f,
+                    1.0f);
+            npcs.spawnNpc(config.npcDifficulty, pos);
+        }
     }
 
     printf("[DUEL] FIGHT round=%d\n", currentRound);
@@ -420,10 +464,12 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     matchOverButtonsShown = false;
     matchOverTimer = 0.0f;
 
-    SpawnPoint* sp = world.pickSpawnPoint();
-    if (sp) {
-        player.pos = sp->position;
-        player.respawnPosition = sp->position;
+    {
+        glm::vec3 playerSpawn;
+        std::vector<glm::vec3> npcSpawns;
+        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
+        player.pos = playerSpawn;
+        player.respawnPosition = playerSpawn;
     }
 
     printf("[DUEL] restart complete\n");

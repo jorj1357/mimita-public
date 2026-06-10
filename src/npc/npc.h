@@ -45,6 +45,7 @@ public:
     NpcStateMachine stateMachine;
 
     float dashCooldown = 0.0f;
+    float downDashCooldown = 0.0f;
     bool dashCommandConsumed = false;
     float attackCooldown = 0.0f;
     float lastTargetLogDistance = -1.0f;
@@ -57,8 +58,8 @@ public:
     float hitReactionTimer = 0.0f;
     unsigned int rngState = 1;
 
-    // Training mode: 0=idle, 1=flee, 2=attack
-    int trainingMode = 0;
+    // Training mode: 0=idle, 1=flee, 2=attack (normal AI)
+    int trainingMode = 2;
 
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);
 };
