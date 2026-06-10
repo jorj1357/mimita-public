@@ -41,6 +41,8 @@ namespace DebugConfig
     inline bool DEBUG_SWORDSWORD = false;
     inline bool DEBUG_ANIMATION = false;
     inline bool DEBUG_GODBALL = false;
+    inline bool DEBUG_GODBALL_HITSTOP = false;
+    inline bool DEBUG_COLLISION_SYSTEM = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
@@ -72,6 +74,8 @@ namespace DebugConfig
         DEBUG_RELOAD = false;
         DEBUG_SWORDSWORD = false;
         DEBUG_ANIMATION = false;
+        DEBUG_GODBALL = false;
+        DEBUG_GODBALL_HITSTOP = false;
     }
 }
 

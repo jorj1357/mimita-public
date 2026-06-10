@@ -148,14 +148,15 @@ static inline void applyCollisionContact(
     float into = glm::dot(incoming, normal);
     const PlayerSettings& cfg = GetPlayerSettings();
 
-    // Only bounce off wall-like normals, not floors/ceilings
+    // Wall-like normal: project velocity
     bool isWall = std::fabs(normal.z) < 0.45f;
     if (isWall)
     {
         projectVelocityAgainstNormal(p, normal);
     }
     
-    if (normal.z > 0.35f)
+    // Ground: slope is walkable
+    if (normal.z >= MAX_WALKABLE_SLOPE_DOT)
     {
         groundedThisFrame = true;
         applyTouchResets(p);
@@ -171,7 +172,18 @@ static inline void applyCollisionContact(
 
         DebugVis::recordGroundNormal(point, normal, label);
     }
-    else if (normal.z < -0.35f)
+    // Steep slope: not ground, but project velocity along tangent for sliding
+    else if (normal.z > 0.0f)
+    {
+        applyTouchResets(p);
+        // Project velocity along slope tangent to allow sliding/surfing
+        glm::vec3 tangent = glm::normalize(glm::cross(glm::cross(normal, glm::vec3(0,0,1)), normal));
+        float tangentSpeed = glm::dot(p.vel, tangent);
+        p.vel = tangent * tangentSpeed;
+        float tangentImpulse = glm::dot(p.externalImpulse, tangent);
+        p.externalImpulse = tangent * tangentImpulse;
+    }
+    else if (normal.z < -MAX_WALKABLE_SLOPE_DOT)
     {
         if (p.vel.z > 0.0f)
             p.vel.z = 0.0f;
@@ -498,9 +510,7 @@ static bool capsuleVsBlock(
 
         correction = normal * (penetration + PUSH_OUT_MARGIN);
 
-        // if (normal.z > 0.5f)
-        // set to 0.3f to make more things count as grounded? idk mar 7 2026
-        if (normal.z > 0.3f)
+        if (normal.z >= MAX_WALKABLE_SLOPE_DOT)
             grounded = true;
 
         return true;
@@ -781,6 +791,7 @@ static glm::vec3 solveBatchedCorrection(
     }
 
     constexpr int SOLVER_PASSES = 6;
+    constexpr float RELAXATION = 0.8f;
     for (int pass = 0; pass < SOLVER_PASSES; ++pass)
     {
         for (const RecoveryContact& c : manifold)
@@ -788,9 +799,15 @@ static glm::vec3 solveBatchedCorrection(
             float required = c.penetration + slop;
             float satisfied = glm::dot(correction, c.normal);
             if (satisfied < required)
-                correction += c.normal * (required - satisfied);
+                correction += c.normal * (required - satisfied) * RELAXATION;
         }
     }
+
+    // Clamp per-axis correction to prevent one contact from dominating
+    constexpr float MAX_AXIS_CORRECTION = 0.5f;
+    correction.x = glm::clamp(correction.x, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
+    correction.y = glm::clamp(correction.y, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
+    correction.z = glm::clamp(correction.z, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
 
     if (outMaxPenetration)
         *outMaxPenetration = maxPenetration;
@@ -949,7 +966,6 @@ static void doGLBTriangleCollisions(
 ) {
     constexpr float SURFACE_SLOP = 0.002f;
     constexpr float MAX_CORRECTION = 2.0f;
-    constexpr float BODY_SAMPLE_RADIUS = 0.045f;
 
     // CHANGED: No dashVel — dash is now in vel, jun 6 2026
     glm::vec3 totalMove = (p.vel + p.externalImpulse) * dt;
@@ -1016,10 +1032,9 @@ static void doGLBTriangleCollisions(
         for (size_t si = 0; si < bodySamples.size(); ++si)
         {
             glm::vec3 sample = bodySamples[si];
-            // On first iteration, include limb animation delta in the sweep
-            glm::vec3 sampleMove = (iter == 0 && si < bodyDeltas.size())
-                ? remainingMove + bodyDeltas[si]
-                : remainingMove;
+            // Include limb animation delta in the sweep every iteration
+            glm::vec3 animDelta = (si < bodyDeltas.size()) ? bodyDeltas[si] : glm::vec3(0.0f);
+            glm::vec3 sampleMove = remainingMove + animDelta;
             for (int triIndex : candidates)
             {
                 float t = 1.0f;
@@ -1237,7 +1252,7 @@ static void doGLBTriangleCollisions(
             for (int triIndex : groundCandidates)
             {
                 const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
-                if (tri.normal.z < 0.5f) continue; // Only upward-facing surfaces
+                if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue; // Only walkable surfaces
                 
                 // Check if triangle is horizontally aligned with player
                 float triMinX = std::min({tri.a.x, tri.b.x, tri.c.x});
@@ -2058,7 +2073,12 @@ static bool capsuleTriangleSweep(
     int triIndex,
     SweepHit& out
 ) {
-    glm::vec3 samples[3] = {cap.a, (cap.a + cap.b) * 0.5f, cap.b};
+    constexpr int NUM_SAMPLES = 5;
+    glm::vec3 samples[NUM_SAMPLES];
+    for (int i = 0; i < NUM_SAMPLES; ++i) {
+        float t = (float)i / (float)(NUM_SAMPLES - 1);
+        samples[i] = cap.a + (cap.b - cap.a) * t;
+    }
     bool hit = false;
     float bestT = 1.0f;
     glm::vec3 bestN(0.0f);
@@ -2096,7 +2116,12 @@ static bool capsuleTriangleContact(
     int triIndex,
     Contact& out
 ) {
-    glm::vec3 samples[3] = {cap.a, (cap.a + cap.b) * 0.5f, cap.b};
+    constexpr int NUM_SAMPLES = 5;
+    glm::vec3 samples[NUM_SAMPLES];
+    for (int i = 0; i < NUM_SAMPLES; ++i) {
+        float t = (float)i / (float)(NUM_SAMPLES - 1);
+        samples[i] = cap.a + (cap.b - cap.a) * t;
+    }
     bool hit = false;
     Contact best;
 

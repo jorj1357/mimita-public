@@ -74,15 +74,11 @@ struct PlayerCapsule {
 // WORLD / COLLISION TUNING
 // =====================================================
 
-// cosine of max walkable slope (~45 degrees)
-// jan 30 2026 does bigger = i can walk up 89 deg slope or smaller?
-// lower = more tolerant, e.g. 0.0f = 90 deg wall is a floor to me 
-// too strict this is 
-// inline float MIN_GROUND_DOT = 0.7f;
-// should be like 80 deg? idk 
-// nevermind just keep it as 0 so stop sliding bruh
-// inline float MIN_GROUND_DOT = 0.2f;
-inline float MIN_GROUND_DOT = 0.0f;
+// cosine of max walkable slope
+// normal.z >= MAX_WALKABLE_SLOPE_DOT = slope is ground
+// normal.z < MAX_WALKABLE_SLOPE_DOT = slope is slide/surf surface
+// default 0.707f = 45 degree max walkable slope
+inline float MAX_WALKABLE_SLOPE_DOT = 0.707f;
 
 // json loading stuff
 // jan 30 2026 do we need this?  i would like to have no conversions 
@@ -226,6 +222,10 @@ inline float SLOPE_OVERLAP = 0.1f;
 // defined in config.h but its 0.02f for now
 // tune 0.01-0.05
 inline float SLOPE_SKIN = 0.02f;
+
+// radius for body part collision sweeps (arms, legs, etc.)
+// larger = more solid limbs, but more collision checks
+constexpr float BODY_SAMPLE_RADIUS = 0.12f;
 
 // max step heihgt
 // how up can u walk , like how tall can it be , the block
