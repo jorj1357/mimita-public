@@ -59,6 +59,7 @@ struct PhysicalBodyPart {
     int nodeIndex = -1;
     Collider collider;
     ProceduralPose pose;
+    ProceduralPose perfectPose;
     SpringState translationSpring;
     SpringState rotationSpring;
     glm::mat4 worldTransform{1.0f};
@@ -68,6 +69,12 @@ struct PhysicalBodyPart {
 struct PhysicalBody {
     std::vector<PhysicalBodyPart> parts;
     std::vector<Mesh> partMeshes;
+};
+
+struct AxisLock {
+    bool x = true;
+    bool y = true;
+    bool z = true;
 };
 
 struct AnimKeyframePart {
@@ -139,6 +146,9 @@ struct PlayerProceduralConfig
     float shotgunRotY;
     float shotgunRotZ;
     LayeredAnimConfig layers;
+    std::unordered_map<std::string, AxisLock> axisLocks;
+    int walkStartTickOnEnter = 7;
+    int animationStateTransitionFrames = 1;
 };
 
 extern PlayerProceduralConfig gPlayerProcedural;
@@ -268,6 +278,8 @@ public:
     glm::vec3 previousProceduralVelocity{0.0f};
     float proceduralTime = 0.0f;
     float previousMove01 = 0.0f;
+    float animStateTime = 0.0f;
+    std::string currentAnimName = "idle";
 
     // -------- Construction --------
     Player();
