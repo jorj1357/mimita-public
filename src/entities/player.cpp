@@ -214,12 +214,12 @@ struct AnimOverlayResult {
 };
 
 static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
-    const AnimClip& clip, float timeSeconds)
+    const AnimClip& clip, float timeSeconds, float speedScale = 1.0f)
 {
     std::unordered_map<std::string, AnimOverlayResult> result;
     if (clip.keyframes.empty()) return result;
 
-    float tickTime = timeSeconds * 60.0f;
+    float tickTime = timeSeconds * 60.0f * speedScale;
     float duration = (float)clip.durationTicks;
     if (duration <= 0.0f) duration = 1.0f;
 
@@ -234,21 +234,47 @@ static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
         if ((float)clip.keyframes[i].tick >= loopedTick) { next = &clip.keyframes[i]; break; }
     }
 
-    float range = (float)(next->tick - prev->tick);
-    float t = (range > 0.001f) ? (loopedTick - (float)prev->tick) / range : 0.0f;
+    float range;
+    float t;
+
+    if (prev == next && clip.loop && clip.keyframes.size() > 1) {
+        // At loop boundary: interpolate between last keyframe and first
+        const AnimKeyframe* last = &clip.keyframes.back();
+        prev = last;
+        float wrappedDist = (duration - (float)last->tick) + (float)next->tick;
+        float currentDist = loopedTick - (float)last->tick;
+        if (currentDist < 0.0f) currentDist += duration;
+        range = wrappedDist;
+        t = (range > 0.001f) ? currentDist / range : 0.0f;
+    } else {
+        range = (float)(next->tick - prev->tick);
+        t = (range > 0.001f) ? (loopedTick - (float)prev->tick) / range : 0.0f;
+    }
     t = std::clamp(t, 0.0f, 1.0f);
 
-    for (const auto& partEntry : next->parts) {
-        const std::string& partName = partEntry.first;
+    // Collect all part names from both prev and next keyframes
+    std::vector<std::string> allParts;
+    for (const auto& p : prev->parts) allParts.push_back(p.first);
+    for (const auto& p : next->parts) {
+        bool found = false;
+        for (const auto& existing : allParts) {
+            if (existing == p.first) { found = true; break; }
+        }
+        if (!found) allParts.push_back(p.first);
+    }
+
+    for (const auto& partName : allParts) {
         AnimOverlayResult overlay;
         auto prevIt = prev->parts.find(partName);
-        if (prevIt != prev->parts.end()) {
-            overlay.translation = glm::mix(prevIt->second.translation, partEntry.second.translation, t);
-            overlay.rotation = glm::mix(prevIt->second.rotation, partEntry.second.rotation, t);
-        } else {
-            overlay.translation = partEntry.second.translation;
-            overlay.rotation = partEntry.second.rotation;
-        }
+        auto nextIt = next->parts.find(partName);
+
+        glm::vec3 prevTrans = (prevIt != prev->parts.end()) ? prevIt->second.translation : glm::vec3(0.0f);
+        glm::vec3 nextTrans = (nextIt != next->parts.end()) ? nextIt->second.translation : glm::vec3(0.0f);
+        glm::vec3 prevRot = (prevIt != prev->parts.end()) ? prevIt->second.rotation : glm::vec3(0.0f);
+        glm::vec3 nextRot = (nextIt != next->parts.end()) ? nextIt->second.rotation : glm::vec3(0.0f);
+
+        overlay.translation = glm::mix(prevTrans, nextTrans, t);
+        overlay.rotation = glm::mix(prevRot, nextRot, t);
         result[partName] = overlay;
     }
 
@@ -1095,8 +1121,31 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     std::string activeAnim = (move01 < 0.01f) ? "idle" : "walk";
     auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
     std::unordered_map<std::string, AnimOverlayResult> animOverlay;
-    if (animIt != gPlayerProcedural.layers.animations.end())
-        animOverlay = interpolateAnimClip(animIt->second, proceduralTime);
+    if (animIt != gPlayerProcedural.layers.animations.end()) {
+        float animSpeedScale = 1.0f;
+        if (animIt->second.speedScaleFromVelocity)
+            animSpeedScale = 0.3f + move01 * 1.2f;
+        animOverlay = interpolateAnimClip(animIt->second, proceduralTime, animSpeedScale);
+    }
+
+    // Debug: print animation state once per second
+    {
+        static float debugTimer = 0.0f;
+        debugTimer -= dt;
+        if (debugTimer <= 0.0f) {
+            debugTimer = 1.0f;
+            float tickTime = proceduralTime * 60.0f;
+            printf("[ANIM DEBUG] anim=%s proceduralTime=%.2f tickTime=%.2f move01=%.2f keyframes=%zu\n",
+                   activeAnim.c_str(), proceduralTime, tickTime, move01,
+                   animIt != gPlayerProcedural.layers.animations.end() ? animIt->second.keyframes.size() : 0);
+            auto torsoIt = animOverlay.find("torso");
+            if (torsoIt != animOverlay.end()) {
+                printf("[ANIM DEBUG]   torso trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       torsoIt->second.translation.x, torsoIt->second.translation.y, torsoIt->second.translation.z,
+                       torsoIt->second.rotation.x, torsoIt->second.rotation.y, torsoIt->second.rotation.z);
+            }
+        }
+    }
 
     // Weapon overlay for current weapon
     std::string weaponId;

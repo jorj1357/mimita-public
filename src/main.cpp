@@ -797,6 +797,7 @@ int main(int argc, char** argv)
     registerDebugToggle("debug_blood_hits", DebugConfig::DEBUG_BLOOD_HITS);
     registerDebugToggle("debug_blood_force", DebugConfig::DEBUG_BLOOD_FORCE);
     registerDebugToggle("debug_debris", DebugConfig::DEBUG_DEBRIS);
+    registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
 
     Terminal::instance().registerCommand({
         "fakelag_mode", "Set fake lag mode (0=off, 1=random, 2=static)",
@@ -1650,6 +1651,15 @@ int main(int argc, char** argv)
                 }
             }
             mousePrev = mouseDown;
+
+            static bool rightMousePrev = false;
+            bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+            if (!Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev) {
+                if (!editorMode) {
+                    weapons.fireAlt(camera, player, npcSystem, world);
+                }
+            }
+            rightMousePrev = rightMouseDown;
 
             static bool slotPrev[10] = {};
             for (int keySlot = 0; keySlot <= 9; ++keySlot) {

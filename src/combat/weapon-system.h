@@ -7,6 +7,7 @@
 #include "weapon-types.h"
 #include "weapon-viewmodel.h"
 #include "weapon-godball.h"
+#include "weapon-swordsword.h"
 
 class Camera;
 class Player;
@@ -31,6 +32,12 @@ public:
         NpcSystem& npcs,
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr);
+
+    RevolverShotResult fireAlt(
+        const Camera& camera,
+        Player& player,
+        NpcSystem& npcs,
+        const World& world);
     std::vector<RevolverShotResult> collectRemoteGodballHits(
         Player& player,
         const std::unordered_map<uint32_t, Player>& remotePlayers,
@@ -53,6 +60,7 @@ private:
     static constexpr int MAX_SLOTS = 11;
     WeaponViewModel mViewModels[MAX_SLOTS];
     GodballPhysics mGodballPhys;
+    SwordswordState mSwordswordState;
     float mShotCooldown = 0.0f;
     float mShootingTimer = 0.0f;
     float mRecoilValue = 0.0f;
@@ -72,6 +80,7 @@ private:
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers);
     void fireGodball(const Camera& camera, Player& player, NpcSystem& npcs, const World& world);
+    void fireSwordsword(const Camera& camera, Player& player, NpcSystem& npcs);
 
     const WeaponDefinition* getDefForSlot(int slot) const;
     const WeaponDefinition* getCurrentDef(const Player& player) const;

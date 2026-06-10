@@ -7,6 +7,7 @@ namespace WeaponData {
 WeaponDefinition createRevolverDefinition();
 WeaponDefinition createGodballDefinition();
 WeaponDefinition createShotgunDefinition();
+WeaponDefinition createSwordswordDefinition();
 
 void registerBuiltinWeapons();
 

@@ -14,7 +14,8 @@ enum class WeaponBehaviorType {
     Hitscan,
     Projectile,
     Godball,
-    Melee
+    Melee,
+    Swordsword
 };
 
 enum class WeaponFireMode {
