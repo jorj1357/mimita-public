@@ -461,90 +461,80 @@ void EffectPartSystem::spawnBloodEffect(
         return;
     }
 
-    struct SurfaceCluster {
-        glm::vec3 position{0.0f};
-        glm::vec3 normal{0.0f};
-        glm::vec3 rayDirection{0.0f};
-        int hitCount = 0;
-    };
-    // More clusters = wider, more natural blood spray instead of a thin line
-    constexpr int MAX_CLUSTERS = 15;
-    std::array<SurfaceCluster, MAX_CLUSTERS> clusters{};
-    int clusterCount = 0;
-    const int rayCount = std::clamp(24 + (int)std::round(damage * 0.8f), 24, 100);
-    const float castDistance = std::clamp(5.0f + damage * 0.12f, 5.0f, 24.0f);
+    // Generate decal positions within a cone VOLUME behind the victim.
+    // Each position is a random point inside the cone, then projected onto
+    // the nearest surface (floor via downward cast, or wall via forward cast).
+    // This avoids the "line on floor" problem from cone-plane intersection.
+    const int decalCount = std::clamp(8 + (int)std::round(damage * 0.3f), 8, 40);
+    const float coneDist = std::clamp(3.0f + damage * 0.08f, 3.0f, 16.0f);
     mBloodDebugSegmentCount = 0;
 
-    for (int ray = 0; ray < rayCount; ++ray) {
+    for (int dec = 0; dec < decalCount; ++dec) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float radial = ray == 0
-            ? 0.0f
-            : std::sqrt((float)(rand() % 1001) / 1000.0f) * coneRadius;
-        const glm::vec3 rayDirection = glm::normalize(
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * coneRadius;
+        const float dist = 0.5f + ((float)(rand() % 1001) / 1000.0f) * (coneDist - 0.5f);
+        const glm::vec3 coneDir = glm::normalize(
             forward +
             tangent * std::cos(angle) * radial +
             bitangent * std::sin(angle) * radial);
-        const glm::vec3 start = hitPoint + forward * 0.05f;
-        const glm::vec3 end = start + rayDirection * castDistance;
-        BloodWorldHit hit;
-        const bool hitWorld = traceBloodSegment(*mWorld, start, end, hit);
+
+        // Random point inside the cone volume
+        glm::vec3 conePoint = hitPoint + coneDir * dist;
+
+        // Try to find a surface at/near this point
+        BloodWorldHit surfaceHit;
+        bool foundSurface = false;
+
+        // 1) Cast downward to find floor/ground
+        BloodWorldHit downHit;
+        float downLen = 2.0f + damageScale * 1.0f;
+        if (traceBloodSegment(*mWorld, conePoint, conePoint + glm::vec3(0,0,-downLen), downHit)) {
+            downHit.position += downHit.normal * 0.01f;
+            surfaceHit = downHit;
+            foundSurface = true;
+        }
+
+        // 2) If no floor, cast forward to find wall
+        if (!foundSurface) {
+            BloodWorldHit fwdHit;
+            if (traceBloodSegment(*mWorld, conePoint, conePoint + coneDir * 2.0f, fwdHit)) {
+                fwdHit.position += fwdHit.normal * 0.01f;
+                surfaceHit = fwdHit;
+                foundSurface = true;
+            }
+        }
+
+        // 3) If still no surface, cast sideways
+        if (!foundSurface) {
+            glm::vec3 sideDir = glm::normalize(glm::cross(coneDir, glm::vec3(0,0,1)));
+            BloodWorldHit sideHit;
+            if (traceBloodSegment(*mWorld, conePoint, conePoint + sideDir * 2.0f, sideHit)) {
+                sideHit.position += sideHit.normal * 0.01f;
+                surfaceHit = sideHit;
+                foundSurface = true;
+            }
+        }
 
         if (mBloodDebugSegmentCount < MAX_BLOOD_DEBUG_SEGMENTS) {
             BloodDebugSegment& debug = mBloodDebugSegments[mBloodDebugSegmentCount++];
-            debug.from = start;
-            debug.to = hitWorld ? hit.position : end;
-            debug.normal = hitWorld ? hit.normal : glm::vec3(0.0f);
-            debug.hit = hitWorld;
+            debug.from = conePoint;
+            debug.to = foundSurface ? surfaceHit.position : conePoint;
+            debug.normal = foundSurface ? surfaceHit.normal : glm::vec3(0,0,1);
+            debug.hit = foundSurface;
         }
-        if (!hitWorld)
+
+        if (!foundSurface)
             continue;
 
-        int clusterIndex = -1;
-        for (int cluster = 0; cluster < clusterCount; ++cluster) {
-            const glm::vec3 center = clusters[cluster].position /
-                (float)clusters[cluster].hitCount;
-            const glm::vec3 normal = glm::normalize(clusters[cluster].normal);
-            // Larger merge distance on strong hits = wider spray
-            float mergeDist = 0.8f + damageScale * 0.6f;
-            if (glm::length(center - hit.position) <= mergeDist &&
-                glm::dot(normal, hit.normal) >= 0.65f) {
-                clusterIndex = cluster;
-                break;
-            }
-        }
-        if (clusterIndex < 0) {
-            if (clusterCount >= (int)clusters.size())
-                continue;
-            clusterIndex = clusterCount++;
-        }
-
-        SurfaceCluster& cluster = clusters[clusterIndex];
-        cluster.position += hit.position;
-        cluster.normal += hit.normal;
-        cluster.rayDirection += rayDirection;
-        ++cluster.hitCount;
-    }
-
-    for (int clusterIndex = 0; clusterIndex < clusterCount; ++clusterIndex) {
-        const SurfaceCluster& cluster = clusters[clusterIndex];
-        if (cluster.hitCount <= 0)
-            continue;
-
-        const glm::vec3 normal = glm::normalize(cluster.normal);
-        const glm::vec3 rayDirection = glm::normalize(cluster.rayDirection);
-        const float impactAngle = std::clamp(
-            std::fabs(glm::dot(-rayDirection, normal)), 0.15f, 1.0f);
         const float variation = 0.8f + (float)(rand() % 401) / 1000.0f;
+        const float impactAngle = std::clamp(1.0f - std::fabs(coneDir.z), 0.15f, 1.0f);
 
         BloodDecal decal;
-        decal.position =
-            cluster.position / (float)cluster.hitCount + normal * 0.006f;
-        decal.normal = normal;
+        decal.position = surfaceHit.position;
+        decal.normal = surfaceHit.normal;
         decal.radius = std::clamp(
-            (0.25f + damage * 0.022f) *
-                (0.8f + impactAngle * 0.5f) * variation,
-            0.25f,
-            4.5f);
+            (0.25f + damage * 0.022f) * (0.8f + impactAngle * 0.5f) * variation,
+            0.25f, 4.5f);
         decal.lifetime = 60.0f;
         decal.rotation = (float)(rand() % 6284) / 1000.0f;
         decal.stretch = 1.0f + (1.0f - impactAngle) * 0.35f;
@@ -570,8 +560,8 @@ void EffectPartSystem::spawnBloodEffect(
     if (DebugConfig::DEBUG_BLOOD_HITS) {
         printf("[BLOOD SPAWN] particles=%d damage=%.1f cone=%.1f\n",
                particleCount, damage, coneDegrees);
-        printf("[BLOOD DECAL] rays=%d clusters=%d active=%zu\n",
-               rayCount, clusterCount, mBloodDecals.size());
+        printf("[BLOOD DECAL] decals=%d active=%zu\n",
+               decalCount, mBloodDecals.size());
     }
 }
 
