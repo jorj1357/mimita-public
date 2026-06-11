@@ -208,12 +208,12 @@
         "idleSwayAmount": 0.03,
         "parts": {
           "leftArm": {
-            "translation": [0, 0, 0],
-            "rotation": [70, 10, -20]
+            "translation": [0, 0, 0.2],
+            "rotation": [0, -20, 75]
           },
           "rightArm": {
-            "translation": [0, 0, 0],
-            "rotation": [70, 10, 20]
+            "translation": [0, 0, -0.1],
+            "rotation": [0,5,80]
           }
         }
       },
