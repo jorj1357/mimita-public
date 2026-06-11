@@ -155,22 +155,22 @@
             "parts": {
               "torso": {
                 "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -40]
+                "rotation": [0, 0, -20]
               },
               "head": {
-                "translation": [0.15, 0, 0],
-                "rotation": [0, 0, 0]
+                "translation": [0.2, 0, 0],
+                "rotation": [0, 0, -10]
               },
               "leftArm": {
-                "translation": [0, 0, 0],
+                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, 80]
               },
               "rightArm": {
-                "translation": [0, 0, 0],
+                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "leftLeg": {
-                "translation": [0, 0, 0],
+                "translation": [-0.1, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "rightLeg": {
@@ -184,18 +184,18 @@
             "parts": {
               "torso": {
                 "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -40]
-              },
-              "head": {
-                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, -20]
               },
+              "head": {
+                "translation": [0.2, 0, 0],
+                "rotation": [0, 0, -10]
+              },
               "leftArm": {
-                "translation": [0, 0, 0],
+                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "rightArm": {
-                "translation": [0, 0, 0],
+                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, 80]
               },
               "leftLeg": {
@@ -203,7 +203,7 @@
                 "rotation": [0, 0, 80]
               },
               "rightLeg": {
-                "translation": [0, 0, 0],
+                "translation": [-0.1, 0, 0],
                 "rotation": [0, 0, -80]
               }
             }
@@ -216,19 +216,19 @@
                 "rotation": [0, 0, -20]
               },
               "head": {
-                "translation": [0.15, 0, 0],
-                "rotation": [0, 0, -20]
+                "translation": [0.2, 0, 0],
+                "rotation": [0, 0, -10]
               },
               "leftArm": {
-                "translation": [0, 0, 0],
+                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, 80]
               },
               "rightArm": {
-                "translation": [0, 0, 0],
+                "translation": [0.1, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "leftLeg": {
-                "translation": [0, 0, 0],
+                "translation": [-0.1, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "rightLeg": {
