@@ -1264,6 +1264,29 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    // Pose debug logging (always enabled for debug builds)
+    // Print weapon pose state once per second
+    if (DebugConfig::DEBUG_ANIMATION) {
+        static float poseDebugTimer2 = 0.0f;
+        poseDebugTimer2 -= dt;
+        if (poseDebugTimer2 <= 0.0f) {
+            poseDebugTimer2 = 1.0f;
+            const PhysicalBodyPart* leftArm = nullptr;
+            const PhysicalBodyPart* rightArm = nullptr;
+            for (const PhysicalBodyPart& part : physicalBody.parts) {
+                if (part.name == "leftArm") leftArm = &part;
+                if (part.name == "rightArm") rightArm = &part;
+            }
+            if (leftArm && rightArm) {
+                printf("[POSE] weapon=%s usePose=%d equipped=%d "
+                       "leftArmFinal=(%.2f %.2f %.2f) rightArmFinal=(%.2f %.2f %.2f)\n",
+                       weaponId.c_str(), (int)hasWeaponPose, (int)weaponEquipped,
+                       leftArm->pose.translation.x, leftArm->pose.translation.y, leftArm->pose.translation.z,
+                       rightArm->pose.translation.x, rightArm->pose.translation.y, rightArm->pose.translation.z);
+            }
+        }
+    }
+
     // Arm debug logging (enable with `anim_debug_arms 1`)
     if (DebugConfig::DEBUG_ANIM_ARMS) {
         static float armDebugTimer = 0.0f;
