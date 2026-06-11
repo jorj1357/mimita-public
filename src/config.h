@@ -42,6 +42,7 @@ namespace DebugConfig
     inline bool DEBUG_ANIMATION = false;
     inline bool DEBUG_GODBALL = false;
     inline bool DEBUG_GODBALL_HITSTOP = false;
+    inline bool DEBUG_ANIM_ARMS = false;
     inline bool DEBUG_COLLISION_SYSTEM = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
@@ -76,6 +77,7 @@ namespace DebugConfig
         DEBUG_ANIMATION = false;
         DEBUG_GODBALL = false;
         DEBUG_GODBALL_HITSTOP = false;
+        DEBUG_ANIM_ARMS = false;
     }
 }
 

@@ -258,6 +258,23 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "anim_debug_arms",
+        "Toggle arm animation debug logging (0=off, 1=on)",
+        "anim_debug_arms <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_ANIM_ARMS = !DebugConfig::DEBUG_ANIM_ARMS;
+            } else {
+                DebugConfig::DEBUG_ANIM_ARMS = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_ANIM_ARMS
+                ? "[OK] arm animation debug enabled"
+                : "[OK] arm animation debug disabled");
+        }
+    });
+
+    registerCommand({
         "swordsword_debug",
         "Toggle swordsword debug visualization (0=off, 1=on)",
         "swordsword_debug <0|1>",

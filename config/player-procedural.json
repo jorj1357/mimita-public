@@ -21,7 +21,7 @@
   "torsoLeanAmount": -40.0,
   "headCounterAmount": -6.0,
   "bobHeight": 0.12,
-  "walkFrequency": 1.0,
+  "walkFrequency": 0.3,
   "walkFrequencyMultiplier": 1.0,
 
   "reloadArmLowerZ": -15.0,
@@ -127,7 +127,7 @@
                 "rotation": [0, 0, 80]
               },
               "rightArm": {
-                "translation": [0.3, 0, 0],
+                "translation": [0, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "leftLeg": {
@@ -156,7 +156,7 @@
                 "rotation": [0, 0, -80]
               },
               "rightArm": {
-                "translation": [0.3, 0, 0],
+                "translation": [0, 0, 0],
                 "rotation": [0, 0, 80]
               },
               "leftLeg": {
@@ -181,11 +181,11 @@
                 "rotation": [0, 0, -20]
               },
               "leftArm": {
-                "translation": [0.2, 0, 0],
+                "translation": [0, 0, 0],
                 "rotation": [0, 0, 80]
               },
               "rightArm": {
-                "translation": [0.3, 0, 0],
+                "translation": [0, 0, 0],
                 "rotation": [0, 0, -80]
               },
               "leftLeg": {
