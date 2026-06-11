@@ -301,6 +301,7 @@ public:
                 const glm::mat4& proj) const;
 
     // -------- Weapon system --------
+    std::string equippedWeaponId;
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 
     // Previous frame body sample positions for limb sweep collisions

@@ -40,7 +40,9 @@ enum NetworkWeaponType : uint8_t
 {
     NETWORK_WEAPON_NONE = 0,
     NETWORK_WEAPON_REVOLVER = 1,
-    NETWORK_WEAPON_GODBALL = 2
+    NETWORK_WEAPON_GODBALL = 2,
+    NETWORK_WEAPON_SHOTGUN = 3,
+    NETWORK_WEAPON_SWORDSWORD = 4
 };
 
 enum ShotImpactType : uint8_t

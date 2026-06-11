@@ -99,6 +99,10 @@ public:
     void setMapList(const std::vector<std::string>& maps);
     void rotateMap(World& world);
 
+    // Team spawn assignment
+    void assignTeamSpawns(const World& world);
+    glm::vec3 getTeamSpawn(DuelTeam team, int entityIndex, int totalOnTeam) const;
+
 private:
     DuelConfig config;
     DuelPhase currentPhase = DuelPhase::Off;
@@ -127,6 +131,12 @@ private:
     bool matchOverButtonsShown = false;
     bool matchOverCaptured = false;
     glm::vec3 matchOverCameraTarget{0.0f};
+
+    // Cached team spawn points for current match
+    glm::vec3 mTeamASpawn{0.0f};
+    glm::vec3 mTeamBSpawn{0.0f};
+    int mTeamASpawnIndex = -1;
+    int mTeamBSpawnIndex = -1;
 
     void beginFight(Player& player, NpcSystem& npcs, World& world);
     void endRound(DuelTeam winner);

@@ -898,6 +898,7 @@ void Player::reset()
     proceduralTime = 0.0f;
     animStateTime = 0.0f;
     currentAnimName = "idle";
+    equippedWeaponId.clear();
 
     for (BodyPart& part : bodyParts)
     {
@@ -1164,11 +1165,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     // Weapon state
     bool weaponEquipped = hasValidWeapon && (equippedSlot >= 1);
-    std::string weaponId;
-    for (const auto& pair : weaponRuntimes) {
-        weaponId = pair.first;
-        break;
-    }
+    std::string weaponId = equippedWeaponId;
     bool hasWeaponPose = false;
     WeaponPoseConfig* weaponPoseCfg = nullptr;
     if (weaponEquipped) {
@@ -1178,6 +1175,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             weaponPoseCfg = &wpIt->second;
         }
     }
+    printf("[ANIM] weapon=%s usePose=%d equipped=%d\n",
+           weaponId.c_str(), (int)hasWeaponPose, (int)weaponEquipped);
 
     // Weapon sway computation (arms only, when weapon has a pose)
     float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
@@ -1500,13 +1499,24 @@ void Player::render(unsigned int shader,
 
 void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce)
 {
-    if (damage <= 0) return;
+    printf("[APPLY DAMAGE] target=%s hpBefore=%d damage=%d\n",
+           username.c_str(), currentHp, damage);
+
+    if (damage <= 0) {
+        printf("[APPLY DAMAGE] damage <= 0, abort\n");
+        return;
+    }
     
     int oldHp = currentHp;
     currentHp = std::max(0, currentHp - damage);
     int actualDamage = oldHp - currentHp;
     
-    if (actualDamage <= 0) return;
+    if (actualDamage <= 0) {
+        printf("[APPLY DAMAGE] no actual damage (already dead?)\n");
+        return;
+    }
+
+    printf("[APPLY DAMAGE] hpAfter=%d actualDamage=%d\n", currentHp, actualDamage);
     
     // Play hurt sound with volume/pitch based on damage
     float hurt01 = std::clamp(actualDamage / 100.0f, 0.0f, 1.0f);

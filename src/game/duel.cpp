@@ -21,41 +21,111 @@
 #include "gui/ui-system.h"
 
 // -------------------------------------------------------
-// Duel spawn pair selection
+// Team-based spawn assignment
 //
-// Rules:
-//   0 spawnpoints  -> player at hardcoded pos, NPCs circle around player
-//   1 spawnpoint   -> player at spawnPoints[0], NPCs circle around player
-//   2+ spawnpoints -> player at spawnPoints[0], NPCs at spawnPoints[1..N]
+// Maps may have spawn points tagged with arena_N:
+//   arena_0 = Team A spawns
+//   arena_1 = Team B spawns
+//
+// If arena tags are absent, the first two spawn points
+// are used (Team A = spawn 0, Team B = nearest different spawn).
 // -------------------------------------------------------
-static void getDuelSpawnPositions(
-    const World& world,
-    glm::vec3& outPlayerPos,
-    std::vector<glm::vec3>& outNpcPositions,
-    int numNpcs)
+
+static int randomInt(int min, int max, unsigned int& seed)
 {
-    outNpcPositions.clear();
-    outPlayerPos = glm::vec3(1.0f, 5.0f, 60.0f);
+    seed = seed * 1664525u + 1013904223u;
+    return min + (int)(((seed >> 8) & 0x00ffffffu) % (unsigned int)(max - min + 1));
+}
+
+static float randomFloat(float min, float max, unsigned int& seed)
+{
+    seed = seed * 1664525u + 1013904223u;
+    float t = (float)((seed >> 8) & 0x00ffffffu) / (float)0x01000000u;
+    return min + t * (max - min);
+}
+
+void DuelManager::assignTeamSpawns(const World& world)
+{
+    mTeamASpawnIndex = -1;
+    mTeamBSpawnIndex = -1;
+    mTeamASpawn = glm::vec3(1.0f, 5.0f, 60.0f);
+    mTeamBSpawn = glm::vec3(1.0f, 5.0f, 60.0f);
 
     if (world.spawnPoints.empty()) {
-        for (int i = 0; i < numNpcs; ++i) {
-            float angle = (6.2831853f * i) / std::max(1, numNpcs);
-            outNpcPositions.push_back(outPlayerPos + glm::vec3(cosf(angle) * 8.0f, sinf(angle) * 8.0f, 1.0f));
-        }
+        printf("[DUEL SPAWN] no spawn points in map\n");
         return;
     }
 
-    outPlayerPos = world.spawnPoints[0].position;
-
-    for (int i = 0; i < numNpcs; ++i) {
-        int idx = 1 + i;
-        if (idx < (int)world.spawnPoints.size()) {
-            outNpcPositions.push_back(world.spawnPoints[idx].position);
-        } else {
-            float angle = (6.2831853f * i) / std::max(1, numNpcs);
-            outNpcPositions.push_back(outPlayerPos + glm::vec3(cosf(angle) * 4.0f, sinf(angle) * 4.0f, 1.0f));
-        }
+    // Group spawns by arenaIndex
+    std::vector<int> arena0, arena1, unassigned;
+    for (int i = 0; i < (int)world.spawnPoints.size(); ++i) {
+        const auto& sp = world.spawnPoints[i];
+        if (sp.arenaIndex == 0) arena0.push_back(i);
+        else if (sp.arenaIndex == 1) arena1.push_back(i);
+        else unassigned.push_back(i);
     }
+
+    // Team A: prefer arena_0, else first unassigned spawn, else first spawn
+    int teamAIdx = -1;
+    if (!arena0.empty()) {
+        unsigned int seed = 12345;
+        teamAIdx = arena0[randomInt(0, (int)arena0.size() - 1, seed)];
+    } else if (!unassigned.empty()) {
+        teamAIdx = unassigned[0];
+    } else {
+        teamAIdx = 0;
+    }
+    mTeamASpawnIndex = teamAIdx;
+    mTeamASpawn = world.spawnPoints[teamAIdx].position;
+
+    // Team B: prefer arena_1, else nearest spawn that is NOT Team A's spawn
+    int teamBIdx = -1;
+    if (!arena1.empty()) {
+        unsigned int seed = 67890;
+        teamBIdx = arena1[randomInt(0, (int)arena1.size() - 1, seed)];
+    } else {
+        // Find nearest spawn point that isn't Team A's
+        float bestDist = 1e30f;
+        for (int i = 0; i < (int)world.spawnPoints.size(); ++i) {
+            if (i == teamAIdx) continue;
+            // Prefer using a different unassigned or arena_1 if available
+            float d = glm::length(world.spawnPoints[i].position - mTeamASpawn);
+            if (d < bestDist) {
+                bestDist = d;
+                teamBIdx = i;
+            }
+        }
+        // Fallback: if no other spawn, use the same but with offset
+        if (teamBIdx < 0) teamBIdx = teamAIdx;
+    }
+    mTeamBSpawnIndex = teamBIdx;
+    mTeamBSpawn = world.spawnPoints[teamBIdx].position;
+
+    printf("[DUEL SPAWN] Team A -> Spawn %d (%.2f, %.2f, %.2f)\n",
+           mTeamASpawnIndex, mTeamASpawn.x, mTeamASpawn.y, mTeamASpawn.z);
+    printf("[DUEL SPAWN] Team B -> Spawn %d (%.2f, %.2f, %.2f)\n",
+           mTeamBSpawnIndex, mTeamBSpawn.x, mTeamBSpawn.y, mTeamBSpawn.z);
+
+    if (teamAIdx == teamBIdx && world.spawnPoints.size() >= 1) {
+        printf("[DUEL SPAWN] WARNING: teams share the same spawn point\n");
+    }
+    if (world.spawnPoints.size() < 2) {
+        printf("[DUEL SPAWN] WARNING: need at least 2 spawn points for separate team spawns\n");
+    }
+}
+
+glm::vec3 DuelManager::getTeamSpawn(DuelTeam team, int entityIndex, int totalOnTeam) const
+{
+    glm::vec3 basePos = (team == DuelTeam::Player) ? mTeamASpawn : mTeamBSpawn;
+
+    // Add small random offset when multiple entities share a spawn
+    if (totalOnTeam > 1) {
+        unsigned int seed = 99991u + (unsigned int)entityIndex * 7477u;
+        float angle = randomFloat(0.0f, 6.2831853f, seed);
+        float radius = randomFloat(0.5f, 2.5f, seed);
+        return basePos + glm::vec3(cosf(angle) * radius, sinf(angle) * radius, 0.0f);
+    }
+    return basePos;
 }
 
 void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, World& world)
@@ -88,12 +158,10 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
         loadWorldFromGLB(world, config.mapPath.c_str());
     }
 
+    assignTeamSpawns(world);
     {
-        glm::vec3 playerSpawn;
-        std::vector<glm::vec3> npcSpawns;
-        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
-        player.pos = playerSpawn;
-        player.respawnPosition = playerSpawn;
+        player.pos = getTeamSpawn(DuelTeam::Player, 0, 1);
+        player.respawnPosition = player.pos;
     }
 
     printf("[DUEL] started npcs=%d killsToWin=%d map=%s\n",
@@ -124,11 +192,8 @@ void DuelManager::resetRoundEntities(
     player.externalImpulse = glm::vec3(0.0f);
 
     {
-        glm::vec3 playerSpawn;
-        std::vector<glm::vec3> npcSpawns;
-        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
-        player.pos = playerSpawn;
-        player.respawnPosition = playerSpawn;
+        player.pos = getTeamSpawn(DuelTeam::Player, 0, 1);
+        player.respawnPosition = player.pos;
     }
 
     alivePlayerCount = 1;
@@ -141,16 +206,11 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
     timer = 0.0f;
 
     {
-        glm::vec3 playerSpawn;
-        std::vector<glm::vec3> npcSpawns;
-        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
         for (int i = 0; i < config.numNpcs; ++i) {
-            glm::vec3 pos = i < (int)npcSpawns.size() ? npcSpawns[i]
-                : player.pos + glm::vec3(
-                    cosf((6.2831853f * i) / std::max(1, config.numNpcs)) * 8.0f,
-                    sinf((6.2831853f * i) / std::max(1, config.numNpcs)) * 8.0f,
-                    1.0f);
+            glm::vec3 pos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
             npcs.spawnNpc(config.npcDifficulty, pos);
+            printf("[DUEL SPAWN] NPC %d team=NPC spawn=(%.2f %.2f %.2f)\n",
+                   i, pos.x, pos.y, pos.z);
         }
     }
 
@@ -464,12 +524,10 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     matchOverButtonsShown = false;
     matchOverTimer = 0.0f;
 
+    assignTeamSpawns(world);
     {
-        glm::vec3 playerSpawn;
-        std::vector<glm::vec3> npcSpawns;
-        getDuelSpawnPositions(world, playerSpawn, npcSpawns, config.numNpcs);
-        player.pos = playerSpawn;
-        player.respawnPosition = playerSpawn;
+        player.pos = getTeamSpawn(DuelTeam::Player, 0, 1);
+        player.respawnPosition = player.pos;
     }
 
     printf("[DUEL] restart complete\n");
