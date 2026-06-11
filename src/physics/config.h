@@ -70,6 +70,11 @@ struct PlayerCapsule {
     float r;
 };
 
+// Collision skin width — treats surfaces as slightly thicker
+// to reduce jitter, snagging, and seam penetration.
+// 0.02f = 2cm virtual margin around all collision geometry.
+constexpr float COLLISION_SKIN = 0.02f;
+
 // =====================================================
 // WORLD / COLLISION TUNING
 // =====================================================

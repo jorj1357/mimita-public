@@ -1603,6 +1603,7 @@ int main(int argc, char** argv)
                 camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt);
             }
             setAudioListener(camera.pos, camera.front);
+            EffectPartSystem::instance().setWorld(world);
             weapons.update(camera, player, npcSystem, dt);
             if (mpContext.active)
             {

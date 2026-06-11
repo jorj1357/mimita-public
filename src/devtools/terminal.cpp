@@ -258,6 +258,23 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "npc_combat_debug",
+        "Toggle NPC combat debug logging (0=off, 1=on)",
+        "npc_combat_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_NPC_COMBAT = !DebugConfig::DEBUG_NPC_COMBAT;
+            } else {
+                DebugConfig::DEBUG_NPC_COMBAT = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_NPC_COMBAT
+                ? "[OK] NPC combat debug enabled"
+                : "[OK] NPC combat debug disabled");
+        }
+    });
+
+    registerCommand({
         "anim_debug_arms",
         "Toggle arm animation debug logging (0=off, 1=on)",
         "anim_debug_arms <0|1>",

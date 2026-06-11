@@ -315,21 +315,85 @@ void EffectPartSystem::update(float dt) {
         return;
     }
 
+    // First pass: move and collide non-sticky blood particles
     for (auto& fx : mPool) {
         if (!fx.alive) continue;
         fx.lifetime += dt;
         if (fx.lifetime < 0.0f)
             continue;
-        if (!fx.sticky)
+
+        if (!fx.sticky && fx.replayType == "blood_sphere_particle") {
+            glm::vec3 oldPos = fx.position;
             fx.position += fx.velocity * dt;
-        if (fx.affectedByGravity)
-            fx.velocity.z -= (fx.gravity > 0.0f ? fx.gravity : 9.81f) * dt;
+            if (fx.affectedByGravity)
+                fx.velocity.z -= (fx.gravity > 0.0f ? fx.gravity : 9.81f) * dt;
+
+            // World collision for blood spheres
+            if (mWorld) {
+                // Only check significant movement to avoid self-collision
+                float moveDist = glm::distance(fx.position, oldPos);
+                if (moveDist > 0.01f) {
+                    BloodWorldHit bloodHit;
+                    if (traceBloodSegment(*mWorld, oldPos, fx.position, bloodHit)) {
+                        // Snap to surface and make sticky
+                        fx.position = bloodHit.position;
+                        fx.sticky = true;
+                        fx.velocity = glm::vec3(0.0f);
+                        fx.affectedByGravity = false;
+                        fx.normal = bloodHit.normal;
+                        fx.maxLifetime = std::max(fx.maxLifetime, 4.0f);
+                        // Render as cylinder decal for visible stain
+                        fx.cylinderDecal = true;
+                        fx.cylinderHeight = fx.scale * 0.3f;
+                        if (DebugConfig::DEBUG_BLOOD_HITS) {
+                            printf("[BLOOD] particle stuck at (%.2f %.2f %.2f) normal=(%.2f %.2f %.2f)\n",
+                                   bloodHit.position.x, bloodHit.position.y, bloodHit.position.z,
+                                   bloodHit.normal.x, bloodHit.normal.y, bloodHit.normal.z);
+                        }
+                        continue;
+                    }
+                }
+            }
+        } else if (!fx.sticky) {
+            fx.position += fx.velocity * dt;
+            if (fx.affectedByGravity)
+                fx.velocity.z -= (fx.gravity > 0.0f ? fx.gravity : 9.81f) * dt;
+        }
+
         if (glm::length(fx.angularVelocity) > 0.0f)
             fx.rotation += fx.angularVelocity * dt;
         if (fx.lifetime >= fx.maxLifetime) {
             fx.alive = false;
             fx.resetStrings();
             --mActiveCount;
+        }
+    }
+
+    // Merge nearby sticky blood spheres into larger blobs
+    if (mWorld) {
+        constexpr float MERGE_DIST = 0.25f;
+        constexpr float MERGE_DIST2 = MERGE_DIST * MERGE_DIST;
+        unsigned int maxIdx = std::min<unsigned int>(mActiveCount + 128, POOL_SIZE);
+        for (unsigned int i = 0; i < maxIdx; ++i) {
+            EffectPart& a = mPool[i];
+            if (!a.alive || !a.sticky || !a.cylinderDecal)
+                continue;
+            for (unsigned int j = i + 1; j < maxIdx; ++j) {
+                EffectPart& b = mPool[j];
+                if (!b.alive || !b.sticky || !b.cylinderDecal)
+                    continue;
+                glm::vec3 diff = a.position - b.position;
+                float dist2 = glm::dot(diff, diff);
+                if (dist2 > MERGE_DIST2)
+                    continue;
+                float r1 = a.scale;
+                float r2 = b.scale;
+                a.scale = std::sqrt(r1 * r1 + r2 * r2);
+                a.cylinderHeight = a.scale * 0.3f;
+                b.alive = false;
+                b.resetStrings();
+                --mActiveCount;
+            }
         }
     }
 }
@@ -626,18 +690,9 @@ void EffectPartSystem::spawnBloodSphereBurst(
     const std::string& targetActorId)
 {
     force = std::clamp(force, 0.1f, 2.0f);
-    int count;
-    if (force < 0.3f)
-        count = 4 + rand() % 3;
-    else if (force < 0.7f)
-        count = 8 + rand() % 7;
-    else
-        // count = 18 + rand() % 11;
-        // 6 7 2026 
-        count =
-            18 +
-            (int)(force * 80.0f) +
-            rand() % 30;
+
+    // Blood count scales with damage/force: base + force * multiplier
+    int count = 4 + (int)(force * 48.0f) + rand() % 10;
 
     glm::vec3 dir = glm::length(shotDirection) > 0.001f
         ? glm::normalize(shotDirection)
@@ -650,23 +705,23 @@ void EffectPartSystem::spawnBloodSphereBurst(
     glm::vec3 up = glm::normalize(glm::cross(right, dir));
 
     for (int i = 0; i < count; ++i) {
-        float coneAngle = 0.8f + force * 1.3f;
+        float baseSpread = 0.5f + force * 0.8f;
         float randomAngle = (float)(rand() % 6283) / 1000.0f;
-        float randomRadius = ((float)(rand() % 1001) / 1000.0f) * coneAngle;
+        float randomRadius = ((float)(rand() % 1001) / 1000.0f) * baseSpread;
+
+        // Tighten the spread cluster
+        randomRadius *= 0.3f;
+
         glm::vec3 velDir = dir
             + right * std::cos(randomAngle) * randomRadius
             + up * std::sin(randomAngle) * randomRadius;
         velDir = glm::normalize(velDir);
 
         EffectPart p;
-        p.position = hitPoint + velDir * (0.03f + (rand() % 31) / 1000.0f);
+        // Tighten spawn position around hit point
+        p.position = hitPoint + velDir * (0.01f + (rand() % 11) / 1000.0f);
         p.replayType = "blood_sphere_particle";
-        // p.velocity = velDir * (14.0f + force * 10.0f + (rand() % 4001) / 1000.0f);
 
-        // 6 7 2026 
-        // aww its like 
-        // p.anchored = true
-        // p.color = color3.new(0,1,1)
         p.velocity =
             velDir *
             (
@@ -675,20 +730,41 @@ void EffectPartSystem::spawnBloodSphereBurst(
                 (rand() % 4001) / 1000.0f
             );
         p.color = {0.90f, 0.03f, 0.05f};
-        p.maxLifetime = 0.6f + (rand() % 401) / 1000.0f;
+        p.maxLifetime = 0.8f + (rand() % 401) / 1000.0f;
         p.lifetime = 0.0f;
-        p.scale = 0.08f + force * 0.15f + (rand() % 51) / 1000.0f;
+        // Larger blood spheres: radius * 2
+        p.scale = (0.08f + force * 0.15f + (rand() % 51) / 1000.0f) * 2.0f;
         p.endScale = p.scale * 0.5f;
         p.alpha = 1.0f;
-        // p.gravity = 25.0f;
-        // 6 7 2026 
-        p.gravity =
-            40.0f - force * 18.0f;
+        p.gravity = 40.0f - force * 18.0f;
         p.affectedByGravity = true;
         p.billboardText = false;
         p.sourceActorId = sourceActorId;
         p.targetActorId = targetActorId;
+
+        // World collision at spawn: trace a short distance along velocity
+        if (mWorld && glm::length(p.velocity) > 0.5f) {
+            BloodWorldHit spawnHit;
+            glm::vec3 traceFrom = p.position;
+            glm::vec3 traceTo = p.position + glm::normalize(p.velocity) * 0.3f;
+            if (traceBloodSegment(*mWorld, traceFrom, traceTo, spawnHit)) {
+                p.position = spawnHit.position;
+                p.sticky = true;
+                p.velocity = glm::vec3(0.0f);
+                p.affectedByGravity = false;
+                p.normal = spawnHit.normal;
+                p.maxLifetime = 4.0f;
+                // Stick to surface using cylinder decal for better visual
+                p.cylinderDecal = true;
+                p.cylinderHeight = p.scale * 0.3f;
+            }
+        }
+
         spawn(p);
+    }
+
+    if (DebugConfig::DEBUG_BLOOD_HITS) {
+        printf("[BLOOD] spawnBloodSphereBurst count=%d force=%.2f\n", count, force);
     }
 }
 
