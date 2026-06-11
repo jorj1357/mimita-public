@@ -407,6 +407,18 @@ def ensure_actor(actor_state, outfit_path):
     for part in parts:
         key = normalized_name(part.name)
         record["part_lookup"][key] = part
+
+    # Reparent body parts directly to actor_root so that root-relative
+    # transforms from the replay data are applied in the correct space.
+    # The GLB hierarchy is nested (e.g. torso → head), but the exporter
+    # bakes all hierarchy transforms into a single root-relative transform
+    # per part. Without reparenting, transforms are applied in the
+    # intermediate parent's space instead of the root's space.
+    body_part_keys = {"head", "torso", "leftarm", "rightarm", "leftleg", "rightleg"}
+    for part in parts:
+        if normalized_name(part.name) in body_part_keys and part.parent != root:
+            part.parent = root
+
     print(f"[ACTOR CREATED] {actor_id} root={root.name if root else 'None'} parts={len(parts)}")
     ACTORS[actor_id] = record
     return record

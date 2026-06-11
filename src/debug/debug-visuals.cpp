@@ -375,7 +375,7 @@ void drawBloodDecal(
     glm::vec4 color)
 {
     (void)camera;
-    constexpr int SEGMENTS = 18;
+    constexpr int SEGMENTS = 24;
     const glm::vec3 n = glm::length(normal) > 0.001f
         ? glm::normalize(normal)
         : glm::vec3(0, 0, 1);
@@ -389,20 +389,39 @@ void drawBloodDecal(
     const glm::vec3 bitangent =
         -baseTangent * std::sin(rotation) + baseBitangent * std::cos(rotation);
 
-    for (int i = 0; i < SEGMENTS; ++i) {
-        const float a0 = 6.2831853f * (float)i / (float)SEGMENTS;
-        const float a1 = 6.2831853f * (float)(i + 1) / (float)SEGMENTS;
-        const float noise0 = 0.82f + 0.18f * std::sin(a0 * 5.0f + rotation * 3.1f);
-        const float noise1 = 0.82f + 0.18f * std::sin(a1 * 5.0f + rotation * 3.1f);
-        const glm::vec3 p0 = position +
-            (tangent * std::cos(a0) * stretch + bitangent * std::sin(a0)) *
-                radius * noise0;
-        const glm::vec3 p1 = position +
-            (tangent * std::cos(a1) * stretch + bitangent * std::sin(a1)) *
-                radius * noise1;
-        gTriVerts.push_back({position, color});
-        gTriVerts.push_back({p0, color});
-        gTriVerts.push_back({p1, color});
+    const auto drawBlob = [&](const glm::vec3& center, float blobRadius,
+                              float blobStretch, float phase) {
+        for (int i = 0; i < SEGMENTS; ++i) {
+            const float a0 = 6.2831853f * (float)i / (float)SEGMENTS;
+            const float a1 = 6.2831853f * (float)(i + 1) / (float)SEGMENTS;
+            const float noise0 =
+                0.96f + 0.025f * std::sin(a0 * 2.0f + phase) +
+                0.015f * std::sin(a0 * 3.0f - phase * 0.7f);
+            const float noise1 =
+                0.96f + 0.025f * std::sin(a1 * 2.0f + phase) +
+                0.015f * std::sin(a1 * 3.0f - phase * 0.7f);
+            const glm::vec3 p0 = center +
+                (tangent * std::cos(a0) * blobStretch + bitangent * std::sin(a0)) *
+                    blobRadius * noise0;
+            const glm::vec3 p1 = center +
+                (tangent * std::cos(a1) * blobStretch + bitangent * std::sin(a1)) *
+                    blobRadius * noise1;
+            gTriVerts.push_back({center, color});
+            gTriVerts.push_back({p0, color});
+            gTriVerts.push_back({p1, color});
+        }
+    };
+
+    drawBlob(position, radius, stretch, rotation);
+    for (int blob = 0; blob < 4; ++blob) {
+        const float angle = rotation * 1.7f + (float)blob * 1.5707963f;
+        const float offset = radius * (0.48f + 0.06f * std::sin(rotation + blob));
+        const glm::vec3 center = position +
+            tangent * std::cos(angle) * offset +
+            bitangent * std::sin(angle) * offset;
+        const float blobRadius =
+            radius * (0.28f + 0.08f * std::sin(rotation * 2.3f + blob * 1.9f));
+        drawBlob(center, blobRadius, 0.9f + 0.15f * stretch, angle);
     }
 }
 
