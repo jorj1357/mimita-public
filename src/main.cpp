@@ -460,15 +460,26 @@ int main(int argc, char** argv)
                         MimitaNet::SHOT_EFFECT_DEBRIS |
                         MimitaNet::SHOT_EFFECT_HIT_SOUND;
                 }
+                // Determine network weapon type from the current equipped weapon
+                uint8_t netWeapon = MimitaNet::NETWORK_WEAPON_REVOLVER;
+                const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+                if (wdef) {
+                    if (wdef->id == "shotgun")
+                        netWeapon = MimitaNet::NETWORK_WEAPON_SHOTGUN;
+                    else if (wdef->id == "godball")
+                        netWeapon = MimitaNet::NETWORK_WEAPON_GODBALL;
+                    else if (wdef->id == "swordsword")
+                        netWeapon = MimitaNet::NETWORK_WEAPON_SWORDSWORD;
+                }
                 MimitaNet::mpSendShotEvent(
                     mpContext, targetId, damage, shot.damage,
                     effectFlags,
-                    MimitaNet::NETWORK_WEAPON_REVOLVER,
+                    netWeapon,
                     impactType,
                     shot.start, shot.end, direction, shot.hitNormal,
                     shot.knockbackImpulse);
             }
-            Terminal::instance().addLog("[REVOLVER] fired");
+            Terminal::instance().addLog("[WEAPON] fired");
         }
     });
 
@@ -1291,6 +1302,10 @@ int main(int argc, char** argv)
                     playerActor.animationState = player.onGround
                         ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
                         : "air";
+                    printf("[REPLAY ACTOR] tick=%u id=%s pos=(%.2f %.2f %.2f) rot=(%.2f %.2f %.2f)\n",
+                           (unsigned)replayTick, playerActor.id.c_str(),
+                           playerActor.position.x, playerActor.position.y, playerActor.position.z,
+                           playerActor.rotation.x, playerActor.rotation.y, playerActor.rotation.z);
                     playerActor.bodyParts = captureReplayBodyParts(player);
                     sceneFrame.actors.push_back(playerActor);
 
