@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Euler, Matrix
 
 # MAX_FRAMES = 1000
 MAX_FRAMES = 250
@@ -49,7 +49,7 @@ def snap_tick_to_keyframe(tick, interval):
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-11-2026\10-44-21-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-11-2026\17-15-50-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
@@ -462,7 +462,7 @@ def apply_limb_transforms(actor_record, actor_state, frame):
     # so their local space is GLB Y-up. But replay stores transforms
     # in game coordinates (Z-up relative to root). Convert game Z-up
     # to GLB Y-up by applying +90X before setting local transforms.
-    correction = mathutils.Euler((math.radians(90.0), 0.0, 0.0))
+    correction = Euler((math.radians(90.0), 0.0, 0.0))
 
     keyframed_count = 0
     for name, transform in entries:
@@ -480,7 +480,7 @@ def apply_limb_transforms(actor_record, actor_state, frame):
         if target and isinstance(transform, dict):
             pos = Vector(transform.get("position", (0.0, 0.0, 0.0)))
             rot = transform.get("rotation", (0.0, 0.0, 0.0))
-            euler = mathutils.Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
+            euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
             pos.rotate(correction)
             euler.rotate(correction)
             target.location = pos
@@ -952,13 +952,13 @@ def process_import_batch():
                 )
 
                 # Convert game Z-up coordinates to GLB Y-up (correction_root space)
-                game_correction = mathutils.Euler((math.radians(90.0), 0.0, 0.0))
+                game_correction = Euler((math.radians(90.0), 0.0, 0.0))
                 converted_state = dict(actor_state)
                 pos = Vector(actor_state.get("position", (0.0, 0.0, 0.0)))
                 pos.rotate(game_correction)
                 converted_state["position"] = (pos.x, pos.y, pos.z)
                 rot = actor_state.get("rotation", (0.0, 0.0, 0.0))
-                rot_euler = mathutils.Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
+                rot_euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
                 rot_euler.rotate(game_correction)
                 converted_state["rotation"] = (math.degrees(rot_euler.x), math.degrees(rot_euler.y), math.degrees(rot_euler.z))
                 print(f"[ACTOR FRAME] tick={tick} frame={frame} id={actor_id} pos={actor_state.get('position')}")
