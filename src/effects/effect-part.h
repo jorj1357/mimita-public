@@ -36,10 +36,6 @@ struct EffectPart
     bool flatDecal = false;
     bool debugVisual = false;
     bool alive = false;
-    // Cylinder rendering for blood splatter
-    bool cylinderDecal = false;
-    bool mergeableBlood = false;
-    float cylinderHeight = 0.0f;
     bool beam = false;
     bool box = false;
 
