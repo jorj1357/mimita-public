@@ -568,7 +568,7 @@ void EffectPartSystem::spawnStickyBlood(glm::vec3 position, glm::vec3 normal, fl
             (float)(rand() % 721 - 360)
         };
         e.replayType = "blood_cylinder";
-        e.maxLifetime = big ? 30.0f : 5.0f;
+        e.maxLifetime = big ? 10.0f : 5.0f;
         e.lifetime = 0.0f;
         const float variation = 0.85f + (rand() % 301) / 1000.0f;
         const float bigScale = (0.5f + force * 0.7f) * variation;
@@ -1235,7 +1235,15 @@ void EffectPartSystem::render(const Camera& camera) const {
         float distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
 
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
-        float alpha = effect.alpha * (1.0f - t) * distFade;
+        float alpha = effect.alpha * distFade;
+        // Cylinder decals (blood): fully visible for first 70% of lifetime, then fade out
+        if (effect.cylinderDecal) {
+            float fadeStart = 0.7f;
+            float fadeT = std::clamp((t - fadeStart) / (1.0f - fadeStart), 0.0f, 1.0f);
+            alpha *= (1.0f - fadeT);
+        } else {
+            alpha *= (1.0f - t);
+        }
         alpha = std::max(0.0f, alpha);
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
@@ -1269,6 +1277,24 @@ void EffectPartSystem::render(const Camera& camera) const {
                 glm::vec4 textColor = {effect.color.x, effect.color.y, effect.color.z, alpha};
                 uiDrawText(effect.label.c_str(), x, y, 0.3f * effect.scale, textColor);
             }
+        }
+    }
+
+    // Blood performance metrics
+    if (DebugConfig::DEBUG_BLOOD_HITS) {
+        int bloodCylinderCount = 0;
+        int totalAlive = 0;
+        for (const auto& effect : mPool) {
+            if (effect.alive) {
+                ++totalAlive;
+                if (effect.cylinderDecal) ++bloodCylinderCount;
+            }
+        }
+        static float bloodPerfTimer = 0.0f;
+        bloodPerfTimer -= 0.016f;
+        if (bloodPerfTimer <= 0.0f) {
+            bloodPerfTimer = 2.0f;
+            printf("[BLOOD PERF] total=%d bloodCylinders=%d\n", totalAlive, bloodCylinderCount);
         }
     }
 

@@ -407,6 +407,16 @@ void WeaponSystem::unequip(Player& player) {
     player.equippedWeaponId.clear();
     mCurrentSlot = 0;
     mCurrentWeaponId.clear();
+    // Reset arm spring states so arms snap to idle immediately
+    // instead of oscillating from the weapon pose.
+    for (PhysicalBodyPart& part : player.physicalBody.parts) {
+        if (part.name == "leftArm" || part.name == "rightArm") {
+            part.translationSpring = SpringState{};
+            part.rotationSpring = SpringState{};
+            part.pose = ProceduralPose{};
+            part.perfectPose = ProceduralPose{};
+        }
+    }
     if (mGodballPhys.active) {
         WeaponGodball::despawnBall(mGodballPhys);
     }

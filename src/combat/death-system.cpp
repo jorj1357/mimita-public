@@ -32,15 +32,15 @@ constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
 
 // Dead body physics tuning
 constexpr float DEAD_GRAVITY = 20.0f;
-constexpr float DEAD_DRAG = 0.6f;
-constexpr float DEAD_ANGULAR_DRAG = 3.0f;
+constexpr float DEAD_DRAG = 0.3f;
+constexpr float DEAD_ANGULAR_DRAG = 0.5f;
 constexpr float DEAD_BOUNCE = 0.15f;
 constexpr float DEAD_FRICTION = 0.8f;
-constexpr float DEAD_MAX_LINEAR_VELOCITY = 30.0f;
-constexpr float DEAD_MAX_ANGULAR_VELOCITY = 12.0f;
-constexpr float DEAD_SLEEP_VELOCITY = 0.1f;
-constexpr float DEAD_SLEEP_ANGULAR = 0.05f;
-constexpr float DEAD_SLEEP_TIME = 0.4f;
+constexpr float DEAD_MAX_LINEAR_VELOCITY = 50.0f;
+constexpr float DEAD_MAX_ANGULAR_VELOCITY = 25.0f;
+constexpr float DEAD_SLEEP_VELOCITY = 0.05f;
+constexpr float DEAD_SLEEP_ANGULAR = 0.03f;
+constexpr float DEAD_SLEEP_TIME = 0.8f;
 constexpr float DEAD_WORLD_FLOOR = -500.0f;
 constexpr float DEAD_COLLISION_SKIN = 0.02f;
 
@@ -145,12 +145,8 @@ bool DeathSystem::kill(
     glm::vec3 externalVel = victim.externalImpulse;
     glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
 
-    printf("[DEATH TRANSITION] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) externalImpulse=(%.2f %.2f %.2f) shotDir=(%.2f %.2f %.2f) force=%.1f\n",
-           victimPos.x, victimPos.y, victimPos.z,
-           linearVel.x, linearVel.y, linearVel.z,
-           externalVel.x, externalVel.y, externalVel.z,
-           direction.x, direction.y, direction.z,
-           lethalForce);
+    printf("[DEATH] victim=%s hitDir=(%.2f %.2f %.2f) damage=%.0f\n",
+           victim.username.c_str(), direction.x, direction.y, direction.z, lethalForce);
 
     DeadBody body;
     body.id = actorId + "_corpse_" + std::to_string(++mCorpseSerial);
@@ -176,14 +172,15 @@ bool DeathSystem::kill(
         body.velocity = linearVel + externalVel;
     }
 
-    // Small death impulse — enough for natural slump, not enough for launch
-    body.velocity += direction * std::min(lethalForce * 0.3f, 5.0f);
+    // Death impulse scales with hit force — flings body backward on strong hits
+    body.velocity += direction * (lethalForce * 0.5f);
 
-    // Gentle angular velocity from the shot direction
-    body.angularVelocity = glm::cross(direction * lethalForce * 0.05f, glm::vec3(0.0f, 0.0f, 1.0f));
+    // Angular velocity from shot direction — makes corpse spin/tumble naturally
+    body.angularVelocity = glm::cross(direction, glm::vec3(0.0f, 0.0f, 1.0f))
+                         * (lethalForce * 0.15f + 0.5f);
     float angSpeed = glm::length(body.angularVelocity);
-    if (angSpeed > 3.0f) {
-        body.angularVelocity = (body.angularVelocity / angSpeed) * 3.0f;
+    if (angSpeed > 15.0f) {
+        body.angularVelocity = (body.angularVelocity / angSpeed) * 15.0f;
     }
 
     // Freeze skeleton pose from current physical body transforms
@@ -217,11 +214,10 @@ bool DeathSystem::kill(
     victim.killedBy = killer.empty() ? "unknown" : killer;
     victim.syncLegacyStateToLayers();
 
-    printf("[DEATH SPAWN] bodyPos=(%.2f %.2f %.2f) frozenParts=%zu vel=(%.2f %.2f %.2f) angVel=(%.2f %.2f %.2f)\n",
-           body.position.x, body.position.y, body.position.z,
+    printf("[RAGDOLL] enabled parts=%zu impulse=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
            body.frozenParts.size(),
-           body.velocity.x, body.velocity.y, body.velocity.z,
-           body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+           body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
+           body.velocity.x, body.velocity.y, body.velocity.z);
 
     if (actorType == "npc")
         AudioManager::instance().play(
@@ -546,30 +542,20 @@ void DeathSystem::render(const Camera& camera) const
         // Build root transform from dead body physics state
         glm::mat4 rootTransform = glm::translate(glm::mat4(1.0f), body.position)
                                 * glm::mat4_cast(body.rotation);
+        glm::mat4 invSpawnRoot = glm::translate(glm::mat4(1.0f), -body.spawnPosition);
 
         // Render each frozen body part using cached mesh + frozen world transform
         // The frozen transforms are in world space from death moment.
-        // We compute the offset from spawn position, then apply current root.
+        // We compute: currentWorld = currentRoot * inv(spawnRoot) * frozenWorld
+        // This correctly applies body rotation to both position offset and part orientation,
+        // making limbs tumble naturally with the corpse instead of staying fixed in world space.
         for (size_t i = 0; i < body.frozenParts.size() && i < body.partMeshes.size(); ++i) {
             const DeadBody::FrozenPart& fp = body.frozenParts[i];
             const Mesh& mesh = body.partMeshes[i];
             if (mesh.verts.empty())
                 continue;
 
-            // Compute relative transform from spawn position
-            // frozen world = spawnRoot * relativeLocal
-            // current world = currentRoot * relativeLocal
-            // relativeLocal = inv(spawnRoot) * frozenWorld
-            glm::mat4 spawnRoot = glm::translate(glm::mat4(1.0f), body.spawnPosition);
-            // For simplicity: offset = frozenWorld - spawnPosition, applied to current position
-            // This preserves the death pose orientation relative to the body
-            glm::vec3 frozenPos = glm::vec3(fp.worldTransform[3]);
-            glm::vec3 offset = frozenPos - body.spawnPosition;
-            glm::vec3 currentPartPos = body.position + offset;
-
-            // Use frozen rotation directly (body rotation is already applied via angular velocity)
-            glm::mat4 partTransform = glm::translate(glm::mat4(1.0f), currentPartPos)
-                                    * glm::mat4_cast(glm::quat_cast(fp.worldTransform));
+            glm::mat4 partTransform = rootTransform * invSpawnRoot * fp.worldTransform;
 
             uploadBodyPartMesh(mesh);
 
