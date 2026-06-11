@@ -53,7 +53,46 @@
     "rightArm": { "rotation": [true, true, true] },
     "leftLeg": { "rotation": [true, true, true] },
     "rightLeg": { "rotation": [true, true, true] }
-    
+  },
+
+  "revolver": {
+    "useWeaponPose": true,
+    "leftArm": {
+      "translation": [0, 0, 0.2],
+      "rotation": [0, -20, 75]
+    },
+    "rightArm": {
+      "translation": [0, 0, -0.1],
+      "rotation": [0, 5, 80]
+    }
+  },
+
+  "shotgun": {
+    "useWeaponPose": true,
+    "leftArm": {
+      "translation": [0, 0, 0],
+      "rotation": [75, 10, -25]
+    },
+    "rightArm": {
+      "translation": [0, 0, 0],
+      "rotation": [72, 10, 20]
+    }
+  },
+
+  "godball": {
+    "useWeaponPose": false
+  },
+
+  "sword": {
+    "useWeaponPose": true,
+    "leftArm": {
+      "translation": [0, 0, 0],
+      "rotation": [60, 5, -40]
+    },
+    "rightArm": {
+      "translation": [0, 0, 0],
+      "rotation": [60, 5, 40]
+    }
   },
 
   "layers": {
@@ -199,38 +238,6 @@
             }
           }
         ]
-      }
-    },
-
-    "weaponOverlays": {
-      "revolver": {
-        "armInfluenceMultiplier": 0.08,
-        "idleSwayAmount": 0.03,
-        "parts": {
-          "leftArm": {
-            "translation": [0, 0, 0.2],
-            "rotation": [0, -20, 75]
-          },
-          "rightArm": {
-            "translation": [0, 0, -0.1],
-            "rotation": [0,5,80]
-          }
-        }
-      },
-
-      "shotgun": {
-        "armInfluenceMultiplier": 0.05,
-        "idleSwayAmount": 0.025,
-        "parts": {
-          "leftArm": {
-            "translation": [0, 0, 0],
-            "rotation": [75, 10, -25]
-          },
-          "rightArm": {
-            "translation": [0, 0, 0],
-            "rotation": [72, 10, 20]
-          }
-        }
       }
     },
 

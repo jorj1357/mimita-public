@@ -31,6 +31,7 @@ namespace DebugConfig
     inline bool DEBUG_INPUT = false;
     inline bool DEBUG_COMMANDS = false;
     inline bool DEBUG_NPC = false;
+    inline bool DEBUG_NPC_COMBAT = false;
     inline bool DEBUG_RAGDOLL = false;
     inline bool DEBUG_BLOOD_RAYS = false;
     inline bool DEBUG_BLOOD_HITS = false;
@@ -78,6 +79,7 @@ namespace DebugConfig
         DEBUG_GODBALL = false;
         DEBUG_GODBALL_HITSTOP = false;
         DEBUG_ANIM_ARMS = false;
+        DEBUG_NPC_COMBAT = false;
     }
 }
 

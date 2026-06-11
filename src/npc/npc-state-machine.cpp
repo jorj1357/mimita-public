@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <glm/gtc/constants.hpp>
 
+#include "config.h"
 #include "debug/debug-log.h"
 
 namespace {
@@ -37,7 +38,6 @@ glm::vec3 rotatePlanar(glm::vec3 v, float radians)
 
 bool shouldJump(Npc& npc, float d01)
 {
-    // Jump chance per decision: 5-15% based on difficulty
     return random01(npc.rngState) < (0.05f + d01 * 0.10f);
 }
 
@@ -45,21 +45,20 @@ bool shouldDash(Npc& npc, float d01, float distance)
 {
     if (npc.dashCooldown > 0.0f)
         return false;
-    // Dash when chasing at range, or when evading
     float chance = 0.10f + d01 * 0.20f;
     if (distance > 5.0f)
         chance += 0.10f;
     return random01(npc.rngState) < chance;
 }
 
-// Utility score for each state given current conditions
 float scoreState(NpcState s, const Npc& npc, float d01)
 {
     const auto& sensors = npc.sensors;
     float dist = sensors.targetDistance;
     float close01 = 1.0f - clamp01((dist - 2.0f) / 16.0f);
-    float far01 = clamp01((dist - 4.0f) / 24.0f);
+    float far01 = clamp01((dist - 4.0f) / 146.0f);
     float mid01 = 1.0f - std::fabs(dist - 8.0f) / 12.0f;
+    float longRange01 = clamp01((dist - 20.0f) / 130.0f);
     float hasTarget = sensors.hasTarget ? 1.0f : 0.0f;
     float agg = npc.tuning.aggression;
 
@@ -72,29 +71,45 @@ float scoreState(NpcState s, const Npc& npc, float d01)
             return (1.0f - hasTarget) * 0.6f + 0.2f;
 
         case NpcState::Chase:
-            // Chase when far or no target recently seen
             return hasTarget * (0.3f + far01 * 0.6f + (1.0f - close01) * 0.3f * agg);
 
         case NpcState::Circle:
-            // Circle at medium-close range, higher aggression = more circling
             return hasTarget * (close01 * 0.5f + mid01 * 0.4f * agg);
 
         case NpcState::Strafe:
-            // Strafe at medium range
-            return hasTarget * (0.15f + mid01 * 0.5f + far01 * 0.2f);
+            return hasTarget * (0.15f + mid01 * 0.5f + (1.0f - longRange01) * 0.3f);
 
         case NpcState::Retreat:
-            // Retreat when very close (dodge) or after being hit recently
             return hasTarget * (close01 * 0.3f + (1.0f - agg) * 0.2f);
 
         case NpcState::Attack:
-            // Attack when in range and cooldown ready
             if (npc.attackCooldown > 0.0f) return 0.0f;
             return hasTarget * (close01 * 0.8f + mid01 * 0.4f + far01 * 0.15f);
 
         case NpcState::Recover:
-            // Only when recently hit
-            return 0.0f;  // triggered externally via hitReactionTimer
+            return 0.0f;
+
+        // --- New states ---
+        case NpcState::Advance:
+            // Advance when at medium-long range with aggression
+            return hasTarget * (longRange01 * 0.6f * agg + far01 * 0.3f);
+
+        case NpcState::HoldPosition:
+            // Hold at medium range, especially after advancing
+            return hasTarget * (mid01 * 0.3f + (1.0f - agg) * 0.15f);
+
+        case NpcState::Peek:
+            // Peek at medium-close range with cover awareness
+            return hasTarget * (mid01 * 0.25f + close01 * 0.15f);
+
+        case NpcState::Aim:
+            // Aim state: stand and shoot at various ranges
+            if (npc.attackCooldown > 0.0f) return 0.0f;
+            return hasTarget * (mid01 * 0.3f + far01 * 0.2f + close01 * 0.1f);
+
+        case NpcState::ZigZag:
+            // Zig-zag approach when at medium range
+            return hasTarget * (mid01 * 0.35f * agg + far01 * 0.2f);
     }
     return 0.0f;
 }
@@ -114,6 +129,11 @@ float stateMinTime(NpcState s, float d01)
         case NpcState::Retreat:     return 0.3f;
         case NpcState::Attack:      return 0.1f;
         case NpcState::Recover:     return 0.15f;
+        case NpcState::Advance:     return 0.5f;
+        case NpcState::HoldPosition: return 0.5f;
+        case NpcState::Peek:        return 0.4f;
+        case NpcState::Aim:         return 0.2f;
+        case NpcState::ZigZag:      return 0.6f;
     }
     return 0.3f;
 }
@@ -131,6 +151,11 @@ float stateMaxTime(NpcState s, float d01)
         case NpcState::Retreat:     return 1.5f * base;
         case NpcState::Attack:      return 0.3f;
         case NpcState::Recover:     return 0.5f * base;
+        case NpcState::Advance:     return 2.0f * base;
+        case NpcState::HoldPosition: return 2.5f * base;
+        case NpcState::Peek:        return 2.0f * base;
+        case NpcState::Aim:         return 1.5f * base;
+        case NpcState::ZigZag:      return 2.5f * base;
     }
     return 1.5f * base;
 }
@@ -147,18 +172,21 @@ std::string npcStateName(NpcState s)
         case NpcState::Retreat:     return "RETREAT";
         case NpcState::Attack:      return "ATTACK";
         case NpcState::Recover:     return "RECOVER";
+        case NpcState::Advance:     return "ADVANCE";
+        case NpcState::HoldPosition: return "HOLD";
+        case NpcState::Peek:        return "PEEK";
+        case NpcState::Aim:         return "AIM";
+        case NpcState::ZigZag:      return "ZIGZAG";
     }
     return "UNKNOWN";
 }
 
-// Pick next state using utility scoring + forced transitions
 NpcState pickNextState(Npc& npc)
 {
     float d01 = difficulty01(npc.difficulty);
     const auto& sensors = npc.sensors;
     float dist = sensors.targetDistance;
 
-    // Handle stuck: force jump + new direction regardless of state
     if (NpcNavigation::isStuck(npc))
     {
         npc.stateMachine.stuckTimer += 0.016f;
@@ -175,11 +203,9 @@ NpcState pickNextState(Npc& npc)
         npc.stateMachine.stuckTimer = 0.0f;
     }
 
-    // If hit recently, force Recover
     if (npc.hitReactionTimer > 0.0f && random01(npc.rngState) < 0.6f)
         return NpcState::Recover;
 
-    // No target → Idle or RandomWalk
     if (!sensors.hasTarget)
     {
         if (random01(npc.rngState) < 0.4f)
@@ -187,20 +213,17 @@ NpcState pickNextState(Npc& npc)
         return NpcState::RandomWalk;
     }
 
-    // Retreat forced timeout: never retreat longer than max
     if (npc.stateMachine.currentState == NpcState::Retreat)
     {
         float maxRetreat = 0.5f + (1.0f - d01) * 2.5f;
         if (npc.stateMachine.retreatTimer > maxRetreat)
         {
-            // After retreat timeout, go aggressive
             if (dist < 8.0f)
                 return NpcState::Circle;
             return NpcState::Chase;
         }
     }
 
-    // Score all candidate states
     struct Candidate {
         NpcState state;
         float score;
@@ -218,13 +241,16 @@ NpcState pickNextState(Npc& npc)
     add(NpcState::Strafe);
     add(NpcState::Retreat);
     add(NpcState::Attack);
+    add(NpcState::Advance);
+    add(NpcState::HoldPosition);
+    add(NpcState::Peek);
+    add(NpcState::Aim);
+    add(NpcState::ZigZag);
 
-    // Avoid picking same state if score is low
     float randomness = 0.15f + d01 * 0.20f;
     for (auto& c : candidates)
         c.score *= (1.0f - randomness * random01(npc.rngState));
 
-    // Never pick retreat at high aggression unless very close
     if (npc.tuning.aggression > 0.6f && dist > 4.0f)
     {
         for (auto& c : candidates)
@@ -232,11 +258,10 @@ NpcState pickNextState(Npc& npc)
                 c.score *= 0.1f;
     }
 
-    // Add bias toward changing state (avoid staying forever)
     for (auto& c : candidates)
     {
         if (c.state == npc.stateMachine.currentState)
-            c.score *= 0.7f; // slight penalty to staying
+            c.score *= 0.7f;
     }
 
     if (candidates.empty())
@@ -248,7 +273,6 @@ NpcState pickNextState(Npc& npc)
     return best->state;
 }
 
-// Compute movement direction and flags for the current state
 void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack)
 {
     float d01 = difficulty01(npc.difficulty);
@@ -259,7 +283,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
     outDash = false;
     outAttack = false;
 
-    // Direction toward target (planar)
     glm::vec3 toTarget = sensors.hasTarget
         ? sensors.predictedTarget - npc.body.pos
         : glm::vec3{0.0f};
@@ -270,16 +293,25 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
     float dist = sensors.targetDistance;
 
+    // === MICRO-MOVEMENT NOISE ===
+    // Add small random wobble every 0.1-0.5s for human-like imperfection
+    npc.moveNoiseTimer -= 0.016f;
+    if (npc.moveNoiseTimer <= 0.0f)
+    {
+        npc.moveNoiseTimer = 0.1f + random01(npc.rngState) * 0.4f;
+        float noiseScale = 0.3f * (1.0f - d01 * 0.5f);
+        npc.moveOffset.x = (random01(npc.rngState) * 2.0f - 1.0f) * noiseScale;
+        npc.moveOffset.y = (random01(npc.rngState) * 2.0f - 1.0f) * noiseScale;
+    }
+
     switch (sm.currentState)
     {
         case NpcState::Idle:
             outMoveDir = {0.0f, 0.0f, 0.0f};
-            // Stand still, slight look movement
             return;
 
         case NpcState::RandomWalk:
         {
-            // Walk toward wander target
             sm.wanderTimer -= 0.016f;
             if (sm.wanderTimer <= 0.0f)
             {
@@ -292,14 +324,13 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             float wLen = glm::length(toWander);
             if (wLen < 1.0f)
             {
-                sm.wanderTimer = 0.0f; // force repick
+                sm.wanderTimer = 0.0f;
                 outMoveDir = {0.0f, 0.0f, 0.0f};
             }
             else
             {
                 outMoveDir = toWander / wLen;
             }
-            // Random jump while wandering
             if (sensors.grounded && random01(npc.rngState) < 0.02f)
                 outJump = true;
             return;
@@ -307,11 +338,11 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Chase:
         {
-            outMoveDir = chaseDir;
-            // Jump when approaching obstacle
+            outMoveDir = chaseDir + glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
             if (sensors.grounded && shouldJump(npc, d01))
                 outJump = true;
-            // Dash to close distance
             if (shouldDash(npc, d01, dist))
                 outDash = true;
             return;
@@ -319,7 +350,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Circle:
         {
-            // Orbit around target at preferred distance
             sm.orbitSwapTimer -= 0.016f;
             if (sm.orbitSwapTimer <= 0.0f)
             {
@@ -331,7 +361,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             float angleSpeed = 2.0f + d01 * 3.0f;
             sm.orbitAngle += angleSpeed * 0.016f * sm.orbitDirection;
 
-            // Compute orbit position
             glm::vec3 orbitTarget = sensors.hasTarget
                 ? sensors.targetPos
                 : sm.lastKnownTarget;
@@ -345,6 +374,9 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             toOrbit.z = 0.0f;
             float oLen = glm::length(toOrbit);
             outMoveDir = oLen > 0.001f ? toOrbit / oLen : lateral * sm.orbitDirection;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
 
             if (sensors.grounded && shouldJump(npc, d01))
                 outJump = true;
@@ -362,15 +394,14 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
                 sm.strafeSwapTimer = 0.3f + random01(npc.rngState) * 2.0f;
             }
 
-            // Move laterally + slightly toward/away
             float towardBias = dist > 12.0f ? 0.4f : (dist < 5.0f ? -0.3f : 0.0f);
             outMoveDir = chaseDir * towardBias + lateral * sm.strafeDirection;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
 
-            // Strafe + jump
             if (sensors.grounded && shouldJump(npc, d01))
                 outJump = true;
-
-            // Attack while strafing
             if (npc.attackCooldown <= 0.0f)
                 outAttack = true;
             return;
@@ -378,19 +409,15 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Retreat:
         {
-            // Move away from target
             outMoveDir = -chaseDir;
-            // Add lateral wobble
             outMoveDir += lateral * (random01(npc.rngState) * 2.0f - 1.0f) * 0.3f;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
             float rLen = glm::length(outMoveDir);
             if (rLen > 0.001f)
                 outMoveDir /= rLen;
 
-            // Shoot while retreating
             if (npc.attackCooldown <= 0.0f && dist < 20.0f)
                 outAttack = true;
-
-            // Jump over obstacles while retreating
             if (sensors.grounded && shouldJump(npc, d01))
                 outJump = true;
             return;
@@ -398,10 +425,9 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Attack:
         {
-            // Fire weapon (handled by combat system)
             outAttack = true;
-            // Keep moving slightly while attacking
             outMoveDir = chaseDir * 0.5f + lateral * (random01(npc.rngState) * 2.0f - 1.0f) * 0.3f;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
             float aLen = glm::length(outMoveDir);
             if (aLen > 0.001f)
                 outMoveDir /= aLen;
@@ -410,11 +436,110 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Recover:
         {
-            // Briefly move erratically
             outMoveDir = lateral * (random01(npc.rngState) * 2.0f - 1.0f);
-            // Maybe jump
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
             if (sensors.grounded && random01(npc.rngState) < 0.3f)
                 outJump = true;
+            return;
+        }
+
+        // --- New states ---
+        case NpcState::Advance:
+        {
+            // Aggressively move toward the player
+            outMoveDir = chaseDir;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
+
+            if (sensors.grounded && shouldJump(npc, d01))
+                outJump = true;
+            if (shouldDash(npc, d01, dist))
+                outDash = true;
+            // Shoot while advancing
+            if (npc.attackCooldown <= 0.0f)
+                outAttack = true;
+            return;
+        }
+
+        case NpcState::HoldPosition:
+        {
+            // Minimal movement, mostly stand and aim
+            float swayAmount = 0.15f;
+            outMoveDir = lateral * std::sin(sm.holdTimer * 2.0f) * swayAmount;
+            outMoveDir += chaseDir * std::cos(sm.holdTimer * 1.7f) * swayAmount * 0.3f;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
+            sm.holdTimer += 0.016f;
+
+            if (npc.attackCooldown <= 0.0f)
+                outAttack = true;
+            return;
+        }
+
+        case NpcState::Peek:
+        {
+            // Peek out from cover: move laterally, pause, move back
+            sm.peekTimer -= 0.016f;
+            if (sm.peekTimer <= 0.0f)
+            {
+                sm.peekDir *= -1.0f;
+                sm.peekTimer = 0.5f + random01(npc.rngState) * 1.0f;
+                sm.peekStartPos = npc.body.pos;
+            }
+
+            float peekPhase = std::abs(std::sin(sm.peekTimer * 3.0f));
+            float peekStrength = 1.0f + dist * 0.02f;
+            outMoveDir = lateral * sm.peekDir * peekPhase * peekStrength;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
+
+            // Shoot during peek exposure
+            if (peekPhase > 0.4f && npc.attackCooldown <= 0.0f)
+                outAttack = true;
+            return;
+        }
+
+        case NpcState::Aim:
+        {
+            // Stand and aim carefully - minimal movement
+            outMoveDir = glm::vec3(npc.moveOffset, 0.0f) * 0.5f;
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
+
+            // Fire when ready
+            if (npc.attackCooldown <= 0.0f)
+                outAttack = true;
+            return;
+        }
+
+        case NpcState::ZigZag:
+        {
+            // Zig-zag approach toward player
+            sm.zigTimer -= 0.016f;
+            if (sm.zigTimer <= 0.0f)
+            {
+                sm.zigPhase = random01(npc.rngState) * glm::two_pi<float>();
+                sm.zigTimer = 0.3f + random01(npc.rngState) * 0.8f;
+            }
+
+            float zigFreq = 3.0f + d01 * 4.0f;
+            float zigAmp = 1.0f + (1.0f - d01) * 2.0f;
+            sm.zigPhase += zigFreq * 0.016f;
+
+            outMoveDir = chaseDir + lateral * std::sin(sm.zigPhase) * zigAmp;
+            outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
+            float len = glm::length(outMoveDir);
+            if (len > 0.001f) outMoveDir /= len;
+
+            if (sensors.grounded && shouldJump(npc, d01))
+                outJump = true;
+            if (npc.attackCooldown <= 0.0f)
+                outAttack = true;
             return;
         }
     }

@@ -154,6 +154,51 @@ bool reloadPlayerProceduralConfig()
             }
         }
 
+        // Parse per-weapon pose configs (root-level entries with weapon IDs)
+        {
+            for (auto it = j.begin(); it != j.end(); ++it) {
+                const std::string& key = it.key();
+                // Skip known non-weapon keys
+                if (key == "layers" || key == "axisLocks" || key == "walkStartTickOnEnter" ||
+                    key == "animationStateTransitionFrames" || key == "leftArmRaise" ||
+                    key == "leftArmForward" || key == "leftArmTwist" ||
+                    key == "rightArmRaise" || key == "rightArmForward" || key == "rightArmTwist" ||
+                    key == "weaponSwayAmount" || key == "weaponSwaySpeed" ||
+                    key == "torsoAimYawStrength" || key == "torsoAimPitchStrength" ||
+                    key == "armAimYawStrength" || key == "armAimPitchStrength" ||
+                    key == "armSwingAmount" || key == "legSwingAmount" ||
+                    key == "torsoLeanAmount" || key == "headCounterAmount" ||
+                    key == "bobHeight" || key == "walkFrequency" || key == "walkFrequencyMultiplier" ||
+                    key == "reloadArmLowerZ" || key == "reloadArmLowerX" || key == "reloadHandLower" ||
+                    key == "armInfluenceMultiplier" || key == "idleSwayAmount" || key == "idleSwaySpeed" ||
+                    key == "revolverOffsetX" || key == "revolverOffsetY" || key == "revolverOffsetZ" ||
+                    key == "revolverRotX" || key == "revolverRotY" || key == "revolverRotZ" ||
+                    key == "shotgunOffsetX" || key == "shotgunOffsetY" || key == "shotgunOffsetZ" ||
+                    key == "shotgunRotX" || key == "shotgunRotY" || key == "shotgunRotZ")
+                    continue;
+
+                WeaponPoseConfig poseCfg;
+                poseCfg.useWeaponPose = it->value("useWeaponPose", true);
+                if (it->contains("leftArm")) {
+                    const auto& la = it->at("leftArm");
+                    if (la.contains("translation") && la["translation"].size() >= 3)
+                        poseCfg.leftArm.translation = glm::vec3(la["translation"][0], la["translation"][1], la["translation"][2]);
+                    if (la.contains("rotation") && la["rotation"].size() >= 3)
+                        poseCfg.leftArm.rotation = glm::vec3(la["rotation"][0], la["rotation"][1], la["rotation"][2]);
+                }
+                if (it->contains("rightArm")) {
+                    const auto& ra = it->at("rightArm");
+                    if (ra.contains("translation") && ra["translation"].size() >= 3)
+                        poseCfg.rightArm.translation = glm::vec3(ra["translation"][0], ra["translation"][1], ra["translation"][2]);
+                    if (ra.contains("rotation") && ra["rotation"].size() >= 3)
+                        poseCfg.rightArm.rotation = glm::vec3(ra["rotation"][0], ra["rotation"][1], ra["rotation"][2]);
+                }
+                loaded.weaponPoses[key] = poseCfg;
+                printf("[WEAPON POSE] weapon=%s usePose=%s\n",
+                       key.c_str(), poseCfg.useWeaponPose ? "true" : "false");
+            }
+        }
+
         // Parse layered animation config (under "layers" key)
         if (j.contains("layers")) {
             const auto& layers = j["layers"];
@@ -182,26 +227,6 @@ bool reloadPlayerProceduralConfig()
                         }
                     }
                     loaded.layers.animations[it.key()] = clip;
-                }
-            }
-
-            if (layers.contains("weaponOverlays")) {
-                const auto& overlays = layers["weaponOverlays"];
-                for (auto it = overlays.begin(); it != overlays.end(); ++it) {
-                    WeaponOverlay overlay;
-                    overlay.armInfluenceMultiplier = it->value("armInfluenceMultiplier", 0.08f);
-                    overlay.idleSwayAmount = it->value("idleSwayAmount", 0.03f);
-                    if (it->contains("parts")) {
-                        for (auto p = it->at("parts").begin(); p != it->at("parts").end(); ++p) {
-                            AnimKeyframePart part;
-                            if (p->contains("translation") && p->at("translation").size() >= 3)
-                                part.translation = glm::vec3(p->at("translation")[0], p->at("translation")[1], p->at("translation")[2]);
-                            if (p->contains("rotation") && p->at("rotation").size() >= 3)
-                                part.rotation = glm::vec3(p->at("rotation")[0], p->at("rotation")[1], p->at("rotation")[2]);
-                            overlay.parts[p.key()] = part;
-                        }
-                    }
-                    loaded.layers.weaponOverlays[it.key()] = overlay;
                 }
             }
 
@@ -1144,27 +1169,27 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         weaponId = pair.first;
         break;
     }
-    bool hasWeaponOverlay = false;
-    WeaponOverlay* weaponOverlay = nullptr;
+    bool hasWeaponPose = false;
+    WeaponPoseConfig* weaponPoseCfg = nullptr;
     if (weaponEquipped) {
-        auto woIt = gPlayerProcedural.layers.weaponOverlays.find(weaponId);
-        if (woIt != gPlayerProcedural.layers.weaponOverlays.end()) {
-            hasWeaponOverlay = true;
-            weaponOverlay = &woIt->second;
+        auto wpIt = gPlayerProcedural.weaponPoses.find(weaponId);
+        if (wpIt != gPlayerProcedural.weaponPoses.end() && wpIt->second.useWeaponPose) {
+            hasWeaponPose = true;
+            weaponPoseCfg = &wpIt->second;
         }
     }
 
-    // Weapon sway computation (arms only, when weapon equipped)
+    // Weapon sway computation (arms only, when weapon has a pose)
     float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
-    float swayAmount = weaponEquipped ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
+    float swayAmount = hasWeaponPose ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
     float swayX = std::sin(swayPhase) * swayAmount;
     float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
     float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
-    float idleSway = weaponEquipped ? std::sin(weaponSwayTime * gPlayerProcedural.idleSwaySpeed) * gPlayerProcedural.idleSwayAmount : 0.0f;
+    float idleSway = hasWeaponPose ? std::sin(weaponSwayTime * gPlayerProcedural.idleSwaySpeed) * gPlayerProcedural.idleSwayAmount : 0.0f;
 
     // Aim tracking for weapon-equipped upper body
     float aimYaw = 0.0f, aimPitch = 0.0f;
-    if (hasAimData && weaponEquipped) {
+    if (hasAimData && hasWeaponPose) {
         glm::vec3 flatAim = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.0f));
         glm::vec3 flatForward = glm::normalize(glm::vec3(movementCapsule.rotation * glm::vec3(0,1,0)));
         aimYaw = std::atan2(flatAim.y, flatAim.x) - std::atan2(flatForward.y, flatForward.x);
@@ -1194,12 +1219,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
 
-        // Weapon overlay replaces arm rotation entirely when a weapon is equipped
-        if (hasWeaponOverlay && weaponOverlay) {
-            auto woIt = weaponOverlay->parts.find(part.name);
-            if (woIt != weaponOverlay->parts.end() && (part.name == "leftArm" || part.name == "rightArm")) {
-                target.rotationEuler = woIt->second.rotation;
-                target.translation += woIt->second.translation;
+        // Per-weapon pose replaces arm rotation when the weapon defines one
+        if (hasWeaponPose && weaponPoseCfg) {
+            if (part.name == "leftArm") {
+                target.rotationEuler = weaponPoseCfg->leftArm.rotation;
+                target.translation += weaponPoseCfg->leftArm.translation;
+            } else if (part.name == "rightArm") {
+                target.rotationEuler = weaponPoseCfg->rightArm.rotation;
+                target.translation += weaponPoseCfg->rightArm.translation;
             }
         }
 
@@ -1244,12 +1271,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         armDebugTimer -= dt;
         if (armDebugTimer <= 0.0f) {
             armDebugTimer = 0.5f;
-            printf("[ANIM_ARMS] state=%s weaponEquipped=%d hasOverlay=%d\n",
-                   activeAnim.c_str(), (int)weaponEquipped, (int)hasWeaponOverlay);
+            printf("[ANIM_ARMS] state=%s weaponEquipped=%d hasWeaponPose=%d weapon=%s\n",
+                   activeAnim.c_str(), (int)weaponEquipped, (int)hasWeaponPose, weaponId.c_str());
             for (const PhysicalBodyPart& part : physicalBody.parts) {
                 if (part.name != "leftArm" && part.name != "rightArm") continue;
                 printf("[ANIM_ARMS]   %s:\n", part.name.c_str());
-                // Base animation contribution (from keyframes)
                 glm::vec3 animTrans(0.0f);
                 glm::vec3 animRot(0.0f);
                 auto ovIt = animOverlay.find(part.name);
@@ -1257,27 +1283,26 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                     animTrans = ovIt->second.translation;
                     animRot = ovIt->second.rotation;
                 }
-                printf("[ANIM_ARMS]     animation    trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                printf("[ANIM_ARMS]     animKeyframes trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
                        animTrans.x, animTrans.y, animTrans.z,
                        animRot.x, animRot.y, animRot.z);
-                // Weapon overlay contribution
-                glm::vec3 woTrans(0.0f);
-                glm::vec3 woRot(0.0f);
-                if (hasWeaponOverlay && weaponOverlay) {
-                    auto woIt = weaponOverlay->parts.find(part.name);
-                    if (woIt != weaponOverlay->parts.end()) {
-                        woTrans = woIt->second.translation;
-                        woRot = woIt->second.rotation;
+                glm::vec3 wpTrans(0.0f);
+                glm::vec3 wpRot(0.0f);
+                if (hasWeaponPose && weaponPoseCfg) {
+                    if (part.name == "leftArm") {
+                        wpTrans = weaponPoseCfg->leftArm.translation;
+                        wpRot = weaponPoseCfg->leftArm.rotation;
+                    } else {
+                        wpTrans = weaponPoseCfg->rightArm.translation;
+                        wpRot = weaponPoseCfg->rightArm.rotation;
                     }
                 }
-                printf("[ANIM_ARMS]     weaponOverlay trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
-                       woTrans.x, woTrans.y, woTrans.z,
-                       woRot.x, woRot.y, woRot.z);
-                // PerfectPose final
+                printf("[ANIM_ARMS]     weaponPose    trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       wpTrans.x, wpTrans.y, wpTrans.z,
+                       wpRot.x, wpRot.y, wpRot.z);
                 printf("[ANIM_ARMS]     perfectPose   trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
                        part.perfectPose.translation.x, part.perfectPose.translation.y, part.perfectPose.translation.z,
                        part.perfectPose.rotationEuler.x, part.perfectPose.rotationEuler.y, part.perfectPose.rotationEuler.z);
-                // Physical (spring-smoothed) final
                 printf("[ANIM_ARMS]     physicalPose  trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
                        part.pose.translation.x, part.pose.translation.y, part.pose.translation.z,
                        part.pose.rotationEuler.x, part.pose.rotationEuler.y, part.pose.rotationEuler.z);

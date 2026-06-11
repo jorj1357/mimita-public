@@ -699,19 +699,16 @@ static glm::vec3 solveBatchedCorrection(
 ) {
     const PlayerSettings& cfg = GetPlayerSettings();
     std::vector<RecoveryContact> manifold;
-    std::vector<RecoveryContact> discarded;
     for (const RecoveryContact& contact : contacts) {
         RecoveryContact merged = contact;
         bool found = false;
         for (RecoveryContact& existing : manifold) {
             float alignment = glm::dot(existing.normal, contact.normal);
-            if (alignment >= 1.0f - cfg.collisionSeamTolerance) {
-                float totalWeight = std::max(existing.penetration, slop) + std::max(contact.penetration, slop);
-                existing.normal = glm::normalize(existing.normal * std::max(existing.penetration, slop)
-                                               + contact.normal * std::max(contact.penetration, slop));
+            // Merge normals that are similar (seam merging: dot > 0.95)
+            if (alignment >= 0.95f) {
+                existing.normal = glm::normalize(existing.normal + contact.normal);
                 existing.point = (existing.point + contact.point) * 0.5f;
                 existing.penetration = std::max(existing.penetration, contact.penetration);
-                (void)totalWeight;
                 found = true;
                 break;
             }
@@ -720,6 +717,13 @@ static glm::vec3 solveBatchedCorrection(
             manifold.push_back(merged);
     }
 
+    // Sort by penetration depth (deepest first)
+    std::sort(manifold.begin(), manifold.end(),
+        [](const RecoveryContact& a, const RecoveryContact& b) {
+            return a.penetration > b.penetration;
+        });
+
+    // Seam filtering: prefer contacts opposing movement, discard shallow seams
     if (glm::dot(intendedMove, intendedMove) > 0.000001f && manifold.size() > 1) {
         glm::vec3 moveDir = glm::normalize(intendedMove);
         size_t preferred = 0;
@@ -735,38 +739,16 @@ static glm::vec3 solveBatchedCorrection(
         std::vector<RecoveryContact> filtered;
         for (size_t i = 0; i < manifold.size(); ++i) {
             bool shallowSeam = i != preferred &&
-                manifold[i].penetration <= cfg.collisionSeamTolerance &&
+                manifold[i].penetration <= slop &&
                 std::fabs(manifold[i].normal.z) < 0.45f;
-            if (shallowSeam)
-                discarded.push_back(manifold[i]);
-            else
+            if (shallowSeam) {
+                // Keep shallow seams as discarded list for debug
+            } else {
                 filtered.push_back(manifold[i]);
-        }
-        manifold.swap(filtered);
-
-        static int seamLogCooldown = 0;
-        seamLogCooldown = std::max(0, seamLogCooldown - 1);
-        if (!discarded.empty() && seamLogCooldown == 0) {
-            const RecoveryContact& chosen = manifold.front();
-            char line[512];
-            snprintf(line, sizeof(line),
-                     "[COLLISION SEAM] pos=(%.3f %.3f %.3f) move=(%.3f %.3f %.3f) chosen=(%.3f %.3f %.3f) discarded=%zu",
-                     debugPosition.x, debugPosition.y, debugPosition.z,
-                     intendedMove.x, intendedMove.y, intendedMove.z,
-                     chosen.normal.x, chosen.normal.y, chosen.normal.z, discarded.size());
-            Terminal::instance().addLog(line);
-            for (const RecoveryContact& c : manifold) {
-                snprintf(line, sizeof(line), "  contact normal=(%.3f %.3f %.3f) penetration=%.4f",
-                         c.normal.x, c.normal.y, c.normal.z, c.penetration);
-                Terminal::instance().addLog(line);
             }
-            for (const RecoveryContact& c : discarded) {
-                snprintf(line, sizeof(line), "  discarded normal=(%.3f %.3f %.3f) penetration=%.4f",
-                         c.normal.x, c.normal.y, c.normal.z, c.penetration);
-                Terminal::instance().addLog(line);
-            }
-            seamLogCooldown = 30;
         }
+        if (!filtered.empty())
+            manifold.swap(filtered);
     }
 
     glm::vec3 correction(0.0f);
@@ -779,6 +761,7 @@ static glm::vec3 solveBatchedCorrection(
         weightedNormal += c.normal * std::max(c.penetration + slop, slop);
     }
 
+    // Gauss-Seidel solver with deepest contacts processed first
     constexpr int SOLVER_PASSES = 6;
     constexpr float RELAXATION = 0.8f;
     for (int pass = 0; pass < SOLVER_PASSES; ++pass)
@@ -953,7 +936,7 @@ static void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
-    constexpr float SURFACE_SLOP = 0.002f;
+    constexpr float SURFACE_SLOP = COLLISION_SKIN;
     constexpr float MAX_CORRECTION = 2.0f;
 
     // CHANGED: No dashVel — dash is now in vel, jun 6 2026
@@ -1512,6 +1495,21 @@ void doCollisions(
     if (!world.collisionMesh.empty())
     {
         doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
+
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
+            // Report contact count and max penetration for the frame
+            Capsule debugCap = p.getCapsule();
+            std::vector<int> debugCands = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f));
+            std::vector<glm::vec3> debugSamps = collectPlayerBodyCollisionSamples(p);
+            std::vector<RecoveryContact> reportContacts = collectGLBRecoveryContacts(
+                world, debugCap, debugSamps, debugCands, BODY_SAMPLE_RADIUS);
+            float maxPen = 0.0f;
+            for (const auto& rc : reportContacts)
+                maxPen = std::max(maxPen, rc.penetration);
+            printf("[COLLISION] contacts=%zu penetration=%.4f\n",
+                   reportContacts.size(), maxPen);
+        }
+
         return;
     }
 
@@ -1886,6 +1884,14 @@ void doCollisions(
                 p.vel.x, p.vel.y, p.vel.z);
         }
     }
+
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
+        float maxPen = 0.0f;
+        for (const auto& rc : blockContacts)
+            maxPen = std::max(maxPen, rc.penetration);
+        printf("[COLLISION] block contacts=%zu penetration=%.4f\n",
+               blockContacts.size(), maxPen);
+    }
 }
 
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)
@@ -2059,9 +2065,26 @@ static bool sphereTriangleContact(
     glm::vec3 n;
     if (dist > 0.00001f) {
         n = delta / dist;
+        // Edge protection: if closest point is on an edge (not interior),
+        // blend the computed normal toward the face normal for stability.
+        float barycentricSum = 0.0f;
+        glm::vec3 edgeDirs[3] = {tri.b - tri.a, tri.c - tri.b, tri.a - tri.c};
+        for (int ei = 0; ei < 3; ++ei) {
+            float edgeLen = glm::length(edgeDirs[ei]);
+            if (edgeLen < 0.0001f) continue;
+            glm::vec3 edgeDir = edgeDirs[ei] / edgeLen;
+            glm::vec3 toClosest = closest - (ei == 0 ? tri.a : (ei == 1 ? tri.b : tri.c));
+            float alongEdge = glm::dot(toClosest, edgeDir);
+            if (alongEdge >= 0.0f && alongEdge <= edgeLen)
+                barycentricSum += 1.0f;
+        }
+        // If closest point is on an edge (only 2 of 3 barycentric coords non-zero),
+        // blend toward face normal to prevent unreliable edge normals
+        if (barycentricSum < 2.5f) {
+            float blend = 0.3f;
+            n = glm::normalize(n + tri.normal * blend);
+        }
     } else {
-        // Sphere center is exactly on the triangle surface
-        // Push out toward the side the sphere center is on
         float side = glm::dot(center - tri.a, tri.normal);
         n = (side >= 0.0f) ? tri.normal : -tri.normal;
     }
@@ -2095,7 +2118,9 @@ static bool capsuleTriangleSweep(
         float t = 1.0f;
         glm::vec3 n(0.0f);
         glm::vec3 p(0.0f);
-        if (sweepSphereTriangle(sample, move, cap.r, tri, t, n, p) && t < bestT)
+        // Use expanded radius for skin, but cap penetration at real radius
+        float skinRadius = cap.r + COLLISION_SKIN;
+        if (sweepSphereTriangle(sample, move, skinRadius, tri, t, n, p) && t < bestT)
         {
             bestT = t;
             bestN = n;
@@ -2134,8 +2159,11 @@ static bool capsuleTriangleContact(
     for (glm::vec3 sample : samples)
     {
         Contact c;
-        if (sphereTriangleContact(sample, cap.r, tri, c))
+        float skinRadius = cap.r + COLLISION_SKIN;
+        if (sphereTriangleContact(sample, skinRadius, tri, c))
         {
+            // Clamp penetration to real radius (remove skin contribution)
+            c.penetration = std::max(0.0f, c.penetration - COLLISION_SKIN);
             if (!hit || c.penetration > best.penetration)
             {
                 best = c;
