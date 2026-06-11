@@ -517,6 +517,16 @@ def apply_limb_transforms(actor_record, actor_state, frame):
                 'X',
                 math.radians(-45.0)
             )
+            # Debug: print limb transforms at frame 0
+            if frame <= 1:
+                print(f"[LIMB] name={name}")
+                print(f"[LIMB]   bind_location={tuple(round(v, 4) for v in target.location)}")
+                print(f"[LIMB]   bind_rotation={tuple(round(math.degrees(a), 1) for a in target.rotation_euler)}")
+                print(f"[LIMB]   replay_location={tuple(transform.get('position', (0,0,0)))}")
+                print(f"[LIMB]   replay_rotation={tuple(transform.get('rotation', (0,0,0)))}")
+                print(f"[LIMB]   final_location={tuple(round(v, 4) for v in pos)}")
+                print(f"[LIMB]   final_rotation={tuple(round(math.degrees(a), 1) for a in glb_euler)}")
+
             target.location = pos
             target.rotation_mode = "XYZ"
             target.rotation_euler = glb_euler
@@ -640,7 +650,10 @@ def create_effect(effect, fps, serial, snapped_tick=None):
         obj.scale.z = min(obj.scale.z, 0.025)
         rotation = effect.get("rotation", (0.0, 0.0, 0.0))
         obj.rotation_euler = tuple(math.radians(value) for value in rotation)
-        obj.rotation_euler.rotate_axis("X", math.radians(90.0))
+        # Blood decal cylinders are oriented along Z by default; game records
+        # surface normals expecting the decal to lie flat. A -90° local X
+        # rotation aligns the cylinder's flat face with the surface.
+        obj.rotation_euler.rotate_axis("X", math.radians(-90.0))
         obj.data.materials.append(
             material_with_color(f"Mimita_Blood_{serial}", event_color)
         )
