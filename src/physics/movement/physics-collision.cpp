@@ -144,18 +144,8 @@ static inline void applyCollisionContact(
                    "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
                    label, triangleIndex, normal.x, normal.y, normal.z, penetration);
 
-    glm::vec3 incoming = p.vel + p.externalImpulse;
-    float speed = glm::length(incoming);
-    float into = glm::dot(incoming, normal);
     const PlayerSettings& cfg = GetPlayerSettings();
 
-    // Wall-like normal: project velocity
-    bool isWall = std::fabs(normal.z) < 0.45f;
-    if (isWall)
-    {
-        projectVelocityAgainstNormal(p, normal);
-    }
-    
     // Ground: slope is walkable
     if (normal.z > MAX_WALKABLE_SLOPE_DOT)
     {
@@ -173,16 +163,12 @@ static inline void applyCollisionContact(
 
         DebugVis::recordGroundNormal(point, normal, label);
     }
-    // Steep slope: not ground, but project velocity along tangent for sliding
+    // Steep slope: not ground, slide along surface
     else if (normal.z > 0.0f)
     {
         applyTouchResets(p);
-        // Project velocity along slope tangent to allow sliding/surfing
-        glm::vec3 tangent = glm::normalize(glm::cross(glm::cross(normal, glm::vec3(0,0,1)), normal));
-        float tangentSpeed = glm::dot(p.vel, tangent);
-        p.vel = tangent * tangentSpeed;
-        float tangentImpulse = glm::dot(p.externalImpulse, tangent);
-        p.externalImpulse = tangent * tangentImpulse;
+        // Project velocity out of the slope, preserving tangential slide
+        projectVelocityAgainstNormal(p, normal);
     }
     else if (normal.z < -MAX_WALKABLE_SLOPE_DOT)
     {
@@ -191,6 +177,8 @@ static inline void applyCollisionContact(
     }
     else
     {
+        // Wall or ceiling: project velocity against normal
+        projectVelocityAgainstNormal(p, normal);
         applyTouchResets(p);
     }
 
@@ -1421,7 +1409,8 @@ static void doGLBTriangleCollisions(
         }
     }
 
-    // CHANGED: Phase 3 velocity projection — no dashVel, skip floor normals, jun 6 2026
+    // Final velocity projection: slide velocity along all contact surfaces
+    // Only walkable ground is skipped so horizontal movement isn't cancelled.
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
@@ -1433,22 +1422,18 @@ static void doGLBTriangleCollisions(
 
     for (const RecoveryContact& c : finalContacts)
     {
-        // Skip walkable surfaces and steep slopes (they handle their own velocity)
-        if (std::fabs(c.normal.z) >= MAX_WALKABLE_SLOPE_DOT * 0.9f)
-            continue;
-        if (c.normal.z > 0.0f)
+        // Skip walkable ground — these should not cancel horizontal velocity
+        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
             continue;
 
-        // Project only against truly wall-like normals
-        glm::vec3 wallNormal = c.normal;
-        if (std::fabs(wallNormal.z) < 0.45f)
-        {
-            wallNormal.z = 0.0f;
+        glm::vec3 beforeVel = p.vel;
+        projectVelocityAgainstNormal(p, c.normal);
 
-            if (glm::length(wallNormal) > 0.0001f)
-                wallNormal = glm::normalize(wallNormal);
-
-            projectVelocityAgainstNormal(p, wallNormal);
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM && glm::length(beforeVel - p.vel) > 0.01f) {
+            printf("[COLLISION SLIDE] before=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) after=(%.2f %.2f %.2f)\n",
+                beforeVel.x, beforeVel.y, beforeVel.z,
+                c.normal.x, c.normal.y, c.normal.z,
+                p.vel.x, p.vel.y, p.vel.z);
         }
     }
 
@@ -1883,25 +1868,22 @@ void doCollisions(
         }
     }
 
-    // CHANGED: Project velocity against block contacts — skip walkable normals
+    // Final velocity projection against all block contacts (skip walkable ground only)
     cap = p.getCapsule();
     std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
     for (const RecoveryContact& c : blockContacts)
     {
-        if (std::fabs(c.normal.z) >= MAX_WALKABLE_SLOPE_DOT * 0.9f)
-            continue;
-        if (c.normal.z > 0.0f)
+        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
             continue;
 
-        glm::vec3 wallNormal = c.normal;
-        if (std::fabs(wallNormal.z) < 0.45f)
-        {
-            wallNormal.z = 0.0f;
+        glm::vec3 beforeVel = p.vel;
+        projectVelocityAgainstNormal(p, c.normal);
 
-            if (glm::length(wallNormal) > 0.0001f)
-                wallNormal = glm::normalize(wallNormal);
-
-            projectVelocityAgainstNormal(p, wallNormal);
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM && glm::length(beforeVel - p.vel) > 0.01f) {
+            printf("[COLLISION SLIDE] block before=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) after=(%.2f %.2f %.2f)\n",
+                beforeVel.x, beforeVel.y, beforeVel.z,
+                c.normal.x, c.normal.y, c.normal.z,
+                p.vel.x, p.vel.y, p.vel.z);
         }
     }
 }
