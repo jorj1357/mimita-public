@@ -16,7 +16,8 @@ IMPORT_SOUNDS = True
 IMPORT_WEAPONS = True
 IMPORT_NPCS = True
 
-IMPORT_MAP = True
+# IMPORT_MAP = True
+IMPORT_MAP = False
 IMPORT_PLAYER = True
 
 # Set >1 for sparse keyframes (e.g. 10 = 1 blender keyframe per 10 game ticks).
@@ -510,12 +511,12 @@ def apply_limb_transforms(actor_record, actor_state, frame):
             pos.rotate(correction)
             rot = transform.get("rotation", (0.0, 0.0, 0.0))
             game_euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
-            # Use single-sided C*R (not C*R*C_inv) for body parts to avoid
-            # double-counting correction_root's R_x(-90°) in the hierarchy chain.
-            game_mat = game_euler.to_matrix()
-            C = Euler((math.radians(90.0), 0.0, 0.0)).to_matrix()
-            glb_mat = C @ game_mat
-            glb_euler = glb_mat.to_euler('XYZ')
+            glb_euler = game_rotation_to_glb(game_euler)
+            # TEST
+            glb_euler.rotate_axis(
+                'X',
+                math.radians(-45.0)
+            )
             target.location = pos
             target.rotation_mode = "XYZ"
             target.rotation_euler = glb_euler
@@ -621,7 +622,7 @@ def create_effect(effect, fps, serial, snapped_tick=None):
         obj.data.materials.append(
             material_with_color(f"Mimita_MuzzleFlash_{serial}", event_color, 12.0)
         )
-    elif effect_type in ("tracer", "bullettracer", "bullet_tracer", "gunshot"):
+    elif effect_type in ("tracer", "bullettracer", "bullet_tracer"):
         obj = add_primitive(
             "cylinder", f"Tracer_{serial}", collection, position, (0.02, 0.02, 1.0), shared=True
         )
@@ -1005,31 +1006,6 @@ def process_import_batch():
                     frame
                 )
 
-                # Import weapon model for this actor
-                if IMPORT_WEAPONS:
-                    weapon_path = actor_state.get("weaponModelPath", "")
-                    weapon_name = actor_state.get("weaponName", "")
-                    if weapon_path:
-                        weapon_record = ensure_weapon(actor_id, actor_record, weapon_path)
-                        print(f"[WEAPON IMPORT] actor={actor_id} weapon={weapon_name} path={weapon_path}")
-
-                # Create and animate a point light above each actor
-                light_name = f"{actor_id}_light"
-                light_obj = bpy.data.objects.get(light_name)
-                if light_obj is None:
-                    light_data = bpy.data.lights.new(light_name, 'POINT')
-                    light_obj = bpy.data.objects.new(light_name, light_data)
-                    light_data.energy = 50.0
-                    light_data.color = (1.0, 1.0, 1.0)
-                    light_data.use_custom_distance = False
-                    bpy.data.collections["Mimita_Actors"].objects.link(light_obj)
-                    print(f"[REPLAY LIGHT] actor={actor_id} light={light_name}")
-                # Light follows actor with +2 Z offset in corrected space
-                light_pos = converted_state.get("position", (0.0, 0.0, 0.0))
-                light_obj.location = (light_pos[0], light_pos[1], light_pos[2] + 2.0)
-                light_obj.keyframe_insert(data_path="location", frame=frame)
-
-
         # Process effects on EVERY tick, snapping to nearest keyframe
         if IMPORT_EFFECTS:
 
@@ -1054,9 +1030,6 @@ def process_import_batch():
                     EFFECT_SERIAL,
                     snapped_tick=snapped_tick,
                 )
-
-                if effect.get("type") == "gunshot":
-                    print(f"[SHOTGUN PELLETS] frame={tick + 1} from={effect.get('from')} to={effect.get('to')}")
 
                 EFFECT_SERIAL += 1
 
