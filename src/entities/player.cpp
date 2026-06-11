@@ -1238,6 +1238,68 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    // Arm debug logging (enable with `anim_debug_arms 1`)
+    if (DebugConfig::DEBUG_ANIM_ARMS) {
+        static float armDebugTimer = 0.0f;
+        armDebugTimer -= dt;
+        if (armDebugTimer <= 0.0f) {
+            armDebugTimer = 0.5f;
+            printf("[ANIM_ARMS] state=%s weaponEquipped=%d hasOverlay=%d\n",
+                   activeAnim.c_str(), (int)weaponEquipped, (int)hasWeaponOverlay);
+            for (const PhysicalBodyPart& part : physicalBody.parts) {
+                if (part.name != "leftArm" && part.name != "rightArm") continue;
+                printf("[ANIM_ARMS]   %s:\n", part.name.c_str());
+                // Base animation contribution (from keyframes)
+                glm::vec3 animTrans(0.0f);
+                glm::vec3 animRot(0.0f);
+                auto ovIt = animOverlay.find(part.name);
+                if (ovIt != animOverlay.end()) {
+                    animTrans = ovIt->second.translation;
+                    animRot = ovIt->second.rotation;
+                }
+                printf("[ANIM_ARMS]     animation    trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       animTrans.x, animTrans.y, animTrans.z,
+                       animRot.x, animRot.y, animRot.z);
+                // Weapon overlay contribution
+                glm::vec3 woTrans(0.0f);
+                glm::vec3 woRot(0.0f);
+                if (hasWeaponOverlay && weaponOverlay) {
+                    auto woIt = weaponOverlay->parts.find(part.name);
+                    if (woIt != weaponOverlay->parts.end()) {
+                        woTrans = woIt->second.translation;
+                        woRot = woIt->second.rotation;
+                    }
+                }
+                printf("[ANIM_ARMS]     weaponOverlay trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       woTrans.x, woTrans.y, woTrans.z,
+                       woRot.x, woRot.y, woRot.z);
+                // PerfectPose final
+                printf("[ANIM_ARMS]     perfectPose   trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       part.perfectPose.translation.x, part.perfectPose.translation.y, part.perfectPose.translation.z,
+                       part.perfectPose.rotationEuler.x, part.perfectPose.rotationEuler.y, part.perfectPose.rotationEuler.z);
+                // Physical (spring-smoothed) final
+                printf("[ANIM_ARMS]     physicalPose  trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                       part.pose.translation.x, part.pose.translation.y, part.pose.translation.z,
+                       part.pose.rotationEuler.x, part.pose.rotationEuler.y, part.pose.rotationEuler.z);
+            }
+            // Verify symmetry
+            const PhysicalBodyPart* leftArm = nullptr;
+            const PhysicalBodyPart* rightArm = nullptr;
+            for (const PhysicalBodyPart& part : physicalBody.parts) {
+                if (part.name == "leftArm") leftArm = &part;
+                if (part.name == "rightArm") rightArm = &part;
+            }
+            if (leftArm && rightArm) {
+                printf("[ANIM_ARMS]   symmetry check:\n");
+                printf("[ANIM_ARMS]     leftArm.translation.y  = %.3f  rightArm.translation.y  = %.3f  (should be negated)\n",
+                       leftArm->perfectPose.translation.y, rightArm->perfectPose.translation.y);
+                printf("[ANIM_ARMS]     leftArm.rotationEuler  = (%.1f %.1f %.1f)  rightArm.rotationEuler = (%.1f %.1f %.1f)\n",
+                       leftArm->perfectPose.rotationEuler.x, leftArm->perfectPose.rotationEuler.y, leftArm->perfectPose.rotationEuler.z,
+                       rightArm->perfectPose.rotationEuler.x, rightArm->perfectPose.rotationEuler.y, rightArm->perfectPose.rotationEuler.z);
+            }
+        }
+    }
+
     // Debug logging (enable with `animation_debug 1`)
     if (DebugConfig::DEBUG_ANIMATION) {
         static float debugTimer = 0.0f;
