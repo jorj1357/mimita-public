@@ -328,7 +328,7 @@ void EffectPartSystem::update(float dt) {
         }
     }
 
-    const glm::vec3 bloodGravity(0.0f, 0.0f, -18.0f);
+    const glm::vec3 bloodGravity(0.0f, 0.0f, -8.0f);
     for (BloodParticle& particle : mBloodParticles) {
         particle.position += particle.velocity * dt;
         particle.velocity += bloodGravity * dt;
@@ -382,11 +382,27 @@ void EffectPartSystem::spawnBloodEffect(
             ? glm::cross(forward, glm::vec3(0.0f, 0.0f, 1.0f))
             : glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
     const glm::vec3 bitangent = glm::normalize(glm::cross(forward, tangent));
-    const int particleCount = std::clamp((int)std::round(damage * 1.35f), 12, 50);
-    const float coneDegrees =
-        60.0f + std::clamp(damage / 100.0f, 0.0f, 1.0f) * 20.0f;
-    const float coneRadius = std::tan(glm::radians(coneDegrees));
     const float damageScale = std::clamp(damage / 100.0f, 0.0f, 2.0f);
+
+    // Particle count scales with damage:
+    // 10 dmg revolver -> ~15 particles
+    // 50 dmg shotgun -> ~45 particles
+    int particleCount = 8;
+    if (damage < 20.0f) particleCount = 8 + (int)(damage * 0.7f);
+    else if (damage < 50.0f) particleCount = 20 + (int)((damage - 20.0f) * 0.8f);
+    else particleCount = 44 + (int)((damage - 50.0f) * 0.2f);
+    particleCount = std::clamp(particleCount, 8, 65);
+
+    // Wide chaotic cone: 80-100 degrees
+    const float coneDegrees = 80.0f + damageScale * 20.0f;
+    const float coneRadius = std::tan(glm::radians(coneDegrees));
+
+    // Speed: weak ~10 m/s, strong ~28 m/s — travels several meters
+    const float baseSpeed = 8.0f + damageScale * 12.0f;
+    const float speedVariation = 5.0f;
+
+    // Lifetime 2.0-3.0 seconds so particles arc and linger
+    const float baseLifetime = 2.0f + damageScale * 0.5f;
 
     if (mBloodParticles.size() + (size_t)particleCount > MAX_BLOOD_PARTICLES) {
         const size_t removeCount =
@@ -405,16 +421,21 @@ void EffectPartSystem::spawnBloodEffect(
             bitangent * std::sin(angle) * radial);
 
         BloodParticle particle;
-        particle.position = hitPoint + direction * 0.03f;
+        particle.position = hitPoint + direction * 0.05f;
         particle.velocity = direction *
-            (6.5f + damageScale * 6.0f + (float)(rand() % 5001) / 1000.0f);
+            (baseSpeed + (float)(rand() % (int)(speedVariation * 1000.0f + 1.0f)) / 1000.0f);
         particle.size = 0.03f + (float)(rand() % 601) / 10000.0f +
-            damageScale * 0.018f;
-        particle.lifetime = 0.3f + (float)(rand() % 301) / 1000.0f;
-        particle.alpha = 0.82f + (float)(rand() % 181) / 1000.0f;
+            damageScale * 0.022f;
+        particle.lifetime = baseLifetime + (float)(rand() % 1001) / 1000.0f;
+        particle.alpha = 0.85f;
         particle.rotation = (float)(rand() % 6284) / 1000.0f;
         particle.stretch = 0.7f + (float)(rand() % 901) / 1000.0f;
         mBloodParticles.push_back(particle);
+    }
+
+    if (DebugConfig::DEBUG_BLOOD_HITS) {
+        printf("[BLOOD PARTICLES] count=%d speed=%.2f lifetime=%.2f cone=%.0f\n",
+               particleCount, baseSpeed, baseLifetime, coneDegrees);
     }
 
     ReplayEffectEvent emitter;
