@@ -382,8 +382,9 @@ void EffectPartSystem::spawnBloodEffect(
             ? glm::cross(forward, glm::vec3(0.0f, 0.0f, 1.0f))
             : glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
     const glm::vec3 bitangent = glm::normalize(glm::cross(forward, tangent));
-    const int particleCount = std::clamp((int)std::round(damage * 2.0f), 10, 50);
-    const float coneDegrees = 30.0f + std::clamp(damage / 100.0f, 0.0f, 1.0f) * 30.0f;
+    const int particleCount = std::clamp((int)std::round(damage * 1.35f), 12, 50);
+    const float coneDegrees =
+        60.0f + std::clamp(damage / 100.0f, 0.0f, 1.0f) * 20.0f;
     const float coneRadius = std::tan(glm::radians(coneDegrees));
     const float damageScale = std::clamp(damage / 100.0f, 0.0f, 2.0f);
 
@@ -406,11 +407,11 @@ void EffectPartSystem::spawnBloodEffect(
         BloodParticle particle;
         particle.position = hitPoint + direction * 0.03f;
         particle.velocity = direction *
-            (5.0f + damageScale * 5.0f + (float)(rand() % 4001) / 1000.0f);
-        particle.size = 0.025f + (float)(rand() % 501) / 10000.0f +
-            damageScale * 0.015f;
+            (6.5f + damageScale * 6.0f + (float)(rand() % 5001) / 1000.0f);
+        particle.size = 0.03f + (float)(rand() % 601) / 10000.0f +
+            damageScale * 0.018f;
         particle.lifetime = 0.3f + (float)(rand() % 301) / 1000.0f;
-        particle.alpha = 0.75f + (float)(rand() % 251) / 1000.0f;
+        particle.alpha = 0.82f + (float)(rand() % 181) / 1000.0f;
         particle.rotation = (float)(rand() % 6284) / 1000.0f;
         particle.stretch = 0.7f + (float)(rand() % 901) / 1000.0f;
         mBloodParticles.push_back(particle);
@@ -473,7 +474,7 @@ void EffectPartSystem::spawnBloodEffect(
             const glm::vec3 center = clusters[cluster].position /
                 (float)clusters[cluster].hitCount;
             const glm::vec3 normal = glm::normalize(clusters[cluster].normal);
-            if (glm::length(center - hit.position) <= 1.5f &&
+            if (glm::length(center - hit.position) <= 1.0f &&
                 glm::dot(normal, hit.normal) >= 0.65f) {
                 clusterIndex = cluster;
                 break;
@@ -508,13 +509,13 @@ void EffectPartSystem::spawnBloodEffect(
             cluster.position / (float)cluster.hitCount + normal * 0.006f;
         decal.normal = normal;
         decal.radius = std::clamp(
-            (0.16f + damage * 0.012f) *
-                (0.7f + impactAngle * 0.6f) * variation,
-            0.16f,
-            2.5f);
+            (0.22f + damage * 0.015f) *
+                (0.8f + impactAngle * 0.5f) * variation,
+            0.22f,
+            3.0f);
         decal.lifetime = 30.0f;
         decal.rotation = (float)(rand() % 6284) / 1000.0f;
-        decal.stretch = 1.0f + (1.0f - impactAngle) * 1.5f;
+        decal.stretch = 1.0f + (1.0f - impactAngle) * 0.35f;
         decal.alpha = 0.78f + (float)(rand() % 181) / 1000.0f;
 
         if (mBloodDecals.size() >= MAX_BLOOD_DECALS)
