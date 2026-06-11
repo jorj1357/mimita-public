@@ -297,13 +297,17 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         runtime.godball.overlapDamageTimer = tickInterval;
     }
 
-    const float npcCollisionRadius = 0.5f;
+    const float damageRadius = phys.radius * 1.25f;
     glm::vec3 currPos = phys.position;
     glm::vec3 prevPos = phys.prevPosition;
     float ballSpeed = glm::length(phys.velocity);
 
     for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
+
+        // Ensure body part world transforms are current
+        npc.body.updateModelWorldTransforms();
+
         uint32_t npcId = npc.id;
 
         GodballPhysics::NpcCollisionDebug cd;
@@ -341,30 +345,39 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
             continue;
         }
 
-        // Swept sphere overlap check
+        // Check overlap against ALL body parts
+        bool hit = false;
         glm::vec3 hitPoint, hitNormal, closestOnSeg;
-        cd.overlapCheck = true;
-        bool hit = sweptSphereOverlap(
-            prevPos, currPos, phys.radius,
-            npc.body.pos, npcCollisionRadius,
-            hitPoint, hitNormal, &closestOnSeg);
+        std::string hitPartName;
 
+        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
+            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+            glm::vec3 worldCenter = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+            glm::vec3 halfSize = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+            float partRadius = glm::length(halfSize) * 1.25f;
+
+            if (sweptSphereOverlap(prevPos, currPos, damageRadius,
+                                   worldCenter, partRadius,
+                                   hitPoint, hitNormal, &closestOnSeg)) {
+                hit = true;
+                hitPartName = part.name;
+                break;
+            }
+        }
+
+        cd.overlapCheck = true;
         cd.sweptHit = hit;
         cd.hitPoint = hitPoint;
         cd.hitNormal = hitNormal;
         cd.sweepClosest = closestOnSeg;
-
-        float totalRadius = phys.radius + npcCollisionRadius;
-        cd.overlapAmount = totalRadius - cd.distanceToTarget;
+        cd.overlapAmount = damageRadius + 0.5f - cd.distanceToTarget;
 
         if (!hit) {
             cd.rejected = true;
             cd.rejectReason = "noIntersection";
             if (DebugConfig::DEBUG_GODBALL) {
-                printf("[GODBALL] npc=%u noIntersection dist=%.2f overlap=%.2f "
-                       "sweepClosest=(%.2f,%.2f,%.2f)\n",
-                       npcId, cd.distanceToTarget, totalRadius - cd.distanceToTarget,
-                       closestOnSeg.x, closestOnSeg.y, closestOnSeg.z);
+                printf("[GODBALL] npc=%u noIntersection dist=%.2f\n",
+                       npcId, cd.distanceToTarget);
             }
             phys.npcCollisions.push_back(cd);
             continue;
@@ -377,6 +390,9 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         float damage = computeDamage(phys, def, owner, npc.body, hitPoint);
         int rounded = std::max(1, (int)std::round(damage));
         cd.computedDamage = damage;
+
+        printf("[GODBALL HIT] speed=%.2f damage=%d part=%s target=%s\n",
+               ballSpeed, rounded, hitPartName.c_str(), npc.body.username.c_str());
 
         // === PHYSICS-DRIVEN KNOCKBACK ===
         glm::vec3 kbDir;
@@ -418,13 +434,6 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
             phys.hitstopTimer = 0.08f;
         }
 
-        if (DebugConfig::DEBUG_GODBALL) {
-            printf("[GODBALL OVERLAP] npc=%u damage=%d vel=%.1f kb=%.2f "
-                   "dist=%.2f overlap=%.2f\n",
-                   npcId, rounded, ballSpeed, knockbackForce,
-                   cd.distanceToTarget, cd.overlapAmount);
-        }
-
         // === BLOOD EFFECTS ===
         glm::vec3 hitPos = npc.body.pos + glm::vec3(0, 0, 0.8f);
         float intensity = std::min((float)rounded / 20.0f, 2.0f);
@@ -442,13 +451,6 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 ? def.customParams.at("maxDamageCap") : 200.0f;
             float damageFraction = std::clamp((float)rounded / maxPossibleDamage, 0.0f, 1.0f);
             WeaponAudio::playGodballImpact(hitPos, damageFraction);
-        }
-
-        if (DebugConfig::DEBUG_GODBALL) {
-            printf("[GODBALL HIT] target=%s damage=%d vel=%.1f "
-                   "speedMult=%.2f angleDot=%.2f overlap=%.2f\n",
-                   npc.body.username.c_str(), rounded, ballSpeed,
-                   1.0f + (ballSpeed / 10.0f) * 3.0f, cd.angleDot, cd.overlapAmount);
         }
 
         cooldowns[npcId] = tickInterval;
@@ -476,47 +478,43 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 float computeDamage(const GodballPhysics& phys, const WeaponDefinition& def,
                      const Player& owner, const Player& target,
                      const glm::vec3& overlapPoint) {
+    (void)owner;
+    (void)overlapPoint;
     float baseDamage = def.customParams.count("baseDamagePerTick")
         ? def.customParams.at("baseDamagePerTick") : 10.0f;
     float speedFactor = def.customParams.count("speedDamageFactor")
-        ? def.customParams.at("speedDamageFactor") : 3.0f;
+        ? def.customParams.at("speedDamageFactor") : 0.5f;
+    float angleMultiplier = def.customParams.count("angleMultiplier")
+        ? def.customParams.at("angleMultiplier") : 20.0f;
     float maxDamageCap = def.customParams.count("maxDamageCap")
         ? def.customParams.at("maxDamageCap") : 200.0f;
 
     float ballSpeed = glm::length(phys.velocity);
-    float speedMultiplier = 1.0f + (ballSpeed / 10.0f) * speedFactor;
 
+    // Always deal at least base damage
+    float totalDamage = baseDamage;
+
+    // Speed bonus
+    totalDamage += ballSpeed * speedFactor;
+
+    // Angle bonus: reward clean hits where ball moves toward target
     glm::vec3 toTarget = target.pos - phys.position;
     float dist = glm::length(toTarget);
-    float angleFactor = 1.0f;
     if (dist > 0.001f && ballSpeed > 0.001f) {
         glm::vec3 dirToTarget = toTarget / dist;
-        angleFactor = 0.5f + 0.5f * std::max(0.0f,
-            glm::dot(glm::normalize(phys.velocity), dirToTarget));
+        float angleFactor = std::abs(glm::dot(glm::normalize(phys.velocity), dirToTarget));
+        totalDamage += angleFactor * angleMultiplier;
     }
 
-    float relativeFactor = def.customParams.count("relativeVelocityFactor")
-        ? def.customParams.at("relativeVelocityFactor") : 2.0f;
-    glm::vec3 relativeVel = phys.velocity - target.vel;
-    float relativeSpeed = glm::length(relativeVel);
-    float relativeMultiplier = 1.0f + (relativeSpeed / 15.0f) * relativeFactor;
-
-    float swingFactor = def.customParams.count("swingDirectionFactor")
-        ? def.customParams.at("swingDirectionFactor") : 2.0f;
-    glm::vec3 ownerToBall = phys.position - owner.pos;
-    float swingBonus = 1.0f;
-    if (glm::length(ownerToBall) > 0.001f && ballSpeed > 0.001f) {
-        ownerToBall = glm::normalize(ownerToBall);
-        swingBonus = 1.0f + std::max(0.0f,
-            glm::dot(glm::normalize(phys.velocity), ownerToBall)) * swingFactor;
-    }
-
-    float totalDamage = baseDamage * speedMultiplier * angleFactor * relativeMultiplier * swingBonus;
-    totalDamage = std::clamp(totalDamage, 1.0f, maxDamageCap);
+    totalDamage = std::clamp(totalDamage, baseDamage, maxDamageCap);
 
     if (DebugConfig::DEBUG_GODBALL) {
-        printf("[GODBALL DAMAGE] speed=%.1f speedMult=%.2f angle=%.2f relMult=%.2f swing=%.2f total=%.1f\n",
-               ballSpeed, speedMultiplier, angleFactor, relativeMultiplier, swingBonus, totalDamage);
+        printf("[GODBALL DAMAGE] speed=%.1f speedBonus=%.1f angleFactor=%.2f total=%.1f\n",
+               ballSpeed, ballSpeed * speedFactor,
+               dist > 0.001f && ballSpeed > 0.001f
+                   ? (float)std::abs(glm::dot(glm::normalize(phys.velocity), glm::normalize(toTarget)))
+                   : 0.0f,
+               totalDamage);
     }
 
     return totalDamage;
