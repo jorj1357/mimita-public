@@ -861,7 +861,9 @@ int runServer(const LaunchOptions& options)
 
                 const bool validWeapon =
                     shot->weapon == NETWORK_WEAPON_REVOLVER ||
-                    shot->weapon == NETWORK_WEAPON_GODBALL;
+                    shot->weapon == NETWORK_WEAPON_GODBALL ||
+                    shot->weapon == NETWORK_WEAPON_SHOTGUN ||
+                    shot->weapon == NETWORK_WEAPON_SWORDSWORD;
                 const bool validImpact =
                     shot->impactType <= SHOT_IMPACT_ENTITY;
                 const glm::vec3 origin{

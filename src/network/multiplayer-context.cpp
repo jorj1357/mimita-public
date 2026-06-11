@@ -2,6 +2,7 @@
 #include "network/packets.h"
 #include "render/outfit-atlas.h"
 #include "config/player-settings.h"
+#include "combat/weapon-registry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -95,6 +96,19 @@ void updateRenderedReplica(
     player.dead = interpolation.target.health <= 0;
     player.onGround = interpolation.target.onGround;
     player.equippedSlot = interpolation.target.equippedSlot;
+    {
+        // Look up weapon ID from slot for animation system
+        player.equippedWeaponId.clear();
+        if (player.equippedSlot >= 1) {
+            auto reg = WeaponRegistry::instance().all();
+            for (const auto& w : reg) {
+                if (w.second.slot == player.equippedSlot) {
+                    player.equippedWeaponId = w.first;
+                    break;
+                }
+            }
+        }
+    }
     player.networkShootEffectTimer =
         std::max(0.0f, player.networkShootEffectTimer - dt);
     player.networkWeaponState = interpolation.target.weaponState;
@@ -103,7 +117,9 @@ void updateRenderedReplica(
     player.aimDirection = interpolation.target.aimDirection;
     player.hasAimData = glm::length(player.aimDirection) > 0.001f;
     player.username = interpolation.displayName;
-    player.updateProceduralAnimation(dt);
+    // Pass reconstructed aim direction so local animation system
+    // produces matching limb positions for the remote player.
+    player.updateProceduralAnimation(dt, player.aimDirection, player.pos);
 }
 
 } // namespace

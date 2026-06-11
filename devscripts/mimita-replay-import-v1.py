@@ -8,7 +8,8 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-MAX_FRAMES = 1000
+# MAX_FRAMES = 1000
+MAX_FRAMES = 250
 
 IMPORT_EFFECTS = True
 IMPORT_SOUNDS = True
@@ -48,7 +49,7 @@ def snap_tick_to_keyframe(tick, interval):
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-08-2026\10-14-46-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-11-2026\10-44-21-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
@@ -244,6 +245,8 @@ def keyframe_transform(obj, frame):
     obj.keyframe_insert(data_path="location", frame=frame)
     obj.keyframe_insert(data_path="rotation_euler", frame=frame)
     obj.keyframe_insert(data_path="scale", frame=frame)
+    if frame <= 5:
+        print(f"[KEYFRAME] obj={obj.name} frame={frame}")
 
 
 def keyframe_visibility(obj, frame, visible):
@@ -402,7 +405,9 @@ def ensure_actor(actor_state, outfit_path):
         "materials": materials,
     }
     for part in parts:
-        record["part_lookup"][normalized_name(part.name)] = part
+        key = normalized_name(part.name)
+        record["part_lookup"][key] = part
+    print(f"[ACTOR CREATED] {actor_id} root={root.name if root else 'None'} parts={len(parts)}")
     ACTORS[actor_id] = record
     return record
 
@@ -437,12 +442,29 @@ def ensure_weapon(actor_id, actor_record, weapon_path):
 
 
 def apply_limb_transforms(actor_record, actor_state, frame):
+    actor_id = actor_state.get("id", actor_state.get("name", "unknown"))
     limbs = actor_state.get("limbs") or actor_state.get("bodyParts")
     if not limbs:
         return
-    entries = limbs.items() if isinstance(limbs, dict) else (
-        (entry.get("name", ""), entry) for entry in limbs
-    )
+    if isinstance(limbs, dict):
+        entries = limbs.items()
+        part_count = len(limbs)
+    elif isinstance(limbs, list):
+        entries = [(entry.get("name", ""), entry) for entry in limbs]
+        part_count = len(limbs)
+    else:
+        log(f"apply_limb_transforms: unexpected limbs type={type(limbs).__name__} for {actor_id}")
+        return
+    log(f"apply_limb_transforms: {actor_id} has {part_count} body parts at frame {frame}")
+
+    # The correction_root rotates GLB Y-up → Blender Z-up via -90X.
+    # Body parts are children of actor_root (child of correction_root),
+    # so their local space is GLB Y-up. But replay stores transforms
+    # in game coordinates (Z-up relative to root). Convert game Z-up
+    # to GLB Y-up by applying +90X before setting local transforms.
+    correction = mathutils.Euler((math.radians(90.0), 0.0, 0.0))
+
+    keyframed_count = 0
     for name, transform in entries:
         normalized = normalized_name(name)
         target = actor_record["part_lookup"].get(normalized)
@@ -456,8 +478,22 @@ def apply_limb_transforms(actor_record, actor_state, frame):
                 None,
             )
         if target and isinstance(transform, dict):
-            set_local_transform(target, transform)
+            pos = Vector(transform.get("position", (0.0, 0.0, 0.0)))
+            rot = transform.get("rotation", (0.0, 0.0, 0.0))
+            euler = mathutils.Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
+            pos.rotate(correction)
+            euler.rotate(correction)
+            target.location = pos
+            target.rotation_mode = "XYZ"
+            target.rotation_euler = euler
+            target.scale = Vector(transform.get("scale", (1.0, 1.0, 1.0)))
             keyframe_transform(target, frame)
+            keyframed_count += 1
+        elif not target:
+            log(f"apply_limb_transforms: part '{name}' not found in actor_record part_lookup for {actor_id}")
+            log(f"  available parts: {list(actor_record['part_lookup'].keys())}")
+    if keyframed_count > 0 and frame <= 5:
+        log(f"apply_limb_transforms: keyframed {keyframed_count} parts for {actor_id} at frame {frame}")
 
 
 def _ensure_shared_mesh(kind):
@@ -640,36 +676,71 @@ def create_effect(effect, fps, serial, snapped_tick=None):
     keyframe_visibility(obj, end_frame + 1, False)
 
 
+def safe_load_sound(sound_path):
+    if not sound_path:
+        return None
+    if not os.path.exists(sound_path):
+        replay_dir = os.path.dirname(str(REPLAY_JSON_PATH))
+        project_root = str(REPO_ROOT)
+        candidates = [
+            sound_path,
+            os.path.join(replay_dir, sound_path),
+            os.path.join(project_root, sound_path),
+            os.path.join(project_root, "assets", "sounds", os.path.basename(sound_path)),
+        ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                sound_path = candidate
+                break
+        else:
+            return None
+    try:
+        return bpy.data.sounds.load(sound_path, check_existing=True)
+    except Exception as e:
+        log(f"failed to load sound {sound_path}: {e}")
+        return None
+
+
 def import_sounds(sound_events, snap_interval=1):
+    missing_sounds = []
+    loaded_count = 0
     scene = bpy.context.scene
     if scene.sequence_editor is None:
         scene.sequence_editor_create()
     sequences = scene.sequence_editor.strips
     for index, event in enumerate(sound_events):
-        path = resolve_path(event.get("soundPath", ""))
-        if path is None and event.get("assetId"):
-            path = resolve_path(ASSETS_BY_ID.get(event["assetId"], {}).get("path", ""))
         raw_tick = int(event.get("tick", 0))
+        raw_path = event.get("soundPath", "")
+        if not raw_path and event.get("assetId"):
+            raw_path = ASSETS_BY_ID.get(event["assetId"], {}).get("path", "")
+        sound = safe_load_sound(raw_path) if raw_path else None
+        if sound is None:
+            missing_sounds.append(raw_path or event.get("assetId", "unknown"))
+            log(f"Sound not found at frame {raw_tick}: {raw_path}")
+            continue
         if snap_interval > 1:
             raw_tick = snap_tick_to_keyframe(raw_tick, snap_interval)
         frame = raw_tick + 1
-        label = path.name if path else event.get("assetId", "missing sound")
+        label = os.path.basename(raw_path) if raw_path else "sound"
         try:
-            if path is None:
-                raise FileNotFoundError(label)
             strip = sequences.new_sound(
                 name=f"SOUND_{index}_{label}",
-                filepath=str(path),
+                filepath=sound.filepath,
                 channel=1 + (index % 8),
                 frame_start=frame,
             )
             strip.volume = float(event.get("volume", 1.0))
             if hasattr(strip, "pitch"):
                 strip.pitch = float(event.get("pitch", 1.0))
+            loaded_count += 1
         except Exception as exc:
-            marker = scene.timeline_markers.new(f"SOUND: {label}", frame=frame)
-            marker["import_error"] = str(exc)
-            log(f"Sound strip fallback marker at frame {frame}: {label}: {exc}")
+            log(f"Failed to create sound strip at frame {frame}: {label}: {exc}")
+            continue
+    log(f"Sounds loaded: {loaded_count}")
+    if missing_sounds:
+        log(f"Sounds missing: {len(missing_sounds)}")
+        for path in missing_sounds:
+            log(f"  missing sound: {path}")
 
 
 def configure_camera(camera, state, frame):
@@ -745,6 +816,24 @@ def main():
         replay = json.load(replay_file)
     log(f"Loaded replay: {replay_path}")
 
+    # Step 1: Print replay structure
+    scene_frames_sizes = replay.get("sceneFrames", [])
+    print("[REPLAY]")
+    print("sceneFrames =", len(scene_frames_sizes))
+    if scene_frames_sizes:
+        first_actor = scene_frames_sizes[0].get("actors", [{}])[0]
+        print("firstActor keys =", list(first_actor.keys()))
+
+    # Step 2: Check if actor position changes over time
+    sample_indices = [idx for idx in [0, 10, 50, 100] if idx < len(scene_frames_sizes)]
+    if sample_indices:
+        print("[REPLAY POSITIONS]")
+        for frame_index in sample_indices:
+            actors = scene_frames_sizes[frame_index].get("actors", [])
+            if actors:
+                actor = actors[0]
+                print(f"  frame{frame_index}: pos={actor.get('position')} rot={actor.get('rotation')}")
+
     for name in COLLECTION_NAMES:
         remove_collection(name)
         create_collection(name)
@@ -810,7 +899,7 @@ def main():
     if IMPORT_SOUNDS:
         sound_events = replay.get("soundEvents", [])
         import_sounds(sound_events, snap_interval=KEYFRAME_EVERY_N_TICKS)
-        log(f"Imported {len(sound_events)} sound events (snapped to {KEYFRAME_EVERY_N_TICKS}-tick interval)")
+        log(f"Processed {len(sound_events)} sound events")
 
     bpy.app.timers.register(process_import_batch)
 
@@ -862,7 +951,18 @@ def process_import_batch():
                     OUTFIT_PATH_GLOBAL
                 )
 
-                set_transform(actor_record["root"], actor_state)
+                # Convert game Z-up coordinates to GLB Y-up (correction_root space)
+                game_correction = mathutils.Euler((math.radians(90.0), 0.0, 0.0))
+                converted_state = dict(actor_state)
+                pos = Vector(actor_state.get("position", (0.0, 0.0, 0.0)))
+                pos.rotate(game_correction)
+                converted_state["position"] = (pos.x, pos.y, pos.z)
+                rot = actor_state.get("rotation", (0.0, 0.0, 0.0))
+                rot_euler = mathutils.Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
+                rot_euler.rotate(game_correction)
+                converted_state["rotation"] = (math.degrees(rot_euler.x), math.degrees(rot_euler.y), math.degrees(rot_euler.z))
+                print(f"[ACTOR FRAME] tick={tick} frame={frame} id={actor_id} pos={actor_state.get('position')}")
+                set_transform(actor_record["root"], converted_state)
 
                 keyframe_transform(actor_record["root"], frame)
 
@@ -908,7 +1008,24 @@ def process_import_batch():
         scene.frame_start = 1
         scene.frame_end = MAX_TICK + 1
 
-        print("Replay import complete.")
+        print("[REPLAY IMPORT] complete")
+        print(f"[REPLAY IMPORT] frames: {scene.frame_start}-{scene.frame_end}")
+
+        # Step 6: Verify animation data
+        total_root_keyframes = 0
+        total_part_keyframes = 0
+        for actor_id, actor_record in ACTORS.items():
+            root = actor_record.get("root")
+            if root and root.animation_data and root.animation_data.action:
+                fc_count = len(root.animation_data.action.fcurves)
+                total_root_keyframes += fc_count
+                print(f"[REPLAY SUMMARY] actor={actor_id} root fcurves={fc_count}")
+            for part in actor_record.get("parts", []):
+                if part.animation_data and part.animation_data.action:
+                    fc_count = len(part.animation_data.action.fcurves)
+                    total_part_keyframes += fc_count
+
+        print(f"[REPLAY SUMMARY] actors={len(ACTORS)} total_root_fcurves={total_root_keyframes} total_part_fcurves={total_part_keyframes}")
 
         return None
 

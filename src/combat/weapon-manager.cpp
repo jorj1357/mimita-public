@@ -98,6 +98,7 @@ bool WeaponManager::reload(Player& player)
 void WeaponManager::equip(Player& player, int slot)
 {
     player.equippedSlot = slot;
+    player.equippedWeaponId = revolverDefinition.id;
     if (slot == revolverDefinition.slot)
         AudioManager::instance().play({"revolverequip", AudioCategory::Weapons, false, {}, 0.85f});
 }

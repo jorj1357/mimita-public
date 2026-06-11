@@ -80,52 +80,64 @@ float NpcCombat::aimErrorDegrees(float difficulty)
     }
 }
 
-// Ray vs capsule (line segment + radius) intersection test
+// Ray vs capsule (line segment + radius) intersection test.
+// Uses segment-segment closest-points to correctly handle rays
+// where the infinite-line closest approach is behind the ray origin.
 bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
                            const glm::vec3& a, const glm::vec3& b, float radius,
                            float& outDist, glm::vec3& outNormal)
 {
+    const float MAX_RAY = 1000.0f;
+
     glm::vec3 ab = b - a;
     float abLen = glm::length(ab);
-    glm::vec3 abDir = abLen > 0.001f ? ab / abLen : glm::vec3(0.0f, 0.0f, 1.0f);
+    if (abLen < 0.0001f) return false;
+    glm::vec3 abDir = ab / abLen;
 
-    // Find closest point on ray to segment ab
-    glm::vec3 oa = origin - a;
-    float dot_ray_ab = glm::dot(dir, abDir);
-    float dot_ab_ab = 1.0f;
-    float dot_oa_ray = glm::dot(oa, dir);
-    float dot_oa_ab = glm::dot(oa, abDir);
+    // Treat the ray as a finite segment for correct segment-segment distance
+    glm::vec3 rayEnd = origin + dir * MAX_RAY;
+    glm::vec3 raySeg = rayEnd - origin;
+    float rayLen = glm::length(raySeg);
+    if (rayLen < 0.0001f) return false;
+    glm::vec3 rayDir = raySeg / rayLen;
 
-    float denom = 1.0f - dot_ray_ab * dot_ray_ab;
+    glm::vec3 r = origin - a;
+    float a_dot_b = glm::dot(rayDir, abDir);
+    float a_dot_r = glm::dot(rayDir, r);
+    float b_dot_r = glm::dot(abDir, r);
+
+    float denom = 1.0f - a_dot_b * a_dot_b;
+    float t, s;
+
     if (std::fabs(denom) < 0.0001f) {
-        // Parallel
-        float t = glm::dot(-oa, dir);
-        float s = 0.0f;
-        glm::vec3 closestRay = origin + dir * t;
-        glm::vec3 closestSeg = a;
-        glm::vec3 diff = closestRay - closestSeg;
-        float dist = glm::length(diff);
-        if (dist < radius) {
-            outDist = t;
-            outNormal = dist > 0.001f ? diff / dist : -dir;
-            return true;
-        }
-        return false;
+        t = 0.0f;
+        s = b_dot_r;
+    } else {
+        t = (a_dot_r - a_dot_b * b_dot_r) / denom;
+        s = (a_dot_b * a_dot_r - b_dot_r) / denom;
     }
 
-    float t = (dot_oa_ray - dot_ray_ab * dot_oa_ab) / denom;
-    float s = (dot_ray_ab * dot_oa_ray - dot_oa_ab) / denom;
+    // Clamp s to capsule segment
+    if (s < 0.0f) {
+        s = 0.0f;
+        t = a_dot_r;
+    } else if (s > abLen) {
+        s = abLen;
+        t = a_dot_r + a_dot_b * abLen;
+    }
 
-    s = std::clamp(s, 0.0f, abLen);
+    // Clamp t to ray segment
+    if (t < 0.0f) t = 0.0f;
+    else if (t > MAX_RAY) t = MAX_RAY;
 
-    glm::vec3 closestRay = origin + dir * t;
+    glm::vec3 closestRay = origin + rayDir * t;
     glm::vec3 closestSeg = a + abDir * s;
     glm::vec3 diff = closestRay - closestSeg;
     float dist = glm::length(diff);
 
-    if (dist < radius && t > 0.0f) {
+    if (dist < radius) {
         outDist = t;
-        outNormal = dist > 0.001f ? diff / dist : -dir;
+        outNormal = dist > 0.001f ? diff / dist : -rayDir;
         return true;
     }
     return false;
@@ -157,28 +169,39 @@ glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 tar
 
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
-    if (npc.attackCooldown > 0.0f)
+    printf("[NPC FIRE] npc=%s target=%s\n",
+           npc.body.username.c_str(), player.username.c_str());
+
+    if (npc.attackCooldown > 0.0f) {
+        printf("[NPC FIRE] blocked by cooldown\n");
         return false;
+    }
 
     // --- Range check: 150m max ---
     float dist = npc.sensors.targetDistance;
-    if (dist > 150.0f)
+    if (dist > 150.0f) {
+        printf("[NPC FIRE] blocked by range\n");
         return false;
+    }
 
     // --- Aim settle timer ---
     // NPC must track target briefly before firing
     float settleTime = 0.1f + (1.0f - difficulty01(npc.difficulty)) * 0.5f;
     npc.aimTimer += dt;
-    if (npc.aimTimer < settleTime)
+    if (npc.aimTimer < settleTime) {
+        printf("[NPC FIRE] aiming... aimTimer=%.2f settleTime=%.2f\n", npc.aimTimer, settleTime);
         return false;
+    }
 
     // --- Line of sight check ---
     glm::vec3 npcPos = npc.body.pos;
     npcPos.z += 0.8f;
     glm::vec3 toPlayer = player.pos - npcPos;
     float losDist = glm::length(toPlayer);
-    if (!lineOfSight(npcPos, player.pos, world))
+    if (!lineOfSight(npcPos, player.pos, world)) {
+        printf("[NPC FIRE] blocked by line of sight\n");
         return false;
+    }
 
     // --- Compute aim direction ---
     glm::vec3 aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
@@ -192,6 +215,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     glm::vec3 hitNormal;
     bool hitPlayer = rayCapsule(npcPos, aimDir, playerCap.a, playerCap.b, playerCap.r,
                                  hitDist, hitNormal);
+
+    printf("[NPC RAYCAST] hit=%d entity=%s distance=%.2f\n",
+           (int)hitPlayer, player.username.c_str(), hitDist);
 
     // Check if world geometry blocks the shot before reaching the player
     bool blockedByWorld = false;
@@ -249,8 +275,21 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     // --- Apply damage only if actually hit ---
     bool dealtDamage = false;
     if (!blockedByWorld && hitPlayer) {
+        int hpBefore = player.currentHp;
+        printf("[NPC DAMAGE ATTEMPT] target=%s damage=%d hpBefore=%d\n",
+               player.username.c_str(), dmg, hpBefore);
         player.takeDamage(dmg, knockbackDir, 8.0f);
+        int hpAfter = player.currentHp;
+        printf("[NPC DAMAGE APPLIED] hpAfter=%d\n", hpAfter);
         dealtDamage = true;
+    }
+
+    if (DebugConfig::DEBUG_NPC_COMBAT) {
+        printf("[NPC SHOT] fired=1 hit=%d blocked=%d target=%s damage=%s dist=%.1f\n",
+               (int)hitPlayer, (int)blockedByWorld,
+               player.username.c_str(),
+               dealtDamage ? "APPLIED" : "MISSED",
+               dist);
     }
 
     // Reset aim timer after firing

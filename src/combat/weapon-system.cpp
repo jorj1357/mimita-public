@@ -391,6 +391,7 @@ void WeaponSystem::equip(Player& player, int slot) {
     if (def) {
         player.equippedSlot = slot;
         player.hasValidWeapon = true;
+        player.equippedWeaponId = def->id;
         mCurrentSlot = slot;
         mCurrentWeaponId = def->id;
         WeaponAudio::playEquipSound(*def);
@@ -403,6 +404,7 @@ void WeaponSystem::equip(Player& player, int slot) {
 void WeaponSystem::unequip(Player& player) {
     player.equippedSlot = 0;
     player.hasValidWeapon = false;
+    player.equippedWeaponId.clear();
     mCurrentSlot = 0;
     mCurrentWeaponId.clear();
     if (mGodballPhys.active) {
