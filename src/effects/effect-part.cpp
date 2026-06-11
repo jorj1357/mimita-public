@@ -328,12 +328,18 @@ void EffectPartSystem::update(float dt) {
         }
     }
 
-    const glm::vec3 bloodGravity(0.0f, 0.0f, -8.0f);
+    const glm::vec3 bloodGravity(0.0f, 0.0f, -2.5f);
+    constexpr float BLOOD_AIR_DRAG = 0.97f;
     for (BloodParticle& particle : mBloodParticles) {
         particle.position += particle.velocity * dt;
         particle.velocity += bloodGravity * dt;
+        particle.velocity *= std::pow(BLOOD_AIR_DRAG, dt * 60.0f);
         particle.age += dt;
-        particle.alpha = std::clamp(1.0f - particle.age / particle.lifetime, 0.0f, 1.0f);
+        // Hold full opacity for first 40% of life, then fade over remaining 60%
+        float fadeStart = particle.lifetime * 0.4f;
+        if (particle.age > fadeStart) {
+            particle.alpha = std::clamp(1.0f - (particle.age - fadeStart) / (particle.lifetime - fadeStart), 0.0f, 1.0f);
+        }
     }
     mBloodParticles.erase(
         std::remove_if(
@@ -385,24 +391,25 @@ void EffectPartSystem::spawnBloodEffect(
     const float damageScale = std::clamp(damage / 100.0f, 0.0f, 2.0f);
 
     // Particle count scales with damage:
-    // 10 dmg revolver -> ~15 particles
-    // 50 dmg shotgun -> ~45 particles
-    int particleCount = 8;
-    if (damage < 20.0f) particleCount = 8 + (int)(damage * 0.7f);
-    else if (damage < 50.0f) particleCount = 20 + (int)((damage - 20.0f) * 0.8f);
-    else particleCount = 44 + (int)((damage - 50.0f) * 0.2f);
-    particleCount = std::clamp(particleCount, 8, 65);
+    // 10 dmg revolver -> ~20 particles
+    // 50 dmg shotgun -> ~70 particles
+    // 100 dmg godball -> ~100 particles
+    int particleCount = 12;
+    if (damage < 20.0f) particleCount = 12 + (int)(damage * 0.8f);
+    else if (damage < 50.0f) particleCount = 28 + (int)((damage - 20.0f) * 1.2f);
+    else particleCount = 64 + (int)((damage - 50.0f) * 0.7f);
+    particleCount = std::clamp(particleCount, 12, 110);
 
     // Wide chaotic cone: 80-100 degrees
     const float coneDegrees = 80.0f + damageScale * 20.0f;
     const float coneRadius = std::tan(glm::radians(coneDegrees));
 
-    // Speed: weak ~10 m/s, strong ~28 m/s — travels several meters
-    const float baseSpeed = 8.0f + damageScale * 12.0f;
-    const float speedVariation = 5.0f;
+    // Speed: weak ~8 m/s, strong ~22 m/s
+    const float baseSpeed = 6.0f + damageScale * 10.0f;
+    const float speedVariation = 4.0f;
 
-    // Lifetime 2.0-3.0 seconds so particles arc and linger
-    const float baseLifetime = 2.0f + damageScale * 0.5f;
+    // Lifetime 5-7 seconds — particles shoot out, slow down, and hang as mist
+    const float baseLifetime = 5.0f + damageScale * 1.0f;
 
     if (mBloodParticles.size() + (size_t)particleCount > MAX_BLOOD_PARTICLES) {
         const size_t removeCount =
@@ -424,8 +431,8 @@ void EffectPartSystem::spawnBloodEffect(
         particle.position = hitPoint + direction * 0.05f;
         particle.velocity = direction *
             (baseSpeed + (float)(rand() % (int)(speedVariation * 1000.0f + 1.0f)) / 1000.0f);
-        particle.size = 0.03f + (float)(rand() % 601) / 10000.0f +
-            damageScale * 0.022f;
+        particle.size = 0.04f + (float)(rand() % 801) / 10000.0f +
+            damageScale * 0.035f;
         particle.lifetime = baseLifetime + (float)(rand() % 1001) / 1000.0f;
         particle.alpha = 0.85f;
         particle.rotation = (float)(rand() % 6284) / 1000.0f;
@@ -460,10 +467,12 @@ void EffectPartSystem::spawnBloodEffect(
         glm::vec3 rayDirection{0.0f};
         int hitCount = 0;
     };
-    std::array<SurfaceCluster, 3> clusters{};
+    // More clusters = wider, more natural blood spray instead of a thin line
+    constexpr int MAX_CLUSTERS = 15;
+    std::array<SurfaceCluster, MAX_CLUSTERS> clusters{};
     int clusterCount = 0;
-    const int rayCount = std::clamp(16 + (int)std::round(damage * 0.48f), 16, 64);
-    const float castDistance = std::clamp(4.0f + damage * 0.08f, 4.0f, 18.0f);
+    const int rayCount = std::clamp(24 + (int)std::round(damage * 0.8f), 24, 100);
+    const float castDistance = std::clamp(5.0f + damage * 0.12f, 5.0f, 24.0f);
     mBloodDebugSegmentCount = 0;
 
     for (int ray = 0; ray < rayCount; ++ray) {
@@ -495,7 +504,9 @@ void EffectPartSystem::spawnBloodEffect(
             const glm::vec3 center = clusters[cluster].position /
                 (float)clusters[cluster].hitCount;
             const glm::vec3 normal = glm::normalize(clusters[cluster].normal);
-            if (glm::length(center - hit.position) <= 1.0f &&
+            // Larger merge distance on strong hits = wider spray
+            float mergeDist = 0.8f + damageScale * 0.6f;
+            if (glm::length(center - hit.position) <= mergeDist &&
                 glm::dot(normal, hit.normal) >= 0.65f) {
                 clusterIndex = cluster;
                 break;
@@ -530,11 +541,11 @@ void EffectPartSystem::spawnBloodEffect(
             cluster.position / (float)cluster.hitCount + normal * 0.006f;
         decal.normal = normal;
         decal.radius = std::clamp(
-            (0.22f + damage * 0.015f) *
+            (0.25f + damage * 0.022f) *
                 (0.8f + impactAngle * 0.5f) * variation,
-            0.22f,
-            3.0f);
-        decal.lifetime = 30.0f;
+            0.25f,
+            4.5f);
+        decal.lifetime = 60.0f;
         decal.rotation = (float)(rand() % 6284) / 1000.0f;
         decal.stretch = 1.0f + (1.0f - impactAngle) * 0.35f;
         decal.alpha = 0.78f + (float)(rand() % 181) / 1000.0f;

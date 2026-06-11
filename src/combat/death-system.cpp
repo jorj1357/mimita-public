@@ -137,7 +137,28 @@ bool DeathSystem::kill(
         ? glm::normalize(shotDirection)
         : glm::vec3(0.0f, 0.0f, -1.0f);
 
-    // Capture final body state BEFORE disabling the player
+    // Step 1: 0.1 second freeze — stop all animation/control
+    victim.vel = glm::vec3(0.0f);
+    victim.externalImpulse = glm::vec3(0.0f);
+    victim.inputWishMove = glm::vec2(0.0f);
+    victim.currentHp = 0;
+    victim.dead = true;
+    victim.proceduralFrozen = true;
+    victim.syncLegacyStateToLayers();
+
+    // Step 2: disable weapon/aim/procedural pose before capturing final state.
+    // Clear arm poses to neutral so the corpse doesn't hold a weapon pose forever.
+    for (PhysicalBodyPart& part : victim.physicalBody.parts) {
+        if (part.name == "leftArm" || part.name == "rightArm") {
+            part.pose = ProceduralPose{};
+            part.perfectPose = ProceduralPose{};
+            part.translationSpring = SpringState{};
+            part.rotationSpring = SpringState{};
+        }
+    }
+    victim.syncLegacyStateToLayers();
+
+    // Capture final body state (neutral pose, no weapon offsets)
     victim.updateModelWorldTransforms();
 
     glm::vec3 victimPos = victim.pos;
@@ -196,12 +217,7 @@ bool DeathSystem::kill(
 
     emitLifecycleEvent("death", victim, actorId, killer);
 
-    // DISABLE alive body
-    victim.vel = glm::vec3(0.0f);
-    victim.externalImpulse = glm::vec3(0.0f);
-    victim.inputWishMove = glm::vec2(0.0f);
-    victim.currentHp = 0;
-    victim.dead = true;
+    // Step 3 (continued from above): duel tracking and respawn timer
     if (actorType == "player")
     {
         gDuelManager.onEntityDeath(DuelTeam::Player);
@@ -212,10 +228,10 @@ bool DeathSystem::kill(
     }
     victim.respawnTimer = RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
-    victim.syncLegacyStateToLayers();
 
-    printf("[RAGDOLL] enabled parts=%zu impulse=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
-           body.frozenParts.size(),
+    printf("[RAGDOLL] player=%s activated=true parts=%zu\n",
+           victim.username.c_str(), body.frozenParts.size());
+    printf("[RAGDOLL IMPULSE] force=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
            body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
            body.velocity.x, body.velocity.y, body.velocity.z);
 
@@ -262,6 +278,12 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
 
 void DeathSystem::updateDeadBodyPhysics(DeadBody& body, const World& world, float dt)
 {
+    // Death freeze: skip physics during the initial freeze period
+    if (body.deathFreezeTimer > 0.0f) {
+        body.deathFreezeTimer -= dt;
+        return;
+    }
+
     float safeDt = std::min(dt, 0.033f);
     const auto& triangles = world.collisionMesh.triangles;
     float radius = body.capsuleRadius;
