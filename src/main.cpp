@@ -1471,18 +1471,9 @@ int main(int argc, char** argv)
                         {
                             EffectPartSystem::instance().spawnDamage(
                                 event.hit, targetName, event.damage);
-                            EffectPartSystem::instance().spawnBloodSphereBurst(
-                                event.hit, event.direction,
-                                std::min(event.power / 40.0f, 2.0f),
+                            EffectPartSystem::instance().spawnBloodEffect(
+                                event.hit, event.direction, event.power,
                                 shooterName, targetName);
-                            EffectPartSystem::instance().spawnBloodSpurt(
-                                event.hit, event.direction,
-                                shooterName, targetName);
-                            EffectPartSystem::instance().spawnProjectedBlood(
-                                event.hit, event.direction,
-                                event.power,
-                                glm::length(event.hit - event.origin),
-                                "torso", world);
                         }
                         if (event.effectFlags &
                             MimitaNet::SHOT_EFFECT_HIT_SOUND)

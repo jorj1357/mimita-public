@@ -365,6 +365,74 @@ void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal,
     }
 }
 
+void drawBloodDecal(
+    const Camera& camera,
+    glm::vec3 position,
+    glm::vec3 normal,
+    float radius,
+    float rotation,
+    float stretch,
+    glm::vec4 color)
+{
+    (void)camera;
+    constexpr int SEGMENTS = 18;
+    const glm::vec3 n = glm::length(normal) > 0.001f
+        ? glm::normalize(normal)
+        : glm::vec3(0, 0, 1);
+    const glm::vec3 baseTangent = glm::normalize(
+        std::fabs(n.z) < 0.9f
+            ? glm::cross(n, glm::vec3(0, 0, 1))
+            : glm::cross(n, glm::vec3(0, 1, 0)));
+    const glm::vec3 baseBitangent = glm::normalize(glm::cross(n, baseTangent));
+    const glm::vec3 tangent =
+        baseTangent * std::cos(rotation) + baseBitangent * std::sin(rotation);
+    const glm::vec3 bitangent =
+        -baseTangent * std::sin(rotation) + baseBitangent * std::cos(rotation);
+
+    for (int i = 0; i < SEGMENTS; ++i) {
+        const float a0 = 6.2831853f * (float)i / (float)SEGMENTS;
+        const float a1 = 6.2831853f * (float)(i + 1) / (float)SEGMENTS;
+        const float noise0 = 0.82f + 0.18f * std::sin(a0 * 5.0f + rotation * 3.1f);
+        const float noise1 = 0.82f + 0.18f * std::sin(a1 * 5.0f + rotation * 3.1f);
+        const glm::vec3 p0 = position +
+            (tangent * std::cos(a0) * stretch + bitangent * std::sin(a0)) *
+                radius * noise0;
+        const glm::vec3 p1 = position +
+            (tangent * std::cos(a1) * stretch + bitangent * std::sin(a1)) *
+                radius * noise1;
+        gTriVerts.push_back({position, color});
+        gTriVerts.push_back({p0, color});
+        gTriVerts.push_back({p1, color});
+    }
+}
+
+void drawFilledBillboard(
+    const Camera& camera,
+    glm::vec3 position,
+    float size,
+    float rotation,
+    float stretch,
+    glm::vec4 color)
+{
+    const glm::vec3 horizontal =
+        (camera.right * std::cos(rotation) + camera.up * std::sin(rotation)) *
+        size * stretch;
+    const glm::vec3 vertical =
+        (-camera.right * std::sin(rotation) + camera.up * std::cos(rotation)) *
+        size;
+    const glm::vec3 p0 = position - horizontal - vertical;
+    const glm::vec3 p1 = position + horizontal - vertical;
+    const glm::vec3 p2 = position + horizontal + vertical;
+    const glm::vec3 p3 = position - horizontal + vertical;
+
+    gTriVerts.push_back({p0, color});
+    gTriVerts.push_back({p1, color});
+    gTriVerts.push_back({p2, color});
+    gTriVerts.push_back({p0, color});
+    gTriVerts.push_back({p2, color});
+    gTriVerts.push_back({p3, color});
+}
+
 // Solid filled sphere for production particles (footsteps, dash)
 void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color)
 {
@@ -1063,6 +1131,16 @@ namespace DebugVis {
     // CHANGED: Not gated behind masterEnabled — intended for production particles/blood, jun 6 2026
     void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal, float radius, glm::vec4 color) {
         ::drawFilledDecal(camera, position, normal, radius, color);
+    }
+
+    void drawBloodDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal,
+                        float radius, float rotation, float stretch, glm::vec4 color) {
+        ::drawBloodDecal(camera, position, normal, radius, rotation, stretch, color);
+    }
+
+    void drawFilledBillboard(const Camera& camera, glm::vec3 position, float size,
+                             float rotation, float stretch, glm::vec4 color) {
+        ::drawFilledBillboard(camera, position, size, rotation, stretch, color);
     }
     
     // Not gated behind masterEnabled — intended for production particles

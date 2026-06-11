@@ -51,7 +51,8 @@ static void applyHit(Player& owner, Player& target, const glm::vec3& hitPoint,
     hitmarker();
 
     EffectPartSystem::instance().spawnEntityImpact(hitPoint, -hitNormal, owner.username, target.username);
-    EffectPartSystem::instance().spawnBloodSpurt(hitPoint, hitNormal, owner.username, target.username);
+    EffectPartSystem::instance().spawnBloodEffect(
+        hitPoint, hitNormal, damage, owner.username, target.username);
 
     int hitIdx = rand() % 4;
     std::string hitName = "swordswordhit" + std::to_string(hitIdx + 1);

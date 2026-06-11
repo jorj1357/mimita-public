@@ -802,6 +802,8 @@ void EffectPartSystem::clear() {
         }
     }
     mActiveCount = 0;
+    mBloodParticles.clear();
+    mBloodDecals.clear();
     mBloodDebugSegmentCount = 0;
 }
 
@@ -816,15 +818,7 @@ void EffectPartSystem::render(const Camera& camera) const {
         float distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
 
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
-        float alpha = effect.alpha * distFade;
-        // Cylinder decals (blood): fully visible for first 70% of lifetime, then fade out
-        if (effect.cylinderDecal) {
-            float fadeStart = 0.7f;
-            float fadeT = std::clamp((t - fadeStart) / (1.0f - fadeStart), 0.0f, 1.0f);
-            alpha *= (1.0f - fadeT);
-        } else {
-            alpha *= (1.0f - t);
-        }
+        float alpha = effect.alpha * (1.0f - t) * distFade;
         alpha = std::max(0.0f, alpha);
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
@@ -835,15 +829,6 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
         else if (effect.box) {
             DebugVis::drawFilledBox(camera, effect.position, effect.halfSize, drawColor, effect.rotation);
-        }
-        else if (effect.cylinderDecal) {
-            if (DebugConfig::DEBUG_BLOOD_HITS) {
-                printf("[BLOOD CYLINDER RENDER] position=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) radius=%.4f visible=1 alpha=%.4f lifetime=%.2f/%.2f alive=%d\n",
-                       effect.position.x, effect.position.y, effect.position.z,
-                       effect.normal.x, effect.normal.y, effect.normal.z,
-                       drawScale, alpha, effect.lifetime, effect.maxLifetime, (int)effect.alive);
-            }
-            DebugVis::drawFilledCylinder(camera, effect.position, effect.normal, drawScale, effect.cylinderHeight, drawColor);
         }
         else if (effect.flatDecal) {
             DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
@@ -861,21 +846,43 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
     }
 
+    for (const BloodParticle& particle : mBloodParticles) {
+        const float dist = glm::length(particle.position - camera.pos);
+        if (dist > 40.0f)
+            continue;
+        const float distFade = dist > 20.0f ? (40.0f - dist) / 20.0f : 1.0f;
+        DebugVis::drawFilledBillboard(
+            camera,
+            particle.position,
+            particle.size,
+            particle.rotation,
+            particle.stretch,
+            {0.92f, 0.015f, 0.025f, particle.alpha * distFade});
+    }
+
+    for (const BloodDecal& decal : mBloodDecals) {
+        const float dist = glm::length(decal.position - camera.pos);
+        if (dist > 60.0f)
+            continue;
+        const float distFade = dist > 40.0f ? (60.0f - dist) / 20.0f : 1.0f;
+        DebugVis::drawBloodDecal(
+            camera,
+            decal.position,
+            decal.normal,
+            decal.radius,
+            decal.rotation,
+            decal.stretch,
+            {0.78f, 0.01f, 0.02f, decal.alpha * distFade});
+    }
+
     // Blood performance metrics
     if (DebugConfig::DEBUG_BLOOD_HITS) {
-        int bloodCylinderCount = 0;
-        int totalAlive = 0;
-        for (const auto& effect : mPool) {
-            if (effect.alive) {
-                ++totalAlive;
-                if (effect.cylinderDecal) ++bloodCylinderCount;
-            }
-        }
         static float bloodPerfTimer = 0.0f;
         bloodPerfTimer -= 0.016f;
         if (bloodPerfTimer <= 0.0f) {
             bloodPerfTimer = 2.0f;
-            printf("[BLOOD PERF] total=%d bloodCylinders=%d\n", totalAlive, bloodCylinderCount);
+            printf("[BLOOD PERF] particles=%zu decals=%zu collisionUpdates=0\n",
+                   mBloodParticles.size(), mBloodDecals.size());
         }
     }
 

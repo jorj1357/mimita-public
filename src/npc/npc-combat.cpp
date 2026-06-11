@@ -258,13 +258,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     EffectPartSystem::instance().spawnTracer(npcPos, hitPoint, npc.body.username);
 
     if (!blockedByWorld && hitPlayer) {
-        EffectPartSystem::instance().spawnBloodSphereBurst(
-            hitPoint, aimDir, (float)dmg / 60.0f,
+        EffectPartSystem::instance().spawnBloodEffect(
+            hitPoint, aimDir, (float)dmg,
             npc.body.username, player.username);
         EffectPartSystem::instance().spawnEntityImpact(
             hitPoint, -aimDir, npc.body.username, player.username);
-        EffectPartSystem::instance().spawnProjectedBlood(
-            hitPoint, aimDir, (float)dmg, dist, "torso", world);
     } else {
         EffectPartSystem::instance().spawnWorldImpact(hitPoint, -aimDir);
     }
