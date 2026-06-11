@@ -58,6 +58,14 @@ public:
     float hitReactionTimer = 0.0f;
     unsigned int rngState = 1;
 
+    // Aim timing
+    float aimTimer = 0.0f;
+    float reactionTimer = 0.0f;
+
+    // Micro-movement noise
+    float moveNoiseTimer = 0.0f;
+    glm::vec2 moveOffset{0.0f};
+
     // Training mode: 0=idle, 1=flee, 2=attack (normal AI)
     int trainingMode = 2;
 

@@ -85,6 +85,7 @@ public:
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
     
+    void setWorld(const class World& world) { mWorld = &world; }
     void clear();
     
     unsigned int activeCount() const { return mActiveCount; }
@@ -106,6 +107,7 @@ private:
         bool hit = false;
     };
 
+    const class World* mWorld = nullptr;
     std::array<EffectPart, POOL_SIZE> mPool{};
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;

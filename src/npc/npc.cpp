@@ -42,7 +42,7 @@ NpcDifficultyTuning tuningForDifficulty(float difficulty)
     tuning.dodgeChance = d * d;
     tuning.aimErrorRadians = 0.80f * (1.0f - d);
     tuning.movementPrecision = 0.12f + d * 0.88f;
-    tuning.awarenessRange = 8.0f + d * 34.0f;
+    tuning.awarenessRange = 15.0f + d * 135.0f;
     tuning.prediction = d * d;
     return tuning;
 }
@@ -183,6 +183,11 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     stateMachine.orbitAngle = random01(rngState) * glm::two_pi<float>();
     stateMachine.orbitSwapTimer = 0.5f + random01(rngState) * 2.0f;
 
+    aimTimer = 0.0f;
+    reactionTimer = 0.05f + random01(rngState) * 0.30f;
+    moveNoiseTimer = 0.1f + random01(rngState) * 0.3f;
+    moveOffset = {0.0f, 0.0f};
+
     Debug::log(Debug::Category::General,
                "[NPC] spawned id=%u difficulty=%.1f reaction=%.2f aggression=%.2f awareness=%.1f\n",
                id,
@@ -279,6 +284,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.downDashCooldown = std::max(0.0f, npc.downDashCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
     npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - safeDt);
+    npc.aimTimer = std::max(0.0f, npc.aimTimer);
     npc.stateMachine.stateTimer += safeDt;
     npc.stateMachine.nextDecisionTime -= safeDt;
     npc.stateMachine.retreatTimer += safeDt;
@@ -418,6 +424,18 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.lastFinalSpeed);
     }
 
+    // NPC Combat debug (state, distance, aim error)
+    if (DebugConfig::DEBUG_NPC_COMBAT && npc.sensors.hasTarget)
+    {
+        float aimErrDeg = NpcCombat::aimErrorDegrees(npc.difficulty);
+        printf("[NPC] id=%u state=%s dist=%.1f aimError=%.2f canSee=%d "
+               "aimTimer=%.2f reactionTimer=%.2f\n",
+               npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
+               npc.sensors.targetDistance, aimErrDeg,
+               (int)(npc.sensors.targetDistance <= npc.tuning.awarenessRange),
+               npc.aimTimer, npc.reactionTimer);
+    }
+
     // Dash cooldown
     if (input.dashPressed && npc.body.didDash)
     {
@@ -432,13 +450,22 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         Debug::log(Debug::Category::General, "[NPC] id=%u down-dashed\n", npc.id);
     }
 
+    // Reaction delay: random delay before first shot after acquiring target
+    if (npc.sensors.hasTarget)
+    {
+        npc.reactionTimer -= safeDt;
+    }
+    else
+    {
+        npc.reactionTimer = 0.05f + random01(npc.rngState) * 0.30f;
+    }
+
     // Attack (disabled for training modes 0 idle and 1 flee)
-    if (attack && npc.attackCooldown <= 0.0f && npc.trainingMode == 2)
+    if (attack && npc.attackCooldown <= 0.0f && npc.trainingMode == 2 && npc.reactionTimer <= 0.0f)
     {
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
         if (fired)
         {
-            // Force immediate re-evaluation after firing
             npc.stateMachine.nextDecisionTime = 0.0f;
         }
     }

@@ -15,7 +15,12 @@ enum class NpcState
     Strafe,
     Retreat,
     Attack,
-    Recover
+    Recover,
+    Advance,
+    HoldPosition,
+    Peek,
+    Aim,
+    ZigZag
 };
 
 std::string npcStateName(NpcState s);
@@ -32,31 +37,39 @@ struct NpcStateMachine
     float stateTimer = 0.0f;
     float nextDecisionTime = 0.0f;
 
-    // Circle orbit
     float orbitAngle = 0.0f;
     float orbitDirection = 1.0f;
     float orbitDistance = 6.0f;
     float orbitSwapTimer = 0.0f;
 
-    // Strafe
     float strafeDirection = 1.0f;
     float strafeSwapTimer = 0.0f;
 
-    // Retreat forced timeout
     float retreatTimer = 0.0f;
 
-    // Recover
     float recoverTimer = 0.0f;
 
-    // Wander
     glm::vec3 wanderTarget{0.0f};
     float wanderTimer = 0.0f;
 
-    // Last known player info (for when target is temporarily lost)
     glm::vec3 lastKnownTarget{0.0f};
     float lastKnownAge = 0.0f;
 
-    // Stuck handling
     glm::vec3 stuckUnstickDir{1.0f, 0.0f, 0.0f};
     float stuckTimer = 0.0f;
+
+    // Advance state
+    float advanceTimer = 0.0f;
+
+    // Peek state
+    float peekDir = 1.0f;
+    float peekTimer = 0.0f;
+    glm::vec3 peekStartPos{0.0f};
+
+    // ZigZag state
+    float zigPhase = 0.0f;
+    float zigTimer = 0.0f;
+
+    // Hold position
+    float holdTimer = 0.0f;
 };

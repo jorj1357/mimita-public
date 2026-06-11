@@ -94,15 +94,14 @@ struct AnimClip {
     std::vector<AnimKeyframe> keyframes;
 };
 
-struct WeaponOverlay {
-    float armInfluenceMultiplier = 0.08f;
-    float idleSwayAmount = 0.03f;
-    std::unordered_map<std::string, AnimKeyframePart> parts;
+struct WeaponPoseConfig {
+    bool useWeaponPose = true;
+    AnimKeyframePart leftArm;
+    AnimKeyframePart rightArm;
 };
 
 struct LayeredAnimConfig {
     std::unordered_map<std::string, AnimClip> animations;
-    std::unordered_map<std::string, WeaponOverlay> weaponOverlays;
     AnimKeyframePart reloadOverlay;
 };
 
@@ -146,6 +145,7 @@ struct PlayerProceduralConfig
     float shotgunRotY;
     float shotgunRotZ;
     LayeredAnimConfig layers;
+    std::unordered_map<std::string, WeaponPoseConfig> weaponPoses;
     std::unordered_map<std::string, AxisLock> axisLocks;
     int walkStartTickOnEnter = 7;
     int animationStateTransitionFrames = 1;
