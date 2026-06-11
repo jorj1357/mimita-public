@@ -53,6 +53,30 @@ struct EffectPart
     }
 };
 
+struct BloodParticle
+{
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
+    float size = 0.05f;
+    float age = 0.0f;
+    float lifetime = 0.5f;
+    float alpha = 1.0f;
+    float rotation = 0.0f;
+    float stretch = 1.0f;
+};
+
+struct BloodDecal
+{
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    float radius = 0.25f;
+    float age = 0.0f;
+    float lifetime = 30.0f;
+    float rotation = 0.0f;
+    float stretch = 1.0f;
+    float alpha = 1.0f;
+};
+
 class EffectPartSystem
 {
 public:
@@ -68,13 +92,8 @@ public:
     EffectPart* spawnFreeze(glm::vec3 position, float freezeDuration);
     EffectPart* spawnImpact(glm::vec3 position, glm::vec3 color, const char* label);
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
-    void spawnBlood(glm::vec3 position, glm::vec3 direction, float amount);
-    void spawnStickyBlood(glm::vec3 position, glm::vec3 normal, float force, unsigned int ownerId = 0);
-    void spawnProjectedBlood(glm::vec3 hitPosition, glm::vec3 direction, float damage, float distance, const std::string& bodyPart, const class World& world);
-    void spawnBloodSpurt(glm::vec3 position, glm::vec3 direction,
-                        const std::string& sourceActorId, const std::string& targetActorId);
-    void spawnBloodSphereBurst(glm::vec3 hitPoint, glm::vec3 shotDirection, float force,
-                               const std::string& sourceActorId, const std::string& targetActorId);
+    void spawnBloodEffect(glm::vec3 hitPoint, glm::vec3 sprayDirection, float damage,
+                          const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal);
@@ -97,7 +116,8 @@ private:
     EffectPartSystem() = default;
 
     static constexpr unsigned int POOL_SIZE = 4096;
-    static constexpr unsigned int MAX_STICKY_BLOOD = 256;
+    static constexpr unsigned int MAX_BLOOD_PARTICLES = 512;
+    static constexpr unsigned int MAX_BLOOD_DECALS = 256;
     static constexpr unsigned int MAX_BLOOD_DEBUG_SEGMENTS = 256;
 
     struct BloodDebugSegment {
@@ -109,6 +129,8 @@ private:
 
     const class World* mWorld = nullptr;
     std::array<EffectPart, POOL_SIZE> mPool{};
+    std::vector<BloodParticle> mBloodParticles;
+    std::vector<BloodDecal> mBloodDecals;
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;
     unsigned int mBloodDebugSegmentCount = 0;
