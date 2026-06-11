@@ -49,7 +49,7 @@ def snap_tick_to_keyframe(tick, interval):
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-11-2026\17-15-50-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-11-2026\18-12-09-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
@@ -239,6 +239,22 @@ def set_local_transform(obj, state):
     obj.rotation_mode = "XYZ"
     obj.rotation_euler = (math.radians(rotation[0]), math.radians(rotation[1]), math.radians(rotation[2]))
     obj.scale = Vector(state.get("scale", (1.0, 1.0, 1.0)))
+
+
+def game_rotation_to_glb(game_euler):
+    """Convert a game Z-up Euler rotation to GLB Y-up using similarity transform.
+    
+    The correction_root applies R_x(-90°) to convert GLB Y-up → Blender Z-up.
+    Body parts are children of actor_root (child of correction_root), so their
+    local space is GLB Y-up. To correctly express a game Z-up rotation in
+    GLB Y-up, we need the similarity transform: R_glb = C * R_game * C⁻¹
+    where C = R_x(+90°).
+    """
+    game_mat = game_euler.to_matrix()
+    C = Euler((math.radians(90.0), 0.0, 0.0)).to_matrix()
+    C_inv = Euler((math.radians(-90.0), 0.0, 0.0)).to_matrix()
+    glb_mat = C @ game_mat @ C_inv
+    return glb_mat.to_euler('XYZ')
 
 
 def keyframe_transform(obj, frame):
@@ -491,13 +507,13 @@ def apply_limb_transforms(actor_record, actor_state, frame):
             )
         if target and isinstance(transform, dict):
             pos = Vector(transform.get("position", (0.0, 0.0, 0.0)))
-            rot = transform.get("rotation", (0.0, 0.0, 0.0))
-            euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
             pos.rotate(correction)
-            euler.rotate(correction)
+            rot = transform.get("rotation", (0.0, 0.0, 0.0))
+            game_euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
+            glb_euler = game_rotation_to_glb(game_euler)
             target.location = pos
             target.rotation_mode = "XYZ"
-            target.rotation_euler = euler
+            target.rotation_euler = glb_euler
             target.scale = Vector(transform.get("scale", (1.0, 1.0, 1.0)))
             keyframe_transform(target, frame)
             keyframed_count += 1
@@ -971,8 +987,8 @@ def process_import_batch():
                 converted_state["position"] = (pos.x, pos.y, pos.z)
                 rot = actor_state.get("rotation", (0.0, 0.0, 0.0))
                 rot_euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
-                rot_euler.rotate(game_correction)
-                converted_state["rotation"] = (math.degrees(rot_euler.x), math.degrees(rot_euler.y), math.degrees(rot_euler.z))
+                glb_euler = game_rotation_to_glb(rot_euler)
+                converted_state["rotation"] = (math.degrees(glb_euler.x), math.degrees(glb_euler.y), math.degrees(glb_euler.z))
                 print(f"[ACTOR FRAME] tick={tick} frame={frame} id={actor_id} pos={actor_state.get('position')}")
                 set_transform(actor_record["root"], converted_state)
 
