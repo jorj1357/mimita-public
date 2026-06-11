@@ -113,6 +113,10 @@ namespace DebugVis {
     // Solid filled decal (not gated behind masterEnabled — for production particles/blood)
     // Changed from debug-only wireframe to solid triangle decal, jun 6 2026
     void drawFilledDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal, float radius, glm::vec4 color);
+    void drawBloodDecal(const Camera& camera, glm::vec3 position, glm::vec3 normal,
+                        float radius, float rotation, float stretch, glm::vec4 color);
+    void drawFilledBillboard(const Camera& camera, glm::vec3 position, float size,
+                             float rotation, float stretch, glm::vec4 color);
     
     // Solid filled sphere (for production particles — footsteps, dash)
     void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);

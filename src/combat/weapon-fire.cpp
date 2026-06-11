@@ -361,14 +361,11 @@ RevolverShotResult tryFireHitscan(
         }
         hitmarker();
 
-        EffectPartSystem::instance().spawnBloodSphereBurst(
-            result.end, shotDirection, (float)totalDamage / 60.0f,
+        EffectPartSystem::instance().spawnBloodEffect(
+            result.end, shotDirection, (float)totalDamage,
             shooter.username, "npc_" + std::to_string(victim->id));
         EffectPartSystem::instance().spawnEntityImpact(
             result.end, hitNormal, shooter.username, "npc_" + std::to_string(victim->id));
-        EffectPartSystem::instance().spawnProjectedBlood(result.end, shotDirection, (float)totalDamage, nearest, hitPart, world);
-        EffectPartSystem::instance().spawnBloodSpurt(
-            result.end, shotDirection, shooter.username, "npc_" + std::to_string(victim->id));
         printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
                def.id.c_str(), hitPart.c_str(), result.damage);
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
@@ -400,13 +397,11 @@ RevolverShotResult tryFireHitscan(
         hitmarker();
         EffectPartSystem::instance().spawnDamage(
             result.end, remoteVictim->username, totalDamage);
-        EffectPartSystem::instance().spawnBloodSphereBurst(
-            result.end, shotDirection, (float)totalDamage / 60.0f,
+        EffectPartSystem::instance().spawnBloodEffect(
+            result.end, shotDirection, (float)totalDamage,
             shooter.username, remoteVictim->username);
         EffectPartSystem::instance().spawnEntityImpact(
             result.end, hitNormal, shooter.username, remoteVictim->username);
-        EffectPartSystem::instance().spawnBloodSpurt(
-            result.end, shotDirection, shooter.username, remoteVictim->username);
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
     } else if (hitWorld) {
         result.hitWorld = true;
@@ -567,13 +562,11 @@ void fireMultiPellet(
                 float df = std::clamp(1.0f - pelletNearest / 110.0f, 0.10f, 1.0f);
                 accumulatedKnockback += pelletDir * (float)dmg * df * (0.08f + ctx.angleFactor * 0.12f);
 
-                EffectPartSystem::instance().spawnBloodSphereBurst(
-                    pelletEnd, pelletDir, (float)dmg / 60.0f,
+                EffectPartSystem::instance().spawnBloodEffect(
+                    pelletEnd, pelletDir, (float)dmg,
                     shooter.username, "npc_" + std::to_string(pelletVictim->id));
                 EffectPartSystem::instance().spawnEntityImpact(
                     pelletEnd, pelletHitNml, shooter.username, "npc_" + std::to_string(pelletVictim->id));
-                EffectPartSystem::instance().spawnBloodSpurt(
-                    pelletEnd, pelletDir, shooter.username, "npc_" + std::to_string(pelletVictim->id));
 
                 if (pelletNearest < nearestPelletDist) {
                     nearestPelletDist = pelletNearest;
@@ -601,13 +594,11 @@ void fireMultiPellet(
                 accumulatedKnockback += pelletDir * (float)totalDmg * df * 0.15f;
 
                 EffectPartSystem::instance().spawnDamage(pelletEnd, pelletRemoteVictim->username, totalDmg);
-                EffectPartSystem::instance().spawnBloodSphereBurst(
-                    pelletEnd, pelletDir, (float)totalDmg / 60.0f,
+                EffectPartSystem::instance().spawnBloodEffect(
+                    pelletEnd, pelletDir, (float)totalDmg,
                     shooter.username, pelletRemoteVictim->username);
                 EffectPartSystem::instance().spawnEntityImpact(
                     pelletEnd, pelletHitNml, shooter.username, pelletRemoteVictim->username);
-                EffectPartSystem::instance().spawnBloodSpurt(
-                    pelletEnd, pelletDir, shooter.username, pelletRemoteVictim->username);
 
                 if (pelletNearest < nearestPelletDist) {
                     nearestPelletDist = pelletNearest;

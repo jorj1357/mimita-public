@@ -436,13 +436,10 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 
         // === BLOOD EFFECTS ===
         glm::vec3 hitPos = npc.body.pos + glm::vec3(0, 0, 0.8f);
-        float intensity = std::min((float)rounded / 20.0f, 2.0f);
-
         EffectPartSystem::instance().spawnDamage(hitPos, npc.body.username, rounded);
-        EffectPartSystem::instance().spawnBloodSphereBurst(
-            hitPos, kbDir, intensity, owner.username, "npc_" + std::to_string(npcId));
-        EffectPartSystem::instance().spawnBloodSpurt(
-            hitPos, kbDir, owner.username, "npc_" + std::to_string(npcId));
+        EffectPartSystem::instance().spawnBloodEffect(
+            hitPos, kbDir, (float)rounded,
+            owner.username, "npc_" + std::to_string(npcId));
         EffectPartSystem::instance().spawnEntityImpact(
             hitPos, kbDir, owner.username, "npc_" + std::to_string(npcId));
 

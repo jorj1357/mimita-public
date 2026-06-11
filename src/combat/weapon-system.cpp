@@ -282,11 +282,8 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
 
         hitmarker();
         EffectPartSystem::instance().spawnDamage(hit.end, target.username, damage);
-        EffectPartSystem::instance().spawnBloodSphereBurst(
-            hit.end, direction, std::min(hit.damage / 20.0f, 2.0f),
-            player.username, target.username);
-        EffectPartSystem::instance().spawnBloodSpurt(
-            hit.end, direction, player.username, target.username);
+        EffectPartSystem::instance().spawnBloodEffect(
+            hit.end, direction, hit.damage, player.username, target.username);
         EffectPartSystem::instance().spawnEntityImpact(
             hit.end, direction, player.username, target.username);
         WeaponAudio::playGodballImpact(
