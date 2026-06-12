@@ -26,10 +26,13 @@
 #include <cstdio>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 #include <random>
+#include <filesystem>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -317,6 +320,11 @@ int main(int argc, char** argv)
     WeaponSystem weapons;
     bool freecamEnabled = false;
     glm::vec3 deathPosition{0.0f};
+    struct ReplayTestState {
+        bool active = false;
+        uint32_t tick = 0;
+        uint32_t npcId = 0;
+    } replayTest;
 
     // Gameplay terminal commands
     auto registerActionCommand = [](const char* name, const char* description) {
@@ -884,6 +892,8 @@ int main(int argc, char** argv)
             gReplayRecorder.registerAsset("map:active", "map_glb", mapPath, {}, "basic", "world");
             gReplayRecorder.registerAsset("model:player", "actor_glb", playerPath, {}, "basic", "player");
             gReplayRecorder.registerAsset("model:revolver", "weapon_glb", revolverPath, {}, "basic", "weapon");
+            const std::string shotgunPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
+            gReplayRecorder.registerAsset("model:shotgun", "weapon_glb", shotgunPath, {}, "basic", "weapon");
             gReplayRecorder.registerAsset("texture:outfit", "texture", GetPlayerSettings().outfitPath, {}, {}, "outfit");
             gReplayRecorder.registerAsset("texture:crosshair-ready", "texture", "assets/crosshair/crosshairready.png", {}, {}, "ui");
             gReplayRecorder.registerAsset("texture:crosshair-delay", "texture", "assets/crosshair/crosshairdelay.png", {}, {}, "ui");
@@ -993,6 +1003,60 @@ int main(int argc, char** argv)
                      (int)gReplayRecorder.isRecording(), (int)gReplayPlayer.isPlaying(),
                      gReplayPlayer.totalTicks());
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_test",
+        "Record a deterministic gameplay replay and validate it in Blender",
+        "replay_test",
+        [&gameState, &activeMapPath, &camera, &player, &npcSystem,
+         &replayTest](const std::vector<std::string>&) {
+            if (gameState != GAME_PLAYING || activeMapPath.empty()) {
+                Terminal::instance().addLog(
+                    "[REPLAY TEST] Enter a loaded game map first");
+                return;
+            }
+            if (mpContext.active) {
+                Terminal::instance().addLog(
+                    "[REPLAY TEST] Disabled during multiplayer");
+                return;
+            }
+            if (replayTest.active || gReplayRecorder.isRecording()) {
+                Terminal::instance().addLog(
+                    "[REPLAY TEST] A recording is already active");
+                return;
+            }
+
+            npcSystem.destroyAll();
+            Terminal::instance().execute("replay.record");
+            if (!gReplayRecorder.isRecording()) {
+                Terminal::instance().addLog(
+                    "[REPLAY TEST] Could not start recording");
+                return;
+            }
+
+            glm::vec3 forward = camera.front;
+            if (glm::length(forward) < 0.001f)
+                forward = glm::vec3(0.0f, 1.0f, 0.0f);
+            forward = glm::normalize(forward);
+            const glm::vec3 spawnPosition =
+                camera.pos + forward * 6.0f + glm::vec3(0.0f, 0.0f, 1.0f);
+            replayTest.npcId = npcSystem.nextNpcId();
+            npcSystem.spawnNpc(replayTest.npcId, 1.0f, spawnPosition);
+            if (!npcSystem.all().empty()) {
+                Npc& npc = npcSystem.all().back();
+                npc.trainingMode = 0;
+                npc.body.maxHp = 500;
+                npc.body.currentHp = 500;
+            }
+
+            player.dead = false;
+            player.currentHp = player.maxHp;
+            replayTest.tick = 0;
+            replayTest.active = true;
+            Terminal::instance().addLog(
+                "[REPLAY TEST] Running 300-tick automated scenario");
         }
     });
 
@@ -1249,6 +1313,50 @@ int main(int argc, char** argv)
                             Debug::log(Debug::Category::General, "[INPUT] key -> action=reload -> command=reload\n");
                         Terminal::instance().execute("reload");
                     }
+
+                    if (replayTest.active) {
+                        tickFrame = {};
+                        if (replayTest.tick < 45) {
+                            tickFrame.moveY = 1.0f;
+                            tickFrame.movementPressed = true;
+                        }
+                        if (replayTest.tick >= 20 &&
+                            replayTest.tick < 24) {
+                            tickFrame.jump = true;
+                            tickFrame.jumpPressed =
+                                replayTest.tick == 20;
+                        }
+                        if (replayTest.tick == 55) {
+                            tickFrame.moveY = 1.0f;
+                            tickFrame.movementPressed = true;
+                            tickFrame.dashPressed = true;
+                        }
+
+                        if (replayTest.tick == 90) {
+                            weapons.equip(player, 1);
+                            Terminal::instance().execute("shoot");
+                        } else if (replayTest.tick == 150) {
+                            weapons.equip(player, 3);
+                            Terminal::instance().execute("shoot");
+                        } else if (replayTest.tick == 180) {
+                            tickFrame.reloadPressed = true;
+                            Terminal::instance().execute("reload");
+                        } else if (replayTest.tick == 220) {
+                            for (Npc& npc : npcSystem.all()) {
+                                if (npc.id != replayTest.npcId ||
+                                    npc.body.dead)
+                                    continue;
+                                DeathSystem::instance().kill(
+                                    npc.body,
+                                    "npc_" + std::to_string(npc.id),
+                                    "npc",
+                                    player.username,
+                                    camera.front,
+                                    24.0f);
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 const bool recordingReplayTick = gReplayRecorder.isRecording();
@@ -1293,10 +1401,19 @@ int main(int argc, char** argv)
                     playerActor.grounded = player.onGround;
                     playerActor.collidable = !player.dead;
                     playerActor.fade = 0.0f;
-                    playerActor.weaponName = player.equippedSlot == 1 ? "revolver" : "none";
-                    playerActor.weaponModelPath = player.equippedSlot == 1
-                        ? "assets/objects/weapons/mimita-revolver-v1.glb"
-                        : "";
+                    {
+                        int slot = player.equippedSlot;
+                        if (slot == 1) {
+                            playerActor.weaponName = "revolver";
+                            playerActor.weaponModelPath = "assets/objects/weapons/mimita-revolver-v1.glb";
+                        } else if (slot == 3) {
+                            playerActor.weaponName = "shotgun";
+                            playerActor.weaponModelPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
+                        } else {
+                            playerActor.weaponName = "none";
+                            playerActor.weaponModelPath = "";
+                        }
+                    }
                     playerActor.reloading = weapons.isReloading(player);
                     playerActor.shooting = weapons.isShooting();
                     playerActor.animationState = player.onGround
@@ -1324,7 +1441,13 @@ int main(int argc, char** argv)
                         npcActor.grounded = npc.body.onGround;
                         npcActor.collidable = !npc.body.dead;
                         npcActor.fade = 0.0f;
-                        npcActor.weaponName = "none";
+                        npcActor.weaponName = npc.body.equippedSlot == 1 ? "revolver"
+                            : npc.body.equippedSlot == 3 ? "shotgun"
+                            : npc.body.equippedSlot == 2 ? "godball"
+                            : "none";
+                        npcActor.weaponModelPath = npc.body.equippedSlot == 1 ? "assets/objects/weapons/mimita-revolver-v1.glb"
+                            : npc.body.equippedSlot == 3 ? "assets/objects/weapons/mimita-shotgun-v1.glb"
+                            : "";
                         npcActor.animationState = npcStateName(npc.stateMachine.currentState);
                         npcActor.bodyParts = captureReplayBodyParts(npc.body);
                         sceneFrame.actors.push_back(npcActor);
@@ -1332,6 +1455,41 @@ int main(int argc, char** argv)
                     DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
                     gReplayRecorder.recordSceneFrame(sceneFrame);
+
+                    if (replayTest.active) {
+                        ++replayTest.tick;
+                        if (replayTest.tick >= 300) {
+                            gReplayRecorder.stopRecording();
+                            const std::string path =
+                                generateReplayExportPath();
+                            const bool exported =
+                                gReplayRecorder.exportToJSON(path);
+                            replayTest.active = false;
+                            if (!exported) {
+                                Terminal::instance().addLog(
+                                    "[REPLAY TEST] Replay export failed");
+                            } else {
+                                const std::string absolutePath =
+                                    std::filesystem::absolute(path).string();
+                                const std::string command =
+                                    "python devscripts/replay-validation-runner.py "
+                                    "--replay \"" + absolutePath + "\"";
+                                std::thread([command, absolutePath]() {
+                                    printf(
+                                        "[REPLAY TEST] Starting validation for %s\n",
+                                        absolutePath.c_str());
+                                    const int result =
+                                        std::system(command.c_str());
+                                    printf(
+                                        "[REPLAY TEST] Validation process exit=%d\n",
+                                        result);
+                                }).detach();
+                                Terminal::instance().addLog(
+                                    "[REPLAY TEST] Replay exported; "
+                                    "headless validation started");
+                            }
+                        }
+                    }
                 }
 
                 simAccumulator -= SIM_DT;
