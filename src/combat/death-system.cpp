@@ -218,6 +218,7 @@ bool DeathSystem::kill(
     emitLifecycleEvent("death", victim, actorId, killer);
 
     // Step 3 (continued from above): duel tracking and respawn timer
+    const DuelPhase duelPhaseBeforeDeath = gDuelManager.phase();
     if (actorType == "player")
     {
         gDuelManager.onEntityDeath(DuelTeam::Player);
@@ -226,6 +227,13 @@ bool DeathSystem::kill(
     {
         gDuelManager.onEntityDeath(DuelTeam::NPC);
     }
+    const bool roundWinningKill =
+        duelPhaseBeforeDeath == DuelPhase::Active &&
+        gDuelManager.phase() != DuelPhase::Active;
+    notifyReplayKill(
+        killer.empty() ? "unknown" : killer,
+        actorId,
+        roundWinningKill);
     victim.respawnTimer = RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
 

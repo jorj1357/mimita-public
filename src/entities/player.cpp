@@ -28,6 +28,7 @@
 #include "physics/config.h"
 #include "debug/gl-debug.h"
 #include "effects/effect-part.h"
+#include "replay/replay-scene.h"
 
 // globals (engine-level)
 extern TextureStore gTextures;
@@ -1443,7 +1444,44 @@ void Player::render(unsigned int shader,
                     const glm::mat4& proj) const
 {
     const_cast<Player*>(this)->updateModelWorldTransforms();
+    renderCurrentPose(shader, view, proj);
+}
 
+void Player::applyReplayPose(
+    const glm::vec3& rootPosition,
+    float rootYaw,
+    const std::vector<ReplayBodyPartState>& parts)
+{
+    pos = rootPosition;
+    yaw = rootYaw;
+    dead = false;
+    syncLegacyStateToLayers();
+
+    const glm::mat4 root =
+        glm::translate(glm::mat4(1.0f), rootPosition) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(rootYaw), glm::vec3(0, 0, 1));
+    for (PhysicalBodyPart& bodyPart : physicalBody.parts) {
+        auto it = std::find_if(
+            parts.begin(), parts.end(),
+            [&bodyPart](const ReplayBodyPartState& part) {
+                return part.name == bodyPart.name;
+            });
+        if (it == parts.end())
+            continue;
+
+        glm::mat4 local = glm::translate(glm::mat4(1.0f), it->position);
+        local = glm::rotate(local, glm::radians(it->rotation.x), glm::vec3(1, 0, 0));
+        local = glm::rotate(local, glm::radians(it->rotation.y), glm::vec3(0, 1, 0));
+        local = glm::rotate(local, glm::radians(it->rotation.z), glm::vec3(0, 0, 1));
+        local = glm::scale(local, it->scale);
+        bodyPart.worldTransform = root * local;
+    }
+}
+
+void Player::renderCurrentPose(unsigned int shader,
+                               const glm::mat4& view,
+                               const glm::mat4& proj) const
+{
     if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
