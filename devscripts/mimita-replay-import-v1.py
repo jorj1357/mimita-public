@@ -10,10 +10,10 @@ from pathlib import Path
 import bpy
 from mathutils import Vector, Euler, Matrix
 
-# MAX_FRAMES = 100000
+MAX_FRAMES = 100000
 # 6 11 2026 note keep at like 250 bc higher frames makes longer import times and 
 # wanting to do testing fast 
-MAX_FRAMES = 250
+# MAX_FRAMES = 250
 
 IMPORT_EFFECTS = True
 IMPORT_SOUNDS = True
@@ -58,7 +58,7 @@ def snap_tick_to_keyframe(tick, interval):
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-12-2026\08-17-37-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-12-2026\08-41-44-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
@@ -770,14 +770,34 @@ def ensure_weapon(actor_id, actor_record, weapon_path):
             weapon_root = wpn_ph
             parts = []
 
+    WEAPON_ATTACHMENT_OFFSETS = {
+        "revolver": {
+            "rotation": (0.0, 90.0, 0.0),
+            "translation": (2.0, 0.0, 0.2),
+        },
+        "shotgun": {
+            "rotation": (90.0, 90.0, 0.0),
+            "translation": (0.0, -2.0, 0.2),
+        },
+    }
+    weapon_path_lower = weapon_path.lower()
+    loc_offset = (0.0, 0.0, 0.0)
+    rot_offset = (0.0, 0.0, 0.0)
+    for weapon_id, offset in WEAPON_ATTACHMENT_OFFSETS.items():
+        if weapon_id in weapon_path_lower:
+            rot_deg = offset["rotation"]
+            loc_offset = offset["translation"]
+            rot_offset = (math.radians(rot_deg[0]), math.radians(rot_deg[1]), math.radians(rot_deg[2]))
+            break
+
     right_hand = find_right_hand(actor_record["parts"])
     weapon_correction.parent = right_hand or actor_record["root"]
-    weapon_correction.location = (0.0, 0.0, 0.0) if right_hand else (0.35, 0.0, 0.9)
-    weapon_correction.rotation_euler = (0.0, 0.0, 0.0)
+    weapon_correction.location = loc_offset if right_hand else (0.35, 0.0, 0.9)
+    weapon_correction.rotation_euler = rot_offset
     weapon_correction.scale = (1.0, 1.0, 1.0)
+    print(f"[WEAPON CREATED] actor={actor_id} path={weapon_path} loc={loc_offset} rot={rot_offset}")
     record = {"root": weapon_correction, "parts": parts}
     WEAPONS[weapon_key] = record
-    print(f"[WEAPON CREATED] actor={actor_id} path={weapon_path}")
     return record
 
 

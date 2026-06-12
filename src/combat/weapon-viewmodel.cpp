@@ -66,9 +66,11 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
     printf("[VIEWMODEL] model loaded verts=%zu\n", heldMesh.verts.size());
 }
 
-void WeaponViewModel::update(const Camera& camera, Player& player, float dt, const WeaponDefinition* def) {
+void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
+                             const WeaponDefinition* def, bool updatePlayerPose) {
     loadModel(def ? def->modelPath : "");
-    player.updateModelWorldTransforms();
+    if (updatePlayerPose)
+        player.updateModelWorldTransforms();
 
     for (const PhysicalBodyPart& part : player.physicalBody.parts) {
         if (part.name != "rightArm")

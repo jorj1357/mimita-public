@@ -59,6 +59,7 @@ float yaw = -90.0f;
 float pitch = 10.0f;
 float punchPitch = 0.0f;
 float punchYaw = 0.0f;
+float fov = CAMERA_FOV;
 bool firstMouse = true;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;

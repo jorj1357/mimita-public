@@ -13,6 +13,8 @@
 
 #include "combat/weapon-types.h"
 
+struct ReplayBodyPartState;
+
 // ---------------- Player ----------------
 //
 // Player is pure data + presentation.
@@ -285,6 +287,13 @@ public:
     Player();
     void reset();
     bool loadModel(const char* path);
+    void applyReplayPose(
+        const glm::vec3& rootPosition,
+        float rootYaw,
+        const std::vector<ReplayBodyPartState>& parts);
+    void renderCurrentPose(unsigned int shader,
+                           const glm::mat4& view,
+                           const glm::mat4& proj) const;
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
