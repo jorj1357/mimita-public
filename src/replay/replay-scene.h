@@ -74,6 +74,7 @@ struct ReplayActorState {
 
     std::string modelPath;
     std::string weaponModelPath;
+    std::string outfitPath;
 
     glm::vec3 position {};
     glm::vec3 rotation {};
@@ -82,6 +83,9 @@ struct ReplayActorState {
     // todo define in a central config 6 7 2026 
     int health = 100;
     int maxHealth = 100;
+    int currentAmmo = 0;
+    int reserveAmmo = 0;
+    bool dead = false;
 
     bool shooting = false;
     bool reloading = false;

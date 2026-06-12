@@ -1036,6 +1036,28 @@ int runServer(const LaunchOptions& options)
                     ++totalPacketsOut;
                 }
             }
+            else if (header->type == PACKET_CHAT_MESSAGE &&
+                     bytes >= (int)sizeof(ChatPacket))
+            {
+                ChatPacket* chat = reinterpret_cast<ChatPacket*>(buffer);
+                auto it = players.find(chat->header.playerId);
+                if (it == players.end())
+                    continue;
+
+                chat->header.tick = tick;
+                printf("%s [CHAT] %s: %s\n", serverTimestamp(),
+                       it->second.name.c_str(), chat->text);
+
+                for (const auto& playerEntry : players)
+                {
+                    if (playerEntry.first == chat->header.playerId)
+                        continue;
+                    sendto(sock, (const char*)chat, sizeof(ChatPacket), 0,
+                           (sockaddr*)&playerEntry.second.addr,
+                           sizeof(playerEntry.second.addr));
+                    ++totalPacketsOut;
+                }
+            }
             else if (header->type == PACKET_PING &&
                      bytes >= (int)sizeof(PingPacket))
             {

@@ -26,7 +26,8 @@ enum PacketType : uint8_t
     PACKET_TELEPORT_REQUEST = 12,
     PACKET_EXPLODE_REQUEST = 13,
     PACKET_SHOT_REQUEST = 14,
-    PACKET_SHOT_EVENT = 15
+    PACKET_SHOT_EVENT = 15,
+    PACKET_CHAT_MESSAGE = 16
 };
 
 enum EntityType : uint8_t
@@ -260,6 +261,13 @@ struct ShotEventPacket
     float knockX = 0.0f;
     float knockY = 0.0f;
     float knockZ = 0.0f;
+};
+
+struct ChatPacket
+{
+    PacketHeader header;
+    char senderName[MAX_NAME_BYTES];
+    char text[240];
 };
 
 struct DisconnectPacket

@@ -600,6 +600,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                    out.origin.x, out.origin.y, out.origin.z,
                    out.hit.x, out.hit.y, out.hit.z);
         }
+        else if (header->type == PACKET_CHAT_MESSAGE &&
+                 bytes >= (int)sizeof(ChatPacket))
+        {
+            const ChatPacket* chat = reinterpret_cast<const ChatPacket*>(buffer);
+            MultiplayerContext::IncomingChatMessage msg;
+            msg.senderName = chat->senderName;
+            msg.text = chat->text;
+            ctx.incomingChatMessages.push_back(msg);
+            printf("[NET CHAT RECV] %s: %s\n", chat->senderName, chat->text);
+        }
         else if (header->type == PACKET_PING &&
                  bytes >= (int)sizeof(PingPacket))
         {
