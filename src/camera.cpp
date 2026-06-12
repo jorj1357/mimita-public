@@ -81,7 +81,7 @@ glm::mat4 Camera::getView() const {
 }
 
 glm::mat4 Camera::getProj(float width, float height) const {
-    return glm::perspective(glm::radians(CAMERA_FOV), width / height, 0.1f, 500.0f);
+    return glm::perspective(glm::radians(fov), width / height, 0.1f, 500.0f);
 }
 
 void Camera::smoothCollision(

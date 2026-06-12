@@ -13,16 +13,20 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <iomanip>
 #include <nlohmann/json.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtx/quaternion.hpp>
 
 #include "entities/player.h"
+#include "camera.h"
 
 using json = nlohmann::json;
 
 namespace {
 ReplayRecorder* gActiveReplayRecorder = nullptr;
+ReplayClipSaver* gActiveReplayClipSaver = nullptr;
+bool gReplayCaptureEnabled = true;
 
 json vec3Json(const glm::vec3& value)
 {
@@ -32,6 +36,106 @@ json vec3Json(const glm::vec3& value)
 json vec4Json(const glm::vec4& value)
 {
     return {value.x, value.y, value.z, value.w};
+}
+
+glm::vec3 jsonVec3(const json& value, const glm::vec3& fallback = {})
+{
+    if (!value.is_array() || value.size() < 3)
+        return fallback;
+    return {value[0].get<float>(), value[1].get<float>(), value[2].get<float>()};
+}
+
+ReplayEffectEvent parseEffect(const json& value)
+{
+    ReplayEffectEvent effect;
+    effect.type = value.value("type", "");
+    effect.position = jsonVec3(value.value("position", json::array()));
+    effect.direction = jsonVec3(value.value("direction", json::array()));
+    effect.from = jsonVec3(value.value("from", json::array()));
+    effect.to = jsonVec3(value.value("to", json::array()));
+    effect.rotation = jsonVec3(value.value("rotation", json::array()));
+    effect.scale = jsonVec3(value.value("scale", json::array()), glm::vec3(1.0f));
+    effect.endScale = jsonVec3(value.value("endScale", json::array()), glm::vec3(1.0f));
+    effect.velocity = jsonVec3(value.value("velocity", json::array()));
+    effect.normal = jsonVec3(value.value("normal", json::array()), glm::vec3(0, 0, 1));
+    if (value.contains("color") && value["color"].is_array() && value["color"].size() >= 4)
+        effect.color = {value["color"][0].get<float>(), value["color"][1].get<float>(),
+                        value["color"][2].get<float>(), value["color"][3].get<float>()};
+    effect.spawnTick = value.value("spawnTick", value.value("tick", 0));
+    effect.spawnTime = value.value("spawnTime", 0.0f);
+    effect.startDelay = value.value("startDelay", 0.0f);
+    effect.lifetime = value.value("lifetime", 0.0f);
+    effect.alpha = value.value("alpha", 1.0f);
+    effect.radius = value.value("radius", 0.0f);
+    effect.thickness = value.value("thickness", 0.0f);
+    effect.endThickness = value.value("endThickness", 0.0f);
+    effect.gravity = value.value("gravity", 0.0f);
+    effect.assetId = value.value("assetId", "");
+    effect.assetPath = value.value("assetPath", "");
+    effect.soundPath = value.value("soundPath", "");
+    effect.sourceActorId = value.value("sourceActorId", "");
+    effect.targetActorId = value.value("targetActorId", "");
+    effect.texturePath = value.value("texturePath", "");
+    effect.materialName = value.value("material", "");
+    return effect;
+}
+
+ReplayActorState parseActor(const json& value)
+{
+    ReplayActorState actor;
+    actor.id = value.value("id", "");
+    actor.name = value.value("name", "");
+    actor.type = value.value("type", "");
+    actor.modelPath = value.value("modelPath", "");
+    actor.weaponModelPath = value.value("weaponModelPath", "");
+    actor.position = jsonVec3(value.value("position", json::array()));
+    actor.rotation = jsonVec3(value.value("rotation", json::array()));
+    actor.velocity = jsonVec3(value.value("velocity", json::array()));
+    actor.health = value.value("health", 100);
+    actor.maxHealth = value.value("maxHealth", 100);
+    actor.shooting = value.value("shooting", false);
+    actor.reloading = value.value("reloading", false);
+    actor.grounded = value.value("grounded", false);
+    actor.collidable = value.value("collidable", true);
+    actor.fade = value.value("fade", 0.0f);
+    actor.blackness = value.value("blackness", 0.0f);
+    actor.weaponName = value.value("weaponName", "");
+    actor.animationState = value.value("animationState", "");
+    if (value.contains("bodyParts") && value["bodyParts"].is_object()) {
+        for (auto it = value["bodyParts"].begin(); it != value["bodyParts"].end(); ++it) {
+            ReplayBodyPartState part;
+            part.name = it.key();
+            part.position = jsonVec3(it->value("position", json::array()));
+            part.rotation = jsonVec3(it->value("rotation", json::array()));
+            part.scale = jsonVec3(it->value("scale", json::array()), glm::vec3(1.0f));
+            actor.bodyParts.push_back(std::move(part));
+        }
+    }
+    return actor;
+}
+
+json actorJson(const ReplayActorState& actor)
+{
+    json value = {
+        {"id", actor.id}, {"name", actor.name}, {"type", actor.type},
+        {"modelPath", actor.modelPath}, {"weaponModelPath", actor.weaponModelPath},
+        {"position", vec3Json(actor.position)}, {"rotation", vec3Json(actor.rotation)},
+        {"velocity", vec3Json(actor.velocity)}, {"health", actor.health},
+        {"maxHealth", actor.maxHealth}, {"shooting", actor.shooting},
+        {"reloading", actor.reloading}, {"grounded", actor.grounded},
+        {"collidable", actor.collidable}, {"fade", actor.fade},
+        {"blackness", actor.blackness}, {"weaponName", actor.weaponName},
+        {"animationState", actor.animationState}
+    };
+    value["bodyParts"] = json::object();
+    for (const ReplayBodyPartState& part : actor.bodyParts) {
+        value["bodyParts"][part.name] = {
+            {"position", vec3Json(part.position)},
+            {"rotation", vec3Json(part.rotation)},
+            {"scale", vec3Json(part.scale)}
+        };
+    }
+    return value;
 }
 
 json materialJson(const ReplayMaterialReference& material)
@@ -145,15 +249,35 @@ void setActiveReplayRecorder(ReplayRecorder* recorder)
     gActiveReplayRecorder = recorder;
 }
 
+void setReplayCaptureEnabled(bool enabled)
+{
+    gReplayCaptureEnabled = enabled;
+}
+
+void setActiveReplayClipSaver(ReplayClipSaver* saver)
+{
+    gActiveReplayClipSaver = saver;
+}
+
+void notifyReplayKill(const std::string& killerId,
+                      const std::string& victimId,
+                      bool roundWinning)
+{
+    if (gActiveReplayClipSaver)
+        gActiveReplayClipSaver->notifyKill(killerId, victimId, roundWinning);
+}
+
 void captureReplayEffect(const ReplayEffectEvent& event)
 {
-    if (gActiveReplayRecorder && gActiveReplayRecorder->isRecording())
+    if (gReplayCaptureEnabled && gActiveReplayRecorder &&
+        gActiveReplayRecorder->isRecording())
         gActiveReplayRecorder->recordEffectEvent(event);
 }
 
 void captureReplaySound(const ReplaySoundEvent& event)
 {
-    if (gActiveReplayRecorder && gActiveReplayRecorder->isRecording())
+    if (gReplayCaptureEnabled && gActiveReplayRecorder &&
+        gActiveReplayRecorder->isRecording())
         gActiveReplayRecorder->recordSoundEvent(event);
 }
 
@@ -224,6 +348,196 @@ std::string generateReplayValidationPath(const std::string& replayPath)
     return path.string();
 }
 
+std::string generateReplayClipPath()
+{
+    const std::time_t now = std::time(nullptr);
+    std::tm localTime{};
+#ifdef _WIN32
+    localtime_s(&localTime, &now);
+#else
+    localtime_r(&now, &localTime);
+#endif
+    char fileName[64];
+    std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S-kill.mclip.json", &localTime);
+    return (std::filesystem::path("replays") / "clips" / fileName).string();
+}
+
+std::vector<std::string> listReplayClips()
+{
+    std::vector<std::pair<std::filesystem::file_time_type, std::string>> found;
+    std::error_code ec;
+    const std::filesystem::path directory =
+        std::filesystem::path("replays") / "clips";
+    if (!std::filesystem::exists(directory, ec))
+        return {};
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+        if (ec || !entry.is_regular_file())
+            continue;
+        const std::string name = entry.path().filename().string();
+        if (name.size() < 11 || name.rfind(".mclip.json") != name.size() - 11)
+            continue;
+        found.push_back({entry.last_write_time(ec), entry.path().string()});
+    }
+    std::sort(found.begin(), found.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::vector<std::string> paths;
+    paths.reserve(found.size());
+    for (const auto& item : found)
+        paths.push_back(item.second);
+    return paths;
+}
+
+bool ReplayClip::save(const std::string& path) const
+{
+    json root;
+    root["metadata"] = {
+        {"format", "mimita-in-engine-clip"},
+        {"version", 1},
+        {"mapPath", mapPath},
+        {"killerId", killerId},
+        {"victimId", victimId},
+        {"killTick", killTick}
+    };
+    root["header"] = {
+        {"version", header.version},
+        {"tickCount", header.tickCount},
+        {"tickRate", header.tickRate},
+        {"mapName", std::string(header.mapName)},
+        {"timestamp", header.timestamp},
+        {"playerName", std::string(header.playerName)}
+    };
+    root["frames"] = json::array();
+    for (const ReplayFrame& frame : frames) {
+        root["frames"].push_back({
+            {"tick", frame.tick},
+            {"moveX", frame.inputs.moveX}, {"moveY", frame.inputs.moveY},
+            {"jump", frame.inputs.jump}, {"jumpPressed", frame.inputs.jumpPressed},
+            {"dashPressed", frame.inputs.dashPressed},
+            {"groundReturnPressed", frame.inputs.groundReturnPressed},
+            {"freezeHeld", frame.inputs.freezeHeld},
+            {"movementPressed", frame.inputs.movementPressed},
+            {"reloadPressed", frame.inputs.reloadPressed},
+            {"lookYaw", frame.inputs.lookYaw}, {"lookPitch", frame.inputs.lookPitch}
+        });
+    }
+    root["sceneFrames"] = json::array();
+    for (const ReplaySceneFrame& frame : sceneFrames) {
+        json value = {
+            {"tick", frame.tick}, {"time", frame.time},
+            {"camera", {
+                {"position", vec3Json(frame.camera.position)},
+                {"rotation", vec3Json(frame.camera.rotation)},
+                {"fov", frame.camera.fov}
+            }}
+        };
+        value["actors"] = json::array();
+        for (const ReplayActorState& actor : frame.actors)
+            value["actors"].push_back(actorJson(actor));
+        value["effects"] = json::array();
+        for (const ReplayEffectEvent& effect : frame.effects)
+            value["effects"].push_back(effectJson(effect));
+        root["sceneFrames"].push_back(std::move(value));
+    }
+    root["soundEvents"] = json::array();
+    for (const ReplaySoundEvent& sound : soundEvents) {
+        root["soundEvents"].push_back({
+            {"tick", sound.tick}, {"soundPath", sound.soundPath},
+            {"world", sound.world}, {"position", vec3Json(sound.position)},
+            {"volume", sound.volume}, {"pitch", sound.pitch},
+            {"maxDistance", sound.maxDistance}
+        });
+    }
+
+    std::error_code ec;
+    const std::filesystem::path output(path);
+    if (output.has_parent_path())
+        std::filesystem::create_directories(output.parent_path(), ec);
+    std::ofstream file(output);
+    if (ec || !file.is_open())
+        return false;
+    file << root.dump(2);
+    return (bool)file;
+}
+
+bool ReplayClip::load(const std::string& path)
+{
+    std::ifstream file(path);
+    if (!file.is_open())
+        return false;
+    try {
+        json root;
+        file >> root;
+        const json metadata = root.value("metadata", json::object());
+        mapPath = metadata.value("mapPath", "");
+        killerId = metadata.value("killerId", "");
+        victimId = metadata.value("victimId", "");
+        killTick = metadata.value("killTick", 0u);
+        const json h = root.value("header", json::object());
+        header = {};
+        header.version = h.value("version", 1u);
+        header.tickRate = h.value("tickRate", 60u);
+        header.timestamp = h.value("timestamp", 0ULL);
+        const std::string mapName = h.value("mapName", "");
+        const std::string playerName = h.value("playerName", "");
+        std::strncpy(header.mapName, mapName.c_str(), sizeof(header.mapName) - 1);
+        std::strncpy(header.playerName, playerName.c_str(), sizeof(header.playerName) - 1);
+
+        frames.clear();
+        for (const json& value : root.value("frames", json::array())) {
+            ReplayFrame frame;
+            frame.tick = value.value("tick", 0u);
+            frame.inputs.moveX = value.value("moveX", 0.0f);
+            frame.inputs.moveY = value.value("moveY", 0.0f);
+            frame.inputs.jump = value.value("jump", false);
+            frame.inputs.jumpPressed = value.value("jumpPressed", false);
+            frame.inputs.dashPressed = value.value("dashPressed", false);
+            frame.inputs.groundReturnPressed = value.value("groundReturnPressed", false);
+            frame.inputs.freezeHeld = value.value("freezeHeld", false);
+            frame.inputs.movementPressed = value.value("movementPressed", false);
+            frame.inputs.reloadPressed = value.value("reloadPressed", false);
+            frame.inputs.lookYaw = value.value("lookYaw", 0.0f);
+            frame.inputs.lookPitch = value.value("lookPitch", 0.0f);
+            frames.push_back(frame);
+        }
+
+        sceneFrames.clear();
+        for (const json& value : root.value("sceneFrames", json::array())) {
+            ReplaySceneFrame frame;
+            frame.tick = value.value("tick", 0);
+            frame.time = value.value("time", 0.0f);
+            const json camera = value.value("camera", json::object());
+            frame.camera.position = jsonVec3(camera.value("position", json::array()));
+            frame.camera.rotation = jsonVec3(camera.value("rotation", json::array()));
+            frame.camera.fov = camera.value("fov", 70.0f);
+            for (const json& actor : value.value("actors", json::array()))
+                frame.actors.push_back(parseActor(actor));
+            for (const json& effect : value.value("effects", json::array()))
+                frame.effects.push_back(parseEffect(effect));
+            sceneFrames.push_back(std::move(frame));
+        }
+
+        soundEvents.clear();
+        for (const json& value : root.value("soundEvents", json::array())) {
+            ReplaySoundEvent sound;
+            sound.tick = value.value("tick", 0);
+            sound.soundPath = value.value("soundPath", "");
+            sound.world = value.value("world", false);
+            sound.position = jsonVec3(value.value("position", json::array()));
+            sound.volume = value.value("volume", 1.0f);
+            sound.pitch = value.value("pitch", 1.0f);
+            sound.maxDistance = value.value("maxDistance", 0.0f);
+            soundEvents.push_back(std::move(sound));
+        }
+        header.tickCount = sceneFrames.empty() ? (uint32_t)frames.size()
+                                                : (uint32_t)sceneFrames.size();
+        return !sceneFrames.empty();
+    } catch (const std::exception& e) {
+        printf("[REPLAY] clip load failed %s: %s\n", path.c_str(), e.what());
+        return false;
+    }
+}
+
 // ============================================================
 // ReplayRecorder
 // ============================================================
@@ -264,6 +578,12 @@ void ReplayRecorder::recordFrame(const InputFrame& frame) {
     mEventTick = rf.tick;
     rf.inputs = frame;
     mFrames.push_back(rf);
+    if (mMaxTicks > 0 && mFrames.size() > mMaxTicks) {
+        const size_t trimCount =
+            std::min<size_t>(mHeader.tickRate, mFrames.size());
+        mFrames.erase(mFrames.begin(), mFrames.begin() + trimCount);
+    }
+    mHeader.tickCount = (uint32_t)mFrames.size();
 }
 
 void ReplayRecorder::recordSceneFrame(const ReplaySceneFrame& inputFrame)
@@ -274,6 +594,12 @@ void ReplayRecorder::recordSceneFrame(const ReplaySceneFrame& inputFrame)
     frame.effects.insert(frame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
     mPendingEffects.clear();
     mSceneFrames.push_back(frame);
+    if (mMaxTicks > 0 && mSceneFrames.size() > mMaxTicks) {
+        const size_t trimCount =
+            std::min<size_t>(mHeader.tickRate, mSceneFrames.size());
+        mSceneFrames.erase(
+            mSceneFrames.begin(), mSceneFrames.begin() + trimCount);
+    }
     mEventTick = mTick;
 }
 
@@ -334,7 +660,55 @@ void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)
     ReplaySoundEvent event = inputEvent;
     event.tick = (int)mEventTick;
     mSoundEvents.push_back(event);
+    if (mMaxTicks > 0) {
+        const int oldestTick = (int)mTick - (int)mMaxTicks;
+        while (!mSoundEvents.empty() && mSoundEvents.front().tick < oldestTick)
+            mSoundEvents.erase(mSoundEvents.begin());
+    }
     registerAsset("sound:" + event.soundPath, "sound", event.soundPath, {}, {}, "audio");
+}
+
+ReplayClip ReplayRecorder::makeClip(
+    uint32_t startTick, uint32_t endTick, uint32_t killTick,
+    const std::string& killerId, const std::string& victimId) const
+{
+    ReplayClip clip;
+    clip.header = mHeader;
+    clip.header.tickCount = 0;
+    clip.mapPath = mWorld.mapPath;
+    clip.killerId = killerId;
+    clip.victimId = victimId;
+    clip.killTick = killTick >= startTick ? killTick - startTick : 0;
+
+    for (const ReplayFrame& source : mFrames) {
+        if (source.tick < startTick || source.tick > endTick)
+            continue;
+        ReplayFrame frame = source;
+        frame.tick -= startTick;
+        clip.frames.push_back(std::move(frame));
+    }
+    for (const ReplaySceneFrame& source : mSceneFrames) {
+        if ((uint32_t)source.tick < startTick || (uint32_t)source.tick > endTick)
+            continue;
+        ReplaySceneFrame frame = source;
+        frame.tick -= (int)startTick;
+        frame.time = (float)frame.tick / (float)std::max(clip.header.tickRate, 1u);
+        for (ReplayEffectEvent& effect : frame.effects) {
+            effect.spawnTick = std::max(0, effect.spawnTick - (int)startTick);
+            effect.spawnTime = (float)effect.spawnTick /
+                (float)std::max(clip.header.tickRate, 1u);
+        }
+        clip.sceneFrames.push_back(std::move(frame));
+    }
+    for (const ReplaySoundEvent& source : mSoundEvents) {
+        if ((uint32_t)source.tick < startTick || (uint32_t)source.tick > endTick)
+            continue;
+        ReplaySoundEvent sound = source;
+        sound.tick -= (int)startTick;
+        clip.soundEvents.push_back(std::move(sound));
+    }
+    clip.header.tickCount = (uint32_t)clip.sceneFrames.size();
+    return clip;
 }
 
 void ReplayRecorder::stopRecording() {
@@ -619,6 +993,19 @@ bool ReplayRecorder::exportToBinary(const std::string& path) const {
 // ============================================================
 
 bool ReplayPlayer::loadFromJSON(const std::string& path) {
+    ReplayClip clip;
+    if (clip.load(path)) {
+        mClip = std::move(clip);
+        mHeader = mClip.header;
+        mFrames = mClip.frames;
+        mCurrentTick = 0;
+        mPlaybackTick = 0.0f;
+        mLastEventTick = -1;
+        printf("[REPLAY] Loaded %zu scene frames from %s\n",
+               mClip.sceneFrames.size(), path.c_str());
+        return true;
+    }
+
     std::ifstream file(path);
     if (!file.is_open()) {
         printf("[REPLAY] Could not open %s\n", path.c_str());
@@ -692,13 +1079,169 @@ bool ReplayPlayer::loadFromBinary(const std::string& path) {
 
 void ReplayPlayer::beginPlayback() {
     mPlaying = true;
+    mPaused = false;
     mCurrentTick = 0;
+    mPlaybackTick = 0.0f;
+    mLastEventTick = -1;
+    mTriggeredEffects.clear();
+    mTriggeredSounds.clear();
     printf("[REPLAY] Playback started  ticks=%u\n", mHeader.tickCount);
 }
 
 void ReplayPlayer::stopPlayback() {
     mPlaying = false;
+    mPaused = false;
     printf("[REPLAY] Playback stopped at tick %u\n", mCurrentTick);
+}
+
+void ReplayPlayer::pause()
+{
+    if (mPlaying)
+        mPaused = true;
+}
+
+void ReplayPlayer::resume()
+{
+    if (mPlaying)
+        mPaused = false;
+}
+
+void ReplayPlayer::setTimescale(float value)
+{
+    mTimescale = glm::clamp(value, 0.05f, 4.0f);
+}
+
+namespace {
+const ReplayActorState* findActor(
+    const ReplaySceneFrame& frame, const std::string& id)
+{
+    auto it = std::find_if(
+        frame.actors.begin(), frame.actors.end(),
+        [&id](const ReplayActorState& actor) { return actor.id == id; });
+    return it == frame.actors.end() ? nullptr : &*it;
+}
+
+ReplayBodyPartState mixPart(
+    const ReplayBodyPartState& a, const ReplayBodyPartState& b, float t)
+{
+    ReplayBodyPartState result = a;
+    result.position = glm::mix(a.position, b.position, t);
+    result.rotation = glm::mix(a.rotation, b.rotation, t);
+    result.scale = glm::mix(a.scale, b.scale, t);
+    return result;
+}
+
+ReplayActorState mixActor(
+    const ReplayActorState& a, const ReplayActorState& b, float t)
+{
+    ReplayActorState result = a;
+    result.position = glm::mix(a.position, b.position, t);
+    result.rotation = glm::mix(a.rotation, b.rotation, t);
+    result.velocity = glm::mix(a.velocity, b.velocity, t);
+    result.health = t < 0.5f ? a.health : b.health;
+    result.shooting = t < 0.5f ? a.shooting : b.shooting;
+    result.reloading = t < 0.5f ? a.reloading : b.reloading;
+    result.grounded = t < 0.5f ? a.grounded : b.grounded;
+    result.collidable = t < 0.5f ? a.collidable : b.collidable;
+    result.weaponName = t < 0.5f ? a.weaponName : b.weaponName;
+    result.weaponModelPath = t < 0.5f ? a.weaponModelPath : b.weaponModelPath;
+    for (ReplayBodyPartState& part : result.bodyParts) {
+        auto it = std::find_if(
+            b.bodyParts.begin(), b.bodyParts.end(),
+            [&part](const ReplayBodyPartState& other) {
+                return other.name == part.name;
+            });
+        if (it != b.bodyParts.end())
+            part = mixPart(part, *it, t);
+    }
+    return result;
+}
+}
+
+void ReplayPlayer::update(float dt)
+{
+    if (!mPlaying || mPaused || mClip.sceneFrames.empty())
+        return;
+
+    const int previousTick = (int)std::floor(mPlaybackTick);
+    mPlaybackTick += dt * (float)std::max(mHeader.tickRate, 1u) * mTimescale;
+    const int lastTick = mClip.sceneFrames.back().tick;
+    if (mPlaybackTick > (float)lastTick) {
+        mPlaybackTick = (float)lastTick;
+        mCurrentTick = (uint32_t)lastTick;
+        mPlaying = false;
+    } else {
+        mCurrentTick = (uint32_t)std::max(0, (int)std::floor(mPlaybackTick));
+    }
+
+    const int currentEventTick = (int)std::floor(mPlaybackTick);
+    for (const ReplaySceneFrame& frame : mClip.sceneFrames) {
+        if (frame.tick <= mLastEventTick || frame.tick > currentEventTick)
+            continue;
+        mTriggeredEffects.insert(
+            mTriggeredEffects.end(), frame.effects.begin(), frame.effects.end());
+    }
+    for (const ReplaySoundEvent& sound : mClip.soundEvents) {
+        if (sound.tick > mLastEventTick && sound.tick <= currentEventTick)
+            mTriggeredSounds.push_back(sound);
+    }
+    if (currentEventTick >= previousTick)
+        mLastEventTick = currentEventTick;
+
+    auto upper = std::lower_bound(
+        mClip.sceneFrames.begin(), mClip.sceneFrames.end(), mPlaybackTick,
+        [](const ReplaySceneFrame& frame, float tick) {
+            return (float)frame.tick < tick;
+        });
+    if (upper == mClip.sceneFrames.begin()) {
+        mInterpolatedFrame = *upper;
+        return;
+    }
+    if (upper == mClip.sceneFrames.end()) {
+        mInterpolatedFrame = mClip.sceneFrames.back();
+        return;
+    }
+    const ReplaySceneFrame& b = *upper;
+    const ReplaySceneFrame& a = *(upper - 1);
+    const float span = (float)std::max(1, b.tick - a.tick);
+    const float t = glm::clamp((mPlaybackTick - (float)a.tick) / span, 0.0f, 1.0f);
+    mInterpolatedFrame = a;
+    mInterpolatedFrame.tick = (int)mPlaybackTick;
+    mInterpolatedFrame.time = mPlaybackTick / (float)std::max(mHeader.tickRate, 1u);
+    mInterpolatedFrame.camera.position =
+        glm::mix(a.camera.position, b.camera.position, t);
+    mInterpolatedFrame.camera.rotation =
+        glm::mix(a.camera.rotation, b.camera.rotation, t);
+    mInterpolatedFrame.camera.fov = glm::mix(a.camera.fov, b.camera.fov, t);
+    mInterpolatedFrame.actors.clear();
+    for (const ReplayActorState& actor : a.actors) {
+        const ReplayActorState* next = findActor(b, actor.id);
+        mInterpolatedFrame.actors.push_back(
+            next ? mixActor(actor, *next, t) : actor);
+    }
+}
+
+const ReplaySceneFrame* ReplayPlayer::currentSceneFrame() const
+{
+    if (mClip.sceneFrames.empty())
+        return nullptr;
+    if (mPlaybackTick <= 0.0f)
+        return &mClip.sceneFrames.front();
+    return &mInterpolatedFrame;
+}
+
+std::vector<ReplayEffectEvent> ReplayPlayer::takeTriggeredEffects()
+{
+    std::vector<ReplayEffectEvent> result;
+    result.swap(mTriggeredEffects);
+    return result;
+}
+
+std::vector<ReplaySoundEvent> ReplayPlayer::takeTriggeredSounds()
+{
+    std::vector<ReplaySoundEvent> result;
+    result.swap(mTriggeredSounds);
+    return result;
 }
 
 bool ReplayPlayer::getFrameAt(uint32_t tick, InputFrame& out) const {
@@ -719,4 +1262,137 @@ const InputFrame* ReplayPlayer::advanceTick() {
 
 void ReplayPlayer::seekToTick(uint32_t tick) {
     mCurrentTick = std::min(tick, (uint32_t)mFrames.size());
+    mPlaybackTick = (float)tick;
+    mLastEventTick = (int)tick - 1;
+}
+
+bool ReplayCameraController::setMode(const std::string& name)
+{
+    if (name == "fp" || name == "firstperson")
+        mMode = ReplayCameraMode::FirstPerson;
+    else if (name == "victim")
+        mMode = ReplayCameraMode::Victim;
+    else if (name == "orbit")
+        mMode = ReplayCameraMode::Orbit;
+    else if (name == "freecam")
+        mMode = ReplayCameraMode::Freecam;
+    else
+        return false;
+    return true;
+}
+
+void ReplayCameraController::setFov(float value)
+{
+    mFov = glm::clamp(value, 20.0f, 160.0f);
+}
+
+const char* ReplayCameraController::modeName() const
+{
+    switch (mMode) {
+        case ReplayCameraMode::FirstPerson: return "fp";
+        case ReplayCameraMode::Victim: return "victim";
+        case ReplayCameraMode::Orbit: return "orbit";
+        case ReplayCameraMode::Freecam: return "freecam";
+    }
+    return "fp";
+}
+
+void ReplayCameraController::update(
+    Camera& camera, const ReplaySceneFrame& frame,
+    const std::string& killerId, const std::string& victimId, float dt)
+{
+    camera.fov = mFov > 0.0f ? mFov : frame.camera.fov;
+    if (mMode == ReplayCameraMode::Freecam)
+        return;
+    if (mMode == ReplayCameraMode::FirstPerson) {
+        const ReplayActorState* killer = findActor(frame, killerId);
+        camera.pos = killer
+            ? killer->position + glm::vec3(0.0f, 0.0f, 1.55f)
+            : frame.camera.position;
+        camera.pitch = frame.camera.rotation.x;
+        camera.yaw = frame.camera.rotation.z;
+        camera.updateVectors();
+        return;
+    }
+
+    const std::string targetId =
+        mMode == ReplayCameraMode::Victim ? victimId : killerId;
+    const ReplayActorState* target = findActor(frame, targetId);
+    if (!target && !frame.actors.empty())
+        target = &frame.actors.front();
+    if (!target)
+        return;
+
+    const glm::vec3 focus = target->position + glm::vec3(0.0f, 0.0f, 1.35f);
+    if (mMode == ReplayCameraMode::Victim) {
+        camera.pos = focus;
+        camera.yaw = target->rotation.z;
+        camera.pitch = 0.0f;
+        camera.updateVectors();
+        return;
+    }
+
+    mOrbitAngle += dt * 35.0f;
+    const float radians = glm::radians(mOrbitAngle);
+    camera.pos = focus + glm::vec3(std::cos(radians) * 5.5f,
+                                   std::sin(radians) * 5.5f, 2.2f);
+    camera.front = glm::normalize(focus - camera.pos);
+    camera.right = glm::normalize(glm::cross(camera.front, glm::vec3(0, 0, 1)));
+    camera.up = glm::normalize(glm::cross(camera.right, camera.front));
+}
+
+void ReplayClipSaver::notifyKill(
+    const std::string& killerId,
+    const std::string& victimId,
+    bool roundWinning)
+{
+    KillInfo info;
+    info.tick = mRing.currentTick();
+    info.killerId = killerId;
+    info.victimId = victimId;
+    info.autoSave = roundWinning;
+    mLastKill = std::move(info);
+    printf("[REPLAY] kill marked tick=%u killer=%s victim=%s roundWinning=%d\n",
+           mLastKill->tick, killerId.c_str(), victimId.c_str(), (int)roundWinning);
+}
+
+void ReplayClipSaver::update()
+{
+    if (!mLastKill || !mLastKill->autoSave || mLastKill->saved)
+        return;
+    if (mRing.currentTick() >= mLastKill->tick + 3u * ReplayRingBuffer::TickRate)
+        saveLastKill();
+}
+
+bool ReplayClipSaver::saveLastKill(std::string* savedPath)
+{
+    if (!mLastKill)
+        return false;
+    const uint32_t requestedEnd =
+        mLastKill->tick + 3u * ReplayRingBuffer::TickRate;
+    if (mRing.currentTick() < requestedEnd) {
+        mLastKill->autoSave = true;
+        if (savedPath)
+            *savedPath = "pending post-kill capture";
+        printf("[REPLAY] clip save queued until tick=%u\n", requestedEnd);
+        return true;
+    }
+    const uint32_t startTick =
+        mLastKill->tick > 5u * ReplayRingBuffer::TickRate
+            ? mLastKill->tick - 5u * ReplayRingBuffer::TickRate
+            : 0u;
+    ReplayClip clip = mRing.makeClip(
+        startTick, requestedEnd, mLastKill->tick,
+        mLastKill->killerId, mLastKill->victimId);
+    if (clip.sceneFrames.empty())
+        return false;
+    const std::string path = generateReplayClipPath();
+    if (!clip.save(path))
+        return false;
+    mLastKill->saved = true;
+    if (savedPath)
+        *savedPath = path;
+    printf("[REPLAY] saved clip %s frames=%zu\n",
+           path.c_str(), clip.sceneFrames.size());
+    return true;
 }

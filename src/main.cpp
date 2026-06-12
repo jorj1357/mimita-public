@@ -28,8 +28,10 @@
 #include <cctype>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <random>
 #include <filesystem>
@@ -167,6 +169,58 @@ static int selectWorldTriangle(const World& world, glm::vec3 origin, glm::vec3 d
 
 int main(int argc, char** argv)
 {
+    if (argc > 1 && std::string(argv[1]) == "--replay-selftest") {
+        ReplayClip clip;
+        clip.header.tickRate = 60;
+        clip.header.tickCount = 2;
+        clip.mapPath = "assets/maps/mimita-duels-map-v3.glb";
+        clip.killerId = "player";
+        clip.victimId = "npc_100";
+        clip.killTick = 30;
+
+        ReplayActorState actorA;
+        actorA.id = "player";
+        actorA.name = "player";
+        actorA.type = "player";
+        actorA.position = {0.0f, 0.0f, 0.0f};
+        actorA.weaponName = "revolver";
+        ReplaySceneFrame frameA;
+        frameA.tick = 0;
+        frameA.actors.push_back(actorA);
+
+        ReplayActorState actorB = actorA;
+        actorB.position = {10.0f, 0.0f, 0.0f};
+        ReplaySceneFrame frameB;
+        frameB.tick = 60;
+        frameB.time = 1.0f;
+        frameB.actors.push_back(actorB);
+        clip.sceneFrames = {frameA, frameB};
+
+        const std::filesystem::path path =
+            std::filesystem::path("build") / "replay-selftest.mclip.json";
+        ReplayPlayer playerTest;
+        const bool saved = clip.save(path.string());
+        const bool loaded = saved && playerTest.loadFromJSON(path.string());
+        playerTest.setTimescale(0.25f);
+        playerTest.beginPlayback();
+        playerTest.update(1.0f);
+        const ReplaySceneFrame* interpolated =
+            playerTest.currentSceneFrame();
+        const bool interpolationOk =
+            interpolated && !interpolated->actors.empty() &&
+            std::fabs(interpolated->actors.front().position.x - 2.5f) < 0.01f;
+        const bool camerasOk =
+            playerTest.cameraController().setMode("fp") &&
+            playerTest.cameraController().setMode("victim") &&
+            playerTest.cameraController().setMode("orbit") &&
+            playerTest.cameraController().setMode("freecam");
+        std::error_code removeError;
+        std::filesystem::remove(path, removeError);
+        printf("[REPLAY SELFTEST] save=%d load=%d interpolation=%d cameras=%d\n",
+               (int)saved, (int)loaded, (int)interpolationOk, (int)camerasOk);
+        return saved && loaded && interpolationOk && camerasOk ? 0 : 1;
+    }
+
     LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
     if (launchOptions.name.empty())
@@ -294,8 +348,10 @@ int main(int argc, char** argv)
     printf("[MAIN] camera bound\n");
 
     // Global replay recorder/player
-    static ReplayRecorder gReplayRecorder;
+    static ReplayRingBuffer gReplayRecorder;
     static ReplayPlayer gReplayPlayer;
+    static ReplayClipSaver gReplayClipSaver(gReplayRecorder);
+    setActiveReplayClipSaver(&gReplayClipSaver);
 
     // Random number generator for spawn selection
     static std::mt19937 rng(std::random_device{}());
@@ -318,6 +374,8 @@ int main(int argc, char** argv)
     std::string activeMapPath;
     int selectedEditorObject = -1;
     WeaponSystem weapons;
+    std::unordered_map<std::string, std::unique_ptr<Player>> replayActorModels;
+    std::unordered_map<std::string, WeaponViewModel> replayWeaponModels;
     bool freecamEnabled = false;
     glm::vec3 deathPosition{0.0f};
     struct ReplayTestState {
@@ -1007,6 +1065,160 @@ int main(int argc, char** argv)
     });
 
     Terminal::instance().registerCommand({
+        "replay_list", "List saved replay clips newest first", "replay_list",
+        [](const std::vector<std::string>&) {
+            const std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[REPLAY] no saved clips");
+                return;
+            }
+            for (const std::string& clip : clips)
+                Terminal::instance().addLog("[REPLAY] " + clip);
+        }
+    });
+
+    auto playReplayClip = [](const std::string& requestedPath) {
+        std::filesystem::path path(requestedPath);
+        if (!std::filesystem::exists(path))
+            path = std::filesystem::path("replays") / "clips" / requestedPath;
+        if (!std::filesystem::exists(path)) {
+            Terminal::instance().addLog(
+                "[ERROR] replay clip not found: " + requestedPath);
+            return;
+        }
+        if (!gReplayPlayer.loadFromJSON(path.string())) {
+            Terminal::instance().addLog(
+                "[ERROR] failed to load replay clip: " + path.string());
+            return;
+        }
+        gReplayPlayer.beginPlayback();
+        printf("[REPLAY] playing %s\n", path.string().c_str());
+        Terminal::instance().addLog("[REPLAY] playing " + path.string());
+    };
+
+    Terminal::instance().registerCommand({
+        "replay_play_recent", "Play the newest saved replay clip",
+        "replay_play_recent",
+        [playReplayClip](const std::vector<std::string>&) {
+            const std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[REPLAY] no saved clips");
+                return;
+            }
+            playReplayClip(clips.front());
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_play", "Play a saved replay clip", "replay_play <filename>",
+        [playReplayClip](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[ERROR] Usage: replay_play <filename>");
+                return;
+            }
+            playReplayClip(args[0]);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_save_last_kill", "Save five seconds before and three seconds after the last kill",
+        "replay_save_last_kill",
+        [](const std::vector<std::string>&) {
+            std::string path;
+            if (!gReplayClipSaver.saveLastKill(&path)) {
+                Terminal::instance().addLog(
+                    "[ERROR] no captured kill is available to save");
+                return;
+            }
+            Terminal::instance().addLog(
+                path == "pending post-kill capture"
+                    ? "[REPLAY] clip queued; capturing three seconds after kill"
+                    : "[REPLAY] saved clip " + path);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_stop", "Stop in-engine replay playback", "replay_stop",
+        [](const std::vector<std::string>&) {
+            gReplayPlayer.stopPlayback();
+            Terminal::instance().addLog("[REPLAY] playback stopped");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_pause", "Pause in-engine replay playback", "replay_pause",
+        [](const std::vector<std::string>&) {
+            gReplayPlayer.pause();
+            Terminal::instance().addLog("[REPLAY] paused");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_resume", "Resume in-engine replay playback", "replay_resume",
+        [](const std::vector<std::string>&) {
+            gReplayPlayer.resume();
+            Terminal::instance().addLog("[REPLAY] resumed");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_timescale", "Set replay playback speed", "replay_timescale <float>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                return;
+            gReplayPlayer.setTimescale(std::stof(args[0]));
+            printf("[REPLAY] timescale %.2f\n", gReplayPlayer.timescale());
+            Terminal::instance().addLog(
+                "[REPLAY] timescale " + std::to_string(gReplayPlayer.timescale()));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_fov", "Override replay camera FOV", "replay_fov <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                return;
+            gReplayPlayer.cameraController().setFov(std::stof(args[0]));
+            Terminal::instance().addLog(
+                "[REPLAY] fov " +
+                std::to_string(gReplayPlayer.cameraController().fov()));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_camera", "Set replay camera mode", "replay_camera <fp|victim|orbit|freecam>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty() ||
+                !gReplayPlayer.cameraController().setMode(args[0])) {
+                Terminal::instance().addLog(
+                    "[ERROR] Usage: replay_camera <fp|victim|orbit|freecam>");
+                return;
+            }
+            printf("[REPLAY] camera mode %s\n",
+                   gReplayPlayer.cameraController().modeName());
+            Terminal::instance().addLog(
+                std::string("[REPLAY] camera mode ") +
+                gReplayPlayer.cameraController().modeName());
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_freecam", "Enable or disable replay freecam", "replay_freecam <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool enabled = !args.empty() && args[0] != "0";
+            gReplayPlayer.cameraController().setMode(enabled ? "freecam" : "fp");
+            Terminal::instance().addLog(
+                enabled ? "[REPLAY] camera mode freecam"
+                        : "[REPLAY] camera mode fp");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_orbit", "Enable or disable replay orbit camera", "replay_orbit <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool enabled = !args.empty() && args[0] != "0";
+            gReplayPlayer.cameraController().setMode(enabled ? "orbit" : "fp");
+            Terminal::instance().addLog(
+                enabled ? "[REPLAY] camera mode orbit"
+                        : "[REPLAY] camera mode fp");
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "replay_test",
         "Record a deterministic gameplay replay and validate it in Blender",
         "replay_test",
@@ -1022,13 +1234,15 @@ int main(int argc, char** argv)
                     "[REPLAY TEST] Disabled during multiplayer");
                 return;
             }
-            if (replayTest.active || gReplayRecorder.isRecording()) {
+            if (replayTest.active) {
                 Terminal::instance().addLog(
                     "[REPLAY TEST] A recording is already active");
                 return;
             }
 
             npcSystem.destroyAll();
+            if (gReplayRecorder.isRecording())
+                gReplayRecorder.stopRecording();
             Terminal::instance().execute("replay.record");
             if (!gReplayRecorder.isRecording()) {
                 Terminal::instance().addLog(
@@ -1222,6 +1436,12 @@ int main(int argc, char** argv)
                         clearPendingMultiplayerConnect();
                     }
                 }
+                if (gameState == GAME_PLAYING && worldLoaded &&
+                    !gReplayRecorder.isRecording()) {
+                    Terminal::instance().execute("replay.record");
+                    Terminal::instance().addLog(
+                        "[REPLAY] 60 second ring buffer active");
+                }
                 bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
                     gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !duelMatchOver
@@ -1267,6 +1487,9 @@ int main(int argc, char** argv)
         if (gameState == GAME_PLAYING)
         {
             DebugVis::beginCollisionFrame();
+            gReplayPlayer.update(dt);
+            const bool replayPlaybackActive = gReplayPlayer.isPlaying();
+            setReplayCaptureEnabled(!replayPlaybackActive);
 
             // Fixed-tick simulation accumulator
             // Accumulate real dt and step simulation at SIM_DT rate
@@ -1275,18 +1498,7 @@ int main(int argc, char** argv)
             while (simAccumulator >= SIM_DT) {
                 InputFrame tickFrame;
 
-                if (gReplayPlayer.isPlaying()) {
-                    // Playback: advance from recorded replay
-                    const InputFrame* recordedFrame = gReplayPlayer.advanceTick();
-                    if (recordedFrame) {
-                        tickFrame = *recordedFrame;
-                    } else {
-                        // Replay finished
-                        gReplayPlayer.stopPlayback();
-                    }
-                }
-
-                if (!gReplayPlayer.isPlaying()) {
+                if (!replayPlaybackActive) {
                     // Live input: build InputFrame from keyboard + terminal override
                     InputCommandSystem::instance().setKeyboardEnabled(!Terminal::instance().isOpen());
                     // tickFrame = buildInputFrame(engine.window(), camera);
@@ -1359,7 +1571,8 @@ int main(int argc, char** argv)
                     }
                 }
 
-                const bool recordingReplayTick = gReplayRecorder.isRecording();
+                const bool recordingReplayTick =
+                    gReplayRecorder.isRecording() && !replayPlaybackActive;
                 uint32_t replayTick = 0;
                 if (recordingReplayTick) {
                     replayTick = gReplayRecorder.currentTick();
@@ -1367,7 +1580,7 @@ int main(int argc, char** argv)
                 }
 
                 // Run simulation for this tick
-                if (!freecamEnabled)
+                if (!freecamEnabled && !replayPlaybackActive)
                     simulateTick(simContext, tickFrame);
 
                 // Capture death position for camera orbit (player.pos stays at death location)
@@ -1385,7 +1598,7 @@ int main(int argc, char** argv)
                     // Camera
                     sceneFrame.camera.position = camera.pos;
                     sceneFrame.camera.rotation = glm::vec3(camera.pitch, 0.0f, camera.yaw);
-                    sceneFrame.camera.fov = 70.0f;
+                    sceneFrame.camera.fov = camera.fov;
 
                     // Player
                     ReplayActorState playerActor;
@@ -1419,10 +1632,6 @@ int main(int argc, char** argv)
                     playerActor.animationState = player.onGround
                         ? (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.5f ? "move" : "idle")
                         : "air";
-                    printf("[REPLAY ACTOR] tick=%u id=%s pos=(%.2f %.2f %.2f) rot=(%.2f %.2f %.2f)\n",
-                           (unsigned)replayTick, playerActor.id.c_str(),
-                           playerActor.position.x, playerActor.position.y, playerActor.position.z,
-                           playerActor.rotation.x, playerActor.rotation.y, playerActor.rotation.z);
                     playerActor.bodyParts = captureReplayBodyParts(player);
                     sceneFrame.actors.push_back(playerActor);
 
@@ -1455,6 +1664,7 @@ int main(int argc, char** argv)
                     DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
                     gReplayRecorder.recordSceneFrame(sceneFrame);
+                    gReplayClipSaver.update();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
@@ -1488,6 +1698,7 @@ int main(int argc, char** argv)
                                     "[REPLAY TEST] Replay exported; "
                                     "headless validation started");
                             }
+                            Terminal::instance().execute("replay.record");
                         }
                     }
                 }
@@ -1745,7 +1956,21 @@ int main(int argc, char** argv)
 
             camera.decayPunch(dt);
             camera.updateVectors();
-            if (freecamEnabled && !Terminal::instance().isOpen()) {
+            const bool replayFreecam =
+                replayPlaybackActive &&
+                gReplayPlayer.cameraController().mode() ==
+                    ReplayCameraMode::Freecam;
+            if (replayPlaybackActive) {
+                if (const ReplaySceneFrame* replayFrame =
+                        gReplayPlayer.currentSceneFrame()) {
+                    gReplayPlayer.cameraController().update(
+                        camera, *replayFrame,
+                        gReplayPlayer.killerId(),
+                        gReplayPlayer.victimId(), dt);
+                }
+            }
+            if ((freecamEnabled || replayFreecam) &&
+                !Terminal::instance().isOpen()) {
                 glm::vec3 flatForward = camera.front;
                 flatForward.z = 0.0f;
                 if (glm::length(flatForward) > 0.001f) flatForward = glm::normalize(flatForward);
@@ -1759,6 +1984,8 @@ int main(int argc, char** argv)
                 if (glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
                 if (glm::length(move) > 0.001f)
                     camera.pos += glm::normalize(move) * GetPlayerSettings().freecamSpeed * dt;
+            } else if (replayPlaybackActive) {
+                // ReplayCameraController owns the camera during playback.
             } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
                 camera.follow(gDuelManager.winnerCameraTarget());
                 camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt);
@@ -1768,7 +1995,40 @@ int main(int argc, char** argv)
             }
             setAudioListener(camera.pos, camera.front);
             EffectPartSystem::instance().setWorld(world);
-            weapons.update(camera, player, npcSystem, dt);
+            if (replayPlaybackActive) {
+                for (const ReplayEffectEvent& effect :
+                     gReplayPlayer.takeTriggeredEffects()) {
+                    if (effect.type == "gunshot") {
+                        EffectPartSystem::instance().spawnMuzzleFlash(
+                            effect.from, effect.sourceActorId);
+                        EffectPartSystem::instance().spawnTracer(
+                            effect.from, effect.to, effect.sourceActorId);
+                    } else if (effect.type == "blood_spurt_emitter") {
+                        EffectPartSystem::instance().spawnBloodEffect(
+                            effect.position, effect.direction, 50.0f,
+                            effect.sourceActorId, effect.targetActorId);
+                    } else if (effect.type == "dash") {
+                        EffectPartSystem::instance().spawnDash(effect.position);
+                    } else if (effect.type == "footstep") {
+                        EffectPartSystem::instance().spawnFootstep(effect.position);
+                    } else if (!effect.type.empty() &&
+                               effect.type != "corpse_spawn") {
+                        EffectPartSystem::instance().spawnCustom(
+                            effect.position, glm::vec3(effect.color),
+                            std::max(effect.lifetime, 0.1f),
+                            effect.type.c_str());
+                    }
+                }
+                for (const ReplaySoundEvent& sound :
+                     gReplayPlayer.takeTriggeredSounds()) {
+                    playWorldSound(
+                        sound.soundPath, sound.position,
+                        sound.volume, sound.pitch,
+                        sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
+                }
+            }
+            if (!replayPlaybackActive)
+                weapons.update(camera, player, npcSystem, dt);
             if (mpContext.active)
             {
                 const std::vector<RevolverShotResult> godballHits =
@@ -1792,21 +2052,23 @@ int main(int argc, char** argv)
                 }
             }
 
-            gDuelManager.update(
-                dt,
-                player,
-                npcSystem,
-                world,
-                camera);
-
-            player.updateAudio(dt);
+            if (!replayPlaybackActive) {
+                gDuelManager.update(
+                    dt,
+                    player,
+                    npcSystem,
+                    world,
+                    camera);
+                player.updateAudio(dt);
+            }
 
             // Update effect parts
             EffectPartSystem::instance().update(dt);
 
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-            if (!Terminal::instance().isOpen() && mouseDown && !mousePrev) {
+            if (!replayPlaybackActive &&
+                !Terminal::instance().isOpen() && mouseDown && !mousePrev) {
                 if (editorMode) {
                     selectedEditorObject = selectWorldTriangle(world, camera.pos, camera.front);
                     Terminal::instance().addLog(selectedEditorObject >= 0
@@ -1820,7 +2082,8 @@ int main(int argc, char** argv)
 
             static bool rightMousePrev = false;
             bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-            if (!Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev) {
+            if (!replayPlaybackActive &&
+                !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev) {
                 if (!editorMode) {
                     weapons.fireAlt(camera, player, npcSystem, world);
                 }
@@ -1831,20 +2094,70 @@ int main(int argc, char** argv)
             for (int keySlot = 0; keySlot <= 9; ++keySlot) {
                 int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
                 bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
-                if (!Terminal::instance().isOpen() && down && !slotPrev[keySlot])
+                if (!replayPlaybackActive &&
+                    !Terminal::instance().isOpen() && down && !slotPrev[keySlot])
                     Terminal::instance().execute("equipslot" + std::to_string(keySlot));
                 slotPrev[keySlot] = down;
             }
             renderWorld(world, camera);
-            renderPlayer(player, camera);
-            // Render remote players from server snapshots
-            if (mpContext.active) {
-                for (auto& kv : mpContext.remotePlayers) {
-                    renderNetworkPlayer(kv.second, camera, kv.first, false);
+            if (replayPlaybackActive) {
+                if (const ReplaySceneFrame* replayFrame =
+                        gReplayPlayer.currentSceneFrame()) {
+                    const glm::mat4 replayView = camera.getView();
+                    const glm::mat4 replayProj = camera.getProj(
+                        (float)engine.renderer->width,
+                        (float)engine.renderer->height);
+                    for (const ReplayActorState& actorState :
+                         replayFrame->actors) {
+                        std::unique_ptr<Player>& actor =
+                            replayActorModels[actorState.id];
+                        if (!actor)
+                            actor = std::make_unique<Player>();
+                        actor->username = actorState.name;
+                        actor->currentHp = actorState.health;
+                        actor->maxHp = actorState.maxHealth;
+                        actor->vel = actorState.velocity;
+                        actor->onGround = actorState.grounded;
+                        actor->applyReplayPose(
+                            actorState.position,
+                            actorState.rotation.z,
+                            actorState.bodyParts);
+
+                        const bool hideFirstPersonActor =
+                            gReplayPlayer.cameraController().mode() ==
+                                ReplayCameraMode::FirstPerson &&
+                            actorState.id == gReplayPlayer.killerId();
+                        if (!hideFirstPersonActor) {
+                            actor->renderCurrentPose(
+                                engine.renderer->shaderProgram,
+                                replayView, replayProj);
+                        }
+
+                        const WeaponDefinition* definition =
+                            WeaponRegistry::instance().get(
+                                actorState.weaponName);
+                        if (definition && !definition->modelPath.empty()) {
+                            actor->equippedSlot = definition->slot;
+                            const std::string weaponKey =
+                                actorState.id + ":" + definition->id;
+                            WeaponViewModel& viewModel =
+                                replayWeaponModels[weaponKey];
+                            viewModel.update(
+                                camera, *actor, dt, definition, false);
+                            viewModel.render(
+                                camera, *actor, definition->slot);
+                        }
+                    }
                 }
+            } else {
+                renderPlayer(player, camera);
+                if (mpContext.active) {
+                    for (auto& kv : mpContext.remotePlayers)
+                        renderNetworkPlayer(kv.second, camera, kv.first, false);
+                }
+                npcSystem.render(camera);
             }
-            npcSystem.render(camera);
-            if (mpContext.active)
+            if (mpContext.active && !replayPlaybackActive)
             {
                 static uint64_t lastReplicaRenderLogMs = 0;
                 const uint64_t renderLogNow = MimitaNet::nowMs();
@@ -1865,8 +2178,10 @@ int main(int argc, char** argv)
                     lastReplicaRenderLogMs = renderLogNow;
                 }
             }
-            DeathSystem::instance().render(camera);
-            weapons.render(camera, player);
+            if (!replayPlaybackActive) {
+                DeathSystem::instance().render(camera);
+                weapons.render(camera, player);
+            }
             
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);

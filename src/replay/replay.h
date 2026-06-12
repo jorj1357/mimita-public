@@ -7,6 +7,8 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
+#include <optional>
 #include <vector>
 #include <string>
 #include "input/input-frame.h"
@@ -16,6 +18,7 @@
 #include <string>
 
 class Player;
+class Camera;
 
 struct ReplayFrame {
     uint32_t tick = 0;
@@ -31,6 +34,20 @@ struct ReplayHeader {
     char mapName[64] = {};
     uint64_t timestamp = 0;
     char playerName[32] = {};
+};
+
+struct ReplayClip {
+    ReplayHeader header{};
+    std::string mapPath;
+    std::string killerId;
+    std::string victimId;
+    uint32_t killTick = 0;
+    std::vector<ReplayFrame> frames;
+    std::vector<ReplaySceneFrame> sceneFrames;
+    std::vector<ReplaySoundEvent> soundEvents;
+
+    bool save(const std::string& path) const;
+    bool load(const std::string& path);
 };
 
 class ReplayRecorder {
@@ -55,6 +72,11 @@ public:
     void setLighting(const ReplayLightingState& lighting);
     void recordEffectEvent(const ReplayEffectEvent& event);
     void recordSoundEvent(const ReplaySoundEvent& event);
+    void setMaxTicks(uint32_t maxTicks) { mMaxTicks = maxTicks; }
+    ReplayClip makeClip(uint32_t startTick, uint32_t endTick,
+                        uint32_t killTick,
+                        const std::string& killerId,
+                        const std::string& victimId) const;
 
     bool isRecording() const {
         return mRecording;
@@ -105,6 +127,39 @@ private:
     ReplayLightingState mLighting;
     std::vector<ReplaySoundEvent> mSoundEvents;
     std::vector<ReplayEffectEvent> mPendingEffects;
+    uint32_t mMaxTicks = 0;
+};
+
+class ReplayRingBuffer : public ReplayRecorder {
+public:
+    static constexpr uint32_t TickRate = 60;
+    static constexpr uint32_t DurationSeconds = 60;
+
+    ReplayRingBuffer() { setMaxTicks(TickRate * DurationSeconds); }
+};
+
+enum class ReplayCameraMode {
+    FirstPerson,
+    Victim,
+    Orbit,
+    Freecam
+};
+
+class ReplayCameraController {
+public:
+    bool setMode(const std::string& name);
+    void setFov(float value);
+    float fov() const { return mFov; }
+    ReplayCameraMode mode() const { return mMode; }
+    const char* modeName() const;
+    void update(Camera& camera, const ReplaySceneFrame& frame,
+                const std::string& killerId,
+                const std::string& victimId, float dt);
+
+private:
+    ReplayCameraMode mMode = ReplayCameraMode::FirstPerson;
+    float mFov = 0.0f;
+    float mOrbitAngle = 0.0f;
 };
 
 class ReplayPlayer {
@@ -115,6 +170,18 @@ public:
     void beginPlayback();
     void stopPlayback();
     bool isPlaying() const { return mPlaying; }
+    bool isPaused() const { return mPaused; }
+    void pause();
+    void resume();
+    void update(float dt);
+    void setTimescale(float value);
+    float timescale() const { return mTimescale; }
+    ReplayCameraController& cameraController() { return mCameraController; }
+    const ReplaySceneFrame* currentSceneFrame() const;
+    std::vector<ReplayEffectEvent> takeTriggeredEffects();
+    std::vector<ReplaySoundEvent> takeTriggeredSounds();
+    const std::string& killerId() const { return mClip.killerId; }
+    const std::string& victimId() const { return mClip.victimId; }
 
     bool getFrameAt(uint32_t tick, InputFrame& out) const;
     const InputFrame* advanceTick();
@@ -130,13 +197,53 @@ private:
     uint32_t mCurrentTick = 0;
     ReplayHeader mHeader{};
     std::vector<ReplayFrame> mFrames;
+    ReplayClip mClip;
+    ReplaySceneFrame mInterpolatedFrame;
+    bool mPaused = false;
+    float mPlaybackTick = 0.0f;
+    float mTimescale = 1.0f;
+    int mLastEventTick = -1;
+    std::vector<ReplayEffectEvent> mTriggeredEffects;
+    std::vector<ReplaySoundEvent> mTriggeredSounds;
+    ReplayCameraController mCameraController;
+};
+
+class ReplayClipSaver {
+public:
+    explicit ReplayClipSaver(ReplayRingBuffer& ring) : mRing(ring) {}
+
+    void notifyKill(const std::string& killerId,
+                    const std::string& victimId,
+                    bool roundWinning);
+    void update();
+    bool saveLastKill(std::string* savedPath = nullptr);
+    bool hasLastKill() const { return mLastKill.has_value(); }
+
+private:
+    struct KillInfo {
+        uint32_t tick = 0;
+        std::string killerId;
+        std::string victimId;
+        bool autoSave = false;
+        bool saved = false;
+    };
+
+    ReplayRingBuffer& mRing;
+    std::optional<KillInfo> mLastKill;
 };
 
 // outside classes ? 6 7 2026
 std::string generateReplayExportPath();
 std::string generateReplayValidationPath(const std::string& replayPath);
+std::string generateReplayClipPath();
+std::vector<std::string> listReplayClips();
 
 void setActiveReplayRecorder(ReplayRecorder* recorder);
+void setReplayCaptureEnabled(bool enabled);
+void setActiveReplayClipSaver(ReplayClipSaver* saver);
+void notifyReplayKill(const std::string& killerId,
+                      const std::string& victimId,
+                      bool roundWinning);
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
 std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player);
