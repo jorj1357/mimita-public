@@ -70,6 +70,7 @@
 #include "devtools/account-config.h"
 #include "devtools/npc-spawn-commands.h"
 #include "ui/hitmarker.h"
+#include "gui/hud/chat-bubble.h"
 #include "effects/effect-part.h"
 #include "replay/replay.h"
 #include "sim/sim-context.h"
@@ -352,6 +353,10 @@ int main(int argc, char** argv)
     static ReplayPlayer gReplayPlayer;
     static ReplayClipSaver gReplayClipSaver(gReplayRecorder);
     setActiveReplayClipSaver(&gReplayClipSaver);
+    static std::unordered_map<std::string, ActorChatState> gReplayChatStates;
+    static std::vector<std::string> G_REPLAY_CLIPS_CACHE;
+    static std::unordered_map<int, std::string> G_COMMAND_BINDS;
+    static std::unordered_map<int, bool> G_BIND_PREV;
 
     // Random number generator for spawn selection
     static std::mt19937 rng(std::random_device{}());
@@ -546,6 +551,60 @@ int main(int argc, char** argv)
                     shot.knockbackImpulse);
             }
             Terminal::instance().addLog("[WEAPON] fired");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "chat", "Send a chat message visible above your character", "chat <message>",
+        [&player, &mpContext](const std::vector<std::string>& args) {
+            if (args.empty())
+            {
+                Terminal::instance().addLog("[CHAT] usage: chat <message>");
+                return;
+            }
+            std::string message;
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                if (i > 0) message += " ";
+                message += args[i];
+            }
+            if (message.size() > 240)
+            {
+                message.resize(240);
+                Terminal::instance().addLog("[CHAT] message truncated to 240 characters");
+            }
+
+            printf("[CHAT] %s: %s\n", player.username.c_str(), message.c_str());
+            Terminal::instance().addLog("[CHAT] " + player.username + ": " + message);
+            Terminal::instance().addLog("[CHAT] bubble added");
+
+            addChatMessage(player.chatState, message, player.username);
+            playChatSound((int)message.size());
+
+            {
+                ReplayEffectEvent chatEvent;
+                chatEvent.type = "chat";
+                chatEvent.sourceActorId = player.username;
+                chatEvent.assetId = message;
+                chatEvent.lifetime = computeChatDuration((int)message.size());
+                captureReplayEffect(chatEvent);
+                Terminal::instance().addLog("[CHAT] replay event recorded");
+            }
+
+            if (mpContext.active && mpContext.localPlayerId != 0)
+            {
+                MimitaNet::ChatPacket chatPacket{};
+                chatPacket.header.type = MimitaNet::PACKET_CHAT_MESSAGE;
+                chatPacket.header.tick = mpContext.tick;
+                chatPacket.header.playerId = mpContext.localPlayerId;
+                std::memset(chatPacket.senderName, 0, sizeof(chatPacket.senderName));
+                std::strncpy(chatPacket.senderName, player.username.c_str(),
+                             sizeof(chatPacket.senderName) - 1);
+                std::memset(chatPacket.text, 0, sizeof(chatPacket.text));
+                std::strncpy(chatPacket.text, message.c_str(), sizeof(chatPacket.text) - 1);
+                MimitaNet::mpSendPacket(mpContext, &chatPacket, sizeof(chatPacket));
+                Terminal::instance().addLog("[CHAT] replicated");
+            }
         }
     });
 
@@ -1043,12 +1102,14 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "replay.play", "Start replay playback", "replay.play",
-        [](const std::vector<std::string>&) {
+        [&gameState](const std::vector<std::string>&) {
             if (gReplayPlayer.totalTicks() == 0) {
                 Terminal::instance().addLog("[ERROR] No replay loaded");
                 return;
             }
+            gReplayPlayer.preloadAssets();
             gReplayPlayer.beginPlayback();
+            gameState = GAME_PLAYING;
             Terminal::instance().addLog("[REPLAY] Playback started");
         }
     });
@@ -1064,60 +1125,162 @@ int main(int argc, char** argv)
         }
     });
 
+    G_REPLAY_CLIPS_CACHE.clear();
     Terminal::instance().registerCommand({
-        "replay_list", "List saved replay clips newest first", "replay_list",
+        "replay_list", "List saved replays newest first (optionally with index)", "replay.list",
         [](const std::vector<std::string>&) {
-            const std::vector<std::string> clips = listReplayClips();
-            if (clips.empty()) {
-                Terminal::instance().addLog("[REPLAY] no saved clips");
+            G_REPLAY_CLIPS_CACHE = listReplayClips();
+            if (G_REPLAY_CLIPS_CACHE.empty()) {
+                Terminal::instance().addLog("[REPLAY] no saved replays");
                 return;
             }
-            for (const std::string& clip : clips)
-                Terminal::instance().addLog("[REPLAY] " + clip);
+            for (size_t i = 0; i < G_REPLAY_CLIPS_CACHE.size(); ++i) {
+                char buf[512];
+                snprintf(buf, sizeof(buf), "[REPLAY] %zu. %s", i + 1,
+                         G_REPLAY_CLIPS_CACHE[i].c_str());
+                Terminal::instance().addLog(buf);
+            }
         }
     });
 
-    auto playReplayClip = [](const std::string& requestedPath) {
-        std::filesystem::path path(requestedPath);
-        if (!std::filesystem::exists(path))
-            path = std::filesystem::path("replays") / "clips" / requestedPath;
-        if (!std::filesystem::exists(path)) {
-            Terminal::instance().addLog(
-                "[ERROR] replay clip not found: " + requestedPath);
+    auto playReplayByPath = [&gameState](const std::string& path) {
+        if (!gReplayPlayer.loadFromJSON(path)) {
+            Terminal::instance().addLog("[ERROR] failed to load replay: " + path);
             return;
         }
-        if (!gReplayPlayer.loadFromJSON(path.string())) {
-            Terminal::instance().addLog(
-                "[ERROR] failed to load replay clip: " + path.string());
-            return;
-        }
+        gReplayPlayer.preloadAssets();
         gReplayPlayer.beginPlayback();
-        printf("[REPLAY] playing %s\n", path.string().c_str());
-        Terminal::instance().addLog("[REPLAY] playing " + path.string());
+        gameState = GAME_PLAYING;
+        printf("[REPLAY] playing %s\n", path.c_str());
+        Terminal::instance().addLog("[REPLAY] playing " + path);
     };
 
+    auto keyNameToGlfw = [](const std::string& name) -> int {
+        std::string upper = name;
+        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+        if (upper == "F1") return GLFW_KEY_F1;
+        if (upper == "F2") return GLFW_KEY_F2;
+        if (upper == "F3") return GLFW_KEY_F3;
+        if (upper == "F4") return GLFW_KEY_F4;
+        if (upper == "F5") return GLFW_KEY_F5;
+        if (upper == "F6") return GLFW_KEY_F6;
+        if (upper == "F7") return GLFW_KEY_F7;
+        if (upper == "F8") return GLFW_KEY_F8;
+        if (upper == "F9") return GLFW_KEY_F9;
+        if (upper == "F10") return GLFW_KEY_F10;
+        if (upper == "F11") return GLFW_KEY_F11;
+        if (upper == "F12") return GLFW_KEY_F12;
+        if (upper == "ESCAPE" || upper == "ESC") return GLFW_KEY_ESCAPE;
+        if (upper == "SPACE") return GLFW_KEY_SPACE;
+        if (upper == "ENTER") return GLFW_KEY_ENTER;
+        if (upper.size() == 1) {
+            char c = upper[0];
+            if (c >= 'A' && c <= 'Z') return GLFW_KEY_A + (c - 'A');
+            if (c >= '0' && c <= '9') return GLFW_KEY_0 + (c - '0');
+        }
+        return -1;
+    };
+    auto glfwToKeyName = [](int key) -> std::string {
+        if (key >= GLFW_KEY_F1 && key <= GLFW_KEY_F12) return "F" + std::to_string(key - GLFW_KEY_F1 + 1);
+        if (key == GLFW_KEY_ESCAPE) return "ESCAPE";
+        if (key == GLFW_KEY_SPACE) return "SPACE";
+        if (key == GLFW_KEY_ENTER) return "ENTER";
+        if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) return std::string(1, 'A' + (key - GLFW_KEY_A));
+        if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) return std::string(1, '0' + (key - GLFW_KEY_0));
+        return "?";
+    };
     Terminal::instance().registerCommand({
-        "replay_play_recent", "Play the newest saved replay clip",
-        "replay_play_recent",
-        [playReplayClip](const std::vector<std::string>&) {
-            const std::vector<std::string> clips = listReplayClips();
-            if (clips.empty()) {
-                Terminal::instance().addLog("[REPLAY] no saved clips");
+        "bind", "Bind a key to a console command", "bind <key> <command>",
+        [keyNameToGlfw](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[ERROR] Usage: bind <key> <command>");
+                Terminal::instance().addLog("Example: bind F8 \"replay.record\"");
                 return;
             }
-            playReplayClip(clips.front());
+            int key = keyNameToGlfw(args[0]);
+            if (key == -1) {
+                Terminal::instance().addLog("[ERROR] Unknown key: " + args[0]);
+                return;
+            }
+            // Combine remaining args into command string
+            std::string cmd;
+            for (size_t i = 1; i < args.size(); ++i) {
+                if (i > 1) cmd += " ";
+                cmd += args[i];
+            }
+            G_COMMAND_BINDS[key] = cmd;
+            G_BIND_PREV[key] = false;
+            printf("[BIND] %s -> %s\n", args[0].c_str(), cmd.c_str());
+            Terminal::instance().addLog("[OK] bind " + args[0] + " -> " + cmd);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "unbind", "Unbind a key", "unbind <key>",
+        [keyNameToGlfw](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: unbind <key>");
+                return;
+            }
+            int key = keyNameToGlfw(args[0]);
+            if (key == -1) {
+                Terminal::instance().addLog("[ERROR] Unknown key: " + args[0]);
+                return;
+            }
+            auto it = G_COMMAND_BINDS.find(key);
+            if (it == G_COMMAND_BINDS.end()) {
+                Terminal::instance().addLog("[ERROR] No bind for key: " + args[0]);
+                return;
+            }
+            G_COMMAND_BINDS.erase(it);
+            G_BIND_PREV.erase(key);
+            printf("[BIND] unbound %s\n", args[0].c_str());
+            Terminal::instance().addLog("[OK] unbound " + args[0]);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "listbinds", "List all command keybinds", "listbinds",
+        [glfwToKeyName](const std::vector<std::string>&) {
+            if (G_COMMAND_BINDS.empty()) {
+                Terminal::instance().addLog("[BIND] no binds");
+                return;
+            }
+            for (const auto& pair : G_COMMAND_BINDS) {
+                char buf[256];
+                snprintf(buf, sizeof(buf), "[BIND] %s -> %s",
+                         glfwToKeyName(pair.first).c_str(), pair.second.c_str());
+                Terminal::instance().addLog(buf);
+            }
         }
     });
 
     Terminal::instance().registerCommand({
-        "replay_play", "Play a saved replay clip", "replay_play <filename>",
-        [playReplayClip](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog(
-                    "[ERROR] Usage: replay_play <filename>");
+        "replay.play", "Play a replay by index from replay.list, or newest if no arg",
+        "replay.play [index]",
+        [playReplayByPath](const std::vector<std::string>& args) {
+            if (G_REPLAY_CLIPS_CACHE.empty())
+                G_REPLAY_CLIPS_CACHE = listReplayClips();
+            if (G_REPLAY_CLIPS_CACHE.empty()) {
+                Terminal::instance().addLog("[ERROR] no replays found");
                 return;
             }
-            playReplayClip(args[0]);
+            size_t index = 0;
+            if (!args.empty()) {
+                char* end = nullptr;
+                long parsed = std::strtol(args[0].c_str(), &end, 10);
+                if (end == args[0].c_str() || parsed < 1) {
+                    Terminal::instance().addLog("[ERROR] invalid index, use replay.list first");
+                    return;
+                }
+                index = (size_t)(parsed - 1);
+            }
+            if (index >= G_REPLAY_CLIPS_CACHE.size()) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "[ERROR] index %zu out of range (max %zu)",
+                         index + 1, G_REPLAY_CLIPS_CACHE.size());
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            playReplayByPath(G_REPLAY_CLIPS_CACHE[index]);
         }
     });
 
@@ -1208,6 +1371,19 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "replay_camera", "Set replay camera mode: fp/victim/orbit/freecam", "replay_camera <mode>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                printf("[REPLAY] camera mode is %s\n", gReplayPlayer.cameraController().modeName());
+                return;
+            }
+            if (gReplayPlayer.cameraController().setMode(args[0]))
+                printf("[REPLAY] camera mode %s\n", args[0].c_str());
+            else
+                printf("[REPLAY] unknown camera mode: %s (try: fp, victim, orbit, freecam)\n", args[0].c_str());
+        }
+    });
+    Terminal::instance().registerCommand({
         "replay_orbit", "Enable or disable replay orbit camera", "replay_orbit <0|1>",
         [](const std::vector<std::string>& args) {
             const bool enabled = !args.empty() && args[0] != "0";
@@ -1215,6 +1391,56 @@ int main(int argc, char** argv)
             Terminal::instance().addLog(
                 enabled ? "[REPLAY] camera mode orbit"
                         : "[REPLAY] camera mode fp");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rpl_load_newest", "Find and play the newest replay file", "rpl_load_newest",
+        [playReplayByPath](const std::vector<std::string>&) {
+            std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[ERROR] no replays found");
+                return;
+            }
+            playReplayByPath(clips.front());
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_pause", "Pause replay playback", "replay_pause",
+        [](const std::vector<std::string>&) {
+            gReplayPlayer.pause(); printf("[REPLAY] paused\n");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_resume", "Resume replay playback", "replay_resume",
+        [](const std::vector<std::string>&) {
+            gReplayPlayer.resume(); printf("[REPLAY] resumed\n");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_toggle_pause", "Toggle replay pause", "replay_toggle_pause",
+        [](const std::vector<std::string>&) {
+            if (gReplayPlayer.isPaused()) gReplayPlayer.resume();
+            else gReplayPlayer.pause();
+            printf("[REPLAY] %s\n", gReplayPlayer.isPaused() ? "paused" : "resumed");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_seek_tick", "Seek to a specific tick", "replay_seek_tick <tick>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) return;
+            int tick = std::stoi(args[0]);
+            gReplayPlayer.seekToTick((uint32_t)std::max(0, tick));
+            printf("[REPLAY] seeked to tick %d\n", tick);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_seek_percent", "Seek to a percentage of the replay", "replay_seek_percent <0-100>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) return;
+            float pct = std::stof(args[0]) / 100.0f;
+            uint32_t tick = (uint32_t)(pct * gReplayPlayer.totalTicks());
+            gReplayPlayer.seekToTick(tick);
+            printf("[REPLAY] seeked to %.0f%% (tick %u)\n", pct * 100.0f, tick);
         }
     });
 
@@ -1611,9 +1837,11 @@ int main(int argc, char** argv)
                     playerActor.velocity = player.vel;
                     playerActor.health = player.currentHp;
                     playerActor.maxHealth = player.maxHp;
+                    playerActor.dead = player.dead;
                     playerActor.grounded = player.onGround;
                     playerActor.collidable = !player.dead;
                     playerActor.fade = 0.0f;
+                    playerActor.outfitPath = GetPlayerSettings().outfitPath;
                     {
                         int slot = player.equippedSlot;
                         if (slot == 1) {
@@ -1625,6 +1853,11 @@ int main(int argc, char** argv)
                         } else {
                             playerActor.weaponName = "none";
                             playerActor.weaponModelPath = "";
+                        }
+                        auto wit = player.weaponRuntimes.find(player.equippedWeaponId);
+                        if (wit != player.weaponRuntimes.end()) {
+                            playerActor.currentAmmo = wit->second.currentAmmo;
+                            playerActor.reserveAmmo = wit->second.reserveAmmo;
                         }
                     }
                     playerActor.reloading = weapons.isReloading(player);
@@ -1647,9 +1880,11 @@ int main(int argc, char** argv)
                         npcActor.velocity = npc.body.vel;
                         npcActor.health = npc.body.currentHp;
                         npcActor.maxHealth = npc.body.maxHp;
+                        npcActor.dead = npc.body.dead;
                         npcActor.grounded = npc.body.onGround;
                         npcActor.collidable = !npc.body.dead;
                         npcActor.fade = 0.0f;
+                        npcActor.outfitPath = "";
                         npcActor.weaponName = npc.body.equippedSlot == 1 ? "revolver"
                             : npc.body.equippedSlot == 3 ? "shotgun"
                             : npc.body.equippedSlot == 2 ? "godball"
@@ -1657,6 +1892,13 @@ int main(int argc, char** argv)
                         npcActor.weaponModelPath = npc.body.equippedSlot == 1 ? "assets/objects/weapons/mimita-revolver-v1.glb"
                             : npc.body.equippedSlot == 3 ? "assets/objects/weapons/mimita-shotgun-v1.glb"
                             : "";
+                        {
+                            auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+                            if (wit != npc.body.weaponRuntimes.end()) {
+                                npcActor.currentAmmo = wit->second.currentAmmo;
+                                npcActor.reserveAmmo = wit->second.reserveAmmo;
+                            }
+                        }
                         npcActor.animationState = npcStateName(npc.stateMachine.currentState);
                         npcActor.bodyParts = captureReplayBodyParts(npc.body);
                         sceneFrame.actors.push_back(npcActor);
@@ -1886,6 +2128,29 @@ int main(int argc, char** argv)
                     }
                 }
                 mpContext.shotEvents.clear();
+
+                for (const auto& chatMsg : mpContext.incomingChatMessages)
+                {
+                    printf("[CHAT] %s: %s\n", chatMsg.senderName.c_str(), chatMsg.text.c_str());
+                    for (auto& kv : mpContext.remotePlayers)
+                    {
+                        if (kv.second.username == chatMsg.senderName)
+                        {
+                            addChatMessage(kv.second.chatState, chatMsg.text, chatMsg.senderName);
+                            break;
+                        }
+                    }
+                    playChatSound((int)chatMsg.text.size());
+
+                    ReplayEffectEvent chatEvent;
+                    chatEvent.type = "chat";
+                    chatEvent.sourceActorId = chatMsg.senderName;
+                    chatEvent.assetId = chatMsg.text;
+                    chatEvent.lifetime = computeChatDuration((int)chatMsg.text.size());
+                    captureReplayEffect(chatEvent);
+                }
+                mpContext.incomingChatMessages.clear();
+
                 MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
 
                 // Sync server NPCs to local NpcSystem for AI
@@ -1963,10 +2228,14 @@ int main(int argc, char** argv)
             if (replayPlaybackActive) {
                 if (const ReplaySceneFrame* replayFrame =
                         gReplayPlayer.currentSceneFrame()) {
-                    gReplayPlayer.cameraController().update(
-                        camera, *replayFrame,
-                        gReplayPlayer.killerId(),
-                        gReplayPlayer.victimId(), dt);
+                    // Skip camera controller update entirely during freecam
+                    // to prevent any accidental camera state modification.
+                    if (gReplayPlayer.cameraController().mode() != ReplayCameraMode::Freecam) {
+                        gReplayPlayer.cameraController().update(
+                            camera, *replayFrame,
+                            gReplayPlayer.killerId(),
+                            gReplayPlayer.victimId(), dt);
+                    }
                 }
             }
             if ((freecamEnabled || replayFreecam) &&
@@ -1998,7 +2267,11 @@ int main(int argc, char** argv)
             if (replayPlaybackActive) {
                 for (const ReplayEffectEvent& effect :
                      gReplayPlayer.takeTriggeredEffects()) {
-                    if (effect.type == "gunshot") {
+                    if (effect.type == "chat") {
+                        ActorChatState& chatState = gReplayChatStates[effect.sourceActorId];
+                        addChatMessage(chatState, effect.assetId, effect.sourceActorId);
+                        playChatSound((int)effect.assetId.size());
+                    } else if (effect.type == "gunshot") {
                         EffectPartSystem::instance().spawnMuzzleFlash(
                             effect.from, effect.sourceActorId);
                         EffectPartSystem::instance().spawnTracer(
@@ -2007,10 +2280,29 @@ int main(int argc, char** argv)
                         EffectPartSystem::instance().spawnBloodEffect(
                             effect.position, effect.direction, 50.0f,
                             effect.sourceActorId, effect.targetActorId);
+                        hitmarker();
                     } else if (effect.type == "dash") {
                         EffectPartSystem::instance().spawnDash(effect.position);
                     } else if (effect.type == "footstep") {
                         EffectPartSystem::instance().spawnFootstep(effect.position);
+                    } else if (effect.type == "impact_world") {
+                        EffectPartSystem::instance().spawnWorldImpact(
+                            effect.position, effect.normal);
+                        EffectPartSystem::instance().spawnWorldDebris(
+                            effect.position, effect.normal, 1.0f);
+                    } else if (effect.type == "debris_block") {
+                        EffectPartSystem::instance().spawnWorldDebris(
+                            effect.position, effect.normal, 1.5f);
+                    } else if (effect.type == "impact_entity") {
+                        EffectPartSystem::instance().spawnEntityImpact(
+                            effect.position, effect.normal,
+                            effect.sourceActorId, effect.targetActorId);
+                    } else if (effect.type == "muzzle_flash") {
+                        EffectPartSystem::instance().spawnMuzzleFlash(
+                            effect.position, effect.sourceActorId);
+                    } else if (effect.type == "tracer") {
+                        EffectPartSystem::instance().spawnTracer(
+                            effect.from, effect.to, effect.sourceActorId);
                     } else if (!effect.type.empty() &&
                                effect.type != "corpse_spawn") {
                         EffectPartSystem::instance().spawnCustom(
@@ -2065,6 +2357,12 @@ int main(int argc, char** argv)
             // Update effect parts
             EffectPartSystem::instance().update(dt);
 
+            updateChatBubbles(player.chatState, dt);
+            for (auto& kv : mpContext.remotePlayers)
+                updateChatBubbles(kv.second.chatState, dt);
+            for (auto& kv : gReplayChatStates)
+                updateChatBubbles(kv.second, dt);
+
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             if (!replayPlaybackActive &&
@@ -2099,6 +2397,16 @@ int main(int argc, char** argv)
                     Terminal::instance().execute("equipslot" + std::to_string(keySlot));
                 slotPrev[keySlot] = down;
             }
+            // Process command keybinds (rising edge)
+            {
+                static std::unordered_map<int, bool> bindPrev;
+                for (const auto& pair : G_COMMAND_BINDS) {
+                    bool down = glfwGetKey(engine.window(), pair.first) == GLFW_PRESS;
+                    if (down && !bindPrev[pair.first] && !Terminal::instance().isOpen())
+                        Terminal::instance().execute(pair.second);
+                    bindPrev[pair.first] = down;
+                }
+            }
             renderWorld(world, camera);
             if (replayPlaybackActive) {
                 if (const ReplaySceneFrame* replayFrame =
@@ -2111,13 +2419,23 @@ int main(int argc, char** argv)
                          replayFrame->actors) {
                         std::unique_ptr<Player>& actor =
                             replayActorModels[actorState.id];
-                        if (!actor)
+                        if (!actor) {
                             actor = std::make_unique<Player>();
+                            // Restore per-actor outfit
+                            const std::string& outfitToUse =
+                                !actorState.outfitPath.empty()
+                                    ? actorState.outfitPath
+                                    : gReplayPlayer.outfitPath();
+                            if (!outfitToUse.empty())
+                                OutfitAtlas::instance().apply(*actor, outfitToUse);
+                        }
                         actor->username = actorState.name;
                         actor->currentHp = actorState.health;
                         actor->maxHp = actorState.maxHealth;
+                        actor->dead = actorState.dead;
                         actor->vel = actorState.velocity;
                         actor->onGround = actorState.grounded;
+                        actor->equippedWeaponId = actorState.weaponName;
                         actor->applyReplayPose(
                             actorState.position,
                             actorState.rotation.z,
@@ -2156,6 +2474,21 @@ int main(int argc, char** argv)
                         renderNetworkPlayer(kv.second, camera, kv.first, false);
                 }
                 npcSystem.render(camera);
+            }
+            {   static float rlogTimer = 0.0f; rlogTimer -= dt;
+                if (rlogTimer <= 0.0f && replayPlaybackActive) {
+                    rlogTimer = 1.0f;
+                    const auto* rframe = gReplayPlayer.currentSceneFrame();
+                    printf("[REPLAY] cameraMode=%s freecam=%d paused=%d "
+                           "viewingActor=%s tick=%u actorCount=%zu effectCount=%zu\n",
+                           gReplayPlayer.cameraController().modeName(),
+                           (int)(gReplayPlayer.cameraController().mode() == ReplayCameraMode::Freecam),
+                           (int)gReplayPlayer.isPaused(),
+                           rframe && !rframe->actors.empty() ? rframe->actors[0].name.c_str() : "none",
+                           gReplayPlayer.currentTick(),
+                           rframe ? rframe->actors.size() : 0,
+                           gReplayPlayer.totalEffectCount());
+                }
             }
             if (mpContext.active && !replayPlaybackActive)
             {
@@ -2314,7 +2647,90 @@ int main(int argc, char** argv)
                 uiDrawText(replayTickText, overlayX, 58.0f, 0.30f,
                            {1.0f, 0.12f, 0.12f, 1.0f});
             }
-            if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
+            if (replayPlaybackActive) {
+                // Replay HUD overlay
+                const float rOverlayX = 20.0f;
+                const float rOverlayY = uiScreenH() - 130.0f;
+                const auto* rFrame = gReplayPlayer.currentSceneFrame();
+                const uint32_t totalTicks = gReplayPlayer.totalTicks();
+                const float currentTime = rFrame ? rFrame->time : 0.0f;
+                const float totalTime = (float)totalTicks / 60.0f;
+                const char* camMode = gReplayPlayer.cameraController().modeName();
+                uiDrawRect({rOverlayX - 8.0f, rOverlayY, 360.0f, 140.0f},
+                           {0.0f, 0.0f, 0.0f, 0.65f}, "replay-hud-bg");
+                char rTickText[128];
+                snprintf(rTickText, sizeof(rTickText),
+                         "REPLAY  Tick: %u / %u  Time: %.1fs / %.1fs",
+                         (unsigned)gReplayPlayer.currentTick(), (unsigned)totalTicks,
+                         currentTime, totalTime);
+                uiDrawText(rTickText, rOverlayX, rOverlayY + 8.0f, 0.40f,
+                           {0.9f, 0.9f, 0.3f, 1.0f});
+                char rCamText[128];
+                snprintf(rCamText, sizeof(rCamText), "Camera: %s  %s",
+                         camMode,
+                         gReplayPlayer.isPaused() ? "[PAUSED]" : "");
+                uiDrawText(rCamText, rOverlayX, rOverlayY + 34.0f, 0.32f,
+                           {0.7f, 0.85f, 1.0f, 1.0f});
+                // Show actor list with HP, weapon, alive/dead
+                if (rFrame) {
+                    float listY = rOverlayY + 58.0f;
+                    int shown = 0;
+                    for (const ReplayActorState& a : rFrame->actors) {
+                        if (shown >= 8) break;
+                        const char* status = a.dead ? "[DEAD]" : "[ALIVE]";
+                        char line[128];
+                        snprintf(line, sizeof(line), "%s %s %d HP  %s %s",
+                                 status, a.name.c_str(), a.health,
+                                 a.weaponName.c_str(),
+                                 a.reloading ? "(reloading)" : "");
+                        uiDrawText(line, rOverlayX, listY, 0.24f,
+                                   a.dead
+                                       ? glm::vec4{0.5f, 0.5f, 0.5f, 1.0f}
+                                       : glm::vec4{1.0f, 1.0f, 1.0f, 1.0f});
+                        listY += 14.0f;
+                        shown++;
+                    }
+                }
+                // Crosshair & ammo for the first armed actor
+                if (rFrame && !rFrame->actors.empty()) {
+                    const ReplayActorState& primary = rFrame->actors[0];
+                    if (!primary.weaponName.empty() && primary.weaponName != "none") {
+                        // Choose crosshair based on weapon state
+                        const char* crosshairPath = "assets/crosshair/crosshairready.png";
+                        if (primary.reloading)
+                            crosshairPath = "assets/crosshair/crosshairreloading.png";
+                        else if (primary.shooting)
+                            crosshairPath = "assets/crosshair/crosshairdelay.png";
+                        float cs = primary.weaponName == "shotgun" ? 140.0f : 100.0f;
+                        uiDrawImage(crosshairPath,
+                                    {uiScreenW() * 0.5f - cs * 0.5f,
+                                     uiScreenH() * 0.5f - cs * 0.5f, cs, cs});
+                        // Ammo count
+                        char ammoLine[48];
+                        snprintf(ammoLine, sizeof(ammoLine), "%d / %d",
+                                 primary.currentAmmo, primary.reserveAmmo);
+                        const float ammoW = uiMeasureText(ammoLine, 0.34f);
+                        uiDrawText(ammoLine, uiScreenW() * 0.5f - ammoW * 0.5f,
+                                   uiScreenH() * 0.5f - cs * 1.1f,
+                                   0.34f, {1.0f, 0.82f, 0.3f, 1.0f});
+                    }
+                }
+                // Draw healthbars for all actors
+                for (const auto& kv : replayActorModels) {
+                    if (!kv.second || kv.second->dead) continue;
+                    drawPlayerHealthbar(*kv.second, camera, "replay-hp");
+                }
+                // Seek bar
+                if (totalTicks > 0) {
+                    const float barX = rOverlayX;
+                    const float barY = rOverlayY + 118.0f;
+                    const float barW = 340.0f;
+                    const float barH = 8.0f;
+                    uiDrawRect({barX, barY, barW, barH}, {0.3f, 0.3f, 0.3f, 0.8f}, "seek-bg");
+                    float progress = (float)gReplayPlayer.currentTick() / (float)totalTicks;
+                    uiDrawRect({barX, barY, barW * progress, barH}, {0.9f, 0.9f, 0.3f, 1.0f}, "seek-fill");
+                }
+            } else if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
                 const char* crosshairPath = "assets/crosshair/crosshairready.png";
                 switch (weapons.crosshairState(player)) {
                     case WeaponCrosshairState::Reloading:
@@ -2459,6 +2875,22 @@ int main(int argc, char** argv)
             }
             for (const Npc& npc : npcSystem.all())
                 drawPlayerHealthbar(npc.body, camera, "npc-hp");
+
+            renderChatBubbles(player.chatState, player, camera);
+            if (!replayPlaybackActive)
+            {
+                for (auto& kv : mpContext.remotePlayers)
+                    renderChatBubbles(kv.second.chatState, kv.second, camera);
+            }
+            else
+            {
+                for (const auto& kv : gReplayChatStates)
+                {
+                    auto actorIt = replayActorModels.find(kv.first);
+                    if (actorIt != replayActorModels.end() && actorIt->second)
+                        renderChatBubbles(kv.second, *actorIt->second, camera);
+                }
+            }
 
             if (mpContext.active)
             {

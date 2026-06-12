@@ -170,7 +170,6 @@ public:
     void beginPlayback();
     void stopPlayback();
     bool isPlaying() const { return mPlaying; }
-    bool isPaused() const { return mPaused; }
     void pause();
     void resume();
     void update(float dt);
@@ -182,6 +181,10 @@ public:
     std::vector<ReplaySoundEvent> takeTriggeredSounds();
     const std::string& killerId() const { return mClip.killerId; }
     const std::string& victimId() const { return mClip.victimId; }
+    bool isPaused() const { return mPaused; }
+    const std::string& outfitPath() const { return mOutfitPath; }
+    void setOutfitPath(const std::string& path) { mOutfitPath = path; }
+    size_t totalEffectCount() const { return mClip.sceneFrames.empty() ? 0 : mClip.soundEvents.size(); }
 
     bool getFrameAt(uint32_t tick, InputFrame& out) const;
     const InputFrame* advanceTick();
@@ -191,6 +194,8 @@ public:
     uint32_t totalTicks() const { return mHeader.tickCount; }
 
     const ReplayHeader& header() const { return mHeader; }
+    const std::vector<ReplayAsset>& assets() const { return mAssets; }
+    bool preloadAssets();
 
 private:
     bool mPlaying = false;
@@ -206,6 +211,8 @@ private:
     std::vector<ReplayEffectEvent> mTriggeredEffects;
     std::vector<ReplaySoundEvent> mTriggeredSounds;
     ReplayCameraController mCameraController;
+    std::string mOutfitPath;
+    std::vector<ReplayAsset> mAssets;
 };
 
 class ReplayClipSaver {
