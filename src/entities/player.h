@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include "map/map_common.h"
 #include "physics/physics-types.h"
+#include "gui/hud/chat-bubble.h"
 
 #include "combat/weapon-types.h"
 
@@ -318,6 +319,9 @@ public:
 
     // -------- Combat --------
     void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);
+
+    // -------- Chat Bubble State --------
+    ActorChatState chatState;
 };
 
 // Upload mesh to shared body-part VAO for ragdoll rendering

@@ -118,6 +118,12 @@ struct MultiplayerContext
     uint64_t lastFakeLagLogMs = 0;
     std::vector<QueuedPacket> outgoingQueue;
     std::vector<NetworkShotEvent> shotEvents;
+    struct IncomingChatMessage
+    {
+        std::string senderName;
+        std::string text;
+    };
+    std::vector<IncomingChatMessage> incomingChatMessages;
     std::unordered_map<uint32_t, uint32_t> lastReceivedShotSerial;
     uint32_t nextLocalShotSerial = 1;
     uint64_t lastPingSentMs = 0;

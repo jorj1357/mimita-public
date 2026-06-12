@@ -175,7 +175,7 @@ bool AudioManager::debug() const { return gSoundDebug; }
 void AudioManager::play(const AudioEvent& event)
 {
     ReplaySoundEvent replayEvent;
-    replayEvent.soundPath = soundPath(event.name);
+    replayEvent.soundPath = event.name;
     replayEvent.world = event.world;
     replayEvent.position = event.position;
     replayEvent.volume = event.volume;

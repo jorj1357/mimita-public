@@ -7,6 +7,7 @@
 #include "replay.h"
 
 #include <cstdio>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <chrono>
@@ -88,11 +89,15 @@ ReplayActorState parseActor(const json& value)
     actor.type = value.value("type", "");
     actor.modelPath = value.value("modelPath", "");
     actor.weaponModelPath = value.value("weaponModelPath", "");
+    actor.outfitPath = value.value("outfitPath", "");
     actor.position = jsonVec3(value.value("position", json::array()));
     actor.rotation = jsonVec3(value.value("rotation", json::array()));
     actor.velocity = jsonVec3(value.value("velocity", json::array()));
     actor.health = value.value("health", 100);
     actor.maxHealth = value.value("maxHealth", 100);
+    actor.currentAmmo = value.value("currentAmmo", 0);
+    actor.reserveAmmo = value.value("reserveAmmo", 0);
+    actor.dead = value.value("dead", false);
     actor.shooting = value.value("shooting", false);
     actor.reloading = value.value("reloading", false);
     actor.grounded = value.value("grounded", false);
@@ -119,9 +124,12 @@ json actorJson(const ReplayActorState& actor)
     json value = {
         {"id", actor.id}, {"name", actor.name}, {"type", actor.type},
         {"modelPath", actor.modelPath}, {"weaponModelPath", actor.weaponModelPath},
+        {"outfitPath", actor.outfitPath},
         {"position", vec3Json(actor.position)}, {"rotation", vec3Json(actor.rotation)},
         {"velocity", vec3Json(actor.velocity)}, {"health", actor.health},
-        {"maxHealth", actor.maxHealth}, {"shooting", actor.shooting},
+        {"maxHealth", actor.maxHealth}, {"currentAmmo", actor.currentAmmo},
+        {"reserveAmmo", actor.reserveAmmo}, {"dead", actor.dead},
+        {"shooting", actor.shooting},
         {"reloading", actor.reloading}, {"grounded", actor.grounded},
         {"collidable", actor.collidable}, {"fade", actor.fade},
         {"blackness", actor.blackness}, {"weaponName", actor.weaponName},
@@ -366,18 +374,20 @@ std::vector<std::string> listReplayClips()
 {
     std::vector<std::pair<std::filesystem::file_time_type, std::string>> found;
     std::error_code ec;
-    const std::filesystem::path directory =
-        std::filesystem::path("replays") / "clips";
-    if (!std::filesystem::exists(directory, ec))
+    const std::filesystem::path baseDir = std::filesystem::path("replays");
+    if (!std::filesystem::exists(baseDir, ec))
         return {};
 
-    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+    // Search recursively through all replay subdirectories (e.g. replays/06-12-2026/)
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(baseDir, ec)) {
         if (ec || !entry.is_regular_file())
             continue;
         const std::string name = entry.path().filename().string();
-        if (name.size() < 11 || name.rfind(".mclip.json") != name.size() - 11)
-            continue;
-        found.push_back({entry.last_write_time(ec), entry.path().string()});
+        // Match .json replay files (full replays) and .mclip.json clips
+        if ((name.size() > 5 && name.rfind(".json") == name.size() - 5) ||
+            (name.size() > 11 && name.rfind(".mclip.json") == name.size() - 11)) {
+            found.push_back({entry.last_write_time(ec), entry.path().string()});
+        }
     }
     std::sort(found.begin(), found.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
@@ -874,6 +884,7 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             a["type"] = actor.type;
             a["modelPath"] = actor.modelPath;
             a["weaponModelPath"] = actor.weaponModelPath;
+            a["outfitPath"] = actor.outfitPath;
 
             a["position"] = {
                 actor.position.x,
@@ -895,6 +906,9 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
 
             a["health"] = actor.health;
             a["maxHealth"] = actor.maxHealth;
+            a["currentAmmo"] = actor.currentAmmo;
+            a["reserveAmmo"] = actor.reserveAmmo;
+            a["dead"] = actor.dead;
             a["weaponName"] = actor.weaponName;
             a["shooting"] = actor.shooting;
             a["reloading"] = actor.reloading;
@@ -1001,6 +1015,7 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         mCurrentTick = 0;
         mPlaybackTick = 0.0f;
         mLastEventTick = -1;
+        mOutfitPath.clear();
         printf("[REPLAY] Loaded %zu scene frames from %s\n",
                mClip.sceneFrames.size(), path.c_str());
         return true;
@@ -1027,6 +1042,30 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         std::string playerName = h.value("playerName", "");
         std::strncpy(mHeader.playerName, playerName.c_str(), sizeof(mHeader.playerName) - 1);
 
+        // Store assets for preload
+        mAssets.clear();
+        if (j.contains("assets")) {
+            for (const auto& jsonAsset : j["assets"]) {
+                ReplayAsset asset;
+                asset.id = jsonAsset.value("id", "");
+                asset.type = jsonAsset.value("type", "");
+                asset.path = jsonAsset.value("path", "");
+                asset.shaderName = jsonAsset.value("shader", "");
+                asset.source = jsonAsset.value("source", "");
+                mAssets.push_back(asset);
+            }
+        }
+
+        // Extract outfit path from assets
+        mOutfitPath.clear();
+        for (const ReplayAsset& asset : mAssets) {
+            if (asset.id.find("outfit") != std::string::npos) {
+                mOutfitPath = asset.path;
+                printf("[REPLAY] Restoring outfit: %s\n", mOutfitPath.c_str());
+                break;
+            }
+        }
+
         mFrames.clear();
         for (const auto& f : j["frames"]) {
             ReplayFrame rf;
@@ -1044,6 +1083,104 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
             rf.inputs.lookYaw = f.value("lookYaw", 0.0f);
             rf.inputs.lookPitch = f.value("lookPitch", 0.0f);
             mFrames.push_back(rf);
+        }
+
+        // Load scene frames (actor positions, camera, etc.)
+        mClip.sceneFrames.clear();
+        if (j.contains("sceneFrames")) {
+            for (const auto& sf : j["sceneFrames"]) {
+                ReplaySceneFrame frame;
+                frame.tick = sf.value("tick", 0);
+                frame.time = sf.value("time", 0.0f);
+                frame.camera.position = {
+                    sf["camera"].value("position", std::vector<float>{0,0,0})[0],
+                    sf["camera"].value("position", std::vector<float>{0,0,0})[1],
+                    sf["camera"].value("position", std::vector<float>{0,0,0})[2]
+                };
+                frame.camera.rotation = {
+                    sf["camera"].value("rotation", std::vector<float>{0,0,0})[0],
+                    sf["camera"].value("rotation", std::vector<float>{0,0,0})[1],
+                    sf["camera"].value("rotation", std::vector<float>{0,0,0})[2]
+                };
+                frame.camera.fov = sf["camera"].value("fov", 70.0f);
+                // Load actors
+                if (sf.contains("actors")) {
+                    for (const auto& a : sf["actors"]) {
+                        ReplayActorState actor;
+                        actor.id = a.value("id", "");
+                        actor.name = a.value("name", "");
+                        actor.type = a.value("type", "");
+                        actor.modelPath = a.value("modelPath", "");
+                        actor.position = {
+                            a.value("position", std::vector<float>{0,0,0})[0],
+                            a.value("position", std::vector<float>{0,0,0})[1],
+                            a.value("position", std::vector<float>{0,0,0})[2]
+                        };
+                        actor.rotation = {
+                            a.value("rotation", std::vector<float>{0,0,0})[0],
+                            a.value("rotation", std::vector<float>{0,0,0})[1],
+                            a.value("rotation", std::vector<float>{0,0,0})[2]
+                        };
+                        actor.velocity = {
+                            a.value("velocity", std::vector<float>{0,0,0})[0],
+                            a.value("velocity", std::vector<float>{0,0,0})[1],
+                            a.value("velocity", std::vector<float>{0,0,0})[2]
+                        };
+                        actor.health = a.value("health", 100);
+                        actor.maxHealth = a.value("maxHealth", 100);
+                        actor.currentAmmo = a.value("currentAmmo", 0);
+                        actor.reserveAmmo = a.value("reserveAmmo", 0);
+                        actor.dead = a.value("dead", false);
+                        actor.outfitPath = a.value("outfitPath", "");
+                        actor.weaponName = a.value("weaponName", "");
+                        actor.weaponModelPath = a.value("weaponModelPath", "");
+                        actor.shooting = a.value("shooting", false);
+                        actor.reloading = a.value("reloading", false);
+                        actor.grounded = a.value("grounded", true);
+                        // Load body parts
+                        if (a.contains("bodyParts")) {
+                            for (auto& bp : a["bodyParts"].items()) {
+                                ReplayBodyPartState part;
+                                part.name = bp.key();
+                                if (bp.value().contains("position")) {
+                                    auto& p = bp.value()["position"];
+                                    part.position = {p[0].get<float>(), p[1].get<float>(), p[2].get<float>()};
+                                }
+                                if (bp.value().contains("rotation")) {
+                                    auto& r = bp.value()["rotation"];
+                                    part.rotation = {r[0].get<float>(), r[1].get<float>(), r[2].get<float>()};
+                                }
+                                if (bp.value().contains("scale")) {
+                                    auto& s = bp.value()["scale"];
+                                    part.scale = {s[0].get<float>(), s[1].get<float>(), s[2].get<float>()};
+                                }
+                                actor.bodyParts.push_back(part);
+                            }
+                        }
+                        frame.actors.push_back(actor);
+                    }
+                }
+                mClip.sceneFrames.push_back(frame);
+            }
+            printf("[REPLAY] Loaded %zu scene frames\n", mClip.sceneFrames.size());
+        }
+
+        // Load sound events
+        mClip.soundEvents.clear();
+        if (j.contains("soundEvents")) {
+            for (const auto& se : j["soundEvents"]) {
+                ReplaySoundEvent sound;
+                sound.tick = se.value("tick", 0);
+                sound.soundPath = se.value("soundPath", "");
+                sound.world = se.value("world", false);
+                std::vector<float> pos = se.value("position", std::vector<float>{0,0,0});
+                sound.position = {pos[0], pos[1], pos[2]};
+                sound.volume = se.value("volume", 1.0f);
+                sound.pitch = se.value("pitch", 1.0f);
+                sound.maxDistance = se.value("maxDistance", 30.0f);
+                mClip.soundEvents.push_back(sound);
+            }
+            printf("[REPLAY] Loaded %zu sound events\n", mClip.soundEvents.size());
         }
 
         printf("[REPLAY] Loaded %zu frames from %s\n", mFrames.size(), path.c_str());
@@ -1075,6 +1212,59 @@ bool ReplayPlayer::loadFromBinary(const std::string& path) {
 
     printf("[REPLAY] Loaded %zu frames (binary) from %s\n", mFrames.size(), path.c_str());
     return true;
+}
+
+bool ReplayPlayer::preloadAssets()
+{
+    printf("[REPLAY] Preloading assets...\n");
+    bool allOk = true;
+
+    std::vector<std::string> requiredModels;
+
+    // Collect all unique model/weapon paths from actors
+    for (const ReplaySceneFrame& frame : mClip.sceneFrames) {
+        for (const ReplayActorState& actor : frame.actors) {
+            if (!actor.modelPath.empty())
+                requiredModels.push_back(actor.modelPath);
+            if (!actor.weaponModelPath.empty())
+                requiredModels.push_back(actor.weaponModelPath);
+        }
+    }
+
+    // Deduplicate
+    std::sort(requiredModels.begin(), requiredModels.end());
+    requiredModels.erase(std::unique(requiredModels.begin(), requiredModels.end()),
+                         requiredModels.end());
+
+    for (const std::string& modelPath : requiredModels) {
+        if (!std::filesystem::exists(modelPath)) {
+            printf("[REPLAY] MISSING ASSET: %s\n", modelPath.c_str());
+            allOk = false;
+        } else {
+            printf("[REPLAY] Found asset: %s\n", modelPath.c_str());
+        }
+    }
+
+    // Check outfit texture
+    if (!mOutfitPath.empty()) {
+        if (!std::filesystem::exists(mOutfitPath)) {
+            printf("[REPLAY] MISSING OUTFIT: %s\n", mOutfitPath.c_str());
+        } else {
+            printf("[REPLAY] Found outfit: %s\n", mOutfitPath.c_str());
+        }
+    }
+
+    // Check all registered assets
+    for (const ReplayAsset& asset : mAssets) {
+        if (!asset.path.empty() && !std::filesystem::exists(asset.path)) {
+            printf("[REPLAY] MISSING ASSET from registry: %s (%s)\n",
+                   asset.path.c_str(), asset.id.c_str());
+        }
+    }
+
+    printf("[REPLAY] Asset preload complete %s\n",
+           allOk ? "ALL OK" : "SOME MISSING");
+    return allOk;
 }
 
 void ReplayPlayer::beginPlayback() {
@@ -1145,6 +1335,9 @@ ReplayActorState mixActor(
     result.collidable = t < 0.5f ? a.collidable : b.collidable;
     result.weaponName = t < 0.5f ? a.weaponName : b.weaponName;
     result.weaponModelPath = t < 0.5f ? a.weaponModelPath : b.weaponModelPath;
+    result.currentAmmo = t < 0.5f ? a.currentAmmo : b.currentAmmo;
+    result.reserveAmmo = t < 0.5f ? a.reserveAmmo : b.reserveAmmo;
+    result.dead = t < 0.5f ? a.dead : b.dead;
     for (ReplayBodyPartState& part : result.bodyParts) {
         auto it = std::find_if(
             b.bodyParts.begin(), b.bodyParts.end(),
@@ -1165,6 +1358,19 @@ void ReplayPlayer::update(float dt)
 
     const int previousTick = (int)std::floor(mPlaybackTick);
     mPlaybackTick += dt * (float)std::max(mHeader.tickRate, 1u) * mTimescale;
+    {   static float logTimer = 0.0f; logTimer -= dt;
+        if (logTimer <= 0.0f) { logTimer = 1.0f;
+            auto* frame = currentSceneFrame();
+            printf("[REPLAY] time=%.2f tick=%.1f frame=%d cameraPos=(%.1f %.1f %.1f) actorCount=%zu sceneFrames=%zu\n",
+                   mPlaybackTick / (float)std::max(mHeader.tickRate, 1u),
+                   mPlaybackTick, frame ? frame->tick : -1,
+                   frame ? frame->camera.position.x : 0.0f,
+                   frame ? frame->camera.position.y : 0.0f,
+                   frame ? frame->camera.position.z : 0.0f,
+                   frame ? frame->actors.size() : 0,
+                   mClip.sceneFrames.size());
+        }
+    }
     const int lastTick = mClip.sceneFrames.back().tick;
     if (mPlaybackTick > (float)lastTick) {
         mPlaybackTick = (float)lastTick;
@@ -1302,8 +1508,16 @@ void ReplayCameraController::update(
     const std::string& killerId, const std::string& victimId, float dt)
 {
     camera.fov = mFov > 0.0f ? mFov : frame.camera.fov;
-    if (mMode == ReplayCameraMode::Freecam)
+    if (mMode == ReplayCameraMode::Freecam) {
+        // Freecam: don't touch camera position/rotation/yaw/pitch.
+        // WASD + mouse are handled by the main loop's freecam section.
+        // Log once to verify freecam is actually active
+        static bool logged = false;
+        if (!logged) { logged = true;
+            printf("[REPLAY FREECAM] active - camera fully detached from replay\n");
+        }
         return;
+    }
     if (mMode == ReplayCameraMode::FirstPerson) {
         const ReplayActorState* killer = findActor(frame, killerId);
         camera.pos = killer
