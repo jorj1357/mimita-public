@@ -1,14 +1,18 @@
 """Import a Mimita cinematic replay JSON into Blender."""
 
+import argparse
 import json
 import math
 import os
+import sys
 from pathlib import Path
 
 import bpy
 from mathutils import Vector, Euler, Matrix
 
-# MAX_FRAMES = 1000
+# MAX_FRAMES = 100000
+# 6 11 2026 note keep at like 250 bc higher frames makes longer import times and 
+# wanting to do testing fast 
 MAX_FRAMES = 250
 
 IMPORT_EFFECTS = True
@@ -16,8 +20,9 @@ IMPORT_SOUNDS = True
 IMPORT_WEAPONS = True
 IMPORT_NPCS = True
 
-# IMPORT_MAP = True
-IMPORT_MAP = False
+# todo fix bc tiss doesnt work 6 11 2026
+IMPORT_MAP = True
+# IMPORT_MAP = False
 IMPORT_PLAYER = True
 
 # Set >1 for sparse keyframes (e.g. 10 = 1 blender keyframe per 10 game ticks).
@@ -35,6 +40,9 @@ DEFAULT_WEAPON_PATH_GLOBAL = None
 SEEN_EFFECTS = set()
 EFFECT_SERIAL = 0
 MAX_TICK = 0
+REPLAY_PATH_GLOBAL = None
+VALIDATION_DATA_GLOBAL = None
+VALIDATION_REPORT_PATH_GLOBAL = None
 
 SHARED_SPHERE_MESH = None
 SHARED_CYLINDER_MESH = None
@@ -50,7 +58,7 @@ def snap_tick_to_keyframe(tick, interval):
 
 
 REPLAY_JSON_PATH = (
-    r"C:\important\mimita-priv-v8\replays\06-11-2026\19-01-19-replay.json"
+    r"C:\important\mimita-priv-v8\replays\06-11-2026\20-22-20-replay.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if not (REPO_ROOT / "assets").is_dir():
@@ -66,10 +74,21 @@ COLLECTION_NAMES = (
     "Mimita_SourceCache",
 )
 
+IMPORT_RUNNING = False
 GLB_CACHE = {}
 ACTORS = {}
 WEAPONS = {}
+ACTOR_WEAPONS = {}
 ASSETS_BY_ID = {}
+
+
+def parse_runtime_args():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--replay")
+    parser.add_argument("--validation")
+    parser.add_argument("--validation-report")
+    args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    return parser.parse_args(args)
 
 
 def log(message):
@@ -258,6 +277,270 @@ def game_rotation_to_glb(game_euler):
     return glb_mat.to_euler('XYZ')
 
 
+def glb_position_to_game(position):
+    converted = Vector(position)
+    converted.rotate(Euler((math.radians(-90.0), 0.0, 0.0)))
+    return converted
+
+
+def glb_rotation_to_game(rotation_matrix):
+    conversion = Euler((math.radians(90.0), 0.0, 0.0)).to_matrix()
+    inverse = Euler((math.radians(-90.0), 0.0, 0.0)).to_matrix()
+    return inverse @ rotation_matrix @ conversion
+
+
+def rotation_error_degrees(expected_degrees, actual_matrix):
+    expected = Euler(
+        tuple(math.radians(value) for value in expected_degrees),
+        "XYZ",
+    ).to_quaternion()
+    actual = actual_matrix.to_quaternion()
+    difference = expected.rotation_difference(actual)
+    angle = math.degrees(difference.angle) % 360.0
+    return min(angle, 360.0 - angle)
+
+
+def validation_part_object(actor_record, part_name):
+    normalized = normalized_name(part_name)
+    target = actor_record["part_lookup"].get(normalized)
+    if target is not None:
+        return target
+    return next(
+        (
+            part
+            for candidate, part in actor_record["part_lookup"].items()
+            if normalized in candidate or candidate in normalized
+        ),
+        None,
+    )
+
+
+def validation_output_paths(replay_path, requested_report_path):
+    if requested_report_path:
+        json_path = Path(requested_report_path)
+    else:
+        json_path = replay_path.with_name(
+            replay_path.stem + "-validation-report.json"
+        )
+    text_path = json_path.with_suffix(".txt")
+    return json_path, text_path
+
+
+def validate_replay(validation, replay_path, requested_report_path=None):
+    thresholds = validation.get("thresholds", {})
+    position_threshold = float(thresholds.get("positionMeters", 0.05))
+    rotation_threshold = float(thresholds.get("rotationDegrees", 5.0))
+    game_fps = int(validation.get("tickRate", 60))
+    scene = bpy.context.scene
+    blender_fps = scene.render.fps / max(scene.render.fps_base, 1.0)
+
+    samples = []
+    aggregates = {}
+
+    def record_sample(
+        actor_id,
+        part_name,
+        tick,
+        position_error=None,
+        rotation_error=None,
+        missing=None,
+    ):
+        passed = (
+            missing is None
+            and position_error is not None
+            and rotation_error is not None
+            and position_error < position_threshold
+            and rotation_error < rotation_threshold
+        )
+        sample = {
+            "actor": actor_id,
+            "part": part_name,
+            "tick": tick,
+            "positionErrorMeters": position_error,
+            "rotationErrorDegrees": rotation_error,
+            "missing": missing,
+            "pass": passed,
+        }
+        samples.append(sample)
+
+        key = (actor_id, part_name)
+        aggregate = aggregates.setdefault(
+            key,
+            {
+                "actor": actor_id,
+                "part": part_name,
+                "sampleCount": 0,
+                "failureCount": 0,
+                "maxPositionErrorMeters": 0.0,
+                "maxRotationErrorDegrees": 0.0,
+                "worstPositionTick": None,
+                "worstRotationTick": None,
+                "missing": set(),
+            },
+        )
+        aggregate["sampleCount"] += 1
+        if not passed:
+            aggregate["failureCount"] += 1
+        if missing:
+            aggregate["missing"].add(missing)
+        if position_error is not None and (
+            aggregate["worstPositionTick"] is None
+            or position_error > aggregate["maxPositionErrorMeters"]
+        ):
+            aggregate["maxPositionErrorMeters"] = position_error
+            aggregate["worstPositionTick"] = tick
+        if rotation_error is not None and (
+            aggregate["worstRotationTick"] is None
+            or rotation_error > aggregate["maxRotationErrorDegrees"]
+        ):
+            aggregate["maxRotationErrorDegrees"] = rotation_error
+            aggregate["worstRotationTick"] = tick
+
+    for validation_frame in validation.get("frames", []):
+        tick = int(validation_frame.get("tick", 0))
+        if tick % KEYFRAME_EVERY_N_TICKS != 0:
+            continue
+        blender_frame = max(
+            1, int(tick * (blender_fps / float(max(game_fps, 1)))) + 1
+        )
+        scene.frame_set(blender_frame)
+        bpy.context.view_layer.update()
+
+        for expected_actor in validation_frame.get("actors", []):
+            actor_id = str(expected_actor.get("id", "unknown"))
+            actor_record = ACTORS.get(actor_id)
+            expected_parts = [("Root", expected_actor.get("root", {}))]
+            expected_parts.extend(
+                expected_actor.get("bodyParts", {}).items()
+            )
+
+            if actor_record is None:
+                for part_name, _ in expected_parts:
+                    record_sample(
+                        actor_id, part_name, tick, missing="actor"
+                    )
+                continue
+
+            for part_name, expected in expected_parts:
+                if part_name == "Root":
+                    target = actor_record.get("root")
+                else:
+                    target = validation_part_object(actor_record, part_name)
+                if target is None:
+                    record_sample(
+                        actor_id, part_name, tick, missing="part"
+                    )
+                    continue
+
+                actual_position = glb_position_to_game(target.location)
+                actual_rotation = glb_rotation_to_game(
+                    target.rotation_euler.to_matrix()
+                )
+                expected_position = Vector(
+                    expected.get("position", (0.0, 0.0, 0.0))
+                )
+                expected_rotation = expected.get(
+                    "rotation", (0.0, 0.0, 0.0)
+                )
+                record_sample(
+                    actor_id,
+                    part_name,
+                    tick,
+                    (expected_position - actual_position).length,
+                    rotation_error_degrees(
+                        expected_rotation, actual_rotation
+                    ),
+                )
+
+    aggregate_rows = []
+    for aggregate in aggregates.values():
+        row = dict(aggregate)
+        row["missing"] = sorted(row["missing"])
+        row["pass"] = row["failureCount"] == 0
+        aggregate_rows.append(row)
+    aggregate_rows.sort(key=lambda row: (row["actor"], row["part"]))
+
+    passed_parts = [
+        f'{row["actor"]}.{row["part"]}'
+        for row in aggregate_rows if row["pass"]
+    ]
+    failed_parts = [
+        f'{row["actor"]}.{row["part"]}'
+        for row in aggregate_rows if not row["pass"]
+    ]
+    largest_position = max(
+        (row["maxPositionErrorMeters"] for row in aggregate_rows),
+        default=0.0,
+    )
+    largest_rotation = max(
+        (row["maxRotationErrorDegrees"] for row in aggregate_rows),
+        default=0.0,
+    )
+    overall_pass = bool(aggregate_rows) and not failed_parts
+
+    report = {
+        "schemaVersion": 1,
+        "sourceReplay": str(replay_path),
+        "sourceValidation": validation.get("sourceReplay", ""),
+        "thresholds": {
+            "positionMeters": position_threshold,
+            "rotationDegrees": rotation_threshold,
+        },
+        "pass": overall_pass,
+        "summary": {
+            "sampleCount": len(samples),
+            "partCount": len(aggregate_rows),
+            "passedParts": passed_parts,
+            "failedParts": failed_parts,
+            "largestPositionErrorMeters": largest_position,
+            "largestRotationErrorDegrees": largest_rotation,
+        },
+        "parts": aggregate_rows,
+        "samples": samples,
+    }
+
+    lines = ["[VALIDATION]"]
+    current_actor = None
+    for row in aggregate_rows:
+        if row["actor"] != current_actor:
+            current_actor = row["actor"]
+            lines.extend(["", f"Actor: {current_actor}"])
+        status = "PASS" if row["pass"] else "FAIL"
+        lines.append(
+            f'{row["part"]}: Position Error = '
+            f'{row["maxPositionErrorMeters"]:.6f}m '
+            f'(tick {row["worstPositionTick"]}), Rotation Error = '
+            f'{row["maxRotationErrorDegrees"]:.6f} deg '
+            f'(tick {row["worstRotationTick"]}) [{status}]'
+        )
+        if row["missing"]:
+            lines.append(f'  Missing: {", ".join(row["missing"])}')
+    lines.extend(
+        [
+            "",
+            "====================",
+            "REPLAY VALIDATION",
+            "====================",
+            f'Overall: {"PASS" if overall_pass else "FAIL"}',
+            f'PASS: {", ".join(passed_parts) if passed_parts else "none"}',
+            f'FAIL: {", ".join(failed_parts) if failed_parts else "none"}',
+            f"Largest Position Error: {largest_position:.6f}m",
+            f"Largest Rotation Error: {largest_rotation:.6f} deg",
+        ]
+    )
+
+    json_path, text_path = validation_output_paths(
+        replay_path, requested_report_path
+    )
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    text_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    log(f"Validation JSON: {json_path}")
+    log(f"Validation text: {text_path}")
+    return report
+
+
 def keyframe_transform(obj, frame):
     obj.keyframe_insert(data_path="location", frame=frame)
     obj.keyframe_insert(data_path="rotation_euler", frame=frame)
@@ -271,6 +554,24 @@ def keyframe_visibility(obj, frame, visible):
     obj.hide_render = not visible
     obj.keyframe_insert(data_path="hide_viewport", frame=frame)
     obj.keyframe_insert(data_path="hide_render", frame=frame)
+
+
+def animation_summary(obj):
+    action = (
+        obj.animation_data.action
+        if obj and obj.animation_data and obj.animation_data.action
+        else None
+    )
+    if action is None:
+        return "NONE", 0, 0
+    fcurves = getattr(action, "fcurves", None)
+    if fcurves is None:
+        return action.name, -1, -1
+    return (
+        action.name,
+        len(fcurves),
+        sum(len(curve.keyframe_points) for curve in fcurves),
+    )
 
 
 def find_asset(predicate):
@@ -442,32 +743,42 @@ def ensure_actor(actor_state, outfit_path):
 
 
 def ensure_weapon(actor_id, actor_record, weapon_path):
-    if actor_id in WEAPONS:
-        return WEAPONS[actor_id]
-    if weapon_path:
+    if not weapon_path:
+        return None
+    weapon_key = f"{actor_id}:{weapon_path}"
+    if weapon_key in WEAPONS:
+        return WEAPONS[weapon_key]
+
+    resolved_path = resolve_path(weapon_path)
+    if resolved_path is None:
+        print(f"[WEAPON MISSING] actor={actor_id} path={weapon_path}")
+        # Create a correction empty as parent so code below doesn't crash
+        weapon_correction = create_empty(f"{actor_id}_weapon_missing", bpy.data.collections["Mimita_Weapons"])
+        wpn_placeholder, _ = create_placeholder(f"{actor_id}_missing_weapon", bpy.data.collections["Mimita_Weapons"])
+        weapon_root = wpn_placeholder
+        parts = []
+    else:
+        weapon_name = os.path.basename(weapon_path).replace('.glb', '')
         weapon_correction, weapon_root, parts = duplicate_glb(
-            weapon_path,
-            f"{actor_id}_revolver",
+            str(resolved_path),
+            f"{actor_id}_{weapon_name}",
             bpy.data.collections["Mimita_Weapons"],
         )
-    else:
-        weapon_correction, weapon_root, parts = None, None, []
-    if weapon_root is None:
-        weapon_correction, weapon_root, parts = None, *create_placeholder(
-            f"{actor_id}_revolver", bpy.data.collections["Mimita_Weapons"]
-        )
+        if weapon_root is None:
+            weapon_correction = create_empty(f"{actor_id}_{weapon_name}_correction", bpy.data.collections["Mimita_Weapons"])
+            wpn_ph, _ = create_placeholder(f"{actor_id}_{weapon_name}", bpy.data.collections["Mimita_Weapons"])
+            weapon_root = wpn_ph
+            parts = []
 
     right_hand = find_right_hand(actor_record["parts"])
     weapon_correction.parent = right_hand or actor_record["root"]
     weapon_correction.location = (0.0, 0.0, 0.0) if right_hand else (0.35, 0.0, 0.9)
     weapon_correction.rotation_euler = (0.0, 0.0, 0.0)
     weapon_correction.scale = (1.0, 1.0, 1.0)
-    WEAPONS[actor_id] = {"root": weapon_correction, "parts": parts}
-    log(
-        f"Attached revolver for {actor_id} to "
-        f"{right_hand.name if right_hand else 'actor root fallback'}"
-    )
-    return WEAPONS[actor_id]
+    record = {"root": weapon_correction, "parts": parts}
+    WEAPONS[weapon_key] = record
+    print(f"[WEAPON CREATED] actor={actor_id} path={weapon_path}")
+    return record
 
 
 def apply_limb_transforms(actor_record, actor_state, frame):
@@ -512,11 +823,6 @@ def apply_limb_transforms(actor_record, actor_state, frame):
             rot = transform.get("rotation", (0.0, 0.0, 0.0))
             game_euler = Euler((math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])))
             glb_euler = game_rotation_to_glb(game_euler)
-            # TEST
-            glb_euler.rotate_axis(
-                'X',
-                math.radians(-45.0)
-            )
             # Debug: print limb transforms at frame 0
             if frame <= 1:
                 print(f"[LIMB] name={name}")
@@ -648,12 +954,15 @@ def create_effect(effect, fps, serial, snapped_tick=None):
             "cylinder", f"Blood_{serial}", collection, position, initial_scale, shared=True
         )
         obj.scale.z = min(obj.scale.z, 0.025)
-        rotation = effect.get("rotation", (0.0, 0.0, 0.0))
-        obj.rotation_euler = tuple(math.radians(value) for value in rotation)
-        # Blood decal cylinders are oriented along Z by default; game records
-        # surface normals expecting the decal to lie flat. A -90° local X
-        # rotation aligns the cylinder's flat face with the surface.
-        obj.rotation_euler.rotate_axis("X", math.radians(-90.0))
+        # Orient cylinder along surface normal: game exports the contact normal,
+        # and the cylinder should lie flat on that surface. Track Z to normal,
+        # then add random spin around normal from rotation field.
+        normal = Vector(effect.get("normal", (0.0, 0.0, 1.0)))
+        if normal.length > 0.001:
+            obj.rotation_euler = normal.to_track_quat('Z').to_euler()
+        rot_spin = effect.get("rotation", (0.0, 0.0, 0.0))
+        if isinstance(rot_spin, (list, tuple)) and len(rot_spin) >= 3:
+            obj.rotation_euler.rotate_axis("Z", math.radians(rot_spin[2]))
         obj.data.materials.append(
             material_with_color(f"Mimita_Blood_{serial}", event_color)
         )
@@ -748,13 +1057,14 @@ def safe_load_sound(sound_path):
         return None
 
 
-def import_sounds(sound_events, snap_interval=1):
+def import_sounds(sound_events, snap_interval=1, game_fps=60):
     missing_sounds = []
     loaded_count = 0
     scene = bpy.context.scene
     if scene.sequence_editor is None:
         scene.sequence_editor_create()
     sequences = scene.sequence_editor.strips
+    blender_fps = scene.render.fps / max(scene.render.fps_base, 1.0)
     for index, event in enumerate(sound_events):
         raw_tick = int(event.get("tick", 0))
         raw_path = event.get("soundPath", "")
@@ -763,11 +1073,12 @@ def import_sounds(sound_events, snap_interval=1):
         sound = safe_load_sound(raw_path) if raw_path else None
         if sound is None:
             missing_sounds.append(raw_path or event.get("assetId", "unknown"))
-            log(f"Sound not found at frame {raw_tick}: {raw_path}")
+            log(f"Sound not found at tick {raw_tick}: {raw_path}")
             continue
         if snap_interval > 1:
             raw_tick = snap_tick_to_keyframe(raw_tick, snap_interval)
-        frame = raw_tick + 1
+        # Convert game tick to Blender frame: game 60fps → blender fps
+        frame = int(raw_tick * (blender_fps / float(game_fps))) + 1
         label = os.path.basename(raw_path) if raw_path else "sound"
         try:
             strip = sequences.new_sound(
@@ -856,12 +1167,38 @@ def main():
     global CAMERA_GLOBAL
     global OUTFIT_PATH_GLOBAL
     global DEFAULT_WEAPON_PATH_GLOBAL
-    replay_path = resolve_path(REPLAY_JSON_PATH)
+    global REPLAY_PATH_GLOBAL
+    global VALIDATION_DATA_GLOBAL
+    global VALIDATION_REPORT_PATH_GLOBAL
+
+    runtime_args = parse_runtime_args()
+    replay_path = resolve_path(runtime_args.replay or REPLAY_JSON_PATH)
     if replay_path is None:
-        raise FileNotFoundError(REPLAY_JSON_PATH)
+        raise FileNotFoundError(runtime_args.replay or REPLAY_JSON_PATH)
+    REPLAY_PATH_GLOBAL = replay_path
+    VALIDATION_REPORT_PATH_GLOBAL = runtime_args.validation_report
     with replay_path.open("r", encoding="utf-8") as replay_file:
         replay = json.load(replay_file)
     log(f"Loaded replay: {replay_path}")
+
+    validation_path_value = runtime_args.validation
+    if not validation_path_value:
+        validation_path_value = replay.get("validation", {}).get("path")
+    if validation_path_value:
+        validation_path = Path(validation_path_value)
+        if not validation_path.is_absolute():
+            validation_path = replay_path.parent / validation_path
+    else:
+        validation_path = replay_path.with_name(
+            replay_path.stem + "-validation.json"
+        )
+    if validation_path.exists():
+        with validation_path.open("r", encoding="utf-8") as validation_file:
+            VALIDATION_DATA_GLOBAL = json.load(validation_file)
+        log(f"Loaded validation data: {validation_path}")
+    else:
+        VALIDATION_DATA_GLOBAL = None
+        log(f"Validation data not found: {validation_path}")
 
     # Step 1: Print replay structure
     scene_frames_sizes = replay.get("sceneFrames", [])
@@ -891,6 +1228,7 @@ def main():
     GLB_CACHE.clear()
     ACTORS.clear()
     WEAPONS.clear()
+    ACTOR_WEAPONS.clear()
     ASSETS_BY_ID.clear()
     ASSETS_BY_ID.update(
         {
@@ -945,10 +1283,19 @@ def main():
 
     if IMPORT_SOUNDS:
         sound_events = replay.get("soundEvents", [])
-        import_sounds(sound_events, snap_interval=KEYFRAME_EVERY_N_TICKS)
+        import_sounds(sound_events, snap_interval=KEYFRAME_EVERY_N_TICKS, game_fps=60)
         log(f"Processed {len(sound_events)} sound events")
 
-    bpy.app.timers.register(process_import_batch)
+    global IMPORT_RUNNING
+    if IMPORT_RUNNING:
+        log("Import already running — skipping duplicate")
+        return
+    IMPORT_RUNNING = True
+    if bpy.app.background:
+        while process_import_batch() is not None:
+            pass
+    else:
+        bpy.app.timers.register(process_import_batch)
 
 
 def process_import_batch():
@@ -973,7 +1320,7 @@ def process_import_batch():
         # Process actors/camera only on keyframe ticks
         if tick % KEYFRAME_EVERY_N_TICKS == 0:
 
-            frame = tick + 1
+            frame = max(1, int(tick * (scene.render.fps / 60.0)) + 1)
             scene.frame_set(frame)
 
             camera_state = scene_frame.get("camera")
@@ -1019,6 +1366,51 @@ def process_import_batch():
                     frame
                 )
 
+                # Import and track weapon models per actor with visibility keyframes
+                weapon_path = actor_state.get("weaponModelPath", "")
+                weapon_name = actor_state.get("weaponName", "none")
+                actor_weapons = ACTOR_WEAPONS
+                last_path = actor_weapons.get(actor_id, "")
+                current_wpn = None
+                if weapon_path:
+                    if weapon_path != last_path:
+                        if last_path:
+                            old_key = f"{actor_id}:{last_path}"
+                            old_wpn = WEAPONS.get(old_key)
+                            if old_wpn and old_wpn.get("root"):
+                                keyframe_visibility(old_wpn["root"], frame, False)
+                        current_wpn = ensure_weapon(actor_id, actor_record, weapon_path)
+                        if current_wpn and current_wpn.get("root"):
+                            keyframe_visibility(current_wpn["root"], frame, True)
+                        actor_weapons[actor_id] = weapon_path
+                        print(f"[WEAPON IMPORT] actor={actor_id} weapon={weapon_name} path={weapon_path}")
+                    else:
+                        # Same weapon as last frame — keep visible
+                        wpn_key = f"{actor_id}:{weapon_path}"
+                        existing = WEAPONS.get(wpn_key)
+                        if existing and existing.get("root"):
+                            keyframe_visibility(existing["root"], frame, True)
+                elif last_path:
+                    # No weapon now — hide previous weapon
+                    old_key = f"{actor_id}:{last_path}"
+                    old_wpn = WEAPONS.get(old_key)
+                    if old_wpn and old_wpn.get("root"):
+                        keyframe_visibility(old_wpn["root"], frame, False)
+
+                # Actor tracking light
+                light_name = f"{actor_id}_light"
+                light_obj = bpy.data.objects.get(light_name)
+                if light_obj is None:
+                    light_data = bpy.data.lights.new(light_name, 'POINT')
+                    light_obj = bpy.data.objects.new(light_name, light_data)
+                    light_data.energy = 50.0
+                    light_data.color = (1.0, 1.0, 1.0)
+                    bpy.data.collections["Mimita_Actors"].objects.link(light_obj)
+                    print(f"[REPLAY LIGHT] actor={actor_id} light={light_name}")
+                light_pos = converted_state.get("position", (0.0, 0.0, 0.0))
+                light_obj.location = (light_pos[0], light_pos[1], light_pos[2] + 2.0)
+                light_obj.keyframe_insert(data_path="location", frame=frame)
+
         # Process effects on EVERY tick, snapping to nearest keyframe
         if IMPORT_EFFECTS:
 
@@ -1053,26 +1445,56 @@ def process_import_batch():
     if IMPORT_INDEX >= len(SCENE_FRAMES_GLOBAL):
 
         scene.frame_start = 1
-        scene.frame_end = MAX_TICK + 1
+        scene.frame_end = max(1, int(MAX_TICK * (scene.render.fps / 60.0)) + 1)
 
         print("[REPLAY IMPORT] complete")
         print(f"[REPLAY IMPORT] frames: {scene.frame_start}-{scene.frame_end}")
 
-        # Step 6: Verify animation data
-        total_root_keyframes = 0
-        total_part_keyframes = 0
+        # Verify animation data, actions, and weapons
+        body_part_names = {"head", "torso", "leftarm", "rightarm", "leftleg", "rightleg"}
         for actor_id, actor_record in ACTORS.items():
             root = actor_record.get("root")
-            if root and root.animation_data and root.animation_data.action:
-                fc_count = len(root.animation_data.action.fcurves)
-                total_root_keyframes += fc_count
-                print(f"[REPLAY SUMMARY] actor={actor_id} root fcurves={fc_count}")
-            for part in actor_record.get("parts", []):
-                if part.animation_data and part.animation_data.action:
-                    fc_count = len(part.animation_data.action.fcurves)
-                    total_part_keyframes += fc_count
+            if root:
+                action_name, curve_count, keyframe_count = animation_summary(
+                    root
+                )
+                print(
+                    f"[REPLAY SUMMARY] actor={actor_id} "
+                    f"root action={action_name} fcurves={curve_count} "
+                    f"keyframes={keyframe_count}"
+                )
 
-        print(f"[REPLAY SUMMARY] actors={len(ACTORS)} total_root_fcurves={total_root_keyframes} total_part_fcurves={total_part_keyframes}")
+            # Check body parts
+            for part in actor_record.get("parts", []):
+                norm = normalized_name(part.name)
+                if norm not in body_part_names:
+                    continue
+                action_name, curve_count, keyframe_count = animation_summary(
+                    part
+                )
+                print(
+                    f"[REPLAY SUMMARY]   part={part.name} "
+                    f"action={action_name} fcurves={curve_count} "
+                    f"keyframes={keyframe_count}"
+                )
+
+            # Check weapon visibility
+            for key, wpn in WEAPONS.items():
+                if actor_id in key:
+                    wpn_root = wpn.get("root")
+                    if wpn_root:
+                        print(f"[WEAPON STATUS] key={key} visible={not wpn_root.hide_viewport} loc={tuple(round(v,2) for v in wpn_root.location)} parent={wpn_root.parent.name if wpn_root.parent else 'NONE'}")
+
+        print(f"[REPLAY SUMMARY] actors={len(ACTORS)} weapons={len(WEAPONS)}")
+
+        if VALIDATION_DATA_GLOBAL is not None:
+            validate_replay(
+                VALIDATION_DATA_GLOBAL,
+                REPLAY_PATH_GLOBAL,
+                VALIDATION_REPORT_PATH_GLOBAL,
+            )
+        else:
+            log("Validation skipped because no validation data was loaded")
 
         return None
 

@@ -134,6 +134,7 @@ private:
 
 // outside classes ? 6 7 2026
 std::string generateReplayExportPath();
+std::string generateReplayValidationPath(const std::string& replayPath);
 
 void setActiveReplayRecorder(ReplayRecorder* recorder);
 void captureReplayEffect(const ReplayEffectEvent& event);
