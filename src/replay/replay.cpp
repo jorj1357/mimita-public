@@ -75,6 +75,69 @@ json effectJson(const ReplayEffectEvent& effect)
         {"material", effect.materialName}
     };
 }
+
+json transformJson(
+    const glm::vec3& position,
+    const glm::vec3& rotation,
+    const glm::vec3& scale = glm::vec3(1.0f))
+{
+    return {
+        {"position", vec3Json(position)},
+        {"rotation", vec3Json(rotation)},
+        {"scale", vec3Json(scale)}
+    };
+}
+
+json buildValidationJson(
+    const std::string& replayPath,
+    const ReplayHeader& header,
+    const std::vector<ReplaySceneFrame>& sceneFrames)
+{
+    json validation;
+    validation["schemaVersion"] = 1;
+    validation["sourceReplay"] =
+        std::filesystem::path(replayPath).filename().string();
+    validation["tickRate"] = header.tickRate;
+    validation["coordinateSystem"] = "Z_UP";
+    validation["distanceUnit"] = "meters";
+    validation["rotationUnit"] = "degrees";
+    validation["transformSpaces"] = {
+        {"root", "world"},
+        {"bodyParts", "actor_root_local"}
+    };
+    validation["thresholds"] = {
+        {"positionMeters", 0.05f},
+        {"rotationDegrees", 5.0f}
+    };
+    validation["channels"] = {
+        {"transforms", {{"version", 1}, {"enabled", true}}}
+    };
+    validation["frames"] = json::array();
+
+    for (const ReplaySceneFrame& sceneFrame : sceneFrames) {
+        json frame;
+        frame["tick"] = sceneFrame.tick;
+        frame["actors"] = json::array();
+
+        for (const ReplayActorState& actor : sceneFrame.actors) {
+            json actorJson;
+            actorJson["id"] = actor.id;
+            actorJson["type"] = actor.type;
+            actorJson["root"] = transformJson(
+                actor.position, actor.rotation);
+            actorJson["bodyParts"] = json::object();
+            for (const ReplayBodyPartState& part : actor.bodyParts) {
+                actorJson["bodyParts"][part.name] = transformJson(
+                    part.position, part.rotation, part.scale);
+            }
+            frame["actors"].push_back(std::move(actorJson));
+        }
+
+        validation["frames"].push_back(std::move(frame));
+    }
+
+    return validation;
+}
 }
 
 void setActiveReplayRecorder(ReplayRecorder* recorder)
@@ -125,9 +188,7 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
         ReplayBodyPartState state;
         state.name = part.name;
         state.position = translation;
-        // Exaggerate rotations by 1.5x for more readable slow-mo playback
         glm::vec3 euler = glm::degrees(glm::eulerAngles(glm::normalize(orientation)));
-        euler *= 1.5f;
         state.rotation = euler;
         state.scale = scale;
         states.push_back(state);
@@ -151,6 +212,16 @@ std::string generateReplayExportPath()
     std::strftime(dateDirectory, sizeof(dateDirectory), "%m-%d-%Y", &localTime);
     std::strftime(fileName, sizeof(fileName), "%H-%M-%S-replay.json", &localTime);
     return (std::filesystem::path("replays") / dateDirectory / fileName).string();
+}
+
+std::string generateReplayValidationPath(const std::string& replayPath)
+{
+    std::filesystem::path path(replayPath);
+    const std::string extension = path.extension().string();
+    path.replace_filename(
+        path.stem().string() + "-validation" +
+        (extension.empty() ? ".json" : extension));
+    return path.string();
 }
 
 // ============================================================
@@ -285,6 +356,7 @@ void ReplayRecorder::stopRecording() {
 
 bool ReplayRecorder::exportToJSON(const std::string& path) const {
     json j;
+    const std::string validationPath = generateReplayValidationPath(path);
 
     // Header
     j["header"]["version"] = mHeader.version;
@@ -300,6 +372,14 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
     j["metadata"]["coordinateSystem"] = "Z_UP";
     j["metadata"]["distanceUnit"] = "meters";
     j["metadata"]["timelineFps"] = mHeader.tickRate;
+    j["validation"]["schemaVersion"] = 1;
+    j["validation"]["path"] =
+        std::filesystem::path(validationPath).filename().string();
+    j["validation"]["channels"] = json::array({"transforms"});
+    j["validation"]["thresholds"] = {
+        {"positionMeters", 0.05f},
+        {"rotationDegrees", 5.0f}
+    };
     json assetsJson = json::array();
 
     for (const auto& asset : mAssets)
@@ -486,8 +566,32 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
         return false;
     }
     file << j.dump(2);
+    file.close();
+    if (!file) {
+        printf("[REPLAY] Failed while writing %s\n", path.c_str());
+        return false;
+    }
+
+    const json validation =
+        buildValidationJson(path, mHeader, mSceneFrames);
+    std::ofstream validationFile(validationPath);
+    if (!validationFile.is_open()) {
+        printf("[REPLAY VALIDATION] Failed to write %s\n",
+               validationPath.c_str());
+        return false;
+    }
+    validationFile << validation.dump(2);
+    validationFile.close();
+    if (!validationFile) {
+        printf("[REPLAY VALIDATION] Failed while writing %s\n",
+               validationPath.c_str());
+        return false;
+    }
+
     printf("[REPLAY] Exported %u input frames and %zu scene frames to %s\n",
            mHeader.tickCount, mSceneFrames.size(), path.c_str());
+    printf("[REPLAY VALIDATION] Exported %zu authoritative frames to %s\n",
+           mSceneFrames.size(), validationPath.c_str());
     return true;
 }
 
