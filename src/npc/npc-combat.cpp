@@ -13,7 +13,6 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
-#include "ui/hitmarker.h"
 #include "world/world.h"
 
 bool gNpcForceHit = false;

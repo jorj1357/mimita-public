@@ -110,6 +110,7 @@
 DuelManager gDuelManager;
 
 
+// TODO(main-cleanup): move to src/physics/ray-utils.h — also deduplicate with WeaponFire::rayTriangle
 static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
                         const CollisionTriangle& tri, float& distance)
 {
@@ -2070,16 +2071,21 @@ int main(int argc, char** argv)
             if (gDuelManager.phase() != prevDuelPhase) {
                 bool enteredMatchEnd = gDuelManager.phase() == DuelPhase::MatchEnd;
                 if (enteredMatchEnd && !gDuelManager.finalKillReplayActive) {
-                    // Extract final kill clip and start replay
-                    std::string clipPath;
-                    if (gReplayClipSaver.saveLastKill(&clipPath) ||
-                        gReplayFactory.saveLastKill(&clipPath)) {
-                        if (gReplayPlayer.loadFromJSON(clipPath)) {
+                    uint32_t now = gReplayRecorder.currentTick();
+                    uint32_t start = now > 480 ? now - 480 : 0; // 8 seconds back
+                    uint32_t end = now;
+                    // Use the last kill info from clip saver if available
+                    ReplayClip clip = gReplayRecorder.makeClip(start, end, start, "", "");
+                    if (!clip.sceneFrames.empty()) {
+                        // Save to temp path and load for playback
+                        std::string tmpPath = "replays/_final_kill_temp.json";
+                        clip.save(tmpPath);
+                        if (gReplayPlayer.loadFromJSON(tmpPath)) {
                             gReplayPlayer.beginPlayback();
                             gDuelManager.finalKillReplayActive = true;
-                            gDuelManager.finalKillReplayPath = clipPath;
+                            gDuelManager.finalKillReplayPath = tmpPath;
                             gDuelManager.finalKillReplayTime = 0.0f;
-                            printf("[FINAL KILL] started replay: %s\n", clipPath.c_str());
+                            printf("[FINAL KILL] started replay: %s\n", tmpPath.c_str());
                         }
                     }
                 }
@@ -2680,7 +2686,9 @@ int main(int argc, char** argv)
                         EffectPartSystem::instance().spawnBloodEffect(
                             effect.position, effect.direction, 50.0f,
                             effect.sourceActorId, effect.targetActorId);
-                        hitmarker();
+                        // Only show hitmarker when the viewed actor (killer) lands a hit
+                        if (effect.sourceActorId == gReplayPlayer.killerId())
+                            hitmarker();
                     } else if (effect.type == "dash") {
                         EffectPartSystem::instance().spawnDash(effect.position);
                     } else if (effect.type == "footstep") {
@@ -2765,9 +2773,13 @@ int main(int argc, char** argv)
 
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-            if (!replayPlaybackActive &&
+            bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd;
+            if (duelEndVisible && mouseDown && !mousePrev) {
+                Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=duel_end_ui consumed=1");
+                Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=duel_end_ui_visible");
+            }
+            if (!replayPlaybackActive && !duelEndVisible &&
                 !Terminal::instance().isOpen() && mouseDown) {
-                // Semi-auto: fire on rising edge. Automatic: fire while held.
                 const WeaponDefinition* curDef = weapons.getCurrentDef(player);
                 bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
                 bool shouldFire = isAuto || (!isAuto && mouseDown && !mousePrev);
@@ -3504,11 +3516,15 @@ int main(int argc, char** argv)
             if (gDuelManager.phase() == DuelPhase::MatchEnd) {
                 DuelMenuAction action = gDuelManager.renderMatchOverScreen(engine.window());
                 if (action == DuelMenuAction::PlayAgain) {
+                    Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
                     gDuelManager.restartDuel(player, npcSystem, world);
                 } else if (action == DuelMenuAction::ExitToMenu) {
+                    Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
+                    Debug::log(Debug::Category::Duel, "[DUEL] duel UI cleared");
                     gDuelManager.stopDuel();
                     npcSystem.destroyAll();
                     gameState = GAME_MENU;
+                    Debug::log(Debug::Category::Duel, "[MAIN MENU] entered");
                 }
             } else {
                 gDuelManager.renderHud();

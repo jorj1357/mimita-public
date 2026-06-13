@@ -19,6 +19,7 @@
 #include "world/world-gltf-loader.h"
 #include "camera.h"
 #include "gui/ui-system.h"
+#include "debug/debug-log.h"
 
 // -------------------------------------------------------
 // Team-based spawn assignment
@@ -52,7 +53,7 @@ void DuelManager::assignTeamSpawns(const World& world)
     mTeamBSpawn = glm::vec3(1.0f, 5.0f, 60.0f);
 
     if (world.spawnPoints.empty()) {
-        printf("[DUEL SPAWN] no spawn points in map\n");
+        Debug::log(Debug::Category::Duel, "[DUEL SPAWN] no spawn points in map");
         return;
     }
 
@@ -101,16 +102,16 @@ void DuelManager::assignTeamSpawns(const World& world)
     mTeamBSpawnIndex = teamBIdx;
     mTeamBSpawn = world.spawnPoints[teamBIdx].position;
 
-    printf("[DUEL SPAWN] Team A -> Spawn %d (%.2f, %.2f, %.2f)\n",
-           mTeamASpawnIndex, mTeamASpawn.x, mTeamASpawn.y, mTeamASpawn.z);
-    printf("[DUEL SPAWN] Team B -> Spawn %d (%.2f, %.2f, %.2f)\n",
-           mTeamBSpawnIndex, mTeamBSpawn.x, mTeamBSpawn.y, mTeamBSpawn.z);
+    Debug::log(Debug::Category::Duel, "[DUEL SPAWN] Team A -> Spawn %d (%.2f, %.2f, %.2f)",
+               mTeamASpawnIndex, mTeamASpawn.x, mTeamASpawn.y, mTeamASpawn.z);
+    Debug::log(Debug::Category::Duel, "[DUEL SPAWN] Team B -> Spawn %d (%.2f, %.2f, %.2f)",
+               mTeamBSpawnIndex, mTeamBSpawn.x, mTeamBSpawn.y, mTeamBSpawn.z);
 
     if (teamAIdx == teamBIdx && world.spawnPoints.size() >= 1) {
-        printf("[DUEL SPAWN] WARNING: teams share the same spawn point\n");
+        Debug::log(Debug::Category::Duel, "[DUEL SPAWN] WARNING: teams share the same spawn point");
     }
     if (world.spawnPoints.size() < 2) {
-        printf("[DUEL SPAWN] WARNING: need at least 2 spawn points for separate team spawns\n");
+        Debug::log(Debug::Category::Duel, "[DUEL SPAWN] WARNING: need at least 2 spawn points for separate team spawns");
     }
 }
 
@@ -164,8 +165,8 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
         player.respawnPosition = player.pos;
     }
 
-    printf("[DUEL] started npcs=%d killsToWin=%d map=%s\n",
-           config.numNpcs, config.killsToWin, config.mapPath.c_str());
+    Debug::log(Debug::Category::Duel, "[DUEL] started npcs=%d killsToWin=%d map=%s",
+               config.numNpcs, config.killsToWin, config.mapPath.c_str());
 }
 
 void DuelManager::startCountdown()
@@ -209,12 +210,12 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
         for (int i = 0; i < config.numNpcs; ++i) {
             glm::vec3 pos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
             npcs.spawnNpc(config.npcDifficulty, pos);
-            printf("[DUEL SPAWN] NPC %d team=NPC spawn=(%.2f %.2f %.2f)\n",
-                   i, pos.x, pos.y, pos.z);
+            Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d team=NPC spawn=(%.2f %.2f %.2f)",
+                       i, pos.x, pos.y, pos.z);
         }
     }
 
-    printf("[DUEL] FIGHT round=%d\n", currentRound);
+    Debug::log(Debug::Category::Duel, "[DUEL] FIGHT round=%d", currentRound);
 }
 
 void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world, Camera& camera)
@@ -278,7 +279,7 @@ void DuelManager::onPlayerKill(int npcIndex)
     playerStats.points += 100;
     playerStats.xp += 50;
 
-    printf("[DUEL] player kill total=%d\n", playerKills);
+    Debug::log(Debug::Category::Duel, "[DUEL] player kill total=%d", playerKills);
 }
 
 void DuelManager::onNpcKill(int npcIndex)
@@ -290,7 +291,7 @@ void DuelManager::onNpcKill(int npcIndex)
     }
     playerStats.deaths++;
 
-    printf("[DUEL] npc kill npc=%d\n", npcIndex);
+    Debug::log(Debug::Category::Duel, "[DUEL] npc kill npc=%d", npcIndex);
 }
 
 void DuelManager::onEntityDeath(DuelTeam team)
@@ -302,10 +303,7 @@ void DuelManager::onEntityDeath(DuelTeam team)
     {
         alivePlayerCount--;
 
-        printf(
-            "[DUEL] player died alivePlayerCount=%d\n",
-            alivePlayerCount
-        );
+        Debug::log(Debug::Category::Duel, "[DUEL] player died alivePlayerCount=%d", alivePlayerCount);
 
         if (alivePlayerCount <= 0)
         {
@@ -316,10 +314,7 @@ void DuelManager::onEntityDeath(DuelTeam team)
     {
         aliveNpcCount--;
 
-        printf(
-            "[DUEL] npc died aliveNpcCount=%d\n",
-            aliveNpcCount
-        );
+        Debug::log(Debug::Category::Duel, "[DUEL] npc died aliveNpcCount=%d", aliveNpcCount);
 
         if (aliveNpcCount <= 0)
         {
@@ -343,12 +338,8 @@ void DuelManager::endRound(DuelTeam winner)
         npcRoundsWon_++;
     }
 
-    printf(
-        "[DUEL] round %d ended winner=%d playerKills=%d\n",
-        currentRound,
-        (int)winner,
-        playerKills
-    );
+    Debug::log(Debug::Category::Duel, "[DUEL] round %d ended winner=%d playerKills=%d",
+               currentRound, (int)winner, playerKills);
 
     if (playerRoundsWon_ >= config.killsToWin)
     {
@@ -377,9 +368,9 @@ void DuelManager::endMatch()
     matchOverButtonsShown = false;
     matchOverCaptured = false;
 
-    printf("[DUEL] match ended winner=%s totalKills=%d totalDeaths=%d\n",
-           matchWinner_ == DuelTeam::Player ? "PLAYER" : "NPC",
-           playerStats.kills, playerStats.deaths);
+    Debug::log(Debug::Category::Duel, "[DUEL] match ended winner=%s totalKills=%d totalDeaths=%d",
+               matchWinner_ == DuelTeam::Player ? "PLAYER" : "NPC",
+               playerStats.kills, playerStats.deaths);
 }
 
 void DuelManager::setMapList(const std::vector<std::string>& maps)
@@ -393,7 +384,7 @@ void DuelManager::rotateMap(World& world)
     currentMapIndex = (currentMapIndex + 1) % mapList.size();
     config.mapPath = mapList[currentMapIndex];
     loadWorldFromGLB(world, config.mapPath.c_str());
-    printf("[DUEL] rotated to map: %s\n", config.mapPath.c_str());
+    Debug::log(Debug::Category::Duel, "[DUEL] rotated to map: %s", config.mapPath.c_str());
 }
 
 void DuelManager::renderHud()
@@ -493,18 +484,20 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     float gap = 20.0f;
 
     UIButtonState playBtn = uiButton(win, "Play Again", {btnX, btnY, btnW, btnH}, {0.24f, 0.82f, 0.48f, 1.0f});
-    if (playBtn.hovered) printf("[DUEL UI] Hover Play Again\n");
+    Debug::logThrottled(Debug::Category::Duel, "hover_play", 1.0f,
+        "[UI BUTTON] id=play_again hover=%d click=%d", (int)playBtn.hovered, (int)playBtn.clicked);
     if (playBtn.clicked) {
-        printf("[DUEL UI] Click Play Again\n");
-        printf("[DUEL UI] Play Again callback executed\n");
+        Debug::log(Debug::Category::Duel, "[UI BUTTON] id=play_again clicked=1 callback=1");
+        Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
         return DuelMenuAction::PlayAgain;
     }
 
     UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH}, {0.86f, 0.3f, 0.3f, 1.0f});
-    if (exitBtn.hovered) printf("[DUEL UI] Hover Exit\n");
+    Debug::logThrottled(Debug::Category::Duel, "hover_exit", 1.0f,
+        "[UI BUTTON] id=exit_main_menu hover=%d click=%d", (int)exitBtn.hovered, (int)exitBtn.clicked);
     if (exitBtn.clicked) {
-        printf("[DUEL UI] Click Exit\n");
-        printf("[DUEL UI] Exit callback executed\n");
+        Debug::log(Debug::Category::Duel, "[UI BUTTON] id=exit_main_menu clicked=1 callback=1");
+        Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
         return DuelMenuAction::ExitToMenu;
     }
 
@@ -513,8 +506,8 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
 
 void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
 {
-    printf("[DUEL] Play Again clicked\n");
-    printf("[DUEL] Restarting duel with existing settings\n");
+    Debug::log(Debug::Category::Duel, "[DUEL] Play Again clicked");
+    Debug::log(Debug::Category::Duel, "[DUEL] Restarting duel with existing settings");
 
     config.enabled = true;
 
@@ -554,13 +547,14 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
         player.respawnPosition = player.pos;
     }
 
-    printf("[DUEL] restart complete\n");
+    Debug::log(Debug::Category::Duel, "[DUEL] restart complete");
 }
 
 void DuelManager::stopDuel()
 {
-    printf("[DUEL] Exit To Main Menu clicked\n");
-    printf("[DUEL] Returning to main menu\n");
+    Debug::log(Debug::Category::Duel, "[DUEL] Exit To Main Menu clicked");
+    Debug::log(Debug::Category::Duel, "[DUEL] Returning to main menu");
+    Debug::log(Debug::Category::Duel, "[DUEL] duel UI cleared");
     currentPhase = DuelPhase::Off;
     config.enabled = false;
     playerStats = DuelStats{};
