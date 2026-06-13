@@ -15,11 +15,15 @@
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "gray-matter": "^4.0.3",
     "nodemailer": "^8.0.7",
     "pg": "^8.21.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-router-dom": "^7.15.1"
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.15.1",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

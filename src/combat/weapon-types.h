@@ -57,6 +57,7 @@ struct WeaponDefinition {
     std::string soundHit;
     std::string soundDryFire;
     std::string soundEquip;
+    std::string poseId;  // which weapon pose config to use (empty = use own id)
 
     std::unordered_map<std::string, float> customParams;
 

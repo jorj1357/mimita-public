@@ -35,6 +35,8 @@ import Jorj from "./pages/Socials-jorj"
 
 import NotFound from "./pages/NotFound"
 import Auth from "./pages/Auth"
+import ArticlesIndex from "./pages/ArticlesIndex"
+import ArticlePage from "./pages/ArticlePage"
 import Account from "./pages/Account"
 import PasswordChange from "./pages/PasswordChange"
 import UserProfile from "./pages/UserProfile"
@@ -136,10 +138,20 @@ ReactDOM.createRoot(
           element={<Jorj />}
         />
 
+        <Route
+          path="/articles"
+          element={<ArticlesIndex />}
+        />
+
+        <Route
+          path="/articles/:slug"
+          element={<ArticlePage />}
+        />
+
         {/* goes last 5 25 2026
         becaues
         Putting it last is important because:
-        path="*" catches everything that doesn’t exist.
+        path="*" catches everything that doesn't exist.
         */}
         <Route
           path="*"

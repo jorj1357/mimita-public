@@ -22,6 +22,7 @@
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "audio/audio.h"
+#include "combat/weapon-registry.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
 #include "config.h"
@@ -1167,10 +1168,16 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     // Weapon state
     bool weaponEquipped = hasValidWeapon && (equippedSlot >= 1);
     std::string weaponId = equippedWeaponId;
+    std::string poseLookupId = weaponId;
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+        if (def && !def->poseId.empty())
+            poseLookupId = def->poseId;
+    }
     bool hasWeaponPose = false;
     WeaponPoseConfig* weaponPoseCfg = nullptr;
     if (weaponEquipped) {
-        auto wpIt = gPlayerProcedural.weaponPoses.find(weaponId);
+        auto wpIt = gPlayerProcedural.weaponPoses.find(poseLookupId);
         if (wpIt != gPlayerProcedural.weaponPoses.end() && wpIt->second.useWeaponPose) {
             hasWeaponPose = true;
             weaponPoseCfg = &wpIt->second;
