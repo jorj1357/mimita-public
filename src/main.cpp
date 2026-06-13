@@ -23,6 +23,14 @@
  * with the debug log function BC WE NOT USING PRINTF DONT USE PRINTF JUTS MAKE UR OWN DEBUG LOG ok 
  */
 
+// 6 12 2026 todo plz make main like literal 100 lines
+// every file ideally is 100 lines or less, and just exposes 1 function 
+//like main just calls functions from other files, and we condense etc
+// bc this is so much lines arghhhhhhhh
+// although idk i just want it to prefromr good and be simple ish enough  to aedit and code
+// etc
+// so  it might not be  big deal bc ai is so strong now  Ok Ai Andy 
+
 #include <cstdio>
 #include <algorithm>
 #include <cctype>
@@ -492,6 +500,12 @@ int main(int argc, char** argv)
             Terminal::instance().addLog("[GAMEPLAY] explode");
         }
     });
+
+    // TODO: Terminal command registration should be moved out of main.cpp.
+    // main.cpp should only call registration functions like:
+    //   registerReplayCommands(); registerWeaponCommands(); etc.
+    // Feature files should expose registration functions that main.cpp calls.
+    // This keeps main.cpp as an orchestrator, not a feature container.
 
     Terminal::instance().registerCommand({
         "freeze", "Toggle freeze", "freeze",
@@ -1941,9 +1955,6 @@ int main(int argc, char** argv)
                         } else if (slot == 3) {
                             playerActor.weaponName = "shotgun";
                             playerActor.weaponModelPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
-                        } else if (slot == 5) {
-                            playerActor.weaponName = "op_revolver";
-                            playerActor.weaponModelPath = "assets/objects/weapons/mimita-revolver-v1.glb";
                         } else {
                             playerActor.weaponName = "none";
                             playerActor.weaponModelPath = "";
@@ -1982,11 +1993,9 @@ int main(int argc, char** argv)
                         npcActor.weaponName = npc.body.equippedSlot == 1 ? "revolver"
                             : npc.body.equippedSlot == 3 ? "shotgun"
                             : npc.body.equippedSlot == 2 ? "godball"
-                            : npc.body.equippedSlot == 5 ? "op_revolver"
                             : "none";
                         npcActor.weaponModelPath = npc.body.equippedSlot == 1 ? "assets/objects/weapons/mimita-revolver-v1.glb"
                             : npc.body.equippedSlot == 3 ? "assets/objects/weapons/mimita-shotgun-v1.glb"
-                            : npc.body.equippedSlot == 5 ? "assets/objects/weapons/mimita-revolver-v1.glb"
                             : "";
                         {
                             auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
@@ -2463,14 +2472,20 @@ int main(int argc, char** argv)
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             if (!replayPlaybackActive &&
-                !Terminal::instance().isOpen() && mouseDown && !mousePrev) {
-                if (editorMode) {
-                    selectedEditorObject = selectWorldTriangle(world, camera.pos, camera.front);
-                    Terminal::instance().addLog(selectedEditorObject >= 0
-                        ? "[EDITOR] selected triangle id " + std::to_string(selectedEditorObject)
-                        : "[EDITOR] no object selected");
-                } else {
-                    Terminal::instance().execute("shoot");
+                !Terminal::instance().isOpen() && mouseDown) {
+                // Semi-auto: fire on rising edge. Automatic: fire while held.
+                const WeaponDefinition* curDef = weapons.getCurrentDef(player);
+                bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
+                bool shouldFire = isAuto || (!isAuto && mouseDown && !mousePrev);
+                if (shouldFire) {
+                    if (editorMode) {
+                        selectedEditorObject = selectWorldTriangle(world, camera.pos, camera.front);
+                        Terminal::instance().addLog(selectedEditorObject >= 0
+                            ? "[EDITOR] selected triangle id " + std::to_string(selectedEditorObject)
+                            : "[EDITOR] no object selected");
+                    } else {
+                        Terminal::instance().execute("shoot");
+                    }
                 }
             }
             mousePrev = mouseDown;
@@ -2893,7 +2908,7 @@ int main(int argc, char** argv)
                            {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
                 uiDrawText("freecam  Free Camera", helpX + 8.0f, hy, 0.24f,
                            {0.8f, 0.8f, 1.0f, 1.0f});
-            } else if (player.equippedSlot >= 1 && player.equippedSlot <= 5) {
+            } else if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
                 const char* crosshairPath = "assets/crosshair/crosshairready.png";
                 switch (weapons.crosshairState(player)) {
                     case WeaponCrosshairState::Reloading:
@@ -2906,7 +2921,7 @@ int main(int argc, char** argv)
                         break;
                 }
                 float size = 100.0f;
-                if (player.equippedSlot == 3 || player.equippedSlot == 5)
+                if (player.equippedSlot == 3)
                     size = 140.0f;
                 uiDrawImage(crosshairPath,
                             {uiScreenW() * 0.5f - size * 0.5f, uiScreenH() * 0.5f - size * 0.5f, size, size});
@@ -2987,7 +3002,7 @@ int main(int argc, char** argv)
                     }
                 }
                 if (player.inventoryOpen)
-                    uiDrawText("INVENTORY: [1] Revolver [2] Godball [3] Shotgun [5] OP Revolver", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
+                    uiDrawText("INVENTORY: [1] Revolver [2-10] Empty", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
             }
             {
                 const float normalSize = 44.0f;

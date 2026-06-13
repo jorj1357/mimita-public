@@ -51,6 +51,5 @@ void drawHitmarker(float dt)
         hmT
     };
 
-    // uiDrawImageRotated("assets/crosshair/crosshairhit.png", cx, cy, 28.0f, 45.0f, color);
     uiDrawImageRotated("assets/crosshair/crosshairhit.png", cx, cy, 28.0f, 0.0f, color);
 }

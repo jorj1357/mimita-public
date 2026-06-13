@@ -90,6 +90,10 @@ export default function Header() {
                 socials
               </Link>
 
+              <Link to="/articles" onClick={() => setOpen(false)}>
+                articles
+              </Link>
+
               <Link to="/terms" onClick={() => setOpen(false)}>
                 terms
               </Link>
