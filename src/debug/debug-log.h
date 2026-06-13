@@ -11,7 +11,18 @@ namespace Debug
         GLB,
         Collision,
         Physics,
-        Render
+        Render,
+        NpcCombat,
+        NpcMovement,
+        Ragdoll,
+        Replay,
+        Weapons,
+        Animation,
+        Gui,
+        Networking,
+        Audio,
+        World,
+        Duel
     };
 
     bool enabled(Category category);
