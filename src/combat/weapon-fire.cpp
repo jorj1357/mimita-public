@@ -415,6 +415,131 @@ RevolverShotResult tryFireHitscan(
     return result;
 }
 
+RevolverShotResult tryFireHitscanDir(
+    const WeaponDefinition& def,
+    WeaponRuntime& runtime,
+    Player& shooter,
+    const World& world,
+    const glm::vec3& muzzlePos,
+    const glm::vec3& aimDir,
+    const Player* targetPlayer)
+{
+    RevolverShotResult result;
+
+    if (!def.soundShoot.empty()) {
+        float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+        float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+        playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
+    }
+
+    result.fired = true;
+    result.start = muzzlePos;
+
+    glm::vec3 shotDirection = glm::normalize(aimDir);
+    static unsigned int spreadRng = 1;
+    shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
+
+    constexpr float MAX_SHOT_DISTANCE = 100.0f;
+    float nearest = MAX_SHOT_DISTANCE;
+    bool hitWorld = false;
+    glm::vec3 worldNormal = -shotDirection;
+    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+        float distance = 0.0f;
+        if (rayTriangle(muzzlePos, shotDirection, tri, distance) && distance < nearest) {
+            nearest = distance;
+            hitWorld = true;
+            worldNormal = tri.normal;
+        }
+    }
+
+    // Track what we hit
+    bool hitPlayer = false;
+    std::string hitPart;
+    glm::vec3 hitNormal{0.0f};
+    float localHeight = 0.5f;
+
+    // Check target player capsule (NPC shooting at human player)
+    if (targetPlayer && !targetPlayer->dead && targetPlayer->currentHp > 0) {
+        Capsule cap = targetPlayer->getCapsule();
+        glm::vec3 mn(cap.a.x - cap.r, cap.a.y - cap.r, cap.a.z - cap.r);
+        glm::vec3 mx(cap.b.x + cap.r, cap.b.y + cap.r, cap.b.z + cap.r);
+        float distance = 0.0f;
+        glm::vec3 normal;
+        if (rayAabb(muzzlePos, shotDirection, mn, mx, distance, normal) && distance < nearest) {
+            nearest = distance;
+            hitWorld = false;
+            hitPlayer = true;
+            hitNormal = normal;
+            glm::vec3 hit = muzzlePos + shotDirection * distance;
+            localHeight = std::clamp(
+                (hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
+            hitPart = localHeight > 0.78f ? "head" :
+                      localHeight > 0.32f ? "torso" : "leg";
+        }
+    }
+
+    result.end = muzzlePos + shotDirection * nearest;
+    result.hitNormal = hitPlayer ? hitNormal : worldNormal;
+
+    ReplayEffectEvent gunshotEvent;
+    gunshotEvent.type = "gunshot";
+    gunshotEvent.position = muzzlePos;
+    gunshotEvent.direction = shotDirection;
+    gunshotEvent.from = muzzlePos;
+    gunshotEvent.to = result.end;
+    gunshotEvent.sourceActorId = shooter.username;
+    captureReplayEffect(gunshotEvent);
+
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username);
+    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username);
+
+    if (hitPlayer && targetPlayer) {
+        // Direct damage to player
+        float damage = def.damage;
+        if (hitPart == "head")
+            damage *= def.headshotMultiplier;
+        else if (hitPart == "leg")
+            damage *= 0.5f;
+
+        const float falloffStart = def.customParams.count("distanceFalloffStart")
+            ? def.customParams.at("distanceFalloffStart") : 110.0f;
+        const float minFraction = def.customParams.count("minDamageFraction")
+            ? def.customParams.at("minDamageFraction") : 0.1f;
+        damage *= std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+        int totalDamage = std::max(1, (int)std::round(damage));
+
+        float df = std::clamp(1.0f - nearest / falloffStart, minFraction, 1.0f);
+        float kn = (float)totalDamage * df * 0.15f;
+        glm::vec3 knockback = shotDirection * kn;
+
+        // Apply damage and knockback directly (player has no WeaponRuntime hit point)
+        const_cast<Player*>(targetPlayer)->takeDamage(totalDamage, knockback, 8.0f);
+
+        result.hitEntity = true;
+        result.bodyPart = hitPart;
+        result.damage = (float)totalDamage;
+
+        hitmarker();
+        EffectPartSystem::instance().spawnDamage(result.end, targetPlayer->username, totalDamage);
+        EffectPartSystem::instance().spawnBloodEffect(
+            result.end, shotDirection, (float)totalDamage,
+            shooter.username, targetPlayer->username);
+        EffectPartSystem::instance().spawnEntityImpact(
+            result.end, hitNormal, shooter.username, targetPlayer->username);
+        playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
+
+    } else if (hitWorld) {
+        result.hitWorld = true;
+        float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
+        EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
+        EffectPartSystem::instance().spawnBulletImpact(result.end);
+        EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal, debrisForce);
+        playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
+    }
+
+    return result;
+}
+
 void fireMultiPellet(
     const WeaponDefinition& def,
     WeaponRuntime& runtime,

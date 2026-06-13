@@ -40,6 +40,19 @@ RevolverShotResult tryFireHitscan(
     const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr
 );
 
+// Direction-based fire: NPCs provide aim direction directly instead of using a camera.
+// Uses the same hit detection, damage, blood, debris, knockback pipeline.
+// Scans world triangles + the target player (if provided).
+RevolverShotResult tryFireHitscanDir(
+    const WeaponDefinition& def,
+    WeaponRuntime& runtime,
+    Player& shooter,
+    const World& world,
+    const glm::vec3& muzzlePos,
+    const glm::vec3& aimDir,
+    const Player* targetPlayer = nullptr
+);
+
 void fireMultiPellet(
     const WeaponDefinition& def,
     WeaponRuntime& runtime,

@@ -6,6 +6,7 @@
 #include <glad/glad.h>
 #include "config.h"
 #include "debug/debug-visuals.h"
+#include "debug/transform-debug.h"
 #include "debug/gl-debug.h"
 #include "camera.h"
 #include "audio/audio.h"
@@ -320,6 +321,10 @@ void DeathSystem::updateDeadBodyPhysics(DeadBody& body, const World& world, floa
         return;
     }
 
+    // Transform debug: capture pre-physics state
+    glm::vec3 prePos = body.position;
+    glm::vec3 preVel = body.velocity;
+
     float safeDt = std::min(dt, 0.033f);
     const auto& triangles = world.collisionMesh.triangles;
     float radius = body.capsuleRadius;
@@ -429,6 +434,14 @@ void DeathSystem::updateDeadBodyPhysics(DeadBody& body, const World& world, floa
              body.position.x, body.position.y, body.position.z,
              body.velocity.x, body.velocity.y, body.velocity.z,
              speed);
+
+    // Transform debug: log physics write
+    glm::vec3 delta = body.position - prePos;
+    if (glm::length(delta) > 0.001f || glm::length(body.velocity - preVel) > 0.001f) {
+        TransformDebug::instance().logWrite("Physics", body.id,
+                                            prePos, body.position,
+                                            preVel, body.velocity);
+    }
 }
 
 bool DeathSystem::trySleepBody(DeadBody& body, float dt)

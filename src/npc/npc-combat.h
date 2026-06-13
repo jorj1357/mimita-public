@@ -6,6 +6,8 @@ struct World;
 class Player;
 class Npc;
 
+extern bool gNpcForceHit;
+
 namespace NpcCombat {
 
 bool tryFire(Npc& npc, const World& world, Player& player, float dt);
