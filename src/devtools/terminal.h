@@ -49,6 +49,7 @@ private:
     int mHistoryIndex = -1;
 
     std::unordered_map<std::string, ConsoleCommand> mCommands;
+    std::vector<std::string> mRegistrationOrder;
 
     float mCursorBlink = 0.0f;
     int mScrollOffset = 0;

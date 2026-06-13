@@ -24,6 +24,7 @@
 
 WeaponSystem::WeaponSystem() {
     WeaponData::registerBuiltinWeapons();
+    // TODO(debug): migrate to Debug::log(Debug::Category::Weapons)
     printf("[WEAPON SYSTEM] initialized\n");
 }
 
@@ -224,7 +225,8 @@ RevolverShotResult WeaponSystem::fireHitscan(
     WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
     mDisturbance += 1.2f;
 
-    printf("[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d\n",
+        // TODO(debug): migrate to Debug::log(Debug::Category::Weapons)
+        printf("[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d\n",
            def->slot, def->id.c_str(), rt->currentAmmo);
 
     return result;
