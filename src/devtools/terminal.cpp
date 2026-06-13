@@ -77,7 +77,7 @@ void Terminal::init(GLFWwindow* window) {
 
     registerCommand({
         "help",
-        "List all available commands (sorted A-Z)",
+        "List all available commands (sorted A-Z, category shown)",
         "help",
         [this](const std::vector<std::string>&) {
             std::vector<const ConsoleCommand*> commands;
@@ -86,43 +86,65 @@ void Terminal::init(GLFWwindow* window) {
             std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
                 return a->name < b->name;
             });
-            addLog("Available commands (try help2 for newest first):");
-            for (const ConsoleCommand* command : commands) {
+            addLog("Available commands (help2 for grouped by category):");
+            std::string lastCat;
+            for (const ConsoleCommand* cmd : commands) {
+                std::string cat = categoryName(cmd->category);
+                if (cat != lastCat) {
+                    char hdr[64];
+                    snprintf(hdr, sizeof(hdr), "--- %s ---", cat.c_str());
+                    addLog(hdr);
+                    lastCat = cat;
+                }
                 char buf[256];
-                snprintf(buf, sizeof(buf), "  %-24s %s", command->name.c_str(), command->description.c_str());
+                snprintf(buf, sizeof(buf), "  %-24s %s", cmd->name.c_str(), cmd->description.c_str());
                 addLog(buf);
             }
         }
-    });
+    }, CommandCategory::UI);
 
     registerCommand({
         "help2",
-        "List commands in registration order (newest at bottom)",
+        "List commands grouped by category (newest at bottom of each)",
         "help2",
         [this](const std::vector<std::string>&) {
-            addLog("=== COMMANDS (newest last) ===");
-            int total = (int)mRegistrationOrder.size();
-            for (int i = 0; i < total; ++i) {
-                auto it = mCommands.find(mRegistrationOrder[i]);
-                if (it == mCommands.end()) continue;
-                const ConsoleCommand& cmd = it->second;
-                bool isRecent = i >= total - 20;
-                char buf[256];
-                if (isRecent && !cmd.dateAdded.empty()) {
-                    snprintf(buf, sizeof(buf), "  [NEW] %-20s %s  (%s)",
-                             cmd.name.c_str(), cmd.description.c_str(),
-                             cmd.dateAdded.c_str());
-                } else if (isRecent) {
-                    snprintf(buf, sizeof(buf), "  [NEW] %-20s %s",
-                             cmd.name.c_str(), cmd.description.c_str());
-                } else {
-                    snprintf(buf, sizeof(buf), "  %-24s %s",
-                             cmd.name.c_str(), cmd.description.c_str());
+            // Collect commands by category
+            std::unordered_map<std::string, std::vector<const ConsoleCommand*>> byCat;
+            std::vector<std::string> catOrder;
+            for (const auto& pair : mCommands) {
+                std::string cat = categoryName(pair.second.category);
+                if (byCat.find(cat) == byCat.end()) catOrder.push_back(cat);
+                byCat[cat].push_back(&pair.second);
+            }
+            for (auto& kv : byCat) {
+                // Sort each category by registration order (newest last)
+                std::sort(kv.second.begin(), kv.second.end(),
+                    [this](const ConsoleCommand* a, const ConsoleCommand* b) {
+                        auto ia = std::find(mRegistrationOrder.begin(), mRegistrationOrder.end(), a->name);
+                        auto ib = std::find(mRegistrationOrder.begin(), mRegistrationOrder.end(), b->name);
+                        return (ia != mRegistrationOrder.end() && ib != mRegistrationOrder.end()) ? ia < ib : a->name < b->name;
+                    });
+            }
+            addLog("=== COMMANDS BY CATEGORY ===");
+            for (const auto& cat : catOrder) {
+                char hdr[64];
+                snprintf(hdr, sizeof(hdr), "--- %s ---", cat.c_str());
+                addLog(hdr);
+                for (const ConsoleCommand* cmd : byCat[cat]) {
+                    char buf[256];
+                    if (!cmd->dateAdded.empty()) {
+                        snprintf(buf, sizeof(buf), "  %-24s %s  (%s)",
+                                 cmd->name.c_str(), cmd->description.c_str(),
+                                 cmd->dateAdded.c_str());
+                    } else {
+                        snprintf(buf, sizeof(buf), "  %-24s %s",
+                                 cmd->name.c_str(), cmd->description.c_str());
+                    }
+                    addLog(buf);
                 }
-                addLog(std::string(buf));
             }
         }
-    });
+    }, CommandCategory::UI);
 
     registerCommand({
         "help_recent",
@@ -904,6 +926,19 @@ void Terminal::registerCommand(const ConsoleCommand& cmd) {
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded) {
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].dateAdded = dateAdded;
+    mRegistrationOrder.push_back(cmd.name);
+}
+
+void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory category) {
+    mCommands[cmd.name] = cmd;
+    mCommands[cmd.name].category = category;
+    mRegistrationOrder.push_back(cmd.name);
+}
+
+void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category) {
+    mCommands[cmd.name] = cmd;
+    mCommands[cmd.name].dateAdded = dateAdded;
+    mCommands[cmd.name].category = category;
     mRegistrationOrder.push_back(cmd.name);
 }
 

@@ -360,6 +360,10 @@ RevolverShotResult tryFireHitscan(
             result.knockbackImpulse = shotDirection * kn + glm::vec3(0, 0, kn * 0.12f);
         }
         hitmarker();
+        if (GetPlayerSettings().debugCombat)
+            Debug::log(Debug::Category::Weapons,
+                "[HITMARKER] attacker=%s victim=npc_%u show=1 reason=local_player_hit_npc",
+                shooter.username.c_str(), victim->id);
 
         EffectPartSystem::instance().spawnBloodEffect(
             result.end, shotDirection, (float)totalDamage,
@@ -395,6 +399,10 @@ RevolverShotResult tryFireHitscan(
             result.knockbackImpulse = shotDirection * kn;
         }
         hitmarker();
+        if (GetPlayerSettings().debugCombat)
+            Debug::log(Debug::Category::Weapons,
+                "[HITMARKER] attacker=%s victim=%s show=1 reason=local_player_hit_remote",
+                shooter.username.c_str(), remoteVictim->username.c_str());
         EffectPartSystem::instance().spawnDamage(
             result.end, remoteVictim->username, totalDamage);
         EffectPartSystem::instance().spawnBloodEffect(
@@ -519,7 +527,11 @@ RevolverShotResult tryFireHitscanDir(
         result.bodyPart = hitPart;
         result.damage = (float)totalDamage;
 
-        hitmarker();
+        // No hitmarker here: this path is called when an NPC damages the player.
+        // Damage confirmation effects only, no visual hit confirmation.
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC HITS PLAYER] npc=%s weapon=%s damage=%d dist=%.1f",
+            shooter.username.c_str(), def.id.c_str(), totalDamage, nearest);
         EffectPartSystem::instance().spawnDamage(result.end, targetPlayer->username, totalDamage);
         EffectPartSystem::instance().spawnBloodEffect(
             result.end, shotDirection, (float)totalDamage,
@@ -773,6 +785,10 @@ void fireMultiPellet(
     if (anyHitEntity) {
         playWorldSound(def.soundHit, lastPelletEnd, 0.85f, 1.0f, 35.0f);
         hitmarker();
+        if (GetPlayerSettings().debugCombat)
+            Debug::log(Debug::Category::Weapons,
+                "[HITMARKER] attacker=%s pellet_hit=1 show=1 reason=shotgun_hit_entity",
+                shooter.username.c_str());
     } else if (anyHitWorld) {
         playWorldSound("hitworld", lastPelletEnd, 0.8f, 1.0f, 35.0f);
     }
