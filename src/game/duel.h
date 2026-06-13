@@ -141,15 +141,6 @@ private:
     bool matchOverCaptured = false;
     glm::vec3 matchOverCameraTarget{0.0f};
 
-    // Final kill replay
-    std::string finalKillReplayPath;
-    bool finalKillReplayActive = false;
-    float finalKillReplayTime = 0.0f;
-    float finalKillSlowMoFactor = 1.0f;
-    int finalKillKillTick = 0;
-    std::string finalKillKillerId;
-    std::string finalKillVictimId;
-
     // Cached team spawn points for current match
     glm::vec3 mTeamASpawn{0.0f};
     glm::vec3 mTeamBSpawn{0.0f};
