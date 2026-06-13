@@ -386,6 +386,20 @@ std::string generateReplayClipPath()
     return (std::filesystem::path("replays") / "clips" / fileName).string();
 }
 
+std::string generateInstantReplayPath()
+{
+    const std::time_t now = std::time(nullptr);
+    std::tm localTime{};
+#ifdef _WIN32
+    localtime_s(&localTime, &now);
+#else
+    localtime_r(&now, &localTime);
+#endif
+    char fileName[80];
+    std::strftime(fileName, sizeof(fileName), "instant-replay-%Y-%m-%d_%H-%M-%S.json", &localTime);
+    return (std::filesystem::path("replays") / "instants" / fileName).string();
+}
+
 std::vector<std::string> listReplayClips()
 {
     std::vector<std::pair<std::filesystem::file_time_type, std::string>> found;
@@ -612,12 +626,9 @@ void ReplayRecorder::recordFrame(const InputFrame& frame) {
     rf.tick = mTick++;
     mEventTick = rf.tick;
     rf.inputs = frame;
+    if (mMaxTicks > 0 && mFrames.size() >= mMaxTicks)
+        mFrames.erase(mFrames.begin());
     mFrames.push_back(rf);
-    if (mMaxTicks > 0 && mFrames.size() > mMaxTicks) {
-        const size_t trimCount =
-            std::min<size_t>(mHeader.tickRate, mFrames.size());
-        mFrames.erase(mFrames.begin(), mFrames.begin() + trimCount);
-    }
     mHeader.tickCount = (uint32_t)mFrames.size();
 }
 
@@ -628,13 +639,9 @@ void ReplayRecorder::recordSceneFrame(const ReplaySceneFrame& inputFrame)
     ReplaySceneFrame frame = inputFrame;
     frame.effects.insert(frame.effects.end(), mPendingEffects.begin(), mPendingEffects.end());
     mPendingEffects.clear();
+    if (mMaxTicks > 0 && mSceneFrames.size() >= mMaxTicks)
+        mSceneFrames.erase(mSceneFrames.begin());
     mSceneFrames.push_back(frame);
-    if (mMaxTicks > 0 && mSceneFrames.size() > mMaxTicks) {
-        const size_t trimCount =
-            std::min<size_t>(mHeader.tickRate, mSceneFrames.size());
-        mSceneFrames.erase(
-            mSceneFrames.begin(), mSceneFrames.begin() + trimCount);
-    }
     mEventTick = mTick;
 }
 

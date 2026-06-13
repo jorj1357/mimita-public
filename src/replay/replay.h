@@ -246,6 +246,7 @@ private:
 std::string generateReplayExportPath();
 std::string generateReplayValidationPath(const std::string& replayPath);
 std::string generateReplayClipPath();
+std::string generateInstantReplayPath();
 std::vector<std::string> listReplayClips();
 
 void setActiveReplayRecorder(ReplayRecorder* recorder);
