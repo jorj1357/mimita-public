@@ -46,7 +46,7 @@ struct DeadBody {
     glm::vec3 deathImpulse{0.0f};
 
     // Death freeze: body is frozen for this duration before physics activates
-    float deathFreezeTimer = 0.02f;
+    float deathFreezeTimer = 0.0f;
 };
 
 class DeathSystem {
