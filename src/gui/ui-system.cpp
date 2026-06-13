@@ -318,6 +318,7 @@ float uiMeasureText(const char* text, float scale)
 
 void uiSetDebug(bool enabled) { gDebug = enabled; }
 void uiSetEditMode(bool enabled) { gUiEditMode = enabled; }
+bool uiEditModeEnabled() { return gUiEditMode; }
 bool uiDebugEnabled() { return gDebug; }
 
 void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName)
@@ -612,7 +613,7 @@ bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float 
     double mx = 0.0, my = 0.0;
     glfwGetCursorPos(win, &mx, &my);
     bool hovered = pointIn(mx, my, r);
-    if (hovered && gMouseDown) {
+    if (!gUiEditMode && hovered && gMouseDown) {
         float t = std::clamp((float(mx) - r.x) / r.w, 0.0f, 1.0f);
         *value = minValue + t * (maxValue - minValue);
     }
@@ -625,7 +626,7 @@ bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float 
     snprintf(buf, sizeof(buf), "%s %.1f", label, *value);
     uiDrawText(buf, r.x, r.y - 28.0f, 0.42f, {0.88f,0.9f,0.94f,1});
     debugWidget("SLIDER", label, r, hovered, hovered && gMouseDown);
-    return hovered && gMouseDown;
+    return !gUiEditMode && hovered && gMouseDown;
 }
 
 void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)

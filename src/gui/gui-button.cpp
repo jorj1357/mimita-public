@@ -30,6 +30,9 @@ bool guiButton(
     glm::vec4 color
 )
 {
+    if (uiEditModeEnabled())
+        return false;
+
     GuiScale s = guiGetScale(win);
 
     x *= s.scaleX;

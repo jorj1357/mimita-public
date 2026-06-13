@@ -399,6 +399,9 @@ std::vector<std::string> listReplayClips()
         if (ec || !entry.is_regular_file())
             continue;
         const std::string name = entry.path().filename().string();
+        // Skip validation companion files
+        if (name.find("-validation") != std::string::npos)
+            continue;
         // Match .json replay files (full replays) and .mclip.json clips
         if ((name.size() > 5 && name.rfind(".json") == name.size() - 5) ||
             (name.size() > 11 && name.rfind(".mclip.json") == name.size() - 11)) {
