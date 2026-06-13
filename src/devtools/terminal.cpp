@@ -77,7 +77,7 @@ void Terminal::init(GLFWwindow* window) {
 
     registerCommand({
         "help",
-        "List all available commands",
+        "List all available commands (sorted A-Z)",
         "help",
         [this](const std::vector<std::string>&) {
             std::vector<const ConsoleCommand*> commands;
@@ -86,10 +86,138 @@ void Terminal::init(GLFWwindow* window) {
             std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
                 return a->name < b->name;
             });
-            addLog("Available commands:");
+            addLog("Available commands (try help2 for newest first):");
             for (const ConsoleCommand* command : commands) {
                 char buf[256];
                 snprintf(buf, sizeof(buf), "  %-24s %s", command->name.c_str(), command->description.c_str());
+                addLog(buf);
+            }
+        }
+    });
+
+    registerCommand({
+        "help2",
+        "List commands sorted by date added (newest at bottom)",
+        "help2",
+        [this](const std::vector<std::string>&) {
+            std::vector<const ConsoleCommand*> commands;
+            commands.reserve(mCommands.size());
+            for (const auto& pair : mCommands) commands.push_back(&pair.second);
+            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                if (a->dateAdded != b->dateAdded)
+                    return a->dateAdded < b->dateAdded;
+                return a->name < b->name;
+            });
+            addLog("=== RECENT COMMANDS (newest at bottom) ===");
+            for (const ConsoleCommand* command : commands) {
+                char buf[256];
+                bool isNew = !command->dateAdded.empty() && command->dateAdded >= "2026-06-10";
+                if (isNew) {
+                    snprintf(buf, sizeof(buf), "  [NEW] %-20s %s  (added: %s)",
+                             command->name.c_str(), command->description.c_str(),
+                             command->dateAdded.c_str());
+                    addLog(std::string(buf));
+                } else if (!command->dateAdded.empty()) {
+                    snprintf(buf, sizeof(buf), "  %-24s %s  (%s)",
+                             command->name.c_str(), command->description.c_str(),
+                             command->dateAdded.c_str());
+                    addLog(std::string(buf));
+                } else {
+                    snprintf(buf, sizeof(buf), "  %-24s %s",
+                             command->name.c_str(), command->description.c_str());
+                    addLog(std::string(buf));
+                }
+            }
+        }
+    });
+
+    registerCommand({
+        "help_recent",
+        "Show last 20 added commands",
+        "help_recent",
+        [this](const std::vector<std::string>&) {
+            std::vector<const ConsoleCommand*> commands;
+            commands.reserve(mCommands.size());
+            for (const auto& pair : mCommands) {
+                if (!pair.second.dateAdded.empty())
+                    commands.push_back(&pair.second);
+            }
+            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                if (a->dateAdded != b->dateAdded)
+                    return a->dateAdded > b->dateAdded; // newest first
+                return a->name < b->name;
+            });
+            int count = 0;
+            addLog("=== RECENTLY ADDED COMMANDS ===");
+            for (const ConsoleCommand* command : commands) {
+                if (count >= 20) break;
+                char buf[256];
+                snprintf(buf, sizeof(buf), "  [NEW] %-20s %s  (added: %s)",
+                         command->name.c_str(), command->description.c_str(),
+                         command->dateAdded.c_str());
+                addLog(std::string(buf));
+                count++;
+            }
+        }
+    });
+
+    registerCommand({
+        "help_today",
+        "Show commands added in the current session",
+        "help_today",
+        [this](const std::vector<std::string>&) {
+            std::vector<const ConsoleCommand*> commands;
+            commands.reserve(mCommands.size());
+            for (const auto& pair : mCommands) {
+                if (!pair.second.dateAdded.empty())
+                    commands.push_back(&pair.second);
+            }
+            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                if (a->dateAdded != b->dateAdded)
+                    return a->dateAdded > b->dateAdded;
+                return a->name < b->name;
+            });
+            addLog("=== ALL DATED COMMANDS ===");
+            for (const ConsoleCommand* command : commands) {
+                char buf[256];
+                snprintf(buf, sizeof(buf), "  [%s] %-20s %s",
+                         command->dateAdded.c_str(), command->name.c_str(),
+                         command->description.c_str());
+                addLog(std::string(buf));
+            }
+        }
+    });
+
+    registerCommand({
+        "help_since",
+        "Show commands added after a date (e.g. help_since 2026-06-10)",
+        "help_since <YYYY-MM-DD>",
+        [this](const std::vector<std::string>& args) {
+            std::string since = args.empty() ? "2026-06-01" : args[0];
+            std::vector<const ConsoleCommand*> commands;
+            commands.reserve(mCommands.size());
+            for (const auto& pair : mCommands) {
+                if (!pair.second.dateAdded.empty() && pair.second.dateAdded >= since)
+                    commands.push_back(&pair.second);
+            }
+            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                if (a->dateAdded != b->dateAdded)
+                    return a->dateAdded > b->dateAdded;
+                return a->name < b->name;
+            });
+            char header[128];
+            snprintf(header, sizeof(header), "=== COMMANDS ADDED SINCE %s ===", since.c_str());
+            addLog(header);
+            for (const ConsoleCommand* command : commands) {
+                char buf[256];
+                snprintf(buf, sizeof(buf), "  [NEW] %-20s %s  (added: %s)",
+                         command->name.c_str(), command->description.c_str(),
+                         command->dateAdded.c_str());
+                addLog(std::string(buf));
+            }
+            if (commands.empty()) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "  (no commands found since %s)", since.c_str());
                 addLog(buf);
             }
         }
@@ -777,6 +905,11 @@ void Terminal::execute(const std::string& input) {
 
 void Terminal::registerCommand(const ConsoleCommand& cmd) {
     mCommands[cmd.name] = cmd;
+}
+
+void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded) {
+    mCommands[cmd.name] = cmd;
+    mCommands[cmd.name].dateAdded = dateAdded;
 }
 
 void Terminal::handleChar(unsigned int codepoint) {

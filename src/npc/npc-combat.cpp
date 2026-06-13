@@ -7,10 +7,15 @@
 #include <glm/gtc/constants.hpp>
 
 #include "audio/audio.h"
+#include "combat/weapon-fire.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-types.h"
 #include "config.h"
 #include "effects/effect-part.h"
 #include "ui/hitmarker.h"
 #include "world/world.h"
+
+bool gNpcForceHit = false;
 
 namespace {
 
@@ -115,18 +120,25 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
         s = (a_dot_b * a_dot_r - b_dot_r) / denom;
     }
 
-    // Clamp s to capsule segment
-    if (s < 0.0f) {
-        s = 0.0f;
-        t = a_dot_r;
-    } else if (s > abLen) {
-        s = abLen;
-        t = a_dot_r + a_dot_b * abLen;
+    // Check distance at the unclamped s (if within segment), or at both endpoints
+    // when the infinite-line closest point falls outside the capsule segment.
+    // The nearest-endpoint clamp alone misses the case where the ray passes closer
+    // to the FAR end (e.g., NPC above player — s wants to be below capsule bottom,
+    // clamps to bottom, but the actual closest approach is at the capsule top).
+    struct { float s, t, d; } best = {s, 0.0f, 1e30f};
+    auto checkS = [&](float sVal) {
+        float tVal = (sVal <= 0.0f) ? a_dot_r : a_dot_r + a_dot_b * sVal;
+        tVal = std::clamp(tVal, 0.0f, MAX_RAY);
+        float dVal = glm::length((origin + rayDir * tVal) - (a + abDir * sVal));
+        if (dVal < best.d) { best = {sVal, tVal, dVal}; }
+    };
+    if (s >= 0.0f && s <= abLen) {
+        checkS(s); // unclamped point is within segment
+    } else {
+        checkS(0.0f);       // capsule bottom
+        checkS(abLen);      // capsule top — may be closer than bottom!
     }
-
-    // Clamp t to ray segment
-    if (t < 0.0f) t = 0.0f;
-    else if (t > MAX_RAY) t = MAX_RAY;
+    t = best.t; s = best.s;
 
     glm::vec3 closestRay = origin + rayDir * t;
     glm::vec3 closestSeg = a + abDir * s;
@@ -194,6 +206,34 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     if (dist > 150.0f)
         return false;
 
+    // Auto-equip weapon if not set
+    if (npc.body.equippedSlot < 1 || npc.body.equippedWeaponId.empty()) {
+        float d01 = difficulty01(npc.difficulty);
+        if (d01 < 0.4f) {
+            npc.body.equippedSlot = 1;
+            npc.body.equippedWeaponId = "revolver";
+        } else if (d01 < 0.7f) {
+            npc.body.equippedSlot = (rand() % 2 == 0) ? 1 : 3;
+            npc.body.equippedWeaponId = (npc.body.equippedSlot == 1) ? "revolver" : "shotgun";
+        } else {
+            npc.body.equippedSlot = (rand() % 2 == 0) ? 3 : 1;
+            npc.body.equippedWeaponId = (npc.body.equippedSlot == 3) ? "shotgun" : "revolver";
+        }
+        printf("[NPC WEAPON] npc=%u auto-equipped slot=%d weapon=%s\n",
+               npc.id, npc.body.equippedSlot, npc.body.equippedWeaponId.c_str());
+    }
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+    if (!def) return false;
+
+    // Initialize runtime if needed
+    auto& rt = npc.body.weaponRuntimes[def->id];
+    if (rt.currentAmmo <= 0 && def->magazineSize > 0) {
+        rt.currentAmmo = def->magazineSize;
+        auto it = def->customParams.find("reserveAmmo");
+        rt.reserveAmmo = (it != def->customParams.end()) ? (int)it->second : 999;
+    }
+
     float settleTime = 0.1f + (1.0f - difficulty01(npc.difficulty)) * 0.5f;
     npc.aimTimer += dt;
     if (npc.aimTimer < settleTime)
@@ -206,70 +246,35 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     glm::vec3 aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
 
-    Capsule playerCap = player.getCapsule();
-    float hitDist = 0.0f;
-    glm::vec3 hitNormal;
-    bool hitPlayer = rayCapsule(npcPos, aimDir, playerCap.a, playerCap.b, playerCap.r,
-                                 hitDist, hitNormal);
+    // Decrement ammo
+    if (def->magazineSize > 0)
+        rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
-    bool blockedByWorld = false;
-    if (hitPlayer) {
-        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-            glm::vec3 e1 = tri.b - tri.a;
-            glm::vec3 e2 = tri.c - tri.a;
-            glm::vec3 pVec = glm::cross(aimDir, e2);
-            float det = glm::dot(e1, pVec);
-            if (std::fabs(det) < 0.0001f) continue;
-            float invDet = 1.0f / det;
-            glm::vec3 tVec = npcPos - tri.a;
-            float u = glm::dot(tVec, pVec) * invDet;
-            if (u < 0.0f || u > 1.0f) continue;
-            glm::vec3 qVec = glm::cross(tVec, e1);
-            float v = glm::dot(aimDir, qVec) * invDet;
-            if (v < 0.0f || u + v > 1.0f) continue;
-            float t = glm::dot(e2, qVec) * invDet;
-            if (t > 0.1f && t < hitDist - 0.3f) {
-                blockedByWorld = true;
-                break;
-            }
-        }
+    // Fire using shared weapon system
+    RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
+        *def, rt, npc.body, world, npcPos, aimDir, &player);
+
+    if (DebugConfig::DEBUG_NPC_COMBAT) {
+        printf("[NPC WEAPON FIRE] npc=%u weapon=%s origin=(%.2f %.2f %.2f) "
+               "aimDir=(%.2f %.2f %.2f) ammo=%d\n",
+               npc.id, def->id.c_str(), npcPos.x, npcPos.y, npcPos.z,
+               aimDir.x, aimDir.y, aimDir.z, rt.currentAmmo);
+        printf("[NPC WEAPON RESULT] npc=%u fired=%d hitEntity=%d hitWorld=%d "
+               "damage=%.0f hpAfter=%d\n",
+               npc.id, (int)shot.fired, (int)shot.hitEntity, (int)shot.hitWorld,
+               shot.damage, player.currentHp);
     }
 
-    float d01 = difficulty01(npc.difficulty);
-    int dmg = std::max(1, (int)(6.0f + d01 * 14.0f + (random01(npc.rngState) * 12.0f - 6.0f)));
-    glm::vec3 hitPoint = npcPos + aimDir * (hitPlayer && !blockedByWorld ? hitDist : dist * 0.8f);
-    glm::vec3 knockbackDir = aimDir;
-    knockbackDir.z = 0.2f;
-
-    EffectPartSystem::instance().spawnMuzzleFlash(npcPos, npc.body.username);
-    EffectPartSystem::instance().spawnTracer(npcPos, hitPoint, npc.body.username);
-
-    if (!blockedByWorld && hitPlayer) {
-        EffectPartSystem::instance().spawnBloodEffect(
-            hitPoint, aimDir, (float)dmg, npc.body.username, player.username);
-        EffectPartSystem::instance().spawnEntityImpact(
-            hitPoint, -aimDir, npc.body.username, player.username);
-        player.takeDamage(dmg, knockbackDir, 8.0f);
-        hitmarker();
-    } else {
-        EffectPartSystem::instance().spawnWorldImpact(hitPoint, -aimDir);
-    }
-
-    AudioManager::instance().play(
-        {"revolvershoot", AudioCategory::Weapons, true, npcPos, 0.5f, 0.9f, 40.0f, npc.id});
-
-    int hpAfter = player.currentHp;
-    printf("[NPC SHOT] hit=%d blocked=%d damage=%d hpAfter=%d dist=%.1f aimError=%.1fdeg\n",
-           (int)hitPlayer, (int)blockedByWorld, dmg, hpAfter, dist,
+    printf("[NPC SHOT] hit=%d weapon=%s damage=%.0f hpAfter=%d dist=%.1f aimError=%.1fdeg\n",
+           (int)shot.hitEntity, def->id.c_str(), shot.damage, player.currentHp, dist,
            aimErrorDegrees(npc.difficulty));
 
-    // Reset aim timer after firing
     npc.aimTimer = 0.0f;
 
-    // Cooldown scales with distance: closer = faster firing
+    float d01 = difficulty01(npc.difficulty);
     float rangeFactor = std::clamp(dist / 150.0f, 0.0f, 1.0f);
     float cd = 0.45f - d01 * 0.35f;
-    cd += rangeFactor * 0.5f; // longer range = slower fire
+    cd += rangeFactor * 0.5f;
     cd = std::max(cd, 0.06f);
     npc.attackCooldown = cd;
     return true;
