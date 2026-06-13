@@ -181,26 +181,27 @@ bool DeathSystem::kill(
     body.debugDeathDir = direction;
 
     if (DebugConfig::DEBUG_NPC_DEATH) {
-        printf("\n[RAGDOLL SPAWN]\n");
-        printf("  id=%s\n", body.id.c_str());
-        printf("  deathPos=(%.2f %.2f %.2f)\n", victimPos.x, victimPos.y, victimPos.z);
-        printf("  deathVel=(%.2f %.2f %.2f)\n", linearVel.x, linearVel.y, linearVel.z);
-        printf("  deathSpeed=%.2f\n", glm::length(linearVel));
-        printf("  deathImpulse=(%.2f %.2f %.2f)\n",
-               body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z);
-        printf("  deathDir=(%.2f %.2f %.2f)\n", direction.x, direction.y, direction.z);
-        printf("  lethalForce=%.1f\n", lethalForce);
-        printf("  corpseInitialVel=(%.2f %.2f %.2f)\n",
-               body.velocity.x, body.velocity.y, body.velocity.z);
-        printf("  corpseAngVel=(%.2f %.2f %.2f)\n",
-               body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
-        printf("  velocityInherited=(%.2f %.2f %.2f)\n",
-               linearVel.x, linearVel.y, linearVel.z);
-        printf("  diffBeforeAfter=(%.2f %.2f %.2f)\n",
-               linearVel.x - body.velocity.x,
-               linearVel.y - body.velocity.y,
-               linearVel.z - body.velocity.z);
-        printf("[/RAGDOLL SPAWN]\n\n");
+    // TODO(debug): migrate these to Debug::log(Debug::Category::Ragdoll)
+    printf("\n[RAGDOLL SPAWN]\n");
+    printf("  id=%s\n", body.id.c_str());
+    printf("  deathPos=(%.2f %.2f %.2f)\n", victimPos.x, victimPos.y, victimPos.z);
+    printf("  deathVel=(%.2f %.2f %.2f)\n", linearVel.x, linearVel.y, linearVel.z);
+    printf("  deathSpeed=%.2f\n", glm::length(linearVel));
+    printf("  deathImpulse=(%.2f %.2f %.2f)\n",
+           body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z);
+    printf("  deathDir=(%.2f %.2f %.2f)\n", direction.x, direction.y, direction.z);
+    printf("  lethalForce=%.1f\n", lethalForce);
+    printf("  corpseInitialVel=(%.2f %.2f %.2f)\n",
+           body.velocity.x, body.velocity.y, body.velocity.z);
+    printf("  corpseAngVel=(%.2f %.2f %.2f)\n",
+           body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+    printf("  velocityInherited=(%.2f %.2f %.2f)\n",
+           linearVel.x, linearVel.y, linearVel.z);
+    printf("  diffBeforeAfter=(%.2f %.2f %.2f)\n",
+           linearVel.x - body.velocity.x,
+           linearVel.y - body.velocity.y,
+           linearVel.z - body.velocity.z);
+    printf("[/RAGDOLL SPAWN]\n\n");
     }
 
     // Single physics body slightly above death position to avoid floor embedding
@@ -266,11 +267,12 @@ bool DeathSystem::kill(
     victim.respawnTimer = RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
 
-    printf("[RAGDOLL] player=%s activated=true parts=%zu\n",
-           victim.username.c_str(), body.frozenParts.size());
-    printf("[RAGDOLL IMPULSE] force=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
-           body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
-           body.velocity.x, body.velocity.y, body.velocity.z);
+        // TODO(debug): migrate to Debug::log(Debug::Category::Ragdoll)
+        printf("[RAGDOLL] player=%s activated=true parts=%zu\n",
+               victim.username.c_str(), body.frozenParts.size());
+        printf("[RAGDOLL IMPULSE] force=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
+               body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
+               body.velocity.x, body.velocity.y, body.velocity.z);
 
     if (actorType == "npc")
         AudioManager::instance().play(
@@ -522,6 +524,7 @@ void DeathSystem::update(
                     body.debugTickTimer = 0.0f;
                     float distFromSpawn = glm::length(body.position - body.spawnPosition);
                     float gravDot = glm::dot(body.velocity, body.debugGravity);
+                    // TODO(debug): migrate to Debug::log(Debug::Category::Ragdoll)
                     printf("[RAGDOLL TICK] id=%s pos=(%.2f %.2f %.2f) "
                            "vel=(%.2f %.2f %.2f) speed=%.2f "
                            "angVel=(%.2f %.2f %.2f) "

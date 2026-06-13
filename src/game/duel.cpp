@@ -516,6 +516,8 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     printf("[DUEL] Play Again clicked\n");
     printf("[DUEL] Restarting duel with existing settings\n");
 
+    config.enabled = true;
+
     npcs.destroyAll();
 
     // Respawn NPCs with saved config

@@ -97,36 +97,29 @@ void Terminal::init(GLFWwindow* window) {
 
     registerCommand({
         "help2",
-        "List commands sorted by date added (newest at bottom)",
+        "List commands in registration order (newest at bottom)",
         "help2",
         [this](const std::vector<std::string>&) {
-            std::vector<const ConsoleCommand*> commands;
-            commands.reserve(mCommands.size());
-            for (const auto& pair : mCommands) commands.push_back(&pair.second);
-            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
-                if (a->dateAdded != b->dateAdded)
-                    return a->dateAdded < b->dateAdded;
-                return a->name < b->name;
-            });
-            addLog("=== RECENT COMMANDS (newest at bottom) ===");
-            for (const ConsoleCommand* command : commands) {
+            addLog("=== COMMANDS (newest last) ===");
+            int total = (int)mRegistrationOrder.size();
+            for (int i = 0; i < total; ++i) {
+                auto it = mCommands.find(mRegistrationOrder[i]);
+                if (it == mCommands.end()) continue;
+                const ConsoleCommand& cmd = it->second;
+                bool isRecent = i >= total - 20;
                 char buf[256];
-                bool isNew = !command->dateAdded.empty() && command->dateAdded >= "2026-06-10";
-                if (isNew) {
-                    snprintf(buf, sizeof(buf), "  [NEW] %-20s %s  (added: %s)",
-                             command->name.c_str(), command->description.c_str(),
-                             command->dateAdded.c_str());
-                    addLog(std::string(buf));
-                } else if (!command->dateAdded.empty()) {
-                    snprintf(buf, sizeof(buf), "  %-24s %s  (%s)",
-                             command->name.c_str(), command->description.c_str(),
-                             command->dateAdded.c_str());
-                    addLog(std::string(buf));
+                if (isRecent && !cmd.dateAdded.empty()) {
+                    snprintf(buf, sizeof(buf), "  [NEW] %-20s %s  (%s)",
+                             cmd.name.c_str(), cmd.description.c_str(),
+                             cmd.dateAdded.c_str());
+                } else if (isRecent) {
+                    snprintf(buf, sizeof(buf), "  [NEW] %-20s %s",
+                             cmd.name.c_str(), cmd.description.c_str());
                 } else {
                     snprintf(buf, sizeof(buf), "  %-24s %s",
-                             command->name.c_str(), command->description.c_str());
-                    addLog(std::string(buf));
+                             cmd.name.c_str(), cmd.description.c_str());
                 }
+                addLog(std::string(buf));
             }
         }
     });
@@ -905,11 +898,13 @@ void Terminal::execute(const std::string& input) {
 
 void Terminal::registerCommand(const ConsoleCommand& cmd) {
     mCommands[cmd.name] = cmd;
+    mRegistrationOrder.push_back(cmd.name);
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded) {
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].dateAdded = dateAdded;
+    mRegistrationOrder.push_back(cmd.name);
 }
 
 void Terminal::handleChar(unsigned int codepoint) {
