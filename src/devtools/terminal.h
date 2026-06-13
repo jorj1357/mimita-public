@@ -12,6 +12,7 @@ struct ConsoleCommand {
     std::string description;
     std::string usage;
     std::function<void(const std::vector<std::string>& args)> fn;
+    std::string dateAdded;  // "YYYY-MM-DD" or empty — stored separately
 };
 
 class Terminal {
@@ -29,6 +30,7 @@ public:
     void render();
 
     void registerCommand(const ConsoleCommand& cmd);
+    void registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded);
     void execute(const std::string& input);
     void addLog(const std::string& text);
 

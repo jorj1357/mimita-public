@@ -69,6 +69,7 @@
 #include "game/game-state.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
+#include "debug/transform-debug.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
@@ -836,6 +837,30 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "npc_damage_debug", "Toggle verbose NPC damage/raycast logging", "npc_damage_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            DebugConfig::DEBUG_NPC_COMBAT = args.empty() ? !DebugConfig::DEBUG_NPC_COMBAT : args[0] != "0";
+            Terminal::instance().addLog(std::string("[DEBUG] NPC combat logging ") +
+                (DebugConfig::DEBUG_NPC_COMBAT ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_force_hit", "Force NPC raycast to always hit (debug)", "npc_force_hit <0|1>",
+        [](const std::vector<std::string>& args) {
+            gNpcForceHit = args.empty() ? !gNpcForceHit : args[0] != "0";
+            Terminal::instance().addLog(std::string("[DEBUG] NPC force hit ") +
+                (gNpcForceHit ? "ENABLED" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "player_capsule_debug", "Toggle player capsule debug visualization", "player_capsule_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            DebugConfig::DEBUG_COLLISION = args.empty() ? !DebugConfig::DEBUG_COLLISION : args[0] != "0";
+            Terminal::instance().addLog(std::string("[DEBUG] player capsule debug ") +
+                (DebugConfig::DEBUG_COLLISION ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
         "npc_delete_selected", "Delete selected NPCs", "npc_delete_selected",
         [&npcSystem](const std::vector<std::string>&) {
             std::vector<std::uint32_t> ids(
@@ -938,6 +963,58 @@ int main(int argc, char** argv)
             Terminal::instance().addLog("[OK] stepping one frame — corpses will resume next tick");
         }
     });
+
+    Terminal::instance().registerCommand({
+        "transform_debug", "Enable/disable transform write logging (0=off, 1=on)", "transform_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                TransformDebug::instance().setEnabled(!TransformDebug::instance().isEnabled());
+            } else {
+                TransformDebug::instance().setEnabled(args[0] != "0");
+            }
+            Terminal::instance().addLog(TransformDebug::instance().isEnabled()
+                ? "[OK] transform debug enabled"
+                : "[OK] transform debug disabled");
+        }
+    }, "2026-06-13");
+    Terminal::instance().registerCommand({
+        "entity_debug", "Filter transform logging to a specific entity ID", "entity_debug <entityId>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                TransformDebug::instance().setTargetEntity("");
+                Terminal::instance().addLog("[OK] entity debug filter cleared");
+                return;
+            }
+            TransformDebug::instance().setTargetEntity(args[0]);
+            Terminal::instance().addLog("[OK] entity debug filter set to: " + args[0]);
+        }
+    }, "2026-06-13");
+    Terminal::instance().registerCommand({
+        "transform_history", "Show recent transform writes for an entity", "transform_history <entityId>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] usage: transform_history <entityId>");
+                return;
+            }
+            const auto* history = TransformDebug::instance().getHistory(args[0]);
+            if (!history || history->empty()) {
+                Terminal::instance().addLog("[ERROR] no history for: " + args[0]);
+                return;
+            }
+            char buf[512];
+            snprintf(buf, sizeof(buf), "=== TRANSFORM HISTORY for %s (%zu events) ===",
+                     args[0].c_str(), history->size());
+            Terminal::instance().addLog(buf);
+            int i = 0;
+            for (const auto& ev : *history) {
+                snprintf(buf, sizeof(buf), "  %d. %s  pos=(%.1f %.1f %.1f)->(%.1f %.1f %.1f)",
+                         ++i, ev.system.c_str(),
+                         ev.oldPos.x, ev.oldPos.y, ev.oldPos.z,
+                         ev.newPos.x, ev.newPos.y, ev.newPos.z);
+                Terminal::instance().addLog(buf);
+            }
+        }
+    }, "2026-06-13");
 
     Terminal::instance().registerCommand({
         "serverconnect", "Print a server connection request", "serverconnect <ip> [args...]",
