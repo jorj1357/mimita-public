@@ -9,6 +9,7 @@
 #include "audio/audio.h"
 #include "config.h"
 #include "effects/effect-part.h"
+#include "ui/hitmarker.h"
 #include "world/world.h"
 
 namespace {
@@ -68,16 +69,13 @@ bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
 
 float NpcCombat::aimErrorDegrees(float difficulty)
 {
-    if (difficulty <= 1.0f) return 12.0f;
-    if (difficulty >= 10.0f) return 0.5f;
-    float t = (difficulty - 1.0f) / 9.0f;
-    if (t <= 0.444f) {
-        float p = t / 0.444f;
-        return 12.0f - p * (12.0f - 4.0f);
-    } else {
-        float p = (t - 0.444f) / (1.0f - 0.444f);
-        return 4.0f - p * (4.0f - 0.5f);
-    }
+    float d = std::clamp(difficulty, 1.0f, 10.0f);
+    // Diff 1 = 12 deg, Diff 5 = 4 deg, Diff 10 = 0.5 deg
+    float t = (d - 1.0f) / 9.0f;
+    if (t <= 0.5f)
+        return 12.0f - (t / 0.5f) * 8.0f;
+    else
+        return 4.0f - ((t - 0.5f) / 0.5f) * 3.5f;
 }
 
 // Ray vs capsule (line segment + radius) intersection test.
@@ -145,15 +143,19 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
 
 glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos, glm::vec3 targetVel)
 {
-    glm::vec3 toTarget = targetPos - npcPos;
+    // Aim at the player's center mass (z = +0.8m above ground) instead of feet.
+    // The NPC fires from chest height (npcPos.z ≈ 0.8). Without this offset the
+    // natural aimDir would point slightly downward, but the old code forced z=0
+    // which made the horizontal ray miss the player capsule at low aim error.
+    glm::vec3 aimTarget = targetPos + glm::vec3(0.0f, 0.0f, 0.8f);
+    glm::vec3 toTarget = aimTarget - npcPos;
     float dist = glm::length(toTarget);
     if (dist < 0.1f)
         return glm::vec3{1.0f, 0.0f, 0.0f};
 
     float predictionFactor = 0.05f + npc.tuning.prediction * 0.55f;
-    glm::vec3 predicted = targetPos + targetVel * predictionFactor;
+    glm::vec3 predicted = aimTarget + targetVel * predictionFactor;
     glm::vec3 aimDir = predicted - npcPos;
-    aimDir.z = 0.0f;
     float aimLen = glm::length(aimDir);
     if (aimLen < 0.001f)
         aimDir = {1.0f, 0.0f, 0.0f};
@@ -162,66 +164,47 @@ glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 tar
 
     float errorDeg = aimErrorDegrees(npc.difficulty);
     float errorRad = glm::radians(errorDeg) * (random01(const_cast<Npc&>(npc).rngState) * 2.0f - 1.0f);
-    aimDir = rotatePlanar(aimDir, errorRad);
+    // Apply error in the horizontal plane, preserving the natural vertical component
+    {
+        float c = std::cos(errorRad);
+        float s = std::sin(errorRad);
+        float dx = aimDir.x * c - aimDir.y * s;
+        float dy = aimDir.x * s + aimDir.y * c;
+        aimDir.x = dx; aimDir.y = dy;
+        // Z component preserved so the ray passes through the player capsule
+    }
 
     return aimDir;
 }
 
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
-    printf("[NPC FIRE] npc=%s target=%s\n",
-           npc.body.username.c_str(), player.username.c_str());
-
-    if (npc.attackCooldown > 0.0f) {
-        printf("[NPC FIRE] blocked by cooldown\n");
+    if (npc.attackCooldown > 0.0f)
         return false;
-    }
 
-    // --- Range check: 150m max ---
     float dist = npc.sensors.targetDistance;
-    if (dist > 150.0f) {
-        printf("[NPC FIRE] blocked by range\n");
+    if (dist > 150.0f)
         return false;
-    }
 
-    // --- Aim settle timer ---
-    // NPC must track target briefly before firing
     float settleTime = 0.1f + (1.0f - difficulty01(npc.difficulty)) * 0.5f;
     npc.aimTimer += dt;
-    if (npc.aimTimer < settleTime) {
-        printf("[NPC FIRE] aiming... aimTimer=%.2f settleTime=%.2f\n", npc.aimTimer, settleTime);
+    if (npc.aimTimer < settleTime)
         return false;
-    }
 
-    // --- Line of sight check ---
     glm::vec3 npcPos = npc.body.pos;
     npcPos.z += 0.8f;
-    glm::vec3 toPlayer = player.pos - npcPos;
-    float losDist = glm::length(toPlayer);
-    if (!lineOfSight(npcPos, player.pos, world)) {
-        printf("[NPC FIRE] blocked by line of sight\n");
+    if (!lineOfSight(npcPos, player.pos, world))
         return false;
-    }
 
-    // --- Compute aim direction ---
     glm::vec3 aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
-    float aimErrorDeg = aimErrorDegrees(npc.difficulty);
-    bool canSeePlayer = true; // LOS already confirmed
 
-    // --- Raycast: fire a bullet at the player ---
-    // Get player capsule for hit detection
     Capsule playerCap = player.getCapsule();
     float hitDist = 0.0f;
     glm::vec3 hitNormal;
     bool hitPlayer = rayCapsule(npcPos, aimDir, playerCap.a, playerCap.b, playerCap.r,
                                  hitDist, hitNormal);
 
-    printf("[NPC RAYCAST] hit=%d entity=%s distance=%.2f\n",
-           (int)hitPlayer, player.username.c_str(), hitDist);
-
-    // Check if world geometry blocks the shot before reaching the player
     bool blockedByWorld = false;
-    float worldDist = hitDist;
     if (hitPlayer) {
         for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
             glm::vec3 e1 = tri.b - tri.a;
@@ -239,17 +222,13 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             float t = glm::dot(e2, qVec) * invDet;
             if (t > 0.1f && t < hitDist - 0.3f) {
                 blockedByWorld = true;
-                worldDist = t;
                 break;
             }
         }
     }
 
-    // --- Fire the shot (visual effects always play) ---
     float d01 = difficulty01(npc.difficulty);
-    float baseDmg = 6.0f + d01 * 14.0f;
-    int dmg = std::max(1, (int)(baseDmg + (random01(npc.rngState) * 12.0f - 6.0f)));
-
+    int dmg = std::max(1, (int)(6.0f + d01 * 14.0f + (random01(npc.rngState) * 12.0f - 6.0f)));
     glm::vec3 hitPoint = npcPos + aimDir * (hitPlayer && !blockedByWorld ? hitDist : dist * 0.8f);
     glm::vec3 knockbackDir = aimDir;
     knockbackDir.z = 0.2f;
@@ -259,10 +238,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     if (!blockedByWorld && hitPlayer) {
         EffectPartSystem::instance().spawnBloodEffect(
-            hitPoint, aimDir, (float)dmg,
-            npc.body.username, player.username);
+            hitPoint, aimDir, (float)dmg, npc.body.username, player.username);
         EffectPartSystem::instance().spawnEntityImpact(
             hitPoint, -aimDir, npc.body.username, player.username);
+        player.takeDamage(dmg, knockbackDir, 8.0f);
+        hitmarker();
     } else {
         EffectPartSystem::instance().spawnWorldImpact(hitPoint, -aimDir);
     }
@@ -270,25 +250,10 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     AudioManager::instance().play(
         {"revolvershoot", AudioCategory::Weapons, true, npcPos, 0.5f, 0.9f, 40.0f, npc.id});
 
-    // --- Apply damage only if actually hit ---
-    bool dealtDamage = false;
-    if (!blockedByWorld && hitPlayer) {
-        int hpBefore = player.currentHp;
-        printf("[NPC DAMAGE ATTEMPT] target=%s damage=%d hpBefore=%d\n",
-               player.username.c_str(), dmg, hpBefore);
-        player.takeDamage(dmg, knockbackDir, 8.0f);
-        int hpAfter = player.currentHp;
-        printf("[NPC DAMAGE APPLIED] hpAfter=%d\n", hpAfter);
-        dealtDamage = true;
-    }
-
-    if (DebugConfig::DEBUG_NPC_COMBAT) {
-        printf("[NPC SHOT] fired=1 hit=%d blocked=%d target=%s damage=%s dist=%.1f\n",
-               (int)hitPlayer, (int)blockedByWorld,
-               player.username.c_str(),
-               dealtDamage ? "APPLIED" : "MISSED",
-               dist);
-    }
+    int hpAfter = player.currentHp;
+    printf("[NPC SHOT] hit=%d blocked=%d damage=%d hpAfter=%d dist=%.1f aimError=%.1fdeg\n",
+           (int)hitPlayer, (int)blockedByWorld, dmg, hpAfter, dist,
+           aimErrorDegrees(npc.difficulty));
 
     // Reset aim timer after firing
     npc.aimTimer = 0.0f;
@@ -299,14 +264,5 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     cd += rangeFactor * 0.5f; // longer range = slower fire
     cd = std::max(cd, 0.06f);
     npc.attackCooldown = cd;
-
-    // --- Debug logging ---
-    if (DebugConfig::DEBUG_NPC_COMBAT) {
-        printf("[NPC SHOT] id=%u hit=%d blocked=%d dist=%.1f aimError=%.2f canSee=%d "
-               "dmg=%d settleTime=%.2f\n",
-               npc.id, (int)dealtDamage, (int)blockedByWorld, dist, aimErrorDeg, (int)canSeePlayer,
-               dmg, settleTime);
-    }
-
     return true;
 }

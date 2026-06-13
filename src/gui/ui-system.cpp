@@ -11,6 +11,7 @@
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
 #include "world/texture-store.h"
+#include "gui/gui-media.h"
 
 // yay sounds 6 4 2026 
 #include "audio/audio.h"
@@ -478,6 +479,36 @@ void uiDrawImage(const char* path, UIRect r, glm::vec4 color)
         r.x, r.y, 0, 0, r.x + r.w, r.y + r.h, 1, 1, r.x, r.y + r.h, 0, 1
     };
     drawTexturedQuad(verts, 6, texture, color);
+}
+
+void uiDrawMedia(const char* path, UIRect r, glm::vec4 color)
+{
+    if (!path || r.w <= 0.0f || r.h <= 0.0f) return;
+    std::string p = path;
+    size_t dot = p.rfind('.');
+    if (dot == std::string::npos) { uiDrawImage(path, r, color); return; }
+    std::string ext = p.substr(dot);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    if (ext == ".gif") {
+        const GifCache* gif = loadGif(path);
+        if (!gif || gif->frames.empty()) return;
+        GLuint tex = gif->frames[gif->currentFrame];
+        if (!tex) return;
+        float verts[] = {
+            r.x, r.y, 0, 0, r.x + r.w, r.y, 1, 0, r.x + r.w, r.y + r.h, 1, 1,
+            r.x, r.y, 0, 0, r.x + r.w, r.y + r.h, 1, 1, r.x, r.y + r.h, 0, 1
+        };
+        drawTexturedQuad(verts, 6, tex, color);
+    } else {
+        // PNG/JPG fall through to existing image loader
+        uiDrawImage(path, r, color);
+    }
+}
+
+void uiUpdateMedia(float dt)
+{
+    updateAllGifs(dt);
 }
 
 void uiDrawImageRotated(const char* path, float cx, float cy, float halfSize, float angleDeg, glm::vec4 color)

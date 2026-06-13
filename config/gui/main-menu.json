@@ -1,0 +1,14 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 1,
+  "elements": [
+    {"id": "title", "x": 0, "y": 0, "width": 200, "height": 60},
+    {"id": "playButton", "x": 0, "y": 0, "width": 250, "height": 58},
+    {"id": "settingsButton", "x": 0, "y": 0, "width": 250, "height": 58},
+    {"id": "sandboxButton", "x": 0, "y": 0, "width": 250, "height": 58},
+    {"id": "signUpButton", "x": 0, "y": 0, "width": 118, "height": 44},
+    {"id": "signInButton", "x": 0, "y": 0, "width": 118, "height": 44},
+    {"id": "resetPasswordButton", "x": 0, "y": 0, "width": 160, "height": 44},
+    {"id": "helpButton", "x": 0, "y": 0, "width": 80, "height": 44}
+  ]
+}
