@@ -77,20 +77,40 @@ void Terminal::init(GLFWwindow* window) {
 
     registerCommand({
         "help",
-        "List all available commands (sorted A-Z, category shown)",
-        "help",
-        [this](const std::vector<std::string>&) {
+        "List all available commands (sorted A-Z, category shown). help <category> to filter.",
+        "help [category]",
+        [this](const std::vector<std::string>& args) {
+            std::string filterCat;
+            if (!args.empty()) {
+                std::string a = args[0];
+                std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+                for (int c = (int)CommandCategory::Uncategorized; c <= (int)CommandCategory::UI; ++c) {
+                    std::string cn = categoryName((CommandCategory)c);
+                    std::transform(cn.begin(), cn.end(), cn.begin(), ::tolower);
+                    if (cn == a) { filterCat = categoryName((CommandCategory)c); break; }
+                }
+                if (filterCat.empty()) {
+                    addLog("Unknown category. Try: Replay, NPC, Weapon, Duel, Debug, Player, Editor, UI, Network, Inventory");
+                    return;
+                }
+            }
             std::vector<const ConsoleCommand*> commands;
             commands.reserve(mCommands.size());
             for (const auto& pair : mCommands) commands.push_back(&pair.second);
             std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
                 return a->name < b->name;
             });
-            addLog("Available commands (help2 for grouped by category):");
+            if (filterCat.empty()) {
+                addLog("Available commands (help2 for grouped by category, help <cat> to filter):");
+            } else {
+                std::string hdr = "--- " + filterCat + " ---";
+                addLog(hdr);
+            }
             std::string lastCat;
             for (const ConsoleCommand* cmd : commands) {
                 std::string cat = categoryName(cmd->category);
-                if (cat != lastCat) {
+                if (!filterCat.empty() && cat != filterCat) continue;
+                if (filterCat.empty() && cat != lastCat) {
                     char hdr[64];
                     snprintf(hdr, sizeof(hdr), "--- %s ---", cat.c_str());
                     addLog(hdr);
