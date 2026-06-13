@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <random>
 #include <memory>
 
 #include "entities/player.h"
@@ -13,43 +12,68 @@
 #include "combat/weapon-system.h"
 #include "replay/replay.h"
 #include "replay/replay-factory.h"
-#include "replay/replay-browser.h"
-#include "replay/replay-timeline.h"
 #include "network/multiplayer-context.h"
 #include "game/duel.h"
 #include "game/game-state.h"
 #include "gui/hud/chat-bubble.h"
 #include "combat/weapon-viewmodel.h"
 
-extern Player gPlayer;
-extern Camera gCamera;
-extern World gWorld;
-extern NpcSystem gNpcSystem;
-extern WeaponSystem gWeapons;
-extern bool gFreecamEnabled;
-extern glm::vec3 gDeathPosition;
-extern int gSelectedEditorObject;
-extern bool gEditorMode;
-extern std::string gActiveGameMode;
-extern std::string gActiveMapPath;
-extern bool gWorldLoaded;
+#define GP_ACCESS(Name, Field, Type) \
+    inline Type& g##Name() { return *gp##Name; }
 
-extern ReplayRingBuffer gReplayRecorder;
-extern ReplayPlayer gReplayPlayer;
-extern ReplayClipSaver gReplayClipSaver;
-extern ReplayFactory gReplayFactory;
-extern ReplayBrowser gReplayBrowser;
-extern ReplayTimeline gReplayTimeline;
-extern std::unordered_map<std::string, ActorChatState> gReplayChatStates;
-extern std::vector<std::string> G_REPLAY_CLIPS_CACHE;
-extern std::unordered_map<int, std::string> G_COMMAND_BINDS;
-extern std::unordered_map<int, bool> G_BIND_PREV;
-extern std::mt19937 gRng;
+// Declared as extern pointers (set by main.cpp)
+extern Player* gpPlayer;
+extern Camera* gpCamera;
+extern World* gpWorld;
+extern NpcSystem* gpNpcSystem;
+extern WeaponSystem* gpWeapons;
+extern bool* gpFreecamEnabled;
+extern glm::vec3* gpDeathPosition;
+extern int* gpSelectedEditorObject;
+extern bool* gpEditorMode;
+extern std::string* gpActiveGameMode;
+extern std::string* gpActiveMapPath;
+extern bool* gpWorldLoaded;
 
-extern DuelConfig gDuelConfig;
-extern DuelManager gDuelManager;
-extern MimitaNet::MultiplayerContext gMpContext;
+extern ReplayRingBuffer* gpReplayRecorder;
+extern ReplayPlayer* gpReplayPlayer;
+extern ReplayClipSaver* gpReplayClipSaver;
+extern ReplayFactory* gpReplayFactory;
+extern ReplayBrowser* gpReplayBrowser;
+extern ReplayTimeline* gpReplayTimeline;
+extern std::unordered_map<std::string, ActorChatState>* gpReplayChatStates;
+extern std::vector<std::string>* gpReplayClipsCache;
+extern std::unordered_map<int, std::string>* gpCommandBinds;
+extern std::unordered_map<int, bool>* gpBindPrev;
 
-extern GameState gGameState;
-extern GameState gPrevState;
+extern DuelConfig* gpDuelConfig;
+extern MimitaNet::MultiplayerContext* gpMpContext;
 
+extern GameState* gpGameState;
+
+// Convenience accessors (non-null after main() init)
+#define REPLAY_RECORDER (*gpReplayRecorder)
+#define REPLAY_PLAYER (*gpReplayPlayer)
+#define REPLAY_CLIP_SAVER (*gpReplayClipSaver)
+#define REPLAY_FACTORY (*gpReplayFactory)
+#define REPLAY_BROWSER (*gpReplayBrowser)
+#define REPLAY_TIMELINE (*gpReplayTimeline)
+#define REPLAY_CHAT_STATES (*gpReplayChatStates)
+#define REPLAY_CLIPS_CACHE (*gpReplayClipsCache)
+#define CMD_BINDS (*gpCommandBinds)
+#define BIND_PREV (*gpBindPrev)
+#define THE_PLAYER (*gpPlayer)
+#define THE_CAMERA (*gpCamera)
+#define THE_WORLD (*gpWorld)
+#define THE_NPC_SYSTEM (*gpNpcSystem)
+#define THE_WEAPONS (*gpWeapons)
+#define FREECAM_ENABLED (*gpFreecamEnabled)
+#define DEATH_POSITION (*gpDeathPosition)
+#define SELECTED_EDITOR_OBJ (*gpSelectedEditorObject)
+#define EDITOR_MODE (*gpEditorMode)
+#define ACTIVE_GAME_MODE (*gpActiveGameMode)
+#define ACTIVE_MAP_PATH (*gpActiveMapPath)
+#define WORLD_LOADED (*gpWorldLoaded)
+#define DUEL_CONFIG (*gpDuelConfig)
+#define MP_CONTEXT (*gpMpContext)
+#define GAME_STATE (*gpGameState)

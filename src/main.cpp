@@ -103,11 +103,43 @@
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
 #include "gui/menus/duel-config-menu.h"
+#include "terminal/terminal-state.h"
+#include "terminal/replay-commands.h"
 
 // 6 9 2026 sort and be more aweosme
 // duelamanger should be  a game manager, with specific modes in it
 // not all in main todo 
 DuelManager gDuelManager;
+
+// Global game objects (pointers set by main() for terminal command access)
+Player* gpPlayer = nullptr;
+Camera* gpCamera = nullptr;
+World* gpWorld = nullptr;
+NpcSystem* gpNpcSystem = nullptr;
+WeaponSystem* gpWeapons = nullptr;
+bool* gpFreecamEnabled = nullptr;
+glm::vec3* gpDeathPosition = nullptr;
+int* gpSelectedEditorObject = nullptr;
+bool* gpEditorMode = nullptr;
+std::string* gpActiveGameMode = nullptr;
+std::string* gpActiveMapPath = nullptr;
+bool* gpWorldLoaded = nullptr;
+
+ReplayRingBuffer* gpReplayRecorder = nullptr;
+ReplayPlayer* gpReplayPlayer = nullptr;
+ReplayClipSaver* gpReplayClipSaver = nullptr;
+ReplayFactory* gpReplayFactory = nullptr;
+ReplayBrowser* gpReplayBrowser = nullptr;
+ReplayTimeline* gpReplayTimeline = nullptr;
+std::unordered_map<std::string, ActorChatState>* gpReplayChatStates = nullptr;
+std::vector<std::string>* gpReplayClipsCache = nullptr;
+std::unordered_map<int, std::string>* gpCommandBinds = nullptr;
+std::unordered_map<int, bool>* gpBindPrev = nullptr;
+
+DuelConfig* gpDuelConfig = nullptr;
+MimitaNet::MultiplayerContext* gpMpContext = nullptr;
+
+GameState* gpGameState = nullptr;
 
 
 // TODO(main-cleanup): move to src/physics/ray-utils.h — also deduplicate with WeaponFire::rayTriangle
@@ -130,6 +162,7 @@ static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
     return distance > 0.0f;
 }
 
+// TODO(main-cleanup): move to devtools/dev-teleport.cpp
 static bool parseTeleportPosition(
     const std::vector<std::string>& args,
     glm::vec3& position)
@@ -154,6 +187,7 @@ static bool parseTeleportPosition(
     return false;
 }
 
+// TODO(main-cleanup): move to src/physics/ray-utils.h
 static glm::vec3 castWorldRay(const World& world, glm::vec3 origin, glm::vec3 direction)
 {
     direction = glm::normalize(direction);
@@ -167,6 +201,7 @@ static glm::vec3 castWorldRay(const World& world, glm::vec3 origin, glm::vec3 di
 }
 
 
+// TODO(main-cleanup): move to gui/gui-editor.cpp (only used by editor mode)
 static int selectWorldTriangle(const World& world, glm::vec3 origin, glm::vec3 direction)
 {
     direction = glm::normalize(direction);
@@ -430,6 +465,39 @@ int main(int argc, char** argv)
         uint32_t tick = 0;
         uint32_t npcId = 0;
     } replayTest;
+
+    // Set global pointers for terminal command access
+    gpReplayRecorder = &gReplayRecorder;
+    gpReplayPlayer = &gReplayPlayer;
+    gpReplayClipSaver = &gReplayClipSaver;
+    gpReplayFactory = &gReplayFactory;
+    gpReplayBrowser = &gReplayBrowser;
+    gpReplayTimeline = &gReplayTimeline;
+    gpReplayChatStates = &gReplayChatStates;
+    gpReplayClipsCache = &G_REPLAY_CLIPS_CACHE;
+    gpCommandBinds = &G_COMMAND_BINDS;
+    gpBindPrev = &G_BIND_PREV;
+    gpGameState = &gameState;
+    gpWorld = &world;
+    gpActiveMapPath = &activeMapPath;
+    gpNpcSystem = &npcSystem;
+    gpFreecamEnabled = &freecamEnabled;
+    gpDeathPosition = &deathPosition;
+    gpEditorMode = &editorMode;
+    gpActiveGameMode = &activeGameMode;
+    gpWorldLoaded = &worldLoaded;
+    gpDuelConfig = &gDuelConfig;
+    gpMpContext = &mpContext;
+
+    // TODO(main-cleanup): move all command registrations to subsystem files
+    //   - input/input-commands.cpp → registerInputCommands()
+    //   - combat/weapon-system.cpp → registerWeaponCommands()
+    //   - devtools/dev-commands.cpp → registerDevCommands()
+    //   - replay/replay-commands.cpp → registerReplayCommands()
+    //   - gui/gui-editor.cpp → registerGuiEditorCommands()
+    //   - game/duel.cpp → registerDuelCommands()
+    //   - debug/debug-commands.cpp → registerDebugCommands()
+    //   - network/net-commands.cpp → registerNetworkCommands()
 
     // Gameplay terminal commands
     auto registerActionCommand = [](const char* name, const char* description) {
@@ -1096,6 +1164,7 @@ int main(int argc, char** argv)
         }
     });
 
+    // TODO(main-cleanup): move registerDebugToggle lambdas + calls to debug/debug-commands.cpp
     auto registerDebugToggle = [](const char* name, bool& flag) {
         Terminal::instance().registerCommand({
             name, std::string("Toggle ") + name, std::string(name) + " [0|1]",
@@ -1182,579 +1251,10 @@ int main(int argc, char** argv)
         }
     });
 
+    // TODO(main-cleanup): move registerReplayCommands() to replay/replay-commands.cpp
     // Replay terminal commands
-    Terminal::instance().registerCommand({
-        "replay.record", "Start replay recording", "replay.record",
-        [&world, &activeMapPath](const std::vector<std::string>&) {
-            if (gReplayRecorder.isRecording()) {
-                Terminal::instance().addLog("[REPLAY] Already recording");
-                return;
-            }
-            if (activeMapPath.empty()) {
-                Terminal::instance().addLog("[REPLAY] No active map is loaded");
-                return;
-            }
-            gReplayRecorder.beginRecording(0.0f, "mimita");
-
-            const std::string mapPath = activeMapPath;
-            const std::string playerPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
-            const std::string revolverPath = "assets/objects/weapons/mimita-revolver-v1.glb";
-            gReplayRecorder.registerAsset("map:active", "map_glb", mapPath, {}, "basic", "world");
-            gReplayRecorder.registerAsset("model:player", "actor_glb", playerPath, {}, "basic", "player");
-            gReplayRecorder.registerAsset("model:revolver", "weapon_glb", revolverPath, {}, "basic", "weapon");
-            const std::string shotgunPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
-            gReplayRecorder.registerAsset("model:shotgun", "weapon_glb", shotgunPath, {}, "basic", "weapon");
-            gReplayRecorder.registerAsset("texture:outfit", "texture", GetPlayerSettings().outfitPath, {}, {}, "outfit");
-            gReplayRecorder.registerAsset("texture:crosshair-ready", "texture", "assets/crosshair/crosshairready.png", {}, {}, "ui");
-            gReplayRecorder.registerAsset("texture:crosshair-delay", "texture", "assets/crosshair/crosshairdelay.png", {}, {}, "ui");
-            gReplayRecorder.registerAsset("texture:crosshair-reloading", "texture", "assets/crosshair/crosshairreloading.png", {}, {}, "ui");
-
-            ReplayWorldMetadata replayWorld;
-            replayWorld.mapAssetId = "map:active";
-            replayWorld.mapPath = mapPath;
-            for (const Mesh::Batch& batch : world.mesh.batches) {
-                const std::string materialName = batch.materialName.empty() ? "default" : batch.materialName;
-                bool alreadyRegistered = false;
-                for (const ReplayMaterialReference& material : replayWorld.materials) {
-                    if (material.materialName == materialName) {
-                        alreadyRegistered = true;
-                        break;
-                    }
-                }
-                if (!alreadyRegistered)
-                    replayWorld.materials.push_back({materialName, "", "basic"});
-            }
-            gReplayRecorder.setWorldMetadata(replayWorld);
-
-            ReplayLightingState replayLighting;
-            replayLighting.directionalLight = gLighting.lightDir;
-            replayLighting.ambientStrength = gLighting.ambientStrength;
-            replayLighting.diffuseStrength = gLighting.diffuseStrength;
-            replayLighting.edgeDarkness = gLighting.edgeDarkness;
-            replayLighting.edgeWidth = gLighting.edgeWidth;
-            replayLighting.aoDarkness = gLighting.aoDarkness;
-            replayLighting.aoContrast = gLighting.aoContrast;
-            replayLighting.textureContrast = gLighting.textureContrast;
-            replayLighting.textureBrightness = gLighting.textureBrightness;
-            gReplayRecorder.setLighting(replayLighting);
-
-            Terminal::instance().addLog("[REPLAY] Recording started");
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay.stop", "Stop replay recording or playback", "replay.stop",
-        [](const std::vector<std::string>&) {
-            if (gReplayRecorder.isRecording()) {
-                gReplayRecorder.stopRecording();
-                const std::string path = generateReplayExportPath();
-                const bool exported = gReplayRecorder.exportToJSON(path);
-                Terminal::instance().addLog(
-                    exported
-                        ? "[REPLAY] Recording stopped and saved to " + path
-                        : "[ERROR] Replay stopped but export failed: " + path
-                );
-            }
-            if (gReplayPlayer.isPlaying()) {
-                gReplayPlayer.stopPlayback();
-                Terminal::instance().addLog("[REPLAY] Playback stopped");
-            }
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay.export", "Export replay to file", "replay.export <path>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog("[ERROR] Usage: replay.export <path>");
-                return;
-            }
-            std::string path = args[0];
-            if (path.find('.') == std::string::npos)
-                path += ".json";
-            const bool exported = gReplayRecorder.exportToJSON(path);
-            Terminal::instance().addLog(
-                exported ? "[REPLAY] Exported to " + path
-                         : "[ERROR] Failed to export replay to " + path
-            );
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay.load", "Load replay file", "replay.load <path>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog("[ERROR] Usage: replay.load <path>");
-                return;
-            }
-            std::string path = args[0];
-            bool ok = gReplayPlayer.loadFromJSON(path);
-            Terminal::instance().addLog(ok ? "[REPLAY] Loaded " + path : "[ERROR] Failed to load " + path);
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay.play", "Start replay playback", "replay.play",
-        [&gameState](const std::vector<std::string>&) {
-            if (gReplayPlayer.totalTicks() == 0) {
-                Terminal::instance().addLog("[ERROR] No replay loaded");
-                return;
-            }
-            gReplayPlayer.preloadAssets();
-            gReplayPlayer.beginPlayback();
-            gameState = GAME_PLAYING;
-            Terminal::instance().addLog("[REPLAY] Playback started");
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay.info", "Show replay info", "replay.info",
-        [](const std::vector<std::string>&) {
-            char buf[128];
-            snprintf(buf, sizeof(buf), "Recording: %d  Playback: %d  Ticks: %u",
-                     (int)gReplayRecorder.isRecording(), (int)gReplayPlayer.isPlaying(),
-                     gReplayPlayer.totalTicks());
-            Terminal::instance().addLog(buf);
-        }
-    });
-
-    G_REPLAY_CLIPS_CACHE.clear();
-    Terminal::instance().registerCommand({
-        "replay_list", "List saved replays newest first (optionally with index)", "replay.list",
-        [](const std::vector<std::string>&) {
-            G_REPLAY_CLIPS_CACHE = listReplayClips();
-            if (G_REPLAY_CLIPS_CACHE.empty()) {
-                Terminal::instance().addLog("[REPLAY] no saved replays");
-                return;
-            }
-            for (size_t i = 0; i < G_REPLAY_CLIPS_CACHE.size(); ++i) {
-                char buf[512];
-                snprintf(buf, sizeof(buf), "[REPLAY] %zu. %s", i + 1,
-                         G_REPLAY_CLIPS_CACHE[i].c_str());
-                Terminal::instance().addLog(buf);
-            }
-        }
-    });
-
-    auto playReplayByPath = [&gameState](const std::string& path) {
-        if (!gReplayPlayer.loadFromJSON(path)) {
-            Terminal::instance().addLog("[ERROR] failed to load replay: " + path);
-            return;
-        }
-        gReplayPlayer.preloadAssets();
-        gReplayPlayer.beginPlayback();
-
-        {
-            uint32_t tickCount = gReplayPlayer.totalTicks();
-            float duration = (float)tickCount / 60.0f;
-            char buf[128];
-            snprintf(buf, sizeof(buf), "[REPLAY] Frames: %u", tickCount);
-            Terminal::instance().addLog(buf);
-            snprintf(buf, sizeof(buf), "[REPLAY] Tick Rate: 60");
-            Terminal::instance().addLog(buf);
-            snprintf(buf, sizeof(buf), "[REPLAY] Duration: %.1f sec", duration);
-            Terminal::instance().addLog(buf);
-            printf("[REPLAY] loaded %s  frames=%u  duration=%.1fs\n",
-                   path.c_str(), tickCount, duration);
-        }
-
-        // Build timeline events from a separate clip load for metadata
-        {
-            ReplayClip timelineClip;
-            if (timelineClip.load(path)) {
-                gReplayTimeline.setFrames(timelineClip.sceneFrames, timelineClip.soundEvents);
-            }
-        }
-
-        gameState = GAME_PLAYING;
-        printf("[REPLAY] playing %s\n", path.c_str());
-        Terminal::instance().addLog("[REPLAY] playing " + path);
-    };
-
-    auto keyNameToGlfw = [](const std::string& name) -> int {
-        std::string upper = name;
-        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-        if (upper == "F1") return GLFW_KEY_F1;
-        if (upper == "F2") return GLFW_KEY_F2;
-        if (upper == "F3") return GLFW_KEY_F3;
-        if (upper == "F4") return GLFW_KEY_F4;
-        if (upper == "F5") return GLFW_KEY_F5;
-        if (upper == "F6") return GLFW_KEY_F6;
-        if (upper == "F7") return GLFW_KEY_F7;
-        if (upper == "F8") return GLFW_KEY_F8;
-        if (upper == "F9") return GLFW_KEY_F9;
-        if (upper == "F10") return GLFW_KEY_F10;
-        if (upper == "F11") return GLFW_KEY_F11;
-        if (upper == "F12") return GLFW_KEY_F12;
-        if (upper == "ESCAPE" || upper == "ESC") return GLFW_KEY_ESCAPE;
-        if (upper == "SPACE") return GLFW_KEY_SPACE;
-        if (upper == "ENTER") return GLFW_KEY_ENTER;
-        if (upper.size() == 1) {
-            char c = upper[0];
-            if (c >= 'A' && c <= 'Z') return GLFW_KEY_A + (c - 'A');
-            if (c >= '0' && c <= '9') return GLFW_KEY_0 + (c - '0');
-        }
-        return -1;
-    };
-    auto glfwToKeyName = [](int key) -> std::string {
-        if (key >= GLFW_KEY_F1 && key <= GLFW_KEY_F12) return "F" + std::to_string(key - GLFW_KEY_F1 + 1);
-        if (key == GLFW_KEY_ESCAPE) return "ESCAPE";
-        if (key == GLFW_KEY_SPACE) return "SPACE";
-        if (key == GLFW_KEY_ENTER) return "ENTER";
-        if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) return std::string(1, 'A' + (key - GLFW_KEY_A));
-        if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) return std::string(1, '0' + (key - GLFW_KEY_0));
-        return "?";
-    };
-    Terminal::instance().registerCommand({
-        "bind", "Bind a key to a console command", "bind <key> <command>",
-        [keyNameToGlfw](const std::vector<std::string>& args) {
-            if (args.size() < 2) {
-                Terminal::instance().addLog("[ERROR] Usage: bind <key> <command>");
-                Terminal::instance().addLog("Example: bind F8 \"replay.record\"");
-                return;
-            }
-            int key = keyNameToGlfw(args[0]);
-            if (key == -1) {
-                Terminal::instance().addLog("[ERROR] Unknown key: " + args[0]);
-                return;
-            }
-            // Combine remaining args into command string
-            std::string cmd;
-            for (size_t i = 1; i < args.size(); ++i) {
-                if (i > 1) cmd += " ";
-                cmd += args[i];
-            }
-            G_COMMAND_BINDS[key] = cmd;
-            G_BIND_PREV[key] = false;
-            printf("[BIND] %s -> %s\n", args[0].c_str(), cmd.c_str());
-            Terminal::instance().addLog("[OK] bind " + args[0] + " -> " + cmd);
-        }
-    });
-    Terminal::instance().registerCommand({
-        "unbind", "Unbind a key", "unbind <key>",
-        [keyNameToGlfw](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog("[ERROR] Usage: unbind <key>");
-                return;
-            }
-            int key = keyNameToGlfw(args[0]);
-            if (key == -1) {
-                Terminal::instance().addLog("[ERROR] Unknown key: " + args[0]);
-                return;
-            }
-            auto it = G_COMMAND_BINDS.find(key);
-            if (it == G_COMMAND_BINDS.end()) {
-                Terminal::instance().addLog("[ERROR] No bind for key: " + args[0]);
-                return;
-            }
-            G_COMMAND_BINDS.erase(it);
-            G_BIND_PREV.erase(key);
-            printf("[BIND] unbound %s\n", args[0].c_str());
-            Terminal::instance().addLog("[OK] unbound " + args[0]);
-        }
-    });
-    Terminal::instance().registerCommand({
-        "listbinds", "List all command keybinds", "listbinds",
-        [glfwToKeyName](const std::vector<std::string>&) {
-            if (G_COMMAND_BINDS.empty()) {
-                Terminal::instance().addLog("[BIND] no binds");
-                return;
-            }
-            for (const auto& pair : G_COMMAND_BINDS) {
-                char buf[256];
-                snprintf(buf, sizeof(buf), "[BIND] %s -> %s",
-                         glfwToKeyName(pair.first).c_str(), pair.second.c_str());
-                Terminal::instance().addLog(buf);
-            }
-        }
-    });
-
-    // Default keybinds: F8 = save instant replay, F9 = watch most recent
-    G_COMMAND_BINDS[GLFW_KEY_F8] = "replay_save_instant";
-    G_BIND_PREV[GLFW_KEY_F8] = false;
-    G_COMMAND_BINDS[GLFW_KEY_F9] = "replay_watch_instant";
-    G_BIND_PREV[GLFW_KEY_F9] = false;
-
-    Terminal::instance().registerCommand({
-        "replay_browser", "Toggle replay browser overlay", "replay_browser",
-        [](const std::vector<std::string>&) {
-            gReplayBrowser.toggle();
-            if (gReplayBrowser.isOpen())
-                gReplayBrowser.refresh();
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay.play", "Play a replay by index from replay.list, or newest if no arg",
-        "replay.play [index]",
-        [playReplayByPath](const std::vector<std::string>& args) {
-            if (G_REPLAY_CLIPS_CACHE.empty())
-                G_REPLAY_CLIPS_CACHE = listReplayClips();
-            if (G_REPLAY_CLIPS_CACHE.empty()) {
-                Terminal::instance().addLog("[ERROR] no replays found");
-                return;
-            }
-            size_t index = 0;
-            if (!args.empty()) {
-                char* end = nullptr;
-                long parsed = std::strtol(args[0].c_str(), &end, 10);
-                if (end == args[0].c_str() || parsed < 1) {
-                    Terminal::instance().addLog("[ERROR] invalid index, use replay.list first");
-                    return;
-                }
-                index = (size_t)(parsed - 1);
-            }
-            if (index >= G_REPLAY_CLIPS_CACHE.size()) {
-                char buf[128];
-                snprintf(buf, sizeof(buf), "[ERROR] index %zu out of range (max %zu)",
-                         index + 1, G_REPLAY_CLIPS_CACHE.size());
-                Terminal::instance().addLog(buf);
-                return;
-            }
-            playReplayByPath(G_REPLAY_CLIPS_CACHE[index]);
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay_save_last_kill", "Save five seconds before and three seconds after the last kill",
-        "replay_save_last_kill",
-        [](const std::vector<std::string>&) {
-            // Try ReplayFactory first (enhanced clip with metadata)
-            std::string factoryPath;
-            if (gReplayFactory.saveLastKill(&factoryPath)) {
-                Terminal::instance().addLog("[REPLAY] saved clip " + factoryPath);
-                return;
-            }
-            // Fallback to old clip saver
-            std::string path;
-            if (!gReplayClipSaver.saveLastKill(&path)) {
-                Terminal::instance().addLog(
-                    "[ERROR] no captured kill is available to save");
-                return;
-            }
-            Terminal::instance().addLog(
-                path == "pending post-kill capture"
-                    ? "[REPLAY] clip queued; capturing three seconds after kill"
-                    : "[REPLAY] saved clip " + path);
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay_save_instant", "Save the last ~60 seconds as an instant replay file",
-        "replay_save_instant",
-        [](const std::vector<std::string>&) {
-            if (!gReplayRecorder.isRecording()) {
-                Terminal::instance().addLog("[ERROR] No replay recording active");
-                return;
-            }
-            std::string path = generateInstantReplayPath();
-            if (!gReplayRecorder.exportToJSON(path)) {
-                Terminal::instance().addLog("[ERROR] Failed to save instant replay");
-                return;
-            }
-            size_t frameCount = gReplayRecorder.frames().size();
-            size_t sceneCount = gReplayRecorder.sceneFrames().size();
-            float duration = (float)frameCount / 60.0f;
-            char buf[128];
-            Terminal::instance().addLog("[REPLAY] Saved instant replay");
-            snprintf(buf, sizeof(buf), "[REPLAY] Frames saved: %zu", frameCount);
-            Terminal::instance().addLog(buf);
-            snprintf(buf, sizeof(buf), "[REPLAY] Scene frames: %zu", sceneCount);
-            Terminal::instance().addLog(buf);
-            snprintf(buf, sizeof(buf), "[REPLAY] Duration: %.1f sec", duration);
-            Terminal::instance().addLog(buf);
-            Terminal::instance().addLog("[REPLAY] File: " + path);
-            printf("[REPLAY] Saved instant replay: %s  frames=%zu  duration=%.1fs\n",
-                   path.c_str(), frameCount, duration);
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_watch_instant", "Load and watch the most recent instant replay",
-        "replay_watch_instant",
-        [playReplayByPath](const std::vector<std::string>&) {
-            Terminal::instance().addLog("[REPLAY] Loading latest replay...");
-            std::vector<std::string> clips = listReplayClips();
-            if (clips.empty()) {
-                Terminal::instance().addLog("[ERROR] No replays found");
-                return;
-            }
-            playReplayByPath(clips.front());
-            gReplayPlayer.pause();
-            char buf[128];
-            snprintf(buf, sizeof(buf), "[REPLAY] Loaded replay  Frames: %u  Duration: %.1f sec",
-                     gReplayPlayer.totalTicks(),
-                     (float)gReplayPlayer.totalTicks() / 60.0f);
-            Terminal::instance().addLog(buf);
-            printf("[REPLAY] Loaded replay: %s  ticks=%u\n",
-                   clips.front().c_str(), gReplayPlayer.totalTicks());
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_stop", "Stop in-engine replay playback", "replay_stop",
-        [](const std::vector<std::string>&) {
-            gReplayPlayer.stopPlayback();
-            Terminal::instance().addLog("[REPLAY] playback stopped");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_pause", "Pause in-engine replay playback", "replay_pause",
-        [](const std::vector<std::string>&) {
-            gReplayPlayer.pause();
-            Terminal::instance().addLog("[REPLAY] paused");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_resume", "Resume in-engine replay playback", "replay_resume",
-        [](const std::vector<std::string>&) {
-            gReplayPlayer.resume();
-            Terminal::instance().addLog("[REPLAY] resumed");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_timescale", "Set replay playback speed", "replay_timescale <float>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty())
-                return;
-            gReplayPlayer.setTimescale(std::stof(args[0]));
-            printf("[REPLAY] timescale %.2f\n", gReplayPlayer.timescale());
-            Terminal::instance().addLog(
-                "[REPLAY] timescale " + std::to_string(gReplayPlayer.timescale()));
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_fov", "Override replay camera FOV", "replay_fov <value>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty())
-                return;
-            gReplayPlayer.cameraController().setFov(std::stof(args[0]));
-            Terminal::instance().addLog(
-                "[REPLAY] fov " +
-                std::to_string(gReplayPlayer.cameraController().fov()));
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_camera", "Set replay camera mode", "replay_camera <fp|victim|orbit|freecam>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty() ||
-                !gReplayPlayer.cameraController().setMode(args[0])) {
-                Terminal::instance().addLog(
-                    "[ERROR] Usage: replay_camera <fp|victim|orbit|freecam>");
-                return;
-            }
-            printf("[REPLAY] camera mode %s\n",
-                   gReplayPlayer.cameraController().modeName());
-            Terminal::instance().addLog(
-                std::string("[REPLAY] camera mode ") +
-                gReplayPlayer.cameraController().modeName());
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_freecam", "Enable or disable replay freecam", "replay_freecam <0|1>",
-        [](const std::vector<std::string>& args) {
-            const bool enabled = !args.empty() && args[0] != "0";
-            gReplayPlayer.cameraController().setMode(enabled ? "freecam" : "fp");
-            Terminal::instance().addLog(
-                enabled ? "[REPLAY] camera mode freecam"
-                        : "[REPLAY] camera mode fp");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_camera", "Set replay camera mode: fp/victim/orbit/freecam", "replay_camera <mode>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                printf("[REPLAY] camera mode is %s\n", gReplayPlayer.cameraController().modeName());
-                return;
-            }
-            if (gReplayPlayer.cameraController().setMode(args[0]))
-                printf("[REPLAY] camera mode %s\n", args[0].c_str());
-            else
-                printf("[REPLAY] unknown camera mode: %s (try: fp, victim, orbit, freecam)\n", args[0].c_str());
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_orbit", "Enable or disable replay orbit camera", "replay_orbit <0|1>",
-        [](const std::vector<std::string>& args) {
-            const bool enabled = !args.empty() && args[0] != "0";
-            gReplayPlayer.cameraController().setMode(enabled ? "orbit" : "fp");
-            Terminal::instance().addLog(
-                enabled ? "[REPLAY] camera mode orbit"
-                        : "[REPLAY] camera mode fp");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "rpl_load_newest", "Find and play the newest replay file", "rpl_load_newest",
-        [playReplayByPath](const std::vector<std::string>&) {
-            std::vector<std::string> clips = listReplayClips();
-            if (clips.empty()) {
-                Terminal::instance().addLog("[ERROR] no replays found");
-                return;
-            }
-            playReplayByPath(clips.front());
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_pause", "Pause replay playback", "replay_pause",
-        [](const std::vector<std::string>&) {
-            gReplayPlayer.pause(); printf("[REPLAY] paused\n");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_resume", "Resume replay playback", "replay_resume",
-        [](const std::vector<std::string>&) {
-            gReplayPlayer.resume(); printf("[REPLAY] resumed\n");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_toggle_pause", "Toggle replay pause", "replay_toggle_pause",
-        [](const std::vector<std::string>&) {
-            if (gReplayPlayer.isPaused()) gReplayPlayer.resume();
-            else gReplayPlayer.pause();
-            printf("[REPLAY] %s\n", gReplayPlayer.isPaused() ? "paused" : "resumed");
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_seek_tick", "Seek to a specific tick", "replay_seek_tick <tick>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) return;
-            int tick = std::stoi(args[0]);
-            gReplayPlayer.seekToTick((uint32_t)std::max(0, tick));
-            printf("[REPLAY] seeked to tick %d\n", tick);
-            Terminal::instance().addLog("[REPLAY] seeked to tick " + std::to_string(tick));
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_seek_percent", "Seek to a percentage of the replay", "replay_seek_percent <0-100>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) return;
-            float pct = std::stof(args[0]) / 100.0f;
-            uint32_t tick = (uint32_t)(pct * gReplayPlayer.totalTicks());
-            gReplayPlayer.seekToTick(tick);
-            printf("[REPLAY] seeked to %.0f%% (tick %u)\n", pct * 100.0f, tick);
-            Terminal::instance().addLog("[REPLAY] seeked to " + std::to_string(int(pct * 100.0f)) + "% (tick " + std::to_string(tick) + ")");
-        }
-    });
-
-    Terminal::instance().registerCommand({
-        "replay_rewind_1s", "Rewind replay by 1 second (60 ticks)", "replay_rewind_1s",
-        [](const std::vector<std::string>&) {
-            uint32_t tick = gReplayPlayer.currentTick();
-            uint32_t newTick = tick > 60 ? tick - 60 : 0;
-            gReplayPlayer.seekToTick(newTick);
-            printf("[REPLAY] rewound 1s to tick %u\n", newTick);
-            Terminal::instance().addLog("[REPLAY] rewound to tick " + std::to_string(newTick));
-        }
-    });
-    Terminal::instance().registerCommand({
-        "replay_forward_1s", "Skip replay forward by 1 second (60 ticks)", "replay_forward_1s",
-        [](const std::vector<std::string>&) {
-            uint32_t tick = gReplayPlayer.currentTick();
-            uint32_t totalTicks = gReplayPlayer.totalTicks();
-            uint32_t newTick = std::min(tick + 60, totalTicks);
-            gReplayPlayer.seekToTick(newTick);
-            printf("[REPLAY] skipped 1s to tick %u\n", newTick);
-            Terminal::instance().addLog("[REPLAY] skipped to tick " + std::to_string(newTick));
-        }
-    });
+    // Register replay terminal commands (moved to src/terminal/replay-commands.cpp)
+    registerReplayCommands();
     Terminal::instance().registerCommand({
         "gui_edit", "Toggle GUI editor mode", "gui_edit [0|1]",
         [](const std::vector<std::string>& args) {
@@ -1926,6 +1426,7 @@ int main(int argc, char** argv)
     constexpr double SIM_DT = 1.0 / 60.0;
     double simAccumulator = 0.0;
 
+    // TODO(main-cleanup): extract main loop body into tickGame(engine, ...) function
     while (engine.running())
     {
         HotReloadSystem::instance().reloadGameDLLIfChanged();
