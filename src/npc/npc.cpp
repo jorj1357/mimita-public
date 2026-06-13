@@ -36,14 +36,22 @@ NpcDifficultyTuning tuningForDifficulty(float difficulty)
 {
     float d = difficulty01(difficulty);
     NpcDifficultyTuning tuning;
-    tuning.reactionDelay = 1.20f - d * 1.16f;
-    tuning.actionInterval = 1.05f - d * 0.95f;
-    tuning.aggression = 0.05f + d * 0.95f;
-    tuning.dodgeChance = d * d;
-    tuning.aimErrorRadians = 0.80f * (1.0f - d);
-    tuning.movementPrecision = 0.12f + d * 0.88f;
-    tuning.awarenessRange = 15.0f + d * 135.0f;
-    tuning.prediction = d * d;
+    // Reaction speed: diff 1 = 0.8s, diff 10 = 0.12s (faster reactions, not stat boosts)
+    tuning.reactionDelay = 0.80f - d * 0.68f;
+    // Decision interval: diff 1 = 0.9s, diff 10 = 0.15s (quicker decisions)
+    tuning.actionInterval = 0.90f - d * 0.75f;
+    // Aggression: diff 1 = 0.15, diff 10 = 0.95 (more aggressive at high diff)
+    tuning.aggression = 0.15f + d * 0.80f;
+    // Dodge chance: diff 1 = 0%, diff 10 = 50%
+    tuning.dodgeChance = d * 0.50f;
+    // Aim error: diff 1 = 12 deg, diff 10 = 0.5 deg (improving aim)
+    tuning.aimErrorRadians = 0.0f; // not used - uses aimErrorDegrees() instead
+    // Movement precision / variety: diff 1 = 0.15, diff 10 = 0.95
+    tuning.movementPrecision = 0.15f + d * 0.80f;
+    // Awareness: diff 1 = 20m, diff 10 = 150m
+    tuning.awarenessRange = 20.0f + d * 130.0f;
+    // Prediction: diff 1 = 0.02, diff 10 = 0.65 (better leading)
+    tuning.prediction = 0.02f + d * 0.63f;
     return tuning;
 }
 
