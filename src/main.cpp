@@ -353,6 +353,8 @@ int main(int argc, char** argv)
 
     Camera camera;
     printf("[MAIN] camera made\n");
+    printf("[CAMERA] Smoothing default: %.1f\n", camera.smoothness);
+    printf("[CAMERA] Raw 1:1 camera enabled\n");
 
     engine.bindCamera(&camera);
     // onl do this 1 time, not per frame
@@ -1205,6 +1207,20 @@ int main(int argc, char** argv)
         gReplayPlayer.preloadAssets();
         gReplayPlayer.beginPlayback();
 
+        {
+            uint32_t tickCount = gReplayPlayer.totalTicks();
+            float duration = (float)tickCount / 60.0f;
+            char buf[128];
+            snprintf(buf, sizeof(buf), "[REPLAY] Frames: %u", tickCount);
+            Terminal::instance().addLog(buf);
+            snprintf(buf, sizeof(buf), "[REPLAY] Tick Rate: 60");
+            Terminal::instance().addLog(buf);
+            snprintf(buf, sizeof(buf), "[REPLAY] Duration: %.1f sec", duration);
+            Terminal::instance().addLog(buf);
+            printf("[REPLAY] loaded %s  frames=%u  duration=%.1fs\n",
+                   path.c_str(), tickCount, duration);
+        }
+
         // Build timeline events from a separate clip load for metadata
         {
             ReplayClip timelineClip;
@@ -1316,10 +1332,10 @@ int main(int argc, char** argv)
         }
     });
 
-    // Default keybinds: F8 = save last kill clip, F9 = toggle replay browser
-    G_COMMAND_BINDS[GLFW_KEY_F8] = "replay_save_last_kill";
+    // Default keybinds: F8 = save instant replay, F9 = watch most recent
+    G_COMMAND_BINDS[GLFW_KEY_F8] = "replay_save_instant";
     G_BIND_PREV[GLFW_KEY_F8] = false;
-    G_COMMAND_BINDS[GLFW_KEY_F9] = "replay_browser";
+    G_COMMAND_BINDS[GLFW_KEY_F9] = "replay_watch_instant";
     G_BIND_PREV[GLFW_KEY_F9] = false;
 
     Terminal::instance().registerCommand({
@@ -1386,6 +1402,56 @@ int main(int argc, char** argv)
         }
     });
 
+    Terminal::instance().registerCommand({
+        "replay_save_instant", "Save the last ~60 seconds as an instant replay file",
+        "replay_save_instant",
+        [](const std::vector<std::string>&) {
+            if (!gReplayRecorder.isRecording()) {
+                Terminal::instance().addLog("[ERROR] No replay recording active");
+                return;
+            }
+            std::string path = generateInstantReplayPath();
+            if (!gReplayRecorder.exportToJSON(path)) {
+                Terminal::instance().addLog("[ERROR] Failed to save instant replay");
+                return;
+            }
+            size_t frameCount = gReplayRecorder.frames().size();
+            size_t sceneCount = gReplayRecorder.sceneFrames().size();
+            float duration = (float)frameCount / 60.0f;
+            char buf[128];
+            Terminal::instance().addLog("[REPLAY] Saved instant replay");
+            snprintf(buf, sizeof(buf), "[REPLAY] Frames saved: %zu", frameCount);
+            Terminal::instance().addLog(buf);
+            snprintf(buf, sizeof(buf), "[REPLAY] Scene frames: %zu", sceneCount);
+            Terminal::instance().addLog(buf);
+            snprintf(buf, sizeof(buf), "[REPLAY] Duration: %.1f sec", duration);
+            Terminal::instance().addLog(buf);
+            Terminal::instance().addLog("[REPLAY] File: " + path);
+            printf("[REPLAY] Saved instant replay: %s  frames=%zu  duration=%.1fs\n",
+                   path.c_str(), frameCount, duration);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_watch_instant", "Load and watch the most recent instant replay",
+        "replay_watch_instant",
+        [playReplayByPath](const std::vector<std::string>&) {
+            Terminal::instance().addLog("[REPLAY] Loading latest replay...");
+            std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[ERROR] No replays found");
+                return;
+            }
+            playReplayByPath(clips.front());
+            gReplayPlayer.pause();
+            char buf[128];
+            snprintf(buf, sizeof(buf), "[REPLAY] Loaded replay  Frames: %u  Duration: %.1f sec",
+                     gReplayPlayer.totalTicks(),
+                     (float)gReplayPlayer.totalTicks() / 60.0f);
+            Terminal::instance().addLog(buf);
+            printf("[REPLAY] Loaded replay: %s  ticks=%u\n",
+                   clips.front().c_str(), gReplayPlayer.totalTicks());
+        }
+    });
     Terminal::instance().registerCommand({
         "replay_stop", "Stop in-engine replay playback", "replay_stop",
         [](const std::vector<std::string>&) {
@@ -2920,20 +2986,29 @@ int main(int argc, char** argv)
 
                 uiDrawText("Time:", labelX, y, 0.28f, {0.6f, 0.6f, 0.6f, 1.0f});
                 {
+                    auto formatTime = [](float seconds) -> std::string {
+                        int totalSec = (int)seconds;
+                        int mins = totalSec / 60;
+                        int secs = totalSec % 60;
+                        char buf[16];
+                        snprintf(buf, sizeof(buf), "%02d:%02d", mins, secs);
+                        return std::string(buf);
+                    };
+                    std::string curStr = formatTime(currentTime);
+                    std::string totStr = formatTime(totalTime);
                     char timeBuf[64];
-                    snprintf(timeBuf, sizeof(timeBuf), "%.1f / %.1f", currentTime, totalTime);
+                    snprintf(timeBuf, sizeof(timeBuf), "%s / %s", curStr.c_str(), totStr.c_str());
                     uiDrawText(timeBuf, valueX, y, 0.28f, {0.9f, 0.9f, 0.3f, 1.0f});
                 }
                 y += lineH;
 
-                // Seek bar at bottom
                 if (totalTicks > 0) {
                     const float barX = rOverlayX + 8.0f;
                     const float barY = y + 4.0f;
                     const float barW = bgW - 16.0f;
                     const float barH = 6.0f;
                     uiDrawRect({barX, barY, barW, barH}, {0.3f, 0.3f, 0.3f, 0.7f}, "seek-bg");
-                    float progress = (float)gReplayPlayer.currentTick() / (float)totalTicks;
+                    float progress = std::clamp((float)gReplayPlayer.currentTick() / (float)std::max(totalTicks, 1u), 0.0f, 1.0f);
                     uiDrawRect({barX, barY, barW * progress, barH}, {0.9f, 0.9f, 0.3f, 0.9f}, "seek-fill");
                 }
 
