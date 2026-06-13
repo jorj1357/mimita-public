@@ -1115,6 +1115,13 @@ int main(int argc, char** argv)
     registerDebugToggle("debug_debris", DebugConfig::DEBUG_DEBRIS);
     registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
+    registerDebugToggle("npc_damage_debug", DebugConfig::DEBUG_NPC_COMBAT);
+    registerDebugToggle("npc_movement_debug", DebugConfig::DEBUG_NPC_MOVEMENT);
+    registerDebugToggle("ragdoll_debug", DebugConfig::DEBUG_RAGDOLL);
+    registerDebugToggle("replay_debug", DebugConfig::DEBUG_REPLAY);
+    registerDebugToggle("networking_debug", DebugConfig::DEBUG_NETWORKING);
+    registerDebugToggle("duel_debug", DebugConfig::DEBUG_DUEL);
+    registerDebugToggle("animation_debug", DebugConfig::DEBUG_ANIMATION);
 
     Terminal::instance().registerCommand({
         "fakelag_mode", "Set fake lag mode (0=off, 1=random, 2=static)",

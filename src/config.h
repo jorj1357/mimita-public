@@ -47,6 +47,10 @@ namespace DebugConfig
     inline bool DEBUG_GODBALL_HITSTOP = false;
     inline bool DEBUG_ANIM_ARMS = false;
     inline bool DEBUG_COLLISION_SYSTEM = false;
+    inline bool DEBUG_NPC_MOVEMENT = false;
+    inline bool DEBUG_REPLAY = false;
+    inline bool DEBUG_NETWORKING = false;
+    inline bool DEBUG_DUEL = false;
     inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
@@ -81,6 +85,10 @@ namespace DebugConfig
         DEBUG_GODBALL = false;
         DEBUG_GODBALL_HITSTOP = false;
         DEBUG_ANIM_ARMS = false;
+        DEBUG_NPC_MOVEMENT = false;
+        DEBUG_REPLAY = false;
+        DEBUG_NETWORKING = false;
+        DEBUG_DUEL = false;
         DEBUG_NPC_COMBAT = false;
     }
 }
