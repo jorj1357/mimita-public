@@ -1560,9 +1560,11 @@ int main(int argc, char** argv)
             } else {
                 GuiEditor::instance().setEnabled(args[0] == "1");
             }
-            printf("[GUI EDIT] %s\n", GuiEditor::instance().isEnabled() ? "enabled" : "disabled");
-            Terminal::instance().addLog(std::string("[GUI EDIT] ") +
-                (GuiEditor::instance().isEnabled() ? "enabled" : "disabled"));
+            const bool on = GuiEditor::instance().isEnabled();
+            printf("[GUI EDIT] %s\n", on ? "enabled" : "disabled");
+            Terminal::instance().addLog(on
+                ? "[GUI] Edit mode ON: buttons disabled, drag layout items only"
+                : "[GUI] Edit mode OFF: buttons work normally");
         }
     });
     Terminal::instance().registerCommand({
