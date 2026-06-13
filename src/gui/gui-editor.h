@@ -20,7 +20,7 @@ public:
 
     // Check if editor is active
     bool isEnabled() const { return mEnabled; }
-    void setEnabled(bool e) { mEnabled = e; }
+    void setEnabled(bool e);
     void toggle() { mEnabled = !mEnabled; }
 
     // Get current selection info

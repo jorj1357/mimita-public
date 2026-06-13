@@ -24,6 +24,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName);
 void uiEndFrame();
 
 void uiSetDebug(bool enabled);
+void uiSetEditMode(bool enabled);
 bool uiDebugEnabled();
 
 void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName);

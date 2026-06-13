@@ -1566,10 +1566,61 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
-        "gui_save", "Save current GUI layout positions to JSON", "gui_save",
+        "gui_save", "Save all GUI layout positions to JSON files in config/gui/", "gui_save",
         [](const std::vector<std::string>&) {
             GuiLayoutManager::instance().saveAll();
-            Terminal::instance().addLog("[GUI LAYOUT] saved all layouts");
+            const std::vector<std::string> unsaved = GuiLayoutManager::instance().unsavedLayouts();
+            if (unsaved.empty() && !GuiLayoutManager::instance().hasUnsaved()) {
+                Terminal::instance().addLog("[GUI] no unsaved layouts");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_save_menu", "Save only the current menu's layout", "gui_save_menu",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[GUI] usage: gui_save_menu <filepath>");
+                Terminal::instance().addLog("[GUI] example: gui_save_menu config/gui/main-menu.json");
+                return;
+            }
+            if (GuiLayoutManager::instance().saveLayout(args[0])) {
+                Terminal::instance().addLog("[GUI] saved " + args[0]);
+            } else {
+                Terminal::instance().addLog("[GUI] failed to save " + args[0]);
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_load", "Reload a GUI layout JSON from disk", "gui_load <filepath>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[GUI] usage: gui_load <filepath>");
+                return;
+            }
+            if (GuiLayoutManager::instance().reloadLayout(args[0])) {
+                Terminal::instance().addLog("[GUI] reloaded " + args[0]);
+            } else {
+                Terminal::instance().addLog("[GUI] failed to reload " + args[0]);
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_reset", "Reset a menu to built-in defaults", "gui_reset <filepath>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[GUI] usage: gui_reset <filepath>");
+                Terminal::instance().addLog("[GUI] example: gui_reset config/gui/main-menu.json");
+                return;
+            }
+            GuiLayoutManager::instance().resetLayout(args[0]);
+            Terminal::instance().addLog("[GUI] reset " + args[0] + " to defaults");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_reset_all", "Reset all menus to built-in defaults", "gui_reset_all",
+        [](const std::vector<std::string>&) {
+            GuiLayoutManager::instance().resetAll();
+            Terminal::instance().addLog("[GUI] all layouts reset to defaults");
         }
     });
     Terminal::instance().registerCommand({
