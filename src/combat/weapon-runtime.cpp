@@ -4,7 +4,8 @@
 
 void WeaponRuntimeHelper::initRuntime(WeaponRuntime& rt, const WeaponDefinition& def) {
     rt.currentAmmo = def.magazineSize;
-    rt.reserveAmmo = 1337;
+    auto it = def.customParams.find("reserveAmmo");
+    rt.reserveAmmo = (it != def.customParams.end()) ? (int)it->second : 1337;
     rt.pendingReloadRounds = 0;
     rt.fireCooldown = 0.0f;
     rt.reloadTimer = 0.0f;

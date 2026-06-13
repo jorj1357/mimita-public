@@ -385,6 +385,7 @@ int main(int argc, char** argv)
     static std::vector<std::string> G_REPLAY_CLIPS_CACHE;
     static std::unordered_map<int, std::string> G_COMMAND_BINDS;
     static std::unordered_map<int, bool> G_BIND_PREV;
+    static bool gReplayCinematicMode = false;
 
     // Random number generator for spawn selection
     static std::mt19937 rng(std::random_device{}());
@@ -739,7 +740,17 @@ int main(int argc, char** argv)
             freecamEnabled = args.empty() ? !freecamEnabled : args[0] != "0";
             if (freecamEnabled)
                 camera.pos = player.pos + glm::vec3(0, 0, 2.0f);
-            Terminal::instance().addLog(std::string("[FREECAM] ") + (freecamEnabled ? "enabled" : "disabled"));
+            // During replay playback, also sync with replay freecam
+            if (gReplayPlayer.isPlaying()) {
+                if (freecamEnabled)
+                    gReplayPlayer.cameraController().setMode("freecam");
+                else
+                    gReplayPlayer.cameraController().setMode("fp");
+                Terminal::instance().addLog(std::string("[REPLAY] ") +
+                    (freecamEnabled ? "Replay Freecam Enabled" : "Replay Freecam Disabled"));
+            } else {
+                Terminal::instance().addLog(std::string("[FREECAM] ") + (freecamEnabled ? "enabled" : "disabled"));
+            }
         }
     });
     Terminal::instance().registerCommand({
@@ -1930,6 +1941,9 @@ int main(int argc, char** argv)
                         } else if (slot == 3) {
                             playerActor.weaponName = "shotgun";
                             playerActor.weaponModelPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
+                        } else if (slot == 5) {
+                            playerActor.weaponName = "op_revolver";
+                            playerActor.weaponModelPath = "assets/objects/weapons/mimita-revolver-v1.glb";
                         } else {
                             playerActor.weaponName = "none";
                             playerActor.weaponModelPath = "";
@@ -1968,9 +1982,11 @@ int main(int argc, char** argv)
                         npcActor.weaponName = npc.body.equippedSlot == 1 ? "revolver"
                             : npc.body.equippedSlot == 3 ? "shotgun"
                             : npc.body.equippedSlot == 2 ? "godball"
+                            : npc.body.equippedSlot == 5 ? "op_revolver"
                             : "none";
                         npcActor.weaponModelPath = npc.body.equippedSlot == 1 ? "assets/objects/weapons/mimita-revolver-v1.glb"
                             : npc.body.equippedSlot == 3 ? "assets/objects/weapons/mimita-shotgun-v1.glb"
+                            : npc.body.equippedSlot == 5 ? "assets/objects/weapons/mimita-revolver-v1.glb"
                             : "";
                         {
                             auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
@@ -2488,6 +2504,43 @@ int main(int argc, char** argv)
                     bindPrev[pair.first] = down;
                 }
             }
+            // Replay playback keyboard shortcuts (only while replay is active)
+            if (replayPlaybackActive && !Terminal::instance().isOpen()) {
+                static bool spacePrev = false;
+                bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+                if (spaceDown && !spacePrev) {
+                    if (gReplayPlayer.isPaused()) gReplayPlayer.resume();
+                    else gReplayPlayer.pause();
+                }
+                spacePrev = spaceDown;
+
+                static bool leftPrev = false;
+                bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
+                if (leftDown && !leftPrev) {
+                    uint32_t t = gReplayPlayer.currentTick();
+                    uint32_t seekTo = t > 300 ? t - 300 : 0;
+                    gReplayPlayer.seekToTick(seekTo);
+                }
+                leftPrev = leftDown;
+
+                static bool rightPrev = false;
+                bool rightDown = glfwGetKey(engine.window(), GLFW_KEY_RIGHT) == GLFW_PRESS;
+                if (rightDown && !rightPrev) {
+                    uint32_t t = gReplayPlayer.currentTick();
+                    uint32_t total = gReplayPlayer.totalTicks();
+                    gReplayPlayer.seekToTick(std::min(t + 300, total));
+                }
+                rightPrev = rightDown;
+
+                static bool lPrev = false;
+                bool lDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
+                if (lDown && !lPrev) {
+                    gReplayCinematicMode = !gReplayCinematicMode;
+                    printf("[CINEMATIC] %s\n", gReplayCinematicMode ? "Enabled" : "Disabled");
+                    Terminal::instance().addLog(std::string("[CINEMATIC] ") + (gReplayCinematicMode ? "Enabled" : "Disabled"));
+                }
+                lPrev = lDown;
+            }
             renderWorld(world, camera);
             if (replayPlaybackActive) {
                 if (const ReplaySceneFrame* replayFrame =
@@ -2728,7 +2781,7 @@ int main(int argc, char** argv)
                 uiDrawText(replayTickText, overlayX, 58.0f, 0.30f,
                            {1.0f, 0.12f, 0.12f, 1.0f});
             }
-            if (replayPlaybackActive) {
+            if (replayPlaybackActive && !gReplayCinematicMode) {
                 const float rOverlayX = uiScreenW() - 280.0f;
                 const float rOverlayY = 20.0f;
                 const auto* rFrame = gReplayPlayer.currentSceneFrame();
@@ -2819,7 +2872,28 @@ int main(int argc, char** argv)
                     if (!kv.second || kv.second->dead) continue;
                     drawPlayerHealthbar(*kv.second, camera, "replay-hp");
                 }
-            } else if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
+
+                // Replay controls help panel (bottom right)
+                const float helpX = uiScreenW() - 220.0f;
+                const float helpY = uiScreenH() - 140.0f;
+                const float helpW = 200.0f;
+                const float helpH = 110.0f;
+                uiDrawRect({helpX, helpY, helpW, helpH},
+                           {0.0f, 0.0f, 0.0f, 0.65f}, "replay-help-bg");
+                float hy = helpY + 6.0f;
+                uiDrawText("REPLAY CONTROLS", helpX + 8.0f, hy, 0.28f,
+                           {0.9f, 0.9f, 0.3f, 1.0f}); hy += 18.0f;
+                uiDrawText("SPACE    Pause/Resume", helpX + 8.0f, hy, 0.24f,
+                           {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
+                uiDrawText("<-       Back 5s", helpX + 8.0f, hy, 0.24f,
+                           {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
+                uiDrawText("->       Forward 5s", helpX + 8.0f, hy, 0.24f,
+                           {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
+                uiDrawText("L        Cinematic", helpX + 8.0f, hy, 0.24f,
+                           {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
+                uiDrawText("freecam  Free Camera", helpX + 8.0f, hy, 0.24f,
+                           {0.8f, 0.8f, 1.0f, 1.0f});
+            } else if (player.equippedSlot >= 1 && player.equippedSlot <= 5) {
                 const char* crosshairPath = "assets/crosshair/crosshairready.png";
                 switch (weapons.crosshairState(player)) {
                     case WeaponCrosshairState::Reloading:
@@ -2832,7 +2906,7 @@ int main(int argc, char** argv)
                         break;
                 }
                 float size = 100.0f;
-                if (player.equippedSlot == 3)
+                if (player.equippedSlot == 3 || player.equippedSlot == 5)
                     size = 140.0f;
                 uiDrawImage(crosshairPath,
                             {uiScreenW() * 0.5f - size * 0.5f, uiScreenH() * 0.5f - size * 0.5f, size, size});
@@ -2913,7 +2987,7 @@ int main(int argc, char** argv)
                     }
                 }
                 if (player.inventoryOpen)
-                    uiDrawText("INVENTORY: [1] Revolver [2-10] Empty", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
+                    uiDrawText("INVENTORY: [1] Revolver [2] Godball [3] Shotgun [5] OP Revolver", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
             }
             {
                 const float normalSize = 44.0f;
