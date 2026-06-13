@@ -8,6 +8,7 @@ WeaponDefinition createRevolverDefinition();
 WeaponDefinition createGodballDefinition();
 WeaponDefinition createShotgunDefinition();
 WeaponDefinition createSwordswordDefinition();
+WeaponDefinition createOpRevolverDefinition();
 
 void registerBuiltinWeapons();
 
