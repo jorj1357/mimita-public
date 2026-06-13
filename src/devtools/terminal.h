@@ -7,12 +7,43 @@
 
 struct GLFWwindow;
 
+enum class CommandCategory {
+    Uncategorized,
+    Replay,
+    NPC,
+    Weapon,
+    Inventory,
+    Duel,
+    Network,
+    Debug,
+    Player,
+    Editor,
+    UI
+};
+
+inline const char* categoryName(CommandCategory c) {
+    switch (c) {
+        case CommandCategory::Replay: return "Replay";
+        case CommandCategory::NPC: return "NPC";
+        case CommandCategory::Weapon: return "Weapon";
+        case CommandCategory::Inventory: return "Inventory";
+        case CommandCategory::Duel: return "Duel";
+        case CommandCategory::Network: return "Network";
+        case CommandCategory::Debug: return "Debug";
+        case CommandCategory::Player: return "Player";
+        case CommandCategory::Editor: return "Editor";
+        case CommandCategory::UI: return "UI";
+        default: return "Uncategorized";
+    }
+}
+
 struct ConsoleCommand {
     std::string name;
     std::string description;
     std::string usage;
     std::function<void(const std::vector<std::string>& args)> fn;
     std::string dateAdded;  // "YYYY-MM-DD" or empty — stored separately
+    CommandCategory category = CommandCategory::Uncategorized;
 };
 
 class Terminal {
@@ -31,6 +62,8 @@ public:
 
     void registerCommand(const ConsoleCommand& cmd);
     void registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded);
+    void registerCommand(const ConsoleCommand& cmd, CommandCategory category);
+    void registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category);
     void execute(const std::string& input);
     void addLog(const std::string& text);
 
