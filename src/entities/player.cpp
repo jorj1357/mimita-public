@@ -1183,8 +1183,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             weaponPoseCfg = &wpIt->second;
         }
     }
-    printf("[ANIM] weapon=%s usePose=%d equipped=%d\n",
-           weaponId.c_str(), (int)hasWeaponPose, (int)weaponEquipped);
+    // chiill bro  6 13 2026  so muhc prints 
+    // printf("[ANIM] weapon=%s usePose=%d equipped=%d\n",
+        //    weaponId.c_str(), (int)hasWeaponPose, (int)weaponEquipped);
 
     // Weapon sway computation (arms only, when weapon has a pose)
     float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;

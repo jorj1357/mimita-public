@@ -176,6 +176,32 @@ bool DeathSystem::kill(
     body.transferredVelocity = linearVel;
     body.deathImpulse = direction * lethalForce;
 
+    body.debugId = mCorpseSerial;
+    body.debugDeathDir = direction;
+
+    if (DebugConfig::DEBUG_NPC_DEATH) {
+        printf("\n[RAGDOLL SPAWN]\n");
+        printf("  id=%s\n", body.id.c_str());
+        printf("  deathPos=(%.2f %.2f %.2f)\n", victimPos.x, victimPos.y, victimPos.z);
+        printf("  deathVel=(%.2f %.2f %.2f)\n", linearVel.x, linearVel.y, linearVel.z);
+        printf("  deathSpeed=%.2f\n", glm::length(linearVel));
+        printf("  deathImpulse=(%.2f %.2f %.2f)\n",
+               body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z);
+        printf("  deathDir=(%.2f %.2f %.2f)\n", direction.x, direction.y, direction.z);
+        printf("  lethalForce=%.1f\n", lethalForce);
+        printf("  corpseInitialVel=(%.2f %.2f %.2f)\n",
+               body.velocity.x, body.velocity.y, body.velocity.z);
+        printf("  corpseAngVel=(%.2f %.2f %.2f)\n",
+               body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+        printf("  velocityInherited=(%.2f %.2f %.2f)\n",
+               linearVel.x, linearVel.y, linearVel.z);
+        printf("  diffBeforeAfter=(%.2f %.2f %.2f)\n",
+               linearVel.x - body.velocity.x,
+               linearVel.y - body.velocity.y,
+               linearVel.z - body.velocity.z);
+        printf("[/RAGDOLL SPAWN]\n\n");
+    }
+
     // Single physics body slightly above death position to avoid floor embedding
     body.position = victimPos + glm::vec3(0.0f, 0.0f, 0.1f);
     body.rotation = victimRotation;
@@ -460,6 +486,10 @@ void DeathSystem::update(
     for (DeadBody& body : mCorpses) {
         body.age += dt;
 
+        // Debug freeze: skip physics update
+        if (DebugConfig::DEBUG_NPC_DEATH_FREEZE && body.debugFreeze)
+            continue;
+
         // Underworld safety
         if (body.position.z < DEAD_WORLD_FLOOR) {
             DEAD_LOG("[UNDERWORLD] Body '%s' at z=%.1f, cleaning up",
@@ -471,6 +501,30 @@ void DeathSystem::update(
         if (body.age < CORPSE_STAGE1_SECONDS) {
             body.blackness = std::clamp(body.age / CORPSE_STAGE1_SECONDS, 0.0f, 1.0f);
             body.fade = 0.0f;
+
+            // Per-frame tick log (0.25s interval)
+            if (DebugConfig::DEBUG_NPC_DEATH) {
+                body.debugTickTimer += dt;
+                if (body.debugTickTimer >= 0.25f) {
+                    body.debugTickTimer = 0.0f;
+                    float distFromSpawn = glm::length(body.position - body.spawnPosition);
+                    float gravDot = glm::dot(body.velocity, body.debugGravity);
+                    printf("[RAGDOLL TICK] id=%s pos=(%.2f %.2f %.2f) "
+                           "vel=(%.2f %.2f %.2f) speed=%.2f "
+                           "angVel=(%.2f %.2f %.2f) "
+                           "distFromDeath=%.2f "
+                           "gravityDot=%.2f "
+                           "sleeping=%d\n",
+                           body.id.c_str(),
+                           body.position.x, body.position.y, body.position.z,
+                           body.velocity.x, body.velocity.y, body.velocity.z,
+                           glm::length(body.velocity),
+                           body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z,
+                           distFromSpawn,
+                           gravDot,
+                           (int)body.sleeping);
+                }
+            }
 
             // Sleep check
             if (trySleepBody(body, dt))
@@ -484,6 +538,12 @@ void DeathSystem::update(
                 (body.age - CORPSE_STAGE1_SECONDS) / CORPSE_STAGE2_SECONDS,
                 0.0f, 1.0f);
         }
+    }
+
+    // Re-freeze corpses after stepping one frame
+    if (DebugConfig::DEBUG_NPC_DEATH_FREEZE) {
+        for (DeadBody& body : mCorpses)
+            body.debugFreeze = true;
     }
 
     // Remove expired corpses
@@ -590,6 +650,75 @@ void DeathSystem::render(const Camera& camera) const
             for (const Mesh::Batch& batch : mesh.batches) {
                 glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
                 glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            }
+        }
+
+        // Deep death debug overlay
+        if (DebugConfig::DEBUG_NPC_DEATH) {
+            // Spawn position (white sphere)
+            DebugVis::drawWireSphere(camera, body.spawnPosition, 0.15f, {1.0f, 1.0f, 1.0f, 1.0f});
+
+            // Current position (magenta sphere)
+            DebugVis::drawWireSphere(camera, body.position, 0.2f, {1.0f, 0.0f, 1.0f, 1.0f});
+
+            // Line from spawn to current (distance indicator)
+            DebugVis::drawLine(camera, body.spawnPosition, body.position, {0.5f, 0.0f, 0.5f, 0.6f});
+
+            // Velocity vector (green)
+            float speed = glm::length(body.velocity);
+            if (speed > 0.1f) {
+                glm::vec3 velEnd = body.position + glm::normalize(body.velocity) * std::min(speed * 0.2f, 4.0f);
+                DebugVis::drawLine(camera, body.position, velEnd, {0.0f, 1.0f, 0.0f, 1.0f});
+            }
+
+            // Death impulse vector (red)
+            float impLen = glm::length(body.deathImpulse);
+            if (impLen > 0.1f) {
+                glm::vec3 impEnd = body.spawnPosition + glm::normalize(body.deathImpulse) * std::min(impLen * 0.1f, 3.0f);
+                DebugVis::drawLine(camera, body.spawnPosition, impEnd, {1.0f, 0.0f, 0.0f, 1.0f});
+            }
+
+            // Gravity vector (blue) — drawn from current position
+            glm::vec3 gravEnd = body.position + body.debugGravity * 0.05f;
+            DebugVis::drawLine(camera, body.position, gravEnd, {0.0f, 0.0f, 1.0f, 0.7f});
+
+            // Angular velocity axis (yellow)
+            float angSpeed = glm::length(body.angularVelocity);
+            if (angSpeed > 0.1f) {
+                glm::vec3 angEnd = body.position + glm::normalize(body.angularVelocity) * std::min(angSpeed * 0.15f, 2.0f);
+                DebugVis::drawLine(camera, body.position, angEnd, {1.0f, 1.0f, 0.0f, 0.8f});
+            }
+
+            // Text overlay above corpse
+            {
+                float distFromSpawn = glm::length(body.position - body.spawnPosition);
+                char label[512];
+                const char* auth = body.sleeping ? "SLEEPING" : "Ragdoll";
+                snprintf(label, sizeof(label),
+                         "RAGDOLL #%d\n"
+                         "POS: %.1f %.1f %.1f\n"
+                         "VEL: %.1f %.1f %.1f\n"
+                         "SPD: %.1f\n"
+                         "ANG: %.2f %.2f %.2f\n"
+                         "DST: %.2f\n"
+                         "AGE: %.2f\n"
+                         "GRAVITY: %.0f %.0f %.0f\n"
+                         "IMPULSE: %.1f %.1f %.1f\n"
+                         "AUTHORITY: %s",
+                         body.debugId,
+                         body.position.x, body.position.y, body.position.z,
+                         body.velocity.x, body.velocity.y, body.velocity.z,
+                         speed,
+                         body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z,
+                         distFromSpawn,
+                         body.age,
+                         body.debugGravity.x, body.debugGravity.y, body.debugGravity.z,
+                         body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
+                         auth);
+
+                // Draw at 0.5m above corpse top
+                glm::vec3 labelPos = body.position + glm::vec3(0.0f, 0.0f, body.capsuleHeight * 0.5f + 0.5f);
+                DebugVis::drawWorldLabel(labelPos, label, {1.0f, 0.8f, 0.2f, 1.0f});
             }
         }
 
