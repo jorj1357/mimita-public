@@ -31,7 +31,7 @@ constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
 constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
 
 // Dead body physics tuning
-constexpr float DEAD_GRAVITY = 20.0f;
+constexpr float DEAD_GRAVITY = 30.0f;
 constexpr float DEAD_DRAG = 0.3f;
 constexpr float DEAD_ANGULAR_DRAG = 0.5f;
 constexpr float DEAD_BOUNCE = 0.15f;
@@ -137,7 +137,13 @@ bool DeathSystem::kill(
         ? glm::normalize(shotDirection)
         : glm::vec3(0.0f, 0.0f, -1.0f);
 
-    // Step 1: 0.1 second freeze — stop all animation/control
+    // Step 1: capture pre-death momentum BEFORE freezing
+    glm::vec3 linearVel = victim.vel;
+    glm::vec3 externalVel = victim.externalImpulse;
+    glm::vec3 victimPos = victim.pos;
+    glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
+
+    // Step 2: freeze the victim — stop all animation/control
     victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);
     victim.inputWishMove = glm::vec2(0.0f);
@@ -146,8 +152,7 @@ bool DeathSystem::kill(
     victim.proceduralFrozen = true;
     victim.syncLegacyStateToLayers();
 
-    // Step 2: disable weapon/aim/procedural pose before capturing final state.
-    // Clear arm poses to neutral so the corpse doesn't hold a weapon pose forever.
+    // Step 3: disable weapon/aim/procedural pose before capturing final state.
     for (PhysicalBodyPart& part : victim.physicalBody.parts) {
         if (part.name == "leftArm" || part.name == "rightArm") {
             part.pose = ProceduralPose{};
@@ -160,11 +165,6 @@ bool DeathSystem::kill(
 
     // Capture final body state (neutral pose, no weapon offsets)
     victim.updateModelWorldTransforms();
-
-    glm::vec3 victimPos = victim.pos;
-    glm::vec3 linearVel = victim.vel;
-    glm::vec3 externalVel = victim.externalImpulse;
-    glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
 
     printf("[DEATH] victim=%s hitDir=(%.2f %.2f %.2f) damage=%.0f\n",
            victim.username.c_str(), direction.x, direction.y, direction.z, lethalForce);
@@ -196,12 +196,14 @@ bool DeathSystem::kill(
     // Death impulse scales with hit force — flings body backward on strong hits
     body.velocity += direction * (lethalForce * 0.5f);
 
-    // Angular velocity from shot direction — makes corpse spin/tumble naturally
-    body.angularVelocity = glm::cross(direction, glm::vec3(0.0f, 0.0f, 1.0f))
-                         * (lethalForce * 0.15f + 0.5f);
+    // Angular velocity from shot direction — brief tumble, not helicopter spin.
+    // Cross product with Z-up gives rotation axis perpendicular to shot.
+    // Reduced multiplier so body gets one natural roll, not infinite spinning.
+    float angForce = (lethalForce * 0.06f + 0.3f);
+    body.angularVelocity = glm::cross(direction, glm::vec3(0.0f, 0.0f, 1.0f)) * angForce;
     float angSpeed = glm::length(body.angularVelocity);
-    if (angSpeed > 15.0f) {
-        body.angularVelocity = (body.angularVelocity / angSpeed) * 15.0f;
+    if (angSpeed > 4.0f) {
+        body.angularVelocity = (body.angularVelocity / angSpeed) * 4.0f;
     }
 
     // Freeze skeleton pose from current physical body transforms
