@@ -40,7 +40,7 @@ Answer directly.
 - First line of each new file should be date created.
 - Second line should be file path.
 - Third line and following should explain purpose of file.
-- Make code easy to reason about for performance, bugs, and AI agents.
+- Make code easy to reason about for performance, bugs, and AI agents. Also humans.
 
 # Terminal commands
 
