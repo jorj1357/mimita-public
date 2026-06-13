@@ -202,6 +202,7 @@ WeaponDefinition createOpRevolverDefinition() {
     def.magazineSize = 999;
     def.customParams["reserveAmmo"] = 9999.0f;
     def.fireMode = WeaponFireMode::Automatic;
+    def.poseId = "revolver";
     return def;
 }
 
