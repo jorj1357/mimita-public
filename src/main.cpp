@@ -1114,6 +1114,7 @@ int main(int argc, char** argv)
     registerDebugToggle("debug_blood_force", DebugConfig::DEBUG_BLOOD_FORCE);
     registerDebugToggle("debug_debris", DebugConfig::DEBUG_DEBRIS);
     registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
+    registerDebugToggle("final_kill_debug", DebugConfig::DEBUG_NPC_DEATH);  // reuse existing flag
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("npc_damage_debug", DebugConfig::DEBUG_NPC_COMBAT);
     registerDebugToggle("npc_movement_debug", DebugConfig::DEBUG_NPC_MOVEMENT);
@@ -2067,6 +2068,21 @@ int main(int argc, char** argv)
         {
             static DuelPhase prevDuelPhase = DuelPhase::Off;
             if (gDuelManager.phase() != prevDuelPhase) {
+                bool enteredMatchEnd = gDuelManager.phase() == DuelPhase::MatchEnd;
+                if (enteredMatchEnd && !gDuelManager.finalKillReplayActive) {
+                    // Extract final kill clip and start replay
+                    std::string clipPath;
+                    if (gReplayClipSaver.saveLastKill(&clipPath) ||
+                        gReplayFactory.saveLastKill(&clipPath)) {
+                        if (gReplayPlayer.loadFromJSON(clipPath)) {
+                            gReplayPlayer.beginPlayback();
+                            gDuelManager.finalKillReplayActive = true;
+                            gDuelManager.finalKillReplayPath = clipPath;
+                            gDuelManager.finalKillReplayTime = 0.0f;
+                            printf("[FINAL KILL] started replay: %s\n", clipPath.c_str());
+                        }
+                    }
+                }
                 prevDuelPhase = gDuelManager.phase();
                 bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
@@ -3426,6 +3442,65 @@ int main(int argc, char** argv)
                          camera.pos.x, camera.pos.y, camera.pos.z);
                 uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
             }
+            // Final kill replay: slow motion and overlay
+            if (gDuelManager.finalKillReplayActive) {
+                gDuelManager.finalKillReplayTime += dt;
+                // Slow motion curve: 0.15x for 2s, ramp to 1x over 1.5s
+                float t = gDuelManager.finalKillReplayTime;
+                if (t < 2.0f) {
+                    gDuelManager.finalKillSlowMoFactor = 0.15f;
+                } else if (t < 3.5f) {
+                    float p = (t - 2.0f) / 1.5f;
+                    gDuelManager.finalKillSlowMoFactor = 0.15f + p * 0.85f;
+                } else {
+                    gDuelManager.finalKillSlowMoFactor = 1.0f;
+                }
+                // Apply slow motion to replay playback
+                gReplayPlayer.setTimescale(gDuelManager.finalKillSlowMoFactor);
+
+                // Draw the final kill overlay on top of match end screen
+                float fkW = (float)uiScreenW(), fkH = (float)uiScreenH();
+                uiDrawRect({0, fkH * 0.3f, fkW, 80.0f}, {0.0f, 0.0f, 0.0f, 0.6f}, "fk-bg");
+                uiDrawText("FINAL KILL", fkW * 0.5f - 160.0f, fkH * 0.3f + 8.0f,
+                           1.2f, {1.0f, 0.9f, 0.1f, 1.0f});
+                uiDrawText("MATCH WINNING ELIMINATION", fkW * 0.5f - 220.0f, fkH * 0.3f + 50.0f,
+                           0.6f, {1.0f, 1.0f, 1.0f, 0.9f});
+
+                // Save Replay button
+                UIRect saveBtn = {fkW * 0.5f - 120.0f, fkH * 0.75f, 240.0f, 50.0f};
+                if (uiButton(engine.window(), "SAVE REPLAY!", saveBtn,
+                             {0.2f, 0.6f, 0.3f, 1.0f}).clicked)
+                {
+                    printf("[FINAL KILL] saveReplayClicked\n");
+                    if (!gDuelManager.finalKillReplayPath.empty()) {
+                        printf("[FINAL KILL] replay already saved: %s\n",
+                               gDuelManager.finalKillReplayPath.c_str());
+                    } else {
+                        std::string path;
+                        if (gReplayFactory.saveLastKill(&path) ||
+                            gReplayClipSaver.saveLastKill(&path)) {
+                            gDuelManager.finalKillReplayPath = path;
+                            printf("[FINAL KILL] jsonSaved=%s\n", path.c_str());
+                            // Launch ffmpeg in separate process
+                            std::string mp4Path = path + ".mp4";
+                            std::string cmd = "start cmd /c ffmpeg -i \"" + path +
+                                "\" \"" + mp4Path + "\" 2>&1";
+                            std::thread([cmd]() {
+                                system(cmd.c_str());
+                            }).detach();
+                            printf("[FINAL KILL] ffmpegStarted=%s\n", mp4Path.c_str());
+                        }
+                    }
+                }
+
+                // Stop final kill replay after 6 seconds
+                if (t > 6.0f) {
+                    gReplayPlayer.stopPlayback();
+                    gDuelManager.finalKillReplayActive = false;
+                    printf("[FINAL KILL] replay ended\n");
+                }
+            }
+
             if (gDuelManager.phase() == DuelPhase::MatchEnd) {
                 DuelMenuAction action = gDuelManager.renderMatchOverScreen(engine.window());
                 if (action == DuelMenuAction::PlayAgain) {
