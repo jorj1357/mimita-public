@@ -40,10 +40,33 @@ const char* categoryName(Debug::Category category)
     }
 }
 
+const char* categoryColor(Debug::Category category)
+{
+    switch (category)
+    {
+        case Debug::Category::Gui: return "\033[36m";   // Cyan
+        case Debug::Category::Weapons: return "\033[31m";  // Red
+        case Debug::Category::NpcCombat: return "\033[31m"; // Red
+        case Debug::Category::Physics: return "\033[33m";   // Yellow
+        case Debug::Category::Collision: return "\033[33m"; // Yellow
+        case Debug::Category::Replay: return "\033[35m";    // Magenta
+        case Debug::Category::Networking: return "\033[32m"; // Green
+        case Debug::Category::Ragdoll: return "\033[38;5;214m"; // Orange
+        case Debug::Category::Render: return "\033[34m";    // Blue
+        case Debug::Category::Audio: return "\033[36m";     // Cyan
+        case Debug::Category::Animation: return "\033[36m"; // Cyan
+        case Debug::Category::Duel: return "\033[35m";      // Magenta
+        case Debug::Category::World: return "\033[32m";     // Green
+        case Debug::Category::NpcMovement: return "\033[33m"; // Yellow
+        default: return "\033[0m";  // Reset
+    }
+}
+
 void printv(const char* level, Debug::Category category, const char* fmt, va_list args)
 {
-    std::printf("[%.3f][%s][%s] ", secondsNow(), level, categoryName(category));
+    std::printf("%s[%.3f][%s][%s]\033[0m ", categoryColor(category), secondsNow(), level, categoryName(category));
     std::vprintf(fmt, args);
+    std::printf("\033[0m");
 }
 
 }

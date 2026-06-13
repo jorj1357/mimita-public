@@ -1413,6 +1413,7 @@ static void doGLBTriangleCollisions(
         projectVelocityAgainstNormal(p, c.normal);
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM && glm::length(beforeVel - p.vel) > 0.01f) {
+            // TODO(debug): migrate to Debug::log(Debug::Category::Collision)
             printf("[COLLISION SLIDE] before=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) after=(%.2f %.2f %.2f)\n",
                 beforeVel.x, beforeVel.y, beforeVel.z,
                 c.normal.x, c.normal.y, c.normal.z,
@@ -1506,6 +1507,7 @@ void doCollisions(
             float maxPen = 0.0f;
             for (const auto& rc : reportContacts)
                 maxPen = std::max(maxPen, rc.penetration);
+            // TODO(debug): migrate to Debug::log(Debug::Category::Collision)
             printf("[COLLISION] contacts=%zu penetration=%.4f\n",
                    reportContacts.size(), maxPen);
         }
@@ -1878,6 +1880,7 @@ void doCollisions(
         projectVelocityAgainstNormal(p, c.normal);
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM && glm::length(beforeVel - p.vel) > 0.01f) {
+            // TODO(debug): migrate to Debug::log(Debug::Category::Collision)
             printf("[COLLISION SLIDE] block before=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) after=(%.2f %.2f %.2f)\n",
                 beforeVel.x, beforeVel.y, beforeVel.z,
                 c.normal.x, c.normal.y, c.normal.z,
