@@ -28,6 +28,12 @@ namespace {
 ReplayRecorder* gActiveReplayRecorder = nullptr;
 ReplayClipSaver* gActiveReplayClipSaver = nullptr;
 bool gReplayCaptureEnabled = true;
+} // anonymous namespace
+
+// Outside anonymous namespace so the extern declaration in replay.h links correctly
+ReplayFactoryNotifyFn gReplayFactoryNotifyFn = nullptr;
+
+namespace {
 
 json vec3Json(const glm::vec3& value)
 {
@@ -111,7 +117,10 @@ ReplayActorState parseActor(const json& value)
             ReplayBodyPartState part;
             part.name = it.key();
             part.position = jsonVec3(it->value("position", json::array()));
-            part.rotation = jsonVec3(it->value("rotation", json::array()));
+            if (it->contains("rotation") && (*it)["rotation"].is_array() && (*it)["rotation"].size() >= 4) {
+                auto& r = (*it)["rotation"];
+                part.rotation = glm::quat(r[0].get<float>(), r[1].get<float>(), r[2].get<float>(), r[3].get<float>());
+            }
             part.scale = jsonVec3(it->value("scale", json::array()), glm::vec3(1.0f));
             actor.bodyParts.push_back(std::move(part));
         }
@@ -139,7 +148,7 @@ json actorJson(const ReplayActorState& actor)
     for (const ReplayBodyPartState& part : actor.bodyParts) {
         value["bodyParts"][part.name] = {
             {"position", vec3Json(part.position)},
-            {"rotation", vec3Json(part.rotation)},
+            {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},
             {"scale", vec3Json(part.scale)}
         };
     }
@@ -239,8 +248,9 @@ json buildValidationJson(
                 actor.position, actor.rotation);
             actorJson["bodyParts"] = json::object();
             for (const ReplayBodyPartState& part : actor.bodyParts) {
+                glm::vec3 euler = glm::degrees(glm::eulerAngles(part.rotation));
                 actorJson["bodyParts"][part.name] = transformJson(
-                    part.position, part.rotation, part.scale);
+                    part.position, euler, part.scale);
             }
             frame["actors"].push_back(std::move(actorJson));
         }
@@ -273,6 +283,13 @@ void notifyReplayKill(const std::string& killerId,
 {
     if (gActiveReplayClipSaver)
         gActiveReplayClipSaver->notifyKill(killerId, victimId, roundWinning);
+    if (gReplayFactoryNotifyFn)
+        gReplayFactoryNotifyFn(killerId, victimId, false, false, roundWinning);
+}
+
+void setReplayFactoryNotifyFn(ReplayFactoryNotifyFn fn)
+{
+    gReplayFactoryNotifyFn = fn;
 }
 
 void captureReplayEffect(const ReplayEffectEvent& event)
@@ -320,8 +337,7 @@ std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
         ReplayBodyPartState state;
         state.name = part.name;
         state.position = translation;
-        glm::vec3 euler = glm::degrees(glm::eulerAngles(glm::normalize(orientation)));
-        state.rotation = euler;
+        state.rotation = glm::normalize(orientation);
         state.scale = scale;
         states.push_back(state);
     }
@@ -407,7 +423,10 @@ bool ReplayClip::save(const std::string& path) const
         {"mapPath", mapPath},
         {"killerId", killerId},
         {"victimId", victimId},
-        {"killTick", killTick}
+        {"weaponId", weaponId},
+        {"killTick", killTick},
+        {"killDistance", killDistance},
+        {"roundWinning", roundWinning}
     };
     root["header"] = {
         {"version", header.version},
@@ -482,7 +501,10 @@ bool ReplayClip::load(const std::string& path)
         mapPath = metadata.value("mapPath", "");
         killerId = metadata.value("killerId", "");
         victimId = metadata.value("victimId", "");
+        weaponId = metadata.value("weaponId", "");
         killTick = metadata.value("killTick", 0u);
+        killDistance = metadata.value("killDistance", 0.0f);
+        roundWinning = metadata.value("roundWinning", false);
         const json h = root.value("header", json::object());
         header = {};
         header.version = h.value("version", 1u);
@@ -689,6 +711,35 @@ ReplayClip ReplayRecorder::makeClip(
     clip.killerId = killerId;
     clip.victimId = victimId;
     clip.killTick = killTick >= startTick ? killTick - startTick : 0;
+
+    // Determine weapon from the killer actor at kill tick
+    for (const ReplaySceneFrame& frame : mSceneFrames) {
+        if ((uint32_t)frame.tick != killTick && (uint32_t)frame.tick < killTick + 2)
+            continue;
+        if ((uint32_t)frame.tick > killTick + 5) break;
+        for (const ReplayActorState& actor : frame.actors) {
+            if (actor.id == killerId && !actor.weaponName.empty() && actor.weaponName != "none") {
+                clip.weaponId = actor.weaponName;
+                break;
+            }
+        }
+        if (!clip.weaponId.empty()) break;
+    }
+
+    // Calculate kill distance from positions at kill tick
+    glm::vec3 killerPos, victimPos;
+    bool foundKiller = false, foundVictim = false;
+    for (const ReplaySceneFrame& frame : mSceneFrames) {
+        if ((uint32_t)frame.tick < killTick || (uint32_t)frame.tick > killTick + 5)
+            continue;
+        for (const ReplayActorState& actor : frame.actors) {
+            if (actor.id == killerId) { killerPos = actor.position; foundKiller = true; }
+            if (actor.id == victimId) { victimPos = actor.position; foundVictim = true; }
+        }
+        if (foundKiller && foundVictim) break;
+    }
+    if (foundKiller && foundVictim)
+        clip.killDistance = glm::length(killerPos - victimPos);
 
     for (const ReplayFrame& source : mFrames) {
         if (source.tick < startTick || source.tick > endTick)
@@ -921,7 +972,7 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             for (const ReplayBodyPartState& part : actor.bodyParts) {
                 a["bodyParts"][part.name] = {
                     {"position", vec3Json(part.position)},
-                    {"rotation", vec3Json(part.rotation)},
+                    {"rotation", {part.rotation.w, part.rotation.x, part.rotation.y, part.rotation.z}},
                     {"scale", vec3Json(part.scale)}
                 };
             }
@@ -1146,9 +1197,10 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                                     auto& p = bp.value()["position"];
                                     part.position = {p[0].get<float>(), p[1].get<float>(), p[2].get<float>()};
                                 }
-                                if (bp.value().contains("rotation")) {
+                                if (bp.value().contains("rotation") && bp.value()["rotation"].is_array()) {
                                     auto& r = bp.value()["rotation"];
-                                    part.rotation = {r[0].get<float>(), r[1].get<float>(), r[2].get<float>()};
+                                    if (r.size() >= 4)
+                                        part.rotation = glm::quat(r[0].get<float>(), r[1].get<float>(), r[2].get<float>(), r[3].get<float>());
                                 }
                                 if (bp.value().contains("scale")) {
                                     auto& s = bp.value()["scale"];
@@ -1316,7 +1368,7 @@ ReplayBodyPartState mixPart(
 {
     ReplayBodyPartState result = a;
     result.position = glm::mix(a.position, b.position, t);
-    result.rotation = glm::mix(a.rotation, b.rotation, t);
+    result.rotation = glm::slerp(a.rotation, b.rotation, t);
     result.scale = glm::mix(a.scale, b.scale, t);
     return result;
 }

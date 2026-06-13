@@ -73,6 +73,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "effects/effect-part.h"
 #include "replay/replay.h"
+#include "replay/replay-factory.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
 #include "combat/weapon-system.h"
@@ -353,6 +354,33 @@ int main(int argc, char** argv)
     static ReplayPlayer gReplayPlayer;
     static ReplayClipSaver gReplayClipSaver(gReplayRecorder);
     setActiveReplayClipSaver(&gReplayClipSaver);
+    static ReplayFactory gReplayFactory(gReplayRecorder);
+    static ReplayBrowser gReplayBrowser;
+    static ReplayTimeline gReplayTimeline;
+
+    // Game state (declared early because many lambdas capture it)
+    GameState gameState = GAME_MENU;
+    GameState prevState = GAME_MENU;
+
+    // Connect ReplayFactory to kill notifications
+    setReplayFactoryNotifyFn([](const std::string& killerId,
+                                 const std::string& victimId,
+                                 bool killerAirborne,
+                                 bool victimAirborne,
+                                 bool roundWinning) {
+        gReplayFactory.notifyKill(killerId, victimId, killerAirborne, victimAirborne, roundWinning);
+    });
+
+    // Set browser play callback
+    gReplayBrowser.setPlayCallback([&gameState](const std::string& path) {
+        if (!gReplayPlayer.loadFromJSON(path)) {
+            Terminal::instance().addLog("[ERROR] failed to load: " + path);
+            return;
+        }
+        gReplayPlayer.preloadAssets();
+        gReplayPlayer.beginPlayback();
+        gameState = GAME_PLAYING;
+    });
     static std::unordered_map<std::string, ActorChatState> gReplayChatStates;
     static std::vector<std::string> G_REPLAY_CLIPS_CACHE;
     static std::unordered_map<int, std::string> G_COMMAND_BINDS;
@@ -370,8 +398,6 @@ int main(int argc, char** argv)
 
     static MimitaNet::MultiplayerContext mpContext;
 
-    GameState gameState = GAME_MENU;
-    GameState prevState = GAME_MENU;
     bool editorMode = false;
     std::string activeGameMode = "sandbox";
     const std::string defaultMapPath =
@@ -1150,6 +1176,15 @@ int main(int argc, char** argv)
         }
         gReplayPlayer.preloadAssets();
         gReplayPlayer.beginPlayback();
+
+        // Build timeline events from a separate clip load for metadata
+        {
+            ReplayClip timelineClip;
+            if (timelineClip.load(path)) {
+                gReplayTimeline.setFrames(timelineClip.sceneFrames, timelineClip.soundEvents);
+            }
+        }
+
         gameState = GAME_PLAYING;
         printf("[REPLAY] playing %s\n", path.c_str());
         Terminal::instance().addLog("[REPLAY] playing " + path);
@@ -1253,6 +1288,21 @@ int main(int argc, char** argv)
         }
     });
 
+    // Default keybinds: F8 = save last kill clip, F9 = toggle replay browser
+    G_COMMAND_BINDS[GLFW_KEY_F8] = "replay_save_last_kill";
+    G_BIND_PREV[GLFW_KEY_F8] = false;
+    G_COMMAND_BINDS[GLFW_KEY_F9] = "replay_browser";
+    G_BIND_PREV[GLFW_KEY_F9] = false;
+
+    Terminal::instance().registerCommand({
+        "replay_browser", "Toggle replay browser overlay", "replay_browser",
+        [](const std::vector<std::string>&) {
+            gReplayBrowser.toggle();
+            if (gReplayBrowser.isOpen())
+                gReplayBrowser.refresh();
+        }
+    });
+
     Terminal::instance().registerCommand({
         "replay.play", "Play a replay by index from replay.list, or newest if no arg",
         "replay.play [index]",
@@ -1288,6 +1338,13 @@ int main(int argc, char** argv)
         "replay_save_last_kill", "Save five seconds before and three seconds after the last kill",
         "replay_save_last_kill",
         [](const std::vector<std::string>&) {
+            // Try ReplayFactory first (enhanced clip with metadata)
+            std::string factoryPath;
+            if (gReplayFactory.saveLastKill(&factoryPath)) {
+                Terminal::instance().addLog("[REPLAY] saved clip " + factoryPath);
+                return;
+            }
+            // Fallback to old clip saver
             std::string path;
             if (!gReplayClipSaver.saveLastKill(&path)) {
                 Terminal::instance().addLog(
@@ -1431,6 +1488,7 @@ int main(int argc, char** argv)
             int tick = std::stoi(args[0]);
             gReplayPlayer.seekToTick((uint32_t)std::max(0, tick));
             printf("[REPLAY] seeked to tick %d\n", tick);
+            Terminal::instance().addLog("[REPLAY] seeked to tick " + std::to_string(tick));
         }
     });
     Terminal::instance().registerCommand({
@@ -1441,9 +1499,31 @@ int main(int argc, char** argv)
             uint32_t tick = (uint32_t)(pct * gReplayPlayer.totalTicks());
             gReplayPlayer.seekToTick(tick);
             printf("[REPLAY] seeked to %.0f%% (tick %u)\n", pct * 100.0f, tick);
+            Terminal::instance().addLog("[REPLAY] seeked to " + std::to_string(int(pct * 100.0f)) + "% (tick " + std::to_string(tick) + ")");
         }
     });
 
+    Terminal::instance().registerCommand({
+        "replay_rewind_1s", "Rewind replay by 1 second (60 ticks)", "replay_rewind_1s",
+        [](const std::vector<std::string>&) {
+            uint32_t tick = gReplayPlayer.currentTick();
+            uint32_t newTick = tick > 60 ? tick - 60 : 0;
+            gReplayPlayer.seekToTick(newTick);
+            printf("[REPLAY] rewound 1s to tick %u\n", newTick);
+            Terminal::instance().addLog("[REPLAY] rewound to tick " + std::to_string(newTick));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "replay_forward_1s", "Skip replay forward by 1 second (60 ticks)", "replay_forward_1s",
+        [](const std::vector<std::string>&) {
+            uint32_t tick = gReplayPlayer.currentTick();
+            uint32_t totalTicks = gReplayPlayer.totalTicks();
+            uint32_t newTick = std::min(tick + 60, totalTicks);
+            gReplayPlayer.seekToTick(newTick);
+            printf("[REPLAY] skipped 1s to tick %u\n", newTick);
+            Terminal::instance().addLog("[REPLAY] skipped to tick " + std::to_string(newTick));
+        }
+    });
     Terminal::instance().registerCommand({
         "replay_test",
         "Record a deterministic gameplay replay and validate it in Blender",
@@ -1907,6 +1987,7 @@ int main(int argc, char** argv)
 
                     gReplayRecorder.recordSceneFrame(sceneFrame);
                     gReplayClipSaver.update();
+                    gReplayFactory.update();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
@@ -2225,21 +2306,21 @@ int main(int argc, char** argv)
                 replayPlaybackActive &&
                 gReplayPlayer.cameraController().mode() ==
                     ReplayCameraMode::Freecam;
-            if (replayPlaybackActive) {
+            // Camera ownership: only ONE system may modify camera per frame.
+            // Freecam (normal or replay) takes priority; replay controller runs only
+            // when freecam is inactive.
+            const bool anyFreecam = (freecamEnabled || replayFreecam) &&
+                                    !Terminal::instance().isOpen();
+            if (replayPlaybackActive && !anyFreecam) {
                 if (const ReplaySceneFrame* replayFrame =
                         gReplayPlayer.currentSceneFrame()) {
-                    // Skip camera controller update entirely during freecam
-                    // to prevent any accidental camera state modification.
-                    if (gReplayPlayer.cameraController().mode() != ReplayCameraMode::Freecam) {
-                        gReplayPlayer.cameraController().update(
-                            camera, *replayFrame,
-                            gReplayPlayer.killerId(),
-                            gReplayPlayer.victimId(), dt);
-                    }
+                    gReplayPlayer.cameraController().update(
+                        camera, *replayFrame,
+                        gReplayPlayer.killerId(),
+                        gReplayPlayer.victimId(), dt);
                 }
             }
-            if ((freecamEnabled || replayFreecam) &&
-                !Terminal::instance().isOpen()) {
+            if (anyFreecam) {
                 glm::vec3 flatForward = camera.front;
                 flatForward.z = 0.0f;
                 if (glm::length(flatForward) > 0.001f) flatForward = glm::normalize(flatForward);
@@ -2254,7 +2335,7 @@ int main(int argc, char** argv)
                 if (glm::length(move) > 0.001f)
                     camera.pos += glm::normalize(move) * GetPlayerSettings().freecamSpeed * dt;
             } else if (replayPlaybackActive) {
-                // ReplayCameraController owns the camera during playback.
+                // ReplayCameraController owns the camera (already applied above).
             } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
                 camera.follow(gDuelManager.winnerCameraTarget());
                 camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt);
@@ -2648,54 +2729,73 @@ int main(int argc, char** argv)
                            {1.0f, 0.12f, 0.12f, 1.0f});
             }
             if (replayPlaybackActive) {
-                // Replay HUD overlay
-                const float rOverlayX = 20.0f;
-                const float rOverlayY = uiScreenH() - 130.0f;
+                const float rOverlayX = uiScreenW() - 280.0f;
+                const float rOverlayY = 20.0f;
                 const auto* rFrame = gReplayPlayer.currentSceneFrame();
                 const uint32_t totalTicks = gReplayPlayer.totalTicks();
-                const float currentTime = rFrame ? rFrame->time : 0.0f;
+                const float currentTime = gReplayPlayer.currentTick() / 60.0f;
                 const float totalTime = (float)totalTicks / 60.0f;
                 const char* camMode = gReplayPlayer.cameraController().modeName();
-                uiDrawRect({rOverlayX - 8.0f, rOverlayY, 360.0f, 140.0f},
-                           {0.0f, 0.0f, 0.0f, 0.65f}, "replay-hud-bg");
-                char rTickText[128];
-                snprintf(rTickText, sizeof(rTickText),
-                         "REPLAY  Tick: %u / %u  Time: %.1fs / %.1fs",
-                         (unsigned)gReplayPlayer.currentTick(), (unsigned)totalTicks,
-                         currentTime, totalTime);
-                uiDrawText(rTickText, rOverlayX, rOverlayY + 8.0f, 0.40f,
-                           {0.9f, 0.9f, 0.3f, 1.0f});
-                char rCamText[128];
-                snprintf(rCamText, sizeof(rCamText), "Camera: %s  %s",
-                         camMode,
-                         gReplayPlayer.isPaused() ? "[PAUSED]" : "");
-                uiDrawText(rCamText, rOverlayX, rOverlayY + 34.0f, 0.32f,
-                           {0.7f, 0.85f, 1.0f, 1.0f});
-                // Show actor list with HP, weapon, alive/dead
-                if (rFrame) {
-                    float listY = rOverlayY + 58.0f;
-                    int shown = 0;
-                    for (const ReplayActorState& a : rFrame->actors) {
-                        if (shown >= 8) break;
-                        const char* status = a.dead ? "[DEAD]" : "[ALIVE]";
-                        char line[128];
-                        snprintf(line, sizeof(line), "%s %s %d HP  %s %s",
-                                 status, a.name.c_str(), a.health,
-                                 a.weaponName.c_str(),
-                                 a.reloading ? "(reloading)" : "");
-                        uiDrawText(line, rOverlayX, listY, 0.24f,
-                                   a.dead
-                                       ? glm::vec4{0.5f, 0.5f, 0.5f, 1.0f}
-                                       : glm::vec4{1.0f, 1.0f, 1.0f, 1.0f});
-                        listY += 14.0f;
-                        shown++;
-                    }
+                const bool paused = gReplayPlayer.isPaused();
+
+                const float labelX = rOverlayX + 12.0f;
+                const float valueX = rOverlayX + 100.0f;
+                const float lineH = 20.0f;
+                const float bgW = 250.0f;
+                float bgH = lineH * 5.0f + 16.0f;
+
+                uiDrawRect({rOverlayX, rOverlayY, bgW, bgH},
+                           {0.0f, 0.0f, 0.0f, 0.70f}, "replay-hud-bg");
+
+                float y = rOverlayY + 8.0f;
+                uiDrawText("Viewing:", labelX, y, 0.28f, {0.6f, 0.6f, 0.6f, 1.0f});
+                if (rFrame && !rFrame->actors.empty())
+                    uiDrawText(rFrame->actors[0].name.c_str(), valueX, y, 0.28f, {1.0f, 1.0f, 1.0f, 1.0f});
+                y += lineH;
+
+                uiDrawText("Camera:", labelX, y, 0.28f, {0.6f, 0.6f, 0.6f, 1.0f});
+                {
+                    char camBuf[64];
+                    snprintf(camBuf, sizeof(camBuf), "%s%s", camMode,
+                             paused ? " [PAUSED]" : "");
+                    uiDrawText(camBuf, valueX, y, 0.28f,
+                               paused ? glm::vec4{1.0f, 0.9f, 0.3f, 1.0f}
+                                      : glm::vec4{0.7f, 0.85f, 1.0f, 1.0f});
                 }
-                // Crosshair & ammo for the first armed actor
+                y += lineH;
+
+                uiDrawText("Tick:", labelX, y, 0.28f, {0.6f, 0.6f, 0.6f, 1.0f});
+                {
+                    char tickBuf[64];
+                    snprintf(tickBuf, sizeof(tickBuf), "%u / %u",
+                             (unsigned)gReplayPlayer.currentTick(), (unsigned)totalTicks);
+                    uiDrawText(tickBuf, valueX, y, 0.28f, {0.9f, 0.9f, 0.3f, 1.0f});
+                }
+                y += lineH;
+
+                uiDrawText("Time:", labelX, y, 0.28f, {0.6f, 0.6f, 0.6f, 1.0f});
+                {
+                    char timeBuf[64];
+                    snprintf(timeBuf, sizeof(timeBuf), "%.1f / %.1f", currentTime, totalTime);
+                    uiDrawText(timeBuf, valueX, y, 0.28f, {0.9f, 0.9f, 0.3f, 1.0f});
+                }
+                y += lineH;
+
+                // Seek bar at bottom
+                if (totalTicks > 0) {
+                    const float barX = rOverlayX + 8.0f;
+                    const float barY = y + 4.0f;
+                    const float barW = bgW - 16.0f;
+                    const float barH = 6.0f;
+                    uiDrawRect({barX, barY, barW, barH}, {0.3f, 0.3f, 0.3f, 0.7f}, "seek-bg");
+                    float progress = (float)gReplayPlayer.currentTick() / (float)totalTicks;
+                    uiDrawRect({barX, barY, barW * progress, barH}, {0.9f, 0.9f, 0.3f, 0.9f}, "seek-fill");
+                }
+
+                // Crosshair for the first armed actor
                 if (rFrame && !rFrame->actors.empty()) {
                     const ReplayActorState& primary = rFrame->actors[0];
                     if (!primary.weaponName.empty() && primary.weaponName != "none") {
-                        // Choose crosshair based on weapon state
                         const char* crosshairPath = "assets/crosshair/crosshairready.png";
                         if (primary.reloading)
                             crosshairPath = "assets/crosshair/crosshairreloading.png";
@@ -2705,7 +2805,6 @@ int main(int argc, char** argv)
                         uiDrawImage(crosshairPath,
                                     {uiScreenW() * 0.5f - cs * 0.5f,
                                      uiScreenH() * 0.5f - cs * 0.5f, cs, cs});
-                        // Ammo count
                         char ammoLine[48];
                         snprintf(ammoLine, sizeof(ammoLine), "%d / %d",
                                  primary.currentAmmo, primary.reserveAmmo);
@@ -2715,20 +2814,10 @@ int main(int argc, char** argv)
                                    0.34f, {1.0f, 0.82f, 0.3f, 1.0f});
                     }
                 }
-                // Draw healthbars for all actors
+                // Healthbars for all replay actors
                 for (const auto& kv : replayActorModels) {
                     if (!kv.second || kv.second->dead) continue;
                     drawPlayerHealthbar(*kv.second, camera, "replay-hp");
-                }
-                // Seek bar
-                if (totalTicks > 0) {
-                    const float barX = rOverlayX;
-                    const float barY = rOverlayY + 118.0f;
-                    const float barW = 340.0f;
-                    const float barH = 8.0f;
-                    uiDrawRect({barX, barY, barW, barH}, {0.3f, 0.3f, 0.3f, 0.8f}, "seek-bg");
-                    float progress = (float)gReplayPlayer.currentTick() / (float)totalTicks;
-                    uiDrawRect({barX, barY, barW * progress, barH}, {0.9f, 0.9f, 0.3f, 1.0f}, "seek-fill");
                 }
             } else if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
                 const char* crosshairPath = "assets/crosshair/crosshairready.png";
@@ -3092,6 +3181,16 @@ int main(int argc, char** argv)
                              rname, kv.first, rp.pos.x, rp.pos.y, rp.pos.z);
                     uiDrawText(buf, dbgX + 8.0f, y, 0.26f, {0.6f, 0.85f, 1.0f, 1.0f});
                     y += lineH;
+                }
+            }
+
+            // Replay Browser overlay (rendered on top of everything)
+            gReplayBrowser.draw();
+
+            // Replay Timeline during playback
+            if (replayPlaybackActive) {
+                if (const ReplaySceneFrame* rFrame = gReplayPlayer.currentSceneFrame()) {
+                    gReplayTimeline.draw(gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());
                 }
             }
 
