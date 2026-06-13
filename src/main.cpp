@@ -3259,6 +3259,15 @@ int main(int argc, char** argv)
                     lastHealthbarLogMs = healthbarNowMs;
             }
             {
+                static float hpLogTimer = 0.0f; hpLogTimer -= 0.016f;
+                if (hpLogTimer <= 0.0f && !npcSystem.all().empty()) {
+                    hpLogTimer = 1.0f;
+                    printf("[PLAYER HP FRAME] hp=%d/%d pos=(%.1f %.1f %.1f)\n",
+                           player.currentHp, player.maxHp,
+                           player.pos.x, player.pos.y, player.pos.z);
+                }
+            }
+            {
                 char npcText[96];
                 snprintf(npcText, sizeof(npcText), "NPCs: %zu", npcSystem.all().size());
                 uiDrawText(npcText, 24, 168, 0.32f, {1.0f, 0.82f, 0.38f, 1.0f});

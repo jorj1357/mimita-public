@@ -176,8 +176,8 @@ bool DeathSystem::kill(
     body.transferredVelocity = linearVel;
     body.deathImpulse = direction * lethalForce;
 
-    // Single physics body at the player's death position
-    body.position = victimPos;
+    // Single physics body slightly above death position to avoid floor embedding
+    body.position = victimPos + glm::vec3(0.0f, 0.0f, 0.1f);
     body.rotation = victimRotation;
 
     // Capsule dimensions matching the player
@@ -390,20 +390,8 @@ void DeathSystem::updateDeadBodyPhysics(DeadBody& body, const World& world, floa
         }
     }
 
-    // Post-movement ground proximity check — zero slow downward velocity near surfaces
-    for (const auto& tri : triangles) {
-        glm::vec3 closest = closestPointOnTriangle(body.position, tri.a, tri.b, tri.c);
-        glm::vec3 diff = body.position - closest;
-        float dist = glm::length(diff);
-
-        if (dist < radius * 2.0f && dist > 0.0001f) {
-            glm::vec3 triNormal = glm::normalize(glm::cross(tri.b - tri.a, tri.c - tri.a));
-            float vDotN = glm::dot(body.velocity, triNormal);
-            if (vDotN < 0.0f && vDotN > -1.5f) {
-                body.velocity -= vDotN * triNormal;
-            }
-        }
-    }
+    // No ground proximity damping — gravity always wins.
+    // The collision system handles ground contact naturally via bounce + friction.
 
     // Clamp again after all corrections
     speed = glm::length(body.velocity);
