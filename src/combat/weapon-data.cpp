@@ -193,12 +193,25 @@ WeaponDefinition createSwordswordDefinition() {
     return def;
 }
 
+WeaponDefinition createOpRevolverDefinition() {
+    WeaponDefinition def = createRevolverDefinition();
+    def.id = "op_revolver";
+    def.displayName = "OP Revolver";
+    def.slot = 5;
+    def.fireDelay = 0.01f;
+    def.magazineSize = 999;
+    def.customParams["reserveAmmo"] = 9999.0f;
+    def.fireMode = WeaponFireMode::Automatic;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     WeaponRegistry::instance().registerWeapon(createRevolverDefinition());
     WeaponRegistry::instance().registerWeapon(createGodballDefinition());
     WeaponRegistry::instance().registerWeapon(createShotgunDefinition());
     WeaponRegistry::instance().registerWeapon(createSwordswordDefinition());
-    printf("[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword\n");
+    WeaponRegistry::instance().registerWeapon(createOpRevolverDefinition());
+    printf("[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver\n");
 }
 
 } // namespace WeaponData
