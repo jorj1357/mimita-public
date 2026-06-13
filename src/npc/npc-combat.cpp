@@ -133,6 +133,14 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     glm::vec3 diff = closestRay - closestSeg;
     float dist = glm::length(diff);
 
+    if (DebugConfig::DEBUG_NPC_COMBAT) {
+        printf("[RAY CAPSULE] closestRay=(%.3f %.3f %.3f) closestCapsule=(%.3f %.3f %.3f) "
+               "distBetween=%.4f radius=%.4f t=%.4f s=%.4f\n",
+               closestRay.x, closestRay.y, closestRay.z,
+               closestSeg.x, closestSeg.y, closestSeg.z,
+               dist, radius, t, s);
+    }
+
     if (dist < radius) {
         outDist = t;
         outNormal = dist > 0.001f ? diff / dist : -rayDir;

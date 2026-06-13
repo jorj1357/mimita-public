@@ -893,6 +893,53 @@ int main(int argc, char** argv)
     });
 
     Terminal::instance().registerCommand({
+        "npc_death_debug", "Deep NPC death debug overlay (0=off, 1=on)", "npc_death_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_NPC_DEATH = !DebugConfig::DEBUG_NPC_DEATH;
+            } else {
+                DebugConfig::DEBUG_NPC_DEATH = args[0] != "0";
+            }
+            Terminal::instance().addLog(DebugConfig::DEBUG_NPC_DEATH
+                ? "[OK] NPC death debug enabled"
+                : "[OK] NPC death debug disabled");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_death_debug_freeze", "Freeze corpse simulation for frame-by-frame stepping", "npc_death_debug_freeze <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_NPC_DEATH_FREEZE = !DebugConfig::DEBUG_NPC_DEATH_FREEZE;
+            } else {
+                DebugConfig::DEBUG_NPC_DEATH_FREEZE = args[0] != "0";
+            }
+            // Apply freeze to all active corpses
+            auto& corpses = DeathSystem::instance().corpses();
+            for (const auto& body : corpses) {
+                const_cast<DeadBody&>(body).debugFreeze = DebugConfig::DEBUG_NPC_DEATH_FREEZE;
+            }
+            if (DebugConfig::DEBUG_NPC_DEATH_FREEZE)
+                Terminal::instance().addLog("[OK] NPC death freeze enabled — corpses frozen");
+            else
+                Terminal::instance().addLog("[OK] NPC death freeze disabled — corpses resumed");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_death_step", "Advance one physics tick on frozen corpses", "npc_death_step",
+        [](const std::vector<std::string>&) {
+            if (!DebugConfig::DEBUG_NPC_DEATH_FREEZE) {
+                Terminal::instance().addLog("[ERROR] npc_death_debug_freeze must be enabled first");
+                return;
+            }
+            auto& corpses = DeathSystem::instance().corpses();
+            for (auto& body : const_cast<std::vector<DeadBody>&>(corpses)) {
+                body.debugFreeze = false;
+            }
+            Terminal::instance().addLog("[OK] stepping one frame — corpses will resume next tick");
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "serverconnect", "Print a server connection request", "serverconnect <ip> [args...]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {

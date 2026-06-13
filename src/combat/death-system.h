@@ -47,6 +47,17 @@ struct DeadBody {
 
     // Death freeze: body is frozen for this duration before physics activates
     float deathFreezeTimer = 0.0f;
+
+    // Debug state
+    int debugId = 0;
+    bool debugFreeze = false;
+    float debugTickTimer = 0.0f;
+
+    // Kill-time capture for debug
+    glm::vec3 debugDeathDir{0.0f};
+    glm::vec3 debugAttackerPos{0.0f};
+    glm::vec3 debugVictimPos{0.0f};
+    glm::vec3 debugGravity{0.0f, 0.0f, -30.0f};
 };
 
 class DeathSystem {
