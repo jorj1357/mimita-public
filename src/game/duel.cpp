@@ -448,13 +448,17 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     if (currentPhase != DuelPhase::MatchEnd)
         return DuelMenuAction::None;
 
-    // Force cursor unlocked so UI hover/click works.
-    // This runs AFTER gDuelManager.update() changes phase to MatchEnd,
-    // so the start-of-frame duel phase check hasn't unlocked it yet.
+    // Ensure GUI edit mode is off so buttons actually fire
+    uiSetEditMode(false);
+
+    // Force cursor unlocked for click detection
     glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
     float cx = uiScreenW() * 0.5f;
     float cy = uiScreenH() * 0.5f;
+
+    // Semi-transparent background to block world clickthrough
+    uiDrawRect({0, 0, uiScreenW(), uiScreenH()}, {0.0f, 0.0f, 0.0f, 0.6f}, "duel-end-bg");
 
     // Winner announcement
     const char* winnerText = (matchWinner_ == DuelTeam::Player) ? "YOU WIN!" : "NPC WINS!";
@@ -488,20 +492,38 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     float btnY = cy + 60.0f;
     float gap = 20.0f;
 
-    if (uiButton(win, "Play Again", {btnX, btnY, btnW, btnH}, {0.24f, 0.82f, 0.48f, 1.0f}).clicked)
+    UIButtonState playBtn = uiButton(win, "Play Again", {btnX, btnY, btnW, btnH}, {0.24f, 0.82f, 0.48f, 1.0f});
+    if (playBtn.hovered) printf("[DUEL UI] Hover Play Again\n");
+    if (playBtn.clicked) {
+        printf("[DUEL UI] Click Play Again\n");
+        printf("[DUEL UI] Play Again callback executed\n");
         return DuelMenuAction::PlayAgain;
+    }
 
-    if (uiButton(win, "Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH}, {0.86f, 0.3f, 0.3f, 1.0f}).clicked)
+    UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH}, {0.86f, 0.3f, 0.3f, 1.0f});
+    if (exitBtn.hovered) printf("[DUEL UI] Hover Exit\n");
+    if (exitBtn.clicked) {
+        printf("[DUEL UI] Click Exit\n");
+        printf("[DUEL UI] Exit callback executed\n");
         return DuelMenuAction::ExitToMenu;
+    }
 
     return DuelMenuAction::None;
 }
 
 void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
 {
-    printf("[DUEL] restarting duel with same config\n");
+    printf("[DUEL] Play Again clicked\n");
+    printf("[DUEL] Restarting duel with existing settings\n");
 
     npcs.destroyAll();
+
+    // Respawn NPCs with saved config
+    for (int i = 0; i < config.numNpcs; ++i) {
+        glm::vec3 spawnPos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
+        npcs.spawnNpc(config.npcDifficulty, spawnPos);
+    }
+
     player.dead = false;
     player.currentHp = 100.0f;
     player.vel = glm::vec3(0.0f);
@@ -535,11 +557,19 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
 
 void DuelManager::stopDuel()
 {
-    printf("[DUEL] stopping duel\n");
+    printf("[DUEL] Exit To Main Menu clicked\n");
+    printf("[DUEL] Returning to main menu\n");
     currentPhase = DuelPhase::Off;
     config.enabled = false;
     playerStats = DuelStats{};
     matchOverCaptured = false;
     matchOverButtonsShown = false;
     matchOverTimer = 0.0f;
+    currentRound = 1;
+    playerRoundsWon_ = 0;
+    npcRoundsWon_ = 0;
+    playerKills = 0;
+    npcKills.clear();
+    alivePlayerCount = 0;
+    aliveNpcCount = 0;
 }
