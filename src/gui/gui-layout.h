@@ -46,10 +46,18 @@ public:
 
     const std::string& filePath() const { return mFilePath; }
 
+    // Dirty tracking
+    bool isDirty() const { return mDirty; }
+    void clearDirty() { mDirty = false; }
+
+    // Clear all elements (for reset)
+    void clear();
+
 private:
     std::string mFilePath;
     std::unordered_map<std::string, GuiElement> mElements;
     int64_t mLastModified = 0;
+    mutable bool mDirty = false;
 };
 
 // Manages ALL layouts with global hot-reload
@@ -74,6 +82,24 @@ public:
 
     // Editor: save all layouts
     void saveAll();
+
+    // Save a single layout by file path
+    bool saveLayout(const std::string& filePath);
+
+    // Reload a single layout from disk
+    bool reloadLayout(const std::string& filePath);
+
+    // Reset a single layout (remove saved elements, reload from defaults)
+    void resetLayout(const std::string& filePath);
+
+    // Reset all layouts
+    void resetAll();
+
+    // Check if any layout has unsaved changes
+    bool hasUnsaved() const;
+
+    // Get list of file paths with unsaved changes
+    std::vector<std::string> unsavedLayouts() const;
 
 private:
     GuiLayoutManager() = default;

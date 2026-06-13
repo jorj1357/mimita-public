@@ -110,7 +110,8 @@ bool GuiLayout::save(const std::string& filePath) const
         return false;
     }
     file << j.dump(2);
-    printf("[GUI LAYOUT] Saved %zu elements to %s\n", mElements.size(), filePath.c_str());
+    mDirty = false;
+    printf("[GUI LAYOUT] Saved %d elements to %s\n", (int)mElements.size(), filePath.c_str());
     return true;
 }
 
@@ -146,6 +147,13 @@ void GuiLayout::set(const std::string& id, float x, float y, float w, float h)
     mElements[id].y = y;
     mElements[id].w = w;
     mElements[id].h = h;
+    mDirty = true;
+}
+
+void GuiLayout::clear()
+{
+    mElements.clear();
+    mDirty = true;
 }
 
 bool GuiLayout::checkFileChanged() const
@@ -201,7 +209,73 @@ void GuiLayoutManager::pollReload()
 
 void GuiLayoutManager::saveAll()
 {
+    int saved = 0;
     for (auto& pair : mLayouts) {
-        pair.second.save(pair.first);
+        if (pair.second.isDirty() || !pair.second.elementIds().empty()) {
+            pair.second.save(pair.first);
+            saved++;
+        }
     }
+    printf("[GUI LAYOUT] Saved %d layout(s)\n", saved);
+}
+
+bool GuiLayoutManager::saveLayout(const std::string& filePath)
+{
+    auto it = mLayouts.find(filePath);
+    if (it == mLayouts.end()) {
+        printf("[GUI LAYOUT] No layout loaded for %s\n", filePath.c_str());
+        return false;
+    }
+    return it->second.save(filePath);
+}
+
+bool GuiLayoutManager::reloadLayout(const std::string& filePath)
+{
+    auto it = mLayouts.find(filePath);
+    if (it == mLayouts.end()) {
+        printf("[GUI LAYOUT] No layout loaded for %s\n", filePath.c_str());
+        return false;
+    }
+    printf("[GUI LAYOUT] Reloading %s\n", filePath.c_str());
+    return it->second.load(filePath);
+}
+
+void GuiLayoutManager::resetLayout(const std::string& filePath)
+{
+    auto it = mLayouts.find(filePath);
+    if (it == mLayouts.end()) return;
+    it->second.clear();
+
+    // Delete the saved file so next launch uses defaults
+    std::error_code ec;
+    std::filesystem::remove(filePath, ec);
+    printf("[GUI LAYOUT] Reset %s (file deleted, will use defaults)\n", filePath.c_str());
+}
+
+void GuiLayoutManager::resetAll()
+{
+    for (auto& pair : mLayouts) {
+        pair.second.clear();
+        std::error_code ec;
+        std::filesystem::remove(pair.first, ec);
+    }
+    printf("[GUI LAYOUT] Reset all layouts\n");
+}
+
+bool GuiLayoutManager::hasUnsaved() const
+{
+    for (const auto& pair : mLayouts) {
+        if (pair.second.isDirty()) return true;
+    }
+    return false;
+}
+
+std::vector<std::string> GuiLayoutManager::unsavedLayouts() const
+{
+    std::vector<std::string> result;
+    for (const auto& pair : mLayouts) {
+        if (pair.second.isDirty())
+            result.push_back(pair.first);
+    }
+    return result;
 }

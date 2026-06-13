@@ -12,6 +12,12 @@ GuiEditor& GuiEditor::instance()
     return editor;
 }
 
+void GuiEditor::setEnabled(bool e)
+{
+    mEnabled = e;
+    uiSetEditMode(e);
+}
+
 void GuiEditor::update(GLFWwindow* win)
 {
     if (!mEnabled) return;
@@ -129,6 +135,25 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
 
 void GuiEditor::renderOverlay(GLFWwindow* win)
 {
+    // Top-right unsaved indicator
+    if (GuiLayoutManager::instance().hasUnsaved()) {
+        const char* unsavedText = "[UNSAVED] Use gui_save to persist layout changes";
+        float tw = uiMeasureText(unsavedText, 0.30f);
+        float sx = uiScreenW() - tw - 20.0f;
+        float sy = 12.0f;
+        uiDrawRect({sx - 8, sy - 4, tw + 16, 26},
+                   {0.5f, 0.1f, 0.05f, 0.85f}, "gui-unsaved-bg");
+        uiDrawText(unsavedText, sx, sy, 0.30f, {1.0f, 0.6f, 0.4f, 1.0f});
+    }
+
+    // Editor mode indicator (top-left)
+    {
+        const char* modeText = "[EDIT MODE] gui_edit 0 to exit";
+        uiDrawRect({10, 10, uiMeasureText(modeText, 0.30f) + 20, 26},
+                   {0.15f, 0.15f, 0.2f, 0.85f}, "gui-edit-bg");
+        uiDrawText(modeText, 18, 12, 0.30f, {1.0f, 0.8f, 0.1f, 1.0f});
+    }
+
     if (mSelectedId.empty()) return;
 
     GuiLayoutManager& mgr = GuiLayoutManager::instance();
