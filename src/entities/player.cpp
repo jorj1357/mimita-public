@@ -1469,11 +1469,9 @@ void Player::applyReplayPose(
         if (it == parts.end())
             continue;
 
-        glm::mat4 local = glm::translate(glm::mat4(1.0f), it->position);
-        local = glm::rotate(local, glm::radians(it->rotation.x), glm::vec3(1, 0, 0));
-        local = glm::rotate(local, glm::radians(it->rotation.y), glm::vec3(0, 1, 0));
-        local = glm::rotate(local, glm::radians(it->rotation.z), glm::vec3(0, 0, 1));
-        local = glm::scale(local, it->scale);
+        glm::mat4 local = glm::translate(glm::mat4(1.0f), it->position)
+            * glm::mat4_cast(it->rotation)
+            * glm::scale(glm::mat4(1.0f), it->scale);
         bodyPart.worldTransform = root * local;
     }
 }

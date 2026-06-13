@@ -41,7 +41,10 @@ struct ReplayClip {
     std::string mapPath;
     std::string killerId;
     std::string victimId;
+    std::string weaponId;
     uint32_t killTick = 0;
+    float killDistance = 0.0f;
+    bool roundWinning = false;
     std::vector<ReplayFrame> frames;
     std::vector<ReplaySceneFrame> sceneFrames;
     std::vector<ReplaySoundEvent> soundEvents;
@@ -251,6 +254,16 @@ void setActiveReplayClipSaver(ReplayClipSaver* saver);
 void notifyReplayKill(const std::string& killerId,
                       const std::string& victimId,
                       bool roundWinning);
+
+// Callback for ReplayFactory kill notification (set by main.cpp)
+using ReplayFactoryNotifyFn = void(*)(const std::string& killerId,
+                                       const std::string& victimId,
+                                       bool killerAirborne,
+                                       bool victimAirborne,
+                                       bool roundWinning);
+extern ReplayFactoryNotifyFn gReplayFactoryNotifyFn;
+void setReplayFactoryNotifyFn(ReplayFactoryNotifyFn fn);
+
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
 std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player);
