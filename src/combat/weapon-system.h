@@ -57,6 +57,7 @@ public:
     GodballPhysics& godballPhysics() { return mGodballPhys; }
 
     const WeaponDefinition* getCurrentDef(const Player& player) const;
+    const WeaponDefinition* getDefForSlot(int slot) const;
 
 private:
     static constexpr int MAX_SLOTS = 11;
@@ -84,7 +85,6 @@ private:
     void fireGodball(const Camera& camera, Player& player, NpcSystem& npcs, const World& world);
     void fireSwordsword(const Camera& camera, Player& player, NpcSystem& npcs);
 
-    const WeaponDefinition* getDefForSlot(int slot) const;
     WeaponRuntime* getCurrentRuntime(Player& player);
 
     int slotIndex(int slot) const { return std::max(0, std::min(slot, MAX_SLOTS - 1)); }

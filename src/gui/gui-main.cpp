@@ -23,6 +23,8 @@
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "ui-system.h"
+#include "gui-editor.h"
+#include "gui-layout.h"
 #include <cstdio>
 
 enum GuiMenuState
@@ -59,6 +61,9 @@ void reportSandboxMapLoadResult(const std::string& message, bool success)
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
+    // Poll for layout file changes (hot reload)
+    GuiLayoutManager::instance().pollReload();
+
     uiBeginFrame(win, "menu");
 
     switch (gGuiMenuState)
@@ -199,4 +204,7 @@ void guiMain(GLFWwindow* win, GameState& state)
 
     uiRenderFrameDebugOverlay(win, "MENU", false);
     uiEndFrame();
+
+    // GUI editor overlay (renders after the menu UI)
+    GuiEditor::instance().update(win);
 }

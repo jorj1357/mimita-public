@@ -49,6 +49,7 @@
 #include "world/world-gltf-loader.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "npc/npc-combat.h"
 #include "camera.h"
 #include "input/input-state.h"
 #include "input/input-poll.h"
@@ -61,6 +62,8 @@
 #include "audio/audio.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
+#include "gui/gui-layout.h"
+#include "gui/gui-editor.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
@@ -597,7 +600,7 @@ int main(int argc, char** argv)
 
     Terminal::instance().registerCommand({
         "chat", "Send a chat message visible above your character", "chat <message>",
-        [&player, &mpContext](const std::vector<std::string>& args) {
+        [&player](const std::vector<std::string>& args) {
             if (args.empty())
             {
                 Terminal::instance().addLog("[CHAT] usage: chat <message>");
@@ -1550,6 +1553,26 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "gui_edit", "Toggle GUI editor mode", "gui_edit [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                GuiEditor::instance().toggle();
+            } else {
+                GuiEditor::instance().setEnabled(args[0] == "1");
+            }
+            printf("[GUI EDIT] %s\n", GuiEditor::instance().isEnabled() ? "enabled" : "disabled");
+            Terminal::instance().addLog(std::string("[GUI EDIT] ") +
+                (GuiEditor::instance().isEnabled() ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_save", "Save current GUI layout positions to JSON", "gui_save",
+        [](const std::vector<std::string>&) {
+            GuiLayoutManager::instance().saveAll();
+            Terminal::instance().addLog("[GUI LAYOUT] saved all layouts");
+        }
+    });
+    Terminal::instance().registerCommand({
         "replay_test",
         "Record a deterministic gameplay replay and validate it in Blender",
         "replay_test",
@@ -1948,13 +1971,10 @@ int main(int argc, char** argv)
                     playerActor.fade = 0.0f;
                     playerActor.outfitPath = GetPlayerSettings().outfitPath;
                     {
-                        int slot = player.equippedSlot;
-                        if (slot == 1) {
-                            playerActor.weaponName = "revolver";
-                            playerActor.weaponModelPath = "assets/objects/weapons/mimita-revolver-v1.glb";
-                        } else if (slot == 3) {
-                            playerActor.weaponName = "shotgun";
-                            playerActor.weaponModelPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
+                        const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+                        if (wdef) {
+                            playerActor.weaponName = wdef->id;
+                            playerActor.weaponModelPath = wdef->modelPath;
                         } else {
                             playerActor.weaponName = "none";
                             playerActor.weaponModelPath = "";
@@ -1990,13 +2010,16 @@ int main(int argc, char** argv)
                         npcActor.collidable = !npc.body.dead;
                         npcActor.fade = 0.0f;
                         npcActor.outfitPath = "";
-                        npcActor.weaponName = npc.body.equippedSlot == 1 ? "revolver"
-                            : npc.body.equippedSlot == 3 ? "shotgun"
-                            : npc.body.equippedSlot == 2 ? "godball"
-                            : "none";
-                        npcActor.weaponModelPath = npc.body.equippedSlot == 1 ? "assets/objects/weapons/mimita-revolver-v1.glb"
-                            : npc.body.equippedSlot == 3 ? "assets/objects/weapons/mimita-shotgun-v1.glb"
-                            : "";
+                        {
+                            const WeaponDefinition* wdef = weapons.getDefForSlot(npc.body.equippedSlot);
+                            if (wdef) {
+                                npcActor.weaponName = wdef->id;
+                                npcActor.weaponModelPath = wdef->modelPath;
+                            } else {
+                                npcActor.weaponName = "none";
+                                npcActor.weaponModelPath = "";
+                            }
+                        }
                         {
                             auto wit = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
                             if (wit != npc.body.weaponRuntimes.end()) {
@@ -2013,6 +2036,7 @@ int main(int argc, char** argv)
                     gReplayRecorder.recordSceneFrame(sceneFrame);
                     gReplayClipSaver.update();
                     gReplayFactory.update();
+                    GuiLayoutManager::instance().pollReload();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
@@ -2869,7 +2893,9 @@ int main(int argc, char** argv)
                             crosshairPath = "assets/crosshair/crosshairreloading.png";
                         else if (primary.shooting)
                             crosshairPath = "assets/crosshair/crosshairdelay.png";
-                        float cs = primary.weaponName == "shotgun" ? 140.0f : 100.0f;
+                        float cs = 100.0f;
+                        const WeaponDefinition* rdef = WeaponRegistry::instance().get(primary.weaponName);
+                        if (rdef) cs = rdef->crosshairSize;
                         uiDrawImage(crosshairPath,
                                     {uiScreenW() * 0.5f - cs * 0.5f,
                                      uiScreenH() * 0.5f - cs * 0.5f, cs, cs});
@@ -2908,23 +2934,24 @@ int main(int argc, char** argv)
                            {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
                 uiDrawText("freecam  Free Camera", helpX + 8.0f, hy, 0.24f,
                            {0.8f, 0.8f, 1.0f, 1.0f});
-            } else if (player.equippedSlot >= 1 && player.equippedSlot <= 3) {
-                const char* crosshairPath = "assets/crosshair/crosshairready.png";
-                switch (weapons.crosshairState(player)) {
-                    case WeaponCrosshairState::Reloading:
-                        crosshairPath = "assets/crosshair/crosshairreloading.png";
-                        break;
-                    case WeaponCrosshairState::Delay:
-                        crosshairPath = "assets/crosshair/crosshairdelay.png";
-                        break;
-                    case WeaponCrosshairState::Ready:
-                        break;
+            } else {
+                const WeaponDefinition* crosshairDef = weapons.getCurrentDef(player);
+                if (crosshairDef && !crosshairDef->crosshairId.empty()) {
+                    const char* crosshairPath = "assets/crosshair/crosshairready.png";
+                    switch (weapons.crosshairState(player)) {
+                        case WeaponCrosshairState::Reloading:
+                            crosshairPath = "assets/crosshair/crosshairreloading.png";
+                            break;
+                        case WeaponCrosshairState::Delay:
+                            crosshairPath = "assets/crosshair/crosshairdelay.png";
+                            break;
+                        case WeaponCrosshairState::Ready:
+                            break;
+                    }
+                    float size = crosshairDef->crosshairSize;
+                    uiDrawImage(crosshairPath,
+                                {uiScreenW() * 0.5f - size * 0.5f, uiScreenH() * 0.5f - size * 0.5f, size, size});
                 }
-                float size = 100.0f;
-                if (player.equippedSlot == 3)
-                    size = 140.0f;
-                uiDrawImage(crosshairPath,
-                            {uiScreenW() * 0.5f - size * 0.5f, uiScreenH() * 0.5f - size * 0.5f, size, size});
             }
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
             uiDrawText(player.username.c_str(), 24, 88, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
@@ -3105,8 +3132,19 @@ int main(int argc, char** argv)
             }
             {
                 char npcText[96];
-                snprintf(npcText, sizeof(npcText), "NPCs: %zu difficulties 1/3/5/7/10", npcSystem.all().size());
+                snprintf(npcText, sizeof(npcText), "NPCs: %zu", npcSystem.all().size());
                 uiDrawText(npcText, 24, 168, 0.32f, {1.0f, 0.82f, 0.38f, 1.0f});
+                if (!npcSystem.all().empty()) {
+                    const Npc& first = npcSystem.all().front();
+                    char tuneText[256];
+                    snprintf(tuneText, sizeof(tuneText),
+                             "  Diff=%.0f aimErr=%.1fdeg reaction=%.2fs moveVar=%.2f",
+                             first.difficulty,
+                             NpcCombat::aimErrorDegrees(first.difficulty),
+                             first.tuning.reactionDelay,
+                             first.tuning.movementPrecision);
+                    uiDrawText(tuneText, 24, 184, 0.28f, {0.8f, 0.9f, 1.0f, 1.0f});
+                }
             }
             if (DebugVis::render())
             {
@@ -3289,6 +3327,9 @@ int main(int argc, char** argv)
             // Dev overlay notifications (temporary)
             DevOverlay::instance().render();
         }
+
+        // Advance GUI media animations (GIF frames, future video)
+        uiUpdateMedia(dt);
 
         if (gameState == GAME_MENU)
         {
