@@ -191,7 +191,12 @@ void flushDebugTris(const Camera& camera)
     }
 
     MIMITA_GL_CLEAR_STAGE("flushDebugTris");
+    // Transparent particle pass: disable depth writes so particles
+    // (blood, debris, sparks) blend together instead of occluding each other.
+    // Depth test is kept so particles sort behind world geometry, but they
+    // should not write their own depth and hide other particles nearby.
     MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+    MIMITA_GL_CALL(glDepthMask(GL_FALSE));
     MIMITA_GL_CALL(glEnable(GL_BLEND));
     MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 
@@ -268,6 +273,8 @@ void flushDebugTris(const Camera& camera)
     MIMITA_GL_CALL(glDisableVertexAttribArray(2));
 
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTriVerts.size()));
+
+    MIMITA_GL_CALL(glDepthMask(GL_TRUE));
 
     gTriVerts.clear();
 }
@@ -433,23 +440,22 @@ void drawFilledBillboard(
     float stretch,
     glm::vec4 color)
 {
-    const glm::vec3 horizontal =
-        (camera.right * std::cos(rotation) + camera.up * std::sin(rotation)) *
-        size * stretch;
-    const glm::vec3 vertical =
-        (-camera.right * std::sin(rotation) + camera.up * std::cos(rotation)) *
-        size;
-    const glm::vec3 p0 = position - horizontal - vertical;
-    const glm::vec3 p1 = position + horizontal - vertical;
-    const glm::vec3 p2 = position + horizontal + vertical;
-    const glm::vec3 p3 = position - horizontal + vertical;
-
-    gTriVerts.push_back({p0, color});
-    gTriVerts.push_back({p1, color});
-    gTriVerts.push_back({p2, color});
-    gTriVerts.push_back({p0, color});
-    gTriVerts.push_back({p2, color});
-    gTriVerts.push_back({p3, color});
+    // Circular billboard: 16-segment triangle fan
+    // Each segment draws a triangle from center to two consecutive edge points
+    constexpr int SEGMENTS = 16;
+    for (int i = 0; i < SEGMENTS; ++i) {
+        const float a1 = rotation + (float)i * 6.2831855f / (float)SEGMENTS;
+        const float a2 = rotation + (float)(i + 1) * 6.2831855f / (float)SEGMENTS;
+        const glm::vec3 edge1 =
+            position +
+            (camera.right * std::cos(a1) + camera.up * std::sin(a1)) * size * stretch;
+        const glm::vec3 edge2 =
+            position +
+            (camera.right * std::cos(a2) + camera.up * std::sin(a2)) * size;
+        gTriVerts.push_back({position, color});
+        gTriVerts.push_back({edge1, color});
+        gTriVerts.push_back({edge2, color});
+    }
 }
 
 // Solid filled sphere for production particles (footsteps, dash)

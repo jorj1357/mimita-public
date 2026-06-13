@@ -392,24 +392,28 @@ void EffectPartSystem::spawnBloodEffect(
 
     // Particle count scales with damage:
     // 10 dmg revolver -> ~20 particles
-    // 50 dmg shotgun -> ~70 particles
-    // 100 dmg godball -> ~100 particles
+    // 50 dmg -> ~70
+    // 100 dmg -> ~100
     int particleCount = 12;
     if (damage < 20.0f) particleCount = 12 + (int)(damage * 0.8f);
     else if (damage < 50.0f) particleCount = 28 + (int)((damage - 20.0f) * 1.2f);
     else particleCount = 64 + (int)((damage - 50.0f) * 0.7f);
     particleCount = std::clamp(particleCount, 12, 110);
 
-    // Wide chaotic cone: 80-100 degrees
-    const float coneDegrees = 80.0f + damageScale * 20.0f;
-    const float coneRadius = std::tan(glm::radians(coneDegrees));
+    // --- BLOOD CONE: tight 15-20 degrees ---
+    const float bloodConeDegrees = 15.0f + damageScale * 5.0f;
+    const float bloodConeRadius = std::tan(glm::radians(bloodConeDegrees));
 
-    // Speed: weak ~8 m/s, strong ~22 m/s
+    // --- DEBRIS CONE: wider 35-60 degrees ---
+    const float debrisConeDegrees = 35.0f + damageScale * 25.0f;
+    const float debrisConeRadius = std::tan(glm::radians(debrisConeDegrees));
+
+    // Speed: center particles get full speed, edge particles get ~40%
     const float baseSpeed = 6.0f + damageScale * 10.0f;
     const float speedVariation = 4.0f;
 
-    // Lifetime 5-7 seconds — particles shoot out, slow down, and hang as mist
-    const float baseLifetime = 5.0f + damageScale * 1.0f;
+    // Lifetime: shorter than before — particles fade instead of hanging
+    const float baseLifetime = 2.5f + damageScale * 1.0f;
 
     if (mBloodParticles.size() + (size_t)particleCount > MAX_BLOOD_PARTICLES) {
         const size_t removeCount =
@@ -419,30 +423,76 @@ void EffectPartSystem::spawnBloodEffect(
             mBloodParticles.begin() + (std::min)(removeCount, mBloodParticles.size()));
     }
 
-    for (int i = 0; i < particleCount; ++i) {
+    // Split particle budget: 2/3 blood, 1/3 debris
+    const int bloodCount = (particleCount * 2) / 3;
+    const int debrisCount = particleCount - bloodCount;
+
+    for (int i = 0; i < bloodCount; ++i) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * coneRadius;
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * bloodConeRadius;
         const glm::vec3 direction = glm::normalize(
             forward +
             tangent * std::cos(angle) * radial +
             bitangent * std::sin(angle) * radial);
 
+        // Center particles are faster, edge particles are slower
+        const float centerBias = 1.0f - radial / std::max(bloodConeRadius, 0.001f);
+        const float speed = (baseSpeed * (0.4f + centerBias * 0.6f)) +
+            (float)(rand() % (int)(speedVariation * 1000.0f + 1.0f)) / 1000.0f;
+
         BloodParticle particle;
         particle.position = hitPoint + direction * 0.05f;
-        particle.velocity = direction *
-            (baseSpeed + (float)(rand() % (int)(speedVariation * 1000.0f + 1.0f)) / 1000.0f);
-        particle.size = 0.04f + (float)(rand() % 801) / 10000.0f +
-            damageScale * 0.035f;
+        particle.velocity = direction * speed;
+        // Smaller particles: 50-60% of previous size
+        particle.size = 0.02f +
+            (float)(rand() % 601) / 20000.0f +
+            damageScale * 0.015f;
         particle.lifetime = baseLifetime + (float)(rand() % 1001) / 1000.0f;
         particle.alpha = 0.85f;
         particle.rotation = (float)(rand() % 6284) / 1000.0f;
-        particle.stretch = 0.7f + (float)(rand() % 901) / 1000.0f;
+        particle.stretch = 0.7f + (float)(rand() % 601) / 1000.0f;
         mBloodParticles.push_back(particle);
     }
 
+    // Debris particles: wider cone, different color (dust/chunks)
+    for (int i = 0; i < debrisCount; ++i) {
+        const float angle = (float)(rand() % 6284) / 1000.0f;
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * debrisConeRadius;
+        const glm::vec3 direction = glm::normalize(
+            forward +
+            tangent * std::cos(angle) * radial +
+            bitangent * std::sin(angle) * radial);
+
+        const float speed = 2.0f + (float)(rand() % 2001) / 1000.0f;
+
+        // Debris uses EffectPart system (spawns as tumbling boxes)
+        EffectPart deb;
+        deb.position = hitPoint + direction * 0.05f;
+        deb.velocity = direction * speed;
+        deb.velocity.z += 1.0f + (float)(rand() % 1001) / 1000.0f;
+        deb.halfSize = glm::vec3(0.02f + (float)(rand() % 301) / 10000.0f);
+        deb.color = glm::vec3(0.35f, 0.3f, 0.25f);
+        deb.alpha = 0.7f;
+        deb.maxLifetime = 1.0f + (float)(rand() % 1001) / 1000.0f;
+        deb.rotation = glm::vec3(
+            (float)(rand() % 6284) / 1000.0f,
+            (float)(rand() % 6284) / 1000.0f,
+            (float)(rand() % 6284) / 1000.0f);
+        deb.angularVelocity = glm::vec3(
+            (float)(rand() % 628) / 100.0f,
+            (float)(rand() % 628) / 100.0f,
+            (float)(rand() % 628) / 100.0f);
+        deb.box = true;
+        deb.gravity = 3.0f;
+        deb.affectedByGravity = true;
+        deb.billboardText = false;
+        deb.replayType = "debris";
+        spawn(deb);
+    }
+
     if (DebugConfig::DEBUG_BLOOD_HITS) {
-        printf("[BLOOD PARTICLES] count=%d speed=%.2f lifetime=%.2f cone=%.0f\n",
-               particleCount, baseSpeed, baseLifetime, coneDegrees);
+        printf("[BLOOD] blood=%d debris=%d speed=%.2f bloodCone=%.0f debrisCone=%.0f\n",
+               bloodCount, debrisCount, baseSpeed, bloodConeDegrees, debrisConeDegrees);
     }
 
     ReplayEffectEvent emitter;
@@ -462,16 +512,13 @@ void EffectPartSystem::spawnBloodEffect(
     }
 
     // Generate decal positions within a cone VOLUME behind the victim.
-    // Each position is a random point inside the cone, then projected onto
-    // the nearest surface (floor via downward cast, or wall via forward cast).
-    // This avoids the "line on floor" problem from cone-plane intersection.
     const int decalCount = std::clamp(8 + (int)std::round(damage * 0.3f), 8, 40);
     const float coneDist = std::clamp(3.0f + damage * 0.08f, 3.0f, 16.0f);
     mBloodDebugSegmentCount = 0;
 
     for (int dec = 0; dec < decalCount; ++dec) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * coneRadius;
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * debrisConeRadius;
         const float dist = 0.5f + ((float)(rand() % 1001) / 1000.0f) * (coneDist - 0.5f);
         const glm::vec3 coneDir = glm::normalize(
             forward +
@@ -558,8 +605,8 @@ void EffectPartSystem::spawnBloodEffect(
     }
 
     if (DebugConfig::DEBUG_BLOOD_HITS) {
-        printf("[BLOOD SPAWN] particles=%d damage=%.1f cone=%.1f\n",
-               particleCount, damage, coneDegrees);
+        printf("[BLOOD SPAWN] particles=%d damage=%.1f bloodCone=%.1f debrisCone=%.1f\n",
+               particleCount, damage, bloodConeDegrees, debrisConeDegrees);
         printf("[BLOOD DECAL] decals=%d active=%zu\n",
                decalCount, mBloodDecals.size());
     }
@@ -896,6 +943,22 @@ void EffectPartSystem::render(const Camera& camera) const {
             decal.rotation,
             decal.stretch,
             {0.78f, 0.01f, 0.02f, decal.alpha * distFade});
+    }
+
+    // Particle debug logging
+    if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {
+        static float partTimer = 0.0f;
+        partTimer -= 0.016f;
+        if (partTimer <= 0.0f) {
+            partTimer = 2.0f;
+            int debrisCount = 0, bloodCount = 0, decalCount = 0;
+            for (const auto& e : mPool) {
+                if (!e.alive) continue;
+                if (e.replayType == "debris_block") ++debrisCount;
+            }
+            printf("[PARTICLE] debris=%d blood=%d decals=%zu transparentPass=1 depthWrite=0\n",
+                   debrisCount, (int)mBloodParticles.size(), mBloodDecals.size());
+        }
     }
 
     // Blood performance metrics
