@@ -74,7 +74,7 @@ double lastX = 400, lastY = 300;
     glm::mat4 getProj(float width, float height) const;
 
     // 0 = locked/snappy, 5 = default, 10 = floaty
-    float smoothness = 5.0f;
+    float smoothness = 0.0f;
 
 private:
     glm::vec3 mPrevCollisionPos{0.0f};
