@@ -31,6 +31,7 @@ bool gDebug = false;
 bool gMousePrev = false;
 bool gMouseDown = false;
 bool gMouseClickEdge = false;
+bool gUiEditMode = false;
 int gFrame = 0;
 int gDrawCalls = 0;
 int gWidgets = 0;
@@ -316,6 +317,7 @@ float uiMeasureText(const char* text, float scale)
 }
 
 void uiSetDebug(bool enabled) { gDebug = enabled; }
+void uiSetEditMode(bool enabled) { gUiEditMode = enabled; }
 bool uiDebugEnabled() { return gDebug; }
 
 void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName)
@@ -546,7 +548,8 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     UIButtonState s;
     s.hovered = pointIn(mx, my, r);
     s.pressed = s.hovered && gMouseDown;
-    s.clicked = s.hovered && gMouseClickEdge;
+    // In edit mode, buttons never fire — the editor consumes all clicks
+    s.clicked = !gUiEditMode && s.hovered && gMouseClickEdge;
 
     static const char* lastHoveredText = nullptr;
     static bool wasHovered = false;
