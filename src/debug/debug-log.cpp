@@ -25,6 +25,17 @@ const char* categoryName(Debug::Category category)
         case Debug::Category::Collision: return "COLLISION";
         case Debug::Category::Physics: return "PHYSICS";
         case Debug::Category::Render: return "RENDER";
+        case Debug::Category::NpcCombat: return "NPC_COMBAT";
+        case Debug::Category::NpcMovement: return "NPC_MOVE";
+        case Debug::Category::Ragdoll: return "RAGDOLL";
+        case Debug::Category::Replay: return "REPLAY";
+        case Debug::Category::Weapons: return "WEAPONS";
+        case Debug::Category::Animation: return "ANIM";
+        case Debug::Category::Gui: return "GUI";
+        case Debug::Category::Networking: return "NET";
+        case Debug::Category::Audio: return "AUDIO";
+        case Debug::Category::World: return "WORLD";
+        case Debug::Category::Duel: return "DUEL";
         default: return "DEBUG";
     }
 }
@@ -45,6 +56,19 @@ bool Debug::enabled(Category category)
         case Category::Collision: return DebugConfig::COLLISION_VERBOSE;
         case Category::Physics: return DebugConfig::PHYSICS_VERBOSE;
         case Category::Render: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::RENDER_VERBOSE;
+        case Category::NpcCombat: return DebugConfig::DEBUG_NPC_COMBAT;
+        case Category::NpcMovement: return DebugConfig::DEBUG_NPC_MOVEMENT;
+        case Category::Ragdoll: return DebugConfig::DEBUG_RAGDOLL;
+        case Category::Replay: return DebugConfig::DEBUG_REPLAY;
+        case Category::Weapons: return DebugConfig::ENABLE_DEBUG_LOGS ||
+                                       DebugConfig::DEBUG_RECOIL ||
+                                       DebugConfig::DEBUG_RELOAD;
+        case Category::Animation: return DebugConfig::DEBUG_ANIMATION;
+        case Category::Gui: return DebugConfig::DEBUG_UI;
+        case Category::Networking: return DebugConfig::DEBUG_NETWORKING;
+        case Category::Audio: return DebugConfig::DEBUG_SOUND;
+        case Category::World: return DebugConfig::ENABLE_DEBUG_LOGS;
+        case Category::Duel: return DebugConfig::DEBUG_DUEL;
         default:
             return DebugConfig::ENABLE_DEBUG_LOGS ||
                    DebugConfig::DEBUG_TICKS ||

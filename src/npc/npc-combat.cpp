@@ -11,6 +11,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "config.h"
+#include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "ui/hitmarker.h"
 #include "world/world.h"
@@ -145,13 +146,12 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     glm::vec3 diff = closestRay - closestSeg;
     float dist = glm::length(diff);
 
-    if (DebugConfig::DEBUG_NPC_COMBAT) {
-        printf("[RAY CAPSULE] closestRay=(%.3f %.3f %.3f) closestCapsule=(%.3f %.3f %.3f) "
-               "distBetween=%.4f radius=%.4f t=%.4f s=%.4f\n",
-               closestRay.x, closestRay.y, closestRay.z,
-               closestSeg.x, closestSeg.y, closestSeg.z,
-               dist, radius, t, s);
-    }
+    Debug::log(Debug::Category::NpcCombat,
+        "[RAY CAPSULE] closestRay=(%.3f %.3f %.3f) closestCapsule=(%.3f %.3f %.3f) "
+        "distBetween=%.4f radius=%.4f t=%.4f s=%.4f",
+        closestRay.x, closestRay.y, closestRay.z,
+        closestSeg.x, closestSeg.y, closestSeg.z,
+        dist, radius, t, s);
 
     if (dist < radius) {
         outDist = t;
@@ -219,8 +219,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             npc.body.equippedSlot = (rand() % 2 == 0) ? 3 : 1;
             npc.body.equippedWeaponId = (npc.body.equippedSlot == 3) ? "shotgun" : "revolver";
         }
-        printf("[NPC WEAPON] npc=%u auto-equipped slot=%d weapon=%s\n",
-               npc.id, npc.body.equippedSlot, npc.body.equippedWeaponId.c_str());
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC WEAPON] npc=%u auto-equipped slot=%d weapon=%s",
+            npc.id, npc.body.equippedSlot, npc.body.equippedWeaponId.c_str());
     }
 
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
@@ -254,20 +255,21 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
         *def, rt, npc.body, world, npcPos, aimDir, &player);
 
-    if (DebugConfig::DEBUG_NPC_COMBAT) {
-        printf("[NPC WEAPON FIRE] npc=%u weapon=%s origin=(%.2f %.2f %.2f) "
-               "aimDir=(%.2f %.2f %.2f) ammo=%d\n",
-               npc.id, def->id.c_str(), npcPos.x, npcPos.y, npcPos.z,
-               aimDir.x, aimDir.y, aimDir.z, rt.currentAmmo);
-        printf("[NPC WEAPON RESULT] npc=%u fired=%d hitEntity=%d hitWorld=%d "
-               "damage=%.0f hpAfter=%d\n",
-               npc.id, (int)shot.fired, (int)shot.hitEntity, (int)shot.hitWorld,
-               shot.damage, player.currentHp);
-    }
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC WEAPON FIRE] npc=%u weapon=%s origin=(%.2f %.2f %.2f) "
+        "aimDir=(%.2f %.2f %.2f) ammo=%d",
+        npc.id, def->id.c_str(), npcPos.x, npcPos.y, npcPos.z,
+        aimDir.x, aimDir.y, aimDir.z, rt.currentAmmo);
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC WEAPON RESULT] npc=%u fired=%d hitEntity=%d hitWorld=%d "
+        "damage=%.0f hpAfter=%d",
+        npc.id, (int)shot.fired, (int)shot.hitEntity, (int)shot.hitWorld,
+        shot.damage, player.currentHp);
 
-    printf("[NPC SHOT] hit=%d weapon=%s damage=%.0f hpAfter=%d dist=%.1f aimError=%.1fdeg\n",
-           (int)shot.hitEntity, def->id.c_str(), shot.damage, player.currentHp, dist,
-           aimErrorDegrees(npc.difficulty));
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC SHOT] hit=%d weapon=%s damage=%.0f hpAfter=%d dist=%.1f aimError=%.1fdeg",
+        (int)shot.hitEntity, def->id.c_str(), shot.damage, player.currentHp, dist,
+        aimErrorDegrees(npc.difficulty));
 
     npc.aimTimer = 0.0f;
 

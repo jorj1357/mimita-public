@@ -436,6 +436,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     if (DebugConfig::DEBUG_NPC_COMBAT && npc.sensors.hasTarget)
     {
         float aimErrDeg = NpcCombat::aimErrorDegrees(npc.difficulty);
+        // TODO(debug): migrate to Debug::log(Debug::Category::NpcMovement)
         printf("[NPC] id=%u state=%s dist=%.1f aimError=%.2f canSee=%d "
                "aimTimer=%.2f reactionTimer=%.2f\n",
                npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
