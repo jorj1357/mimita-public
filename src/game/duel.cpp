@@ -450,29 +450,38 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     // Force cursor unlocked for click detection
     glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
-    float cx = uiScreenW() * 0.5f;
-    float cy = uiScreenH() * 0.5f;
+    float sw = uiScreenW();
+    float sh = uiScreenH();
 
-    // Semi-transparent background to block world clickthrough
-    uiDrawRect({0, 0, uiScreenW(), uiScreenH()}, {0.0f, 0.0f, 0.0f, 0.6f}, "duel-end-bg");
+    Debug::log(Debug::Category::Duel, "[DUEL UI] MatchEnd layout=left_panel");
+
+    // Light full-screen dim so replay stays visible
+    uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.15f}, "duel-end-dim");
+
+    // Left-side menu panel
+    float panelX = 40.0f;
+    float panelY = sh * 0.5f - 140.0f;
+    float panelW = 300.0f;
+    float panelH = 290.0f;
+    uiDrawRect({panelX, panelY, panelW, panelH}, {0.0f, 0.0f, 0.0f, 0.75f}, "duel-end-panel");
 
     // Winner announcement
     const char* winnerText = (matchWinner_ == DuelTeam::Player) ? "YOU WIN!" : "NPC WINS!";
     glm::vec4 winnerColor = (matchWinner_ == DuelTeam::Player)
         ? glm::vec4(0.3f, 1.0f, 0.3f, 1.0f)
         : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
-    uiDrawText(winnerText, cx - 100.0f, cy - 140.0f, 1.0f, winnerColor);
+    uiDrawText(winnerText, panelX + 20.0f, panelY + 12.0f, 0.85f, winnerColor);
 
     // Score
     char scoreText[32];
     snprintf(scoreText, sizeof(scoreText), "%d - %d", playerRoundsWon_, npcRoundsWon_);
-    uiDrawText(scoreText, cx - 30.0f, cy - 60.0f, 0.6f, {1, 0.85f, 0.25f, 1});
+    uiDrawText(scoreText, panelX + 20.0f, panelY + 58.0f, 0.55f, {1, 0.85f, 0.25f, 1});
 
     // Stats
     char statsText[128];
     snprintf(statsText, sizeof(statsText), "Kills: %d | Deaths: %d | Points: %d | XP: %d",
              playerStats.kills, playerStats.deaths, playerStats.points, playerStats.xp);
-    uiDrawText(statsText, cx - 200.0f, cy - 20.0f, 0.38f, {1, 1, 1, 1});
+    uiDrawText(statsText, panelX + 20.0f, panelY + 88.0f, 0.34f, {1, 1, 1, 1});
 
     bool canShowButtons = matchOverButtonsShown;
 
@@ -480,7 +489,7 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     if (!canShowButtons && finalKillReplayTime < 0.5f && matchOverTimer > 0.0f) {
         char countdownText[64];
         snprintf(countdownText, sizeof(countdownText), "Match ends in %.0f...", std::ceil(matchOverTimer));
-        uiDrawText(countdownText, cx - 100.0f, cy + 40.0f, 0.38f, {1, 1, 1, 0.7f});
+        uiDrawText(countdownText, panelX + 20.0f, panelY + 125.0f, 0.38f, {1, 1, 1, 0.7f});
         return DuelMenuAction::None;
     }
 
@@ -494,16 +503,18 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
         return DuelMenuAction::None;
     }
 
-    float btnW = 280.0f;
-    float btnH = 54.0f;
-    float btnX = cx - btnW * 0.5f;
-    float btnY = cy + 60.0f;
-    float gap = 20.0f;
+    // Stack buttons vertically inside the left panel
+    float btnW = panelW - 40.0f;
+    float btnH = 44.0f;
+    float btnX = panelX + 20.0f;
+    float btnY = panelY + 120.0f;
+    float gap = 12.0f;
 
     UIButtonState playBtn = uiButton(win, "Play Again", {btnX, btnY, btnW, btnH}, {0.24f, 0.82f, 0.48f, 1.0f});
     Debug::logThrottled(Debug::Category::Duel, "hover_play", 1.0f,
         "[UI BUTTON] id=play_again hover=%d click=%d", (int)playBtn.hovered, (int)playBtn.clicked);
     if (playBtn.clicked) {
+        Debug::log(Debug::Category::Duel, "[DUEL UI] Play Again clicked");
         Debug::log(Debug::Category::Duel, "[UI BUTTON] id=play_again clicked=1 callback=1");
         Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
         return DuelMenuAction::PlayAgain;
@@ -513,9 +524,19 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     Debug::logThrottled(Debug::Category::Duel, "hover_exit", 1.0f,
         "[UI BUTTON] id=exit_main_menu hover=%d click=%d", (int)exitBtn.hovered, (int)exitBtn.clicked);
     if (exitBtn.clicked) {
+        Debug::log(Debug::Category::Duel, "[DUEL UI] Exit To Main Menu clicked");
         Debug::log(Debug::Category::Duel, "[UI BUTTON] id=exit_main_menu clicked=1 callback=1");
         Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
         return DuelMenuAction::ExitToMenu;
+    }
+
+    // Save Replay button, shown when final kill replay is active
+    if (finalKillReplayActive) {
+        UIButtonState saveBtn = uiButton(win, "Save Replay", {btnX, btnY + (btnH + gap) * 2, btnW, btnH}, {0.2f, 0.6f, 0.3f, 1.0f});
+        if (saveBtn.clicked) {
+            Debug::log(Debug::Category::Duel, "[DUEL UI] Save Replay clicked");
+            return DuelMenuAction::SaveReplay;
+        }
     }
 
     return DuelMenuAction::None;

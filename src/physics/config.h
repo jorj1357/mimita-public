@@ -196,8 +196,12 @@ inline float AIR_DASH_IMPULSE = 50.0f;
 
 // down dash slam speed (Q key)
 constexpr float DOWN_DASH_SPEED = -100.0f;
+// constexpr float DOWN_DASH_SPEED = -25.0f;
+// what if not having this at all idk 6 14 2026 
+// constexpr float DOWN_DASH_SPEED = -5.0f;
 
 // how many dash charges u got
+// 6 14 2026 not used bc dashes just recharge if u touch a world object
 constexpr int   DASH_MAX_CHARGES   = 3;
 
 // how long between each dash charge 
