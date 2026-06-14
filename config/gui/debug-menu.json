@@ -1,0 +1,27 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 1,
+  "elements": [
+    {
+      "id": "backButton",
+      "x": 40,
+      "y": 40,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Toggle Debug Movement",
+      "x": 760,
+      "y": 360,
+      "width": 400,
+      "height": 70
+    },
+    {
+      "id": "Toggle Debug Visuals",
+      "x": 760,
+      "y": 450,
+      "width": 400,
+      "height": 70
+    }
+  ]
+}

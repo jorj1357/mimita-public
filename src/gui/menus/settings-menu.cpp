@@ -7,6 +7,7 @@
  */
 
 #include "settings-menu.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 #include "camera.h"
 #include "config/player-settings.h"
@@ -78,6 +79,7 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     SettingsMenuResult r{};
 
     PlayerSettings& settings = GetPlayerSettings();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/settings-menu.json");
 
     static bool fullscreen = false;
     static bool physicsDebug = true;
@@ -279,20 +281,13 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     // TEST BUTTON
     //--------------------------------------------------
 
-    if (
-        uiButton(
-            win,
-            "TEST BUTTON",
-            uiCentered(
-                uiScaleX(250),
-                uiScaleY(58),
-                sh * 0.62f
-            ),
-            {0.42f,0.72f,0.95f,1.0f}
-        ).clicked
-    )
     {
-        printf("[SETTINGS MENU] Test button pressed\n");
+        UIRect tr = layout.getRect("TEST BUTTON", 
+            uiCentered(uiScaleX(250), uiScaleY(58), sh * 0.62f));
+        if (uiButton(win, "TEST BUTTON", tr, {0.42f,0.72f,0.95f,1.0f}).clicked)
+        {
+            printf("[SETTINGS MENU] Test button pressed\n");
+        }
     }
 
     //--------------------------------------------------
@@ -321,22 +316,14 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     // BACK BUTTON
     //--------------------------------------------------
 
-    if (
-        uiButton(
-            win,
-            "BACK",
-            uiCentered(
-                uiScaleX(180),
-                uiScaleY(48),
-                sh - uiScaleY(82)
-            ),
-            {0.75f,0.25f,0.25f,1.0f}
-        ).clicked
-    )
     {
-        printf("[SETTINGS MENU] Back pressed\n");
-
-        r.goBack = true;
+        UIRect br = layout.getRect("backButton", 
+            uiCentered(uiScaleX(180), uiScaleY(48), sh - uiScaleY(82)));
+        if (uiButton(win, "BACK", br, {0.75f,0.25f,0.25f,1.0f}).clicked)
+        {
+            printf("[SETTINGS MENU] Back pressed\n");
+            r.goBack = true;
+        }
     }
 
     return r;

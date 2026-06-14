@@ -41,6 +41,14 @@ std::vector<std::string> gWarnings;
 // Widget tracking for GUI editor
 std::vector<UITrackedWidget> gTrackedWidgets;
 
+// Global hover ownership: exactly one widget owns hover focus per frame.
+// gHoverOwnerKey is set to the topmost (last-drawn) widget under the cursor.
+static std::string gHoverOwnerKey;
+static std::string gPrevHoverOwnerKey;
+
+// Overlap debug visualization
+static bool gOverlapDebugEnabled = false;
+
 bool uiCanPlayUISound() {
     if (!gWindow) return false;
     if (glfwGetWindowAttrib(gWindow, GLFW_FOCUSED) == 0) return false;
@@ -280,6 +288,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     gDrawCalls = 0;
     gWidgets = 0;
     gTrackedWidgets.clear();
+    gHoverOwnerKey.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
 
@@ -297,8 +306,63 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
         Debug::logThrottled(Debug::Category::Render, "ui-frame", DebugConfig::PRINT_INTERVAL, "[UI] Rendering UI frame %d pass=%s framebuffer=%dx%d\n", gFrame, passName ? passName : "unknown", gFbW, gFbH);
 }
 
+static void drawOverlapDebug()
+{
+    if (!gOverlapDebugEnabled || gTrackedWidgets.empty()) return;
+
+    for (size_t i = 0; i < gTrackedWidgets.size(); ++i)
+    {
+        const UITrackedWidget& a = gTrackedWidgets[i];
+        for (size_t j = i + 1; j < gTrackedWidgets.size(); ++j)
+        {
+            const UITrackedWidget& b = gTrackedWidgets[j];
+            const UIRect& ra = a.rect;
+            const UIRect& rb = b.rect;
+
+            if (ra.x < rb.x + rb.w && ra.x + ra.w > rb.x &&
+                ra.y < rb.y + rb.h && ra.y + ra.h > rb.y)
+            {
+                float ox = std::max(ra.x, rb.x);
+                float oy = std::max(ra.y, rb.y);
+                float ow = std::min(ra.x + ra.w, rb.x + rb.w) - ox;
+                float oh = std::min(ra.y + ra.h, rb.y + rb.h) - oy;
+
+                printf("[GUI OVERLAP] \"%s\" overlaps \"%s\"  overlap=(%.0f,%.0f,%.0f,%.0f)\n",
+                       a.id.c_str(), b.id.c_str(), ox, oy, ow, oh);
+
+                // Draw overlapping region in semi-transparent red
+                uiDrawRect({ox, oy, ow, oh}, {1.0f, 0.0f, 0.0f, 0.35f}, "overlap-debug");
+
+                // Draw outlines around both overlapping widgets
+                uiDrawRectOutline(ra, {1.0f, 0.0f, 0.0f, 0.8f}, "overlap-widget");
+                uiDrawRectOutline(rb, {1.0f, 0.0f, 0.0f, 0.8f}, "overlap-widget");
+            }
+        }
+    }
+}
+
 void uiEndFrame()
 {
+    // Global hover ownership: determine enter/exit for the topmost widget only
+    if (gHoverOwnerKey != gPrevHoverOwnerKey)
+    {
+        if (!gPrevHoverOwnerKey.empty())
+        {
+            printf("[UI HOVER EXIT] id=%s\n", gPrevHoverOwnerKey.c_str());
+        }
+        if (!gHoverOwnerKey.empty())
+        {
+            printf("[UI HOVER ENTER] id=%s\n", gHoverOwnerKey.c_str());
+            if (uiCanPlayUISound()) {
+                playMenuHover();
+            }
+        }
+        gPrevHoverOwnerKey = gHoverOwnerKey;
+    }
+
+    // Overlap debug visualization (drawn before GL state cleanup)
+    drawOverlapDebug();
+
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
     gMousePrev = gMouseDown;
@@ -325,6 +389,8 @@ void uiSetDebug(bool enabled) { gDebug = enabled; }
 void uiSetEditMode(bool enabled) { gUiEditMode = enabled; }
 bool uiEditModeEnabled() { return gUiEditMode; }
 bool uiDebugEnabled() { return gDebug; }
+void uiSetOverlapDebug(bool enabled) { gOverlapDebugEnabled = enabled; }
+bool uiOverlapDebugEnabled() { return gOverlapDebugEnabled; }
 
 const std::vector<UITrackedWidget>& uiGetTrackedWidgets()
 {
@@ -557,30 +623,18 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     double mx = 0.0, my = 0.0;
     glfwGetCursorPos(win, &mx, &my);
     UIButtonState s;
-    s.hovered = pointIn(mx, my, r);
-    s.pressed = s.hovered && gMouseDown;
+    const bool rawHovered = pointIn(mx, my, r);
+    s.pressed = rawHovered && gMouseDown;
     // In edit mode, buttons never fire — the editor consumes all clicks
-    s.clicked = !gUiEditMode && s.hovered && gMouseClickEdge;
-
-    static std::unordered_map<std::string, bool> prevHover;
+    s.clicked = !gUiEditMode && rawHovered && gMouseClickEdge;
 
     const char* key = id ? id : text;
-    bool isHoveredNow = s.hovered;
-    bool wasHovered = prevHover[key];
-    bool hoverEntered = isHoveredNow && !wasHovered;
-    bool hoverExited = !isHoveredNow && wasHovered;
 
-    if (hoverEntered) {
-        if (uiCanPlayUISound()) {
-            playMenuHover();
-        }
-        printf("[GUI HOVER ENTER] button=%s\n", key ? key : "(null)");
+    // Global hover ownership: the last (topmost) widget under cursor wins.
+    s.hovered = rawHovered;
+    if (rawHovered) {
+        gHoverOwnerKey = key;
     }
-    if (hoverExited) {
-        printf("[GUI HOVER EXIT] button=%s\n", key ? key : "(null)");
-    }
-
-    prevHover[key] = isHoveredNow;
 
     glm::vec4 c = color;
     if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);

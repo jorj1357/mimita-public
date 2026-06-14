@@ -1,7 +1,8 @@
 #include "online-menu.h"
-#include "../gui-button.h"
 #include "../gui-back.h"
+#include "../gui-button.h"
 #include "../gui-label.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <cstring>
@@ -175,7 +176,8 @@ void drawInput(
         window, value.empty() ? "_" : value.c_str(),
         {x, y + 24.0f, width, 42.0f},
         focused ? glm::vec4(0.19f, 0.28f, 0.38f, 1.0f)
-                : glm::vec4(0.11f, 0.13f, 0.17f, 1.0f));
+                : glm::vec4(0.11f, 0.13f, 0.17f, 1.0f),
+        label);
     if (state.clicked)
         focusedField = field;
 }
@@ -215,7 +217,10 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     int w = 0, h = 0;
     glfwGetFramebufferSize(win, &w, &h);
     float cx = w * 0.5f;
+    float cy = h * 0.5f;
     const bool running = serverRunning();
+
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
 
     uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "online-menu-bg");
 
@@ -237,36 +242,37 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     uiDrawText(("Status: " + processStatus).c_str(), left, 380.0f, 0.32f,
                running ? glm::vec4(0.3f, 1.0f, 0.4f, 1.0f)
                        : glm::vec4(0.75f, 0.78f, 0.84f, 1.0f));
-    if (!running &&
-        guiButton(win, "Start Server", left, 420.0f, 195.0f, 52.0f, {0.2f,0.8f,0.3f,1.0f}))
-    {
-        r.startServer = launchServerProcess();
+    if (!running) {
+        UIRect sr = layout.getRectCentered("Start Server", {cx - 450.0f, 420.0f, 195.0f, 52.0f}, cx, 0);
+        if (guiButton(win, "Start Server", sr.x, sr.y, sr.w, sr.h, {0.2f,0.8f,0.3f,1.0f}))
+            r.startServer = launchServerProcess();
     }
-    if (running &&
-        guiButton(win, "Stop Server", left, 420.0f, 195.0f, 52.0f, {0.85f,0.22f,0.18f,1.0f}))
-    {
-        r.stopServer = stopServerProcess();
-    }
-    if (running &&
-        guiButton(win, "Join Server", left + 215.0f, 420.0f, 195.0f, 52.0f, {0.2f,0.7f,1.0f,1.0f}))
-    {
-        r.connectToServer = true;
-        r.connectAddress = endpoint(hostIp, hostPort);
+    if (running) {
+        UIRect sr = layout.getRectCentered("Stop Server", {cx - 450.0f, 420.0f, 195.0f, 52.0f}, cx, 0);
+        if (guiButton(win, "Stop Server", sr.x, sr.y, sr.w, sr.h, {0.85f,0.22f,0.18f,1.0f}))
+            r.stopServer = stopServerProcess();
+        UIRect jr = layout.getRectCentered("Join Server", {cx - 235.0f, 420.0f, 195.0f, 52.0f}, cx, 0);
+        if (guiButton(win, "Join Server", jr.x, jr.y, jr.w, jr.h, {0.2f,0.7f,1.0f,1.0f}))
+        {
+            r.connectToServer = true;
+            r.connectAddress = endpoint(hostIp, hostPort);
+        }
     }
 
     uiDrawText("JOIN SERVER", right, 160.0f, 0.42f, {0.35f, 0.7f, 1.0f, 1.0f});
     drawInput(win, "Server IP / hostname", joinIp, InputField::JoinIp, right, 205.0f, 280.0f);
     drawInput(win, "Port", joinPort, InputField::JoinPort, right + 300.0f, 205.0f, 120.0f);
-    if (guiButton(win, "Connect", right, 310.0f, 420.0f, 58.0f, {0.2f,0.7f,1.0f,1.0f}))
     {
-        r.connectToServer = true;
-        r.connectAddress = endpoint(joinIp, joinPort);
+        UIRect cr = layout.getRectCentered("Connect", {cx + 30.0f, 310.0f, 420.0f, 58.0f}, cx, 0);
+        if (guiButton(win, "Connect", cr.x, cr.y, cr.w, cr.h, {0.2f,0.7f,1.0f,1.0f}))
+        {
+            r.connectToServer = true;
+            r.connectAddress = endpoint(joinIp, joinPort);
+        }
     }
 
-    if (guiBackButton(win))
-    {
+    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
-    }
 
     return r;
 }

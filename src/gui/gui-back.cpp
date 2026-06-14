@@ -15,30 +15,15 @@
 #include "gui-button.h"
 #include <cstdio>
 
+bool guiBackButton(GLFWwindow* win, UIRect r)
+{
+    bool clicked = guiButton(win, "Back", r.x, r.y, r.w, r.h, {0.6f,0.2f,0.2f,1.0f});
+    if (clicked)
+        printf("[GUI BACK] Back button CLICKED\n");
+    return clicked;
+}
+
 bool guiBackButton(GLFWwindow* win)
 {
-    printf("[GUI BACK] begin\n");
-
-    bool clicked = guiButton(
-        win,
-        "Back",
-        40,
-        40,
-        120,
-        50,
-        {0.6f,0.2f,0.2f,1.0f}
-    );
-
-    if (clicked)
-    {
-        printf("[GUI BACK] Back button CLICKED\n");
-    }
-    else
-    {
-        printf("[GUI BACK] Back button not clicked\n");
-    }
-
-    printf("[GUI BACK] end\n");
-
-    return clicked;
+    return guiBackButton(win, {40.0f, 40.0f, 120.0f, 50.0f});
 }
