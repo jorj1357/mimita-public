@@ -5,6 +5,7 @@ add_library(mimita-game SHARED
     src/effects/effect-part.cpp
     src/gui/gui-coord.cpp
     src/replay/replay-factory.cpp
+    src/video/video-settings.cpp
 )
 
 target_compile_features(mimita-game PRIVATE cxx_std_17)

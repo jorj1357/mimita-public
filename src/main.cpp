@@ -87,6 +87,7 @@
 #include "effects/effect-part.h"
 #include "replay/replay.h"
 #include "replay/replay-factory.h"
+#include "video/video-settings.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
 #include "combat/weapon-system.h"
@@ -339,24 +340,16 @@ int main(int argc, char** argv)
     MusicManager::instance().setVolume(GetPlayerSettings().musicVolume);
     MusicManager::instance().setMuted(GetPlayerSettings().musicMuted);
 
-    {
-        const std::string& res = GetPlayerSettings().resolution;
-        int resW = 0, resH = 0;
-        if (sscanf(res.c_str(), "%dx%d", &resW, &resH) == 2 && resW > 0 && resH > 0)
-        {
-            printf("[MAIN] Applying resolution: %s\n", res.c_str());
-            glfwSetWindowSize(engine.window(), resW, resH);
-            if (engine.renderer)
-            {
-                engine.renderer->width = resW;
-                engine.renderer->height = resH;
-            }
-        }
-    }
+    // Load and apply video settings
+    VideoSettings::instance().load();
+    VideoSettings::instance().apply();
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
     Terminal::instance().init(engine.window());
+
+    // Lighting config
+    LightingConfig::instance().load("config/lighting.json");
     
     // Effect part system init
     EffectPartSystem::instance().init();
@@ -1334,6 +1327,105 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "lighting_reload", "Reload config/lighting.json from disk", "lighting_reload",
+        [](const std::vector<std::string>&) {
+            if (LightingConfig::instance().pollReload())
+                Terminal::instance().addLog("[LIGHTING] Reloaded");
+            else
+                Terminal::instance().addLog("[LIGHTING] No changes or failed to load");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "lighting_info", "Print current lighting config values", "lighting_info",
+        [](const std::vector<std::string>&) {
+            const auto& d = LightingConfig::instance().data();
+            Terminal::instance().addLog("[LIGHTING] ambient=" +
+                std::to_string(d.ambientColor.r) + "," +
+                std::to_string(d.ambientColor.g) + "," +
+                std::to_string(d.ambientColor.b) + " intensity=" +
+                std::to_string(d.ambientIntensity));
+            Terminal::instance().addLog("[LIGHTING] post brightness=" +
+                std::to_string(d.brightness) + " contrast=" +
+                std::to_string(d.contrast) + " saturation=" +
+                std::to_string(d.saturation) + " gamma=" +
+                std::to_string(d.gamma) + " hueShift=" +
+                std::to_string(d.hueShift));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "lighting_reset", "Reset lighting config to defaults", "lighting_reset",
+        [](const std::vector<std::string>&) {
+            LightingConfig::instance().reset();
+            Terminal::instance().addLog("[LIGHTING] Reset to defaults");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "resolution", "Set display resolution", "resolution <1-4> (1=800x600 2=1024x768 3=1280x720 4=1920x1080)",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                int idx = VideoSettings::instance().resolutionIndex();
+                Terminal::instance().addLog("[VIDEO] Current resolution: " +
+                    std::to_string(VideoSettings::instance().width()) + "x" +
+                    std::to_string(VideoSettings::instance().height()) +
+                    " (index " + std::to_string(idx) + ")");
+                Terminal::instance().addLog("[VIDEO] Usage: resolution <1-4>");
+                Terminal::instance().addLog("[VIDEO]   1 = 800x600");
+                Terminal::instance().addLog("[VIDEO]   2 = 1024x768");
+                Terminal::instance().addLog("[VIDEO]   3 = 1280x720");
+                Terminal::instance().addLog("[VIDEO]   4 = 1920x1080");
+                return;
+            }
+            int idx = std::atoi(args[0].c_str());
+            VideoSettings::instance().setResolution(idx);
+            Terminal::instance().addLog("[VIDEO] Resolution set to " +
+                std::to_string(VideoSettings::instance().width()) + "x" +
+                std::to_string(VideoSettings::instance().height()));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "fullscreen", "Toggle fullscreen mode", "fullscreen <0|1> (0=windowed 1=fullscreen)",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[VIDEO] Fullscreen: " +
+                    std::string(VideoSettings::instance().fullscreen() ? "ON" : "OFF"));
+                Terminal::instance().addLog("[VIDEO] Usage: fullscreen <0|1>");
+                return;
+            }
+            bool on = args[0] == "1";
+            VideoSettings::instance().setFullscreen(on);
+            Terminal::instance().addLog("[VIDEO] Fullscreen: " +
+                std::string(on ? "ON" : "OFF"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "video_info", "Show current video settings", "video_info",
+        [](const std::vector<std::string>&) {
+            auto& vs = VideoSettings::instance();
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Resolution: %dx%d  (index %d)",
+                     vs.width(), vs.height(), vs.resolutionIndex());
+            Terminal::instance().addLog(std::string("[VIDEO] ") + buf);
+            Terminal::instance().addLog(std::string("[VIDEO] Fullscreen: ") +
+                (vs.fullscreen() ? "ON" : "OFF"));
+            Terminal::instance().addLog("[VIDEO] Resizable: OFF");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_debug_coords", "Toggle coordinate debug overlay", "gui_debug_coords [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                uiSetCoordDebug(!uiCoordDebugEnabled());
+            } else {
+                uiSetCoordDebug(args[0] == "1");
+            }
+            const bool on = uiCoordDebugEnabled();
+            printf("[GUI COORD DEBUG] %s\n", on ? "enabled" : "disabled");
+            Terminal::instance().addLog(on
+                ? "[GUI] Coord debug ON"
+                : "[GUI] Coord debug OFF");
+        }
+    });
+    Terminal::instance().registerCommand({
         "gui_debug_overlap", "Toggle overlap debug visualization", "gui_debug_overlap [0|1]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
@@ -1912,6 +2004,7 @@ int main(int argc, char** argv)
                     gReplayClipSaver.update();
                     gReplayFactory.update();
                     GuiLayoutManager::instance().pollReload();
+                    LightingConfig::instance().pollReload();
 
                     if (replayTest.active) {
                         ++replayTest.tick;

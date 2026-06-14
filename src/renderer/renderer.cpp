@@ -337,3 +337,37 @@ void Renderer::shutdown() {
 
     glfwTerminate();
 }
+
+void Renderer::applyVideoMode(int w, int h, bool fullscreen)
+{
+    if (!window) return;
+
+    if (fullscreen) {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        if (!monitor) {
+            printf("[RENDERER] No primary monitor, falling back to windowed\n");
+            fullscreen = false;
+        } else {
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            glfwSetWindowMonitor(window, monitor, 0, 0, w, h,
+                                 mode ? mode->refreshRate : GLFW_DONT_CARE);
+        }
+    }
+
+    if (!fullscreen) {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        int wx = 100, wy = 100;
+        if (monitor) {
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            if (mode) {
+                wx = (mode->width - w) / 2;
+                wy = (mode->height - h) / 2;
+            }
+        }
+        glfwSetWindowMonitor(window, nullptr, wx, wy, w, h, GLFW_DONT_CARE);
+    }
+
+    width = w;
+    height = h;
+    printf("[RENDERER] Video mode applied: %dx%d fullscreen=%d\n", w, h, (int)fullscreen);
+}

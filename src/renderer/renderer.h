@@ -2,6 +2,9 @@
 // jan 25 2026 small clean refactor
 
 #pragma once
+#ifndef GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_NONE
+#endif
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -21,4 +24,5 @@ struct Renderer {
     void endFrame();
     bool shouldClose();
     void shutdown();
+    void applyVideoMode(int w, int h, bool fullscreen);
 };

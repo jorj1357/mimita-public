@@ -12,21 +12,25 @@
 #include "camera.h"
 #include "config/player-settings.h"
 #include "audio/music-manager.h"
+#include "video/video-settings.h"
 #include "renderer/renderer.h"
 
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
 
-extern Renderer* gRenderer;
-
 static const char* kResolutions[] = {
     "800x600",
     "1024x768",
-    "1280x960",
+    "1280x720",
     "1920x1080"
 };
 static const int kNumResolutions = 4;
+
+static const char* kFullscreenOptions[] = {
+    "OFF",
+    "ON"
+};
 
 static const char* kGraphicsPresets[] = {
     "Minimal",
@@ -36,18 +40,6 @@ static const char* kGraphicsPresets[] = {
     "Max"
 };
 static const int kNumGraphicsPresets = 5;
-
-static void applyResolution(const char* resStr)
-{
-    if (!gRenderer || !gRenderer->window) return;
-    int w = 0, h = 0;
-    if (sscanf(resStr, "%dx%d", &w, &h) != 2) return;
-    if (w <= 0 || h <= 0) return;
-    glfwSetWindowSize(gRenderer->window, w, h);
-    gRenderer->width = w;
-    gRenderer->height = h;
-    printf("[SETTINGS] Resolution applied: %dx%d\n", w, h);
-}
 
 static int uiOptionDropdown(GLFWwindow* win, const char* label,
                             float x, float& y, float w, float h, float gap,
@@ -218,12 +210,15 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
 
     y += uiScaleY(12);
 
-    uiCheckbox(
-        win,
-        "FULLSCREEN PLACEHOLDER",
-        uiRow(leftX, y, uiScaleX(96), uiScaleY(42), gap),
-        &fullscreen
-    );
+    // Fullscreen toggle
+    {
+        int fsIdx = VideoSettings::instance().fullscreen() ? 1 : 0;
+        int next = uiOptionDropdown(win, "FULLSCREEN",
+            leftX, y, uiScaleX(96), uiScaleY(28), gap,
+            kFullscreenOptions, 2, fsIdx);
+        if (next >= 0 && next != fsIdx)
+            VideoSettings::instance().setFullscreen(next == 1);
+    }
 
     uiCheckbox(
         win,
@@ -242,19 +237,13 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     y += uiScaleY(16);
 
     {
-        int idx = -1;
-        for (int i = 0; i < kNumResolutions; ++i)
-            if (settings.resolution == kResolutions[i]) { idx = i; break; }
-        if (idx < 0) idx = 0;
+        int idx = VideoSettings::instance().resolutionIndex() - 1;
+        if (idx < 0 || idx >= kNumResolutions) idx = 2;
         int next = uiOptionDropdown(win, "RESOLUTION",
             leftX, y, uiScaleX(200), uiScaleY(26), uiScaleY(20),
             kResolutions, kNumResolutions, idx);
         if (next >= 0 && next != idx)
-        {
-            settings.resolution = kResolutions[next];
-            applyResolution(settings.resolution.c_str());
-            SavePlayerSettings();
-        }
+            VideoSettings::instance().setResolution(next + 1);
     }
 
     {
