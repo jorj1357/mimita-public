@@ -1,41 +1,41 @@
 {
+  "format": "mimita-gui-layout",
+  "version": 1,
   "elements": [
     {
-      "height": 58.0,
       "id": "playButton",
+      "x": 836.0,
+      "y": 516.0,
       "width": 250.0,
-      "x": -124.0,
-      "y": -24.0
+      "height": 58.0
     },
     {
-      "height": 58.0,
       "id": "settingsButton",
+      "x": 825.0,
+      "y": 696.0,
       "width": 250.0,
-      "x": -135.0,
-      "y": 156.0
+      "height": 58.0
     },
     {
-      "height": 58.0,
       "id": "replaysButton",
+      "x": 836.0,
+      "y": 601.0,
       "width": 250.0,
-      "x": -124.0,
-      "y": 61.0
+      "height": 58.0
     },
     {
-      "height": 58.0,
       "id": "exitButton",
+      "x": 836.0,
+      "y": 680.0,
       "width": 250.0,
-      "x": -124.0,
-      "y": 140.0
+      "height": 58.0
     },
     {
-      "height": 60.0,
       "id": "title",
+      "x": 865.0,
+      "y": 241.0,
       "width": 200.0,
-      "x": -95.0,
-      "y": -299.0
+      "height": 60.0
     }
-  ],
-  "format": "mimita-gui-layout",
-  "version": 1
+  ]
 }

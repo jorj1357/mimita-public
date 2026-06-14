@@ -166,11 +166,11 @@ void drawInput(
     const char* label,
     std::string& value,
     InputField field,
-    float x,
-    float y,
-    float width)
+    float x,   // design x
+    float y,   // design y
+    float width) // design width
 {
-    uiDrawText(label, x, y, 0.30f, {0.72f, 0.78f, 0.88f, 1.0f});
+    uiDrawText(label, uiScaleX(x), uiScaleY(y), 0.30f, {0.72f, 0.78f, 0.88f, 1.0f});
     const bool focused = focusedField == field;
     UIButtonState state = uiButton(
         window, value.empty() ? "_" : value.c_str(),
@@ -214,64 +214,65 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 {
     OnlineMenuResult r{};
 
-    int w = 0, h = 0;
-    glfwGetFramebufferSize(win, &w, &h);
-    float cx = w * 0.5f;
-    float cy = h * 0.5f;
+    float fbW = uiScreenW(), fbH = uiScreenH();
     const bool running = serverRunning();
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
 
-    uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "online-menu-bg");
+    uiDrawRect({0, 0, fbW, fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "online-menu-bg");
 
-    // Breadcrumb header
-    uiDrawText("PLAY  >  ONLINE", cx - 140.0f, 60.0f, 0.50f,
+    uiDrawText("PLAY  >  ONLINE", uiScaleX(820.0f), uiScaleY(60.0f), 0.50f,
                {0.55f, 0.78f, 1.0f, 1.0f});
-    uiDrawRect({cx - 200.0f, 104.0f, 400.0f, 2.0f},
+    uiDrawRect({uiScaleX(760.0f), uiScaleY(104.0f), uiScaleX(400.0f), uiScaleY(2.0f)},
                {0.3f, 0.4f, 0.5f, 0.6f}, "online-menu-separator");
 
-    guiLabel("Multiplayer", cx - 80.0f, 130.0f);
+    guiLabel("Multiplayer", uiScaleX(880.0f), uiScaleY(130.0f));
 
-    const float left = cx - 450.0f;
-    const float right = cx + 30.0f;
-    uiDrawText("HOST SERVER", left, 160.0f, 0.42f, {0.3f, 1.0f, 0.5f, 1.0f});
+    // Design coordinates: left column at x=510, right column at x=990
+    const float left = 510.0f;
+    const float right = 990.0f;
+    uiDrawText("HOST SERVER", uiScaleX(left), uiScaleY(160.0f), 0.42f, {0.3f, 1.0f, 0.5f, 1.0f});
     drawInput(win, "Server name", serverName, InputField::ServerName, left, 205.0f, 410.0f);
     drawInput(win, "Bind IP", hostIp, InputField::HostIp, left, 290.0f, 270.0f);
     drawInput(win, "Port", hostPort, InputField::HostPort, left + 290.0f, 290.0f, 120.0f);
 
-    uiDrawText(("Status: " + processStatus).c_str(), left, 380.0f, 0.32f,
+    uiDrawText(("Status: " + processStatus).c_str(), uiScaleX(left), uiScaleY(380.0f), 0.32f,
                running ? glm::vec4(0.3f, 1.0f, 0.4f, 1.0f)
                        : glm::vec4(0.75f, 0.78f, 0.84f, 1.0f));
     if (!running) {
-        UIRect sr = layout.getRectCentered("Start Server", {cx - 450.0f, 420.0f, 195.0f, 52.0f}, cx, 0);
-        if (guiButton(win, "Start Server", sr.x, sr.y, sr.w, sr.h, {0.2f,0.8f,0.3f,1.0f}))
+        if (guiButton(win, "Start Server",
+            layout.getRectDesign("Start Server", {510.0f, 420.0f, 195.0f, 52.0f}),
+            {0.2f,0.8f,0.3f,1.0f}))
             r.startServer = launchServerProcess();
     }
     if (running) {
-        UIRect sr = layout.getRectCentered("Stop Server", {cx - 450.0f, 420.0f, 195.0f, 52.0f}, cx, 0);
-        if (guiButton(win, "Stop Server", sr.x, sr.y, sr.w, sr.h, {0.85f,0.22f,0.18f,1.0f}))
+        if (guiButton(win, "Stop Server",
+            layout.getRectDesign("Stop Server", {510.0f, 420.0f, 195.0f, 52.0f}),
+            {0.85f,0.22f,0.18f,1.0f}))
             r.stopServer = stopServerProcess();
-        UIRect jr = layout.getRectCentered("Join Server", {cx - 235.0f, 420.0f, 195.0f, 52.0f}, cx, 0);
-        if (guiButton(win, "Join Server", jr.x, jr.y, jr.w, jr.h, {0.2f,0.7f,1.0f,1.0f}))
+        if (guiButton(win, "Join Server",
+            layout.getRectDesign("Join Server", {725.0f, 420.0f, 195.0f, 52.0f}),
+            {0.2f,0.7f,1.0f,1.0f}))
         {
             r.connectToServer = true;
             r.connectAddress = endpoint(hostIp, hostPort);
         }
     }
 
-    uiDrawText("JOIN SERVER", right, 160.0f, 0.42f, {0.35f, 0.7f, 1.0f, 1.0f});
+    uiDrawText("JOIN SERVER", uiScaleX(right), uiScaleY(160.0f), 0.42f, {0.35f, 0.7f, 1.0f, 1.0f});
     drawInput(win, "Server IP / hostname", joinIp, InputField::JoinIp, right, 205.0f, 280.0f);
     drawInput(win, "Port", joinPort, InputField::JoinPort, right + 300.0f, 205.0f, 120.0f);
     {
-        UIRect cr = layout.getRectCentered("Connect", {cx + 30.0f, 310.0f, 420.0f, 58.0f}, cx, 0);
-        if (guiButton(win, "Connect", cr.x, cr.y, cr.w, cr.h, {0.2f,0.7f,1.0f,1.0f}))
+        if (guiButton(win, "Connect",
+            layout.getRectDesign("Connect", {990.0f, 310.0f, 420.0f, 58.0f}),
+            {0.2f,0.7f,1.0f,1.0f}))
         {
             r.connectToServer = true;
             r.connectAddress = endpoint(joinIp, joinPort);
         }
     }
 
-    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
+    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;

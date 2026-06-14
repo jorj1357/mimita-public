@@ -29,6 +29,7 @@ struct PlayerSettings {
     float weaponRecoilDecay = 5.0f;
     float freecamSpeed = 18.0f;
 
+    bool musicMuted = false;
     bool debugCombat = false;
 
     std::string resolution = "1280x960";

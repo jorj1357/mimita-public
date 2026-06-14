@@ -60,6 +60,7 @@
 #include "physics/physics-mini.h"
 #include "physics/physics-debug-movement.h"
 #include "audio/audio.h"
+#include "audio/music-manager.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
 #include "gui/gui-layout.h"
@@ -333,6 +334,10 @@ int main(int argc, char** argv)
     CreateDefaultAccountConfig();
     LoadAccountConfig("default");
     LoadDuelStats("default");
+
+    MusicManager::instance().init();
+    MusicManager::instance().setVolume(GetPlayerSettings().musicVolume);
+    MusicManager::instance().setMuted(GetPlayerSettings().musicMuted);
 
     {
         const std::string& res = GetPlayerSettings().resolution;
@@ -1431,6 +1436,61 @@ int main(int argc, char** argv)
         }
     });
 
+    // Music debug commands
+    Terminal::instance().registerCommand({
+        "music_next", "Skip to next music track", "music_next",
+        [](const std::vector<std::string>&) { MusicManager::instance().skip(); },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_prev", "Go to previous music track", "music_prev",
+        [](const std::vector<std::string>&) { MusicManager::instance().previous(); },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_pause", "Pause music playback", "music_pause",
+        [](const std::vector<std::string>&) { MusicManager::instance().pause(); },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_resume", "Resume music playback", "music_resume",
+        [](const std::vector<std::string>&) { MusicManager::instance().resume(); },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_stop", "Stop music playback", "music_stop",
+        [](const std::vector<std::string>&) { MusicManager::instance().stop(); },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_reload", "Reload music files and credits", "music_reload",
+        [](const std::vector<std::string>&) { MusicManager::instance().reload(); },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_info", "Show current track info", "music_info",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().addLog("[MUSIC] " + MusicManager::instance().currentTrackInfo());
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_volume", "Set music volume (0.0 - 1.0)", "music_volume <volume>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "[MUSIC] volume=%.2f", MusicManager::instance().volume());
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            float vol = std::clamp(std::stof(args[0]), 0.0f, 1.0f);
+            MusicManager::instance().setVolume(vol);
+            GetPlayerSettings().musicVolume = vol;
+            SavePlayerSettings();
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
+
     // SimContext setup: bundle sim state for replay/deterministic ticks
     SimContext simContext;
     simContext.player = &player;
@@ -1450,12 +1510,18 @@ int main(int argc, char** argv)
         bool worldPassRan = false;
 
         audioUpdate(dt);
+        MusicManager::instance().update(dt);
         DebugVis::update();
         uiSetDebug(DebugVis::ui());
 
         if (gameState != prevState)
         {
             printf("[MAIN] gameState changed %d -> %d\n", (int)prevState, (int)gameState);
+            if (gameState == GAME_PLAYING) {
+                MusicManager::instance().enterGameMode();
+            } else {
+                MusicManager::instance().enterMenuMode();
+            }
             if (gameState == GAME_PLAYING)
             {
                 SandboxMapSelection sandboxSelection =
@@ -3261,6 +3327,7 @@ int main(int argc, char** argv)
                 }
             }
 
+            MusicManager::instance().drawAllOverlay();
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
 
@@ -3297,6 +3364,8 @@ int main(int argc, char** argv)
         escapePrev = escapeDown;
 
         // Terminal rendering (on top of everything)
+        // 6 14 2026 yes absolutely render terminal on top of everything
+        // terminal is the task manager escape if we have crashes etc 
         Terminal::instance().render();
 
         engine.endFrame();

@@ -62,39 +62,37 @@ void signInMenuHandleKey(int key, int action)
 SignInMenuResult drawSignInMenu(GLFWwindow* window)
 {
     SignInMenuResult result{};
-    int width = 0;
-    int height = 0;
-    glfwGetFramebufferSize(window, &width, &height);
-    const float centerX = width * 0.5f;
+    float fbW = uiScreenW(), fbH = uiScreenH();
+    const float designCx = 960.0f;
 
-    uiDrawRect({0, 0, (float)width, (float)height},
+    uiDrawRect({0, 0, fbW, fbH},
                {0.035f, 0.04f, 0.052f, 1.0f}, "sign-in-background");
-    uiDrawText("Local Dev Sign In", centerX - 130.0f, 120.0f, 0.7f,
+    uiDrawText("Local Dev Sign In", uiScaleX(830.0f), uiScaleY(120.0f), 0.7f,
                {0.95f, 0.98f, 1.0f, 1.0f});
     uiDrawText("LocalProfileSystem: passwords are stored as plain text for development.",
-               centerX - 300.0f, 180.0f, 0.3f, {1.0f, 0.72f, 0.3f, 1.0f});
+               uiScaleX(660.0f), uiScaleY(180.0f), 0.3f, {1.0f, 0.72f, 0.3f, 1.0f});
 
-    uiDrawText("Username", centerX - 210.0f, 245.0f, 0.34f, {0.8f,0.86f,0.95f,1});
-    uiDrawRect({centerX - 210.0f, 275.0f, 420.0f, 48.0f},
+    uiDrawText("Username", uiScaleX(750.0f), uiScaleY(245.0f), 0.34f, {0.8f,0.86f,0.95f,1});
+    uiDrawRect({uiScaleX(750.0f), uiScaleY(275.0f), uiScaleX(420.0f), uiScaleY(48.0f)},
                passwordFocused ? glm::vec4(0.12f,0.13f,0.16f,1)
                                : glm::vec4(0.18f,0.22f,0.28f,1),
                "sign-in-username");
     uiDrawText(username.empty() ? "_" : username.c_str(),
-               centerX - 196.0f, 288.0f, 0.38f, {1,1,1,1});
+               uiScaleX(764.0f), uiScaleY(288.0f), 0.38f, {1,1,1,1});
 
-    uiDrawText("Password", centerX - 210.0f, 350.0f, 0.34f, {0.8f,0.86f,0.95f,1});
-    uiDrawRect({centerX - 210.0f, 380.0f, 420.0f, 48.0f},
+    uiDrawText("Password", uiScaleX(750.0f), uiScaleY(350.0f), 0.34f, {0.8f,0.86f,0.95f,1});
+    uiDrawRect({uiScaleX(750.0f), uiScaleY(380.0f), uiScaleX(420.0f), uiScaleY(48.0f)},
                passwordFocused ? glm::vec4(0.18f,0.22f,0.28f,1)
                                : glm::vec4(0.12f,0.13f,0.16f,1),
                "sign-in-password");
     std::string masked(password.size(), '*');
     uiDrawText(masked.empty() ? "_" : masked.c_str(),
-               centerX - 196.0f, 393.0f, 0.38f, {1,1,1,1});
+               uiScaleX(764.0f), uiScaleY(393.0f), 0.38f, {1,1,1,1});
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/sign-in-menu.json");
-    UIRect r = layout.getRectCentered("signIn", {centerX - 120.0f, 470.0f, 240.0f, 58.0f}, centerX, 0);
-    if (guiButton(window, "Sign In", r.x, r.y, r.w, r.h,
-                  {0.2f,0.7f,1.0f,1.0f}, "signIn"))
+    if (guiButton(window, "Sign In",
+        layout.getRectDesign("signIn", {840.0f, 470.0f, 240.0f, 58.0f}),
+        {0.2f,0.7f,1.0f,1.0f}, "signIn"))
     {
         result.signedIn = LocalProfileSystem::instance().signIn(username, password);
         message = result.signedIn
@@ -103,12 +101,11 @@ SignInMenuResult drawSignInMenu(GLFWwindow* window)
     }
 
     if (!message.empty())
-        uiDrawText(message.c_str(), centerX - 170.0f, 550.0f, 0.36f,
+        uiDrawText(message.c_str(), uiScaleX(790.0f), uiScaleY(550.0f), 0.36f,
                    result.signedIn ? glm::vec4(0.3f,1,0.4f,1)
                                    : glm::vec4(1,0.3f,0.3f,1));
 
-    if (guiBackButton(window, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
+    if (guiBackButton(window, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         result.goBack = true;
     return result;
 }
-

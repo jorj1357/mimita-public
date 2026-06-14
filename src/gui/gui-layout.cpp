@@ -123,6 +123,14 @@ UIRect GuiLayout::getRect(const std::string& id, const UIRect& fallback) const
     return makeRect(it->second.x, it->second.y, it->second.w, it->second.h);
 }
 
+UIRect GuiLayout::getRectDesign(const std::string& id, const UIRect& fallback) const
+{
+    auto it = mElements.find(id);
+    if (it == mElements.end())
+        return fallback;
+    return makeRect(it->second.x, it->second.y, it->second.w, it->second.h);
+}
+
 UIRect GuiLayout::getRectCentered(const std::string& id, const UIRect& fallback,
                                    float cx, float cy) const
 {

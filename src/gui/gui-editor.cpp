@@ -1,4 +1,6 @@
 #include "gui-editor.h"
+#include "gui-coord.h"
+
 #include "gui-layout.h"
 #include "ui-system.h"
 
@@ -33,12 +35,6 @@ void GuiEditor::setActiveLayout(const std::string& filePath)
 void GuiEditor::update(GLFWwindow* win)
 {
     if (!mEnabled) return;
-
-    int fbW = 0, fbH = 0;
-    glfwGetFramebufferSize(win, &fbW, &fbH);
-    mCenterX = fbW * 0.5f;
-    mCenterY = fbH * 0.5f;
-
     handleInput(win);
     handleKeyboard(win);
     renderOverlay(win);
@@ -53,10 +49,11 @@ void GuiEditor::checkOverlaps()
     const GuiElement* selected = layout.get(mSelectedId);
     if (!selected) return;
 
-    float sx = mCenterX + selected->x;
-    float sy = mCenterY + selected->y;
-    float sw = selected->w;
-    float sh = selected->h;
+    // Convert design coords to framebuffer for overlap comparison
+    float sx = uiScaleX(selected->x);
+    float sy = uiScaleY(selected->y);
+    float sw = uiScaleX(selected->w);
+    float sh = uiScaleY(selected->h);
 
     for (const std::string& id : layout.elementIds())
     {
@@ -64,11 +61,11 @@ void GuiEditor::checkOverlaps()
         const GuiElement* elem = layout.get(id);
         if (!elem) continue;
 
-        float ex = mCenterX + elem->x;
-        float ey = mCenterY + elem->y;
+        float ex = uiScaleX(elem->x);
+        float ey = uiScaleY(elem->y);
 
-        if (sx < ex + elem->w && sx + sw > ex &&
-            sy < ey + elem->h && sy + sh > ey)
+        if (sx < ex + uiScaleX(elem->w) && sx + sw > ex &&
+            sy < ey + uiScaleY(elem->h) && sy + sh > ey)
         {
             mHasOverlap = true;
             printf("[GUI EDIT OVERLAP] \"%s\" overlaps \"%s\"\n",
@@ -80,68 +77,39 @@ void GuiEditor::checkOverlaps()
 
 void GuiEditor::handleInput(GLFWwindow* win)
 {
+    // Get cursor in screen (framebuffer) coordinates
     double mx, my;
     glfwGetCursorPos(win, &mx, &my);
+    double fbx, fby;
+    GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, fbx, fby);
+
+    // Convert cursor to design coordinates for comparison with tracked widgets
+    double dx = GuiCoordinateSystem::instance().screenToDesignX((float)fbx);
+    double dy = GuiCoordinateSystem::instance().screenToDesignY((float)fby);
 
     bool mouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
 
     if (mouseDown && !mDragging) {
-        // Check tracked widgets first (buttons rendered this frame)
+        // Only check widgets rendered this frame (tracked in design coordinates)
         const auto& widgets = uiGetTrackedWidgets();
         for (const auto& w : widgets) {
             double wx = w.rect.x, wy = w.rect.y, ww = w.rect.w, wh = w.rect.h;
-            if (mx >= wx && mx <= wx + ww && my >= wy && my <= wy + wh) {
+            if (dx >= wx && dx <= wx + ww && dy >= wy && dy <= wy + wh) {
                 mSelectedId = w.id;
-                mDragOffsetX = (float)mx - wx;
-                mDragOffsetY = (float)my - wy;
+                mDragOffsetX = (float)dx - wx;
+                mDragOffsetY = (float)dy - wy;
                 mDragging = true;
                 mHasOverlap = false;
-                printf("[GUI EDIT] selected widget=\"%s\"  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
+                printf("[GUI EDIT] selected widget=\"%s\"  design=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
                        w.id.c_str(), wx, wy, ww, wh);
 
-                // Create or update layout entry with current position
+                // Store directly in layout (already design coordinates)
                 if (!mActiveLayoutFile.empty()) {
                     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-                    const GuiElement* existing = layout.get(mSelectedId);
-                    float elemX = wx - mCenterX;
-                    float elemY = wy - mCenterY;
-                    float elemW = ww;
-                    float elemH = wh;
-                    if (existing) {
-                        elemX = existing->x;
-                        elemY = existing->y;
-                        elemW = existing->w;
-                        elemH = existing->h;
-                    }
-                    layout.set(mSelectedId, elemX, elemY, elemW, elemH);
+                    layout.set(mSelectedId, (float)wx, (float)wy, (float)ww, (float)wh);
                 }
                 checkOverlaps();
                 return;
-            }
-        }
-
-        // Also check layout elements directly (for cases where widgets weren't tracked)
-        if (!mActiveLayoutFile.empty()) {
-            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-            for (const std::string& id : layout.elementIds()) {
-                const GuiElement* elem = layout.get(id);
-                if (!elem) continue;
-
-                float sx = mCenterX + elem->x;
-                float sy = mCenterY + elem->y;
-
-                if (mx >= sx && mx <= sx + elem->w &&
-                    my >= sy && my <= sy + elem->h) {
-                    mSelectedId = id;
-                    mDragOffsetX = (float)mx - sx;
-                    mDragOffsetY = (float)my - sy;
-                    mDragging = true;
-                    mHasOverlap = false;
-                    printf("[GUI EDIT] selected layout=\"%s\"  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
-                           id.c_str(), sx, sy, elem->w, elem->h);
-                    checkOverlaps();
-                    return;
-                }
             }
         }
     }
@@ -153,9 +121,10 @@ void GuiEditor::handleInput(GLFWwindow* win)
                 const GuiElement* elem = layout.get(mSelectedId);
                 float w = elem ? elem->w : 50.0f;
                 float h = elem ? elem->h : 30.0f;
-                float newOffX = (float)mx - mCenterX - mDragOffsetX;
-                float newOffY = (float)my - mCenterY - mDragOffsetY;
-                layout.set(mSelectedId, newOffX, newOffY, w, h);
+                // Drag delta is in design coordinates
+                float newX = (float)dx - mDragOffsetX;
+                float newY = (float)dy - mDragOffsetY;
+                layout.set(mSelectedId, newX, newY, w, h);
                 checkOverlaps();
             }
         } else {
@@ -229,8 +198,11 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     const GuiElement* elem = layout.get(mSelectedId);
     if (!elem) return;
 
-    float sx = mCenterX + elem->x;
-    float sy = mCenterY + elem->y;
+    // Convert design coordinates to framebuffer for rendering
+    float sx = uiScaleX(elem->x);
+    float sy = uiScaleY(elem->y);
+    float sw = uiScaleX(elem->w);
+    float sh = uiScaleY(elem->h);
 
     // Selection highlight rectangle: green = no overlap, red = overlap
     glm::vec4 outlineColor = mHasOverlap
@@ -244,7 +216,7 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
                    {0.5f, 0.0f, 0.0f, 0.85f}, "gui-overlap-warn-bg");
         uiDrawText(warnText, sx + 2, sy - 50, 0.28f, {1.0f, 0.3f, 0.2f, 1.0f});
     }
-    uiDrawRectOutline({sx - 2, sy - 2, elem->w + 4, elem->h + 4},
+    uiDrawRectOutline({sx - 2, sy - 2, sw + 4, sh + 4},
                      outlineColor, "gui-edit-select");
 
     // Corner handles (4 small squares)
@@ -252,16 +224,16 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     glm::vec4 handleColor{1.0f, 1.0f, 0.3f, 1.0f};
     uiDrawRect({sx - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
                handleColor, "gui-edit-handle");
-    uiDrawRect({sx + elem->w - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
+    uiDrawRect({sx + sw - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
                handleColor, "gui-edit-handle");
-    uiDrawRect({sx - handleSize, sy + elem->h - handleSize, handleSize * 2, handleSize * 2},
+    uiDrawRect({sx - handleSize, sy + sh - handleSize, handleSize * 2, handleSize * 2},
                handleColor, "gui-edit-handle");
-    uiDrawRect({sx + elem->w - handleSize, sy + elem->h - handleSize, handleSize * 2, handleSize * 2},
+    uiDrawRect({sx + sw - handleSize, sy + sh - handleSize, handleSize * 2, handleSize * 2},
                handleColor, "gui-edit-handle");
 
-    // Element info label
+    // Element info label (show design coordinates)
     char info[128];
-    snprintf(info, sizeof(info), "%s  (%.0f, %.0f)  %.0f x %.0f",
+    snprintf(info, sizeof(info), "%s  design=(%.0f, %.0f)  %.0f x %.0f",
              mSelectedId.c_str(), elem->x, elem->y, elem->w, elem->h);
     float labelW = uiMeasureText(info, 0.28f);
     uiDrawRect({sx - 4, sy - 28, labelW + 8, 22},
