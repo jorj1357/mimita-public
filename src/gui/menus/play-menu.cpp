@@ -1,5 +1,6 @@
 #include "play-menu.h"
 #include "../gui-back.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 
 PlayMenuResult drawPlayMenu(GLFWwindow* win)
@@ -11,6 +12,8 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
     float cx = w * 0.5f;
     float cy = h * 0.5f;
 
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/play-menu.json");
+
     uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "play-menu-bg");
 
     // Breadcrumb header
@@ -20,7 +23,7 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
 
     // DUELS - largest, most prominent button
     if (uiButton(win, "DUELS",
-        {cx - 160.0f, cy - 70.0f, 320.0f, 68.0f},
+        layout.getRectCentered("DUELS", {cx - 160.0f, cy - 70.0f, 320.0f, 68.0f}, cx, cy),
         {0.9f, 0.28f, 0.12f, 1.0f}).clicked)
     {
         r.goDuels = true;
@@ -30,7 +33,7 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
 
     // ONLINE / COMMUNITY SERVERS
     if (uiButton(win, "ONLINE / COMMUNITY SERVERS",
-        {cx - 160.0f, cy + 75.0f, 320.0f, 58.0f},
+        layout.getRectCentered("ONLINE / COMMUNITY SERVERS", {cx - 160.0f, cy + 75.0f, 320.0f, 58.0f}, cx, cy),
         {0.22f, 0.5f, 0.78f, 1.0f}).clicked)
     {
         r.goOnline = true;
@@ -40,7 +43,7 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
 
     // PRACTICE
     if (uiButton(win, "PRACTICE",
-        {cx - 160.0f, cy + 183.0f, 320.0f, 58.0f},
+        layout.getRectCentered("PRACTICE", {cx - 160.0f, cy + 183.0f, 320.0f, 58.0f}, cx, cy),
         {0.25f, 0.65f, 0.45f, 1.0f}).clicked)
     {
         r.goPractice = true;

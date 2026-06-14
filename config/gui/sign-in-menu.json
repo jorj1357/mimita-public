@@ -1,0 +1,13 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 1,
+  "elements": [
+    {
+      "id": "signIn",
+      "x": -120.0,
+      "y": 470.0,
+      "width": 240.0,
+      "height": 58.0
+    }
+  ]
+}
