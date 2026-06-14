@@ -98,7 +98,7 @@
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
-#include "gui/menus/play-menu.h"
+#include "gui/menus/online-menu.h"
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -299,7 +299,7 @@ int main(int argc, char** argv)
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
         signInMenuHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
-        playMenuHandleChar(codepoint);
+        onlineMenuHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
     });
     // Terminal key input callback
@@ -308,7 +308,7 @@ int main(int argc, char** argv)
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             signInMenuHandleKey(key, action);
             serverInfoMenuHandleKey(key, action);
-            playMenuHandleKey(key, action);
+            onlineMenuHandleKey(key, action);
             Terminal::instance().handleKey(key, mods);
         }
     });

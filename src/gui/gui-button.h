@@ -25,5 +25,6 @@ bool guiButton(
     float y,
     float w,
     float h,
-    glm::vec4 color
+    glm::vec4 color,
+    const char* id = nullptr
 );

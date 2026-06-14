@@ -16,13 +16,24 @@ void GuiEditor::setEnabled(bool e)
 {
     mEnabled = e;
     uiSetEditMode(e);
+    if (!e) {
+        mSelectedId.clear();
+        mDragging = false;
+    }
+}
+
+void GuiEditor::setActiveLayout(const std::string& filePath)
+{
+    mActiveLayoutFile = filePath;
+    // Pre-load the layout to ensure it's in the manager
+    if (!filePath.empty())
+        GuiLayoutManager::instance().getLayout(filePath);
 }
 
 void GuiEditor::update(GLFWwindow* win)
 {
     if (!mEnabled) return;
 
-    // Get framebuffer size for reference center
     int fbW = 0, fbH = 0;
     glfwGetFramebufferSize(win, &fbW, &fbH);
     mCenterX = fbW * 0.5f;
@@ -41,25 +52,45 @@ void GuiEditor::handleInput(GLFWwindow* win)
     bool mouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
 
     if (mouseDown && !mDragging) {
-        // Check if clicking on any element in the active layout
-        // We iterate all layouts and look for elements under the cursor
-        GuiLayoutManager& mgr = GuiLayoutManager::instance();
+        // Check tracked widgets first (buttons rendered this frame)
+        const auto& widgets = uiGetTrackedWidgets();
+        for (const auto& w : widgets) {
+            double wx = w.rect.x, wy = w.rect.y, ww = w.rect.w, wh = w.rect.h;
+            if (mx >= wx && mx <= wx + ww && my >= wy && my <= wy + wh) {
+                mSelectedId = w.id;
+                mDragOffsetX = (float)mx - wx;
+                mDragOffsetY = (float)my - wy;
+                mDragging = true;
+                printf("[GUI EDIT] selected widget=\"%s\"  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
+                       w.id.c_str(), wx, wy, ww, wh);
 
-        // Check all layouts for the selected element
-        // The editor only works with the LAST accessed layout
-        // For multi-layout support, we'd need the active layout name
-        // For now, use the file path from the layout manager's last accessed layout
+                // Create or update layout entry with current position
+                if (!mActiveLayoutFile.empty()) {
+                    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+                    const GuiElement* existing = layout.get(mSelectedId);
+                    float elemX = wx - mCenterX;
+                    float elemY = wy - mCenterY;
+                    float elemW = ww;
+                    float elemH = wh;
+                    if (existing) {
+                        elemX = existing->x;
+                        elemY = existing->y;
+                        elemW = existing->w;
+                        elemH = existing->h;
+                    }
+                    layout.set(mSelectedId, elemX, elemY, elemW, elemH);
+                }
+                return;
+            }
+        }
 
-        // Hit test against elements of the active layout
-        for (const auto& layoutPair : {
-            "config/gui/main-menu.json"
-        }) {
-            GuiLayout& layout = mgr.getLayout(layoutPair);
+        // Also check layout elements directly (for cases where widgets weren't tracked)
+        if (!mActiveLayoutFile.empty()) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             for (const std::string& id : layout.elementIds()) {
                 const GuiElement* elem = layout.get(id);
                 if (!elem) continue;
 
-                // Compute screen position (centered layout assumption)
                 float sx = mCenterX + elem->x;
                 float sy = mCenterY + elem->y;
 
@@ -69,7 +100,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
                     mDragOffsetX = (float)mx - sx;
                     mDragOffsetY = (float)my - sy;
                     mDragging = true;
-                    printf("[GUI EDIT] selected=%s  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
+                    printf("[GUI EDIT] selected layout=\"%s\"  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
                            id.c_str(), sx, sy, elem->w, elem->h);
                     return;
                 }
@@ -79,21 +110,14 @@ void GuiEditor::handleInput(GLFWwindow* win)
 
     if (mDragging) {
         if (mouseDown && !mSelectedId.empty()) {
-            // Drag the element
-            // Update layout offset from center
-            float newOffX = (float)mx - mCenterX - mDragOffsetX;
-            float newOffY = (float)my - mCenterY - mDragOffsetY;
-
-            // Update in ALL layouts (just in case)
-            GuiLayoutManager& mgr = GuiLayoutManager::instance();
-            for (const auto& layoutPair : {
-                "config/gui/main-menu.json"
-            }) {
-                GuiLayout& layout = mgr.getLayout(layoutPair);
+            if (!mActiveLayoutFile.empty()) {
+                GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
                 const GuiElement* elem = layout.get(mSelectedId);
-                if (elem) {
-                    layout.set(mSelectedId, newOffX, newOffY, elem->w, elem->h);
-                }
+                float w = elem ? elem->w : 50.0f;
+                float h = elem ? elem->h : 30.0f;
+                float newOffX = (float)mx - mCenterX - mDragOffsetX;
+                float newOffY = (float)my - mCenterY - mDragOffsetY;
+                layout.set(mSelectedId, newOffX, newOffY, w, h);
             }
         } else {
             mDragging = false;
@@ -103,7 +127,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
 
 void GuiEditor::handleKeyboard(GLFWwindow* win)
 {
-    if (mSelectedId.empty()) return;
+    if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
 
     float step = 1.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
@@ -120,15 +144,10 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
     if (glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS) dy += step;
 
     if (dx != 0.0f || dy != 0.0f) {
-        GuiLayoutManager& mgr = GuiLayoutManager::instance();
-        for (const auto& layoutPair : {
-            "config/gui/main-menu.json"
-        }) {
-            GuiLayout& layout = mgr.getLayout(layoutPair);
-            const GuiElement* elem = layout.get(mSelectedId);
-            if (elem) {
-                layout.set(mSelectedId, elem->x + dx, elem->y + dy, elem->w, elem->h);
-            }
+        GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+        const GuiElement* elem = layout.get(mSelectedId);
+        if (elem) {
+            layout.set(mSelectedId, elem->x + dx, elem->y + dy, elem->w, elem->h);
         }
     }
 }
@@ -152,46 +171,49 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
         uiDrawRect({10, 10, uiMeasureText(modeText, 0.30f) + 20, 26},
                    {0.15f, 0.15f, 0.2f, 0.85f}, "gui-edit-bg");
         uiDrawText(modeText, 18, 12, 0.30f, {1.0f, 0.8f, 0.1f, 1.0f});
+
+        // Show active layout file
+        if (!mActiveLayoutFile.empty()) {
+            char layoutInfo[128];
+            snprintf(layoutInfo, sizeof(layoutInfo), "Layout: %s", mActiveLayoutFile.c_str());
+            uiDrawRect({10, 42, uiMeasureText(layoutInfo, 0.24f) + 20, 22},
+                       {0.1f, 0.1f, 0.15f, 0.8f}, "gui-layout-bg");
+            uiDrawText(layoutInfo, 18, 44, 0.24f, {0.6f, 0.8f, 1.0f, 1.0f});
+        }
     }
 
     if (mSelectedId.empty()) return;
+    if (mActiveLayoutFile.empty()) return;
 
-    GuiLayoutManager& mgr = GuiLayoutManager::instance();
-    for (const auto& layoutPair : {
-        "config/gui/main-menu.json"
-    }) {
-        GuiLayout& layout = mgr.getLayout(layoutPair);
-        const GuiElement* elem = layout.get(mSelectedId);
-        if (!elem) continue;
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    const GuiElement* elem = layout.get(mSelectedId);
+    if (!elem) return;
 
-        float sx = mCenterX + elem->x;
-        float sy = mCenterY + elem->y;
+    float sx = mCenterX + elem->x;
+    float sy = mCenterY + elem->y;
 
-        // Selection highlight rectangle
-        uiDrawRectOutline({sx - 2, sy - 2, elem->w + 4, elem->h + 4},
-                         {1.0f, 0.8f, 0.1f, 1.0f}, "gui-edit-select");
+    // Selection highlight rectangle
+    uiDrawRectOutline({sx - 2, sy - 2, elem->w + 4, elem->h + 4},
+                     {1.0f, 0.8f, 0.1f, 1.0f}, "gui-edit-select");
 
-        // Corner handles (4 small squares)
-        float handleSize = 6.0f;
-        glm::vec4 handleColor{1.0f, 1.0f, 0.3f, 1.0f};
-        uiDrawRect({sx - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
-                   handleColor, "gui-edit-handle");
-        uiDrawRect({sx + elem->w - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
-                   handleColor, "gui-edit-handle");
-        uiDrawRect({sx - handleSize, sy + elem->h - handleSize, handleSize * 2, handleSize * 2},
-                   handleColor, "gui-edit-handle");
-        uiDrawRect({sx + elem->w - handleSize, sy + elem->h - handleSize, handleSize * 2, handleSize * 2},
-                   handleColor, "gui-edit-handle");
+    // Corner handles (4 small squares)
+    float handleSize = 6.0f;
+    glm::vec4 handleColor{1.0f, 1.0f, 0.3f, 1.0f};
+    uiDrawRect({sx - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
+               handleColor, "gui-edit-handle");
+    uiDrawRect({sx + elem->w - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
+               handleColor, "gui-edit-handle");
+    uiDrawRect({sx - handleSize, sy + elem->h - handleSize, handleSize * 2, handleSize * 2},
+               handleColor, "gui-edit-handle");
+    uiDrawRect({sx + elem->w - handleSize, sy + elem->h - handleSize, handleSize * 2, handleSize * 2},
+               handleColor, "gui-edit-handle");
 
-        // Element info label
-        char info[128];
-        snprintf(info, sizeof(info), "%s  (%.0f, %.0f)  %.0f x %.0f",
-                 mSelectedId.c_str(), elem->x, elem->y, elem->w, elem->h);
-        float labelW = uiMeasureText(info, 0.28f);
-        uiDrawRect({sx - 4, sy - 28, labelW + 8, 22},
-                   {0.0f, 0.0f, 0.0f, 0.75f}, "gui-edit-label-bg");
-        uiDrawText(info, sx + 2, sy - 26, 0.28f, {1.0f, 0.8f, 0.1f, 1.0f});
-
-        break;
-    }
+    // Element info label
+    char info[128];
+    snprintf(info, sizeof(info), "%s  (%.0f, %.0f)  %.0f x %.0f",
+             mSelectedId.c_str(), elem->x, elem->y, elem->w, elem->h);
+    float labelW = uiMeasureText(info, 0.28f);
+    uiDrawRect({sx - 4, sy - 28, labelW + 8, 22},
+               {0.0f, 0.0f, 0.0f, 0.75f}, "gui-edit-label-bg");
+    uiDrawText(info, sx + 2, sy - 26, 0.28f, {1.0f, 0.8f, 0.1f, 1.0f});
 }
