@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "../gui-back.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 #include "map/map-catalog.h"
 
@@ -47,6 +48,9 @@ SandboxMapMenuResult drawSandboxMapMenu(GLFWwindow* win)
     int height = 0;
     glfwGetFramebufferSize(win, &width, &height);
     const float centerX = width * 0.5f;
+    const float centerY = height * 0.5f;
+
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/sandbox-map-menu.json");
 
     uiDrawRect({0, 0, (float)width, (float)height},
                {0.035f, 0.04f, 0.052f, 1.0f}, "sandbox-map-menu-bg");
@@ -90,21 +94,27 @@ SandboxMapMenuResult drawSandboxMapMenu(GLFWwindow* win)
     }
 
     const float controlsY = (float)height - 82.0f;
-    if (uiButton(win, "REFRESH", {centerX - 90.0f, controlsY, 180.0f, 46.0f},
-                 {0.24f, 0.62f, 0.48f, 1.0f}).clicked)
     {
-        refreshCatalog();
-        gLoadMessage.clear();
+        UIRect rr = layout.getRectCentered("REFRESH", {centerX - 90.0f, controlsY, 180.0f, 46.0f}, centerX, centerY);
+        if (uiButton(win, "REFRESH", rr, {0.24f, 0.62f, 0.48f, 1.0f}).clicked)
+        {
+            refreshCatalog();
+            gLoadMessage.clear();
+        }
     }
 
     if (pageCount > 1)
     {
-        if (uiButton(win, "<", {centerX - 220.0f, controlsY, 62.0f, 46.0f},
-                     {0.24f, 0.35f, 0.5f, 1.0f}).clicked)
-            gPage = std::max(0, gPage - 1);
-        if (uiButton(win, ">", {centerX + 158.0f, controlsY, 62.0f, 46.0f},
-                     {0.24f, 0.35f, 0.5f, 1.0f}).clicked)
-            gPage = std::min(pageCount - 1, gPage + 1);
+        {
+            UIRect lr = layout.getRectCentered("<", {centerX - 220.0f, controlsY, 62.0f, 46.0f}, centerX, centerY);
+            if (uiButton(win, "<", lr, {0.24f, 0.35f, 0.5f, 1.0f}).clicked)
+                gPage = std::max(0, gPage - 1);
+        }
+        {
+            UIRect rr = layout.getRectCentered(">", {centerX + 158.0f, controlsY, 62.0f, 46.0f}, centerX, centerY);
+            if (uiButton(win, ">", rr, {0.24f, 0.35f, 0.5f, 1.0f}).clicked)
+                gPage = std::min(pageCount - 1, gPage + 1);
+        }
 
         char pageText[64];
         snprintf(pageText, sizeof(pageText), "Page %d / %d", gPage + 1, pageCount);
@@ -112,7 +122,7 @@ SandboxMapMenuResult drawSandboxMapMenu(GLFWwindow* win)
                    {0.72f, 0.78f, 0.88f, 1.0f});
     }
 
-    if (guiBackButton(win))
+    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         result.goBack = true;
     return result;
 }

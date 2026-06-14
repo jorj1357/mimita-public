@@ -1329,6 +1329,21 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "gui_debug_overlap", "Toggle overlap debug visualization", "gui_debug_overlap [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                uiSetOverlapDebug(!uiOverlapDebugEnabled());
+            } else {
+                uiSetOverlapDebug(args[0] == "1");
+            }
+            const bool on = uiOverlapDebugEnabled();
+            printf("[GUI OVERLAP DEBUG] %s\n", on ? "enabled" : "disabled");
+            Terminal::instance().addLog(on
+                ? "[GUI] Overlap debug ON: overlapping widgets highlighted in red"
+                : "[GUI] Overlap debug OFF");
+        }
+    });
+    Terminal::instance().registerCommand({
         "replay_test",
         "Record a deterministic gameplay replay and validate it in Blender",
         "replay_test",
@@ -3013,7 +3028,8 @@ int main(int argc, char** argv)
                            0.6f, {1.0f, 1.0f, 1.0f, 0.9f});
 
                 // Save Replay button
-                UIRect saveBtn = {fkW * 0.5f - 120.0f, fkH * 0.75f, 240.0f, 50.0f};
+                GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
+                UIRect saveBtn = duelLayout.getRect("SAVE REPLAY!", {fkW * 0.5f - 120.0f, fkH * 0.75f, 240.0f, 50.0f});
                 if (uiButton(engine.window(), "SAVE REPLAY!", saveBtn,
                              {0.2f, 0.6f, 0.3f, 1.0f}).clicked)
                 {

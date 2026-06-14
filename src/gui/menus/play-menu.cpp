@@ -51,7 +51,7 @@ PlayMenuResult drawPlayMenu(GLFWwindow* win)
     uiDrawText("Sandbox and training modes.", cx - 135.0f, cy + 251.0f, 0.32f,
                {0.72f, 0.78f, 0.88f, 1.0f});
 
-    if (guiBackButton(win))
+    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;

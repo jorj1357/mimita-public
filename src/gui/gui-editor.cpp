@@ -44,6 +44,40 @@ void GuiEditor::update(GLFWwindow* win)
     renderOverlay(win);
 }
 
+void GuiEditor::checkOverlaps()
+{
+    mHasOverlap = false;
+    if (mActiveLayoutFile.empty() || mSelectedId.empty()) return;
+
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    const GuiElement* selected = layout.get(mSelectedId);
+    if (!selected) return;
+
+    float sx = mCenterX + selected->x;
+    float sy = mCenterY + selected->y;
+    float sw = selected->w;
+    float sh = selected->h;
+
+    for (const std::string& id : layout.elementIds())
+    {
+        if (id == mSelectedId) continue;
+        const GuiElement* elem = layout.get(id);
+        if (!elem) continue;
+
+        float ex = mCenterX + elem->x;
+        float ey = mCenterY + elem->y;
+
+        if (sx < ex + elem->w && sx + sw > ex &&
+            sy < ey + elem->h && sy + sh > ey)
+        {
+            mHasOverlap = true;
+            printf("[GUI EDIT OVERLAP] \"%s\" overlaps \"%s\"\n",
+                   mSelectedId.c_str(), id.c_str());
+            return;
+        }
+    }
+}
+
 void GuiEditor::handleInput(GLFWwindow* win)
 {
     double mx, my;
@@ -61,6 +95,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
                 mDragOffsetX = (float)mx - wx;
                 mDragOffsetY = (float)my - wy;
                 mDragging = true;
+                mHasOverlap = false;
                 printf("[GUI EDIT] selected widget=\"%s\"  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
                        w.id.c_str(), wx, wy, ww, wh);
 
@@ -80,6 +115,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
                     }
                     layout.set(mSelectedId, elemX, elemY, elemW, elemH);
                 }
+                checkOverlaps();
                 return;
             }
         }
@@ -100,8 +136,10 @@ void GuiEditor::handleInput(GLFWwindow* win)
                     mDragOffsetX = (float)mx - sx;
                     mDragOffsetY = (float)my - sy;
                     mDragging = true;
+                    mHasOverlap = false;
                     printf("[GUI EDIT] selected layout=\"%s\"  pos=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
                            id.c_str(), sx, sy, elem->w, elem->h);
+                    checkOverlaps();
                     return;
                 }
             }
@@ -118,9 +156,11 @@ void GuiEditor::handleInput(GLFWwindow* win)
                 float newOffX = (float)mx - mCenterX - mDragOffsetX;
                 float newOffY = (float)my - mCenterY - mDragOffsetY;
                 layout.set(mSelectedId, newOffX, newOffY, w, h);
+                checkOverlaps();
             }
         } else {
             mDragging = false;
+            mHasOverlap = false;
         }
     }
 }
@@ -192,9 +232,20 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     float sx = mCenterX + elem->x;
     float sy = mCenterY + elem->y;
 
-    // Selection highlight rectangle
+    // Selection highlight rectangle: green = no overlap, red = overlap
+    glm::vec4 outlineColor = mHasOverlap
+        ? glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)
+        : glm::vec4(0.0f, 1.0f, 0.2f, 1.0f);
+
+    if (mHasOverlap) {
+        const char* warnText = "[OVERLAP] Element overlaps another";
+        float tw = uiMeasureText(warnText, 0.28f);
+        uiDrawRect({sx - 4, sy - 52, tw + 8, 22},
+                   {0.5f, 0.0f, 0.0f, 0.85f}, "gui-overlap-warn-bg");
+        uiDrawText(warnText, sx + 2, sy - 50, 0.28f, {1.0f, 0.3f, 0.2f, 1.0f});
+    }
     uiDrawRectOutline({sx - 2, sy - 2, elem->w + 4, elem->h + 4},
-                     {1.0f, 0.8f, 0.1f, 1.0f}, "gui-edit-select");
+                     outlineColor, "gui-edit-select");
 
     // Corner handles (4 small squares)
     float handleSize = 6.0f;

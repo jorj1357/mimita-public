@@ -18,6 +18,7 @@
 #include "world/world.h"
 #include "world/world-gltf-loader.h"
 #include "camera.h"
+#include "gui/gui-layout.h"
 #include "gui/ui-system.h"
 #include "debug/debug-log.h"
 
@@ -503,6 +504,8 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
         return DuelMenuAction::None;
     }
 
+    GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
+
     // Stack buttons vertically inside the left panel
     float btnW = panelW - 40.0f;
     float btnH = 44.0f;
@@ -510,29 +513,36 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     float btnY = panelY + 120.0f;
     float gap = 12.0f;
 
-    UIButtonState playBtn = uiButton(win, "Play Again", {btnX, btnY, btnW, btnH}, {0.24f, 0.82f, 0.48f, 1.0f});
-    Debug::logThrottled(Debug::Category::Duel, "hover_play", 1.0f,
-        "[UI BUTTON] id=play_again hover=%d click=%d", (int)playBtn.hovered, (int)playBtn.clicked);
-    if (playBtn.clicked) {
-        Debug::log(Debug::Category::Duel, "[DUEL UI] Play Again clicked");
-        Debug::log(Debug::Category::Duel, "[UI BUTTON] id=play_again clicked=1 callback=1");
-        Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
-        return DuelMenuAction::PlayAgain;
+    {
+        UIRect pr = duelLayout.getRect("Play Again", {btnX, btnY, btnW, btnH});
+        UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f});
+        Debug::logThrottled(Debug::Category::Duel, "hover_play", 1.0f,
+            "[UI BUTTON] id=play_again hover=%d click=%d", (int)playBtn.hovered, (int)playBtn.clicked);
+        if (playBtn.clicked) {
+            Debug::log(Debug::Category::Duel, "[DUEL UI] Play Again clicked");
+            Debug::log(Debug::Category::Duel, "[UI BUTTON] id=play_again clicked=1 callback=1");
+            Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
+            return DuelMenuAction::PlayAgain;
+        }
     }
 
-    UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH}, {0.86f, 0.3f, 0.3f, 1.0f});
-    Debug::logThrottled(Debug::Category::Duel, "hover_exit", 1.0f,
-        "[UI BUTTON] id=exit_main_menu hover=%d click=%d", (int)exitBtn.hovered, (int)exitBtn.clicked);
-    if (exitBtn.clicked) {
-        Debug::log(Debug::Category::Duel, "[DUEL UI] Exit To Main Menu clicked");
-        Debug::log(Debug::Category::Duel, "[UI BUTTON] id=exit_main_menu clicked=1 callback=1");
-        Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
-        return DuelMenuAction::ExitToMenu;
+    {
+        UIRect er = duelLayout.getRect("Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH});
+        UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f});
+        Debug::logThrottled(Debug::Category::Duel, "hover_exit", 1.0f,
+            "[UI BUTTON] id=exit_main_menu hover=%d click=%d", (int)exitBtn.hovered, (int)exitBtn.clicked);
+        if (exitBtn.clicked) {
+            Debug::log(Debug::Category::Duel, "[DUEL UI] Exit To Main Menu clicked");
+            Debug::log(Debug::Category::Duel, "[UI BUTTON] id=exit_main_menu clicked=1 callback=1");
+            Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
+            return DuelMenuAction::ExitToMenu;
+        }
     }
 
     // Save Replay button, shown when final kill replay is active
     if (finalKillReplayActive) {
-        UIButtonState saveBtn = uiButton(win, "Save Replay", {btnX, btnY + (btnH + gap) * 2, btnW, btnH}, {0.2f, 0.6f, 0.3f, 1.0f});
+        UIRect sr = duelLayout.getRect("Save Replay", {btnX, btnY + (btnH + gap) * 2, btnW, btnH});
+        UIButtonState saveBtn = uiButton(win, "Save Replay", sr, {0.2f, 0.6f, 0.3f, 1.0f});
         if (saveBtn.clicked) {
             Debug::log(Debug::Category::Duel, "[DUEL UI] Save Replay clicked");
             return DuelMenuAction::SaveReplay;

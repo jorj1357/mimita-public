@@ -1,6 +1,7 @@
 #include "help-menu.h"
-#include "../ui-system.h"
 #include "../gui-back.h"
+#include "../gui-layout.h"
+#include "../ui-system.h"
 #include <cstdio>
 
 HelpMenuResult drawHelpMenu(GLFWwindow* win)
@@ -9,6 +10,7 @@ HelpMenuResult drawHelpMenu(GLFWwindow* win)
 
     int w = 0, h = 0;
     glfwGetFramebufferSize(win, &w, &h);
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/help-menu.json");
 
     uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "help-menu-background");
 
@@ -90,7 +92,7 @@ HelpMenuResult drawHelpMenu(GLFWwindow* win)
     line("Visit https://mimita.fun to get involved.");
     y += 8.0f;
 
-    if (guiBackButton(win))
+    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;

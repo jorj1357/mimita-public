@@ -107,7 +107,7 @@ SignInMenuResult drawSignInMenu(GLFWwindow* window)
                    result.signedIn ? glm::vec4(0.3f,1,0.4f,1)
                                    : glm::vec4(1,0.3f,0.3f,1));
 
-    if (guiBackButton(window))
+    if (guiBackButton(window, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         result.goBack = true;
     return result;
 }

@@ -18,6 +18,8 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
+#include "ui-system.h"
+
 bool guiButton(
     GLFWwindow* win,
     const char* text,
@@ -28,3 +30,14 @@ bool guiButton(
     glm::vec4 color,
     const char* id = nullptr
 );
+
+inline bool guiButton(
+    GLFWwindow* win,
+    const char* text,
+    UIRect r,
+    glm::vec4 color,
+    const char* id = nullptr
+)
+{
+    return guiButton(win, text, r.x, r.y, r.w, r.h, color, id);
+}
