@@ -2,6 +2,7 @@
 #include "../gui-button.h"
 #include "../gui-back.h"
 #include "../gui-label.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <cstring>
@@ -105,17 +106,22 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
 
     uiDrawText("Port: 1357", cx - 200.0f, 280.0f, 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
 
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/server-info-menu.json");
     if (serverRunning) {
         uiDrawText("Status: Running", cx - 200.0f, 330.0f, 0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
         uiDrawText("Server terminal is open in background", cx - 200.0f, 365.0f, 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
-        if (guiButton(win, "Connect", cx - 125.0f, 400.0f, 250.0f, 60.0f, {0.2f,0.7f,1.0f,1.0f}))
+        if (guiButton(win, "Connect",
+            layout.getRectCentered("connect", {cx - 125.0f, 400.0f, 250.0f, 60.0f}, cx, 0),
+            {0.2f,0.7f,1.0f,1.0f}, "connect"))
             r.connect = true;
     } else {
         uiDrawText("Status: Not Running", cx - 200.0f, 330.0f, 0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
         uiDrawText("Click to start a dedicated server", cx - 200.0f, 365.0f, 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
-        if (guiButton(win, "Start Server", cx - 125.0f, 400.0f, 250.0f, 60.0f, {0.2f,0.8f,0.3f,1.0f}))
+        if (guiButton(win, "Start Server",
+            layout.getRectCentered("startServer", {cx - 125.0f, 400.0f, 250.0f, 60.0f}, cx, 0),
+            {0.2f,0.8f,0.3f,1.0f}, "startServer"))
         {
             if (launchServerProcess())
                 r.startServer = true;

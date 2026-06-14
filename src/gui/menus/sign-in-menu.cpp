@@ -2,6 +2,7 @@
 
 #include "gui/gui-back.h"
 #include "gui/gui-button.h"
+#include "gui/gui-layout.h"
 #include "gui/ui-system.h"
 #include "profile/local-profile-system.h"
 
@@ -90,8 +91,10 @@ SignInMenuResult drawSignInMenu(GLFWwindow* window)
     uiDrawText(masked.empty() ? "_" : masked.c_str(),
                centerX - 196.0f, 393.0f, 0.38f, {1,1,1,1});
 
-    if (guiButton(window, "Sign In", centerX - 120.0f, 470.0f, 240.0f, 58.0f,
-                  {0.2f,0.7f,1.0f,1.0f}))
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/sign-in-menu.json");
+    UIRect r = layout.getRectCentered("signIn", {centerX - 120.0f, 470.0f, 240.0f, 58.0f}, centerX, 0);
+    if (guiButton(window, "Sign In", r.x, r.y, r.w, r.h,
+                  {0.2f,0.7f,1.0f,1.0f}, "signIn"))
     {
         result.signedIn = LocalProfileSystem::instance().signIn(username, password);
         message = result.signedIn
