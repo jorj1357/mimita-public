@@ -33,7 +33,8 @@ enum class DuelTeam {
 enum class DuelMenuAction {
     None,
     PlayAgain,
-    ExitToMenu
+    ExitToMenu,
+    SaveReplay
 };
 
 enum class MapRotationMode {

@@ -3067,6 +3067,25 @@ int main(int argc, char** argv)
                     npcSystem.destroyAll();
                     gameState = GAME_MENU;
                     Debug::log(Debug::Category::Duel, "[MAIN MENU] entered");
+                } else if (action == DuelMenuAction::SaveReplay) {
+                    if (!gDuelManager.finalKillReplayPath.empty()) {
+                        Debug::log(Debug::Category::Duel, "[DUEL] replay already saved: %s",
+                                   gDuelManager.finalKillReplayPath.c_str());
+                    } else {
+                        std::string path;
+                        if (gReplayFactory.saveLastKill(&path) ||
+                            gReplayClipSaver.saveLastKill(&path)) {
+                            gDuelManager.finalKillReplayPath = path;
+                            Debug::log(Debug::Category::Duel, "[DUEL] replay saved: %s", path.c_str());
+                            std::string mp4Path = path + ".mp4";
+                            std::string cmd = "start cmd /c ffmpeg -i \"" + path +
+                                "\" \"" + mp4Path + "\" 2>&1";
+                            std::thread([cmd]() {
+                                system(cmd.c_str());
+                            }).detach();
+                            Debug::log(Debug::Category::Duel, "[DUEL] ffmpeg started for: %s", mp4Path.c_str());
+                        }
+                    }
                 }
             } else {
                 gDuelManager.renderHud();
