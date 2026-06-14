@@ -1,0 +1,76 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 1,
+  "elements": [
+    {
+      "id": "backButton",
+      "x": 40,
+      "y": 40,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "NPC Count -",
+      "x": 350,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "NPC Count +",
+      "x": 410,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "Kills to Win -",
+      "x": 350,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "Kills to Win +",
+      "x": 410,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "Time Limit -",
+      "x": 350,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "Time Limit +",
+      "x": 410,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "Difficulty -",
+      "x": 350,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "Difficulty +",
+      "x": 410,
+      "y": -5,
+      "width": 50,
+      "height": 40
+    },
+    {
+      "id": "START DUEL",
+      "x": -140.0,
+      "y": 370.0,
+      "width": 300.0,
+      "height": 80.0
+    }
+  ]
+}

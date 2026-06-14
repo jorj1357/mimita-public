@@ -2,6 +2,7 @@
 #include "../gui-button.h"
 #include "../gui-back.h"
 #include "../gui-label.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <algorithm>
@@ -51,7 +52,9 @@ DuelConfigResult drawDuelConfigMenu(GLFWwindow* win)
             sNpcDifficulty = std::min(10.0f, sNpcDifficulty + 1.0f);
     }
 
-    if (guiButton(win, "START DUEL", 820, 540, 300, 80, {0.9f, 0.25f, 0.1f, 1.0f}))
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/duel-config-menu.json");
+    UIRect r = layout.getRectCentered("START DUEL", {820.0f, 540.0f, 300.0f, 80.0f}, 0, 0);
+    if (guiButton(win, "START DUEL", r.x, r.y, r.w, r.h, {0.9f, 0.25f, 0.1f, 1.0f}, "START DUEL"))
     {
         r.startDuel = true;
     }
