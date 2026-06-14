@@ -38,6 +38,7 @@ private:
     std::string mSelectedId;
     std::string mActiveLayoutFile;
     bool mDragging = false;
+    bool mResizing = false;
     float mDragOffsetX = 0.0f;
     float mDragOffsetY = 0.0f;
     bool mHasOverlap = false;

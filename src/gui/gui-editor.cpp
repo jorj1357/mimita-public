@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <cmath>
 #include <GLFW/glfw3.h>
 
 GuiEditor& GuiEditor::instance()
@@ -21,6 +22,7 @@ void GuiEditor::setEnabled(bool e)
     if (!e) {
         mSelectedId.clear();
         mDragging = false;
+        mResizing = false;
     }
 }
 
@@ -89,7 +91,23 @@ void GuiEditor::handleInput(GLFWwindow* win)
 
     bool mouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
 
-    if (mouseDown && !mDragging) {
+    if (mouseDown && !mDragging && !mResizing &&
+        !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+        GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+        const GuiElement* elem = layout.get(mSelectedId);
+        if (elem) {
+            const float handleRadius = 12.0f;
+            const float right = elem->x + elem->w;
+            const float bottom = elem->y + elem->h;
+            if (std::abs((float)dx - right) <= handleRadius &&
+                std::abs((float)dy - bottom) <= handleRadius) {
+                mResizing = true;
+                return;
+            }
+        }
+    }
+
+    if (mouseDown && !mDragging && !mResizing) {
         // Only check widgets rendered this frame (tracked in design coordinates)
         const auto& widgets = uiGetTrackedWidgets();
         for (const auto& w : widgets) {
@@ -132,6 +150,23 @@ void GuiEditor::handleInput(GLFWwindow* win)
             mHasOverlap = false;
         }
     }
+
+    if (mResizing) {
+        if (mouseDown && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+            const GuiElement* elem = layout.get(mSelectedId);
+            if (elem) {
+                GuiElement updated = *elem;
+                updated.w = std::max(1.0f, (float)dx - updated.x);
+                updated.h = std::max(1.0f, (float)dy - updated.y);
+                layout.setElement(updated);
+                checkOverlaps();
+            }
+        } else {
+            mResizing = false;
+            mHasOverlap = false;
+        }
+    }
 }
 
 void GuiEditor::handleKeyboard(GLFWwindow* win)
@@ -156,7 +191,20 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
         GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
         const GuiElement* elem = layout.get(mSelectedId);
         if (elem) {
-            layout.set(mSelectedId, elem->x + dx, elem->y + dy, elem->w, elem->h);
+            GuiElement updated = *elem;
+            if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS) {
+                updated.textOffsetX += dx;
+                updated.textOffsetY += dy;
+            } else if (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+                       glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
+                updated.w = std::max(1.0f, updated.w + dx);
+                updated.h = std::max(1.0f, updated.h + dy);
+            } else {
+                updated.x += dx;
+                updated.y += dy;
+            }
+            layout.setElement(updated);
+            checkOverlaps();
         }
     }
 }
@@ -176,7 +224,7 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
 
     // Editor mode indicator (top-left)
     {
-        const char* modeText = "[EDIT MODE] gui_edit 0 to exit";
+        const char* modeText = "[EDIT MODE] drag=move corner=resize T+arrows=text offset";
         uiDrawRect({10, 10, uiMeasureText(modeText, 0.30f) + 20, 26},
                    {0.15f, 0.15f, 0.2f, 0.85f}, "gui-edit-bg");
         uiDrawText(modeText, 18, 12, 0.30f, {1.0f, 0.8f, 0.1f, 1.0f});
@@ -233,8 +281,9 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
 
     // Element info label (show design coordinates)
     char info[128];
-    snprintf(info, sizeof(info), "%s  design=(%.0f, %.0f)  %.0f x %.0f",
-             mSelectedId.c_str(), elem->x, elem->y, elem->w, elem->h);
+    snprintf(info, sizeof(info), "%s  design=(%.0f, %.0f)  %.0f x %.0f  text=(%.0f, %.0f)",
+             mSelectedId.c_str(), elem->x, elem->y, elem->w, elem->h,
+             elem->textOffsetX, elem->textOffsetY);
     float labelW = uiMeasureText(info, 0.28f);
     uiDrawRect({sx - 4, sy - 28, labelW + 8, 22},
                {0.0f, 0.0f, 0.0f, 0.75f}, "gui-edit-label-bg");

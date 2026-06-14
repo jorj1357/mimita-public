@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -81,14 +82,95 @@ bool pump(TestClient& client, uint64_t deadline)
     return false;
 }
 
-void sendAttack(TestClient& client, const sockaddr_in& server, bool pressed)
+const MimitaNet::SnapshotEntity* findEntity(
+    const TestClient& client,
+    uint32_t entityId)
+{
+    for (uint32_t i = 0;
+         i < client.snapshot.entityCount &&
+         i < MimitaNet::MAX_SNAPSHOT_ENTITIES;
+         ++i)
+    {
+        if (client.snapshot.entities[i].networkEntityId == entityId)
+            return &client.snapshot.entities[i];
+    }
+    return nullptr;
+}
+
+void sendPosition(
+    TestClient& client,
+    const sockaddr_in& server,
+    float x,
+    float y,
+    float z)
 {
     MimitaNet::InputPacket input{};
     input.header.type = MimitaNet::PACKET_INPUT;
     input.header.playerId = client.id;
     input.camForwardX = 1.0f;
-    input.attackPressed = pressed ? 1 : 0;
+    input.clientPx = x;
+    input.clientPy = y;
+    input.clientPz = z;
     sendto(client.socket, (const char*)&input, sizeof(input), 0,
+           (const sockaddr*)&server, sizeof(server));
+}
+
+void sendShot(
+    TestClient& client,
+    const TestClient& target,
+    const sockaddr_in& server,
+    uint32_t serial)
+{
+    const MimitaNet::SnapshotEntity* shooterEntity =
+        findEntity(client, client.id);
+    const MimitaNet::SnapshotEntity* targetEntity =
+        findEntity(client, target.id);
+    if (!shooterEntity || !targetEntity)
+        return;
+
+    const float originX = shooterEntity->px;
+    const float originY = shooterEntity->py;
+    const float originZ = shooterEntity->pz + 0.8f;
+    const float hitX = targetEntity->px;
+    const float hitY = targetEntity->py;
+    const float hitZ = targetEntity->pz + 0.8f;
+    float dirX = hitX - originX;
+    float dirY = hitY - originY;
+    float dirZ = hitZ - originZ;
+    const float length = std::sqrt(
+        dirX * dirX + dirY * dirY + dirZ * dirZ);
+    if (length <= 0.001f)
+        return;
+    dirX /= length;
+    dirY /= length;
+    dirZ /= length;
+
+    MimitaNet::ShotRequestPacket shot{};
+    shot.header.type = MimitaNet::PACKET_SHOT_REQUEST;
+    shot.header.playerId = client.id;
+    shot.shotSerial = serial;
+    shot.targetPlayerId = target.id;
+    shot.damage = 30;
+    shot.power = 30.0f;
+    shot.effectFlags =
+        MimitaNet::SHOT_EFFECT_ENTITY_IMPACT |
+        MimitaNet::SHOT_EFFECT_BLOOD |
+        MimitaNet::SHOT_EFFECT_HIT_SOUND;
+    shot.weapon = MimitaNet::NETWORK_WEAPON_REVOLVER;
+    shot.impactType = MimitaNet::SHOT_IMPACT_ENTITY;
+    shot.originX = originX;
+    shot.originY = originY;
+    shot.originZ = originZ;
+    shot.hitX = hitX;
+    shot.hitY = hitY;
+    shot.hitZ = hitZ;
+    shot.dirX = dirX;
+    shot.dirY = dirY;
+    shot.dirZ = dirZ;
+    shot.normalX = -dirX;
+    shot.normalY = -dirY;
+    shot.normalZ = -dirZ;
+    sendto(client.socket, (const char*)&shot, sizeof(shot), 0,
            (const sockaddr*)&server, sizeof(server));
 }
 
@@ -146,6 +228,28 @@ int main()
     if (first.id == second.id || first.approvedName == second.approvedName)
         return 5;
 
+    const MimitaNet::SnapshotEntity* initialFirst =
+        findEntity(first, first.id);
+    if (!initialFirst)
+        return 6;
+    const float initialFirstX = initialFirst->px;
+    sendPosition(
+        first, server,
+        initialFirst->px + 1.0f,
+        initialFirst->py,
+        initialFirst->pz);
+    bool movementReplicated = false;
+    const uint64_t movementDeadline = MimitaNet::nowMs() + 1500;
+    while (!movementReplicated && MimitaNet::nowMs() < movementDeadline)
+    {
+        pump(first, MimitaNet::nowMs() + 30);
+        pump(second, MimitaNet::nowMs() + 30);
+        const MimitaNet::SnapshotEntity* moved =
+            findEntity(second, first.id);
+        movementReplicated =
+            moved && std::fabs(moved->px - initialFirstX) >= 0.5f;
+    }
+
     MimitaNet::SpawnNpcRequestPacket spawn{};
     spawn.header.type = MimitaNet::PACKET_SPAWN_NPC_REQUEST;
     spawn.header.playerId = first.id;
@@ -170,14 +274,10 @@ int main()
     bool sawDeath = false;
     for (int shot = 0; shot < 4 && !sawDeath; ++shot)
     {
-        sendAttack(first, server, true);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        pump(first, MimitaNet::nowMs() + 80);
-        pump(second, MimitaNet::nowMs() + 80);
-        sendAttack(first, server, false);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        pump(first, MimitaNet::nowMs() + 80);
-        pump(second, MimitaNet::nowMs() + 80);
+        sendShot(first, second, server, (uint32_t)shot + 1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        pump(first, MimitaNet::nowMs() + 120);
+        pump(second, MimitaNet::nowMs() + 120);
         sawDeath = entityHealth(first, second.id) == 0 ||
                    entityHealth(second, second.id) == 0;
     }
@@ -202,15 +302,18 @@ int main()
 
     std::printf(
         "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u "
-        "spawned=%d/%d combatDeath=%d respawn=%d targetHealth=%d\n",
+        "movement=%d spawned=%d/%d combatDeath=%d respawn=%d targetHealth=%d\n",
         first.id, first.approvedName.c_str(),
         second.id, second.approvedName.c_str(),
         first.snapshot.playerCount, first.snapshot.npcCount,
+        (int)movementReplicated,
         (int)firstSawSpawn, (int)secondSawSpawn,
         (int)sawDeath, (int)sawRespawn, entityHealth(first, second.id));
 
     disconnect(first, server);
     disconnect(second, server);
     MimitaNet::netShutdown();
-    return firstSawSpawn && secondSawSpawn && sawDeath && sawRespawn ? 0 : 6;
+    return movementReplicated &&
+           firstSawSpawn && secondSawSpawn &&
+           sawDeath && sawRespawn ? 0 : 7;
 }

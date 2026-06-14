@@ -16,6 +16,20 @@ struct GuiElement {
     float y = 0.0f;
     float w = 0.0f;
     float h = 0.0f;
+    float textOffsetX = 8.0f;
+    float textOffsetY = 4.0f;
+    float fontSize = 0.0f;
+    float padding = 0.0f;
+    float margin = 0.0f;
+    bool visible = true;
+    float hoverScale = 1.0f;
+    std::string hoverSound;
+    std::string clickSound;
+    std::string backgroundImage;
+    std::string backgroundVideo;
+    std::string anchorX = "left";
+    std::string anchorY = "top";
+    int layer = 0;
 };
 
 // Manages a single layout file (one per menu/screen)
@@ -41,6 +55,8 @@ public:
 
     // Set or update element position/size
     void set(const std::string& id, float x, float y, float w, float h);
+    void set(const std::string& id, float x, float y, float w, float h, float textOffsetX, float textOffsetY);
+    void setElement(const GuiElement& element);
 
     // Check if file changed since last load (for hot reload)
     bool checkFileChanged() const;
@@ -60,7 +76,7 @@ public:
 private:
     std::string mFilePath;
     std::unordered_map<std::string, GuiElement> mElements;
-    int64_t mLastModified = 0;
+    mutable int64_t mLastModified = 0;
     mutable bool mDirty = false;
 };
 
