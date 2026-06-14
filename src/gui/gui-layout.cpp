@@ -27,7 +27,7 @@ static int64_t getFileModifiedTime(const std::string& path)
     std::error_code ec;
     auto ft = std::filesystem::last_write_time(path, ec);
     if (ec) return 0;
-    return std::chrono::duration_cast<std::chrono::seconds>(
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
         ft.time_since_epoch()).count();
 }
 
@@ -37,7 +37,6 @@ static int64_t getFileModifiedTime(const std::string& path)
 bool GuiLayout::load(const std::string& filePath)
 {
     mFilePath = filePath;
-    mElements.clear();
 
     std::ifstream file(filePath);
     if (!file.is_open()) {
@@ -49,6 +48,7 @@ bool GuiLayout::load(const std::string& filePath)
     try {
         json j;
         file >> j;
+        std::unordered_map<std::string, GuiElement> loadedElements;
 
         if (j.contains("elements") && j["elements"].is_array()) {
             for (const auto& elem : j["elements"]) {
@@ -58,12 +58,28 @@ bool GuiLayout::load(const std::string& filePath)
                 e.y = elem.value("y", 0.0f);
                 e.w = elem.value("width", 0.0f);
                 e.h = elem.value("height", 0.0f);
+                e.textOffsetX = elem.value("textOffsetX", 8.0f);
+                e.textOffsetY = elem.value("textOffsetY", 4.0f);
+                e.fontSize = elem.value("fontSize", 0.0f);
+                e.padding = elem.value("padding", 0.0f);
+                e.margin = elem.value("margin", 0.0f);
+                e.visible = elem.value("visible", true);
+                e.hoverScale = elem.value("hoverScale", 1.0f);
+                e.hoverSound = elem.value("hoverSound", "");
+                e.clickSound = elem.value("clickSound", "");
+                e.backgroundImage = elem.value("backgroundImage", "");
+                e.backgroundVideo = elem.value("backgroundVideo", "");
+                e.anchorX = elem.value("anchorX", "left");
+                e.anchorY = elem.value("anchorY", "top");
+                e.layer = elem.value("layer", 0);
                 if (!e.id.empty())
-                    mElements[e.id] = e;
+                    loadedElements[e.id] = e;
             }
         }
 
+        mElements = std::move(loadedElements);
         mLastModified = getFileModifiedTime(filePath);
+        mDirty = false;
         printf("[GUI LAYOUT] Loaded %zu elements from %s\n",
                mElements.size(), filePath.c_str());
         return true;
@@ -89,13 +105,27 @@ bool GuiLayout::save(const std::string& filePath) const
 
     for (const std::string& id : ids) {
         const GuiElement& e = mElements.at(id);
-        elementsJson.push_back({
-            {"id", e.id},
-            {"x", e.x},
-            {"y", e.y},
-            {"width", e.w},
-            {"height", e.h}
-        });
+        json obj;
+        obj["id"] = e.id;
+        obj["x"] = e.x;
+        obj["y"] = e.y;
+        obj["width"] = e.w;
+        obj["height"] = e.h;
+        if (e.textOffsetX != 8.0f) obj["textOffsetX"] = e.textOffsetX;
+        if (e.textOffsetY != 4.0f) obj["textOffsetY"] = e.textOffsetY;
+        if (e.fontSize != 0.0f) obj["fontSize"] = e.fontSize;
+        if (e.padding != 0.0f) obj["padding"] = e.padding;
+        if (e.margin != 0.0f) obj["margin"] = e.margin;
+        if (!e.visible) obj["visible"] = false;
+        if (e.hoverScale != 1.0f) obj["hoverScale"] = e.hoverScale;
+        if (!e.hoverSound.empty()) obj["hoverSound"] = e.hoverSound;
+        if (!e.clickSound.empty()) obj["clickSound"] = e.clickSound;
+        if (!e.backgroundImage.empty()) obj["backgroundImage"] = e.backgroundImage;
+        if (!e.backgroundVideo.empty()) obj["backgroundVideo"] = e.backgroundVideo;
+        if (e.anchorX != "left") obj["anchorX"] = e.anchorX;
+        if (e.anchorY != "top") obj["anchorY"] = e.anchorY;
+        if (e.layer != 0) obj["layer"] = e.layer;
+        elementsJson.push_back(obj);
     }
     j["elements"] = elementsJson;
 
@@ -110,6 +140,8 @@ bool GuiLayout::save(const std::string& filePath) const
         return false;
     }
     file << j.dump(2);
+    file.close();
+    mLastModified = getFileModifiedTime(filePath);
     mDirty = false;
     printf("[GUI LAYOUT] Saved %d elements to %s\n", (int)mElements.size(), filePath.c_str());
     return true;
@@ -155,6 +187,25 @@ void GuiLayout::set(const std::string& id, float x, float y, float w, float h)
     mElements[id].y = y;
     mElements[id].w = w;
     mElements[id].h = h;
+    mDirty = true;
+}
+
+void GuiLayout::set(const std::string& id, float x, float y, float w, float h, float tx, float ty)
+{
+    mElements[id].id = id;
+    mElements[id].x = x;
+    mElements[id].y = y;
+    mElements[id].w = w;
+    mElements[id].h = h;
+    mElements[id].textOffsetX = tx;
+    mElements[id].textOffsetY = ty;
+    mDirty = true;
+}
+
+void GuiLayout::setElement(const GuiElement& element)
+{
+    if (element.id.empty()) return;
+    mElements[element.id] = element;
     mDirty = true;
 }
 

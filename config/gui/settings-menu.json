@@ -1,5 +1,222 @@
 {
   "format": "mimita-gui-layout",
   "version": 1,
-  "elements": []
+  "elements": [
+    {
+      "id": "settingsTitle",
+      "x": 840.0,
+      "y": 40.0,
+      "width": 300.0,
+      "height": 50.0
+    },
+    {
+      "id": "audioHeader",
+      "x": 120.0,
+      "y": 120.0,
+      "width": 300.0,
+      "height": 36.0
+    },
+    {
+      "id": "masterVolumeLabel",
+      "x": 120.0,
+      "y": 176.0,
+      "width": 300.0,
+      "height": 24.0
+    },
+    {
+      "id": "masterVolumeSlider",
+      "x": 120.0,
+      "y": 210.0,
+      "width": 380.0,
+      "height": 28.0
+    },
+    {
+      "id": "masterVolumeValue",
+      "x": 518.0,
+      "y": 214.0,
+      "width": 60.0,
+      "height": 24.0
+    },
+    {
+      "id": "musicVolumeLabel",
+      "x": 120.0,
+      "y": 262.0,
+      "width": 300.0,
+      "height": 24.0
+    },
+    {
+      "id": "musicVolumeSlider",
+      "x": 120.0,
+      "y": 296.0,
+      "width": 380.0,
+      "height": 28.0
+    },
+    {
+      "id": "musicVolumeValue",
+      "x": 518.0,
+      "y": 300.0,
+      "width": 60.0,
+      "height": 24.0
+    },
+    {
+      "id": "muteLabel",
+      "x": 120.0,
+      "y": 350.0,
+      "width": 100.0,
+      "height": 24.0
+    },
+    {
+      "id": "muteToggle",
+      "x": 120.0,
+      "y": 382.0,
+      "width": 72.0,
+      "height": 32.0
+    },
+    {
+      "id": "gameplayHeader",
+      "x": 120.0,
+      "y": 450.0,
+      "width": 300.0,
+      "height": 36.0
+    },
+    {
+      "id": "fovLabel",
+      "x": 120.0,
+      "y": 506.0,
+      "width": 300.0,
+      "height": 24.0
+    },
+    {
+      "id": "fovSlider",
+      "x": 120.0,
+      "y": 540.0,
+      "width": 380.0,
+      "height": 28.0
+    },
+    {
+      "id": "fovValue",
+      "x": 518.0,
+      "y": 544.0,
+      "width": 60.0,
+      "height": 24.0
+    },
+    {
+      "id": "sensitivityLabel",
+      "x": 120.0,
+      "y": 592.0,
+      "width": 300.0,
+      "height": 24.0
+    },
+    {
+      "id": "sensitivitySlider",
+      "x": 120.0,
+      "y": 626.0,
+      "width": 380.0,
+      "height": 28.0
+    },
+    {
+      "id": "sensitivityValue",
+      "x": 518.0,
+      "y": 630.0,
+      "width": 60.0,
+      "height": 24.0
+    },
+    {
+      "id": "videoHeader",
+      "x": 640.0,
+      "y": 120.0,
+      "width": 300.0,
+      "height": 36.0
+    },
+    {
+      "id": "fullscreenLabel",
+      "x": 640.0,
+      "y": 176.0,
+      "width": 200.0,
+      "height": 24.0
+    },
+    {
+      "id": "fullscreenToggle",
+      "x": 640.0,
+      "y": 210.0,
+      "width": 120.0,
+      "height": 56.0,
+      "textOffsetX": 12.0,
+      "textOffsetY": 6.0
+    },
+    {
+      "id": "resolutionLabel",
+      "x": 640.0,
+      "y": 290.0,
+      "width": 200.0,
+      "height": 24.0
+    },
+    {
+      "id": "resolutionDropdown",
+      "x": 640.0,
+      "y": 324.0,
+      "width": 240.0,
+      "height": 112.0,
+      "textOffsetX": 12.0,
+      "textOffsetY": 6.0
+    },
+    {
+      "id": "graphicsLabel",
+      "x": 640.0,
+      "y": 462.0,
+      "width": 200.0,
+      "height": 24.0
+    },
+    {
+      "id": "graphicsDropdown",
+      "x": 640.0,
+      "y": 496.0,
+      "width": 240.0,
+      "height": 138.0,
+      "textOffsetX": 12.0,
+      "textOffsetY": 6.0
+    },
+    {
+      "id": "debugHeader",
+      "x": 640.0,
+      "y": 670.0,
+      "width": 300.0,
+      "height": 36.0
+    },
+    {
+      "id": "physicsDebugLabel",
+      "x": 640.0,
+      "y": 726.0,
+      "width": 200.0,
+      "height": 24.0
+    },
+    {
+      "id": "physicsDebugToggle",
+      "x": 640.0,
+      "y": 758.0,
+      "width": 72.0,
+      "height": 32.0
+    },
+    {
+      "id": "renderDebugLabel",
+      "x": 640.0,
+      "y": 800.0,
+      "width": 200.0,
+      "height": 24.0
+    },
+    {
+      "id": "renderDebugToggle",
+      "x": 640.0,
+      "y": 832.0,
+      "width": 72.0,
+      "height": 32.0
+    },
+    {
+      "id": "backButton",
+      "x": 840.0,
+      "y": 960.0,
+      "width": 240.0,
+      "height": 48.0
+    }
+  ]
 }
