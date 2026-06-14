@@ -66,7 +66,7 @@ static int uiOptionDropdown(GLFWwindow* win, const char* label,
         if (i == currentIndex)
             uiDrawRectOutline(r, {0.5f, 0.9f, 1.0f, 1.0f}, label);
         uiDrawText(options[i], x + uiScaleX(8), optY + uiScaleY(4), 0.32f, {1.0f, 1.0f, 1.0f, 1.0f});
-        if (uiButton(win, "", r, color).clicked)
+        if (uiButton(win, "", r, color, options[i]).clicked)
             result = i;
         y += h + gap * 0.3f;
     }

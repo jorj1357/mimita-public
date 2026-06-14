@@ -18,14 +18,24 @@ public:
     // Set the reference center point for the current layout
     void setCenter(float cx, float cy) { mCenterX = cx; mCenterY = cy; }
 
+    // Set the active layout file path for the current menu
+    void setActiveLayout(const std::string& filePath);
+
+    // Get the active layout file path
+    const std::string& activeLayout() const { return mActiveLayoutFile; }
+
     // Check if editor is active
     bool isEnabled() const { return mEnabled; }
     void setEnabled(bool e);
-    void toggle() { mEnabled = !mEnabled; }
+    void toggle() { setEnabled(!mEnabled); }
 
     // Get current selection info
     const std::string& selectedElement() const { return mSelectedId; }
     bool hasSelection() const { return !mSelectedId.empty(); }
+
+    // Get screen center (for external use)
+    float centerX() const { return mCenterX; }
+    float centerY() const { return mCenterY; }
 
 private:
     GuiEditor() = default;
@@ -35,6 +45,7 @@ private:
     float mCenterY = 0.0f;
 
     std::string mSelectedId;
+    std::string mActiveLayoutFile;
     bool mDragging = false;
     float mDragOffsetX = 0.0f;
     float mDragOffsetY = 0.0f;

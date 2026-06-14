@@ -5,6 +5,8 @@
 #endif
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <string>
+#include <vector>
 
 struct UIRect {
     float x = 0.0f;
@@ -17,6 +19,13 @@ struct UIButtonState {
     bool hovered = false;
     bool pressed = false;
     bool clicked = false;
+};
+
+struct UITrackedWidget {
+    std::string id;
+    UIRect rect;
+    bool hovered = false;
+    bool pressed = false;
 };
 
 void uiInit(GLFWwindow* win);
@@ -38,7 +47,7 @@ void uiDrawImageRotated(const char* path, float cx, float cy, float halfSize, fl
 void uiDrawWarning(const char* text, float x, float y);
 float uiMeasureText(const char* text, float scale);
 
-UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color);
+UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color, const char* id = nullptr);
 bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value);
 bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float minValue, float maxValue);
 void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r);
@@ -60,3 +69,6 @@ UIRect uiRow(
 );
 
 void uiRenderFrameDebugOverlay(GLFWwindow* win, const char* activeScene, bool worldPassRan);
+
+// Widget tracking for GUI editor
+const std::vector<UITrackedWidget>& uiGetTrackedWidgets();

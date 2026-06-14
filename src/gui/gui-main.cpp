@@ -1,20 +1,8 @@
-// C:\important\quiet\n\mimita-priv-v7\src\gui\gui-main.cpp
-// mar 8 2026
-/**
- * purpose
- * expose ONE function:
- * guiMain(args)
- *
- * this file DOES:
- * - route between main/play/settings/debug menus
- *
- * this file DOES NOT:
- * - draw raw gui primitives itself
- */
-
 #include "gui-main.h"
 #include "menus/main-menu.h"
 #include "menus/play-menu.h"
+#include "menus/online-menu.h"
+#include "menus/practice-menu.h"
 #include "menus/settings-menu.h"
 #include "menus/debug-menu.h"
 #include "menus/duel-config-menu.h"
@@ -36,10 +24,27 @@ enum GuiMenuState
     GUI_MENU_DUEL_CONFIG,
     GUI_MENU_SERVER_INFO,
     GUI_MENU_SIGN_IN,
-    GUI_MENU_HELP
+    GUI_MENU_HELP,
+    GUI_MENU_PLAY,
+    GUI_MENU_PRACTICE
 };
 
 static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
+
+static const char* layoutFileForMenu(GuiMenuState state)
+{
+    switch (state) {
+        case GUI_MENU_MAIN:         return "config/gui/main-menu.json";
+        case GUI_MENU_SERVERS:      return "config/gui/play-menu.json";
+        case GUI_MENU_SETTINGS:     return "config/gui/settings-menu.json";
+        case GUI_MENU_DUEL_CONFIG:  return "config/gui/duel-config-menu.json";
+        case GUI_MENU_SANDBOX_MAPS: return "config/gui/sandbox-map-menu.json";
+        case GUI_MENU_SIGN_IN:      return "config/gui/sign-in-menu.json";
+        case GUI_MENU_HELP:         return "config/gui/help-menu.json";
+        case GUI_MENU_SERVER_INFO:  return "config/gui/server-info-menu.json";
+    }
+    return "config/gui/main-menu.json";
+}
 
 static DuelConfigResult gPendingDuelConfig{};
 static bool gServerRunning = false;
@@ -61,10 +66,12 @@ void reportSandboxMapLoadResult(const std::string& message, bool success)
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
-    // Poll for layout file changes (hot reload)
     GuiLayoutManager::instance().pollReload();
 
     uiBeginFrame(win, "menu");
+
+    // Tell the GUI editor which layout file is active for this menu
+    GuiEditor::instance().setActiveLayout(layoutFileForMenu(gGuiMenuState));
 
     switch (gGuiMenuState)
     {
@@ -74,26 +81,59 @@ void guiMain(GLFWwindow* win, GameState& state)
 
             if (r.goPlay)
             {
-                playMenuSetActive(true);
-                gGuiMenuState = GUI_MENU_SERVERS;
+                gGuiMenuState = GUI_MENU_PLAY;
             }
             else if (r.goSettings)
             {
                 gGuiMenuState = GUI_MENU_SETTINGS;
             }
-            else if (r.goSignIn)
+            else if (r.goReplays)
             {
-                signInMenuSetActive(true);
-                gGuiMenuState = GUI_MENU_SIGN_IN;
+                printf("[MAIN MENU] Replays menu not yet implemented\n");
             }
-            else if (r.startSandbox)
+            else if (r.goExit)
+            {
+                glfwSetWindowShouldClose(win, GLFW_TRUE);
+            }
+            break;
+        }
+
+        case GUI_MENU_PLAY:
+        {
+            PlayMenuResult r = drawPlayMenu(win);
+
+            if (r.goDuels)
+            {
+                gGuiMenuState = GUI_MENU_DUEL_CONFIG;
+            }
+            else if (r.goOnline)
+            {
+                onlineMenuSetActive(true);
+                gGuiMenuState = GUI_MENU_SERVERS;
+            }
+            else if (r.goPractice)
+            {
+                gGuiMenuState = GUI_MENU_PRACTICE;
+            }
+            else if (r.goBack)
+            {
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            break;
+        }
+
+        case GUI_MENU_PRACTICE:
+        {
+            PracticeMenuResult r = drawPracticeMenu(win);
+
+            if (r.goSandbox)
             {
                 sandboxMapMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_SANDBOX_MAPS;
             }
-            else if (r.goHelp)
+            else if (r.goBack)
             {
-                gGuiMenuState = GUI_MENU_HELP;
+                gGuiMenuState = GUI_MENU_PLAY;
             }
             break;
         }
@@ -111,7 +151,7 @@ void guiMain(GLFWwindow* win, GameState& state)
             else if (r.goBack)
             {
                 sandboxMapMenuSetActive(false);
-                gGuiMenuState = GUI_MENU_MAIN;
+                gGuiMenuState = GUI_MENU_PRACTICE;
             }
             break;
         }
@@ -129,23 +169,18 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_SERVERS:
         {
-            PlayMenuResult r = drawPlayMenu(win);
+            OnlineMenuResult r = drawOnlineMenu(win);
             if (r.connectToServer)
             {
                 gPendingConnect.shouldConnect = true;
                 gPendingConnect.address = r.connectAddress;
-                playMenuSetActive(false);
+                onlineMenuSetActive(false);
                 state = GAME_PLAYING;
-            }
-            else if (r.startDuel)
-            {
-                playMenuSetActive(false);
-                gGuiMenuState = GUI_MENU_DUEL_CONFIG;
             }
             else if (r.goBack)
             {
-                playMenuSetActive(false);
-                gGuiMenuState = GUI_MENU_MAIN;
+                onlineMenuSetActive(false);
+                gGuiMenuState = GUI_MENU_PLAY;
             }
             break;
         }
@@ -159,8 +194,7 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.goBack)
             {
-                playMenuSetActive(true);
-                gGuiMenuState = GUI_MENU_SERVERS;
+                gGuiMenuState = GUI_MENU_PLAY;
             }
             break;
         }
@@ -205,6 +239,5 @@ void guiMain(GLFWwindow* win, GameState& state)
     uiRenderFrameDebugOverlay(win, "MENU", false);
     uiEndFrame();
 
-    // GUI editor overlay (renders after the menu UI)
     GuiEditor::instance().update(win);
 }

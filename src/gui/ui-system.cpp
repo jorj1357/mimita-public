@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glad/glad.h>
@@ -36,6 +37,9 @@ int gFrame = 0;
 int gDrawCalls = 0;
 int gWidgets = 0;
 std::vector<std::string> gWarnings;
+
+// Widget tracking for GUI editor
+std::vector<UITrackedWidget> gTrackedWidgets;
 
 bool uiCanPlayUISound() {
     if (!gWindow) return false;
@@ -275,6 +279,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     ++gFrame;
     gDrawCalls = 0;
     gWidgets = 0;
+    gTrackedWidgets.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
 
@@ -320,6 +325,11 @@ void uiSetDebug(bool enabled) { gDebug = enabled; }
 void uiSetEditMode(bool enabled) { gUiEditMode = enabled; }
 bool uiEditModeEnabled() { return gUiEditMode; }
 bool uiDebugEnabled() { return gDebug; }
+
+const std::vector<UITrackedWidget>& uiGetTrackedWidgets()
+{
+    return gTrackedWidgets;
+}
 
 void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName)
 {
@@ -541,7 +551,7 @@ void uiDrawWarning(const char* text, float x, float y)
     uiDrawText(text, x, y, 0.34f, {1.0f, 1.0f, 0.1f, 1.0f});
 }
 
-UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color)
+UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color, const char* id)
 {
     ++gWidgets;
     double mx = 0.0, my = 0.0;
@@ -552,23 +562,25 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     // In edit mode, buttons never fire — the editor consumes all clicks
     s.clicked = !gUiEditMode && s.hovered && gMouseClickEdge;
 
-    static const char* lastHoveredText = nullptr;
-    static bool wasHovered = false;
+    static std::unordered_map<std::string, bool> prevHover;
 
+    const char* key = id ? id : text;
     bool isHoveredNow = s.hovered;
+    bool wasHovered = prevHover[key];
     bool hoverEntered = isHoveredNow && !wasHovered;
     bool hoverExited = !isHoveredNow && wasHovered;
 
-    if (hoverEntered && lastHoveredText != text) {
+    if (hoverEntered) {
         if (uiCanPlayUISound()) {
             playMenuHover();
         }
-        lastHoveredText = text;
-    } else if (hoverExited && lastHoveredText == text) {
-        lastHoveredText = nullptr;
+        printf("[GUI HOVER ENTER] button=%s\n", key ? key : "(null)");
+    }
+    if (hoverExited) {
+        printf("[GUI HOVER EXIT] button=%s\n", key ? key : "(null)");
     }
 
-    wasHovered = isHoveredNow;
+    prevHover[key] = isHoveredNow;
 
     glm::vec4 c = color;
     if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);
@@ -586,6 +598,7 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     // uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {0.02f, 0.02f, 0.025f, 1.0f});
     uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
     debugWidget("BUTTON", text, r, s.hovered, s.pressed);
+    gTrackedWidgets.push_back({key, r, s.hovered, s.pressed});
 
     if (s.clicked)
     {
