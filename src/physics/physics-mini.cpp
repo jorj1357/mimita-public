@@ -138,7 +138,8 @@ static void physicsMainUpdate_Internal(
     doAirDash(p, wishMoveXY, jumpPressed, movementPressed, !groundedThisFrame, dt);
 
     // down dash: Q key, always works regardless of grounded state
-    doDownDash(p, downDashPressed, dt);
+    // 6 14 2026 testing not havingthis at all 
+    // doDownDash(p, downDashPressed, dt);
 
     // jump AFTER grounded so we actually know it work
     doJump(p, jumpHeld, dt);
