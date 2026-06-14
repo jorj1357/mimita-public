@@ -1,5 +1,3 @@
-// C:\important\mimita-priv-v8\src\render\render-world.cpp
-
 #include "render-world.h"
 
 #include <cstdio>
@@ -15,27 +13,12 @@
 #include "renderer/renderer.h"
 #include "world/world.h"
 #include "world/texture-store.h"
+#include "render/lighting-config.h"
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
 namespace {
-
-// Easy lighting tuning.
-// Shader expects these as uniforms.
-glm::vec3 gLightDir = glm::normalize(glm::vec3(-0.35f, -0.10f, -1.0f));
-
-float gAmbientStrength   = 0.72f;
-float gDiffuseStrength   = 0.45f;
-
-float gEdgeDarkness      = 0.10f;
-float gEdgeWidth         = 1.20f;
-
-float gAODarkness        = 0.05f;
-float gAOContrast        = 0.80f;
-
-float gTextureContrast   = 1.02f;
-float gTextureBrightness = 1.35f;
 
 GLuint gVao = 0;
 GLuint gVbo = 0;
@@ -49,126 +32,64 @@ GLint uniformLoc(GLuint shader, const char* name)
     return glGetUniformLocation(shader, name);
 }
 
-void setMat4(GLuint shader, const char* name, const glm::mat4& m)
-{
-    GLint loc = uniformLoc(shader, name);
-    if (loc != -1)
-        glUniformMatrix4fv(loc, 1, GL_FALSE, &m[0][0]);
-}
-
 void setInt(GLuint shader, const char* name, int v)
 {
-    GLint loc = uniformLoc(shader, name);
-    if (loc != -1)
-        glUniform1i(loc, v);
+    glUniform1i(uniformLoc(shader, name), v);
 }
 
 void setFloat(GLuint shader, const char* name, float v)
 {
-    GLint loc = uniformLoc(shader, name);
-    if (loc != -1)
-        glUniform1f(loc, v);
+    glUniform1f(uniformLoc(shader, name), v);
 }
 
-void setVec3(GLuint shader, const char* name, const glm::vec3& v)
+void setVec3(GLuint shader, const char* name, glm::vec3 v)
 {
-    GLint loc = uniformLoc(shader, name);
-    if (loc != -1)
-        glUniform3fv(loc, 1, &v.x);
+    glUniform3f(uniformLoc(shader, name), v.x, v.y, v.z);
 }
 
-bool batchLooksValid(const Mesh& mesh, const Mesh::Batch& batch)
+void setMat4(GLuint shader, const char* name, const glm::mat4& m)
 {
-    if (batch.count == 0)
-        return false;
-
-    if (batch.first >= mesh.verts.size())
-        return false;
-
-    if (batch.first + batch.count > mesh.verts.size())
-        return false;
-
-    if (batch.first > (size_t)std::numeric_limits<GLint>::max())
-        return false;
-
-    if (batch.count > (size_t)std::numeric_limits<GLsizei>::max())
-        return false;
-
-    return true;
+    glUniformMatrix4fv(uniformLoc(shader, name), 1, GL_FALSE, &m[0][0]);
 }
+
+struct MeshVertex
+{
+    float x, y, z;
+    float u, v;
+    float nx, ny, nz;
+};
 
 void uploadMeshIfNeeded(const World& world)
 {
-    const Mesh& mesh = world.mesh;
-    if (gVao && gBuiltVertCount == mesh.verts.size() && gBuiltBatchCount == mesh.batches.size())
-    {
-        if (gBuiltRevision == world.renderRevision)
-            return;
+    const WorldMesh& mesh = world.mesh;
+    if (mesh.verts.empty()) return;
+
+    if (mesh.verts.size() == gBuiltVertCount &&
+        mesh.batches.size() == gBuiltBatchCount &&
+        world.renderRevision == gBuiltRevision)
+        return;
+
+    if (!gVao) {
+        glGenVertexArrays(1, &gVao);
+        glGenBuffers(1, &gVbo);
     }
 
-    printf("[RENDER] uploading GLB world mesh verts=%zu triangles=%zu batches=%zu\n",
-           mesh.verts.size(),
-           mesh.verts.size() / 3,
-           mesh.batches.size());
+    glBindVertexArray(gVao);
+    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 mesh.verts.size() * sizeof(MeshVertex),
+                 mesh.verts.data(),
+                 GL_STATIC_DRAW);
 
-    MIMITA_GL_CLEAR_STAGE("uploadMeshIfNeeded");
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, x));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, u));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, nx));
 
-    if (!gVao)
-        MIMITA_GL_CALL(glGenVertexArrays(1, &gVao));
-
-    if (!gVbo)
-        MIMITA_GL_CALL(glGenBuffers(1, &gVbo));
-
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-
-    MIMITA_GL_CALL(glBufferData(
-        GL_ARRAY_BUFFER,
-        (GLsizeiptr)(mesh.verts.size() * sizeof(Vertex)),
-        mesh.verts.data(),
-        GL_STATIC_DRAW
-    ));
-
-    // Must match shaders/basic.vert:
-    // layout(location = 0) in vec3 aPos;
-    // layout(location = 1) in vec2 aUV;
-    // layout(location = 2) in vec3 aNormal;
-
-    // position
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(Vertex),
-        (void*)offsetof(Vertex, pos)
-    ));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-
-    // UV
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        1,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(Vertex),
-        (void*)offsetof(Vertex, uv)
-    ));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-
-    // normal
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        2,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(Vertex),
-        (void*)offsetof(Vertex, normal)
-    ));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
-
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
-    MIMITA_GL_CALL(glBindVertexArray(0));
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 
     gBuiltVertCount = mesh.verts.size();
     gBuiltBatchCount = mesh.batches.size();
@@ -179,19 +100,21 @@ void uploadMeshIfNeeded(const World& world)
 
 void setUniforms(GLuint shader)
 {
+    const auto& cfg = LightingConfig::instance();
+
     setInt(shader, "uUseColor", 0);
     setInt(shader, "uTex", 0);
     setInt(shader, "uDebugView", DebugVis::shaderDebugView());
 
-    setVec3(shader, "uLightDir", gLightDir);
-    setFloat(shader, "uAmbientStrength", gAmbientStrength);
-    setFloat(shader, "uDiffuseStrength", gDiffuseStrength);
-    setFloat(shader, "uEdgeDarkness", gEdgeDarkness);
-    setFloat(shader, "uEdgeWidth", gEdgeWidth);
-    setFloat(shader, "uAODarkness", gAODarkness);
-    setFloat(shader, "uAOContrast", gAOContrast);
-    setFloat(shader, "uTextureContrast", gTextureContrast);
-    setFloat(shader, "uTextureBrightness", gTextureBrightness);
+    setVec3(shader, "uLightDir", cfg.lightDir());
+    setFloat(shader, "uAmbientStrength", cfg.ambientStrength());
+    setFloat(shader, "uDiffuseStrength", cfg.diffuseStrength());
+    setFloat(shader, "uEdgeDarkness", cfg.edgeDarkness());
+    setFloat(shader, "uEdgeWidth", cfg.edgeWidth());
+    setFloat(shader, "uAODarkness", cfg.aoDarkness());
+    setFloat(shader, "uAOContrast", cfg.aoContrast());
+    setFloat(shader, "uTextureContrast", cfg.textureContrast());
+    setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
 }
 
 } // namespace
@@ -228,44 +151,25 @@ void renderWorld(const World& world, const Camera& cam)
     setMat4(shader, "model", model);
     setMat4(shader, "view", view);
     setMat4(shader, "projection", proj);
+
     setUniforms(shader);
 
-    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
+    glBindVertexArray(gVao);
 
-    if (!world.mesh.batches.empty())
+    const WorldMesh& mesh = world.mesh;
+    GLuint texId = gTextures.getTexture();
+
+    for (const auto& batch : mesh.batches)
     {
-        for (const Mesh::Batch& batch : world.mesh.batches)
-        {
-            if (!batchLooksValid(world.mesh, batch))
-            {
-                printf("[RENDER WARNING] bad batch skipped first=%zu count=%zu verts=%zu\n",
-                       batch.first,
-                       batch.count,
-                       world.mesh.verts.size());
-                continue;
-            }
+        if (texId) {
+            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, texId));
+        }
 
-            GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
-
-            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
-        }
-    }
-    else
-    {
-        if (world.mesh.verts.size() <= (size_t)std::numeric_limits<GLsizei>::max())
-        {
-            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("default")));
-            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)world.mesh.verts.size()));
-        }
-        else
-        {
-            printf("[RENDER WARNING] world mesh too large for glDrawArrays verts=%zu\n", world.mesh.verts.size());
-        }
+        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.start, (GLsizei)batch.count));
     }
 
-    MIMITA_GL_CALL(glBindVertexArray(0));
+    glBindVertexArray(0);
+    MIMITA_GL_CALL(glUseProgram(0));
 
-    MIMITA_GL_CHECK("renderWorld complete");
+    MIMITA_GL_CHECK("renderWorld");
 }
