@@ -16,7 +16,6 @@
  */
 
 #include "gui-button.h"
-#include "gui-scale.h"
 #include "gui/ui-system.h"
 #include <cstdio>
 
@@ -31,13 +30,8 @@ bool guiButton(
     const char* id
 )
 {
-    GuiScale s = guiGetScale(win);
-
-    x *= s.scaleX;
-    y *= s.scaleY;
-    w *= s.scaleX;
-    h *= s.scaleY;
-
+    // Input is in design coordinates (1920x1080 space).
+    // uiButton() handles the design→screen conversion internally.
     UIButtonState state = uiButton(win, text, {x, y, w, h}, color, id);
     return state.clicked;
 }

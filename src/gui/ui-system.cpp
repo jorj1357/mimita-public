@@ -13,6 +13,7 @@
 #include "debug/gl-debug.h"
 #include "world/texture-store.h"
 #include "gui/gui-media.h"
+#include "gui-coord.h"
 
 // yay sounds 6 4 2026 
 #include "audio/audio.h"
@@ -48,6 +49,9 @@ static std::string gPrevHoverOwnerKey;
 
 // Overlap debug visualization
 static bool gOverlapDebugEnabled = false;
+
+// Coordinate debug visualization
+static bool gCoordDebug = false;
 
 bool uiCanPlayUISound() {
     if (!gWindow) return false;
@@ -284,6 +288,12 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     if (gFbW <= 0) gFbW = 1;
     if (gFbH <= 0) gFbH = 1;
 
+    {
+        int winW = 1, winH = 1;
+        glfwGetWindowSize(win, &winW, &winH);
+        GuiCoordinateSystem::instance().update(gFbW, gFbH, winW, winH);
+    }
+
     ++gFrame;
     gDrawCalls = 0;
     gWidgets = 0;
@@ -360,8 +370,66 @@ void uiEndFrame()
         gPrevHoverOwnerKey = gHoverOwnerKey;
     }
 
-    // Overlap debug visualization (drawn before GL state cleanup)
+    // Overlap debug visualization
     drawOverlapDebug();
+
+    // Coordinate debug overlay
+    if (gCoordDebug && !gTrackedWidgets.empty())
+    {
+        GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+        double mx, my;
+        glfwGetCursorPos(gWindow, &mx, &my);
+        double fbx, fby;
+        cs.cursorWindowToScreen(mx, my, fbx, fby);
+
+        // Find hovered widget
+        const UITrackedWidget* hovered = nullptr;
+        for (const auto& w : gTrackedWidgets) {
+            UIRect fbR = cs.designToScreen(w.rect);
+            if (pointIn(fbx, fby, fbR)) {
+                hovered = &w;
+            }
+        }
+
+        float x = uiScreenW() - 380.0f;
+        float y = 80.0f;
+        float lineH = 20.0f;
+
+        uiDrawRect({x - 8, y - 8, 380, hovered ? lineH * 7 + 16 : lineH * 4 + 16},
+                   {0.05f, 0.05f, 0.1f, 0.85f}, "coord-debug-bg");
+
+        const UITrackedWidget* sel = hovered ? hovered : (!gTrackedWidgets.empty() ? &gTrackedWidgets.back() : nullptr);
+
+        if (sel) {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Widget: %s", sel->id.c_str());
+            uiDrawText(buf, x, y, 0.26f, {0.4f, 1.0f, 0.6f, 1.0f}); y += lineH;
+            snprintf(buf, sizeof(buf), "Design: %.0f, %.0f  %.0fx%.0f",
+                     sel->rect.x, sel->rect.y, sel->rect.w, sel->rect.h);
+            uiDrawText(buf, x, y, 0.26f, {0.6f, 0.8f, 1.0f, 1.0f}); y += lineH;
+            UIRect fb = cs.designToScreen(sel->rect);
+            snprintf(buf, sizeof(buf), "Screen: %.0f, %.0f  %.0fx%.0f",
+                     fb.x, fb.y, fb.w, fb.h);
+            uiDrawText(buf, x, y, 0.26f, {0.6f, 0.8f, 1.0f, 1.0f}); y += lineH;
+            snprintf(buf, sizeof(buf), "Mouse: %.0f, %.0f", fbx, fby);
+            uiDrawText(buf, x, y, 0.26f, {0.9f, 0.9f, 0.5f, 1.0f}); y += lineH;
+            snprintf(buf, sizeof(buf), "Hovered: %s", hovered ? "yes" : "no");
+            uiDrawText(buf, x, y, 0.26f, hovered ? glm::vec4(0.3f,1.0f,0.3f,1) : glm::vec4(1.0f,0.3f,0.3f,1)); y += lineH;
+            if (hovered) {
+                float dx = (float)fbx - fb.x;
+                float dy = (float)fby - fb.y;
+                snprintf(buf, sizeof(buf), "Rel: %.0f, %.0f  (%.1f%%, %.1f%%)",
+                         dx, dy, dx / fb.w * 100.0f, dy / fb.h * 100.0f);
+                uiDrawText(buf, x, y, 0.26f, {0.8f, 0.9f, 1.0f, 1.0f}); y += lineH;
+            }
+        } else {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "No widgets this frame");
+            uiDrawText(buf, x, y, 0.26f, {1.0f, 0.5f, 0.3f, 1.0f}); y += lineH;
+            snprintf(buf, sizeof(buf), "Mouse: %.0f, %.0f", fbx, fby);
+            uiDrawText(buf, x, y, 0.26f, {0.9f, 0.9f, 0.5f, 1.0f}); y += lineH;
+        }
+    }
 
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
@@ -391,6 +459,9 @@ bool uiEditModeEnabled() { return gUiEditMode; }
 bool uiDebugEnabled() { return gDebug; }
 void uiSetOverlapDebug(bool enabled) { gOverlapDebugEnabled = enabled; }
 bool uiOverlapDebugEnabled() { return gOverlapDebugEnabled; }
+
+void uiSetCoordDebug(bool enabled) { gCoordDebug = enabled; }
+bool uiCoordDebugEnabled() { return gCoordDebug; }
 
 const std::vector<UITrackedWidget>& uiGetTrackedWidgets()
 {
@@ -620,10 +691,20 @@ void uiDrawWarning(const char* text, float x, float y)
 UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color, const char* id)
 {
     ++gWidgets;
+
+    // Input 'r' is in design coordinates (1920x1080).
+    // Convert to screen (framebuffer) coordinates for rendering and hit-testing.
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    UIRect fbR = cs.designToScreen(r);
+
     double mx = 0.0, my = 0.0;
     glfwGetCursorPos(win, &mx, &my);
+    // Convert cursor from window coordinates to screen (framebuffer) coordinates.
+    double fbx = mx, fby = my;
+    cs.cursorWindowToScreen(mx, my, fbx, fby);
+
     UIButtonState s;
-    const bool rawHovered = pointIn(mx, my, r);
+    const bool rawHovered = pointIn(fbx, fby, fbR);
     s.pressed = rawHovered && gMouseDown;
     // In edit mode, buttons never fire — the editor consumes all clicks
     s.clicked = !gUiEditMode && rawHovered && gMouseClickEdge;
@@ -639,19 +720,14 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     glm::vec4 c = color;
     if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);
     if (s.pressed) c *= glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
-    uiDrawRect(r, c, text);
-    uiDrawRectOutline(r, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
+    uiDrawRect(fbR, c, text);
+    uiDrawRectOutline(fbR, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
 
-    // float textScale = std::clamp(r.h / 110.0f, 0.38f, 0.62f);
-    float textScale = std::clamp(r.h / 110.0f, 0.38f, 1.2f);
-    // float textScale = 1.0f;
-    // float textScale = 0.5f;
-    // float textScale = 0.1f;
-    // float textW = (float)std::strlen(text) * 24.0f * textScale;
+    float textScale = std::clamp(fbR.h / 110.0f, 0.38f, 1.2f);
     float textW = uiMeasureText(text, textScale);
-    // uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {0.02f, 0.02f, 0.025f, 1.0f});
-    uiDrawText(text, r.x + (r.w - textW) * 0.5f, r.y + r.h * 0.34f, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
-    debugWidget("BUTTON", text, r, s.hovered, s.pressed);
+    uiDrawText(text, fbR.x + (fbR.w - textW) * 0.5f, fbR.y + fbR.h * 0.34f, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
+    debugWidget("BUTTON", text, fbR, s.hovered, s.pressed);
+    // Track widget in design coordinates (the layout stores design coords)
     gTrackedWidgets.push_back({key, r, s.hovered, s.pressed});
 
     if (s.clicked)
@@ -677,22 +753,29 @@ bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value)
 bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float minValue, float maxValue)
 {
     ++gWidgets;
+
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    UIRect fbR = cs.designToScreen(r);
+
     double mx = 0.0, my = 0.0;
     glfwGetCursorPos(win, &mx, &my);
-    bool hovered = pointIn(mx, my, r);
+    double fbx = mx, fby = my;
+    cs.cursorWindowToScreen(mx, my, fbx, fby);
+
+    bool hovered = pointIn(fbx, fby, fbR);
     if (!gUiEditMode && hovered && gMouseDown) {
-        float t = std::clamp((float(mx) - r.x) / r.w, 0.0f, 1.0f);
+        float t = std::clamp((float(fbx) - fbR.x) / fbR.w, 0.0f, 1.0f);
         *value = minValue + t * (maxValue - minValue);
     }
 
     float t = (*value - minValue) / (maxValue - minValue);
-    uiDrawRect(r, {0.12f,0.14f,0.18f,1}, "slider-track");
-    uiDrawRect({r.x, r.y, r.w * t, r.h}, {0.25f,0.65f,0.95f,1}, "slider-fill");
-    uiDrawRectOutline(r, {0.9f,0.9f,0.9f,0.9f}, "slider-border");
+    uiDrawRect(fbR, {0.12f,0.14f,0.18f,1}, "slider-track");
+    uiDrawRect({fbR.x, fbR.y, fbR.w * t, fbR.h}, {0.25f,0.65f,0.95f,1}, "slider-fill");
+    uiDrawRectOutline(fbR, {0.9f,0.9f,0.9f,0.9f}, "slider-border");
     char buf[128];
     snprintf(buf, sizeof(buf), "%s %.1f", label, *value);
-    uiDrawText(buf, r.x, r.y - 28.0f, 0.42f, {0.88f,0.9f,0.94f,1});
-    debugWidget("SLIDER", label, r, hovered, hovered && gMouseDown);
+    uiDrawText(buf, fbR.x, fbR.y - 28.0f, 0.42f, {0.88f,0.9f,0.94f,1});
+    debugWidget("SLIDER", label, fbR, hovered, hovered && gMouseDown);
     return !gUiEditMode && hovered && gMouseDown;
 }
 
@@ -706,22 +789,22 @@ void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)
 
 float uiScreenW()
 {
-    return (float)gFbW;
+    return GuiCoordinateSystem::instance().screenW();
 }
 
 float uiScreenH()
 {
-    return (float)gFbH;
+    return GuiCoordinateSystem::instance().screenH();
 }
 
 float uiScaleX(float px)
 {
-    return px * ((float)gFbW / 1920.0f);
+    return GuiCoordinateSystem::instance().designToScreenX(px);
 }
 
 float uiScaleY(float px)
 {
-    return px * ((float)gFbH / 1080.0f);
+    return GuiCoordinateSystem::instance().designToScreenY(px);
 }
 
 UIRect uiCentered(float w, float h, float y)

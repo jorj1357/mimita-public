@@ -11,6 +11,7 @@
 #include "../ui-system.h"
 #include "camera.h"
 #include "config/player-settings.h"
+#include "audio/music-manager.h"
 #include "renderer/renderer.h"
 
 #include <cstdio>
@@ -166,6 +167,30 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         0.0f,
         1.0f
     )) SavePlayerSettings();
+
+    if (uiSlider(
+        win,
+        "MUSIC VOLUME",
+        uiRow(leftX, y, sliderW, uiScaleY(28), gap),
+        &settings.musicVolume,
+        0.0f,
+        1.0f
+    )) {
+        MusicManager::instance().setVolume(settings.musicVolume);
+        SavePlayerSettings();
+    }
+
+    y += uiScaleY(8);
+
+    if (uiCheckbox(
+        win,
+        "MUTE MUSIC",
+        uiRow(leftX, y, uiScaleX(96), uiScaleY(42), gap),
+        &settings.musicMuted
+    )) {
+        MusicManager::instance().setMuted(settings.musicMuted);
+        SavePlayerSettings();
+    }
 
     if (uiSlider(
         win,

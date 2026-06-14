@@ -3,39 +3,39 @@
   "version": 1,
   "elements": [
     {
-      "id": "backButton",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50
-    },
-    {
       "id": "Start Server",
-      "x": -450.0,
+      "x": 510.0,
       "y": 420.0,
       "width": 195.0,
       "height": 52.0
     },
     {
       "id": "Stop Server",
-      "x": -450.0,
+      "x": 510.0,
       "y": 420.0,
       "width": 195.0,
       "height": 52.0
     },
     {
       "id": "Join Server",
-      "x": -235.0,
+      "x": 725.0,
       "y": 420.0,
       "width": 195.0,
       "height": 52.0
     },
     {
       "id": "Connect",
-      "x": 30.0,
+      "x": 990.0,
       "y": 310.0,
       "width": 420.0,
       "height": 58.0
+    },
+    {
+      "id": "backButton",
+      "x": 40.0,
+      "y": 40.0,
+      "width": 120.0,
+      "height": 50.0
     }
   ]
 }

@@ -3,6 +3,7 @@ project(mimita_hot_reload LANGUAGES CXX)
 
 add_library(mimita-game SHARED
     src/effects/effect-part.cpp
+    src/gui/gui-coord.cpp
     src/replay/replay-factory.cpp
 )
 

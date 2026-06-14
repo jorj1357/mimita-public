@@ -3,32 +3,32 @@
   "version": 1,
   "elements": [
     {
-      "id": "backButton",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50
-    },
-    {
       "id": "DUELS",
-      "x": -160.0,
-      "y": 155.0,
+      "x": 800.0,
+      "y": 470.0,
       "width": 320.0,
       "height": 68.0
     },
     {
       "id": "ONLINE / COMMUNITY SERVERS",
-      "x": -160.0,
-      "y": 300.0,
+      "x": 800.0,
+      "y": 615.0,
       "width": 320.0,
       "height": 58.0
     },
     {
       "id": "PRACTICE",
-      "x": -160.0,
-      "y": 408.0,
+      "x": 800.0,
+      "y": 723.0,
       "width": 320.0,
       "height": 58.0
+    },
+    {
+      "id": "backButton",
+      "x": 40.0,
+      "y": 40.0,
+      "width": 120.0,
+      "height": 50.0
     }
   ]
 }

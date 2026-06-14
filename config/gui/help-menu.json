@@ -4,10 +4,10 @@
   "elements": [
     {
       "id": "backButton",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50
+      "x": 40.0,
+      "y": 40.0,
+      "width": 120.0,
+      "height": 50.0
     }
   ]
 }

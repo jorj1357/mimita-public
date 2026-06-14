@@ -3,25 +3,25 @@
   "version": 1,
   "elements": [
     {
-      "id": "backButton",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50
-    },
-    {
       "id": "connect",
-      "x": -125.0,
+      "x": 835.0,
       "y": 400.0,
       "width": 250.0,
       "height": 60.0
     },
     {
       "id": "startServer",
-      "x": -125.0,
+      "x": 835.0,
       "y": 400.0,
       "width": 250.0,
       "height": 60.0
+    },
+    {
+      "id": "backButton",
+      "x": 40.0,
+      "y": 40.0,
+      "width": 120.0,
+      "height": 50.0
     }
   ]
 }

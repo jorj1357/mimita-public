@@ -19,8 +19,6 @@ static bool launchServerProcess()
     STARTUPINFOA si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
-    // CREATE_NEW_CONSOLE gives the server its own visible terminal window
-    // so the user can see server logs
     char cmd[] = "mimita.exe --server";
     BOOL ok = CreateProcessA(
         nullptr, cmd,
@@ -89,38 +87,35 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
                                     bool serverRunning)
 {
     ServerInfoResult r{};
-
-    int w = 0, h = 0;
-    glfwGetFramebufferSize(win, &w, &h);
-    float cx = w * 0.5f;
+    float fbW = uiScreenW(), fbH = uiScreenH();
     activeAddress = serverAddress;
 
-    uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "server-info-bg");
+    uiDrawRect({0, 0, fbW, fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "server-info-bg");
 
-    guiLabel("Host Server", cx - 80.0f, 140.0f);
+    guiLabel("Host Server", uiScaleX(880.0f), uiScaleY(140.0f));
 
-    uiDrawText("Address:", cx - 200.0f, 240.0f, 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
-    uiDrawRect({cx - 100.0f, 220.0f, 300.0f, 48.0f},
+    uiDrawText("Address:", uiScaleX(760.0f), uiScaleY(240.0f), 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
+    uiDrawRect({uiScaleX(860.0f), uiScaleY(220.0f), uiScaleX(300.0f), uiScaleY(48.0f)},
                {0.12f,0.14f,0.18f,1.0f}, "server-address-input");
-    uiDrawText(serverAddress, cx - 88.0f, 240.0f, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
+    uiDrawText(serverAddress, uiScaleX(872.0f), uiScaleY(240.0f), 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
 
-    uiDrawText("Port: 1357", cx - 200.0f, 280.0f, 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
+    uiDrawText("Port: 1357", uiScaleX(760.0f), uiScaleY(280.0f), 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/server-info-menu.json");
     if (serverRunning) {
-        uiDrawText("Status: Running", cx - 200.0f, 330.0f, 0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
-        uiDrawText("Server terminal is open in background", cx - 200.0f, 365.0f, 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
+        uiDrawText("Status: Running", uiScaleX(760.0f), uiScaleY(330.0f), 0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
+        uiDrawText("Server terminal is open in background", uiScaleX(760.0f), uiScaleY(365.0f), 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
         if (guiButton(win, "Connect",
-            layout.getRectCentered("connect", {cx - 125.0f, 400.0f, 250.0f, 60.0f}, cx, 0),
+            layout.getRectDesign("connect", {835.0f, 400.0f, 250.0f, 60.0f}),
             {0.2f,0.7f,1.0f,1.0f}, "connect"))
             r.connect = true;
     } else {
-        uiDrawText("Status: Not Running", cx - 200.0f, 330.0f, 0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
-        uiDrawText("Click to start a dedicated server", cx - 200.0f, 365.0f, 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
+        uiDrawText("Status: Not Running", uiScaleX(760.0f), uiScaleY(330.0f), 0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
+        uiDrawText("Click to start a dedicated server", uiScaleX(760.0f), uiScaleY(365.0f), 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
         if (guiButton(win, "Start Server",
-            layout.getRectCentered("startServer", {cx - 125.0f, 400.0f, 250.0f, 60.0f}, cx, 0),
+            layout.getRectDesign("startServer", {835.0f, 400.0f, 250.0f, 60.0f}),
             {0.2f,0.8f,0.3f,1.0f}, "startServer"))
         {
             if (launchServerProcess())
@@ -128,7 +123,7 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
         }
     }
 
-    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
+    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;
