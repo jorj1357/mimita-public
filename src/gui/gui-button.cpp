@@ -27,12 +27,10 @@ bool guiButton(
     float y,
     float w,
     float h,
-    glm::vec4 color
+    glm::vec4 color,
+    const char* id
 )
 {
-    if (uiEditModeEnabled())
-        return false;
-
     GuiScale s = guiGetScale(win);
 
     x *= s.scaleX;
@@ -40,6 +38,6 @@ bool guiButton(
     w *= s.scaleX;
     h *= s.scaleY;
 
-    UIButtonState state = uiButton(win, text, {x, y, w, h}, color);
+    UIButtonState state = uiButton(win, text, {x, y, w, h}, color, id);
     return state.clicked;
 }

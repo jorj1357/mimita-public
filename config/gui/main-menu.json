@@ -1,32 +1,11 @@
 {
   "elements": [
     {
-      "height": 44.0,
-      "id": "helpButton",
-      "width": 80.0,
-      "x": -366.0,
-      "y": 300.0
-    },
-    {
       "height": 58.0,
       "id": "playButton",
       "width": 250.0,
       "x": -124.0,
       "y": -24.0
-    },
-    {
-      "height": 44.0,
-      "id": "resetPasswordButton",
-      "width": 160.0,
-      "x": 169.0,
-      "y": 281.0
-    },
-    {
-      "height": 58.0,
-      "id": "sandboxButton",
-      "width": 250.0,
-      "x": -126.0,
-      "y": 61.0
     },
     {
       "height": 58.0,
@@ -36,18 +15,18 @@
       "y": 156.0
     },
     {
-      "height": 44.0,
-      "id": "signInButton",
-      "width": 118.0,
-      "x": 7.0,
-      "y": 285.0
+      "height": 58.0,
+      "id": "replaysButton",
+      "width": 250.0,
+      "x": -124.0,
+      "y": 61.0
     },
     {
-      "height": 44.0,
-      "id": "signUpButton",
-      "width": 118.0,
-      "x": -218.0,
-      "y": 299.0
+      "height": 58.0,
+      "id": "exitButton",
+      "width": 250.0,
+      "x": -124.0,
+      "y": 140.0
     },
     {
       "height": 60.0,
