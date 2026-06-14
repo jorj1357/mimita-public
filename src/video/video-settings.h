@@ -45,6 +45,6 @@ public:
 private:
     VideoSettings() = default;
 
-    int mIndex = RES_1280x720;
+    int mIndex = RES_800x600;
     bool mFullscreen = false;
 };

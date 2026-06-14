@@ -11,6 +11,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/gl-debug.h"
 #include "renderer/renderer.h"
+#include "map/map_common.h"
 #include "world/world.h"
 #include "world/texture-store.h"
 #include "render/lighting-config.h"
@@ -52,16 +53,9 @@ void setMat4(GLuint shader, const char* name, const glm::mat4& m)
     glUniformMatrix4fv(uniformLoc(shader, name), 1, GL_FALSE, &m[0][0]);
 }
 
-struct MeshVertex
-{
-    float x, y, z;
-    float u, v;
-    float nx, ny, nz;
-};
-
 void uploadMeshIfNeeded(const World& world)
 {
-    const WorldMesh& mesh = world.mesh;
+    const Mesh& mesh = world.mesh;
     if (mesh.verts.empty()) return;
 
     if (mesh.verts.size() == gBuiltVertCount &&
@@ -77,16 +71,16 @@ void uploadMeshIfNeeded(const World& world)
     glBindVertexArray(gVao);
     glBindBuffer(GL_ARRAY_BUFFER, gVbo);
     glBufferData(GL_ARRAY_BUFFER,
-                 mesh.verts.size() * sizeof(MeshVertex),
+                 mesh.verts.size() * sizeof(Vertex),
                  mesh.verts.data(),
                  GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, x));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, u));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)offsetof(MeshVertex, nx));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -156,16 +150,15 @@ void renderWorld(const World& world, const Camera& cam)
 
     glBindVertexArray(gVao);
 
-    const WorldMesh& mesh = world.mesh;
-    GLuint texId = gTextures.getTexture();
+    const Mesh& mesh = world.mesh;
 
     for (const auto& batch : mesh.batches)
     {
-        if (texId) {
-            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, texId));
+        if (batch.texture) {
+            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture));
         }
 
-        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.start, (GLsizei)batch.count));
+        MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
     }
 
     glBindVertexArray(0);

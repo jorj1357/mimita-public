@@ -1441,6 +1441,36 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "gui_debug_layout", "Show layout file paths and hot-reload status", "gui_debug_layout",
+        [](const std::vector<std::string>&) {
+            auto& mgr = GuiLayoutManager::instance();
+            Terminal::instance().addLog("[GUI] Layout files in config/gui/:");
+            for (const auto& path : {
+                "config/gui/main-menu.json",
+                "config/gui/play-menu.json",
+                "config/gui/settings-menu.json",
+                "config/gui/sandbox-map-menu.json",
+                "config/gui/duel-config-menu.json",
+                "config/gui/server-info-menu.json",
+                "config/gui/sign-in-menu.json",
+                "config/gui/help-menu.json",
+                "config/gui/community-menu.json",
+                "config/gui/practice-menu.json",
+                "config/gui/replay-menu.json",
+                "config/gui/graphics-menu.json",
+                "config/gui/debug-menu.json",
+                "config/gui/duel-match-end.json"
+            }) {
+                auto& layout = mgr.getLayout(path);
+                int count = (int)layout.elementIds().size();
+                Terminal::instance().addLog(std::string("  ") + path + " (" +
+                    std::to_string(count) + " elements)");
+            }
+            Terminal::instance().addLog("[GUI] Hot reload: active (pollReload called each frame)");
+            Terminal::instance().addLog("[GUI] Edit a JSON file, Ctrl+S, changes apply immediately");
+        }
+    });
+    Terminal::instance().registerCommand({
         "replay_test",
         "Record a deterministic gameplay replay and validate it in Blender",
         "replay_test",
@@ -1563,6 +1593,21 @@ int main(int argc, char** argv)
         "music_info", "Show current track info", "music_info",
         [](const std::vector<std::string>&) {
             Terminal::instance().addLog("[MUSIC] " + MusicManager::instance().currentTrackInfo());
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_debug_ui", "Toggle music widget debug overlay", "music_debug_ui [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                MusicManager::instance().setWidgetDebug(!MusicManager::instance().widgetDebug());
+            } else {
+                MusicManager::instance().setWidgetDebug(args[0] == "1");
+            }
+            const bool on = MusicManager::instance().widgetDebug();
+            Terminal::instance().addLog(on
+                ? "[MUSIC] Widget debug ON"
+                : "[MUSIC] Widget debug OFF");
         },
         "2026-06-14", CommandCategory::Debug
     });
