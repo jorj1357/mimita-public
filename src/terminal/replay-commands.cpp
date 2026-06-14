@@ -7,7 +7,7 @@
 #include <cstdlib>
 
 #include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
+#include <glm/glms.hpp>
 
 #include "devtools/terminal.h"
 #include "config/player-settings.h"
