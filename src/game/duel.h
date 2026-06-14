@@ -95,6 +95,7 @@ public:
 
     // Final kill replay state
     bool finalKillReplayActive = false;
+    bool finalKillReplayLoaded = false;
     std::string finalKillReplayPath;
     float finalKillReplayTime = 0.0f;
     float finalKillSlowMoFactor = 1.0f;
