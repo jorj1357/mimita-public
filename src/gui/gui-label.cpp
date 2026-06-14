@@ -12,19 +12,6 @@
  */
 
 /**
- * mar 8 2026 todo
- * split this into like
- * another file that renders text
- * or does fonts
- * just dont 
- * dont do fonts all in this file 
- * need a specific file that exposes
- * doFont(args)
- * and all we do here
- * is just call it 
- */
-
-/**
  * mar 14 2026
  * gui-label.cpp should only render text, not load fonts.
  */
