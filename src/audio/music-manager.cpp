@@ -10,6 +10,7 @@
 #include "miniaudio.h"
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
+#include "gui/gui-coord.h"
 
 using json = nlohmann::json;
 
@@ -196,6 +197,7 @@ void MusicManager::shutdown()
 void MusicManager::update(float dt)
 {
     if (!mInitialized) return;
+    mWidgetDt = dt;
 
     if (mCurrentSound && ma_sound_at_end(mCurrentSound)) {
         if (mMode == Mode::Ingame) {
@@ -379,83 +381,128 @@ void MusicManager::drawNowPlayingPopup()
 
 void MusicManager::drawMusicWidget()
 {
-    float sw = uiScreenW();
-    float sh = uiScreenH();
+    GLFWwindow* win = glfwGetCurrentContext();
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
 
-    float iconSize = 36.0f;
-    float ix = sw - iconSize - 10.0f;
-    float iy = sh - iconSize - 10.0f;
+    // Get cursor in design coordinates
+    double mx, my;
+    glfwGetCursorPos(win, &mx, &my);
+    double fbx, fby;
+    cs.cursorWindowToScreen(mx, my, fbx, fby);
+    float cdx = cs.screenToDesignX((float)fbx);
+    float cdy = cs.screenToDesignY((float)fby);
 
-    UIRect iconRect = {ix, iy, iconSize, iconSize};
+    // Widget layout in design coordinates (1920x1080)
+    const float iconS = 36.0f;
+    const float iconX = 1920.0f - iconS - 10.0f;
+    const float iconY = 1080.0f - iconS - 10.0f;
+    const UIRect iconRect = {iconX, iconY, iconS, iconS};
+
+    const float panelW = 300.0f;
+    const float panelH = 210.0f;
+    const float panelX = iconX - (panelW - iconS);  // align right edges
+    const float panelY = iconY - panelH - 6.0f;
+    const UIRect panelRect = {panelX, panelY, panelW, panelH};
+
+    // Hover detection
+    bool hoverIcon = cdx >= iconRect.x && cdx <= iconRect.x + iconRect.w &&
+                     cdy >= iconRect.y && cdy <= iconRect.y + iconRect.h;
+    bool hoverPanel = cdx >= panelRect.x && cdx <= panelRect.x + panelRect.w &&
+                      cdy >= panelRect.y && cdy <= panelRect.y + panelRect.h;
+    bool hoverAny = hoverIcon || hoverPanel;
+
+    // Update open/close state (called each frame from guiMain -> drawAllOverlay)
+    // Reset close timer when hovering any part of the widget
+    if (hoverAny) {
+        mWidgetCloseTimer = 2.0f;
+        mWidgetPanelOpen = true;
+    } else if (mWidgetPanelOpen) {
+        mWidgetCloseTimer -= mWidgetDt;
+        if (mWidgetCloseTimer <= 0.0f) {
+            mWidgetPanelOpen = false;
+            mWidgetCloseTimer = 0.0f;
+        }
+    }
+
+    // Draw icon (always visible)
     uiDrawRect(iconRect, {0.12f, 0.12f, 0.16f, 0.85f}, "music-widget-icon");
     uiDrawRectOutline(iconRect, {0.4f, 0.6f, 0.9f, 0.8f}, "music-widget-border");
-    uiDrawText("♪", ix + 7.0f, iy + 5.0f, 0.5f, {0.7f, 0.85f, 1.0f, 0.9f});
+    uiDrawText("♪", uiScaleX(iconX + 7.0f), uiScaleY(iconY + 5.0f), 0.5f, {0.7f, 0.85f, 1.0f, 0.9f});
 
-    bool hovering = false;
-    double mx, my;
-    glfwGetCursorPos(glfwGetCurrentContext(), &mx, &my);
-    bool mouseInIcon = mx >= ix && mx <= ix + iconSize && my >= iy && my <= iy + iconSize;
+    if (!mWidgetPanelOpen) return;
 
-    if (!mouseInIcon) return;
+    // Draw panel
+    uiDrawRect(panelRect, {0.06f, 0.06f, 0.1f, 0.95f}, "music-widget-panel");
+    uiDrawRectOutline(panelRect, {0.3f, 0.5f, 0.8f, 0.9f}, "music-widget-panel-border");
 
-    float panelW = 300.0f;
-    float panelH = 200.0f;
-    float px = sw - panelW - 10.0f;
-    float py = sh - panelH - iconSize - 16.0f;
-
-    UIRect panel = {px, py, panelW, panelH};
-    bool mouseInPanel = mx >= px && mx <= px + panelW && my >= py && my <= py + panelH;
-
-    if (!mouseInPanel && !mouseInIcon) return;
-
-    uiDrawRect(panel, {0.06f, 0.06f, 0.1f, 0.95f}, "music-widget-panel");
-    uiDrawRectOutline(panel, {0.3f, 0.5f, 0.8f, 0.9f}, "music-widget-panel-border");
-
-    float y = py + 12.0f;
-    uiDrawText("MUSIC PLAYER", px + 12.0f, y, 0.36f, {0.6f, 0.8f, 1.0f, 1.0f});
-    y += 28.0f;
-
-    std::string info = currentTrackInfo();
-    uiDrawText(info.c_str(), px + 12.0f, y, 0.32f, {0.85f, 0.88f, 1.0f, 1.0f});
+    float y = panelY + 10.0f;
+    uiDrawText("MUSIC PLAYER", uiScaleX(panelX + 12.0f), uiScaleY(y), 0.36f,
+               {0.6f, 0.8f, 1.0f, 1.0f});
     y += 26.0f;
 
-    GLFWwindow* win = glfwGetCurrentContext();
-    float btnW = 50.0f;
-    float btnH = 26.0f;
-    float gap = 8.0f;
+    std::string info = currentTrackInfo();
+    uiDrawText(info.c_str(), uiScaleX(panelX + 12.0f), uiScaleY(y), 0.30f,
+               {0.85f, 0.88f, 1.0f, 1.0f});
+    y += 26.0f;
+
+    // Transport buttons
+    const float btnW = 50.0f;
+    const float btnH = 26.0f;
+    const float gap = 8.0f;
     float btnY = y;
 
     if (uiButton(win, isPlaying() ? "||" : "|>",
-        {px + 12.0f, btnY, btnW, btnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-pause").clicked)
+        {panelX + 12.0f, btnY, btnW, btnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-pause").clicked)
     {
         if (isPlaying()) pause(); else resume();
     }
     if (uiButton(win, ">>",
-        {px + 12.0f + (btnW + gap), btnY, btnW, btnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-skip").clicked)
+        {panelX + 12.0f + (btnW + gap), btnY, btnW, btnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-skip").clicked)
     {
         skip();
     }
     if (uiButton(win, "<<",
-        {px + 12.0f + (btnW + gap) * 2, btnY, btnW, btnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-prev").clicked)
+        {panelX + 12.0f + (btnW + gap) * 2, btnY, btnW, btnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-prev").clicked)
     {
         previous();
     }
 
-    y += btnH + 16.0f;
+    y += btnH + 14.0f;
 
-    float sliderW = panelW - 24.0f;
-    UIRect volRect = {px + 12.0f, y, sliderW, 20.0f};
-    if (uiSlider(win, "VOLUME", volRect, &mVolume, 0.0f, 1.0f))
+    // Volume slider
+    if (uiSlider(win, "VOLUME",
+        {panelX + 12.0f, y, panelW - 24.0f, 20.0f}, &mVolume, 0.0f, 1.0f))
         applyVolume();
+    y += 28.0f;
 
-    y += 36.0f;
-
-    bool muteVal = mMuted;
-    uiCheckbox(win, "MUTE",
-        {px + 12.0f, y, 50.0f, 22.0f}, &muteVal);
-    if (muteVal != mMuted) {
-        mMuted = muteVal;
+    // Mute toggle
+    if (uiButton(win, mMuted ? "MUTED" : "MUTE ON",
+        {panelX + 12.0f, y, 80.0f, 24.0f},
+        mMuted ? glm::vec4(0.5f,0.2f,0.2f,1) : glm::vec4(0.25f,0.55f,0.3f,1),
+        "music-mute").clicked)
+    {
+        mMuted = !mMuted;
         applyVolume();
+    }
+
+    // Debug overlay
+    if (mWidgetDebug)
+    {
+        char buf[256];
+        float dx = uiScaleX(panelX);
+        float dy = uiScaleY(panelY + panelH + 4.0f);
+        uiDrawRect({dx, dy, uiScaleX(280.0f), uiScaleY(100.0f)},
+                   {0.0f, 0.0f, 0.0f, 0.8f}, "music-debug-bg");
+        snprintf(buf, sizeof(buf), "Panel Open: %s", mWidgetPanelOpen ? "yes" : "no");
+        uiDrawText(buf, dx + 4.0f, dy, 0.24f, {1,1,1,1}); dy += uiScaleY(16.0f);
+        snprintf(buf, sizeof(buf), "Icon Hovered: %s", hoverIcon ? "yes" : "no");
+        uiDrawText(buf, dx + 4.0f, dy, 0.24f, {1,1,1,1}); dy += uiScaleY(16.0f);
+        snprintf(buf, sizeof(buf), "Panel Hovered: %s", hoverPanel ? "yes" : "no");
+        uiDrawText(buf, dx + 4.0f, dy, 0.24f, {1,1,1,1}); dy += uiScaleY(16.0f);
+        snprintf(buf, sizeof(buf), "Close Timer: %.2fs", mWidgetCloseTimer);
+        uiDrawText(buf, dx + 4.0f, dy, 0.24f, {1,1,1,1}); dy += uiScaleY(16.0f);
+        snprintf(buf, sizeof(buf), "Cursor design: %.0f, %.0f", cdx, cdy);
+        uiDrawText(buf, dx + 4.0f, dy, 0.24f, {1,1,1,1});
     }
 }
 

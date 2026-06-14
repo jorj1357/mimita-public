@@ -42,6 +42,10 @@ public:
     void drawMusicWidget();
     void drawAllOverlay();
 
+    // Music widget debug
+    void setWidgetDebug(bool enabled) { mWidgetDebug = enabled; }
+    bool widgetDebug() const { return mWidgetDebug; }
+
 private:
     MusicManager() = default;
     ~MusicManager() = default;
@@ -91,4 +95,10 @@ private:
     std::mt19937 mRng;
 
     bool mInitialized = false;
+
+    // Music widget hover state
+    float mWidgetDt = 0.0f;
+    float mWidgetCloseTimer = 0.0f;
+    bool mWidgetPanelOpen = false;
+    bool mWidgetDebug = false;
 };
