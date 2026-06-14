@@ -8,19 +8,17 @@ HelpMenuResult drawHelpMenu(GLFWwindow* win)
 {
     HelpMenuResult r{};
 
-    int w = 0, h = 0;
-    glfwGetFramebufferSize(win, &w, &h);
+    float fbW = uiScreenW(), fbH = uiScreenH();
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/help-menu.json");
 
-    uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "help-menu-background");
+    uiDrawRect({0, 0, fbW, fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "help-menu-background");
 
-    float cx = w * 0.5f;
-    float x = cx - 340.0f;
-    float y = 60.0f;
+    float x = uiScaleX(620.0f);
+    float y = uiScaleY(60.0f);
     float lineH = 26.0f;
 
-    uiDrawText("HELP", cx - 28.0f, y, 0.7f, {0.95f, 0.98f, 1.0f, 1.0f});
-    y += 50.0f;
+    uiDrawText("HELP", uiScaleX(932.0f), y, 0.7f, {0.95f, 0.98f, 1.0f, 1.0f});
+    y += uiScaleY(50.0f);
 
     auto line = [&](const char* text, glm::vec4 color = {0.75f, 0.85f, 1.0f, 1.0f}) {
         uiDrawText(text, x, y, 0.32f, color);
@@ -92,7 +90,7 @@ HelpMenuResult drawHelpMenu(GLFWwindow* win)
     line("Visit https://mimita.fun to get involved.");
     y += 8.0f;
 
-    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
+    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;

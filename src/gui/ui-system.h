@@ -75,3 +75,7 @@ void uiRenderFrameDebugOverlay(GLFWwindow* win, const char* activeScene, bool wo
 
 // Widget tracking for GUI editor
 const std::vector<UITrackedWidget>& uiGetTrackedWidgets();
+
+// Coordinate debug overlay
+void uiSetCoordDebug(bool enabled);
+bool uiCoordDebugEnabled();

@@ -60,6 +60,7 @@ bool LoadPlayerSettings(const std::string& account)
         readValue(j, "weapon_weight", gSettings.weaponWeight);
         readValue(j, "weapon_recoil_decay", gSettings.weaponRecoilDecay);
         readValue(j, "freecam_speed", gSettings.freecamSpeed);
+        readValue(j, "music_muted", gSettings.musicMuted);
         readValue(j, "debug_combat", gSettings.debugCombat);
         readValue(j, "resolution", gSettings.resolution);
         readValue(j, "graphics_preset", gSettings.graphicsPreset);
@@ -108,6 +109,7 @@ bool SavePlayerSettings(const std::string& account)
     j["weapon_weight"] = gSettings.weaponWeight;
     j["weapon_recoil_decay"] = gSettings.weaponRecoilDecay;
     j["freecam_speed"] = gSettings.freecamSpeed;
+    j["music_muted"] = gSettings.musicMuted;
     j["debug_combat"] = gSettings.debugCombat;
     j["resolution"] = gSettings.resolution;
     j["graphics_preset"] = gSettings.graphicsPreset;

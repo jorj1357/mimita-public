@@ -3,74 +3,74 @@
   "version": 1,
   "elements": [
     {
-      "id": "backButton",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50
-    },
-    {
       "id": "NPC Count -",
-      "x": 350,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1070.0,
+      "y": 255.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "NPC Count +",
-      "x": 410,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1130.0,
+      "y": 255.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "Kills to Win -",
-      "x": 350,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1070.0,
+      "y": 315.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "Kills to Win +",
-      "x": 410,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1130.0,
+      "y": 315.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "Time Limit -",
-      "x": 350,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1070.0,
+      "y": 375.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "Time Limit +",
-      "x": 410,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1130.0,
+      "y": 375.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "Difficulty -",
-      "x": 350,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1070.0,
+      "y": 435.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "Difficulty +",
-      "x": 410,
-      "y": -5,
-      "width": 50,
-      "height": 40
+      "x": 1130.0,
+      "y": 435.0,
+      "width": 50.0,
+      "height": 40.0
     },
     {
       "id": "START DUEL",
-      "x": -140.0,
-      "y": 370.0,
+      "x": 820.0,
+      "y": 540.0,
       "width": 300.0,
       "height": 80.0
+    },
+    {
+      "id": "backButton",
+      "x": 40.0,
+      "y": 40.0,
+      "width": 120.0,
+      "height": 50.0
     }
   ]
 }

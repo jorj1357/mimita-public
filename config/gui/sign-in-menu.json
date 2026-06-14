@@ -3,18 +3,18 @@
   "version": 1,
   "elements": [
     {
-      "id": "backButton",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50
-    },
-    {
       "id": "signIn",
-      "x": -120.0,
+      "x": 840.0,
       "y": 470.0,
       "width": 240.0,
       "height": 58.0
+    },
+    {
+      "id": "backButton",
+      "x": 40.0,
+      "y": 40.0,
+      "width": 120.0,
+      "height": 50.0
     }
   ]
 }

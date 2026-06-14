@@ -27,6 +27,10 @@ public:
     // Get element rect, returns fallback if not found
     UIRect getRect(const std::string& id, const UIRect& fallback) const;
 
+    // Get element rect in absolute design coordinates (1920x1080 space).
+    // Returns fallback if element not found.
+    UIRect getRectDesign(const std::string& id, const UIRect& fallback) const;
+
     // Get element rect with center offset: stored offset is added to (cx, cy)
     // This makes layouts resolution-independent
     UIRect getRectCentered(const std::string& id, const UIRect& fallback,
