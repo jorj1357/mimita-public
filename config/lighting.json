@@ -1,0 +1,44 @@
+{
+    "ambient": {
+        "r": 0.35,
+        "g": 0.35,
+        "b": 0.40,
+        "intensity": 1.0
+    },
+    "light": {
+        "dir": { "x": -0.35, "y": -0.1, "z": -1.0 },
+        "diffuseStrength": 0.45
+    },
+    "edge": {
+        "darkness": 0.10,
+        "width": 1.2
+    },
+    "ao": {
+        "enabled": false,
+        "darkness": 0.05,
+        "contrast": 0.8,
+        "strength": 1.0
+    },
+    "texture": {
+        "contrast": 1.02,
+        "brightness": 1.35
+    },
+    "fog": {
+        "enabled": false,
+        "density": 0.002,
+        "r": 0.7,
+        "g": 0.8,
+        "b": 1.0
+    },
+    "post": {
+        "brightness": 1.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "gamma": 2.2,
+        "hueShift": 0.0
+    },
+    "sky": {},
+    "sun": {},
+    "bloom": {},
+    "volumetrics": {}
+}

@@ -93,16 +93,16 @@ void registerReplayCommands()
             REPLAY_RECORDER.setWorldMetadata(replayWorld);
 
             ReplayLightingState replayLighting;
-            extern LightingConfig gLighting;
-            replayLighting.directionalLight = gLighting.lightDir;
-            replayLighting.ambientStrength = gLighting.ambientStrength;
-            replayLighting.diffuseStrength = gLighting.diffuseStrength;
-            replayLighting.edgeDarkness = gLighting.edgeDarkness;
-            replayLighting.edgeWidth = gLighting.edgeWidth;
-            replayLighting.aoDarkness = gLighting.aoDarkness;
-            replayLighting.aoContrast = gLighting.aoContrast;
-            replayLighting.textureContrast = gLighting.textureContrast;
-            replayLighting.textureBrightness = gLighting.textureBrightness;
+            auto& lc = LightingConfig::instance();
+            replayLighting.directionalLight = lc.lightDir();
+            replayLighting.ambientStrength = lc.ambientStrength();
+            replayLighting.diffuseStrength = lc.diffuseStrength();
+            replayLighting.edgeDarkness = lc.edgeDarkness();
+            replayLighting.edgeWidth = lc.edgeWidth();
+            replayLighting.aoDarkness = lc.aoDarkness();
+            replayLighting.aoContrast = lc.aoContrast();
+            replayLighting.textureContrast = lc.textureContrast();
+            replayLighting.textureBrightness = lc.textureBrightness();
             REPLAY_RECORDER.setLighting(replayLighting);
 
             Terminal::instance().addLog("[REPLAY] Recording started");
