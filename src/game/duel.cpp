@@ -364,13 +364,18 @@ void DuelManager::endMatch()
     else
         matchWinner_ = DuelTeam::NPC;
 
-    matchOverTimer = 4.0f;
+    matchOverTimer = 3.0f;
     matchOverButtonsShown = false;
     matchOverCaptured = false;
+    finalKillReplayActive = false;
+    finalKillReplayLoaded = false;
+    finalKillReplayTime = 0.0f;
 
     Debug::log(Debug::Category::Duel, "[DUEL] match ended winner=%s totalKills=%d totalDeaths=%d",
                matchWinner_ == DuelTeam::Player ? "PLAYER" : "NPC",
                playerStats.kills, playerStats.deaths);
+    Debug::log(Debug::Category::Duel, "[DUEL] entering result screen");
+    Debug::log(Debug::Category::Duel, "[DUEL] result screen timer=%.1f", matchOverTimer);
 }
 
 void DuelManager::setMapList(const std::vector<std::string>& maps)
@@ -469,14 +474,26 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
              playerStats.kills, playerStats.deaths, playerStats.points, playerStats.xp);
     uiDrawText(statsText, cx - 200.0f, cy - 20.0f, 0.38f, {1, 1, 1, 1});
 
-    if (!matchOverButtonsShown) {
+    bool canShowButtons = matchOverButtonsShown;
+
+    // During result screen phase (before replay starts), show countdown instead of buttons
+    if (!canShowButtons && finalKillReplayTime < 0.5f && matchOverTimer > 0.0f) {
         char countdownText[64];
         snprintf(countdownText, sizeof(countdownText), "Match ends in %.0f...", std::ceil(matchOverTimer));
         uiDrawText(countdownText, cx - 100.0f, cy + 40.0f, 0.38f, {1, 1, 1, 0.7f});
         return DuelMenuAction::None;
     }
 
-    // Buttons
+    // Show buttons after the replay slow-motion phase completes
+    if (!canShowButtons && finalKillReplayActive && finalKillReplayTime > 6.0f) {
+        canShowButtons = true;
+        matchOverButtonsShown = true;
+    }
+
+    if (!canShowButtons) {
+        return DuelMenuAction::None;
+    }
+
     float btnW = 280.0f;
     float btnH = 54.0f;
     float btnX = cx - btnW * 0.5f;
@@ -540,6 +557,9 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     matchOverCaptured = false;
     matchOverButtonsShown = false;
     matchOverTimer = 0.0f;
+    finalKillReplayActive = false;
+    finalKillReplayLoaded = false;
+    finalKillReplayTime = 0.0f;
 
     assignTeamSpawns(world);
     {
@@ -561,6 +581,9 @@ void DuelManager::stopDuel()
     matchOverCaptured = false;
     matchOverButtonsShown = false;
     matchOverTimer = 0.0f;
+    finalKillReplayActive = false;
+    finalKillReplayLoaded = false;
+    finalKillReplayTime = 0.0f;
     currentRound = 1;
     playerRoundsWon_ = 0;
     npcRoundsWon_ = 0;
