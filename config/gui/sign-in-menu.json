@@ -3,6 +3,13 @@
   "version": 1,
   "elements": [
     {
+      "id": "backButton",
+      "x": 40,
+      "y": 40,
+      "width": 120,
+      "height": 50
+    },
+    {
       "id": "signIn",
       "x": -120.0,
       "y": 470.0,

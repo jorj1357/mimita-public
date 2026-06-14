@@ -1,6 +1,6 @@
 #include "server-info-menu.h"
-#include "../gui-button.h"
 #include "../gui-back.h"
+#include "../gui-button.h"
 #include "../gui-label.h"
 #include "../gui-layout.h"
 #include "../ui-system.h"
@@ -128,7 +128,7 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
         }
     }
 
-    if (guiBackButton(win))
+    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;

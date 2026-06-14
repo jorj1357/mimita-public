@@ -7,5 +7,7 @@
 
 #pragma once
 #include <GLFW/glfw3.h>
+#include "ui-system.h"
 
 bool guiBackButton(GLFWwindow* win);
+bool guiBackButton(GLFWwindow* win, UIRect r);

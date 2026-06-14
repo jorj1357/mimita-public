@@ -35,13 +35,15 @@ static const char* layoutFileForMenu(GuiMenuState state)
 {
     switch (state) {
         case GUI_MENU_MAIN:         return "config/gui/main-menu.json";
-        case GUI_MENU_SERVERS:      return "config/gui/play-menu.json";
-        case GUI_MENU_SETTINGS:     return "config/gui/settings-menu.json";
-        case GUI_MENU_DUEL_CONFIG:  return "config/gui/duel-config-menu.json";
+        case GUI_MENU_PLAY:         return "config/gui/play-menu.json";
+        case GUI_MENU_PRACTICE:     return "config/gui/practice-menu.json";
         case GUI_MENU_SANDBOX_MAPS: return "config/gui/sandbox-map-menu.json";
+        case GUI_MENU_SETTINGS:     return "config/gui/settings-menu.json";
+        case GUI_MENU_SERVERS:      return "config/gui/community-menu.json";
+        case GUI_MENU_DUEL_CONFIG:  return "config/gui/duel-config-menu.json";
+        case GUI_MENU_SERVER_INFO:  return "config/gui/server-info-menu.json";
         case GUI_MENU_SIGN_IN:      return "config/gui/sign-in-menu.json";
         case GUI_MENU_HELP:         return "config/gui/help-menu.json";
-        case GUI_MENU_SERVER_INFO:  return "config/gui/server-info-menu.json";
     }
     return "config/gui/main-menu.json";
 }

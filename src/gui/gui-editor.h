@@ -49,8 +49,10 @@ private:
     bool mDragging = false;
     float mDragOffsetX = 0.0f;
     float mDragOffsetY = 0.0f;
+    bool mHasOverlap = false;
 
     void renderOverlay(GLFWwindow* win);
     void handleInput(GLFWwindow* win);
     void handleKeyboard(GLFWwindow* win);
+    void checkOverlaps();
 };

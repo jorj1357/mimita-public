@@ -37,6 +37,9 @@ void uiSetEditMode(bool enabled);
 bool uiEditModeEnabled();
 bool uiDebugEnabled();
 
+void uiSetOverlapDebug(bool enabled);
+bool uiOverlapDebugEnabled();
+
 void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName);
 void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName);
 void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color);

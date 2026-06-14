@@ -1,5 +1,6 @@
 #include "practice-menu.h"
 #include "../gui-back.h"
+#include "../gui-layout.h"
 #include "../ui-system.h"
 
 PracticeMenuResult drawPracticeMenu(GLFWwindow* win)
@@ -11,6 +12,8 @@ PracticeMenuResult drawPracticeMenu(GLFWwindow* win)
     float cx = w * 0.5f;
     float cy = h * 0.5f;
 
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/practice-menu.json");
+
     uiDrawRect({0, 0, (float)w, (float)h}, {0.035f, 0.04f, 0.052f, 1.0f}, "practice-menu-bg");
 
     // Breadcrumb header
@@ -21,7 +24,7 @@ PracticeMenuResult drawPracticeMenu(GLFWwindow* win)
 
     // SANDBOX
     if (uiButton(win, "SANDBOX",
-        {cx - 125.0f, cy - 29.0f, 250.0f, 58.0f},
+        layout.getRectCentered("SANDBOX", {cx - 125.0f, cy - 29.0f, 250.0f, 58.0f}, cx, cy),
         {0.25f, 0.55f, 0.95f, 1.0f}).clicked)
     {
         r.goSandbox = true;
@@ -31,7 +34,7 @@ PracticeMenuResult drawPracticeMenu(GLFWwindow* win)
 
     // Future: Training Range, NPC Practice
 
-    if (guiBackButton(win))
+    if (guiBackButton(win, layout.getRect("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
         r.goBack = true;
 
     return r;
