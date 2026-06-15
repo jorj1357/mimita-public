@@ -40,17 +40,28 @@ bool isFfmpegDebugMode()
     return gFfmpegDebugMode;
 }
 
+// Build arguments for ShellExecuteA "cmd.exe" that correctly handle quoted exe paths.
+// cmd.exe /k parsing: the outer "" produces a literal " for the exe path.
+// Example: cmd = "\"C:\\path\\ffmpeg.exe\" -version"
+// Returns: "/k \"\"C:\\path\\ffmpeg.exe\" -version\""
+std::string makeCmdKArgs(const std::string& cmd)
+{
+    return "/k \"" + cmd + "\"";
+}
+
 static void debugLaunchFfmpegVisible(const std::string& cmd)
 {
-    // Start ffmpeg in a new visible cmd.exe window with /k (stays open after ffmpeg exits)
-    // This lets us see ffmpeg's stdout/stderr directly
-    std::string args = std::string("/k ") + cmd;
+    std::string args = makeCmdKArgs(cmd);
+    printf("[EXPORTTRACE] ShellExecuteA params EXACT=%s%s%s\n",
+           "cmd.exe ", args.c_str(), ""); fflush(stdout);
     HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
-    if ((INT_PTR)h <= 32) {
-        printf("[EXPORTTRACE] ShellExecuteA failed to open cmd window. error=%d\n", (int)(INT_PTR)h);
-        fflush(stdout);
+    INT_PTR result = (INT_PTR)h;
+    if (result <= 32) {
+        DWORD err = GetLastError();
+        printf("[EXPORTTRACE] ShellExecuteA FAILED result=%lld GetLastError=%lu\n",
+               (long long)result, (unsigned long)err); fflush(stdout);
     } else {
-        printf("[EXPORTTRACE] Launched ffmpeg in visible cmd window. Close the window when done debugging.\n");
+        printf("[EXPORTTRACE] Launched ffmpeg in visible cmd window. Close when done.\n");
         fflush(stdout);
     }
 }
