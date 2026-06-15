@@ -39,3 +39,6 @@ std::string getReplayExportStatusText();
 void cancelReplayExport();
 void openReplayFolder();
 const ReplayExportJob& getReplayExportJob();
+void setFfmpegDebugMode(bool enabled);
+bool isFfmpegDebugMode();
+std::string generateExportOutputPath();

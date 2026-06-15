@@ -247,26 +247,28 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
                     duelEndState = DuelEndState::Countdown;
                     countdownTimer = 3.0f;
                     currentCountdownNumber = 3;
-                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] VictoryScreen -> Countdown");
+                    Debug::log(Debug::Category::Duel, "[DUEL] MatchEnd -> Countdown");
                 }
                 break;
 
             case DuelEndState::Countdown:
             {
                 static int prevCountdownNum = 999;
+                int prevNum = currentCountdownNumber;
                 countdownTimer -= dt;
                 currentCountdownNumber = (int)std::ceil(countdownTimer);
                 if (currentCountdownNumber < 0) currentCountdownNumber = 0;
                 if (currentCountdownNumber != prevCountdownNum) {
-                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] Countdown = %d (timer=%.2f)", currentCountdownNumber, countdownTimer);
+                    if (currentCountdownNumber >= 0 && currentCountdownNumber <= 3)
+                        Debug::log(Debug::Category::Duel, "[DUEL] Countdown %d", currentCountdownNumber);
                     prevCountdownNum = currentCountdownNumber;
                 }
                 if (countdownTimer <= 0.0f) {
                     prevCountdownNum = 999;
-                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] Countdown complete (timer=%.2f)", countdownTimer);
+                    Debug::log(Debug::Category::Duel, "[DUEL] Countdown 0");
                     duelEndState = DuelEndState::FinalKillReplay;
                     currentCountdownNumber = 0;
-                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] Entering FinalKillReplay (replayReady=%d)", (int)replayReady);
+                    Debug::log(Debug::Category::Duel, "[DUEL] Starting Final Kill Replay (replayReady=%d)", (int)replayReady);
                 }
                 break;
             }
@@ -364,7 +366,7 @@ void DuelManager::endRound(DuelTeam winner)
 
 void DuelManager::endMatch()
 {
-    Debug::log(Debug::Category::Duel, "[DUEL FLOW] MatchEnd winner=%s",
+    Debug::log(Debug::Category::Duel, "[DUEL] Active -> MatchEnd winner=%s",
                playerRoundsWon_ >= config.killsToWin ? "PLAYER" : "NPC");
     currentPhase = DuelPhase::MatchEnd;
     playerStats.matchesWon++;
@@ -492,71 +494,44 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
 
     GuiEditor::instance().setActiveLayout("config/gui/duel-match-end.json");
 
-    // Phase 3: Final Kill Replay (auto-playing)
+    // Phase 3: Final Kill Replay (auto-playing) - ONLY Save Replay button
     if (duelEndState == DuelEndState::FinalKillReplay) {
         uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.15f}, "fk-bg");
 
-        uiDrawRect({0, sh * 0.3f, sw, 60.0f}, {0.0f, 0.0f, 0.0f, 0.6f}, "fk-header");
-        uiDrawText("FINAL KILL", sw * 0.5f - 120.0f, sh * 0.3f + 10.0f,
-                   1.0f, {1.0f, 0.9f, 0.1f, 1.0f});
+        uiDrawRect({sw - 280.0f, sh - 80.0f, 260.0f, 44.0f}, {0.0f, 0.0f, 0.0f, 0.6f}, "fk-save-bg");
 
-        GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
+        const ReplayExportJob& job = getReplayExportJob();
+        bool exportBusy = (job.state == ReplayExportJob::Capturing || job.state == ReplayExportJob::Encoding);
+        bool exportDone = (job.state == ReplayExportJob::Done);
+        bool exportFailed = (job.state == ReplayExportJob::Failed);
 
-        {
-            UIRect pr = duelLayout.getRectDesign("Play Again", {830.0f, 460.0f, 260.0f, 44.0f});
-            UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f}, "duel-play-again-fk");
-            if (playBtn.clicked) {
-                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Play Again clicked during FinalKillReplay");
-                return DuelMenuAction::PlayAgain;
-            }
+        const char* btnLabel = "Save Replay";
+        glm::vec4 btnColor = {0.2f, 0.6f, 0.3f, 1.0f};
+        if (exportBusy) {
+            btnLabel = "Saving Replay...";
+            btnColor = {0.5f, 0.5f, 0.2f, 1.0f};
+        } else if (exportDone) {
+            btnLabel = "Replay Saved!";
+            btnColor = {0.2f, 0.8f, 0.3f, 1.0f};
+        } else if (exportFailed) {
+            btnLabel = "Export Failed";
+            btnColor = {0.8f, 0.2f, 0.2f, 1.0f};
         }
 
-        {
-            UIRect er = duelLayout.getRectDesign("Exit To Main Menu", {830.0f, 516.0f, 260.0f, 44.0f});
-            UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f}, "duel-exit-menu-fk");
-            if (exitBtn.clicked) {
-                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Exit To Menu clicked during FinalKillReplay");
-                return DuelMenuAction::ExitToMenu;
-            }
+        UIRect saveRect = {sw - 280.0f, sh - 80.0f, 260.0f, 44.0f};
+        UIButtonState saveBtn = uiButton(win, btnLabel, saveRect, btnColor, "duel-save-replay-fk");
+        if (!exportBusy && saveBtn.clicked) {
+            Debug::log(Debug::Category::Duel, "[DUEL FLOW] Save Replay clicked during FinalKillReplay");
+            return DuelMenuAction::SaveReplay;
         }
 
-        {
-            const ReplayExportJob& job = getReplayExportJob();
-            bool exportBusy = (job.state == ReplayExportJob::Capturing || job.state == ReplayExportJob::Encoding);
-            bool exportDone = (job.state == ReplayExportJob::Done);
-            bool exportFailed = (job.state == ReplayExportJob::Failed);
-
-            UIRect sr = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
-
-            const char* btnLabel = "Save Replay";
-            glm::vec4 btnColor = {0.2f, 0.6f, 0.3f, 1.0f};
-            if (exportBusy) {
-                btnLabel = "Saving Replay...";
-                btnColor = {0.5f, 0.5f, 0.2f, 1.0f};
-            } else if (exportDone) {
-                btnLabel = "Replay Saved!";
-                btnColor = {0.2f, 0.8f, 0.3f, 1.0f};
-            } else if (exportFailed) {
-                btnLabel = "Export Failed";
-                btnColor = {0.8f, 0.2f, 0.2f, 1.0f};
-            }
-
-            UIButtonState saveBtn = uiButton(win, btnLabel, sr, btnColor, "duel-save-replay-fk");
-            if (!exportBusy && saveBtn.clicked) {
-                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Save Replay clicked during FinalKillReplay");
-                return DuelMenuAction::SaveReplay;
-            }
-
-            std::string status = getReplayExportStatusText();
-            if (!status.empty()) {
-                uiDrawText(status.c_str(), sr.x - 10.0f, sr.y + sr.h + 4.0f, 0.28f, {1.0f, 1.0f, 1.0f, 0.9f});
-            }
+        std::string status = getReplayExportStatusText();
+        if (!status.empty()) {
+            uiDrawText(status.c_str(), saveRect.x - 10.0f, saveRect.y + saveRect.h + 4.0f, 0.28f, {1.0f, 1.0f, 1.0f, 0.9f});
         }
 
-        // Show fallback message if replay failed to load
-        if (!replayReady && countdownTimer <= 0.0f) {
-            float msgY = sh * 0.3f + 70.0f;
-            uiDrawText("FINAL KILL REPLAY FAILED", sw * 0.5f - 180.0f, msgY,
+        if (!replayReady) {
+            uiDrawText("FINAL KILL REPLAY FAILED", sw * 0.5f - 180.0f, sh * 0.5f,
                        0.6f, {1.0f, 0.3f, 0.3f, 1.0f});
         }
 
