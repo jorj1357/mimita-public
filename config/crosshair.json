@@ -4,15 +4,15 @@
   "dot": false,
   "dynamic": false,
   "enabled": true,
-  "gap": 5.0,
+  "gap": 0.25600001215934753,
   "green": 255,
   "outline": true,
   "outlineThickness": 1.0,
-  "red": 0,
+  "red": 255,
   "showBottom": true,
   "showLeft": true,
   "showRight": true,
   "showTop": true,
-  "size": 8.0,
-  "thickness": 2.0
+  "size": 4.0960001945495605,
+  "thickness": 1.3600000143051147
 }

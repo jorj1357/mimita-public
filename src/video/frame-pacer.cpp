@@ -7,6 +7,8 @@
 
 #include <chrono>
 
+FramePacer* ScopedFrameTimer::sPacer = nullptr;
+
 uint64_t FramePacer::nowUs()
 {
     using namespace std::chrono;
@@ -27,6 +29,8 @@ float FramePacer::p99FrameTimeMs() const
 
 void FramePacer::beginFrame()
 {
+    mSubsystemCount = 0;
+
     uint64_t now = nowUs();
 
     if (mFrameStartUs != 0)
@@ -36,7 +40,6 @@ void FramePacer::beginFrame()
 
     mFrameStartUs = now;
 
-    // Compute dt in seconds from last frame time
     mDt = (float)((double)mLastFrameUs / 1000000.0);
     if (mDt < 0.0001f) mDt = 0.0001f;
     if (mDt > 0.1f)    mDt = 0.1f;
@@ -56,24 +59,76 @@ void FramePacer::endFrame()
         if (elapsedUs < targetUs)
         {
             uint64_t remainingUs = targetUs - elapsedUs;
-
-            // Sleep for most of remaining time (leave ~0.5ms for spin wait)
             if (remainingUs > 1000)
             {
                 uint64_t sleepUs = remainingUs - 500;
                 std::this_thread::sleep_for(
                     std::chrono::microseconds(sleepUs));
             }
-
-            // Busy-wait for the final fraction
-            while (nowUs() - mFrameStartUs < targetUs)
-            {
-                // spin
-            }
+            while (nowUs() - mFrameStartUs < targetUs) {}
         }
     }
 
     updateStats();
+
+    // Update 300-sample history copy for external access
+    if (mHistoryCount < MAX_HISTORY)
+        mHistoryCopy[mHistoryCount++] = mLastFrameMs;
+    else
+    {
+        for (int i = 1; i < MAX_HISTORY; ++i)
+            mHistoryCopy[i - 1] = mHistoryCopy[i];
+        mHistoryCopy[MAX_HISTORY - 1] = mLastFrameMs;
+    }
+
+    // Hitch detection
+    if (mHitchDebug && targetMs > 0.0f)
+    {
+        float hitchThreshold = targetMs * 1.5f;
+        if (mLastFrameMs > hitchThreshold)
+        {
+            printf("[FRAME HITCH] frame=%d  total=%.2fms  (threshold=%.2fms, target=%.2fms)\n",
+                   mFrameCount, mLastFrameMs, hitchThreshold, targetMs);
+            for (int i = 0; i < mSubsystemCount; ++i)
+            {
+                if (mSubsystems[i].name)
+                    printf("  %s=%.2f\n", mSubsystems[i].name, (double)mSubsystems[i].totalUs / 1000.0);
+            }
+        }
+    }
+}
+
+void FramePacer::beginSubsystem(const char* name)
+{
+    if (mSubsystemCount >= MAX_SUBSYSTEMS) return;
+    mSubsystems[mSubsystemCount].name = name;
+    mSubsystems[mSubsystemCount].startUs = nowUs();
+    mSubsystems[mSubsystemCount].totalUs = 0;
+    mSubsystemCount++;
+}
+
+void FramePacer::endSubsystem()
+{
+    uint64_t now = nowUs();
+    for (int i = mSubsystemCount - 1; i >= 0; --i)
+    {
+        if (mSubsystems[i].startUs != 0)
+        {
+            mSubsystems[i].totalUs += now - mSubsystems[i].startUs;
+            mSubsystems[i].startUs = 0;
+            return;
+        }
+    }
+}
+
+const char* FramePacer::subsystemName(int i) const
+{
+    return i < mSubsystemCount ? mSubsystems[i].name : nullptr;
+}
+
+double FramePacer::subsystemTimeMs(int i) const
+{
+    return i < mSubsystemCount ? (double)mSubsystems[i].totalUs / 1000.0 : 0.0;
 }
 
 void FramePacer::setMaxFrames(int fps)
@@ -93,10 +148,8 @@ void FramePacer::updateStats()
 {
     float ms = mLastFrameMs;
 
-    // Rolling history
     if (mHistorySum == 0.0f)
     {
-        // First entry: fill buffer with this value
         for (int i = 0; i < HISTORY_SIZE; ++i)
             mHistory[i] = ms;
         mHistorySum = ms * HISTORY_SIZE;
@@ -110,7 +163,6 @@ void FramePacer::updateStats()
     mHistoryIdx = (mHistoryIdx + 1) % HISTORY_SIZE;
     mAvgFrameMs = mHistorySum / HISTORY_SIZE;
 
-    // Min / max (reset every HISTORY_SIZE frames)
     if (mFrameCount % HISTORY_SIZE == 0)
     {
         mMinFrameMs = ms;
@@ -122,10 +174,8 @@ void FramePacer::updateStats()
         if (ms > mMaxFrameMs) mMaxFrameMs = ms;
     }
 
-    // Variance = |current - average|
     mLastVarianceMs = std::fabs(ms - mAvgFrameMs);
 
-    // P99: sort history every 60 frames
     if (mFrameCount % 60 == 0 && mFrameCount > 0)
     {
         std::copy(mHistory, mHistory + HISTORY_SIZE, mSortedHistory);
@@ -137,7 +187,6 @@ void FramePacer::updateStats()
 
     ++mFrameCount;
 
-    // Build display text
     if (mShowFPS)
     {
         int fps = ms > 0.0f ? (int)(1000.0f / ms + 0.5f) : 0;
