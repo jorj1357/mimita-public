@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 #include "replay/replay-export.h"
 #include "replay/replay-factory.h"
@@ -467,6 +471,61 @@ void registerReplayCommands()
             REPLAY_PLAYER.seekToTick(newTick);
             printf("[REPLAY] skipped 1s to tick %u\n", newTick);
             Terminal::instance().addLog("[REPLAY] skipped to tick " + std::to_string(newTick));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "export_debug_mode", "Toggle ffmpeg visible cmd window debug mode (on/off)", "export_debug_mode [on|off]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                bool current = isFfmpegDebugMode();
+                setFfmpegDebugMode(!current);
+            } else {
+                setFfmpegDebugMode(args[0] == "on" || args[0] == "1");
+            }
+            Terminal::instance().addLog(
+                std::string("[FFMPEG DEBUG] ") + (isFfmpegDebugMode() ? "ON (visible cmd window)" : "OFF (_popen)"));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "export_test_ffmpeg", "Test ffmpeg by running 'ffmpeg -version' in a visible cmd window", "export_test_ffmpeg",
+        [](const std::vector<std::string>&) {
+            std::string ffmpeg = defaultFfmpegPath();
+            if (!std::filesystem::exists(ffmpeg)) {
+                Terminal::instance().addLog("[ERROR] ffmpeg not found at: " + ffmpeg);
+                return;
+            }
+            Terminal::instance().addLog("[FFMPEG TEST] launching in visible window: " + ffmpeg);
+            std::string cmd = "\"" + ffmpeg + "\" -version";
+            std::string args = std::string("/k ") + cmd;
+            ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "export_test_output", "Test ffmpeg by generating a test MP4 in the export directory", "export_test_output",
+        [](const std::vector<std::string>&) {
+            std::string ffmpeg = defaultFfmpegPath();
+            if (!std::filesystem::exists(ffmpeg)) {
+                Terminal::instance().addLog("[ERROR] ffmpeg not found at: " + ffmpeg);
+                return;
+            }
+            // Generate output path using the same logic as normal export
+            std::string outputPath = generateExportOutputPath();
+            std::filesystem::path outDir = std::filesystem::path(outputPath).parent_path();
+            std::error_code ec;
+            std::filesystem::create_directories(outDir, ec);
+            if (ec) {
+                Terminal::instance().addLog("[ERROR] cannot create output dir: " + outDir.string());
+                return;
+            }
+            std::string nativeOutput = std::filesystem::path(outputPath).make_preferred().string();
+            std::string cmd = "\"" + ffmpeg + "\" -f lavfi -i testsrc=duration=1:size=1280x720:rate=60 -pix_fmt yuv420p \"" + nativeOutput + "\"";
+            Terminal::instance().addLog("[FFMPEG TEST OUTPUT] command: " + cmd);
+            Terminal::instance().addLog("[FFMPEG TEST OUTPUT] output: " + nativeOutput);
+            std::string args = std::string("/k ") + cmd;
+            ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
         }
     });
 
