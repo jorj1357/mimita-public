@@ -14,7 +14,7 @@
         "width": 1.2
     },
     "ao": {
-        "enabled": false,
+        "enabled": true,
         "darkness": 0.05,
         "contrast": 0.8,
         "strength": 1.0
@@ -24,7 +24,7 @@
         "brightness": 1.35
     },
     "fog": {
-        "enabled": false,
+        "enabled": true,
         "density": 0.002,
         "r": 0.7,
         "g": 0.8,

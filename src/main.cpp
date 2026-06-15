@@ -58,6 +58,7 @@
 #include "input/input-frame.h"
 #include "input/input-commands.h"
 #include "render/render-world.h"
+#include "render/post-fx.h"
 #include "render/render-player.h"
 #include "physics/physics-mini.h"
 #include "physics/physics-debug-movement.h"
@@ -73,6 +74,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "debug/transform-debug.h"
+#include "debug/debug-diag.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
@@ -115,6 +117,8 @@
 #include "terminal/replay-commands.h"
 #include "perf/perf.h"
 #include "replay/replay-export.h"
+#include "effects/hitfx-commands.h"
+#include "effects/hit-effects.h"
 
 // 6 9 2026 sort and be more aweosme
 // duelamanger should be  a game manager, with specific modes in it
@@ -433,7 +437,14 @@ int main(int argc, char** argv)
     VideoSettings::instance().apply();
     gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
     gFramePacer.setVSync(VideoSettings::instance().vsync());
-    ScopedFrameTimer::sPacer = &gFramePacer;
+
+    // Init PostFX
+    {
+        extern Renderer* gRenderer;
+        PostFX::instance().loadConfig("config/postfx.json");
+        PostFX::instance().initFBO(gRenderer->width, gRenderer->height);
+    }
+
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
@@ -1347,6 +1358,9 @@ int main(int argc, char** argv)
     // Register replay terminal commands (moved to src/terminal/replay-commands.cpp)
     registerReplayCommands();
     registerPerfCommands();
+    registerHitFxCommands();
+    registerDiagnosticCommands();
+    HitEffects::loadConfig("config/hitfx.json");
 
     // Debug toggle for mainmenu timing
     Terminal::instance().registerCommand({
@@ -1438,6 +1452,37 @@ int main(int argc, char** argv)
         [](const std::vector<std::string>&) {
             GuiLayoutManager::instance().resetAll();
             Terminal::instance().addLog("[GUI] all layouts reset to defaults");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "postfx_debug", "Toggle PostFX debug overlay", "postfx_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                PostFX::instance().debugEnabled = !PostFX::instance().debugEnabled;
+            } else {
+                PostFX::instance().debugEnabled = args[0] == "1";
+            }
+            const bool on = PostFX::instance().debugEnabled;
+            printf("[POSTFX] debug=%s\n", on ? "ON" : "OFF");
+            Terminal::instance().addLog(std::string("[POSTFX] debug=") + (on ? "ON" : "OFF"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "postfx_preset", "Apply a PostFX preset", "postfx_preset <name>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[POSTFX] Usage: postfx_preset <normal|dream|void|psychedelic|retro|glitch|competitive>");
+                return;
+            }
+            PostFX::instance().applyPreset(args[0]);
+            Terminal::instance().addLog("[POSTFX] Preset applied: " + args[0]);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "postfx_reload", "Reload config/postfx.json", "postfx_reload",
+        [](const std::vector<std::string>&) {
+            PostFX::instance().loadConfig("config/postfx.json");
+            Terminal::instance().addLog("[POSTFX] Reloaded config/postfx.json");
         }
     });
     Terminal::instance().registerCommand({
@@ -1975,6 +2020,28 @@ int main(int argc, char** argv)
             MusicManager::instance().setVolume(vol);
             GetPlayerSettings().musicVolume = vol;
             SavePlayerSettings();
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
+
+    // Spawn FX debug commands
+    Terminal::instance().registerCommand({
+        "spawnfx_test", "Trigger spawn flash effect immediately", "spawnfx_test",
+        [&player](const std::vector<std::string>&) {
+            player.spawnFlashTimer = 10.0f;
+            playSound("entity/player/spawning", 1.0f);
+            Debug::log(Debug::Category::Audio, "[SPAWN FX] spawnfx_test triggered\n");
+            Terminal::instance().addLog("[SPAWN FX] test triggered");
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "spawnfx_debug", "Show spawn flash debug info", "spawnfx_debug",
+        [&player](const std::vector<std::string>&) {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "[SPAWN FX] active=%d timer=%.0f ticks",
+                     (int)(player.spawnFlashTimer > 0.0f), player.spawnFlashTimer);
+            Terminal::instance().addLog(buf);
         },
         "2026-06-14", CommandCategory::Debug
     });
@@ -2597,6 +2664,9 @@ int main(int argc, char** argv)
                             EffectPartSystem::instance().spawnEntityImpact(
                                 event.hit, event.normal,
                                 shooterName, targetName);
+                            HitEffects::spawnHitEffects(
+                                event.hit, event.normal,
+                                event.damage, shooterName, targetName);
                         }
                         if (event.effectFlags & MimitaNet::SHOT_EFFECT_BLOOD)
                         {
@@ -2816,6 +2886,8 @@ int main(int argc, char** argv)
                     } else if (effect.type == "debris_block") {
                         EffectPartSystem::instance().spawnWorldDebris(
                             effect.position, effect.normal, 1.5f);
+                    } else if (effect.type == "hit_burst") {
+                        HitEffects::spawnHitEffects(effect.position, effect.normal, 0, "replay", "replay");
                     } else if (effect.type == "impact_entity") {
                         EffectPartSystem::instance().spawnEntityImpact(
                             effect.position, effect.normal,
@@ -2897,6 +2969,7 @@ int main(int argc, char** argv)
 
             // Update effect parts
             EffectPartSystem::instance().update(dt);
+            HitEffects::updateHitBursts(dt);
 
             updateChatBubbles(player.chatState, dt);
             for (auto& kv : mpContext.remotePlayers)
@@ -2997,6 +3070,7 @@ int main(int argc, char** argv)
                 lPrev = lDown;
             }
             { Perf::ScopedTimer _ren("Rendering");
+            PostFX::instance().bindFBO();
             renderWorld(world, camera);
             if (replayPlaybackActive) {
                 if (const ReplaySceneFrame* replayFrame =
@@ -3058,6 +3132,32 @@ int main(int argc, char** argv)
                     }
                 }
             } else {
+                // Spawn flash: black out world behind the player
+                if (player.spawnFlashTimer > 0.0f) {
+                    static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
+                    if (!spawnFlashVao) {
+                        float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+                        glGenVertexArrays(1, &spawnFlashVao);
+                        glGenBuffers(1, &spawnFlashVbo);
+                        glBindVertexArray(spawnFlashVao);
+                        glBindBuffer(GL_ARRAY_BUFFER, spawnFlashVbo);
+                        glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+                        glEnableVertexAttribArray(0);
+                        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+                    }
+                    GLuint shader = engine.renderer->shaderProgram;
+                    glDisable(GL_DEPTH_TEST);
+                    glUseProgram(shader);
+                    glm::mat4 id(1.0f);
+                    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+                    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+                    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+                    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+                    glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 1.0f);
+                    glBindVertexArray(spawnFlashVao);
+                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                    glEnable(GL_DEPTH_TEST);
+                }
                 renderPlayer(player, camera);
                 if (mpContext.active) {
                     for (auto& kv : mpContext.remotePlayers) {
@@ -3174,8 +3274,15 @@ int main(int argc, char** argv)
 
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
+            HitEffects::renderHitBursts(camera);
             DebugVis::flushTris(camera);
             } // Perf::ScopedTimer Rendering
+
+            // Post-process pass: unbind FBO and apply full-screen effects
+            PostFX::instance().unbindFBO();
+            PostFX::instance().advanceTime(dt);
+            PostFX::instance().pollReload();
+            PostFX::instance().render();
 
             // Capture replay frame for video export (after 3D render, before UI overlay)
             if (isReplayExportActive())
@@ -3433,6 +3540,14 @@ int main(int argc, char** argv)
                     drawCrosshair(uiScreenW() * 0.5f, uiScreenH() * 0.5f);
                 }
             }
+            // Spawn flash: hide GUI
+            if (player.spawnFlashTimer > 0.0f)
+            {
+                Debug::logThrottled(Debug::Category::Audio, "spawnflash", 1.0f,
+                    "[SPAWN FX] hiding GUI for spawn flash (timer=%.0f)\n", player.spawnFlashTimer);
+            }
+            else
+            {
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
             uiDrawText(player.username.c_str(), 24, 88, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
             char hpText[64];
@@ -3939,6 +4054,15 @@ int main(int argc, char** argv)
                                {0.5f, 0.8f, 1.0f, 1.0f});
                 }
             }
+            if (PostFX::instance().debugEnabled)
+            {
+                const char* txt = PostFX::instance().debugText();
+                if (txt && txt[0])
+                    uiDrawText(txt, uiScreenW() - 380.0f, 12.0f, 0.28f,
+                               {1.0f, 0.8f, 0.2f, 1.0f});
+            }
+            } // end spawn flash GUI hide else
+
             // Update perf state counters
             Perf::state().npcCount = (int)npcSystem.all().size();
             Perf::state().playerCount = 1;
