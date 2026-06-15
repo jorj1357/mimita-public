@@ -477,6 +477,7 @@ void registerReplayCommands()
     Terminal::instance().registerCommand({
         "export_debug_mode", "Toggle ffmpeg visible cmd window debug mode (on/off)", "export_debug_mode [on|off]",
         [](const std::vector<std::string>& args) {
+            printf("[EXPORTTRACE] export_debug_mode command ENTERED\n"); fflush(stdout);
             if (args.empty()) {
                 bool current = isFfmpegDebugMode();
                 setFfmpegDebugMode(!current);
@@ -491,41 +492,74 @@ void registerReplayCommands()
     Terminal::instance().registerCommand({
         "export_test_ffmpeg", "Test ffmpeg by running 'ffmpeg -version' in a visible cmd window", "export_test_ffmpeg",
         [](const std::vector<std::string>&) {
+            printf("[EXPORTTRACE] export_test_ffmpeg command ENTERED\n"); fflush(stdout);
             std::string ffmpeg = defaultFfmpegPath();
+            printf("[EXPORTTRACE] ffmpeg path=%s\n", ffmpeg.c_str()); fflush(stdout);
             if (!std::filesystem::exists(ffmpeg)) {
+                printf("[EXPORTTRACE] ffmpeg NOT FOUND at: %s\n", ffmpeg.c_str()); fflush(stdout);
                 Terminal::instance().addLog("[ERROR] ffmpeg not found at: " + ffmpeg);
                 return;
             }
+            printf("[EXPORTTRACE] ffmpeg exists OK\n"); fflush(stdout);
             Terminal::instance().addLog("[FFMPEG TEST] launching in visible window: " + ffmpeg);
             std::string cmd = "\"" + ffmpeg + "\" -version";
-            std::string args = std::string("/k ") + cmd;
-            ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
+            std::string launchArgs = makeCmdKArgs(cmd);
+            printf("[EXPORTTRACE] ShellExecuteA params EXACT=%s %s\n", "cmd.exe", launchArgs.c_str()); fflush(stdout);
+            printf("[EXPORTTRACE] Calling ShellExecuteA...\n"); fflush(stdout);
+            HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", launchArgs.c_str(), NULL, SW_SHOWNORMAL);
+            INT_PTR result = (INT_PTR)h;
+            printf("[EXPORTTRACE] ShellExecuteA returned %lld (0=success, <=32=error)\n", (long long)result); fflush(stdout);
+            if (result <= 32) {
+                DWORD err = GetLastError();
+                printf("[EXPORTTRACE] ShellExecuteA FAILED GetLastError=%lu\n", (unsigned long)err); fflush(stdout);
+                Terminal::instance().addLog("[ERROR] ShellExecuteA failed with code " + std::to_string(err));
+            } else {
+                printf("[EXPORTTRACE] ShellExecuteA SUCCESS (cmd window should be open)\n"); fflush(stdout);
+            }
         }
     });
 
     Terminal::instance().registerCommand({
         "export_test_output", "Test ffmpeg by generating a test MP4 in the export directory", "export_test_output",
         [](const std::vector<std::string>&) {
+            printf("[EXPORTTRACE] export_test_output command ENTERED\n"); fflush(stdout);
             std::string ffmpeg = defaultFfmpegPath();
+            printf("[EXPORTTRACE] ffmpeg path=%s\n", ffmpeg.c_str()); fflush(stdout);
             if (!std::filesystem::exists(ffmpeg)) {
+                printf("[EXPORTTRACE] ffmpeg NOT FOUND at: %s\n", ffmpeg.c_str()); fflush(stdout);
                 Terminal::instance().addLog("[ERROR] ffmpeg not found at: " + ffmpeg);
                 return;
             }
-            // Generate output path using the same logic as normal export
+            printf("[EXPORTTRACE] ffmpeg exists OK\n"); fflush(stdout);
             std::string outputPath = generateExportOutputPath();
+            printf("[EXPORTTRACE] outputPath=%s\n", outputPath.c_str()); fflush(stdout);
             std::filesystem::path outDir = std::filesystem::path(outputPath).parent_path();
             std::error_code ec;
             std::filesystem::create_directories(outDir, ec);
             if (ec) {
+                printf("[EXPORTTRACE] cannot create output dir: %s\n", ec.message().c_str()); fflush(stdout);
                 Terminal::instance().addLog("[ERROR] cannot create output dir: " + outDir.string());
                 return;
             }
+            printf("[EXPORTTRACE] output dir created OK\n"); fflush(stdout);
             std::string nativeOutput = std::filesystem::path(outputPath).make_preferred().string();
             std::string cmd = "\"" + ffmpeg + "\" -f lavfi -i testsrc=duration=1:size=1280x720:rate=60 -pix_fmt yuv420p \"" + nativeOutput + "\"";
+            printf("[EXPORTTRACE] ffmpeg command: %s\n", cmd.c_str()); fflush(stdout);
             Terminal::instance().addLog("[FFMPEG TEST OUTPUT] command: " + cmd);
             Terminal::instance().addLog("[FFMPEG TEST OUTPUT] output: " + nativeOutput);
-            std::string args = std::string("/k ") + cmd;
-            ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
+            std::string launchArgs = makeCmdKArgs(cmd);
+            printf("[EXPORTTRACE] ShellExecuteA params EXACT=%s %s\n", "cmd.exe", launchArgs.c_str()); fflush(stdout);
+            printf("[EXPORTTRACE] Calling ShellExecuteA...\n"); fflush(stdout);
+            HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", launchArgs.c_str(), NULL, SW_SHOWNORMAL);
+            INT_PTR result = (INT_PTR)h;
+            printf("[EXPORTTRACE] ShellExecuteA returned %lld (0=success, <=32=error)\n", (long long)result); fflush(stdout);
+            if (result <= 32) {
+                DWORD err = GetLastError();
+                printf("[EXPORTTRACE] ShellExecuteA FAILED GetLastError=%lu\n", (unsigned long)err); fflush(stdout);
+                Terminal::instance().addLog("[ERROR] ShellExecuteA failed with code " + std::to_string(err));
+            } else {
+                printf("[EXPORTTRACE] ShellExecuteA SUCCESS (cmd window should be open)\n"); fflush(stdout);
+            }
         }
     });
 

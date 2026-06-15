@@ -1,0 +1,1837 @@
+==================================================
+MIMITA RUN LOG
+Start Time: 2026-06-15 19:29:39
+Build: debug
+==================================================
+[LOGMANAGER] Logging to: logs/15-06-2026/19-29-39-log.txt
+[LOG] Console output enabled
+[LOG] File logging enabled
+[LOG] Active log path: logs/15-06-2026/19-29-39-log.txt
+[LOG] Mirroring console -> file
+[MAIN] before engine.init
+[CURSOR] loaded custom cursor 100x100 channels=4 hotspot=0,0 mode=top-left
+[WINDOW] focused=1
+OpenGL 3.3.0 NVIDIA 592.27
+[RENDERER] loading shaders
+[RENDERER] opening file: shaders/basic.vert
+[RENDERER] loaded 1598 bytes
+[RENDERER] opening file: shaders/basic.frag
+[RENDERER] loaded 5391 bytes
+[RENDERER] Shader compile OK: shaders/basic.vert
+[RENDERER] Shader compile OK: shaders/basic.frag
+[RENDERER] Program link OK
+[RENDERER] shaderProgram=3
+[ENGINE] Init OK (800x600)
+[ENGINE] OpenGL ready
+[MAIN] after engine.init
+[MAIN] after glfwSetInputMode
+[FONT] Loading bitmap font
+[FONT] Loading bitmap font descriptor
+[FONT] opening file: assets/font/mingliu-mimita-v3.fnt
+[FONT] common lineHeight=48 base=38 atlas=256x256
+[FONT] Loaded atlas page request id=0 path=assets/font/mingliu-mimita-v3_0.png
+[FONT] Loaded atlas page id=0 tex=1 size=256x256
+[FONT] Loaded atlas page request id=1 path=assets/font/mingliu-mimita-v3_1.png
+[FONT] Loaded atlas page id=1 tex=2 size=256x256
+[FONT] Loaded glyphs count=140 kernings=0 pages=2
+[FONT] VAO/VBO ready
+[MAIN] after fontInit()
+[UI] Initializing UI system
+[UI] Using built-in rectangle/vector fallback font; asset fonts are optional
+[UI] Initializing dedicated screen-space UI shader
+[UI] UI shader linked program=6
+[MAIN] after uiInit()
+[DBGVIS] init
+[MAIN] after DebugVis::init()
+[DEV CONFIG] Bound F1 (0x122) -> toggle_npc_menu : Toggle NPC Dev Menu
+[DEV CONFIG] Bound F2 (0x123) -> spawn_npc : Spawn NPC at cursor
+[DEV CONFIG] Bound F3 (0x124) -> teleport_selected_to_player : Teleport selected NPCs to player
+[DEV CONFIG] Bound F4 (0x125) -> select_all_npcs : Select all NPCs
+[DEV CONFIG] Bound F5 (0x126) -> clear_selection : Clear NPC selection
+[DEV CONFIG] Bound F6 (0x127) -> teleport_selected_to_coords : Teleport selected to coordinates
+[DEV CONFIG] Bound F7 (0x128) -> npc_menu_select_next : Cycle NPC selection next
+[DEV CONFIG] Bound F8 (0x129) -> npc_menu_select_prev : Cycle NPC selection prev
+[DEV CONFIG] Bound F9 (0x12A) -> spawn_npc_diff_1 : Spawn NPC difficulty 1
+[DEV CONFIG] Bound F10 (0x12B) -> spawn_npc_diff_5 : Spawn NPC difficulty 5
+[DEV CONFIG] Bound F11 (0x12C) -> spawn_npc_diff_10 : Spawn NPC difficulty 10
+[DEV CONFIG] Bound F12 (0x12D) -> reload_dev_config : Reload this config file
+[DEV CONFIG] Loaded 12 bindings from config/dev_controls.txt
+[DEV OVERLAY] Initialized
+[DEV OVERLAY] Notification: Dev mode enabled. Press ` to open console.
+[DEV OVERLAY] Notification: Loaded config: default
+[ACCOUNT CONFIG] Loaded 0 binds from config/accounts/default.json
+[DUEL STATS] loaded kills=0 deaths=0 points=0 xp=0
+[VIDEO] Loaded: resolution=2 (1024x768) fullscreen=0 maxFrames=999 vsync=0
+[RENDERER] Video mode applied: 1024x768 fullscreen=0
+[POSTFX] FBO created: 1024x768
+[FRAME PACER] maxFrames=999 (target=1.00 ms)
+[FRAME PACER] vsync=OFF
+[POSTFX] Loaded config from config/postfx.json
+[INPUT COMMANDS] Bound walkforward = W
+[INPUT COMMANDS] Bound walkback = S
+[INPUT COMMANDS] Bound walkleft = A
+[INPUT COMMANDS] Bound walkright = D
+[INPUT COMMANDS] Bound jump = SPACE
+[INPUT COMMANDS] Bound dash = LEFT_SHIFT
+[INPUT COMMANDS] Bound down_dash = Q
+[INPUT COMMANDS] Bound freeze = E
+[INPUT COMMANDS] Bound reload = R
+[INPUT COMMANDS] Initialized with callback
+[INPUT COMMANDS] Loaded binds from config/accounts/default.json
+[DEV COMMANDS] Registered: tp_selected_to_me - Teleport selected NPCs to local player
+[DEV COMMANDS] Registered: tp_selected_to_coords - Teleport selected NPCs to coordinates
+[DEV COMMANDS] Registered: tp_selected_to_spawn - Teleport selected NPCs to spawn point
+[LIGHTING] Loaded config from config/lighting.json
+[SHADOWS] Loaded config from config/shadows.json
+[EFFECT PART] Initialized pool size=4096
+[HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-3512-1.dll
+[HOT RELOAD] reload success generation=1
+[MAIN] dev tools initialized
+[MAIN] after glEnable and glBlendFunc()
+[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[TEXTURE] Loading texture assets/textures/default.png
+[TEXTURE] Uploading to GPU tex=4 size=64x64 channels=4
+[TEXTURE] Upload complete assets/textures/default.png tex=4
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[PLAYER GLB] hierarchy nodes=7 bodyColliders=6 root=plrOrigin expected
+[TEXTURE] Loading texture assets/outfits/suitv4debug.png
+[TEXTURE] Uploading to GPU tex=5 size=2000x2000 channels=4
+[TEXTURE] Upload complete assets/outfits/suitv4debug.png tex=5
+[MAIN] player made
+[MAIN] npc system made
+[MAIN] camera made
+[CAMERA] Smoothing default: 0.0
+[CAMERA] Raw 1:1 camera enabled
+[ENGINE] Camera bound
+[MAIN] camera bound
+[WEAPON] Registered: revolver (slot 1)
+[WEAPON] Registered: godball (slot 2)
+[WEAPON] Registered: shotgun (slot 3)
+[WEAPON] Registered: swordsword (slot 4)
+[WEAPON] Registered: op_revolver (slot 5)
+[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver
+[WEAPON SYSTEM] initialized
+[DUPLICATE COMMAND] godball_debug
+[DUPLICATE COMMAND] npc_damage_debug
+[DUPLICATE COMMAND] ragdoll_debug
+[DUPLICATE COMMAND] animation_debug
+[DUPLICATE COMMAND] replay.play
+[DUPLICATE COMMAND] replay_debug
+[GUI LAYOUT] Loaded 5 elements from config/gui/main-menu.json
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[WEAPON POSE] weapon=godball usePose=false
+[WEAPON POSE] weapon=revolver usePose=true
+[WEAPON POSE] weapon=shotgun usePose=true
+[WEAPON POSE] weapon=sword usePose=true
+[HOT RELOAD] player procedural config reloaded
+[PROC HOT RELOAD] config reloaded: writeTime changed
+[TERMINAL] opened
+[EXPORTTRACE] export_test_ffmpeg command ENTERED
+[EXPORTTRACE] ffmpeg path=C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffmpeg.exe
+[EXPORTTRACE] ffmpeg exists OK
+[EXPORTTRACE] ShellExecuteA params:
+[EXPORTTRACE]   operation="open"
+[EXPORTTRACE]   file="cmd.exe"
+[EXPORTTRACE]   parameters="/k "C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffmpeg.exe" -version"
+[EXPORTTRACE]   directory=NULL
+[EXPORTTRACE]   show=SW_SHOWNORMAL
+[EXPORTTRACE] Calling ShellExecuteA...
+[EXPORTTRACE] ShellExecuteA returned 42 (0=success, <=32=error)
+[EXPORTTRACE] ShellExecuteA SUCCESS (cmd window should be open)
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=music-pause
+[UI HOVER EXIT] id=music-pause
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=music-pause
+[UI HOVER EXIT] id=music-pause
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=SETTINGS
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=music-pause
+[UI HOVER EXIT] id=music-pause
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=SETTINGS
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=music-skip
+[UI HOVER EXIT] id=music-skip
+[UI HOVER ENTER] id=music-skip
+[UI HOVER EXIT] id=music-skip
+[UI HOVER ENTER] id=music-skip
+[UI HOVER EXIT] id=music-skip
+[UI HOVER ENTER] id=music-prev
+[UI HOVER EXIT] id=music-prev
+[UI HOVER ENTER] id=music-prev
+[UI HOVER EXIT] id=music-prev
+[UI HOVER ENTER] id=music-mute
+[AUDIO] Engine initialized
+[AUDIO] Combat sounds preloaded
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=music-mute
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=music-mute
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=music-mute
+[UI HOVER ENTER] id=music-pause
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=music-pause
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=SETTINGS
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=EXIT
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=EXIT
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=EXIT
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=EXIT
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=REPLAYS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=REPLAYS
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=PLAY
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=PLAY
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=PLAY
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[TERMINAL] closed
+[UI HOVER ENTER] id=REPLAYS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=REPLAYS
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=REPLAYS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=PLAY
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: PLAY
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[MAIN MENU] Play pressed
+[GUI LAYOUT] Loaded 4 elements from config/gui/play-menu.json
+[UI HOVER EXIT] id=PLAY
+[SOUND] stopped event=ui/click
+[UI HOVER ENTER] id=ONLINE / COMMUNITY SERVERS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=ONLINE / COMMUNITY SERVERS
+[UI HOVER ENTER] id=PRACTICE
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=PRACTICE
+[UI HOVER ENTER] id=ONLINE / COMMUNITY SERVERS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=ONLINE / COMMUNITY SERVERS
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=DUELS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: DUELS
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[GUI LAYOUT] Loaded 10 elements from config/gui/duel-config-menu.json
+[UI HOVER EXIT] id=DUELS
+[SOUND] stopped event=ui/click
+[UI HOVER ENTER] id=START DUEL
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: START DUEL
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[MAIN] gameState changed 0 -> 1
+[MAIN] PLAY requested without sandbox selection; loading default world
+[WORLD GLB] loading assets/maps/mimita-aabb-only-interior-small-v4.glb
+[GLB IMAGE] index=0 name=winxp width=64 height=64 components=4 embedded=yes bv=5
+[GLB IMAGE] index=1 name=grass width=64 height=64 components=4 embedded=yes bv=511
+[GLB IMAGE] index=2 name=greyskyv1 width=64 height=64 components=4 embedded=yes bv=849
+[GLB IMAGE] index=3 name=checker width=64 height=64 components=4 embedded=yes bv=1187
+[GLB IMAGE] index=4 name=teethv2 width=64 height=64 components=4 embedded=yes bv=1589
+[GLB IMAGE] index=5 name=exclamation width=64 height=64 components=4 embedded=yes bv=1991
+[GLB IMAGE] index=6 name=text width=64 height=64 components=4 embedded=yes bv=2024
+[GLB IMAGE] index=7 name=greenwirev1 width=64 height=64 components=4 embedded=yes bv=2057
+[GLB IMAGE] index=8 name=greengreenv3 width=64 height=64 components=4 embedded=yes bv=2300
+[GLB IMAGE] index=9 name=grimev1 width=64 height=64 components=4 embedded=yes bv=2720
+[GLB IMAGE] index=10 name=grimev4 width=64 height=64 components=4 embedded=yes bv=3053
+[GLB IMAGE] index=11 name=enterv3 width=64 height=64 components=4 embedded=yes bv=3423
+[GLB MATERIAL] material=0 name=Material.003 baseColorTexture=0 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=0 textureIndex=0 sourceImage=0
+[GLB MATERIAL] material=0 name=Material.003 texture=6
+[GLB MATERIAL] material=1 name=Material.005 baseColorTexture=1 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=1 textureIndex=1 sourceImage=1
+[GLB MATERIAL] material=1 name=Material.005 texture=7
+[GLB MATERIAL] material=2 name=Material.009 baseColorTexture=2 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=2 textureIndex=2 sourceImage=2
+[GLB MATERIAL] material=2 name=Material.009 texture=8
+[GLB MATERIAL] material=3 name=Material.013 baseColorTexture=3 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=3 textureIndex=3 sourceImage=3
+[GLB MATERIAL] material=3 name=Material.013 texture=9
+[GLB MATERIAL] material=4 name=Material.010 baseColorTexture=4 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=4 textureIndex=4 sourceImage=4
+[GLB MATERIAL] material=4 name=Material.010 texture=10
+[GLB MATERIAL] material=5 name=Material.011 baseColorTexture=5 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=5 textureIndex=5 sourceImage=5
+[GLB MATERIAL] material=5 name=Material.011 texture=11
+[GLB MATERIAL] material=6 name=Material.014 baseColorTexture=6 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=6 textureIndex=6 sourceImage=6
+[GLB MATERIAL] material=6 name=Material.014 texture=12
+[GLB MATERIAL] material=7 name=Material.012 baseColorTexture=7 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=7 textureIndex=7 sourceImage=7
+[GLB MATERIAL] material=7 name=Material.012 texture=13
+[GLB MATERIAL] material=8 name=Material.006 baseColorTexture=8 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=8 textureIndex=8 sourceImage=8
+[GLB MATERIAL] material=8 name=Material.006 texture=14
+[GLB MATERIAL] material=9 name=Material.001 baseColorTexture=9 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=9 textureIndex=9 sourceImage=9
+[GLB MATERIAL] material=9 name=Material.001 texture=15
+[GLB MATERIAL] material=10 name=Material baseColorTexture=10 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=10 textureIndex=10 sourceImage=10
+[GLB MATERIAL] material=10 name=Material texture=16
+[GLB MATERIAL] material=11 name=Material.008 baseColorTexture=11 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=11 textureIndex=11 sourceImage=11
+[GLB MATERIAL] material=11 name=Material.008 texture=17
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=6 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=7 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=8 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=9 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=10 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=11 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=12 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=13 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=14 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=15 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=16 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=17 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=18 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=19 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=20 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=21 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=22 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=23 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=24 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=25 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=26 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=27 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=28 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=29 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=30 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=31 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=32 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=33 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=34 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=35 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=36 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=37 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=38 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=39 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=40 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=41 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=42 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=43 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=44 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=45 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=46 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=47 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=48 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=49 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=50 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=51 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=52 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=53 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=54 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=55 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=56 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=57 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=58 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=59 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=60 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=61 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=62 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=63 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=64 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=65 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=66 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=67 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=68 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=69 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=70 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=71 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=72 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=73 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=74 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=75 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=76 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=77 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=78 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=79 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=80 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=81 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=82 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=83 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=84 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=85 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=86 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=87 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=88 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=89 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=90 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=91 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=92 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=93 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=94 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=95 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=96 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=97 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=98 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=99 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=100 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=101 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=102 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=103 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=104 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=105 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=106 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=107 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=108 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=109 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=110 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=111 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=112 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=113 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=114 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=115 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=116 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=117 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=118 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=119 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=120 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=121 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=122 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=123 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=124 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=125 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(3.1713,1.0682) uv1=(-0.0550,2.1436)
+[GLB UV] mesh=126 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=127 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=128 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=129 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=130 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=131 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=132 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=133 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=134 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=135 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=136 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=137 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=138 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=139 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=140 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=141 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=142 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=143 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=144 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=145 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=146 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=147 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=148 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=149 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=150 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=151 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=152 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=153 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=154 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=155 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=156 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=157 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=158 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=159 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=160 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=161 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=162 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=163 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=164 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=165 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=166 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=167 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=168 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=169 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=170 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=171 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=172 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=173 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=174 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=175 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=176 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=177 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=178 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=179 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=180 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=181 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=182 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=183 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=184 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=185 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=186 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=187 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=188 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=189 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=190 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=191 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=192 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=193 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=194 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=195 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=196 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=197 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=198 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=199 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=200 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=201 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=202 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=203 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=204 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=205 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=206 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=207 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=208 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=209 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0075,0.0105) uv1=(0.0011,-0.9981)
+[GLB UV] mesh=210 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=211 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=212 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=213 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=214 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=215 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=216 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=217 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=218 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=219 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=220 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=221 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=222 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=223 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=224 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=225 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=226 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=227 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=228 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=229 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=230 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=231 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=232 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=233 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=234 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=235 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=236 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=237 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=238 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=239 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=240 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=241 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=242 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=243 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=244 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=245 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=246 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=247 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=248 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=249 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=250 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=251 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=252 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=253 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=254 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=255 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=256 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=257 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=258 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=259 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=260 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=261 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=262 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=263 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=264 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=265 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=266 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=267 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=268 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=269 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=270 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=271 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=272 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=273 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=274 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=275 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=276 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=277 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=278 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=279 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=280 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=281 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=282 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=283 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=284 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=285 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=286 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=287 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=288 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=289 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=290 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=291 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=292 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=293 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8777,0.6624) uv1=(-0.4779,-0.3578)
+[GLB UV] mesh=294 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=295 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=296 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=297 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=298 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=299 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=300 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=301 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=302 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=303 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=304 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=305 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=306 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=307 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=308 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=309 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=310 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=311 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=312 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=313 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=314 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=315 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=316 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=317 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=318 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=319 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=320 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=321 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=322 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(1.0789,2.0525)
+[GLB UV] mesh=323 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=324 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=325 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=326 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=327 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=328 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=329 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0789,-2.0520) uv1=(2.1050,1.0264)
+[GLB UV] mesh=330 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=331 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=332 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=333 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=334 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=335 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=336 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=337 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=338 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=339 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=340 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=341 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=342 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=343 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=344 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=345 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=346 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=347 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=348 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=349 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=350 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=351 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=352 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=353 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=354 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=355 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=356 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=357 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=358 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=359 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=360 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=361 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=362 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=363 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=364 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=365 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=366 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=367 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=368 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=369 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=370 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=371 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=372 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=373 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=374 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=375 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=376 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=377 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=378 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=379 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=380 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=381 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=382 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=383 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=384 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=385 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=386 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=387 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=388 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=389 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=390 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=391 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=392 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=393 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(2.1050,1.0264) uv1=(1.0789,2.0525)
+[GLB UV] mesh=394 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=395 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=396 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=397 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=398 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=399 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=400 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=401 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=402 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=403 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=404 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=405 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=406 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=407 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=408 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=409 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=410 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=411 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=412 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=413 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=414 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=415 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=416 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=417 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=418 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=419 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=420 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=421 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=422 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=423 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=424 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=425 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=426 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=427 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=428 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=429 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=430 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=431 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=432 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=433 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=434 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=435 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=436 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=437 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=438 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=439 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=440 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=441 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=442 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=443 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=444 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=445 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=446 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=447 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=448 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=449 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=450 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=451 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=452 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=453 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=454 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=455 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=456 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=457 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=458 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=459 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=460 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=461 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=462 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=463 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=464 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=465 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=466 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=467 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=468 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=469 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=470 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=471 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=472 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=473 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=474 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=475 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=476 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=477 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=478 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=479 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=480 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=481 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=482 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=483 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=484 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=485 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=486 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=487 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=488 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=489 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=490 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=491 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=492 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-2.0342,-0.0139) uv1=(1.0195,-1.0318)
+[GLB UV] mesh=493 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(1.0195,-1.0318) uv1=(2.0374,-0.0139)
+[GLB UV] mesh=494 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=495 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=496 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=497 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=498 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=499 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=500 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=501 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.8228,0.0606) uv1=(0.0558,2.6963)
+[GLB UV] mesh=502 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=503 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=504 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=505 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=506 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=507 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=508 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=509 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.7345,0.0833) uv1=(0.1044,2.5999)
+[GLB UV] mesh=510 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=511 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=512 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=513 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=514 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=515 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=516 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=517 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=518 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=519 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=520 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=521 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=522 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=523 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=524 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=525 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=526 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=527 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=528 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=529 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=530 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=531 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=532 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=533 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=534 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=535 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=536 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=537 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=538 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=539 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=540 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=541 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,1.0000)
+[GLB UV] mesh=542 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=543 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=544 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=545 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=546 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=547 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=548 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=549 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=550 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=551 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=552 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=553 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=554 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=555 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=556 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=557 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=558 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=559 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=560 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=561 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=562 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=563 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=564 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=565 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=566 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=567 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=568 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=569 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=570 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=571 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.1992,3.5610) uv1=(-1.4706,-0.2532)
+[GLB UV] mesh=572 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=573 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=574 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=575 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=576 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=577 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=578 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=579 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=580 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=581 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=582 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=583 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=584 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=585 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=586 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=587 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=588 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=589 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=590 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=591 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=592 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=593 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=594 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=595 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=596 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=597 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=598 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=599 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=600 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=601 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=602 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=603 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=604 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=605 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=606 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=607 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=608 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=609 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=610 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=611 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=612 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=613 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=614 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=615 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=616 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=617 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=618 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=619 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=620 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=621 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=622 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=623 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=624 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=625 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=626 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=627 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=628 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=629 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=630 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=631 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=632 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=633 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=634 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=635 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=636 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=637 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=638 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=639 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=640 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=641 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=642 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=643 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=644 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=645 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=646 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=647 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=648 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=649 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=650 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=651 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=652 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,3.5610)
+[GLB UV] mesh=653 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=654 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=655 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=656 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=657 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.3957,-0.0797) uv1=(-0.1243,-1.3511)
+[GLB UV] mesh=658 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=659 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=660 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=661 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=662 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=663 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=664 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=665 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=666 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=667 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1877,-0.0646) uv1=(-0.1049,-1.1474)
+[GLB UV] mesh=668 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=669 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=670 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=671 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=672 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=673 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.4706,-0.2532) uv1=(-0.1992,-1.5246)
+[GLB UV] mesh=674 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=675 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=676 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=677 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=678 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=679 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=680 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=681 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=682 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=683 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=684 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=685 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=686 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=687 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=688 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=689 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=690 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=691 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=692 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=693 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,2.4944)
+[GLB UV] mesh=694 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,2.4944)
+[GLB UV] mesh=695 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=696 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,2.4944)
+[GLB UV] mesh=697 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,2.4944)
+[GLB UV] mesh=698 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=699 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=700 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=701 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=702 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=703 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=704 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=705 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=706 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=707 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=708 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=709 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=710 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=711 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=712 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=713 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=714 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=715 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=716 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=717 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=718 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=719 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=720 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=721 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=722 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=723 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=724 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=725 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=726 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=727 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=728 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=729 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=730 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=731 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=732 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=733 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=734 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=735 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=736 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=737 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=738 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=739 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=740 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=741 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=742 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=743 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=744 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=745 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=746 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=747 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=748 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=749 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=750 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=751 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=752 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=753 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=754 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=755 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=756 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.6466,0.0920) uv1=(0.1542,-0.7088)
+[GLB UV] mesh=757 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=758 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=759 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=760 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=761 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=762 prim=0 hasTexcoord0=yes uvCount=98 vertexCount=98 uv0=(-1.0838,0.0062) uv1=(-1.0838,0.0062)
+[GLB UV] mesh=763 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=764 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=765 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=766 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=767 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=768 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=769 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=770 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=771 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=772 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=773 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=774 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=775 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=776 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=777 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=778 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=779 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=780 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=781 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=782 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=783 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=784 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=785 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=786 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=787 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=788 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=789 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=790 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=791 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=792 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=793 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=794 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=795 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=796 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=797 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=798 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=799 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=800 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=801 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=802 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=803 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=804 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=805 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=806 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=807 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=808 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=809 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=810 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=811 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=812 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=813 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=814 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=815 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=816 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=817 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=818 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=819 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=820 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=821 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=822 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=823 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=824 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=825 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=826 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=827 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=828 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=829 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=830 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=831 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=832 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=833 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=834 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=835 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=836 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=837 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=838 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=839 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=840 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=841 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,3.1378)
+[GLB UV] mesh=842 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,3.1378)
+[GLB UV] mesh=843 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,3.1378)
+[GLB UV] mesh=844 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,3.1378)
+[GLB UV] mesh=845 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,3.1378)
+[GLB UV] mesh=846 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,3.1378)
+[GLB UV] mesh=847 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=848 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.0890,0.0010) uv1=(-0.0434,-1.0446)
+[GLB UV] mesh=849 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=850 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=851 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=852 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=853 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=854 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=855 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=856 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=857 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=858 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=859 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=860 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=861 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=862 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=863 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=864 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=865 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=866 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=867 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=868 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=869 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=870 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=871 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=872 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=873 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=874 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=875 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=876 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=877 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=878 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=879 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=880 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=881 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=882 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=883 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=884 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=885 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=886 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=887 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=888 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=889 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=890 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=891 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=892 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=893 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=894 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=895 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=896 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=897 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=898 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=899 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=900 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=901 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=902 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=903 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=904 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=905 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=906 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=907 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=908 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=909 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=910 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=911 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=912 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=913 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=914 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=915 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=916 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=917 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=918 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=919 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=920 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=921 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=922 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=923 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=924 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=925 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=926 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=927 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=928 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=929 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.1174,3.1426) uv1=(-1.1994,-0.0663)
+[GLB UV] mesh=930 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=931 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=932 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=933 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=934 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=935 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=936 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=937 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=938 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=939 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=940 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=941 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=942 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=943 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=944 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=945 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=946 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=947 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=948 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=949 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=950 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=951 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=952 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=953 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=954 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=955 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=956 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=957 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=958 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=959 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=960 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=961 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=962 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=963 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=964 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=965 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=966 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=967 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=968 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=969 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=970 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=971 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=972 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=973 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=974 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=975 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=976 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=977 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=978 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=979 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=980 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=981 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=982 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=983 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=984 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=985 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=986 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=987 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=988 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=989 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=990 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=991 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=992 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=993 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=994 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=995 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=996 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=997 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=998 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=999 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1000 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1001 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1002 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1003 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.1174,-1.1360) uv1=(-1.1994,-0.0663)
+[GLB UV] mesh=1004 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1005 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.1174,-1.1360) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=1006 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.1174,-1.1360) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=1007 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1008 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-0.1174,-1.1360) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=1009 prim=0 hasTexcoord0=yes uvCount=147 vertexCount=147 uv0=(1.5054,1.0461) uv1=(-0.6584,1.0461)
+[GLB UV] mesh=1010 prim=0 hasTexcoord0=yes uvCount=142 vertexCount=142 uv0=(1.5054,1.0461) uv1=(-0.6584,1.0461)
+[GLB UV] mesh=1011 prim=0 hasTexcoord0=yes uvCount=2748 vertexCount=2748 uv0=(1.4378,-1.1360) uv1=(-0.5908,-1.1360)
+[GLB UV] mesh=1012 prim=0 hasTexcoord0=yes uvCount=2522 vertexCount=2522 uv0=(1.4378,-1.1360) uv1=(-0.5908,-1.1360)
+[GLB UV] mesh=1013 prim=0 hasTexcoord0=yes uvCount=20 vertexCount=20 uv0=(-1.1994,-0.0663) uv1=(-1.1994,-0.0663)
+[GLB UV] mesh=1014 prim=0 hasTexcoord0=yes uvCount=20 vertexCount=20 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=1015 prim=0 hasTexcoord0=yes uvCount=22 vertexCount=22 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=1016 prim=0 hasTexcoord0=yes uvCount=20 vertexCount=20 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[GLB UV] mesh=1017 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,-1.1360)
+[GLB UV] mesh=1018 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(-1.1994,-0.0663) uv1=(-0.1174,3.1426)
+[WORLD GLB] verts=42720 triangles=14240 batches=12
+[WORLD GLB] before collision build
+[WORLD GLB COLLISION] triangles=14240 bounds min=(-20.00 -51.00 -5.13) max=(564.00 110.00 130.00)
+[WORLD GLB COLLISION] chunks=9518 chunkSize=6.00
+[SPAWN GLB] total spawn points extracted: 0
+[WORLD GLB] after collision build
+[WORLD GLB] load success path=assets/maps/mimita-aabb-only-interior-small-v4.glb revision=1 spawns=0 unloadMs=0.00 totalMs=210.81
+[NPC SELECTION] Cleared selection
+[REPLAY] Recording started  map=mimita seed=0.0
+[WEAPON] Runtime initialized for weapon 'shotgun': ammo=2 reserve=1337
+[GLB IMAGE] index=0 name=T_Shotgun_BaseColor width=256 height=256 components=4 embedded=yes bv=9
+[GLB MATERIAL] material=0 name=M_Shotgun baseColorTexture=0 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=0 textureIndex=0 sourceImage=0
+[GLB MATERIAL] material=0 name=M_Shotgun texture=18
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=388 vertexCount=388 uv0=(0.6829,0.5490) uv1=(0.6829,0.5490)
+[VIEWMODEL] model loaded verts=684
+[SOUND] loaded event=entity/player/land path=assets/sound/entity/player/land.wav
+[SOUND] playing event=entity/player/land category=3D path=assets/sound/entity/player/land.wav
+[SHADOWS] Shadow map FBO created: 1024x1024
+[UI HOVER EXIT] id=START DUEL
+[SOUND] stopped event=ui/click
+[INPUT COMMANDS] Loaded binds from config/accounts/default.json
+[SOUND] loaded event=entity/player/land path=assets/sound/entity/player/land.wav
+[SOUND] playing event=entity/player/land category=3D path=assets/sound/entity/player/land.wav
+[SOUND] stopped event=entity/player/land
+[SOUND] stopped event=entity/player/land
+[WORLD] batches=12 vertices=42720 depth=1 cull=1 blend=0 polygonMode=0x1b02/0x0
+[WORLD] uLightDir=(-0.329,-0.094,-0.940) uAmbientStrength=0.720 uDiffuseStrength=0.450 uTextureBrightness=1.350 uTextureContrast=1.020 uDebugView=0
+[WORLD] uniform uLightDir location=10
+[WORLD] uniform uAmbientStrength location=4
+[WORLD] uniform uDiffuseStrength location=7
+[WORLD] uniform uTextureBrightness location=19
+[WORLD] uniform uTextureContrast location=20
+[WORLD] uniform uDebugView location=6
+
+FRAME
+
+1. bind postfx fbo: PASS OK
+2. render world: PASS OK
+3. render players: PASS OK
+4. render weapons: PASS OK
+5. render effects: PASS OK
+6. unbind postfx fbo: PASS OK
+7. postfx render: PASS OK
+8. gui render: PASS OK
+9. swap buffers: PASS OK
+
+World batches: 12
+World vertices: 42720
+World draw calls: 12
+
+Player draw calls: 6
+Weapon draw calls: 1
+Effect draw calls: 0
+Debug modes: master=1 wireframe=0 lightingOnly=0 uDebugView=0
+[TERMINAL] opened
+[WORLD] batches=12 vertices=42720 depth=1 cull=1 blend=0 polygonMode=0x1b02/0x0
+[WORLD] uLightDir=(-0.329,-0.094,-0.940) uAmbientStrength=0.720 uDiffuseStrength=0.450 uTextureBrightness=1.350 uTextureContrast=1.020 uDebugView=0
+[WORLD] uniform uLightDir location=10
+[WORLD] uniform uAmbientStrength location=4
+[WORLD] uniform uDiffuseStrength location=7
+[WORLD] uniform uTextureBrightness location=19
+[WORLD] uniform uTextureContrast location=20
+[WORLD] uniform uDebugView location=6
+
+FRAME
+
+1. bind postfx fbo: PASS OK
+2. render world: PASS OK
+3. render players: PASS OK
+4. render weapons: PASS OK
+5. render effects: PASS OK
+6. unbind postfx fbo: PASS OK
+7. postfx render: PASS OK
+8. gui render: PASS OK
+9. swap buffers: PASS OK
+
+World batches: 12
+World vertices: 42720
+World draw calls: 12
+
+Player draw calls: 6
+Weapon draw calls: 1
+Effect draw calls: 0
+Debug modes: master=1 wireframe=0 lightingOnly=0 uDebugView=0
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[PLAYER GLB] hierarchy nodes=7 bodyColliders=6 root=plrOrigin expected
+[SOUND] loaded event=npc_spawn path=assets/sound/U mimita sound effects.wav - item get.mp3
+[SOUND] playing event=npc_spawn category=3D path=assets/sound/U mimita sound effects.wav - item get.mp3
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[PLAYER GLB] hierarchy nodes=7 bodyColliders=6 root=plrOrigin expected
+[SOUND] loaded event=npc_spawn path=assets/sound/U mimita sound effects.wav - item get.mp3
+[SOUND] playing event=npc_spawn category=3D path=assets/sound/U mimita sound effects.wav - item get.mp3
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[PLAYER GLB] hierarchy nodes=7 bodyColliders=6 root=plrOrigin expected
+[SOUND] loaded event=npc_spawn path=assets/sound/U mimita sound effects.wav - item get.mp3
+[SOUND] playing event=npc_spawn category=3D path=assets/sound/U mimita sound effects.wav - item get.mp3
+[PLAYER HP FRAME] hp=100/100 pos=(0.5 5.0 58.8)
+[WORLD] batches=12 vertices=42720 depth=1 cull=1 blend=0 polygonMode=0x1b02/0x0
+[WORLD] uLightDir=(-0.329,-0.094,-0.940) uAmbientStrength=0.720 uDiffuseStrength=0.450 uTextureBrightness=1.350 uTextureContrast=1.020 uDebugView=0
+[WORLD] uniform uLightDir location=10
+[WORLD] uniform uAmbientStrength location=4
+[WORLD] uniform uDiffuseStrength location=7
+[WORLD] uniform uTextureBrightness location=19
+[WORLD] uniform uTextureContrast location=20
+[WORLD] uniform uDebugView location=6
+
+FRAME
+
+1. bind postfx fbo: PASS OK
+2. render world: PASS OK
+3. render players: PASS OK
+4. render weapons: PASS OK
+5. render effects: PASS OK
+6. unbind postfx fbo: PASS OK
+7. postfx render: PASS OK
+8. gui render: PASS OK
+9. swap buffers: PASS OK
+
+World batches: 12
+World vertices: 42720
+World draw calls: 12
+
+Player draw calls: 24
+Weapon draw calls: 1
+Effect draw calls: 0
+Debug modes: master=1 wireframe=0 lightingOnly=0 uDebugView=0
+[GUI OVERLAP DEBUG] enabled
+[PLAYER HP FRAME] hp=100/100 pos=(0.5 5.0 58.8)
+[PLAYER HP FRAME] hp=100/100 pos=(0.5 5.0 58.8)
+[WORLD] batches=12 vertices=42720 depth=1 cull=1 blend=0 polygonMode=0x1b02/0x0
+[WORLD] uLightDir=(-0.329,-0.094,-0.940) uAmbientStrength=0.720 uDiffuseStrength=0.450 uTextureBrightness=1.350 uTextureContrast=1.020 uDebugView=0
+[WORLD] uniform uLightDir location=10
+[WORLD] uniform uAmbientStrength location=4
+[WORLD] uniform uDiffuseStrength location=7
+[WORLD] uniform uTextureBrightness location=19
+[WORLD] uniform uTextureContrast location=20
+[WORLD] uniform uDebugView location=6
+
+FRAME
+
+1. bind postfx fbo: PASS OK
+2. render world: PASS OK
+3. render players: PASS OK
+4. render weapons: PASS OK
+5. render effects: PASS OK
+6. unbind postfx fbo: PASS OK
+7. postfx render: PASS OK
+8. gui render: PASS OK
+9. swap buffers: PASS OK
+
+World batches: 12
+World vertices: 42720
+World draw calls: 12
+
+Player draw calls: 24
+Weapon draw calls: 1
+Effect draw calls: 0
+Debug modes: master=1 wireframe=0 lightingOnly=0 uDebugView=0
