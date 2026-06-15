@@ -259,6 +259,28 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "commands",
+        "List all registered command names",
+        "commands",
+        [this](const std::vector<std::string>&) {
+            addLog("Registered commands (" + std::to_string(mCommands.size()) + " total):");
+            std::vector<std::string> names;
+            for (const auto& pair : mCommands)
+                names.push_back(pair.first);
+            std::sort(names.begin(), names.end());
+            std::string line;
+            for (size_t i = 0; i < names.size(); ++i) {
+                if (!line.empty()) line += "  ";
+                line += names[i];
+                if (line.size() > 100 || i == names.size() - 1) {
+                    addLog("  " + line);
+                    line.clear();
+                }
+            }
+        }
+    });
+
+    registerCommand({
         "clear",
         "Clear the terminal scrollback",
         "clear",

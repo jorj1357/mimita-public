@@ -3,6 +3,7 @@
 #include "render/outfit-atlas.h"
 #include "config/player-settings.h"
 #include "combat/weapon-registry.h"
+#include "effects/effect-part.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,9 @@
 #include <cstring>
 
 namespace MimitaNet {
+
+bool gNetDamageDebug = false;
+bool gNetHitDebug = false;
 
 namespace {
 
@@ -40,6 +44,7 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.aimDirection = {entity.aimX, entity.aimY, entity.aimZ};
     transform.pingMs = entity.pingMs;
     transform.receivedMs = nowMs();
+    transform.lastDashSerial = entity.lastDashSerial;
     return transform;
 }
 
@@ -117,6 +122,17 @@ void updateRenderedReplica(
     player.aimDirection = interpolation.target.aimDirection;
     player.hasAimData = glm::length(player.aimDirection) > 0.001f;
     player.username = interpolation.displayName;
+
+    // Detect dash serial change → trigger dash effect locally
+    if (interpolation.target.lastDashSerial != player.networkLastDashSerial)
+    {
+        player.didDash = true;
+        player.networkLastDashSerial = interpolation.target.lastDashSerial;
+        EffectPartSystem::instance().spawnDash(player.pos);
+        printf("[NET DASH] remote dash serial=%u\n",
+               (unsigned)interpolation.target.lastDashSerial);
+    }
+
     // Pass reconstructed aim direction so local animation system
     // produces matching limb positions for the remote player.
     player.updateProceduralAnimation(dt, player.aimDirection, player.pos);
@@ -406,6 +422,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
             }
             ++ctx.snapshotsReceived;
             ctx.lastSnapshotTick = snapshot->header.tick;
+            ctx.latestServerTick = snapshot->header.tick;
             ctx.lastSnapshotReceivedMs = nowMs();
             uint32_t count = std::min(snapshot->entityCount, (uint32_t)MAX_SNAPSHOT_ENTITIES);
             const bool logSnapshot = snapshot->header.tick % 60 == 0;
@@ -668,7 +685,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     const bool initialSpawn = !ctx.localPlayerReconciled;
     const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
     const bool serverRespawnedPlayer =
-        ctx.localServerHealth > 0 && player.dead && !ctx.awaitingExplodeDeath;
+        ctx.localServerHealth > 0 && player.dead;
     const bool catastrophicDivergence =
         error > CATASTROPHIC_DIVERGENCE &&
         !ctx.awaitingTeleportAck &&
@@ -850,6 +867,7 @@ uint32_t mpSendShotEvent(
     if (ctx.nextLocalShotSerial == 0)
         ctx.nextLocalShotSerial = 1;
     packet.clientTimeMs = nowMs();
+    packet.lastServerTick = ctx.latestServerTick;
     packet.targetPlayerId = targetPlayerId;
     packet.damage = damage;
     packet.power = power;

@@ -84,6 +84,7 @@ public:
 
     bool enabled() const { return config.enabled; }
     DuelPhase phase() const { return currentPhase; }
+    bool isCountdownActive() const { return currentPhase == DuelPhase::Countdown; }
     const DuelStats& stats() const { return playerStats; }
     int playerRoundsWon() const { return playerRoundsWon_; }
     int npcRoundsWon() const { return npcRoundsWon_; }

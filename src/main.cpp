@@ -88,11 +88,15 @@
 #include "replay/replay.h"
 #include "replay/replay-factory.h"
 #include "video/video-settings.h"
+#include "video/frame-pacer.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
+#include "crosshair/crosshair-commands.h"
+#include "crosshair/crosshair-config.h"
+#include "crosshair/crosshair-render.h"
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
 #include "render/lighting-config.h"
@@ -112,6 +116,7 @@
 // duelamanger should be  a game manager, with specific modes in it
 // not all in main todo 
 DuelManager gDuelManager;
+FramePacer gFramePacer;
 
 // Global game objects (pointers set by main() for terminal command access)
 Player* gpPlayer = nullptr;
@@ -343,6 +348,8 @@ int main(int argc, char** argv)
     // Load and apply video settings
     VideoSettings::instance().load();
     VideoSettings::instance().apply();
+    gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
+    gFramePacer.setVSync(VideoSettings::instance().vsync());
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
@@ -350,6 +357,8 @@ int main(int argc, char** argv)
 
     // Lighting config
     LightingConfig::instance().load("config/lighting.json");
+    CrosshairConfig::instance().load();
+    registerCrosshairCommands();
     
     // Effect part system init
     EffectPartSystem::instance().init();
@@ -1408,6 +1417,227 @@ int main(int argc, char** argv)
             Terminal::instance().addLog(std::string("[VIDEO] Fullscreen: ") +
                 (vs.fullscreen() ? "ON" : "OFF"));
             Terminal::instance().addLog("[VIDEO] Resizable: OFF");
+            Terminal::instance().addLog("[VIDEO] maxFrames=" +
+                std::to_string(vs.maxFrames()));
+            Terminal::instance().addLog(std::string("[VIDEO] vsync=") +
+                (vs.vsync() ? "ON" : "OFF"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "maxframes", "Set maximum FPS cap", "maxframes <10-999>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[VIDEO] maxFrames=" +
+                    std::to_string(VideoSettings::instance().maxFrames()));
+                return;
+            }
+            int fps = std::atoi(args[0].c_str());
+            VideoSettings::instance().setMaxFrames(fps);
+            gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
+            Terminal::instance().addLog("[VIDEO] maxFrames set to " +
+                std::to_string(gFramePacer.maxFrames()));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "vsync", "Toggle VSync", "vsync <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(std::string("[VIDEO] vsync=") +
+                    (VideoSettings::instance().vsync() ? "ON" : "OFF"));
+                return;
+            }
+            bool on = args[0] == "1";
+            VideoSettings::instance().setVSync(on);
+            gFramePacer.setVSync(on);
+            Terminal::instance().addLog(std::string("[VIDEO] vsync=") +
+                (on ? "ON" : "OFF"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "showfps", "Toggle FPS display", "showfps [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                gFramePacer.setShowFPS(!gFramePacer.showFPS());
+            } else {
+                gFramePacer.setShowFPS(args[0] == "1");
+            }
+            Terminal::instance().addLog(std::string("[VIDEO] showfps=") +
+                (gFramePacer.showFPS() ? "ON" : "OFF"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "frame_debug", "Toggle frame pacing diagnostics", "frame_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                gFramePacer.setFrameDebug(!gFramePacer.frameDebug());
+            } else {
+                gFramePacer.setFrameDebug(args[0] == "1");
+            }
+            // Enable FPS display automatically when frame debug is on
+            if (gFramePacer.frameDebug())
+                gFramePacer.setShowFPS(true);
+            Terminal::instance().addLog(std::string("[VIDEO] frame_debug=") +
+                (gFramePacer.frameDebug() ? "ON" : "OFF"));
+        }
+    });
+    static bool gNetPresentationDebug = false;
+    Terminal::instance().registerCommand({
+        "net_debug_presentation", "Toggle remote player presentation debug overlay", "net_debug_presentation [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                gNetPresentationDebug = !gNetPresentationDebug;
+            } else {
+                gNetPresentationDebug = args[0] == "1";
+            }
+            printf("[NET PRESENTATION DEBUG] %s\n", gNetPresentationDebug ? "ON" : "OFF");
+            Terminal::instance().addLog(gNetPresentationDebug
+                ? "[NET] Presentation debug ON"
+                : "[NET] Presentation debug OFF");
+        }
+    });
+    static bool gNetDebugEntities = false;
+    Terminal::instance().registerCommand({
+        "net_damage_debug", "Log damage pipeline: shooter/target/health/accept/reject", "net_damage_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                MimitaNet::gNetDamageDebug = !MimitaNet::gNetDamageDebug;
+            } else {
+                MimitaNet::gNetDamageDebug = args[0] == "1";
+            }
+            printf("[NET DAMAGE DEBUG] %s\n", MimitaNet::gNetDamageDebug ? "ON" : "OFF");
+            Terminal::instance().addLog(MimitaNet::gNetDamageDebug
+                ? "[NET] Damage debug ON"
+                : "[NET] Damage debug OFF");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "net_hit_debug", "Log raycast hit details: origin/direction/entity/distance", "net_hit_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                MimitaNet::gNetHitDebug = !MimitaNet::gNetHitDebug;
+            } else {
+                MimitaNet::gNetHitDebug = args[0] == "1";
+            }
+            printf("[NET HIT DEBUG] %s\n", MimitaNet::gNetHitDebug ? "ON" : "OFF");
+            Terminal::instance().addLog(MimitaNet::gNetHitDebug
+                ? "[NET] Hit debug ON"
+                : "[NET] Hit debug OFF");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "net_compare", "Show client/server/remote state side-by-side", "net_compare",
+        [&player](const std::vector<std::string>&) {
+            if (!mpContext.active) {
+                Terminal::instance().addLog("[NET] Not connected to server");
+                return;
+            }
+            Terminal::instance().addLog("=== NET COMPARE ===");
+            Terminal::instance().addLog("LOCAL CLIENT VIEW:");
+            Terminal::instance().addLog("  id=" + std::to_string(mpContext.localPlayerId) +
+                " hp=" + std::to_string(player.currentHp) +
+                " dead=" + std::to_string((int)player.dead) +
+                " pos=(" + std::to_string((int)player.pos.x) + "," +
+                           std::to_string((int)player.pos.y) + "," +
+                           std::to_string((int)player.pos.z) + ")" +
+                " weapon=" + player.equippedWeaponId);
+            Terminal::instance().addLog("SERVER SNAPSHOT:");
+            Terminal::instance().addLog("  id=" + std::to_string(mpContext.localPlayerId) +
+                " hp=" + std::to_string(mpContext.localServerHealth) +
+                " pos=(" + std::to_string((int)mpContext.localServerPosition.x) + "," +
+                           std::to_string((int)mpContext.localServerPosition.y) + "," +
+                           std::to_string((int)mpContext.localServerPosition.z) + ")" +
+                " awaitingExplode=" + std::to_string((int)mpContext.awaitingExplodeDeath) +
+                " reconciled=" + std::to_string((int)mpContext.localPlayerReconciled));
+            for (const auto& kv : mpContext.remotePlayers) {
+                auto it = mpContext.remotePlayerInterpolation.find(kv.first);
+                int snapAge = it != mpContext.remotePlayerInterpolation.end()
+                    ? (int)(MimitaNet::nowMs() - it->second.target.receivedMs)
+                    : -1;
+                Terminal::instance().addLog("REMOTE PLAYER id=" + std::to_string(kv.first) +
+                    " hp=" + std::to_string(kv.second.currentHp) +
+                    " dead=" + std::to_string((int)kv.second.dead) +
+                    " pos=(" + std::to_string((int)kv.second.pos.x) + "," +
+                               std::to_string((int)kv.second.pos.y) + "," +
+                               std::to_string((int)kv.second.pos.z) + ")" +
+                    " weapon=" + kv.second.equippedWeaponId +
+                    " snapAge=" + std::to_string(snapAge) + "ms");
+            }
+            for (const auto& kv : mpContext.remoteNpcs) {
+                Terminal::instance().addLog("REMOTE NPC id=" + std::to_string(kv.first) +
+                    " hp=" + std::to_string(kv.second.currentHp) +
+                    " dead=" + std::to_string((int)kv.second.dead) +
+                    " pos=(" + std::to_string((int)kv.second.pos.x) + "," +
+                               std::to_string((int)kv.second.pos.y) + "," +
+                               std::to_string((int)kv.second.pos.z) + ")");
+            }
+            Terminal::instance().addLog("=== END ===");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "net_entity_dump", "Dump all replicated entities with full state", "net_entity_dump",
+        [&player](const std::vector<std::string>&) {
+            if (!mpContext.active) {
+                Terminal::instance().addLog("[NET] Not connected to server");
+                return;
+            }
+            Terminal::instance().addLog("=== NET ENTITY DUMP ===");
+            Terminal::instance().addLog("LOCAL id=" + std::to_string(mpContext.localPlayerId) +
+                " hp=" + std::to_string(player.currentHp) +
+                " maxHp=" + std::to_string(player.maxHp) +
+                " dead=" + std::to_string((int)player.dead) +
+                " onGround=" + std::to_string((int)player.onGround) +
+                " slot=" + std::to_string(player.equippedSlot) +
+                " weapon=" + player.equippedWeaponId +
+                " pos=(" + std::to_string(player.pos.x) + "," + std::to_string(player.pos.y) + "," + std::to_string(player.pos.z) + ")" +
+                " vel=(" + std::to_string(player.vel.x) + "," + std::to_string(player.vel.y) + "," + std::to_string(player.vel.z) + ")" +
+                " yaw=" + std::to_string(player.yaw) +
+                " respawnTimer=" + std::to_string(player.respawnTimer));
+            Terminal::instance().addLog("SERVER health=" + std::to_string(mpContext.localServerHealth) +
+                " ping=" + std::to_string(mpContext.localPingMs) +
+                " tick=" + std::to_string(mpContext.tick) +
+                " snapshotsReceived=" + std::to_string(mpContext.snapshotsReceived) +
+                " snapshotsMissed=" + std::to_string(mpContext.snapshotsMissed));
+            for (const auto& kv : mpContext.remotePlayers) {
+                auto it = mpContext.remotePlayerInterpolation.find(kv.first);
+                std::string age = it != mpContext.remotePlayerInterpolation.end()
+                    ? std::to_string(MimitaNet::nowMs() - it->second.target.receivedMs) + "ms"
+                    : "none";
+                Terminal::instance().addLog("PLAYER id=" + std::to_string(kv.first) +
+                    " hp=" + std::to_string(kv.second.currentHp) +
+                    " dead=" + std::to_string((int)kv.second.dead) +
+                    " onGround=" + std::to_string((int)kv.second.onGround) +
+                    " slot=" + std::to_string(kv.second.equippedSlot) +
+                    " weapon=" + kv.second.equippedWeaponId +
+                    " pos=(" + std::to_string((int)kv.second.pos.x) + "," +
+                               std::to_string((int)kv.second.pos.y) + "," +
+                               std::to_string((int)kv.second.pos.z) + ")" +
+                    " yaw=" + std::to_string((int)kv.second.yaw) +
+                    " snapAge=" + age);
+            }
+            for (const auto& kv : mpContext.remoteNpcs) {
+                Terminal::instance().addLog("NPC id=" + std::to_string(kv.first) +
+                    " hp=" + std::to_string(kv.second.currentHp) +
+                    " dead=" + std::to_string((int)kv.second.dead) +
+                    " pos=(" + std::to_string((int)kv.second.pos.x) + "," +
+                               std::to_string((int)kv.second.pos.y) + "," +
+                               std::to_string((int)kv.second.pos.z) + ")" +
+                    " yaw=" + std::to_string((int)kv.second.yaw));
+            }
+            Terminal::instance().addLog("=== END DUMP ===");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "net_debug_entities", "Toggle entity replication debug overlay", "net_debug_entities [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                gNetDebugEntities = !gNetDebugEntities;
+            } else {
+                gNetDebugEntities = args[0] == "1";
+            }
+            printf("[NET ENTITIES DEBUG] %s\n", gNetDebugEntities ? "ON" : "OFF");
+            Terminal::instance().addLog(gNetDebugEntities
+                ? "[NET] Entity debug ON"
+                : "[NET] Entity debug OFF");
         }
     });
     Terminal::instance().registerCommand({
@@ -1468,6 +1698,21 @@ int main(int argc, char** argv)
             }
             Terminal::instance().addLog("[GUI] Hot reload: active (pollReload called each frame)");
             Terminal::instance().addLog("[GUI] Edit a JSON file, Ctrl+S, changes apply immediately");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "input_debug", "Toggle input debug overlay", "input_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            auto& cmd = InputCommandSystem::instance();
+            if (args.empty()) {
+                cmd.setInputDebug(!cmd.inputDebug());
+            } else {
+                cmd.setInputDebug(args[0] == "1");
+            }
+            const bool on = cmd.inputDebug();
+            Terminal::instance().addLog(on
+                ? "[INPUT] Debug ON: showing key states and buffers"
+                : "[INPUT] Debug OFF");
         }
     });
     Terminal::instance().registerCommand({
@@ -1642,8 +1887,10 @@ int main(int argc, char** argv)
     while (engine.running())
     {
         HotReloadSystem::instance().reloadGameDLLIfChanged();
-        float dt = engine.beginFrame();
+        gFramePacer.beginFrame();
+    float dt = engine.beginFrame();
         updatePlayerProceduralHotReload(dt);
+        CrosshairConfig::instance().pollReload();
         bool worldPassRan = false;
 
         audioUpdate(dt);
@@ -2527,11 +2774,12 @@ int main(int argc, char** argv)
             static bool mousePrev = false;
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd;
+            bool duelCountdown = gDuelManager.isCountdownActive();
             if (duelEndVisible && mouseDown && !mousePrev) {
                 Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=duel_end_ui consumed=1");
                 Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=duel_end_ui_visible");
             }
-            if (!replayPlaybackActive && !duelEndVisible &&
+            if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
                 !Terminal::instance().isOpen() && mouseDown) {
                 const WeaponDefinition* curDef = weapons.getCurrentDef(player);
                 bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
@@ -2551,7 +2799,7 @@ int main(int argc, char** argv)
 
             static bool rightMousePrev = false;
             bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-            if (!replayPlaybackActive &&
+            if (!replayPlaybackActive && !duelCountdown &&
                 !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev) {
                 if (!editorMode) {
                     weapons.fireAlt(camera, player, npcSystem, world);
@@ -2563,7 +2811,7 @@ int main(int argc, char** argv)
             for (int keySlot = 0; keySlot <= 9; ++keySlot) {
                 int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
                 bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
-                if (!replayPlaybackActive &&
+                if (!replayPlaybackActive && !duelCountdown &&
                     !Terminal::instance().isOpen() && down && !slotPrev[keySlot])
                     Terminal::instance().execute("equipslot" + std::to_string(keySlot));
                 slotPrev[keySlot] = down;
@@ -2678,8 +2926,13 @@ int main(int argc, char** argv)
             } else {
                 renderPlayer(player, camera);
                 if (mpContext.active) {
-                    for (auto& kv : mpContext.remotePlayers)
+                    for (auto& kv : mpContext.remotePlayers) {
                         renderNetworkPlayer(kv.second, camera, kv.first, false);
+                        weapons.renderRemoteWeapon(kv.second, camera);
+                    }
+                    for (auto& kv : mpContext.remoteNpcs) {
+                        renderNetworkPlayer(kv.second, camera, kv.first, false);
+                    }
                 }
                 npcSystem.render(camera);
             }
@@ -2723,7 +2976,68 @@ int main(int argc, char** argv)
                 DeathSystem::instance().render(camera);
                 weapons.render(camera, player);
             }
+
+            // Remote player presentation debug overlay
+            if (gNetPresentationDebug && mpContext.active)
+            {
+                float debugY = 120.0f;
+                for (const auto& kv : mpContext.remotePlayers)
+                {
+                    const Player& rp = kv.second;
+                    auto it = mpContext.remotePlayerInterpolation.find(kv.first);
+                    const MimitaNet::EntityInterpolationState* interp =
+                        it != mpContext.remotePlayerInterpolation.end() ? &it->second : nullptr;
+
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                        "REMOTE id=%u  weapon=%s  hp=%d  dead=%d  ground=%d  "
+                        "dashSer=%u  aim=(%.2f,%.2f)",
+                        kv.first, rp.equippedWeaponId.c_str(),
+                        rp.currentHp, (int)rp.dead, (int)rp.onGround,
+                        (unsigned)rp.networkLastDashSerial,
+                        rp.aimDirection.x, rp.aimDirection.y);
+                    uiDrawText(buf, 10.0f, debugY, 0.32f,
+                        rp.dead ? glm::vec4(1,0,0,1) : glm::vec4(0.3f,1,0.5f,1));
+                    debugY += 22.0f;
+
+                    if (interp)
+                    {
+                        snprintf(buf, sizeof(buf),
+                            "  pos=(%.1f,%.1f,%.1f)  vel=(%.1f,%.1f,%.1f)  yaw=%.1f",
+                            rp.pos.x, rp.pos.y, rp.pos.z,
+                            rp.vel.x, rp.vel.y, rp.vel.z, rp.yaw);
+                        uiDrawText(buf, 10.0f, debugY, 0.28f, {0.6f,0.7f,0.9f,1});
+                        debugY += 20.0f;
+                    }
+                }
+            }
             
+            // Entity replication debug overlay
+            if (gNetDebugEntities && mpContext.active)
+            {
+                float debugY = 120.0f;
+                auto drawEntityLine = [&](const char* label, uint32_t id,
+                    const Player& entity, const glm::vec4& color) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                        "%s id=%u  hp=%d  dead=%d  weapon=%s  "
+                        "pos=(%.1f,%.1f,%.1f)  yaw=%.1f",
+                        label, id, entity.currentHp, (int)entity.dead,
+                        entity.equippedWeaponId.c_str(),
+                        entity.pos.x, entity.pos.y, entity.pos.z, entity.yaw);
+                    uiDrawText(buf, 10.0f, debugY, 0.28f, color);
+                    debugY += 18.0f;
+                };
+
+                for (const auto& kv : mpContext.remotePlayers)
+                    drawEntityLine("PLAYER", kv.first, kv.second,
+                        kv.second.dead ? glm::vec4(1,0,0,1) : glm::vec4(0.3f,1,0.5f,1));
+
+                for (const auto& kv : mpContext.remoteNpcs)
+                    drawEntityLine("NPC", kv.first, kv.second,
+                        kv.second.dead ? glm::vec4(1,0.3f,0,1) : glm::vec4(0.2f,0.8f,1,1));
+            }
+
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
             DebugVis::flushTris(camera);
@@ -2932,23 +3246,16 @@ int main(int argc, char** argv)
                 if (rFrame && !rFrame->actors.empty()) {
                     const ReplayActorState& primary = rFrame->actors[0];
                     if (!primary.weaponName.empty() && primary.weaponName != "none") {
-                        const char* crosshairPath = "assets/crosshair/crosshairready.png";
-                        if (primary.reloading)
-                            crosshairPath = "assets/crosshair/crosshairreloading.png";
-                        else if (primary.shooting)
-                            crosshairPath = "assets/crosshair/crosshairdelay.png";
-                        float cs = 100.0f;
-                        const WeaponDefinition* rdef = WeaponRegistry::instance().get(primary.weaponName);
-                        if (rdef) cs = rdef->crosshairSize;
-                        uiDrawImage(crosshairPath,
-                                    {uiScreenW() * 0.5f - cs * 0.5f,
-                                     uiScreenH() * 0.5f - cs * 0.5f, cs, cs});
+                        updateCrosshairDynamic(
+                            dt, glm::length(glm::vec2(primary.velocity)),
+                            primary.grounded, false, primary.shooting);
+                        drawCrosshair(uiScreenW() * 0.5f, uiScreenH() * 0.5f);
                         char ammoLine[48];
                         snprintf(ammoLine, sizeof(ammoLine), "%d / %d",
                                  primary.currentAmmo, primary.reserveAmmo);
                         const float ammoW = uiMeasureText(ammoLine, 0.34f);
                         uiDrawText(ammoLine, uiScreenW() * 0.5f - ammoW * 0.5f,
-                                   uiScreenH() * 0.5f - cs * 1.1f,
+                                   uiScreenH() * 0.5f - 42.0f,
                                    0.34f, {1.0f, 0.82f, 0.3f, 1.0f});
                     }
                 }
@@ -2979,22 +3286,11 @@ int main(int argc, char** argv)
                 uiDrawText("freecam  Free Camera", helpX + 8.0f, hy, 0.24f,
                            {0.8f, 0.8f, 1.0f, 1.0f});
             } else {
-                const WeaponDefinition* crosshairDef = weapons.getCurrentDef(player);
-                if (crosshairDef && !crosshairDef->crosshairId.empty()) {
-                    const char* crosshairPath = "assets/crosshair/crosshairready.png";
-                    switch (weapons.crosshairState(player)) {
-                        case WeaponCrosshairState::Reloading:
-                            crosshairPath = "assets/crosshair/crosshairreloading.png";
-                            break;
-                        case WeaponCrosshairState::Delay:
-                            crosshairPath = "assets/crosshair/crosshairdelay.png";
-                            break;
-                        case WeaponCrosshairState::Ready:
-                            break;
-                    }
-                    float size = crosshairDef->crosshairSize;
-                    uiDrawImage(crosshairPath,
-                                {uiScreenW() * 0.5f - size * 0.5f, uiScreenH() * 0.5f - size * 0.5f, size, size});
+                if (weapons.getCurrentDef(player)) {
+                    updateCrosshairDynamic(
+                        dt, glm::length(glm::vec2(player.vel)), player.onGround,
+                        player.didDash, weapons.isShooting());
+                    drawCrosshair(uiScreenW() * 0.5f, uiScreenH() * 0.5f);
                 }
             }
             uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
@@ -3466,6 +3762,16 @@ int main(int argc, char** argv)
             }
 
             MusicManager::instance().drawAllOverlay();
+            if (gFramePacer.showFPS())
+            {
+                uiDrawText(gFramePacer.fpsText(), 12.0f, 12.0f, 0.36f,
+                           {0.3f, 1.0f, 0.5f, 1.0f});
+                if (gFramePacer.frameDebug())
+                {
+                    uiDrawText(gFramePacer.debugText(), 12.0f, 38.0f, 0.30f,
+                               {0.5f, 0.8f, 1.0f, 1.0f});
+                }
+            }
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
 
@@ -3507,6 +3813,7 @@ int main(int argc, char** argv)
         Terminal::instance().render();
 
         engine.endFrame();
+        gFramePacer.endFrame();
 
     }
 

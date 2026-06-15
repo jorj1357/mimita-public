@@ -6,10 +6,13 @@
 #include "config/player-settings.h"
 #include "audio/music-manager.h"
 #include "video/video-settings.h"
+#include "crosshair/crosshair-config.h"
+#include "crosshair/crosshair-render.h"
 
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 
 static const char* kOnOff[] = { "OFF", "ON" };
 
@@ -212,6 +215,50 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
             renderDebug ? glm::vec4(0.25f,0.7f,0.35f,1) : glm::vec4(0.5f,0.2f,0.2f,1),
             "render_debug").clicked)
             renderDebug = !renderDebug;
+    }
+
+    // ===== CROSSHAIR =====
+    {
+        auto& config = CrosshairConfig::instance();
+        auto& crosshair = config.edit();
+        uiDrawText("CROSSHAIR", uiScaleX(1080.0f), uiScaleY(120.0f), 0.48f,
+                   {0.65f, 0.85f, 1.0f, 1.0f});
+        uiDrawRect({uiScaleX(1450.0f), uiScaleY(150.0f),
+                    uiScaleX(300.0f), uiScaleY(220.0f)},
+                   {0.08f, 0.09f, 0.12f, 1.0f}, "crosshair-preview");
+        drawCrosshairPreview(uiScaleX(1600.0f), uiScaleY(260.0f),
+                             std::min(uiScaleX(2.0f), uiScaleY(2.0f)));
+
+        bool changed = false;
+        auto slider = [&](const char* label, float y, float* value,
+                          float minValue, float maxValue) {
+            uiDrawText(label, uiScaleX(1080.0f), uiScaleY(y), 0.30f,
+                       {0.8f, 0.85f, 0.95f, 1.0f});
+            changed |= uiSlider(win, label, {1080.0f, y + 28.0f, 300.0f, 24.0f},
+                                value, minValue, maxValue);
+        };
+        slider("Size", 176.0f, &crosshair.size, 0.0f, 32.0f);
+        slider("Gap", 246.0f, &crosshair.gap, 0.0f, 32.0f);
+        slider("Thickness", 316.0f, &crosshair.thickness, 1.0f, 10.0f);
+
+        float red = (float)crosshair.red;
+        float green = (float)crosshair.green;
+        float blue = (float)crosshair.blue;
+        slider("Red", 386.0f, &red, 0.0f, 255.0f);
+        slider("Green", 456.0f, &green, 0.0f, 255.0f);
+        slider("Blue", 526.0f, &blue, 0.0f, 255.0f);
+        crosshair.red = (int)red;
+        crosshair.green = (int)green;
+        crosshair.blue = (int)blue;
+
+        changed |= uiCheckbox(win, "Dot", {1080.0f, 610.0f, 72.0f, 32.0f}, &crosshair.dot);
+        changed |= uiCheckbox(win, "Outline", {1080.0f, 658.0f, 72.0f, 32.0f}, &crosshair.outline);
+        changed |= uiCheckbox(win, "Dynamic", {1080.0f, 706.0f, 72.0f, 32.0f}, &crosshair.dynamic);
+        changed |= uiCheckbox(win, "Top", {1280.0f, 610.0f, 72.0f, 32.0f}, &crosshair.showTop);
+        changed |= uiCheckbox(win, "Bottom", {1280.0f, 658.0f, 72.0f, 32.0f}, &crosshair.showBottom);
+        changed |= uiCheckbox(win, "Left", {1450.0f, 610.0f, 72.0f, 32.0f}, &crosshair.showLeft);
+        changed |= uiCheckbox(win, "Right", {1450.0f, 658.0f, 72.0f, 32.0f}, &crosshair.showRight);
+        if (changed) config.save();
     }
 
     // ===== BACK BUTTON =====

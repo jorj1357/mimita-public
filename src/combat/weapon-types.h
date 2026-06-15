@@ -58,8 +58,6 @@ struct WeaponDefinition {
     std::string soundDryFire;
     std::string soundEquip;
     std::string poseId;  // which weapon pose config to use (empty = use own id)
-    std::string crosshairId;  // which crosshair to use (empty = default)
-    float crosshairSize = 100.0f;  // crosshair pixel size
 
     std::unordered_map<std::string, float> customParams;
 
