@@ -14,3 +14,5 @@ struct World;
 class Camera;
 
 void renderWorld(const World& world, const Camera& cam);
+void setWorldSolidRedDebug(bool enabled);
+bool worldSolidRedDebug();

@@ -28,6 +28,7 @@
 #include "config.h"
 #include "physics/config.h"
 #include "debug/gl-debug.h"
+#include "debug/debug-diag.h"
 #include "effects/effect-part.h"
 #include "replay/replay-scene.h"
 
@@ -1519,6 +1520,7 @@ void Player::renderCurrentPose(unsigned int shader,
             {
                 MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
                 MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                diagRenderCountPlayerDraw();
             }
         }
         return;
@@ -1548,6 +1550,7 @@ void Player::renderCurrentPose(unsigned int shader,
         {
             MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
             MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+            diagRenderCountPlayerDraw();
         }
         return;
     }
@@ -1571,6 +1574,7 @@ void Player::renderCurrentPose(unsigned int shader,
 
     MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));
+    diagRenderCountPlayerDraw();
 }
 
 void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce)
