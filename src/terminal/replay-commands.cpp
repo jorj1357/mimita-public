@@ -5,6 +5,9 @@
 #include <cstring>
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+
+#include "replay/replay-export.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -463,6 +466,26 @@ void registerReplayCommands()
             REPLAY_PLAYER.seekToTick(newTick);
             printf("[REPLAY] skipped 1s to tick %u\n", newTick);
             Terminal::instance().addLog("[REPLAY] skipped to tick " + std::to_string(newTick));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_export_mp4", "Export a saved replay JSON clip to MP4 video", "replay_export_mp4 [path]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: replay_export_mp4 <path-to-clip.json>");
+                return;
+            }
+            std::string path = args[0];
+            if (!std::filesystem::exists(path)) {
+                Terminal::instance().addLog("[ERROR] File not found: " + path);
+                return;
+            }
+            if (startReplayExport(path, 1280, 720)) {
+                Terminal::instance().addLog("[REPLAY] Export started for: " + path);
+            } else {
+                Terminal::instance().addLog("[ERROR] Failed to start export");
+            }
         }
     });
 }

@@ -21,6 +21,7 @@
 #include "camera.h"
 #include "gui/gui-layout.h"
 #include "gui/ui-system.h"
+#include "gui/gui-editor.h"
 #include "debug/debug-log.h"
 
 // -------------------------------------------------------
@@ -372,6 +373,8 @@ void DuelManager::endMatch()
     finalKillReplayActive = false;
     finalKillReplayLoaded = false;
     finalKillReplayTime = 0.0f;
+    matchEndTick = 0;
+    finalKillSavedOnce = false;
 
     Debug::log(Debug::Category::Duel, "[DUEL] match ended winner=%s totalKills=%d totalDeaths=%d",
                matchWinner_ == DuelTeam::Player ? "PLAYER" : "NPC",
@@ -452,6 +455,9 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     // Force cursor unlocked for click detection
     glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
+    // Set active layout for GUI editor
+    GuiEditor::instance().setActiveLayout("config/gui/duel-match-end.json");
+
     float sw = uiScreenW();
     float sh = uiScreenH();
 
@@ -507,45 +513,28 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
 
     GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
 
-    // Stack buttons vertically inside the left panel
-    float btnW = panelW - 40.0f;
-    float btnH = 44.0f;
-    float btnX = panelX + 20.0f;
-    float btnY = panelY + 120.0f;
-    float gap = 12.0f;
-
+    // Buttons use design-coordinate layout (centered in 1920x1080 design space)
     {
-        UIRect pr = duelLayout.getRect("Play Again", {btnX, btnY, btnW, btnH});
+        UIRect pr = duelLayout.getRectDesign("Play Again", {830.0f, 460.0f, 260.0f, 44.0f});
         UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f});
-        Debug::logThrottled(Debug::Category::Duel, "hover_play", 1.0f,
-            "[UI BUTTON] id=play_again hover=%d click=%d", (int)playBtn.hovered, (int)playBtn.clicked);
         if (playBtn.clicked) {
-            Debug::log(Debug::Category::Duel, "[DUEL UI] Play Again clicked");
-            Debug::log(Debug::Category::Duel, "[UI BUTTON] id=play_again clicked=1 callback=1");
-            Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
             return DuelMenuAction::PlayAgain;
         }
     }
 
     {
-        UIRect er = duelLayout.getRect("Exit To Main Menu", {btnX, btnY + btnH + gap, btnW, btnH});
+        UIRect er = duelLayout.getRectDesign("Exit To Main Menu", {830.0f, 516.0f, 260.0f, 44.0f});
         UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f});
-        Debug::logThrottled(Debug::Category::Duel, "hover_exit", 1.0f,
-            "[UI BUTTON] id=exit_main_menu hover=%d click=%d", (int)exitBtn.hovered, (int)exitBtn.clicked);
         if (exitBtn.clicked) {
-            Debug::log(Debug::Category::Duel, "[DUEL UI] Exit To Main Menu clicked");
-            Debug::log(Debug::Category::Duel, "[UI BUTTON] id=exit_main_menu clicked=1 callback=1");
-            Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
             return DuelMenuAction::ExitToMenu;
         }
     }
 
     // Save Replay button, shown when final kill replay is active
     if (finalKillReplayActive) {
-        UIRect sr = duelLayout.getRect("Save Replay", {btnX, btnY + (btnH + gap) * 2, btnW, btnH});
+        UIRect sr = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
         UIButtonState saveBtn = uiButton(win, "Save Replay", sr, {0.2f, 0.6f, 0.3f, 1.0f});
         if (saveBtn.clicked) {
-            Debug::log(Debug::Category::Duel, "[DUEL UI] Save Replay clicked");
             return DuelMenuAction::SaveReplay;
         }
     }
@@ -592,6 +581,8 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     finalKillReplayActive = false;
     finalKillReplayLoaded = false;
     finalKillReplayTime = 0.0f;
+    matchEndTick = 0;
+    finalKillSavedOnce = false;
 
     assignTeamSpawns(world);
     {
@@ -616,6 +607,12 @@ void DuelManager::stopDuel()
     finalKillReplayActive = false;
     finalKillReplayLoaded = false;
     finalKillReplayTime = 0.0f;
+    finalKillSlowMoFactor = 1.0f;
+    matchEndTick = 0;
+    finalKillSavedOnce = false;
+    finalKillReplayPath.clear();
+    finalKillKillerId.clear();
+    finalKillVictimId.clear();
     currentRound = 1;
     playerRoundsWon_ = 0;
     npcRoundsWon_ = 0;
@@ -623,4 +620,11 @@ void DuelManager::stopDuel()
     npcKills.clear();
     alivePlayerCount = 0;
     aliveNpcCount = 0;
+    duelFrozen_ = false;
+    timer = 0.0f;
+    roundEndTimer = 0.0f;
+    countdown = 0.0f;
+    matchWinner_ = DuelTeam::Player;
+    matchOverCameraTarget = glm::vec3(0.0f);
+    Debug::log(Debug::Category::Duel, "[DUEL] stopDuel complete — all state cleared");
 }

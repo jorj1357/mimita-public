@@ -39,10 +39,12 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <chrono>
 #include <unordered_map>
 #include <vector>
 #include <random>
 #include <filesystem>
+#include <shellapi.h>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -111,6 +113,8 @@
 #include "gui/menus/duel-config-menu.h"
 #include "terminal/terminal-state.h"
 #include "terminal/replay-commands.h"
+#include "perf/perf.h"
+#include "replay/replay-export.h"
 
 // 6 9 2026 sort and be more aweosme
 // duelamanger should be  a game manager, with specific modes in it
@@ -148,6 +152,85 @@ MimitaNet::MultiplayerContext* gpMpContext = nullptr;
 
 GameState* gpGameState = nullptr;
 
+// mainmenu debug flag (toggle with mainmenu_debug command)
+static bool gMainmenuDebug = false;
+
+// Global emergency mainmenu — force return to Main Menu from anywhere
+static void forceMainMenu()
+{
+    auto startTime = std::chrono::steady_clock::now();
+    Debug::log(Debug::Category::General, "[MAINMENU] requested");
+
+    auto logPhase = [&](const char* phase) {
+        if (!gMainmenuDebug) return;
+        auto now = std::chrono::steady_clock::now();
+        double ms = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - startTime).count() / 1000.0;
+        Debug::log(Debug::Category::General, "[MAINMENU] %s: %.2fms", phase, ms);
+    };
+
+    Debug::log(Debug::Category::General, "[MAINMENU] currentState=%s",
+        gDuelManager.phase() != DuelPhase::Off ? "DUEL" :
+        REPLAY_PLAYER.isPlaying() ? "REPLAY" :
+        MP_CONTEXT.active ? "MULTIPLAYER" : "GAMEPLAY");
+
+    Debug::log(Debug::Category::General, "[MAINMENU] transitioning");
+
+    // 1. Stop replay playback
+    if (REPLAY_PLAYER.isPlaying()) {
+        REPLAY_PLAYER.stopPlayback();
+        logPhase("Replay Cleanup");
+    }
+
+    // 2. Stop replay recording
+    if (REPLAY_RECORDER.isRecording()) {
+        REPLAY_RECORDER.stopRecording();
+        logPhase("Replay Recording Stop");
+    }
+
+    // 3. Stop duel
+    if (gDuelManager.phase() != DuelPhase::Off) {
+        gDuelManager.stopDuel();
+        logPhase("Duel Cleanup");
+    }
+
+    // 4. Destroy NPCs
+    THE_NPC_SYSTEM.destroyAll();
+    logPhase("NPC Cleanup");
+
+    // 5. Disconnect multiplayer
+    if (MP_CONTEXT.active) {
+        Debug::log(Debug::Category::General, "[MAINMENU] disconnecting multiplayer");
+        MimitaNet::mpShutdown(MP_CONTEXT);
+        logPhase("Network Cleanup");
+        Debug::log(Debug::Category::General, "[MAINMENU] client disconnected");
+    }
+
+    // 6. Reset freecam
+    FREECAM_ENABLED = false;
+
+    // 7. Reset player state
+    THE_PLAYER.dead = false;
+    THE_PLAYER.currentHp = THE_PLAYER.maxHp;
+    THE_PLAYER.vel = glm::vec3(0.0f);
+    THE_PLAYER.externalImpulse = glm::vec3(0.0f);
+    THE_PLAYER.proceduralFrozen = false;
+    THE_PLAYER.respawnTimer = 0.0f;
+    THE_PLAYER.killedBy.clear();
+
+    // 8. Cancel any ongoing replay export
+    cancelReplayExport();
+
+    // 9. Force cursor visible
+    GLFWwindow* win = glfwGetCurrentContext();
+    if (win)
+        glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
+    // 10. Transition to menu
+    GAME_STATE = GAME_MENU;
+
+    logPhase("GUI Load");
+    Debug::log(Debug::Category::General, "[MAINMENU] success");
+}
 
 // TODO(main-cleanup): move to src/physics/ray-utils.h — also deduplicate with WeaponFire::rayTriangle
 static bool rayTriangle(glm::vec3 origin, glm::vec3 direction,
@@ -350,6 +433,7 @@ int main(int argc, char** argv)
     VideoSettings::instance().apply();
     gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
     gFramePacer.setVSync(VideoSettings::instance().vsync());
+    ScopedFrameTimer::sPacer = &gFramePacer;
     InputCommandSystem::instance().init(engine.window());
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
@@ -1262,6 +1346,27 @@ int main(int argc, char** argv)
     // Replay terminal commands
     // Register replay terminal commands (moved to src/terminal/replay-commands.cpp)
     registerReplayCommands();
+    registerPerfCommands();
+
+    // Debug toggle for mainmenu timing
+    Terminal::instance().registerCommand({
+        "mainmenu_debug", "Log mainmenu cleanup timing breakdown", "mainmenu_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            gMainmenuDebug = args.empty() ? !gMainmenuDebug : args[0] != "0";
+            Terminal::instance().addLog(std::string("[MAINMENU] debug=") +
+                (gMainmenuDebug ? "1" : "0"));
+        }
+    });
+
+    // Global emergency mainmenu command
+    Terminal::instance().registerCommand({
+        "mainmenu", "Return to Main Menu immediately (emergency escape hatch)", "mainmenu",
+        [](const std::vector<std::string>&) {
+            forceMainMenu();
+            Terminal::instance().addLog("[MAINMENU] returned to main menu");
+        }
+    });
+
     Terminal::instance().registerCommand({
         "gui_edit", "Toggle GUI editor mode", "gui_edit [0|1]",
         [](const std::vector<std::string>& args) {
@@ -1480,6 +1585,7 @@ int main(int argc, char** argv)
                 (gFramePacer.frameDebug() ? "ON" : "OFF"));
         }
     });
+
     static bool gNetPresentationDebug = false;
     Terminal::instance().registerCommand({
         "net_debug_presentation", "Toggle remote player presentation debug overlay", "net_debug_presentation [0|1]",
@@ -1888,13 +1994,16 @@ int main(int argc, char** argv)
     {
         HotReloadSystem::instance().reloadGameDLLIfChanged();
         gFramePacer.beginFrame();
-    float dt = engine.beginFrame();
+        Perf::beginFrame();
+        float dt = engine.beginFrame();
         updatePlayerProceduralHotReload(dt);
         CrosshairConfig::instance().pollReload();
         bool worldPassRan = false;
 
+        { Perf::ScopedTimer _aud("Audio");
         audioUpdate(dt);
         MusicManager::instance().update(dt);
+        }
         DebugVis::update();
         uiSetDebug(DebugVis::ui());
 
@@ -2040,37 +2149,9 @@ int main(int argc, char** argv)
                     Debug::log(Debug::Category::Duel, "[DUEL] final kill detected");
                     Debug::log(Debug::Category::Duel, "[DUEL] match winner determined%s",
                         gDuelManager.matchWinner() == DuelTeam::Player ? " (PLAYER)" : " (NPC)");
-                    uint32_t now = gReplayRecorder.currentTick();
-                    uint32_t start = now > 480 ? now - 480 : 0; // 8 seconds back
-                    uint32_t end = now;
-                    ReplayClip clip = gReplayRecorder.makeClip(start, end, start, "", "");
-                    if (!clip.sceneFrames.empty()) {
-                        std::string tmpPath = "replays/_final_kill_temp.json";
-                        clip.save(tmpPath);
-                        Debug::log(Debug::Category::Replay,
-                            "[REPLAY START CHECK] path=%s frames=%zu",
-                            tmpPath.c_str(), clip.sceneFrames.size());
-                        if (gReplayPlayer.loadFromJSON(tmpPath)) {
-                            gDuelManager.finalKillReplayLoaded = true;
-                            gDuelManager.finalKillReplayPath = tmpPath;
-                            gDuelManager.finalKillReplayTime = 0.0f;
-                            Debug::log(Debug::Category::Replay,
-                                "[REPLAY] loading clip=%s", tmpPath.c_str());
-                            Debug::log(Debug::Category::Replay,
-                                "[REPLAY] load success=1 frames=%u",
-                                gReplayPlayer.totalTicks());
-                        } else {
-                            Debug::log(Debug::Category::Replay,
-                                "[REPLAY] load failed reason=loadFromJSON returned false");
-                            Debug::log(Debug::Category::Replay,
-                                "[REPLAY START CHECK] FAILED replay clip load error");
-                        }
-                    } else {
-                        Debug::log(Debug::Category::Replay,
-                            "[REPLAY START CHECK] FAILED zero scene frames");
-                        Debug::log(Debug::Category::Replay,
-                            "[REPLAY START CHECK] path=%s", "replays/_final_kill_temp.json");
-                    }
+                    gDuelManager.matchEndTick = gReplayRecorder.currentTick();
+                    gDuelManager.finalKillKillTick = (int)gDuelManager.matchEndTick;
+                    Debug::log(Debug::Category::Duel, "[DUEL] recording aftermath for 5s (endTick=%u)", gDuelManager.matchEndTick);
                 }
                 prevDuelPhase = gDuelManager.phase();
                 bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
@@ -2097,10 +2178,56 @@ int main(int argc, char** argv)
         }
         gravePrev = graveDown;
 
+        // Delayed final kill clip creation (wait 5 seconds after match end for aftermath)
+        if (gDuelManager.phase() == DuelPhase::MatchEnd &&
+            gDuelManager.matchEndTick > 0 &&
+            !gDuelManager.finalKillReplayLoaded &&
+            gReplayRecorder.currentTick() >= gDuelManager.matchEndTick + 5u * ReplayRingBuffer::TickRate)
+        {
+            uint32_t killTick = gDuelManager.matchEndTick;
+            uint32_t start = killTick > 480 ? killTick - 480 : 0;
+            uint32_t end = killTick + 5u * ReplayRingBuffer::TickRate;
+            uint32_t now = gReplayRecorder.currentTick();
+            if (end > now) end = now;
+            Debug::log(Debug::Category::Duel, "[DUEL] creating final kill clip start=%u end=%u (kill=%u)", start, end, killTick);
+            ReplayClip clip = gReplayRecorder.makeClip(start, end, killTick, "", "");
+            if (!clip.sceneFrames.empty()) {
+                std::string savePath = generateReplayClipPath();
+                if (clip.save(savePath)) {
+                    gDuelManager.finalKillReplayPath = savePath;
+                    gDuelManager.finalKillSavedOnce = true;
+                    Debug::log(Debug::Category::Replay, "[REPLAY] final kill auto-saved: %s frames=%zu", savePath.c_str(), clip.sceneFrames.size());
+                }
+                std::string tmpPath = "replays/_final_kill_temp.json";
+                clip.save(tmpPath);
+                if (gReplayPlayer.loadFromJSON(tmpPath)) {
+                    gDuelManager.finalKillReplayLoaded = true;
+                    gDuelManager.finalKillReplayTime = 0.0f;
+                    Debug::log(Debug::Category::Replay, "[REPLAY] final kill clip loaded frames=%u", gReplayPlayer.totalTicks());
+                }
+            }
+            gDuelManager.matchEndTick = 0;
+            DevOverlay::instance().showNotification("Replay saved! Press F10 to open folder", 5.0f);
+        }
+
         if (gameState == GAME_PLAYING)
         {
             DebugVis::beginCollisionFrame();
             gReplayPlayer.update(dt);
+
+            // Replay export mode: seek and rebuild interpolated frame for capture
+            {
+                const ReplayExportJob& job = getReplayExportJob();
+                if (job.state == ReplayExportJob::Capturing) {
+                    uint32_t seekTick = job.capturedTicks;
+                    if (seekTick < gReplayPlayer.totalTicks()) {
+                        gReplayPlayer.pause();
+                        gReplayPlayer.seekToTick(seekTick);
+                        gReplayPlayer.update(0.0f);
+                    }
+                }
+            }
+
             const bool replayPlaybackActive = gReplayPlayer.isPlaying();
             setReplayCaptureEnabled(!replayPlaybackActive);
 
@@ -2108,6 +2235,7 @@ int main(int argc, char** argv)
             // Accumulate real dt and step simulation at SIM_DT rate
             simAccumulator += (double)dt;
 
+            { Perf::ScopedTimer _t("Simulation");
             while (simAccumulator >= SIM_DT) {
                 InputFrame tickFrame;
 
@@ -2337,6 +2465,7 @@ int main(int argc, char** argv)
 
                 simAccumulator -= SIM_DT;
             }
+            } // Perf::ScopedTimer Simulation
 
             // Process local NPC commands only outside authoritative multiplayer.
             if (!mpContext.active) {
@@ -2345,6 +2474,7 @@ int main(int argc, char** argv)
             }
 
             // Multiplayer tick - receive snapshots
+            { Perf::ScopedTimer _net("Networking");
             if (mpContext.active) {
                 MimitaNet::mpTick(mpContext, player.username, dt);
                 if (!mpContext.approvedLocalName.empty())
@@ -2605,6 +2735,7 @@ int main(int argc, char** argv)
                     mpContext.showDebugOverlay = !mpContext.showDebugOverlay;
                 f3Prev = f3Down;
             }
+            } // Perf::ScopedTimer Networking
 
             if (!Terminal::instance().isOpen())
                 applyDebugMovement(player, engine.window(), camera, dt);
@@ -2711,8 +2842,10 @@ int main(int argc, char** argv)
                         sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
                 }
             }
+            { Perf::ScopedTimer _wp("Weapons");
             if (!replayPlaybackActive)
                 weapons.update(camera, player, npcSystem, dt);
+            }
             if (mpContext.active)
             {
                 const std::vector<RevolverShotResult> godballHits =
@@ -2863,6 +2996,7 @@ int main(int argc, char** argv)
                 }
                 lPrev = lDown;
             }
+            { Perf::ScopedTimer _ren("Rendering");
             renderWorld(world, camera);
             if (replayPlaybackActive) {
                 if (const ReplaySceneFrame* replayFrame =
@@ -3041,7 +3175,12 @@ int main(int argc, char** argv)
             // Render effect parts (world-space visualizations)
             EffectPartSystem::instance().render(camera);
             DebugVis::flushTris(camera);
-            
+            } // Perf::ScopedTimer Rendering
+
+            // Capture replay frame for video export (after 3D render, before UI overlay)
+            if (isReplayExportActive())
+                updateReplayExport();
+
             worldPassRan = true;
 
             npcSystem.drawDebug(camera);
@@ -3143,6 +3282,7 @@ int main(int argc, char** argv)
                 NpcSelectionManager::instance().drawSelection(npcSystem, camera);
             }
 
+            { Perf::ScopedTimer _ui("UI");
             uiBeginFrame(engine.window(), "game-debug-overlay");
             drawHitmarker(dt);
             if (mpContext.active && !mpContext.connected)
@@ -3529,29 +3669,17 @@ int main(int argc, char** argv)
 
                 // Save Replay button
                 GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
-                UIRect saveBtn = duelLayout.getRect("SAVE REPLAY!", {fkW * 0.5f - 120.0f, fkH * 0.75f, 240.0f, 50.0f});
+                UIRect saveBtn = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
                 if (uiButton(engine.window(), "SAVE REPLAY!", saveBtn,
                              {0.2f, 0.6f, 0.3f, 1.0f}).clicked)
                 {
-                    printf("[FINAL KILL] saveReplayClicked\n");
                     if (!gDuelManager.finalKillReplayPath.empty()) {
+                        std::string msg = "Replay saved\n" + gDuelManager.finalKillReplayPath;
+                        DevOverlay::instance().showNotification(msg, 5.0f);
                         printf("[FINAL KILL] replay already saved: %s\n",
                                gDuelManager.finalKillReplayPath.c_str());
                     } else {
-                        std::string path;
-                        if (gReplayFactory.saveLastKill(&path) ||
-                            gReplayClipSaver.saveLastKill(&path)) {
-                            gDuelManager.finalKillReplayPath = path;
-                            printf("[FINAL KILL] jsonSaved=%s\n", path.c_str());
-                            // Launch ffmpeg in separate process
-                            std::string mp4Path = path + ".mp4";
-                            std::string cmd = "start cmd /c ffmpeg -i \"" + path +
-                                "\" \"" + mp4Path + "\" 2>&1";
-                            std::thread([cmd]() {
-                                system(cmd.c_str());
-                            }).detach();
-                            printf("[FINAL KILL] ffmpegStarted=%s\n", mp4Path.c_str());
-                        }
+                        printf("[FINAL KILL] replay not ready yet (still recording aftermath)\n");
                     }
                 }
 
@@ -3577,30 +3705,35 @@ int main(int argc, char** argv)
                     Debug::log(Debug::Category::Duel, "[DUEL] restarting same settings");
                     gDuelManager.restartDuel(player, npcSystem, world);
                 } else if (action == DuelMenuAction::ExitToMenu) {
-                    Debug::log(Debug::Category::Duel, "[DUEL] exit to main menu requested");
-                    Debug::log(Debug::Category::Duel, "[DUEL] duel UI cleared");
+                    Debug::log(Debug::Category::Duel, "[DUEL] Exit To Main Menu clicked");
+                    Debug::log(Debug::Category::Duel, "[DUEL] Requesting menu transition");
+                    Debug::log(Debug::Category::Duel, "[DUEL] Leaving duel");
+                    Debug::log(Debug::Category::Duel, "[DUEL] old state=GAME_PLAYING new state=GAME_MENU");
+                    Debug::log(Debug::Category::Duel, "[DUEL] stopping replay playback");
+                    gReplayPlayer.stopPlayback();
+                    Debug::log(Debug::Category::Duel, "[DUEL] stopping replay recording");
+                    if (gReplayRecorder.isRecording())
+                        gReplayRecorder.stopRecording();
+                    Debug::log(Debug::Category::Duel, "[DUEL] clearing duel state");
                     gDuelManager.stopDuel();
+                    Debug::log(Debug::Category::Duel, "[DUEL] destroying NPCs");
                     npcSystem.destroyAll();
+                    Debug::log(Debug::Category::Duel, "[DUEL] forcing cursor normal");
+                    glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    Debug::log(Debug::Category::Duel, "[DUEL] Loading main menu");
                     gameState = GAME_MENU;
-                    Debug::log(Debug::Category::Duel, "[MAIN MENU] entered");
+                    Debug::log(Debug::Category::Duel, "[DUEL EXIT] transition complete");
                 } else if (action == DuelMenuAction::SaveReplay) {
                     if (!gDuelManager.finalKillReplayPath.empty()) {
-                        Debug::log(Debug::Category::Duel, "[DUEL] replay already saved: %s",
-                                   gDuelManager.finalKillReplayPath.c_str());
-                    } else {
-                        std::string path;
-                        if (gReplayFactory.saveLastKill(&path) ||
-                            gReplayClipSaver.saveLastKill(&path)) {
-                            gDuelManager.finalKillReplayPath = path;
-                            Debug::log(Debug::Category::Duel, "[DUEL] replay saved: %s", path.c_str());
-                            std::string mp4Path = path + ".mp4";
-                            std::string cmd = "start cmd /c ffmpeg -i \"" + path +
-                                "\" \"" + mp4Path + "\" 2>&1";
-                            std::thread([cmd]() {
-                                system(cmd.c_str());
-                            }).detach();
-                            Debug::log(Debug::Category::Duel, "[DUEL] ffmpeg started for: %s", mp4Path.c_str());
+                        std::string jsonPath = gDuelManager.finalKillReplayPath;
+                        int rw = engine.renderer ? engine.renderer->width : 1280;
+                        int rh = engine.renderer ? engine.renderer->height : 720;
+                        if (startReplayExport(jsonPath, rw, rh)) {
+                            DevOverlay::instance().showNotification("Exporting replay...", 2.0f);
                         }
+                    } else {
+                        DevOverlay::instance().showNotification("Replay not ready yet. Wait for replay to load.", 5.0f);
+                        Debug::log(Debug::Category::Duel, "[DUEL] replay not ready yet (recording aftermath)");
                     }
                 }
             } else {
@@ -3761,6 +3894,40 @@ int main(int argc, char** argv)
                 }
             }
 
+            // Replay export overlay
+            if (isReplayExportActive())
+            {
+                float ex = uiScreenW() * 0.5f - 200.0f;
+                float ey = uiScreenH() * 0.7f;
+                float ew = 400.0f;
+                float eh = 80.0f;
+                uiDrawRect({ex, ey, ew, eh}, {0.0f, 0.0f, 0.0f, 0.8f}, "export-bg");
+                std::string status = getReplayExportStatusText();
+                uiDrawText(status.c_str(), ex + 10.0f, ey + 8.0f, 0.32f, {0.3f, 1.0f, 0.5f, 1.0f});
+                // Progress bar
+                float p = getReplayExportProgress();
+                uiDrawRect({ex + 10.0f, ey + eh - 16.0f, (ew - 20.0f) * p, 10.0f},
+                           {0.3f, 1.0f, 0.3f, 1.0f}, "export-progress");
+            }
+            // Replay export completed popup
+            {
+                static bool exportPopupShown = false;
+                const ReplayExportJob& job = getReplayExportJob();
+                if (job.state == ReplayExportJob::Done && !exportPopupShown) {
+                    exportPopupShown = true;
+                    std::string result = getReplayExportStatusText();
+                    DevOverlay::instance().showNotification(result, 8.0f);
+                    Debug::log(Debug::Category::Replay, "[REPLAY SAVE] Export success popup shown");
+                }
+                if (job.state == ReplayExportJob::Failed && !exportPopupShown) {
+                    exportPopupShown = true;
+                    std::string result = getReplayExportStatusText();
+                    DevOverlay::instance().showNotification(result, 8.0f);
+                    Debug::log(Debug::Category::Replay, "[REPLAY SAVE] Export failed popup shown");
+                }
+                if (job.state == ReplayExportJob::Idle)
+                    exportPopupShown = false;
+            }
             MusicManager::instance().drawAllOverlay();
             if (gFramePacer.showFPS())
             {
@@ -3772,8 +3939,17 @@ int main(int argc, char** argv)
                                {0.5f, 0.8f, 1.0f, 1.0f});
                 }
             }
+            // Update perf state counters
+            Perf::state().npcCount = (int)npcSystem.all().size();
+            Perf::state().playerCount = 1;
+            Perf::state().bloodCount = EffectPartSystem::instance().activeCount();
+            Perf::state().particleCount = EffectPartSystem::instance().activeCount();
+            if (gReplayPlayer.isPlaying())
+                Perf::state().replayMemoryMb = (double)gReplayPlayer.totalTicks() * sizeof(ReplaySceneFrame) / (1024.0 * 1024.0);
+            Perf::renderOverlay();
             uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
+            } // Perf::ScopedTimer UI
 
             // Dev overlay notifications (temporary)
             DevOverlay::instance().render();
@@ -3797,15 +3973,51 @@ int main(int argc, char** argv)
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
                     gameState == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
             } else {
+                // Clean up duel state if match was in progress
+                if (gDuelManager.phase() != DuelPhase::Off) {
+                    Debug::log(Debug::Category::Duel, "[DUEL] escape pressed during duel (phase=%d) — cleaning up", (int)gDuelManager.phase());
+                    gReplayPlayer.stopPlayback();
+                    if (gReplayRecorder.isRecording())
+                        gReplayRecorder.stopRecording();
+                    gDuelManager.stopDuel();
+                    npcSystem.destroyAll();
+                }
                 // Disconnect from multiplayer if active
                 if (mpContext.active) {
                     MimitaNet::mpShutdown(mpContext);
                 }
+                Debug::log(Debug::Category::Duel, "[DUEL] escape: transitioning to main menu");
                 gameState = GAME_MENU;
                 glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             }
         }
         escapePrev = escapeDown;
+
+        // F10: Open replays folder
+        static bool f10Prev = false;
+        bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
+        if (f10Down && !f10Prev) {
+            ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
+            Debug::log(Debug::Category::General, "[MAIN] opened replays folder");
+        }
+        f10Prev = f10Down;
+
+        // F12: Emergency main menu shortcut
+        static bool f12Prev = false;
+        bool f12Down = glfwGetKey(engine.window(), GLFW_KEY_F12) == GLFW_PRESS;
+        if (f12Down && !f12Prev && !Terminal::instance().isOpen()) {
+            Debug::log(Debug::Category::General, "[MAINMENU] F12 pressed — forcing main menu");
+            forceMainMenu();
+            DevOverlay::instance().showNotification("Returned to Main Menu (F12)", 3.0f);
+            Terminal::instance().addLog("[MAINMENU] triggered via F12 key");
+        }
+        f12Prev = f12Down;
+
+        // Failsafe: if in menu but duel still active, force cleanup
+        if (GAME_STATE == GAME_MENU && gDuelManager.phase() != DuelPhase::Off) {
+            Debug::log(Debug::Category::Duel, "[DUEL FAILSAFE] gameState=MENU but duel phase=%d — forcing cleanup", (int)gDuelManager.phase());
+            forceMainMenu();
+        }
 
         // Terminal rendering (on top of everything)
         // 6 14 2026 yes absolutely render terminal on top of everything
@@ -3813,6 +4025,7 @@ int main(int argc, char** argv)
         Terminal::instance().render();
 
         engine.endFrame();
+        Perf::endFrame();
         gFramePacer.endFrame();
 
     }
