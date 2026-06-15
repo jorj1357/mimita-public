@@ -30,6 +30,7 @@
 #include "debug/gl-debug.h"
 #include "debug/debug-diag.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "replay/replay-scene.h"
 
 // globals (engine-level)
@@ -1674,7 +1675,18 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     }
     
     // Spawn blood effect at player position
-    EffectPartSystem::instance().spawnDamage(pos, username, actualDamage);
+    {
+        HitEvent ev;
+        ev.position = pos;
+        ev.normal = glm::vec3(0, 0, 1);
+        ev.direction = glm::length(knockbackDir) > 0.001f ? glm::normalize(knockbackDir) : glm::vec3(0, 0, 1);
+        ev.hitEntity = true;
+        ev.damage = actualDamage;
+        ev.attacker = "world";
+        ev.victim = username;
+        ev.weaponSource = "player_take_damage";
+        HitEffects::onHit(ev);
+    }
     
     if (DebugConfig::DEBUG_COMMANDS) {
         Debug::log(Debug::Category::General, "[PLAYER HURT] damage=%d hp=%d/%d vol=%.2f pitch=%.2f\n",

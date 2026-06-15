@@ -19,9 +19,23 @@
 
     "debugShadowMap": false,
 
-    "playerReceivesShadows": true,
+    "playersCastShadows": true,
+
+    "npcsCastShadows": true,
+
+    "weaponsCastShadows": true,
+
+    "effectsCastShadows": true,
+
+    "particlesCastShadows": true,
+
+    "playersReceiveShadows": true,
+
+    "npcsReceiveShadows": true,
 
     "worldReceivesShadows": true,
 
-    "effectsReceiveShadows": true
+    "effectsReceiveShadows": false,
+
+    "effectShadowCutoffAlpha": 0.05
 }
