@@ -177,6 +177,7 @@ public:
     bool dead = false;
     bool proceduralFrozen = false;
     float respawnTimer = 0.0f;
+    float spawnFlashTimer = 0.0f;
     glm::vec3 respawnPosition{1.0f, 5.0f, 60.0f};
     std::string killedBy;
     // -------- Core State --------
@@ -295,7 +296,8 @@ public:
         const std::vector<ReplayBodyPartState>& parts);
     void renderCurrentPose(unsigned int shader,
                            const glm::mat4& view,
-                           const glm::mat4& proj) const;
+                           const glm::mat4& proj,
+                           bool whiteOverride = false) const;
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();

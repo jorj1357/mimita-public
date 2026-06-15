@@ -1,4 +1,4 @@
-[LOCAL PROFILE] active username="player28148" dev-auth-only=1
+[LOCAL PROFILE] active username="player20732" dev-auth-only=1
 [MAIN] start
 [MAIN] before engine.init
 [CURSOR] loaded custom cursor 100x100 channels=4 hotspot=0,0 mode=top-left
@@ -53,10 +53,12 @@ OpenGL 3.3.0 NVIDIA 592.27
 [DEV OVERLAY] Notification: Loaded config: default
 [ACCOUNT CONFIG] Loaded 0 binds from config/accounts/default.json
 [DUEL STATS] loaded kills=0 deaths=0 points=0 xp=0
-[VIDEO] Loaded: resolution=1 (800x600) fullscreen=1 maxFrames=999 vsync=0
-[RENDERER] Video mode applied: 800x600 fullscreen=1
+[VIDEO] Loaded: resolution=2 (1024x768) fullscreen=0 maxFrames=999 vsync=0
+[RENDERER] Video mode applied: 1024x768 fullscreen=0
+[POSTFX] FBO created: 1024x768
 [FRAME PACER] maxFrames=999 (target=1.00 ms)
 [FRAME PACER] vsync=OFF
+[POSTFX] Loaded config from config/postfx.json
 [INPUT COMMANDS] Bound walkforward = W
 [INPUT COMMANDS] Bound walkback = S
 [INPUT COMMANDS] Bound walkleft = A
@@ -73,11 +75,9 @@ OpenGL 3.3.0 NVIDIA 592.27
 [DEV COMMANDS] Registered: tp_selected_to_spawn - Teleport selected NPCs to spawn point
 [LIGHTING] Loaded config from config/lighting.json
 [EFFECT PART] Initialized pool size=4096
-[HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-28148-1.dll
+[HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-20732-1.dll
 [HOT RELOAD] reload success generation=1
 [MAIN] dev tools initialized
 [MAIN] after glEnable and glBlendFunc()
 [MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first
-[TEXTURE] Loading texture assets/textures/default.png
-[TEXTURE] Uploading to GPU tex=3 size=64x64 channels=4
-[TEXTURE] Upload comp
+[TEXTURE] Loading texture assets/textures/default.

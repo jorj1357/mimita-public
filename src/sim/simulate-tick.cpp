@@ -77,6 +77,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     DeathSystem::instance().update(
         *sim.world, *sim.player, *sim.npcSystem, frame.jumpPressed, TICK_DT);
 
+    if (sim.player->spawnFlashTimer > 0.0f)
+        sim.player->spawnFlashTimer = std::max(0.0f, sim.player->spawnFlashTimer - 1.0f);
+
     if (DebugConfig::DEBUG_TICKS)
         Debug::log(Debug::Category::General,
                    "[PLAYER] tick=%llu pos=(%.3f %.3f %.3f) grounded=%d vel=(%.3f %.3f %.3f)\n",

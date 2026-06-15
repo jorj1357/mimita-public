@@ -877,6 +877,7 @@ void Player::reset()
     dead = false;
     proceduralFrozen = false;
     respawnTimer = 0.0f;
+    spawnFlashTimer = 0.0f;
     killedBy.clear();
     respawnPosition = pos;
 
@@ -1452,7 +1453,8 @@ void Player::render(unsigned int shader,
                     const glm::mat4& proj) const
 {
     const_cast<Player*>(this)->updateModelWorldTransforms();
-    renderCurrentPose(shader, view, proj);
+    bool flash = spawnFlashTimer > 0.0f;
+    renderCurrentPose(shader, view, proj, flash);
 }
 
 void Player::applyReplayPose(
@@ -1486,7 +1488,8 @@ void Player::applyReplayPose(
 
 void Player::renderCurrentPose(unsigned int shader,
                                const glm::mat4& view,
-                               const glm::mat4& proj) const
+                               const glm::mat4& proj,
+                               bool whiteOverride) const
 {
     if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
@@ -1494,7 +1497,9 @@ void Player::renderCurrentPose(unsigned int shader,
         MIMITA_GL_CALL(glUseProgram(shader));
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
-        glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
+        glUniform1i(glGetUniformLocation(shader,"uUseColor"), whiteOverride ? 1 : 0);
+        if (whiteOverride)
+            glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
         glActiveTexture(GL_TEXTURE0);
@@ -1532,7 +1537,9 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
-        glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
+        glUniform1i(glGetUniformLocation(shader,"uUseColor"), whiteOverride ? 1 : 0);
+        if (whiteOverride)
+            glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
         MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
@@ -1554,7 +1561,9 @@ void Player::renderCurrentPose(unsigned int shader,
     glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
-    glUniform1i(glGetUniformLocation(shader,"uUseColor"),0);
+    glUniform1i(glGetUniformLocation(shader,"uUseColor"), whiteOverride ? 1 : 0);
+    if (whiteOverride)
+        glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
     glUniform1i(glGetUniformLocation(shader,"uTex"),0);
 
     MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
