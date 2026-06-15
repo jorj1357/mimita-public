@@ -12,6 +12,7 @@
 
 #include "camera.h"
 #include "debug/debug-visuals.h"
+#include "debug/debug-diag.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
@@ -166,6 +167,7 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     for (const Mesh::Batch& batch : heldMesh.batches) {
         glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
         glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        diagRenderCountWeaponDraw();
     }
     glBindVertexArray(0);
 }

@@ -4,9 +4,11 @@
 #include <cstdarg>
 #include <ctime>
 #include <algorithm>
+#include <array>
 
 #include "devtools/terminal.h"
 #include "render/post-fx.h"
+#include "render/render-world.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "debug/debug-visuals.h"
@@ -142,11 +144,8 @@ static void cmdPostFXTestMagenta(const std::vector<std::string>&)
 {
     PostFX& pf = PostFX::instance();
     if (!pf.hasFbo()) { Terminal::instance().addLog("[POSTFX] No FBO to clear"); return; }
-    glBindFramebuffer(GL_FRAMEBUFFER, pf.fboId());
-    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    Terminal::instance().addLog("[POSTFX] FBO cleared to MAGENTA. If screen is magenta, FBO+quad+shader work.");
+    pf.requestMagentaTest();
+    Terminal::instance().addLog("[POSTFX] Next frame will clear the FBO to MAGENTA after world rendering.");
 }
 
 static void cmdPostFXTestChecker(const std::vector<std::string>&)
@@ -229,7 +228,90 @@ static void cmdShaderValidate(const std::vector<std::string>&)
 // ============================================================
 // Phase 6 — Render trace
 // ============================================================
-static bool gRenderTraceEnabled = false;
+static bool gRenderTraceEnabled = true;
+static float gRenderTraceTimer = 0.0f;
+static bool gRenderTraceSample = false;
+static std::array<bool, 9> gRenderStageReached{};
+static std::array<bool, 9> gRenderStageOk{};
+static size_t gWorldBatches = 0;
+static size_t gWorldVertices = 0;
+static size_t gWorldDrawCalls = 0;
+static size_t gPlayerDrawCalls = 0;
+static size_t gWeaponDrawCalls = 0;
+static size_t gEffectDrawCalls = 0;
+
+static void clearGlErrors()
+{
+    while (glGetError() != GL_NO_ERROR) {}
+}
+
+void diagRenderFrameBegin(float dt)
+{
+    gRenderTraceTimer += dt;
+    gRenderTraceSample = gRenderTraceEnabled && gRenderTraceTimer >= 1.0f;
+    if (!gRenderTraceSample)
+        return;
+
+    gRenderTraceTimer = 0.0f;
+    gRenderStageReached.fill(false);
+    gRenderStageOk.fill(false);
+    gWorldBatches = 0;
+    gWorldVertices = 0;
+    gWorldDrawCalls = 0;
+    gPlayerDrawCalls = 0;
+    gWeaponDrawCalls = 0;
+    gEffectDrawCalls = 0;
+    clearGlErrors();
+}
+
+bool diagRenderTraceSampling()
+{
+    return gRenderTraceSample;
+}
+
+void diagRenderStage(int stage)
+{
+    if (!gRenderTraceSample || stage < 1 || stage > 9)
+        return;
+    gRenderStageReached[(size_t)stage - 1] = true;
+    gRenderStageOk[(size_t)stage - 1] = glGetError() == GL_NO_ERROR;
+}
+
+void diagRenderWorldCounts(size_t batches, size_t vertices, size_t drawCalls)
+{
+    if (!gRenderTraceSample) return;
+    gWorldBatches = batches;
+    gWorldVertices = vertices;
+    gWorldDrawCalls = drawCalls;
+}
+
+void diagRenderCountPlayerDraw() { if (gRenderTraceSample) ++gPlayerDrawCalls; }
+void diagRenderCountWeaponDraw() { if (gRenderTraceSample) ++gWeaponDrawCalls; }
+void diagRenderCountEffectDraw() { if (gRenderTraceSample) ++gEffectDrawCalls; }
+
+void diagRenderFrameEnd()
+{
+    if (!gRenderTraceSample) return;
+
+    static const char* names[] = {
+        "bind postfx fbo", "render world", "render players",
+        "render weapons", "render effects", "unbind postfx fbo",
+        "postfx render", "gui render", "swap buffers"
+    };
+    printf("\nFRAME\n\n");
+    for (int i = 0; i < 9; ++i) {
+        printf("%d. %s: PASS %s\n", i + 1, names[i],
+            gRenderStageReached[i] && gRenderStageOk[i] ? "OK" : "FAILED");
+    }
+    printf("\nWorld batches: %zu\nWorld vertices: %zu\nWorld draw calls: %zu\n\n"
+           "Player draw calls: %zu\nWeapon draw calls: %zu\nEffect draw calls: %zu\n",
+           gWorldBatches, gWorldVertices, gWorldDrawCalls,
+           gPlayerDrawCalls, gWeaponDrawCalls, gEffectDrawCalls);
+    printf("Debug modes: master=%d wireframe=%d lightingOnly=%d uDebugView=%d\n",
+           (int)DebugVis::masterEnabled(), (int)DebugVis::wireframe(),
+           (int)DebugVis::lightingOnly(), DebugVis::shaderDebugView());
+    gRenderTraceSample = false;
+}
 
 void diagRenderTrace(const char* stage)
 {
@@ -405,6 +487,22 @@ void registerDiagnosticCommands()
         cmdPostFXInfo
     });
     t.registerCommand({
+        "postfx_dump", "Dump PostFX framebuffer validity and dimensions",
+        "postfx_dump",
+        cmdPostFXInfo
+    });
+    t.registerCommand({
+        "postfx_bypass", "Render the world directly to the backbuffer",
+        "postfx_bypass <0|1>",
+        [](const std::vector<std::string>& args) {
+            PostFX& pf = PostFX::instance();
+            const bool bypass = args.empty() ? !pf.bypass() : args[0] != "0";
+            pf.setBypass(bypass);
+            Terminal::instance().addLog(std::string("[POSTFX] bypass=") +
+                (bypass ? "1 (direct backbuffer)" : "0 (FBO + PostFX)"));
+        }
+    });
+    t.registerCommand({
         "postfx_test_magenta", "Fill FBO with magenta to test FBO→screen pipeline",
         "postfx_test_magenta",
         cmdPostFXTestMagenta
@@ -413,6 +511,16 @@ void registerDiagnosticCommands()
         "postfx_test_checker", "Fill FBO with checkerboard to test texture sampling",
         "postfx_test_checker",
         cmdPostFXTestChecker
+    });
+    t.registerCommand({
+        "world_solid_red", "Bypass world texture and lighting with solid red",
+        "world_solid_red <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool enabled = args.empty() ? !worldSolidRedDebug() : args[0] != "0";
+            setWorldSolidRedDebug(enabled);
+            Terminal::instance().addLog(std::string("[WORLD] solid red=") +
+                (enabled ? "1" : "0"));
+        }
     });
 
     // Phase 4 — Texture debug

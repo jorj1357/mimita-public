@@ -57,6 +57,10 @@ public:
     void bindFBO();
     void unbindFBO();
     void render();
+    void setBypass(bool bypass) { mBypass = bypass; }
+    bool bypass() const { return mBypass; }
+    void requestMagentaTest() { mMagentaTestPending = true; }
+    bool consumeMagentaTest();
 
     // Debug
     bool debugEnabled = false;
@@ -111,6 +115,8 @@ private:
 
     float mTime = 0.0f;
     char mDebugText[512] = {};
+    bool mBypass = false;
+    bool mMagentaTestPending = false;
 
     bool initQuad(GLuint& vao, GLuint& vbo);
     bool loadShaders();

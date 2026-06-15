@@ -15,6 +15,7 @@
 #include "world/world.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
+#include "debug/debug-diag.h"
 #include "config.h"
 #include <vector>
 
@@ -273,6 +274,7 @@ void flushDebugTris(const Camera& camera)
     MIMITA_GL_CALL(glDisableVertexAttribArray(2));
 
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTriVerts.size()));
+    diagRenderCountEffectDraw();
 
     MIMITA_GL_CALL(glDepthMask(GL_TRUE));
 
