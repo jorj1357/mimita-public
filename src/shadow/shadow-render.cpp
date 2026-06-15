@@ -294,29 +294,17 @@ void renderEffectDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
     if (loc < 0) { glUseProgram(0); return; }
     glBindVertexArray(gSphereVao);
 
-    // iterate all active hit bursts and render their effect geometry
-    struct HitBurstIterator {
-        int index;
-        glm::vec3 position;
-        int spawnTick;
-        int totalTicks;
-        bool alive;
-    };
+    float cutoffAlpha = ShadowConfig::instance().effectShadowCutoffAlpha();
 
-    // Use a static buffer large enough to cover MAX_BURSTS (64)
     static constexpr int MAX_BURSTS = 64;
-    static HitBurstIterator bursts[MAX_BURSTS];
-    int count = HitEffects::collectActiveBursts(
-        reinterpret_cast<HitEffects::BurstData*>(bursts), MAX_BURSTS);
+    static HitBurstSnapshot bursts[MAX_BURSTS];
+    int count = HitEffects::collectBurstSnapshots(bursts, MAX_BURSTS);
 
     for (int i = 0; i < count; ++i) {
         const auto& b = bursts[i];
         if (!b.alive) continue;
 
-        int age = b.index - b.spawnTick;
-        float progress = b.totalTicks > 0 ? (float)age / (float)b.totalTicks : 0.0f;
-
-        // Render a simple sphere at the burst position
+        float progress = b.totalTicks > 0 ? (float)b.ageTicks / (float)b.totalTicks : 0.0f;
         float baseRadius = 0.3f + progress * 0.5f;
         glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), b.position), glm::vec3(baseRadius));
         glm::mat4 mvp = lightViewProj * model;
@@ -339,16 +327,9 @@ void renderParticleDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
 
     float cutoffAlpha = ShadowConfig::instance().effectShadowCutoffAlpha();
 
-    struct PartIter {
-        glm::vec3 position;
-        float scale;
-        float alpha;
-    };
-    static constexpr int MAX_PARTS = 4096;
-    static PartIter parts[MAX_PARTS];
-    int count = EffectPartSystem::instance().collectAlive(
-        reinterpret_cast<EffectPartSystem::PartData*>(parts), MAX_PARTS,
-        cutoffAlpha);
+    static constexpr int MAX_PARTS = 200;
+    static EffectPartSystem::PartSnapshot parts[MAX_PARTS];
+    int count = EffectPartSystem::instance().collectAlive(parts, MAX_PARTS, cutoffAlpha);
 
     for (int i = 0; i < count; ++i) {
         const auto& p = parts[i];

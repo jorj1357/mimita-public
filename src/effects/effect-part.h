@@ -107,7 +107,14 @@ public:
 
     // Legacy API for code that still uses getEffects()
     const EffectPart* poolData() const { return mPool.data(); }
-    
+
+    struct PartSnapshot {
+        glm::vec3 position;
+        float scale;
+        float alpha;
+    };
+    int collectAlive(PartSnapshot* out, int maxCount, float minAlpha) const;
+
 private:
     EffectPartSystem() = default;
 

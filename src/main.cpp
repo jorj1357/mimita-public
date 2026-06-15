@@ -122,6 +122,8 @@
 #include "replay/replay-export.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
+#include "debug/log-manager.h"
+#include <windows.h>
 
 // 6 9 2026 sort and be more aweosme
 // duelamanger should be  a game manager, with specific modes in it
@@ -399,6 +401,7 @@ int main(int argc, char** argv)
         return MimitaNet::runClient(launchOptions);
 
     printf("[MAIN] start\n");
+    LogManager::instance().init();
 
     Engine engine;
     printf("[MAIN] before engine.init\n");
@@ -1401,6 +1404,53 @@ int main(int argc, char** argv)
         [](const std::vector<std::string>&) {
             forceMainMenu();
             Terminal::instance().addLog("[MAINMENU] returned to main menu");
+        }
+    });
+
+    // Log management commands
+    Terminal::instance().registerCommand({
+        "log_info", "Print current log file info", "log_info",
+        [](const std::vector<std::string>&) {
+            auto& lm = LogManager::instance();
+            char buf[512];
+            snprintf(buf, sizeof(buf), "Current Log:\n%s\n\nLog Count:\n%d\nMax Logs:\n30",
+                     lm.path().c_str(), lm.fileCount());
+            Terminal::instance().addLog(buf);
+            printf("[LOG INFO] Current: %s\n", lm.path().c_str());
+            printf("[LOG INFO] Count: %d / 30\n", lm.fileCount());
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "log_open", "Open current log in default editor", "log_open",
+        [](const std::vector<std::string>&) {
+            std::string p = LogManager::instance().path();
+            if (!p.empty()) {
+                ShellExecuteA(NULL, "open", p.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "log_folder", "Open logs folder in Explorer", "log_folder",
+        [](const std::vector<std::string>&) {
+            ShellExecuteA(NULL, "open", "logs", NULL, NULL, SW_SHOWNORMAL);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "log_flush", "Force flush log to disk", "log_flush",
+        [](const std::vector<std::string>&) {
+            LogManager::instance().flush();
+            printf("[LOG] flushed\n");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "log_test", "Write test message to log", "log_test",
+        [](const std::vector<std::string>&) {
+            printf("[LOG TEST] hello world\n");
+            Terminal::instance().addLog("[LOG TEST] hello world");
         }
     });
 
@@ -4258,6 +4308,7 @@ int main(int argc, char** argv)
     MimitaNet::mpShutdown(mpContext);
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
+    LogManager::instance().shutdown();
     
     return 0;
 }

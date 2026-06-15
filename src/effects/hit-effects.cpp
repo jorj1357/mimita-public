@@ -499,3 +499,17 @@ int HitEffects::debugBurstCount()
 {
     return gBurstCount;
 }
+
+int HitEffects::collectBurstSnapshots(HitBurstSnapshot* out, int maxCount)
+{
+    int count = 0;
+    for (int i = 0; i < gBurstCount && count < maxCount; ++i) {
+        const HitBurstEffect& b = gBursts[i];
+        out[count].position = b.position;
+        out[count].ageTicks = gGlobalTick - b.spawnTick;
+        out[count].totalTicks = b.totalTicks;
+        out[count].alive = b.alive;
+        count++;
+    }
+    return count;
+}

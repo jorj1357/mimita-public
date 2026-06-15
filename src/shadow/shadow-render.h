@@ -16,7 +16,6 @@ bool showShadowMap();
 void renderShadowMapOverlay(int screenW, int screenH);
 
 // Per-category depth rendering (called from renderShadowMap or standalone)
-void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP);
 void renderPlayerDepth(const class Player& player, GLuint shadowShader, const glm::mat4& lightViewProj);
 void renderNpcDepths(GLuint shadowShader, const glm::mat4& lightViewProj);
 void renderEffectDepths(GLuint shadowShader, const glm::mat4& lightViewProj);
