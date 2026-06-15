@@ -390,7 +390,7 @@ RevolverShotResult tryFireHitscan(
             shooter.username, "npc_" + std::to_string(victim->id));
         EffectPartSystem::instance().spawnEntityImpact(
             result.end, hitNormal, shooter.username, "npc_" + std::to_string(victim->id));
-        HitEffects::spawnHitEffects(result.end, hitNormal, totalDamage,
+        HitEffects::spawnHitEffects(result.end, shotDirection, hitNormal, totalDamage,
                                      shooter.username, "npc_" + std::to_string(victim->id));
         printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
                def.id.c_str(), hitPart.c_str(), result.damage);
@@ -432,7 +432,7 @@ RevolverShotResult tryFireHitscan(
             shooter.username, remoteVictim->username);
         EffectPartSystem::instance().spawnEntityImpact(
             result.end, hitNormal, shooter.username, remoteVictim->username);
-        HitEffects::spawnHitEffects(result.end, hitNormal, totalDamage,
+        HitEffects::spawnHitEffects(result.end, shotDirection, hitNormal, totalDamage,
                                      shooter.username, remoteVictim->username);
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
     } else if (hitWorld) {
@@ -562,7 +562,7 @@ RevolverShotResult tryFireHitscanDir(
             shooter.username, targetPlayer->username);
         EffectPartSystem::instance().spawnEntityImpact(
             result.end, hitNormal, shooter.username, targetPlayer->username);
-        HitEffects::spawnHitEffects(result.end, hitNormal, totalDamage,
+        HitEffects::spawnHitEffects(result.end, shotDirection, hitNormal, totalDamage,
                                      shooter.username, targetPlayer->username);
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
 
@@ -737,7 +737,7 @@ void fireMultiPellet(
                     shooter.username, "npc_" + std::to_string(pelletVictim->id));
                 EffectPartSystem::instance().spawnEntityImpact(
                     pelletEnd, pelletHitNml, shooter.username, "npc_" + std::to_string(pelletVictim->id));
-                HitEffects::spawnHitEffects(pelletEnd, pelletHitNml, dmg,
+                HitEffects::spawnHitEffects(pelletEnd, pelletDir, pelletHitNml, dmg,
                                              shooter.username, "npc_" + std::to_string(pelletVictim->id));
 
                 if (pelletNearest < nearestPelletDist) {
@@ -771,7 +771,7 @@ void fireMultiPellet(
                     shooter.username, pelletRemoteVictim->username);
                 EffectPartSystem::instance().spawnEntityImpact(
                     pelletEnd, pelletHitNml, shooter.username, pelletRemoteVictim->username);
-                HitEffects::spawnHitEffects(pelletEnd, pelletHitNml, totalDmg,
+                HitEffects::spawnHitEffects(pelletEnd, pelletDir, pelletHitNml, totalDmg,
                                              shooter.username, pelletRemoteVictim->username);
 
                 if (pelletNearest < nearestPelletDist) {

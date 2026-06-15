@@ -1,83 +1,117 @@
 {
-    "format": "mimita-hitfx-v1",
-    "whiteImpactStar": {
-        "enabled": true,
-        "ticks": 2,
-        "spikeCount": 12,
-        "innerRadius": 0.08,
-        "outerRadius": 0.35,
-        "rotationSpeed": 0.0,
-        "randomRotation": true,
-        "brightness": 3.0,
-        "alpha": 1.0,
-        "sizeCurve": "linear",
-        "alphaCurve": "linear",
-        "brightnessCurve": "linear",
-        "color": [1.0, 1.0, 1.0]
+    "enabled": true,
+    "hotReload": true,
+
+    "core": {
+        "lifetimeTicks": 60,
+        "spawnAtHitLocation": true,
+        "directional": true,
+        "useBlood": false
     },
-    "brightBlueBurst": {
+
+    "sphereTimeline": [
+        {
+            "name": "white_initial",
+            "startTick": 0,
+            "endTick": 1,
+            "startRadius": 0.12,
+            "endRadius": 0.18,
+            "colorStart": [1.0, 1.0, 1.0],
+            "colorEnd": [1.0, 1.0, 1.0],
+            "alphaStart": 1.0,
+            "alphaEnd": 1.0,
+            "brightnessStart": 3.0,
+            "brightnessEnd": 2.5
+        },
+        {
+            "name": "bright_blue_pop",
+            "startTick": 1,
+            "endTick": 2,
+            "startRadius": 0.18,
+            "endRadius": 0.35,
+            "colorStart": [0.45, 0.85, 1.0],
+            "colorEnd": [0.25, 0.65, 1.0],
+            "alphaStart": 0.95,
+            "alphaEnd": 0.85,
+            "brightnessStart": 2.5,
+            "brightnessEnd": 2.0
+        },
+        {
+            "name": "dark_blue_expand",
+            "startTick": 2,
+            "endTick": 60,
+            "startRadius": 0.35,
+            "endRadius": 1.25,
+            "colorStart": [0.05, 0.25, 1.0],
+            "colorEnd": [0.0, 0.04, 0.35],
+            "alphaStart": 0.75,
+            "alphaEnd": 0.0,
+            "brightnessStart": 1.3,
+            "brightnessEnd": 0.0
+        }
+    ],
+
+    "particles": {
         "enabled": true,
-        "ticks": 4,
-        "radius": 0.4,
-        "brightness": 2.5,
-        "alpha": 0.9,
-        "sizeCurve": "ease_out",
-        "alphaCurve": "ease_out",
-        "brightnessCurve": "ease_out",
-        "color": [0.4, 0.8, 1.0]
-    },
-    "darkBlueFade": {
-        "enabled": true,
-        "ticks": 12,
-        "radius": 0.8,
-        "brightness": 1.0,
-        "alpha": 0.6,
-        "sizeCurve": "ease_in",
-        "alphaCurve": "ease_out",
-        "brightnessCurve": "ease_out",
-        "color": [0.0, 0.2, 1.0]
-    },
-    "impactConeParticles": {
-        "enabled": true,
-        "particleCount": 20,
-        "coneAngleDegrees": 35,
-        "initialSpeed": 3.0,
-        "speedVariation": 1.0,
+        "texturePath": "assets/textures/blood v1.png",
+        "tintColor": [1.0, 1.0, 1.0],
+        "alpha": 0.85,
+        "brightness": 2.0,
+
+        "count": 18,
+        "lifetimeTicks": 24,
+
+        "coneAngleDegrees": 35.0,
+        "speed": 4.0,
+        "speedRandomness": 1.5,
+        "sizeStart": 0.04,
+        "sizeEnd": 0.12,
+
+        "drag": 0.05,
         "gravity": 0.0,
-        "drag": 0.0,
-        "ticks": 10,
-        "startSize": 0.03,
-        "endSize": 0.12,
-        "brightness": 2.0,
-        "alpha": 1.0,
-        "color": [1.0, 1.0, 1.0]
+
+        "spawnDirection": "opposite_hit_direction"
     },
-    "elongatedImpactSphere": {
-        "enabled": true,
-        "ticks": 6,
-        "startLength": 0.2,
-        "endLength": 1.0,
-        "startRadius": 0.1,
-        "endRadius": 0.3,
-        "alphaStart": 1.0,
-        "alphaEnd": 0.0,
-        "brightness": 2.0,
-        "sizeCurve": "ease_out",
-        "alphaCurve": "ease_out",
-        "brightnessCurve": "ease_out",
-        "color": [1.0, 1.0, 1.0]
+
+    "directionalShapes": {
+        "elongatedSphere": {
+            "enabled": true,
+            "alignToHitDirection": true,
+            "startTick": 0,
+            "endTick": 12,
+            "lengthStart": 0.15,
+            "lengthEnd": 1.0,
+            "radiusStart": 0.08,
+            "radiusEnd": 0.25,
+            "colorStart": [1.0, 1.0, 1.0],
+            "colorEnd": [0.1, 0.35, 1.0],
+            "alphaStart": 0.9,
+            "alphaEnd": 0.0,
+            "brightnessStart": 2.5,
+            "brightnessEnd": 0.0
+        },
+
+        "impactDisc": {
+            "enabled": true,
+            "normalFacesHitDirection": true,
+            "startTick": 0,
+            "endTick": 10,
+            "radiusStart": 0.1,
+            "radiusEnd": 0.9,
+            "thickness": 0.025,
+            "colorStart": [1.0, 1.0, 1.0],
+            "colorEnd": [0.0, 0.2, 1.0],
+            "alphaStart": 1.0,
+            "alphaEnd": 0.0,
+            "brightnessStart": 3.0,
+            "brightnessEnd": 0.0
+        }
     },
-    "perpendicularImpactDisc": {
-        "enabled": true,
-        "ticks": 8,
-        "startRadius": 0.1,
-        "endRadius": 1.2,
-        "alphaStart": 1.0,
-        "alphaEnd": 0.0,
-        "brightness": 2.5,
-        "sizeCurve": "ease_out",
+
+    "curves": {
+        "radiusCurve": "ease_out",
         "alphaCurve": "ease_out",
-        "brightnessCurve": "ease_out",
-        "color": [1.0, 1.0, 1.0]
+        "brightnessCurve": "linear",
+        "particleSizeCurve": "ease_out"
     }
 }

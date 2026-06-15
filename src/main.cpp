@@ -2665,7 +2665,7 @@ int main(int argc, char** argv)
                                 event.hit, event.normal,
                                 shooterName, targetName);
                             HitEffects::spawnHitEffects(
-                                event.hit, event.normal,
+                                event.hit, event.direction, event.normal,
                                 event.damage, shooterName, targetName);
                         }
                         if (event.effectFlags & MimitaNet::SHOT_EFFECT_BLOOD)
@@ -2887,7 +2887,7 @@ int main(int argc, char** argv)
                         EffectPartSystem::instance().spawnWorldDebris(
                             effect.position, effect.normal, 1.5f);
                     } else if (effect.type == "hit_burst") {
-                        HitEffects::spawnHitEffects(effect.position, effect.normal, 0, "replay", "replay");
+                        HitEffects::spawnHitEffects(effect.position, effect.normal, effect.normal, 0, "replay", "replay");
                     } else if (effect.type == "impact_entity") {
                         EffectPartSystem::instance().spawnEntityImpact(
                             effect.position, effect.normal,
