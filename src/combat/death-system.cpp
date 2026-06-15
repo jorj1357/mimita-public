@@ -5,6 +5,7 @@
 
 #include <glad/glad.h>
 #include "config.h"
+#include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "debug/transform-debug.h"
 #include "debug/gl-debug.h"
@@ -308,8 +309,11 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.dead = false;
     actor.proceduralFrozen = false;
     actor.respawnTimer = 0.0f;
+    actor.spawnFlashTimer = 10.0f;
     actor.killedBy.clear();
     actor.onGround = false;
+    playWorldSound("entity/player/spawning", actor.pos, 1.0f);
+    Debug::log(Debug::Category::Audio, "[SPAWN FX] playing spawning.wav\n");
     actor.syncLegacyStateToLayers();
     actor.updateModelWorldTransforms();
     emitLifecycleEvent("respawn", actor, actorId, actorId);

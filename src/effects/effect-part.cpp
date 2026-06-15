@@ -77,6 +77,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include <cstring>
 #include "audio/audio.h"
 #include "config.h"
+#include "effects/hit-effects.h"
 #include "replay/replay.h"
 #include "hot-reload/hot-reload-system.h"
 
@@ -379,6 +380,7 @@ void EffectPartSystem::spawnBloodEffect(
     const std::string& sourceActorId,
     const std::string& targetActorId)
 {
+    if (!isBloodFXEnabled()) return;
     damage = std::max(0.0f, damage);
     const glm::vec3 forward = glm::length(sprayDirection) > 0.001f
         ? glm::normalize(sprayDirection)

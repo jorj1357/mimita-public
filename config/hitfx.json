@@ -1,0 +1,83 @@
+{
+    "format": "mimita-hitfx-v1",
+    "whiteImpactStar": {
+        "enabled": true,
+        "ticks": 2,
+        "spikeCount": 12,
+        "innerRadius": 0.08,
+        "outerRadius": 0.35,
+        "rotationSpeed": 0.0,
+        "randomRotation": true,
+        "brightness": 3.0,
+        "alpha": 1.0,
+        "sizeCurve": "linear",
+        "alphaCurve": "linear",
+        "brightnessCurve": "linear",
+        "color": [1.0, 1.0, 1.0]
+    },
+    "brightBlueBurst": {
+        "enabled": true,
+        "ticks": 4,
+        "radius": 0.4,
+        "brightness": 2.5,
+        "alpha": 0.9,
+        "sizeCurve": "ease_out",
+        "alphaCurve": "ease_out",
+        "brightnessCurve": "ease_out",
+        "color": [0.4, 0.8, 1.0]
+    },
+    "darkBlueFade": {
+        "enabled": true,
+        "ticks": 12,
+        "radius": 0.8,
+        "brightness": 1.0,
+        "alpha": 0.6,
+        "sizeCurve": "ease_in",
+        "alphaCurve": "ease_out",
+        "brightnessCurve": "ease_out",
+        "color": [0.0, 0.2, 1.0]
+    },
+    "impactConeParticles": {
+        "enabled": true,
+        "particleCount": 20,
+        "coneAngleDegrees": 35,
+        "initialSpeed": 3.0,
+        "speedVariation": 1.0,
+        "gravity": 0.0,
+        "drag": 0.0,
+        "ticks": 10,
+        "startSize": 0.03,
+        "endSize": 0.12,
+        "brightness": 2.0,
+        "alpha": 1.0,
+        "color": [1.0, 1.0, 1.0]
+    },
+    "elongatedImpactSphere": {
+        "enabled": true,
+        "ticks": 6,
+        "startLength": 0.2,
+        "endLength": 1.0,
+        "startRadius": 0.1,
+        "endRadius": 0.3,
+        "alphaStart": 1.0,
+        "alphaEnd": 0.0,
+        "brightness": 2.0,
+        "sizeCurve": "ease_out",
+        "alphaCurve": "ease_out",
+        "brightnessCurve": "ease_out",
+        "color": [1.0, 1.0, 1.0]
+    },
+    "perpendicularImpactDisc": {
+        "enabled": true,
+        "ticks": 8,
+        "startRadius": 0.1,
+        "endRadius": 1.2,
+        "alphaStart": 1.0,
+        "alphaEnd": 0.0,
+        "brightness": 2.5,
+        "sizeCurve": "ease_out",
+        "alphaCurve": "ease_out",
+        "brightnessCurve": "ease_out",
+        "color": [1.0, 1.0, 1.0]
+    }
+}

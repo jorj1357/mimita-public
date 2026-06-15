@@ -459,7 +459,7 @@ void drawFilledBillboard(
 }
 
 // Solid filled sphere for production particles (footsteps, dash)
-void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color)
+void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale)
 {
     (void)camera;
     constexpr int LAT_SEGMENTS = 8;
@@ -474,19 +474,26 @@ void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm:
         float r1 = std::sin(a1);
         for (int lon = 0; lon < LON_SEGMENTS; ++lon)
         {
-            float b0 = 6.2831853f * (float)lon / (float)LON_SEGMENTS;
-            float b1 = 6.2831853f * (float)(lon + 1) / (float)LON_SEGMENTS;
-            glm::vec3 p00 = center + glm::vec3(r0 * std::cos(b0), r0 * std::sin(b0), y0) * radius;
-            glm::vec3 p01 = center + glm::vec3(r0 * std::cos(b1), r0 * std::sin(b1), y0) * radius;
-            glm::vec3 p10 = center + glm::vec3(r1 * std::cos(b0), r1 * std::sin(b0), y1) * radius;
-            glm::vec3 p11 = center + glm::vec3(r1 * std::cos(b1), r1 * std::sin(b1), y1) * radius;
-            // Two triangles per quad
-            gTriVerts.push_back({p00, color});
-            gTriVerts.push_back({p10, color});
-            gTriVerts.push_back({p01, color});
-            gTriVerts.push_back({p01, color});
-            gTriVerts.push_back({p10, color});
-            gTriVerts.push_back({p11, color});
+            float b0 = 2.0f * 3.14159265f * (float)lon / (float)LON_SEGMENTS;
+            float b1 = 2.0f * 3.14159265f * (float)((lon + 1) % LON_SEGMENTS) / (float)LON_SEGMENTS;
+            glm::vec3 off0 = scale * glm::vec3(radius * r0 * std::sin(b0), radius * r0 * std::cos(b0), radius * y0);
+            glm::vec3 off1 = scale * glm::vec3(radius * r1 * std::sin(b0), radius * r1 * std::cos(b0), radius * y1);
+            glm::vec3 off2 = scale * glm::vec3(radius * r1 * std::sin(b1), radius * r1 * std::cos(b1), radius * y1);
+            glm::vec3 off3 = scale * glm::vec3(radius * r0 * std::sin(b1), radius * r0 * std::cos(b1), radius * y0);
+            glm::vec3 p00 = center + off0;
+            glm::vec3 p10 = center + off1;
+            glm::vec3 p01 = center + off3;
+            glm::vec3 p11 = center + off2;
+            if (lat > 0) {
+                gTriVerts.push_back({p00, color});
+                gTriVerts.push_back({p10, color});
+                gTriVerts.push_back({p01, color});
+            }
+            if (lat < LAT_SEGMENTS - 1) {
+                gTriVerts.push_back({p01, color});
+                gTriVerts.push_back({p10, color});
+                gTriVerts.push_back({p11, color});
+            }
         }
     }
 }
@@ -1169,8 +1176,8 @@ namespace DebugVis {
     }
     
     // Not gated behind masterEnabled — intended for production particles
-    void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color) {
-        ::drawFilledSphere(camera, center, radius, color);
+    void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale) {
+        ::drawFilledSphere(camera, center, radius, color, scale);
     }
 
     void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color) {

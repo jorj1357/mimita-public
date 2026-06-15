@@ -1,5 +1,6 @@
 #include "video-settings.h"
 #include "renderer/renderer.h"
+#include "render/post-fx.h"
 
 #include <cstdio>
 #include <fstream>
@@ -81,6 +82,7 @@ void VideoSettings::apply()
         return;
     }
     gRenderer->applyVideoMode(width(), height(), mFullscreen);
+    PostFX::instance().initFBO(gRenderer->width, gRenderer->height);
 }
 
 void VideoSettings::load()

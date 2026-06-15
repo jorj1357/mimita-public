@@ -119,7 +119,7 @@ namespace DebugVis {
                              float rotation, float stretch, glm::vec4 color);
     
     // Solid filled sphere (for production particles — footsteps, dash)
-    void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
+    void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale = glm::vec3(1.0f));
     void drawFilledCylinder(const Camera& camera, glm::vec3 center, glm::vec3 axis, float radius, float height, glm::vec4 color);
     void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color);
     void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler = glm::vec3(0.0f));

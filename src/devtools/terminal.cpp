@@ -77,49 +77,69 @@ void Terminal::init(GLFWwindow* window) {
 
     registerCommand({
         "help",
-        "List all available commands (sorted A-Z, category shown). help <category> to filter.",
-        "help [category]",
+        "Show command info. help <name> for details, help <category> to filter.",
+        "help [name|category]",
         [this](const std::vector<std::string>& args) {
-            std::string filterCat;
-            if (!args.empty()) {
-                std::string a = args[0];
-                std::transform(a.begin(), a.end(), a.begin(), ::tolower);
-                for (int c = (int)CommandCategory::Uncategorized; c <= (int)CommandCategory::UI; ++c) {
-                    std::string cn = categoryName((CommandCategory)c);
-                    std::transform(cn.begin(), cn.end(), cn.begin(), ::tolower);
-                    if (cn == a) { filterCat = categoryName((CommandCategory)c); break; }
+            if (args.empty()) {
+                std::vector<const ConsoleCommand*> commands;
+                commands.reserve(mCommands.size());
+                for (const auto& pair : mCommands) commands.push_back(&pair.second);
+                std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                    return a->name < b->name;
+                });
+                addLog("Available commands (help <name> for details, help <Category> to filter):");
+                std::string lastCat;
+                for (const ConsoleCommand* cmd : commands) {
+                    std::string cat = categoryName(cmd->category);
+                    if (cat != lastCat) {
+                        char hdr[64];
+                        snprintf(hdr, sizeof(hdr), "--- %s ---", cat.c_str());
+                        addLog(hdr);
+                        lastCat = cat;
+                    }
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), "  %-24s %s", cmd->name.c_str(), cmd->description.c_str());
+                    addLog(buf);
                 }
-                if (filterCat.empty()) {
-                    addLog("Unknown category. Try: Replay, NPC, Weapon, Duel, Debug, Player, Editor, UI, Network, Inventory");
+                return;
+            }
+            std::string a = args[0];
+            std::string aLower = a;
+            std::transform(aLower.begin(), aLower.end(), aLower.begin(), ::tolower);
+            auto it = mCommands.find(a);
+            if (it != mCommands.end()) {
+                const ConsoleCommand& cmd = it->second;
+                addLog("--- " + cmd.name + " ---");
+                addLog("  Description: " + cmd.description);
+                addLog("  Usage: " + cmd.usage);
+                addLog("  Category: " + std::string(categoryName(cmd.category)));
+                if (!cmd.dateAdded.empty())
+                    addLog("  Added: " + cmd.dateAdded);
+                return;
+            }
+            for (int c = (int)CommandCategory::Uncategorized; c <= (int)CommandCategory::UI; ++c) {
+                std::string cn = categoryName((CommandCategory)c);
+                std::transform(cn.begin(), cn.end(), cn.begin(), ::tolower);
+                if (cn == aLower) {
+                    std::string filterCat = categoryName((CommandCategory)c);
+                    std::vector<const ConsoleCommand*> commands;
+                    commands.reserve(mCommands.size());
+                    for (const auto& pair : mCommands) commands.push_back(&pair.second);
+                    std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                        return a->name < b->name;
+                    });
+                    addLog("--- " + filterCat + " ---");
+                    for (const ConsoleCommand* cmd : commands) {
+                        if (categoryName(cmd->category) == filterCat) {
+                            char buf[256];
+                            snprintf(buf, sizeof(buf), "  %-24s %s", cmd->name.c_str(), cmd->description.c_str());
+                            addLog(buf);
+                        }
+                    }
                     return;
                 }
             }
-            std::vector<const ConsoleCommand*> commands;
-            commands.reserve(mCommands.size());
-            for (const auto& pair : mCommands) commands.push_back(&pair.second);
-            std::sort(commands.begin(), commands.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
-                return a->name < b->name;
-            });
-            if (filterCat.empty()) {
-                addLog("Available commands (help2 for grouped by category, help <cat> to filter):");
-            } else {
-                std::string hdr = "--- " + filterCat + " ---";
-                addLog(hdr);
-            }
-            std::string lastCat;
-            for (const ConsoleCommand* cmd : commands) {
-                std::string cat = categoryName(cmd->category);
-                if (!filterCat.empty() && cat != filterCat) continue;
-                if (filterCat.empty() && cat != lastCat) {
-                    char hdr[64];
-                    snprintf(hdr, sizeof(hdr), "--- %s ---", cat.c_str());
-                    addLog(hdr);
-                    lastCat = cat;
-                }
-                char buf[256];
-                snprintf(buf, sizeof(buf), "  %-24s %s", cmd->name.c_str(), cmd->description.c_str());
-                addLog(buf);
-            }
+            addLog("Unknown command or category: " + a + ". Try 'help' for a list.");
         }
     }, CommandCategory::UI);
 
@@ -961,23 +981,41 @@ void Terminal::execute(const std::string& input) {
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd) {
+    if (mCommands.find(cmd.name) != mCommands.end()) {
+        std::string msg = "[DUPLICATE COMMAND] " + cmd.name;
+        addLog(msg);
+        printf("%s\n", msg.c_str());
+        return;
+    }
     mCommands[cmd.name] = cmd;
     mRegistrationOrder.push_back(cmd.name);
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded) {
+    if (mCommands.find(cmd.name) != mCommands.end()) {
+        addLog("[DUPLICATE COMMAND] " + cmd.name);
+        return;
+    }
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].dateAdded = dateAdded;
     mRegistrationOrder.push_back(cmd.name);
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory category) {
+    if (mCommands.find(cmd.name) != mCommands.end()) {
+        addLog("[DUPLICATE COMMAND] " + cmd.name);
+        return;
+    }
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].category = category;
     mRegistrationOrder.push_back(cmd.name);
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category) {
+    if (mCommands.find(cmd.name) != mCommands.end()) {
+        addLog("[DUPLICATE COMMAND] " + cmd.name);
+        return;
+    }
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].dateAdded = dateAdded;
     mCommands[cmd.name].category = category;
