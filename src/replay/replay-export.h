@@ -42,3 +42,4 @@ const ReplayExportJob& getReplayExportJob();
 void setFfmpegDebugMode(bool enabled);
 bool isFfmpegDebugMode();
 std::string generateExportOutputPath();
+std::string makeCmdKArgs(const std::string& cmd);
