@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "camera.h"
+#include "effects/hit-effects.h"
 
 using json = nlohmann::json;
 
@@ -62,6 +63,7 @@ bool LoadPlayerSettings(const std::string& account)
         readValue(j, "freecam_speed", gSettings.freecamSpeed);
         readValue(j, "music_muted", gSettings.musicMuted);
         readValue(j, "debug_combat", gSettings.debugCombat);
+        readValue(j, "bloodfx", gSettings.bloodFX);
         readValue(j, "resolution", gSettings.resolution);
         readValue(j, "graphics_preset", gSettings.graphicsPreset);
 
@@ -70,6 +72,7 @@ bool LoadPlayerSettings(const std::string& account)
         gSettings.equippedSlot = std::clamp(gSettings.equippedSlot, 1, 10);
         CAMERA_FOV = gSettings.fov;
         CAMERA_SENS = gSettings.sensitivity;
+        gBloodFXEnabled = gSettings.bloodFX;
         return true;
     } catch (const std::exception& e) {
         printf("[PLAYER SETTINGS] load failed: %s\n", e.what());
@@ -111,6 +114,7 @@ bool SavePlayerSettings(const std::string& account)
     j["freecam_speed"] = gSettings.freecamSpeed;
     j["music_muted"] = gSettings.musicMuted;
     j["debug_combat"] = gSettings.debugCombat;
+    j["bloodfx"] = gSettings.bloodFX;
     j["resolution"] = gSettings.resolution;
     j["graphics_preset"] = gSettings.graphicsPreset;
 

@@ -15,23 +15,12 @@
 #include "gui-layout.h"
 #include "audio/music-manager.h"
 #include "input/input-commands.h"
+#include "replay/replay-factory.h"
+#include "replay/replay.h"
+#include "terminal/terminal-state.h"
 #include <cstdio>
 
-enum GuiMenuState
-{
-    GUI_MENU_MAIN,
-    GUI_MENU_SETTINGS,
-    GUI_MENU_SANDBOX_MAPS,
-    GUI_MENU_SERVERS,
-    GUI_MENU_DUEL_CONFIG,
-    GUI_MENU_SERVER_INFO,
-    GUI_MENU_SIGN_IN,
-    GUI_MENU_HELP,
-    GUI_MENU_PLAY,
-    GUI_MENU_PRACTICE
-};
-
-static GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
+GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
 
 static const char* layoutFileForMenu(GuiMenuState state)
 {
@@ -46,6 +35,7 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_SERVER_INFO:  return "config/gui/server-info-menu.json";
         case GUI_MENU_SIGN_IN:      return "config/gui/sign-in-menu.json";
         case GUI_MENU_HELP:         return "config/gui/help-menu.json";
+        case GUI_MENU_REPLAY:       return "config/gui/replay-menu.json";
     }
     return "config/gui/main-menu.json";
 }
@@ -93,7 +83,8 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.goReplays)
             {
-                printf("[MAIN MENU] Replays menu not yet implemented\n");
+                printf("[MAIN MENU] switching to replay menu\n");
+                gGuiMenuState = GUI_MENU_REPLAY;
             }
             else if (r.goExit)
             {
@@ -236,6 +227,23 @@ void guiMain(GLFWwindow* win, GameState& state)
             HelpMenuResult r = drawHelpMenu(win);
             if (r.goBack)
                 gGuiMenuState = GUI_MENU_MAIN;
+            break;
+        }
+
+        case GUI_MENU_REPLAY:
+        {
+            ReplayBrowser& browser = REPLAY_BROWSER;
+            browser.setOpen(true);
+            browser.draw();
+
+            // Back button using layout
+            GuiLayout& rl = GuiLayoutManager::instance().getLayout("config/gui/replay-menu.json");
+            const GuiElement* bb = rl.get("backButton");
+            if (bb && uiButton(win, "BACK", {bb->x, bb->y, bb->w, bb->h}, {0.7f, 0.2f, 0.2f, 1.0f}).clicked)
+            {
+                browser.setOpen(false);
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
             break;
         }
     }

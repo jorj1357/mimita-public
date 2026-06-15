@@ -4,31 +4,35 @@
 
     "core": {
         "lifetimeTicks": 60,
-        "spawnAtHitLocation": true,
+        "spawnAtHitLocation": false,
         "directional": true,
-        "useBlood": false
+        "useBlood": false,
+        "damageNumbers": false,
+        "entityImpact": false,
+        "worldImpact": false,
+        "bulletImpact": false
     },
 
     "sphereTimeline": [
         {
             "name": "white_initial",
-            "startTick": 0,
-            "endTick": 1,
+            "startTick": 1,
+            "endTick": 102,
             "startRadius": 0.12,
-            "endRadius": 0.18,
+            "endRadius": 1.58,
             "colorStart": [1.0, 1.0, 1.0],
             "colorEnd": [1.0, 1.0, 1.0],
             "alphaStart": 1.0,
             "alphaEnd": 1.0,
             "brightnessStart": 3.0,
-            "brightnessEnd": 2.5
+            "brightnessEnd": 0.5
         },
         {
             "name": "bright_blue_pop",
             "startTick": 1,
-            "endTick": 2,
+            "endTick": 222,
             "startRadius": 0.18,
-            "endRadius": 0.35,
+            "endRadius": 3.35,
             "colorStart": [0.45, 0.85, 1.0],
             "colorEnd": [0.25, 0.65, 1.0],
             "alphaStart": 0.95,
@@ -39,7 +43,7 @@
         {
             "name": "dark_blue_expand",
             "startTick": 2,
-            "endTick": 60,
+            "endTick": 333,
             "startRadius": 0.35,
             "endRadius": 1.25,
             "colorStart": [0.05, 0.25, 1.0],
@@ -52,17 +56,17 @@
     ],
 
     "particles": {
-        "enabled": true,
+        "enabled": false,
         "texturePath": "assets/textures/blood v1.png",
         "tintColor": [1.0, 1.0, 1.0],
         "alpha": 0.85,
         "brightness": 2.0,
 
-        "count": 18,
-        "lifetimeTicks": 24,
+        "count": 100,
+        "lifetimeTicks": 243,
 
         "coneAngleDegrees": 35.0,
-        "speed": 4.0,
+        "speed": 5.0,
         "speedRandomness": 1.5,
         "sizeStart": 0.04,
         "sizeEnd": 0.12,
@@ -70,15 +74,15 @@
         "drag": 0.05,
         "gravity": 0.0,
 
-        "spawnDirection": "opposite_hit_direction"
+        "spawnDirection": "hit_direction"
     },
 
     "directionalShapes": {
         "elongatedSphere": {
-            "enabled": true,
+            "enabled": false,
             "alignToHitDirection": true,
             "startTick": 0,
-            "endTick": 12,
+            "endTick": 122,
             "lengthStart": 0.15,
             "lengthEnd": 1.0,
             "radiusStart": 0.08,
@@ -92,7 +96,7 @@
         },
 
         "impactDisc": {
-            "enabled": true,
+            "enabled": false,
             "normalFacesHitDirection": true,
             "startTick": 0,
             "endTick": 10,
@@ -113,5 +117,19 @@
         "alphaCurve": "ease_out",
         "brightnessCurve": "linear",
         "particleSizeCurve": "ease_out"
+    },
+
+    "legacyContactSphere": {
+        "enabled": false,
+
+        "color": [1.0, 0.15, 0.1],
+
+        "alpha": 1.0,
+
+        "lifetimeSeconds": 0.25,
+
+        "startRadius": 0.18,
+
+        "endRadius": 0.27
     }
 }

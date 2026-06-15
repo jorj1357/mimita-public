@@ -312,6 +312,8 @@ public:
     void render(unsigned int shader,
                 const glm::mat4& view,
                 const glm::mat4& proj) const;
+    void renderDepth(unsigned int shadowShader,
+                     const glm::mat4& lightViewProj) const;
 
     // -------- Weapon system --------
     std::string equippedWeaponId;

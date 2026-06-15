@@ -1577,6 +1577,68 @@ void Player::renderCurrentPose(unsigned int shader,
     diagRenderCountPlayerDraw();
 }
 
+void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewProj) const
+{
+    const_cast<Player*>(this)->updateModelWorldTransforms();
+
+    glUseProgram(shadowShader);
+    GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
+
+    if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
+    {
+        for (size_t i = 0; i < physicalBody.parts.size(); ++i)
+        {
+            const PhysicalBodyPart& part = physicalBody.parts[i];
+            const Mesh& mesh = physicalBody.partMeshes[i];
+            if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
+                continue;
+
+            uploadBodyPartMesh(mesh);
+
+            const glm::mat4& model = part.worldTransform;
+            glm::mat4 mvp = lightViewProj * model;
+            if (loc >= 0)
+                glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
+
+            for (const Mesh::Batch& batch : mesh.batches)
+                glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        }
+        glUseProgram(0);
+        return;
+    }
+
+    if (modelLoaded && !renderMesh.verts.empty())
+    {
+        uploadPlayerMeshIfNeeded(renderMesh);
+
+        glm::mat4 modelMat =
+            glm::translate(glm::mat4(1.0f), pos) *
+            glm::rotate(glm::mat4(1.0f), glm::radians(yaw), glm::vec3(0,0,1));
+
+        glm::mat4 mvp = lightViewProj * modelMat;
+        if (loc >= 0)
+            glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
+
+        glBindVertexArray(playerVAO);
+        for (const Mesh::Batch& batch : renderMesh.batches)
+            glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+
+        glUseProgram(0);
+        return;
+    }
+
+    initCapsuleMesh();
+
+    glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), pos);
+    glm::mat4 mvp = lightViewProj * modelMat;
+    if (loc >= 0)
+        glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
+
+    glBindVertexArray(capsuleVAO);
+    glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount);
+    glUseProgram(0);
+}
+
 void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce)
 {
     printf("[APPLY DAMAGE] target=%s hpBefore=%d damage=%d\n",

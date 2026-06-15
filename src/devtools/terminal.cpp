@@ -1,10 +1,12 @@
 #include "terminal.h"
+#include "command-search.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cctype>
 #include <sstream>
 #include <fstream>
+#include <cmath>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -139,7 +141,34 @@ void Terminal::init(GLFWwindow* window) {
                     return;
                 }
             }
-            addLog("Unknown command or category: " + a + ". Try 'help' for a list.");
+            // Fuzzy search for matching commands
+            rebuildCache();
+            MatchResult mr;
+            std::vector<const ConsoleCommand*> fuzzyResults;
+            for (const auto& cc : mCachedCommands) {
+                if (fuzzyMatch(aLower, cc.lowerName, mr) > 0)
+                    fuzzyResults.push_back(cc.cmd);
+            }
+            std::sort(fuzzyResults.begin(), fuzzyResults.end(), [](const ConsoleCommand* a, const ConsoleCommand* b) {
+                return a->name < b->name;
+            });
+            if (!fuzzyResults.empty()) {
+                addLog("No exact match found for \"" + a + "\". Did you mean:");
+                for (size_t i = 0; i < std::min(fuzzyResults.size(), (size_t)20); i++) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), "  %-24s %s",
+                             fuzzyResults[i]->name.c_str(),
+                             fuzzyResults[i]->description.c_str());
+                    addLog(buf);
+                }
+                if (fuzzyResults.size() > 20) {
+                    char buf[64];
+                    snprintf(buf, sizeof(buf), "  ... and %zu more", fuzzyResults.size() - 20);
+                    addLog(buf);
+                }
+            } else {
+                addLog("Unknown command or category: " + a + ". Try 'help' for a list.");
+            }
         }
     }, CommandCategory::UI);
 
@@ -910,6 +939,42 @@ void Terminal::init(GLFWwindow* window) {
             }
         }
     });
+
+    registerCommand({
+        "command_stats",
+        "Show command search statistics",
+        "command_stats",
+        [this](const std::vector<std::string>&) {
+            addLog("--- Command Stats ---");
+            char buf[256];
+            snprintf(buf, sizeof(buf), "  registered commands: %zu", mCommands.size());
+            addLog(buf);
+            snprintf(buf, sizeof(buf), "  cache entries: %zu", mCachedCommands.size());
+            addLog(buf);
+            snprintf(buf, sizeof(buf), "  search results: %zu", mSearchResults.size());
+            addLog(buf);
+            snprintf(buf, sizeof(buf), "  selected result: %d", mSelectedResult);
+            addLog(buf);
+        }
+    });
+
+    registerCommand({
+        "cmd",
+        "Open command palette (terminal search mode)",
+        "cmd",
+        [this](const std::vector<std::string>&) {
+            addLog("[OK] Command palette ready — start typing to search commands");
+        }
+    });
+
+    registerCommand({
+        "palette",
+        "Open command palette (terminal search mode)",
+        "palette",
+        [this](const std::vector<std::string>&) {
+            addLog("[OK] Command palette ready — start typing to search commands");
+        }
+    });
 }
 
 void Terminal::toggle() {
@@ -989,6 +1054,7 @@ void Terminal::registerCommand(const ConsoleCommand& cmd) {
     }
     mCommands[cmd.name] = cmd;
     mRegistrationOrder.push_back(cmd.name);
+    mCacheDirty = true;
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded) {
@@ -999,6 +1065,7 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dat
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].dateAdded = dateAdded;
     mRegistrationOrder.push_back(cmd.name);
+    mCacheDirty = true;
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory category) {
@@ -1009,6 +1076,7 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory catego
     mCommands[cmd.name] = cmd;
     mCommands[cmd.name].category = category;
     mRegistrationOrder.push_back(cmd.name);
+    mCacheDirty = true;
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category) {
@@ -1020,17 +1088,183 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dat
     mCommands[cmd.name].dateAdded = dateAdded;
     mCommands[cmd.name].category = category;
     mRegistrationOrder.push_back(cmd.name);
+    mCacheDirty = true;
+}
+
+void Terminal::rebuildCache() {
+    if (!mCacheDirty) return;
+    mCachedCommands.clear();
+    mCachedCommands.reserve(mCommands.size());
+    for (const auto& pair : mCommands) {
+        CachedCommand cc;
+        cc.cmd = &pair.second;
+        cc.lowerName = pair.first;
+        std::transform(cc.lowerName.begin(), cc.lowerName.end(), cc.lowerName.begin(), ::tolower);
+        cc.lowerDesc = pair.second.description;
+        std::transform(cc.lowerDesc.begin(), cc.lowerDesc.end(), cc.lowerDesc.begin(), ::tolower);
+        mCachedCommands.push_back(cc);
+    }
+    mCacheDirty = false;
+}
+
+void Terminal::updateSearch() {
+    if (mInputLine == mLastSearchInput && !mCacheDirty) return;
+    mLastSearchInput = mInputLine;
+    rebuildCache();
+
+    mSearchResults.clear();
+    mGhostSuffix.clear();
+    mSelectedResult = -1;
+
+    if (mInputLine.empty()) {
+        return;
+    }
+
+    // Only autocomplete the first word (no spaces = typing command name)
+    if (mInputLine.find(' ') != std::string::npos) {
+        mSelectedResult = -1;
+        return;
+    }
+
+    std::string inputLower = mInputLine;
+    std::transform(inputLower.begin(), inputLower.end(), inputLower.begin(), ::tolower);
+
+    MatchResult mr;
+    for (const auto& cc : mCachedCommands) {
+        int score = fuzzyMatch(inputLower, cc.lowerName, mr);
+        if (score > 0) {
+            SearchResult sr;
+            sr.cmd = cc.cmd;
+            sr.score = score;
+            sr.matchPositions = std::move(mr.positions);
+            mSearchResults.push_back(std::move(sr));
+        }
+        // Also search description for lower priority matches
+        if (score == 0 && cc.lowerDesc.find(inputLower) != std::string::npos) {
+            SearchResult sr;
+            sr.cmd = cc.cmd;
+            sr.score = 1;
+            mSearchResults.push_back(std::move(sr));
+        }
+    }
+
+    std::sort(mSearchResults.begin(), mSearchResults.end(),
+        [](const SearchResult& a, const SearchResult& b) {
+            if (a.score != b.score) return a.score > b.score;
+            return a.cmd->name < b.cmd->name;
+        });
+
+    if (mSearchResults.size() > 20)
+        mSearchResults.resize(20);
+
+    if (mSelectedResult >= (int)mSearchResults.size())
+        mSelectedResult = mSearchResults.empty() ? -1 : 0;
+
+    mGhostSuffix = computeGhostSuffix(inputLower);
+}
+
+std::string Terminal::computeGhostSuffix(const std::string& inputLower) const {
+    if (mSearchResults.empty() || inputLower.empty())
+        return {};
+
+    const std::string& bestName = mSearchResults[0].cmd->name;
+    if (inputLower.size() >= bestName.size())
+        return {};
+
+    // Only show ghost if input is a case-insensitive prefix of the best match
+    for (size_t i = 0; i < inputLower.size(); i++) {
+        if (inputLower[i] != std::tolower(bestName[i]))
+            return {};
+    }
+
+    return bestName.substr(inputLower.size());
+}
+
+void Terminal::drawAutocompleteMenu(float inputLineY, float lineHeight) {
+    if (mSearchResults.empty() || mInputLine.empty())
+        return;
+
+    float fbW = uiScreenW();
+    float itemH = lineHeight;
+    int maxVisible = 12;
+    int numShow = std::min((int)mSearchResults.size(), maxVisible);
+    float menuH = itemH * numShow + 4;
+    float menuX = 16.0f;
+    float menuY = inputLineY - 8.0f - menuH;
+    float menuW = fbW - 32.0f;
+
+    // Menu background
+    uiDrawRect({menuX, menuY, menuW, menuH}, {0.06f, 0.06f, 0.06f, 0.95f}, "autocomplete-bg");
+    uiDrawRect({menuX, menuY, menuW, 1}, {0.85f, 0.05f, 0.05f, 0.7f}, "autocomplete-accent");
+
+    float descColorMulti = 0.4f;
+
+    for (int i = 0; i < numShow; i++) {
+        const SearchResult& sr = mSearchResults[i];
+        float y = menuY + 2.0f + itemH * i;
+
+        if (i == mSelectedResult) {
+            uiDrawRect({menuX + 2, y, menuW - 4, itemH}, {0.25f, 0.25f, 0.35f, 0.8f}, "autocomplete-sel");
+        }
+
+        // Draw command name with highlighted matching positions
+        const std::string& name = sr.cmd->name;
+        glm::vec4 nameColor = {0.95f, 0.95f, 0.95f, 1.0f};
+        glm::vec4 hlColor = {1.0f, 0.9f, 0.3f, 1.0f};
+
+        if (sr.matchPositions.empty()) {
+            uiDrawText(name.c_str(), menuX + 8, y, 0.35f, nameColor);
+        } else {
+            // Draw full name in base color, then overlay matched chars in highlight
+            uiDrawText(name.c_str(), menuX + 8, y, 0.35f, nameColor);
+            for (int pos : sr.matchPositions) {
+                if (pos < (int)name.size()) {
+                    std::string prefix = name.substr(0, pos);
+                    float cx = menuX + 8 + uiMeasureText(prefix.c_str(), 0.35f);
+                    char ch[2] = { name[pos], '\0' };
+                    uiDrawText(ch, cx, y, 0.35f, hlColor);
+                }
+            }
+        }
+
+        // Draw description
+        if (!sr.cmd->description.empty()) {
+            float nameW = uiMeasureText(name.c_str(), 0.35f) + 12;
+            std::string desc = sr.cmd->description;
+            float maxDescW = menuW - nameW - 24;
+            if (maxDescW > 40) {
+                // Truncate if too long
+                float descW = uiMeasureText(desc.c_str(), 0.30f);
+                if (descW > maxDescW) {
+                    while (!desc.empty() && uiMeasureText((desc + "...").c_str(), 0.30f) > maxDescW)
+                        desc.pop_back();
+                    desc += "...";
+                }
+                uiDrawText(desc.c_str(), menuX + 8 + nameW, y, 0.30f,
+                          {descColorMulti, descColorMulti, descColorMulti + 0.25f, 0.8f});
+            }
+        }
+    }
+
+    if ((int)mSearchResults.size() > maxVisible) {
+        char more[64];
+        snprintf(more, sizeof(more), "... %zu more", mSearchResults.size() - (size_t)maxVisible);
+        uiDrawText(more, menuX + 8, menuY + menuH, 0.30f, {0.5f, 0.5f, 0.5f, 0.7f});
+    }
 }
 
 void Terminal::handleChar(unsigned int codepoint) {
     if (!mOpen) return;
     if (codepoint >= 32 && codepoint <= 126) {
         mInputLine += (char)codepoint;
+        mSelectedResult = -1;
     }
 }
 
 void Terminal::handleKey(int key, int mods) {
     if (!mOpen) return;
+
+    updateSearch();
 
     if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) {
         const char* clip = glfwGetClipboardString(mWindow);
@@ -1051,10 +1285,16 @@ void Terminal::handleKey(int key, int mods) {
     }
 
     if (key == GLFW_KEY_ENTER) {
+        if (!mSearchResults.empty()) {
+            int idx = mSelectedResult >= 0 ? mSelectedResult : 0;
+            mInputLine = mSearchResults[idx].cmd->name;
+        }
         executeCurrent();
     } else if (key == GLFW_KEY_BACKSPACE) {
-        if (!mInputLine.empty())
+        if (!mInputLine.empty()) {
             mInputLine.pop_back();
+            mSelectedResult = -1;
+        }
     } else if ((mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_UP) {
         mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
     } else if ((mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_DOWN) {
@@ -1068,7 +1308,12 @@ void Terminal::handleKey(int key, int mods) {
     } else if (key == GLFW_KEY_PAGE_DOWN) {
         mScrollOffset = std::max(0, mScrollOffset - 10);
     } else if (key == GLFW_KEY_UP) {
-        if (!mHistory.empty()) {
+        if (!mSearchResults.empty()) {
+            if (mSelectedResult < 0)
+                mSelectedResult = 0;
+            else if (mSelectedResult > 0)
+                mSelectedResult--;
+        } else if (!mHistory.empty()) {
             if (mHistoryIndex == -1)
                 mHistoryIndex = (int)mHistory.size() - 1;
             else if (mHistoryIndex > 0)
@@ -1076,7 +1321,12 @@ void Terminal::handleKey(int key, int mods) {
             mInputLine = mHistory[mHistoryIndex];
         }
     } else if (key == GLFW_KEY_DOWN) {
-        if (mHistoryIndex >= 0 && mHistoryIndex < (int)mHistory.size() - 1) {
+        if (!mSearchResults.empty()) {
+            if (mSelectedResult < (int)mSearchResults.size() - 1)
+                mSelectedResult++;
+            else
+                mSelectedResult = 0;
+        } else if (mHistoryIndex >= 0 && mHistoryIndex < (int)mHistory.size() - 1) {
             mHistoryIndex++;
             mInputLine = mHistory[mHistoryIndex];
         } else {
@@ -1084,28 +1334,11 @@ void Terminal::handleKey(int key, int mods) {
             mInputLine.clear();
         }
     } else if (key == GLFW_KEY_TAB) {
-        // simple tab completion: find first matching command
-        if (!mInputLine.empty()) {
-            std::string prefix = mInputLine;
-            std::string match;
-            for (const auto& pair : mCommands) {
-                if (pair.first.find(prefix) == 0) {
-                    if (match.empty()) {
-                        match = pair.first;
-                    } else {
-                        // multiple matches, show them
-                        match.clear();
-                        addLog("] " + mInputLine);
-                        for (const auto& p : mCommands) {
-                            if (p.first.find(prefix) == 0)
-                                addLog("  " + p.first);
-                        }
-                        return;
-                    }
-                }
-            }
-            if (!match.empty()) {
-                mInputLine = match + " ";
+        if (!mSearchResults.empty() && !mInputLine.empty()) {
+            int idx = mSelectedResult >= 0 ? mSelectedResult : 0;
+            if (idx < (int)mSearchResults.size()) {
+                mInputLine = mSearchResults[idx].cmd->name;
+                mLastSearchInput = mInputLine;
             }
         }
     }
@@ -1125,6 +1358,8 @@ void Terminal::handleScroll(double yOffset)
 
 void Terminal::render() {
     if (!mOpen || !mWindow) return;
+
+    updateSearch();
 
     uiBeginFrame(mWindow, "terminal");
 
@@ -1168,20 +1403,30 @@ void Terminal::render() {
         uiDrawText(scrollText, fbW - 330.0f, 20.0f, 0.30f, {1.0f, 0.8f, 0.25f, 1.0f});
     }
 
+    // Autocomplete menu (draw before input line background)
+    drawAutocompleteMenu(inputLineY, lineHeight);
+
     // Input line background
     uiDrawRect({0, inputLineY - 6.0f, fbW, 36.0f}, {0.08f, 0.08f, 0.08f, 0.95f}, "terminal-input-bg");
     uiDrawRect({0, inputLineY - 6.0f, fbW, 1}, {0.85f, 0.05f, 0.05f, 0.7f}, "terminal-input-accent");
 
-    // Prompt
+    // Prompt text
+    float promptX = 16.0f;
     std::string prompt = "] " + mInputLine;
+    uiDrawText(prompt.c_str(), promptX, inputLineY, 0.42f, {0.95f, 0.95f, 0.95f, 1.0f});
+
+    // Ghost text (inline autocomplete)
+    float inputEndX = promptX + uiMeasureText(prompt.c_str(), 0.42f);
+    if (!mGhostSuffix.empty()) {
+        uiDrawText(mGhostSuffix.c_str(), inputEndX, inputLineY, 0.42f, {0.4f, 0.4f, 0.45f, 0.7f});
+    }
 
     // Blinking cursor
     mCursorBlink += 0.05f;
     bool cursorVisible = fmodf(mCursorBlink, 1.0f) < 0.6f;
-    if (cursorVisible)
-        prompt += "_";
-
-    uiDrawText(prompt.c_str(), 16.0f, inputLineY, 0.42f, {0.95f, 0.95f, 0.95f, 1.0f});
+    if (cursorVisible) {
+        uiDrawText("_", inputEndX, inputLineY, 0.42f, {0.95f, 0.95f, 0.95f, 1.0f});
+    }
 
     uiEndFrame();
 }

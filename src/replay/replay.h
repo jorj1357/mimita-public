@@ -8,17 +8,30 @@
 
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
-#include <vector>
 #include <string>
+#include <unordered_map>
+#include <vector>
 #include "input/input-frame.h"
 
 #include "replay-scene.h"
 
-#include <string>
+class Player;
+struct WeaponViewModel;
 
 class Player;
 class Camera;
+
+enum class ReplayState
+{
+    None,
+    ReplayMenu,
+    LoadingReplay,
+    WatchingReplay,
+    PausedReplay,
+    ExitingReplay
+};
 
 struct ReplayFrame {
     uint32_t tick = 0;
@@ -267,4 +280,8 @@ void setReplayFactoryNotifyFn(ReplayFactoryNotifyFn fn);
 
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
+
+// Replay actor/weapon model maps (owned by main.cpp, accessible globally for cleanup)
+extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels;
+extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
 std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player);
