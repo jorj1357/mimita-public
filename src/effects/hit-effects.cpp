@@ -3,11 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <glm/glm.hpp>
 
+#include <glm/glm.hpp>
+#include <glad/glad.h>
 #include <nlohmann/json.hpp>
 
 #include "effects/effect-part.h"
@@ -15,22 +16,24 @@
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
 #include "camera.h"
+#include "renderer/renderer.h"
 #include "replay/replay.h"
 
 using json = nlohmann::json;
-
-bool gBloodFXEnabled = true;
 
 static constexpr int MAX_BURSTS = 64;
 static HitBurstEffect gBursts[MAX_BURSTS];
 static int gBurstCount = 0;
 static int gGlobalTick = 0;
 
-static HitFxConfigData gConfig;
+static HitFxConfig gConfig;
 static std::filesystem::file_time_type gConfigLastWrite;
 static std::string gConfigPath = "config/hitfx.json";
-static bool gConfigLoaded = false;
 static bool gDebugPanelEnabled = false;
+
+bool gBloodFXEnabled = true;
+
+extern Renderer* gRenderer;
 
 static float evalCurve(const std::string& curve, float t)
 {
@@ -39,30 +42,37 @@ static float evalCurve(const std::string& curve, float t)
     if (curve == "ease_out") return 1.0f - (1.0f - t) * (1.0f - t);
     if (curve == "ease_in_out") return t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) * 0.5f;
     if (curve == "exponential") return t < 0.5f ? std::pow(2.0f, 10.0f * t - 10.0f) * 0.5f : (2.0f - std::pow(2.0f, -10.0f * t + 10.0f)) * 0.5f;
+    if (curve == "linear") return t;
     return t;
 }
 
-static float stageProgress(int age, int ticks)
+static float lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+static glm::vec3 lerpVec3(const glm::vec3& a, const glm::vec3& b, float t)
 {
-    return ticks > 0 ? std::clamp((float)age / (float)ticks, 0.0f, 1.0f) : 1.0f;
+    return glm::vec3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t));
 }
 
-static void readVec3(const json& j, const char* key, glm::vec3& out)
+static glm::vec3 readVec3Json(const json& j)
 {
-    if (j.contains(key) && j[key].is_array() && j[key].size() >= 3)
-        out = glm::vec3((float)j[key][0], (float)j[key][1], (float)j[key][2]);
+    if (j.is_array() && j.size() >= 3)
+        return glm::vec3((float)j[0], (float)j[1], (float)j[2]);
+    return glm::vec3(1.0f);
 }
 
-static void readStage(const json& j, StageConfig& s)
+static void readKeyframe(const json& j, HitFxKeyframe& k)
 {
-    if (j.contains("enabled")) s.enabled = j["enabled"];
-    if (j.contains("ticks")) s.ticks = j["ticks"];
-    if (j.contains("alpha")) s.alpha = j["alpha"];
-    if (j.contains("brightness")) s.brightness = j["brightness"];
-    readVec3(j, "color", s.color);
-    if (j.contains("sizeCurve")) s.sizeCurve = j["sizeCurve"];
-    if (j.contains("alphaCurve")) s.alphaCurve = j["alphaCurve"];
-    if (j.contains("brightnessCurve")) s.brightnessCurve = j["brightnessCurve"];
+    if (j.contains("name")) k.name = j["name"];
+    if (j.contains("startTick")) k.startTick = j["startTick"];
+    if (j.contains("endTick")) k.endTick = j["endTick"];
+    if (j.contains("startRadius")) k.startRadius = j["startRadius"];
+    if (j.contains("endRadius")) k.endRadius = j["endRadius"];
+    if (j.contains("colorStart")) k.colorStart = readVec3Json(j["colorStart"]);
+    if (j.contains("colorEnd")) k.colorEnd = readVec3Json(j["colorEnd"]);
+    if (j.contains("alphaStart")) k.alphaStart = j["alphaStart"];
+    if (j.contains("alphaEnd")) k.alphaEnd = j["alphaEnd"];
+    if (j.contains("brightnessStart")) k.brightnessStart = j["brightnessStart"];
+    if (j.contains("brightnessEnd")) k.brightnessEnd = j["brightnessEnd"];
 }
 
 void HitEffects::loadConfig(const std::string& path)
@@ -77,227 +87,225 @@ void HitEffects::loadConfig(const std::string& path)
         json j;
         file >> j;
 
-        if (j.contains("whiteImpactStar"))
-            readStage(j["whiteImpactStar"], gConfig.whiteStar);
-        if (j.contains("whiteImpactStar") && j["whiteImpactStar"].contains("spikeCount"))
-            gConfig.whiteStar.spikeCount = j["whiteImpactStar"]["spikeCount"];
-        if (j.contains("whiteImpactStar") && j["whiteImpactStar"].contains("innerRadius"))
-            gConfig.whiteStar.innerRadius = j["whiteImpactStar"]["innerRadius"];
-        if (j.contains("whiteImpactStar") && j["whiteImpactStar"].contains("outerRadius"))
-            gConfig.whiteStar.outerRadius = j["whiteImpactStar"]["outerRadius"];
-        if (j.contains("whiteImpactStar") && j["whiteImpactStar"].contains("rotationSpeed"))
-            gConfig.whiteStar.rotationSpeed = j["whiteImpactStar"]["rotationSpeed"];
-        if (j.contains("whiteImpactStar") && j["whiteImpactStar"].contains("randomRotation"))
-            gConfig.whiteStar.randomRotation = j["whiteImpactStar"]["randomRotation"];
+        HitFxConfig cfg;
 
-        if (j.contains("brightBlueBurst"))
-            readStage(j["brightBlueBurst"], gConfig.blueBurst);
-        if (j.contains("brightBlueBurst") && j["brightBlueBurst"].contains("radius"))
-            gConfig.blueBurst.radius = j["brightBlueBurst"]["radius"];
+        if (j.contains("enabled")) cfg.enabled = j["enabled"];
+        if (j.contains("hotReload")) cfg.hotReload = j["hotReload"];
 
-        if (j.contains("darkBlueFade"))
-            readStage(j["darkBlueFade"], gConfig.blueFade);
-        if (j.contains("darkBlueFade") && j["darkBlueFade"].contains("radius"))
-            gConfig.blueFade.radius = j["darkBlueFade"]["radius"];
-
-        if (j.contains("impactConeParticles")) {
-            const json& c = j["impactConeParticles"];
-            if (c.contains("enabled")) gConfig.cone.enabled = c["enabled"];
-            if (c.contains("particleCount")) gConfig.cone.particleCount = c["particleCount"];
-            if (c.contains("coneAngleDegrees")) gConfig.cone.coneAngleDegrees = c["coneAngleDegrees"];
-            if (c.contains("initialSpeed")) gConfig.cone.initialSpeed = c["initialSpeed"];
-            if (c.contains("speedVariation")) gConfig.cone.speedVariation = c["speedVariation"];
-            if (c.contains("gravity")) gConfig.cone.gravity = c["gravity"];
-            if (c.contains("drag")) gConfig.cone.drag = c["drag"];
-            if (c.contains("ticks")) gConfig.cone.ticks = c["ticks"];
-            if (c.contains("startSize")) gConfig.cone.startSize = c["startSize"];
-            if (c.contains("endSize")) gConfig.cone.endSize = c["endSize"];
-            if (c.contains("brightness")) gConfig.cone.brightness = c["brightness"];
-            if (c.contains("alpha")) gConfig.cone.alpha = c["alpha"];
-            readVec3(c, "color", gConfig.cone.color);
+        if (j.contains("core")) {
+            const json& c = j["core"];
+            if (c.contains("lifetimeTicks")) cfg.core.lifetimeTicks = c["lifetimeTicks"];
+            if (c.contains("spawnAtHitLocation")) cfg.core.spawnAtHitLocation = c["spawnAtHitLocation"];
+            if (c.contains("directional")) cfg.core.directional = c["directional"];
+            if (c.contains("useBlood")) cfg.core.useBlood = c["useBlood"];
         }
 
-        if (j.contains("elongatedImpactSphere")) {
-            const json& e = j["elongatedImpactSphere"];
-            if (e.contains("enabled")) gConfig.oval.enabled = e["enabled"];
-            if (e.contains("ticks")) gConfig.oval.ticks = e["ticks"];
-            if (e.contains("startLength")) gConfig.oval.startLength = e["startLength"];
-            if (e.contains("endLength")) gConfig.oval.endLength = e["endLength"];
-            if (e.contains("startRadius")) gConfig.oval.startRadius = e["startRadius"];
-            if (e.contains("endRadius")) gConfig.oval.endRadius = e["endRadius"];
-            if (e.contains("alphaStart")) gConfig.oval.alphaStart = e["alphaStart"];
-            if (e.contains("alphaEnd")) gConfig.oval.alphaEnd = e["alphaEnd"];
-            if (e.contains("brightness")) gConfig.oval.brightness = e["brightness"];
-            readVec3(e, "color", gConfig.oval.color);
-            if (e.contains("sizeCurve")) gConfig.oval.sizeCurve = e["sizeCurve"];
-            if (e.contains("alphaCurve")) gConfig.oval.alphaCurve = e["alphaCurve"];
-            if (e.contains("brightnessCurve")) gConfig.oval.brightnessCurve = e["brightnessCurve"];
+        if (j.contains("sphereTimeline") && j["sphereTimeline"].is_array()) {
+            cfg.sphereTimeline.clear();
+            for (const auto& item : j["sphereTimeline"]) {
+                HitFxKeyframe kf;
+                readKeyframe(item, kf);
+                cfg.sphereTimeline.push_back(kf);
+            }
         }
 
-        if (j.contains("perpendicularImpactDisc")) {
-            const json& d = j["perpendicularImpactDisc"];
-            if (d.contains("enabled")) gConfig.disc.enabled = d["enabled"];
-            if (d.contains("ticks")) gConfig.disc.ticks = d["ticks"];
-            if (d.contains("startRadius")) gConfig.disc.startRadius = d["startRadius"];
-            if (d.contains("endRadius")) gConfig.disc.endRadius = d["endRadius"];
-            if (d.contains("alphaStart")) gConfig.disc.alphaStart = d["alphaStart"];
-            if (d.contains("alphaEnd")) gConfig.disc.alphaEnd = d["alphaEnd"];
-            if (d.contains("brightness")) gConfig.disc.brightness = d["brightness"];
-            readVec3(d, "color", gConfig.disc.color);
-            if (d.contains("sizeCurve")) gConfig.disc.sizeCurve = d["sizeCurve"];
-            if (d.contains("alphaCurve")) gConfig.disc.alphaCurve = d["alphaCurve"];
-            if (d.contains("brightnessCurve")) gConfig.disc.brightnessCurve = d["brightnessCurve"];
+        if (j.contains("particles")) {
+            const json& p = j["particles"];
+            if (p.contains("enabled")) cfg.particles.enabled = p["enabled"];
+            if (p.contains("texturePath")) cfg.particles.texturePath = p["texturePath"];
+            if (p.contains("tintColor")) cfg.particles.tintColor = readVec3Json(p["tintColor"]);
+            if (p.contains("alpha")) cfg.particles.alpha = p["alpha"];
+            if (p.contains("brightness")) cfg.particles.brightness = p["brightness"];
+            if (p.contains("count")) cfg.particles.count = p["count"];
+            if (p.contains("lifetimeTicks")) cfg.particles.lifetimeTicks = p["lifetimeTicks"];
+            if (p.contains("coneAngleDegrees")) cfg.particles.coneAngleDegrees = p["coneAngleDegrees"];
+            if (p.contains("speed")) cfg.particles.speed = p["speed"];
+            if (p.contains("speedRandomness")) cfg.particles.speedRandomness = p["speedRandomness"];
+            if (p.contains("sizeStart")) cfg.particles.sizeStart = p["sizeStart"];
+            if (p.contains("sizeEnd")) cfg.particles.sizeEnd = p["sizeEnd"];
+            if (p.contains("drag")) cfg.particles.drag = p["drag"];
+            if (p.contains("gravity")) cfg.particles.gravity = p["gravity"];
+            if (p.contains("spawnDirection")) cfg.particles.spawnDirection = p["spawnDirection"];
         }
 
+        if (j.contains("directionalShapes")) {
+            const json& ds = j["directionalShapes"];
+            if (ds.contains("elongatedSphere")) {
+                const json& e = ds["elongatedSphere"];
+                if (e.contains("enabled")) cfg.elongatedSphere.enabled = e["enabled"];
+                if (e.contains("alignToHitDirection")) cfg.elongatedSphere.alignToHitDirection = e["alignToHitDirection"];
+                if (e.contains("startTick")) cfg.elongatedSphere.startTick = e["startTick"];
+                if (e.contains("endTick")) cfg.elongatedSphere.endTick = e["endTick"];
+                if (e.contains("lengthStart")) cfg.elongatedSphere.lengthStart = e["lengthStart"];
+                if (e.contains("lengthEnd")) cfg.elongatedSphere.lengthEnd = e["lengthEnd"];
+                if (e.contains("radiusStart")) cfg.elongatedSphere.radiusStart = e["radiusStart"];
+                if (e.contains("radiusEnd")) cfg.elongatedSphere.radiusEnd = e["radiusEnd"];
+                if (e.contains("colorStart")) cfg.elongatedSphere.colorStart = readVec3Json(e["colorStart"]);
+                if (e.contains("colorEnd")) cfg.elongatedSphere.colorEnd = readVec3Json(e["colorEnd"]);
+                if (e.contains("alphaStart")) cfg.elongatedSphere.alphaStart = e["alphaStart"];
+                if (e.contains("alphaEnd")) cfg.elongatedSphere.alphaEnd = e["alphaEnd"];
+                if (e.contains("brightnessStart")) cfg.elongatedSphere.brightnessStart = e["brightnessStart"];
+                if (e.contains("brightnessEnd")) cfg.elongatedSphere.brightnessEnd = e["brightnessEnd"];
+            }
+            if (ds.contains("impactDisc")) {
+                const json& d = ds["impactDisc"];
+                if (d.contains("enabled")) cfg.impactDisc.enabled = d["enabled"];
+                if (d.contains("normalFacesHitDirection")) cfg.impactDisc.normalFacesHitDirection = d["normalFacesHitDirection"];
+                if (d.contains("startTick")) cfg.impactDisc.startTick = d["startTick"];
+                if (d.contains("endTick")) cfg.impactDisc.endTick = d["endTick"];
+                if (d.contains("radiusStart")) cfg.impactDisc.radiusStart = d["radiusStart"];
+                if (d.contains("radiusEnd")) cfg.impactDisc.radiusEnd = d["radiusEnd"];
+                if (d.contains("thickness")) cfg.impactDisc.thickness = d["thickness"];
+                if (d.contains("colorStart")) cfg.impactDisc.colorStart = readVec3Json(d["colorStart"]);
+                if (d.contains("colorEnd")) cfg.impactDisc.colorEnd = readVec3Json(d["colorEnd"]);
+                if (d.contains("alphaStart")) cfg.impactDisc.alphaStart = d["alphaStart"];
+                if (d.contains("alphaEnd")) cfg.impactDisc.alphaEnd = d["alphaEnd"];
+                if (d.contains("brightnessStart")) cfg.impactDisc.brightnessStart = d["brightnessStart"];
+                if (d.contains("brightnessEnd")) cfg.impactDisc.brightnessEnd = d["brightnessEnd"];
+            }
+        }
+
+        if (j.contains("curves")) {
+            const json& cv = j["curves"];
+            if (cv.contains("radiusCurve")) cfg.curves.radiusCurve = cv["radiusCurve"];
+            if (cv.contains("alphaCurve")) cfg.curves.alphaCurve = cv["alphaCurve"];
+            if (cv.contains("brightnessCurve")) cfg.curves.brightnessCurve = cv["brightnessCurve"];
+            if (cv.contains("particleSizeCurve")) cfg.curves.particleSizeCurve = cv["particleSizeCurve"];
+        }
+
+        gConfig = cfg;
         auto ec = std::filesystem::last_write_time(path);
         gConfigLastWrite = ec;
-        gConfigLoaded = true;
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] Reloaded %s\n", path.c_str());
+        Debug::log(Debug::Category::NpcCombat, "[HITFX] Loaded %s\n", path.c_str());
     } catch (const std::exception& e) {
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] parse error: %s\n", e.what());
+        Debug::log(Debug::Category::NpcCombat, "[HITFX] ERROR parsing config, keeping previous values: %s\n", e.what());
     }
 }
 
 void HitEffects::pollReload()
 {
-    if (gConfigPath.empty()) return;
+    if (!gConfig.hotReload || gConfigPath.empty()) return;
     std::error_code ec;
     auto wt = std::filesystem::last_write_time(gConfigPath, ec);
     if (ec) return;
     if (wt != gConfigLastWrite) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX] File changed\n");
         loadConfig(gConfigPath);
+        Debug::log(Debug::Category::NpcCombat, "[HITFX] Reloaded %s\n", gConfigPath.c_str());
     }
 }
 
-const HitFxConfigData& HitEffects::config() { return gConfig; }
+const HitFxConfig& HitEffects::config() { return gConfig; }
 
-static void spawnWhiteStar(const HitBurstEffect& b, int age, const Camera& camera)
+static void renderSphereTimeline(const HitBurstEffect& b, int age, const Camera& camera)
 {
-    const WhiteImpactStarConfig& cfg = gConfig.whiteStar;
-    if (!cfg.enabled || age >= cfg.ticks) return;
-    float t = stageProgress(age, cfg.ticks);
-    float scale = cfg.innerRadius + (cfg.outerRadius - cfg.innerRadius) * evalCurve(cfg.sizeCurve, t);
-    float alpha = cfg.alpha * evalCurve(cfg.alphaCurve, t);
-    float bright = cfg.brightness * evalCurve(cfg.brightnessCurve, t);
-    glm::vec4 col{cfg.color.x * bright, cfg.color.y * bright, cfg.color.z * bright, alpha};
-    int count = cfg.spikeCount;
-    float rotOff = cfg.randomRotation ? (float)(b.spawnTick * 137) : 0.0f;
-    float rot = glm::radians((float)age * cfg.rotationSpeed + rotOff);
-    for (int i = 0; i < count; ++i) {
-        float a0 = (float)i / (float)count * 6.2831853f + rot;
-        float a1 = a0 + 3.14159f / (float)count;
-        glm::vec3 d0(std::cos(a0) * std::cos(a0 * 0.5f), std::sin(a0) * std::cos(a0 * 0.5f), std::sin(a0 * 0.5f));
-        glm::vec3 d1(std::cos(a1) * std::cos(a1 * 0.5f), std::sin(a1) * std::cos(a1 * 0.5f), std::sin(a1 * 0.5f));
-        if (glm::length(d0) > 0.001f) d0 = glm::normalize(d0);
-        if (glm::length(d1) > 0.001f) d1 = glm::normalize(d1);
-        DebugVis::drawFilledBeam(camera, b.position, b.position + d0 * scale, 0.04f, col);
-        DebugVis::drawFilledBeam(camera, b.position, b.position + d1 * scale, 0.04f, col);
+    for (const auto& kf : gConfig.sphereTimeline) {
+        if (age < kf.startTick || age > kf.endTick) continue;
+        int range = std::max(1, kf.endTick - kf.startTick);
+        float t = (float)(age - kf.startTick) / (float)range;
+        t = evalCurve(gConfig.curves.radiusCurve, t);
+        float radius = lerp(kf.startRadius, kf.endRadius, t);
+        float alpha = lerp(kf.alphaStart, kf.alphaEnd, evalCurve(gConfig.curves.alphaCurve, (float)(age - kf.startTick) / (float)range));
+        float brightness = lerp(kf.brightnessStart, kf.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, (float)(age - kf.startTick) / (float)range));
+        glm::vec3 color = lerpVec3(kf.colorStart, kf.colorEnd, (float)(age - kf.startTick) / (float)range);
+        glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
+        DebugVis::drawFilledSphere(camera, b.position, radius, col);
     }
 }
 
-static void spawnBlueBurst(const HitBurstEffect& b, int age, const Camera& camera)
+static void renderElongatedSphere(const HitBurstEffect& b, int age, const Camera& camera)
 {
-    const BrightBlueBurstConfig& cfg = gConfig.blueBurst;
-    if (!cfg.enabled || age >= cfg.ticks) return;
-    float t = stageProgress(age, cfg.ticks);
-    float radius = cfg.radius * evalCurve(cfg.sizeCurve, t);
-    float alpha = cfg.alpha * evalCurve(cfg.alphaCurve, t);
-    float bright = cfg.brightness * evalCurve(cfg.brightnessCurve, t);
-    glm::vec4 col{cfg.color.x * bright, cfg.color.y * bright, cfg.color.z * bright, alpha};
-    DebugVis::drawFilledSphere(camera, b.position, radius, col);
-}
+    const auto& cfg = gConfig.elongatedSphere;
+    if (!cfg.enabled || age < cfg.startTick || age > cfg.endTick) return;
+    int range = std::max(1, cfg.endTick - cfg.startTick);
+    float t = (float)(age - cfg.startTick) / (float)range;
+    float len = lerp(cfg.lengthStart, cfg.lengthEnd, evalCurve(gConfig.curves.radiusCurve, t));
+    float rad = lerp(cfg.radiusStart, cfg.radiusEnd, evalCurve(gConfig.curves.radiusCurve, t));
+    float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, evalCurve(gConfig.curves.alphaCurve, t));
+    float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, t));
+    glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
+    glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
 
-static void spawnBlueFade(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    const DarkBlueFadeConfig& cfg = gConfig.blueFade;
-    if (!cfg.enabled || age >= cfg.ticks) return;
-    float t = stageProgress(age, cfg.ticks);
-    float radius = cfg.radius * evalCurve(cfg.sizeCurve, t);
-    float alpha = cfg.alpha * evalCurve(cfg.alphaCurve, t);
-    float bright = cfg.brightness * evalCurve(cfg.brightnessCurve, t);
-    glm::vec4 col{cfg.color.x * bright, cfg.color.y * bright, cfg.color.z * bright, alpha};
-    DebugVis::drawFilledSphere(camera, b.position, radius, col);
-}
-
-static void spawnConeParticles(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    (void)camera;
-    const ImpactConeConfig& cfg = gConfig.cone;
-    if (!cfg.enabled) return;
-    if (age != 0) return;
-    float coneRad = glm::radians(cfg.coneAngleDegrees);
-    for (int i = 0; i < cfg.particleCount; ++i) {
-        float angle = (float)std::rand() / (float)RAND_MAX * 6.2831853f;
-        float spread = (float)std::rand() / (float)RAND_MAX * coneRad;
-        float speed = cfg.initialSpeed + ((float)std::rand() / (float)RAND_MAX - 0.5f) * 2.0f * cfg.speedVariation;
-        speed = std::max(0.0f, speed);
-        glm::vec3 dir = b.normal;
-        glm::vec3 up(0, 0, 1);
-        if (std::abs(glm::dot(dir, up)) > 0.99f) up = glm::vec3(1, 0, 0);
-        glm::vec3 right = glm::normalize(glm::cross(dir, up));
-        glm::vec3 localUp = glm::cross(right, dir);
-        glm::vec3 vel = glm::normalize(dir + (std::cos(angle) * right + std::sin(angle) * localUp) * std::tan(spread)) * speed;
-        float startSz = cfg.startSize;
-        float endSz = cfg.endSize;
-        EffectPart e;
-        e.position = b.position;
-        e.velocity = vel;
-        e.color = glm::vec4(cfg.color.x * cfg.brightness, cfg.color.y * cfg.brightness, cfg.color.z * cfg.brightness, cfg.alpha);
-        e.maxLifetime = (float)cfg.ticks / 60.0f;
-        e.scale = startSz;
-        e.endScale = endSz;
-        e.gravity = cfg.gravity;
-        e.thickness = cfg.drag;
-        e.replayType = "hitfx_cone";
-        EffectPartSystem::instance().spawn(e);
-    }
-}
-
-static void spawnElongatedSphere(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    const ElongatedSphereConfig& cfg = gConfig.oval;
-    if (!cfg.enabled || age >= cfg.ticks) return;
-    float t = stageProgress(age, cfg.ticks);
-    float len = cfg.startLength + (cfg.endLength - cfg.startLength) * evalCurve(cfg.sizeCurve, t);
-    float rad = cfg.startRadius + (cfg.endRadius - cfg.startRadius) * evalCurve(cfg.sizeCurve, t);
-    float alpha = cfg.alphaStart + (cfg.alphaEnd - cfg.alphaStart) * evalCurve(cfg.alphaCurve, t);
-    float bright = cfg.brightness * evalCurve(cfg.brightnessCurve, t);
-    glm::vec4 col{cfg.color.x * bright, cfg.color.y * bright, cfg.color.z * bright, alpha};
-    glm::vec3 dir = glm::length(b.normal) > 0.001f ? glm::normalize(b.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);
     glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
     DebugVis::drawFilledSphere(camera, b.position, rad, col, scaleVec);
 }
 
-static void spawnPerpendicularDisc(const HitBurstEffect& b, int age, const Camera& camera)
+static void renderImpactDisc(const HitBurstEffect& b, int age, const Camera& camera)
 {
-    const PerpendicularDiscConfig& cfg = gConfig.disc;
-    if (!cfg.enabled || age >= cfg.ticks) return;
-    float t = stageProgress(age, cfg.ticks);
-    float radius = cfg.startRadius + (cfg.endRadius - cfg.startRadius) * evalCurve(cfg.sizeCurve, t);
-    float alpha = cfg.alphaStart + (cfg.alphaEnd - cfg.alphaStart) * evalCurve(cfg.alphaCurve, t);
-    float bright = cfg.brightness * evalCurve(cfg.brightnessCurve, t);
-    glm::vec4 col{cfg.color.x * bright, cfg.color.y * bright, cfg.color.z * bright, alpha};
+    const auto& cfg = gConfig.impactDisc;
+    if (!cfg.enabled || age < cfg.startTick || age > cfg.endTick) return;
+    int range = std::max(1, cfg.endTick - cfg.startTick);
+    float t = (float)(age - cfg.startTick) / (float)range;
+    float radius = lerp(cfg.radiusStart, cfg.radiusEnd, evalCurve(gConfig.curves.radiusCurve, t));
+    float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, evalCurve(gConfig.curves.alphaCurve, t));
+    float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, t));
+    glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
+    glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
     glm::vec3 nrm = glm::length(b.normal) > 0.001f ? glm::normalize(b.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
     DebugVis::drawFilledDecal(camera, b.position, nrm, radius, col);
 }
 
-void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitNormal,
-                                  int damage, const std::string& sourceId,
+static void spawnParticles(const HitBurstEffect& b, int age)
+{
+    const auto& cfg = gConfig.particles;
+    if (!cfg.enabled) return;
+    if (age != 0) return;
+
+    float coneRad = glm::radians(cfg.coneAngleDegrees);
+    glm::vec3 baseDir = b.direction;
+    if (cfg.spawnDirection == "opposite_hit_direction")
+        baseDir = -b.direction;
+    if (glm::length(baseDir) < 0.001f) baseDir = glm::vec3(0.0f, 0.0f, 1.0f);
+    baseDir = glm::normalize(baseDir);
+
+    for (int i = 0; i < cfg.count; ++i) {
+        float angle = (float)std::rand() / (float)RAND_MAX * 6.2831853f;
+        float spread = (float)std::rand() / (float)RAND_MAX * coneRad;
+        float speed = cfg.speed + ((float)std::rand() / (float)RAND_MAX - 0.5f) * 2.0f * cfg.speedRandomness;
+        speed = std::max(0.0f, speed);
+
+        glm::vec3 up(0, 0, 1);
+        if (std::abs(glm::dot(baseDir, up)) > 0.99f) up = glm::vec3(1, 0, 0);
+        glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
+        glm::vec3 localUp = glm::cross(right, baseDir);
+        glm::vec3 vel = glm::normalize(baseDir + (std::cos(angle) * right + std::sin(angle) * localUp) * std::tan(spread)) * speed;
+
+        float startSz = cfg.sizeStart;
+        float endSz = cfg.sizeEnd;
+
+        EffectPart e;
+        e.position = b.position;
+        e.velocity = vel;
+        e.color = glm::vec4(cfg.tintColor.x * cfg.brightness, cfg.tintColor.y * cfg.brightness, cfg.tintColor.z * cfg.brightness, cfg.alpha);
+        e.maxLifetime = (float)cfg.lifetimeTicks / 60.0f;
+        e.scale = startSz;
+        e.endScale = endSz;
+        e.gravity = cfg.gravity;
+        e.thickness = cfg.drag;
+        e.replayType = "hitfx_particle";
+        EffectPartSystem::instance().spawn(e);
+    }
+}
+
+void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
+                                  const glm::vec3& hitNormal, int damage,
+                                  const std::string& sourceId,
                                   const std::string& targetId)
 {
     (void)sourceId;
     (void)targetId;
+    if (!gConfig.enabled) return;
     if (gBurstCount >= MAX_BURSTS) {
         gBursts[0] = gBursts[gBurstCount - 1];
         gBurstCount--;
     }
     HitBurstEffect& b = gBursts[gBurstCount++];
     b.position = hitPoint;
-    b.normal = hitNormal;
+    b.direction = glm::length(hitDirection) > 0.001f ? glm::normalize(hitDirection) : hitNormal;
+    b.normal = glm::length(hitNormal) > 0.001f ? glm::normalize(hitNormal) : -b.direction;
     b.spawnTick = gGlobalTick;
-    b.totalTicks = std::max({gConfig.whiteStar.ticks, gConfig.blueBurst.ticks, gConfig.blueFade.ticks,
-                             gConfig.cone.ticks, gConfig.oval.ticks, gConfig.disc.ticks}) + 1;
+    b.totalTicks = gConfig.core.lifetimeTicks;
     b.alive = true;
 
     ReplayEffectEvent ev;
@@ -329,8 +337,12 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitNormal,
         EffectPartSystem::instance().spawn(e);
     }
 
-    Debug::log(Debug::Category::NpcCombat, "[HITFX] spawned at (%.1f %.1f %.1f) damage=%d normal=(%.2f %.2f %.2f)",
-               hitPoint.x, hitPoint.y, hitPoint.z, damage, hitNormal.x, hitNormal.y, hitNormal.z);
+    spawnParticles(b, 0);
+
+    Debug::log(Debug::Category::NpcCombat, "[HITFX] spawned at (%.1f %.1f %.1f) damage=%d dir=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f)",
+               hitPoint.x, hitPoint.y, hitPoint.z, damage,
+               hitDirection.x, hitDirection.y, hitDirection.z,
+               hitNormal.x, hitNormal.y, hitNormal.z);
 }
 
 void HitEffects::updateHitBursts(float dt)
@@ -359,20 +371,21 @@ void HitEffects::renderHitBursts(const Camera& camera)
         if (!b.alive) continue;
         int age = gGlobalTick - b.spawnTick;
 
-        spawnWhiteStar(b, age, camera);
-        spawnBlueBurst(b, age, camera);
-        spawnBlueFade(b, age, camera);
-        spawnConeParticles(b, age, camera);
-        spawnElongatedSphere(b, age, camera);
-        spawnPerpendicularDisc(b, age, camera);
+        renderSphereTimeline(b, age, camera);
+        renderElongatedSphere(b, age, camera);
+        renderImpactDisc(b, age, camera);
     }
 
     if (gDebugPanelEnabled) {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "HIT FX\nWhiteStar: spikes=%d ticks=%d\nBlueBurst: ticks=%d\nCone: particles=%d angle=%.0f\nDisc: radius=%.1f\nOval: length=%.1f",
-                 gConfig.whiteStar.spikeCount, gConfig.whiteStar.ticks,
-                 gConfig.blueBurst.ticks, gConfig.cone.particleCount,
-                 gConfig.cone.coneAngleDegrees, gConfig.disc.endRadius, gConfig.oval.endLength);
+        char buf[512];
+        int len = std::snprintf(buf, sizeof(buf),
+            "HIT FX\nbursts=%d/%d\nspheres=%zu\nparticles(enabled=%d count=%d)\n"
+            "elongated(enabled=%d)\ndisc(enabled=%d)\nlifetime=%d",
+            gBurstCount, MAX_BURSTS, gConfig.sphereTimeline.size(),
+            (int)gConfig.particles.enabled, gConfig.particles.count,
+            (int)gConfig.elongatedSphere.enabled,
+            (int)gConfig.impactDisc.enabled,
+            gConfig.core.lifetimeTicks);
         uiDrawText(buf, 12.0f, 320.0f, 0.32f, {0.3f, 1.0f, 0.5f, 1.0f});
     }
 }

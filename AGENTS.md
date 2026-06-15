@@ -31,6 +31,8 @@ Rules:
 Do not output chain-of-thought.
 Do not narrate internal reasoning.
 
+When building or testing the EXE, use build_agent.py instead of build.py, because build.py opens the EXE on the computer and may falsely appear to error when it has not.
+
 ---
 
 # Core Philosophy

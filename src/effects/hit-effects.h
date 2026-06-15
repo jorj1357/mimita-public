@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <glm/glm.hpp>
 
 class Camera;
@@ -9,100 +10,110 @@ class Camera;
 extern bool gBloodFXEnabled;
 inline bool isBloodFXEnabled() { return gBloodFXEnabled; }
 
-struct StageConfig {
+struct HitFxKeyframe {
+    std::string name;
+    int startTick = 0;
+    int endTick = 1;
+    float startRadius = 0.12f;
+    float endRadius = 0.18f;
+    glm::vec3 colorStart{1.0f};
+    glm::vec3 colorEnd{1.0f};
+    float alphaStart = 1.0f;
+    float alphaEnd = 1.0f;
+    float brightnessStart = 3.0f;
+    float brightnessEnd = 2.5f;
+};
+
+struct HitFxParticleConfig {
     bool enabled = true;
-    int ticks = 2;
-    float alpha = 1.0f;
-    float brightness = 1.0f;
-    glm::vec3 color{1.0f};
-    std::string sizeCurve = "linear";
-    std::string alphaCurve = "linear";
-    std::string brightnessCurve = "linear";
-};
-
-struct WhiteImpactStarConfig : StageConfig {
-    int spikeCount = 12;
-    float innerRadius = 0.08f;
-    float outerRadius = 0.35f;
-    float rotationSpeed = 0.0f;
-    bool randomRotation = true;
-};
-
-struct BrightBlueBurstConfig : StageConfig {
-    float radius = 0.4f;
-};
-
-struct DarkBlueFadeConfig : StageConfig {
-    float radius = 0.8f;
-};
-
-struct ImpactConeConfig {
-    bool enabled = true;
-    int particleCount = 20;
+    std::string texturePath;
+    glm::vec3 tintColor{1.0f};
+    float alpha = 0.85f;
+    float brightness = 2.0f;
+    int count = 18;
+    int lifetimeTicks = 24;
     float coneAngleDegrees = 35.0f;
-    float initialSpeed = 3.0f;
-    float speedVariation = 1.0f;
+    float speed = 4.0f;
+    float speedRandomness = 1.5f;
+    float sizeStart = 0.04f;
+    float sizeEnd = 0.12f;
+    float drag = 0.05f;
     float gravity = 0.0f;
-    float drag = 0.0f;
-    int ticks = 10;
-    float startSize = 0.03f;
-    float endSize = 0.12f;
-    float brightness = 2.0f;
-    float alpha = 1.0f;
-    glm::vec3 color{1.0f};
+    std::string spawnDirection = "opposite_hit_direction";
 };
 
-struct ElongatedSphereConfig {
+struct HitFxDirectionalShape {
     bool enabled = true;
-    int ticks = 6;
-    float startLength = 0.2f;
-    float endLength = 1.0f;
-    float startRadius = 0.1f;
-    float endRadius = 0.3f;
+    bool alignToHitDirection = true;
+    int startTick = 0;
+    int endTick = 12;
+    float lengthStart = 0.15f;
+    float lengthEnd = 1.0f;
+    float radiusStart = 0.08f;
+    float radiusEnd = 0.25f;
+    glm::vec3 colorStart{1.0f};
+    glm::vec3 colorEnd{0.1f, 0.35f, 1.0f};
+    float alphaStart = 0.9f;
+    float alphaEnd = 0.0f;
+    float brightnessStart = 2.5f;
+    float brightnessEnd = 0.0f;
+};
+
+struct HitFxImpactDisc {
+    bool enabled = true;
+    bool normalFacesHitDirection = true;
+    int startTick = 0;
+    int endTick = 10;
+    float radiusStart = 0.1f;
+    float radiusEnd = 0.9f;
+    float thickness = 0.025f;
+    glm::vec3 colorStart{1.0f};
+    glm::vec3 colorEnd{0.0f, 0.2f, 1.0f};
     float alphaStart = 1.0f;
     float alphaEnd = 0.0f;
-    float brightness = 2.0f;
-    glm::vec3 color{1.0f};
-    std::string sizeCurve = "ease_out";
-    std::string alphaCurve = "ease_out";
-    std::string brightnessCurve = "ease_out";
+    float brightnessStart = 3.0f;
+    float brightnessEnd = 0.0f;
 };
 
-struct PerpendicularDiscConfig {
+struct HitFxCurves {
+    std::string radiusCurve = "ease_out";
+    std::string alphaCurve = "ease_out";
+    std::string brightnessCurve = "linear";
+    std::string particleSizeCurve = "ease_out";
+};
+
+struct HitFxConfig {
     bool enabled = true;
-    int ticks = 8;
-    float startRadius = 0.1f;
-    float endRadius = 1.2f;
-    float alphaStart = 1.0f;
-    float alphaEnd = 0.0f;
-    float brightness = 2.5f;
-    glm::vec3 color{1.0f};
-    std::string sizeCurve = "ease_out";
-    std::string alphaCurve = "ease_out";
-    std::string brightnessCurve = "ease_out";
-};
+    bool hotReload = true;
 
-struct HitFxConfigData {
-    WhiteImpactStarConfig whiteStar;
-    BrightBlueBurstConfig blueBurst;
-    DarkBlueFadeConfig blueFade;
-    ImpactConeConfig cone;
-    ElongatedSphereConfig oval;
-    PerpendicularDiscConfig disc;
+    struct Core {
+        int lifetimeTicks = 60;
+        bool spawnAtHitLocation = true;
+        bool directional = true;
+        bool useBlood = false;
+    } core;
+
+    std::vector<HitFxKeyframe> sphereTimeline;
+    HitFxParticleConfig particles;
+    HitFxDirectionalShape elongatedSphere;
+    HitFxImpactDisc impactDisc;
+    HitFxCurves curves;
 };
 
 struct HitBurstEffect {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 direction{0.0f, 0.0f, 1.0f};
     int spawnTick = 0;
-    int totalTicks = 24;
+    int totalTicks = 60;
     bool alive = true;
 };
 
 namespace HitEffects {
 
-void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitNormal,
-                     int damage, const std::string& sourceId = "",
+void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
+                     const glm::vec3& hitNormal, int damage,
+                     const std::string& sourceId = "",
                      const std::string& targetId = "");
 
 void updateHitBursts(float dt);
@@ -113,6 +124,6 @@ int debugBurstCount();
 
 void loadConfig(const std::string& path);
 void pollReload();
-const HitFxConfigData& config();
+const HitFxConfig& config();
 
 } // namespace HitEffects
