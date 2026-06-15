@@ -53,6 +53,11 @@ public:
 
     const std::vector<std::string>& killfeed() const { return mKillfeed; }
 
+    // Render the equipped weapon on a remote player's hand.
+    // Uses the same viewmodel mesh and attachment logic as the local player,
+    // but does not modify the remote player's arm poses.
+    void renderRemoteWeapon(const Player& player, const Camera& camera);
+
     const GodballPhysics& godballPhysics() const { return mGodballPhys; }
     GodballPhysics& godballPhysics() { return mGodballPhys; }
 

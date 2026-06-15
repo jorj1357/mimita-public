@@ -59,6 +59,20 @@ void VideoSettings::setFullscreen(bool enabled)
     save();
 }
 
+void VideoSettings::setMaxFrames(int fps)
+{
+    mMaxFrames = std::clamp(fps, 10, 999);
+    printf("[VIDEO] maxFrames=%d\n", mMaxFrames);
+    save();
+}
+
+void VideoSettings::setVSync(bool on)
+{
+    mVSync = on;
+    printf("[VIDEO] vsync=%s\n", on ? "ON" : "OFF");
+    save();
+}
+
 void VideoSettings::apply()
 {
     if (!gRenderer || !gRenderer->window)
@@ -88,9 +102,13 @@ void VideoSettings::load()
             mIndex = std::clamp(j["resolution_index"].get<int>(), 1, NUM_RESOLUTIONS);
         if (j.contains("fullscreen"))
             mFullscreen = j["fullscreen"].get<bool>();
+        if (j.contains("maxFrames"))
+            mMaxFrames = std::clamp(j["maxFrames"].get<int>(), 10, 999);
+        if (j.contains("vsync"))
+            mVSync = j["vsync"].get<bool>();
 
-        printf("[VIDEO] Loaded: resolution=%d (%dx%d) fullscreen=%d\n",
-               mIndex, width(), height(), (int)mFullscreen);
+        printf("[VIDEO] Loaded: resolution=%d (%dx%d) fullscreen=%d maxFrames=%d vsync=%d\n",
+               mIndex, width(), height(), (int)mFullscreen, mMaxFrames, (int)mVSync);
     }
     catch (const std::exception& e)
     {
@@ -110,6 +128,8 @@ void VideoSettings::save()
     json j;
     j["resolution_index"] = mIndex;
     j["fullscreen"] = mFullscreen;
+    j["maxFrames"] = mMaxFrames;
+    j["vsync"] = mVSync;
     j["width"] = width();
     j["height"] = height();
 

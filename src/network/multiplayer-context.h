@@ -31,6 +31,7 @@ struct SnapshotTransform
     int pingMs = 0;
     uint32_t serverTick = 0;
     uint64_t receivedMs = 0;
+    uint16_t lastDashSerial = 0;
 };
 
 struct QueuedPacket
@@ -126,6 +127,7 @@ struct MultiplayerContext
     std::vector<IncomingChatMessage> incomingChatMessages;
     std::unordered_map<uint32_t, uint32_t> lastReceivedShotSerial;
     uint32_t nextLocalShotSerial = 1;
+    uint32_t latestServerTick = 0;
     uint64_t lastPingSentMs = 0;
     int localPingMs = 0;
 };
@@ -154,5 +156,9 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
 void mpSetFakeLagMode(MultiplayerContext& ctx, int mode);
 void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds);
 void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs);
+
+// Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
+extern bool gNetDamageDebug;
+extern bool gNetHitDebug;
 
 } // namespace MimitaNet

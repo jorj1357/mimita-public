@@ -19,6 +19,7 @@
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
 #include "entities/player.h"
+#include "network/multiplayer-context.h"
 #include "world/world.h"
 #include "npc/npc.h"
 #include "replay/replay.h"
@@ -56,7 +57,14 @@ AimTarget computeAimTarget(
     if (remotePlayers) {
         for (const auto& entry : *remotePlayers) {
             const Player& remote = entry.second;
-            if (remote.dead || remote.currentHp <= 0) continue;
+            if (remote.dead || remote.currentHp <= 0) {
+                if (MimitaNet::gNetHitDebug)
+                    printf("[NET HIT SKIP AIM] remote id=%u reason=%s hp=%d\n",
+                           entry.first,
+                           remote.dead ? "dead" : "hp-zero",
+                           remote.currentHp);
+                continue;
+            }
             const Capsule capsule = remote.getCapsule();
             const glm::vec3 mn(remote.pos.x - capsule.r, remote.pos.y - capsule.r, capsule.a.z - capsule.r);
             const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);
@@ -303,8 +311,19 @@ RevolverShotResult tryFireHitscan(
                 capsule.b.z + capsule.r);
             float distance = 0.0f;
             glm::vec3 normal;
+            if (MimitaNet::gNetHitDebug) {
+                printf("[NET HIT TEST] remote id=%u capsul mn=(%.1f,%.1f,%.1f) "
+                       "mx=(%.1f,%.1f,%.1f) muzzle=(%.1f,%.1f,%.1f) "
+                       "dir=(%.2f,%.2f,%.2f)\n",
+                       entry.first, mn.x, mn.y, mn.z, mx.x, mx.y, mx.z,
+                       muzzlePos.x, muzzlePos.y, muzzlePos.z,
+                       shotDirection.x, shotDirection.y, shotDirection.z);
+            }
             if (rayAabb(muzzlePos, shotDirection, mn, mx, distance, normal) &&
                 distance < nearest) {
+                if (MimitaNet::gNetHitDebug)
+                    printf("[NET HIT REMOTE] id=%u distance=%.2f\n",
+                           entry.first, distance);
                 nearest = distance;
                 hitWorld = false;
                 victim = nullptr;
@@ -651,10 +670,17 @@ void fireMultiPellet(
             // Raycast against remote players
             uint32_t pelletRemoteTargetId = 0;
             const Player* pelletRemoteVictim = nullptr;
-            if (remotePlayers) {
-                for (const auto& entry : *remotePlayers) {
-                    const Player& remote = entry.second;
-                    if (remote.dead || remote.currentHp <= 0) continue;
+    if (remotePlayers) {
+        for (const auto& entry : *remotePlayers) {
+            const Player& remote = entry.second;
+            if (remote.dead || remote.currentHp <= 0) {
+                if (MimitaNet::gNetHitDebug)
+                    printf("[NET HIT SKIP] remote id=%u reason=%s hp=%d\n",
+                           entry.first,
+                           remote.dead ? "dead" : "hp-zero",
+                           remote.currentHp);
+                continue;
+            }
                     const Capsule capsule = remote.getCapsule();
                     const glm::vec3 mn(remote.pos.x - capsule.r, remote.pos.y - capsule.r, capsule.a.z - capsule.r);
                     const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);

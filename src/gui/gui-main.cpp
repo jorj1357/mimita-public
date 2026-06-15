@@ -14,6 +14,7 @@
 #include "gui-editor.h"
 #include "gui-layout.h"
 #include "audio/music-manager.h"
+#include "input/input-commands.h"
 #include <cstdio>
 
 enum GuiMenuState
@@ -240,6 +241,7 @@ void guiMain(GLFWwindow* win, GameState& state)
     }
 
     MusicManager::instance().drawAllOverlay();
+    InputCommandSystem::instance().drawInputDebug();
     uiRenderFrameDebugOverlay(win, "MENU", false);
     uiEndFrame();
 
