@@ -156,4 +156,39 @@ void registerHitFxCommands()
             Terminal::instance().addLog(std::string("[HITFX] trace=") + (on ? "1" : "0"));
         }
     });
+
+    Terminal::instance().registerCommand({
+        "dashfx", "Toggle ground dash burst effect (0=off, 1=on). Default on.",
+        "dashfx [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(gDashFXEnabled
+                    ? "[DASHFX] enabled"
+                    : "[DASHFX] disabled");
+                return;
+            }
+            gDashFXEnabled = args[0] != "0";
+            Debug::log(Debug::Category::NpcCombat, "[DASHFX] %s",
+                gDashFXEnabled ? "Enabled" : "Disabled");
+            Terminal::instance().addLog(gDashFXEnabled
+                ? "[DASHFX] enabled"
+                : "[DASHFX] disabled");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "dashfx_test", "Spawn dash burst at player feet",
+        "dashfx_test",
+        [](const std::vector<std::string>&) {
+            if (!gpPlayer) {
+                Terminal::instance().addLog("[DASHFX] no player");
+                return;
+            }
+            glm::vec3 dir(1.0f, 0.0f, 0.0f);
+            if (glm::length(gpPlayer->vel) > 0.001f)
+                dir = glm::normalize(glm::vec3(gpPlayer->vel.x, gpPlayer->vel.y, 0.0f));
+            HitEffects::spawnMovementDashBurst(gpPlayer->pos, dir, glm::length(gpPlayer->vel));
+            Terminal::instance().addLog("[DASHFX] test burst spawned");
+        }
+    });
 }

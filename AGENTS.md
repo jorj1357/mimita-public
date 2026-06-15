@@ -33,6 +33,38 @@ Do not narrate internal reasoning.
 
 When building or testing the EXE, use build_agent.py instead of build.py, because build.py opens the EXE on the computer and may falsely appear to error when it has not.
 
+After any build_agent.py invocation, check the build result status printed in the output:
+
+```
+=== BUILD CHANGELOG ===
+Status: SUCCESS
+```
+
+or:
+
+```
+Status: NOTHING_CHANGED
+```
+
+If the status is NOTHING_CHANGED and you expected changes, the human may have built first. Read `build/changelog.txt` for the full build log. The changelog always reflects the most recent build_agent.py run.
+
+If you get NOTHING_CHANGED but changed source files, the human may have built first. Read `build/changelog.txt` for the full build log. The changelog always reflects the most recent build_agent.py run.
+
+If you get NOTHING_CHANGED but changed source files, force a rebuild by deleting the EXE:
+```powershell
+Remove-Item -Force "mimita.exe" -ErrorAction SilentlyContinue; python build_agent.py
+```
+
+The changelog at `build/changelog.txt` is written after every `build_agent.py` invocation. Its first three lines always show:
+
+```
+=== BUILD CHANGELOG ===
+Time: YYYY-MM-DD HH:MM:SS
+Status: SUCCESS|NOTHING_CHANGED|FAILED
+```
+
+Always check this status after building. If the human built between your source edits and your build_agent.py call, you will see NOTHING_CHANGED even though your edits should trigger a rebuild. Delete mimita.exe and rebuild in that case.
+
 ---
 
 # Core Philosophy

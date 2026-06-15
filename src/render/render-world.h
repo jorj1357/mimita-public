@@ -14,6 +14,7 @@
 
 struct World;
 class Camera;
+class Terminal; // forward decl for dump functions
 
 extern bool gWorldTextureDebug;
 
@@ -22,3 +23,7 @@ void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& 
 void setWorldSolidRedDebug(bool enabled);
 bool worldSolidRedDebug();
 void registerWorldTextureCommands();
+void dumpGLBMaterials(Terminal& t);
+void dumpGLBTextures(Terminal& t);
+void dumpGLBLights(Terminal& t);
+void validateGLB(Terminal& t);

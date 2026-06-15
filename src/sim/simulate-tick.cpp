@@ -10,6 +10,7 @@
 #include "debug/debug-log.h"
 #include "combat/weapon-hit.h"
 #include "combat/death-system.h"
+#include "effects/hit-effects.h"
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -59,10 +60,23 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         if (frame.dashPressed) Debug::log(Debug::Category::General, "[COMMAND] tick=%llu dash\n", (unsigned long long)sim.tick);
     }
 
+    bool isMovingThisTick = frame.moveX != 0.0f || frame.moveY != 0.0f;
+    static bool prevMoving = false;
+
     InputState input = inputStateFromFrame(frame);
     if (!sim.player->dead) {
         physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
+
+        if (!prevMoving && isMovingThisTick && sim.player->stableOnGround) {
+            glm::vec2 vel2d(sim.player->vel.x, sim.player->vel.y);
+            float speed = glm::length(vel2d);
+            if (speed > 0.001f) {
+                glm::vec3 dir = glm::normalize(glm::vec3(vel2d.x, vel2d.y, 0.0f));
+                HitEffects::spawnMovementDashBurst(sim.player->pos, dir, speed);
+            }
+        }
     }
+    prevMoving = isMovingThisTick;
     sim.npcSystem->update(*sim.world, *sim.player, TICK_DT);
 
     // Resolve NPC vs Player collisions

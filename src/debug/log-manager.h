@@ -19,6 +19,7 @@ public:
 
     std::string path() const { return mPath; }
     int fileCount() const;
+    int savedStdoutFd() const { return mSavedStdout; }
 
 private:
     LogManager() = default;

@@ -33,6 +33,7 @@ static bool gDebugPanelEnabled = false;
 
 bool gBloodFXEnabled = false;
 bool gHitFxTraceEnabled = false;
+bool gDashFXEnabled = true;
 
 extern Renderer* gRenderer;
 
@@ -186,6 +187,26 @@ void HitEffects::loadConfig(const std::string& path)
             if (l.contains("lifetimeSeconds")) cfg.legacyContactSphere.lifetimeSeconds = l["lifetimeSeconds"];
             if (l.contains("startRadius")) cfg.legacyContactSphere.startRadius = l["startRadius"];
             if (l.contains("endRadius")) cfg.legacyContactSphere.endRadius = l["endRadius"];
+        }
+
+        if (j.contains("movementDashBurst")) {
+            const json& m = j["movementDashBurst"];
+            if (m.contains("enabled")) cfg.movementDashBurst.enabled = m["enabled"];
+            if (m.contains("lifetimeTicks")) cfg.movementDashBurst.lifetimeTicks = m["lifetimeTicks"];
+            if (m.contains("lengthStart")) cfg.movementDashBurst.lengthStart = m["lengthStart"];
+            if (m.contains("lengthEnd")) cfg.movementDashBurst.lengthEnd = m["lengthEnd"];
+            if (m.contains("radiusStart")) cfg.movementDashBurst.radiusStart = m["radiusStart"];
+            if (m.contains("radiusEnd")) cfg.movementDashBurst.radiusEnd = m["radiusEnd"];
+            if (m.contains("colorStart")) cfg.movementDashBurst.colorStart = readVec3Json(m["colorStart"]);
+            if (m.contains("colorEnd")) cfg.movementDashBurst.colorEnd = readVec3Json(m["colorEnd"]);
+            if (m.contains("alphaStart")) cfg.movementDashBurst.alphaStart = m["alphaStart"];
+            if (m.contains("alphaEnd")) cfg.movementDashBurst.alphaEnd = m["alphaEnd"];
+            if (m.contains("brightnessStart")) cfg.movementDashBurst.brightnessStart = m["brightnessStart"];
+            if (m.contains("brightnessEnd")) cfg.movementDashBurst.brightnessEnd = m["brightnessEnd"];
+            if (m.contains("speedScaling")) cfg.movementDashBurst.speedScaling = m["speedScaling"];
+            if (m.contains("speedThreshold")) cfg.movementDashBurst.speedThreshold = m["speedThreshold"];
+            if (m.contains("speedScaleMin")) cfg.movementDashBurst.speedScaleMin = m["speedScaleMin"];
+            if (m.contains("speedScaleMax")) cfg.movementDashBurst.speedScaleMax = m["speedScaleMax"];
         }
 
         gConfig = cfg;
@@ -436,6 +457,25 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
                hitNormal.x, hitNormal.y, hitNormal.z);
 }
 
+void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
+{
+    if (!gConfig.enabled || !gConfig.movementDashBurst.enabled || !gDashFXEnabled) return;
+    if (gBurstCount >= MAX_BURSTS) {
+        gBursts[0] = gBursts[gBurstCount - 1];
+        gBurstCount--;
+    }
+    HitBurstEffect& b = gBursts[gBurstCount++];
+    b.position = position;
+    b.position.z += 0.05f;
+    b.direction = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.spawnTick = gGlobalTick;
+    b.totalTicks = gConfig.movementDashBurst.lifetimeTicks;
+    b.alive = true;
+    b.dashBurst = true;
+    b.dashSpeed = speed;
+}
+
 void HitEffects::updateHitBursts(float dt)
 {
     (void)dt;
@@ -455,6 +495,33 @@ void HitEffects::updateHitBursts(float dt)
     }
 }
 
+static void renderMovementDashBurst(const HitBurstEffect& b, int age, const Camera& camera)
+{
+    const auto& cfg = gConfig.movementDashBurst;
+    if (!cfg.enabled) return;
+    if (age < 0 || age > cfg.lifetimeTicks) return;
+
+    float t = cfg.lifetimeTicks > 0 ? (float)age / (float)cfg.lifetimeTicks : 1.0f;
+    t = std::clamp(t, 0.0f, 1.0f);
+
+    float len = lerp(cfg.lengthStart, cfg.lengthEnd, t);
+    float rad = lerp(cfg.radiusStart, cfg.radiusEnd, t);
+    float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, t);
+    float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, t);
+    glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
+
+    if (cfg.speedScaling && b.dashSpeed > cfg.speedThreshold) {
+        float scale = std::clamp(b.dashSpeed / cfg.speedThreshold, cfg.speedScaleMin, cfg.speedScaleMax);
+        len *= scale;
+    }
+
+    glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
+
+    glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
+    DebugVis::drawFilledSphere(camera, b.position, rad, col, scaleVec);
+}
+
 void HitEffects::renderHitBursts(const Camera& camera)
 {
     for (int i = 0; i < gBurstCount; ++i) {
@@ -462,9 +529,13 @@ void HitEffects::renderHitBursts(const Camera& camera)
         if (!b.alive) continue;
         int age = gGlobalTick - b.spawnTick;
 
-        renderSphereTimeline(b, age, camera);
-        renderElongatedSphere(b, age, camera);
-        renderImpactDisc(b, age, camera);
+        if (b.dashBurst) {
+            renderMovementDashBurst(b, age, camera);
+        } else {
+            renderSphereTimeline(b, age, camera);
+            renderElongatedSphere(b, age, camera);
+            renderImpactDisc(b, age, camera);
+        }
     }
 
     if (gDebugPanelEnabled) {

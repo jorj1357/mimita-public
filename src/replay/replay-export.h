@@ -25,6 +25,7 @@ struct ReplayExportJob {
     // Result
     std::string errorMsg;
     int ffmpegExitCode = -1;
+    uint32_t frameWriteCount = 0;
     float progress() const;
 };
 
