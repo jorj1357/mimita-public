@@ -9,6 +9,7 @@
 
 #include "camera.h"
 #include "debug/debug-visuals.h"
+#include "debug/debug-diag.h"
 #include "debug/gl-debug.h"
 #include "renderer/renderer.h"
 #include "map/map_common.h"
@@ -27,6 +28,7 @@ GLuint gVbo = 0;
 size_t gBuiltVertCount = (size_t)-1;
 size_t gBuiltBatchCount = (size_t)-1;
 std::uint64_t gBuiltRevision = (std::uint64_t)-1;
+bool gSolidRedDebug = false;
 
 GLint uniformLoc(GLuint shader, const char* name)
 {
@@ -96,7 +98,9 @@ void setUniforms(GLuint shader)
 {
     const auto& cfg = LightingConfig::instance();
 
-    setInt(shader, "uUseColor", 0);
+    setInt(shader, "uUseColor", gSolidRedDebug ? 1 : 0);
+    if (gSolidRedDebug)
+        glUniform4f(uniformLoc(shader, "uColor"), 1.0f, 0.0f, 0.0f, 1.0f);
     setInt(shader, "uTex", 0);
     setInt(shader, "uDebugView", DebugVis::shaderDebugView());
 
@@ -112,6 +116,9 @@ void setUniforms(GLuint shader)
 }
 
 } // namespace
+
+void setWorldSolidRedDebug(bool enabled) { gSolidRedDebug = enabled; }
+bool worldSolidRedDebug() { return gSolidRedDebug; }
 
 void renderWorld(const World& world, const Camera& cam)
 {
@@ -151,15 +158,44 @@ void renderWorld(const World& world, const Camera& cam)
     glBindVertexArray(gVao);
 
     const Mesh& mesh = world.mesh;
+    size_t drawCalls = 0;
+    const bool trace = diagRenderTraceSampling();
+    if (trace) {
+        GLint polygonMode[2] = {};
+        glGetIntegerv(GL_POLYGON_MODE, polygonMode);
+        const auto& cfg = LightingConfig::instance();
+        printf("[WORLD] batches=%zu vertices=%zu depth=%d cull=%d blend=%d polygonMode=0x%x/0x%x\n",
+               mesh.batches.size(), mesh.verts.size(),
+               (int)glIsEnabled(GL_DEPTH_TEST), (int)glIsEnabled(GL_CULL_FACE),
+               (int)glIsEnabled(GL_BLEND), polygonMode[0], polygonMode[1]);
+        printf("[WORLD] uLightDir=(%.3f,%.3f,%.3f) uAmbientStrength=%.3f "
+               "uDiffuseStrength=%.3f uTextureBrightness=%.3f "
+               "uTextureContrast=%.3f uDebugView=%d\n",
+               cfg.lightDir().x, cfg.lightDir().y, cfg.lightDir().z,
+               cfg.ambientStrength(), cfg.diffuseStrength(),
+               cfg.textureBrightness(), cfg.textureContrast(),
+               DebugVis::shaderDebugView());
+        const char* uniformNames[] = {
+            "uLightDir", "uAmbientStrength", "uDiffuseStrength",
+            "uTextureBrightness", "uTextureContrast", "uDebugView"
+        };
+        for (const char* name : uniformNames)
+            printf("[WORLD] uniform %s location=%d\n", name, uniformLoc(shader, name));
+    }
 
     for (const auto& batch : mesh.batches)
     {
+        if (trace)
+            printf("[WORLD] batch first=%zu count=%zu texture=%u\n",
+                   batch.first, batch.count, batch.texture);
         if (batch.texture) {
             MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture));
         }
 
         MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+        ++drawCalls;
     }
+    diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
 
     glBindVertexArray(0);
     MIMITA_GL_CALL(glUseProgram(0));

@@ -3070,8 +3070,12 @@ int main(int argc, char** argv)
                 lPrev = lDown;
             }
             { Perf::ScopedTimer _ren("Rendering");
+            diagRenderFrameBegin(dt);
             PostFX::instance().bindFBO();
+            diagRenderStage(1);
             renderWorld(world, camera);
+            PostFX::instance().consumeMagentaTest();
+            diagRenderStage(2);
             if (replayPlaybackActive) {
                 if (const ReplaySceneFrame* replayFrame =
                         gReplayPlayer.currentSceneFrame()) {
@@ -3170,6 +3174,7 @@ int main(int argc, char** argv)
                 }
                 npcSystem.render(camera);
             }
+            diagRenderStage(3);
             {   static float rlogTimer = 0.0f; rlogTimer -= dt;
                 if (rlogTimer <= 0.0f && replayPlaybackActive) {
                     rlogTimer = 1.0f;
@@ -3210,6 +3215,7 @@ int main(int argc, char** argv)
                 DeathSystem::instance().render(camera);
                 weapons.render(camera, player);
             }
+            diagRenderStage(4);
 
             // Remote player presentation debug overlay
             if (gNetPresentationDebug && mpContext.active)
@@ -3276,13 +3282,16 @@ int main(int argc, char** argv)
             EffectPartSystem::instance().render(camera);
             HitEffects::renderHitBursts(camera);
             DebugVis::flushTris(camera);
+            diagRenderStage(5);
             } // Perf::ScopedTimer Rendering
 
             // Post-process pass: unbind FBO and apply full-screen effects
             PostFX::instance().unbindFBO();
+            diagRenderStage(6);
             PostFX::instance().advanceTime(dt);
             PostFX::instance().pollReload();
             PostFX::instance().render();
+            diagRenderStage(7);
 
             // Capture replay frame for video export (after 3D render, before UI overlay)
             if (isReplayExportActive())
@@ -4147,8 +4156,11 @@ int main(int argc, char** argv)
         // 6 14 2026 yes absolutely render terminal on top of everything
         // terminal is the task manager escape if we have crashes etc 
         Terminal::instance().render();
+        diagRenderStage(8);
 
         engine.endFrame();
+        diagRenderStage(9);
+        diagRenderFrameEnd();
         Perf::endFrame();
         gFramePacer.endFrame();
 

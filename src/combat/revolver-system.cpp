@@ -16,6 +16,7 @@
 #include "camera.h"
 #include "config/player-settings.h"
 #include "debug/debug-visuals.h"
+#include "debug/debug-diag.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
 #include "entities/player.h"
@@ -207,6 +208,7 @@ void RevolverSystem::render(const Camera& camera, const Player& player) const
     for (const Mesh::Batch& batch : mHeldMesh.batches) {
         glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
         glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        diagRenderCountWeaponDraw();
     }
     glBindVertexArray(0);
 }

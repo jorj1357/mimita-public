@@ -19,3 +19,12 @@ void diagLogGL(const char* file, int line, const char* op, GLenum error);
 void diagCheckGL(const char* file, int line, const char* op);
 
 #define CHECK_GL(op) do { op; diagCheckGL(__FILE__, __LINE__, #op); } while(0)
+
+void diagRenderFrameBegin(float dt);
+bool diagRenderTraceSampling();
+void diagRenderStage(int stage);
+void diagRenderWorldCounts(size_t batches, size_t vertices, size_t drawCalls);
+void diagRenderCountPlayerDraw();
+void diagRenderCountWeaponDraw();
+void diagRenderCountEffectDraw();
+void diagRenderFrameEnd();

@@ -228,6 +228,9 @@ bool PostFX::loadShaders()
 
 bool PostFX::initFBO(int width, int height)
 {
+    if (!mPostShader && !loadShaders())
+        return false;
+
     if (mFbo && width == mFboW && height == mFboH)
         return true;
 
@@ -277,6 +280,10 @@ bool PostFX::initFBO(int width, int height)
 
 void PostFX::bindFBO()
 {
+    if (mBypass) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return;
+    }
     if (!mFbo) return;
     glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
     // Clear the FBO's color and depth buffers.
@@ -348,6 +355,7 @@ void PostFX::renderQuad(GLuint vao)
 
 void PostFX::render()
 {
+    if (mBypass) return;
     if (!mPostShader || !mFbo || !mQuadVao) return;
 
     glDisable(GL_DEPTH_TEST);
@@ -361,6 +369,18 @@ void PostFX::render()
     renderQuad(mQuadVao);
 
     // GUI is rendered after this by the caller (PostFX::unbindFBO returns to default FB)
+}
+
+bool PostFX::consumeMagentaTest()
+{
+    if (!mMagentaTestPending || mBypass || !mFbo)
+        return false;
+
+    mMagentaTestPending = false;
+    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
+    return true;
 }
 
 void PostFX::applyPreset(const std::string& name)
