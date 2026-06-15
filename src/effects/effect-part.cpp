@@ -364,6 +364,11 @@ void EffectPartSystem::update(float dt) {
 }
 
 EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string& victim, int damage) {
+    if (!HitEffects::config().core.damageNumbers) return nullptr;
+    if (gHitFxTraceEnabled) {
+        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=damage_number pos=(%.1f,%.1f,%.1f) damage=%d victim=%s\n",
+                   position.x, position.y, position.z, damage, victim.c_str());
+    }
     EffectPart e;
     e.position = position;
     e.color = {1.0f, 0.0f, 0.0f};
@@ -893,6 +898,23 @@ void EffectPartSystem::clear() {
     mBloodParticles.clear();
     mBloodDecals.clear();
     mBloodDebugSegmentCount = 0;
+}
+
+int EffectPartSystem::collectAlive(PartSnapshot* out, int maxCount, float minAlpha) const
+{
+    int count = 0;
+    for (const auto& e : mPool) {
+        if (!e.alive || e.lifetime < 0.0f) continue;
+        float t = std::clamp(e.lifetime / e.maxLifetime, 0.0f, 1.0f);
+        float alpha = e.alpha * (1.0f - t);
+        if (alpha < minAlpha) continue;
+        if (count >= maxCount) break;
+        out[count].position = e.position;
+        out[count].scale = e.scale + (e.endScale - e.scale) * t;
+        out[count].alpha = alpha;
+        count++;
+    }
+    return count;
 }
 
 void EffectPartSystem::render(const Camera& camera) const {

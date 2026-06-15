@@ -138,6 +138,13 @@ struct HitBurstEffect {
     bool alive = true;
 };
 
+struct HitBurstSnapshot {
+    glm::vec3 position;
+    int ageTicks;
+    int totalTicks;
+    bool alive;
+};
+
 namespace HitEffects {
 
 void onHit(const HitEvent& event);
@@ -153,6 +160,7 @@ void renderHitBursts(const Camera& camera);
 void clearHitBursts();
 int activeBurstCount();
 int debugBurstCount();
+int collectBurstSnapshots(HitBurstSnapshot* out, int maxCount);
 
 void loadConfig(const std::string& path);
 void pollReload();

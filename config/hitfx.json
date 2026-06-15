@@ -9,8 +9,8 @@
         "useBlood": false,
         "damageNumbers": false,
         "entityImpact": false,
-        "worldImpact": false,
-        "bulletImpact": false
+        "worldImpact": true,
+        "bulletImpact": true
     },
 
     "sphereTimeline": [
