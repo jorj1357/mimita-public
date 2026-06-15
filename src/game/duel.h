@@ -104,6 +104,8 @@ public:
     int finalKillKillTick = 0;
     std::string finalKillKillerId;
     std::string finalKillVictimId;
+    uint32_t matchEndTick = 0;
+    bool finalKillSavedOnce = false;
 
     void restartDuel(Player& player, NpcSystem& npcs, World& world);
     void stopDuel();

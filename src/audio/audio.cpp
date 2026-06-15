@@ -93,14 +93,6 @@ static void startSound(const std::string& name, float volume, float pitch,
         if (gSoundDebug) printf("[SOUND] invalid path event=%s path=%s\n", name.c_str(), path.c_str());
         return;
     }
-    if (!position) {
-        ma_result result = ma_engine_play_sound(&gEngine, path.c_str(), nullptr);
-        if (gSoundDebug)
-            printf(result == MA_SUCCESS ? "[SOUND] playing event=%s category=2D path=%s\n"
-                                        : "[SOUND] failed event=%s path=%s\n",
-                   name.c_str(), path.c_str());
-        return;
-    }
     if (ma_sound_init_from_file(&gEngine, path.c_str(), 0, nullptr, nullptr, &active->sound) != MA_SUCCESS) {
         if (gSoundDebug) printf("[SOUND] failed event=%s path=%s\n", name.c_str(), path.c_str());
         return;
@@ -122,9 +114,12 @@ static void startSound(const std::string& name, float volume, float pitch,
         ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_linear);
         ma_sound_set_min_distance(&active->sound, 1.0f);
         ma_sound_set_max_distance(&active->sound, std::max(1.0f, maxDistance));
+    } else {
+        ma_sound_set_spatialization_enabled(&active->sound, MA_FALSE);
     }
     ma_sound_start(&active->sound);
-    if (gSoundDebug) printf("[SOUND] playing event=%s category=3D path=%s\n", name.c_str(), path.c_str());
+    if (gSoundDebug) printf("[SOUND] playing event=%s category=%s path=%s\n",
+                            name.c_str(), position ? "3D" : "2D", path.c_str());
     gActiveSounds.push_back(std::move(active));
 }
 
@@ -140,6 +135,31 @@ static void initAudioOnce()
 
     gAudioInit = true;
     printf("[AUDIO] Engine initialized\n");
+
+    // Preload all combat sounds so first-use playback has no file I/O hitch
+    const char* combatSounds[] = {
+        "revolvershoot", "revolverreload", "revolverchamber",
+        "shotgunshoot", "shotgunreload",
+        "godballhit",
+        "swordswordhit1", "swordswordhit2", "swordswordhit3", "swordswordhit4",
+        "gethurt", "player_hurt", "hitworld",
+        "npc_spawn", "npc_death", "world_impact",
+        "dash", "jump", "land",
+        "ui/hover"
+    };
+    for (const char* name : combatSounds)
+    {
+        std::string path = soundPath(name);
+        if (std::filesystem::exists(path))
+        {
+            ma_sound preload;
+            if (ma_sound_init_from_file(&gEngine, path.c_str(), MA_SOUND_FLAG_ASYNC, nullptr, nullptr, &preload) == MA_SUCCESS)
+            {
+                ma_sound_uninit(&preload);
+            }
+        }
+    }
+    printf("[AUDIO] Combat sounds preloaded\n");
 }
 
 void audioUpdate(float dt)
