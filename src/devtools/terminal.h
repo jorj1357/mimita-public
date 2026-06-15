@@ -89,4 +89,28 @@ private:
 
     static constexpr int MAX_SCROLLBACK = 256;
     static constexpr int MAX_HISTORY = 64;
+
+    // --- Command search / autocomplete ---
+    struct CachedCommand {
+        const ConsoleCommand* cmd;
+        std::string lowerName;
+        std::string lowerDesc;
+    };
+    std::vector<CachedCommand> mCachedCommands;
+    bool mCacheDirty = true;
+
+    struct SearchResult {
+        const ConsoleCommand* cmd;
+        int score;
+        std::vector<int> matchPositions;
+    };
+    std::vector<SearchResult> mSearchResults;
+    std::string mLastSearchInput;
+    std::string mGhostSuffix;
+    int mSelectedResult = -1;
+
+    void rebuildCache();
+    void updateSearch();
+    std::string computeGhostSuffix(const std::string& input) const;
+    void drawAutocompleteMenu(float inputLineY, float lineHeight);
 };

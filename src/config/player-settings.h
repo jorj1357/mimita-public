@@ -31,6 +31,7 @@ struct PlayerSettings {
 
     bool musicMuted = false;
     bool debugCombat = false;
+    bool bloodFX = false;
 
     std::string resolution = "1280x960";
     std::string graphicsPreset = "High";

@@ -3,6 +3,7 @@
 #include "effects/effect-part.h"
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
+#include "config/player-settings.h"
 #include "entities/player.h"
 #include "camera.h"
 
@@ -11,6 +12,26 @@ extern Camera* gpCamera;
 
 void registerHitFxCommands()
 {
+    Terminal::instance().registerCommand({
+        "bloodfx", "Toggle blood effects (0=off, 1=on). Default off.",
+        "bloodfx [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(gBloodFXEnabled
+                    ? "[BLOODFX] enabled"
+                    : "[BLOODFX] disabled");
+                return;
+            }
+            gBloodFXEnabled = args[0] != "0";
+            GetPlayerSettings().bloodFX = gBloodFXEnabled;
+            SavePlayerSettings();
+            Debug::log(Debug::Category::NpcCombat, "[BLOODFX] %s",
+                gBloodFXEnabled ? "Enabled" : "Disabled");
+            Terminal::instance().addLog(gBloodFXEnabled
+                ? "[BLOODFX] enabled"
+                : "[BLOODFX] disabled");
+        }
+    });
     Terminal::instance().registerCommand({
         "hitfx_debug", "Toggle hit effect debug panel",
         "hitfx_debug [0|1]",
@@ -22,14 +43,16 @@ void registerHitFxCommands()
                 char buf[1024];
                 std::snprintf(buf, sizeof(buf),
                     "[HITFX] bursts=%d spheres=%zu particles(enabled=%d count=%d) "
-                    "elongated(enabled=%d) disc(enabled=%d) lifetime=%d useBlood=%d",
+                    "elongated(enabled=%d) disc(enabled=%d) lifetime=%d useBlood=%d "
+                    "legacySphere=%s",
                     HitEffects::debugBurstCount(),
                     cfg.sphereTimeline.size(),
                     (int)cfg.particles.enabled, cfg.particles.count,
                     (int)cfg.elongatedSphere.enabled,
                     (int)cfg.impactDisc.enabled,
                     cfg.core.lifetimeTicks,
-                    (int)cfg.core.useBlood);
+                    (int)cfg.core.useBlood,
+                    cfg.legacyContactSphere.enabled ? "ON" : "OFF");
                 Terminal::instance().addLog(buf);
                 Debug::log(Debug::Category::NpcCombat, "%s", buf);
             }
@@ -80,8 +103,9 @@ void registerHitFxCommands()
             char buf[2048];
             int pos = 0;
             pos += std::snprintf(buf + pos, sizeof(buf) - (size_t)pos,
-                "[HITFX] enabled=%d hotReload=%d lifetime=%d useBlood=%d",
-                (int)cfg.enabled, (int)cfg.hotReload, cfg.core.lifetimeTicks, (int)cfg.core.useBlood);
+                "[HITFX] enabled=%d hotReload=%d lifetime=%d useBlood=%d dmgNum=%d entImpact=%d worldImpact=%d bulletImpact=%d",
+                (int)cfg.enabled, (int)cfg.hotReload, cfg.core.lifetimeTicks, (int)cfg.core.useBlood,
+                (int)cfg.core.damageNumbers, (int)cfg.core.entityImpact, (int)cfg.core.worldImpact, (int)cfg.core.bulletImpact);
             pos += std::snprintf(buf + pos, sizeof(buf) - (size_t)pos,
                 " | spheres=%zu", cfg.sphereTimeline.size());
             for (size_t i = 0; i < cfg.sphereTimeline.size() && i < 3; ++i) {
@@ -106,6 +130,30 @@ void registerHitFxCommands()
                 cfg.impactDisc.startTick, cfg.impactDisc.endTick,
                 cfg.impactDisc.radiusStart, cfg.impactDisc.radiusEnd);
             Terminal::instance().addLog(buf);
+            const auto& l = cfg.legacyContactSphere;
+            std::snprintf(buf, sizeof(buf),
+                "Legacy Contact Sphere\n"
+                "  enabled: %s\n"
+                "  color: [%.2f, %.2f, %.2f]\n"
+                "  alpha: %.2f\n"
+                "  radius: %.2f -> %.2f\n"
+                "  lifetime: %.2f",
+                l.enabled ? "true" : "false",
+                l.color.x, l.color.y, l.color.z,
+                l.alpha,
+                l.startRadius, l.endRadius,
+                l.lifetimeSeconds);
+            Terminal::instance().addLog(buf);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "hitfx_trace", "Trace every effect spawn to source file", "hitfx_trace [0|1]",
+        [](const std::vector<std::string>& args) {
+            bool on = args.empty() ? !gHitFxTraceEnabled : (args[0] != "0");
+            gHitFxTraceEnabled = on;
+            Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] %s\n", on ? "enabled" : "disabled");
+            Terminal::instance().addLog(std::string("[HITFX] trace=") + (on ? "1" : "0"));
         }
     });
 }

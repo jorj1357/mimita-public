@@ -16,6 +16,11 @@
 #include "world/world.h"
 #include "world/texture-store.h"
 #include "render/lighting-config.h"
+#include "shadow/shadow-config.h"
+#include "shadow/shadow-render.h"
+#include "devtools/terminal.h"
+#include "gui/font-stuff/font-loader.h"
+#include "debug/debug-diag.h"
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
@@ -97,6 +102,7 @@ void uploadMeshIfNeeded(const World& world)
 void setUniforms(GLuint shader)
 {
     const auto& cfg = LightingConfig::instance();
+    const auto& scfg = ShadowConfig::instance();
 
     setInt(shader, "uUseColor", gSolidRedDebug ? 1 : 0);
     if (gSolidRedDebug)
@@ -113,12 +119,58 @@ void setUniforms(GLuint shader)
     setFloat(shader, "uAOContrast", cfg.aoContrast());
     setFloat(shader, "uTextureContrast", cfg.textureContrast());
     setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
+
+    // Shadow uniforms
+    bool shadowsEnabled = scfg.enabled() && shadowDepthTex() != 0;
+    setInt(shader, "uShadowsEnabled", shadowsEnabled ? 1 : 0);
+    if (shadowsEnabled) {
+        bindShadowMap(1);
+        setInt(shader, "uShadowMap", 1);
+        setMat4(shader, "uShadowMatrix", shadowMatrix());
+        setFloat(shader, "uShadowDarkness", scfg.shadowDarkness());
+        setFloat(shader, "uShadowBias", scfg.shadowBias());
+        setFloat(shader, "uShadowSoftness", scfg.shadowSoftness());
+        glm::vec3 tint = scfg.shadowTint();
+        setVec3(shader, "uShadowTint", tint);
+        // Restore active texture unit to 0 after bindShadowMap changed it to 1
+        glActiveTexture(GL_TEXTURE0);
+    }
 }
 
 } // namespace
 
 void setWorldSolidRedDebug(bool enabled) { gSolidRedDebug = enabled; }
 bool worldSolidRedDebug() { return gSolidRedDebug; }
+
+bool gWorldTextureDebug = false;
+
+void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP)
+{
+    if (world.mesh.verts.empty()) return;
+    uploadMeshIfNeeded(world);
+
+    glUseProgram(shadowShader);
+    if (shadowShader) {
+        GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
+        if (loc >= 0)
+            glUniformMatrix4fv(loc, 1, GL_FALSE, &lightMVP[0][0]);
+    }
+
+    glBindVertexArray(gVao);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    for (const auto& batch : world.mesh.batches) {
+        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+    }
+
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
 
 void renderWorld(const World& world, const Camera& cam)
 {
@@ -185,12 +237,13 @@ void renderWorld(const World& world, const Camera& cam)
 
     for (const auto& batch : mesh.batches)
     {
-        if (trace)
-            printf("[WORLD] batch first=%zu count=%zu texture=%u\n",
-                   batch.first, batch.count, batch.texture);
-        if (batch.texture) {
-            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture));
+        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
+        if (gWorldTextureDebug)
+        {
+            printf("[WORLD TEX] batch first=%zu count=%zu texture=%u material=%s\n",
+                   batch.first, batch.count, tex, batch.materialName.c_str());
         }
+        MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
 
         MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
         ++drawCalls;
@@ -201,4 +254,44 @@ void renderWorld(const World& world, const Camera& cam)
     MIMITA_GL_CALL(glUseProgram(0));
 
     MIMITA_GL_CHECK("renderWorld");
+}
+
+void registerWorldTextureCommands()
+{
+    Terminal::instance().registerCommand({
+        "world_texture_debug", "Toggle per-batch texture tracing", "world_texture_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                gWorldTextureDebug = !gWorldTextureDebug;
+            } else {
+                gWorldTextureDebug = args[0] != "0";
+            }
+            printf("[WORLD TEX] debug=%d\n", (int)gWorldTextureDebug);
+        },
+        "2026-06-15", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "world_texture_list", "Print all loaded textures including font/UI", "world_texture_list",
+        [](const std::vector<std::string>&) {
+            auto& t = Terminal::instance();
+            t.addLog("=== TEXTURES (TextureStore) ===");
+            size_t count = gTextures.map.size();
+            char buf[128];
+            snprintf(buf, sizeof(buf), "World textures: %zu", count);
+            t.addLog(buf);
+            for (const auto& pair : gTextures.map) {
+                snprintf(buf, sizeof(buf), "  ID %u  %s", pair.second, pair.first.c_str());
+                t.addLog(buf);
+            }
+            t.addLog("--- Font Atlases ---");
+            snprintf(buf, sizeof(buf), "  gFontTex=%u pages=%d", gFontTex, (int)gFontPageCount);
+            t.addLog(buf);
+            for (int i = 0; i < (int)gFontPageCount && i < 8; i++) {
+                snprintf(buf, sizeof(buf), "  gFontPages[%d]=%u", i, gFontPages[i]);
+                t.addLog(buf);
+            }
+        },
+        "2026-06-15", CommandCategory::Debug
+    });
 }

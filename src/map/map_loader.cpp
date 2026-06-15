@@ -197,24 +197,24 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
 {
     if (image.image.empty() || image.width <= 0 || image.height <= 0)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] image %d invalid data size=%zu dims=%dx%d; using assets/textures/default.png\n",
+        GLB_LOG("[GLB TEXTURE WARNING] image %d invalid data size=%zu dims=%dx%d\n",
                 imageIndex, image.image.size(), image.width, image.height);
-        return gTextures.get("default");
+        return 0;
     }
 
     if (image.component < 1 || image.component > 4)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] image %d unsupported component count=%d; using default.png\n",
+        GLB_LOG("[GLB TEXTURE WARNING] image %d unsupported component count=%d\n",
                 imageIndex, image.component);
-        return gTextures.get("default");
+        return 0;
     }
 
     const size_t expectedBytes = (size_t)image.width * (size_t)image.height * (size_t)image.component;
     if (expectedBytes == 0 || image.image.size() < expectedBytes)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] image %d pixel buffer too small bytes=%zu expected=%zu dims=%dx%d components=%d; using default.png\n",
+        GLB_LOG("[GLB TEXTURE WARNING] image %d pixel buffer too small bytes=%zu expected=%zu dims=%dx%d components=%d\n",
                 imageIndex, image.image.size(), expectedBytes, image.width, image.height, image.component);
-        return gTextures.get("default");
+        return 0;
     }
 
     // Mipmaps are smaller prefiltered versions of the same texture.
@@ -227,8 +227,8 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
     MIMITA_GL_CALL(glGenTextures(1, &tex));
     if (!tex)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] glGenTextures returned 0 for image %d; using default.png\n", imageIndex);
-        return gTextures.get("default");
+        GLB_LOG("[GLB TEXTURE WARNING] glGenTextures returned 0 for image %d\n", imageIndex);
+        return 0;
     }
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
 

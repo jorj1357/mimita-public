@@ -4,6 +4,8 @@
 #include "../ui-system.h"
 #include "camera.h"
 #include "config/player-settings.h"
+#include "effects/hit-effects.h"
+#include "debug/debug-log.h"
 #include "audio/music-manager.h"
 #include "video/video-settings.h"
 #include "crosshair/crosshair-config.h"
@@ -153,6 +155,18 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     {
         CAMERA_SENS = settings.sensitivity;
         SavePlayerSettings();
+    }
+
+    drawLabel("Blood Effects", layout.get("bloodFxLabel"));
+    {
+        const GuiElement* cb = layout.get("bloodFxToggle");
+        if (cb && uiCheckbox(win, "BLOOD", {cb->x, cb->y, cb->w, cb->h}, &settings.bloodFX))
+        {
+            gBloodFXEnabled = settings.bloodFX;
+            SavePlayerSettings();
+            Debug::log(Debug::Category::NpcCombat, "[BLOODFX] %s",
+                gBloodFXEnabled ? "Enabled" : "Disabled");
+        }
     }
 
     // ===== RIGHT COLUMN: VIDEO =====

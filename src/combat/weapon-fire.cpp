@@ -199,7 +199,18 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
     victim.body.vel += shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
     victim.hitReactionTimer = 0.3f;
 
-    EffectPartSystem::instance().spawnDamage(ctx.hitPosition, victim.body.username, rounded);
+    {
+        HitEvent ev;
+        ev.position = ctx.hitPosition;
+        ev.normal = ctx.hitNormal;
+        ev.direction = -shotDirection;
+        ev.hitEntity = true;
+        ev.damage = rounded;
+        ev.attacker = shooter.username;
+        ev.victim = victim.body.username;
+        ev.weaponSource = "weaponfire";
+        HitEffects::onHit(ev);
+    }
 
     if (GetPlayerSettings().debugCombat) {
         char debug[320];
@@ -385,13 +396,18 @@ RevolverShotResult tryFireHitscan(
                 "[HITMARKER] attacker=%s victim=npc_%u show=1 reason=local_player_hit_npc",
                 shooter.username.c_str(), victim->id);
 
-        EffectPartSystem::instance().spawnBloodEffect(
-            result.end, shotDirection, (float)totalDamage,
-            shooter.username, "npc_" + std::to_string(victim->id));
-        EffectPartSystem::instance().spawnEntityImpact(
-            result.end, hitNormal, shooter.username, "npc_" + std::to_string(victim->id));
-        HitEffects::spawnHitEffects(result.end, shotDirection, hitNormal, totalDamage,
-                                     shooter.username, "npc_" + std::to_string(victim->id));
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = hitNormal;
+            ev.direction = shotDirection;
+            ev.hitEntity = true;
+            ev.damage = totalDamage;
+            ev.attacker = shooter.username;
+            ev.victim = "npc_" + std::to_string(victim->id);
+            ev.weaponSource = def.id;
+            HitEffects::onHit(ev);
+        }
         printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
                def.id.c_str(), hitPart.c_str(), result.damage);
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
@@ -425,21 +441,33 @@ RevolverShotResult tryFireHitscan(
             Debug::log(Debug::Category::Weapons,
                 "[HITMARKER] attacker=%s victim=%s show=1 reason=local_player_hit_remote",
                 shooter.username.c_str(), remoteVictim->username.c_str());
-        EffectPartSystem::instance().spawnDamage(
-            result.end, remoteVictim->username, totalDamage);
-        EffectPartSystem::instance().spawnBloodEffect(
-            result.end, shotDirection, (float)totalDamage,
-            shooter.username, remoteVictim->username);
-        EffectPartSystem::instance().spawnEntityImpact(
-            result.end, hitNormal, shooter.username, remoteVictim->username);
-        HitEffects::spawnHitEffects(result.end, shotDirection, hitNormal, totalDamage,
-                                     shooter.username, remoteVictim->username);
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = hitNormal;
+            ev.direction = shotDirection;
+            ev.hitEntity = true;
+            ev.damage = totalDamage;
+            ev.attacker = shooter.username;
+            ev.victim = remoteVictim->username;
+            ev.weaponSource = def.id;
+            HitEffects::onHit(ev);
+        }
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
     } else if (hitWorld) {
         result.hitWorld = true;
         float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
-        EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
-        EffectPartSystem::instance().spawnBulletImpact(result.end);
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = worldNormal;
+            ev.direction = shotDirection;
+            ev.hitWorld = true;
+            ev.damage = 0;
+            ev.attacker = shooter.username;
+            ev.weaponSource = def.id;
+            HitEffects::onHit(ev);
+        }
         EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal, debrisForce);
         playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
     }
@@ -556,21 +584,34 @@ RevolverShotResult tryFireHitscanDir(
         Debug::log(Debug::Category::NpcCombat,
             "[NPC HITS PLAYER] npc=%s weapon=%s damage=%d dist=%.1f",
             shooter.username.c_str(), def.id.c_str(), totalDamage, nearest);
-        EffectPartSystem::instance().spawnDamage(result.end, targetPlayer->username, totalDamage);
-        EffectPartSystem::instance().spawnBloodEffect(
-            result.end, shotDirection, (float)totalDamage,
-            shooter.username, targetPlayer->username);
-        EffectPartSystem::instance().spawnEntityImpact(
-            result.end, hitNormal, shooter.username, targetPlayer->username);
-        HitEffects::spawnHitEffects(result.end, shotDirection, hitNormal, totalDamage,
-                                     shooter.username, targetPlayer->username);
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = hitNormal;
+            ev.direction = shotDirection;
+            ev.hitEntity = true;
+            ev.damage = totalDamage;
+            ev.attacker = shooter.username;
+            ev.victim = targetPlayer->username;
+            ev.weaponSource = def.id;
+            HitEffects::onHit(ev);
+        }
         playWorldSound(def.soundHit, result.end, 0.85f, 1.0f, 35.0f);
 
     } else if (hitWorld) {
         result.hitWorld = true;
         float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
-        EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
-        EffectPartSystem::instance().spawnBulletImpact(result.end);
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = worldNormal;
+            ev.direction = shotDirection;
+            ev.hitWorld = true;
+            ev.damage = 0;
+            ev.attacker = shooter.username;
+            ev.weaponSource = def.id;
+            HitEffects::onHit(ev);
+        }
         EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal, debrisForce);
         playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
     }
@@ -732,13 +773,18 @@ void fireMultiPellet(
                 float df = std::clamp(1.0f - pelletNearest / 110.0f, 0.10f, 1.0f);
                 accumulatedKnockback += pelletDir * (float)dmg * df * (0.08f + ctx.angleFactor * 0.12f);
 
-                EffectPartSystem::instance().spawnBloodEffect(
-                    pelletEnd, pelletDir, (float)dmg,
-                    shooter.username, "npc_" + std::to_string(pelletVictim->id));
-                EffectPartSystem::instance().spawnEntityImpact(
-                    pelletEnd, pelletHitNml, shooter.username, "npc_" + std::to_string(pelletVictim->id));
-                HitEffects::spawnHitEffects(pelletEnd, pelletDir, pelletHitNml, dmg,
-                                             shooter.username, "npc_" + std::to_string(pelletVictim->id));
+                {
+                    HitEvent ev;
+                    ev.position = pelletEnd;
+                    ev.normal = pelletHitNml;
+                    ev.direction = pelletDir;
+                    ev.hitEntity = true;
+                    ev.damage = dmg;
+                    ev.attacker = shooter.username;
+                    ev.victim = "npc_" + std::to_string(pelletVictim->id);
+                    ev.weaponSource = def.id;
+                    HitEffects::onHit(ev);
+                }
 
                 if (pelletNearest < nearestPelletDist) {
                     nearestPelletDist = pelletNearest;
@@ -765,14 +811,18 @@ void fireMultiPellet(
                 float df = std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
                 accumulatedKnockback += pelletDir * (float)totalDmg * df * 0.15f;
 
-                EffectPartSystem::instance().spawnDamage(pelletEnd, pelletRemoteVictim->username, totalDmg);
-                EffectPartSystem::instance().spawnBloodEffect(
-                    pelletEnd, pelletDir, (float)totalDmg,
-                    shooter.username, pelletRemoteVictim->username);
-                EffectPartSystem::instance().spawnEntityImpact(
-                    pelletEnd, pelletHitNml, shooter.username, pelletRemoteVictim->username);
-                HitEffects::spawnHitEffects(pelletEnd, pelletDir, pelletHitNml, totalDmg,
-                                             shooter.username, pelletRemoteVictim->username);
+                {
+                    HitEvent ev;
+                    ev.position = pelletEnd;
+                    ev.normal = pelletHitNml;
+                    ev.direction = pelletDir;
+                    ev.hitEntity = true;
+                    ev.damage = totalDmg;
+                    ev.attacker = shooter.username;
+                    ev.victim = pelletRemoteVictim->username;
+                    ev.weaponSource = def.id;
+                    HitEffects::onHit(ev);
+                }
 
                 if (pelletNearest < nearestPelletDist) {
                     nearestPelletDist = pelletNearest;
@@ -782,8 +832,17 @@ void fireMultiPellet(
             } else if (hitW) {
                 anyHitWorld = true;
                 float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
-                EffectPartSystem::instance().spawnWorldImpact(pelletEnd, worldNml);
-                EffectPartSystem::instance().spawnBulletImpact(pelletEnd);
+                {
+                    HitEvent ev;
+                    ev.position = pelletEnd;
+                    ev.normal = worldNml;
+                    ev.direction = pelletDir;
+                    ev.hitWorld = true;
+                    ev.damage = 0;
+                    ev.attacker = shooter.username;
+                    ev.weaponSource = def.id;
+                    HitEffects::onHit(ev);
+                }
                 EffectPartSystem::instance().spawnWorldDebris(pelletEnd, worldNml, debrisForce);
 
                 if (pelletNearest < nearestPelletDist) {

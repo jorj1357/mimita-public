@@ -19,6 +19,7 @@
 #include "debug/debug-diag.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
 #include "npc/npc.h"
@@ -317,12 +318,18 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
         result.knockbackImpulse = shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
-        EffectPartSystem::instance().spawnBloodEffect(
-            result.end, shotDirection, (float)rounded,
-            shooter.username, "npc_" + std::to_string(victim->id));
-        EffectPartSystem::instance().spawnDamage(result.end, victim->body.username, rounded);
-        EffectPartSystem::instance().spawnEntityImpact(
-            result.end, hitNormal, shooter.username, "npc_" + std::to_string(victim->id));
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = hitNormal;
+            ev.direction = shotDirection;
+            ev.hitEntity = true;
+            ev.damage = rounded;
+            ev.attacker = shooter.username;
+            ev.victim = "npc_" + std::to_string(victim->id);
+            ev.weaponSource = "revolver";
+            HitEffects::onHit(ev);
+        }
         playWorldSound("player_hurt", result.end, 0.85f, 1.0f, 35.0f);
 
         char debug[320];
@@ -345,8 +352,17 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             Terminal::instance().addLog(line);
         }
     } else if (hitWorld) {
-        EffectPartSystem::instance().spawnWorldImpact(result.end, worldNormal);
-        EffectPartSystem::instance().spawnBulletImpact(result.end);
+        {
+            HitEvent ev;
+            ev.position = result.end;
+            ev.normal = worldNormal;
+            ev.direction = shotDirection;
+            ev.hitWorld = true;
+            ev.damage = 0;
+            ev.attacker = shooter.username;
+            ev.weaponSource = "revolver";
+            HitEffects::onHit(ev);
+        }
         EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal);
         playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
     }

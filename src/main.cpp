@@ -91,6 +91,9 @@
 #include "effects/effect-part.h"
 #include "replay/replay.h"
 #include "replay/replay-factory.h"
+#include "shadow/shadow-config.h"
+#include "shadow/shadow-render.h"
+#include "shadow/shadow-commands.h"
 #include "video/video-settings.h"
 #include "video/frame-pacer.h"
 #include "sim/sim-context.h"
@@ -142,6 +145,8 @@ bool* gpWorldLoaded = nullptr;
 
 ReplayRingBuffer* gpReplayRecorder = nullptr;
 ReplayPlayer* gpReplayPlayer = nullptr;
+std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels = nullptr;
+std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels = nullptr;
 ReplayClipSaver* gpReplayClipSaver = nullptr;
 ReplayFactory* gpReplayFactory = nullptr;
 ReplayBrowser* gpReplayBrowser = nullptr;
@@ -165,6 +170,8 @@ static void forceMainMenu()
     auto startTime = std::chrono::steady_clock::now();
     Debug::log(Debug::Category::General, "[MAINMENU] requested");
 
+    printf("[MAINMENU] entering\n");
+
     auto logPhase = [&](const char* phase) {
         if (!gMainmenuDebug) return;
         auto now = std::chrono::steady_clock::now();
@@ -181,9 +188,17 @@ static void forceMainMenu()
 
     // 1. Stop replay playback
     if (REPLAY_PLAYER.isPlaying()) {
+        printf("[MAINMENU] cleaning replay\n");
         REPLAY_PLAYER.stopPlayback();
         logPhase("Replay Cleanup");
     }
+
+    // 1b. Clear replay actor/weapon models
+    printf("[MAINMENU] clearing replay models\n");
+    if (gpReplayActorModels) gpReplayActorModels->clear();
+    if (gpReplayWeaponModels) gpReplayWeaponModels->clear();
+    if (gpReplayChatStates) gpReplayChatStates->clear();
+    logPhase("Replay Models Clear");
 
     // 2. Stop replay recording
     if (REPLAY_RECORDER.isRecording()) {
@@ -193,6 +208,7 @@ static void forceMainMenu()
 
     // 3. Stop duel
     if (gDuelManager.phase() != DuelPhase::Off) {
+        printf("[MAINMENU] cleaning duel\n");
         gDuelManager.stopDuel();
         logPhase("Duel Cleanup");
     }
@@ -203,6 +219,7 @@ static void forceMainMenu()
 
     // 5. Disconnect multiplayer
     if (MP_CONTEXT.active) {
+        printf("[MAINMENU] cleaning network\n");
         Debug::log(Debug::Category::General, "[MAINMENU] disconnecting multiplayer");
         MimitaNet::mpShutdown(MP_CONTEXT);
         logPhase("Network Cleanup");
@@ -230,6 +247,7 @@ static void forceMainMenu()
         glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
     // 10. Transition to menu
+    printf("[MAINMENU] switching scene\n");
     GAME_STATE = GAME_MENU;
 
     logPhase("GUI Load");
@@ -452,6 +470,7 @@ int main(int argc, char** argv)
 
     // Lighting config
     LightingConfig::instance().load("config/lighting.json");
+    ShadowConfig::instance().load("config/shadows.json");
     CrosshairConfig::instance().load();
     registerCrosshairCommands();
     
@@ -560,6 +579,8 @@ int main(int argc, char** argv)
     WeaponSystem weapons;
     std::unordered_map<std::string, std::unique_ptr<Player>> replayActorModels;
     std::unordered_map<std::string, WeaponViewModel> replayWeaponModels;
+    gpReplayActorModels = &replayActorModels;
+    gpReplayWeaponModels = &replayWeaponModels;
     bool freecamEnabled = false;
     glm::vec3 deathPosition{0.0f};
     struct ReplayTestState {
@@ -1360,6 +1381,8 @@ int main(int argc, char** argv)
     registerPerfCommands();
     registerHitFxCommands();
     registerDiagnosticCommands();
+    registerShadowCommands();
+    registerWorldTextureCommands();
     HitEffects::loadConfig("config/hitfx.json");
 
     // Debug toggle for mainmenu timing
@@ -2492,6 +2515,7 @@ int main(int argc, char** argv)
                     gReplayFactory.update();
                     GuiLayoutManager::instance().pollReload();
                     LightingConfig::instance().pollReload();
+                    ShadowConfig::instance().pollReload();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
@@ -2648,10 +2672,15 @@ int main(int argc, char** argv)
                         if (event.effectFlags &
                             MimitaNet::SHOT_EFFECT_WORLD_IMPACT)
                         {
-                            EffectPartSystem::instance().spawnWorldImpact(
-                                event.hit, event.normal);
-                            EffectPartSystem::instance().spawnBulletImpact(
-                                event.hit);
+                            HitEvent ev;
+                            ev.position = event.hit;
+                            ev.normal = event.normal;
+                            ev.direction = event.direction;
+                            ev.hitWorld = true;
+                            ev.damage = 0;
+                            ev.attacker = shooterName;
+                            ev.weaponSource = "net_shot";
+                            HitEffects::onHit(ev);
                         }
                         if (event.effectFlags & MimitaNet::SHOT_EFFECT_DEBRIS) {
                             float debrisForce = std::clamp(event.power / 40.0f, 0.1f, 5.0f);
@@ -2661,20 +2690,29 @@ int main(int argc, char** argv)
                         if (event.effectFlags &
                             MimitaNet::SHOT_EFFECT_ENTITY_IMPACT)
                         {
-                            EffectPartSystem::instance().spawnEntityImpact(
-                                event.hit, event.normal,
-                                shooterName, targetName);
-                            HitEffects::spawnHitEffects(
-                                event.hit, event.direction, event.normal,
-                                event.damage, shooterName, targetName);
+                            HitEvent ev;
+                            ev.position = event.hit;
+                            ev.normal = event.normal;
+                            ev.direction = event.direction;
+                            ev.hitEntity = true;
+                            ev.damage = event.damage;
+                            ev.attacker = shooterName;
+                            ev.victim = targetName;
+                            ev.weaponSource = "net_shot";
+                            HitEffects::onHit(ev);
                         }
                         if (event.effectFlags & MimitaNet::SHOT_EFFECT_BLOOD)
                         {
-                            EffectPartSystem::instance().spawnDamage(
-                                event.hit, targetName, event.damage);
-                            EffectPartSystem::instance().spawnBloodEffect(
-                                event.hit, event.direction, event.power,
-                                shooterName, targetName);
+                            HitEvent ev;
+                            ev.position = event.hit;
+                            ev.normal = event.normal;
+                            ev.direction = event.direction;
+                            ev.hitEntity = true;
+                            ev.damage = event.damage;
+                            ev.attacker = shooterName;
+                            ev.victim = targetName;
+                            ev.weaponSource = "net_shot";
+                            HitEffects::onHit(ev);
                         }
                         if (event.effectFlags &
                             MimitaNet::SHOT_EFFECT_HIT_SOUND)
@@ -2879,8 +2917,16 @@ int main(int argc, char** argv)
                     } else if (effect.type == "footstep") {
                         EffectPartSystem::instance().spawnFootstep(effect.position);
                     } else if (effect.type == "impact_world") {
-                        EffectPartSystem::instance().spawnWorldImpact(
-                            effect.position, effect.normal);
+                        HitEvent ev;
+                        ev.position = effect.position;
+                        ev.normal = effect.normal;
+                        ev.direction = effect.direction;
+                        ev.hitWorld = true;
+                        ev.damage = 0;
+                        ev.attacker = effect.sourceActorId;
+                        ev.victim = effect.targetActorId;
+                        ev.weaponSource = "replay";
+                        HitEffects::onHit(ev);
                         EffectPartSystem::instance().spawnWorldDebris(
                             effect.position, effect.normal, 1.0f);
                     } else if (effect.type == "debris_block") {
@@ -2889,9 +2935,16 @@ int main(int argc, char** argv)
                     } else if (effect.type == "hit_burst") {
                         HitEffects::spawnHitEffects(effect.position, effect.normal, effect.normal, 0, "replay", "replay");
                     } else if (effect.type == "impact_entity") {
-                        EffectPartSystem::instance().spawnEntityImpact(
-                            effect.position, effect.normal,
-                            effect.sourceActorId, effect.targetActorId);
+                        HitEvent ev;
+                        ev.position = effect.position;
+                        ev.normal = effect.normal;
+                        ev.direction = effect.direction;
+                        ev.hitEntity = true;
+                        ev.damage = 0;
+                        ev.attacker = effect.sourceActorId;
+                        ev.victim = effect.targetActorId;
+                        ev.weaponSource = "replay";
+                        HitEffects::onHit(ev);
                     } else if (effect.type == "muzzle_flash") {
                         EffectPartSystem::instance().spawnMuzzleFlash(
                             effect.position, effect.sourceActorId);
@@ -3071,6 +3124,8 @@ int main(int argc, char** argv)
             }
             { Perf::ScopedTimer _ren("Rendering");
             diagRenderFrameBegin(dt);
+            renderShadowMap(world, camera.pos);
+            glViewport(0, 0, engine.renderer->width, engine.renderer->height);
             PostFX::instance().bindFBO();
             diagRenderStage(1);
             renderWorld(world, camera);
@@ -3291,6 +3346,7 @@ int main(int argc, char** argv)
             PostFX::instance().advanceTime(dt);
             PostFX::instance().pollReload();
             PostFX::instance().render();
+            renderShadowMapOverlay(engine.renderer->width, engine.renderer->height);
             diagRenderStage(7);
 
             // Capture replay frame for video export (after 3D render, before UI overlay)
@@ -4070,6 +4126,23 @@ int main(int argc, char** argv)
                     uiDrawText(txt, uiScreenW() - 380.0f, 12.0f, 0.28f,
                                {1.0f, 0.8f, 0.2f, 1.0f});
             }
+            if (ShadowConfig::instance().data().debugDrawShadowFrustum)
+            {
+                const auto& sd = ShadowConfig::instance().data();
+                char buf[512];
+                glm::vec3 dir = LightingConfig::instance().lightDir();
+                snprintf(buf, sizeof(buf),
+                    "SHADOWS\nenabled: %s\nmapSize: %d\ndistance: %.0f\nbias: %.4f\ndarkness: %.2f\nsoftness: %.1f\n\nsunDir:\n%.2f\n%.2f\n%.2f",
+                    sd.enabled ? "yes" : "no",
+                    sd.shadowMapSize,
+                    sd.shadowDistance,
+                    sd.shadowBias,
+                    sd.shadowDarkness,
+                    sd.shadowSoftness,
+                    dir.x, dir.y, dir.z);
+                uiDrawText(buf, uiScreenW() - 280.0f, 120.0f, 0.26f,
+                           {1.0f, 0.9f, 0.4f, 1.0f});
+            }
             } // end spawn flash GUI hide else
 
             // Update perf state counters
@@ -4105,6 +4178,21 @@ int main(int argc, char** argv)
                 bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
                 glfwSetInputMode(engine.window(), GLFW_CURSOR,
                     gameState == GAME_PLAYING && !duelMatchOver ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+            } else if (gReplayPlayer.isPlaying()) {
+                // Watching replay -> ReplayMenu
+                printf("[MAINMENU] cleaning replay\n");
+                gReplayPlayer.stopPlayback();
+                replayActorModels.clear();
+                replayWeaponModels.clear();
+                gReplayChatStates.clear();
+                printf("[MAINMENU] switching to replay menu\n");
+                gGuiMenuState = GUI_MENU_REPLAY;
+                gameState = GAME_MENU;
+                glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            } else if (gameState == GAME_MENU && gGuiMenuState == GUI_MENU_REPLAY) {
+                // ReplayMenu -> MainMenu
+                printf("[MAINMENU] switching to main menu\n");
+                gGuiMenuState = GUI_MENU_MAIN;
             } else {
                 // Clean up duel state if match was in progress
                 if (gDuelManager.phase() != DuelPhase::Off) {

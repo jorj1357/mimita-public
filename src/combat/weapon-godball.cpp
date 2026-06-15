@@ -18,6 +18,7 @@
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
@@ -436,12 +437,18 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
 
         // === BLOOD EFFECTS ===
         glm::vec3 hitPos = npc.body.pos + glm::vec3(0, 0, 0.8f);
-        EffectPartSystem::instance().spawnDamage(hitPos, npc.body.username, rounded);
-        EffectPartSystem::instance().spawnBloodEffect(
-            hitPos, kbDir, (float)rounded,
-            owner.username, "npc_" + std::to_string(npcId));
-        EffectPartSystem::instance().spawnEntityImpact(
-            hitPos, kbDir, owner.username, "npc_" + std::to_string(npcId));
+        {
+            HitEvent ev;
+            ev.position = hitPos;
+            ev.normal = kbDir;
+            ev.direction = kbDir;
+            ev.hitEntity = true;
+            ev.damage = rounded;
+            ev.attacker = owner.username;
+            ev.victim = "npc_" + std::to_string(npcId);
+            ev.weaponSource = "godball";
+            HitEffects::onHit(ev);
+        }
 
         {
             float maxPossibleDamage = def.customParams.count("maxDamageCap")
