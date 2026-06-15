@@ -9,8 +9,10 @@ class Camera;
 
 extern bool gBloodFXEnabled;
 extern bool gHitFxTraceEnabled;
+extern bool gDashFXEnabled;
 inline bool isBloodFXEnabled() { return gBloodFXEnabled; }
 inline bool isHitFxTraceEnabled() { return gHitFxTraceEnabled; }
+inline bool isDashFXEnabled() { return gDashFXEnabled; }
 
 struct HitFxKeyframe {
     std::string name;
@@ -93,6 +95,25 @@ struct LegacyContactSphereConfig {
     float endRadius = 0.27f;
 };
 
+struct MovementDashBurstConfig {
+    bool enabled = true;
+    int lifetimeTicks = 8;
+    float lengthStart = 0.5f;
+    float lengthEnd = 2.5f;
+    float radiusStart = 0.18f;
+    float radiusEnd = 0.35f;
+    glm::vec3 colorStart{1.0f, 1.0f, 1.0f};
+    glm::vec3 colorEnd{0.75f, 0.9f, 1.0f};
+    float alphaStart = 0.85f;
+    float alphaEnd = 0.0f;
+    float brightnessStart = 2.5f;
+    float brightnessEnd = 0.0f;
+    bool speedScaling = true;
+    float speedThreshold = 12.0f;
+    float speedScaleMin = 1.0f;
+    float speedScaleMax = 2.5f;
+};
+
 struct HitFxConfig {
     bool enabled = true;
     bool hotReload = true;
@@ -114,6 +135,7 @@ struct HitFxConfig {
     HitFxImpactDisc impactDisc;
     HitFxCurves curves;
     LegacyContactSphereConfig legacyContactSphere;
+    MovementDashBurstConfig movementDashBurst;
 };
 
 struct HitEvent {
@@ -136,6 +158,8 @@ struct HitBurstEffect {
     int spawnTick = 0;
     int totalTicks = 60;
     bool alive = true;
+    bool dashBurst = false;
+    float dashSpeed = 0.0f;
 };
 
 struct HitBurstSnapshot {
@@ -154,6 +178,8 @@ void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                      const glm::vec3& hitNormal, int damage,
                      const std::string& sourceId = "",
                      const std::string& targetId = "");
+
+void spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
 
 void updateHitBursts(float dt);
 void renderHitBursts(const Camera& camera);

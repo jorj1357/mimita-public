@@ -67,7 +67,25 @@ public:
     void execute(const std::string& input);
     void addLog(const std::string& text);
 
+    // Replay export picker
+    struct ReplayPickerEntry {
+        std::string path;
+        std::string filename;
+        uint64_t fileSize = 0;
+        uint32_t tickCount = 0;
+        std::string dateStr;
+        double durationSec = 0.0;
+    };
+    void startExportPicker();
+    void closeExportPicker();
+    bool isExportPickerActive() const { return mExportPickerActive; }
+    void renderExportPicker();
+
 private:
+    bool mExportPickerActive = false;
+    std::vector<ReplayPickerEntry> mExportPickerReplays;
+    int mExportPickerIndex = 0;
+    int mExportPickerScroll = 0;
     Terminal() = default;
 
     void executeCurrent();

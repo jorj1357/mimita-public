@@ -403,6 +403,11 @@ int main(int argc, char** argv)
     printf("[MAIN] start\n");
     LogManager::instance().init();
 
+    printf("[LOG] Console output enabled\n");
+    printf("[LOG] File logging enabled\n");
+    printf("[LOG] Active log path: %s\n", LogManager::instance().path().c_str());
+    printf("[LOG] Mirroring console -> file\n");
+
     Engine engine;
     printf("[MAIN] before engine.init\n");
     engine.init(800, 600, "mimita.exe");
@@ -2027,6 +2032,36 @@ int main(int argc, char** argv)
         }
     });
 
+    Terminal::instance().registerCommand({
+        "duel_state",
+        "Show current duel end state",
+        "duel_state",
+        [](const std::vector<std::string>&) {
+            const char* stateName = "None";
+            switch (gDuelManager.endState()) {
+            case DuelEndState::None:          stateName = "None"; break;
+            case DuelEndState::VictoryScreen: stateName = "VictoryScreen"; break;
+            case DuelEndState::Countdown:     stateName = "Countdown"; break;
+            case DuelEndState::FinalKillReplay: stateName = "FinalKillReplay"; break;
+            case DuelEndState::ReplayMenu:    stateName = "ReplayMenu"; break;
+            }
+            char buf[256];
+            float timeRemaining = 0.0f;
+            if (gDuelManager.endState() == DuelEndState::VictoryScreen)
+                timeRemaining = gDuelManager.victoryTimeLeft();
+            else if (gDuelManager.endState() == DuelEndState::Countdown)
+                timeRemaining = gDuelManager.countdownTimeLeft();
+            snprintf(buf, sizeof(buf),
+                "Current State: %s\nTime Remaining: %.2f\nReplay Loaded: %s\nReplay Playing: %s\nFinal Kill Marker: %s",
+                stateName,
+                timeRemaining,
+                gReplayPlayer.totalTicks() > 0 ? "YES" : "NO",
+                gReplayPlayer.isPlaying() ? "YES" : "NO",
+                gDuelManager.isReplayReady() ? "YES" : "NO");
+            Terminal::instance().addLog(buf);
+        }
+    });
+
     // Music debug commands
     Terminal::instance().registerCommand({
         "music_next", "Skip to next music track", "music_next",
@@ -2285,13 +2320,13 @@ int main(int argc, char** argv)
             static DuelPhase prevDuelPhase = DuelPhase::Off;
             if (gDuelManager.phase() != prevDuelPhase) {
                 bool enteredMatchEnd = gDuelManager.phase() == DuelPhase::MatchEnd;
-                if (enteredMatchEnd && !gDuelManager.finalKillReplayLoaded) {
-                    Debug::log(Debug::Category::Duel, "[DUEL] final kill detected");
-                    Debug::log(Debug::Category::Duel, "[DUEL] match winner determined%s",
-                        gDuelManager.matchWinner() == DuelTeam::Player ? " (PLAYER)" : " (NPC)");
+                if (enteredMatchEnd && gDuelManager.endState() == DuelEndState::None) {
                     gDuelManager.matchEndTick = gReplayRecorder.currentTick();
-                    gDuelManager.finalKillKillTick = (int)gDuelManager.matchEndTick;
-                    Debug::log(Debug::Category::Duel, "[DUEL] recording aftermath for 5s (endTick=%u)", gDuelManager.matchEndTick);
+                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] VictoryScreen start (3s)");
+                    Debug::log(Debug::Category::Duel, "[FINAL KILL] detected tick=%u winner=%s",
+                        gDuelManager.matchEndTick,
+                        gDuelManager.matchWinner() == DuelTeam::Player ? "PLAYER" : "NPC");
+                    Debug::log(Debug::Category::Duel, "[FINAL KILL] recording aftermath for 5s (endTick=%u)", gDuelManager.matchEndTick);
                 }
                 prevDuelPhase = gDuelManager.phase();
                 bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
@@ -2321,33 +2356,83 @@ int main(int argc, char** argv)
         // Delayed final kill clip creation (wait 5 seconds after match end for aftermath)
         if (gDuelManager.phase() == DuelPhase::MatchEnd &&
             gDuelManager.matchEndTick > 0 &&
-            !gDuelManager.finalKillReplayLoaded &&
-            gReplayRecorder.currentTick() >= gDuelManager.matchEndTick + 5u * ReplayRingBuffer::TickRate)
+            gReplayRecorder.isRecording())
         {
-            uint32_t killTick = gDuelManager.matchEndTick;
-            uint32_t start = killTick > 480 ? killTick - 480 : 0;
-            uint32_t end = killTick + 5u * ReplayRingBuffer::TickRate;
-            uint32_t now = gReplayRecorder.currentTick();
-            if (end > now) end = now;
-            Debug::log(Debug::Category::Duel, "[DUEL] creating final kill clip start=%u end=%u (kill=%u)", start, end, killTick);
-            ReplayClip clip = gReplayRecorder.makeClip(start, end, killTick, "", "");
-            if (!clip.sceneFrames.empty()) {
-                std::string savePath = generateReplayClipPath();
-                if (clip.save(savePath)) {
-                    gDuelManager.finalKillReplayPath = savePath;
-                    gDuelManager.finalKillSavedOnce = true;
-                    Debug::log(Debug::Category::Replay, "[REPLAY] final kill auto-saved: %s frames=%zu", savePath.c_str(), clip.sceneFrames.size());
-                }
-                std::string tmpPath = "replays/_final_kill_temp.json";
-                clip.save(tmpPath);
-                if (gReplayPlayer.loadFromJSON(tmpPath)) {
-                    gDuelManager.finalKillReplayLoaded = true;
-                    gDuelManager.finalKillReplayTime = 0.0f;
-                    Debug::log(Debug::Category::Replay, "[REPLAY] final kill clip loaded frames=%u", gReplayPlayer.totalTicks());
-                }
+            static bool replayReadyLogged = false;
+            if (gDuelManager.isReplayReady() && !replayReadyLogged) {
+                Debug::log(Debug::Category::Duel, "[REPLAY] replayReady=1 (set by prior frame)");
+                replayReadyLogged = true;
             }
-            gDuelManager.matchEndTick = 0;
-            DevOverlay::instance().showNotification("Replay saved! Press F10 to open folder", 5.0f);
+            uint32_t nowTick = gReplayRecorder.currentTick();
+            if (!gDuelManager.isReplayReady() &&
+                nowTick >= gDuelManager.matchEndTick + 5u * ReplayRingBuffer::TickRate)
+            {
+                Debug::log(Debug::Category::Duel, "[REPLAY] replayReady=0, starting clip creation (nowTick=%u matchEndTick=%u)", nowTick, gDuelManager.matchEndTick);
+                uint32_t killTick = gDuelManager.matchEndTick;
+                uint32_t start = killTick > 480 ? killTick - 480 : 0;
+                uint32_t end = killTick + 5u * ReplayRingBuffer::TickRate;
+                uint32_t now = gReplayRecorder.currentTick();
+                if (end > now) end = now;
+                Debug::log(Debug::Category::Duel, "[DUEL] creating final kill clip start=%u end=%u (kill=%u)", start, end, killTick);
+                ReplayClip clip = gReplayRecorder.makeClip(start, end, killTick, "", "");
+                if (clip.sceneFrames.empty()) {
+                    Debug::log(Debug::Category::Replay, "[REPLAY] final kill marker missing, using last 10 seconds");
+                    start = now > 600 ? now - 600 : 0;
+                    end = now;
+                    clip = gReplayRecorder.makeClip(start, end, 0, "", "");
+                } else {
+                    Debug::log(Debug::Category::Replay, "[REPLAY] using final kill marker at tick %u", killTick);
+                }
+                if (!clip.sceneFrames.empty()) {
+                    Debug::log(Debug::Category::Replay, "[REPLAY] clip has %zu sceneFrames, %zu frames", clip.sceneFrames.size(), clip.frames.size());
+                    std::string savePath = generateReplayClipPath();
+                    Debug::log(Debug::Category::Replay, "[REPLAY] saving clip to %s", savePath.c_str());
+                    if (clip.save(savePath)) {
+                        gDuelManager.finalKillReplayPath = savePath;
+                        gDuelManager.finalKillSavedOnce = true;
+                        Debug::log(Debug::Category::Replay, "[REPLAY] final kill auto-saved: %s frames=%zu", savePath.c_str(), clip.sceneFrames.size());
+                    } else {
+                        Debug::log(Debug::Category::Replay, "[REPLAY] clip.save FAILED for %s", savePath.c_str());
+                    }
+                    std::string tmpPath = "replays/_final_kill_temp.json";
+                    Debug::log(Debug::Category::Replay, "[REPLAY] saving temp clip to %s", tmpPath.c_str());
+                    if (clip.save(tmpPath)) {
+                        Debug::log(Debug::Category::Replay, "[REPLAY] temp clip saved OK");
+                    } else {
+                        Debug::log(Debug::Category::Replay, "[REPLAY] temp clip save FAILED");
+                    }
+                    Debug::log(Debug::Category::Replay, "[REPLAY] loading clip from %s", tmpPath.c_str());
+                    if (gReplayPlayer.loadFromJSON(tmpPath)) {
+                        gDuelManager.setReplayReady();
+                        Debug::log(Debug::Category::Replay, "[REPLAY] replayReady=1 clip loaded OK totalTicks=%u currentTick=%u",
+                                   gReplayPlayer.totalTicks(), gReplayPlayer.currentTick());
+                        replayReadyLogged = true;
+                    } else {
+                        Debug::log(Debug::Category::Replay, "[REPLAY] loadFromJSON FAILED");
+                    }
+                } else {
+                    Debug::log(Debug::Category::Replay, "[REPLAY] clip.sceneFrames EMPTY after makeClip - NO REPLAY DATA");
+                }
+                gDuelManager.matchEndTick = 0;
+                DevOverlay::instance().showNotification("Replay saved! Press F10 to open folder", 5.0f);
+            }
+        }
+
+        // Auto-start replay playback when state becomes FinalKillReplay
+        if (gDuelManager.endState() == DuelEndState::FinalKillReplay &&
+            !gReplayPlayer.isPlaying())
+        {
+            if (gDuelManager.isReplayReady()) {
+                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Replay started");
+                Debug::log(Debug::Category::Duel, "[REPLAY] beginPlayback totalTicks=%u currentTick=%u",
+                           gReplayPlayer.totalTicks(), gReplayPlayer.currentTick());
+                gReplayPlayer.beginPlayback();
+                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Replay controls enabled");
+                Debug::log(Debug::Category::Duel, "[REPLAY] isPlaying=%d currentTick=%u",
+                           (int)gReplayPlayer.isPlaying(), gReplayPlayer.currentTick());
+            } else {
+                Debug::log(Debug::Category::Duel, "[REPLAY] FinalKillReplay but replay NOT ready yet - waiting for clip creation");
+            }
         }
 
         if (gameState == GAME_PLAYING)
@@ -3053,20 +3138,14 @@ int main(int argc, char** argv)
                     camera);
                 player.updateAudio(dt);
 
-                // After result screen timer expires, start the final kill replay
-                if (gDuelManager.phase() == DuelPhase::MatchEnd &&
-                    gDuelManager.finalKillReplayLoaded &&
-                    !gDuelManager.finalKillReplayActive &&
-                    gDuelManager.matchOverRemaining() <= 0.0f)
+                // Transition from FinalKillReplay to ReplayMenu when replay ends
+                if (gDuelManager.endState() == DuelEndState::FinalKillReplay &&
+                    !gReplayPlayer.isPlaying())
                 {
-                    Debug::log(Debug::Category::Duel, "[DUEL] result screen complete");
-                    Debug::log(Debug::Category::Duel, "[DUEL] starting final kill replay");
-                    Debug::log(Debug::Category::Replay, "[REPLAY] playback begin");
-                    gReplayPlayer.beginPlayback();
-                    gDuelManager.finalKillReplayActive = true;
-                    gDuelManager.finalKillReplayTime = 0.0f;
-                    Debug::log(Debug::Category::Replay,
-                        "[REPLAY] playback success=1");
+                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] FinalKillReplay -> ReplayMenu (currentTick=%u totalTicks=%u playing=%d)",
+                               gReplayPlayer.currentTick(), gReplayPlayer.totalTicks(),
+                               (int)gReplayPlayer.isPlaying());
+                    gDuelManager.setEndState(DuelEndState::ReplayMenu);
                 }
             }
 
@@ -3873,60 +3952,57 @@ int main(int argc, char** argv)
                          camera.pos.x, camera.pos.y, camera.pos.z);
                 uiDrawText(dbg, 24, 184, 0.30f, {1.0f, 0.9f, 0.45f, 1.0f});
             }
-            // Final kill replay: slow motion and overlay
-            if (gDuelManager.finalKillReplayActive) {
-                gDuelManager.finalKillReplayTime += dt;
-                // Slow motion curve: 0.15x for 2s, ramp to 1x over 1.5s
-                float t = gDuelManager.finalKillReplayTime;
-                if (t < 2.0f) {
-                    gDuelManager.finalKillSlowMoFactor = 0.15f;
-                } else if (t < 3.5f) {
-                    float p = (t - 2.0f) / 1.5f;
-                    gDuelManager.finalKillSlowMoFactor = 0.15f + p * 0.85f;
-                } else {
-                    gDuelManager.finalKillSlowMoFactor = 1.0f;
-                }
-                // Apply slow motion to replay playback
-                gReplayPlayer.setTimescale(gDuelManager.finalKillSlowMoFactor);
 
-                // Draw the final kill overlay on top of match end screen
-                float fkW = (float)uiScreenW(), fkH = (float)uiScreenH();
-                uiDrawRect({0, fkH * 0.3f, fkW, 80.0f}, {0.0f, 0.0f, 0.0f, 0.6f}, "fk-bg");
-                uiDrawText("FINAL KILL", fkW * 0.5f - 160.0f, fkH * 0.3f + 8.0f,
-                           1.2f, {1.0f, 0.9f, 0.1f, 1.0f});
-                uiDrawText("MATCH WINNING ELIMINATION", fkW * 0.5f - 220.0f, fkH * 0.3f + 50.0f,
-                           0.6f, {1.0f, 1.0f, 1.0f, 0.9f});
-
-                // Save Replay button
-                GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
-                UIRect saveBtn = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
-                if (uiButton(engine.window(), "SAVE REPLAY!", saveBtn,
-                             {0.2f, 0.6f, 0.3f, 1.0f}).clicked)
-                {
-                    if (!gDuelManager.finalKillReplayPath.empty()) {
-                        std::string msg = "Replay saved\n" + gDuelManager.finalKillReplayPath;
-                        DevOverlay::instance().showNotification(msg, 5.0f);
-                        printf("[FINAL KILL] replay already saved: %s\n",
-                               gDuelManager.finalKillReplayPath.c_str());
-                    } else {
-                        printf("[FINAL KILL] replay not ready yet (still recording aftermath)\n");
-                    }
+            // Duel state onscreen debug overlay (always visible during MatchEnd)
+            if (gDuelManager.phase() == DuelPhase::MatchEnd)
+            {
+                const char* stateName = "None";
+                switch (gDuelManager.endState()) {
+                case DuelEndState::None:          stateName = "None"; break;
+                case DuelEndState::VictoryScreen: stateName = "VictoryScreen"; break;
+                case DuelEndState::Countdown:     stateName = "Countdown"; break;
+                case DuelEndState::FinalKillReplay: stateName = "FinalKillReplay"; break;
+                case DuelEndState::ReplayMenu:    stateName = "ReplayMenu"; break;
                 }
-
-                // Replay looping: after slow-motion phase, loop the kill replay in background
-                if (t > 6.0f) {
-                    // When replay reaches the end (playback stopped), loop back
-                    if (!gReplayPlayer.isPlaying()) {
-                        gReplayPlayer.beginPlayback();
-                        Debug::log(Debug::Category::Replay,
-                            "[REPLAY] final kill replay looping as background");
-                    }
-                    // 50% dim overlay when replay loops (buttons will be shown)
-                    float fkW2 = (float)uiScreenW(), fkH2 = (float)uiScreenH();
-                    uiDrawRect({0, 0, fkW2, fkH2}, {0.0f, 0.0f, 0.0f, 0.5f}, "fk-dim");
-                    Debug::logThrottled(Debug::Category::Duel, "fk_loop", 3.0f,
-                        "[DUEL] final kill replay looping as background");
+                float y = 20.0f;
+                char buf[128];
+                snprintf(buf, sizeof(buf), "DUEL STATE: %s", stateName);
+                uiDrawText(buf, 24, y, 0.35f, {0.3f, 1.0f, 0.3f, 1.0f}); y += 20.0f;
+                snprintf(buf, sizeof(buf), "ReplayReady: %d", (int)gDuelManager.isReplayReady());
+                uiDrawText(buf, 24, y, 0.35f, {1.0f, 1.0f, 1.0f, 1.0f}); y += 18.0f;
+                snprintf(buf, sizeof(buf), "ReplayLoaded: %s", gReplayPlayer.totalTicks() > 0 ? "YES" : "NO");
+                uiDrawText(buf, 24, y, 0.35f, {1.0f, 1.0f, 1.0f, 1.0f}); y += 18.0f;
+                snprintf(buf, sizeof(buf), "ReplayPlaying: %d", (int)gReplayPlayer.isPlaying());
+                uiDrawText(buf, 24, y, 0.35f, {1.0f, 1.0f, 1.0f, 1.0f}); y += 18.0f;
+                snprintf(buf, sizeof(buf), "CurrentReplayTick: %u/%u", gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());
+                uiDrawText(buf, 24, y, 0.35f, {1.0f, 1.0f, 1.0f, 1.0f}); y += 18.0f;
+                const ReplayExportJob& job = getReplayExportJob();
+                const char* exportState = "Idle";
+                switch (job.state) {
+                case ReplayExportJob::Idle:      exportState = "Idle"; break;
+                case ReplayExportJob::Capturing: exportState = "Capturing"; break;
+                case ReplayExportJob::Encoding:  exportState = "Encoding"; break;
+                case ReplayExportJob::Done:      exportState = "Done"; break;
+                case ReplayExportJob::Failed:    exportState = "Failed"; break;
                 }
+                snprintf(buf, sizeof(buf), "ExportInProgress: %s", exportState);
+                uiDrawText(buf, 24, y, 0.35f, {1.0f, 1.0f, 1.0f, 1.0f}); y += 18.0f;
+                snprintf(buf, sizeof(buf), "ReplayPath: %s", gDuelManager.finalKillReplayPath.c_str());
+                uiDrawText(buf, 24, y, 0.30f, {0.8f, 0.8f, 0.8f, 1.0f});
+            }
+            // Apply slow-motion during final kill replay
+            if (gDuelManager.endState() == DuelEndState::FinalKillReplay) {
+                float elapsed = gReplayPlayer.totalTicks() > 0
+                    ? (float)gReplayPlayer.currentTick() / 60.0f
+                    : 0.0f;
+                float factor = 1.0f;
+                if (elapsed < 2.0f) {
+                    factor = 0.15f;
+                } else if (elapsed < 3.5f) {
+                    float p = (elapsed - 2.0f) / 1.5f;
+                    factor = 0.15f + p * 0.85f;
+                }
+                gReplayPlayer.setTimescale(factor);
             }
 
             if (gDuelManager.phase() == DuelPhase::MatchEnd) {
@@ -3954,16 +4030,28 @@ int main(int argc, char** argv)
                     gameState = GAME_MENU;
                     Debug::log(Debug::Category::Duel, "[DUEL EXIT] transition complete");
                 } else if (action == DuelMenuAction::SaveReplay) {
+                    Debug::log(Debug::Category::Duel, "[EXPORT] button pressed");
+                    Debug::log(Debug::Category::Duel, "[EXPORT] finalKillReplayPath=%s replayLoaded=%s replayPlaying=%s",
+                               gDuelManager.finalKillReplayPath.c_str(),
+                               gReplayPlayer.totalTicks() > 0 ? "YES" : "NO",
+                               gReplayPlayer.isPlaying() ? "YES" : "NO");
                     if (!gDuelManager.finalKillReplayPath.empty()) {
                         std::string jsonPath = gDuelManager.finalKillReplayPath;
+                        Debug::log(Debug::Category::Duel, "[EXPORT] source replay path=%s", jsonPath.c_str());
                         int rw = engine.renderer ? engine.renderer->width : 1280;
                         int rh = engine.renderer ? engine.renderer->height : 720;
+                        Debug::log(Debug::Category::Duel, "[EXPORT] output mp4 path will be generated by startReplayExport");
                         if (startReplayExport(jsonPath, rw, rh)) {
                             DevOverlay::instance().showNotification("Exporting replay...", 2.0f);
+                        } else {
+                            Debug::log(Debug::Category::Duel, "[EXPORT] startReplayExport returned FALSE");
+                            const ReplayExportJob& job = getReplayExportJob();
+                            Debug::log(Debug::Category::Duel, "[EXPORT] job state=%d error=%s",
+                                       (int)job.state, job.errorMsg.c_str());
                         }
                     } else {
                         DevOverlay::instance().showNotification("Replay not ready yet. Wait for replay to load.", 5.0f);
-                        Debug::log(Debug::Category::Duel, "[DUEL] replay not ready yet (recording aftermath)");
+                        Debug::log(Debug::Category::Duel, "[EXPORT] finalKillReplayPath EMPTY - replay clip not saved yet");
                     }
                 }
             } else {
