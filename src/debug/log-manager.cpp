@@ -169,12 +169,15 @@ int LogManager::fileCount() const
 static void captureThreadFunc(int readFd, LogManager* mgr, std::atomic<bool>& running)
 {
     char buf[4096];
+    int consoleFd = mgr->savedStdoutFd();
     while (running) {
         int n = (int)_read(readFd, buf, sizeof(buf) - 1);
         if (n > 0) {
             buf[n] = '\0';
             mgr->write(buf, n);
             mgr->flush();
+            if (consoleFd >= 0)
+                _write(consoleFd, buf, n);
         } else {
             break;
         }
@@ -210,6 +213,9 @@ bool LogManager::init()
         if (mSavedStdout >= 0) {
             _dup2(pipeWrite, _fileno(stdout));
             _close(pipeWrite);
+
+            // Unbuffered stdout so every printf appears in the pipe immediately
+            setvbuf(stdout, nullptr, _IONBF, 0);
 
             mRunning = true;
             mCaptureThread = std::thread(captureThreadFunc, mPipeRead, this, std::ref(mRunning));

@@ -1,10 +1,3 @@
-// C:\important\mimita-priv-v8\src\game\duel.cpp
-// 6 7 2026
-/** purpose
- * duels first game mode
- * first to 5, 100 hp, spawn with revolver and shotgun, small close range map
- */
-
 #include "game/duel.h"
 
 #include <cstdio>
@@ -23,17 +16,7 @@
 #include "gui/ui-system.h"
 #include "gui/gui-editor.h"
 #include "debug/debug-log.h"
-
-// -------------------------------------------------------
-// Team-based spawn assignment
-//
-// Maps may have spawn points tagged with arena_N:
-//   arena_0 = Team A spawns
-//   arena_1 = Team B spawns
-//
-// If arena tags are absent, the first two spawn points
-// are used (Team A = spawn 0, Team B = nearest different spawn).
-// -------------------------------------------------------
+#include "replay/replay-export.h"
 
 static int randomInt(int min, int max, unsigned int& seed)
 {
@@ -60,7 +43,6 @@ void DuelManager::assignTeamSpawns(const World& world)
         return;
     }
 
-    // Group spawns by arenaIndex
     std::vector<int> arena0, arena1, unassigned;
     for (int i = 0; i < (int)world.spawnPoints.size(); ++i) {
         const auto& sp = world.spawnPoints[i];
@@ -69,7 +51,6 @@ void DuelManager::assignTeamSpawns(const World& world)
         else unassigned.push_back(i);
     }
 
-    // Team A: prefer arena_0, else first unassigned spawn, else first spawn
     int teamAIdx = -1;
     if (!arena0.empty()) {
         unsigned int seed = 12345;
@@ -82,24 +63,20 @@ void DuelManager::assignTeamSpawns(const World& world)
     mTeamASpawnIndex = teamAIdx;
     mTeamASpawn = world.spawnPoints[teamAIdx].position;
 
-    // Team B: prefer arena_1, else nearest spawn that is NOT Team A's spawn
     int teamBIdx = -1;
     if (!arena1.empty()) {
         unsigned int seed = 67890;
         teamBIdx = arena1[randomInt(0, (int)arena1.size() - 1, seed)];
     } else {
-        // Find nearest spawn point that isn't Team A's
         float bestDist = 1e30f;
         for (int i = 0; i < (int)world.spawnPoints.size(); ++i) {
             if (i == teamAIdx) continue;
-            // Prefer using a different unassigned or arena_1 if available
             float d = glm::length(world.spawnPoints[i].position - mTeamASpawn);
             if (d < bestDist) {
                 bestDist = d;
                 teamBIdx = i;
             }
         }
-        // Fallback: if no other spawn, use the same but with offset
         if (teamBIdx < 0) teamBIdx = teamAIdx;
     }
     mTeamBSpawnIndex = teamBIdx;
@@ -121,8 +98,6 @@ void DuelManager::assignTeamSpawns(const World& world)
 glm::vec3 DuelManager::getTeamSpawn(DuelTeam team, int entityIndex, int totalOnTeam) const
 {
     glm::vec3 basePos = (team == DuelTeam::Player) ? mTeamASpawn : mTeamBSpawn;
-
-    // Add small random offset when multiple entities share a spawn
     if (totalOnTeam > 1) {
         unsigned int seed = 99991u + (unsigned int)entityIndex * 7477u;
         float angle = randomFloat(0.0f, 6.2831853f, seed);
@@ -144,7 +119,7 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
     currentMapIndex = 0;
     playerRoundsWon_ = 0;
     npcRoundsWon_ = 0;
-    
+
     playerKills = 0;
     npcKills.assign(config.numNpcs, 0);
     alivePlayerCount = 1;
@@ -152,8 +127,11 @@ void DuelManager::start(const DuelConfig& cfg, Player& player, NpcSystem& npcs, 
     playerStats = DuelStats{};
 
     matchOverCaptured = false;
-    matchOverButtonsShown = false;
-    matchOverTimer = 0.0f;
+    victoryTimer = 0.0f;
+    countdownTimer = 0.0f;
+    currentCountdownNumber = 0;
+    replayReady = false;
+    duelEndState = DuelEndState::None;
 
     npcs.destroyAll();
 
@@ -239,7 +217,6 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
         case DuelPhase::Active:
             timer += dt;
 
-            // timeout = enemies win
             if (config.duelLengthSeconds > 0 &&
                 timer >= config.duelLengthSeconds)
             {
@@ -252,7 +229,6 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
             roundEndTimer -= dt;
             if (roundEndTimer <= 0.0f) {
                 currentRound++;
-
                 resetRoundEntities(player, npcs, world);
                 startCountdown();
             }
@@ -263,11 +239,42 @@ void DuelManager::update(float dt, Player& player, NpcSystem& npcs, World& world
                 matchOverCameraTarget = player.pos;
                 matchOverCaptured = true;
             }
-            if (!matchOverButtonsShown) {
-                matchOverTimer -= dt;
-                if (matchOverTimer <= 0.0f) {
-                    matchOverButtonsShown = true;
+
+            switch (duelEndState) {
+            case DuelEndState::VictoryScreen:
+                victoryTimer -= dt;
+                if (victoryTimer <= 0.0f) {
+                    duelEndState = DuelEndState::Countdown;
+                    countdownTimer = 3.0f;
+                    currentCountdownNumber = 3;
+                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] VictoryScreen -> Countdown");
                 }
+                break;
+
+            case DuelEndState::Countdown:
+            {
+                static int prevCountdownNum = 999;
+                countdownTimer -= dt;
+                currentCountdownNumber = (int)std::ceil(countdownTimer);
+                if (currentCountdownNumber < 0) currentCountdownNumber = 0;
+                if (currentCountdownNumber != prevCountdownNum) {
+                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] Countdown = %d (timer=%.2f)", currentCountdownNumber, countdownTimer);
+                    prevCountdownNum = currentCountdownNumber;
+                }
+                if (countdownTimer <= 0.0f) {
+                    prevCountdownNum = 999;
+                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] Countdown complete (timer=%.2f)", countdownTimer);
+                    duelEndState = DuelEndState::FinalKillReplay;
+                    currentCountdownNumber = 0;
+                    Debug::log(Debug::Category::Duel, "[DUEL FLOW] Entering FinalKillReplay (replayReady=%d)", (int)replayReady);
+                }
+                break;
+            }
+
+            case DuelEndState::FinalKillReplay:
+            case DuelEndState::ReplayMenu:
+            case DuelEndState::None:
+                break;
             }
             break;
     }
@@ -328,6 +335,9 @@ void DuelManager::onEntityDeath(DuelTeam team)
 
 void DuelManager::endRound(DuelTeam winner)
 {
+    Debug::log(Debug::Category::Duel, "[DUEL FLOW] RoundEnd winner=%s scores=%d-%d",
+               winner == DuelTeam::Player ? "PLAYER" : "NPC",
+               playerRoundsWon_, npcRoundsWon_);
     currentPhase = DuelPhase::RoundEnd;
     roundEndTimer = 3.0f;
 
@@ -341,17 +351,12 @@ void DuelManager::endRound(DuelTeam winner)
         npcRoundsWon_++;
     }
 
-    Debug::log(Debug::Category::Duel, "[DUEL] round %d ended winner=%d playerKills=%d",
-               currentRound, (int)winner, playerKills);
+    Debug::log(Debug::Category::Duel, "[DUEL] round %d ended winner=%d playerKills=%d newScores=%d-%d",
+               currentRound, (int)winner, playerKills, playerRoundsWon_, npcRoundsWon_);
 
-    if (playerRoundsWon_ >= config.killsToWin)
+    if (playerRoundsWon_ >= config.killsToWin || npcRoundsWon_ >= config.killsToWin)
     {
-        endMatch();
-        return;
-    }
-
-    if (npcRoundsWon_ >= config.killsToWin)
-    {
+        Debug::log(Debug::Category::Duel, "[DUEL FLOW] RoundEnd -> MatchEnd (killsToWin=%d)", config.killsToWin);
         endMatch();
         return;
     }
@@ -359,6 +364,8 @@ void DuelManager::endRound(DuelTeam winner)
 
 void DuelManager::endMatch()
 {
+    Debug::log(Debug::Category::Duel, "[DUEL FLOW] MatchEnd winner=%s",
+               playerRoundsWon_ >= config.killsToWin ? "PLAYER" : "NPC");
     currentPhase = DuelPhase::MatchEnd;
     playerStats.matchesWon++;
 
@@ -367,20 +374,20 @@ void DuelManager::endMatch()
     else
         matchWinner_ = DuelTeam::NPC;
 
-    matchOverTimer = 3.0f;
-    matchOverButtonsShown = false;
+    duelEndState = DuelEndState::VictoryScreen;
+    victoryTimer = 3.0f;
+    countdownTimer = 0.0f;
+    currentCountdownNumber = 0;
+    replayReady = false;
     matchOverCaptured = false;
-    finalKillReplayActive = false;
-    finalKillReplayLoaded = false;
-    finalKillReplayTime = 0.0f;
     matchEndTick = 0;
     finalKillSavedOnce = false;
 
+    Debug::log(Debug::Category::Duel, "[DUEL FLOW] VictoryScreen start (3s) winner=%s",
+               matchWinner_ == DuelTeam::Player ? "YOU WIN" : "YOU LOSE");
     Debug::log(Debug::Category::Duel, "[DUEL] match ended winner=%s totalKills=%d totalDeaths=%d",
                matchWinner_ == DuelTeam::Player ? "PLAYER" : "NPC",
                playerStats.kills, playerStats.deaths);
-    Debug::log(Debug::Category::Duel, "[DUEL] entering result screen");
-    Debug::log(Debug::Category::Duel, "[DUEL] result screen timer=%.1f", matchOverTimer);
 }
 
 void DuelManager::setMapList(const std::vector<std::string>& maps)
@@ -449,94 +456,168 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
     if (currentPhase != DuelPhase::MatchEnd)
         return DuelMenuAction::None;
 
-    // Ensure GUI edit mode is off so buttons actually fire
     uiSetEditMode(false);
-
-    // Force cursor unlocked for click detection
     glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-
-    // Set active layout for GUI editor
-    GuiEditor::instance().setActiveLayout("config/gui/duel-match-end.json");
 
     float sw = uiScreenW();
     float sh = uiScreenH();
 
-    Debug::log(Debug::Category::Duel, "[DUEL UI] MatchEnd layout=left_panel");
+    // Phase 1: Victory Screen (3 seconds)
+    if (duelEndState == DuelEndState::VictoryScreen) {
+        uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.6f}, "victory-dim");
 
-    // Light full-screen dim so replay stays visible
-    uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.15f}, "duel-end-dim");
+        const char* winnerText = (matchWinner_ == DuelTeam::Player) ? "YOU WIN" : "YOU LOSE";
+        glm::vec4 winnerColor = (matchWinner_ == DuelTeam::Player)
+            ? glm::vec4(0.3f, 1.0f, 0.3f, 1.0f)
+            : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
+        uiDrawText(winnerText, sw * 0.5f - 180.0f, sh * 0.4f, 1.5f, winnerColor);
 
-    // Left-side menu panel
-    float panelX = 40.0f;
-    float panelY = sh * 0.5f - 140.0f;
-    float panelW = 300.0f;
-    float panelH = 290.0f;
-    uiDrawRect({panelX, panelY, panelW, panelH}, {0.0f, 0.0f, 0.0f, 0.75f}, "duel-end-panel");
+        char scoreText[32];
+        snprintf(scoreText, sizeof(scoreText), "%d - %d", playerRoundsWon_, npcRoundsWon_);
+        uiDrawText(scoreText, sw * 0.5f - 60.0f, sh * 0.4f + 80.0f, 0.8f, {1, 0.85f, 0.25f, 1});
 
-    // Winner announcement
-    const char* winnerText = (matchWinner_ == DuelTeam::Player) ? "YOU WIN!" : "NPC WINS!";
-    glm::vec4 winnerColor = (matchWinner_ == DuelTeam::Player)
-        ? glm::vec4(0.3f, 1.0f, 0.3f, 1.0f)
-        : glm::vec4(1.0f, 0.3f, 0.3f, 1.0f);
-    uiDrawText(winnerText, panelX + 20.0f, panelY + 12.0f, 0.85f, winnerColor);
-
-    // Score
-    char scoreText[32];
-    snprintf(scoreText, sizeof(scoreText), "%d - %d", playerRoundsWon_, npcRoundsWon_);
-    uiDrawText(scoreText, panelX + 20.0f, panelY + 58.0f, 0.55f, {1, 0.85f, 0.25f, 1});
-
-    // Stats
-    char statsText[128];
-    snprintf(statsText, sizeof(statsText), "Kills: %d | Deaths: %d | Points: %d | XP: %d",
-             playerStats.kills, playerStats.deaths, playerStats.points, playerStats.xp);
-    uiDrawText(statsText, panelX + 20.0f, panelY + 88.0f, 0.34f, {1, 1, 1, 1});
-
-    bool canShowButtons = matchOverButtonsShown;
-
-    // During result screen phase (before replay starts), show countdown instead of buttons
-    if (!canShowButtons && finalKillReplayTime < 0.5f && matchOverTimer > 0.0f) {
-        char countdownText[64];
-        snprintf(countdownText, sizeof(countdownText), "Match ends in %.0f...", std::ceil(matchOverTimer));
-        uiDrawText(countdownText, panelX + 20.0f, panelY + 125.0f, 0.38f, {1, 1, 1, 0.7f});
         return DuelMenuAction::None;
     }
 
-    // Show buttons after the replay slow-motion phase completes
-    if (!canShowButtons && finalKillReplayActive && finalKillReplayTime > 6.0f) {
-        canShowButtons = true;
-        matchOverButtonsShown = true;
-    }
+    // Phase 2: Countdown (3, 2, 1)
+    if (duelEndState == DuelEndState::Countdown) {
+        uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.6f}, "countdown-dim");
 
-    if (!canShowButtons) {
+        char numText[8];
+        snprintf(numText, sizeof(numText), "%d", currentCountdownNumber);
+        uiDrawText(numText, sw * 0.5f - 30.0f, sh * 0.5f - 40.0f, 2.0f, {1.0f, 1.0f, 1.0f, 1.0f});
+
         return DuelMenuAction::None;
     }
 
-    GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
+    GuiEditor::instance().setActiveLayout("config/gui/duel-match-end.json");
 
-    // Buttons use design-coordinate layout (centered in 1920x1080 design space)
-    {
-        UIRect pr = duelLayout.getRectDesign("Play Again", {830.0f, 460.0f, 260.0f, 44.0f});
-        UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f});
-        if (playBtn.clicked) {
-            return DuelMenuAction::PlayAgain;
+    // Phase 3: Final Kill Replay (auto-playing)
+    if (duelEndState == DuelEndState::FinalKillReplay) {
+        uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.15f}, "fk-bg");
+
+        uiDrawRect({0, sh * 0.3f, sw, 60.0f}, {0.0f, 0.0f, 0.0f, 0.6f}, "fk-header");
+        uiDrawText("FINAL KILL", sw * 0.5f - 120.0f, sh * 0.3f + 10.0f,
+                   1.0f, {1.0f, 0.9f, 0.1f, 1.0f});
+
+        GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
+
+        {
+            UIRect pr = duelLayout.getRectDesign("Play Again", {830.0f, 460.0f, 260.0f, 44.0f});
+            UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f}, "duel-play-again-fk");
+            if (playBtn.clicked) {
+                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Play Again clicked during FinalKillReplay");
+                return DuelMenuAction::PlayAgain;
+            }
         }
+
+        {
+            UIRect er = duelLayout.getRectDesign("Exit To Main Menu", {830.0f, 516.0f, 260.0f, 44.0f});
+            UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f}, "duel-exit-menu-fk");
+            if (exitBtn.clicked) {
+                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Exit To Menu clicked during FinalKillReplay");
+                return DuelMenuAction::ExitToMenu;
+            }
+        }
+
+        {
+            const ReplayExportJob& job = getReplayExportJob();
+            bool exportBusy = (job.state == ReplayExportJob::Capturing || job.state == ReplayExportJob::Encoding);
+            bool exportDone = (job.state == ReplayExportJob::Done);
+            bool exportFailed = (job.state == ReplayExportJob::Failed);
+
+            UIRect sr = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
+
+            const char* btnLabel = "Save Replay";
+            glm::vec4 btnColor = {0.2f, 0.6f, 0.3f, 1.0f};
+            if (exportBusy) {
+                btnLabel = "Saving Replay...";
+                btnColor = {0.5f, 0.5f, 0.2f, 1.0f};
+            } else if (exportDone) {
+                btnLabel = "Replay Saved!";
+                btnColor = {0.2f, 0.8f, 0.3f, 1.0f};
+            } else if (exportFailed) {
+                btnLabel = "Export Failed";
+                btnColor = {0.8f, 0.2f, 0.2f, 1.0f};
+            }
+
+            UIButtonState saveBtn = uiButton(win, btnLabel, sr, btnColor, "duel-save-replay-fk");
+            if (!exportBusy && saveBtn.clicked) {
+                Debug::log(Debug::Category::Duel, "[DUEL FLOW] Save Replay clicked during FinalKillReplay");
+                return DuelMenuAction::SaveReplay;
+            }
+
+            std::string status = getReplayExportStatusText();
+            if (!status.empty()) {
+                uiDrawText(status.c_str(), sr.x - 10.0f, sr.y + sr.h + 4.0f, 0.28f, {1.0f, 1.0f, 1.0f, 0.9f});
+            }
+        }
+
+        // Show fallback message if replay failed to load
+        if (!replayReady && countdownTimer <= 0.0f) {
+            float msgY = sh * 0.3f + 70.0f;
+            uiDrawText("FINAL KILL REPLAY FAILED", sw * 0.5f - 180.0f, msgY,
+                       0.6f, {1.0f, 0.3f, 0.3f, 1.0f});
+        }
+
+        return DuelMenuAction::None;
     }
 
-    {
-        UIRect er = duelLayout.getRectDesign("Exit To Main Menu", {830.0f, 516.0f, 260.0f, 44.0f});
-        UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f});
-        if (exitBtn.clicked) {
-            return DuelMenuAction::ExitToMenu;
-        }
-    }
+    // Phase 4: Replay Menu (buttons visible)
+    if (duelEndState == DuelEndState::ReplayMenu) {
+        uiDrawRect({0, 0, sw, sh}, {0.0f, 0.0f, 0.0f, 0.5f}, "replay-menu-dim");
 
-    // Save Replay button, shown when final kill replay is active
-    if (finalKillReplayActive) {
-        UIRect sr = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
-        UIButtonState saveBtn = uiButton(win, "Save Replay", sr, {0.2f, 0.6f, 0.3f, 1.0f});
-        if (saveBtn.clicked) {
-            return DuelMenuAction::SaveReplay;
+        GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
+
+        {
+            UIRect pr = duelLayout.getRectDesign("Play Again", {830.0f, 460.0f, 260.0f, 44.0f});
+            UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f}, "duel-play-again");
+            if (playBtn.clicked) {
+                return DuelMenuAction::PlayAgain;
+            }
         }
+
+        {
+            UIRect er = duelLayout.getRectDesign("Exit To Main Menu", {830.0f, 516.0f, 260.0f, 44.0f});
+            UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f}, "duel-exit-menu");
+            if (exitBtn.clicked) {
+                return DuelMenuAction::ExitToMenu;
+            }
+        }
+
+        {
+            const ReplayExportJob& job = getReplayExportJob();
+            bool exportBusy = (job.state == ReplayExportJob::Capturing || job.state == ReplayExportJob::Encoding);
+            bool exportDone = (job.state == ReplayExportJob::Done);
+            bool exportFailed = (job.state == ReplayExportJob::Failed);
+
+            UIRect sr = duelLayout.getRectDesign("Save Replay", {830.0f, 572.0f, 260.0f, 44.0f});
+
+            const char* btnLabel = "Save Replay";
+            glm::vec4 btnColor = {0.2f, 0.6f, 0.3f, 1.0f};
+            if (exportBusy) {
+                btnLabel = "Saving Replay...";
+                btnColor = {0.5f, 0.5f, 0.2f, 1.0f};
+            } else if (exportDone) {
+                btnLabel = "Replay Saved!";
+                btnColor = {0.2f, 0.8f, 0.3f, 1.0f};
+            } else if (exportFailed) {
+                btnLabel = "Export Failed";
+                btnColor = {0.8f, 0.2f, 0.2f, 1.0f};
+            }
+
+            UIButtonState saveBtn = uiButton(win, btnLabel, sr, btnColor, "duel-save-replay");
+            if (!exportBusy && saveBtn.clicked) {
+                return DuelMenuAction::SaveReplay;
+            }
+
+            std::string status = getReplayExportStatusText();
+            if (!status.empty()) {
+                uiDrawText(status.c_str(), sr.x - 10.0f, sr.y + sr.h + 4.0f, 0.28f, {1.0f, 1.0f, 1.0f, 0.9f});
+            }
+        }
+
+        return DuelMenuAction::None;
     }
 
     return DuelMenuAction::None;
@@ -551,7 +632,6 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
 
     npcs.destroyAll();
 
-    // Respawn NPCs with saved config
     for (int i = 0; i < config.numNpcs; ++i) {
         glm::vec3 spawnPos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
         npcs.spawnNpc(config.npcDifficulty, spawnPos);
@@ -576,11 +656,11 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     aliveNpcCount = config.numNpcs;
     playerStats = DuelStats{};
     matchOverCaptured = false;
-    matchOverButtonsShown = false;
-    matchOverTimer = 0.0f;
-    finalKillReplayActive = false;
-    finalKillReplayLoaded = false;
-    finalKillReplayTime = 0.0f;
+    victoryTimer = 0.0f;
+    countdownTimer = 0.0f;
+    currentCountdownNumber = 0;
+    replayReady = false;
+    duelEndState = DuelEndState::None;
     matchEndTick = 0;
     finalKillSavedOnce = false;
 
@@ -602,17 +682,14 @@ void DuelManager::stopDuel()
     config.enabled = false;
     playerStats = DuelStats{};
     matchOverCaptured = false;
-    matchOverButtonsShown = false;
-    matchOverTimer = 0.0f;
-    finalKillReplayActive = false;
-    finalKillReplayLoaded = false;
-    finalKillReplayTime = 0.0f;
-    finalKillSlowMoFactor = 1.0f;
+    victoryTimer = 0.0f;
+    countdownTimer = 0.0f;
+    currentCountdownNumber = 0;
+    replayReady = false;
+    duelEndState = DuelEndState::None;
     matchEndTick = 0;
     finalKillSavedOnce = false;
     finalKillReplayPath.clear();
-    finalKillKillerId.clear();
-    finalKillVictimId.clear();
     currentRound = 1;
     playerRoundsWon_ = 0;
     npcRoundsWon_ = 0;

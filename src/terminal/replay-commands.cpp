@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "replay/replay-export.h"
+#include "replay/replay-factory.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -470,10 +471,11 @@ void registerReplayCommands()
     });
 
     Terminal::instance().registerCommand({
-        "replay_export_mp4", "Export a saved replay JSON clip to MP4 video", "replay_export_mp4 [path]",
+        "replay_export_mp4", "Open replay picker, or export path directly", "replay_export_mp4 [path]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                Terminal::instance().addLog("[ERROR] Usage: replay_export_mp4 <path-to-clip.json>");
+                Terminal::instance().addLog("[REPLAY] Scanning replays...");
+                Terminal::instance().startExportPicker();
                 return;
             }
             std::string path = args[0];
@@ -482,7 +484,72 @@ void registerReplayCommands()
                 return;
             }
             if (startReplayExport(path, 1280, 720)) {
-                Terminal::instance().addLog("[REPLAY] Export started for: " + path);
+                Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
+            } else {
+                Terminal::instance().addLog("[ERROR] Failed to start export");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_export_latest", "Export the newest replay to MP4", "replay_export_latest",
+        [](const std::vector<std::string>&) {
+            std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[ERROR] No replays found");
+                return;
+            }
+            std::string path = clips.front();
+            Terminal::instance().addLog("[REPLAY EXPORT] exporting newest: " + path);
+            if (startReplayExport(path, 1280, 720)) {
+                Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
+            } else {
+                Terminal::instance().addLog("[ERROR] Failed to start export");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_export_last_duel", "Export the most recent duel replay to MP4", "replay_export_last_duel",
+        [](const std::vector<std::string>&) {
+            std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[ERROR] No replays found");
+                return;
+            }
+            // Filter for duel-related files (contain duel in the clip path or are mclip files from duel)
+            std::string* found = nullptr;
+            for (auto& c : clips) {
+                if (c.find("duel") != std::string::npos ||
+                    c.find("mclip") != std::string::npos) {
+                    found = &c;
+                    break;
+                }
+            }
+            if (!found) found = &clips.front();
+            std::string path = *found;
+            Terminal::instance().addLog("[REPLAY EXPORT] exporting last duel: " + path);
+            if (startReplayExport(path, 1280, 720)) {
+                Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
+            } else {
+                Terminal::instance().addLog("[ERROR] Failed to start export");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_export_finalkill", "Export the most recent final kill replay to MP4", "replay_export_finalkill",
+        [](const std::vector<std::string>&) {
+            std::vector<ReplayClipInfo> clips = scanSavedClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[ERROR] No clips found");
+                return;
+            }
+            // Use the first (newest) clip
+            std::string path = clips.front().path;
+            Terminal::instance().addLog("[REPLAY EXPORT] exporting final kill: " + path);
+            if (startReplayExport(path, 1280, 720)) {
+                Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
             }

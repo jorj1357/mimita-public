@@ -131,5 +131,24 @@
         "startRadius": 0.18,
 
         "endRadius": 0.27
+    },
+
+    "movementDashBurst": {
+        "enabled": true,
+        "lifetimeTicks": 8,
+        "lengthStart": 0.5,
+        "lengthEnd": 2.5,
+        "radiusStart": 0.18,
+        "radiusEnd": 0.35,
+        "brightnessStart": 2.5,
+        "brightnessEnd": 0.0,
+        "alphaStart": 0.85,
+        "alphaEnd": 0.0,
+        "colorStart": [1.0, 1.0, 1.0],
+        "colorEnd": [0.75, 0.9, 1.0],
+        "speedScaling": true,
+        "speedThreshold": 12.0,
+        "speedScaleMin": 1.0,
+        "speedScaleMax": 2.5
     }
 }

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <fstream>
 #include <cmath>
+#include <filesystem>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -22,6 +23,8 @@
 #include "camera.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "replay/replay-export.h"
+#include "terminal/terminal-state.h"
 
 static std::string glfwToKeyName(int key) {
     switch (key) {
@@ -1008,6 +1011,78 @@ void Terminal::addHistory(const std::string& input) {
     mHistoryIndex = -1;
 }
 
+void Terminal::startExportPicker() {
+    mExportPickerReplays.clear();
+    mExportPickerIndex = 0;
+    mExportPickerScroll = 0;
+
+    std::vector<std::string> paths;
+    std::error_code ec;
+    const std::filesystem::path baseDir = "replays";
+    if (std::filesystem::exists(baseDir, ec)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(baseDir, ec)) {
+            if (ec || !entry.is_regular_file()) continue;
+            const std::string name = entry.path().filename().string();
+            if (name.find("-validation") != std::string::npos) continue;
+            if ((name.size() > 5 && name.rfind(".json") == name.size() - 5) ||
+                (name.size() > 11 && name.rfind(".mclip.json") == name.size() - 11)) {
+                paths.push_back(entry.path().string());
+            }
+        }
+    }
+
+    // Sort by modified time ascending (oldest first)
+    std::sort(paths.begin(), paths.end(), [](const std::string& a, const std::string& b) {
+        return std::filesystem::last_write_time(a) < std::filesystem::last_write_time(b);
+    });
+
+    for (const std::string& p : paths) {
+        ReplayPickerEntry e;
+        e.path = p;
+        e.filename = std::filesystem::path(p).filename().string();
+        e.fileSize = std::filesystem::file_size(p, ec);
+
+        // Try to load clip info for tick count
+        ReplayClip clip;
+        if (clip.load(p)) {
+            e.tickCount = clip.header.tickCount;
+            e.durationSec = (double)e.tickCount / 60.0;
+        }
+
+        // Format date
+        auto ft = std::filesystem::last_write_time(p, ec);
+        if (!ec) {
+            auto sft = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ft - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+            std::time_t t = std::chrono::system_clock::to_time_t(sft);
+            std::tm tm{};
+#ifdef _WIN32
+            localtime_s(&tm, &t);
+#else
+            localtime_r(&t, &tm);
+#endif
+            char buf[32];
+            std::strftime(buf, sizeof(buf), "%m/%d/%Y %I:%M %p", &tm);
+            e.dateStr = buf;
+        }
+
+        mExportPickerReplays.push_back(e);
+    }
+
+    addLog("[REPLAY PICKER] found " + std::to_string(mExportPickerReplays.size()) + " replays");
+    if (!mExportPickerReplays.empty())
+        mExportPickerIndex = (int)mExportPickerReplays.size() - 1; // start at newest
+    mExportPickerActive = true;
+    mExportPickerScroll = std::max(0, (int)mExportPickerReplays.size() - 20);
+}
+
+void Terminal::closeExportPicker() {
+    mExportPickerActive = false;
+    mExportPickerReplays.clear();
+    mExportPickerIndex = 0;
+    mExportPickerScroll = 0;
+}
+
 void Terminal::executeCurrent() {
     std::string input = mInputLine;
     addLog("] " + input);
@@ -1264,6 +1339,58 @@ void Terminal::handleChar(unsigned int codepoint) {
 void Terminal::handleKey(int key, int mods) {
     if (!mOpen) return;
 
+    // Route keys to export picker when active
+    if (mExportPickerActive) {
+        int count = (int)mExportPickerReplays.size();
+        if (key == GLFW_KEY_ESCAPE) {
+            closeExportPicker();
+            addLog("[REPLAY PICKER] cancelled");
+        } else if (key == GLFW_KEY_ENTER) {
+            if (count > 0 && mExportPickerIndex >= 0 && mExportPickerIndex < count) {
+                std::string path = mExportPickerReplays[mExportPickerIndex].path;
+                addLog("[REPLAY PICKER] selected: " + path);
+                closeExportPicker();
+
+                // Start export
+                if (!std::filesystem::exists(path)) {
+                    addLog("[ERROR] File not found: " + path);
+                    return;
+                }
+                if (startReplayExport(path, 1280, 720)) {
+                    addLog("[REPLAY EXPORT] started: " + path);
+                } else {
+                    addLog("[ERROR] Failed to start export");
+                }
+            }
+        } else if (key == GLFW_KEY_UP) {
+            if (mExportPickerIndex > 0) {
+                mExportPickerIndex--;
+                if (mExportPickerIndex < mExportPickerScroll)
+                    mExportPickerScroll = mExportPickerIndex;
+            }
+        } else if (key == GLFW_KEY_DOWN) {
+            if (mExportPickerIndex < count - 1) {
+                mExportPickerIndex++;
+                if (mExportPickerIndex >= mExportPickerScroll + 20)
+                    mExportPickerScroll = mExportPickerIndex - 19;
+            }
+        } else if (key == GLFW_KEY_PAGE_UP) {
+            mExportPickerIndex = std::max(0, mExportPickerIndex - 10);
+            mExportPickerScroll = std::max(0, mExportPickerIndex);
+        } else if (key == GLFW_KEY_PAGE_DOWN) {
+            mExportPickerIndex = std::min(count - 1, mExportPickerIndex + 10);
+            if (mExportPickerIndex >= mExportPickerScroll + 20)
+                mExportPickerScroll = mExportPickerIndex - 19;
+        } else if (key == GLFW_KEY_HOME) {
+            mExportPickerIndex = 0;
+            mExportPickerScroll = 0;
+        } else if (key == GLFW_KEY_END) {
+            mExportPickerIndex = count - 1;
+            mExportPickerScroll = std::max(0, count - 20);
+        }
+        return;
+    }
+
     updateSearch();
 
     if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) {
@@ -1359,6 +1486,11 @@ void Terminal::handleScroll(double yOffset)
 void Terminal::render() {
     if (!mOpen || !mWindow) return;
 
+    if (mExportPickerActive) {
+        renderExportPicker();
+        return;
+    }
+
     updateSearch();
 
     uiBeginFrame(mWindow, "terminal");
@@ -1366,13 +1498,9 @@ void Terminal::render() {
     float fbW = uiScreenW();
     float fbH = uiScreenH();
 
-    // Fullscreen semi-transparent black background
     uiDrawRect({0, 0, fbW, fbH}, {0.0f, 0.0f, 0.0f, 0.92f}, "terminal-bg");
-
-    // Red accent line at top
     uiDrawRect({0, 0, fbW, 3}, {0.85f, 0.05f, 0.05f, 0.9f}, "terminal-accent");
 
-    // Draw scrollback
     float lineHeight = 22.0f;
     float inputLineY = fbH - 40.0f;
     float startY = inputLineY - 12.0f - lineHeight;
@@ -1403,30 +1531,80 @@ void Terminal::render() {
         uiDrawText(scrollText, fbW - 330.0f, 20.0f, 0.30f, {1.0f, 0.8f, 0.25f, 1.0f});
     }
 
-    // Autocomplete menu (draw before input line background)
     drawAutocompleteMenu(inputLineY, lineHeight);
 
-    // Input line background
     uiDrawRect({0, inputLineY - 6.0f, fbW, 36.0f}, {0.08f, 0.08f, 0.08f, 0.95f}, "terminal-input-bg");
     uiDrawRect({0, inputLineY - 6.0f, fbW, 1}, {0.85f, 0.05f, 0.05f, 0.7f}, "terminal-input-accent");
 
-    // Prompt text
     float promptX = 16.0f;
     std::string prompt = "] " + mInputLine;
     uiDrawText(prompt.c_str(), promptX, inputLineY, 0.42f, {0.95f, 0.95f, 0.95f, 1.0f});
 
-    // Ghost text (inline autocomplete)
     float inputEndX = promptX + uiMeasureText(prompt.c_str(), 0.42f);
     if (!mGhostSuffix.empty()) {
         uiDrawText(mGhostSuffix.c_str(), inputEndX, inputLineY, 0.42f, {0.4f, 0.4f, 0.45f, 0.7f});
     }
 
-    // Blinking cursor
     mCursorBlink += 0.05f;
     bool cursorVisible = fmodf(mCursorBlink, 1.0f) < 0.6f;
     if (cursorVisible) {
         uiDrawText("_", inputEndX, inputLineY, 0.42f, {0.95f, 0.95f, 0.95f, 1.0f});
     }
+
+    uiEndFrame();
+}
+
+void Terminal::renderExportPicker() {
+    uiBeginFrame(mWindow, "export-picker");
+
+    float fbW = uiScreenW();
+    float fbH = uiScreenH();
+
+    uiDrawRect({0, 0, fbW, fbH}, {0.0f, 0.0f, 0.0f, 0.92f}, "picker-bg");
+    uiDrawRect({0, 0, fbW, 3}, {0.2f, 0.6f, 0.3f, 0.9f}, "picker-accent");
+
+    float lineHeight = 22.0f;
+    float titleY = 16.0f;
+
+    uiDrawText("[ REPLAY EXPORT ]", 16.0f, titleY, 0.50f, {0.2f, 0.9f, 0.3f, 1.0f});
+
+    int count = (int)mExportPickerReplays.size();
+    int visibleLines = (int)((fbH - 80.0f) / lineHeight) - 2;
+    int endIdx = std::min(count, mExportPickerScroll + visibleLines);
+
+    float y = titleY + 36.0f;
+    for (int i = mExportPickerScroll; i < endIdx; i++) {
+        const ReplayPickerEntry& e = mExportPickerReplays[i];
+        bool selected = (i == mExportPickerIndex);
+
+        // Highlight bar for selected
+        if (selected) {
+            float textW = uiMeasureText(e.filename.c_str(), 0.38f) + 400.0f;
+            uiDrawRect({14.0f, y - 2.0f, textW, lineHeight}, {0.2f, 0.3f, 0.4f, 0.6f}, "picker-sel");
+        }
+
+        glm::vec4 textColor = selected
+            ? glm::vec4{1.0f, 1.0f, 1.0f, 1.0f}
+            : glm::vec4{0.7f, 0.8f, 0.9f, 0.8f};
+        uiDrawText(e.filename.c_str(), 16.0f, y, 0.38f, textColor);
+
+        // Info line
+        char info[128];
+        snprintf(info, sizeof(info), "%s  |  %.1f KB  |  %.1f sec",
+                 e.dateStr.c_str(),
+                 (double)e.fileSize / 1024.0,
+                 e.durationSec);
+        float infoX = 16.0f + uiMeasureText(e.filename.c_str(), 0.38f) + 24.0f;
+        uiDrawText(info, infoX, y, 0.30f, {0.5f, 0.6f, 0.7f, 0.7f});
+
+        y += lineHeight;
+    }
+
+    // Navigation help
+    char nav[256];
+    snprintf(nav, sizeof(nav),
+             "\x18\x19 Navigate  |  PgUp/PgDn Page  |  Home/End Edges  |  Enter Export  |  Esc Cancel");
+    uiDrawText(nav, 16.0f, fbH - 24.0f, 0.30f, {0.5f, 0.5f, 0.5f, 0.7f});
 
     uiEndFrame();
 }

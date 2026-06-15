@@ -1068,6 +1068,7 @@ bool ReplayRecorder::exportToBinary(const std::string& path) const {
 // ============================================================
 
 bool ReplayPlayer::loadFromJSON(const std::string& path) {
+    printf("[REPLAY] loading clip from %s\n", path.c_str());
     ReplayClip clip;
     if (clip.load(path)) {
         mClip = std::move(clip);
@@ -1077,11 +1078,12 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         mPlaybackTick = 0.0f;
         mLastEventTick = -1;
         mOutfitPath.clear();
-        printf("[REPLAY] Loaded %zu scene frames from %s\n",
-               mClip.sceneFrames.size(), path.c_str());
+        printf("[REPLAY] clip loaded path=%s sceneFrames=%zu frames=%zu header.tickCount=%u\n",
+               path.c_str(), mClip.sceneFrames.size(), mFrames.size(), mHeader.tickCount);
         return true;
     }
 
+    printf("[REPLAY] clip.load() returned false, trying JSON parse for %s\n", path.c_str());
     std::ifstream file(path);
     if (!file.is_open()) {
         printf("[REPLAY] Could not open %s\n", path.c_str());
@@ -1330,6 +1332,7 @@ bool ReplayPlayer::preloadAssets()
 }
 
 void ReplayPlayer::beginPlayback() {
+    printf("[REPLAY] beginPlayback called tickCount=%u currentTick=%u\n", mHeader.tickCount, mCurrentTick);
     mPlaying = true;
     mPaused = false;
     mCurrentTick = 0;
@@ -1337,7 +1340,8 @@ void ReplayPlayer::beginPlayback() {
     mLastEventTick = -1;
     mTriggeredEffects.clear();
     mTriggeredSounds.clear();
-    printf("[REPLAY] Playback started  ticks=%u\n", mHeader.tickCount);
+    printf("[REPLAY] Playback started ticks=%u currentTick=%u isPlaying=%d\n",
+           mHeader.tickCount, mCurrentTick, (int)mPlaying);
 }
 
 void ReplayPlayer::stopPlayback() {

@@ -36,6 +36,18 @@
 
 extern TextureStore gTextures;
 
+GLBDebugData gGLBDebug;
+
+void GLBDebugData::clear()
+{
+    materials.clear();
+    images.clear();
+    lights.clear();
+    meshCount = 0;
+    totalPrimitives = 0;
+    loaded = false;
+}
+
 namespace {
 
 #ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
@@ -193,12 +205,86 @@ bool validateAccessor(
     return true;
 }
 
-GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
+GLuint loadExternalImage(const std::string& uri, const std::string& glbDir)
 {
+    printf("[TEXTURE SEARCH] trying external URI: %s\n", uri.c_str());
+
+    // Try URI as-is relative to CWD
+    std::string tryPath = resolveAssetPath(uri);
+    if (!tryPath.empty())
+    {
+        GLuint tex = gTextures.getPath(tryPath, false);
+        if (tex)
+        {
+            printf("[TEXTURE SEARCH] FOUND %s\n", tryPath.c_str());
+            return tex;
+        }
+    }
+
+    // Try relative to GLB directory
+    if (!glbDir.empty())
+    {
+        std::string relPath = glbDir + "/" + uri;
+        printf("[TEXTURE SEARCH] trying %s\n", relPath.c_str());
+        GLuint tex = gTextures.getPath(relPath, false);
+        if (tex)
+        {
+            printf("[TEXTURE SEARCH] FOUND %s\n", relPath.c_str());
+            return tex;
+        }
+    }
+
+    // Try assets/textures/<filename>
+    size_t slashPos = uri.find_last_of("/\\");
+    std::string filename = (slashPos != std::string::npos) ? uri.substr(slashPos + 1) : uri;
+    std::string texPath = "assets/textures/" + filename;
+    printf("[TEXTURE SEARCH] trying %s\n", texPath.c_str());
+    GLuint tex = gTextures.getPath(texPath, false);
+    if (tex)
+    {
+        printf("[TEXTURE SEARCH] FOUND %s\n", texPath.c_str());
+        return tex;
+    }
+
+    // Try without extension
+    size_t dotPos = filename.rfind('.');
+    if (dotPos != std::string::npos)
+    {
+        std::string nameOnly = filename.substr(0, dotPos);
+        printf("[TEXTURE SEARCH] trying %s\n", nameOnly.c_str());
+        tex = gTextures.get(nameOnly);
+        if (tex)
+        {
+            printf("[TEXTURE SEARCH] FOUND assets/textures/%s.png\n", nameOnly.c_str());
+            return tex;
+        }
+    }
+
+    printf("[TEXTURE SEARCH] NOT FOUND %s\n", uri.c_str());
+    return 0;
+}
+
+GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::string& glbDir)
+{
+    // Handle non-embedded (external) images
+    if (!image.uri.empty() && (image.image.empty() || image.width <= 0 || image.height <= 0))
+    {
+        printf("[GLB IMAGE] index=%d uri=%s external image; trying file load\n",
+               imageIndex, image.uri.c_str());
+        return loadExternalImage(image.uri, glbDir);
+    }
+
     if (image.image.empty() || image.width <= 0 || image.height <= 0)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] image %d invalid data size=%zu dims=%dx%d\n",
+        printf("[GLB TEXTURE WARNING] image %d invalid data size=%zu dims=%dx%d\n",
                 imageIndex, image.image.size(), image.width, image.height);
+        // Try external URI as fallback
+        if (!image.uri.empty())
+        {
+            printf("[GLB TEXTURE WARNING] image %d has uri=%s; trying external load\n",
+                   imageIndex, image.uri.c_str());
+            return loadExternalImage(image.uri, glbDir);
+        }
         return 0;
     }
 
@@ -262,9 +348,7 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
     // Minification = texture is smaller on screen than in memory. Use mipmaps.
     MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
 
-    // Magnification = texture is larger on screen than in memory. NEAREST preserves a
-    // crisp PS2-ish/pixel edge; switch to GL_LINEAR for smoother texture enlargement.
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
 
     MIMITA_GL_CALL(glGenerateMipmap(GL_TEXTURE_2D));
     Debug::log(Debug::Category::GLB, "[TEXTURE] mipmaps generated for GLB texture tex=%u\n", tex);
@@ -275,7 +359,7 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex)
         MIMITA_GL_CALL(glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso));
         if (maxAniso > 1.0f)
         {
-            GLfloat useAniso = maxAniso < 4.0f ? maxAniso : 4.0f;
+            GLfloat useAniso = maxAniso < 16.0f ? maxAniso : 16.0f;
             MIMITA_GL_CALL(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, useAniso));
             Debug::log(Debug::Category::GLB, "[TEXTURE] anisotropic filtering %.1fx applied to GLB texture\n", useAniso);
         }
@@ -482,13 +566,21 @@ void appendPrimitive(
         if (!validateAccessor(model, uvIt->second, "TEXCOORD_0", meshIndex, primitiveIndex,
                               TINYGLTF_TYPE_VEC2, TINYGLTF_COMPONENT_TYPE_FLOAT, &uvAccessor))
         {
-            GLB_LOG("[GLB WARNING] mesh=%d prim=%d invalid TEXCOORD_0; using uv=(0,0)\n",
+            printf("[GLB UV WARNING] mesh=%d prim=%d invalid TEXCOORD_0; using uv=(0,0)\n",
                     meshIndex, primitiveIndex);
             uvAccessor = nullptr;
         }
+        else if (uvAccessor && uvAccessor->count > 0)
+        {
+            glm::vec2 uv0 = readVec2(model, *uvAccessor, 0, {0,0});
+            glm::vec2 uv1 = readVec2(model, *uvAccessor, std::min((size_t)1, uvAccessor->count - 1), {0,0});
+            printf("[GLB UV] mesh=%d prim=%d hasTexcoord0=yes uvCount=%zu vertexCount=%zu uv0=(%.4f,%.4f) uv1=(%.4f,%.4f)\n",
+                   meshIndex, primitiveIndex, uvAccessor->count, posAccessor->count,
+                   uv0.x, uv0.y, uv1.x, uv1.y);
+        }
     }
     else
-        GLB_LOG("[GLB WARNING] mesh=%d prim=%d missing TEXCOORD_0; using uv=(0,0)\n", meshIndex, primitiveIndex);
+        printf("[GLB UV] mesh=%d prim=%d hasTexcoord0=no; using uv=(0,0)\n", meshIndex, primitiveIndex);
 
     const tinygltf::Accessor* indexAccessor = nullptr;
     if (primitive.indices >= 0)
@@ -745,7 +837,7 @@ Mesh loadOBJ(const std::string& path)
     return mesh;
 }
 
-Mesh loadGLB(const std::string& path)
+Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/)
 {
     std::string resolvedPath = resolveAssetPath(path);
     GLB_LOG("[GLB] path = %s\n", resolvedPath.c_str());
@@ -795,44 +887,130 @@ Mesh loadGLB(const std::string& path)
         }
     }
 
+    // Derive GLB directory for external texture resolution
+    std::string glbDir;
+    {
+        size_t slashPos = resolvedPath.find_last_of("/\\");
+        if (slashPos != std::string::npos)
+            glbDir = resolvedPath.substr(0, slashPos);
+    }
+
     std::vector<GLuint> imageTextures(model.images.size(), 0);
     for (size_t i = 0; i < model.images.size(); ++i)
     {
-        GLB_LOG("[GLB] uploading image %zu/%zu\n", i + 1, model.images.size());
-        imageTextures[i] = uploadGLBImage(model.images[i], (int)i);
+        const tinygltf::Image& img = model.images[i];
+        bool embedded = img.bufferView >= 0;
+        printf("[GLB IMAGE] index=%zu name=%s width=%d height=%d components=%d embedded=%s bv=%d\n",
+               i, img.name.c_str(), img.width, img.height, img.component,
+               embedded ? "yes" : "no", img.bufferView);
+        imageTextures[i] = uploadGLBImage(img, (int)i, glbDir);
     }
+
+    // Temp storage for solid-color textures (created before mesh exists)
+    std::vector<GLuint> colorTextures;
 
     std::vector<GLuint> materialTextures(model.materials.size(), 0);
     for (size_t i = 0; i < model.materials.size(); ++i)
     {
         const tinygltf::Material& mat = model.materials[i];
-        int texIndex = mat.pbrMetallicRoughness.baseColorTexture.index;
-        GLB_LOG("[GLB] material %zu name=%s baseColorTexture=%d\n", i, mat.name.c_str(), texIndex);
+
+        int baseColorTexIndex = mat.pbrMetallicRoughness.baseColorTexture.index;
+        const std::vector<double>& bcf = mat.pbrMetallicRoughness.baseColorFactor;
+        printf("[GLB MATERIAL] material=%zu name=%s baseColorTexture=%d baseColorFactor=[%.2f,%.2f,%.2f,%.2f]\n",
+               i, mat.name.c_str(), baseColorTexIndex,
+               bcf.size() >= 4 ? bcf[0] : 1.0,
+               bcf.size() >= 4 ? bcf[1] : 1.0,
+               bcf.size() >= 4 ? bcf[2] : 1.0,
+               bcf.size() >= 4 ? bcf[3] : 1.0);
+
+        const auto& pbr = mat.pbrMetallicRoughness;
+        int texIndex = pbr.baseColorTexture.index;
+
         if (texIndex >= 0 && texIndex < (int)model.textures.size())
         {
             int imageIndex = model.textures[texIndex].source;
-            GLB_LOG("[GLB] material %zu texture=%d sourceImage=%d\n", i, texIndex, imageIndex);
+            printf("[GLB MATERIAL] material=%zu textureIndex=%d sourceImage=%d\n",
+                   i, texIndex, imageIndex);
             if (imageIndex >= 0 && imageIndex < (int)imageTextures.size())
+            {
                 materialTextures[i] = imageTextures[imageIndex];
+            }
             else
-                GLB_LOG("[GLB WARNING] material %zu texture source image out of range image=%d images=%zu\n",
-                        i, imageIndex, imageTextures.size());
+            {
+                printf("[GLB WARNING] material=%zu texture source image out of range image=%d images=%zu\n",
+                       i, imageIndex, imageTextures.size());
+            }
         }
         else if (texIndex >= 0)
         {
-            GLB_LOG("[GLB WARNING] material %zu texture index out of range texture=%d textures=%zu\n",
-                    i, texIndex, model.textures.size());
+            printf("[GLB WARNING] material=%zu texture index out of range texture=%d textures=%zu\n",
+                   i, texIndex, model.textures.size());
         }
+
         if (!materialTextures[i])
         {
-            GLB_LOG("[GLB TEXTURE WARNING] material %zu (%s) has no baseColor texture; using default.png\n", i, mat.name.c_str());
-            materialTextures[i] = gTextures.get("default");
+            bool hasColorFactor = bcf.size() >= 3;
+            if (hasColorFactor)
+            {
+                float r = (float)(bcf.size() >= 1 ? bcf[0] : 1.0);
+                float g = (float)(bcf.size() >= 2 ? bcf[1] : 1.0);
+                float b = (float)(bcf.size() >= 3 ? bcf[2] : 1.0);
+                float a = (float)(bcf.size() >= 4 ? bcf[3] : 1.0);
+
+                printf("[GLB MATERIAL] material=%zu (%s) no texture; generating 1x1 from baseColorFactor (%.2f,%.2f,%.2f,%.2f)\n",
+                       i, mat.name.c_str(), r, g, b, a);
+
+                GLuint tex = 0;
+                glGenTextures(1, &tex);
+                if (tex)
+                {
+                    glBindTexture(GL_TEXTURE_2D, tex);
+                    unsigned char pixels[4];
+                    pixels[0] = (unsigned char)(r * 255.0f);
+                    pixels[1] = (unsigned char)(g * 255.0f);
+                    pixels[2] = (unsigned char)(b * 255.0f);
+                    pixels[3] = (unsigned char)(a * 255.0f);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    materialTextures[i] = tex;
+                    colorTextures.push_back(tex);
+                }
+                else
+                {
+                    printf("[GLB WARNING] material=%zu failed to create solid color texture; using default.png\n", i);
+                    materialTextures[i] = gTextures.get("default");
+                }
+            }
+            else
+            {
+                printf("[GLB TEXTURE WARNING] material=%zu (%s) has no baseColor texture and no baseColorFactor; using default.png\n",
+                       i, mat.name.c_str());
+                materialTextures[i] = gTextures.get("default");
+            }
         }
-        GLB_LOG("[GLB] material %zu name=%s texture=%u\n", i, mat.name.c_str(), materialTextures[i]);
+
+        // Check KHR_texture_transform
+        const auto& bct = pbr.baseColorTexture;
+        auto texExtIt = bct.extensions.find("KHR_texture_transform");
+        if (texExtIt != bct.extensions.end())
+        {
+            const tinygltf::Value& extVal = texExtIt->second;
+            printf("[GLB MATERIAL] material=%zu KHR_texture_transform present\n", i);
+        }
+
+        printf("[GLB MATERIAL] material=%zu name=%s texture=%u\n", i, mat.name.c_str(), materialTextures[i]);
     }
 
     Mesh mesh;
     for (GLuint texture : imageTextures)
+    {
+        if (texture)
+            mesh.ownedTextures.push_back(texture);
+    }
+    for (GLuint texture : colorTextures)
     {
         if (texture)
             mesh.ownedTextures.push_back(texture);
@@ -877,6 +1055,172 @@ Mesh loadGLB(const std::string& path)
     if (merged.size() != mesh.batches.size())
         GLB_LOG("[GLB] merged material batches %zu -> %zu to reduce texture binds\n", mesh.batches.size(), merged.size());
     mesh.batches = merged;
+
+    // Store GLB debug data
+    {
+        gGLBDebug.clear();
+        gGLBDebug.meshCount = (int)model.meshes.size();
+        gGLBDebug.loaded = true;
+
+        for (size_t i = 0; i < model.materials.size(); ++i)
+        {
+            const tinygltf::Material& mat = model.materials[i];
+            const auto& pbr = mat.pbrMetallicRoughness;
+            GLBMaterialInfo mi;
+            mi.index = (int)i;
+            mi.name = mat.name;
+            mi.baseColorTextureIndex = pbr.baseColorTexture.index;
+            mi.hasTexture = mi.baseColorTextureIndex >= 0;
+            mi.hasColorFactor = pbr.baseColorFactor.size() >= 3;
+            for (int k = 0; k < 4 && k < (int)pbr.baseColorFactor.size(); ++k)
+                mi.baseColorFactor[k] = pbr.baseColorFactor[k];
+            for (int k = pbr.baseColorFactor.size(); k < 4; ++k)
+                mi.baseColorFactor[k] = (k == 3) ? 1.0 : 0.0;
+
+            mi.hasKhrTextureTransform = false;
+            auto extIt = pbr.baseColorTexture.extensions.find("KHR_texture_transform");
+            if (extIt != pbr.baseColorTexture.extensions.end())
+            {
+                mi.hasKhrTextureTransform = true;
+                const tinygltf::Value& extVal = extIt->second;
+                if (extVal.IsObject())
+                {
+                    tinygltf::Value::Object extObj = extVal.Get<tinygltf::Value::Object>();
+                    auto offIt = extObj.find("offset");
+                    if (offIt != extObj.end() && offIt->second.IsArray())
+                    {
+                        tinygltf::Value::Array arr = offIt->second.Get<tinygltf::Value::Array>();
+                        if (arr.size() >= 2)
+                        {
+                            mi.texTransformOffset[0] = arr[0].GetNumberAsDouble();
+                            mi.texTransformOffset[1] = arr[1].GetNumberAsDouble();
+                        }
+                    }
+                    auto scaleIt = extObj.find("scale");
+                    if (scaleIt != extObj.end() && scaleIt->second.IsArray())
+                    {
+                        tinygltf::Value::Array arr = scaleIt->second.Get<tinygltf::Value::Array>();
+                        if (arr.size() >= 2)
+                        {
+                            mi.texTransformScale[0] = arr[0].GetNumberAsDouble();
+                            mi.texTransformScale[1] = arr[1].GetNumberAsDouble();
+                        }
+                    }
+                }
+            }
+            gGLBDebug.materials.push_back(mi);
+        }
+
+        for (size_t i = 0; i < model.images.size(); ++i)
+        {
+            const tinygltf::Image& img = model.images[i];
+            GLBImageInfo ii;
+            ii.index = (int)i;
+            ii.name = img.name;
+            ii.width = img.width;
+            ii.height = img.height;
+            ii.components = img.component;
+            ii.embedded = img.bufferView >= 0;
+            ii.uri = img.uri;
+            gGLBDebug.images.push_back(ii);
+        }
+
+        // Import KHR_lights_punctual if present
+        {
+            auto lightsExtIt = model.extensions.find("KHR_lights_punctual");
+            if (lightsExtIt != model.extensions.end())
+            {
+                const tinygltf::Value& lightsExt = lightsExtIt->second;
+                if (lightsExt.IsObject())
+                {
+                    tinygltf::Value::Object lightsData = lightsExt.Get<tinygltf::Value::Object>();
+                    auto lightsArrayIt = lightsData.find("lights");
+                    if (lightsArrayIt != lightsData.end() && lightsArrayIt->second.IsArray())
+                    {
+                        tinygltf::Value::Array lightsArr = lightsArrayIt->second.Get<tinygltf::Value::Array>();
+                        for (size_t li = 0; li < lightsArr.size(); ++li)
+                        {
+                            const tinygltf::Value& lv = lightsArr[li];
+                            if (!lv.IsObject()) continue;
+                            tinygltf::Value::Object l = lv.Get<tinygltf::Value::Object>();
+                            GLBLightInfo info;
+                            auto nameIt = l.find("name");
+                            info.name = (nameIt != l.end() && nameIt->second.IsString())
+                                ? nameIt->second.Get<std::string>() : ("light_" + std::to_string(li));
+                            auto typeIt = l.find("type");
+                            info.type = (typeIt != l.end() && typeIt->second.IsString())
+                                ? typeIt->second.Get<std::string>() : "point";
+                            auto colorIt = l.find("color");
+                            if (colorIt != l.end() && colorIt->second.IsArray())
+                            {
+                                tinygltf::Value::Array cArr = colorIt->second.Get<tinygltf::Value::Array>();
+                                for (int k = 0; k < 3 && k < (int)cArr.size(); ++k)
+                                    info.color[k] = cArr[k].GetNumberAsDouble();
+                            }
+                            auto intensityIt = l.find("intensity");
+                            info.intensity = (intensityIt != l.end() && intensityIt->second.IsNumber())
+                                ? intensityIt->second.Get<double>() : 1.0;
+                            auto rangeIt = l.find("range");
+                            info.range = (rangeIt != l.end() && rangeIt->second.IsNumber())
+                                ? rangeIt->second.Get<double>() : 0.0;
+                            info.position[0] = info.position[1] = info.position[2] = 0.0;
+                            info.direction[0] = info.direction[1] = info.direction[2] = 0.0;
+                            info.innerConeAngle = 0.0;
+                            info.outerConeAngle = 0.0;
+                            if (info.type == "spot")
+                            {
+                                auto innerIt = l.find("innerConeAngle");
+                                info.innerConeAngle = (innerIt != l.end() && innerIt->second.IsNumber())
+                                    ? innerIt->second.Get<double>() : 0.0;
+                                auto outerIt = l.find("outerConeAngle");
+                                info.outerConeAngle = (outerIt != l.end() && outerIt->second.IsNumber())
+                                    ? outerIt->second.Get<double>() : 0.7853981633974483;
+                            }
+                            gGLBDebug.lights.push_back(info);
+                            printf("[GLB LIGHT] imported light=%zu name=%s type=%s intensity=%.2f range=%.2f\n",
+                                   li, info.name.c_str(), info.type.c_str(), info.intensity, info.range);
+                        }
+                    }
+                }
+            }
+        }
+
+        // For each node, check if it references a light (KHR_lights_punctual node extension)
+        for (size_t ni = 0; ni < model.nodes.size(); ++ni)
+        {
+            const tinygltf::Node& node = model.nodes[ni];
+            auto nodeLightIt = node.extensions.find("KHR_lights_punctual");
+            if (nodeLightIt != node.extensions.end())
+            {
+                const tinygltf::Value& nodeLightVal = nodeLightIt->second;
+                if (nodeLightVal.IsObject())
+                {
+                    tinygltf::Value::Object nodeLightData = nodeLightVal.Get<tinygltf::Value::Object>();
+                    auto lightIdxIt = nodeLightData.find("light");
+                    if (lightIdxIt != nodeLightData.end() && lightIdxIt->second.IsNumber())
+                    {
+                        int lightIdx = lightIdxIt->second.Get<int>();
+                        if (lightIdx >= 0 && lightIdx < (int)gGLBDebug.lights.size())
+                        {
+                            glm::mat4 nodeXform(1.0f);
+                            nodeMatrix(node, (int)ni, nodeXform);
+                            auto& lightInfo = gGLBDebug.lights[lightIdx];
+                            lightInfo.position[0] = nodeXform[3][0];
+                            lightInfo.position[1] = nodeXform[3][1];
+                            lightInfo.position[2] = nodeXform[3][2];
+                            glm::vec3 dir = nodeXform * glm::vec4(0, 0, -1, 0);
+                            lightInfo.direction[0] = dir.x;
+                            lightInfo.direction[1] = dir.y;
+                            lightInfo.direction[2] = dir.z;
+                            printf("[GLB LIGHT] node=%zu name=%s lightIdx=%d pos=(%.2f,%.2f,%.2f)\n",
+                                   ni, node.name.c_str(), lightIdx,
+                                   lightInfo.position[0], lightInfo.position[1], lightInfo.position[2]);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     GLB_LOG("[GLB] verts=%zu triangles=%zu batches=%zu\n", mesh.verts.size(), mesh.verts.size() / 3, mesh.batches.size());
     return mesh;

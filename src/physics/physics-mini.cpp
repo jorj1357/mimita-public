@@ -48,7 +48,7 @@ static void updateVisualFacingFromCamera(Player& p, const glm::vec3& camForward,
 
     flat = glm::normalize(flat);
     float targetYaw = glm::degrees(std::atan2(flat.y, flat.x));
-    float turn = std::min(1.0f, dt * 18.0f);
+    float turn = std::min(1.0f, dt * 90.0f);
     p.yaw += shortestAngleDegrees(p.yaw, targetYaw) * turn;
 }
 

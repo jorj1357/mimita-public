@@ -1,10 +1,3 @@
-// C:\important\mimita-priv-v8\src\game\duel.h
-// 6 7 2026
-/** purpose
- * duels first game mode
- * first to 5, 100 hp, spawn with revolver and shotgun, small close range map
- */
-
 #pragma once
 
 #include <string>
@@ -28,6 +21,14 @@ enum class DuelPhase {
 enum class DuelTeam {
     Player,
     NPC
+};
+
+enum class DuelEndState {
+    None,
+    VictoryScreen,
+    Countdown,
+    FinalKillReplay,
+    ReplayMenu
 };
 
 enum class DuelMenuAction {
@@ -91,19 +92,16 @@ public:
     bool isDuelFrozen() const { return duelFrozen_; }
 
     DuelTeam matchWinner() const { return matchWinner_; }
-    float matchOverRemaining() const { return matchOverTimer; }
-    bool matchOverButtonsVisible() const { return matchOverButtonsShown; }
     glm::vec3 winnerCameraTarget() const { return matchOverCameraTarget; }
+    DuelEndState endState() const { return duelEndState; }
+    void setEndState(DuelEndState s) { duelEndState = s; }
+    float victoryTimeLeft() const { return victoryTimer; }
+    float countdownTimeLeft() const { return countdownTimer; }
+    int countdownNumber() const { return currentCountdownNumber; }
+    bool isReplayReady() const { return replayReady; }
+    void setReplayReady() { replayReady = true; }
 
-    // Final kill replay state
-    bool finalKillReplayActive = false;
-    bool finalKillReplayLoaded = false;
     std::string finalKillReplayPath;
-    float finalKillReplayTime = 0.0f;
-    float finalKillSlowMoFactor = 1.0f;
-    int finalKillKillTick = 0;
-    std::string finalKillKillerId;
-    std::string finalKillVictimId;
     uint32_t matchEndTick = 0;
     bool finalKillSavedOnce = false;
 
@@ -113,7 +111,6 @@ public:
     void setMapList(const std::vector<std::string>& maps);
     void rotateMap(World& world);
 
-    // Team spawn assignment
     void assignTeamSpawns(const World& world);
     glm::vec3 getTeamSpawn(DuelTeam team, int entityIndex, int totalOnTeam) const;
 
@@ -139,14 +136,15 @@ private:
     DuelStats playerStats;
     std::vector<std::string> mapList;
 
-    // Match-over state
     DuelTeam matchWinner_ = DuelTeam::Player;
-    float matchOverTimer = 0.0f;
-    bool matchOverButtonsShown = false;
+    DuelEndState duelEndState = DuelEndState::None;
+    float victoryTimer = 0.0f;
+    float countdownTimer = 0.0f;
+    int currentCountdownNumber = 0;
+    bool replayReady = false;
     bool matchOverCaptured = false;
     glm::vec3 matchOverCameraTarget{0.0f};
 
-    // Cached team spawn points for current match
     glm::vec3 mTeamASpawn{0.0f};
     glm::vec3 mTeamBSpawn{0.0f};
     int mTeamASpawnIndex = -1;
