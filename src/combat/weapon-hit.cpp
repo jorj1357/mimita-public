@@ -59,7 +59,7 @@ void weaponHit(Player& attacker, Player& target)
         target.pos, -toTarget, attacker.username, target.username);
     EffectPartSystem::instance().spawnBloodEffect(
         target.pos, toTarget, MELEE_DAMAGE, attacker.username, target.username);
-    HitEffects::spawnHitEffects(target.pos, -toTarget, (int)MELEE_DAMAGE,
+    HitEffects::spawnHitEffects(target.pos, toTarget, -toTarget, (int)MELEE_DAMAGE,
                                  attacker.username, target.username);
     if (target.currentHp <= 0) {
         DeathSystem::instance().kill(
