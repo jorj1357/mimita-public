@@ -43,6 +43,8 @@ extern ReplayBrowser* gpReplayBrowser;
 extern ReplayTimeline* gpReplayTimeline;
 extern std::unordered_map<std::string, ActorChatState>* gpReplayChatStates;
 extern std::vector<std::string>* gpReplayClipsCache;
+extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels;
+extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
 extern std::unordered_map<int, std::string>* gpCommandBinds;
 extern std::unordered_map<int, bool>* gpBindPrev;
 
@@ -60,6 +62,8 @@ extern GameState* gpGameState;
 #define REPLAY_TIMELINE (*gpReplayTimeline)
 #define REPLAY_CHAT_STATES (*gpReplayChatStates)
 #define REPLAY_CLIPS_CACHE (*gpReplayClipsCache)
+#define REPLAY_ACTOR_MODELS (*gpReplayActorModels)
+#define REPLAY_WEAPON_MODELS (*gpReplayWeaponModels)
 #define CMD_BINDS (*gpCommandBinds)
 #define BIND_PREV (*gpBindPrev)
 #define THE_PLAYER (*gpPlayer)

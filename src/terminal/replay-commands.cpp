@@ -488,4 +488,69 @@ void registerReplayCommands()
             }
         }
     });
+
+    Terminal::instance().registerCommand({
+        "replay_exit", "Safe exit from replay, clear all replay resources", "replay_exit",
+        [](const std::vector<std::string>&) {
+            printf("[REPLAY] replay_exit called\n");
+            if (REPLAY_PLAYER.isPlaying()) {
+                REPLAY_PLAYER.stopPlayback();
+                printf("[REPLAY] playback stopped\n");
+            }
+            if (!REPLAY_ACTOR_MODELS.empty()) {
+                REPLAY_ACTOR_MODELS.clear();
+                printf("[REPLAY] actor models cleared\n");
+            }
+            if (!REPLAY_WEAPON_MODELS.empty()) {
+                REPLAY_WEAPON_MODELS.clear();
+                printf("[REPLAY] weapon models cleared\n");
+            }
+            if (!REPLAY_CHAT_STATES.empty()) {
+                REPLAY_CHAT_STATES.clear();
+                printf("[REPLAY] chat states cleared\n");
+            }
+            Terminal::instance().addLog("[REPLAY] all replay resources cleaned");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_state", "Print current replay state info", "replay_state",
+        [](const std::vector<std::string>&) {
+            char buf[512];
+            const ReplayPlayer& p = REPLAY_PLAYER;
+            snprintf(buf, sizeof(buf),
+                "ReplayState: %s\nGameState: %s\nLoaded: %s\nFrame: %u/%u\n"
+                "Playing: %s Paused: %s Duration: %.1fs\nActors: %zu Weapons: %zu",
+                p.isPlaying() ? "WatchingReplay" : GAME_STATE == GAME_MENU ? "Menu" : "None",
+                GAME_STATE == GAME_PLAYING ? "PLAYING" : GAME_STATE == GAME_MENU ? "MENU" : "PAUSED",
+                p.totalTicks() > 0 ? "yes" : "no",
+                p.currentTick(), p.totalTicks(),
+                p.isPlaying() ? "yes" : "no",
+                p.isPaused() ? "yes" : "no",
+                p.totalTicks() > 0 ? (float)p.totalTicks() / 60.0f : 0.0f,
+                (unsigned long)REPLAY_ACTOR_MODELS.size(),
+                (unsigned long)REPLAY_WEAPON_MODELS.size());
+            Terminal::instance().addLog(buf);
+            printf("[REPLAY STATE] %s\n", buf);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "replay_debug", "Print all replay resource debug info", "replay_debug",
+        [](const std::vector<std::string>&) {
+            const ReplayPlayer& p = REPLAY_PLAYER;
+            printf("[REPLAY DEBUG] isPlaying=%d isPaused=%d currentTick=%u totalTicks=%u timescale=%.2f\n",
+                   (int)p.isPlaying(), (int)p.isPaused(),
+                   p.currentTick(), p.totalTicks(), p.timescale());
+            printf("[REPLAY DEBUG] actorModels=%zu weaponModels=%zu chatStates=%zu\n",
+                   REPLAY_ACTOR_MODELS.size(), REPLAY_WEAPON_MODELS.size(),
+                   REPLAY_CHAT_STATES.size());
+            printf("[REPLAY DEBUG] recording=%d clipSaver.hasLastKill=%d\n",
+                   (int)REPLAY_RECORDER.isRecording(),
+                   (int)REPLAY_CLIP_SAVER.hasLastKill());
+            printf("[REPLAY DEBUG] replayExportActive=%d\n",
+                   (int)isReplayExportActive());
+            Terminal::instance().addLog("[REPLAY] debug info printed to console");
+        }
+    });
 }

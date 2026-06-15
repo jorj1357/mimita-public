@@ -8,7 +8,9 @@
 class Camera;
 
 extern bool gBloodFXEnabled;
+extern bool gHitFxTraceEnabled;
 inline bool isBloodFXEnabled() { return gBloodFXEnabled; }
+inline bool isHitFxTraceEnabled() { return gHitFxTraceEnabled; }
 
 struct HitFxKeyframe {
     std::string name;
@@ -82,6 +84,15 @@ struct HitFxCurves {
     std::string particleSizeCurve = "ease_out";
 };
 
+struct LegacyContactSphereConfig {
+    bool enabled = false;
+    glm::vec3 color{1.0f, 0.15f, 0.1f};
+    float alpha = 1.0f;
+    float lifetimeSeconds = 0.25f;
+    float startRadius = 0.18f;
+    float endRadius = 0.27f;
+};
+
 struct HitFxConfig {
     bool enabled = true;
     bool hotReload = true;
@@ -91,6 +102,10 @@ struct HitFxConfig {
         bool spawnAtHitLocation = true;
         bool directional = true;
         bool useBlood = false;
+        bool damageNumbers = true;
+        bool entityImpact = true;
+        bool worldImpact = true;
+        bool bulletImpact = true;
     } core;
 
     std::vector<HitFxKeyframe> sphereTimeline;
@@ -98,6 +113,20 @@ struct HitFxConfig {
     HitFxDirectionalShape elongatedSphere;
     HitFxImpactDisc impactDisc;
     HitFxCurves curves;
+    LegacyContactSphereConfig legacyContactSphere;
+};
+
+struct HitEvent {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec3 direction;
+    bool hitEntity = false;
+    bool hitWorld = false;
+    int damage = 0;
+    std::string attacker;
+    std::string victim;
+    std::string weaponSource = "unknown";
+    float knockbackForce = 0.0f;
 };
 
 struct HitBurstEffect {
@@ -111,6 +140,9 @@ struct HitBurstEffect {
 
 namespace HitEffects {
 
+void onHit(const HitEvent& event);
+
+// legacy -- still called internally by onHit, but weapons should use onHit
 void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                      const glm::vec3& hitNormal, int damage,
                      const std::string& sourceId = "",

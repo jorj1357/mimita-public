@@ -20,12 +20,14 @@ layout (location = 3) in vec4 aDebugColor;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 uShadowMatrix;
 
 out vec2 vUV;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec3 vViewDir;
 out vec4 vDebugColor;
+out vec4 vShadowCoord;
 
 void main() {
     vec4 worldPos = model * vec4(aPos, 1.0);
@@ -41,6 +43,8 @@ void main() {
     // Camera-space direction is useful for fresnel/edge darkening in the fragment shader.
     vec3 cameraPos = inverse(view)[3].xyz;
     vViewDir = normalize(cameraPos - worldPos.xyz);
+
+    vShadowCoord = uShadowMatrix * worldPos;
 
     gl_Position = projection * view * worldPos;
 }

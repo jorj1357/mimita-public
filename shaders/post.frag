@@ -228,6 +228,15 @@ void main()
         col = floor(col * levels) / levels;
     }
 
+    // --- Shadow Boost (amplifies shadow darkness with non-linear scaling) ---
+    strength = uShadowBoost;
+    if (strength > 0.001) {
+        float luma = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+        float shadowAmount = smoothstep(0.4, 0.0, luma);
+        float boost = strength * strength * 0.02 + strength * 0.05;
+        col.rgb *= 1.0 - shadowAmount * min(boost, 0.9);
+    }
+
     // --- Gamma correction (always applied) ---
     col = pow(clamp(col, 0.0, 1.0), vec3(1.0 / uGamma));
 

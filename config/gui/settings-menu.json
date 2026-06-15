@@ -122,6 +122,20 @@
       "height": 24.0
     },
     {
+      "id": "bloodFxLabel",
+      "x": 120.0,
+      "y": 650.0,
+      "width": 200.0,
+      "height": 24.0
+    },
+    {
+      "id": "bloodFxToggle",
+      "x": 120.0,
+      "y": 680.0,
+      "width": 72.0,
+      "height": 32.0
+    },
+    {
       "id": "videoHeader",
       "x": 640.0,
       "y": 120.0,

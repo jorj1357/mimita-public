@@ -10,9 +10,15 @@
 
 #pragma once
 
+#include <glm/glm.hpp>
+
 struct World;
 class Camera;
 
+extern bool gWorldTextureDebug;
+
 void renderWorld(const World& world, const Camera& cam);
+void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP);
 void setWorldSolidRedDebug(bool enabled);
 bool worldSolidRedDebug();
+void registerWorldTextureCommands();

@@ -55,12 +55,18 @@ void weaponHit(Player& attacker, Player& target)
     knockbackDir.z = 0.3f; // Slight upward
     
     target.takeDamage((int)MELEE_DAMAGE, knockbackDir, MELEE_KNOCKBACK);
-    EffectPartSystem::instance().spawnEntityImpact(
-        target.pos, -toTarget, attacker.username, target.username);
-    EffectPartSystem::instance().spawnBloodEffect(
-        target.pos, toTarget, MELEE_DAMAGE, attacker.username, target.username);
-    HitEffects::spawnHitEffects(target.pos, toTarget, -toTarget, (int)MELEE_DAMAGE,
-                                 attacker.username, target.username);
+    {
+        HitEvent ev;
+        ev.position = target.pos;
+        ev.normal = -toTarget;
+        ev.direction = toTarget;
+        ev.hitEntity = true;
+        ev.damage = (int)MELEE_DAMAGE;
+        ev.attacker = attacker.username;
+        ev.victim = target.username;
+        ev.weaponSource = "melee";
+        HitEffects::onHit(ev);
+    }
     if (target.currentHp <= 0) {
         DeathSystem::instance().kill(
             target, target.username, "player", attacker.username, toTarget, MELEE_KNOCKBACK);

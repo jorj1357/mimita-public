@@ -20,6 +20,23 @@
 
 struct DuelConfigResult;
 
+enum GuiMenuState
+{
+    GUI_MENU_MAIN,
+    GUI_MENU_SETTINGS,
+    GUI_MENU_SANDBOX_MAPS,
+    GUI_MENU_SERVERS,
+    GUI_MENU_DUEL_CONFIG,
+    GUI_MENU_SERVER_INFO,
+    GUI_MENU_SIGN_IN,
+    GUI_MENU_HELP,
+    GUI_MENU_PLAY,
+    GUI_MENU_PRACTICE,
+    GUI_MENU_REPLAY
+};
+
+extern GuiMenuState gGuiMenuState;
+
 void guiMain(GLFWwindow* win, GameState& state);
 DuelConfigResult getPendingDuelConfig();
 void clearPendingDuelConfig();

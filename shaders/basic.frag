@@ -59,6 +59,17 @@ uniform float uTextureContrast;
 // Higher = brighter texture before lighting.
 uniform float uTextureBrightness;
 
+// Shadow mapping
+uniform sampler2D uShadowMap;
+uniform mat4 uShadowMatrix;
+uniform float uShadowDarkness;
+uniform float uShadowBias;
+uniform float uShadowSoftness;
+uniform vec3 uShadowTint;
+uniform bool uShadowsEnabled;
+
+in vec4 vShadowCoord;
+
 vec3 applyTextureTuning(vec3 color)
 {
     // Contrast around 0.5 keeps texture art readable without needing PBR.
@@ -72,6 +83,22 @@ float checker(vec2 uv)
     // UV debug: if UVs are wrong, this checker stretches, smears, or disappears.
     vec2 c = floor(fract(uv * 12.0) * 2.0);
     return mod(c.x + c.y, 2.0);
+}
+
+float sampleShadow(vec3 sc, float bias, float softness)
+{
+    ivec2 mapSize = textureSize(uShadowMap, 0);
+    vec2 texel = 1.0 / vec2(mapSize);
+    float radius = softness;
+    float s = 0.0;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            vec2 offset = vec2(x, y) * texel * radius;
+            float d = texture(uShadowMap, sc.xy + offset).r;
+            s += (sc.z - bias) > d ? 1.0 : 0.0;
+        }
+    }
+    return s / 9.0;
 }
 
 void main()
@@ -117,6 +144,17 @@ void main()
 
     float light = uAmbientStrength + diffuse;
     vec3 lit = texColor * light * edgeShade * aoShade;
+
+    // Shadow
+    float shadow = 0.0;
+    if (uShadowsEnabled) {
+        vec3 sc = vShadowCoord.xyz / vShadowCoord.w;
+        if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z <= 1.0) {
+            shadow = sampleShadow(sc, uShadowBias, uShadowSoftness);
+        }
+        float shadowFactor = 1.0 - shadow * uShadowDarkness;
+        lit = lit * shadowFactor + uShadowTint * shadow * uShadowDarkness;
+    }
 
     if (uDebugView == 1) {
         float c = checker(vUV);

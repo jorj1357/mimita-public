@@ -68,6 +68,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 
 #include "effect-part.h"
 #include "debug/debug-visuals.h"
+#include "debug/debug-log.h"
 #include "gui/ui-system.h"
 #include "camera.h"
 #include "world/world.h"
@@ -620,6 +621,11 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     const std::string& sourceActorId,
     const std::string& targetActorId)
 {
+    if (!HitEffects::config().core.entityImpact) return nullptr;
+    if (gHitFxTraceEnabled) {
+        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_entity pos=(%.1f,%.1f,%.1f)\n",
+                   position.x, position.y, position.z);
+    }
     EffectPart effect;
     effect.position = position;
     effect.normal = normal;
@@ -636,6 +642,11 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
 }
 
 EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal) {
+    if (!HitEffects::config().core.worldImpact) return nullptr;
+    if (gHitFxTraceEnabled) {
+        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_world pos=(%.1f,%.1f,%.1f)\n",
+                   position.x, position.y, position.z);
+    }
     EffectPart e;
     e.position = position;
     e.normal = normal;
@@ -684,6 +695,11 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const 
 }
 
 EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
+    if (!HitEffects::config().core.bulletImpact) return nullptr;
+    if (gHitFxTraceEnabled) {
+        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_sphere pos=(%.1f,%.1f,%.1f)\n",
+                   position.x, position.y, position.z);
+    }
     EffectPart e;
     e.position = position;
     e.replayType = "impact_sphere";

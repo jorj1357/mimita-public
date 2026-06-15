@@ -18,6 +18,7 @@
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
@@ -283,11 +284,18 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
         mRemoteGodballCooldowns[targetId] = tickInterval;
 
         hitmarker();
-        EffectPartSystem::instance().spawnDamage(hit.end, target.username, damage);
-        EffectPartSystem::instance().spawnBloodEffect(
-            hit.end, direction, hit.damage, player.username, target.username);
-        EffectPartSystem::instance().spawnEntityImpact(
-            hit.end, direction, player.username, target.username);
+        {
+            HitEvent ev;
+            ev.position = hit.end;
+            ev.normal = direction;
+            ev.direction = direction;
+            ev.hitEntity = true;
+            ev.damage = damage;
+            ev.attacker = player.username;
+            ev.victim = target.username;
+            ev.weaponSource = "godball_remote";
+            HitEffects::onHit(ev);
+        }
         WeaponAudio::playGodballImpact(
             hit.end, std::clamp(hit.damage / 100.0f, 0.0f, 1.0f));
     }

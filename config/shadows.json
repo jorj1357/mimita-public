@@ -1,0 +1,27 @@
+{
+    "enabled": true,
+
+    "shadowMapSize": 1024,
+
+    "shadowDistance": 100.0,
+
+    "shadowBias": 0.002,
+
+    "shadowDarkness": 0.75,
+
+    "shadowSoftness": 1.5,
+
+    "shadowTint": [0.0, 0.0, 0.0],
+
+    "stabilize": true,
+
+    "debugDrawShadowFrustum": false,
+
+    "debugShadowMap": false,
+
+    "playerReceivesShadows": true,
+
+    "worldReceivesShadows": true,
+
+    "effectsReceiveShadows": true
+}

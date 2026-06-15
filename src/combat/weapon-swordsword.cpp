@@ -17,6 +17,7 @@
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
@@ -50,9 +51,18 @@ static void applyHit(Player& owner, Player& target, const glm::vec3& hitPoint,
 
     hitmarker();
 
-    EffectPartSystem::instance().spawnEntityImpact(hitPoint, -hitNormal, owner.username, target.username);
-    EffectPartSystem::instance().spawnBloodEffect(
-        hitPoint, hitNormal, damage, owner.username, target.username);
+    {
+        HitEvent ev;
+        ev.position = hitPoint;
+        ev.normal = -hitNormal;
+        ev.direction = hitNormal;
+        ev.hitEntity = true;
+        ev.damage = (int)damage;
+        ev.attacker = owner.username;
+        ev.victim = target.username;
+        ev.weaponSource = "swordsword";
+        HitEffects::onHit(ev);
+    }
 
     int hitIdx = rand() % 4;
     std::string hitName = "swordswordhit" + std::to_string(hitIdx + 1);

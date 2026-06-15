@@ -31,7 +31,8 @@ static std::filesystem::file_time_type gConfigLastWrite;
 static std::string gConfigPath = "config/hitfx.json";
 static bool gDebugPanelEnabled = false;
 
-bool gBloodFXEnabled = true;
+bool gBloodFXEnabled = false;
+bool gHitFxTraceEnabled = false;
 
 extern Renderer* gRenderer;
 
@@ -98,6 +99,10 @@ void HitEffects::loadConfig(const std::string& path)
             if (c.contains("spawnAtHitLocation")) cfg.core.spawnAtHitLocation = c["spawnAtHitLocation"];
             if (c.contains("directional")) cfg.core.directional = c["directional"];
             if (c.contains("useBlood")) cfg.core.useBlood = c["useBlood"];
+            if (c.contains("damageNumbers")) cfg.core.damageNumbers = c["damageNumbers"];
+            if (c.contains("entityImpact")) cfg.core.entityImpact = c["entityImpact"];
+            if (c.contains("worldImpact")) cfg.core.worldImpact = c["worldImpact"];
+            if (c.contains("bulletImpact")) cfg.core.bulletImpact = c["bulletImpact"];
         }
 
         if (j.contains("sphereTimeline") && j["sphereTimeline"].is_array()) {
@@ -171,6 +176,16 @@ void HitEffects::loadConfig(const std::string& path)
             if (cv.contains("alphaCurve")) cfg.curves.alphaCurve = cv["alphaCurve"];
             if (cv.contains("brightnessCurve")) cfg.curves.brightnessCurve = cv["brightnessCurve"];
             if (cv.contains("particleSizeCurve")) cfg.curves.particleSizeCurve = cv["particleSizeCurve"];
+        }
+
+        if (j.contains("legacyContactSphere")) {
+            const json& l = j["legacyContactSphere"];
+            if (l.contains("enabled")) cfg.legacyContactSphere.enabled = l["enabled"];
+            if (l.contains("color")) cfg.legacyContactSphere.color = readVec3Json(l["color"]);
+            if (l.contains("alpha")) cfg.legacyContactSphere.alpha = l["alpha"];
+            if (l.contains("lifetimeSeconds")) cfg.legacyContactSphere.lifetimeSeconds = l["lifetimeSeconds"];
+            if (l.contains("startRadius")) cfg.legacyContactSphere.startRadius = l["startRadius"];
+            if (l.contains("endRadius")) cfg.legacyContactSphere.endRadius = l["endRadius"];
         }
 
         gConfig = cfg;
@@ -288,6 +303,75 @@ static void spawnParticles(const HitBurstEffect& b, int age)
     }
 }
 
+void HitEffects::onHit(const HitEvent& event)
+{
+    if (!gConfig.enabled) return;
+
+    // 1. Legacy contact sphere
+    if (gConfig.legacyContactSphere.enabled) {
+        EffectPart e;
+        e.position = event.position;
+        const auto& l = gConfig.legacyContactSphere;
+        e.color = glm::vec4(l.color.x, l.color.y, l.color.z, l.alpha);
+        e.maxLifetime = l.lifetimeSeconds;
+        e.scale = l.startRadius;
+        e.endScale = l.endRadius;
+        e.replayType = "contact_sphere";
+        EffectPartSystem::instance().spawn(e);
+    }
+
+    // 2. Entity impact sphere (red)
+    if (event.hitEntity && gConfig.core.entityImpact) {
+        EffectPartSystem::instance().spawnEntityImpact(
+            event.position, event.normal, event.attacker, event.victim);
+    }
+
+    // 3. World impact sphere (gray)
+    if (event.hitWorld && gConfig.core.worldImpact) {
+        EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal);
+    }
+
+    // 4. Bullet impact hole
+    if (event.hitWorld && gConfig.core.bulletImpact) {
+        EffectPartSystem::instance().spawnBulletImpact(event.position);
+    }
+
+    // 5. Blood effect
+    if (event.hitEntity && gConfig.core.entityImpact) {
+        EffectPartSystem::instance().spawnBloodEffect(
+            event.position, event.direction, (float)event.damage,
+            event.attacker, event.victim);
+    }
+
+    // 6. Damage number
+    if (gConfig.core.damageNumbers) {
+        EffectPart e;
+        e.position = event.position;
+        e.color = glm::vec4(1.0f, 0.9f, 0.1f, 1.0f);
+        e.maxLifetime = 1.2f;
+        e.scale = 0.35f;
+        e.label = std::to_string(event.damage);
+        e.replayType = "damage_number";
+        EffectPartSystem::instance().spawn(e);
+    }
+
+    // 7. HitFX timeline (burst)
+    spawnHitEffects(event.position, event.direction, event.normal, event.damage,
+                    event.attacker, event.victim);
+
+    if (gHitFxTraceEnabled) {
+        Debug::log(Debug::Category::NpcCombat,
+            "[HITFX] source=%s event=%s damage=%d spawnDamage=%d spawnEntityImpact=%d spawnBlood=%d spawnParticles=%d\n",
+            event.weaponSource.c_str(),
+            event.hitEntity ? "entity_hit" : "world_hit",
+            event.damage,
+            (int)gConfig.core.damageNumbers,
+            (int)(event.hitEntity && gConfig.core.entityImpact),
+            (int)(event.hitEntity && gConfig.core.entityImpact),
+            (int)gConfig.particles.enabled);
+    }
+}
+
 void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                                   const glm::vec3& hitNormal, int damage,
                                   const std::string& sourceId,
@@ -316,17 +400,18 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
     ev.lifetime = (float)b.totalTicks / 60.0f;
     captureReplayEffect(ev);
 
-    {
+    if (gConfig.legacyContactSphere.enabled) {
         EffectPart e;
         e.position = hitPoint;
-        e.color = glm::vec4(1.0f, 0.15f, 0.1f, 1.0f);
-        e.maxLifetime = 0.25f;
-        e.scale = 0.18f;
-        e.endScale = 0.27f;
+        const auto& l = gConfig.legacyContactSphere;
+        e.color = glm::vec4(l.color.x, l.color.y, l.color.z, l.alpha);
+        e.maxLifetime = l.lifetimeSeconds;
+        e.scale = l.startRadius;
+        e.endScale = l.endRadius;
         e.replayType = "contact_sphere";
         EffectPartSystem::instance().spawn(e);
     }
-    {
+    if (gConfig.core.damageNumbers) {
         EffectPart e;
         e.position = hitPoint;
         e.color = glm::vec4(1.0f, 0.9f, 0.1f, 1.0f);
@@ -335,6 +420,12 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
         e.label = std::to_string(damage);
         e.replayType = "damage_number";
         EffectPartSystem::instance().spawn(e);
+    }
+    if (gHitFxTraceEnabled) {
+        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=hit-effects.cpp Type=contact_sphere pos=(%.1f,%.1f,%.1f)\n",
+                   hitPoint.x, hitPoint.y, hitPoint.z);
+        Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=hit-effects.cpp Type=damage_number pos=(%.1f,%.1f,%.1f) damage=%d\n",
+                   hitPoint.x, hitPoint.y, hitPoint.z, damage);
     }
 
     spawnParticles(b, 0);
@@ -380,12 +471,16 @@ void HitEffects::renderHitBursts(const Camera& camera)
         char buf[512];
         int len = std::snprintf(buf, sizeof(buf),
             "HIT FX\nbursts=%d/%d\nspheres=%zu\nparticles(enabled=%d count=%d)\n"
-            "elongated(enabled=%d)\ndisc(enabled=%d)\nlifetime=%d",
+            "elongated(enabled=%d)\ndisc(enabled=%d)\nlifetime=%d\n"
+            "LegacySphere: %s\ndmgNum=%d entImpact=%d worldImpact=%d bulletImpact=%d",
             gBurstCount, MAX_BURSTS, gConfig.sphereTimeline.size(),
             (int)gConfig.particles.enabled, gConfig.particles.count,
             (int)gConfig.elongatedSphere.enabled,
             (int)gConfig.impactDisc.enabled,
-            gConfig.core.lifetimeTicks);
+            gConfig.core.lifetimeTicks,
+            gConfig.legacyContactSphere.enabled ? "ON" : "OFF",
+            (int)gConfig.core.damageNumbers, (int)gConfig.core.entityImpact,
+            (int)gConfig.core.worldImpact, (int)gConfig.core.bulletImpact);
         uiDrawText(buf, 12.0f, 320.0f, 0.32f, {0.3f, 1.0f, 0.5f, 1.0f});
     }
 }
