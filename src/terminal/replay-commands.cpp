@@ -71,10 +71,6 @@ void registerReplayCommands()
             const std::string shotgunPath = "assets/objects/weapons/mimita-shotgun-v1.glb";
             REPLAY_RECORDER.registerAsset("model:shotgun", "weapon_glb", shotgunPath, {}, "basic", "weapon");
             REPLAY_RECORDER.registerAsset("texture:outfit", "texture", GetPlayerSettings().outfitPath, {}, {}, "outfit");
-            REPLAY_RECORDER.registerAsset("texture:crosshair-ready", "texture", "assets/crosshair/crosshairready.png", {}, {}, "ui");
-            REPLAY_RECORDER.registerAsset("texture:crosshair-delay", "texture", "assets/crosshair/crosshairdelay.png", {}, {}, "ui");
-            REPLAY_RECORDER.registerAsset("texture:crosshair-reloading", "texture", "assets/crosshair/crosshairreloading.png", {}, {}, "ui");
-
             ReplayWorldMetadata replayWorld;
             replayWorld.mapAssetId = "map:active";
             replayWorld.mapPath = mapPath;

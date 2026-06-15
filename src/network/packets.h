@@ -132,7 +132,7 @@ struct SnapshotEntity
     uint32_t networkEntityId = 0;
     uint8_t entityType = ENTITY_NONE;
     uint8_t active = 0;
-    uint16_t reserved = 0;
+    uint16_t lastDashSerial = 0;
     uint32_t ownerClientId = 0;
     float px = 0.0f;
     float py = 0.0f;
@@ -214,6 +214,7 @@ struct ShotRequestPacket
     uint16_t effectFlags = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t impactType = SHOT_IMPACT_NONE;
+    uint32_t lastServerTick = 0;
     float originX = 0.0f;
     float originY = 0.0f;
     float originZ = 0.0f;
@@ -246,6 +247,7 @@ struct ShotEventPacket
     uint8_t impactType = SHOT_IMPACT_NONE;
     uint8_t killed = 0;
     uint8_t damageConfirmed = 0;
+    uint32_t lastServerTick = 0;
     float originX = 0.0f;
     float originY = 0.0f;
     float originZ = 0.0f;
@@ -278,8 +280,8 @@ struct DisconnectPacket
 #pragma pack(pop)
 
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
-static_assert(sizeof(ShotRequestPacket) <= 128, "ShotRequestPacket is too large");
-static_assert(sizeof(ShotEventPacket) <= 128, "ShotEventPacket is too large");
+static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
+static_assert(sizeof(ShotEventPacket) <= 132, "ShotEventPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

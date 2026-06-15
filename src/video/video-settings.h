@@ -38,6 +38,12 @@ public:
     int width() const;
     int height() const;
 
+    // Frame pacing
+    void setMaxFrames(int fps);
+    int maxFrames() const { return mMaxFrames; }
+    void setVSync(bool on);
+    bool vsync() const { return mVSync; }
+
     // Persistence
     void load();
     void save();
@@ -47,4 +53,6 @@ private:
 
     int mIndex = RES_800x600;
     bool mFullscreen = false;
+    int mMaxFrames = 999;
+    bool mVSync = false;
 };

@@ -2,6 +2,7 @@
 
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "network/multiplayer-context.h"
 #include "physics/config.h"
 #include "physics/physics-types.h"
 #include "utils/path_utils.h"
@@ -12,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <limits>
 #include <thread>
 #include <unordered_map>
@@ -47,6 +49,13 @@ struct ServerInput
     uint32_t tick = 0;
 };
 
+struct PositionHistoryEntry
+{
+    glm::vec3 pos{0.0f};
+    glm::vec3 vel{0.0f};
+    uint32_t tick = 0;
+};
+
 struct ServerPlayer
 {
     uint32_t id = 0;
@@ -67,7 +76,9 @@ struct ServerPlayer
     uint8_t weaponState = 0;
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
+    uint16_t lastDashSerial = 0;
     ServerInput input;
+    std::deque<PositionHistoryEntry> posHistory;
 };
 
 struct ServerNpc
@@ -429,6 +440,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             p.vel.x += dashDir.x * DASH_IMPULSE;
             p.vel.y += dashDir.y * DASH_IMPULSE;
             p.dashAvailable = false;
+            ++p.lastDashSerial;
         }
     }
 
@@ -493,6 +505,91 @@ void simulateNpc(ServerNpc& npc, const std::unordered_map<uint32_t, ServerPlayer
     npc.pos += npc.vel * SERVER_DT;
 }
 
+void pushPositionHistory(ServerPlayer& p, uint32_t tick)
+{
+    p.posHistory.push_back({p.pos, p.vel, tick});
+    // Keep ~500ms of history (30 entries at 60 Hz)
+    while (p.posHistory.size() > 30)
+        p.posHistory.pop_front();
+}
+
+bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos)
+{
+    if (p.posHistory.empty())
+        return false;
+    if (targetTick >= p.posHistory.back().tick)
+    {
+        outPos = p.pos;
+        return true;
+    }
+    if (targetTick <= p.posHistory.front().tick)
+    {
+        outPos = p.posHistory.front().pos;
+        return true;
+    }
+    // Linear search backwards (history is small, <30 entries)
+    for (int i = (int)p.posHistory.size() - 1; i > 0; --i)
+    {
+        if (p.posHistory[i].tick == targetTick)
+        {
+            outPos = p.posHistory[i].pos;
+            return true;
+        }
+        if (p.posHistory[i].tick < targetTick)
+        {
+            // Interpolate between posHistory[i] and posHistory[i+1]
+            const auto& a = p.posHistory[i];
+            const auto& b = p.posHistory[i + 1];
+            float frac = float(targetTick - a.tick) / float(b.tick - a.tick);
+            outPos = glm::mix(a.pos, b.pos, frac);
+            return true;
+        }
+    }
+    outPos = p.posHistory.front().pos;
+    return true;
+}
+
+bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
+                       const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
+                       float& outDist)
+{
+    glm::vec3 e1 = b - a;
+    glm::vec3 e2 = c - a;
+    glm::vec3 p = glm::cross(direction, e2);
+    float det = glm::dot(e1, p);
+    if (std::fabs(det) < 0.000001f) return false;
+    float inv = 1.0f / det;
+    glm::vec3 t = origin - a;
+    float u = glm::dot(t, p) * inv;
+    if (u < 0.0f || u > 1.0f) return false;
+    glm::vec3 q = glm::cross(t, e1);
+    float v = glm::dot(direction, q) * inv;
+    if (v < 0.0f || u + v > 1.0f) return false;
+    outDist = glm::dot(e2, q) * inv;
+    return outDist > 0.0f;
+}
+
+bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
+                         float maxDist, const HeadlessWorld& world,
+                         glm::vec3& outHitPos, glm::vec3& outNormal)
+{
+    float closest = maxDist;
+    bool hit = false;
+    for (const CollisionTriangle& tri : world.triangles)
+    {
+        float d;
+        if (serverRayTriangle(origin, direction, tri.a, tri.b, tri.c, d) && d < closest)
+        {
+            closest = d;
+            outNormal = tri.normal;
+            hit = true;
+        }
+    }
+    if (hit)
+        outHitPos = origin + direction * closest;
+    return hit;
+}
+
 SnapshotEntity makePlayerEntity(const ServerPlayer& player)
 {
     SnapshotEntity out{};
@@ -507,6 +604,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.onGround = player.onGround ? 1 : 0;
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;
+    out.lastDashSerial = player.lastDashSerial;
     out.aimX = player.input.camForward.x;
     out.aimY = player.input.camForward.y;
     out.aimZ = player.input.camForward.z;
@@ -981,39 +1079,143 @@ int runServer(const LaunchOptions& options)
                 event.knockX = shot->knockX;
                 event.knockY = shot->knockY;
                 event.knockZ = shot->knockZ;
+                event.lastServerTick = shot->lastServerTick;
 
+                // --- Lag compensation: rewind target to snapshot the client saw ---
                 auto targetIt = players.find(shot->targetPlayerId);
-                const float targetHitDistance =
-                    targetIt != players.end()
-                    ? glm::length(
-                        position -
-                        (targetIt->second.pos + glm::vec3(0.0f, 0.0f, 0.8f)))
-                    : std::numeric_limits<float>::infinity();
-                const bool validTarget =
-                    shot->impactType == SHOT_IMPACT_ENTITY &&
+                bool damageConfirmed = false;
+
+                if (MimitaNet::gNetDamageDebug)
+                {
+                    printf("[NET DAMAGE] shooter=%u target=%u impactType=%u "
+                           "damage=%d shooterDead=%d targetDead=%d "
+                           "shooterHealth=%d targetHealth=%d\n",
+                           shooter.id, shot->targetPlayerId, shot->impactType,
+                           shot->damage, (int)shooter.dead,
+                           (int)(targetIt != players.end() && targetIt->second.dead),
+                           shooter.health,
+                           targetIt != players.end() ? targetIt->second.health : -1);
+                }
+
+                if (shot->impactType == SHOT_IMPACT_ENTITY &&
                     targetIt != players.end() &&
                     shooterIt != targetIt &&
                     !targetIt->second.dead &&
-                    targetHitDistance <= 2.5f;
-                const bool damageConfirmed =
-                    validTarget && shot->damage > 0 && shot->damage <= 200;
-                if (damageConfirmed)
+                    shot->damage > 0 && shot->damage <= 200)
                 {
                     ServerPlayer& target = targetIt->second;
-                    event.damage = shot->damage;
-                    target.health = std::max(0, target.health - shot->damage);
-                    event.targetHealth = target.health;
-                    event.damageConfirmed = 1;
-                    if (target.health == 0)
+
+                    // 1. Rewind target position to the tick the client last saw
+                    glm::vec3 rewoundPos;
+                    bool hasRewound = getPositionAtTick(
+                        target, shot->lastServerTick, rewoundPos);
+
+                    // Fall back to current position if history is missing
+                    glm::vec3 checkPos = hasRewound
+                        ? rewoundPos
+                        : target.pos;
+
+                    // 2. Check distance to rewound hit position
+                    const float rewindDistance = glm::length(
+                        position - (checkPos + glm::vec3(0.0f, 0.0f, 0.8f)));
+
+                    if (gNetHitDebug)
                     {
-                        target.dead = true;
-                        target.respawnSeconds = 2.0f;
-                        target.vel = glm::vec3(0.0f);
-                        event.killed = 1;
+                        printf("[NET HIT] shooter=%u target=%u "
+                               "origin=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) "
+                               "claimedHit=(%.2f,%.2f,%.2f) "
+                               "rewindTick=%u rewindDist=%.2f "
+                               "targetRewoundPos=(%.2f,%.2f,%.2f) "
+                               "targetCurrentPos=(%.2f,%.2f,%.2f)\n",
+                               shooter.id, shot->targetPlayerId,
+                               origin.x, origin.y, origin.z,
+                               direction.x, direction.y, direction.z,
+                               position.x, position.y, position.z,
+                               shot->lastServerTick, rewindDistance,
+                               checkPos.x, checkPos.y, checkPos.z,
+                               target.pos.x, target.pos.y, target.pos.z);
+                    }
+
+                    if (rewindDistance <= 2.5f)
+                    {
+                        // 3. Server-side world occlusion check: ray from origin to hit
+                        glm::vec3 shotDir = glm::normalize(direction);
+                        float worldDist = shotDistance;
+                        glm::vec3 worldHit, worldNormal;
+                        bool hitWorld = serverRaycastWorld(
+                            origin, shotDir, shotDistance, world, worldHit, worldNormal);
+
+                        // Accept if no world hit, or if world hit is BEYOND the claimed hit
+                        bool occluded = hitWorld && glm::length(worldHit - origin) < rewindDistance;
+
+                        if (gNetHitDebug)
+                        {
+                            printf("[NET HIT OCCLUSION] hitWorld=%d occluded=%d "
+                                   "worldHitDist=%.2f claimedDist=%.2f\n",
+                                   (int)hitWorld, (int)occluded,
+                                   hitWorld ? glm::length(worldHit - origin) : 0.0f,
+                                   rewindDistance);
+                        }
+
+                        if (!occluded)
+                        {
+                            damageConfirmed = true;
+                            event.damage = shot->damage;
+                            target.health = std::max(0, target.health - shot->damage);
+                            event.targetHealth = target.health;
+                            event.damageConfirmed = 1;
+                            if (target.health == 0)
+                            {
+                                target.dead = true;
+                                target.respawnSeconds = 2.0f;
+                                target.vel = glm::vec3(0.0f);
+                                event.killed = 1;
+                            }
+
+                            printf("%s [NET SHOT REWIND] shooter=%u target=%u "
+                                   "rewoundTick=%u rewindDist=%.2f occluded=%d "
+                                   "hasHistory=%d\n",
+                                   serverTimestamp(), shooter.id, target.id,
+                                   shot->lastServerTick, rewindDistance,
+                                   (int)occluded, (int)hasRewound);
+                        }
+                        else
+                        {
+                            printf("%s [NET SHOT OCCLUDED] shooter=%u target=%u "
+                                   "worldHit=%.2f < hitDist=%.2f\n",
+                                   serverTimestamp(), shooter.id, target.id,
+                                   glm::length(worldHit - origin), rewindDistance);
+                        }
+                    }
+                    else
+                    {
+                        printf("%s [NET SHOT REWIND MISS] shooter=%u target=%u "
+                               "rewoundTick=%u rewindDist=%.2f (<=2.5f required) "
+                               "currentDist=%.2f hasHistory=%d\n",
+                               serverTimestamp(), shooter.id, target.id,
+                               shot->lastServerTick, rewindDistance,
+                               glm::length(position - (target.pos + glm::vec3(0,0,0.8f))),
+                               (int)hasRewound);
                     }
                 }
-                else if (event.impactType == SHOT_IMPACT_ENTITY)
+
+                if (!damageConfirmed && event.impactType == SHOT_IMPACT_ENTITY)
                 {
+                    if (gNetDamageDebug)
+                    {
+                        printf("[NET DAMAGE REJECT] shooter=%u target=%u "
+                               "reason=", shooter.id, shot->targetPlayerId);
+                        if (targetIt == players.end())
+                            printf("target-not-found");
+                        else if (targetIt->second.dead)
+                            printf("target-dead");
+                        else
+                            printf("rewind-dist=%.2f-or-occluded",
+                                   targetIt != players.end() ?
+                                   glm::length(glm::vec3(event.hitX, event.hitY, event.hitZ) -
+                                   (targetIt->second.pos + glm::vec3(0,0,0.8f))) : 0.0f);
+                        printf("\n");
+                    }
                     event.targetPlayerId = 0;
                     event.impactType = SHOT_IMPACT_NONE;
                     event.effectFlags &= ~(
@@ -1082,6 +1284,10 @@ int runServer(const LaunchOptions& options)
             else
                 ++it;
         }
+
+        // Record pre-simulation positions for lag compensation history
+        for (auto& kv : players)
+            pushPositionHistory(kv.second, tick);
 
         // Simulate all players
         for (auto& kv : players)

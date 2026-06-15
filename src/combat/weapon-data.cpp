@@ -39,8 +39,6 @@ WeaponDefinition createRevolverDefinition() {
     def.soundHit = "player_hurt";
     def.soundDryFire = "ui/click";
     def.soundEquip = "revolverequip";
-    def.crosshairId = "revolver";
-    def.crosshairSize = 100.0f;
 
     def.customParams["distanceFalloffStart"] = 110.0f;
     def.customParams["minDamageFraction"] = 0.1f;
@@ -134,8 +132,6 @@ WeaponDefinition createShotgunDefinition() {
     def.soundHit = "player_hurt";
     def.soundDryFire = "ui/click";
     def.soundEquip = "shotgunequip";
-    def.crosshairId = "shotgun";
-    def.crosshairSize = 140.0f;
 
     def.customParams["distanceFalloffStart"] = 60.0f;
     def.customParams["minDamageFraction"] = 0.05f;

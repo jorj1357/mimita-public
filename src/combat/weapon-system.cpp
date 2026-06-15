@@ -460,3 +460,12 @@ void WeaponSystem::addKillLine(const std::string& line) {
     if (mKillfeed.size() > 20)
         mKillfeed.erase(mKillfeed.begin());
 }
+
+void WeaponSystem::renderRemoteWeapon(const Player& player, const Camera& camera) {
+    if (player.dead) return;
+    const WeaponDefinition* def = getCurrentDef(player);
+    if (!def) return;
+    int idx = slotIndex(def->slot);
+    mViewModels[idx].update(camera, const_cast<Player&>(player), 0.0f, def, true);
+    mViewModels[idx].render(camera, player, def->slot);
+}

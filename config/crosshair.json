@@ -1,0 +1,18 @@
+{
+  "alpha": 255,
+  "blue": 255,
+  "dot": false,
+  "dynamic": false,
+  "enabled": true,
+  "gap": 5.0,
+  "green": 255,
+  "outline": true,
+  "outlineThickness": 1.0,
+  "red": 0,
+  "showBottom": true,
+  "showLeft": true,
+  "showRight": true,
+  "showTop": true,
+  "size": 8.0,
+  "thickness": 2.0
+}

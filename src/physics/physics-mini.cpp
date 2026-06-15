@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "input/input-commands.h"
 
 #include "entities/player.h"
 #include "world/world.h"
@@ -254,16 +255,24 @@ void physicsMainUpdate(
     const InputState& input,
     float dt
 ){
+    // Use buffered actions so quick presses survive frame drops.
+    // consumeBuffered* returns true if a press happened within the buffer window,
+    // and clears the buffer to prevent double-consumption.
+    auto& cmd = InputCommandSystem::instance();
+    bool bufferedJump = cmd.consumeBufferedJump();
+    bool bufferedDash = cmd.consumeBufferedDash();
+    bool bufferedDownDash = cmd.consumeBufferedDownDash();
+
     physicsMainUpdate_Internal(
         p,
         world,
         input.wishMoveXY,
         input.jumpHeld,
-        input.jumpPressed,
-        input.dashPressed,
+        input.jumpPressed || bufferedJump,
+        input.dashPressed || bufferedDash,
         input.movementPressed,
         input.groundReturnPressed,
-        input.downDashPressed,
+        input.downDashPressed || bufferedDownDash,
         input.camForward,
         dt,
         false,
