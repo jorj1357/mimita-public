@@ -1050,6 +1050,34 @@ static void doGLBTriangleCollisions(
             {
                 glm::vec3 originalPos = p.pos;
 
+                // Validate step-up: check that at least 3 of 5 capsule
+                // sample points agree on the step height. This prevents
+                // stepping on micro-edges or single-triangle spikes.
+                int consistentSamples = 0;
+                int totalSamples = 0;
+                for (int s = 0; s < 5; s++) {
+                    float t = (float)s / 4.0f;
+                    glm::vec3 samplePos = cap.a + (cap.b - cap.a) * t;
+                    float sampleFeetZ = samplePos.z - cap.r;
+                    for (int triIndex : candidates) {
+                        const CollisionTriangle& tri =
+                            world.collisionMesh.triangles[triIndex];
+                        float triZ = std::max({tri.a.z, tri.b.z, tri.c.z});
+                        if (sampleFeetZ < triZ && triZ - sampleFeetZ <= MAX_STEP_HEIGHT) {
+                            consistentSamples++;
+                            break;
+                        }
+                    }
+                    totalSamples++;
+                }
+                bool consistentStep = (consistentSamples >= 3);
+
+                if (!consistentStep) {
+                    p.pos = originalPos;
+                    p.updateModelWorldTransforms();
+                    continue;
+                }
+
                 // lift player upward
                 p.pos.z += stepHeight + 0.01f;
 
@@ -1084,6 +1112,30 @@ static void doGLBTriangleCollisions(
 
                 if (!blocked)
                 {
+                    // Floor validation: after lifting, verify there is
+                    // walkable floor below by checking ground snap range.
+                    Capsule checkCap = stepCap;
+                    checkCap.a.z -= 0.3f;
+                    checkCap.b.z -= 0.3f;
+                    bool hasFloor = false;
+                    for (int triIndex : candidates) {
+                        const CollisionTriangle& tri =
+                            world.collisionMesh.triangles[triIndex];
+                        Contact fc;
+                        if (capsuleTriangleContact(checkCap, tri, triIndex, fc)) {
+                            if (fc.normal.z >= MAX_WALKABLE_SLOPE_DOT) {
+                                hasFloor = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!hasFloor) {
+                        p.pos = originalPos;
+                        p.updateModelWorldTransforms();
+                        continue;
+                    }
+
                     groundedThisFrame = true;
 
                     if (p.vel.z < 0.0f)
@@ -2218,19 +2270,36 @@ static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
             continue;
 
         const glm::mat4& xform = it->worldTransform;
-        if (!collider.samplePoints.empty())
-        {
-            for (glm::vec3 point : collider.samplePoints)
-                samples.push_back(glm::vec3(xform * glm::vec4(point, 1.0f)));
+
+        // Compute capsule axis from collider bounds, then sample along it.
+        // This replaces the old per-vertex sampling that caused limb snagging
+        // on world geometry corners.
+        glm::vec3 localCenter = (collider.localMin + collider.localMax) * 0.5f;
+        glm::vec3 localExtents = (collider.localMax - collider.localMin) * 0.5f;
+        float axisLen = glm::length(localExtents);
+        glm::vec3 axisDir(0.0f, 0.0f, 1.0f);
+        if (axisLen > 0.001f)
+            axisDir = localExtents / axisLen;
+
+        glm::vec3 worldCenter = glm::vec3(xform * glm::vec4(localCenter, 1.0f));
+        float radius = std::min(localExtents.x, localExtents.y) * 1.5f;
+        // Scale radius up slightly to fill gaps between old triangle vertices
+        radius = std::max(radius, BODY_SAMPLE_RADIUS);
+        radius = std::min(radius, 0.35f); // cap to avoid excessive size
+
+        glm::vec3 worldA = worldCenter - glm::vec3(xform * glm::vec4(axisDir * axisLen, 0.0f));
+        glm::vec3 worldB = worldCenter + glm::vec3(xform * glm::vec4(axisDir * axisLen, 0.0f));
+        if (glm::length(worldB - worldA) < 0.001f) {
+            // Nearly spherical part: emit a single sample
+            samples.push_back(worldCenter);
+            continue;
         }
-        else
-        {
-            for (const CollisionTriangle& tri : collider.triangles)
-            {
-                samples.push_back(glm::vec3(xform * glm::vec4(tri.a, 1.0f)));
-                samples.push_back(glm::vec3(xform * glm::vec4(tri.b, 1.0f)));
-                samples.push_back(glm::vec3(xform * glm::vec4(tri.c, 1.0f)));
-            }
+
+        // Sample 3 spheres along the capsule axis for smooth sliding
+        for (int i = 0; i < 3; i++) {
+            float t = (float)i / 2.0f;
+            glm::vec3 pt = worldA + (worldB - worldA) * t;
+            samples.push_back(pt);
         }
     }
 

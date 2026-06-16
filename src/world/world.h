@@ -141,6 +141,7 @@ struct World {
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunks;
 
     Mesh mesh;
+    Mesh skyMesh;
     CollisionMeshCache collisionMesh;
     float collisionChunkSize = 6.0f;
     std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionChunks;

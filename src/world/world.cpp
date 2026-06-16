@@ -124,6 +124,7 @@ void World::clear()
     spawnPoints.clear();
     selectedSpawnIndex = -1;
     mesh = Mesh{};
+    skyMesh = Mesh{};
     collisionMesh.clear();
     collisionChunks.clear();
 }

@@ -118,7 +118,7 @@ bool loadWorldFromGLB(World& world, const char* path)
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
-    candidate.mesh = loadGLB(path);
+    candidate.mesh = loadGLB(path, true, &candidate.skyMesh);
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] after loadGLB\n");
 

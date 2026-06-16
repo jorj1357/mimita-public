@@ -18,6 +18,7 @@ class Terminal; // forward decl for dump functions
 
 extern bool gWorldTextureDebug;
 
+void renderSky(const World& world, const Camera& cam);
 void renderWorld(const World& world, const Camera& cam);
 void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP);
 void setWorldSolidRedDebug(bool enabled);
