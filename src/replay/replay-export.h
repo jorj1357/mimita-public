@@ -17,7 +17,8 @@ struct ReplayExportJob {
 
     // Encoding
     std::string ffmpegPath;
-    FILE* ffmpegPipe = nullptr;
+    std::string rawTempPath;
+    FILE* rawFile = nullptr;
 
     // Output
     std::string outputPath;
