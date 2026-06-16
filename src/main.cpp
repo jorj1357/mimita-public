@@ -97,6 +97,7 @@
 #include "shadow/shadow-render.h"
 #include "shadow/shadow-commands.h"
 #include "video/video-settings.h"
+#include "video/outro.h"
 #include "video/frame-pacer.h"
 #include "sim/sim-context.h"
 #include "combat/weapon-hit.h"
@@ -1644,6 +1645,7 @@ int main(int argc, char** argv)
     registerReplayCommands();
     registerVoidDeathCommands();
     registerHitmarkerAudioCommands();
+    registerOutroCommands();
     registerPerfCommands();
     registerHitFxCommands();
     registerDiagnosticCommands();
@@ -2920,6 +2922,7 @@ int main(int argc, char** argv)
                     ShadowConfig::instance().pollReload();
                     pollVoidDeathConfig();
                     pollHitmarkerAudioConfig();
+                    pollOutroConfig();
                     pollReplayHitmarkerConfig();
 
                     if (replayTest.active) {
@@ -3361,7 +3364,8 @@ int main(int argc, char** argv)
                             ? glm::normalize(effect.to - effect.from)
                             : glm::vec3(1.0f, 0.0f, 0.0f);
                         float len = glm::length(effect.to - effect.from);
-                        float rad = effect.scale.x > 0.0f ? effect.scale.x : 1.5f;
+                        const auto& deCfg = HitEffects::config().deathEllipsoid;
+                        float rad = effect.scale.x > 0.0f ? effect.scale.x : deCfg.radius;
                         EffectPartSystem::instance().spawnDeathEllipsoid(
                             effect.from, dir, len, rad, std::max(effect.lifetime, 0.1f));
                     } else if (!effect.type.empty() &&

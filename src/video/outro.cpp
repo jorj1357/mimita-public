@@ -98,6 +98,7 @@ void pollOutroConfig()
 
 void appendOutroToExport(const char* exportedVideoPath)
 {
+    Debug::log(Debug::Category::Replay, "[OUTRO HARD PROOF] ENTERED appendOutroToExport");
     if (!gConfig.enabled)
         return;
     if (!std::filesystem::exists(gConfig.outroPath))
