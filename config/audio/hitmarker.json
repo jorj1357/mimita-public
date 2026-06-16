@@ -1,0 +1,8 @@
+{
+    "enabled": true,
+    "volumeMin": 0.40,
+    "volumeMax": 1.00,
+    "pitchMin": 0.70,
+    "pitchMax": 1.30,
+    "damageForMaxImpact": 100
+}

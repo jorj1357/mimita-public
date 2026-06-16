@@ -458,7 +458,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         }
 
         cooldowns[npcId] = tickInterval;
-        hitmarker();
+        hitmarker(rounded);
 
         if (npc.body.currentHp <= 0) {
             DeathSystem::instance().kill(

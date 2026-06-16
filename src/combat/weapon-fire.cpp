@@ -390,7 +390,7 @@ RevolverShotResult tryFireHitscan(
             float kn = (float)totalDamage * df * (0.08f + ctx.angleFactor * 0.12f);
             result.knockbackImpulse = shotDirection * kn + glm::vec3(0, 0, kn * 0.12f);
         }
-        hitmarker();
+        hitmarker(totalDamage);
         if (GetPlayerSettings().debugCombat)
             Debug::log(Debug::Category::Weapons,
                 "[HITMARKER] attacker=%s victim=npc_%u show=1 reason=local_player_hit_npc",
@@ -436,7 +436,7 @@ RevolverShotResult tryFireHitscan(
             float kn = (float)totalDamage * df * 0.15f;
             result.knockbackImpulse = shotDirection * kn;
         }
-        hitmarker();
+        hitmarker(totalDamage);
         if (GetPlayerSettings().debugCombat)
             Debug::log(Debug::Category::Weapons,
                 "[HITMARKER] attacker=%s victim=%s show=1 reason=local_player_hit_remote",
@@ -880,7 +880,7 @@ void fireMultiPellet(
     // Single hit sound for any hits
     if (anyHitEntity) {
         playWorldSound(def.soundHit, lastPelletEnd, 0.85f, 1.0f, 35.0f);
-        hitmarker();
+        hitmarker((int)accumulatedDamage);
         if (GetPlayerSettings().debugCombat)
             Debug::log(Debug::Category::Weapons,
                 "[HITMARKER] attacker=%s pellet_hit=1 show=1 reason=shotgun_hit_entity",
