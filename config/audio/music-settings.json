@@ -1,4 +1,5 @@
 {
-    "musicEnabled": true,
-    "musicVolume": 0.009999999776482582
+    "musicEnabled": false,
+    "musicVolume": 0.009999999776482582,
+    "playbackSpeed": 1.0
 }

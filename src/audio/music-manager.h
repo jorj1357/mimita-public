@@ -28,6 +28,8 @@ public:
 
     void setVolume(float vol);
     float volume() const;
+    void setPlaybackSpeed(float speed);
+    float playbackSpeed() const;
 
     void setMuted(bool m);
     bool muted() const;
@@ -65,6 +67,7 @@ private:
     void playNextIngame();
     void pickMenuTrack();
     void applyVolume();
+    void applyPlaybackSpeed();
     void uninitSound();
 
     std::vector<TrackEntry> mMenuTracks;
@@ -82,7 +85,7 @@ private:
 
     float mVolume = 1.0f;
     bool mMuted = false;
-
+    float mPlaybackSpeed = 1.0f;
     std::string mCurrentPath;
     std::string mCurrentFilename;
     std::string mCurrentArtist;
