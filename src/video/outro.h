@@ -1,5 +1,5 @@
 #pragma once
 
-void appendOutroToExport(const char* exportedVideoPath);
+void appendOutroToFinishedMp4(const char* replayMp4Path);
 void pollOutroConfig();
 void registerOutroCommands();
