@@ -282,6 +282,13 @@ void setReplayFactoryNotifyFn(ReplayFactoryNotifyFn fn);
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
 
+bool ReplayShouldPlayHitmarkerAudio(
+    const std::string& attackerId,
+    ReplayCameraMode cameraMode,
+    const std::string& viewedEntity);
+
+void pollReplayHitmarkerConfig();
+
 // Replay actor/weapon model maps (owned by main.cpp, accessible globally for cleanup)
 extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels;
 extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
