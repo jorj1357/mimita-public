@@ -8,5 +8,5 @@
 
 extern float gHitmarkerTimer;
 
-void hitmarker();
+void hitmarker(int damage = 0);
 void drawHitmarker(float dt);

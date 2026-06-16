@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 
 #include "gui/ui-system.h"
+#include "audio/hitmarker-audio.h"
 
 namespace
 {
@@ -19,9 +20,10 @@ constexpr float HITMARKER_DURATION = 0.5f;
 
 float gHitmarkerTimer = 0.0f;
 
-void hitmarker()
+void hitmarker(int damage)
 {
     gHitmarkerTimer = HITMARKER_DURATION;
+    playHitmarkerSound(damage);
 }
 
 void drawHitmarker(float dt)

@@ -314,7 +314,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
         victim->body.vel += shotDirection * knockback + glm::vec3(0,0,knockback * 0.12f);
         victim->hitReactionTimer = 0.3f;
         result.hitEntity = true;
-        hitmarker();
+        hitmarker(rounded);
         result.bodyPart = hitPart;
         result.damage = (float)rounded;
         result.knockbackImpulse = shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);

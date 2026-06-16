@@ -49,7 +49,7 @@ static void applyHit(Player& owner, Player& target, const glm::vec3& hitPoint,
 
     target.takeDamage((int)damage, kbDir, knockbackForce);
 
-    hitmarker();
+    hitmarker((int)damage);
 
     {
         HitEvent ev;
