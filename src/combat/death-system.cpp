@@ -309,6 +309,7 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.dead = false;
     actor.proceduralFrozen = false;
     actor.respawnTimer = 0.0f;
+    actor.voidDeathTriggered = false;
     actor.spawnFlashTimer = 10.0f;
     actor.killedBy.clear();
     actor.onGround = false;

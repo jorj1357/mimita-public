@@ -1,5 +1,6 @@
 #include "network/net_mode.h"
 
+#include "void-death/void-death.h"
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/multiplayer-context.h"
@@ -1293,6 +1294,38 @@ int runServer(const LaunchOptions& options)
         for (auto& kv : players)
             simulatePlayer(kv.second, world);
         resolvePlayerCollision(players);
+        // Server-authoritative void death check
+        {
+            const VoidDeathConfig& vdc = getVoidDeathConfig();
+            if (vdc.enabled)
+            {
+                for (auto& kv : players)
+                {
+                    if (!kv.second.dead && kv.second.pos.z < vdc.killZ)
+                    {
+                        kv.second.health = 0;
+                        kv.second.dead = true;
+                        kv.second.respawnSeconds = 2.0f;
+                        kv.second.vel = glm::vec3(0.0f);
+                        printf("%s [SERVER VOID DEATH] playerId=%u name=%s z=%.1f killZ=%.1f\n",
+                               serverTimestamp(), kv.second.id, kv.second.name.c_str(),
+                               kv.second.pos.z, vdc.killZ);
+                    }
+                }
+                for (auto& kv : npcs)
+                {
+                    if (kv.second.pos.z < vdc.killZ)
+                    {
+                        printf("%s [SERVER VOID DEATH] npcId=%u z=%.1f killZ=%.1f\n",
+                               serverTimestamp(), kv.second.entityId,
+                               kv.second.pos.z, vdc.killZ);
+                        kv.second.health = 0;
+                        kv.second.pos = {1.0f + (float)(kv.second.entityId - 1) * 1.5f, 5.0f, 30.0f};
+                        kv.second.vel = glm::vec3(0.0f);
+                    }
+                }
+            }
+        }
         for (auto& kv : npcs)
             simulateNpc(kv.second, players);
 
