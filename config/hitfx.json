@@ -135,12 +135,12 @@
 
     "movementDashBurst": {
         "enabled": true,
-        "lifetimeTicks": 8,
+        "lifetimeTicks": 25,
         "lengthStart": 0.5,
-        "lengthEnd": 2.5,
+        "lengthEnd": 3.1,
         "radiusStart": 0.18,
         "radiusEnd": 0.35,
-        "brightnessStart": 2.5,
+        "brightnessStart": 23.5,
         "brightnessEnd": 0.0,
         "alphaStart": 0.85,
         "alphaEnd": 0.0,

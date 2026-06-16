@@ -699,6 +699,28 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const 
     return spawn(e);
 }
 
+EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction,
+                                                   float length, float radius, float lifetime)
+{
+    EffectPart e;
+    e.position = position;
+    // Store direction indicator in endPosition so the renderer can compute elongation
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    e.endPosition = position + dir * length;
+    e.replayType = "death_ellipsoid";
+    e.color = {1.0f, 0.0f, 0.0f};
+    e.alpha = 0.75f;
+    e.maxLifetime = lifetime;
+    e.scale = radius;
+    e.endScale = radius;
+    e.sticky = true;
+    e.billboardText = false;
+    e.affectedByGravity = false;
+    Debug::log(Debug::Category::NpcCombat, "[DEATH ELLIPSOID] victim=%s pos=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) lifetime=%.1f length=%.1f radius=%.1f",
+               "", position.x, position.y, position.z, dir.x, dir.y, dir.z, lifetime, length, radius);
+    return spawn(e);
+}
+
 EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
     if (!HitEffects::config().core.bulletImpact) return nullptr;
     if (gHitFxTraceEnabled) {
@@ -942,6 +964,15 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
         else if (effect.flatDecal) {
             DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
+        }
+        else if (effect.replayType == "death_ellipsoid") {
+            glm::vec3 dir = glm::length(effect.endPosition - effect.position) > 0.001f
+                ? glm::normalize(effect.endPosition - effect.position)
+                : glm::vec3(1.0f, 0.0f, 0.0f);
+            float len = glm::length(effect.endPosition - effect.position);
+            float rad = drawScale;
+            glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
+            DebugVis::drawFilledSphere(camera, effect.position, rad, drawColor, scaleVec);
         }
         else {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
