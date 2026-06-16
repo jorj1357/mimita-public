@@ -34,10 +34,7 @@ static bool gDebugPanelEnabled = false;
 bool gBloodFXEnabled = false;
 bool gHitFxTraceEnabled = false;
 bool gDashFXEnabled = true;
-bool gDeathEllipsoidEnabled = true;
-float gDeathEllipsoidLength = 8.0f;
-float gDeathEllipsoidRadius = 1.5f;
-float gDeathEllipsoidLifetime = 3.0f;
+
 
 extern Renderer* gRenderer;
 
@@ -193,6 +190,23 @@ void HitEffects::loadConfig(const std::string& path)
             if (l.contains("endRadius")) cfg.legacyContactSphere.endRadius = l["endRadius"];
         }
 
+        if (j.contains("deathEllipsoid")) {
+            const json& d = j["deathEllipsoid"];
+            if (d.contains("enabled")) cfg.deathEllipsoid.enabled = d["enabled"];
+            if (d.contains("lifetime")) cfg.deathEllipsoid.lifetime = d["lifetime"];
+            if (d.contains("length")) cfg.deathEllipsoid.length = d["length"];
+            if (d.contains("radius")) cfg.deathEllipsoid.radius = d["radius"];
+            if (d.contains("baseAlpha")) cfg.deathEllipsoid.baseAlpha = d["baseAlpha"];
+            if (d.contains("color") && d["color"].is_array() && d["color"].size() >= 4)
+                cfg.deathEllipsoid.color = glm::vec4((float)d["color"][0], (float)d["color"][1],
+                                                     (float)d["color"][2], (float)d["color"][3]);
+            if (d.contains("fade")) cfg.deathEllipsoid.fade = d["fade"];
+            Debug::log(Debug::Category::NpcCombat,
+                "[HITFX CONFIG] deathEllipsoid enabled=%d lifetime=%.2f length=%.2f radius=%.2f\n",
+                (int)cfg.deathEllipsoid.enabled, cfg.deathEllipsoid.lifetime,
+                cfg.deathEllipsoid.length, cfg.deathEllipsoid.radius);
+        }
+
         if (j.contains("movementDashBurst")) {
             const json& m = j["movementDashBurst"];
             if (m.contains("enabled")) cfg.movementDashBurst.enabled = m["enabled"];
@@ -236,6 +250,7 @@ void HitEffects::pollReload()
 }
 
 const HitFxConfig& HitEffects::config() { return gConfig; }
+HitFxConfig& HitEffects::mutableConfig() { return gConfig; }
 
 static void renderSphereTimeline(const HitBurstEffect& b, int age, const Camera& camera)
 {

@@ -702,14 +702,15 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const 
 EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction,
                                                    float length, float radius, float lifetime)
 {
+    const auto& deCfg = HitEffects::config().deathEllipsoid;
     EffectPart e;
     e.position = position;
     // Store direction indicator in endPosition so the renderer can compute elongation
     glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
     e.endPosition = position + dir * length;
     e.replayType = "death_ellipsoid";
-    e.color = {1.0f, 0.0f, 0.0f};
-    e.alpha = 0.75f;
+    e.color = glm::vec3(deCfg.color);
+    e.alpha = deCfg.baseAlpha;
     e.maxLifetime = lifetime;
     e.scale = radius;
     e.endScale = radius;
@@ -928,7 +929,9 @@ int EffectPartSystem::collectAlive(PartSnapshot* out, int maxCount, float minAlp
     for (const auto& e : mPool) {
         if (!e.alive || e.lifetime < 0.0f) continue;
         float t = std::clamp(e.lifetime / e.maxLifetime, 0.0f, 1.0f);
-        float alpha = e.alpha * (1.0f - t);
+        float alpha = e.alpha;
+        if (e.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade)
+            alpha *= (1.0f - t);
         if (alpha < minAlpha) continue;
         if (count >= maxCount) break;
         out[count].position = e.position;
@@ -950,7 +953,9 @@ void EffectPartSystem::render(const Camera& camera) const {
         float distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
 
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
-        float alpha = effect.alpha * (1.0f - t) * distFade;
+        float alpha = effect.alpha * distFade;
+        if (effect.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade)
+            alpha *= (1.0f - t);
         alpha = std::max(0.0f, alpha);
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         

@@ -10,10 +10,15 @@ class Camera;
 extern bool gBloodFXEnabled;
 extern bool gHitFxTraceEnabled;
 extern bool gDashFXEnabled;
-extern bool gDeathEllipsoidEnabled;
-extern float gDeathEllipsoidLength;
-extern float gDeathEllipsoidRadius;
-extern float gDeathEllipsoidLifetime;
+struct DeathEllipsoidConfig {
+    bool enabled = true;
+    float lifetime = 3.0f;
+    float length = 8.0f;
+    float radius = 1.5f;
+    float baseAlpha = 0.75f;
+    glm::vec4 color{1.0f, 0.0f, 0.0f, 0.75f};
+    bool fade = true;
+};
 inline bool isBloodFXEnabled() { return gBloodFXEnabled; }
 inline bool isHitFxTraceEnabled() { return gHitFxTraceEnabled; }
 inline bool isDashFXEnabled() { return gDashFXEnabled; }
@@ -140,6 +145,7 @@ struct HitFxConfig {
     HitFxCurves curves;
     LegacyContactSphereConfig legacyContactSphere;
     MovementDashBurstConfig movementDashBurst;
+    DeathEllipsoidConfig deathEllipsoid;
 };
 
 struct HitEvent {
@@ -192,8 +198,9 @@ int activeBurstCount();
 int debugBurstCount();
 int collectBurstSnapshots(HitBurstSnapshot* out, int maxCount);
 
-void loadConfig(const std::string& path);
-void pollReload();
-const HitFxConfig& config();
+    void loadConfig(const std::string& path);
+    void pollReload();
+    const HitFxConfig& config();
+    HitFxConfig& mutableConfig();
 
 } // namespace HitEffects
