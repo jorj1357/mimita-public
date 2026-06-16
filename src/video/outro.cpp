@@ -266,6 +266,13 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     std::error_code ec;
     bool hardFail = false;
 
+    // ---- DUPLICATE APPEND PROTECTION ----
+    if (replayPath.find("-with-outro") != std::string::npos)
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO] already appended, skipping\n");
+        return;
+    }
+
     // ---- INPUT ----
     bool replayExists = std::filesystem::exists(replayPath);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input path=%s\n", replayPath.c_str());
@@ -277,7 +284,7 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     if (replaySize == 0) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input empty\n"); return; }
 
     double replayDuration = probeDuration(replayPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input duration=%.1f\n", replayDuration);
+    Debug::log(Debug::Category::Replay, "[OUTRO] replay duration=%.1f\n", replayDuration);
 
     int replayW = 0, replayH = 0;
     probeResolution(replayPath, replayW, replayH);
@@ -293,9 +300,10 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro size=%llu\n", (unsigned long long)outroSize);
 
     double outroDuration = probeDuration(outroPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro duration=%.1f\n", outroDuration);
+    Debug::log(Debug::Category::Replay, "[OUTRO] outro duration=%.1f\n", outroDuration);
 
     double expectedDuration = replayDuration + outroDuration;
+    Debug::log(Debug::Category::Replay, "[OUTRO] expected duration=%.1f\n", expectedDuration);
     Debug::log(Debug::Category::Replay, "[OUTRO APPEND] expected duration=%.1f + %.1f = %.1f\n",
                replayDuration, outroDuration, expectedDuration);
 
@@ -444,8 +452,16 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     }
 
     double finalDuration = probeDuration(replayPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] final duration=%.1f\n", finalDuration);
-    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] PASS\n");
+    Debug::log(Debug::Category::Replay, "[OUTRO] final duration=%.1f\n", finalDuration);
+    if (std::fabs(finalDuration - expectedDuration) < 0.5)
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO] PASS\n");
+    }
+    else
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO] FAILED duration mismatch (expected=%.1f actual=%.1f)\n",
+                   expectedDuration, finalDuration);
+    }
 }
 
 void registerOutroCommands()
