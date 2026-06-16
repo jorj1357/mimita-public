@@ -29,10 +29,27 @@ struct OutroConfig {
 static OutroConfig gConfig;
 static uint64_t gLastWriteTime = 0;
 
-// Default ffmpeg path matching replay-export.cpp
-static std::string ffmpegPath()
+static std::string ffmpegDir()
 {
-    return "C:\\important\\ffmpeg-2025-11-17-git-e94439e49b-full_build\\bin\\ffmpeg.exe";
+    return "C:\\important\\ffmpeg-2025-11-17-git-e94439e49b-full_build\\bin";
+}
+
+static std::string ffmpegExe()
+{
+    return ffmpegDir() + "\\ffmpeg.exe";
+}
+
+static std::string ffprobeExe()
+{
+    return ffmpegDir() + "\\ffprobe.exe";
+}
+
+static std::string absPath(const std::string& path)
+{
+    std::error_code ec;
+    auto p = std::filesystem::absolute(path, ec);
+    if (ec) return path;
+    return p.string();
 }
 
 static uint64_t fileWriteTime(const char* path)
@@ -104,25 +121,78 @@ void pollOutroConfig()
 
 static double probeDuration(const std::string& path)
 {
-    char cmd[1024];
-    char tmpPath[512];
-    std::snprintf(tmpPath, sizeof(tmpPath), "replays/exports/_tmp/_dur_%lld.txt",
-                  (long long)std::time(nullptr));
+    std::string absInput = absPath(path);
+    std::string absOutroDir = absPath("replays/exports");
+
+    std::string tmpDir = absPath("replays/exports/_tmp");
+    std::error_code ec;
+    std::filesystem::create_directories(tmpDir, ec);
+
+    char tmpPath[1024];
+    std::snprintf(tmpPath, sizeof(tmpPath), "%s\\_dur_%lld.txt",
+                  tmpDir.c_str(), (long long)std::time(nullptr));
+    std::string absTmp = absPath(tmpPath);
+
+    std::string ffprobeStderrPath = absOutroDir + "\\ffprobe_stderr.txt";
+
+    char cmd[2048];
     std::snprintf(cmd, sizeof(cmd),
-                  "\"%s\" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\" > \"%s\" 2>nul",
-                  ffmpegPath().c_str(), path.c_str(), tmpPath);
-    std::system(cmd);
+                  "\"%s\" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\" > \"%s\" 2>\"%s\"",
+                  ffprobeExe().c_str(), absInput.c_str(), absTmp.c_str(), ffprobeStderrPath.c_str());
+
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe command=%s\n", cmd);
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe exists=%d\n", (int)std::filesystem::exists(ffprobeExe()));
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] tmp dir exists=%d\n", (int)std::filesystem::exists(tmpDir));
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] tmp output=%s\n", absTmp.c_str());
+
+    int probeResult = std::system(cmd);
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe system result=%d\n", probeResult);
+
+    // Dump ffprobe stderr
+    {
+        std::ifstream stderrFile(ffprobeStderrPath);
+        if (stderrFile.is_open())
+        {
+            std::string line;
+            int lineCount = 0;
+            while (std::getline(stderrFile, line) && lineCount < 20)
+            {
+                Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe stderr: %s\n", line.c_str());
+                ++lineCount;
+            }
+            stderrFile.close();
+        }
+        else
+        {
+            Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe stderr file not found: %s\n", ffprobeStderrPath.c_str());
+        }
+    }
+
     double dur = 0.0;
-    std::ifstream f(tmpPath);
-    if (f.is_open()) { f >> dur; f.close(); }
-    std::filesystem::remove(tmpPath);
+    std::ifstream f(absTmp);
+    if (f.is_open())
+    {
+        std::string line;
+        std::getline(f, line);
+        f.close();
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe output=\"%s\"\n", line.c_str());
+        if (!line.empty())
+            dur = std::atof(line.c_str());
+    }
+    else
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe output file not found: %s\n", absTmp.c_str());
+    }
+
+    std::filesystem::remove(absTmp, ec);
+    std::filesystem::remove(ffprobeStderrPath, ec);
     return dur;
 }
 
 void appendOutroToFinishedMp4(const char* replayMp4Path)
 {
-    std::string replayPath(replayMp4Path);
-    std::string outroPath = gConfig.outroPath;
+    std::string replayPath = absPath(replayMp4Path);
+    std::string outroPath = absPath(gConfig.outroPath);
     std::error_code ec;
     bool hardFail = false;
 
@@ -151,6 +221,14 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     double outroDuration = probeDuration(outroPath);
     Debug::log(Debug::Category::Replay, "[OUTRO TEST] outro duration=%.1f\n", outroDuration);
 
+    // ---- FAIL FAST IF DURATION PROBING FAILED ----
+    if (replayDuration <= 0.0 || outroDuration <= 0.0)
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO ERROR] duration probe failed (input=%.1f outro=%.1f)\n",
+                   replayDuration, outroDuration);
+        return;
+    }
+
     // ---- BUILD OUTPUT PATH ----
     std::string outputPath;
     {
@@ -162,13 +240,13 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
     }
 
     // ---- FFMPEG CONCAT ----
-    std::string batDir = "replays/exports/_tmp/";
-    std::filesystem::create_directories(batDir, ec);
+    std::string tmpDir = absPath("replays/exports/_tmp");
+    std::filesystem::create_directories(tmpDir, ec);
 
-    std::string batPath = batDir + "outro_append.bat";
-    std::string stderrPath = "replays/exports/outro_ffmpeg_stderr.txt";
+    std::string batPath = tmpDir + "\\outro_append.bat";
+    std::string stderrPath = absPath("replays/exports/outro_ffmpeg_stderr.txt");
 
-    char ffmpegCmd[4096];
+    char ffmpegCmd[8192];
     std::snprintf(ffmpegCmd, sizeof(ffmpegCmd),
         "@echo off\n"
         "\"%s\" -y -i \"%s\" -i \"%s\" -filter_complex "
@@ -176,10 +254,12 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
         "-map \"[outv]\" -map \"[outa]\" -c:v libx264 -preset fast -pix_fmt yuv420p -crf 18 "
         "-c:a aac -b:a 192k \"%s\" 2>\"%s\"\n"
         "exit /b %%ERRORLEVEL%%\n",
-        ffmpegPath().c_str(),
+        ffmpegExe().c_str(),
         replayPath.c_str(), outroPath.c_str(),
         outputPath.c_str(),
         stderrPath.c_str());
+
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffmpeg command=%s\n", ffmpegCmd);
 
     {
         std::ofstream bat(batPath);
@@ -188,8 +268,11 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
         bat.close();
     }
 
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] batch file path=%s\n", batPath.c_str());
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] stderr path=%s\n", stderrPath.c_str());
+
     int result = std::system(batPath.c_str());
-    std::filesystem::remove(batPath, ec);
+    // std::filesystem::remove(batPath, ec);
 
     Debug::log(Debug::Category::Replay, "[OUTRO TEST] ffmpeg exit code=%d\n", result);
 
@@ -310,13 +393,12 @@ void registerOutroCommands()
             std::string mp4Path;
             if (!args.empty())
             {
-                mp4Path = args[0];
+                mp4Path = absPath(args[0]);
             }
             else
             {
-                // Find latest exported MP4
                 namespace fs = std::filesystem;
-                fs::path exportDir = "replays/exports";
+                fs::path exportDir = absPath("replays/exports");
                 if (!fs::exists(exportDir))
                 {
                     Terminal::instance().addLog("[OUTRO] no exports directory found");
@@ -333,7 +415,7 @@ void registerOutroCommands()
                 }
                 if (candidates.empty())
                 {
-                    Terminal::instance().addLog("[OUTRO] no exported MP4s found in replays/exports/");
+                    Terminal::instance().addLog("[OUTRO] no exported MP4s found");
                     return;
                 }
                 std::sort(candidates.begin(), candidates.end(),
@@ -350,7 +432,6 @@ void registerOutroCommands()
                 gConfig.enabled = true;
             }
 
-            // Capture durations before
             double beforeDuration = probeDuration(mp4Path);
             uint64_t beforeSize = 0;
             {
@@ -360,7 +441,6 @@ void registerOutroCommands()
 
             appendOutroToFinishedMp4(mp4Path.c_str());
 
-            // Verify after
             double afterDuration = probeDuration(mp4Path);
             uint64_t afterSize = 0;
             {
@@ -385,7 +465,7 @@ void registerOutroCommands()
         "outro_verify", "Print latest export file info", "outro_verify",
         [](const std::vector<std::string>&) {
             namespace fs = std::filesystem;
-            fs::path exportDir = "replays/exports";
+            fs::path exportDir = absPath("replays/exports");
             if (!fs::exists(exportDir))
             {
                 Terminal::instance().addLog("[OUTRO] no exports directory");
@@ -420,6 +500,47 @@ void registerOutroCommands()
                      "[OUTRO]   size=%llu bytes",
                      latest.filename().string().c_str(), dur, (unsigned long long)size);
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "probe_test", "Probe durations of latest replay MP4 and outro", "probe_test",
+        [](const std::vector<std::string>&) {
+            namespace fs = std::filesystem;
+            fs::path exportDir = absPath("replays/exports");
+            if (!fs::exists(exportDir))
+            {
+                Terminal::instance().addLog("[OUTRO] no exports directory");
+                return;
+            }
+            std::vector<fs::path> candidates;
+            for (auto& entry : fs::recursive_directory_iterator(exportDir))
+            {
+                if (entry.path().extension() == ".mp4" &&
+                    entry.path().filename().string().find("-with-outro") == std::string::npos)
+                {
+                    candidates.push_back(entry.path());
+                }
+            }
+            if (candidates.empty())
+            {
+                Terminal::instance().addLog("[OUTRO] no MP4 files found");
+                return;
+            }
+            std::sort(candidates.begin(), candidates.end(),
+                [](const fs::path& a, const fs::path& b) {
+                    return fs::last_write_time(a) > fs::last_write_time(b);
+                });
+
+            std::string replayPath = candidates[0].string();
+            Terminal::instance().addLog("[OUTRO] probing: " + replayPath);
+            double replayDur = probeDuration(replayPath);
+            Terminal::instance().addLog(std::string("[OUTRO] replay duration: ") + std::to_string(replayDur) + "s");
+
+            std::string outroPath = absPath(gConfig.outroPath);
+            Terminal::instance().addLog("[OUTRO] probing: " + outroPath);
+            double outroDur = probeDuration(outroPath);
+            Terminal::instance().addLog(std::string("[OUTRO] outro duration: ") + std::to_string(outroDur) + "s");
         }
     });
 }
