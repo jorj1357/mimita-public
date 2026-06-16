@@ -1047,11 +1047,22 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         drawCollisionEvents(camera);
     }
 
-    // collision_debug gated visualization
-    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
-        drawCollisionEvents(camera);
+    // collision_debug_player: movement capsule + floor contacts + grounding state
+    if (DebugConfig::DEBUG_COLLISION_PLAYER) {
+        Capsule cap = player.getCapsule();
+        glm::vec4 capColor = player.stableOnGround
+            ? glm::vec4(0.0f, 1.0f, 0.0f, 0.6f)
+            : glm::vec4(1.0f, 0.3f, 0.0f, 0.6f);
+        // Draw capsule as two wireframe spheres + connecting lines
+        drawWireSphere(camera, cap.a, cap.r, capColor);
+        drawWireSphere(camera, cap.b, cap.r, capColor);
+        for (int i = 0; i <= 8; i++) {
+            float t = (float)i / 8.0f;
+            glm::vec3 pA = cap.a + glm::vec3(cos(t * 6.2832f) * cap.r, sin(t * 6.2832f) * cap.r, 0.0f);
+            glm::vec3 pB = cap.b + glm::vec3(cos(t * 6.2832f) * cap.r, sin(t * 6.2832f) * cap.r, 0.0f);
+            drawLine(camera, pA, pB, capColor);
+        }
 
-        // Grounded state label above player
         char info[128];
         if (player.stableOnGround) {
             snprintf(info, sizeof(info), "GROUNDED stable=%d lostTimer=%.3f",
@@ -1060,9 +1071,11 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
             snprintf(info, sizeof(info), "AIR vel.z=%.2f",
                      player.vel.z);
         }
-        drawWorldLabel(player.pos + glm::vec3(0, 0, PLAYER_HEIGHT + 0.8f), info, {0.0f, 1.0f, 0.0f, 1.0f});
+        drawWorldLabel(player.pos + glm::vec3(0, 0, PLAYER_HEIGHT + 0.8f), info, capColor);
+    }
 
-        // Limb collider wireframes
+    // collision_debug_limb: limb capsule colliders + active contacts
+    if (DebugConfig::DEBUG_COLLISION_LIMB) {
         const glm::vec4 limbColor{0.8f, 0.4f, 0.1f, 0.8f};
         for (const Collider& collider : player.bodyColliders)
         {
@@ -1072,27 +1085,40 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
             if (it == player.nodes.end()) continue;
 
             const glm::mat4& xform = it->worldTransform;
-            if (!collider.samplePoints.empty())
-            {
-                for (glm::vec3 point : collider.samplePoints)
-                {
-                    glm::vec3 worldPt = glm::vec3(xform * glm::vec4(point, 1.0f));
-                    drawWireSphere(camera, worldPt, BODY_SAMPLE_RADIUS, limbColor);
+            // Compute capsule axis from bounds
+            glm::vec3 localCenter = (collider.localMin + collider.localMax) * 0.5f;
+            glm::vec3 localExtents = (collider.localMax - collider.localMin) * 0.5f;
+            float axisLen = glm::length(localExtents);
+            glm::vec3 axisDir(0.0f, 0.0f, 1.0f);
+            if (axisLen > 0.001f)
+                axisDir = localExtents / axisLen;
+            glm::vec3 worldCenter = glm::vec3(xform * glm::vec4(localCenter, 1.0f));
+            float radius = std::min(localExtents.x, localExtents.y) * 1.5f;
+            radius = std::max(radius, BODY_SAMPLE_RADIUS);
+            radius = std::min(radius, 0.35f);
+            glm::vec3 worldA = worldCenter - glm::vec3(xform * glm::vec4(axisDir * axisLen, 0.0f));
+            glm::vec3 worldB = worldCenter + glm::vec3(xform * glm::vec4(axisDir * axisLen, 0.0f));
+
+            if (glm::length(worldB - worldA) > 0.001f) {
+                drawWireSphere(camera, worldA, radius, limbColor);
+                drawWireSphere(camera, worldB, radius, limbColor);
+                for (int i = 0; i <= 6; i++) {
+                    float t2 = (float)i / 6.0f;
+                    glm::vec3 pA = worldA + glm::vec3(cos(t2 * 6.2832f) * radius, sin(t2 * 6.2832f) * radius, 0.0f);
+                    glm::vec3 pB = worldB + glm::vec3(cos(t2 * 6.2832f) * radius, sin(t2 * 6.2832f) * radius, 0.0f);
+                    drawLine(camera, pA, pB, limbColor);
                 }
+            } else {
+                drawWireSphere(camera, worldCenter, radius, limbColor);
             }
-            if (!collider.triangles.empty())
-            {
-                for (const CollisionTriangle& tri : collider.triangles)
-                {
-                    glm::vec3 wa = glm::vec3(xform * glm::vec4(tri.a, 1.0f));
-                    glm::vec3 wb = glm::vec3(xform * glm::vec4(tri.b, 1.0f));
-                    glm::vec3 wc = glm::vec3(xform * glm::vec4(tri.c, 1.0f));
-                    drawLine(camera, wa, wb, limbColor);
-                    drawLine(camera, wb, wc, limbColor);
-                    drawLine(camera, wc, wa, limbColor);
-                }
-            }
+            drawWorldLabel(worldCenter + glm::vec3(0.0f, 0.0f, radius + 0.3f),
+                          collider.name.c_str(), limbColor);
         }
+    }
+
+    // collision_debug system-wide events
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
+        drawCollisionEvents(camera);
     }
 
     if (DebugVis::render()) {

@@ -61,6 +61,49 @@ void setMat4(GLuint shader, const char* name, const glm::mat4& m)
     glUniformMatrix4fv(uniformLoc(shader, name), 1, GL_FALSE, &m[0][0]);
 }
 
+static GLuint gSkyVao = 0;
+static GLuint gSkyVbo = 0;
+static size_t gSkyBuiltVertCount = 0;
+static size_t gSkyBuiltBatchCount = 0;
+static uint64_t gSkyBuiltRevision = 0;
+
+static void uploadSkyIfNeeded(const World& world)
+{
+    const Mesh& mesh = world.skyMesh;
+    if (mesh.verts.empty()) return;
+
+    if (mesh.verts.size() == gSkyBuiltVertCount &&
+        mesh.batches.size() == gSkyBuiltBatchCount &&
+        world.renderRevision == gSkyBuiltRevision)
+        return;
+
+    if (!gSkyVao) {
+        glGenVertexArrays(1, &gSkyVao);
+        glGenBuffers(1, &gSkyVbo);
+    }
+
+    glBindVertexArray(gSkyVao);
+    glBindBuffer(GL_ARRAY_BUFFER, gSkyVbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 mesh.verts.size() * sizeof(Vertex),
+                 mesh.verts.data(),
+                 GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    gSkyBuiltVertCount = mesh.verts.size();
+    gSkyBuiltBatchCount = mesh.batches.size();
+    gSkyBuiltRevision = world.renderRevision;
+}
+
 void uploadMeshIfNeeded(const World& world)
 {
     const Mesh& mesh = world.mesh;
@@ -171,6 +214,44 @@ void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& 
 
     glBindVertexArray(0);
     glUseProgram(0);
+}
+
+void renderSky(const World& world, const Camera& cam)
+{
+    if (!gRenderer || !gRenderer->shaderProgram || world.skyMesh.verts.empty())
+        return;
+
+    auto& mesh = world.skyMesh;
+    uploadSkyIfNeeded(world);
+
+    GLuint shader = gRenderer->shaderProgram;
+    glUseProgram(shader);
+
+    // Depth disabled: sky renders behind everything
+    glDisable(GL_DEPTH_TEST);
+
+    // Model matrix: follow camera position (sky is infinitely distant)
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), cam.pos);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &model[0][0]);
+
+    glm::mat4 view = cam.getView();
+    glm::mat4 proj = cam.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &proj[0][0]);
+
+    setUniforms(shader);
+
+    glBindVertexArray(gSkyVao);
+    for (const auto& batch : mesh.batches)
+    {
+        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+    }
+    glBindVertexArray(0);
+    glUseProgram(0);
+
+    glEnable(GL_DEPTH_TEST);
 }
 
 void renderWorld(const World& world, const Camera& cam)

@@ -83,7 +83,9 @@ constexpr float COLLISION_SKIN = 0.02f;
 // normal.z >= MAX_WALKABLE_SLOPE_DOT = slope is ground
 // normal.z < MAX_WALKABLE_SLOPE_DOT = slope is slide/surf surface
 // default 0.707f = 45 degree max walkable slope
-inline float MAX_WALKABLE_SLOPE_DOT = 0.707f;
+// Changed to 0.80f (~37 degrees) to prevent standing on steep curved/sloped
+// geometry that should not be standable.
+inline float MAX_WALKABLE_SLOPE_DOT = 0.80f;
 
 // json loading stuff
 // jan 30 2026 do we need this?  i would like to have no conversions 
@@ -235,7 +237,10 @@ inline float SLOPE_SKIN = 0.02f;
 // radius for body part collision sweeps (arms, legs, etc.)
 // larger = more solid limbs, but more collision checks
 // keep single definition only
-constexpr float BODY_SAMPLE_RADIUS = 0.12f;
+// Radius for body part collision sweeps (arms, legs, etc.)
+// Increased from 0.12f to 0.25f to prevent limb spheres from catching
+// on world geometry triangle edges and corners.
+constexpr float BODY_SAMPLE_RADIUS = 0.25f;
 
 // max step heihgt
 // how up can u walk , like how tall can it be , the block

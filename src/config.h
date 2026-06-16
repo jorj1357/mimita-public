@@ -47,6 +47,8 @@ namespace DebugConfig
     inline bool DEBUG_GODBALL_HITSTOP = false;
     inline bool DEBUG_ANIM_ARMS = false;
     inline bool DEBUG_COLLISION_SYSTEM = false;
+    inline bool DEBUG_COLLISION_PLAYER = false;
+    inline bool DEBUG_COLLISION_LIMB = false;
     inline bool DEBUG_NPC_MOVEMENT = false;
     inline bool DEBUG_REPLAY = true;
     inline bool DEBUG_NETWORKING = false;
@@ -86,6 +88,8 @@ namespace DebugConfig
         DEBUG_GODBALL_HITSTOP = false;
         DEBUG_ANIM_ARMS = false;
         DEBUG_NPC_MOVEMENT = false;
+        DEBUG_COLLISION_PLAYER = false;
+        DEBUG_COLLISION_LIMB = false;
         DEBUG_REPLAY = false;
         DEBUG_NETWORKING = false;
         DEBUG_DUEL = false;

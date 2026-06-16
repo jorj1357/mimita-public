@@ -1594,6 +1594,8 @@ int main(int argc, char** argv)
     registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
     registerDebugToggle("final_kill_debug", DebugConfig::DEBUG_NPC_DEATH);  // reuse existing flag
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
+    registerDebugToggle("collision_debug_player", DebugConfig::DEBUG_COLLISION_PLAYER);
+    registerDebugToggle("collision_debug_limb", DebugConfig::DEBUG_COLLISION_LIMB);
     registerDebugToggle("npc_damage_debug", DebugConfig::DEBUG_NPC_COMBAT);
     registerDebugToggle("npc_movement_debug", DebugConfig::DEBUG_NPC_MOVEMENT);
     registerDebugToggle("ragdoll_debug", DebugConfig::DEBUG_RAGDOLL);
@@ -1670,6 +1672,29 @@ int main(int argc, char** argv)
     registerHitFxCommands();
     registerDiagnosticCommands();
     registerShadowCommands();
+    Terminal::instance().registerCommand({
+        "skybox_debug", "Show skybox source info", "skybox_debug",
+        [&world](const std::vector<std::string>&) {
+            bool hasSky = !world.skyMesh.verts.empty();
+            char buf[512];
+            if (hasSky)
+            {
+                snprintf(buf, sizeof(buf),
+                    "sky source=glb\n"
+                    "sky mesh found=1\n"
+                    "sky verts=%zu\n"
+                    "sky batches=%zu",
+                    world.skyMesh.verts.size(), world.skyMesh.batches.size());
+            }
+            else
+            {
+                snprintf(buf, sizeof(buf),
+                    "sky source=fallback\n"
+                    "reason=no sky data found");
+            }
+            Terminal::instance().addLog(buf);
+        }
+    });
     registerWorldTextureCommands();
     HitEffects::loadConfig("config/hitfx.json");
 
@@ -3742,6 +3767,7 @@ int main(int argc, char** argv)
             glViewport(0, 0, engine.renderer->width, engine.renderer->height);
             PostFX::instance().bindFBO();
             diagRenderStage(1);
+            renderSky(world, camera);
             renderWorld(world, camera);
             PostFX::instance().consumeMagentaTest();
             diagRenderStage(2);
