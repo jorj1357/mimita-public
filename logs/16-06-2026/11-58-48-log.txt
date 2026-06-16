@@ -511,3 +511,74 @@ OpenGL 3.3.0 NVIDIA 592.27
 [UI HOVER EXIT] id=PLAY
 [UI HOVER ENTER] id=REPLAYS
 [UI HOVER EXIT] id=REPLAYS
+[TERMINAL] closed
+[TERMINAL] opened
+[35m[113.124][INFO][REPLAY][0m [OUTRO APPEND] input path=C:\important\mimita-priv-v8\replays\exports\_tmp\twostage_v3.mp4
+[0m[35m[113.124][INFO][REPLAY][0m [OUTRO APPEND] input exists=1
+[0m[35m[113.124][INFO][REPLAY][0m [OUTRO APPEND] input size=17342614
+[0m[35m[113.124][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe=C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffprobe.exe
+[0m[35m[113.125][INFO][REPLAY][0m [OUTRO CMD] ffprobe args=-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "C:\important\mimita-priv-v8\replays\exports\_tmp\twostage_v3.mp4"
+[0m[35m[113.125][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe exists=1
+[0m[35m[113.159][INFO][REPLAY][0m [OUTRO CMD] ffprobe exit=0
+[0m[35m[113.159][INFO][REPLAY][0m [OUTRO PROBE] raw output=29.835333
+
+[0m[35m[113.159][INFO][REPLAY][0m [OUTRO PROBE] parsed duration=29.8
+[0m[35m[113.159][INFO][REPLAY][0m [OUTRO APPEND] input duration=29.8
+[0m[35m[113.193][INFO][REPLAY][0m [OUTRO APPEND] input resolution=0x1280
+[0m[35m[113.194][INFO][REPLAY][0m [OUTRO APPEND] outro path=C:\important\mimita-priv-v8\assets\video\mimitaoutrov1.webm
+[0m[35m[113.194][INFO][REPLAY][0m [OUTRO APPEND] outro exists=1
+[0m[35m[113.194][INFO][REPLAY][0m [OUTRO APPEND] outro size=639545
+[0m[35m[113.194][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe=C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffprobe.exe
+[0m[35m[113.194][INFO][REPLAY][0m [OUTRO CMD] ffprobe args=-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "C:\important\mimita-priv-v8\assets\video\mimitaoutrov1.webm"
+[0m[35m[113.194][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe exists=1
+[0m[35m[113.226][INFO][REPLAY][0m [OUTRO CMD] ffprobe exit=0
+[0m[35m[113.226][INFO][REPLAY][0m [OUTRO PROBE] raw output=2.008000
+
+[0m[35m[113.226][INFO][REPLAY][0m [OUTRO PROBE] parsed duration=2.0
+[0m[35m[113.226][INFO][REPLAY][0m [OUTRO APPEND] outro duration=2.0
+[0m[35m[113.226][INFO][REPLAY][0m [OUTRO APPEND] expected duration=29.8 + 2.0 = 31.8
+[0m[35m[113.227][INFO][REPLAY][0m [OUTRO APPEND] stage1 args=-y -i "C:\important\mimita-priv-v8\assets\video\mimitaoutrov1.webm" -c:v libx264 -preset fast -pix_fmt yuv420p -crf 18 -c:a aac -b:a 192k -vf "scale=0:1280:force_original_aspect_ratio=decrease,pad=0:1280:(ow-iw)/2:(oh-ih)/2" -loglevel error "C:\important\mimita-priv-v8\replays\exports\_tmp\outro_normalized.mp4"
+[0m[35m[113.760][INFO][REPLAY][0m [OUTRO APPEND] stage1 exit=0
+[0m[35m[113.760][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe=C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffprobe.exe
+[0m[35m[113.760][INFO][REPLAY][0m [OUTRO CMD] ffprobe args=-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "C:\important\mimita-priv-v8\replays\exports\_tmp\outro_normalized.mp4"
+[0m[35m[113.761][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe exists=1
+[0m[35m[113.802][INFO][REPLAY][0m [OUTRO CMD] ffprobe exit=0
+[0m[35m[113.802][INFO][REPLAY][0m [OUTRO PROBE] raw output=2.007000
+
+[0m[35m[113.802][INFO][REPLAY][0m [OUTRO PROBE] parsed duration=2.0
+[0m[35m[113.802][INFO][REPLAY][0m [OUTRO APPEND] normalized duration=2.0
+[0m[35m[113.802][INFO][REPLAY][0m [OUTRO APPEND] stage2 args=-y -f concat -safe 0 -i "C:\important\mimita-priv-v8\replays\exports\_tmp\concat_list.txt" -c copy -bsf:v h264_mp4toannexb -loglevel error "C:\important\mimita-priv-v8\replays\exports\_tmp\twostage_v3-with-outro.mp4"
+[0m[35m[113.874][INFO][REPLAY][0m [OUTRO APPEND] stage2 exit=0
+[0m[35m[113.874][INFO][REPLAY][0m [OUTRO APPEND] output exists=1
+[0m[35m[113.875][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe=C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffprobe.exe
+[0m[35m[113.875][INFO][REPLAY][0m [OUTRO CMD] ffprobe args=-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "C:\important\mimita-priv-v8\replays\exports\_tmp\twostage_v3-with-outro.mp4"
+[0m[35m[113.875][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe exists=1
+[0m[35m[113.912][INFO][REPLAY][0m [OUTRO CMD] ffprobe exit=0
+[0m[35m[113.912][INFO][REPLAY][0m [OUTRO PROBE] raw output=31.842333
+
+[0m[35m[113.912][INFO][REPLAY][0m [OUTRO PROBE] parsed duration=31.8
+[0m[35m[113.912][INFO][REPLAY][0m [OUTRO APPEND] output size=17940608
+[0m[35m[113.912][INFO][REPLAY][0m [OUTRO APPEND] output duration=31.8
+[0m[35m[113.912][INFO][REPLAY][0m [OUTRO APPEND] replacing original
+[0m[35m[113.914][INFO][REPLAY][0m [OUTRO APPEND] rename failed: Permission denied
+[0m[35m[113.914][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe=C:\important\ffmpeg-2025-11-17-git-e94439e49b-full_build\bin\ffprobe.exe
+[0m[35m[113.914][INFO][REPLAY][0m [OUTRO CMD] ffprobe args=-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "C:\important\mimita-priv-v8\replays\exports\_tmp\twostage_v3.mp4"
+[0m[35m[113.914][INFO][REPLAY][0m [OUTRO CMD] ffprobe exe exists=1
+[0m[35m[113.948][INFO][REPLAY][0m [OUTRO CMD] ffprobe exit=0
+[0m[35m[113.948][INFO][REPLAY][0m [OUTRO PROBE] raw output=29.835333
+
+[0m[35m[113.948][INFO][REPLAY][0m [OUTRO PROBE] parsed duration=29.8
+[0m[UI HOVER ENTER] id=EXIT
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=REPLAYS
+[UI HOVER EXIT] id=REPLAYS
