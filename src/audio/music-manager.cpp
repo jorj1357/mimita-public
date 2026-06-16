@@ -95,6 +95,14 @@ void MusicManager::applyVolume()
     }
 }
 
+void MusicManager::applyPlaybackSpeed()
+{
+    if (mCurrentSound) {
+        float clamped = std::clamp(mPlaybackSpeed, 0.25f, 2.0f);
+        ma_sound_set_pitch(mCurrentSound, clamped);
+    }
+}
+
 void MusicManager::startTrack(const std::string& path)
 {
     uninitSound();
@@ -124,6 +132,7 @@ void MusicManager::startTrack(const std::string& path)
     }
 
     applyVolume();
+    applyPlaybackSpeed();
     ma_sound_start(mCurrentSound);
 
     mTrackJustChanged = true;
@@ -348,6 +357,16 @@ void MusicManager::setMuted(bool m)
 
 bool MusicManager::muted() const { return mMuted; }
 
+void MusicManager::setPlaybackSpeed(float speed)
+{
+    mPlaybackSpeed = std::clamp(speed, 0.25f, 2.0f);
+    applyPlaybackSpeed();
+    saveConfig();
+    Debug::log(Debug::Category::Audio, "[MUSIC] playbackSpeed applied=%.2f\n", mPlaybackSpeed);
+}
+
+float MusicManager::playbackSpeed() const { return mPlaybackSpeed; }
+
 bool MusicManager::isPlaying() const
 {
     return mInitialized && mCurrentSound && ma_sound_is_playing(mCurrentSound);
@@ -495,6 +514,34 @@ void MusicManager::drawMusicWidget()
     {
         setMuted(!mMuted);
     }
+    y += 30.0f;
+
+    // Speed controls
+    {
+        char speedLabel[64];
+        snprintf(speedLabel, sizeof(speedLabel), "Speed: %.2fx", mPlaybackSpeed);
+        uiDrawText(speedLabel, uiScaleX(panelX + 12.0f), uiScaleY(y), 0.30f,
+                   {0.7f, 0.9f, 1.0f, 1.0f});
+        y += 22.0f;
+
+        const float spBtnW = 60.0f;
+        const float spBtnH = 22.0f;
+        if (uiButton(win, "Slow",
+            {panelX + 12.0f, y, spBtnW, spBtnH}, {0.3f, 0.2f, 0.5f, 1.0f}, "music-speed-down").clicked)
+        {
+            setPlaybackSpeed(mPlaybackSpeed - 0.1f);
+        }
+        if (uiButton(win, "Reset",
+            {panelX + 12.0f + (spBtnW + 6.0f), y, spBtnW, spBtnH}, {0.2f, 0.3f, 0.5f, 1.0f}, "music-speed-reset").clicked)
+        {
+            setPlaybackSpeed(1.0f);
+        }
+        if (uiButton(win, "Fast",
+            {panelX + 12.0f + (spBtnW + 6.0f) * 2, y, spBtnW, spBtnH}, {0.2f, 0.5f, 0.3f, 1.0f}, "music-speed-up").clicked)
+        {
+            setPlaybackSpeed(mPlaybackSpeed + 0.1f);
+        }
+    }
 
     // Debug overlay
     if (mWidgetDebug)
@@ -542,10 +589,14 @@ void MusicManager::loadConfig()
             float vol = j["musicVolume"];
             setVolume(vol);
         }
+        if (j.contains("playbackSpeed")) {
+            float speed = j["playbackSpeed"];
+            setPlaybackSpeed(speed);
+        }
         std::error_code ec;
         mConfigLastWrite = std::filesystem::last_write_time(mConfigPath, ec);
-        Debug::log(Debug::Category::Audio, "[MUSIC] config loaded: enabled=%d volume=%.2f\n",
-                   (int)!mMuted, mVolume);
+        Debug::log(Debug::Category::Audio, "[MUSIC CONFIG] loaded path=%s musicMuted=%d volume=%.2f playbackSpeed=%.2f\n",
+                   mConfigPath.c_str(), (int)mMuted, mVolume, mPlaybackSpeed);
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Audio, "[MUSIC] config parse error: %s\n", e.what());
     }
@@ -560,6 +611,7 @@ void MusicManager::saveConfig()
         json j;
         j["musicEnabled"] = !mMuted;
         j["musicVolume"] = mVolume;
+        j["playbackSpeed"] = mPlaybackSpeed;
         std::ofstream file(mConfigPath);
         if (file.is_open()) {
             file << j.dump(4);

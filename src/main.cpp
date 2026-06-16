@@ -2437,13 +2437,66 @@ int main(int argc, char** argv)
             auto& mm = MusicManager::instance();
             char buf[256];
             snprintf(buf, sizeof(buf),
-                "musicEnabled=%d\nmusicVolume=%.2f\nconfigLoaded=1\nconfigPath=config/audio/music-settings.json",
-                (int)!mm.muted(), mm.volume());
+                "musicEnabled=%d\nmusicVolume=%.2f\nmusicSpeed=%.2f\nconfigLoaded=1\nconfigPath=config/audio/music-settings.json",
+                (int)!mm.muted(), mm.volume(), mm.playbackSpeed());
             Terminal::instance().addLog(buf);
-            Debug::log(Debug::Category::Audio, "[MUSIC] debug: enabled=%d volume=%.2f\n",
-                       (int)!mm.muted(), mm.volume());
+            Debug::log(Debug::Category::Audio, "[MUSIC] debug: enabled=%d volume=%.2f speed=%.2f\n",
+                       (int)!mm.muted(), mm.volume(), mm.playbackSpeed());
         },
         "2026-06-14", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "music_speed", "Set music playback speed (0.25-2.0)", "music_speed <value>",
+        [](const std::vector<std::string>& args) {
+            auto& mm = MusicManager::instance();
+            if (args.empty()) {
+                Terminal::instance().addLog(std::string("[MUSIC] speed=") + std::to_string(mm.playbackSpeed()) + "x");
+                return;
+            }
+            float speed = std::stof(args[0]);
+            mm.setPlaybackSpeed(speed);
+            Terminal::instance().addLog(std::string("[MUSIC] speed set to ") + std::to_string(mm.playbackSpeed()) + "x");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "music_speed_up", "Increase music playback speed by 0.1", "music_speed_up",
+        [](const std::vector<std::string>&) {
+            auto& mm = MusicManager::instance();
+            mm.setPlaybackSpeed(mm.playbackSpeed() + 0.1f);
+            Terminal::instance().addLog(std::string("[MUSIC] speed=") + std::to_string(mm.playbackSpeed()) + "x");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "music_speed_down", "Decrease music playback speed by 0.1", "music_speed_down",
+        [](const std::vector<std::string>&) {
+            auto& mm = MusicManager::instance();
+            mm.setPlaybackSpeed(mm.playbackSpeed() - 0.1f);
+            Terminal::instance().addLog(std::string("[MUSIC] speed=") + std::to_string(mm.playbackSpeed()) + "x");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "music_speed_reset", "Reset music playback speed to 1.0", "music_speed_reset",
+        [](const std::vector<std::string>&) {
+            MusicManager::instance().setPlaybackSpeed(1.0f);
+            Terminal::instance().addLog("[MUSIC] speed reset to 1.00x");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "music_status", "Show current music state", "music_status",
+        [](const std::vector<std::string>&) {
+            auto& mm = MusicManager::instance();
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "Volume: %.2f\nMuted: %d\nSpeed: %.2fx\nPlaying: %d\nTrack: %s",
+                mm.volume(), (int)mm.muted(), mm.playbackSpeed(),
+                (int)mm.isPlaying(), mm.currentTrackInfo().c_str());
+            Terminal::instance().addLog(buf);
+        }
     });
 
     // Spawn FX debug commands
