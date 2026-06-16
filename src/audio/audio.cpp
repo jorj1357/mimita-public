@@ -316,10 +316,11 @@ std::string resolveSoundPath(const std::string& name)
 }
 
 bool decodeAudioToPCM(const std::string& path, std::vector<int16_t>& outPCM,
-                      uint32_t& outSampleRate, uint32_t& outChannels)
+                      uint32_t& outSampleRate, uint32_t& outChannels,
+                      uint32_t targetSampleRate, uint32_t targetChannels)
 {
     ma_decoder decoder;
-    ma_decoder_config config = ma_decoder_config_init(ma_format_s16, 2, 44100);
+    ma_decoder_config config = ma_decoder_config_init(ma_format_s16, targetChannels, targetSampleRate);
     if (ma_decoder_init_file(path.c_str(), &config, &decoder) != MA_SUCCESS)
         return false;
 

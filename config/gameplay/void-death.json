@@ -1,0 +1,5 @@
+{
+    "enabled": true,
+    "killZ": -500.0,
+    "command": "explode"
+}
