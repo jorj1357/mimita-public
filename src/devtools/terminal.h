@@ -44,6 +44,7 @@ struct ConsoleCommand {
     std::function<void(const std::vector<std::string>& args)> fn;
     std::string dateAdded;  // "YYYY-MM-DD" or empty — stored separately
     CommandCategory category = CommandCategory::Uncategorized;
+    std::vector<std::string> aliases;  // alternative names that run the same handler
 };
 
 class Terminal {

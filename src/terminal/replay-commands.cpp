@@ -298,7 +298,8 @@ void registerReplayCommands()
             Terminal::instance().addLog("[REPLAY] File: " + path);
             printf("[REPLAY] Saved instant replay: %s  frames=%zu  duration=%.1fs\n",
                    path.c_str(), frameCount, duration);
-        }
+        },
+        std::string(), CommandCategory::Uncategorized, {"rpls"}
     });
 
     Terminal::instance().registerCommand({
@@ -772,7 +773,8 @@ void registerReplayCommands()
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
             }
-        }
+        },
+        std::string(), CommandCategory::Uncategorized, {"rplx"}
     });
 
     Terminal::instance().registerCommand({
