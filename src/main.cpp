@@ -385,6 +385,95 @@ int main(int argc, char** argv)
         return saved && loaded && interpolationOk && camerasOk ? 0 : 1;
     }
 
+    if (argc > 1 && std::string(argv[1]) == "-exportdiagnostic") {
+        printf("[EXPORTDIAG] Running replay export diagnostic...\n");
+        // Find newest replay
+        std::vector<std::string> clips = listReplayClips();
+        std::string reportPath = "replays/exports/export-diagnostic-report.txt";
+        std::error_code ec;
+        std::filesystem::create_directories("replays/exports", ec);
+        FILE* report = fopen(reportPath.c_str(), "w");
+        if (!report) {
+            printf("[EXPORTDIAG] FAILED: cannot write report\n");
+            return 1;
+        }
+        fprintf(report, "=== EXPORT DIAGNOSTIC REPORT ===\n");
+        fprintf(report, "Timestamp: %lld\n", (long long)std::time(nullptr));
+
+        // CHECK A: Replay exists
+        fprintf(report, "\n--- CHECK A: Replay exists ---\n");
+        if (clips.empty()) {
+            fprintf(report, "FAIL: No replays found\n");
+            fclose(report);
+            return 1;
+        }
+        std::string newestPath = clips.front();
+        fprintf(report, "PASS: Newest replay: %s\n", newestPath.c_str());
+
+        // CHECK B: Replay loads
+        fprintf(report, "\n--- CHECK B: Replay loads ---\n");
+        ReplayClip clip;
+        if (!clip.load(newestPath)) {
+            fprintf(report, "FAIL: Cannot load replay\n");
+            fclose(report);
+            return 1;
+        }
+        fprintf(report, "PASS: tickCount=%u duration=%.1fs map=%s\n",
+                clip.header.tickCount, (float)clip.header.tickCount / 60.0f,
+                clip.header.mapName);
+
+        // CHECK C: FFmpeg exists
+        fprintf(report, "\n--- CHECK C: FFmpeg ---\n");
+        std::string ffmpeg = defaultFfmpegPath();
+        if (!std::filesystem::exists(ffmpeg)) {
+            fprintf(report, "FAIL: ffmpeg not found at %s\n", ffmpeg.c_str());
+            fclose(report);
+            return 1;
+        }
+        fprintf(report, "PASS: ffmpeg found at %s\n", ffmpeg.c_str());
+
+        // CHECK D: ffmpeg -version
+        fprintf(report, "\n--- CHECK D: ffmpeg -version ---\n");
+        std::string versionCmd = "\"" + ffmpeg + "\" -version 2>&1";
+        FILE* vp = _popen(versionCmd.c_str(), "r");
+        if (vp) {
+            char vbuf[256];
+            if (fgets(vbuf, sizeof(vbuf), vp))
+                fprintf(report, "PASS: %s", vbuf);
+            _pclose(vp);
+        } else {
+            fprintf(report, "FAIL: cannot run ffmpeg -version\n");
+        }
+
+        // CHECK E: Load into gReplayPlayer
+        fprintf(report, "\n--- CHECK E: Load into gReplayPlayer ---\n");
+        {
+            ReplayPlayer diagnosticPlayer;
+            if (!diagnosticPlayer.loadFromJSON(newestPath)) {
+                fprintf(report, "FAIL: Cannot load replay into ReplayPlayer\n");
+            } else {
+                fprintf(report, "PASS: totalTicks=%u\n", diagnosticPlayer.totalTicks());
+                diagnosticPlayer.beginPlayback();
+                fprintf(report, "PASS: beginPlayback OK. isPlaying=%d\n", (int)diagnosticPlayer.isPlaying());
+                diagnosticPlayer.seekToTick(0);
+                const ReplaySceneFrame* frame = diagnosticPlayer.currentSceneFrame();
+                fprintf(report, "PASS: seekToTick(0). hasSceneFrame=%d\n", frame ? 1 : 0);
+                if (frame)
+                    fprintf(report, "PASS: actors=%zu\n", frame->actors.size());
+            }
+        }
+
+        // CHECK F: Output path
+        fprintf(report, "\n--- CHECK F: Output path ---\n");
+        std::string outputPath = generateExportOutputPath();
+        fprintf(report, "PASS: outputPath=%s\n", outputPath.c_str());
+
+        fprintf(report, "\n=== DIAGNOSTIC COMPLETE ===\n");
+        fclose(report);
+        printf("[EXPORTDIAG] Report written to %s\n", reportPath.c_str());
+        return 0;
+    }
+
     LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
     if (launchOptions.name.empty())
@@ -2424,14 +2513,21 @@ int main(int argc, char** argv)
                 if (job.state == ReplayExportJob::Capturing) {
                     uint32_t seekTick = job.capturedTicks;
                     if (seekTick < gReplayPlayer.totalTicks()) {
-                        gReplayPlayer.pause();
+                        Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u / total %u", seekTick, gReplayPlayer.totalTicks());
                         gReplayPlayer.seekToTick(seekTick);
                         gReplayPlayer.update(0.0f);
+                    } else {
+                        Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u >= total %u (skip)", seekTick, gReplayPlayer.totalTicks());
                     }
                 }
             }
 
             const bool replayPlaybackActive = gReplayPlayer.isPlaying();
+            const bool replayRenderActive = replayPlaybackActive ||
+                (getReplayExportJob().state == ReplayExportJob::Capturing && gReplayPlayer.totalTicks() > 0);
+            Debug::log(Debug::Category::Replay, "[EXPORTTRACE] replayPlaybackActive=%d replayRenderActive=%d totalTicks=%u exportState=%d",
+                   (int)replayPlaybackActive, (int)replayRenderActive, gReplayPlayer.totalTicks(),
+                   (int)getReplayExportJob().state);
             setReplayCaptureEnabled(!replayPlaybackActive);
 
             // Fixed-tick simulation accumulator
@@ -3300,7 +3396,16 @@ int main(int argc, char** argv)
             renderWorld(world, camera);
             PostFX::instance().consumeMagentaTest();
             diagRenderStage(2);
-            if (replayPlaybackActive) {
+            {
+                static uint64_t renderLogFrame = 0;
+                if (renderLogFrame++ % 60 == 0 || getReplayExportJob().state == ReplayExportJob::Capturing) {
+                    Debug::log(Debug::Category::Replay, "[EXPORTTRACE] RENDER: replayRenderActive=%d hasSceneFrame=%d exportState=%d",
+                           (int)replayRenderActive,
+                           gReplayPlayer.currentSceneFrame() ? 1 : 0,
+                           (int)getReplayExportJob().state);
+                }
+            }
+            if (replayRenderActive) {
                 if (const ReplaySceneFrame* replayFrame =
                         gReplayPlayer.currentSceneFrame()) {
                     const glm::mat4 replayView = camera.getView();
@@ -4418,7 +4523,7 @@ int main(int argc, char** argv)
         if (isReplayExportActive()) {
             static bool loggedOnce = false;
             if (!loggedOnce) {
-                printf("[EXPORTTRACE] main loop calling updateReplayExport\n"); fflush(stdout);
+                Debug::log(Debug::Category::Replay, "[EXPORTTRACE] main loop calling updateReplayExport");
                 loggedOnce = true;
             }
             updateReplayExport();

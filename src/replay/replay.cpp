@@ -1533,9 +1533,17 @@ const InputFrame* ReplayPlayer::advanceTick() {
 }
 
 void ReplayPlayer::seekToTick(uint32_t tick) {
-    mCurrentTick = std::min(tick, (uint32_t)mFrames.size());
+    // Clamp against scene frames (visual data) not input frames (which may be empty in clips).
+    // Scene frames drive replay rendering; input frames are only for simulation playback.
+    size_t maxTicks = mClip.sceneFrames.empty() ? mFrames.size() : mClip.sceneFrames.size();
+    mCurrentTick = std::min(tick, (uint32_t)maxTicks);
     mPlaybackTick = (float)tick;
     mLastEventTick = (int)tick - 1;
+    // Ensure playing state so that subsequent update() interpolates frames
+    mPlaying = true;
+    mPaused = false;
+    printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u max=%zu frames=%zu scene=%zu playing=1\n",
+           tick, mCurrentTick, maxTicks, mFrames.size(), mClip.sceneFrames.size());
 }
 
 bool ReplayCameraController::setMode(const std::string& name)

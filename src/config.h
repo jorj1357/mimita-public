@@ -2,7 +2,7 @@
 
 namespace DebugConfig
 {
-    inline bool ENABLE_DEBUG_LOGS = false;
+    inline bool ENABLE_DEBUG_LOGS = true;
 
     inline bool GLB_VERBOSE = false;
     inline bool COLLISION_VERBOSE = false;
@@ -48,9 +48,9 @@ namespace DebugConfig
     inline bool DEBUG_ANIM_ARMS = false;
     inline bool DEBUG_COLLISION_SYSTEM = false;
     inline bool DEBUG_NPC_MOVEMENT = false;
-    inline bool DEBUG_REPLAY = false;
+    inline bool DEBUG_REPLAY = true;
     inline bool DEBUG_NETWORKING = false;
-    inline bool DEBUG_DUEL = false;
+    inline bool DEBUG_DUEL = true;
     inline bool DEBUG_VISUALS_MASTER = true;
 
     inline void ResetAll()
