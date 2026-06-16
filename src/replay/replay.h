@@ -211,6 +211,7 @@ public:
 
     const ReplayHeader& header() const { return mHeader; }
     const std::vector<ReplayAsset>& assets() const { return mAssets; }
+    const std::vector<ReplaySoundEvent>& soundEvents() const { return mClip.soundEvents; }
     bool preloadAssets();
 
 private:

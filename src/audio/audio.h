@@ -6,7 +6,9 @@
  */
 
 #pragma once
+#include <cstdint>
 #include <string>
+#include <vector>
 #include <glm/glm.hpp>
 
 enum class AudioCategory { Movement, UI, Weapons, NPC, Impacts, Ambient };
@@ -51,3 +53,11 @@ void playRandomFootstep();
 
 void playMenuClick();
 void playMenuHover();
+
+// Resolve a sound name (e.g. "revolvershoot") to its filesystem path.
+// Returns the path if the file exists, or empty string if not found.
+std::string resolveSoundPath(const std::string& name);
+
+// Decode an audio file to 16-bit PCM. Returns false on failure.
+bool decodeAudioToPCM(const std::string& path, std::vector<int16_t>& outPCM,
+                      uint32_t& outSampleRate, uint32_t& outChannels);
