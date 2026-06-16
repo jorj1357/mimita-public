@@ -225,6 +225,12 @@ void HitEffects::loadConfig(const std::string& path)
             if (m.contains("speedThreshold")) cfg.movementDashBurst.speedThreshold = m["speedThreshold"];
             if (m.contains("speedScaleMin")) cfg.movementDashBurst.speedScaleMin = m["speedScaleMin"];
             if (m.contains("speedScaleMax")) cfg.movementDashBurst.speedScaleMax = m["speedScaleMax"];
+            if (m.contains("forwardOffset") || m.contains("directionalOffset")) {
+                cfg.movementDashBurst.forwardOffset = m.contains("forwardOffset")
+                    ? (float)m["forwardOffset"] : (float)m["directionalOffset"];
+            }
+            if (m.contains("rightOffset")) cfg.movementDashBurst.rightOffset = m["rightOffset"];
+            if (m.contains("upOffset")) cfg.movementDashBurst.upOffset = m["upOffset"];
         }
 
         gConfig = cfg;
@@ -483,13 +489,30 @@ void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::ve
         gBursts[0] = gBursts[gBurstCount - 1];
         gBurstCount--;
     }
+
+    const auto& cfg = gConfig.movementDashBurst;
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 fwd = dir;
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
+    up = glm::normalize(glm::cross(right, fwd));
+
+    glm::vec3 offset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + offset;
+    spawnPos.z += 0.05f;
+
+    Debug::log(Debug::Category::General, "[DASH FX] position=(%.2f,%.2f,%.2f) direction=(%.2f,%.2f,%.2f) offset=(%.2f,%.2f,%.2f) spawn=(%.2f,%.2f,%.2f)",
+               position.x, position.y, position.z,
+               dir.x, dir.y, dir.z,
+               offset.x, offset.y, offset.z,
+               spawnPos.x, spawnPos.y, spawnPos.z);
+
     HitBurstEffect& b = gBursts[gBurstCount++];
-    b.position = position;
-    b.position.z += 0.05f;
-    b.direction = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    b.position = spawnPos;
+    b.direction = dir;
     b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
     b.spawnTick = gGlobalTick;
-    b.totalTicks = gConfig.movementDashBurst.lifetimeTicks;
+    b.totalTicks = cfg.lifetimeTicks;
     b.alive = true;
     b.dashBurst = true;
     b.dashSpeed = speed;

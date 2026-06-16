@@ -121,6 +121,13 @@ struct MovementDashBurstConfig {
     float speedThreshold = 12.0f;
     float speedScaleMin = 1.0f;
     float speedScaleMax = 2.5f;
+    // Directional spawn offset: the burst spawns at position + offset.
+    // forwardOffset: along movement direction (negative = behind player)
+    // rightOffset: perpendicular to movement (positive = right side)
+    // upOffset: vertical offset
+    float forwardOffset = -1.0f;
+    float rightOffset = 0.0f;
+    float upOffset = 0.0f;
 };
 
 struct HitFxConfig {
