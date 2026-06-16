@@ -283,7 +283,7 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
         hits.push_back(hit);
         mRemoteGodballCooldowns[targetId] = tickInterval;
 
-        hitmarker();
+        hitmarker(damage);
         {
             HitEvent ev;
             ev.position = hit.end;

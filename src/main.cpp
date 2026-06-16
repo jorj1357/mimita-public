@@ -63,6 +63,7 @@
 #include "physics/physics-mini.h"
 #include "physics/physics-debug-movement.h"
 #include "audio/audio.h"
+#include "audio/hitmarker-audio.h"
 #include "audio/music-manager.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
@@ -1641,6 +1642,7 @@ int main(int argc, char** argv)
     // Register replay terminal commands (moved to src/terminal/replay-commands.cpp)
     registerReplayCommands();
     registerVoidDeathCommands();
+    registerHitmarkerAudioCommands();
     registerPerfCommands();
     registerHitFxCommands();
     registerDiagnosticCommands();
@@ -2916,6 +2918,7 @@ int main(int argc, char** argv)
                     LightingConfig::instance().pollReload();
                     ShadowConfig::instance().pollReload();
                     pollVoidDeathConfig();
+                    pollHitmarkerAudioConfig();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
