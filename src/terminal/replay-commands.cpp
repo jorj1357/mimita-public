@@ -888,6 +888,35 @@ void registerReplayCommands()
     });
 
     Terminal::instance().registerCommand({
+        "healthbar_audit", "Audit healthbar state: count alive/dead/orphaned entries", "healthbar_audit",
+        [](const std::vector<std::string>&) {
+            uint32_t total = 0, alive = 0, dead = 0;
+            for (const auto& kv : REPLAY_ACTOR_MODELS) {
+                total++;
+                if (kv.second && kv.second->dead) dead++;
+                else alive++;
+            }
+            printf("[HEALTHBAR AUDIT]\n");
+            printf("  replayActorModels=%u\n", total);
+            printf("  alive=%u\n", alive);
+            printf("  dead=%u\n", dead);
+            if (const ReplaySceneFrame* frame = REPLAY_PLAYER.currentSceneFrame()) {
+                printf("  sceneFrameActors=%zu\n", frame->actors.size());
+                size_t frameAlive = 0, frameDead = 0;
+                for (const auto& a : frame->actors) {
+                    if (a.dead) frameDead++;
+                    else frameAlive++;
+                }
+                printf("  frameAlive=%zu frameDead=%zu\n", frameAlive, frameDead);
+            } else {
+                printf("  sceneFrameActors=0 (no current frame)\n");
+            }
+            printf("  replayExportActive=%d\n", (int)isReplayExportActive());
+            Terminal::instance().addLog("[HEALTHBAR] audit printed to console");
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "replay_hitmarker_reload", "Reload config/audio/replay-hitmarkers.json",
         "replay_hitmarker_reload",
         [](const std::vector<std::string>&) {

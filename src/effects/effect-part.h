@@ -96,6 +96,8 @@ public:
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {});
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position);
+    EffectPart* spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction, float length = 8.0f,
+                                    float radius = 1.5f, float lifetime = 3.0f);
     void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);

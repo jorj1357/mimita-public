@@ -3356,6 +3356,14 @@ int main(int argc, char** argv)
                     } else if (effect.type == "tracer") {
                         EffectPartSystem::instance().spawnTracer(
                             effect.from, effect.to, effect.sourceActorId);
+                    } else if (effect.type == "death_ellipsoid") {
+                        glm::vec3 dir = glm::length(effect.to - effect.from) > 0.001f
+                            ? glm::normalize(effect.to - effect.from)
+                            : glm::vec3(1.0f, 0.0f, 0.0f);
+                        float len = glm::length(effect.to - effect.from);
+                        float rad = effect.scale.x > 0.0f ? effect.scale.x : 1.5f;
+                        EffectPartSystem::instance().spawnDeathEllipsoid(
+                            effect.from, dir, len, rad, std::max(effect.lifetime, 0.1f));
                     } else if (!effect.type.empty() &&
                                effect.type != "corpse_spawn") {
                         EffectPartSystem::instance().spawnCustom(
@@ -4256,6 +4264,12 @@ int main(int argc, char** argv)
                     x += normalSize + gap;
                 }
             }
+            // Live entity healthbars: only during live gameplay, NOT during
+            // replay/export. During replay/export, the replay actor healthbars
+            // are rendered separately (see above). The live player and NPCs
+            // exist in the world but their models are not rendered; rendering
+            // their healthbars would produce orphaned floating bars.
+            if (!replayPlaybackActive) {
             {
                 float nameX = 0.0f, nameY = 0.0f;
                 if (DebugVis::projectToScreen(camera, player.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.7f),
@@ -4274,6 +4288,7 @@ int main(int argc, char** argv)
                     }
                     drawPlayerHealthbar(npc.body, camera, "npc-hp");
                 }
+            }
 
             renderChatBubbles(player.chatState, player, camera);
             if (!replayPlaybackActive)
