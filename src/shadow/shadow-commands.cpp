@@ -8,6 +8,7 @@
 #include "effects/effect-part.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "debug/debug-log.h"
 
 extern Player* gpPlayer;
 extern NpcSystem* gpNpcSystem;
@@ -135,5 +136,43 @@ void registerShadowCommands()
             Terminal::instance().addLog(buf);
         },
         "2026-06-15", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "shadow_debug_local_player", "Print local player shadow submission status",
+        "shadow_debug_local_player",
+        [](const std::vector<std::string>&) {
+            const auto& d = ShadowConfig::instance().data();
+            int found = gpPlayer ? 1 : 0;
+            int castsShadow = found && d.playersCastShadows ? 1 : 0;
+            int submitted = castsShadow ? 1 : 0;
+            int meshCount = 0;
+            if (found) {
+                meshCount = (int)gpPlayer->physicalBody.partMeshes.size();
+                if (meshCount == 0 && !gpPlayer->renderMesh.verts.empty())
+                    meshCount = 1;
+            }
+            Debug::log(Debug::Category::Render,
+                "[SHADOW] localPlayerFound=%d\n"
+                "  castsShadow=%d\n"
+                "  submittedToShadowPass=%d\n"
+                "  shadowMeshCount=%d\n",
+                found, castsShadow, submitted, meshCount);
+
+            char buf[256];
+            int pos = 0;
+            pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
+                "localPlayerFound=%d\n"
+                "castsShadow=%d\n"
+                "submittedToShadowPass=%d\n"
+                "shadowMeshCount=%d\n"
+                "reason=%s",
+                found, castsShadow, submitted, meshCount,
+                !found ? "gpPlayer is null (not assigned in main)" :
+                !castsShadow ? "playersCastShadows disabled in config" :
+                "OK");
+            Terminal::instance().addLog(buf);
+        },
+        "2026-06-16", CommandCategory::Debug
     });
 }

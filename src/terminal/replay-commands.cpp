@@ -926,4 +926,17 @@ void registerReplayCommands()
             Terminal::instance().addLog("[REPLAY HITMARKER] config reloaded");
         }
     });
+
+    Terminal::instance().registerCommand({
+        "replay_audio_debug", "Print replay export audio config", "replay_audio_debug",
+        [](const std::vector<std::string>&) {
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "audioVolumeMultiplier=%.2f\n"
+                     "configLoaded=1\n"
+                     "configPath=config/replay/replay-export.json",
+                     getReplayExportAudioVolume());
+            Terminal::instance().addLog(buf);
+        }
+    });
 }

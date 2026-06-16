@@ -51,7 +51,7 @@ namespace DebugConfig
     inline bool DEBUG_REPLAY = true;
     inline bool DEBUG_NETWORKING = false;
     inline bool DEBUG_DUEL = true;
-    inline bool DEBUG_VISUALS_MASTER = true;
+    inline bool DEBUG_VISUALS_MASTER = false;
 
     inline void ResetAll()
     {
