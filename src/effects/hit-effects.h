@@ -10,6 +10,10 @@ class Camera;
 extern bool gBloodFXEnabled;
 extern bool gHitFxTraceEnabled;
 extern bool gDashFXEnabled;
+extern bool gDeathEllipsoidEnabled;
+extern float gDeathEllipsoidLength;
+extern float gDeathEllipsoidRadius;
+extern float gDeathEllipsoidLifetime;
 inline bool isBloodFXEnabled() { return gBloodFXEnabled; }
 inline bool isHitFxTraceEnabled() { return gHitFxTraceEnabled; }
 inline bool isDashFXEnabled() { return gDashFXEnabled; }

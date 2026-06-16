@@ -1,0 +1,9 @@
+{
+    "enabled": true,
+    "lifetime": 3.0,
+    "length": 8.0,
+    "radius": 1.5,
+    "baseAlpha": 0.75,
+    "color": [1.0, 0.0, 0.0, 0.75],
+    "fade": true
+}

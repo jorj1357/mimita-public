@@ -34,6 +34,10 @@ static bool gDebugPanelEnabled = false;
 bool gBloodFXEnabled = false;
 bool gHitFxTraceEnabled = false;
 bool gDashFXEnabled = true;
+bool gDeathEllipsoidEnabled = true;
+float gDeathEllipsoidLength = 8.0f;
+float gDeathEllipsoidRadius = 1.5f;
+float gDeathEllipsoidLifetime = 3.0f;
 
 extern Renderer* gRenderer;
 

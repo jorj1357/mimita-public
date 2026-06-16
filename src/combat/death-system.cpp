@@ -21,6 +21,8 @@
 #include "world/texture-store.h"
 #include "world/world.h"
 #include "game/duel.h"
+#include "effects/effect-part.h"
+#include "effects/hit-effects.h"
 
 extern DuelManager gDuelManager;
 
@@ -289,6 +291,13 @@ bool DeathSystem::kill(
     captureReplayEffect(corpseEvent);
 
     mCorpses.push_back(std::move(body));
+
+    // Spawn death ellipsoid effect at the victim position, elongated along the kill direction
+    if (gDeathEllipsoidEnabled) {
+        EffectPartSystem::instance().spawnDeathEllipsoid(
+            victimPos, direction,
+            gDeathEllipsoidLength, gDeathEllipsoidRadius, gDeathEllipsoidLifetime);
+    }
 
     return true;
 }
