@@ -1,0 +1,743 @@
+==================================================
+MIMITA RUN LOG
+Start Time: 2026-06-16 12:43:00
+Build: debug
+==================================================
+
+[LOG ROTATION] Removed 1 old logs
+[LOGMANAGER] Logging to: logs/16-06-2026/12-43-00-log.txt
+[LOG] Console output enabled
+[LOG] File logging enabled
+[LOG] Active log path: logs/16-06-2026/12-43-00-log.txt
+[LOG] Mirroring console -> file
+[MAIN] before engine.init
+[CURSOR] loaded custom cursor 100x100 channels=4 hotspot=0,0 mode=top-left
+[WINDOW] focused=1
+OpenGL 3.3.0 NVIDIA 592.27
+[RENDERER] loading shaders
+[RENDERER] opening file: shaders/basic.vert
+[RENDERER] loaded 1598 bytes
+[RENDERER] opening file: shaders/basic.frag
+[RENDERER] loaded 5391 bytes
+[RENDERER] Shader compile OK: shaders/basic.vert
+[RENDERER] Shader compile OK: shaders/basic.frag
+[RENDERER] Program link OK
+[RENDERER] shaderProgram=3
+[ENGINE] Init OK (800x600)
+[ENGINE] OpenGL ready
+[MAIN] after engine.init
+[MAIN] after glfwSetInputMode
+[FONT] Loading bitmap font
+[FONT] Loading bitmap font descriptor
+[FONT] opening file: assets/font/mingliu-mimita-v3.fnt
+[FONT] common lineHeight=48 base=38 atlas=256x256
+[FONT] Loaded atlas page request id=0 path=assets/font/mingliu-mimita-v3_0.png
+[FONT] Loaded atlas page id=0 tex=1 size=256x256
+[FONT] Loaded atlas page request id=1 path=assets/font/mingliu-mimita-v3_1.png
+[FONT] Loaded atlas page id=1 tex=2 size=256x256
+[FONT] Loaded glyphs count=140 kernings=0 pages=2
+[FONT] VAO/VBO ready
+[MAIN] after fontInit()
+[UI] Initializing UI system
+[UI] Using built-in rectangle/vector fallback font; asset fonts are optional
+[UI] Initializing dedicated screen-space UI shader
+[UI] UI shader linked program=6
+[MAIN] after uiInit()
+[DBGVIS] init
+[DBGVIS] config loaded: config/debug/debug-settings.json
+[DEBUG] verbose logging ENABLED; disable in config.h
+[MAIN] after DebugVis::init()
+[DEV CONFIG] Bound F1 (0x122) -> toggle_npc_menu : Toggle NPC Dev Menu
+[DEV CONFIG] Bound F2 (0x123) -> spawn_npc : Spawn NPC at cursor
+[DEV CONFIG] Bound F3 (0x124) -> teleport_selected_to_player : Teleport selected NPCs to player
+[DEV CONFIG] Bound F4 (0x125) -> select_all_npcs : Select all NPCs
+[DEV CONFIG] Bound F5 (0x126) -> clear_selection : Clear NPC selection
+[DEV CONFIG] Bound F6 (0x127) -> teleport_selected_to_coords : Teleport selected to coordinates
+[DEV CONFIG] Bound F7 (0x128) -> npc_menu_select_next : Cycle NPC selection next
+[DEV CONFIG] Bound F8 (0x129) -> npc_menu_select_prev : Cycle NPC selection prev
+[DEV CONFIG] Bound F9 (0x12A) -> spawn_npc_diff_1 : Spawn NPC difficulty 1
+[DEV CONFIG] Bound F10 (0x12B) -> spawn_npc_diff_5 : Spawn NPC difficulty 5
+[DEV CONFIG] Bound F11 (0x12C) -> spawn_npc_diff_10 : Spawn NPC difficulty 10
+[DEV CONFIG] Bound F12 (0x12D) -> reload_dev_config : Reload this config file
+[DEV CONFIG] Loaded 12 bindings from config/dev_controls.txt
+[DEV OVERLAY] Initialized
+[DEV OVERLAY] Notification: Dev mode enabled. Press ` to open console.
+[DEV OVERLAY] Notification: Loaded config: default
+[ACCOUNT CONFIG] Loaded 0 binds from config/accounts/default.json
+[DUEL STATS] loaded kills=0 deaths=0 points=0 xp=0
+[VIDEO] Loaded: resolution=2 (1024x768) fullscreen=0 maxFrames=999 vsync=0
+[RENDERER] Video mode applied: 1024x768 fullscreen=0
+[POSTFX] FBO created: 1024x768
+[FRAME PACER] maxFrames=999 (target=1.00 ms)
+[FRAME PACER] vsync=OFF
+[POSTFX] Loaded config from config/postfx.json
+[INPUT COMMANDS] Bound walkforward = W
+[INPUT COMMANDS] Bound walkback = S
+[INPUT COMMANDS] Bound walkleft = A
+[INPUT COMMANDS] Bound walkright = D
+[INPUT COMMANDS] Bound jump = SPACE
+[INPUT COMMANDS] Bound dash = LEFT_SHIFT
+[INPUT COMMANDS] Bound down_dash = Q
+[INPUT COMMANDS] Bound freeze = E
+[INPUT COMMANDS] Bound reload = R
+[INPUT COMMANDS] Initialized with callback
+[INPUT COMMANDS] Loaded binds from config/accounts/default.json
+[DEV COMMANDS] Registered: tp_selected_to_me - Teleport selected NPCs to local player
+[DEV COMMANDS] Registered: tp_selected_to_coords - Teleport selected NPCs to coordinates
+[DEV COMMANDS] Registered: tp_selected_to_spawn - Teleport selected NPCs to spawn point
+[LIGHTING] Loaded config from config/lighting.json
+[SHADOWS] Loaded config from config/shadows.json
+[EFFECT PART] Initialized pool size=4096
+[HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-6292-1.dll
+[HOT RELOAD] reload success generation=1
+[MAIN] dev tools initialized
+[MAIN] after glEnable and glBlendFunc()
+[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[TEXTURE] Loading texture assets/textures/default.png
+[TEXTURE] Uploading to GPU tex=4 size=64x64 channels=4
+[TEXTURE] Upload complete assets/textures/default.png tex=4
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.3750,0.0000) uv1=(0.1250,0.2500)
+[PLAYER GLB] hierarchy nodes=7 bodyColliders=6 root=plrOrigin expected
+[TEXTURE] Loading texture assets/outfits/suitv4debug.png
+[TEXTURE] Uploading to GPU tex=5 size=2000x2000 channels=4
+[TEXTURE] Upload complete assets/outfits/suitv4debug.png tex=5
+[MAIN] player made
+[MAIN] npc system made
+[MAIN] camera made
+[CAMERA] Smoothing default: 0.0
+[CAMERA] Raw 1:1 camera enabled
+[ENGINE] Camera bound
+[MAIN] camera bound
+[WEAPON] Registered: revolver (slot 1)
+[WEAPON] Registered: godball (slot 2)
+[WEAPON] Registered: shotgun (slot 3)
+[WEAPON] Registered: swordsword (slot 4)
+[WEAPON] Registered: op_revolver (slot 5)
+[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver
+[WEAPON SYSTEM] initialized
+[DUPLICATE COMMAND] godball_debug
+[DUPLICATE COMMAND] npc_damage_debug
+[DUPLICATE COMMAND] ragdoll_debug
+[DUPLICATE COMMAND] animation_debug
+[DUPLICATE COMMAND] replay.play
+[DUPLICATE COMMAND] replay_debug
+[GUI LAYOUT] Loaded 5 elements from config/gui/main-menu.json
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[UI HOVER ENTER] id=REPLAYS
+[AUDIO] Engine initialized
+[AUDIO] Combat sounds preloaded
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[WEAPON POSE] weapon=godball usePose=false
+[WEAPON POSE] weapon=revolver usePose=true
+[WEAPON POSE] weapon=shotgun usePose=true
+[WEAPON POSE] weapon=sword usePose=true
+[HOT RELOAD] player procedural config reloaded
+[PROC HOT RELOAD] config reloaded: writeTime changed
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=PLAY
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: PLAY
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[MAIN MENU] Play pressed
+[GUI LAYOUT] Loaded 4 elements from config/gui/play-menu.json
+[UI HOVER EXIT] id=PLAY
+[SOUND] stopped event=ui/click
+[UI HOVER ENTER] id=ONLINE / COMMUNITY SERVERS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=ONLINE / COMMUNITY SERVERS
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=PRACTICE
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: PRACTICE
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[GUI LAYOUT] Loaded 2 elements from config/gui/practice-menu.json
+[UI HOVER EXIT] id=PRACTICE
+[SOUND] stopped event=ui/click
+[UI HOVER ENTER] id=SANDBOX
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: SANDBOX
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[MAP SCAN] root=C:\important\mimita-priv-v8\assets\maps
+[MAP SCAN] discovered name="Funworldv1" path=assets/maps/funworldv1.glb
+[MAP SCAN] discovered name="Ideas Map V1" path=assets/maps/ideas-map-v1.glb
+[MAP SCAN] discovered name="Mimita Aabb Only Interior Small V4" path=assets/maps/mimita-aabb-only-interior-small-v4.glb
+[MAP SCAN] discovered name="Mimita Duels Map V3" path=assets/maps/mimita-duels-map-v3.glb
+[MAP SCAN] discovered name="Mimita Garage Map V1" path=assets/maps/mimita-garage-map-v1.glb
+[MAP SCAN] count=5 status="5 map(s) found"
+[GUI LAYOUT] Loaded 4 elements from config/gui/sandbox-map-menu.json
+[UI HOVER EXIT] id=SANDBOX
+[SOUND] stopped event=ui/click
+[UI HOVER ENTER] id=Mimita Garage Map V1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=Mimita Garage Map V1
+[UI HOVER ENTER] id=Mimita Duels Map V3
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=Mimita Duels Map V3
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=Mimita Aabb Only Interior Small V4
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=Mimita Aabb Only Interior Small V4
+[UI HOVER ENTER] id=Ideas Map V1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=Ideas Map V1
+[UI HOVER ENTER] id=Ideas Map V1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=Ideas Map V1
+[UI HOVER ENTER] id=Ideas Map V1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=Ideas Map V1
+[UI HOVER ENTER] id=Funworldv1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=Funworldv1
+[UI HOVER ENTER] id=Funworldv1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: Funworldv1
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[SANDBOX MAP MENU] selected index=0 path=assets/maps/funworldv1.glb
+[MAIN] gameState changed 0 -> 1
+[SANDBOX MAP] selected path=assets/maps/funworldv1.glb
+[WORLD GLB] loading assets/maps/funworldv1.glb
+[GLB IMAGE] index=0 name=wallv2 width=64 height=64 components=4 embedded=yes bv=4
+[GLB IMAGE] index=1 name=grimev4 width=64 height=64 components=4 embedded=yes bv=9
+[GLB IMAGE] index=2 name=grossv1 width=64 height=64 components=4 embedded=yes bv=28
+[GLB IMAGE] index=3 name=grossv3 width=64 height=64 components=4 embedded=yes bv=32
+[GLB IMAGE] index=4 name=exclamation width=64 height=64 components=4 embedded=yes bv=37
+[GLB IMAGE] index=5 name=tilev2 width=64 height=64 components=4 embedded=yes bv=63
+[GLB IMAGE] index=6 name=grimev3 width=64 height=64 components=4 embedded=yes bv=96
+[GLB IMAGE] index=7 name=arcadecarpet width=64 height=64 components=4 embedded=yes bv=147
+[GLB IMAGE] index=8 name=jin width=64 height=64 components=4 embedded=yes bv=196
+[GLB MATERIAL] material=0 name=Material baseColorTexture=0 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=0 textureIndex=0 sourceImage=0
+[GLB MATERIAL] material=0 name=Material texture=6
+[GLB MATERIAL] material=1 name=Material.004 baseColorTexture=1 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=1 textureIndex=1 sourceImage=1
+[GLB MATERIAL] material=1 name=Material.004 texture=7
+[GLB MATERIAL] material=2 name=Material.043 baseColorTexture=2 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=2 textureIndex=2 sourceImage=2
+[GLB MATERIAL] material=2 name=Material.043 texture=8
+[GLB MATERIAL] material=3 name=Material.042 baseColorTexture=3 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=3 textureIndex=3 sourceImage=3
+[GLB MATERIAL] material=3 name=Material.042 texture=9
+[GLB MATERIAL] material=4 name=Material.002 baseColorTexture=4 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=4 textureIndex=4 sourceImage=4
+[GLB MATERIAL] material=4 name=Material.002 texture=10
+[GLB MATERIAL] material=5 name=Material.005 baseColorTexture=5 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=5 textureIndex=5 sourceImage=5
+[GLB MATERIAL] material=5 KHR_texture_transform present
+[GLB MATERIAL] material=5 name=Material.005 texture=11
+[GLB MATERIAL] material=6 name=Material.003 baseColorTexture=6 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=6 textureIndex=6 sourceImage=6
+[GLB MATERIAL] material=6 name=Material.003 texture=12
+[GLB MATERIAL] material=7 name=Material.041 baseColorTexture=7 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=7 textureIndex=7 sourceImage=7
+[GLB MATERIAL] material=7 KHR_texture_transform present
+[GLB MATERIAL] material=7 name=Material.041 texture=13
+[GLB MATERIAL] material=8 name=Material.040 baseColorTexture=8 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=8 textureIndex=8 sourceImage=8
+[GLB MATERIAL] material=8 name=Material.040 texture=14
+[GLB MATERIAL] material=9 name=Material.008 baseColorTexture=9 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=9 textureIndex=9 sourceImage=1
+[GLB MATERIAL] material=9 name=Material.008 texture=7
+[GLB MATERIAL] material=10 name=Material.001 baseColorTexture=10 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=10 textureIndex=10 sourceImage=0
+[GLB MATERIAL] material=10 name=Material.001 texture=6
+[GLB MATERIAL] material=11 name=Material.006 baseColorTexture=11 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=11 textureIndex=11 sourceImage=0
+[GLB MATERIAL] material=11 name=Material.006 texture=6
+[GLB MATERIAL] material=12 name=Material.007 baseColorTexture=12 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=12 textureIndex=12 sourceImage=5
+[GLB MATERIAL] material=12 KHR_texture_transform present
+[GLB MATERIAL] material=12 name=Material.007 texture=11
+[GLB MATERIAL] material=13 name=Material.009 baseColorTexture=13 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=13 textureIndex=13 sourceImage=0
+[GLB MATERIAL] material=13 name=Material.009 texture=6
+[GLB MATERIAL] material=14 name=Material.010 baseColorTexture=14 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=14 textureIndex=14 sourceImage=6
+[GLB MATERIAL] material=14 name=Material.010 texture=12
+[GLB MATERIAL] material=15 name=Material.011 baseColorTexture=15 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=15 textureIndex=15 sourceImage=5
+[GLB MATERIAL] material=15 KHR_texture_transform present
+[GLB MATERIAL] material=15 name=Material.011 texture=11
+[GLB MATERIAL] material=16 name=Material.012 baseColorTexture=16 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=16 textureIndex=16 sourceImage=4
+[GLB MATERIAL] material=16 name=Material.012 texture=10
+[GLB MATERIAL] material=17 name=Material.014 baseColorTexture=17 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=17 textureIndex=17 sourceImage=6
+[GLB MATERIAL] material=17 name=Material.014 texture=12
+[GLB MATERIAL] material=18 name=Material.015 baseColorTexture=18 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=18 textureIndex=18 sourceImage=6
+[GLB MATERIAL] material=18 name=Material.015 texture=12
+[GLB MATERIAL] material=19 name=Material.016 baseColorTexture=19 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=19 textureIndex=19 sourceImage=6
+[GLB MATERIAL] material=19 name=Material.016 texture=12
+[GLB MATERIAL] material=20 name=Material.017 baseColorTexture=20 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=20 textureIndex=20 sourceImage=6
+[GLB MATERIAL] material=20 name=Material.017 texture=12
+[GLB MATERIAL] material=21 name=Material.018 baseColorTexture=21 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=21 textureIndex=21 sourceImage=4
+[GLB MATERIAL] material=21 name=Material.018 texture=10
+[GLB MATERIAL] material=22 name=Material.019 baseColorTexture=22 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=22 textureIndex=22 sourceImage=4
+[GLB MATERIAL] material=22 name=Material.019 texture=10
+[GLB MATERIAL] material=23 name=Material.020 baseColorTexture=23 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=23 textureIndex=23 sourceImage=4
+[GLB MATERIAL] material=23 name=Material.020 texture=10
+[GLB MATERIAL] material=24 name=Material.021 baseColorTexture=24 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=24 textureIndex=24 sourceImage=1
+[GLB MATERIAL] material=24 name=Material.021 texture=7
+[GLB MATERIAL] material=25 name=Material.022 baseColorTexture=25 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=25 textureIndex=25 sourceImage=0
+[GLB MATERIAL] material=25 name=Material.022 texture=6
+[GLB MATERIAL] material=26 name=Material.023 baseColorTexture=26 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=26 textureIndex=26 sourceImage=0
+[GLB MATERIAL] material=26 name=Material.023 texture=6
+[GLB MATERIAL] material=27 name=Material.024 baseColorTexture=27 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=27 textureIndex=27 sourceImage=1
+[GLB MATERIAL] material=27 name=Material.024 texture=7
+[GLB MATERIAL] material=28 name=Material.025 baseColorTexture=28 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=28 textureIndex=28 sourceImage=1
+[GLB MATERIAL] material=28 name=Material.025 texture=7
+[GLB MATERIAL] material=29 name=Material.026 baseColorTexture=29 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=29 textureIndex=29 sourceImage=0
+[GLB MATERIAL] material=29 name=Material.026 texture=6
+[GLB MATERIAL] material=30 name=Material.027 baseColorTexture=30 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=30 textureIndex=30 sourceImage=4
+[GLB MATERIAL] material=30 name=Material.027 texture=10
+[GLB MATERIAL] material=31 name=Material.028 baseColorTexture=31 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=31 textureIndex=31 sourceImage=5
+[GLB MATERIAL] material=31 KHR_texture_transform present
+[GLB MATERIAL] material=31 name=Material.028 texture=11
+[GLB MATERIAL] material=32 name=Material.029 baseColorTexture=32 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=32 textureIndex=32 sourceImage=5
+[GLB MATERIAL] material=32 KHR_texture_transform present
+[GLB MATERIAL] material=32 name=Material.029 texture=11
+[GLB MATERIAL] material=33 name=Material.030 baseColorTexture=33 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=33 textureIndex=33 sourceImage=4
+[GLB MATERIAL] material=33 name=Material.030 texture=10
+[GLB MATERIAL] material=34 name=Material.031 baseColorTexture=34 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=34 textureIndex=34 sourceImage=4
+[GLB MATERIAL] material=34 name=Material.031 texture=10
+[GLB MATERIAL] material=35 name=Material.032 baseColorTexture=35 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=35 textureIndex=35 sourceImage=4
+[GLB MATERIAL] material=35 name=Material.032 texture=10
+[GLB MATERIAL] material=36 name=Material.033 baseColorTexture=36 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=36 textureIndex=36 sourceImage=5
+[GLB MATERIAL] material=36 KHR_texture_transform present
+[GLB MATERIAL] material=36 name=Material.033 texture=11
+[GLB MATERIAL] material=37 name=Material.034 baseColorTexture=37 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=37 textureIndex=37 sourceImage=1
+[GLB MATERIAL] material=37 name=Material.034 texture=7
+[GLB MATERIAL] material=38 name=Material.035 baseColorTexture=38 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=38 textureIndex=38 sourceImage=1
+[GLB MATERIAL] material=38 name=Material.035 texture=7
+[GLB MATERIAL] material=39 name=Material.036 baseColorTexture=39 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=39 textureIndex=39 sourceImage=1
+[GLB MATERIAL] material=39 name=Material.036 texture=7
+[GLB MATERIAL] material=40 name=Material.037 baseColorTexture=40 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=40 textureIndex=40 sourceImage=1
+[GLB MATERIAL] material=40 name=Material.037 texture=7
+[GLB MATERIAL] material=41 name=Material.038 baseColorTexture=41 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=41 textureIndex=41 sourceImage=0
+[GLB MATERIAL] material=41 name=Material.038 texture=6
+[GLB MATERIAL] material=42 name=Material.039 baseColorTexture=42 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=42 textureIndex=42 sourceImage=0
+[GLB MATERIAL] material=42 name=Material.039 texture=6
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=1 prim=0 hasTexcoord0=yes uvCount=18 vertexCount=18 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=2 prim=0 hasTexcoord0=yes uvCount=18 vertexCount=18 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=3 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=4 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=5 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=6 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=7 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=8 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=9 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=10 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=11 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=12 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=13 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=14 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=15 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=16 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=17 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=18 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=19 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=20 prim=0 hasTexcoord0=yes uvCount=505 vertexCount=505 uv0=(0.0000,1.0000) uv1=(0.0909,1.0000)
+[GLB UV] mesh=21 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=22 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=23 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=24 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=25 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=26 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=27 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=28 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=29 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=30 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=31 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=32 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=33 prim=0 hasTexcoord0=yes uvCount=18 vertexCount=18 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=34 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=35 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=36 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=37 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=38 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=39 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=40 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=41 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=42 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=43 prim=0 hasTexcoord0=yes uvCount=2304 vertexCount=2304 uv0=(0.5000,0.5000) uv1=(0.5000,0.5000)
+[GLB UV] mesh=44 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=45 prim=0 hasTexcoord0=yes uvCount=18 vertexCount=18 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=46 prim=0 hasTexcoord0=yes uvCount=30 vertexCount=30 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=47 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=48 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=49 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=50 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=51 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=52 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=53 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=54 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=55 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=56 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=57 prim=0 hasTexcoord0=yes uvCount=61 vertexCount=61 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=58 prim=0 hasTexcoord0=yes uvCount=240 vertexCount=240 uv0=(0.5455,1.0000) uv1=(0.1818,1.0000)
+[GLB UV] mesh=59 prim=0 hasTexcoord0=yes uvCount=240 vertexCount=240 uv0=(0.5455,1.0000) uv1=(0.1818,1.0000)
+[GLB UV] mesh=60 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=61 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=62 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=63 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=64 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=65 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=66 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=67 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=68 prim=0 hasTexcoord0=yes uvCount=30 vertexCount=30 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=69 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=70 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=71 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=72 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=73 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=74 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=75 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=76 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=77 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=78 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=79 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=80 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=81 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=82 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=83 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=84 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=85 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=86 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=87 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=88 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=89 prim=0 hasTexcoord0=yes uvCount=913 vertexCount=913 uv0=(0.1320,0.2570) uv1=(0.1320,0.2570)
+[GLB UV] mesh=90 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=91 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=92 prim=0 hasTexcoord0=yes uvCount=18 vertexCount=18 uv0=(0.1250,0.2500) uv1=(0.1250,0.2500)
+[GLB UV] mesh=93 prim=0 hasTexcoord0=yes uvCount=1282 vertexCount=1282 uv0=(0.1325,0.2575) uv1=(0.1325,0.2575)
+[GLB UV] mesh=94 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=95 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=96 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=97 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=98 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=99 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1351,0.2601) uv1=(0.1351,0.2601)
+[GLB UV] mesh=100 prim=0 hasTexcoord0=yes uvCount=768 vertexCount=768 uv0=(0.7500,0.5267) uv1=(0.7500,0.5267)
+[GLB UV] mesh=101 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=102 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=103 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=104 prim=0 hasTexcoord0=yes uvCount=530 vertexCount=530 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=105 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=106 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=107 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=108 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=109 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=110 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=111 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=112 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=113 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=114 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=115 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=116 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=117 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=118 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=119 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=120 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=121 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=122 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=123 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=124 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=125 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=126 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=127 prim=0 hasTexcoord0=yes uvCount=24 vertexCount=24 uv0=(0.1250,0.2500) uv1=(0.3750,0.0000)
+[GLB UV] mesh=128 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=129 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=130 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=131 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=132 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=133 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1351,0.2601) uv1=(0.1351,0.2601)
+[GLB UV] mesh=134 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1351,0.2601) uv1=(0.1351,0.2601)
+[GLB UV] mesh=135 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1351,0.2601) uv1=(0.1351,0.2601)
+[GLB UV] mesh=136 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1351,0.2601) uv1=(0.1351,0.2601)
+[GLB UV] mesh=137 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1351,0.2601) uv1=(0.1351,0.2601)
+[GLB UV] mesh=138 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=139 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=140 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=141 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=142 prim=0 hasTexcoord0=yes uvCount=192 vertexCount=192 uv0=(0.7500,0.5100) uv1=(1.0000,0.5000)
+[GLB UV] mesh=143 prim=0 hasTexcoord0=yes uvCount=1984 vertexCount=1984 uv0=(0.7344,0.0000) uv1=(0.2656,0.0000)
+[GLB UV] mesh=144 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=145 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=146 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=147 prim=0 hasTexcoord0=yes uvCount=128 vertexCount=128 uv0=(0.7500,0.5100) uv1=(0.2500,0.5100)
+[GLB UV] mesh=148 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1453,0.2703) uv1=(0.1453,0.2703)
+[GLB UV] mesh=149 prim=0 hasTexcoord0=yes uvCount=96 vertexCount=96 uv0=(0.1521,0.2771) uv1=(0.1521,0.2771)
+[WORLD GLB] verts=89226 triangles=29742 batches=71
+[WORLD GLB] before collision build
+[WORLD GLB COLLISION] triangles=29740 bounds min=(-324.23 -411.42 22.57) max=(309.97 210.28 494.27)
+[WORLD GLB COLLISION] chunks=28661 chunkSize=6.00
+[SPAWN GLB] extracted index=0 name=spawnpoint pos=(70.578 20.770 376.476) arena=-1
+[SPAWN GLB] total spawn points extracted: 1
+[WORLD GLB] after collision build
+[WORLD GLB] load success path=assets/maps/funworldv1.glb revision=1 spawns=1 unloadMs=0.00 totalMs=126.25
+[NPC SELECTION] Cleared selection
+[0m[0.000][INFO][DEBUG][0m [NPC] cleanup complete
+[0m[SANDBOX SPAWN] selected index=0 name=spawnpoint world=(70.578 20.770 376.476)
+[SANDBOX MAP] load success path=assets/maps/funworldv1.glb spawns=1
+[REPLAY] Recording started  map=mimita seed=0.0
+[35m[0.001][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.001][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.001][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[WEAPON] Runtime initialized for weapon 'shotgun': ammo=2 reserve=1337
+[GLB IMAGE] index=0 name=T_Shotgun_BaseColor width=256 height=256 components=4 embedded=yes bv=9
+[GLB MATERIAL] material=0 name=M_Shotgun baseColorTexture=0 baseColorFactor=[1.00,1.00,1.00,1.00]
+[GLB MATERIAL] material=0 textureIndex=0 sourceImage=0
+[GLB MATERIAL] material=0 name=M_Shotgun texture=15
+[GLB UV] mesh=0 prim=0 hasTexcoord0=yes uvCount=388 vertexCount=388 uv0=(0.6829,0.5490) uv1=(0.6829,0.5490)
+[VIEWMODEL] model loaded verts=684
+[SOUND] loaded event=entity/player/land path=assets/sound/entity/player/land.wav
+[SOUND] playing event=entity/player/land category=3D path=assets/sound/entity/player/land.wav
+[SOUND] weapon=shotgun event=shoot path=shotgunshoot pitch=0.994 volume=1.008
+[SOUND] loaded event=shotgunshoot path=assets/sound/weapon/shotgun/shotgunshoot.wav
+[SOUND] playing event=shotgunshoot category=3D path=assets/sound/weapon/shotgun/shotgunshoot.wav
+[WEAPON] multi-pellet fired: pellets=15 totalDamage=0
+[WEAPON] hitscan fired: slot=3 weapon=shotgun ammo=1
+[SHADOWS] Shadow map FBO created: 1024x1024
+[35m[0.015][INFO][REPLAY][0m [EXPORTTRACE] RENDER: replayRenderActive=0 hasSceneFrame=0 exportState=0[0m[UI HOVER EXIT] id=Funworldv1
+[SOUND] stopped event=ui/click
+[35m[0.018][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.019][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.019][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[INPUT COMMANDS] Loaded binds from config/accounts/default.json
+[35m[0.025][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.025][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.025][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.029][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.029][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.029][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.032][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.033][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.033][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.035][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.036][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.036][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.039][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.039][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.039][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.046][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.046][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.046][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.053][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.053][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.053][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.060][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.060][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.060][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.066][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.066][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.067][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.073][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.073][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.074][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.081][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.081][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.081][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.088][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.088][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.088][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.095][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.095][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.095][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.102][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.102][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.102][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.108][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.108][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.108][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.115][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.116][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.116][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.122][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.122][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.122][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.129][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.129][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.129][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.136][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.136][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.136][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[0m[0.137][INFO][DEBUG][0m [VOID DEATH] config reloaded: enabled=1 killZ=-500.0 command=explode
+[0m[35m[0.139][INFO][REPLAY][0m [REPLAY AUDIO] config reloaded audioVolumeMultiplier=0.80[0m[35m[0.139][INFO][REPLAY][0m [OUTRO] config reloaded: enabled=1 path=assets/video/mimitaoutrov1.webm
+[0m[35m[0.140][INFO][REPLAY][0m [REPLAY HITMARKER] config reloaded: enable=1 attackerPOVOnly=1
+[0m[35m[0.143][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.143][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.143][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.150][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.150][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.150][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.157][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.157][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.157][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.164][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.164][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.164][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.171][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.171][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.171][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.178][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.178][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.178][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.185][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.185][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.185][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.191][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.191][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.191][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.198][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.198][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.198][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.205][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.206][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.206][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.212][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.212][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.212][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.220][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.220][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.220][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.227][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.227][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.227][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.233][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.233][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.233][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.240][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.241][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.241][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.247][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.247][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.247][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.254][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.254][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.254][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.261][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.261][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.261][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.268][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.268][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.268][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.275][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.275][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.275][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.282][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.282][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.282][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.289][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.289][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.289][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.295][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.296][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.296][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.303][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.303][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.303][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.309][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.310][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.310][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.317][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.317][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.317][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.323][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.324][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.324][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.330][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.331][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.331][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.338][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.338][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.338][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.344][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.344][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.345][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.352][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.352][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.352][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.358][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.358][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.358][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.365][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.365][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.366][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.372][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.372][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.372][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.379][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.379][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.379][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.386][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.386][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.386][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.393][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.393][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.393][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.400][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.400][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.400][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.407][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.407][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.407][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.414][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.414][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.414][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.415][INFO][REPLAY][0m [EXPORTTRACE] RENDER: replayRenderActive=0 hasSceneFrame=0 exportState=0[0m[35m[0.421][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.421][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.421][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.427][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.428][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.428][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.435][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.435][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.435][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.441][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.442][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.442][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.449][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.449][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.449][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.455][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.455][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.455][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.462][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.462][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.462][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.469][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.470][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.470][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.476][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.476][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.476][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.483][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.484][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.484][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[SOUND] stopped event=entity/player/land
+[35m[0.491][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.491][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.491][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.497][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.498][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.498][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.504][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.504][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.504][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.511][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.512][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.512][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.518][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.518][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.518][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.525][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.526][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.526][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.532][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.532][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.532][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.539][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.539][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.539][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.546][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.546][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.546][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.553][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.554][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.554][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.560][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.560][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.560][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.566][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.567][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.567][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.574][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.574][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.574][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.581][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.581][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.581][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.588][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.588][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.588][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.594][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.594][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.595][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.602][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.602][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.602][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.609][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.609][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.609][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.615][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.615][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.616][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.622][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.622][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.622][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.629][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.629][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.629][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.636][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.637][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.637][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.643][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.644][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.644][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.650][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.650][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.651][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.657][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.657][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.657][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.664][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.664][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.664][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.670][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.671][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.671][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.678][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.678][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.678][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.685][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.685][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.685][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.691][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.691][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.691][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.698][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.698][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.698][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.705][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.705][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.705][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.712][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.712][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.712][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.719][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.719][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.719][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[SOUND] loaded event=entity/player/land path=assets/sound/entity/player/land.wav
+[SOUND] playing event=entity/player/land category=3D path=assets/sound/entity/player/land.wav
+[35m[0.726][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.726][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.727][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.733][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.733][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.733][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.740][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.740][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.740][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.747][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.747][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.747][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.754][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.754][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.754][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.761][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.761][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.761][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.768][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.768][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.768][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.775][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.775][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.775][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.782][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.782][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.782][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.789][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.789][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.789][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.796][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.796][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.796][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.803][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.803][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.803][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.810][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.810][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.810][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.816][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.816][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.816][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.824][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.824][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.824][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.830][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.831][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.831][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.832][INFO][REPLAY][0m [EXPORTTRACE] RENDER: replayRenderActive=0 hasSceneFrame=0 exportState=0[0m[35m[0.837][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.837][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.838][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.844][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.844][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.844][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.851][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.852][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.852][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.858][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.858][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.858][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.865][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.865][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.865][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[WORLD] batches=71 vertices=89226 depth=1 cull=1 blend=0 polygonMode=0x1b02/0x0
+[WORLD] uLightDir=(-0.329,-0.094,-0.940) uAmbientStrength=0.720 uDiffuseStrength=0.450 uTextureBrightness=1.350 uTextureContrast=1.020 uDebugView=0
+[WORLD] uniform uLightDir location=10
+[WORLD] uniform uAmbientStrength location=4
+[WORLD] uniform uDiffuseStrength location=7
+[WORLD] uniform uTextureBrightness location=19
+[WORLD] uniform uTextureContrast location=20
+[WORLD] uniform uDebugView location=6
+
+FRAME
+
+1. bind postfx fbo: PASS OK
+2. render world: PASS OK
+3. render players: PASS OK
+4. render weapons: PASS OK
+5. render effects: PASS OK
+6. unbind postfx fbo: PASS OK
+7. postfx render: PASS OK
+8. gui render: PASS OK
+9. swap buffers: PASS OK
+
+World batches: 71
+World vertices: 89226
+World draw calls: 71
+
+Player draw calls: 6
+Weapon draw calls: 1
+Effect draw calls: 0
+Debug modes: master=0 wireframe=0 lightingOnly=0 uDebugView=0
+[35m[0.872][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.872][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.872][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.879][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.879][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.879][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.886][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.886][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.886][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.893][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.893][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.893][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.900][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.900][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.900][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.907][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.907][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.907][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.914][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.914][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.914][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.920][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.921][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.921][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.928][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.928][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.928][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.934][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.934][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.935][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.941][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.942][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.942][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.948][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.948][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.948][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.955][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.955][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.956][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.962][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.962][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.963][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.969][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.969][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.969][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.976][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.976][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.976][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.983][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.983][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.983][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.990][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.990][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.990][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[0.997][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[0.997][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[0.997][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.004][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.004][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.004][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.011][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.011][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.011][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.018][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.018][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.018][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.025][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.025][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.025][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.032][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.032][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.032][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.039][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.039][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.039][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.046][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.046][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.046][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.053][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.053][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.053][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.060][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.061][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.061][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.067][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.067][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.067][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.074][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.074][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.074][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.081][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.081][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.081][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.088][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.088][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.088][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.096][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.096][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.096][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[SOUND] weapon=shotgun event=equip path=shotgunequip
+[SOUND] invalid path event=shotgunequip path=assets/sound/shotgunequip.wav
+[WEAPON] equipped 'shotgun' slot 3
+[35m[1.102][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.102][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.102][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.109][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.109][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.109][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.115][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.115][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.115][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.122][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.123][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.123][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.130][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.130][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.130][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.136][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.136][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.136][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.143][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.143][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.143][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.150][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.150][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.150][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.157][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.157][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.157][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.164][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.164][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.164][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.171][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.171][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.171][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.177][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.178][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.178][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.185][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.185][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.185][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.192][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.192][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.192][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.198][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.198][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.198][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.206][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.206][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.206][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[SOUND] stopped event=entity/player/land
+[35m[1.212][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.213][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.213][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.219][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.220][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.220][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.226][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.226][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.226][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.233][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.233][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.233][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.240][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.241][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.241][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.247][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.247][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.247][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.248][INFO][REPLAY][0m [EXPORTTRACE] RENDER: replayRenderActive=0 hasSceneFrame=0 exportState=0[0m[35m[1.254][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.255][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.255][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.261][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.262][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.262][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.268][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.268][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.268][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.276][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.276][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.276][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.282][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.282][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.282][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.289][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.289][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.289][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.296][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.296][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.296][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.303][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.303][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.303][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.310][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.310][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.310][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.317][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.317][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.317][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.323][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.324][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.324][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.331][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.331][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.331][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.337][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.337][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.337][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.344][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.344][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.344][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.351][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.351][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.351][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.358][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.358][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.358][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.365][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.365][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.365][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.372][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.372][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.372][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.379][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.379][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.379][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.386][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.386][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.386][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.393][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.393][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.393][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.400][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.400][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.400][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.407][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.407][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.407][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.414][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.414][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.414][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.421][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.421][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.421][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.427][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.427][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.427][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.435][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.435][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.435][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.441][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.442][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.442][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.448][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.448][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.449][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.455][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.455][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.455][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.462][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.462][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.462][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.469][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.469][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.469][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.476][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.476][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.477][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.483][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.483][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.483][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.490][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.490][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.490][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.497][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.497][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.497][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.504][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.504][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.504][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[0m[1.505][INFO][DEBUG][0m [DASH FX] position=(55.79,38.05,355.87) direction=(0.31,-0.95,0.00) offset=(-0.31,0.95,0.00) spawn=(55.49,39.01,355.92)[0m[SOUND] loaded event=entity/player/walk3 path=assets/sound/entity/player/walk3.wav
+[SOUND] playing event=entity/player/walk3 category=3D path=assets/sound/entity/player/walk3.wav
+[35m[1.511][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.511][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.511][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.518][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.518][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.518][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.525][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.525][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.525][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.532][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.532][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.532][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.539][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.539][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.539][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.545][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.546][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.546][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.552][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.552][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.553][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.560][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.560][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.560][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.566][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.567][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.567][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.573][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.573][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.573][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.580][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.581][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.581][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.587][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.587][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.587][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.594][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.594][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.594][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.602][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.602][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.602][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.609][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.609][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.609][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.616][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.616][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.616][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.623][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.623][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.623][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.629][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.630][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.630][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.637][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.637][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.637][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.643][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.644][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.644][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.650][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.650][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.650][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.657][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.657][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.658][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.664][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.664][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.664][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.665][INFO][REPLAY][0m [EXPORTTRACE] RENDER: replayRenderActive=0 hasSceneFrame=0 exportState=0[0m[35m[1.671][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.672][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.672][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.678][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.678][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.678][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.685][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.685][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.685][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.692][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.693][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.693][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.699][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.699][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.699][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.706][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.706][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.706][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.713][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.713][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.713][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.720][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.720][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.720][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.727][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.727][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.727][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.733][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.733][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.733][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.741][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.741][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.741][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[SOUND] stopped event=entity/player/walk3
+[35m[1.747][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.747][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.748][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.754][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.754][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.755][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.761][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.761][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.761][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.769][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.769][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.769][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.776][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.776][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.776][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.782][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.782][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.782][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.789][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.789][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.789][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.796][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.796][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.796][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.803][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.803][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.803][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.810][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.810][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.810][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.817][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.817][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.817][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.824][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.824][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.824][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.831][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.831][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.831][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.837][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.837][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.837][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.845][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.845][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.845][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.851][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.851][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.851][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.858][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.858][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.859][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[SOUND] loaded event=entity/player/walk1 path=assets/sound/entity/player/walk1.wav
+[SOUND] playing event=entity/player/walk1 category=3D path=assets/sound/entity/player/walk1.wav
+[35m[1.865][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.865][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.866][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.872][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.872][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.872][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[WORLD] batches=71 vertices=89226 depth=1 cull=1 blend=0 polygonMode=0x1b02/0x0
+[WORLD] uLightDir=(-0.329,-0.094,-0.940) uAmbientStrength=0.720 uDiffuseStrength=0.450 uTextureBrightness=1.350 uTextureContrast=1.020 uDebugView=0
+[WORLD] uniform uLightDir location=10
+[WORLD] uniform uAmbientStrength location=4
+[WORLD] uniform uDiffuseStrength location=7
+[WORLD] uniform uTextureBrightness location=19
+[WORLD] uniform uTextureContrast location=20
+[WORLD] uniform uDebugView location=6
+
+FRAME
+
+1. bind postfx fbo: PASS OK
+2. render world: PASS OK
+3. render players: PASS OK
+4. render weapons: PASS OK
+5. render effects: PASS OK
+6. unbind postfx fbo: PASS OK
+7. postfx render: PASS OK
+8. gui render: PASS OK
+9. swap buffers: PASS OK
+
+World batches: 71
+World vertices: 89226
+World draw calls: 71
+
+Player draw calls: 6
+Weapon draw calls: 0
+Effect draw calls: 1
+Debug modes: master=0 wireframe=0 lightingOnly=0 uDebugView=0
+[35m[1.880][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.880][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.880][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.886][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.886][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.886][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.893][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.893][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.893][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.900][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.900][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.900][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.907][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.907][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.907][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.913][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.914][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.914][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.921][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.921][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.921][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.927][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.927][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.928][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.935][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.935][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.935][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.941][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.941][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.941][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.949][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.949][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.949][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.955][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.955][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.955][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.962][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.963][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.963][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.969][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.970][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.970][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.976][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.976][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.976][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.983][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.983][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.984][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.991][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.991][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.991][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[1.997][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[1.997][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[1.997][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.004][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.004][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.004][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.011][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.011][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.011][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.018][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.018][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.018][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.025][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.025][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.025][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.032][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.032][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.032][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.039][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.039][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.039][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.046][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.046][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.046][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.053][INFO][REPLAY][0m [EXPORTTRACE] SET replayPlaybackActive=0 file=main.cpp line=2689[0m[35m[2.053][INFO][REPLAY][0m [EXPORTTRACE] SET replayRenderActive=0 file=main.cpp line=2690[0m[35m[2.053][INFO][REPLAY][0m [EXPORTTRACE] replayPlaybackActive=0 replayRenderActive=0 totalTicks=0 exportState=0[0m[35m[2.056][INFO][DUEL][0m [DUEL] escape: transitioning to main menu[0m[MAIN] gameState changed 1 -> 0
+[UI HOVER ENTER] id=Funworldv1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=Funworldv1
+[UI HOVER ENTER] id=Ideas Map V1
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=Ideas Map V1
+[SOUND] stopped event=entity/player/walk1
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=Mimita Aabb Only Interior Small V4
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=Mimita Aabb Only Interior Small V4
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=shotgunshoot
+[UI HOVER ENTER] id=music-pause
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=music-pause
+[SOUND] stopped event=ui/hover
+[UI HOVER ENTER] id=music-mute
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: MUTE ON
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/click
+[UI HOVER EXIT] id=music-mute
+[UI HOVER ENTER] id=Back
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI] button clicked: Back
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[GUI BACK] Back button CLICKED
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/click
+[UI] button clicked: Back
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[GUI BACK] Back button CLICKED
+[SOUND] stopped event=ui/click
+[UI HOVER EXIT] id=Back
+[UI HOVER ENTER] id=Back
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: Back
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[GUI BACK] Back button CLICKED
+[UI HOVER EXIT] id=Back
+[SOUND] stopped event=ui/click
+[UI HOVER ENTER] id=PLAY
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[UI HOVER EXIT] id=PLAY
+[UI HOVER ENTER] id=REPLAYS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=REPLAYS
+[UI HOVER ENTER] id=EXIT
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=EXIT
+[UI HOVER ENTER] id=SETTINGS
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[SOUND] stopped event=ui/hover
+[UI HOVER EXIT] id=SETTINGS
+[UI HOVER ENTER] id=EXIT
+[SOUND] loaded event=ui/hover path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/hover category=2D path=assets/sound/ui/click.wav
+[SOUND] stopped event=ui/hover
+[UI] button clicked: EXIT
+[SOUND] loaded event=ui/click path=assets/sound/ui/click.wav
+[SOUND] playing event=ui/click category=2D path=assets/sound/ui/click.wav
+[MAIN MENU] Exit pressed
+[MAIN] loop ended
+[HOT RELOAD] unloading old DLL
+[CURSOR] destroyed custom cursor
+
+==================================================
+END OF RUN
+Time: 2026-06-16 12:43:09
+==================================================

@@ -1,14 +1,14 @@
 ==================================================
 MIMITA RUN LOG
-Start Time: 2026-06-16 09:08:31
+Start Time: 2026-06-16 12:43:12
 Build: debug
 ==================================================
 
 [LOG ROTATION] Removed 1 old logs
-[LOGMANAGER] Logging to: logs/16-06-2026/09-08-31-log.txt
+[LOGMANAGER] Logging to: logs/16-06-2026/12-43-12-log.txt
 [LOG] Console output enabled
 [LOG] File logging enabled
-[LOG] Active log path: logs/16-06-2026/09-08-31-log.txt
+[LOG] Active log path: logs/16-06-2026/12-43-12-log.txt
 [LOG] Mirroring console -> file
 [MAIN] before engine.init
 [CURSOR] loaded custom cursor 100x100 channels=4 hotspot=0,0 mode=top-left
@@ -44,6 +44,7 @@ OpenGL 3.3.0 NVIDIA 592.27
 [UI] UI shader linked program=6
 [MAIN] after uiInit()
 [DBGVIS] init
+[DBGVIS] config loaded: config/debug/debug-settings.json
 [DEBUG] verbose logging ENABLED; disable in config.h
 [MAIN] after DebugVis::init()
 [DEV CONFIG] Bound F1 (0x122) -> toggle_npc_menu : Toggle NPC Dev Menu
@@ -87,7 +88,7 @@ OpenGL 3.3.0 NVIDIA 592.27
 [LIGHTING] Loaded config from config/lighting.json
 [SHADOWS] Loaded config from config/shadows.json
 [EFFECT PART] Initialized pool size=4096
-[HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-14320-1.dll
+[HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-11692-1.dll
 [HOT RELOAD] reload success generation=1
 [MAIN] dev tools initialized
 [MAIN] after glEnable and glBlendFunc()

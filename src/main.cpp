@@ -700,6 +700,7 @@ int main(int argc, char** argv)
     uiInit(engine.window());
     printf("[MAIN] after uiInit()\n");
     DebugVis::init(engine.window());
+    DebugVis::loadConfig();
     Debug::startupReport();
     printf("[MAIN] after DebugVis::init()\n");
 
@@ -855,6 +856,9 @@ int main(int argc, char** argv)
     } replayTest;
 
     // Set global pointers for terminal command access
+    gpPlayer = &player;
+    gpCamera = &camera;
+    gpWeapons = &weapons;
     gpReplayRecorder = &gReplayRecorder;
     gpReplayPlayer = &gReplayPlayer;
     gpReplayClipSaver = &gReplayClipSaver;
@@ -1208,7 +1212,23 @@ int main(int argc, char** argv)
         [](const std::vector<std::string>& args) {
             bool enabled = args.empty() ? !DebugVis::masterEnabled() : args[0] != "0";
             DebugVis::setMasterEnabled(enabled);
+            DebugVis::saveConfig();
             Terminal::instance().addLog(std::string("[DEBUG VISUALS] ") + (enabled ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "debugvis_status", "Show debug visualization status", "debugvis_status",
+        [](const std::vector<std::string>&) {
+            int enabled = DebugVis::masterEnabled() ? 1 : 0;
+            std::string configPath = "config/debug/debug-settings.json";
+            int configLoaded = std::filesystem::exists(configPath) ? 1 : 0;
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "debugVisualizationEnabled=%d\n"
+                "configLoaded=%d\n"
+                "configPath=%s",
+                enabled, configLoaded, configPath.c_str());
+            Terminal::instance().addLog(buf);
         }
     });
     Terminal::instance().registerCommand({
@@ -2391,6 +2411,40 @@ int main(int argc, char** argv)
         },
         "2026-06-14", CommandCategory::Debug
     });
+    Terminal::instance().registerCommand({
+        "music_mute", "Toggle music mute on/off", "music_mute [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                bool muted = MusicManager::instance().muted();
+                Terminal::instance().addLog(muted
+                    ? "[MUSIC] muted"
+                    : "[MUSIC] unmuted");
+                return;
+            }
+            bool mute = args[0] != "0";
+            MusicManager::instance().setMuted(mute);
+            GetPlayerSettings().musicMuted = mute;
+            SavePlayerSettings();
+            Terminal::instance().addLog(mute
+                ? "[MUSIC] muted"
+                : "[MUSIC] unmuted");
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_debug", "Show music config state", "music_debug",
+        [](const std::vector<std::string>&) {
+            auto& mm = MusicManager::instance();
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "musicEnabled=%d\nmusicVolume=%.2f\nconfigLoaded=1\nconfigPath=config/audio/music-settings.json",
+                (int)!mm.muted(), mm.volume());
+            Terminal::instance().addLog(buf);
+            Debug::log(Debug::Category::Audio, "[MUSIC] debug: enabled=%d volume=%.2f\n",
+                       (int)!mm.muted(), mm.volume());
+        },
+        "2026-06-14", CommandCategory::Debug
+    });
 
     // Spawn FX debug commands
     Terminal::instance().registerCommand({
@@ -2922,6 +2976,7 @@ int main(int argc, char** argv)
                     ShadowConfig::instance().pollReload();
                     pollVoidDeathConfig();
                     pollHitmarkerAudioConfig();
+                    pollReplayExportConfig();
                     pollOutroConfig();
                     pollReplayHitmarkerConfig();
 

@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <unordered_map>
+#include <filesystem>
 #include <random>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "miniaudio.h"
 
@@ -101,4 +102,10 @@ private:
     float mWidgetCloseTimer = 0.0f;
     bool mWidgetPanelOpen = false;
     bool mWidgetDebug = false;
+
+    // Config persistence
+    std::string mConfigPath = "config/audio/music-settings.json";
+    std::filesystem::file_time_type mConfigLastWrite;
+    void loadConfig();
+    void saveConfig();
 };

@@ -179,6 +179,7 @@ void MusicManager::init()
     Debug::log(Debug::Category::Audio, "[MUSIC] loaded tracks=%zu menu=%zu ingame=%zu\n",
         mMenuTracks.size() + mIngameTracks.size(), mMenuTracks.size(), mIngameTracks.size());
 
+    loadConfig();
     mInitialized = true;
     enterMenuMode();
 }
@@ -197,6 +198,15 @@ void MusicManager::shutdown()
 void MusicManager::update(float dt)
 {
     if (!mInitialized) return;
+    // Hot reload: check if config file changed on disk
+    {
+        std::error_code ec;
+        auto wt = std::filesystem::last_write_time(mConfigPath, ec);
+        if (!ec && wt != mConfigLastWrite) {
+            Debug::log(Debug::Category::Audio, "[MUSIC] config changed on disk, reloading\n");
+            loadConfig();
+        }
+    }
     mWidgetDt = dt;
 
     if (mCurrentSound && ma_sound_at_end(mCurrentSound)) {
@@ -323,6 +333,7 @@ void MusicManager::setVolume(float vol)
 {
     mVolume = std::clamp(vol, 0.0f, 1.0f);
     applyVolume();
+    saveConfig();
     Debug::log(Debug::Category::Audio, "[MUSIC] volume=%.2f\n", mVolume);
 }
 
@@ -332,6 +343,7 @@ void MusicManager::setMuted(bool m)
 {
     mMuted = m;
     applyVolume();
+    saveConfig();
 }
 
 bool MusicManager::muted() const { return mMuted; }
@@ -481,8 +493,7 @@ void MusicManager::drawMusicWidget()
         mMuted ? glm::vec4(0.5f,0.2f,0.2f,1) : glm::vec4(0.25f,0.55f,0.3f,1),
         "music-mute").clicked)
     {
-        mMuted = !mMuted;
-        applyVolume();
+        setMuted(!mMuted);
     }
 
     // Debug overlay
@@ -510,4 +521,52 @@ void MusicManager::drawAllOverlay()
 {
     drawNowPlayingPopup();
     drawMusicWidget();
+}
+
+void MusicManager::loadConfig()
+{
+    std::ifstream file(mConfigPath);
+    if (!file.is_open()) {
+        // First launch: save defaults, then load is skipped
+        saveConfig();
+        return;
+    }
+    try {
+        json j;
+        file >> j;
+        if (j.contains("musicEnabled")) {
+            bool enabled = j["musicEnabled"];
+            setMuted(!enabled);
+        }
+        if (j.contains("musicVolume")) {
+            float vol = j["musicVolume"];
+            setVolume(vol);
+        }
+        std::error_code ec;
+        mConfigLastWrite = std::filesystem::last_write_time(mConfigPath, ec);
+        Debug::log(Debug::Category::Audio, "[MUSIC] config loaded: enabled=%d volume=%.2f\n",
+                   (int)!mMuted, mVolume);
+    } catch (const std::exception& e) {
+        Debug::log(Debug::Category::Audio, "[MUSIC] config parse error: %s\n", e.what());
+    }
+}
+
+void MusicManager::saveConfig()
+{
+    try {
+        std::error_code ec;
+        std::filesystem::create_directories(
+            std::filesystem::path(mConfigPath).parent_path(), ec);
+        json j;
+        j["musicEnabled"] = !mMuted;
+        j["musicVolume"] = mVolume;
+        std::ofstream file(mConfigPath);
+        if (file.is_open()) {
+            file << j.dump(4);
+            file.close();
+            mConfigLastWrite = std::filesystem::last_write_time(mConfigPath, ec);
+        }
+    } catch (const std::exception& e) {
+        Debug::log(Debug::Category::Audio, "[MUSIC] config save error: %s\n", e.what());
+    }
 }
