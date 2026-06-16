@@ -138,14 +138,15 @@ std::string generateExportOutputPath()
     return result;
 }
 
-static bool writeWavFile(const std::string& path, const std::vector<int16_t>& samples, uint32_t sampleRate)
+static bool writeWavFile(const std::string& path, const std::vector<int16_t>& samples,
+                         uint32_t sampleRate, uint16_t channels = 2)
 {
     FILE* f = fopen(path.c_str(), "wb");
     if (!f) return false;
     uint32_t dataBytes = (uint32_t)(samples.size() * sizeof(int16_t));
     uint32_t riffSize = 36 + dataBytes;
-    uint16_t fmt = 1; // PCM
-    uint16_t ch = 1;  // mono
+    uint16_t fmt = 1;
+    uint16_t ch = channels;
     uint32_t byteRate = sampleRate * ch * sizeof(int16_t);
     uint16_t blockAlign = ch * sizeof(int16_t);
     uint16_t bitsPerSample = 16;
@@ -169,15 +170,17 @@ static bool writeWavFile(const std::string& path, const std::vector<int16_t>& sa
     return true;
 }
 
-// Build a mono 44100Hz WAV from replay sound events, mixed at their tick timestamps.
+// Build a stereo 48000Hz WAV from replay sound events, mixed at their tick timestamps.
+// Uses float mixing with linear interpolation resampling and soft limiting
+// to prevent the crackling/clipping artifacts from the prior nearest-neighbor
+// integer approach.
 static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 {
     const auto& events = REPLAY_PLAYER.soundEvents();
     if (events.empty())
     {
-        // Create a short silent WAV so ffmpeg has an audio stream to mux
-        std::vector<int16_t> silent(44100, 0); // 1 second of silence
-        return writeWavFile(wavPath, silent, 44100);
+        std::vector<int16_t> silent(48000 * 2, 0);
+        return writeWavFile(wavPath, silent, 48000);
     }
 
     EXPORTLOG("[REPLAY AUDIO] events=%zu", events.size());
@@ -187,11 +190,16 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
             EXPORTLOG("[REPLAY AUDIO] event=%s tick=%d", ev.soundPath.c_str(), ev.tick);
     }
 
-    uint32_t sampleRate = 44100;
+    // 48000 Hz stereo output
+    uint32_t sampleRate = 48000;
+    uint16_t numChannels = 2;
     double tickRate = 60.0;
-    double totalDurationSec = (double)totalTicks / tickRate + 1.0; // +1s padding
-    size_t totalSamples = (size_t)(totalDurationSec * sampleRate);
-    std::vector<int32_t> mix(totalSamples, 0);
+    double totalDurationSec = (double)totalTicks / tickRate + 1.0;
+    size_t totalFrames = (size_t)(totalDurationSec * sampleRate);
+    size_t totalSamples = totalFrames * numChannels;
+
+    // Float mix buffer: interleaved L/R, initialized to 0
+    std::vector<float> mix(totalSamples, 0.0f);
 
     uint32_t decodedCount = 0;
     for (const auto& event : events)
@@ -206,9 +214,10 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
             continue;
         }
 
+        // Decode at 48000 Hz stereo directly (avoids extra resampling)
         std::vector<int16_t> pcm;
         uint32_t rate = 0, ch = 0;
-        if (!decodeAudioToPCM(filePath, pcm, rate, ch))
+        if (!decodeAudioToPCM(filePath, pcm, rate, ch, sampleRate, numChannels))
         {
             EXPORTLOG("[REPLAY AUDIO] skip undecodable event=%s file=%s", event.soundPath.c_str(), filePath.c_str());
             continue;
@@ -216,31 +225,75 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         decodedCount++;
 
         double eventTime = (double)event.tick / tickRate;
-        size_t dstOffset = (size_t)(eventTime * sampleRate);
+        size_t dstFrame = (size_t)(eventTime * sampleRate);
         size_t srcFrames = pcm.size() / ch;
 
-        for (size_t i = 0; i < srcFrames; i++)
+        // If the decoded rate differs from target (shouldn't since we request 48000,
+        // but miniaudio may fall back to source rate), do linear interpolation.
+        if (rate == sampleRate && ch == numChannels)
         {
-            double srcTime = (double)i / rate;
-            size_t dstPos = dstOffset + (size_t)(srcTime * sampleRate);
-            if (dstPos >= totalSamples) break;
+            // Fast path: direct copy with volume
+            for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
+            {
+                for (uint32_t c = 0; c < numChannels; c++)
+                {
+                    float s = (float)pcm[(i * ch + c)] * event.volume / 32768.0f;
+                    mix[(dstFrame + i) * numChannels + c] += s;
+                }
+            }
+        }
+        else
+        {
+            // Resampling path: linear interpolation
+            for (size_t i = 0; i < srcFrames; i++)
+            {
+                double srcTime = (double)i / rate;
+                double dstPos = dstFrame + srcTime * sampleRate;
+                if (dstPos >= (double)totalFrames - 1.0) break;
 
-            int32_t mono = 0;
-            for (uint32_t c = 0; c < ch; c++)
-                mono += pcm[i * ch + c];
-            mono = (int32_t)((double)mono / ch * event.volume);
-            mix[dstPos] += mono;
+                size_t dstI = (size_t)dstPos;
+                double frac = dstPos - (double)dstI;
+                size_t dstNext = dstI + 1;
+
+                for (uint32_t c = 0; c < std::min(ch, (uint32_t)numChannels); c++)
+                {
+                    float s0 = (float)pcm[i * ch + std::min(c, ch - 1)] / 32768.0f;
+                    float s1 = (float)pcm[std::min(i + 1, srcFrames - 1) * ch + std::min(c, ch - 1)] / 32768.0f;
+                    float interp = s0 + (s1 - s0) * (float)frac;
+                    interp *= event.volume;
+
+                    uint32_t outCh = std::min(c, (uint32_t)(numChannels - 1));
+                    mix[dstI * numChannels + outCh] += interp;
+                    if (dstNext < totalFrames)
+                        mix[dstNext * numChannels + outCh] += interp * (1.0f - (float)frac);
+                }
+            }
         }
     }
 
-    // Clamp and convert to int16
+    // Soft limiting to prevent clipping while preserving dynamic range.
+    // Uses a simple hard knee: apply gain reduction at peaks > 0.9.
+    float peak = 0.0f;
+    uint64_t clippedSamples = 0;
     std::vector<int16_t> output(totalSamples);
     for (size_t i = 0; i < totalSamples; i++)
     {
-        int32_t s = mix[i];
-        if (s > 32767) s = 32767;
-        if (s < -32768) s = -32768;
-        output[i] = (int16_t)s;
+        float s = mix[i];
+        float absS = std::fabs(s);
+        if (absS > peak) peak = absS;
+
+        // Soft limit: sigmoid-like curve for values > 0.9
+        if (absS > 0.9f)
+        {
+            float excess = (absS - 0.9f) / (absS + 0.01f);
+            s = (s > 0 ? 1.0f : -1.0f) * (0.9f + excess * 0.1f);
+        }
+
+        // Hard clamp to prevent any remaining overflow
+        if (s > 1.0f) { s = 1.0f; clippedSamples++; }
+        if (s < -1.0f) { s = -1.0f; clippedSamples++; }
+
+        output[i] = (int16_t)(s * 32767.0f);
     }
 
     bool ok = writeWavFile(wavPath, output, sampleRate);
@@ -249,7 +302,9 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         uint64_t wavBytes = 0;
         std::error_code ec;
         wavBytes = std::filesystem::file_size(wavPath, ec);
-        EXPORTLOG("[EXPORT AUDIO] events=%u wavBytes=%llu", decodedCount, (unsigned long long)wavBytes);
+        EXPORTLOG("[EXPORT AUDIO] events=%u wavBytes=%llu sampleRate=%u channels=%u duration=%.1f",
+                  decodedCount, (unsigned long long)wavBytes, sampleRate, numChannels, totalDurationSec);
+        EXPORTLOG("[EXPORT AUDIO] peak=%.2f clippedSamples=%llu", peak, (unsigned long long)clippedSamples);
     }
     return ok;
 }
@@ -579,8 +634,8 @@ void updateReplayExport()
         if (!audioOk) {
             // Fallback: create a silent WAV so ffmpeg always has an audio input
             EXPORTLOG("[EXPORT AUDIO] buildExportAudio failed, creating silent fallback");
-            std::vector<int16_t> silence(44100, 0);
-            audioOk = writeWavFile(nativeWav, silence, 44100);
+            std::vector<int16_t> silence(48000 * 2, 0);
+            audioOk = writeWavFile(nativeWav, silence, 48000, 2);
         }
         EXPORTLOG("[EXPORT AUDIO] buildExportAudio=%s", audioOk ? "OK" : "FAILED (silent fallback)");
 
@@ -591,7 +646,7 @@ void updateReplayExport()
         }
 
         std::string audioInput = "-i \"" + nativeWav + "\"";
-        std::string audioCodec = "-c:a aac -b:a 128k";
+        std::string audioCodec = "-c:a aac -b:a 192k";
 
         std::string batContent = "@echo off\r\n"
             "\"" + gJob.ffmpegPath + "\" -y -f rawvideo -pixel_format rgb24 "

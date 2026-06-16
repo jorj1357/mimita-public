@@ -58,6 +58,8 @@ void playMenuHover();
 // Returns the path if the file exists, or empty string if not found.
 std::string resolveSoundPath(const std::string& name);
 
-// Decode an audio file to 16-bit PCM. Returns false on failure.
+// Decode an audio file to 16-bit PCM at target sample rate / channels.
+// Returns false on failure. Default: 48000 Hz stereo.
 bool decodeAudioToPCM(const std::string& path, std::vector<int16_t>& outPCM,
-                      uint32_t& outSampleRate, uint32_t& outChannels);
+                      uint32_t& outSampleRate, uint32_t& outChannels,
+                      uint32_t targetSampleRate = 48000, uint32_t targetChannels = 2);

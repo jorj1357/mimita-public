@@ -11,6 +11,7 @@
 #include "combat/weapon-hit.h"
 #include "combat/death-system.h"
 #include "effects/hit-effects.h"
+#include "void-death/void-death.h"
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -93,6 +94,10 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 
     if (sim.player->spawnFlashTimer > 0.0f)
         sim.player->spawnFlashTimer = std::max(0.0f, sim.player->spawnFlashTimer - 1.0f);
+
+    checkVoidDeath(*sim.player, sim.player->username, "player");
+    for (Npc& npc : sim.npcSystem->all())
+        checkVoidDeath(npc.body, "npc_" + std::to_string(npc.id), "npc");
 
     if (DebugConfig::DEBUG_TICKS)
         Debug::log(Debug::Category::General,

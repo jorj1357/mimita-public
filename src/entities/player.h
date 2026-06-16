@@ -180,6 +180,7 @@ public:
     float spawnFlashTimer = 0.0f;
     glm::vec3 respawnPosition{1.0f, 5.0f, 60.0f};
     std::string killedBy;
+    bool voidDeathTriggered = false;
     // -------- Core State --------
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};

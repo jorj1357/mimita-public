@@ -101,6 +101,7 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
+#include "void-death/void-death.h"
 #include "crosshair/crosshair-commands.h"
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
@@ -155,6 +156,11 @@ ReplayBrowser* gpReplayBrowser = nullptr;
 ReplayTimeline* gpReplayTimeline = nullptr;
 std::unordered_map<std::string, ActorChatState>* gpReplayChatStates = nullptr;
 std::vector<std::string>* gpReplayClipsCache = nullptr;
+
+// REPLAY EXPORT UI FILTER
+// Set to false if you want replay controls/debug overlays
+// visible in exported videos.
+static bool gReplayExportRenderMode = false;
 std::unordered_map<int, std::string>* gpCommandBinds = nullptr;
 std::unordered_map<int, bool>* gpBindPrev = nullptr;
 
@@ -1634,6 +1640,7 @@ int main(int argc, char** argv)
     // Replay terminal commands
     // Register replay terminal commands (moved to src/terminal/replay-commands.cpp)
     registerReplayCommands();
+    registerVoidDeathCommands();
     registerPerfCommands();
     registerHitFxCommands();
     registerDiagnosticCommands();
@@ -2908,6 +2915,7 @@ int main(int argc, char** argv)
                     GuiLayoutManager::instance().pollReload();
                     LightingConfig::instance().pollReload();
                     ShadowConfig::instance().pollReload();
+                    pollVoidDeathConfig();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
@@ -3588,6 +3596,10 @@ int main(int argc, char** argv)
                            (int)getReplayExportJob().state);
                 }
             }
+            // Update export render mode flag: hide replay/export/debug UI
+            // during capture so the exported video looks like gameplay footage.
+            gReplayExportRenderMode = isReplayExportActive();
+
             // [E] Step 2: replay render (into PostFX FBO)
             if (getReplayExportJob().state == ReplayExportJob::Capturing) {
                 Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] render order: 1.replay update, 2.replay render, 3.glReadPixels");
@@ -3926,7 +3938,7 @@ int main(int argc, char** argv)
                                ? glm::vec4(1.0f, 0.25f, 0.2f, 1.0f)
                                : glm::vec4(0.3f, 0.75f, 1.0f, 1.0f));
             }
-            if (gReplayRecorder.isRecording()) {
+            if (gReplayRecorder.isRecording() && !gReplayExportRenderMode) {
                 const float overlayX = uiScreenW() - 230.0f;
                 uiDrawRect({overlayX - 18.0f, 20.0f, 12.0f, 12.0f},
                            {1.0f, 0.05f, 0.05f, 1.0f}, "replay-record-dot");
@@ -3944,6 +3956,9 @@ int main(int argc, char** argv)
                 const auto* rFrame = gReplayPlayer.currentSceneFrame();
                 const uint32_t totalTicks = gReplayPlayer.totalTicks();
                 const float currentTime = gReplayPlayer.currentTick() / 60.0f;
+
+                // REPLAY EXPORT UI FILTER: hide replay-only UI overlay during export
+                if (!gReplayExportRenderMode) {
                 const float totalTime = (float)totalTicks / 60.0f;
                 const char* camMode = gReplayPlayer.cameraController().modeName();
                 const bool paused = gReplayPlayer.isPaused();
@@ -4010,6 +4025,7 @@ int main(int argc, char** argv)
                     float progress = std::clamp((float)gReplayPlayer.currentTick() / (float)std::max(totalTicks, 1u), 0.0f, 1.0f);
                     uiDrawRect({barX, barY, barW * progress, barH}, {0.9f, 0.9f, 0.3f, 0.9f}, "seek-fill");
                 }
+                } // end REPLAY EXPORT UI FILTER (hide replay-only overlay)
 
                 // Crosshair for the first armed actor
                 if (rFrame && !rFrame->actors.empty()) {
@@ -4034,6 +4050,8 @@ int main(int argc, char** argv)
                     drawPlayerHealthbar(*kv.second, camera, "replay-hp");
                 }
 
+                // REPLAY EXPORT UI FILTER: hide controls help during export
+                if (!gReplayExportRenderMode) {
                 // Replay controls help panel (bottom right)
                 const float helpX = uiScreenW() - 220.0f;
                 const float helpY = uiScreenH() - 140.0f;
@@ -4054,6 +4072,7 @@ int main(int argc, char** argv)
                            {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
                 uiDrawText("freecam  Free Camera", helpX + 8.0f, hy, 0.24f,
                            {0.8f, 0.8f, 1.0f, 1.0f});
+                } // end REPLAY EXPORT UI FILTER (controls help)
             } else {
                 if (weapons.getCurrentDef(player)) {
                     updateCrosshairDynamic(
@@ -4530,6 +4549,8 @@ int main(int argc, char** argv)
                 }
             }
 
+            // REPLAY EXPORT UI FILTER: hide browser, timeline, export overlay
+            if (!gReplayExportRenderMode) {
             // Replay Browser overlay (rendered on top of everything)
             gReplayBrowser.draw();
 
@@ -4574,6 +4595,7 @@ int main(int argc, char** argv)
                 if (job.state == ReplayExportJob::Idle)
                     exportPopupShown = false;
             }
+            } // end REPLAY EXPORT UI FILTER (browser, timeline, export overlay)
             MusicManager::instance().drawAllOverlay();
             if (gFramePacer.showFPS())
             {
