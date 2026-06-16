@@ -207,6 +207,36 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         if (event.tick < 0 || (uint32_t)event.tick >= totalTicks)
             continue;
 
+        // Skip hitmarker sounds unless camera is viewing the attacker
+        if (event.soundPath == "hitmarker1")
+        {
+            const ReplayCameraMode camMode = REPLAY_PLAYER.cameraController().mode();
+            std::string viewedEntity;
+            switch (camMode) {
+                case ReplayCameraMode::Freecam: break;
+                case ReplayCameraMode::FirstPerson:
+                case ReplayCameraMode::Orbit:
+                    viewedEntity = REPLAY_PLAYER.killerId();
+                    break;
+                case ReplayCameraMode::Victim:
+                    viewedEntity = REPLAY_PLAYER.victimId();
+                    break;
+            }
+            if (!ReplayShouldPlayHitmarkerAudio(
+                    REPLAY_PLAYER.killerId(), camMode, viewedEntity))
+            {
+                EXPORTLOG("[REPLAY HITMARKER] skip export attacker=%s viewedEntity=%s camera=%s",
+                          REPLAY_PLAYER.killerId().c_str(),
+                          viewedEntity.c_str(),
+                          REPLAY_PLAYER.cameraController().modeName());
+                continue;
+            }
+            EXPORTLOG("[REPLAY HITMARKER] include export attacker=%s viewedEntity=%s camera=%s",
+                      REPLAY_PLAYER.killerId().c_str(),
+                      viewedEntity.c_str(),
+                      REPLAY_PLAYER.cameraController().modeName());
+        }
+
         std::string filePath = resolveSoundPath(event.soundPath);
         if (filePath.empty() || !std::filesystem::exists(filePath))
         {

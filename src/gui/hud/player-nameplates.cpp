@@ -9,6 +9,7 @@
 #include "entities/player.h"
 #include "gui/ui-system.h"
 #include "physics/config.h"
+#include "debug/debug-log.h"
 
 namespace {
 
@@ -55,6 +56,7 @@ HealthbarRenderResult drawPlayerHealthbar(
 
     if (player.dead || player.currentHp <= 0)
     {
+        Debug::log(Debug::Category::General, "[HEALTHBAR] skipped render owner=%s dead=%d hp=%d", player.username.c_str(), (int)player.dead, player.currentHp);
         result.cullReason = HealthbarCullReason::Dead;
         return result;
     }
