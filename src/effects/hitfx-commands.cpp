@@ -197,14 +197,15 @@ void registerHitFxCommands()
         "deathfx_ellipsoid", "Enable/disable death ellipsoid effect (0=off, 1=on)",
         "deathfx_ellipsoid [0|1]",
         [](const std::vector<std::string>& args) {
+            auto& deCfg = HitEffects::mutableConfig().deathEllipsoid;
             if (args.empty()) {
-                Terminal::instance().addLog(gDeathEllipsoidEnabled
+                Terminal::instance().addLog(deCfg.enabled
                     ? "[DEATHFX] ellipsoid enabled"
                     : "[DEATHFX] ellipsoid disabled");
                 return;
             }
-            gDeathEllipsoidEnabled = args[0] != "0";
-            Terminal::instance().addLog(gDeathEllipsoidEnabled
+            deCfg.enabled = args[0] != "0";
+            Terminal::instance().addLog(deCfg.enabled
                 ? "[DEATHFX] ellipsoid enabled"
                 : "[DEATHFX] ellipsoid disabled");
         }
@@ -214,12 +215,13 @@ void registerHitFxCommands()
         "deathfx_ellipsoid_length", "Set death ellipsoid length",
         "deathfx_ellipsoid_length <value>",
         [](const std::vector<std::string>& args) {
+            auto& deCfg = HitEffects::mutableConfig().deathEllipsoid;
             if (args.empty()) {
-                Terminal::instance().addLog("[DEATHFX] length=" + std::to_string(gDeathEllipsoidLength));
+                Terminal::instance().addLog("[DEATHFX] length=" + std::to_string(deCfg.length));
                 return;
             }
-            gDeathEllipsoidLength = std::max(1.0f, std::stof(args[0]));
-            Terminal::instance().addLog("[DEATHFX] length set to " + std::to_string(gDeathEllipsoidLength));
+            deCfg.length = std::max(1.0f, std::stof(args[0]));
+            Terminal::instance().addLog("[DEATHFX] length set to " + std::to_string(deCfg.length));
         }
     });
 
@@ -227,12 +229,13 @@ void registerHitFxCommands()
         "deathfx_ellipsoid_radius", "Set death ellipsoid radius",
         "deathfx_ellipsoid_radius <value>",
         [](const std::vector<std::string>& args) {
+            auto& deCfg = HitEffects::mutableConfig().deathEllipsoid;
             if (args.empty()) {
-                Terminal::instance().addLog("[DEATHFX] radius=" + std::to_string(gDeathEllipsoidRadius));
+                Terminal::instance().addLog("[DEATHFX] radius=" + std::to_string(deCfg.radius));
                 return;
             }
-            gDeathEllipsoidRadius = std::max(0.1f, std::stof(args[0]));
-            Terminal::instance().addLog("[DEATHFX] radius set to " + std::to_string(gDeathEllipsoidRadius));
+            deCfg.radius = std::max(0.1f, std::stof(args[0]));
+            Terminal::instance().addLog("[DEATHFX] radius set to " + std::to_string(deCfg.radius));
         }
     });
 
@@ -240,12 +243,13 @@ void registerHitFxCommands()
         "deathfx_ellipsoid_lifetime", "Set death ellipsoid lifetime in seconds",
         "deathfx_ellipsoid_lifetime <value>",
         [](const std::vector<std::string>& args) {
+            auto& deCfg = HitEffects::mutableConfig().deathEllipsoid;
             if (args.empty()) {
-                Terminal::instance().addLog("[DEATHFX] lifetime=" + std::to_string(gDeathEllipsoidLifetime));
+                Terminal::instance().addLog("[DEATHFX] lifetime=" + std::to_string(deCfg.lifetime));
                 return;
             }
-            gDeathEllipsoidLifetime = std::max(0.1f, std::stof(args[0]));
-            Terminal::instance().addLog("[DEATHFX] lifetime set to " + std::to_string(gDeathEllipsoidLifetime));
+            deCfg.lifetime = std::max(0.1f, std::stof(args[0]));
+            Terminal::instance().addLog("[DEATHFX] lifetime set to " + std::to_string(deCfg.lifetime));
         }
     });
 
@@ -258,7 +262,8 @@ void registerHitFxCommands()
                 Terminal::instance().addLog("[DEATHFX] no player");
                 return;
             }
-            if (!gDeathEllipsoidEnabled) {
+            const auto& deCfg = HitEffects::config().deathEllipsoid;
+            if (!deCfg.enabled) {
                 Terminal::instance().addLog("[DEATHFX] ellipsoid disabled");
                 return;
             }
@@ -266,7 +271,7 @@ void registerHitFxCommands()
             glm::vec3 dir = cam ? cam->front : glm::vec3(1.0f, 0.0f, 0.0f);
             EffectPartSystem::instance().spawnDeathEllipsoid(
                 gpPlayer->pos, dir,
-                gDeathEllipsoidLength, gDeathEllipsoidRadius, gDeathEllipsoidLifetime);
+                deCfg.length, deCfg.radius, deCfg.lifetime);
             Terminal::instance().addLog("[DEATHFX] test ellipsoid spawned");
         }
     });

@@ -18,6 +18,7 @@
 #include <GLFW/glfw3.h>
 
 #include "replay/replay.h"
+#include "video/outro.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "render/post-fx.h"
@@ -748,6 +749,11 @@ void updateReplayExport()
         EXPORTLOG("PASS: output file exists, size=%llu bytes (%.1f KB)",
                   (unsigned long long)gJob.mp4FileBytes, (double)gJob.mp4FileBytes / 1024.0);
         EXPORTLOG("=== EXPORT COMPLETE ===");
+
+        // Append outro video if configured
+        Debug::log(Debug::Category::Replay, "[OUTRO HARD PROOF] ABOUT TO CALL appendOutroToExport");
+        appendOutroToExport(gJob.outputPath.c_str());
+
         gJob.state = ReplayExportJob::Done;
     }
 }

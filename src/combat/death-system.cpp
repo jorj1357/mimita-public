@@ -293,10 +293,11 @@ bool DeathSystem::kill(
     mCorpses.push_back(std::move(body));
 
     // Spawn death ellipsoid effect at the victim position, elongated along the kill direction
-    if (gDeathEllipsoidEnabled) {
+    const auto& deCfg = HitEffects::config().deathEllipsoid;
+    if (deCfg.enabled) {
         EffectPartSystem::instance().spawnDeathEllipsoid(
             victimPos, direction,
-            gDeathEllipsoidLength, gDeathEllipsoidRadius, gDeathEllipsoidLifetime);
+            deCfg.length, deCfg.radius, deCfg.lifetime);
     }
 
     return true;
