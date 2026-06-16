@@ -119,33 +119,104 @@ void pollOutroConfig()
     }
 }
 
+// Execute a Windows process with CreateProcessW and capture stdout.
+// Returns exit code. Sets stdoutBuf to captured output.
+// Does NOT use cmd.exe — no shell interpretation.
+static int runProcessCaptureStdout(const std::string& exePath, const std::string& args, std::string& stdoutBuf)
+{
+    stdoutBuf.clear();
+
+    // Build command line for CreateProcessW: executable + args
+    std::wstring cmdLine = L"\"" + std::wstring(exePath.begin(), exePath.end()) + L"\" " + std::wstring(args.begin(), args.end());
+
+    // Create pipes for stdout
+    HANDLE hReadPipe = NULL, hWritePipe = NULL;
+    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 65536))
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] CreatePipe failed\n");
+        return -1;
+    }
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    PROCESS_INFORMATION pi = { 0 };
+    STARTUPINFOW si = { 0 };
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = hWritePipe;
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE); // let stderr go to parent's stderr
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+    // Mutable copy for CreateProcessW
+    std::vector<wchar_t> mutableCmd(cmdLine.begin(), cmdLine.end());
+    mutableCmd.push_back(L'\0');
+
+    BOOL created = CreateProcessW(
+        NULL,                  // lpApplicationName (NULL = use cmdline)
+        mutableCmd.data(),     // lpCommandLine
+        NULL,                  // lpProcessAttributes
+        NULL,                  // lpThreadAttributes
+        TRUE,                  // bInheritHandles
+        0,                     // dwCreationFlags
+        NULL,                  // lpEnvironment
+        NULL,                  // lpCurrentDirectory
+        &si,                   // lpStartupInfo
+        &pi                    // lpProcessInformation
+    );
+
+    CloseHandle(hWritePipe);
+
+    if (!created)
+    {
+        DWORD err = GetLastError();
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] CreateProcessW failed (error=%lu)\n", (unsigned long)err);
+        CloseHandle(hReadPipe);
+        return -1;
+    }
+
+    // Read stdout
+    char buf[4096];
+    DWORD bytesRead = 0;
+    while (ReadFile(hReadPipe, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0)
+    {
+        buf[bytesRead] = '\0';
+        stdoutBuf += buf;
+    }
+
+    CloseHandle(hReadPipe);
+
+    // Wait for process to finish
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return (int)exitCode;
+}
+
 static double probeDuration(const std::string& path)
 {
     std::string absInput = absPath(path);
+    std::string exePath = ffprobeExe();
 
-    char cmd[2048];
-    std::snprintf(cmd, sizeof(cmd),
-                  "\"%s\" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\"",
-                  ffprobeExe().c_str(), absInput.c_str());
-
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe command=%s\n", cmd);
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe exists=%d\n", (int)std::filesystem::exists(ffprobeExe()));
-
-    std::string stdoutBuf;
+    std::string args;
     {
-        FILE* pipe = _popen(cmd, "r");
-        if (!pipe)
-        {
-            Debug::log(Debug::Category::Replay, "[OUTRO CMD] _popen failed\n");
-            return 0.0;
-        }
-        char buf[256];
-        while (fgets(buf, sizeof(buf), pipe))
-            stdoutBuf += buf;
-        int exitCode = _pclose(pipe);
-        Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe _pclose exit=%d\n", exitCode);
+        char buf[2048];
+        std::snprintf(buf, sizeof(buf),
+                      "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\"",
+                      absInput.c_str());
+        args = buf;
     }
 
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe=%s\n", exePath.c_str());
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe args=%s\n", args.c_str());
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe exists=%d\n", (int)std::filesystem::exists(exePath));
+
+    std::string stdoutBuf;
+    int exitCode = runProcessCaptureStdout(exePath, args, stdoutBuf);
+
+    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exit=%d\n", exitCode);
     Debug::log(Debug::Category::Replay, "[OUTRO PROBE] raw output=%s\n", stdoutBuf.c_str());
 
     // Trim whitespace
@@ -160,6 +231,34 @@ static double probeDuration(const std::string& path)
     return dur;
 }
 
+static bool runFfmpeg(const std::string& args, int& outExitCode, std::string& outStdout)
+{
+    outExitCode = runProcessCaptureStdout(ffmpegExe(), args, outStdout);
+    return outExitCode == 0;
+}
+
+static bool probeResolution(const std::string& path, int& outW, int& outH)
+{
+    char buf[2048];
+    std::snprintf(buf, sizeof(buf),
+                  "-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=1 \"%s\"",
+                  path.c_str());
+    std::string args = buf;
+    std::string stdoutBuf;
+    int exitCode = runProcessCaptureStdout(ffprobeExe(), args, stdoutBuf);
+    outW = 0; outH = 0;
+    if (exitCode == 0)
+    {
+        size_t x = stdoutBuf.find('x');
+        if (x != std::string::npos)
+        {
+            outW = std::atoi(stdoutBuf.substr(0, x).c_str());
+            outH = std::atoi(stdoutBuf.substr(x + 1).c_str());
+        }
+    }
+    return outW > 0 && outH > 0;
+}
+
 void appendOutroToFinishedMp4(const char* replayMp4Path)
 {
     std::string replayPath = absPath(replayMp4Path);
@@ -169,36 +268,48 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
 
     // ---- INPUT ----
     bool replayExists = std::filesystem::exists(replayPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] input path=%s\n", replayPath.c_str());
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] input exists=%d\n", (int)replayExists);
-    if (!replayExists) { Debug::log(Debug::Category::Replay, "[OUTRO TEST] input not found\n"); return; }
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input path=%s\n", replayPath.c_str());
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input exists=%d\n", (int)replayExists);
+    if (!replayExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input not found\n"); return; }
 
     uint64_t replaySize = std::filesystem::file_size(replayPath, ec);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] input size=%llu\n", (unsigned long long)replaySize);
-    if (replaySize == 0) { Debug::log(Debug::Category::Replay, "[OUTRO TEST] input empty\n"); return; }
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input size=%llu\n", (unsigned long long)replaySize);
+    if (replaySize == 0) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input empty\n"); return; }
 
     double replayDuration = probeDuration(replayPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] input duration=%.1f\n", replayDuration);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input duration=%.1f\n", replayDuration);
+
+    int replayW = 0, replayH = 0;
+    probeResolution(replayPath, replayW, replayH);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] input resolution=%dx%d\n", replayW, replayH);
 
     // ---- OUTRO ----
     bool outroExists = std::filesystem::exists(outroPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] outro path=%s\n", outroPath.c_str());
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] outro exists=%d\n", (int)outroExists);
-    if (!outroExists) { Debug::log(Debug::Category::Replay, "[OUTRO TEST] outro not found, skipping\n"); return; }
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro path=%s\n", outroPath.c_str());
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro exists=%d\n", (int)outroExists);
+    if (!outroExists) { Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro not found\n"); return; }
 
     uint64_t outroSize = std::filesystem::file_size(outroPath, ec);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] outro size=%llu\n", (unsigned long long)outroSize);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro size=%llu\n", (unsigned long long)outroSize);
 
     double outroDuration = probeDuration(outroPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] outro duration=%.1f\n", outroDuration);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] outro duration=%.1f\n", outroDuration);
+
+    double expectedDuration = replayDuration + outroDuration;
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] expected duration=%.1f + %.1f = %.1f\n",
+               replayDuration, outroDuration, expectedDuration);
 
     // ---- FAIL FAST IF DURATION PROBING FAILED ----
     if (replayDuration <= 0.0 || outroDuration <= 0.0)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO ERROR] duration probe failed (input=%.1f outro=%.1f)\n",
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED duration probe (input=%.1f outro=%.1f)\n",
                    replayDuration, outroDuration);
         return;
     }
+
+    // ---- BUILD TEMP DIR ----
+    std::string tmpDir = absPath("replays/exports/_tmp");
+    std::filesystem::create_directories(tmpDir, ec);
 
     // ---- BUILD OUTPUT PATH ----
     std::string outputPath;
@@ -210,69 +321,78 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
             outputPath = replayPath + "-with-outro.mp4";
     }
 
-    // ---- FFMPEG CONCAT ----
-    std::string tmpDir = absPath("replays/exports/_tmp");
-    std::filesystem::create_directories(tmpDir, ec);
+    // ---- STAGE 1: Normalize outro to match replay resolution/codec ----
+    std::string normalizedOutro = tmpDir + "\\outro_normalized.mp4";
 
-    std::string batPath = tmpDir + "\\outro_append.bat";
-    std::string stderrPath = absPath("replays/exports/outro_ffmpeg_stderr.txt");
+    char stage1Args[4096];
+    std::snprintf(stage1Args, sizeof(stage1Args),
+        "-y -i \"%s\" -c:v libx264 -preset fast -pix_fmt yuv420p -crf 18 "
+        "-c:a aac -b:a 192k "
+        "-vf \"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2\" "
+        "-loglevel error \"%s\"",
+        outroPath.c_str(), replayW, replayH, replayW, replayH, normalizedOutro.c_str());
 
-    char ffmpegCmd[8192];
-    std::snprintf(ffmpegCmd, sizeof(ffmpegCmd),
-        "@echo off\n"
-        "\"%s\" -y -i \"%s\" -i \"%s\" -filter_complex "
-        "\"[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]\" "
-        "-map \"[outv]\" -map \"[outa]\" -c:v libx264 -preset fast -pix_fmt yuv420p -crf 18 "
-        "-c:a aac -b:a 192k \"%s\" 2>\"%s\"\n"
-        "exit /b %%ERRORLEVEL%%\n",
-        ffmpegExe().c_str(),
-        replayPath.c_str(), outroPath.c_str(),
-        outputPath.c_str(),
-        stderrPath.c_str());
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage1 args=%s\n", stage1Args);
 
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffmpeg command=%s\n", ffmpegCmd);
+    int stage1Exit = 0;
+    std::string stage1Out;
+    bool stage1Ok = runFfmpeg(stage1Args, stage1Exit, stage1Out);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage1 exit=%d\n", stage1Exit);
 
+    if (!stage1Ok)
     {
-        std::ofstream bat(batPath);
-        if (!bat.is_open()) { Debug::log(Debug::Category::Replay, "[OUTRO TEST] failed to write batch\n"); return; }
-        bat << ffmpegCmd;
-        bat.close();
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage1 failed (normalize)\n");
+        return;
     }
 
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] batch file path=%s\n", batPath.c_str());
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] stderr path=%s\n", stderrPath.c_str());
+    // Verify normalized outro
+    double normDur = probeDuration(normalizedOutro);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] normalized duration=%.1f\n", normDur);
 
-    int result = std::system(batPath.c_str());
-    // std::filesystem::remove(batPath, ec);
-
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] ffmpeg exit code=%d\n", result);
-
-    // Dump stderr on failure
-    if (result != 0)
+    // ---- STAGE 2: Concat via demuxer with stream copy ----
+    // Use -bsf:v h264_mp4toannexb to prevent "missing picture in access unit" errors
+    std::string concatListPath = tmpDir + "\\concat_list.txt";
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] ffmpeg stderr dumped to %s\n", stderrPath.c_str());
-        std::ifstream stderrFile(stderrPath);
-        if (stderrFile.is_open())
+        std::ofstream list(concatListPath);
+        if (!list.is_open())
         {
-            std::string line;
-            int lineCount = 0;
-            while (std::getline(stderrFile, line) && lineCount < 20)
-            {
-                Debug::log(Debug::Category::Replay, "[OUTRO TEST] stderr: %s\n", line.c_str());
-                ++lineCount;
-            }
-            stderrFile.close();
+            Debug::log(Debug::Category::Replay, "[OUTRO APPEND] failed to write concat list\n");
+            return;
         }
+        list << "file '" << replayPath << "'\n";
+        list << "file '" << normalizedOutro << "'\n";
+        list.close();
+    }
+
+    char stage2Args[4096];
+    std::snprintf(stage2Args, sizeof(stage2Args),
+        "-y -f concat -safe 0 -i \"%s\" -c copy -bsf:v h264_mp4toannexb -loglevel error \"%s\"",
+        concatListPath.c_str(), outputPath.c_str());
+
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 args=%s\n", stage2Args);
+
+    int stage2Exit = 0;
+    std::string stage2Out;
+    bool stage2Ok = runFfmpeg(stage2Args, stage2Exit, stage2Out);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 exit=%d\n", stage2Exit);
+
+    if (!stage2Ok)
+    {
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] stage2 failed (concat)\n");
         hardFail = true;
     }
 
+    // ---- CLEANUP TEMP FILES ----
+    std::filesystem::remove(normalizedOutro, ec);
+    std::filesystem::remove(concatListPath, ec);
+
     // ---- VERIFY OUTPUT ----
     bool outputExists = std::filesystem::exists(outputPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] output exists=%d\n", (int)outputExists);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] output exists=%d\n", (int)outputExists);
 
     if (!outputExists)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] output file missing\n");
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] output file missing\n");
         hardFail = true;
     }
 
@@ -283,51 +403,49 @@ void appendOutroToFinishedMp4(const char* replayMp4Path)
         outputSize = std::filesystem::file_size(outputPath, ec);
         outputDuration = probeDuration(outputPath);
     }
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] output size=%llu\n", (unsigned long long)outputSize);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] output duration=%.1f\n", outputDuration);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] output size=%llu\n", (unsigned long long)outputSize);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] output duration=%.1f\n", outputDuration);
 
     // ---- VALIDATION ----
     if (outputDuration <= replayDuration)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] FAILED duration did not increase (%.1f <= %.1f)\n",
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED duration did not increase (%.1f <= %.1f)\n",
                    outputDuration, replayDuration);
         hardFail = true;
     }
 
     if (outputSize <= replaySize)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] FAILED size did not increase (%llu <= %llu)\n",
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED size did not increase (%llu <= %llu)\n",
                    (unsigned long long)outputSize, (unsigned long long)replaySize);
         hardFail = true;
     }
 
-    double expectedDuration = replayDuration + outroDuration;
     if (outputDuration < expectedDuration - 0.5)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] FAILED duration too short (%.1f < %.1f - 0.5)\n",
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] FAILED duration too short (%.1f < %.1f - 0.5)\n",
                    outputDuration, expectedDuration);
         hardFail = true;
     }
 
     if (hardFail)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] HARD FAIL\n");
-        std::filesystem::remove(outputPath, ec);
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] HARD FAIL\n");
         return;
     }
 
     // ---- REPLACE ORIGINAL ----
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] replacing original\n");
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] replacing original\n");
     std::filesystem::rename(outputPath, replayPath, ec);
     if (ec)
     {
-        Debug::log(Debug::Category::Replay, "[OUTRO TEST] rename failed: %s\n", ec.message().c_str());
+        Debug::log(Debug::Category::Replay, "[OUTRO APPEND] rename failed: %s\n", ec.message().c_str());
         return;
     }
 
     double finalDuration = probeDuration(replayPath);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] final duration=%.1f\n", finalDuration);
-    Debug::log(Debug::Category::Replay, "[OUTRO TEST] PASS\n");
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] final duration=%.1f\n", finalDuration);
+    Debug::log(Debug::Category::Replay, "[OUTRO APPEND] PASS\n");
 }
 
 void registerOutroCommands()
@@ -512,6 +630,69 @@ void registerOutroCommands()
             Terminal::instance().addLog("[OUTRO] probing: " + outroPath);
             double outroDur = probeDuration(outroPath);
             Terminal::instance().addLog(std::string("[OUTRO] outro duration: ") + std::to_string(outroDur) + "s");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "outro_append_test", "Append outro to latest replay and print all logs", "outro_append_test",
+        [](const std::vector<std::string>&) {
+            namespace fs = std::filesystem;
+            fs::path exportDir = absPath("replays/exports");
+            if (!fs::exists(exportDir))
+            {
+                Terminal::instance().addLog("[OUTRO] no exports directory");
+                return;
+            }
+            std::vector<fs::path> candidates;
+            for (auto& entry : fs::recursive_directory_iterator(exportDir))
+            {
+                if (entry.path().extension() == ".mp4" &&
+                    entry.path().filename().string().find("-with-outro") == std::string::npos)
+                {
+                    candidates.push_back(entry.path());
+                }
+            }
+            if (candidates.empty())
+            {
+                Terminal::instance().addLog("[OUTRO] no MP4 files found");
+                return;
+            }
+            std::sort(candidates.begin(), candidates.end(),
+                [](const fs::path& a, const fs::path& b) {
+                    return fs::last_write_time(a) > fs::last_write_time(b);
+                });
+            std::string mp4Path = candidates[0].string();
+            Terminal::instance().addLog("[OUTRO] appending outro to: " + mp4Path);
+            appendOutroToFinishedMp4(mp4Path.c_str());
+
+            double finalDur = probeDuration(mp4Path);
+            Terminal::instance().addLog(std::string("[OUTRO] final duration: ") + std::to_string(finalDur) + "s");
+            Terminal::instance().addLog("[OUTRO] check for -with-outro.mp4 in same directory");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "outro_append_manual", "Append outro to a specific MP4 path", "outro_append_manual <full path to mp4>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+            {
+                Terminal::instance().addLog("[OUTRO] usage: outro_append_manual <path>");
+                return;
+            }
+            std::string mp4Path = absPath(args[0]);
+            Terminal::instance().addLog("[OUTRO] manual append to: " + mp4Path);
+
+            if (!std::filesystem::exists(mp4Path))
+            {
+                Terminal::instance().addLog("[OUTRO] file not found");
+                return;
+            }
+
+            appendOutroToFinishedMp4(mp4Path.c_str());
+
+            double finalDur = probeDuration(mp4Path);
+            Terminal::instance().addLog(std::string("[OUTRO] final duration: ") + std::to_string(finalDur) + "s");
+            Terminal::instance().addLog("[OUTRO] check for -with-outro.mp4 in same directory");
         }
     });
 }
