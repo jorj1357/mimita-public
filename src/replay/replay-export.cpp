@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -19,6 +20,7 @@
 
 #include "replay/replay.h"
 #include "video/outro.h"
+#include <nlohmann/json.hpp>
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "render/post-fx.h"
@@ -28,9 +30,75 @@ static ReplayExportJob gJob;
 
 static bool gFfmpegDebugMode = false;
 
+// ---- Replay Export Audio Config (hot-reload) ----
+struct ReplayExportAudioConfig {
+    float audioVolumeMultiplier = 0.8f;
+};
+
+static ReplayExportAudioConfig gAudioConfig;
+static uint64_t gAudioConfigLastWrite = 0;
+
+static const char* REPLAY_EXPORT_CONFIG_PATH = "config/replay/replay-export.json";
+
+static uint64_t cfgFileWriteTime(const char* path)
+{
+    std::error_code ec;
+    auto ft = std::filesystem::last_write_time(path, ec);
+    if (ec) return 0;
+    return ft.time_since_epoch().count();
+}
+
+static void reloadReplayExportConfig()
+{
+    std::ifstream file(REPLAY_EXPORT_CONFIG_PATH);
+    if (!file.is_open())
+        return;
+
+    try
+    {
+        nlohmann::json j;
+        file >> j;
+
+        ReplayExportAudioConfig loaded;
+        if (j.contains("audioVolumeMultiplier"))
+            loaded.audioVolumeMultiplier = j["audioVolumeMultiplier"].get<float>();
+
+        gAudioConfig = loaded;
+        Debug::log(Debug::Category::Replay, "[REPLAY AUDIO] config reloaded audioVolumeMultiplier=%.2f", gAudioConfig.audioVolumeMultiplier);
+    }
+    catch (const std::exception& e)
+    {
+        Debug::log(Debug::Category::Replay, "[REPLAY AUDIO] config reload failed: %s", e.what());
+    }
+}
+
+void pollReplayExportConfig()
+{
+    static double elapsed = 0.0;
+    elapsed += 1.0 / 60.0;
+    if (elapsed < 0.25)
+        return;
+    elapsed = 0.0;
+
+    uint64_t wt = cfgFileWriteTime(REPLAY_EXPORT_CONFIG_PATH);
+    if (wt == 0)
+        return;
+
+    if (wt != gAudioConfigLastWrite)
+    {
+        gAudioConfigLastWrite = wt;
+        reloadReplayExportConfig();
+    }
+}
+
 #define EXPORTTRACE(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORTTRACE] " fmt, ##__VA_ARGS__)
 #define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
 #define EXPORTTRACE_CRASH(fmt, ...) do { printf("[EXPORT] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
+
+float getReplayExportAudioVolume()
+{
+    return gAudioConfig.audioVolumeMultiplier;
+}
 
 void setFfmpegDebugMode(bool enabled)
 {
@@ -302,6 +370,10 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         }
     }
 
+    // Apply global audio volume multiplier (from config)
+    float volMul = gAudioConfig.audioVolumeMultiplier;
+    EXPORTLOG("[REPLAY AUDIO] volumeMultiplier=%.2f", volMul);
+
     // Soft limiting to prevent clipping while preserving dynamic range.
     // Uses a simple hard knee: apply gain reduction at peaks > 0.9.
     float peak = 0.0f;
@@ -309,7 +381,7 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     std::vector<int16_t> output(totalSamples);
     for (size_t i = 0; i < totalSamples; i++)
     {
-        float s = mix[i];
+        float s = mix[i] * volMul;
         float absS = std::fabs(s);
         if (absS > peak) peak = absS;
 
