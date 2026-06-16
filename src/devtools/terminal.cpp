@@ -1130,6 +1130,14 @@ void Terminal::registerCommand(const ConsoleCommand& cmd) {
     mCommands[cmd.name] = cmd;
     mRegistrationOrder.push_back(cmd.name);
     mCacheDirty = true;
+    for (const std::string& alias : cmd.aliases)
+    {
+        ConsoleCommand a = cmd;
+        a.name = alias;
+        a.aliases.clear();
+        mCommands[alias] = a;
+        mRegistrationOrder.push_back(alias);
+    }
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded) {
@@ -1141,6 +1149,15 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dat
     mCommands[cmd.name].dateAdded = dateAdded;
     mRegistrationOrder.push_back(cmd.name);
     mCacheDirty = true;
+    for (const std::string& alias : cmd.aliases)
+    {
+        ConsoleCommand a = cmd;
+        a.name = alias;
+        a.aliases.clear();
+        a.dateAdded = dateAdded;
+        mCommands[alias] = a;
+        mRegistrationOrder.push_back(alias);
+    }
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory category) {
@@ -1152,6 +1169,15 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory catego
     mCommands[cmd.name].category = category;
     mRegistrationOrder.push_back(cmd.name);
     mCacheDirty = true;
+    for (const std::string& alias : cmd.aliases)
+    {
+        ConsoleCommand a = cmd;
+        a.name = alias;
+        a.aliases.clear();
+        a.category = category;
+        mCommands[alias] = a;
+        mRegistrationOrder.push_back(alias);
+    }
 }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category) {
@@ -1164,6 +1190,16 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dat
     mCommands[cmd.name].category = category;
     mRegistrationOrder.push_back(cmd.name);
     mCacheDirty = true;
+    for (const std::string& alias : cmd.aliases)
+    {
+        ConsoleCommand a = cmd;
+        a.name = alias;
+        a.aliases.clear();
+        a.dateAdded = dateAdded;
+        a.category = category;
+        mCommands[alias] = a;
+        mRegistrationOrder.push_back(alias);
+    }
 }
 
 void Terminal::rebuildCache() {
