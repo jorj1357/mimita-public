@@ -15,6 +15,10 @@ struct ReplayExportJob {
     int capWidth = 0;
     int capHeight = 0;
 
+    // Desired output dimensions (may differ from capture dimensions)
+    int outputWidth = 0;
+    int outputHeight = 0;
+
     // Encoding
     std::string ffmpegPath;
     std::string rawTempPath;
@@ -27,6 +31,8 @@ struct ReplayExportJob {
     std::string errorMsg;
     int ffmpegExitCode = -1;
     uint32_t frameWriteCount = 0;
+    uint64_t rawFileBytes = 0;
+    uint64_t mp4FileBytes = 0;
     float progress() const;
 };
 
