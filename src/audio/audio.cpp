@@ -309,3 +309,31 @@ void playMenuHover()
 {
     AudioManager::instance().play({"ui/hover", AudioCategory::UI, false, {}, 0.18f, 1.15f});
 }
+
+std::string resolveSoundPath(const std::string& name)
+{
+    return ::soundPath(name);
+}
+
+bool decodeAudioToPCM(const std::string& path, std::vector<int16_t>& outPCM,
+                      uint32_t& outSampleRate, uint32_t& outChannels)
+{
+    ma_decoder decoder;
+    ma_decoder_config config = ma_decoder_config_init(ma_format_s16, 2, 44100);
+    if (ma_decoder_init_file(path.c_str(), &config, &decoder) != MA_SUCCESS)
+        return false;
+
+    outSampleRate = decoder.outputSampleRate;
+    outChannels = decoder.outputChannels;
+
+    ma_uint64 totalFrames = 0;
+    if (ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames) != MA_SUCCESS) {
+        ma_decoder_uninit(&decoder);
+        return false;
+    }
+
+    outPCM.resize((size_t)totalFrames * outChannels);
+    ma_decoder_read_pcm_frames(&decoder, outPCM.data(), totalFrames, nullptr);
+    ma_decoder_uninit(&decoder);
+    return true;
+}

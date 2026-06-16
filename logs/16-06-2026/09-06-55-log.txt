@@ -5699,3 +5699,23 @@ Debug modes: master=0 wireframe=0 lightingOnly=0 uDebugView=0
 [HOT RELOAD] loading new DLL C:\important\mimita-priv-v8\build\mimita-game-live-2520-2.dll
 [HOT RELOAD] unloading old DLL
 [HOT RELOAD] reload success generation=2
+[UI HOVER ENTER] id=Back
+[UI HOVER EXIT] id=Back
+[UI HOVER ENTER] id=Mimita Garage Map V1
+[UI HOVER EXIT] id=Mimita Garage Map V1
+[UI HOVER ENTER] id=Mimita Duels Map V3
+[UI HOVER EXIT] id=Mimita Duels Map V3
+[UI HOVER ENTER] id=Mimita Aabb Only Interior Small V4
+[UI HOVER EXIT] id=Mimita Aabb Only Interior Small V4
+[UI HOVER ENTER] id=Ideas Map V1
+[UI HOVER EXIT] id=Ideas Map V1
+[UI HOVER ENTER] id=Ideas Map V1
+[UI HOVER EXIT] id=Ideas Map V1
+[UI HOVER ENTER] id=Mimita Aabb Only Interior Small V4
+[UI HOVER EXIT] id=Mimita Aabb Only Interior Small V4
+[UI HOVER ENTER] id=Mimita Garage Map V1
+[UI HOVER EXIT] id=Mimita Garage Map V1
+[UI HOVER ENTER] id=Mimita Duels Map V3
+[UI HOVER EXIT] id=Mimita Duels Map V3
+[UI HOVER ENTER] id=Mimita Garage Map V1
+[UI HOVER EXIT] id=Mimita Garage Map V1

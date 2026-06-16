@@ -21,6 +21,7 @@
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "render/post-fx.h"
+#include "audio/audio.h"
 
 static ReplayExportJob gJob;
 
@@ -135,6 +136,122 @@ std::string generateExportOutputPath()
     std::string result = path.string();
     EXPORTTRACE("output path=%s", result.c_str());
     return result;
+}
+
+static bool writeWavFile(const std::string& path, const std::vector<int16_t>& samples, uint32_t sampleRate)
+{
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) return false;
+    uint32_t dataBytes = (uint32_t)(samples.size() * sizeof(int16_t));
+    uint32_t riffSize = 36 + dataBytes;
+    uint16_t fmt = 1; // PCM
+    uint16_t ch = 1;  // mono
+    uint32_t byteRate = sampleRate * ch * sizeof(int16_t);
+    uint16_t blockAlign = ch * sizeof(int16_t);
+    uint16_t bitsPerSample = 16;
+
+    fwrite("RIFF", 1, 4, f);
+    fwrite(&riffSize, 4, 1, f);
+    fwrite("WAVE", 1, 4, f);
+    fwrite("fmt ", 1, 4, f);
+    uint32_t fmtSize = 16;
+    fwrite(&fmtSize, 4, 1, f);
+    fwrite(&fmt, 2, 1, f);
+    fwrite(&ch, 2, 1, f);
+    fwrite(&sampleRate, 4, 1, f);
+    fwrite(&byteRate, 4, 1, f);
+    fwrite(&blockAlign, 2, 1, f);
+    fwrite(&bitsPerSample, 2, 1, f);
+    fwrite("data", 1, 4, f);
+    fwrite(&dataBytes, 4, 1, f);
+    fwrite(samples.data(), 1, dataBytes, f);
+    fclose(f);
+    return true;
+}
+
+// Build a mono 44100Hz WAV from replay sound events, mixed at their tick timestamps.
+static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
+{
+    const auto& events = REPLAY_PLAYER.soundEvents();
+    if (events.empty())
+    {
+        // Create a short silent WAV so ffmpeg has an audio stream to mux
+        std::vector<int16_t> silent(44100, 0); // 1 second of silence
+        return writeWavFile(wavPath, silent, 44100);
+    }
+
+    EXPORTLOG("[REPLAY AUDIO] events=%zu", events.size());
+    for (const auto& ev : events)
+    {
+        if (ev.tick % 60 == 0 || ev.tick == 0)
+            EXPORTLOG("[REPLAY AUDIO] event=%s tick=%d", ev.soundPath.c_str(), ev.tick);
+    }
+
+    uint32_t sampleRate = 44100;
+    double tickRate = 60.0;
+    double totalDurationSec = (double)totalTicks / tickRate + 1.0; // +1s padding
+    size_t totalSamples = (size_t)(totalDurationSec * sampleRate);
+    std::vector<int32_t> mix(totalSamples, 0);
+
+    uint32_t decodedCount = 0;
+    for (const auto& event : events)
+    {
+        if (event.tick < 0 || (uint32_t)event.tick >= totalTicks)
+            continue;
+
+        std::string filePath = resolveSoundPath(event.soundPath);
+        if (filePath.empty() || !std::filesystem::exists(filePath))
+        {
+            EXPORTLOG("[REPLAY AUDIO] skip unresolved event=%s", event.soundPath.c_str());
+            continue;
+        }
+
+        std::vector<int16_t> pcm;
+        uint32_t rate = 0, ch = 0;
+        if (!decodeAudioToPCM(filePath, pcm, rate, ch))
+        {
+            EXPORTLOG("[REPLAY AUDIO] skip undecodable event=%s file=%s", event.soundPath.c_str(), filePath.c_str());
+            continue;
+        }
+        decodedCount++;
+
+        double eventTime = (double)event.tick / tickRate;
+        size_t dstOffset = (size_t)(eventTime * sampleRate);
+        size_t srcFrames = pcm.size() / ch;
+
+        for (size_t i = 0; i < srcFrames; i++)
+        {
+            double srcTime = (double)i / rate;
+            size_t dstPos = dstOffset + (size_t)(srcTime * sampleRate);
+            if (dstPos >= totalSamples) break;
+
+            int32_t mono = 0;
+            for (uint32_t c = 0; c < ch; c++)
+                mono += pcm[i * ch + c];
+            mono = (int32_t)((double)mono / ch * event.volume);
+            mix[dstPos] += mono;
+        }
+    }
+
+    // Clamp and convert to int16
+    std::vector<int16_t> output(totalSamples);
+    for (size_t i = 0; i < totalSamples; i++)
+    {
+        int32_t s = mix[i];
+        if (s > 32767) s = 32767;
+        if (s < -32768) s = -32768;
+        output[i] = (int16_t)s;
+    }
+
+    bool ok = writeWavFile(wavPath, output, sampleRate);
+    if (ok)
+    {
+        uint64_t wavBytes = 0;
+        std::error_code ec;
+        wavBytes = std::filesystem::file_size(wavPath, ec);
+        EXPORTLOG("[EXPORT AUDIO] events=%u wavBytes=%llu", decodedCount, (unsigned long long)wavBytes);
+    }
+    return ok;
 }
 
 bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderHeight)
@@ -449,13 +566,23 @@ void updateReplayExport()
         EXPORTLOG("STAGE 8/8: encoding MP4 from raw frames");
         gJob.state = ReplayExportJob::Encoding;
 
-        // Build ffmpeg command to encode raw file to MP4.
+        // Build ffmpeg command to encode raw file to MP4 with audio.
         // Use a batch script to avoid cmd.exe quoting issues with std::system().
-        // Use actual capture dimensions for -video_size.
-        // Add -vf scale if output dimensions differ from capture dimensions.
         namespace fs = std::filesystem;
         std::string nativeOutput = fs::path(gJob.outputPath).make_preferred().string();
         std::string nativeRaw = fs::path(gJob.rawTempPath).make_preferred().string();
+        std::string nativeWav = (fs::path("replays") / "exports" / "_tmp" / "export_audio.wav").make_preferred().string();
+
+        // Generate audio WAV from replay sound events
+        EXPORTLOG("[EXPORT AUDIO] Building audio WAV from replay sound events");
+        bool audioOk = buildExportAudio(nativeWav, gJob.totalTicks);
+        if (!audioOk) {
+            // Fallback: create a silent WAV so ffmpeg always has an audio input
+            EXPORTLOG("[EXPORT AUDIO] buildExportAudio failed, creating silent fallback");
+            std::vector<int16_t> silence(44100, 0);
+            audioOk = writeWavFile(nativeWav, silence, 44100);
+        }
+        EXPORTLOG("[EXPORT AUDIO] buildExportAudio=%s", audioOk ? "OK" : "FAILED (silent fallback)");
 
         std::string scaleFilter;
         if (gJob.outputWidth > 0 && gJob.outputHeight > 0 &&
@@ -463,13 +590,20 @@ void updateReplayExport()
             scaleFilter = "-vf scale=" + std::to_string(gJob.outputWidth) + ":" + std::to_string(gJob.outputHeight);
         }
 
+        std::string audioInput = "-i \"" + nativeWav + "\"";
+        std::string audioCodec = "-c:a aac -b:a 128k";
+
         std::string batContent = "@echo off\r\n"
             "\"" + gJob.ffmpegPath + "\" -y -f rawvideo -pixel_format rgb24 "
             "-video_size " + std::to_string(gJob.capWidth) + "x" + std::to_string(gJob.capHeight) + " "
             "-framerate 60 -i \"" + nativeRaw + "\" "
+            + audioInput + " "
             + scaleFilter + " "
             "-c:v libx264 -preset fast -pix_fmt yuv420p "
-            "-crf 18 \"" + nativeOutput + "\" "
+            "-crf 18 "
+            + audioCodec + " "
+            "-shortest \""
+            + nativeOutput + "\" "
             "-loglevel error\r\n"
             "exit /b %ERRORLEVEL%\r\n";
 
@@ -491,11 +625,12 @@ void updateReplayExport()
         // [H] Log exit code
         EXPORTLOG("[EXPORT DEBUG] ffmpeg exit code=%d", encodeResult);
 
-        // [G] Clean up temp raw file and batch file
+        // [G] Clean up temp raw file, batch file, and audio WAV
         {
             std::error_code ec;
             std::filesystem::remove(gJob.rawTempPath, ec);
             std::filesystem::remove(batPath, ec);
+            std::filesystem::remove(nativeWav, ec);
         }
 
         // Validate by checking output file existence/size, not just exit code.
