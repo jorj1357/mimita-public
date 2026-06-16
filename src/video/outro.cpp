@@ -122,70 +122,41 @@ void pollOutroConfig()
 static double probeDuration(const std::string& path)
 {
     std::string absInput = absPath(path);
-    std::string absOutroDir = absPath("replays/exports");
-
-    std::string tmpDir = absPath("replays/exports/_tmp");
-    std::error_code ec;
-    std::filesystem::create_directories(tmpDir, ec);
-
-    char tmpPath[1024];
-    std::snprintf(tmpPath, sizeof(tmpPath), "%s\\_dur_%lld.txt",
-                  tmpDir.c_str(), (long long)std::time(nullptr));
-    std::string absTmp = absPath(tmpPath);
-
-    std::string ffprobeStderrPath = absOutroDir + "\\ffprobe_stderr.txt";
 
     char cmd[2048];
     std::snprintf(cmd, sizeof(cmd),
-                  "\"%s\" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\" > \"%s\" 2>\"%s\"",
-                  ffprobeExe().c_str(), absInput.c_str(), absTmp.c_str(), ffprobeStderrPath.c_str());
+                  "\"%s\" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"%s\"",
+                  ffprobeExe().c_str(), absInput.c_str());
 
     Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe command=%s\n", cmd);
     Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe exe exists=%d\n", (int)std::filesystem::exists(ffprobeExe()));
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] tmp dir exists=%d\n", (int)std::filesystem::exists(tmpDir));
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] tmp output=%s\n", absTmp.c_str());
 
-    int probeResult = std::system(cmd);
-    Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe system result=%d\n", probeResult);
-
-    // Dump ffprobe stderr
+    std::string stdoutBuf;
     {
-        std::ifstream stderrFile(ffprobeStderrPath);
-        if (stderrFile.is_open())
+        FILE* pipe = _popen(cmd, "r");
+        if (!pipe)
         {
-            std::string line;
-            int lineCount = 0;
-            while (std::getline(stderrFile, line) && lineCount < 20)
-            {
-                Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe stderr: %s\n", line.c_str());
-                ++lineCount;
-            }
-            stderrFile.close();
+            Debug::log(Debug::Category::Replay, "[OUTRO CMD] _popen failed\n");
+            return 0.0;
         }
-        else
-        {
-            Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe stderr file not found: %s\n", ffprobeStderrPath.c_str());
-        }
+        char buf[256];
+        while (fgets(buf, sizeof(buf), pipe))
+            stdoutBuf += buf;
+        int exitCode = _pclose(pipe);
+        Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe _pclose exit=%d\n", exitCode);
     }
+
+    Debug::log(Debug::Category::Replay, "[OUTRO PROBE] raw output=%s\n", stdoutBuf.c_str());
+
+    // Trim whitespace
+    while (!stdoutBuf.empty() && (stdoutBuf.back() == '\n' || stdoutBuf.back() == '\r' || stdoutBuf.back() == ' '))
+        stdoutBuf.pop_back();
 
     double dur = 0.0;
-    std::ifstream f(absTmp);
-    if (f.is_open())
-    {
-        std::string line;
-        std::getline(f, line);
-        f.close();
-        Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe output=\"%s\"\n", line.c_str());
-        if (!line.empty())
-            dur = std::atof(line.c_str());
-    }
-    else
-    {
-        Debug::log(Debug::Category::Replay, "[OUTRO CMD] ffprobe output file not found: %s\n", absTmp.c_str());
-    }
+    if (!stdoutBuf.empty())
+        dur = std::atof(stdoutBuf.c_str());
 
-    std::filesystem::remove(absTmp, ec);
-    std::filesystem::remove(ffprobeStderrPath, ec);
+    Debug::log(Debug::Category::Replay, "[OUTRO PROBE] parsed duration=%.1f\n", dur);
     return dur;
 }
 
