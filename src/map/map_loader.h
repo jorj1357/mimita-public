@@ -53,5 +53,5 @@ struct GLBDebugData {
 extern GLBDebugData gGLBDebug;
 
 Mesh loadOBJ(const std::string& path);
-Mesh loadGLB(const std::string& path, bool storeDebugInfo = true);
+Mesh loadGLB(const std::string& path, bool storeDebugInfo = true, Mesh* skyMesh = nullptr);
 void releaseMeshGLResources(Mesh& mesh);

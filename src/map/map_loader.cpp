@@ -730,6 +730,19 @@ void appendPrimitive(
     loggedPrimitives++;
 }
 
+static bool isSkyNode(const std::string& name)
+{
+    std::string lower;
+    lower.reserve(name.size());
+    for (char c : name) lower += (char)std::tolower((unsigned char)c);
+    return lower.find("sky") != std::string::npos ||
+           lower.find("skybox") != std::string::npos ||
+           lower.find("skydome") != std::string::npos ||
+           lower.find("sky_dome") != std::string::npos ||
+           lower.find("environment") != std::string::npos ||
+           lower.find("worldsphere") != std::string::npos;
+}
+
 void walkNode(
     const tinygltf::Model& model,
     int nodeIndex,
@@ -737,7 +750,8 @@ void walkNode(
     const std::vector<GLuint>& materialTextures,
     Mesh& mesh,
     std::unordered_set<int>& activeNodes,
-    int depth
+    int depth,
+    Mesh* skyMesh = nullptr
 ) {
     if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size())
     {
@@ -772,12 +786,24 @@ void walkNode(
     if (node.mesh >= 0 && node.mesh < (int)model.meshes.size())
     {
         const tinygltf::Mesh& gltfMesh = model.meshes[node.mesh];
+        Mesh& target = (skyMesh && isSkyNode(node.name)) ? *skyMesh : mesh;
+
         if (loggedNodes < 20 || (loggedNodes % 100) == 0)
-            GLB_LOG("[GLB] node=%d meshIndex=%d meshName=%s primitives=%zu\n",
-                    nodeIndex, node.mesh, gltfMesh.name.c_str(), gltfMesh.primitives.size());
+        {
+            if (&target == skyMesh)
+                GLB_LOG("[GLB] SKY node=%d name=%s meshIndex=%d meshName=%s primitives=%zu\n",
+                        nodeIndex, node.name.c_str(), node.mesh, gltfMesh.name.c_str(), gltfMesh.primitives.size());
+            else
+                GLB_LOG("[GLB] node=%d meshIndex=%d meshName=%s primitives=%zu\n",
+                        nodeIndex, node.mesh, gltfMesh.name.c_str(), gltfMesh.primitives.size());
+        }
         loggedNodes++;
+
+        if (&target == skyMesh)
+            GLB_LOG("[GLB] ROUTING TO SKY MESH node=%d name=%s\n", nodeIndex, node.name.c_str());
+
         for (int primIndex = 0; primIndex < (int)gltfMesh.primitives.size(); ++primIndex)
-            appendPrimitive(model, node.mesh, primIndex, gltfMesh.primitives[primIndex], world, materialTextures, mesh);
+            appendPrimitive(model, node.mesh, primIndex, gltfMesh.primitives[primIndex], world, materialTextures, target);
     }
     else if (node.mesh >= 0)
     {
@@ -786,7 +812,7 @@ void walkNode(
     }
 
     for (int child : node.children)
-        walkNode(model, child, world, materialTextures, mesh, activeNodes, depth + 1);
+        walkNode(model, child, world, materialTextures, mesh, activeNodes, depth + 1, skyMesh);
 
     activeNodes.erase(nodeIndex);
 }
@@ -837,7 +863,7 @@ Mesh loadOBJ(const std::string& path)
     return mesh;
 }
 
-Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/)
+Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh)
 {
     std::string resolvedPath = resolveAssetPath(path);
     GLB_LOG("[GLB] path = %s\n", resolvedPath.c_str());
@@ -1023,7 +1049,7 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/)
         for (int node : scene.nodes)
         {
             std::unordered_set<int> activeNodes;
-            walkNode(model, node, glm::mat4(1.0f), materialTextures, mesh, activeNodes, 0);
+            walkNode(model, node, glm::mat4(1.0f), materialTextures, mesh, activeNodes, 0, skyMesh);
         }
     }
     else
