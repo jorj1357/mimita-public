@@ -1,9 +1,9 @@
 {
-    "brightness": 1.6,
-    "contrast": 2,
+    "brightness": 0.8,
+    "contrast": 1,
     "saturation": 1.0,
     "gamma": 2.2,
-    "hueShift": 85.0,
+    "hueShift": 0.0,
     "colorTemperature": 0.0,
     "vignette": 0,
     "filmGrain": 0,
@@ -20,14 +20,14 @@
 
     "dreamStrength": 0.0,
     "voidStrength": 0.0,
-    "psychedelicStrength": 1.0,
-    "retroStrength": 0.5,
+    "psychedelicStrength": 0.0,
+    "retroStrength": 0.0,
     "glitchStrength": 0,
 
     "worldWave": 0.0,
-    "screenWave": 0.1,
+    "screenWave": 0.0,
     "screenShakeFx": 0,
-    "edgeGlow": 1,
-    "outlineBoost": 1.0,
+    "edgeGlow": 0.0,
+    "outlineBoost": 0.0,
     "shadowBoost": 0.0
 }
