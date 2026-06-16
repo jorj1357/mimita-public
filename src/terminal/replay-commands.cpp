@@ -886,4 +886,13 @@ void registerReplayCommands()
             Terminal::instance().addLog("[REPLAY] debug info printed to console");
         }
     });
+
+    Terminal::instance().registerCommand({
+        "replay_hitmarker_reload", "Reload config/audio/replay-hitmarkers.json",
+        "replay_hitmarker_reload",
+        [](const std::vector<std::string>&) {
+            pollReplayHitmarkerConfig();
+            Terminal::instance().addLog("[REPLAY HITMARKER] config reloaded");
+        }
+    });
 }

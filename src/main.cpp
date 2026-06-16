@@ -91,6 +91,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "effects/effect-part.h"
 #include "replay/replay.h"
+#include "replay/replay-export-ui.h"
 #include "replay/replay-factory.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
@@ -2919,6 +2920,7 @@ int main(int argc, char** argv)
                     ShadowConfig::instance().pollReload();
                     pollVoidDeathConfig();
                     pollHitmarkerAudioConfig();
+                    pollReplayHitmarkerConfig();
 
                     if (replayTest.active) {
                         ++replayTest.tick;
@@ -3362,12 +3364,45 @@ int main(int argc, char** argv)
                             effect.type.c_str());
                     }
                 }
-                for (const ReplaySoundEvent& sound :
-                     gReplayPlayer.takeTriggeredSounds()) {
-                    playWorldSound(
-                        sound.soundPath, sound.position,
-                        sound.volume, sound.pitch,
-                        sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
+                {
+                    const ReplayCameraMode camMode =
+                        gReplayPlayer.cameraController().mode();
+                    std::string viewedEntity;
+                    switch (camMode) {
+                        case ReplayCameraMode::Freecam:
+                            break;
+                        case ReplayCameraMode::FirstPerson:
+                        case ReplayCameraMode::Orbit:
+                            viewedEntity = gReplayPlayer.killerId();
+                            break;
+                        case ReplayCameraMode::Victim:
+                            viewedEntity = gReplayPlayer.victimId();
+                            break;
+                    }
+                    for (const ReplaySoundEvent& sound :
+                         gReplayPlayer.takeTriggeredSounds()) {
+                        bool play = true;
+                        if (sound.soundPath == "hitmarker1") {
+                            play = ReplayShouldPlayHitmarkerAudio(
+                                gReplayPlayer.killerId(), camMode, viewedEntity);
+                            Debug::log(Debug::Category::Replay,
+                                "[REPLAY HITMARKER]\n"
+                                "  attacker=%s\n"
+                                "  viewedEntity=%s\n"
+                                "  camera=%s\n"
+                                "  play=%d\n",
+                                gReplayPlayer.killerId().c_str(),
+                                viewedEntity.c_str(),
+                                gReplayPlayer.cameraController().modeName(),
+                                (int)play);
+                        }
+                        if (!play)
+                            continue;
+                        playWorldSound(
+                            sound.soundPath, sound.position,
+                            sound.volume, sound.pitch,
+                            sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
+                    }
                 }
             }
             { Perf::ScopedTimer _wp("Weapons");
@@ -3620,6 +3655,7 @@ int main(int argc, char** argv)
                             replayActorModels[actorState.id];
                         if (!actor) {
                             actor = std::make_unique<Player>();
+                            Debug::log(Debug::Category::Replay, "[HEALTHBAR] created owner=%s", actorState.id.c_str());
                             // Restore per-actor outfit
                             const std::string& outfitToUse =
                                 !actorState.outfitPath.empty()
@@ -4047,10 +4083,19 @@ int main(int argc, char** argv)
                                    0.34f, {1.0f, 0.82f, 0.3f, 1.0f});
                     }
                 }
-                // Healthbars for all replay actors
-                for (const auto& kv : replayActorModels) {
-                    if (!kv.second || kv.second->dead) continue;
-                    drawPlayerHealthbar(*kv.second, camera, "replay-hp");
+                // Healthbars for replay actors in the current scene frame only.
+                // Iterating the full replayActorModels map would render healthbars
+                // for dead actors whose entries were never cleaned up.
+                if (const ReplaySceneFrame* hbFrame = gReplayPlayer.currentSceneFrame()) {
+                    for (const ReplayActorState& actorState : hbFrame->actors) {
+                        auto mit = replayActorModels.find(actorState.id);
+                        if (mit == replayActorModels.end() || !mit->second || mit->second->dead) {
+                            Debug::log(Debug::Category::Replay, "[HEALTHBAR] skipped render owner=%s dead=%d",
+                                       actorState.id.c_str(), mit != replayActorModels.end() && mit->second ? mit->second->dead : 0);
+                            continue;
+                        }
+                        drawPlayerHealthbar(*mit->second, camera, "replay-hp");
+                    }
                 }
 
                 // REPLAY EXPORT UI FILTER: hide controls help during export
@@ -4098,6 +4143,8 @@ int main(int argc, char** argv)
             snprintf(hpText, sizeof(hpText), "HP: %d/%d", player.currentHp, player.maxHp);
             uiDrawText(hpText, 24, 116, 0.38f, {0.35f, 1.0f, 0.45f, 1.0f});
             if (player.dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
+                if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen)
+                {
                 const float centerX = uiScreenW() * 0.5f;
                 const float centerY = uiScreenH() * 0.5f;
                 std::string deathText = "you died to " +
@@ -4116,7 +4163,9 @@ int main(int argc, char** argv)
                 uiDrawText("press space to respawn instantly",
                            centerX - 190.0f, centerY + 42.0f,
                            0.38f, {0.85f, 0.9f, 1.0f, 1.0f});
+                }
             }
+            if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay)
             {
                 glm::vec3 totalVel = player.vel;
                 float speed = glm::length(totalVel);
@@ -4124,6 +4173,7 @@ int main(int argc, char** argv)
                 snprintf(speedText, sizeof(speedText), "Speed: %.2f m/s", speed);
                 uiDrawText(speedText, 24, 144, 0.38f, {0.75f, 0.9f, 1.0f, 1.0f});
             }
+            if (!gReplayExportRenderMode || ReplayExportUI::showModeText)
             {
                 char modeText[128];
                 snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
@@ -4217,8 +4267,13 @@ int main(int argc, char** argv)
                     uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
                 }
             }
-            for (const Npc& npc : npcSystem.all())
-                drawPlayerHealthbar(npc.body, camera, "npc-hp");
+                for (const Npc& npc : npcSystem.all()) {
+                    if (npc.body.dead) {
+                        Debug::log(Debug::Category::Replay, "[HEALTHBAR] skipped render owner=%s dead=1", npc.body.username.c_str());
+                        continue;
+                    }
+                    drawPlayerHealthbar(npc.body, camera, "npc-hp");
+                }
 
             renderChatBubbles(player.chatState, player, camera);
             if (!replayPlaybackActive)
@@ -4278,6 +4333,7 @@ int main(int argc, char** argv)
                            player.pos.x, player.pos.y, player.pos.z);
                 }
             }
+            if (!gReplayExportRenderMode || ReplayExportUI::showNpcDebug)
             {
                 char npcText[96];
                 snprintf(npcText, sizeof(npcText), "NPCs: %zu", npcSystem.all().size());
@@ -4294,7 +4350,7 @@ int main(int argc, char** argv)
                     uiDrawText(tuneText, 24, 184, 0.28f, {0.8f, 0.9f, 1.0f, 1.0f});
                 }
             }
-            if (DebugVis::render())
+            if (DebugVis::render() && (!gReplayExportRenderMode || ReplayExportUI::showDebugVis))
             {
                 char dbg[256];
                 snprintf(dbg, sizeof(dbg), "dt %.3f grounded %d vel %.2f %.2f %.2f cam %.1f %.1f %.1f",
@@ -4304,7 +4360,8 @@ int main(int argc, char** argv)
             }
 
             // Duel state onscreen debug overlay (always visible during MatchEnd)
-            if (gDuelManager.phase() == DuelPhase::MatchEnd)
+            if (gDuelManager.phase() == DuelPhase::MatchEnd &&
+                (!gReplayExportRenderMode || ReplayExportUI::showDuelDebug))
             {
                 const char* stateName = "None";
                 switch (gDuelManager.endState()) {
@@ -4600,7 +4657,7 @@ int main(int argc, char** argv)
             }
             } // end REPLAY EXPORT UI FILTER (browser, timeline, export overlay)
             MusicManager::instance().drawAllOverlay();
-            if (gFramePacer.showFPS())
+            if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps))
             {
                 uiDrawText(gFramePacer.fpsText(), 12.0f, 12.0f, 0.36f,
                            {0.3f, 1.0f, 0.5f, 1.0f});
@@ -4610,14 +4667,14 @@ int main(int argc, char** argv)
                                {0.5f, 0.8f, 1.0f, 1.0f});
                 }
             }
-            if (PostFX::instance().debugEnabled)
+            if (PostFX::instance().debugEnabled && (!gReplayExportRenderMode || ReplayExportUI::showPostFxDebug))
             {
                 const char* txt = PostFX::instance().debugText();
                 if (txt && txt[0])
                     uiDrawText(txt, uiScreenW() - 380.0f, 12.0f, 0.28f,
                                {1.0f, 0.8f, 0.2f, 1.0f});
             }
-            if (ShadowConfig::instance().data().debugDrawShadowFrustum)
+            if (ShadowConfig::instance().data().debugDrawShadowFrustum && (!gReplayExportRenderMode || ReplayExportUI::showShadowDebug))
             {
                 const auto& sd = ShadowConfig::instance().data();
                 char buf[512];
@@ -4636,6 +4693,26 @@ int main(int argc, char** argv)
             }
             } // end spawn flash GUI hide else
 
+            // Cleanup pass: remove replay actor models not present in the current
+            // scene frame. These are stale entries (dead entities removed from the
+            // actor list) that would otherwise render orphaned healthbars.
+            if (gReplayPlayer.totalTicks() > 0) {
+                const ReplaySceneFrame* cleanupFrame = gReplayPlayer.currentSceneFrame();
+                std::vector<std::string> toRemove;
+                for (const auto& kv : replayActorModels) {
+                    if (!cleanupFrame ||
+                        std::none_of(cleanupFrame->actors.begin(),
+                                     cleanupFrame->actors.end(),
+                                     [&](const ReplayActorState& a) { return a.id == kv.first; })) {
+                        Debug::log(Debug::Category::Replay, "[HEALTHBAR] destroyed owner=%s reason=stale",
+                                   kv.first.c_str());
+                        toRemove.push_back(kv.first);
+                    }
+                }
+                for (const std::string& id : toRemove)
+                    replayActorModels.erase(id);
+            }
+
             // Update perf state counters
             Perf::state().npcCount = (int)npcSystem.all().size();
             Perf::state().playerCount = 1;
@@ -4643,13 +4720,16 @@ int main(int argc, char** argv)
             Perf::state().particleCount = EffectPartSystem::instance().activeCount();
             if (gReplayPlayer.isPlaying())
                 Perf::state().replayMemoryMb = (double)gReplayPlayer.totalTicks() * sizeof(ReplaySceneFrame) / (1024.0 * 1024.0);
-            Perf::renderOverlay();
-            uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
+            if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)
+                Perf::renderOverlay();
+            if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)
+                uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
             } // Perf::ScopedTimer UI
 
             // Dev overlay notifications (temporary)
-            DevOverlay::instance().render();
+            if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
+                DevOverlay::instance().render();
         }
 
         // Advance GUI media animations (GIF frames, future video)

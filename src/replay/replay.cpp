@@ -21,6 +21,7 @@
 
 #include "entities/player.h"
 #include "camera.h"
+#include "debug/debug-log.h"
 
 using json = nlohmann::json;
 
@@ -1650,6 +1651,91 @@ void ReplayClipSaver::update()
         return;
     if (mRing.currentTick() >= mLastKill->tick + 3u * ReplayRingBuffer::TickRate)
         saveLastKill();
+}
+
+namespace {
+
+struct ReplayHitmarkerConfig {
+    bool enableReplayHitmarkers = true;
+    bool attackerPOVOnly = true;
+};
+
+static ReplayHitmarkerConfig gReplayHitmarkerCfg;
+static uint64_t gReplayHitmarkerCfgLastWrite = 0;
+static const char* REPLAY_HITMARKER_CFG_PATH = "config/audio/replay-hitmarkers.json";
+
+static uint64_t cfgFileWriteTime(const char* path)
+{
+    std::error_code ec;
+    auto ft = std::filesystem::last_write_time(path, ec);
+    if (ec) return 0;
+    return ft.time_since_epoch().count();
+}
+
+static void reloadReplayHitmarkerConfig()
+{
+    std::ifstream file(REPLAY_HITMARKER_CFG_PATH);
+    if (!file.is_open())
+        return;
+    try
+    {
+        nlohmann::json j;
+        file >> j;
+
+        ReplayHitmarkerConfig loaded;
+        if (j.contains("enableReplayHitmarkers"))
+            loaded.enableReplayHitmarkers = j["enableReplayHitmarkers"].get<bool>();
+        if (j.contains("attackerPOVOnly"))
+            loaded.attackerPOVOnly = j["attackerPOVOnly"].get<bool>();
+
+        gReplayHitmarkerCfg = loaded;
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY HITMARKER] config reloaded: enable=%d attackerPOVOnly=%d\n",
+            (int)gReplayHitmarkerCfg.enableReplayHitmarkers,
+            (int)gReplayHitmarkerCfg.attackerPOVOnly);
+    }
+    catch (const std::exception& e)
+    {
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY HITMARKER] config reload failed: %s\n", e.what());
+    }
+}
+
+} // anonymous namespace
+
+void pollReplayHitmarkerConfig()
+{
+    static double elapsed = 0.0;
+    elapsed += 1.0 / 60.0;
+    if (elapsed < 0.25)
+        return;
+    elapsed = 0.0;
+
+    uint64_t wt = cfgFileWriteTime(REPLAY_HITMARKER_CFG_PATH);
+    if (wt == 0)
+        return;
+
+    if (wt != gReplayHitmarkerCfgLastWrite)
+    {
+        gReplayHitmarkerCfgLastWrite = wt;
+        reloadReplayHitmarkerConfig();
+    }
+}
+
+bool ReplayShouldPlayHitmarkerAudio(
+    const std::string& attackerId,
+    ReplayCameraMode cameraMode,
+    const std::string& viewedEntity)
+{
+    if (!gReplayHitmarkerCfg.enableReplayHitmarkers)
+        return false;
+    if (!gReplayHitmarkerCfg.attackerPOVOnly)
+        return true;
+    if (cameraMode == ReplayCameraMode::Freecam)
+        return false;
+    if (viewedEntity != attackerId)
+        return false;
+    return true;
 }
 
 bool ReplayClipSaver::saveLastKill(std::string* savedPath)
