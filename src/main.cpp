@@ -385,6 +385,165 @@ int main(int argc, char** argv)
         return saved && loaded && interpolationOk && camerasOk ? 0 : 1;
     }
 
+    if (argc > 1 && std::string(argv[1]) == "--replay-export-selftest") {
+        printf("[REPLAY EXPORT SELFTEST] Starting...\n");
+
+        int failures = 0;
+        int total = 0;
+        auto check = [&](bool cond, const char* name) {
+            total++;
+            if (!cond) { printf("  FAIL: %s\n", name); failures++; }
+            else { printf("  PASS: %s\n", name); }
+        };
+
+        // 1. Create a tiny replay file
+        printf("\n--- Creating test replay ---\n");
+        ReplayClip clip;
+        clip.header.tickRate = 60;
+        clip.header.tickCount = 10;
+        clip.mapPath = "assets/maps/mimita-duels-map-v3.glb";
+        clip.killerId = "player";
+        clip.victimId = "npc_100";
+        clip.killTick = 5;
+
+        ReplayActorState actorA;
+        actorA.id = "player";
+        actorA.name = "player";
+        actorA.type = "player";
+        actorA.position = {0.0f, 0.0f, 0.0f};
+        actorA.weaponName = "revolver";
+        for (uint32_t i = 0; i < 10; i++) {
+            ReplaySceneFrame f;
+            f.tick = (int)i;
+            f.time = (float)i / 60.0f;
+            actorA.position.x = (float)i * 2.0f;
+            f.actors.push_back(actorA);
+            clip.sceneFrames.push_back(f);
+        }
+
+        const std::filesystem::path selftestDir =
+            std::filesystem::path("build") / "replay-export-selftest";
+        std::error_code ec;
+        std::filesystem::create_directories(selftestDir, ec);
+        std::filesystem::path replayPath = selftestDir / "selftest.mclip.json";
+        bool saved = clip.save(replayPath.string());
+        check(saved, "create test replay file");
+        if (!saved) { printf("[REPLAY EXPORT SELFTEST] FAILED: cannot create replay\n"); return 1; }
+
+        // 2. Verify replay loads and advances
+        printf("\n--- Verifying replay advances ---\n");
+        ReplayPlayer player;
+        bool loaded = player.loadFromJSON(replayPath.string());
+        check(loaded, "load test replay into player");
+        if (!loaded) { printf("[REPLAY EXPORT SELFTEST] FAILED: cannot load replay\n"); return 1; }
+
+        player.beginPlayback();
+        check(player.isPlaying(), "beginPlayback sets isPlaying");
+
+        player.seekToTick(0);
+        const ReplaySceneFrame* frame0 = player.currentSceneFrame();
+        check(frame0 != nullptr && !frame0->actors.empty(), "seekToTick(0) returns scene frame with actors");
+        check(frame0 && frame0->actors[0].position.x == 0.0f, "actor0.x at tick 0 == 0.0");
+
+        player.seekToTick(5);
+        player.update(0.0f);
+        const ReplaySceneFrame* frame5 = player.currentSceneFrame();
+        check(frame5 != nullptr, "seekToTick(5) returns scene frame");
+        check(frame5 && frame5->actors[0].position.x > 0.0f, "actor0.x at tick 5 > 0.0 (advancing)");
+
+        player.seekToTick(9);
+        player.update(0.0f);
+        const ReplaySceneFrame* frame9 = player.currentSceneFrame();
+        check(frame9 != nullptr, "seekToTick(9) returns scene frame");
+
+        check(player.currentTick() > 0, "currentTick > 0 (replay advances)");
+
+        // 3. Verify ffmpeg exists
+        printf("\n--- Verifying ffmpeg ---\n");
+        std::string ffmpegPath = defaultFfmpegPath();
+        bool ffmpegExists = std::filesystem::exists(ffmpegPath);
+        check(ffmpegExists, "ffmpeg exists at default path");
+        if (!ffmpegExists) {
+            printf("[REPLAY EXPORT SELFTEST] ffmpeg not found, skipping ffmpeg tests\n");
+        } else {
+            // 4. Create a synthetic raw file and encode it with ffmpeg
+            printf("\n--- Creating synthetic raw file ---\n");
+            int rawW = 320, rawH = 240, rawFrames = 3;
+            std::filesystem::path rawPath = selftestDir / "selftest_raw.rgb";
+            std::filesystem::path mp4Path = selftestDir / "selftest_output.mp4";
+            std::filesystem::path stderrPath = selftestDir / "selftest_ffmpeg_stderr.txt";
+
+            // Write 3 frames of raw RGB data (solid red/green/blue)
+            FILE* rawFile = fopen(rawPath.string().c_str(), "wb");
+            bool rawOpened = (rawFile != nullptr);
+            check(rawOpened, "open synthetic raw file");
+            if (rawOpened) {
+                for (int f = 0; f < rawFrames; f++) {
+                    std::vector<uint8_t> rawFrame(rawW * rawH * 3);
+                    uint8_t r = (f == 0) ? 255 : (f == 1) ? 0 : 0;
+                    uint8_t g = (f == 0) ? 0 : (f == 1) ? 255 : 0;
+                    uint8_t b = (f == 0) ? 0 : (f == 1) ? 0 : 255;
+                    for (size_t i = 0; i < rawFrame.size(); i += 3) {
+                        rawFrame[i] = r;
+                        rawFrame[i+1] = g;
+                        rawFrame[i+2] = b;
+                    }
+                    fwrite(rawFrame.data(), 1, rawFrame.size(), rawFile);
+                }
+                fclose(rawFile);
+            }
+
+            uint64_t rawSize = std::filesystem::file_size(rawPath, ec);
+            check(rawSize > 0, "raw file exists and size > 0");
+            printf("    raw file bytes=%llu\n", (unsigned long long)rawSize);
+
+            // 5. Run ffmpeg on synthetic raw file
+            printf("\n--- Running ffmpeg on synthetic raw file ---\n");
+            std::string rawStr = rawPath.make_preferred().string();
+            std::string mp4Str = mp4Path.make_preferred().string();
+
+            // Write a batch file to avoid cmd.exe quoting issues with std::system()
+            std::filesystem::path batPath = selftestDir / "encode.bat";
+            std::string batContent = "@echo off\r\n"
+                "\"" + ffmpegPath + "\" -y -f rawvideo -pixel_format rgb24 "
+                "-video_size " + std::to_string(rawW) + "x" + std::to_string(rawH) + " "
+                "-framerate 60 -i \"" + rawStr + "\" "
+                "-c:v libx264 -preset fast -pix_fmt yuv420p "
+                "-crf 23 \"" + mp4Str + "\" "
+                "-loglevel error\r\n"
+                "exit /b %ERRORLEVEL%\r\n";
+            FILE* batFile = fopen(batPath.string().c_str(), "w");
+            if (batFile) {
+                fwrite(batContent.c_str(), 1, batContent.size(), batFile);
+                fclose(batFile);
+            }
+            int ffmpegResult = std::system(batPath.string().c_str());
+            printf("    ffmpeg exit code=%d\n", ffmpegResult);
+
+            // 6. Verify mp4 exists and has size > 0
+            printf("\n--- Verifying mp4 output ---\n");
+            bool mp4Exists = std::filesystem::exists(mp4Path, ec);
+            check(mp4Exists, "mp4 file exists");
+            bool mp4SizeOk = false;
+            if (mp4Exists) {
+                uint64_t mp4Size = std::filesystem::file_size(mp4Path, ec);
+                mp4SizeOk = mp4Size > 0;
+                check(mp4SizeOk, "mp4 file size > 0");
+                printf("    mp4 bytes=%llu\n", (unsigned long long)mp4Size);
+            } else {
+                check(false, "mp4 file size > 0");
+            }
+        }
+
+        // Cleanup
+        printf("\n--- Cleanup ---\n");
+        std::filesystem::remove_all(selftestDir, ec);
+
+        printf("\n[REPLAY EXPORT SELFTEST] Results: %d/%d passed, %d failed\n",
+               total - failures, total, failures);
+        return failures > 0 ? 1 : 0;
+    }
+
     if (argc > 1 && std::string(argv[1]) == "-exportdiagnostic") {
         printf("[EXPORTDIAG] Running replay export diagnostic...\n");
         // Find newest replay
@@ -2502,20 +2661,33 @@ int main(int argc, char** argv)
                 DevOverlay::instance().showNotification("Replay unavailable", 5.0f);
         }
 
-        if (gameState == GAME_PLAYING)
+        // Force GAME_PLAYING rendering path during replay export so the
+        // replay scene is rendered into the framebuffer for glReadPixels.
+        // Without this, export from main menu (GAME_MENU) would capture the
+        // menu UI instead of the replay.
+        const bool replayExportForceRender =
+            (getReplayExportJob().state == ReplayExportJob::Capturing ||
+             getReplayExportJob().state == ReplayExportJob::Encoding) && worldLoaded;
+
+        if (gameState == GAME_PLAYING || replayExportForceRender)
         {
             DebugVis::beginCollisionFrame();
             gReplayPlayer.update(dt);
 
             // Replay export mode: seek and rebuild interpolated frame for capture
+            // [D] [E] Step 1: replay update (seek + zero-dt update)
             {
                 const ReplayExportJob& job = getReplayExportJob();
                 if (job.state == ReplayExportJob::Capturing) {
                     uint32_t seekTick = job.capturedTicks;
+                    uint32_t beforeTick = gReplayPlayer.currentTick();
                     if (seekTick < gReplayPlayer.totalTicks()) {
                         Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u / total %u", seekTick, gReplayPlayer.totalTicks());
                         gReplayPlayer.seekToTick(seekTick);
                         gReplayPlayer.update(0.0f);
+                        uint32_t afterTick = gReplayPlayer.currentTick();
+                        Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] REPLAY_PLAYER.update: beforeTick=%u afterTick=%u (seekTick=%u)",
+                                   beforeTick, afterTick, seekTick);
                     } else {
                         Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u >= total %u (skip)", seekTick, gReplayPlayer.totalTicks());
                     }
@@ -2523,8 +2695,19 @@ int main(int argc, char** argv)
             }
 
             const bool replayPlaybackActive = gReplayPlayer.isPlaying();
-            const bool replayRenderActive = replayPlaybackActive ||
+            Debug::log(Debug::Category::Replay, "[EXPORTTRACE] SET replayPlaybackActive=%d file=main.cpp line=%d",
+                       (int)replayPlaybackActive, 2689);
+            bool replayRenderActive = replayPlaybackActive ||
                 (getReplayExportJob().state == ReplayExportJob::Capturing && gReplayPlayer.totalTicks() > 0);
+            // Force replay rendering during export even if the player stopped
+            if (getReplayExportJob().state == ReplayExportJob::Capturing) {
+                if (!replayRenderActive) {
+                    Debug::log(Debug::Category::Replay, "[EXPORTTRACE] FORCE replayRenderActive=1 during export (was 0)");
+                }
+                replayRenderActive = true;
+            }
+            Debug::log(Debug::Category::Replay, "[EXPORTTRACE] SET replayRenderActive=%d file=main.cpp line=%d",
+                       (int)replayRenderActive, 2690);
             Debug::log(Debug::Category::Replay, "[EXPORTTRACE] replayPlaybackActive=%d replayRenderActive=%d totalTicks=%u exportState=%d",
                    (int)replayPlaybackActive, (int)replayRenderActive, gReplayPlayer.totalTicks(),
                    (int)getReplayExportJob().state);
@@ -3404,6 +3587,10 @@ int main(int argc, char** argv)
                            gReplayPlayer.currentSceneFrame() ? 1 : 0,
                            (int)getReplayExportJob().state);
                 }
+            }
+            // [E] Step 2: replay render (into PostFX FBO)
+            if (getReplayExportJob().state == ReplayExportJob::Capturing) {
+                Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] render order: 1.replay update, 2.replay render, 3.glReadPixels");
             }
             if (replayRenderActive) {
                 if (const ReplaySceneFrame* replayFrame =
@@ -4443,7 +4630,10 @@ int main(int argc, char** argv)
         // Advance GUI media animations (GIF frames, future video)
         uiUpdateMedia(dt);
 
-        if (gameState == GAME_MENU)
+        // Skip menu rendering during replay export so glReadPixels captures
+        // the replay scene (rendered in GAME_PLAYING block above) instead of
+        // the menu UI.
+        if (gameState == GAME_MENU && !isReplayExportActive())
         {
             guiMain(engine.window(), gameState);
         }
@@ -4519,11 +4709,11 @@ int main(int argc, char** argv)
             forceMainMenu();
         }
 
-        // Capture replay frame for video export (after ALL rendering, before terminal overlay)
+        // [E] Step 3: glReadPixels capture (after ALL rendering, before terminal overlay)
         if (isReplayExportActive()) {
             static bool loggedOnce = false;
             if (!loggedOnce) {
-                Debug::log(Debug::Category::Replay, "[EXPORTTRACE] main loop calling updateReplayExport");
+                Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] render order: 3.glReadPixels (capture)");
                 loggedOnce = true;
             }
             updateReplayExport();
