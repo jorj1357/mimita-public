@@ -430,3 +430,58 @@ If a feature becomes difficult to find, debug, test, or optimize:
 the ownership is probably wrong.
 
 Move it to the subsystem that logically owns it.
+
+---
+
+# TASK COMPLETION REQUIREMENTS
+
+Before ending any task:
+
+1. Build if code changed
+2. Run relevant validation/tests
+3. Verify expected outputs exist
+4. Save logs
+5. Trigger completion notification script
+6. Print summary
+
+Agents should never simply stop after editing files.
+
+They should validate work first.
+
+---
+
+# TASK COMPLETION HOOK
+
+When work is complete, run:
+
+```
+devscripts\agent_finish.bat [task_name]
+```
+
+or:
+
+```
+python devscripts/agent_task_complete.py [task_name]
+```
+
+This will:
+
+* Play a completion sound (`assets/sound/entity/player/spawning.wav`)
+* Show a Windows toast notification ("MiMITA Agent: Task Completed")
+* Print `[AGENT COMPLETE]` to the console
+
+## Example
+
+After building and verifying:
+
+```
+python build_agent.py
+:: check for SUCCESS
+devscripts\agent_finish.bat "Fix duel replay flow"
+```
+
+## Failure handling
+
+If the sound file is missing: a warning is printed.
+If the notification fails: a warning is printed.
+The script never crashes.

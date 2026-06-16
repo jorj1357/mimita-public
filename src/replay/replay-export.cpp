@@ -5,6 +5,8 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -19,20 +21,22 @@
 
 #include "replay/replay.h"
 #include "debug/debug-log.h"
+#include "terminal/terminal-state.h"
 
 static ReplayExportJob gJob;
 
 // Debug flag: when true, launches ffmpeg in a visible cmd window instead of _popen
 static bool gFfmpegDebugMode = false;
 
-#define EXPORTTRACE(fmt, ...) do { printf("[EXPORTTRACE] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
-#define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORTTRACE] " fmt, ##__VA_ARGS__)
+#define EXPORTTRACE(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORTTRACE] " fmt, ##__VA_ARGS__)
+#define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
+// Crash-safe logging for pipe/IO failures where Debug::log might not flush
+#define EXPORTTRACE_CRASH(fmt, ...) do { printf("[EXPORT] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
 
 void setFfmpegDebugMode(bool enabled)
 {
     gFfmpegDebugMode = enabled;
-    printf("[EXPORTTRACE] ffmpeg debug mode = %s\n", enabled ? "ON (visible cmd window)" : "OFF (_popen)");
-    fflush(stdout);
+    EXPORTTRACE("ffmpeg debug mode = %s", enabled ? "ON (visible cmd window)" : "OFF (_popen)");
 }
 
 bool isFfmpegDebugMode()
@@ -52,17 +56,15 @@ std::string makeCmdKArgs(const std::string& cmd)
 static void debugLaunchFfmpegVisible(const std::string& cmd)
 {
     std::string args = makeCmdKArgs(cmd);
-    printf("[EXPORTTRACE] ShellExecuteA params EXACT=%s%s%s\n",
-           "cmd.exe ", args.c_str(), ""); fflush(stdout);
+    EXPORTTRACE("ShellExecuteA params EXACT=%s %s", "cmd.exe", args.c_str());
     HINSTANCE h = ShellExecuteA(NULL, "open", "cmd.exe", args.c_str(), NULL, SW_SHOWNORMAL);
     INT_PTR result = (INT_PTR)h;
     if (result <= 32) {
         DWORD err = GetLastError();
-        printf("[EXPORTTRACE] ShellExecuteA FAILED result=%lld GetLastError=%lu\n",
-               (long long)result, (unsigned long)err); fflush(stdout);
+        EXPORTTRACE_CRASH("ShellExecuteA FAILED result=%lld GetLastError=%lu",
+               (long long)result, (unsigned long)err);
     } else {
-        printf("[EXPORTTRACE] Launched ffmpeg in visible cmd window. Close when done.\n");
-        fflush(stdout);
+        EXPORTTRACE("Launched ffmpeg in visible cmd window. Close when done.");
     }
 }
 
@@ -144,47 +146,68 @@ std::string generateExportOutputPath()
 
 bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderHeight)
 {
-    EXPORTTRACE("=== startReplayExport entered ===");
-    EXPORTTRACE("jsonPath=%s renderWidth=%d renderHeight=%d", jsonPath.c_str(), renderWidth, renderHeight);
-    EXPORTTRACE("gJob.state=%d (0=Idle)", (int)gJob.state);
+    EXPORTLOG("=== REPLAY EXPORT START ===");
+    EXPORTLOG("jsonPath=%s renderWidth=%d renderHeight=%d", jsonPath.c_str(), renderWidth, renderHeight);
 
     if (gJob.state != ReplayExportJob::Idle)
     {
-        EXPORTTRACE("Export already in progress, ignoring");
+        EXPORTLOG("FAIL: export already in progress");
         return false;
     }
 
-    EXPORTTRACE("Checking jsonPath exists...");
+    EXPORTLOG("STAGE 1/8: checking replay file");
     if (!std::filesystem::exists(jsonPath))
     {
-        EXPORTTRACE("Replay file NOT FOUND: %s", jsonPath.c_str());
+        EXPORTLOG("FAIL: replay file NOT FOUND at %s", jsonPath.c_str());
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Replay file not found:\n" + jsonPath;
         return false;
     }
-    EXPORTTRACE("jsonPath exists OK");
+    EXPORTLOG("PASS: replay file found at %s", jsonPath.c_str());
 
-    EXPORTTRACE("Loading replay clip...");
+    EXPORTLOG("STAGE 2/8: loading replay clip");
     ReplayClip clip;
     if (!clip.load(jsonPath))
     {
-        EXPORTTRACE("Failed to load replay clip: %s", jsonPath.c_str());
+        EXPORTLOG("FAIL: cannot load replay clip: %s", jsonPath.c_str());
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Failed to load replay clip:\n" + jsonPath;
         return false;
     }
-    EXPORTTRACE("Replay clip loaded OK");
 
     uint32_t totalTicks = clip.header.tickCount;
-    EXPORTTRACE("totalTicks=%u", totalTicks);
     if (totalTicks == 0)
     {
-        EXPORTTRACE("Replay has zero frames");
+        EXPORTLOG("FAIL: replay has zero frames");
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Replay has no frames.";
         return false;
     }
-    EXPORTTRACE("Frames to export: %u", totalTicks);
+    EXPORTLOG("PASS: replay loaded, tickCount=%u, sceneFrames=%zu, duration=%.1fs",
+              totalTicks, clip.sceneFrames.size(), (float)totalTicks / 60.0f);
+
+    EXPORTLOG("STAGE 3/8: loading replay into REPLAY_PLAYER");
+    if (!REPLAY_PLAYER.loadFromJSON(jsonPath)) {
+        EXPORTLOG("FAIL: cannot load into REPLAY_PLAYER");
+        gJob.state = ReplayExportJob::Failed;
+        gJob.errorMsg = "Failed to load replay into player:\n" + jsonPath;
+        return false;
+    }
+    REPLAY_PLAYER.beginPlayback();
+    REPLAY_PLAYER.seekToTick(0);
+    uint32_t loadedTick = REPLAY_PLAYER.currentTick();
+    const ReplaySceneFrame* firstFrame = REPLAY_PLAYER.currentSceneFrame();
+    uint32_t actorCount = firstFrame ? (uint32_t)firstFrame->actors.size() : 0;
+    EXPORTLOG("PASS: REPLAY_PLAYER loaded: totalTicks=%u isPlaying=%d isPaused=%d currentTick=%u actorCount=%u",
+              REPLAY_PLAYER.totalTicks(), (int)REPLAY_PLAYER.isPlaying(),
+              (int)REPLAY_PLAYER.isPaused(), loadedTick, actorCount);
+    if (loadedTick == 0 && REPLAY_PLAYER.totalTicks() > 0)
+        EXPORTLOG("WARN: currentTick=0 but totalTicks=%u — seekToTick clamped to 0 (input frames empty?)",
+                  REPLAY_PLAYER.totalTicks());
+    if (actorCount == 0)
+        EXPORTLOG("WARN: replay has zero actors in frame 0");
+
+    EXPORTLOG("STAGE 4/8: checking ffmpeg");
 
     EXPORTTRACE("Checking ffmpeg path...");
     std::string ffmpeg = defaultFfmpegPath();
@@ -197,7 +220,9 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         return false;
     }
     EXPORTTRACE("ffmpeg exists OK");
+    EXPORTLOG("PASS: ffmpeg found at %s", ffmpeg.c_str());
 
+    EXPORTLOG("STAGE 5/8: generating output path, total frames to export=%u", totalTicks);
     EXPORTTRACE("Generating output path...");
     std::string outputPath = generateExportOutputPath();
     EXPORTTRACE("outputPath=%s", outputPath.c_str());
@@ -222,10 +247,12 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     EXPORTTRACE("Building ffmpeg command...");
     namespace fs = std::filesystem;
     std::string nativeOutput = fs::path(outputPath).make_preferred().string();
+    std::string stderrLog = (fs::path("replays") / "exports" / "_ffmpeg_stderr.txt").string();
     std::string cmd = "\"" + ffmpeg + "\" -y -f rawvideo -pixel_format rgb24 "
         "-video_size " + std::to_string(renderWidth) + "x" + std::to_string(renderHeight) + " "
         "-framerate 60 -i - -c:v libx264 -preset fast -pix_fmt yuv420p "
-        "-crf 18 \"" + nativeOutput + "\"";
+        "-crf 18 \"" + nativeOutput + "\""
+        " 2>\"" + stderrLog + "\"";
 
     EXPORTTRACE("=== EXACT FFMPEG COMMAND ===");
     EXPORTTRACE("%s", cmd.c_str());
@@ -277,33 +304,25 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     }
     EXPORTTRACE("Working directory: %s", std::filesystem::current_path().string().c_str());
 
-    if (gFfmpegDebugMode)
+    EXPORTLOG("STAGE 6/8: creating temp raw file for frame capture");
+    namespace fs = std::filesystem;
+    std::string rawTempDir = (fs::path("replays") / "exports" / "_tmp").string();
     {
-        // DEBUG MODE: launch ffmpeg in a visible cmd window instead of _popen
-        EXPORTTRACE("FFMPEG DEBUG MODE: launching visible cmd window...");
-        debugLaunchFfmpegVisible(cmd);
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "FFmpeg launched in debug window. Check the cmd window for errors.";
-        EXPORTTRACE("=== startReplayExport returning false (debug mode) ===");
-        return false;
+        std::error_code ec;
+        fs::create_directories(rawTempDir, ec);
     }
+    std::string rawTempPath = (fs::path("replays") / "exports" / "_tmp" / "export_raw.rgb").string();
+    EXPORTLOG("PASS: raw temp path=%s", rawTempPath.c_str());
 
-    EXPORTTRACE("Calling _popen...");
-    FILE* pipe = _popen(cmd.c_str(), "wb");
-    EXPORTTRACE("_popen returned pipe=%p", (void*)pipe);
-    if (!pipe)
-    {
-#ifdef _WIN32
-        DWORD err = GetLastError();
-        EXPORTTRACE("pipe open FAILED GetLastError=%lu errno=%d", (unsigned long)err, errno);
-#else
-        EXPORTTRACE("pipe open FAILED errno=%d", errno);
-#endif
+    // Open temp raw file for writing frame data
+    FILE* rawFile = fopen(rawTempPath.c_str(), "wb");
+    if (!rawFile) {
+        EXPORTLOG("FAIL: cannot create temp raw file at %s (errno=%d)", rawTempPath.c_str(), errno);
         gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Failed to launch FFmpeg.";
+        gJob.errorMsg = "Cannot create temp raw file:\n" + rawTempPath;
         return false;
     }
-    EXPORTTRACE("pipe open OK");
+    EXPORTLOG("PASS: temp raw file opened for writing");
 
     EXPORTTRACE("Initializing job state...");
     gJob.state = ReplayExportJob::Capturing;
@@ -313,14 +332,15 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     gJob.capWidth = renderWidth;
     gJob.capHeight = renderHeight;
     gJob.ffmpegPath = ffmpeg;
-    gJob.ffmpegPipe = pipe;
+    gJob.rawTempPath = rawTempPath;
+    gJob.rawFile = rawFile;
     gJob.outputPath = outputPath;
     gJob.ffmpegExitCode = -1;
     gJob.errorMsg.clear();
     gJob.frameWriteCount = 0;
     EXPORTTRACE("gJob.state set to Capturing (1)");
 
-    EXPORTTRACE("=== startReplayExport returning true ===");
+    EXPORTLOG("=== startReplayExport returning true ===");
     return true;
 }
 
@@ -336,12 +356,24 @@ void updateReplayExport()
     int h = gJob.capHeight;
     uint32_t frameNum = gJob.capturedTicks;
 
-    if (frameNum == 0)
+    if (frameNum == 0) {
         EXPORTTRACE("=== updateReplayExport: first frame ===");
+        EXPORTLOG("STAGE 7/8: capturing frames");
+    }
 
     EXPORTTRACE("Frame %u/%u: allocating pixels buffer (%dx%d*3=%d bytes)",
                 frameNum, gJob.totalTicks, w, h, w * h * 3);
     std::vector<uint8_t> pixels(w * h * 3);
+
+    // Trace framebuffer state before capture
+    {
+        GLint readFb = 0, drawFb = 0, viewport[4] = {};
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFb);
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFb);
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        EXPORTTRACE_CRASH("Frame %u: FB read=%d draw=%d viewport=%dx%d+%d+%d",
+               frameNum, readFb, drawFb, viewport[2], viewport[3], viewport[0], viewport[1]);
+    }
 
     EXPORTTRACE("Frame %u: calling glReadPixels...", frameNum);
     glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
@@ -351,6 +383,40 @@ void updateReplayExport()
         EXPORTTRACE("Frame %u: glReadPixels GL ERROR=0x%x", frameNum, glErr);
     else
         EXPORTTRACE("Frame %u: glReadPixels OK", frameNum);
+
+    // Sample first few pixels to detect garbage/magenta/empty framebuffer
+    {
+        uint8_t r = pixels[0], g = pixels[1], b = pixels[2];
+        uint8_t r2 = pixels[w*3], g2 = pixels[w*3+1], b2 = pixels[w*3+2];
+        EXPORTTRACE_CRASH("Frame %u: pixel(0,0)=RGB(%u,%u,%u) pixel(0,1)=RGB(%u,%u,%u)",
+               frameNum, r, g, b, r2, g2, b2);
+        // Magenta = (255,0,255) is PostFX's sentinel for unrendered area
+        if (r == 255 && g == 0 && b == 255)
+            EXPORTTRACE_CRASH("*** MAGENTA PIXEL DETECTED - PostFX FBO not rendered to default framebuffer ***");
+
+        // Compute rolling hash of frame center to detect static screens
+        static uint64_t firstFrameHash = 0;
+        uint64_t thisHash = 0;
+        const uint8_t* cp = pixels.data() + (w * (h/2) * 3);
+        for (int i = 0; i < 64 && i < w; i++)
+            thisHash = (thisHash << 1) ^ cp[i * 3];
+        if (frameNum == 0) {
+            firstFrameHash = thisHash;
+            EXPORTLOG("frame 0 hash=%llu", (unsigned long long)thisHash);
+        } else if (frameNum % 60 == 0) {
+            bool identical = (thisHash == firstFrameHash);
+            EXPORTLOG("frame %u hash=%llu sameAsFrame0=%s", frameNum, (unsigned long long)thisHash, identical ? "YES (STATIC)" : "NO (advancing)");
+        }
+
+        // Log actor count periodically
+        if (frameNum % 60 == 0) {
+            const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+            uint32_t ac = sf ? (uint32_t)sf->actors.size() : 0;
+            EXPORTLOG("frame %u: REPLAY_PLAYER tick=%u/%u isPlaying=%d actorCount=%u",
+                      frameNum, REPLAY_PLAYER.currentTick(), REPLAY_PLAYER.totalTicks(),
+                      (int)REPLAY_PLAYER.isPlaying(), ac);
+        }
+    }
 
     // Flip vertically
     std::vector<uint8_t> flipped(w * h * 3);
@@ -365,24 +431,18 @@ void updateReplayExport()
 
     size_t expectedBytes = flipped.size();
     EXPORTTRACE("Frame %u: calling fwrite (%zu bytes to pipe)...", frameNum, expectedBytes);
-    size_t written = fwrite(flipped.data(), 1, expectedBytes, gJob.ffmpegPipe);
+    size_t written = fwrite(flipped.data(), 1, expectedBytes, gJob.rawFile);
     EXPORTTRACE("Frame %u: fwrite returned %zu (expected %zu)", frameNum, written, expectedBytes);
 
     if (written != expectedBytes)
     {
-        int fwErr = ferror(gJob.ffmpegPipe);
-        EXPORTTRACE("Frame %u: fwrite FAILED (wrote %zu/%zu) ferror=%d feof=%d",
-                    frameNum, written, expectedBytes, fwErr, feof(gJob.ffmpegPipe));
-#ifdef _WIN32
-        DWORD lastErr = GetLastError();
-        EXPORTTRACE("Frame %u: GetLastError=%lu", frameNum, (unsigned long)lastErr);
-#endif
+        int fwErr = ferror(gJob.rawFile);
+        EXPORTTRACE_CRASH("Frame %u: fwrite FAILED (wrote %zu/%zu) ferror=%d",
+                    frameNum, written, expectedBytes, fwErr);
         gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Pipe write failed during frame capture.";
-        EXPORTTRACE("Frame %u: calling _pclose on failed pipe...", frameNum);
-        _pclose(gJob.ffmpegPipe);
-        gJob.ffmpegPipe = nullptr;
-        EXPORTTRACE("Frame %u: pipe closed after write failure", frameNum);
+        gJob.errorMsg = "Raw file write failed during frame capture.";
+        fclose(gJob.rawFile);
+        gJob.rawFile = nullptr;
         return;
     }
 
@@ -398,43 +458,75 @@ void updateReplayExport()
     if (gJob.capturedTicks >= gJob.totalTicks)
     {
         EXPORTTRACE("=== ALL FRAMES WRITTEN (%u) ===", gJob.capturedTicks);
+        fclose(gJob.rawFile);
+        gJob.rawFile = nullptr;
 
-        EXPORTTRACE("Calling _pclose to finalize ffmpeg...");
-        int ret = _pclose(gJob.ffmpegPipe);
-        gJob.ffmpegPipe = nullptr;
-        gJob.ffmpegExitCode = ret;
-        EXPORTTRACE("_pclose returned %d", ret);
+        EXPORTLOG("STAGE 8/8: encoding MP4 from raw frames");
+        gJob.state = ReplayExportJob::Encoding;
 
-        if (ret != 0)
+        // Build ffmpeg command to encode the raw file to MP4
+        namespace fs = std::filesystem;
+        std::string nativeOutput = fs::path(gJob.outputPath).make_preferred().string();
+        std::string nativeRaw = fs::path(gJob.rawTempPath).make_preferred().string();
+        std::string stderrLog = (fs::path("replays") / "exports" / "_ffmpeg_stderr.txt").string();
+        std::string ffmpegCmd = "\"" + gJob.ffmpegPath + "\" -y -f rawvideo -pixel_format rgb24 "
+            "-video_size " + std::to_string(gJob.capWidth) + "x" + std::to_string(gJob.capHeight) + " "
+            "-framerate 60 -i \"" + nativeRaw + "\" -c:v libx264 -preset fast -pix_fmt yuv420p "
+            "-crf 18 \"" + nativeOutput + "\""
+            " 2>\"" + stderrLog + "\"";
+
+        EXPORTLOG("Running ffmpeg encoding command...");
+        EXPORTLOG("  %s", ffmpegCmd.c_str());
+
+        int encodeResult = std::system(ffmpegCmd.c_str());
+        EXPORTLOG("ffmpeg encode exit code=%d", encodeResult);
+
+        // Clean up temp raw file
+        std::error_code ec;
+        std::filesystem::remove(gJob.rawTempPath, ec);
+
+        if (encodeResult != 0)
         {
-            EXPORTTRACE("FFMPEG EXIT CODE = %d (NON-ZERO)", ret);
+            EXPORTLOG("FAIL: ffmpeg encoding failed with exit code %d", encodeResult);
+            // Read stderr
+            std::ifstream sf(stderrLog);
+            if (sf.is_open()) {
+                std::stringstream ss;
+                ss << sf.rdbuf();
+                EXPORTLOG("ffmpeg stderr:");
+                std::istringstream lines(ss.str());
+                std::string line;
+                while (std::getline(lines, line))
+                    EXPORTLOG("  %s", line.c_str());
+                sf.close();
+            }
             gJob.state = ReplayExportJob::Failed;
-            gJob.errorMsg = "FFmpeg exited with code " + std::to_string(ret);
+            gJob.errorMsg = "FFmpeg encoding failed with code " + std::to_string(encodeResult);
             return;
         }
+        EXPORTLOG("PASS: ffmpeg encoding succeeded");
 
-        EXPORTTRACE("FFMPEG EXIT CODE = 0 (OK)");
-        EXPORTTRACE("Checking output file: %s", gJob.outputPath.c_str());
-
+        // Validate output
         if (!std::filesystem::exists(gJob.outputPath))
         {
-            EXPORTTRACE("OUTPUT FILE MISSING");
+            EXPORTLOG("FAIL: output file missing after encoding");
             gJob.state = ReplayExportJob::Failed;
             gJob.errorMsg = "Output file missing after encoding:\n" + gJob.outputPath;
             return;
         }
 
         uint64_t fileSize = std::filesystem::file_size(gJob.outputPath);
-        EXPORTTRACE("output file size=%llu bytes", (unsigned long long)fileSize);
         if (fileSize == 0)
         {
-            EXPORTTRACE("OUTPUT FILE EMPTY (0 bytes)");
+            EXPORTLOG("FAIL: output file is empty (0 bytes)");
             gJob.state = ReplayExportJob::Failed;
             gJob.errorMsg = "Output file is empty:\n" + gJob.outputPath;
             return;
         }
 
-        EXPORTTRACE("=== EXPORT COMPLETE ===");
+        EXPORTLOG("PASS: output file exists, size=%llu bytes (%.1f KB)",
+                  (unsigned long long)fileSize, (double)fileSize / 1024.0);
+        EXPORTLOG("=== EXPORT COMPLETE ===");
         gJob.state = ReplayExportJob::Done;
     }
 }
@@ -488,10 +580,15 @@ std::string getReplayExportStatusText()
 
 void cancelReplayExport()
 {
-    if (gJob.state == ReplayExportJob::Capturing && gJob.ffmpegPipe)
+    if (gJob.state == ReplayExportJob::Capturing && gJob.rawFile)
     {
-        _pclose(gJob.ffmpegPipe);
-        gJob.ffmpegPipe = nullptr;
+        fclose(gJob.rawFile);
+        gJob.rawFile = nullptr;
+    }
+    // Clean up temp file if it exists
+    if (!gJob.rawTempPath.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(gJob.rawTempPath, ec);
     }
     gJob = ReplayExportJob{};
 }
