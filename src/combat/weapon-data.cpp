@@ -1,5 +1,6 @@
 #include "weapon-data.h"
 #include "weapon-registry.h"
+#include "../debug/debug-log.h"
 
 #include <cstdio>
 
@@ -206,13 +207,29 @@ WeaponDefinition createOpRevolverDefinition() {
     return def;
 }
 
+WeaponDefinition createAa12Definition() {
+    WeaponDefinition def = createShotgunDefinition();
+    def.id = "aa12";
+    def.displayName = "AA12";
+    def.slot = 6;
+    def.fireDelay = 0.1f;
+    def.magazineSize = 999;
+    def.customParams["reserveAmmo"] = 9999.0f;
+    def.fireMode = WeaponFireMode::Automatic;
+    def.poseId = "shotgun";
+    Debug::log(Debug::Category::Weapons, "[AA12] Registered: aa12 (slot 6, auto, fireDelay=%.2f, ammo=%d, reserve=%.0f)",
+               def.fireDelay, def.magazineSize, def.customParams["reserveAmmo"]);
+    return def;
+}
+
 void registerBuiltinWeapons() {
     WeaponRegistry::instance().registerWeapon(createRevolverDefinition());
     WeaponRegistry::instance().registerWeapon(createGodballDefinition());
     WeaponRegistry::instance().registerWeapon(createShotgunDefinition());
     WeaponRegistry::instance().registerWeapon(createSwordswordDefinition());
     WeaponRegistry::instance().registerWeapon(createOpRevolverDefinition());
-    printf("[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver\n");
+    WeaponRegistry::instance().registerWeapon(createAa12Definition());
+    Debug::log(Debug::Category::Weapons, "[AA12] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12");
 }
 
 } // namespace WeaponData
