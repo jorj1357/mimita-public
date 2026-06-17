@@ -229,6 +229,8 @@ RevolverShotResult WeaponSystem::fireHitscan(
         // TODO(debug): migrate to Debug::log(Debug::Category::Weapons)
         printf("[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d\n",
            def->slot, def->id.c_str(), rt->currentAmmo);
+        if (def->id == "aa12")
+            Debug::log(Debug::Category::Weapons, "[AA12] Fired: ammo=%d, cooldown=%.2f", rt->currentAmmo, rt->fireCooldown);
 
     return result;
 }
@@ -403,6 +405,8 @@ void WeaponSystem::equip(Player& player, int slot) {
         mCurrentWeaponId = def->id;
         WeaponAudio::playEquipSound(*def);
         printf("[WEAPON] equipped '%s' slot %d\n", def->id.c_str(), slot);
+        if (def->id == "aa12")
+            Debug::log(Debug::Category::Weapons, "[AA12] Equipped: aa12 (slot %d)", slot);
     } else {
         unequip(player);
     }

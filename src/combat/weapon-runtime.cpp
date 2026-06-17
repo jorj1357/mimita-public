@@ -1,4 +1,5 @@
 #include "weapon-runtime.h"
+#include "../debug/debug-log.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -19,6 +20,8 @@ void WeaponRuntimeHelper::initRuntime(WeaponRuntime& rt, const WeaponDefinition&
     rt.customVec3s.clear();
     printf("[WEAPON] Runtime initialized for weapon '%s': ammo=%d reserve=%d\n",
            def.id.c_str(), rt.currentAmmo, rt.reserveAmmo);
+    if (def.id == "aa12")
+        Debug::log(Debug::Category::Weapons, "[AA12] Runtime init: fireCooldown=%.2f (fireDelay=%.2f)", rt.fireCooldown, def.fireDelay);
 }
 
 void WeaponRuntimeHelper::updateCooldowns(WeaponRuntime& rt, float dt) {
