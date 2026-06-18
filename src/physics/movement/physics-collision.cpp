@@ -26,6 +26,7 @@
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
+#include "physics/body-part-collision.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "config.h"
@@ -33,6 +34,7 @@
 #include "debug/debug-visuals.h"
 #include "config/player-settings.h"
 #include "devtools/terminal.h"
+#include "perf/perf.h"
 
 // =====================================================
 // DEBUG TOGGLE
@@ -648,6 +650,32 @@ static std::vector<RecoveryContact> collectBlockContactsForCapsule(
     return contacts;
 }
 
+static std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
+    const World& world,
+    const Capsule& cap,
+    const std::vector<int>& candidates
+) {
+    std::vector<RecoveryContact> contacts;
+    for (int triIndex : candidates)
+    {
+        if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+            continue;
+        Contact contact;
+        if (capsuleTriangleContact(cap, world.collisionMesh.triangles[triIndex], triIndex, contact))
+        {
+            contacts.push_back({
+                contact.normal,
+                contact.point,
+                contact.penetration,
+                contact.triangleIndex,
+                nullptr,
+                "capsule-triangle"
+            });
+        }
+    }
+    return contacts;
+}
+
 static std::vector<RecoveryContact> collectGLBRecoveryContacts(
     const World& world,
     const Capsule& cap,
@@ -1014,33 +1042,9 @@ static void doGLBTriangleCollisions(
                 earliest = hit;
         }
 
-        for (size_t si = 0; si < bodySamples.size(); ++si)
-        {
-            glm::vec3 sample = bodySamples[si];
-            // Include limb animation delta in the sweep every iteration
-            glm::vec3 animDelta = (si < bodyDeltas.size()) ? bodyDeltas[si] : glm::vec3(0.0f);
-            glm::vec3 sampleMove = remainingMove + animDelta;
-            for (int triIndex : candidates)
-            {
-                float t = 1.0f;
-                glm::vec3 n(0.0f);
-                glm::vec3 point(0.0f);
-                if (sweepSphereTriangle(sample, sampleMove, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], t, n, point) && t < earliest.time)
-                {
-                    earliest.hit = true;
-                    earliest.time = t;
-                    earliest.normal = n;
-                    earliest.point = point;
-                    earliest.triangleIndex = triIndex;
-                    earliest.colliderName = "player_body_part";
-                }
-            }
-        }
-
         glm::vec3 stepMove = remainingMove * earliest.time;
         p.pos += stepMove;
         p.updateModelWorldTransforms();
-        bodySamples = collectPlayerBodyCollisionSamples(p);
         cap = p.getCapsule();
 
         if (!earliest.hit)
@@ -1221,7 +1225,6 @@ static void doGLBTriangleCollisions(
     // This correctly handles contradictory normals (corners, edges, seams)
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
-    bodySamples = collectPlayerBodyCollisionSamples(p);
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
 
     float maxPenetrationSeen = 0.0f;
@@ -1230,11 +1233,10 @@ static void doGLBTriangleCollisions(
     {
         p.updateModelWorldTransforms();
         cap = p.getCapsule();
-        bodySamples = collectPlayerBodyCollisionSamples(p);
         candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
 
-        std::vector<RecoveryContact> contacts = collectGLBRecoveryContacts(
-            world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
+        std::vector<RecoveryContact> contacts = collectCapsuleRecoveryContacts(
+            world, cap, candidates
         );
 
         if (contacts.empty())
@@ -1332,9 +1334,8 @@ static void doGLBTriangleCollisions(
                         p.updateModelWorldTransforms();
                         Capsule postSnapCap = p.getCapsule();
                         std::vector<int> postSnapCandidates = gatherGLBTriangles(world, postSnapCap, glm::vec3(0.0f));
-                        std::vector<glm::vec3> postSnapSamples = collectPlayerBodyCollisionSamples(p);
-                        std::vector<RecoveryContact> postSnapContacts = collectGLBRecoveryContacts(
-                            world, postSnapCap, postSnapSamples, postSnapCandidates, BODY_SAMPLE_RADIUS
+                        std::vector<RecoveryContact> postSnapContacts = collectCapsuleRecoveryContacts(
+                            world, postSnapCap, postSnapCandidates
                         );
 
                         if (!postSnapContacts.empty())
@@ -1372,8 +1373,8 @@ static void doGLBTriangleCollisions(
         p.updateModelWorldTransforms();
         Capsule stuckCheckCap = p.getCapsule();
         std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f));
-        std::vector<RecoveryContact> stuckContacts = collectGLBRecoveryContacts(
-            world, stuckCheckCap, collectPlayerBodyCollisionSamples(p), stuckCandidates, BODY_SAMPLE_RADIUS
+        std::vector<RecoveryContact> stuckContacts = collectCapsuleRecoveryContacts(
+            world, stuckCheckCap, stuckCandidates
         );
 
         float worstPen = 0.0f;
@@ -1467,10 +1468,9 @@ static void doGLBTriangleCollisions(
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
     candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
-    bodySamples = collectPlayerBodyCollisionSamples(p);
 
-    std::vector<RecoveryContact> finalContacts = collectGLBRecoveryContacts(
-        world, cap, bodySamples, candidates, BODY_SAMPLE_RADIUS
+    std::vector<RecoveryContact> finalContacts = collectCapsuleRecoveryContacts(
+        world, cap, candidates
     );
 
     for (const RecoveryContact& c : finalContacts)
@@ -1488,6 +1488,57 @@ static void doGLBTriangleCollisions(
                 c.triangleIndex, c.penetration,
                 c.normal.x, c.normal.y, c.normal.z,
                 c.point.x, c.point.y, c.point.z);
+        }
+    }
+
+    // Rotation safety pass: after all collision resolution, verify the
+    // authoritative capsule is not penetrating world geometry due to
+    // body/weapon/animation/rotation updates that happened during the frame.
+    // This catches cases where non-authoritative changes (weapon pose,
+    // arm rotation, body turning) could have pushed through walls.
+    {
+        p.updateModelWorldTransforms();
+        Capsule safetyCap = p.getCapsule();
+        std::vector<int> safetyCandidates = gatherGLBTriangles(world, safetyCap, glm::vec3(0.0f));
+        std::vector<RecoveryContact> safetyContacts = collectCapsuleRecoveryContacts(
+            world, safetyCap, safetyCandidates
+        );
+
+        if (!safetyContacts.empty())
+        {
+            float maxPen = 0.0f;
+            int srcTri = -1;
+            glm::vec3 srcNormal(0.0f);
+            for (const auto& c : safetyContacts)
+            {
+                if (c.penetration > maxPen)
+                {
+                    maxPen = c.penetration;
+                    srcTri = c.triangleIndex;
+                    srcNormal = c.normal;
+                }
+            }
+
+            PHYS_LOG(
+                "[COLLISION] rotation-safety: capsule penetration=%.4f contacts=%zu triangleId=%d normal=(%.3f %.3f %.3f)\n",
+                maxPen, safetyContacts.size(), srcTri,
+                srcNormal.x, srcNormal.y, srcNormal.z
+            );
+
+            glm::vec3 safetyCorrection = solveBatchedCorrection(safetyContacts, SURFACE_SLOP);
+            float corrLen = glm::length(safetyCorrection);
+            if (corrLen > MAX_CORRECTION)
+                safetyCorrection *= MAX_CORRECTION / corrLen;
+
+            p.pos += safetyCorrection;
+            DebugVis::recordDepenetration(p.pos - safetyCorrection, safetyCorrection, "rotation-safety");
+
+            for (const RecoveryContact& c : safetyContacts)
+            {
+                if (c.normal.z <= MAX_WALKABLE_SLOPE_DOT)
+                    projectVelocityAgainstNormal(p, c.normal);
+                applyCollisionContact(p, groundedThisFrame, c.normal, c.point, c.penetration, c.triangleIndex, "rotation-safety");
+            }
         }
     }
 
@@ -1534,6 +1585,49 @@ static void doGLBTriangleCollisions(
         }
     }
 
+    // Resolve per-body-part world collision (visual push-back only).
+    // This adjusts each body part's worldTransform so limbs visually stop at walls.
+    // The root capsule (player position) is NOT modified.
+    if (DebugConfig::DEBUG_COLLISION_LIMB || true) { // always enabled for correctness
+        resolveBodyPartCollisions(p, world, dt);
+    }
+
+    // Non-authoritative collider warning: body/weapon colliders no longer
+    // push the root capsule. If body samples are penetrating world geometry,
+    // log a warning so developers know their collision volumes are oversized
+    // or their animation poses are causing visual clipping.
+    {
+        static float bodyWarnTimer = 0.0f;
+        bodyWarnTimer += dt;
+        std::vector<glm::vec3> bodyCheckSamples = collectPlayerBodyCollisionSamples(p);
+        bool anyBodyPen = false;
+        for (glm::vec3 sample : bodyCheckSamples)
+        {
+            AABB sampleBounds = {sample - glm::vec3(BODY_SAMPLE_RADIUS), sample + glm::vec3(BODY_SAMPLE_RADIUS)};
+            std::vector<int> bodyTriCandidates;
+            appendChunkTrianglesForAABB(world, sampleBounds, BODY_SAMPLE_RADIUS, bodyTriCandidates);
+            for (int triIndex : bodyTriCandidates)
+            {
+                Contact c;
+                if (sphereTriangleContact(sample, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], c))
+                {
+                    anyBodyPen = true;
+                    if (bodyWarnTimer >= 1.0f)
+                    {
+                        PHYS_LOG("[COLLISION WARNING] non-authoritative collider penetration ignored; source=body/weapon/arm triangleId=%d normal=(%.3f %.3f %.3f) pen=%.4f\n",
+                                 triIndex, c.normal.x, c.normal.y, c.normal.z, c.penetration);
+                    }
+                    break;
+                }
+            }
+        }
+        if (anyBodyPen && bodyWarnTimer >= 1.0f)
+        {
+            PHYS_LOG("[COLLISION WARNING] body/weapon colliders penetrating world geometry; these do NOT affect root position\n");
+            bodyWarnTimer = 0.0f;
+        }
+    }
+
     // collision_debug: record additional contact visualization events
     // (actual drawing happens in drawDebugStuff with the camera)
     if (DebugConfig::DEBUG_COLLISION_SYSTEM)
@@ -1562,6 +1656,7 @@ void doCollisions(
     float dt
 )
 {
+    Perf::ScopedTimer _colTimer("Collision");
     p.collisionBounceCooldown = std::max(0.0f, p.collisionBounceCooldown - dt);
     if (!world.collisionMesh.empty())
     {

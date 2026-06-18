@@ -9,6 +9,68 @@ void registerPerfCommands()
 {
     auto& t = Terminal::instance();
 
+    // Umbrella toggle: enable/disable all perf overlays
+    t.registerCommand({
+        "perf",
+        "Toggle all performance overlays (report, graph, NPC, memory, spikes)",
+        "perf [0|1]",
+        [](const std::vector<std::string>& args) {
+            PerfState& s = Perf::state();
+            bool val = args.empty() ? !s.showPerfReport : args[0] != "0";
+            s.showPerfReport = val;
+            s.showGraph = val;
+            s.showNpcPerf = val;
+            s.showMemory = val;
+            s.showSpikes = val;
+            Terminal::instance().addLog(std::string("[PERF] perf=") + (val ? "ON" : "OFF"));
+        }
+    });
+
+    // NPC Profiling overlay
+    t.registerCommand({
+        "perf_npc",
+        "Toggle NPC performance breakdown (update, combat, pathfinding, collision, render)",
+        "perf_npc [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::toggleNpcPerf();
+            else
+                Perf::state().showNpcPerf = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_npc=") +
+                (Perf::state().showNpcPerf ? "ON" : "OFF"));
+        }
+    });
+
+    // Memory / Long session overlay
+    t.registerCommand({
+        "perf_memory",
+        "Toggle memory tracking overlay (entity counts, replay MB, effects, audio, runtime)",
+        "perf_memory [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::toggleMemory();
+            else
+                Perf::state().showMemory = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_memory=") +
+                (Perf::state().showMemory ? "ON" : "OFF"));
+        }
+    });
+
+    // Spike detection
+    t.registerCommand({
+        "perf_spikes",
+        "Toggle frame spike detection: logs and displays spikes with subsystem breakdown",
+        "perf_spikes [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::toggleSpikes();
+            else
+                Perf::state().showSpikes = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_spikes=") +
+                (Perf::state().showSpikes ? "ON" : "OFF"));
+        }
+    });
+
     // Part 2: Performance report
     t.registerCommand({
         "perf_report",

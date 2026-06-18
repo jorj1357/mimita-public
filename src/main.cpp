@@ -1604,6 +1604,10 @@ int main(int argc, char** argv)
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_debug_player", DebugConfig::DEBUG_COLLISION_PLAYER);
     registerDebugToggle("collision_debug_limb", DebugConfig::DEBUG_COLLISION_LIMB);
+    registerDebugToggle("collision_draw_triangles", DebugConfig::DEBUG_COLLISION_SYSTEM);
+    registerDebugToggle("collision_draw_contacts", DebugConfig::DEBUG_COLLISION_SYSTEM);
+    registerDebugToggle("collision_draw_capsule", DebugConfig::DEBUG_COLLISION_PLAYER);
+    registerDebugToggle("collision_draw_sweep", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("npc_damage_debug", DebugConfig::DEBUG_NPC_COMBAT);
     registerDebugToggle("npc_movement_debug", DebugConfig::DEBUG_NPC_MOVEMENT);
     registerDebugToggle("ragdoll_debug", DebugConfig::DEBUG_RAGDOLL);
@@ -2574,6 +2578,17 @@ int main(int argc, char** argv)
         CrosshairConfig::instance().pollReload();
         AvatarSystem::instance().pollHotReload();
         bool worldPassRan = false;
+
+        // Re-register avatar UI after hot reload (EXE code, always safe)
+        {
+            static uint32_t lastReloadCount = 0;
+            uint32_t currentCount = HotReloadSystem::instance().gameMemory().reloadCount;
+            if (currentCount != lastReloadCount) {
+                printf("[AVATAR UI] Hot reload re-register complete (count=%u)\n", currentCount);
+                Terminal::instance().addLog("[AVATAR UI] Hot reload re-register complete");
+                lastReloadCount = currentCount;
+            }
+        }
 
         { Perf::ScopedTimer _aud("Audio");
         audioUpdate(dt);
