@@ -433,6 +433,51 @@ Move it to the subsystem that logically owns it.
 
 ---
 
+==================================================
+CHARACTER PHYSICS DESIGN PRINCIPLE
+==================================
+
+Mimita uses full-body collision.
+
+The player is not represented solely by a movement capsule.
+
+Instead:
+
+* Head collides
+* Torso collides
+* Left arm collides
+* Right arm collides
+* Left leg collides
+* Right leg collides
+* Equipped weapon collides
+* Future held objects collide
+
+The movement capsule may still exist as a stability/root movement collider, but body parts are real physical colliders that participate in:
+
+* World collision
+* Damage detection
+* Hit detection
+* Physics interactions
+* Future object interaction
+
+Goal:
+
+If a body part physically reaches a wall, object, floor, ceiling, or obstacle, that body part should collide with it.
+
+Weapons should not pass through walls.
+
+Arms should not pass through walls.
+
+Legs should not pass through walls.
+
+Body parts should not pass through walls.
+
+Future systems should assume full-body collision is desired.
+
+==================================================
+
+---
+
 # TASK COMPLETION REQUIREMENTS
 
 Before ending any task:

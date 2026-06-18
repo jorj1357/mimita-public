@@ -11,6 +11,7 @@
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "avatar/avatar-menu.h"
+#include "avatar/avatar.h"
 #include "ui-system.h"
 #include "gui-editor.h"
 #include "gui-layout.h"
@@ -19,6 +20,7 @@
 #include "replay/replay-factory.h"
 #include "replay/replay.h"
 #include "terminal/terminal-state.h"
+#include "devtools/terminal.h"
 #include <cstdio>
 
 GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
@@ -256,9 +258,26 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_AVATAR_CREATOR:
         {
+            printf("[AVATAR UI] Opening Avatar Creator\n");
             AvatarMenuResult r = drawAvatarMenu(win);
-            if (r.goBack)
+            if (r.goBack) {
+                printf("[AVATAR UI] Closing Avatar Creator\n");
                 gGuiMenuState = GUI_MENU_MAIN;
+            }
+            if (r.goApply) {
+                extern Player* gpPlayer;
+                if (gpPlayer) {
+                    AvatarSystem::instance().applyToPlayer(*gpPlayer, true);
+                    Terminal::instance().addLog("[AVATAR] Applied to player");
+                }
+            }
+            if (r.goSave) {
+                extern Player* gpPlayer;
+                if (gpPlayer) {
+                    AvatarSystem::instance().applyToPlayer(*gpPlayer, true);
+                    Terminal::instance().addLog("[AVATAR] Saved and applied to player");
+                }
+            }
             break;
         }
     }
