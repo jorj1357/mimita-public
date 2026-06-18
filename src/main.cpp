@@ -1604,6 +1604,8 @@ int main(int argc, char** argv)
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_debug_player", DebugConfig::DEBUG_COLLISION_PLAYER);
     registerDebugToggle("collision_debug_limb", DebugConfig::DEBUG_COLLISION_LIMB);
+    registerDebugToggle("show_body_colliders", DebugConfig::DEBUG_COLLISION_LIMB);
+    registerDebugToggle("show_body_contacts", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_draw_triangles", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_draw_contacts", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_draw_capsule", DebugConfig::DEBUG_COLLISION_PLAYER);
@@ -2568,6 +2570,10 @@ int main(int argc, char** argv)
     double simAccumulator = 0.0;
 
     // TODO(main-cleanup): extract main loop body into tickGame(engine, ...) function
+    // main.cpp should NOT contain game logic. It should call functions from
+    // subsystem files (src/sim/, src/input/, src/render/, etc.).
+    // Every block below should eventually become a single function call.
+    // See AGENTS.md Architecture Direction for ownership rules.
     while (engine.running())
     {
         HotReloadSystem::instance().reloadGameDLLIfChanged();
@@ -4891,9 +4897,13 @@ int main(int argc, char** argv)
 
             // Update perf state counters
             Perf::state().npcCount = (int)npcSystem.all().size();
+            if (Perf::state().npcCount > Perf::state().peakNpcCount)
+                Perf::state().peakNpcCount = (float)Perf::state().npcCount;
             Perf::state().playerCount = 1;
             Perf::state().bloodCount = EffectPartSystem::instance().activeCount();
             Perf::state().particleCount = EffectPartSystem::instance().activeCount();
+            Perf::state().effectCount = (int)EffectPartSystem::instance().activeCount();
+            Perf::state().corpseCount = (int)DeathSystem::instance().corpses().size();
             if (gReplayPlayer.isPlaying())
                 Perf::state().replayMemoryMb = (double)gReplayPlayer.totalTicks() * sizeof(ReplaySceneFrame) / (1024.0 * 1024.0);
             if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)

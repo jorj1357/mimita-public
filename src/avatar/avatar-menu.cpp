@@ -89,61 +89,77 @@ void avatarMenuHandleKey(int key, int action) {
     }
 }
 
-// ─── helpers ────────────────────────────────────────────────────────
-
-static float pickerSectionHeight() {
-    return 420.0f;
-}
-
 // ─── draw the file picker overlay ───────────────────────────────────
 
-static void drawPicker(GLFWwindow* win) {
+static void drawPicker(GLFWwindow* win, GuiLayout& layout) {
     if (gOpenPickerSlot < 0 || gPickerFiles.empty()) return;
 
-    float pw = 560.0f, ph = pickerSectionHeight();
-    float px = (1920.0f - pw) * 0.5f;
-    float py = (1080.0f - ph) * 0.5f;
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
 
-    UIRect bg = {uiScaleX(px), uiScaleY(py), uiScaleX(pw), uiScaleY(ph)};
+    const GuiElement* panelEl = layout.get("pickerPanel");
+    float pdx = panelEl ? panelEl->x : 680.0f;
+    float pdy = panelEl ? panelEl->y : 330.0f;
+    float pdw = panelEl ? panelEl->w : 560.0f;
+    float pdh = panelEl ? panelEl->h : 420.0f;
+
+    UIRect bg = cs.designToScreen({pdx, pdy, pdw, pdh});
     uiDrawRect(bg, {0.08f, 0.09f, 0.13f, 0.96f}, "picker-bg");
     uiDrawRectOutline(bg, {0.3f, 0.5f, 0.7f, 1.0f}, "picker-border");
 
-    float cx = bg.x + 14.0f;
-    float cy = bg.y + 12.0f;
-    float cw = bg.w - 28.0f;
+    const GuiElement* titleEl = layout.get("pickerTitle");
+    float tdx = titleEl ? titleEl->x : (pdx + 14.0f);
+    float tdy = titleEl ? titleEl->y : (pdy + 12.0f);
+    float tsize = titleEl ? titleEl->fontSize : 0.35f;
+    if (tsize <= 0.0f) tsize = 0.35f;
+    uiDrawText("SELECT PNG", uiScaleX(tdx), uiScaleY(tdy), tsize, {0.8f, 0.85f, 0.95f, 1.0f});
 
-    uiDrawText("SELECT PNG", cx, cy, 0.35f, {0.8f, 0.85f, 0.95f, 1.0f});
-    cy += 32.0f;
-
-    // close X
-    if (uiButton(win, "X", {bg.x + bg.w - 36.0f, bg.y + 8.0f, 28.0f, 28.0f},
+    const GuiElement* closeEl = layout.get("pickerClose");
+    float clx = closeEl ? closeEl->x : (pdx + pdw - 36.0f);
+    float cly = closeEl ? closeEl->y : (pdy + 8.0f);
+    float clw = closeEl ? closeEl->w : 28.0f;
+    float clh = closeEl ? closeEl->h : 28.0f;
+    if (uiButton(win, "X", {clx, cly, clw, clh},
                  {0.5f, 0.15f, 0.15f, 1.0f}).clicked) { closePicker(); }
 
-    // file list
-    float rowH = 30.0f;
-    int visible = (int)((bg.y + bg.h - cy - 10.0f) / rowH);
+    const GuiElement* rowEl = layout.get("pickerRow");
+    float rx = rowEl ? rowEl->x : (pdx + 14.0f);
+    float ry = rowEl ? rowEl->y : (pdy + 58.0f);
+    float rw = rowEl ? rowEl->w : (pdw - 28.0f);
+    float rh = rowEl ? rowEl->h : 30.0f;
+
+    int visible = (int)((pdy + pdh - 10.0f - ry) / rh);
     int count = (int)gPickerFiles.size();
 
-    uiDrawText("Click a file or type path + ENTER", cx, cy, 0.22f, {0.5f, 0.6f, 0.7f, 1.0f});
-    cy += 26.0f;
+    uiDrawText("Click a file or type path + ENTER", uiScaleX(rx), uiScaleY(ry - 28.0f),
+               0.22f, {0.5f, 0.6f, 0.7f, 1.0f});
 
-    // scroll up
+    float itemY = ry;
+
+    const GuiElement* suEl = layout.get("pickerScrollUp");
+    float sux = suEl ? suEl->x : (pdx + pdw - 46.0f);
+    float suy = suEl ? suEl->y : (ry - 26.0f);
+    float suw = suEl ? suEl->w : 40.0f;
+    float suh = suEl ? suEl->h : 20.0f;
+
     if (gPickerScroll > 0) {
-        if (uiButton(win, "^", {cx + cw - 40.0f, cy - 24.0f, 40.0f, 20.0f},
+        if (uiButton(win, "^", {sux, suy, suw, suh},
                      {0.2f, 0.3f, 0.4f, 1.0f}).clicked) {
             gPickerScroll = std::max(0, gPickerScroll - 1);
         }
     }
 
     for (int i = gPickerScroll; i < count && i < gPickerScroll + visible; ++i) {
-        UIRect fr = {cx, cy, cw, rowH - 2.0f};
+        UIRect rowRect = {rx, itemY, rw, rh - 2.0f};
+        UIRect sr = cs.designToScreen(rowRect);
         glm::vec4 fb = (i % 2 == 0) ? glm::vec4{0.12f, 0.13f, 0.17f, 1.0f}
                                      : glm::vec4{0.10f, 0.11f, 0.15f, 1.0f};
-        uiDrawRect(fr, fb, "picker-file");
-        uiDrawText(gPickerFiles[i].c_str(), fr.x + 6.0f, fr.y + 4.0f, 0.24f,
+        uiDrawRect(sr, fb, "picker-file");
+        float fsize = rowEl ? rowEl->fontSize : 0.24f;
+        if (fsize <= 0.0f) fsize = 0.24f;
+        uiDrawText(gPickerFiles[i].c_str(), sr.x + 6.0f, sr.y + 4.0f, fsize,
                    {1.0f, 1.0f, 1.0f, 1.0f});
 
-        if (uiButton(win, "", fr, fb).clicked) {
+        if (uiButton(win, "", rowRect, fb).clicked) {
             AvatarSystem& avs = AvatarSystem::instance();
             if (gOpenPickerSlot < 4) {
                 SimpleAvatar s = avs.current().simple;
@@ -163,12 +179,16 @@ static void drawPicker(GLFWwindow* win) {
             closePicker();
             printf("[AVATAR UI] Avatar slot assigned\n");
         }
-        cy += rowH;
+        itemY += rh;
     }
 
-    // scroll down
     if (gPickerScroll + visible < count) {
-        if (uiButton(win, "v", {cx + cw - 40.0f, cy, 40.0f, 20.0f},
+        const GuiElement* sdEl = layout.get("pickerScrollDown");
+        float sdx = sdEl ? sdEl->x : (pdx + pdw - 46.0f);
+        float sdy = sdEl ? sdEl->y : itemY;
+        float sdw = sdEl ? sdEl->w : 40.0f;
+        float sdh = sdEl ? sdEl->h : 20.0f;
+        if (uiButton(win, "v", {sdx, sdy, sdw, sdh},
                      {0.2f, 0.3f, 0.4f, 1.0f}).clicked) {
             gPickerScroll = std::min(gPickerScroll + 1, count - visible);
         }
@@ -184,29 +204,37 @@ struct SlotRow {
     int slotIndex;
 };
 
-static void drawSlotRow(GLFWwindow* win, const SlotRow& s) {
+static void drawSlotRow(GLFWwindow* win, const SlotRow& s, GuiLayout& layout) {
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     float xs = uiScaleX(s.x), ys = uiScaleY(s.y);
     float ws = uiScaleX(s.w), hs = uiScaleY(s.h);
 
-    uiDrawText(s.label, xs, ys, 0.30f, {0.7f, 0.8f, 0.9f, 1.0f});
-    float tw = uiMeasureText(s.label, 0.30f) + 12.0f;
+    float txtSize = 0.30f;
+    uiDrawText(s.label, xs, ys, txtSize, {0.7f, 0.8f, 0.9f, 1.0f});
+    float tw = uiMeasureText(s.label, txtSize) + 12.0f;
 
-    // value field + picker button
-    float vx = xs + tw, vw = ws - tw - uiScaleX(75.0f);
+    float vx = xs + tw;
+    float vw = ws - tw;
+
+    const GuiElement* browseEl = layout.get("simpleSlotBrowse");
+    float browseDW = browseEl ? (float)browseEl->w : 75.0f;
+    float browseW = uiScaleX(browseDW);
+    vw -= browseW + uiScaleX(4.0f);
+
     glm::vec4 vc = s.value.empty() ? glm::vec4{0.14f, 0.14f, 0.18f, 1.0f}
                                    : glm::vec4{0.16f, 0.28f, 0.16f, 1.0f};
     uiDrawRect({vx, ys, vw, hs}, vc, "slot-val");
     uiDrawText(s.value.empty() ? "<none>" : s.value.c_str(),
                vx + 6.0f, ys + 4.0f, 0.28f, {1.0f, 1.0f, 1.0f, 1.0f});
 
-    if (uiButton(win, "", {vx, ys, vw, hs}, vc).clicked) {
+    if (uiButton(win, "", cs.screenToDesign({vx, ys, vw, hs}), vc).clicked) {
         openPicker(s.slotIndex, AvatarSystem::instance().listPngs(
             AvatarSystem::instance().currentName()));
     }
 
-    // browse button
-    float bx = vx + vw + 4.0f;
-    if (uiButton(win, "BROWSE", {bx, ys, uiScaleX(70.0f), hs},
+    float bx = vx + vw + uiScaleX(4.0f);
+    UIRect browseRect = cs.screenToDesign({bx, ys, browseW, hs});
+    if (uiButton(win, "BROWSE", browseRect,
                  {0.25f, 0.35f, 0.5f, 1.0f}).clicked) {
         openPicker(s.slotIndex, AvatarSystem::instance().listPngs(
             AvatarSystem::instance().currentName()));
@@ -218,6 +246,7 @@ static void drawSlotRow(GLFWwindow* win, const SlotRow& s) {
 static void drawAdvSlot(GLFWwindow* win, float x, float y, float w, float h,
                         const std::string& faceLabel, const std::string& value,
                         int slotIndex) {
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     float xs = uiScaleX(x), ys = uiScaleY(y);
     float ws = uiScaleX(w), hs = uiScaleY(h);
 
@@ -225,22 +254,20 @@ static void drawAdvSlot(GLFWwindow* win, float x, float y, float w, float h,
     float tw = uiMeasureText(faceLabel.c_str(), 0.22f) + 6.0f;
 
     float vx = xs + tw, vw = ws - tw;
+
     glm::vec4 vc = value.empty() ? glm::vec4{0.10f, 0.10f, 0.14f, 1.0f}
                                  : glm::vec4{0.14f, 0.22f, 0.14f, 1.0f};
     uiDrawRect({vx, ys, vw, hs}, vc, "adv-val");
     uiDrawText(value.empty() ? "<default>" : value.c_str(),
                vx + 3.0f, ys + 2.0f, 0.20f, {1.0f, 1.0f, 1.0f, 1.0f});
 
-    if (uiButton(win, "", {vx, ys, vw, hs}, vc).clicked) {
+    float sx = cs.scaleX();
+    float btnX = x + tw / sx;
+    float btnW = w - tw / sx;
+    if (uiButton(win, "", {btnX, y, btnW, h}, vc).clicked) {
         openPicker(slotIndex, AvatarSystem::instance().listPngs(
             AvatarSystem::instance().currentName()));
     }
-}
-
-// ─── draw a section heading ─────────────────────────────────────────
-
-static void drawHeading(const char* text, float x, float y, glm::vec4 color) {
-    uiDrawText(text, uiScaleX(x), uiScaleY(y), 0.38f, color);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -250,6 +277,8 @@ static void drawHeading(const char* text, float x, float y, glm::vec4 color) {
 AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
     AvatarMenuResult r{};
     AvatarSystem& av = AvatarSystem::instance();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
 
     printf("[AVATAR UI] Opening Avatar Creator\n");
     Terminal::instance().addLog("[AVATAR UI] Opening Avatar Creator");
@@ -257,34 +286,56 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
     int fbW = 0, fbH = 0;
     glfwGetFramebufferSize(win, &fbW, &fbH);
 
-    // background
     uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.030f, 0.035f, 0.048f, 1.0f}, "avatar-bg");
 
     // ── title ─────────────────────────────────────────────────────
-    uiDrawText("AVATAR CREATOR", uiScaleX(50.0f), uiScaleY(28.0f), 0.65f,
-               {0.95f, 0.98f, 1.0f, 1.0f});
+    {
+        const GuiElement* te = layout.get("title");
+        float tx = te ? te->x : 50.0f;
+        float ty = te ? te->y : 28.0f;
+        float tsize = te ? te->fontSize : 0.65f;
+        if (tsize <= 0.0f) tsize = 0.65f;
+        uiDrawText("AVATAR CREATOR", uiScaleX(tx), uiScaleY(ty), tsize,
+                   {0.95f, 0.98f, 1.0f, 1.0f});
+    }
 
     // ── left column: avatar list ──────────────────────────────────
-    float lx = 50.0f, ly = 90.0f;
-    const float col1X = lx, col1W = 320.0f;
-    const float col2X = 420.0f, col2W = 580.0f;
-    const float rowH = 34.0f;
-    const float gap = 8.0f;
 
-    drawHeading("AVATARS", col1X, ly, {0.65f, 0.85f, 1.0f, 1.0f});
-    ly += 36.0f;
+    const GuiElement* ah = layout.get("avatarHeading");
+    {
+        float hx = ah ? ah->x : 50.0f;
+        float hy = ah ? ah->y : 90.0f;
+        float hsize = ah ? ah->fontSize : 0.38f;
+        if (hsize <= 0.0f) hsize = 0.38f;
+        uiDrawText("AVATARS", uiScaleX(hx), uiScaleY(hy), hsize,
+                   {0.65f, 0.85f, 1.0f, 1.0f});
+    }
+
+    const GuiElement* ae = layout.get("avatarEntry");
+    float entryX = ae ? ae->x : 54.0f;
+    float entryW = ae ? ae->w : 312.0f;
+    float entryH = ae ? ae->h : 30.0f;
+
+    const GuiElement* asp = layout.get("avatarEntrySpacing");
+    float avatarSpacing = asp ? asp->h : 4.0f;
+    float avatarStep = entryH + avatarSpacing;
+
+    float ly = ah ? (ah->y + ah->h + 4.0f) : 126.0f;
 
     std::vector<std::string> avatars = av.listAvatars();
     for (size_t i = 0; i < avatars.size(); ++i) {
-        UIRect ar = {uiScaleX(col1X + 4.0f), uiScaleY(ly),
-                     uiScaleX(col1W - 8.0f), uiScaleY(30.0f)};
+        float curY = ly + i * avatarStep;
+        UIRect ar = {entryX, curY, entryW, entryH};
+        UIRect sr = cs.designToScreen(ar);
         bool active = avatars[i] == av.currentName();
         glm::vec4 ab = active ? glm::vec4{0.18f, 0.45f, 0.25f, 1.0f}
                               : glm::vec4{0.09f, 0.11f, 0.16f, 1.0f};
-        uiDrawRect(ar, ab, "avatar-entry");
+        uiDrawRect(sr, ab, "avatar-entry");
         if (active)
-            uiDrawRectOutline(ar, {0.3f, 0.8f, 0.5f, 1.0f}, "avatar-active");
-        uiDrawText(avatars[i].c_str(), ar.x + 6.0f, ar.y + 4.0f, 0.26f,
+            uiDrawRectOutline(sr, {0.3f, 0.8f, 0.5f, 1.0f}, "avatar-active");
+        float esize = ae ? ae->fontSize : 0.26f;
+        if (esize <= 0.0f) esize = 0.26f;
+        uiDrawText(avatars[i].c_str(), sr.x + 6.0f, sr.y + 4.0f, esize,
                    {1.0f, 1.0f, 1.0f, 1.0f});
         if (uiButton(win, avatars[i].c_str(), ar, ab).clicked && !active) {
             printf("[AVATAR UI] Loading avatar: %s\n", avatars[i].c_str());
@@ -292,60 +343,99 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
             GetPlayerSettings().avatarName = avatars[i];
             SavePlayerSettings();
         }
-        ly += 34.0f;
     }
 
-    // current avatar name
+    // active avatar name
     if (av.hasAvatar()) {
+        const GuiElement* aat = layout.get("avatarActiveText");
+        float atx = aat ? aat->x : 50.0f;
+        float aty = ly + (float)avatars.size() * avatarStep + 8.0f;
+        float atsize = aat ? aat->fontSize : 0.26f;
+        if (atsize <= 0.0f) atsize = 0.26f;
         std::string cur = "Active: " + av.currentName();
-        uiDrawText(cur.c_str(), uiScaleX(col1X), uiScaleY(ly + 8.0f), 0.26f,
+        uiDrawText(cur.c_str(), uiScaleX(atx), uiScaleY(aty), atsize,
                    {0.5f, 0.9f, 0.5f, 1.0f});
     }
 
     // ── middle column: simple mode ────────────────────────────────
-    float sy = 90.0f;
-    drawHeading("SIMPLE MODE", col2X, sy, {0.95f, 0.98f, 1.0f, 1.0f});
-    sy += 38.0f;
-    uiDrawText("4 images → auto-assigned to all body part faces",
-               uiScaleX(col2X), uiScaleY(sy), 0.22f, {0.5f, 0.6f, 0.7f, 1.0f});
-    sy += 28.0f;
+
+    const GuiElement* sh = layout.get("simpleHeading");
+    float col2X = sh ? sh->x : 420.0f;
+
+    {
+        float hx = sh ? sh->x : col2X;
+        float hy = sh ? sh->y : 90.0f;
+        float hsize = sh ? sh->fontSize : 0.38f;
+        if (hsize <= 0.0f) hsize = 0.38f;
+        uiDrawText("SIMPLE MODE", uiScaleX(hx), uiScaleY(hy), hsize,
+                   {0.95f, 0.98f, 1.0f, 1.0f});
+    }
+
+    const GuiElement* sd = layout.get("simpleDesc");
+    float descY = sd ? sd->y : (sh ? sh->y + sh->h + 2.0f : 128.0f);
+    {
+        float dx = sd ? sd->x : col2X;
+        float dsize = sd ? sd->fontSize : 0.22f;
+        if (dsize <= 0.0f) dsize = 0.22f;
+        uiDrawText("4 images \u2192 auto-assigned to all body part faces",
+                   uiScaleX(dx), uiScaleY(descY), dsize, {0.5f, 0.6f, 0.7f, 1.0f});
+    }
+
+    const GuiElement* ssr = layout.get("simpleSlotRow");
+    float slotX = ssr ? ssr->x : col2X;
+    float slotY = ssr ? ssr->y : (descY + 28.0f);
+    float slotW = ssr ? ssr->w : 580.0f;
+    float slotH = ssr ? ssr->h : 34.0f;
+
+    const GuiElement* ssp = layout.get("simpleSlotSpacing");
+    float slotGap = ssp ? ssp->h : 8.0f;
 
     if (av.hasAvatar()) {
-        const SimpleAvatar& s = av.current().simple;
+        const SimpleAvatar& sa = av.current().simple;
         for (int i = 0; i < 4; ++i) {
             std::string val;
             switch (i) {
-                case 0: val = s.face; break;
-                case 1: val = s.shirt; break;
-                case 2: val = s.pants; break;
-                case 3: val = s.skin; break;
+                case 0: val = sa.face; break;
+                case 1: val = sa.shirt; break;
+                case 2: val = sa.pants; break;
+                case 3: val = sa.skin; break;
             }
-            drawSlotRow(win, {col2X, sy, col2W, rowH, kSimpleLabels[i], val, i});
-            sy += rowH + gap;
+            drawSlotRow(win, {slotX, slotY, slotW, slotH, kSimpleLabels[i], val, i}, layout);
+            slotY += slotH + slotGap;
         }
-        sy += 6.0f;
     }
 
-    // mapping hint
-    float hintY = sy;
-    uiDrawText("face.png → head front", uiScaleX(col2X), uiScaleY(hintY), 0.20f,
-               {0.45f, 0.55f, 0.65f, 1.0f});
-    hintY += 18.0f;
-    uiDrawText("shirt.png → torso + arms", uiScaleX(col2X), uiScaleY(hintY), 0.20f,
-               {0.45f, 0.55f, 0.65f, 1.0f});
-    hintY += 18.0f;
-    uiDrawText("pants.png → legs", uiScaleX(col2X), uiScaleY(hintY), 0.20f,
-               {0.45f, 0.55f, 0.65f, 1.0f});
-    hintY += 18.0f;
-    uiDrawText("skin.png → head sides / top / back", uiScaleX(col2X), uiScaleY(hintY), 0.20f,
-               {0.45f, 0.55f, 0.65f, 1.0f});
+    // mapping hints — Y is always dynamically positioned after slots
+    {
+        const char* hintTexts[4] = {
+            "face.png \u2192 head front",
+            "shirt.png \u2192 torso + arms",
+            "pants.png \u2192 legs",
+            "skin.png \u2192 head sides / top / back"
+        };
+        float hintBaseY = slotY + 6.0f;
+        for (int i = 0; i < 4; ++i) {
+            char hintId[16];
+            snprintf(hintId, sizeof(hintId), "hint%d", i);
+            const GuiElement* he = layout.get(hintId);
+            float hx = he ? he->x : col2X;
+            float hy = hintBaseY + (float)i * 18.0f;
+            float hsize = he ? he->fontSize : 0.20f;
+            if (hsize <= 0.0f) hsize = 0.20f;
+            uiDrawText(hintTexts[i], uiScaleX(hx), uiScaleY(hy), hsize,
+                       {0.45f, 0.55f, 0.65f, 1.0f});
+        }
+    }
 
     // ── save / apply / back buttons ───────────────────────────────
-    float btnY = 700.0f;
+
+    const GuiElement* sb = layout.get("saveButton");
+    const GuiElement* abtn = layout.get("applyButton");
+    const GuiElement* bb = layout.get("backButton");
+
     if (gOpenPickerSlot < 0) {
-        if (uiButton(win, "SAVE",
-            {uiScaleX(col2X), uiScaleY(btnY), uiScaleX(140.0f), uiScaleY(42.0f)},
-            {0.18f, 0.50f, 0.26f, 1.0f}).clicked)
+        if (sb && uiButton(win, "SAVE", {sb->x, sb->y, sb->w, sb->h},
+                           {0.18f, 0.50f, 0.26f, 1.0f}).clicked)
         {
             if (av.hasAvatar()) {
                 if (av.current().advancedMode)
@@ -359,17 +449,15 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
             }
         }
 
-        if (uiButton(win, "APPLY",
-            {uiScaleX(col2X + 155.0f), uiScaleY(btnY), uiScaleX(140.0f), uiScaleY(42.0f)},
-            {0.22f, 0.38f, 0.55f, 1.0f}).clicked)
+        if (abtn && uiButton(win, "APPLY", {abtn->x, abtn->y, abtn->w, abtn->h},
+                             {0.22f, 0.38f, 0.55f, 1.0f}).clicked)
         {
             printf("[AVATAR UI] Apply clicked\n");
             r.goApply = true;
         }
 
-        if (uiButton(win, "BACK",
-            {uiScaleX(col2X + 310.0f), uiScaleY(btnY), uiScaleX(140.0f), uiScaleY(42.0f)},
-            {0.50f, 0.18f, 0.18f, 1.0f}).clicked)
+        if (bb && uiButton(win, "BACK", {bb->x, bb->y, bb->w, bb->h},
+                           {0.50f, 0.18f, 0.18f, 1.0f}).clicked)
         {
             printf("[AVATAR UI] Back clicked\n");
             r.goBack = true;
@@ -377,12 +465,16 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
     }
 
     // ── advanced mode toggle ──────────────────────────────────────
-    float advToggleY = btnY - 56.0f;
+
+    const GuiElement* at = layout.get("advToggle");
+    float advToggleX = at ? at->x : col2X;
+    float advToggleY = at ? at->y : (sb ? sb->y - 56.0f : 644.0f);
+    float advToggleW = at ? at->w : 200.0f;
+    float advToggleH = at ? at->h : 30.0f;
+
     bool adv = av.hasAvatar() && av.current().advancedMode;
-    UIRect advToggle = {uiScaleX(col2X), uiScaleY(advToggleY),
-                        uiScaleX(200.0f), uiScaleY(30.0f)};
     if (uiButton(win, adv ? "ADVANCED MODE: ON" : "ADVANCED MODE: OFF",
-                 advToggle,
+                 {advToggleX, advToggleY, advToggleW, advToggleH},
                  adv ? glm::vec4{0.35f, 0.25f, 0.55f, 1.0f}
                      : glm::vec4{0.12f, 0.14f, 0.18f, 1.0f}).clicked)
     {
@@ -391,29 +483,65 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
     }
 
     // ── advanced mode per-face ────────────────────────────────────
+
     if (adv && av.hasAvatar()) {
-        float ax = 1050.0f, ay = 90.0f;
-        float sectionW = 780.0f;
-        float colW = sectionW / 6.0f;
-        float faceH = 24.0f;
-        float faceGap = 3.0f;
+        const GuiElement* advh = layout.get("advHeading");
+        float ax = advh ? advh->x : 1050.0f;
+        float ay = advh ? advh->y : 90.0f;
 
-        drawHeading("ADVANCED MODE", ax, ay, {0.95f, 0.80f, 1.0f, 1.0f});
-        ay += 38.0f;
-        uiDrawText("Assign each face individually", uiScaleX(ax), uiScaleY(ay), 0.22f,
-                   {0.5f, 0.6f, 0.7f, 1.0f});
-        ay += 28.0f;
+        {
+            float hx = advh ? advh->x : ax;
+            float hy = advh ? advh->y : ay;
+            float hsize = advh ? advh->fontSize : 0.38f;
+            if (hsize <= 0.0f) hsize = 0.38f;
+            uiDrawText("ADVANCED MODE", uiScaleX(hx), uiScaleY(hy), hsize,
+                       {0.95f, 0.80f, 1.0f, 1.0f});
+        }
 
-        // scroll arrows
-        float listH = 560.0f;
-        int totalRows = 6; // 6 body parts
-        int visibleRows = (int)(listH / (faceH + faceGap + 22.0f));
+        const GuiElement* adesc = layout.get("advDesc");
+        {
+            float dx = adesc ? adesc->x : ax;
+            float dy = adesc ? adesc->y : (ay + 38.0f);
+            float dsize = adesc ? adesc->fontSize : 0.22f;
+            if (dsize <= 0.0f) dsize = 0.22f;
+            uiDrawText("Assign each face individually", uiScaleX(dx), uiScaleY(dy), dsize,
+                       {0.5f, 0.6f, 0.7f, 1.0f});
+        }
+
+        const GuiElement* afs = layout.get("advFaceSlot");
+        float colW = afs ? (afs->w + 4.0f) : 130.0f;
+        float faceH = afs ? afs->h : 24.0f;
+
+        const GuiElement* afg = layout.get("advFaceSpacing");
+        float faceGap = afg ? afg->w : 3.0f;
+
+        const GuiElement* arg = layout.get("advRowSpacing");
+        float rowGap = arg ? arg->h : 6.0f;
+
+        const GuiElement* alh = layout.get("advListHeight");
+        float listH = alh ? alh->h : 560.0f;
+
+        const GuiElement* aph = layout.get("advPartHeading");
+        float partH = aph ? aph->h : 22.0f;
+
+        float faceStep = faceH + faceGap;
+        float partStep = partH + faceStep * 6.0f + rowGap;
+
+        int totalRows = 6;
+        int visibleRows = (int)(listH / partStep);
         if (visibleRows < 1) visibleRows = 1;
 
+        float startAy = ay + 66.0f;
+        float currentAy = startAy;
+
+        const GuiElement* ascUp = layout.get("advScrollUp");
         if (gAdvScroll > 0) {
-            if (uiButton(win, "^ up",
-                {uiScaleX(ax), uiScaleY(ay - 24.0f), uiScaleX(70.0f), uiScaleY(20.0f)},
-                {0.2f, 0.3f, 0.4f, 1.0f}).clicked)
+            float sux = ascUp ? ascUp->x : ax;
+            float suy = ascUp ? ascUp->y : (currentAy - 24.0f);
+            float suw = ascUp ? ascUp->w : 70.0f;
+            float suh = ascUp ? ascUp->h : 20.0f;
+            if (uiButton(win, "^ up", {sux, suy, suw, suh},
+                         {0.2f, 0.3f, 0.4f, 1.0f}).clicked)
                 gAdvScroll = std::max(0, gAdvScroll - 1);
         }
 
@@ -428,41 +556,46 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
             return nullptr;
         };
 
-        float startAy = ay;
         for (int pi = gAdvScroll; pi < 6 && pi < gAdvScroll + visibleRows; ++pi) {
             const AvatarPartFaces* part = getPart(pi);
             if (!part) continue;
 
-            // part heading
             float px = uiScaleX(ax);
-            float py = uiScaleY(ay);
-            uiDrawText(kPartLabels[pi], px, py, 0.30f, {0.85f, 0.90f, 1.0f, 1.0f});
-            ay += 22.0f;
+            float py = uiScaleY(currentAy);
+            float psize = aph ? aph->fontSize : 0.30f;
+            if (psize <= 0.0f) psize = 0.30f;
+            uiDrawText(kPartLabels[pi], px, py, psize,
+                       {0.85f, 0.90f, 1.0f, 1.0f});
+            currentAy += partH;
 
-            // 6 faces in a row
             for (int fi = 0; fi < 6; ++fi) {
-                float fx = ax + fi * colW;
+                float fx = ax + fi * (colW + faceGap);
                 std::string val = part->byName(kFaceKeys[fi]);
                 int slotId = 4 + pi * 6 + fi;
-                drawAdvSlot(win, fx, ay, colW - 4.0f, faceH,
+                drawAdvSlot(win, fx, currentAy, colW, faceH,
                            kFaceLabels[fi], val, slotId);
             }
-            ay += faceH + faceGap + 6.0f;
+            currentAy += faceStep + 6.0f;
         }
 
         // scroll down
         if (gAdvScroll + visibleRows < totalRows) {
-            if (uiButton(win, "v down",
-                {uiScaleX(ax), uiScaleY(ay), uiScaleX(70.0f), uiScaleY(20.0f)},
-                {0.2f, 0.3f, 0.4f, 1.0f}).clicked)
+            const GuiElement* ascDn = layout.get("advScrollDown");
+            float sdx = ascDn ? ascDn->x : ax;
+            float sdy = ascDn ? ascDn->y : currentAy;
+            float sdw = ascDn ? ascDn->w : 70.0f;
+            float sdh = ascDn ? ascDn->h : 20.0f;
+            if (uiButton(win, "v down", {sdx, sdy, sdw, sdh},
+                         {0.2f, 0.3f, 0.4f, 1.0f}).clicked)
                 gAdvScroll = std::min(gAdvScroll + 1, totalRows - visibleRows);
         }
 
-        // adv mode save/apply
-        float advBtnY = ay + 24.0f;
-        if (uiButton(win, "SAVE ADV",
-            {uiScaleX(ax), uiScaleY(advBtnY), uiScaleX(130.0f), uiScaleY(38.0f)},
-            {0.18f, 0.50f, 0.26f, 1.0f}).clicked)
+        // adv mode save/apply — Y is dynamic, below the list
+        float advBtnY = currentAy + 24.0f;
+        const GuiElement* sab = layout.get("saveAdvButton");
+        if (sab && uiButton(win, "SAVE ADV",
+                            {sab->x, advBtnY, sab->w, sab->h},
+                            {0.18f, 0.50f, 0.26f, 1.0f}).clicked)
         {
             if (av.hasAvatar()) {
                 av.saveAdvanced(av.currentName(), av.current());
@@ -472,14 +605,15 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
                 r.goSave = true;
             }
         }
-        if (uiButton(win, "APPLY ADV",
-            {uiScaleX(ax + 145.0f), uiScaleY(advBtnY), uiScaleX(130.0f), uiScaleY(38.0f)},
-            {0.22f, 0.38f, 0.55f, 1.0f}).clicked)
+        const GuiElement* aab = layout.get("applyAdvButton");
+        if (aab && uiButton(win, "APPLY ADV",
+                            {aab->x, advBtnY, aab->w, aab->h},
+                            {0.22f, 0.38f, 0.55f, 1.0f}).clicked)
             r.goApply = true;
     }
 
     // ── file picker overlay ───────────────────────────────────────
-    drawPicker(win);
+    drawPicker(win, layout);
 
     return r;
 }
