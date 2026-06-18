@@ -7,6 +7,7 @@
   },
   "name": "default",
   "settings": {
+    "avatar_name": "",
     "bloodfx": false,
     "collision_bounce_max_speed": 45.0,
     "collision_bounce_min_speed": 7.0,
@@ -14,7 +15,7 @@
     "collision_movement_bias": 0.75,
     "collision_seam_tolerance": 0.03500000014901161,
     "debug_combat": false,
-    "equipped_slot": 5,
+    "equipped_slot": 3,
     "fov": 112.33551788330078,
     "freecam_speed": 18.0,
     "graphics_preset": "Max",
@@ -29,7 +30,6 @@
     "weapon_recoil_decay": 5.0,
     "weapon_recoil_strength": 22.0,
     "weapon_sway_strength": 0.11999999731779099,
-    "weapon_weight": 1.0,
-    "avatar_name": ""
+    "weapon_weight": 1.0
   }
 }
