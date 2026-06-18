@@ -27,7 +27,10 @@ enum PacketType : uint8_t
     PACKET_EXPLODE_REQUEST = 13,
     PACKET_SHOT_REQUEST = 14,
     PACKET_SHOT_EVENT = 15,
-    PACKET_CHAT_MESSAGE = 16
+    PACKET_CHAT_MESSAGE = 16,
+    PACKET_NPC_DAMAGE_REQUEST = 17,
+    PACKET_NPC_DAMAGE_EVENT = 18,
+    PACKET_SERVER_COMMAND = 19
 };
 
 enum EntityType : uint8_t
@@ -270,6 +273,65 @@ struct ChatPacket
     PacketHeader header;
     char senderName[MAX_NAME_BYTES];
     char text[240];
+};
+
+struct NpcDamageRequestPacket
+{
+    PacketHeader header;
+    uint32_t npcEntityId = 0;
+    int32_t damage = 0;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float dirX = 0.0f;
+    float dirY = 0.0f;
+    float dirZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+    uint16_t effectFlags = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t impactType = SHOT_IMPACT_ENTITY;
+};
+
+struct NpcDamageEventPacket
+{
+    PacketHeader header;
+    uint32_t npcEntityId = 0;
+    uint32_t shooterPlayerId = 0;
+    int32_t damage = 0;
+    int32_t npcHealth = 0;
+    uint8_t killed = 0;
+    uint8_t reserved0 = 0;
+    uint8_t reserved1 = 0;
+    uint8_t reserved2 = 0;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float dirX = 0.0f;
+    float dirY = 0.0f;
+    float dirZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    uint16_t effectFlags = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t impactType = SHOT_IMPACT_ENTITY;
+};
+
+struct ServerCommandPacket
+{
+    PacketHeader header;
+    char commandText[240];
 };
 
 struct DisconnectPacket
