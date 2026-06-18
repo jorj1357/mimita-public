@@ -110,8 +110,8 @@ static void physicsMainUpdate_Internal(
     // dont do dash at all 6 6 2026 ? 
     // fast push should be from gun pushing me? idk 
 
-    // testing 4 substeps so we have even more collision checsk
-    int steps = 4; // small substep count
+    // testing 6 substeps so we have even more collision checks
+    int steps = 6; // small substep count
     float subdt = dt / steps;
 
     // only set grounded here? not sure mar 7 2026 

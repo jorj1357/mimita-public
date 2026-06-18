@@ -1,0 +1,11 @@
+{
+  "name": "test_avatar",
+  "version": 1,
+  "advanced_mode": false,
+  "simple": {
+    "face": "face.png",
+    "shirt": "shirt.png",
+    "pants": "pants.png",
+    "skin": "skin.png"
+  }
+}

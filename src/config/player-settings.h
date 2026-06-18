@@ -10,6 +10,7 @@ struct PlayerSettings {
     float sensitivity = 0.15f;
     int equippedSlot = 1;
     std::string outfitPath = "devscripts/character_outfit_template.png";
+    std::string avatarName;
 
     float collisionSeamTolerance = 0.035f;
     float collisionMovementBias = 0.75f;

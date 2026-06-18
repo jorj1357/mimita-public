@@ -1,6 +1,7 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "render/outfit-atlas.h"
+#include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
@@ -514,7 +515,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                 EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
                 if (isNew)
                 {
-                    OutfitAtlas::instance().apply(p, GetPlayerSettings().outfitPath);
+                    if (GetPlayerSettings().avatarName.empty()) {
+                        OutfitAtlas::instance().apply(p, GetPlayerSettings().outfitPath);
+                    } else {
+                        AvatarSystem::instance().applyToPlayer(p);
+                    }
                     interpolation.renderRegistered = true;
                     printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
                            "mesh=%s position=(%.2f,%.2f,%.2f)\n",

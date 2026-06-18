@@ -32,7 +32,8 @@ enum GuiMenuState
     GUI_MENU_HELP,
     GUI_MENU_PLAY,
     GUI_MENU_PRACTICE,
-    GUI_MENU_REPLAY
+    GUI_MENU_REPLAY,
+    GUI_MENU_AVATAR_CREATOR
 };
 
 extern GuiMenuState gGuiMenuState;

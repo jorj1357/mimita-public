@@ -73,6 +73,17 @@ static bool sphereTriangleContact(
 
 static bool pointInTriangle(glm::vec3 p, const CollisionTriangle& tri);
 
+static bool sweepSphereEdge(
+    glm::vec3 start,
+    glm::vec3 move,
+    float radius,
+    glm::vec3 edgeA,
+    glm::vec3 edgeB,
+    float& hitTime,
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
+);
+
 static std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,
@@ -1143,9 +1154,14 @@ static void doGLBTriangleCollisions(
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;
 
+                    // Reduce remaining move so the player does not
+                    // accumulate extra distance across sweep iterations.
+                    remainingMove -= stepMove;
+
                     PHYS_LOG(
-                        "[GLB STEP] stepped up %.3f\n",
-                        stepHeight
+                        "[GLB STEP] stepped up %.3f remainingMove=(%.4f %.4f %.4f)\n",
+                        stepHeight,
+                        remainingMove.x, remainingMove.y, remainingMove.z
                     );
 
                     continue;
@@ -1467,11 +1483,11 @@ static void doGLBTriangleCollisions(
         projectVelocityAgainstNormal(p, c.normal);
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM && glm::length(beforeVel - p.vel) > 0.01f) {
-            // TODO(debug): migrate to Debug::log(Debug::Category::Collision)
-            printf("[COLLISION SLIDE] before=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) after=(%.2f %.2f %.2f)\n",
-                beforeVel.x, beforeVel.y, beforeVel.z,
+            Debug::log(Debug::Category::Collision,
+                "[COLLISION] triangleId=%d penetration=%.4f normal=(%.3f %.3f %.3f) contact=(%.3f %.3f %.3f)\n",
+                c.triangleIndex, c.penetration,
                 c.normal.x, c.normal.y, c.normal.z,
-                p.vel.x, p.vel.y, p.vel.z);
+                c.point.x, c.point.y, c.point.z);
         }
     }
 
@@ -2042,6 +2058,63 @@ static bool sweepSpherePoint(
     return true;
 }
 
+// Swept sphere vs line segment (edge).  Prevents the sphere from
+// passing between triangle vertices through the edge opening.
+static bool sweepSphereEdge(
+    glm::vec3 start,
+    glm::vec3 move,
+    float radius,
+    glm::vec3 edgeA,
+    glm::vec3 edgeB,
+    float& hitTime,
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
+) {
+    glm::vec3 edgeDir = edgeB - edgeA;
+    float edgeLen = glm::length(edgeDir);
+    if (edgeLen < 0.000001f)
+        return false;
+    edgeDir /= edgeLen;
+
+    // Project sphere trajectory onto the plane perpendicular to the edge.
+    // The perpendicular motion determines closest approach to the edge line.
+    glm::vec3 rel = start - edgeA;
+    float proj = glm::dot(rel, edgeDir);
+    glm::vec3 relPerp = rel - edgeDir * proj;
+    glm::vec3 movePerp = move - edgeDir * glm::dot(move, edgeDir);
+
+    float a = glm::dot(movePerp, movePerp);
+    float b = 2.0f * glm::dot(relPerp, movePerp);
+    float c = glm::dot(relPerp, relPerp) - radius * radius;
+
+    float disc = b * b - 4.0f * a * c;
+    if (disc < 0.0f)
+        return false;
+
+    float t = (-b - sqrtf(disc)) / (2.0f * a);
+    if (t < 0.0f || t > 1.0f)
+        return false;
+
+    // Verify contact point is within the edge segment at hit time
+    glm::vec3 centerAtT = start + move * t;
+    glm::vec3 relAtT = centerAtT - edgeA;
+    float projAtT = glm::dot(relAtT, edgeDir);
+    if (projAtT < 0.0f || projAtT > edgeLen)
+        return false;
+
+    glm::vec3 closestOnEdge = edgeA + edgeDir * projAtT;
+    glm::vec3 normal = centerAtT - closestOnEdge;
+    float dist = glm::length(normal);
+    if (dist < 0.000001f)
+        return false;
+    normal /= dist;
+
+    hitTime = t;
+    hitNormal = normal;
+    hitPoint = closestOnEdge;
+    return true;
+}
+
 static bool sweepSphereTriangle(
     glm::vec3 start,
     glm::vec3 move,
@@ -2082,6 +2155,25 @@ static bool sweepSphereTriangle(
         }
     }
 
+    // Edge sweeps: prevent sphere from passing between vertices through the edge opening
+    {
+        glm::vec3 edgePairs[3][2] = {{tri.a, tri.b}, {tri.b, tri.c}, {tri.c, tri.a}};
+        for (auto& ep : edgePairs)
+        {
+            float t = 1.0f;
+            glm::vec3 en(0.0f);
+            glm::vec3 epPt(0.0f);
+            if (sweepSphereEdge(start, move, radius, ep[0], ep[1], t, en, epPt) && t < bestT)
+            {
+                bestT = t;
+                bestN = en;
+                bestP = epPt;
+                hit = true;
+            }
+        }
+    }
+
+    // Vertex sweeps
     glm::vec3 pts[3] = {tri.a, tri.b, tri.c};
     for (glm::vec3 pt : pts)
     {
@@ -2159,7 +2251,7 @@ static bool capsuleTriangleSweep(
     int triIndex,
     SweepHit& out
 ) {
-    constexpr int NUM_SAMPLES = 5;
+    constexpr int NUM_SAMPLES = 7;
     glm::vec3 samples[NUM_SAMPLES];
     for (int i = 0; i < NUM_SAMPLES; ++i) {
         float t = (float)i / (float)(NUM_SAMPLES - 1);
@@ -2203,7 +2295,7 @@ static bool capsuleTriangleContact(
     int triIndex,
     Contact& out
 ) {
-    constexpr int NUM_SAMPLES = 5;
+    constexpr int NUM_SAMPLES = 7;
     glm::vec3 samples[NUM_SAMPLES];
     for (int i = 0; i < NUM_SAMPLES; ++i) {
         float t = (float)i / (float)(NUM_SAMPLES - 1);
