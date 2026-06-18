@@ -1294,14 +1294,13 @@ int main(int argc, char** argv)
         [&weapons](const std::vector<std::string>&) { weapons.inspect(); }
     });
     Terminal::instance().registerCommand({
-        "npc_spawn", "Spawn NPCs in front of the camera", "npc_spawn <count>",
-        [&npcSystem, &camera, &player](const std::vector<std::string>& args) {
+        "npc_spawn", "Spawn NPCs at the global spawn point", "npc_spawn <count>",
+        [&npcSystem](const std::vector<std::string>& args) {
             int count = args.empty() ? 1 : std::clamp(std::stoi(args[0]), 1, 100);
             for (int i = 0; i < count; ++i) {
-                glm::vec3 spawnPos = camera.pos + camera.front * (5.0f + i * 1.5f) + glm::vec3(0,0,1);
-                npcSystem.spawnNpc(1.0f, spawnPos);
+                npcSystem.spawnNpc(1.0f);
                 if (mpContext.active)
-                    MimitaNet::mpRequestNpcSpawn(mpContext, spawnPos, 1.0f);
+                    MimitaNet::mpRequestNpcSpawn(mpContext, npcSpawnPoint, 1.0f);
             }
             Terminal::instance().addLog("[NPC COMMAND] npc_spawn count=" + std::to_string(count));
         }
@@ -2285,10 +2284,8 @@ int main(int argc, char** argv)
             if (glm::length(forward) < 0.001f)
                 forward = glm::vec3(0.0f, 1.0f, 0.0f);
             forward = glm::normalize(forward);
-            const glm::vec3 spawnPosition =
-                camera.pos + forward * 6.0f + glm::vec3(0.0f, 0.0f, 1.0f);
             replayTest.npcId = npcSystem.nextNpcId();
-            npcSystem.spawnNpc(replayTest.npcId, 1.0f, spawnPosition);
+            npcSystem.spawnNpc(replayTest.npcId, 1.0f, npcSpawnPoint);
             if (!npcSystem.all().empty()) {
                 Npc& npc = npcSystem.all().back();
                 npc.trainingMode = 0;

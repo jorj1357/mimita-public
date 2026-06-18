@@ -188,6 +188,11 @@ bool worldSolidRedDebug() { return gSolidRedDebug; }
 
 bool gWorldTextureDebug = false;
 
+// Backface rendering control.
+// True  = disable backface culling (interior surfaces visible).
+// False = enable backface culling (interior surfaces hidden).
+bool gRenderBackfaces = true;
+
 void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP)
 {
     if (world.mesh.verts.empty()) return;
@@ -276,6 +281,16 @@ void renderWorld(const World& world, const Camera& cam)
     MIMITA_GL_CLEAR_STAGE("renderWorld");
     uploadMeshIfNeeded(world);
 
+    // Manage backface culling so interior surfaces (e.g. holes cut
+    // into geometry) are visible.  Default: culling OFF.
+    if (gRenderBackfaces)
+        glDisable(GL_CULL_FACE);
+    else
+    {
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+    }
+
     GLuint shader = gRenderer->shaderProgram;
     MIMITA_GL_CALL(glUseProgram(shader));
 
@@ -297,10 +312,16 @@ void renderWorld(const World& world, const Camera& cam)
     if (trace) {
         GLint polygonMode[2] = {};
         glGetIntegerv(GL_POLYGON_MODE, polygonMode);
+        GLint cullFaceMode = GL_BACK;
+        glGetIntegerv(GL_CULL_FACE_MODE, &cullFaceMode);
+        const char* cullFaceName =
+            cullFaceMode == GL_FRONT ? "GL_FRONT" :
+            cullFaceMode == GL_BACK  ? "GL_BACK"  : "GL_FRONT_AND_BACK";
         const auto& cfg = LightingConfig::instance();
-        printf("[WORLD] batches=%zu vertices=%zu depth=%d cull=%d blend=%d polygonMode=0x%x/0x%x\n",
+        printf("[WORLD] batches=%zu vertices=%zu depth=%d cull=%d cullMode=%s blend=%d polygonMode=0x%x/0x%x\n",
                mesh.batches.size(), mesh.verts.size(),
                (int)glIsEnabled(GL_DEPTH_TEST), (int)glIsEnabled(GL_CULL_FACE),
+               cullFaceName,
                (int)glIsEnabled(GL_BLEND), polygonMode[0], polygonMode[1]);
         printf("[WORLD] uLightDir=(%.3f,%.3f,%.3f) uAmbientStrength=%.3f "
                "uDiffuseStrength=%.3f uTextureBrightness=%.3f "
@@ -331,6 +352,30 @@ void renderWorld(const World& world, const Camera& cam)
         ++drawCalls;
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
+
+    // Debug: visualize face normals (green = front face, red = back face)
+    if (DebugVis::normals())
+    {
+        const std::vector<Vertex>& verts = mesh.verts;
+        for (size_t i = 0; i + 2 < verts.size(); i += 3)
+        {
+            const glm::vec3& a = verts[i].pos;
+            const glm::vec3& b = verts[i + 1].pos;
+            const glm::vec3& c = verts[i + 2].pos;
+
+            glm::vec3 centroid = (a + b + c) / 3.0f;
+            glm::vec3 faceNormal = glm::normalize(glm::cross(b - a, c - a));
+            glm::vec3 viewDir = glm::normalize(centroid - cam.pos);
+
+            // Approximate front/back: if normal points toward camera, face is visible (front).
+            bool towardCamera = glm::dot(faceNormal, viewDir) < 0.0f;
+            glm::vec4 color = towardCamera
+                ? glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)   // green = front
+                : glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);   // red   = back
+
+            DebugVis::drawLine(cam, centroid, centroid + faceNormal * 0.4f, color);
+        }
+    }
 
     glBindVertexArray(0);
     MIMITA_GL_CALL(glUseProgram(0));
@@ -411,6 +456,20 @@ void registerWorldTextureCommands()
             validateGLB(t);
         },
         "2026-06-15", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "render_backfaces", "Toggle backface culling (0=cull back faces, 1=show all faces)",
+        "render_backfaces <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                printf("[RENDER] render_backfaces = %d (0=cull, 1=show)\n", (int)gRenderBackfaces);
+                return;
+            }
+            gRenderBackfaces = args[0] != "0";
+            printf("[RENDER] render_backfaces set to %d (0=cull, 1=show)\n", (int)gRenderBackfaces);
+        },
+        "2026-06-18", CommandCategory::Debug
     });
 }
 
