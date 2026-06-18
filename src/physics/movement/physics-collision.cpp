@@ -71,6 +71,8 @@ static bool sphereTriangleContact(
     Contact& contact
 );
 
+static bool pointInTriangle(glm::vec3 p, const CollisionTriangle& tri);
+
 static std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,
@@ -936,7 +938,7 @@ static void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
-    constexpr float SURFACE_SLOP = COLLISION_SKIN;
+    constexpr float SURFACE_SLOP = 0.0f;
     constexpr float MAX_CORRECTION = 2.0f;
 
     // CHANGED: No dashVel — dash is now in vel, jun 6 2026
@@ -1261,7 +1263,7 @@ static void doGLBTriangleCollisions(
     // This prevents hovering and flickering grounded state
     // IMPORTANT: After snapping, re-check for wall penetration
     {
-        constexpr float GROUND_SNAP_DISTANCE = 0.08f;
+        constexpr float GROUND_SNAP_DISTANCE = 0.01f;
         constexpr float MAX_UPWARD_VEL_FOR_SNAP = 0.5f;
         
         if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
@@ -1278,16 +1280,16 @@ static void doGLBTriangleCollisions(
                 const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
                 if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue; // Only walkable surfaces
                 
-                // Check if triangle is horizontally aligned with player
-                float triMinX = std::min({tri.a.x, tri.b.x, tri.c.x});
-                float triMaxX = std::max({tri.a.x, tri.b.x, tri.c.x});
-                float triMinY = std::min({tri.a.y, tri.b.y, tri.c.y});
-                float triMaxY = std::max({tri.a.y, tri.b.y, tri.c.y});
+                // Project capsule center onto triangle plane and test actual triangle membership
+                // instead of AABB overlap, which produces false positives for off-center triangles.
+                glm::vec3 capCenter(checkCap.a.x, checkCap.a.y, 0.0f);
+                float planeDist = glm::dot(capCenter - tri.a, tri.normal);
+                glm::vec3 proj = capCenter - tri.normal * planeDist;
+                if (!pointInTriangle(proj, tri))
+                    continue;
                 
-                if (checkCap.a.x + checkCap.r >= triMinX && checkCap.a.x - checkCap.r <= triMaxX &&
-                    checkCap.a.y + checkCap.r >= triMinY && checkCap.a.y - checkCap.r <= triMaxY)
                 {
-                    // Triangle is roughly under player - check Z
+                    // Triangle is under player - check Z
                     float triCenterZ = (tri.a.z + tri.b.z + tri.c.z) / 3.0f;
                     if (triCenterZ < feetZ && triCenterZ > bestGroundZ)
                         bestGroundZ = triCenterZ;
@@ -2173,8 +2175,7 @@ static bool capsuleTriangleSweep(
         float t = 1.0f;
         glm::vec3 n(0.0f);
         glm::vec3 p(0.0f);
-        // Use expanded radius for skin, but cap penetration at real radius
-        float skinRadius = cap.r + COLLISION_SKIN;
+        float skinRadius = cap.r;
         if (sweepSphereTriangle(sample, move, skinRadius, tri, t, n, p) && t < bestT)
         {
             bestT = t;

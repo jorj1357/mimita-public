@@ -69,11 +69,11 @@ void ProcessNpcSpawnCommands(NpcSystem& npcSystem, const Camera& camera, const W
         // Clamp difficulty
         difficulty = std::clamp(difficulty, 1.0f, 10.0f);
         
-        npcSystem.spawnNpc(difficulty, spawnPos);
+        npcSystem.spawnNpc(difficulty);
         
         char msg[128];
         snprintf(msg, sizeof(msg), "Spawned NPC at (%.1f, %.1f, %.1f) difficulty %.1f", 
-                 spawnPos.x, spawnPos.y, spawnPos.z, difficulty);
+                 npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z, difficulty);
         DevOverlay::instance().showNotification(msg, 3.0f);
         printf("[NPC SPAWN] %s\n", msg);
     }
@@ -124,7 +124,7 @@ void ProcessNpcTrainingSpawnCommands(NpcSystem& npcSystem, const Camera& camera,
 
         difficulty = std::clamp(difficulty, 1.0f, 10.0f);
 
-        npcSystem.spawnNpc(difficulty, spawnPos);
+        npcSystem.spawnNpc(difficulty);
 
         // Apply training settings to the last spawned NPC
         if (!npcSystem.all().empty()) {

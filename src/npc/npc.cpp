@@ -208,11 +208,11 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
 void NpcSystem::spawnPrototypeScene()
 {
     clear();
-    npcs.emplace_back(1, 1.0f, glm::vec3(-6.0f, 6.0f, 32.0f));
-    npcs.emplace_back(2, 3.0f, glm::vec3(8.0f, 5.0f, 32.0f));
-    npcs.emplace_back(3, 5.0f, glm::vec3(-4.0f, -7.0f, 32.0f));
-    npcs.emplace_back(4, 7.0f, glm::vec3(7.0f, -6.0f, 32.0f));
-    npcs.emplace_back(5, 10.0f, glm::vec3(0.0f, 12.0f, 32.0f));
+    for (int i = 0; i < 5; ++i) {
+        float d = 1.0f + i * 2.0f;
+        if (i == 4) d = 10.0f;
+        spawnNpc(d);
+    }
 }
 
 void NpcSystem::clear()
@@ -227,13 +227,14 @@ void NpcSystem::clear()
     Debug::log(Debug::Category::General, "[NPC] cleanup complete\n");
 }
 
-void NpcSystem::spawnNpc(float difficulty, glm::vec3 spawnPos)
+void NpcSystem::spawnNpc(float difficulty)
 {
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     uint32_t id = nextNpcId();
-    npcs.emplace_back(id, d, spawnPos);
-    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
-    Debug::log(Debug::Category::General, "[NPC] spawned id=%u (global diff=%.1f)\n", id, d);
+    npcs.emplace_back(id, d, npcSpawnPoint);
+    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, npcSpawnPoint, 0.8f, 1.0f, 35.0f, id});
+    Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (global diff=%.1f)\n",
+               id, npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z, d);
 }
 
 void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)
@@ -241,7 +242,8 @@ void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     npcs.emplace_back(id, d, spawnPos);
     AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
-    Debug::log(Debug::Category::General, "[NPC] spawned id=%u (network, diff=%.1f)\n", id, d);
+    Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (network, diff=%.1f)\n",
+               id, spawnPos.x, spawnPos.y, spawnPos.z, d);
 }
 
 void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)

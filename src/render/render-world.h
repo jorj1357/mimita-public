@@ -17,6 +17,7 @@ class Camera;
 class Terminal; // forward decl for dump functions
 
 extern bool gWorldTextureDebug;
+extern bool gRenderBackfaces;
 
 void renderSky(const World& world, const Camera& cam);
 void renderWorld(const World& world, const Camera& cam);
