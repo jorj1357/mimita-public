@@ -284,6 +284,8 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.nextLocalShotSerial = 1;
     ctx.lastPingSentMs = 0;
     ctx.localPingMs = 0;
+    ctx.lastHeardServerMs = 0;
+    ctx.lastDisconnectLogMs = 0;
     ctx.lastFakeLagLogMs = 0;
 
     printf("[NET CONNECT] connecting to %s as \"%s\"\n", address.c_str(), playerName.c_str());
@@ -332,12 +334,35 @@ void mpShutdown(MultiplayerContext& ctx)
     printf("[NET DISCONNECT] shutdown complete\n");
 }
 
-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
+static const char* disconnectReasonStr(MultiplayerContext& ctx)
+{
+    if (!ctx.active) return "inactive";
+    if (ctx.connectFailed) return "connection-timeout";
+    if (!ctx.connected) return "not-connected";
+    if (ctx.sock == INVALID_SOCKET) return "invalid-socket";
+    return "unknown";
+}
+
+void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input)
 {
     if (!ctx.active)
         return;
 
     uint64_t currentMs = nowMs();
+
+    // Client-side timeout detection: warn if no server packet for 10s
+    constexpr uint64_t CLIENT_TIMEOUT_MS = 10000;
+    if (ctx.connected && ctx.lastHeardServerMs > 0 &&
+        currentMs - ctx.lastHeardServerMs > CLIENT_TIMEOUT_MS)
+    {
+        if (currentMs - ctx.lastDisconnectLogMs >= 1000)
+        {
+            printf("[NET TIMEOUT] player=%u reason=server-silent lastPacket=%llums ago\n",
+                   ctx.localPlayerId,
+                   (unsigned long long)(currentMs - ctx.lastHeardServerMs));
+            ctx.lastDisconnectLogMs = currentMs;
+        }
+    }
     if (ctx.fakeLagMode == 1 &&
         (ctx.fakeLagNextRandomizeMs == 0 ||
          currentMs >= ctx.fakeLagNextRandomizeMs))
@@ -395,6 +420,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
             header->magic != PROTOCOL_MAGIC ||
             header->version != PROTOCOL_VERSION)
             continue;
+
+        ctx.lastHeardServerMs = nowMs();
 
         if (header->type == PACKET_WELCOME && bytes >= (int)sizeof(WelcomePacket))
         {
@@ -622,6 +649,33 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
                    out.origin.x, out.origin.y, out.origin.z,
                    out.hit.x, out.hit.y, out.hit.z);
         }
+        else if (header->type == PACKET_NPC_DAMAGE_EVENT &&
+                 bytes >= (int)sizeof(NpcDamageEventPacket))
+        {
+            const NpcDamageEventPacket* event =
+                reinterpret_cast<const NpcDamageEventPacket*>(buffer);
+
+            auto npcIt = ctx.remoteNpcs.find(event->npcEntityId);
+            if (npcIt != ctx.remoteNpcs.end())
+            {
+                Player& npc = npcIt->second;
+                npc.currentHp = event->npcHealth;
+                printf("[NET NPC DAMAGE RECV] npcId=%u damage=%d health=%d killed=%d\n",
+                       event->npcEntityId, event->damage, event->npcHealth,
+                       (int)event->killed);
+
+                if (event->killed)
+                {
+                    ctx.remoteNpcs.erase(npcIt);
+                    ctx.remoteNpcInterpolation.erase(event->npcEntityId);
+                    printf("[NET NPC KILL RECV] npcId=%u removed\n", event->npcEntityId);
+                }
+            }
+            else
+            {
+                printf("[NET NPC DAMAGE RECV] npcId=%u not-found\n", event->npcEntityId);
+            }
+        }
         else if (header->type == PACKET_CHAT_MESSAGE &&
                  bytes >= (int)sizeof(ChatPacket))
         {
@@ -640,6 +694,35 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt)
             ctx.localPingMs = (int)std::min<uint64_t>(
                 9999, nowMs() - ping->clientTimeMs);
         }
+    }
+
+    // Send input packet to server every tick when connected
+    if (ctx.connected && ctx.localPlayerId && input)
+    {
+        InputPacket in{};
+        in.header.type = PACKET_INPUT;
+        in.header.tick = ctx.tick;
+        in.header.playerId = ctx.localPlayerId;
+        in.wishX = input->wishX;
+        in.wishY = input->wishY;
+        in.camForwardX = input->camForward.x;
+        in.camForwardY = input->camForward.y;
+        in.camForwardZ = input->camForward.z;
+        in.yaw = input->yaw;
+        in.clientPx = input->position.x;
+        in.clientPy = input->position.y;
+        in.clientPz = input->position.z;
+        in.clientVx = input->velocity.x;
+        in.clientVy = input->velocity.y;
+        in.clientVz = input->velocity.z;
+        in.equippedSlot = (int16_t)input->equippedSlot;
+        in.weaponState = input->weaponState;
+        in.clientPingMs = ctx.localPingMs;
+        in.jumpHeld = input->jumpHeld ? 1 : 0;
+        in.dashPressed = input->dashPressed ? 1 : 0;
+        in.attackPressed = input->attackPressed ? 1 : 0;
+        in.freezeHeld = input->freezeHeld ? 1 : 0;
+        mpSendPacket(ctx, &in, sizeof(in));
     }
 
     for (auto& kv : ctx.remotePlayers)
@@ -892,6 +975,47 @@ uint32_t mpSendShotEvent(
            effectFlags, targetPlayerId, damage,
            origin.x, origin.y, origin.z, hit.x, hit.y, hit.z);
     return packet.shotSerial;
+}
+
+void mpSendNpcDamageRequest(MultiplayerContext& ctx, uint32_t npcEntityId, int damage,
+    const glm::vec3& origin, const glm::vec3& hit, const glm::vec3& direction,
+    const glm::vec3& normal, const glm::vec3& knockback, uint16_t effectFlags, uint8_t weapon)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    NpcDamageRequestPacket packet{};
+    packet.header.type = PACKET_NPC_DAMAGE_REQUEST;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.npcEntityId = npcEntityId;
+    packet.damage = std::clamp(damage, 1, 200);
+    packet.originX = origin.x; packet.originY = origin.y; packet.originZ = origin.z;
+    packet.hitX = hit.x; packet.hitY = hit.y; packet.hitZ = hit.z;
+    packet.dirX = direction.x; packet.dirY = direction.y; packet.dirZ = direction.z;
+    packet.normalX = normal.x; packet.normalY = normal.y; packet.normalZ = normal.z;
+    packet.knockX = knockback.x; packet.knockY = knockback.y; packet.knockZ = knockback.z;
+    packet.effectFlags = effectFlags;
+    packet.weapon = weapon;
+    packet.impactType = SHOT_IMPACT_ENTITY;
+    mpSendPacket(ctx, &packet, sizeof(packet));
+    printf("[NET NPC DAMAGE SEND] npcId=%u damage=%d origin=(%.2f,%.2f,%.2f)\n",
+           npcEntityId, damage, origin.x, origin.y, origin.z);
+}
+
+void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    ServerCommandPacket packet{};
+    packet.header.type = PACKET_SERVER_COMMAND;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    std::memset(packet.commandText, 0, sizeof(packet.commandText));
+    std::strncpy(packet.commandText, command.c_str(), sizeof(packet.commandText) - 1);
+    mpSendPacket(ctx, &packet, sizeof(packet));
+    printf("[NET SERVER COMMAND SEND] cmd=\"%s\"\n", command.c_str());
 }
 
 } // namespace MimitaNet

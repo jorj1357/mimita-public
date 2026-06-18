@@ -744,6 +744,14 @@ int runServer(const LaunchOptions& options)
                 continue;
             }
 
+            // Update lastHeardMs for ANY valid packet from a known player
+            if (header->type != PACKET_HELLO)
+            {
+                auto it = players.find(header->playerId);
+                if (it != players.end())
+                    it->second.lastHeardMs = nowMs();
+            }
+
             if (header->type == PACKET_HELLO && bytes >= (int)sizeof(HelloPacket))
             {
                 uint32_t existingId = 0;
@@ -1271,15 +1279,104 @@ int runServer(const LaunchOptions& options)
                        (sockaddr*)&from, sizeof(from));
                 ++totalPacketsOut;
             }
+            else if (header->type == PACKET_NPC_DAMAGE_REQUEST &&
+                     bytes >= (int)sizeof(NpcDamageRequestPacket))
+            {
+                const NpcDamageRequestPacket* req =
+                    reinterpret_cast<const NpcDamageRequestPacket*>(buffer);
+                auto shooterIt = players.find(req->header.playerId);
+                if (shooterIt == players.end() ||
+                    !sameAddress(shooterIt->second.addr, from))
+                    continue;
+
+                auto npcIt = npcs.find(req->npcEntityId);
+                if (npcIt == npcs.end())
+                {
+                    printf("%s [NET NPC DAMAGE] shooter=%u npcId=%u accepted=0 reason=npc-not-found\n",
+                           serverTimestamp(), req->header.playerId, req->npcEntityId);
+                    continue;
+                }
+
+                ServerNpc& target = npcIt->second;
+                const int clamped = std::clamp((int)req->damage, 1, 200);
+                target.health -= clamped;
+                const bool killed = target.health <= 0;
+                if (killed)
+                {
+                    target.health = 0;
+                    printf("%s [NET NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
+                           serverTimestamp(), req->header.playerId,
+                           target.entityId, target.name.c_str());
+                }
+
+                // Broadcast damage event to all clients
+                NpcDamageEventPacket event{};
+                event.header.type = PACKET_NPC_DAMAGE_EVENT;
+                event.header.tick = tick;
+                event.header.playerId = req->header.playerId;
+                event.npcEntityId = req->npcEntityId;
+                event.shooterPlayerId = req->header.playerId;
+                event.damage = clamped;
+                event.npcHealth = target.health;
+                event.killed = killed ? 1 : 0;
+                event.originX = req->originX; event.originY = req->originY; event.originZ = req->originZ;
+                event.hitX = req->hitX; event.hitY = req->hitY; event.hitZ = req->hitZ;
+                event.dirX = req->dirX; event.dirY = req->dirY; event.dirZ = req->dirZ;
+                event.normalX = req->normalX; event.normalY = req->normalY; event.normalZ = req->normalZ;
+                event.effectFlags = req->effectFlags;
+                event.weapon = req->weapon;
+                event.impactType = req->impactType;
+
+                for (const auto& pe : players)
+                {
+                    sendto(sock, (const char*)&event, sizeof(event), 0,
+                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                    ++totalPacketsOut;
+                }
+
+                // Remove killed NPCs — they disappear from next snapshot
+                if (killed)
+                    npcs.erase(npcIt);
+            }
+            else if (header->type == PACKET_SERVER_COMMAND &&
+                     bytes >= (int)sizeof(ServerCommandPacket))
+            {
+                ServerCommandPacket* cmd =
+                    reinterpret_cast<ServerCommandPacket*>(buffer);
+                auto it = players.find(cmd->header.playerId);
+                if (it == players.end())
+                    continue;
+
+                cmd->commandText[239] = '\0';
+                const std::string commandStr(cmd->commandText);
+
+                printf("%s [SERVER COMMAND] playerId=%u name=\"%s\" cmd=\"%s\"\n",
+                       serverTimestamp(), it->second.id, it->second.name.c_str(),
+                       commandStr.c_str());
+
+                if (commandStr == "npc_delete_all")
+                {
+                    printf("%s [SERVER COMMAND] npc_delete_all by playerId=%u count=%zu\n",
+                           serverTimestamp(), it->second.id, npcs.size());
+                    npcs.clear();
+                }
+                else
+                {
+                    printf("%s [SERVER COMMAND] unknown cmd=\"%s\" from playerId=%u\n",
+                           serverTimestamp(), commandStr.c_str(), it->second.id);
+                }
+            }
         }
 
         // Timeout disconnected clients
         for (auto it = players.begin(); it != players.end(); )
         {
-            if (nowMs() - it->second.lastHeardMs > CLIENT_TIMEOUT_MS)
+            const uint64_t silentMs = nowMs() - it->second.lastHeardMs;
+            if (silentMs > CLIENT_TIMEOUT_MS)
             {
-                printf("%s [SERVER TIMEOUT] id=%u name=\"%s\"\n",
-                       serverTimestamp(), it->second.id, it->second.name.c_str());
+                printf("%s [SERVER DISCONNECT] reason=timeout id=%u name=\"%s\" lastHeard=%llums ago ping=%dms\n",
+                       serverTimestamp(), it->second.id, it->second.name.c_str(),
+                       (unsigned long long)silentMs, it->second.pingMs);
                 it = players.erase(it);
             }
             else

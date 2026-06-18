@@ -130,15 +130,37 @@ struct MultiplayerContext
     uint32_t latestServerTick = 0;
     uint64_t lastPingSentMs = 0;
     int localPingMs = 0;
+    uint64_t lastHeardServerMs = 0;
+    uint64_t lastDisconnectLogMs = 0;
+};
+
+struct MpInput
+{
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
+    float yaw = 0.0f;
+    glm::vec3 camForward{1.0f, 0.0f, 0.0f};
+    float wishX = 0.0f;
+    float wishY = 0.0f;
+    bool jumpHeld = false;
+    bool dashPressed = false;
+    bool attackPressed = false;
+    bool freezeHeld = false;
+    int equippedSlot = 0;
+    uint8_t weaponState = 0;
 };
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt);
+void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input = nullptr);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty = 1.0f);
 void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
 void mpRequestExplode(MultiplayerContext& ctx);
+void mpSendNpcDamageRequest(MultiplayerContext& ctx, uint32_t npcEntityId, int damage,
+    const glm::vec3& origin, const glm::vec3& hit, const glm::vec3& direction,
+    const glm::vec3& normal, const glm::vec3& knockback, uint16_t effectFlags, uint8_t weapon);
+void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,
     uint32_t targetPlayerId,
