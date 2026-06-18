@@ -68,8 +68,16 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
         r.goReplays = true;
     }
 
+    if (uiButton(win, "AVATAR",
+        layout.getRectDesign("avatarButton", {835.0f, 776.0f, 250.0f, 58.0f}),
+        {0.3f,0.6f,0.5f,1.0f}).clicked)
+    {
+        printf("[MAIN MENU] Avatar Creator pressed\n");
+        r.goAvatarCreator = true;
+    }
+
     if (uiButton(win, "EXIT",
-        layout.getRectDesign("exitButton", {835.0f, 776.0f, 250.0f, 58.0f}),
+        layout.getRectDesign("exitButton", {835.0f, 853.0f, 250.0f, 58.0f}),
         {0.65f,0.2f,0.2f,1.0f}).clicked)
     {
         printf("[MAIN MENU] Exit pressed\n");

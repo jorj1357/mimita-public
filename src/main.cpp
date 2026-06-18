@@ -110,6 +110,9 @@
 #include "crosshair/crosshair-render.h"
 #include "config/player-settings.h"
 #include "render/outfit-atlas.h"
+#include "avatar/avatar.h"
+#include "avatar/avatar-commands.h"
+#include "avatar/avatar-menu.h"
 #include "render/lighting-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "profile/local-profile-system.h"
@@ -675,6 +678,7 @@ int main(int argc, char** argv)
     // Terminal character input callback
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
         signInMenuHandleChar(codepoint);
+        avatarMenuHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
@@ -684,6 +688,7 @@ int main(int argc, char** argv)
         (void)scancode;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             signInMenuHandleKey(key, action);
+            avatarMenuHandleKey(key, action);
             serverInfoMenuHandleKey(key, action);
             onlineMenuHandleKey(key, action);
             Terminal::instance().handleKey(key, mods);
@@ -769,6 +774,10 @@ int main(int argc, char** argv)
     player.username = LocalProfileSystem::instance().currentUsername();
     player.equippedSlot = GetPlayerSettings().equippedSlot;
     OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath);
+    if (!GetPlayerSettings().avatarName.empty())
+        AvatarSystem::instance().loadAvatar(GetPlayerSettings().avatarName);
+    if (AvatarSystem::instance().hasAvatar())
+        AvatarSystem::instance().applyToPlayer(player);
     printf("[MAIN] player made\n");
 
     NpcSystem npcSystem;
@@ -1664,6 +1673,7 @@ int main(int argc, char** argv)
     // Replay terminal commands
     // Register replay terminal commands (moved to src/terminal/replay-commands.cpp)
     registerReplayCommands();
+    registerAvatarCommands(player);
     registerVoidDeathCommands();
     registerHitmarkerAudioCommands();
     registerOutroCommands();
@@ -2562,6 +2572,7 @@ int main(int argc, char** argv)
         float dt = engine.beginFrame();
         updatePlayerProceduralHotReload(dt);
         CrosshairConfig::instance().pollReload();
+        AvatarSystem::instance().pollHotReload();
         bool worldPassRan = false;
 
         { Perf::ScopedTimer _aud("Audio");

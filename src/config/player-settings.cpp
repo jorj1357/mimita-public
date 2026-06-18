@@ -50,6 +50,7 @@ bool LoadPlayerSettings(const std::string& account)
         readValue(j, "sensitivity", gSettings.sensitivity);
         readValue(j, "equipped_slot", gSettings.equippedSlot);
         readValue(j, "outfit_png", gSettings.outfitPath);
+        readValue(j, "avatar_name", gSettings.avatarName);
         readValue(j, "collision_seam_tolerance", gSettings.collisionSeamTolerance);
         readValue(j, "collision_movement_bias", gSettings.collisionMovementBias);
         readValue(j, "collision_bounce_strength", gSettings.collisionBounceStrength);
@@ -101,6 +102,7 @@ bool SavePlayerSettings(const std::string& account)
     j["sensitivity"] = gSettings.sensitivity;
     j["equipped_slot"] = gSettings.equippedSlot;
     j["outfit_png"] = gSettings.outfitPath;
+    j["avatar_name"] = gSettings.avatarName;
     j["collision_seam_tolerance"] = gSettings.collisionSeamTolerance;
     j["collision_movement_bias"] = gSettings.collisionMovementBias;
     j["collision_bounce_strength"] = gSettings.collisionBounceStrength;

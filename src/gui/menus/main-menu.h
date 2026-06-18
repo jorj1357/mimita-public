@@ -21,6 +21,7 @@ struct MainMenuResult
     bool goPlay = false;
     bool goSettings = false;
     bool goReplays = false;
+    bool goAvatarCreator = false;
     bool goExit = false;
 };
 

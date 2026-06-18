@@ -10,6 +10,7 @@
 #include "menus/sign-in-menu.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
+#include "avatar/avatar-menu.h"
 #include "ui-system.h"
 #include "gui-editor.h"
 #include "gui-layout.h"
@@ -36,6 +37,7 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_SIGN_IN:      return "config/gui/sign-in-menu.json";
         case GUI_MENU_HELP:         return "config/gui/help-menu.json";
         case GUI_MENU_REPLAY:       return "config/gui/replay-menu.json";
+        case GUI_MENU_AVATAR_CREATOR: return "config/gui/avatar-creator.json";
     }
     return "config/gui/main-menu.json";
 }
@@ -85,6 +87,11 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 printf("[MAIN MENU] switching to replay menu\n");
                 gGuiMenuState = GUI_MENU_REPLAY;
+            }
+            else if (r.goAvatarCreator)
+            {
+                printf("[MAIN MENU] switching to avatar creator\n");
+                gGuiMenuState = GUI_MENU_AVATAR_CREATOR;
             }
             else if (r.goExit)
             {
@@ -244,6 +251,14 @@ void guiMain(GLFWwindow* win, GameState& state)
                 browser.setOpen(false);
                 gGuiMenuState = GUI_MENU_MAIN;
             }
+            break;
+        }
+
+        case GUI_MENU_AVATAR_CREATOR:
+        {
+            AvatarMenuResult r = drawAvatarMenu(win);
+            if (r.goBack)
+                gGuiMenuState = GUI_MENU_MAIN;
             break;
         }
     }
