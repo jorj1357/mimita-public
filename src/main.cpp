@@ -3137,7 +3137,24 @@ int main(int argc, char** argv)
             // Multiplayer tick - receive snapshots
             { Perf::ScopedTimer _net("Networking");
             if (mpContext.active) {
-                MimitaNet::mpTick(mpContext, player.username, dt);
+                MimitaNet::MpInput mpInput;
+                mpInput.position = player.pos;
+                mpInput.velocity = player.vel;
+                mpInput.yaw = camera.yaw;
+                mpInput.camForward = camera.front;
+                // Read live input keys directly for network input packet
+                mpInput.wishX = 0.0f;
+                mpInput.wishY = 0.0f;
+                if (glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS) mpInput.wishY += 1.0f;
+                if (glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS) mpInput.wishY -= 1.0f;
+                if (glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS) mpInput.wishX -= 1.0f;
+                if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) mpInput.wishX += 1.0f;
+                mpInput.jumpHeld = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+                mpInput.dashPressed = glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+                mpInput.freezeHeld = glfwGetKey(engine.window(), GLFW_KEY_G) == GLFW_PRESS;
+                mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+                mpInput.equippedSlot = player.equippedSlot;
+                MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);
                 if (!mpContext.approvedLocalName.empty())
                     player.username = mpContext.approvedLocalName;
 

@@ -14,6 +14,8 @@
 #include "avatar/avatar.h"
 #include "ui-system.h"
 #include "gui-editor.h"
+#include "camera.h"
+#include "render/render-player.h"
 #include "gui-layout.h"
 #include "audio/music-manager.h"
 #include "input/input-commands.h"
@@ -258,6 +260,52 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_AVATAR_CREATOR:
         {
+            // ── 3D Avatar Preview ─────────────────────────────────
+            // Render the player model into the center of the screen
+            // behind the menu UI for a live character preview.
+            extern Player* gpPlayer;
+            if (gpPlayer)
+            {
+                // Save & clear depth for clean preview rendering behind UI
+                glClear(GL_DEPTH_BUFFER_BIT);
+
+                // Setup orbiting preview camera
+                Camera previewCam;
+                static float previewAngle = 0.0f;
+                previewAngle += 0.008f; // auto-rotate
+                if (previewAngle > 360.0f) previewAngle -= 360.0f;
+
+                float previewDist = 9.0f;
+                float previewHeight = 3.0f;
+                float rad = glm::radians(previewAngle);
+                previewCam.pos = glm::vec3(
+                    gpPlayer->pos.x + std::cos(rad) * previewDist,
+                    gpPlayer->pos.y + std::sin(rad) * previewDist,
+                    gpPlayer->pos.z + previewHeight
+                );
+                // Look toward player center
+                previewCam.front = glm::normalize(gpPlayer->pos + glm::vec3(0, 0, 1.5f) - previewCam.pos);
+                previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0, 0, 1)));
+                previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
+
+                // Render with an unobtrusive background for the preview area
+                int fbW = 0, fbH = 0;
+                glfwGetFramebufferSize(win, &fbW, &fbH);
+                // Use a scissor rect to only render in the center preview area
+                // (between left panel ~300px and right panel ~1450px in design coords)
+                float scaleX = (float)fbW / 1920.0f;
+                int previewPX = (int)(300.0f * scaleX);
+                int previewPW = (int)((1450.0f - 300.0f) * scaleX);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(previewPX, 0, previewPW, fbH);
+                glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                glDisable(GL_SCISSOR_TEST);
+
+                // Render the player model
+                renderPlayer(*gpPlayer, previewCam);
+            }
+
             printf("[AVATAR UI] Opening Avatar Creator\n");
             AvatarMenuResult r = drawAvatarMenu(win);
             if (r.goBack) {
