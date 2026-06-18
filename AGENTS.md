@@ -28,6 +28,8 @@ Rules:
 * Fix problems directly.
 * Keep solutions practical and shippable.
 
+If there is a TODO comment in the file you are working on, and it is easy enough to do, just do it and continue rather than skipping it.
+
 Do not output chain-of-thought.
 Do not narrate internal reasoning.
 

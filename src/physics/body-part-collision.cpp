@@ -181,8 +181,8 @@ void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
                         avgNormal = ct.normal;
                     }
                     penCount++;
-                    DebugVis::recordContact(ct.point, ct.normal, ct.penetration, ti,
-                                            collider.name + "_contact");
+                    std::string label = collider.name + "_contact";
+                    DebugVis::recordContact(ct.point, ct.normal, ct.penetration, ti, label.c_str());
                 }
             }
         }
@@ -208,8 +208,8 @@ void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
                     "[BODY PART] %s corrected: pen=%.4f norm=(%.2f %.2f %.2f) hits=%d\n",
                     collider.name.c_str(), maxPen, avgNormal.x, avgNormal.y, avgNormal.z, penCount);
             }
-            DebugVis::recordDepenetration(part.worldTransform[3], correction,
-                                          collider.name + "_push");
+            std::string depLabel = collider.name + "_push";
+            DebugVis::recordDepenetration(part.worldTransform[3], correction, depLabel.c_str());
         }
     }
 
