@@ -18,6 +18,7 @@
 #include "devtools/dev-npc-selection.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat.h"
+#include "perf/perf.h"
 #include "npc/npc-state-machine.h"
 
 namespace {
@@ -229,6 +230,7 @@ void NpcSystem::clear()
 
 void NpcSystem::spawnNpc(float difficulty)
 {
+    Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     uint32_t id = nextNpcId();
     npcs.emplace_back(id, d, npcSpawnPoint);
@@ -239,6 +241,7 @@ void NpcSystem::spawnNpc(float difficulty)
 
 void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)
 {
+    Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     npcs.emplace_back(id, d, spawnPos);
     AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
@@ -276,6 +279,7 @@ void NpcSystem::setGlobalDifficulty(float d)
 
 void NpcSystem::update(const World& world, Player& player, float dt)
 {
+    Perf::ScopedTimer _updateTimer("NpcUpdate");
     for (Npc& npc : npcs)
         updateOneNpc(npc, world, player, dt);
 }
@@ -374,26 +378,29 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     computeStateMovement(npc, moveDir, jump, dash, attack);
 
     // Apply wall avoidance
-    if (glm::length(moveDir) > 0.001f)
-        moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world);
+    {
+        Perf::ScopedTimer _pathTimer("NpcPathfinding");
+        if (glm::length(moveDir) > 0.001f)
+            moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world);
 
-    // Stuck detection override
-    if (NpcNavigation::isStuck(npc))
-    {
-        npc.stateMachine.stuckTimer += safeDt;
-        if (npc.stateMachine.stuckTimer > 0.3f)
+        // Stuck detection override
+        if (NpcNavigation::isStuck(npc))
         {
-            // Force unstuck: pick a free direction and jump
-            moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world);
-            jump = true;
-            dash = npc.dashCooldown <= 0.0f;
-            // Force re-evaluation soon
-            npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+            npc.stateMachine.stuckTimer += safeDt;
+            if (npc.stateMachine.stuckTimer > 0.3f)
+            {
+                // Force unstuck: pick a free direction and jump
+                moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world);
+                jump = true;
+                dash = npc.dashCooldown <= 0.0f;
+                // Force re-evaluation soon
+                npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+            }
         }
-    }
-    else
-    {
-        npc.stateMachine.stuckTimer = 0.0f;
+        else
+        {
+            npc.stateMachine.stuckTimer = 0.0f;
+        }
     }
 
     // Build input
@@ -402,32 +409,34 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         npc.dashCommandConsumed = true;
 
     // Physics update (uses same player movement system)
-    glm::vec3 velocityBefore = npc.body.vel;
-    float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
     bool downDashAvailableBefore = npc.body.downDashAvailable;
-
-    physicsMainUpdate(npc.body, world, input, safeDt);
-
-    // Track physics stats
-    float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
-    npc.lastMoveInput = input.wishMoveXY;
-    npc.lastAcceleration = (npc.body.vel - velocityBefore) / safeDt;
-    npc.lastGravityDelta = npc.body.vel.z - velocityBefore.z;
-    npc.lastFrictionDelta = input.movementPressed ? 0.0f : planarSpeedAfter - planarSpeedBefore;
-    npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
-
-    // Debug logging
-    if (DebugConfig::DEBUG_NPC)
     {
-        std::string cmdKey = "npc-cmd-" + std::to_string(npc.id);
-        Debug::logThrottled(Debug::Category::General, cmdKey.c_str(), DebugConfig::PRINT_INTERVAL,
-            "[NPC] id=%u state=%s jump=%d dash=%d move=(%.2f %.2f)\n",
-            npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
-            (int)input.jumpHeld, (int)input.dashPressed,
-            input.wishMoveXY.x, input.wishMoveXY.y);
+        Perf::ScopedTimer _npcCollision("NpcCollision");
+        glm::vec3 velocityBefore = npc.body.vel;
+        float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
 
-        std::string physKey = "npc-phys-" + std::to_string(npc.id);
-        Debug::logThrottled(Debug::Category::General, physKey.c_str(), DebugConfig::PRINT_INTERVAL,
+        physicsMainUpdate(npc.body, world, input, safeDt);
+
+        // Track physics stats
+        float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
+        npc.lastMoveInput = input.wishMoveXY;
+        npc.lastAcceleration = (npc.body.vel - velocityBefore) / safeDt;
+        npc.lastGravityDelta = npc.body.vel.z - velocityBefore.z;
+        npc.lastFrictionDelta = input.movementPressed ? 0.0f : planarSpeedAfter - planarSpeedBefore;
+        npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
+
+        // Debug logging
+        if (DebugConfig::DEBUG_NPC)
+        {
+            std::string cmdKey = "npc-cmd-" + std::to_string(npc.id);
+            Debug::logThrottled(Debug::Category::General, cmdKey.c_str(), DebugConfig::PRINT_INTERVAL,
+                "[NPC] id=%u state=%s jump=%d dash=%d move=(%.2f %.2f)\n",
+                npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
+                (int)input.jumpHeld, (int)input.dashPressed,
+                input.wishMoveXY.x, input.wishMoveXY.y);
+
+            std::string physKey = "npc-phys-" + std::to_string(npc.id);
+            Debug::logThrottled(Debug::Category::General, physKey.c_str(), DebugConfig::PRINT_INTERVAL,
             "[NPC PHYS] id=%u grounded=%d vel=(%.2f %.2f %.2f) finalSpeed=%.2f\n",
             npc.id, (int)npc.body.onGround,
             npc.body.vel.x, npc.body.vel.y, npc.body.vel.z,
@@ -446,6 +455,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                (int)(npc.sensors.targetDistance <= npc.tuning.awarenessRange),
                npc.aimTimer, npc.reactionTimer);
     }
+    } // Perf::ScopedTimer NpcCollision
 
     // Dash cooldown
     if (input.dashPressed && npc.body.didDash)
@@ -474,6 +484,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     // Attack (disabled for training modes 0 idle and 1 flee)
     if (attack && npc.attackCooldown <= 0.0f && npc.trainingMode == 2 && npc.reactionTimer <= 0.0f)
     {
+        Perf::ScopedTimer _combatTimer("NpcCombat");
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
         if (fired)
         {

@@ -1,3 +1,267 @@
 {
-  "elements": []
+  "format": "mimita-gui-layout",
+  "version": 1,
+  "elements": [
+    {
+      "id": "title",
+      "x": 50.0,
+      "y": 28.0,
+      "width": 400.0,
+      "height": 50.0,
+      "fontSize": 0.65
+    },
+    {
+      "id": "avatarHeading",
+      "x": 50.0,
+      "y": 90.0,
+      "width": 300.0,
+      "height": 36.0,
+      "fontSize": 0.38
+    },
+    {
+      "id": "avatarEntry",
+      "x": 54.0,
+      "y": 126.0,
+      "width": 312.0,
+      "height": 30.0,
+      "fontSize": 0.26
+    },
+    {
+      "id": "avatarEntrySpacing",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.0,
+      "height": 4.0
+    },
+    {
+      "id": "avatarActiveText",
+      "x": 50.0,
+      "y": 0.0,
+      "width": 300.0,
+      "height": 24.0,
+      "fontSize": 0.26
+    },
+    {
+      "id": "simpleHeading",
+      "x": 420.0,
+      "y": 90.0,
+      "width": 400.0,
+      "height": 36.0,
+      "fontSize": 0.38
+    },
+    {
+      "id": "simpleDesc",
+      "x": 420.0,
+      "y": 128.0,
+      "width": 500.0,
+      "height": 28.0,
+      "fontSize": 0.22
+    },
+    {
+      "id": "simpleSlotRow",
+      "x": 420.0,
+      "y": 156.0,
+      "width": 580.0,
+      "height": 34.0
+    },
+    {
+      "id": "simpleSlotSpacing",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.0,
+      "height": 8.0
+    },
+    {
+      "id": "simpleSlotBrowse",
+      "x": 925.0,
+      "y": 0.0,
+      "width": 70.0,
+      "height": 34.0
+    },
+    {
+      "id": "hint0",
+      "x": 420.0,
+      "y": 316.0,
+      "width": 500.0,
+      "height": 18.0,
+      "fontSize": 0.20
+    },
+    {
+      "id": "hint1",
+      "x": 420.0,
+      "y": 334.0,
+      "width": 500.0,
+      "height": 18.0,
+      "fontSize": 0.20
+    },
+    {
+      "id": "hint2",
+      "x": 420.0,
+      "y": 352.0,
+      "width": 500.0,
+      "height": 18.0,
+      "fontSize": 0.20
+    },
+    {
+      "id": "hint3",
+      "x": 420.0,
+      "y": 370.0,
+      "width": 500.0,
+      "height": 18.0,
+      "fontSize": 0.20
+    },
+    {
+      "id": "advToggle",
+      "x": 420.0,
+      "y": 644.0,
+      "width": 200.0,
+      "height": 30.0
+    },
+    {
+      "id": "saveButton",
+      "x": 420.0,
+      "y": 700.0,
+      "width": 140.0,
+      "height": 42.0
+    },
+    {
+      "id": "applyButton",
+      "x": 575.0,
+      "y": 700.0,
+      "width": 140.0,
+      "height": 42.0
+    },
+    {
+      "id": "backButton",
+      "x": 730.0,
+      "y": 700.0,
+      "width": 140.0,
+      "height": 42.0
+    },
+    {
+      "id": "advHeading",
+      "x": 1050.0,
+      "y": 90.0,
+      "width": 400.0,
+      "height": 36.0,
+      "fontSize": 0.38
+    },
+    {
+      "id": "advDesc",
+      "x": 1050.0,
+      "y": 128.0,
+      "width": 500.0,
+      "height": 28.0,
+      "fontSize": 0.22
+    },
+    {
+      "id": "advScrollUp",
+      "x": 1050.0,
+      "y": 156.0,
+      "width": 70.0,
+      "height": 20.0
+    },
+    {
+      "id": "advPartHeading",
+      "x": 1050.0,
+      "y": 0.0,
+      "width": 300.0,
+      "height": 22.0,
+      "fontSize": 0.30
+    },
+    {
+      "id": "advFaceSlot",
+      "x": 1050.0,
+      "y": 0.0,
+      "width": 126.0,
+      "height": 24.0,
+      "fontSize": 0.22
+    },
+    {
+      "id": "advFaceSpacing",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3.0,
+      "height": 0.0
+    },
+    {
+      "id": "advRowSpacing",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.0,
+      "height": 6.0
+    },
+    {
+      "id": "advListHeight",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.0,
+      "height": 560.0
+    },
+    {
+      "id": "advScrollDown",
+      "x": 1050.0,
+      "y": 0.0,
+      "width": 70.0,
+      "height": 20.0
+    },
+    {
+      "id": "saveAdvButton",
+      "x": 1050.0,
+      "y": 0.0,
+      "width": 130.0,
+      "height": 38.0
+    },
+    {
+      "id": "applyAdvButton",
+      "x": 1195.0,
+      "y": 0.0,
+      "width": 130.0,
+      "height": 38.0
+    },
+    {
+      "id": "pickerPanel",
+      "x": 680.0,
+      "y": 330.0,
+      "width": 560.0,
+      "height": 420.0
+    },
+    {
+      "id": "pickerTitle",
+      "x": 694.0,
+      "y": 342.0,
+      "width": 400.0,
+      "height": 32.0,
+      "fontSize": 0.35
+    },
+    {
+      "id": "pickerClose",
+      "x": 1204.0,
+      "y": 338.0,
+      "width": 28.0,
+      "height": 28.0
+    },
+    {
+      "id": "pickerRow",
+      "x": 694.0,
+      "y": 388.0,
+      "width": 532.0,
+      "height": 30.0,
+      "fontSize": 0.24
+    },
+    {
+      "id": "pickerScrollUp",
+      "x": 1186.0,
+      "y": 388.0,
+      "width": 40.0,
+      "height": 20.0
+    },
+    {
+      "id": "pickerScrollDown",
+      "x": 1186.0,
+      "y": 0.0,
+      "width": 40.0,
+      "height": 20.0
+    }
+  ]
 }
