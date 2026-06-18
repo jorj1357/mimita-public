@@ -7,7 +7,7 @@
   },
   "name": "default",
   "settings": {
-    "avatar_name": "",
+    "avatar_name": "test_avatar",
     "bloodfx": false,
     "collision_bounce_max_speed": 45.0,
     "collision_bounce_min_speed": 7.0,
