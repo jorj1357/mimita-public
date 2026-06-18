@@ -13,6 +13,7 @@
 #include "audio/audio.h"
 #include "input/input-state.h"
 #include "npc/npc.h"
+#include "physics/config.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
 #include "render/render-player.h"
@@ -267,8 +268,11 @@ bool DeathSystem::kill(
         killer.empty() ? "unknown" : killer,
         actorId,
         roundWinningKill);
-    victim.respawnTimer = RESPAWN_SECONDS;
+    victim.respawnTimer = (actorType == "npc") ? npcRespawnDelaySeconds : RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
+
+    if (actorType == "npc")
+        Debug::log(Debug::Category::NpcCombat, "[NPC] Respawning in %.2f seconds\n", victim.respawnTimer);
 
         // TODO(debug): migrate to Debug::log(Debug::Category::Ragdoll)
         printf("[RAGDOLL] player=%s activated=true parts=%zu\n",
@@ -632,6 +636,10 @@ void DeathSystem::update(
                     npc.body,
                     "npc_" + std::to_string(npc.id),
                     world);
+                npc.body.pos = npcSpawnPoint;
+                npc.body.respawnPosition = npcSpawnPoint;
+                Debug::log(Debug::Category::NpcCombat, "[NPC] Spawned at (%.2f, %.2f, %.2f)\n",
+                           npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z);
             }
         }
     }

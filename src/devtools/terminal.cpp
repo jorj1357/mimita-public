@@ -900,6 +900,30 @@ void Terminal::init(GLFWwindow* window) {
     });
 
     registerCommand({
+        "npc_spawnpoint",
+        "Set the global NPC spawn point",
+        "npc_spawnpoint <x> <y> <z>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 3) {
+                Terminal::instance().addLog(
+                    "Current spawn point: (" +
+                    std::to_string(npcSpawnPoint.x) + ", " +
+                    std::to_string(npcSpawnPoint.y) + ", " +
+                    std::to_string(npcSpawnPoint.z) + ")");
+                return;
+            }
+            npcSpawnPoint.x = std::stof(args[0]);
+            npcSpawnPoint.y = std::stof(args[1]);
+            npcSpawnPoint.z = std::stof(args[2]);
+            Terminal::instance().addLog(
+                "[NPC] Spawn point set to (" +
+                std::to_string(npcSpawnPoint.x) + ", " +
+                std::to_string(npcSpawnPoint.y) + ", " +
+                std::to_string(npcSpawnPoint.z) + ")");
+        }
+    });
+
+    registerCommand({
         "account",
         "Show current account and config",
         "account",

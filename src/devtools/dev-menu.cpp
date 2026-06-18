@@ -59,17 +59,17 @@ DevMenuResult drawDevMenu(GLFWwindow* win, NpcSystem& npcSystem, Player& player)
     y += 30;
     
     if (guiButton(win, "Spawn NPC (Diff 1)", 50, y, btnW, btnH, {0.9f, 0.7f, 0.3f, 1.0f})) {
-        npcSystem.spawnNpc(1.0f, player.pos + glm::vec3(5.0f, 0.0f, 0.0f));
+        npcSystem.spawnNpc(1.0f);
     }
     y += btnH + gap;
     
     if (guiButton(win, "Spawn NPC (Diff 5)", 50, y, btnW, btnH, {0.9f, 0.5f, 0.3f, 1.0f})) {
-        npcSystem.spawnNpc(5.0f, player.pos + glm::vec3(-5.0f, 0.0f, 0.0f));
+        npcSystem.spawnNpc(5.0f);
     }
     y += btnH + gap;
     
     if (guiButton(win, "Spawn NPC (Diff 10)", 50, y, btnW, btnH, {0.9f, 0.3f, 0.3f, 1.0f})) {
-        npcSystem.spawnNpc(10.0f, player.pos + glm::vec3(0.0f, 5.0f, 0.0f));
+        npcSystem.spawnNpc(10.0f);
     }
     y += btnH + gap + 10;
     

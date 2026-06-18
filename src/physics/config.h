@@ -238,9 +238,8 @@ inline float SLOPE_SKIN = 0.02f;
 // larger = more solid limbs, but more collision checks
 // keep single definition only
 // Radius for body part collision sweeps (arms, legs, etc.)
-// Increased from 0.12f to 0.25f to prevent limb spheres from catching
-// on world geometry triangle edges and corners.
-constexpr float BODY_SAMPLE_RADIUS = 0.25f;
+// 0.15f balances preventing limb tunneling vs. corner snagging.
+inline float BODY_SAMPLE_RADIUS = 0.15f;
 
 // max step heihgt
 // how up can u walk , like how tall can it be , the block
@@ -292,3 +291,15 @@ inline float DASH_SPEED_MULT = 1.5f;
 
 // testing if we want infinite dashes for combat sstem v2 mar 8 2026
 inline bool DASH_INFINITE = true;
+
+// =====================================================
+// NPC RESPAWN
+// =====================================================
+
+// How long after death before an NPC respawns.
+// Hot-reloadable: change while running to affect future respawns.
+inline float npcRespawnDelaySeconds = 0.01f;
+
+// Global spawn position for all new NPCs.
+// Hot-reloadable: change while running to affect future spawns.
+inline glm::vec3 npcSpawnPoint = glm::vec3(0.0f, 0.0f, 0.0f);

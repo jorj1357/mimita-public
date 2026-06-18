@@ -189,10 +189,9 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
 
     {
         for (int i = 0; i < config.numNpcs; ++i) {
-            glm::vec3 pos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
-            npcs.spawnNpc(config.npcDifficulty, pos);
+            npcs.spawnNpc(config.npcDifficulty);
             Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d team=NPC spawn=(%.2f %.2f %.2f)",
-                       i, pos.x, pos.y, pos.z);
+                       i, npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z);
         }
     }
 
@@ -608,8 +607,7 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     npcs.destroyAll();
 
     for (int i = 0; i < config.numNpcs; ++i) {
-        glm::vec3 spawnPos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
-        npcs.spawnNpc(config.npcDifficulty, spawnPos);
+        npcs.spawnNpc(config.npcDifficulty);
     }
 
     player.dead = false;
