@@ -29,6 +29,7 @@
     "weapon_recoil_decay": 5.0,
     "weapon_recoil_strength": 22.0,
     "weapon_sway_strength": 0.11999999731779099,
-    "weapon_weight": 1.0
+    "weapon_weight": 1.0,
+    "avatar_name": ""
   }
 }
