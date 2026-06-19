@@ -47,6 +47,53 @@ static int    capsuleVertCount = 0;
 static GLuint playerVAO = 0;
 static GLuint playerVBO = 0;
 static size_t playerUploadedVertCount = (size_t)-1;
+static GLuint* bodyPartVAOs = nullptr;
+static GLuint* bodyPartVBOs = nullptr;
+static int bodyPartCount = 0;
+static uint64_t* bodyPartUploadGenerations = nullptr;
+
+// Per-part upload: caches upload so glBufferData is NOT called every frame.
+// The part meshes only change when the atlas is reapplied (rare).
+// Uses per-part VAO/VBO so each part keeps its own GPU buffer.
+void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex)
+{
+    MIMITA_GL_CLEAR_STAGE("uploadBodyPartMeshPart");
+    if (!bodyPartVAOs) {
+        int count = 8;
+        bodyPartVAOs = new GLuint[count]();
+        bodyPartVBOs = new GLuint[count]();
+        bodyPartUploadGenerations = new uint64_t[count]();
+        bodyPartCount = count;
+    }
+    if (partIndex < 0 || partIndex >= bodyPartCount) return;
+
+    uint64_t expectedGen = reinterpret_cast<uint64_t>(mesh.verts.data()) ^ mesh.verts.size();
+    if (bodyPartUploadGenerations[partIndex] == expectedGen)
+    {
+        MIMITA_GL_CALL(glBindVertexArray(bodyPartVAOs[partIndex]));
+        return;
+    }
+
+    if (!bodyPartVAOs[partIndex])
+        MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAOs[partIndex]));
+    if (!bodyPartVBOs[partIndex])
+        MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBOs[partIndex]));
+
+    MIMITA_GL_CALL(glBindVertexArray(bodyPartVAOs[partIndex]));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBOs[partIndex]));
+    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));
+
+    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+
+    bodyPartUploadGenerations[partIndex] = expectedGen;
+}
+
+// Legacy single shared VAO/VBO upload (for death-system corpse rendering)
 static GLuint bodyPartVAO = 0;
 static GLuint bodyPartVBO = 0;
 
@@ -62,10 +109,8 @@ void uploadBodyPartMesh(const Mesh& mesh)
 
     MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
     MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-
     MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
     MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-
     MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
     MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 }
@@ -1493,16 +1538,49 @@ void Player::renderCurrentPose(unsigned int shader,
                                const glm::mat4& proj,
                                bool whiteOverride) const
 {
+    {
+        // Single-shot perf model logging outside the main block to avoid static scope issues
+        static bool perfModelLogged = false;
+        if (DebugConfig::DEBUG_PERF_MODEL && !perfModelLogged) {
+            perfModelLogged = true;
+            int totalTris = 0, totalBatches = 0, totalVerts = 0;
+            for (size_t pi = 0; pi < physicalBody.partMeshes.size(); ++pi) {
+                const Mesh& pm = physicalBody.partMeshes[pi];
+                int tris = (int)pm.verts.size() / 3;
+                totalTris += tris;
+                totalVerts += (int)pm.verts.size();
+                totalBatches += (int)pm.batches.size();
+                printf("[PERF MODEL] part=%s verts=%zu tris=%d batches=%zu\n",
+                       physicalBody.parts[pi].name.c_str(), pm.verts.size(), tris, pm.batches.size());
+            }
+            printf("[PERF MODEL] total: %d vertices, %d triangles, %d batches across %zu parts\n",
+                   totalVerts, totalTris, totalBatches, physicalBody.partMeshes.size());
+        } else if (!DebugConfig::DEBUG_PERF_MODEL) {
+            perfModelLogged = false;
+        }
+    }
+
     if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
+
+        // Cache uniform locations to avoid glGetUniformLocation calls each frame
+        static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
+        static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1;
+        if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
+        if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
+        if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
+        if (uUseColorLoc < 0) uUseColorLoc = glGetUniformLocation(shader, "uUseColor");
+        if (uColorLoc < 0) uColorLoc = glGetUniformLocation(shader, "uColor");
+        if (uTexLoc < 0) uTexLoc = glGetUniformLocation(shader, "uTex");
+
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
         MIMITA_GL_CALL(glUseProgram(shader));
-        glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
-        glUniform1i(glGetUniformLocation(shader,"uUseColor"), whiteOverride ? 1 : 0);
+        glUniformMatrix4fv(uViewLoc, 1, 0, &view[0][0]);
+        glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
+        glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
         if (whiteOverride)
-            glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
-        glUniform1i(glGetUniformLocation(shader,"uTex"),0);
+            glUniform4f(uColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+        glUniform1i(uTexLoc, 0);
 
         glActiveTexture(GL_TEXTURE0);
         for (size_t i = 0; i < physicalBody.parts.size(); ++i)
@@ -1512,10 +1590,10 @@ void Player::renderCurrentPose(unsigned int shader,
             if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
                 continue;
 
-            uploadBodyPartMesh(mesh);
+            uploadBodyPartMeshPart(mesh, (int)i);
 
             const glm::mat4& model = part.worldTransform;
-            glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
+            glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
 
             for (const Mesh::Batch& batch : mesh.batches)
             {
@@ -1594,7 +1672,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
             if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
                 continue;
 
-            uploadBodyPartMesh(mesh);
+            uploadBodyPartMeshPart(mesh, (int)i);
 
             const glm::mat4& model = part.worldTransform;
             glm::mat4 mvp = lightViewProj * model;

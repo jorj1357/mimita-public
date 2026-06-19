@@ -56,6 +56,13 @@ public:
     float lastFrictionDelta = 0.0f;
     float lastFinalSpeed = 0.0f;
     float hitReactionTimer = 0.0f;
+
+    // Bomb tag behavior flags
+    bool bombTagActive = false;
+    bool bombTagHasBomb = false;
+    glm::vec3 bombTagChaseTarget{0.0f};
+    glm::vec3 bombTagFleeFrom{0.0f};
+
     unsigned int rngState = 1;
 
     // Aim timing

@@ -49,7 +49,11 @@ namespace DebugConfig
     inline bool DEBUG_COLLISION_SYSTEM = false;
     inline bool DEBUG_COLLISION_PLAYER = false;
     inline bool DEBUG_COLLISION_LIMB = false;
+    inline bool DEBUG_COLLISION_GRID = false;
+    inline bool DEBUG_COLLISION_VALIDATE = false;
+    inline bool DEBUG_BOMBTAG = false;
     inline bool DEBUG_NPC_MOVEMENT = false;
+    inline bool DEBUG_PERF_MODEL = false;
     inline bool DEBUG_REPLAY = true;
     inline bool DEBUG_NETWORKING = false;
     inline bool DEBUG_DUEL = true;
@@ -90,6 +94,9 @@ namespace DebugConfig
         DEBUG_NPC_MOVEMENT = false;
         DEBUG_COLLISION_PLAYER = false;
         DEBUG_COLLISION_LIMB = false;
+        DEBUG_COLLISION_GRID = false;
+        DEBUG_COLLISION_VALIDATE = false;
+        DEBUG_BOMBTAG = false;
         DEBUG_REPLAY = false;
         DEBUG_NETWORKING = false;
         DEBUG_DUEL = false;
