@@ -33,7 +33,8 @@ enum GuiMenuState
     GUI_MENU_PLAY,
     GUI_MENU_PRACTICE,
     GUI_MENU_REPLAY,
-    GUI_MENU_AVATAR_CREATOR
+    GUI_MENU_AVATAR_CREATOR,
+    GUI_MENU_BOMB_TAG_CONFIG
 };
 
 extern GuiMenuState gGuiMenuState;
@@ -41,6 +42,11 @@ extern GuiMenuState gGuiMenuState;
 void guiMain(GLFWwindow* win, GameState& state);
 DuelConfigResult getPendingDuelConfig();
 void clearPendingDuelConfig();
+
+#include "game/bomb-tag-config.h"
+extern BombTagConfigResult gPendingBombTagConfig;
+BombTagConfigResult getPendingBombTagConfig();
+void clearPendingBombTagConfig();
 
 struct SandboxMapSelection
 {

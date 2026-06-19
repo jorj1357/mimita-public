@@ -129,6 +129,7 @@
 #include "replay/replay-export.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
+#include "game/bomb-tag.h"
 #include "debug/log-manager.h"
 #include <windows.h>
 
@@ -136,6 +137,7 @@
 // duelamanger should be  a game manager, with specific modes in it
 // not all in main todo 
 DuelManager gDuelManager;
+BombTagManager gBombTagManager;
 FramePacer gFramePacer;
 
 // Global game objects (pointers set by main() for terminal command access)
@@ -1606,6 +1608,8 @@ int main(int argc, char** argv)
     registerDebugToggle("collision_debug_limb", DebugConfig::DEBUG_COLLISION_LIMB);
     registerDebugToggle("show_body_colliders", DebugConfig::DEBUG_COLLISION_LIMB);
     registerDebugToggle("show_body_contacts", DebugConfig::DEBUG_COLLISION_SYSTEM);
+    registerDebugToggle("debug_collisions", DebugConfig::DEBUG_COLLISION_GRID);
+    registerDebugToggle("collision_validate", DebugConfig::DEBUG_COLLISION_VALIDATE);
     registerDebugToggle("collision_draw_triangles", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_draw_contacts", DebugConfig::DEBUG_COLLISION_SYSTEM);
     registerDebugToggle("collision_draw_capsule", DebugConfig::DEBUG_COLLISION_PLAYER);
@@ -1614,9 +1618,11 @@ int main(int argc, char** argv)
     registerDebugToggle("npc_movement_debug", DebugConfig::DEBUG_NPC_MOVEMENT);
     registerDebugToggle("ragdoll_debug", DebugConfig::DEBUG_RAGDOLL);
     registerDebugToggle("replay_debug", DebugConfig::DEBUG_REPLAY);
+    registerDebugToggle("bombtag_debug", DebugConfig::DEBUG_BOMBTAG);
     registerDebugToggle("networking_debug", DebugConfig::DEBUG_NETWORKING);
     registerDebugToggle("duel_debug", DebugConfig::DEBUG_DUEL);
     registerDebugToggle("animation_debug", DebugConfig::DEBUG_ANIMATION);
+    registerDebugToggle("debug_perf_model", DebugConfig::DEBUG_PERF_MODEL);
     registerDebugToggle("ui_debug", DebugConfig::DEBUG_UI);
     registerDebugToggle("physics_debug", DebugConfig::DEBUG_PHYSICS);
     registerDebugToggle("combat_debug", DebugConfig::DEBUG_NPC_COMBAT);
@@ -2695,6 +2701,25 @@ int main(int argc, char** argv)
                         activeMapPath = cfg.mapPath;
                         worldLoaded = !world.mesh.verts.empty();
                         clearPendingDuelConfig();
+                        gBombTagManager.stop();
+                    }
+                }
+                // Handle bomb tag config from menu
+                {
+                    BombTagConfigResult bcr = getPendingBombTagConfig();
+                    if (bcr.start) {
+                        gDuelManager.stopDuel();
+                        BombTagConfig cfg;
+                        cfg.numNpcs = bcr.numNpcs;
+                        cfg.lives = bcr.lives;
+                        cfg.timeLimitSeconds = bcr.timeLimitSeconds;
+                        cfg.npcDifficulty = bcr.npcDifficulty;
+                        cfg.enabled = true;
+                        gBombTagManager.setCamera(camera);
+                        gBombTagManager.start(cfg, player, npcSystem, world);
+                        activeMapPath = cfg.mapPath;
+                        worldLoaded = !world.mesh.verts.empty();
+                        clearPendingBombTagConfig();
                     }
                 }
                 // Handle multiplayer connect from menu
@@ -2903,7 +2928,9 @@ int main(int argc, char** argv)
                     tickFrame = buildInputFrame(engine.window(), camera);
 
                     if (gDuelManager.phase() == DuelPhase::Countdown ||
-                        gDuelManager.phase() == DuelPhase::MatchEnd)
+                        gDuelManager.phase() == DuelPhase::MatchEnd ||
+                        gBombTagManager.isCountdownActive() ||
+                        gBombTagManager.phase() == BombTagPhase::MatchEnd)
                     {
                         tickFrame.moveX = 0.0f;
                         tickFrame.moveY = 0.0f;
@@ -3624,12 +3651,12 @@ int main(int argc, char** argv)
             }
 
             if (!replayPlaybackActive) {
-                gDuelManager.update(
-                    dt,
-                    player,
-                    npcSystem,
-                    world,
-                    camera);
+                if (gDuelManager.enabled()) {
+                    gDuelManager.update(dt, player, npcSystem, world, camera);
+                }
+                if (gBombTagManager.enabled()) {
+                    gBombTagManager.update(dt, player, npcSystem, world);
+                }
                 player.updateAudio(dt);
 
                 // Auto-start replay when state becomes FinalKillReplay
@@ -3719,11 +3746,14 @@ int main(int argc, char** argv)
             bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd;
             bool duelCountdown = gDuelManager.isCountdownActive();
-            if (duelEndVisible && mouseDown && !mousePrev) {
-                Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=duel_end_ui consumed=1");
-                Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=duel_end_ui_visible");
+            bool bombTagEndVisible = gBombTagManager.phase() == BombTagPhase::MatchEnd;
+            bool bombTagCountdown = gBombTagManager.isCountdownActive();
+            if ((duelEndVisible || bombTagEndVisible) && mouseDown && !mousePrev) {
+                Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=game_end_ui consumed=1");
+                Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=end_ui_visible");
             }
             if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
+                !bombTagEndVisible && !bombTagCountdown &&
                 !Terminal::instance().isOpen() && mouseDown) {
                 const WeaponDefinition* curDef = weapons.getCurrentDef(player);
                 bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
@@ -4628,6 +4658,7 @@ int main(int argc, char** argv)
                         gReplayRecorder.stopRecording();
                     Debug::log(Debug::Category::Duel, "[DUEL] clearing duel state");
                     gDuelManager.stopDuel();
+                    gBombTagManager.stop();
                     Debug::log(Debug::Category::Duel, "[DUEL] destroying NPCs");
                     npcSystem.destroyAll();
                     Debug::log(Debug::Category::Duel, "[DUEL] forcing cursor normal");
@@ -4660,8 +4691,34 @@ int main(int argc, char** argv)
                         Debug::log(Debug::Category::Duel, "[EXPORT] finalKillReplayPath EMPTY - replay clip not saved yet");
                     }
                 }
+            } else if (gBombTagManager.phase() == BombTagPhase::MatchEnd) {
+                BombTagMenuAction btAction = gBombTagManager.renderMatchOverScreen(engine.window());
+                if (btAction == BombTagMenuAction::PlayAgain) {
+                    BombTagConfig cfg;
+                    cfg.numNpcs = 3;
+                    cfg.npcDifficulty = 5.0f;
+                    cfg.lives = 0;
+                    cfg.timeLimitSeconds = 180;
+                    cfg.enabled = true;
+                    cfg.mapPath = activeMapPath;
+                    npcSystem.destroyAll();
+                    gBombTagManager.setCamera(camera);
+                    gBombTagManager.start(cfg, player, npcSystem, world);
+                } else if (btAction == BombTagMenuAction::ExitToMenu) {
+                    gReplayPlayer.stopPlayback();
+                    if (gReplayRecorder.isRecording())
+                        gReplayRecorder.stopRecording();
+                    gBombTagManager.stop();
+                    gDuelManager.stopDuel();
+                    npcSystem.destroyAll();
+                    glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    gameState = GAME_MENU;
+                }
             } else {
-                gDuelManager.renderHud();
+                if (gDuelManager.enabled())
+                    gDuelManager.renderHud();
+                if (gBombTagManager.enabled())
+                    gBombTagManager.renderHud();
             }
 
             // TAB Player List overlay

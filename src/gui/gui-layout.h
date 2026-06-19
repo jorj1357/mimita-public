@@ -11,25 +11,63 @@ struct UIRect;
 
 // A single editable element in a GUI layout
 struct GuiElement {
+    // Identity
     std::string id;
+    std::string type = "button";   // "button", "text", "image", "panel",
+                                   // "checkbox", "slider", "dropdown"
+
+    // Layout
     float x = 0.0f;
     float y = 0.0f;
-    float w = 0.0f;
-    float h = 0.0f;
+    float w = 100.0f;
+    float h = 30.0f;
     float textOffsetX = 8.0f;
     float textOffsetY = 4.0f;
-    float fontSize = 0.0f;
-    float padding = 0.0f;
+    float padding = 8.0f;
     float margin = 0.0f;
-    bool visible = true;
-    float hoverScale = 1.0f;
-    std::string hoverSound;
-    std::string clickSound;
-    std::string backgroundImage;
-    std::string backgroundVideo;
+    float rotation = 0.0f;
     std::string anchorX = "left";
     std::string anchorY = "top";
     int layer = 0;
+
+    // Appearance
+    bool visible = true;
+    bool enabled = true;
+    float opacity = 1.0f;
+    float hoverScale = 1.0f;
+
+    // Text
+    std::string text;
+    std::string font;
+    float fontSize = 0.0f;
+
+    // Colors: [r, g, b, a] each in 0-1 range (empty vector = not set for overrides)
+    std::vector<float> textColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    std::vector<float> backgroundColor = {0.2f, 0.2f, 0.3f, 1.0f};
+    std::vector<float> hoverColor;
+    std::vector<float> pressedColor;
+    std::vector<float> outlineColor;
+
+    // Image / media
+    std::string backgroundImage;
+    std::string backgroundVideo;
+
+    // Sound
+    std::string hoverSound;
+    std::string clickSound;
+
+    // Helpers for converting color vectors to glm::vec4
+    glm::vec4 getTextColorVec() const;
+    glm::vec4 getBackgroundColorVec() const;
+    bool hasHoverColor() const { return hoverColor.size() == 4; }
+    glm::vec4 getHoverColorVec() const;
+    bool hasPressedColor() const { return pressedColor.size() == 4; }
+    glm::vec4 getPressedColorVec() const;
+    bool hasOutlineColor() const { return outlineColor.size() == 4; }
+    glm::vec4 getOutlineColorVec() const;
+
+    // Reset all color overrides (hover, pressed, outline) to unset
+    void clearColorOverrides();
 };
 
 // Manages a single layout file (one per menu/screen)

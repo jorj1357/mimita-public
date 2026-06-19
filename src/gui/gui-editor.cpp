@@ -1,13 +1,11 @@
 #include "gui-editor.h"
 #include "gui-coord.h"
-
 #include "gui-layout.h"
 #include "ui-system.h"
 
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
-#include <GLFW/glfw3.h>
 
 GuiEditor& GuiEditor::instance()
 {
@@ -23,13 +21,15 @@ void GuiEditor::setEnabled(bool e)
         mSelectedId.clear();
         mDragging = false;
         mResizing = false;
+        mResizeCorner = -1;
+        mSnapGuides.clear();
+        GuiLayoutManager::instance().saveAll();
     }
 }
 
 void GuiEditor::setActiveLayout(const std::string& filePath)
 {
     mActiveLayoutFile = filePath;
-    // Pre-load the layout to ensure it's in the manager
     if (!filePath.empty())
         GuiLayoutManager::instance().getLayout(filePath);
 }
@@ -37,38 +37,103 @@ void GuiEditor::setActiveLayout(const std::string& filePath)
 void GuiEditor::update(GLFWwindow* win)
 {
     if (!mEnabled) return;
+    autoSave();
     handleInput(win);
     handleKeyboard(win);
     renderOverlay(win);
 }
 
+void GuiEditor::autoSave()
+{
+    if (!GuiLayoutManager::instance().hasUnsaved()) return;
+    double now = glfwGetTime();
+    if (now - mLastEditTime >= AUTO_SAVE_DELAY) {
+        GuiLayoutManager::instance().saveAll();
+        mLastEditTime = now;
+    }
+}
+
+void GuiEditor::markEdited()
+{
+    mLastEditTime = glfwGetTime();
+}
+
+// ── Value rounding ────────────────────────────────────────────────
+float GuiEditor::roundValue(float val)
+{
+    float nearest = std::round(val);
+    if (std::abs(val - nearest) <= 1.2f) return nearest;
+    float nearest5 = std::round(val / 5.0f) * 5.0f;
+    if (std::abs(val - nearest5) <= 3.0f) return nearest5;
+    return val;
+}
+
+float GuiEditor::roundCoord(float val) { return roundValue(val); }
+
+// ── Snap guides ──────────────────────────────────────────────────
+void GuiEditor::computeSnapGuides(const GuiElement& elem)
+{
+    mSnapGuides.clear();
+    mSnapGuides.push_back({960.0f, true});
+    mSnapGuides.push_back({540.0f, false});
+    mSnapGuides.push_back({0.0f, true});
+    mSnapGuides.push_back({1920.0f, true});
+    mSnapGuides.push_back({0.0f, false});
+    mSnapGuides.push_back({1080.0f, false});
+
+    if (mActiveLayoutFile.empty()) return;
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    for (const std::string& id : layout.elementIds()) {
+        if (id == mSelectedId) continue;
+        const GuiElement* other = layout.get(id);
+        if (!other) continue;
+        mSnapGuides.push_back({other->x, true});
+        mSnapGuides.push_back({other->x + other->w, true});
+        mSnapGuides.push_back({other->x + other->w * 0.5f, true});
+        mSnapGuides.push_back({other->y, false});
+        mSnapGuides.push_back({other->y + other->h, false});
+        mSnapGuides.push_back({other->y + other->h * 0.5f, false});
+    }
+}
+
+void GuiEditor::snapPosition(float& x, float& y, float w, float h) const
+{
+    const float threshold = 8.0f;
+    float best = threshold * threshold;
+    float sx = x, sy = y;
+    for (const auto& g : mSnapGuides) {
+        if (g.vertical) {
+            for (float e : {x, x + w, x + w * 0.5f}) {
+                float d = e - g.pos;
+                if (d * d < best) { best = d * d; sx = x - d; }
+            }
+        } else {
+            for (float e : {y, y + h, y + h * 0.5f}) {
+                float d = e - g.pos;
+                if (d * d < best) { best = d * d; sy = y - d; }
+            }
+        }
+    }
+    x = sx; y = sy;
+}
+
+// ── Overlap ──────────────────────────────────────────────────────
 void GuiEditor::checkOverlaps()
 {
     mHasOverlap = false;
     if (mActiveLayoutFile.empty() || mSelectedId.empty()) return;
-
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-    const GuiElement* selected = layout.get(mSelectedId);
-    if (!selected) return;
-
-    // Convert design coords to framebuffer for overlap comparison
-    float sx = uiScaleX(selected->x);
-    float sy = uiScaleY(selected->y);
-    float sw = uiScaleX(selected->w);
-    float sh = uiScaleY(selected->h);
-
-    for (const std::string& id : layout.elementIds())
-    {
+    const GuiElement* sel = layout.get(mSelectedId);
+    if (!sel) return;
+    float sx = uiScaleX(sel->x), sy = uiScaleY(sel->y);
+    float sw = uiScaleX(sel->w), sh = uiScaleY(sel->h);
+    for (const std::string& id : layout.elementIds()) {
         if (id == mSelectedId) continue;
-        const GuiElement* elem = layout.get(id);
-        if (!elem) continue;
-
-        float ex = uiScaleX(elem->x);
-        float ey = uiScaleY(elem->y);
-
-        if (sx < ex + uiScaleX(elem->w) && sx + sw > ex &&
-            sy < ey + uiScaleY(elem->h) && sy + sh > ey)
-        {
+        const GuiElement* e = layout.get(id);
+        if (!e) continue;
+        float ex = uiScaleX(e->x), ey = uiScaleY(e->y);
+        if (sx < ex + uiScaleX(e->w) && sx + sw > ex &&
+            sy < ey + uiScaleY(e->h) && sy + sh > ey) {
             mHasOverlap = true;
             printf("[GUI EDIT OVERLAP] \"%s\" overlaps \"%s\"\n",
                    mSelectedId.c_str(), id.c_str());
@@ -77,40 +142,110 @@ void GuiEditor::checkOverlaps()
     }
 }
 
+// ── Property panel constants ──────────────────────────────────────
+static constexpr float PP_X = 1460.0f, PP_Y = 80.0f, PP_W = 430.0f;
+static constexpr float PP_LABEL_X = 1470.0f;
+static constexpr float PP_TRACK_X = 1560.0f, PP_TRACK_W = 230.0f;
+static constexpr float PP_VAL_X = 1800.0f;
+static constexpr float PP_ROW_H = 22.0f;
+
+// ── Input ─────────────────────────────────────────────────────────
 void GuiEditor::handleInput(GLFWwindow* win)
 {
-    // Get cursor in screen (framebuffer) coordinates
     double mx, my;
     glfwGetCursorPos(win, &mx, &my);
     double fbx, fby;
     GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, fbx, fby);
-
-    // Convert cursor to design coordinates for comparison with tracked widgets
     double dx = GuiCoordinateSystem::instance().screenToDesignX((float)fbx);
     double dy = GuiCoordinateSystem::instance().screenToDesignY((float)fby);
 
     bool mouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    static bool prevDown = false;
+    bool pressed = mouseDown && !prevDown;
+    bool released = !mouseDown && prevDown;
+    prevDown = mouseDown;
 
-    if (mouseDown && !mDragging && !mResizing &&
-        !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
-        GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-        const GuiElement* elem = layout.get(mSelectedId);
-        if (elem) {
-            const float handleRadius = 12.0f;
-            const float right = elem->x + elem->w;
-            const float bottom = elem->y + elem->h;
-            if (std::abs((float)dx - right) <= handleRadius &&
-                std::abs((float)dy - bottom) <= handleRadius) {
-                mResizing = true;
+    // Property panel slider dragging
+    static int dragSlider = -1;
+    if (dragSlider >= 0) {
+        if (mouseDown && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+            GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+            if (elem) {
+                float t = std::clamp((float)(dx - PP_TRACK_X) / PP_TRACK_W, 0.0f, 1.0f);
+                auto setR = [&](float& v, float mn, float mx) { v = mn + t * (mx - mn); };
+                if (dragSlider == 0) setR(elem->x, 0, 1920);
+                else if (dragSlider == 1) setR(elem->y, 0, 1080);
+                else if (dragSlider == 2) setR(elem->w, 10, 800);
+                else if (dragSlider == 3) setR(elem->h, 10, 600);
+                else if (dragSlider == 4 && !elem->textColor.empty()) setR(elem->textColor[0], 0, 1);
+                else if (dragSlider == 5 && elem->textColor.size() > 1) setR(elem->textColor[1], 0, 1);
+                else if (dragSlider == 6 && elem->textColor.size() > 2) setR(elem->textColor[2], 0, 1);
+                else if (dragSlider == 7 && elem->textColor.size() > 3) setR(elem->textColor[3], 0, 1);
+                else if (dragSlider == 8 && !elem->backgroundColor.empty()) setR(elem->backgroundColor[0], 0, 1);
+                else if (dragSlider == 9 && elem->backgroundColor.size() > 1) setR(elem->backgroundColor[1], 0, 1);
+                else if (dragSlider == 10 && elem->backgroundColor.size() > 2) setR(elem->backgroundColor[2], 0, 1);
+                else if (dragSlider == 11 && elem->backgroundColor.size() > 3) setR(elem->backgroundColor[3], 0, 1);
+                else if (dragSlider == 12) setR(elem->opacity, 0, 1);
+                layout.setElement(*elem);
+                markEdited();
+            }
+            return;
+        } else {
+            dragSlider = -1;
+        }
+    }
+
+    // Start slider drag
+    if (pressed && !mDragging && !mResizing) {
+        if (dx >= PP_TRACK_X && dx <= PP_TRACK_X + PP_TRACK_W && dy >= PP_Y + 30.0f) {
+            int idx = (int)((dy - (PP_Y + 30.0f)) / PP_ROW_H);
+            if (idx >= 0 && idx <= 13) {
+                dragSlider = idx;
                 return;
             }
         }
     }
 
-    if (mouseDown && !mDragging && !mResizing) {
-        // Only check widgets rendered this frame (tracked in design coordinates)
-        const auto& widgets = uiGetTrackedWidgets();
-        for (const auto& w : widgets) {
+    // Hierarchy click
+    if (pressed && !mDragging && !mResizing) {
+        float hx = 12.0f, hy = 110.0f;
+        if (dx >= hx && dx <= hx + 218.0f && dy >= hy && !mActiveLayoutFile.empty()) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+            auto ids = layout.elementIds();
+            int idx = (int)((dy - hy) / PP_ROW_H);
+            if (idx >= 0 && idx < (int)ids.size()) {
+                mSelectedId = ids[idx];
+                mDragOffsetX = 0; mDragOffsetY = 0;
+                printf("[GUI EDIT] hierarchy selected \"%s\"\n", mSelectedId.c_str());
+                return;
+            }
+        }
+    }
+
+    // Resize corner detection
+    if (pressed && !mDragging && !mResizing && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+        GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+        const GuiElement* elem = layout.get(mSelectedId);
+        if (elem) {
+            const float hr = 12.0f;
+            float cx[4] = {elem->x, elem->x + elem->w, elem->x, elem->x + elem->w};
+            float cy[4] = {elem->y, elem->y, elem->y + elem->h, elem->y + elem->h};
+            for (int i = 0; i < 4; ++i) {
+                if (std::abs((float)dx - cx[i]) <= hr && std::abs((float)dy - cy[i]) <= hr) {
+                    mResizing = true;
+                    mResizeCorner = i;
+                    mResizeStartX = elem->x; mResizeStartY = elem->y;
+                    mResizeStartW = elem->w; mResizeStartH = elem->h;
+                    return;
+                }
+            }
+        }
+    }
+
+    // Selection click
+    if (pressed && !mDragging && !mResizing) {
+        for (const auto& w : uiGetTrackedWidgets()) {
             double wx = w.rect.x, wy = w.rect.y, ww = w.rect.w, wh = w.rect.h;
             if (dx >= wx && dx <= wx + ww && dy >= wy && dy <= wy + wh) {
                 mSelectedId = w.id;
@@ -118,10 +253,8 @@ void GuiEditor::handleInput(GLFWwindow* win)
                 mDragOffsetY = (float)dy - wy;
                 mDragging = true;
                 mHasOverlap = false;
-                printf("[GUI EDIT] selected widget=\"%s\"  design=(%.0f,%.0f)  size=(%.0f,%.0f)\n",
+                printf("[GUI EDIT] selected \"%s\" (%.0f,%.0f) %.0fx%.0f\n",
                        w.id.c_str(), wx, wy, ww, wh);
-
-                // Store directly in layout (already design coordinates)
                 if (!mActiveLayoutFile.empty()) {
                     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
                     layout.set(mSelectedId, (float)wx, (float)wy, (float)ww, (float)wh);
@@ -132,160 +265,333 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
+    // Drag with snap
     if (mDragging) {
-        if (mouseDown && !mSelectedId.empty()) {
-            if (!mActiveLayoutFile.empty()) {
-                GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-                const GuiElement* elem = layout.get(mSelectedId);
-                float w = elem ? elem->w : 50.0f;
-                float h = elem ? elem->h : 30.0f;
-                // Drag delta is in design coordinates
-                float newX = (float)dx - mDragOffsetX;
-                float newY = (float)dy - mDragOffsetY;
-                layout.set(mSelectedId, newX, newY, w, h);
-                checkOverlaps();
-            }
-        } else {
-            mDragging = false;
-            mHasOverlap = false;
-        }
-    }
-
-    if (mResizing) {
         if (mouseDown && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             const GuiElement* elem = layout.get(mSelectedId);
             if (elem) {
-                GuiElement updated = *elem;
-                updated.w = std::max(1.0f, (float)dx - updated.x);
-                updated.h = std::max(1.0f, (float)dy - updated.y);
-                layout.setElement(updated);
+                float nx = (float)dx - mDragOffsetX;
+                float ny = (float)dy - mDragOffsetY;
+                computeSnapGuides(*elem);
+                snapPosition(nx, ny, elem->w, elem->h);
+                layout.set(mSelectedId, roundCoord(nx), roundCoord(ny),
+                           roundValue(elem->w), roundValue(elem->h));
                 checkOverlaps();
+                markEdited();
+            }
+        } else {
+            mDragging = false;
+            mHasOverlap = false;
+            mSnapGuides.clear();
+        }
+    }
+
+    // Resize
+    if (mResizing) {
+        if (mouseDown && mResizeCorner >= 0 && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+            GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+            if (elem) {
+                float ndx = (float)dx, ndy = (float)dy;
+                float nw = mResizeStartW, nh = mResizeStartH;
+                float nx = mResizeStartX, ny = mResizeStartY;
+                switch (mResizeCorner) {
+                    case 0:
+                        nw = std::max(10.0f, mResizeStartW + (mResizeStartX - ndx));
+                        nh = std::max(10.0f, mResizeStartH + (mResizeStartY - ndy));
+                        nx = mResizeStartX + (mResizeStartW - nw);
+                        ny = mResizeStartY + (mResizeStartH - nh);
+                        break;
+                    case 1:
+                        nw = std::max(10.0f, ndx - mResizeStartX);
+                        nh = std::max(10.0f, mResizeStartH + (mResizeStartY - ndy));
+                        ny = mResizeStartY + (mResizeStartH - nh);
+                        break;
+                    case 2:
+                        nw = std::max(10.0f, mResizeStartW + (mResizeStartX - ndx));
+                        nh = std::max(10.0f, ndy - mResizeStartY);
+                        nx = mResizeStartX + (mResizeStartW - nw);
+                        break;
+                    case 3:
+                        nw = std::max(10.0f, ndx - mResizeStartX);
+                        nh = std::max(10.0f, ndy - mResizeStartY);
+                        break;
+                }
+                elem->w = roundValue(nw); elem->h = roundValue(nh);
+                elem->x = roundCoord(nx); elem->y = roundCoord(ny);
+                layout.setElement(*elem);
+                checkOverlaps();
+                markEdited();
             }
         } else {
             mResizing = false;
+            mResizeCorner = -1;
             mHasOverlap = false;
         }
     }
 }
 
+// ── Keyboard ─────────────────────────────────────────────────────
 void GuiEditor::handleKeyboard(GLFWwindow* win)
 {
     if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
-
     float step = 1.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-        glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
-        step = 10.0f;
+        glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) step = 10.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-        glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)
-        step = 50.0f;
+        glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) step = 50.0f;
 
-    float dx = 0.0f, dy = 0.0f;
+    float dx = 0, dy = 0;
     if (glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS) dx -= step;
     if (glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS) dx += step;
     if (glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS) dy -= step;
     if (glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS) dy += step;
+    if (dx == 0 && dy == 0) return;
 
-    if (dx != 0.0f || dy != 0.0f) {
-        GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-        const GuiElement* elem = layout.get(mSelectedId);
-        if (elem) {
-            GuiElement updated = *elem;
-            if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS) {
-                updated.textOffsetX += dx;
-                updated.textOffsetY += dy;
-            } else if (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
-                       glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
-                updated.w = std::max(1.0f, updated.w + dx);
-                updated.h = std::max(1.0f, updated.h + dy);
-            } else {
-                updated.x += dx;
-                updated.y += dy;
-            }
-            layout.setElement(updated);
-            checkOverlaps();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+    if (!elem) return;
+    if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS) {
+        elem->textOffsetX += dx; elem->textOffsetY += dy;
+    } else if (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+               glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
+        elem->w = std::max(10.0f, elem->w + dx);
+        elem->h = std::max(10.0f, elem->h + dy);
+    } else {
+        elem->x += dx; elem->y += dy;
+    }
+    elem->x = roundCoord(elem->x); elem->y = roundCoord(elem->y);
+    layout.setElement(*elem);
+    checkOverlaps();
+    markEdited();
+}
+
+// ── Selection handles ────────────────────────────────────────────
+void GuiEditor::renderSelectionHandles(const GuiElement& elem)
+{
+    float sx = uiScaleX(elem.x), sy = uiScaleY(elem.y);
+    float sw = uiScaleX(elem.w), sh = uiScaleY(elem.h);
+    float hs = 6.0f;
+    glm::vec4 oc = mHasOverlap
+        ? glm::vec4(1,0,0,1) : glm::vec4(0,1,0.2f,1);
+    uiDrawRectOutline({sx - 2, sy - 2, sw + 4, sh + 4}, oc, "gui-sel");
+    glm::vec4 hc(1,1,0.3f,1);
+    uiDrawRect({sx - hs, sy - hs, hs * 2, hs * 2}, hc, "gui-h");
+    uiDrawRect({sx + sw - hs, sy - hs, hs * 2, hs * 2}, hc, "gui-h");
+    uiDrawRect({sx - hs, sy + sh - hs, hs * 2, hs * 2}, hc, "gui-h");
+    uiDrawRect({sx + sw - hs, sy + sh - hs, hs * 2, hs * 2}, hc, "gui-h");
+}
+
+// ── Property panel ───────────────────────────────────────────────
+void GuiEditor::renderPropertyPanel(const GuiElement& elem)
+{
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    // Background
+    UIRect pbg = cs.designToScreen({PP_X, PP_Y, PP_W, 520.0f});
+    uiDrawRect(pbg, {0.08f, 0.08f, 0.12f, 0.92f}, "gui-prop");
+    uiDrawRectOutline(pbg, {0.3f, 0.3f, 0.4f, 0.8f}, "gui-prop-border");
+
+    auto dsx = [&](float x) { return cs.designToScreenX(x); };
+    auto dsy = [&](float y) { return cs.designToScreenY(y); };
+
+    // Title
+    char title[128];
+    snprintf(title, sizeof(title), "PROPERTIES: %s (%s)", elem.id.c_str(), elem.type.c_str());
+    uiDrawText(title, dsx(PP_X + 8), dsy(PP_Y + 4), 0.30f, {0.4f, 1.0f, 0.6f, 1.0f});
+    uiDrawRect({dsx(PP_X + 4), dsy(PP_Y + 28), dsx(PP_W - 8), 1},
+               {0.3f, 0.3f, 0.5f, 0.6f}, "gui-p-div");
+
+    // ── Draw one slider row ──
+    struct R { const char* label; float val; float mn; float mx; int idx; };
+    auto readCol = [&](const std::vector<float>& c, int i) {
+        return (int)c.size() > i ? c[i] : (i < 3 ? 0.0f : 1.0f);
+    };
+    R rows[] = {
+        {"X", elem.x, 0, 1920, 0},
+        {"Y", elem.y, 0, 1080, 1},
+        {"W", elem.w, 10, 800, 2},
+        {"H", elem.h, 10, 600, 3},
+        {"--- Text ---", 0, 0, 0, -1},
+        {"Font", elem.fontSize, 0, 2, -2},
+        {"T-R", readCol(elem.textColor, 0), 0, 1, 4},
+        {"T-G", readCol(elem.textColor, 1), 0, 1, 5},
+        {"T-B", readCol(elem.textColor, 2), 0, 1, 6},
+        {"T-A", readCol(elem.textColor, 3), 0, 1, 7},
+        {"--- BG ---", 0, 0, 0, -1},
+        {"B-R", readCol(elem.backgroundColor, 0), 0, 1, 8},
+        {"B-G", readCol(elem.backgroundColor, 1), 0, 1, 9},
+        {"B-B", readCol(elem.backgroundColor, 2), 0, 1, 10},
+        {"B-A", readCol(elem.backgroundColor, 3), 0, 1, 11},
+        {"--- Misc ---", 0, 0, 0, -1},
+        {"Opacity", elem.opacity, 0, 1, 12},
+        {"Padding", elem.padding, 0, 100, -2},
+    };
+
+    for (int i = 0; i < (int)(sizeof(rows)/sizeof(rows[0])); ++i) {
+        float ry = PP_Y + 34.0f + i * PP_ROW_H;
+        auto& r = rows[i];
+        bool isSection = (r.idx == -1);
+        bool isReadOnly = (r.idx == -2);
+
+        if (isSection) {
+            uiDrawText(r.label, dsx(PP_X + 8), dsy(ry + 2), 0.24f,
+                       {0.5f, 0.6f, 0.8f, 1.0f});
+            continue;
+        }
+
+        // Label
+        uiDrawText(r.label, dsx(PP_LABEL_X), dsy(ry), 0.26f,
+                   {0.7f, 0.8f, 0.9f, 1.0f});
+
+        // Track
+        float tsx = dsx(PP_TRACK_X), tsy = dsy(ry);
+        float tsw = dsx(PP_TRACK_W), tsh = dsy(PP_ROW_H);
+        uiDrawRect({tsx, tsy, tsw, tsh}, {0.15f, 0.15f, 0.2f, 1.0f}, "st");
+
+        if (!isReadOnly) {
+            float t = (r.mx > r.mn) ? std::clamp((r.val - r.mn) / (r.mx - r.mn), 0.0f, 1.0f) : 0;
+            uiDrawRect({tsx, tsy, tsw * t, tsh}, {0.25f, 0.6f, 0.9f, 1.0f}, "sf");
+        }
+
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.2f", r.val);
+        uiDrawText(buf, dsx(PP_VAL_X), dsy(ry), 0.26f, {0.9f, 0.9f, 0.5f, 1.0f});
+    }
+
+    // Visibility / enabled toggles display
+    float toy = PP_Y + 34.0f + (sizeof(rows)/sizeof(rows[0])) * PP_ROW_H + 4;
+    uiDrawText(elem.visible ? "[VISIBLE]" : "[HIDDEN]",
+               dsx(PP_X + 8), dsy(toy), 0.26f,
+               elem.visible ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
+    uiDrawText(elem.enabled ? "[ENABLED]" : "[DISABLED]",
+               dsx(PP_X + 120), dsy(toy), 0.26f,
+               elem.enabled ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
+
+    // Anchor info
+    char info[128];
+    snprintf(info, sizeof(info), "Anchor: %s/%s  Layer: %d  Rot: %.0f",
+             elem.anchorX.c_str(), elem.anchorY.c_str(), elem.layer, elem.rotation);
+    uiDrawText(info, dsx(PP_X + 8), dsy(toy + PP_ROW_H), 0.24f,
+               {0.5f, 0.6f, 0.8f, 1.0f});
+
+    // Text content display
+    if (!elem.text.empty()) {
+        uiDrawText(elem.text.c_str(), dsx(PP_X + 8), dsy(toy + PP_ROW_H * 2),
+                   0.26f, {0.8f, 0.8f, 0.5f, 1.0f});
+    }
+}
+
+// ── Hierarchy ────────────────────────────────────────────────────
+void GuiEditor::renderHierarchyView()
+{
+    if (mActiveLayoutFile.empty()) return;
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    auto ids = layout.elementIds();
+    if (ids.empty()) return;
+
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    const float hx = 10.0f, hy = 80.0f, hw = 220.0f;
+    float maxH = std::max(60.0f, (float)ids.size() * PP_ROW_H + 34.0f);
+
+    UIRect bg = cs.designToScreen({hx, hy, hw, maxH});
+    uiDrawRect(bg, {0.08f, 0.08f, 0.12f, 0.92f}, "gui-hier");
+    uiDrawRectOutline(bg, {0.3f, 0.3f, 0.4f, 0.7f}, "gui-hier-border");
+
+    uiDrawText("ELEMENTS", cs.designToScreenX(hx + 8), cs.designToScreenY(hy + 4),
+               0.28f, {0.4f, 1.0f, 0.6f, 1.0f});
+    uiDrawRect({cs.designToScreenX(hx + 4), cs.designToScreenY(hy + 28),
+                cs.designToScreenX(hw - 8), 1},
+               {0.3f, 0.3f, 0.5f, 0.6f}, "gui-h-div");
+
+    for (size_t i = 0; i < ids.size(); ++i) {
+        float ry = hy + 32.0f + i * PP_ROW_H;
+        float rsx = cs.designToScreenX(hx + 2);
+        float rsy = cs.designToScreenY(ry);
+        float rsw = cs.designToScreenX(hw - 4);
+        float rsh = cs.designToScreenY(PP_ROW_H - 2);
+        bool sel = (ids[i] == mSelectedId);
+        if (sel)
+            uiDrawRect({rsx, rsy, rsw, rsh}, {0.2f, 0.4f, 0.6f, 0.7f}, "gui-h-sel");
+
+        const GuiElement* el = layout.get(ids[i]);
+        const char* icon = "?";
+        if (el) {
+            if (el->type == "button") icon = "B";
+            else if (el->type == "text" || el->type == "label") icon = "T";
+            else if (el->type == "image") icon = "I";
+            else if (el->type == "panel") icon = "P";
+            else if (el->type == "checkbox") icon = "C";
+        }
+        char label[128];
+        snprintf(label, sizeof(label), "[%s] %s", icon, ids[i].c_str());
+        uiDrawText(label, rsx + 4, rsy, 0.24f,
+                   sel ? glm::vec4(1,1,1,1) : glm::vec4(0.7f,0.8f,0.9f,1));
+    }
+}
+
+// ── Snap guides ──────────────────────────────────────────────────
+void GuiEditor::renderSnapGuides()
+{
+    if (mSnapGuides.empty()) return;
+    for (const auto& g : mSnapGuides) {
+        if (g.vertical) {
+            float sx = uiScaleX(g.pos);
+            uiDrawRect({sx - 1, 0, 2, uiScreenH()}, {0.2f, 0.6f, 1.0f, 0.5f}, "guide");
+        } else {
+            float sy = uiScaleY(g.pos);
+            uiDrawRect({0, sy - 1, uiScreenW(), 2}, {0.2f, 0.6f, 1.0f, 0.5f}, "guide");
         }
     }
 }
 
+// ── Main overlay ─────────────────────────────────────────────────
 void GuiEditor::renderOverlay(GLFWwindow* win)
 {
-    // Top-right unsaved indicator
+    (void)win;
+
+    // Auto-save indicator
     if (GuiLayoutManager::instance().hasUnsaved()) {
-        const char* unsavedText = "[UNSAVED] Use gui_save to persist layout changes";
-        float tw = uiMeasureText(unsavedText, 0.30f);
+        const char* text = "[AUTO-SAVE PENDING]";
+        float tw = uiMeasureText(text, 0.30f);
         float sx = uiScreenW() - tw - 20.0f;
-        float sy = 12.0f;
-        uiDrawRect({sx - 8, sy - 4, tw + 16, 26},
-                   {0.5f, 0.1f, 0.05f, 0.85f}, "gui-unsaved-bg");
-        uiDrawText(unsavedText, sx, sy, 0.30f, {1.0f, 0.6f, 0.4f, 1.0f});
+        uiDrawRect({sx - 8, 8, tw + 16, 26}, {0.5f, 0.1f, 0.05f, 0.85f}, "gui-unsaved");
+        uiDrawText(text, sx, 12, 0.30f, {1.0f, 0.6f, 0.4f, 1.0f});
     }
 
-    // Editor mode indicator (top-left)
+    // Mode indicator
     {
-        const char* modeText = "[EDIT MODE] drag=move corner=resize T+arrows=text offset";
-        uiDrawRect({10, 10, uiMeasureText(modeText, 0.30f) + 20, 26},
-                   {0.15f, 0.15f, 0.2f, 0.85f}, "gui-edit-bg");
-        uiDrawText(modeText, 18, 12, 0.30f, {1.0f, 0.8f, 0.1f, 1.0f});
-
-        // Show active layout file
+        const char* mt = "[EDIT MODE] drag=move corner=resize T+arrows=text-offset";
+        float tw = uiMeasureText(mt, 0.28f);
+        uiDrawRect({10, 10, tw + 20, 24}, {0.15f, 0.15f, 0.2f, 0.85f}, "gui-mode");
+        uiDrawText(mt, 18, 12, 0.28f, {1.0f, 0.8f, 0.1f, 1.0f});
         if (!mActiveLayoutFile.empty()) {
-            char layoutInfo[128];
-            snprintf(layoutInfo, sizeof(layoutInfo), "Layout: %s", mActiveLayoutFile.c_str());
-            uiDrawRect({10, 42, uiMeasureText(layoutInfo, 0.24f) + 20, 22},
-                       {0.1f, 0.1f, 0.15f, 0.8f}, "gui-layout-bg");
-            uiDrawText(layoutInfo, 18, 44, 0.24f, {0.6f, 0.8f, 1.0f, 1.0f});
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Layout: %s", mActiveLayoutFile.c_str());
+            uiDrawRect({10, 38, uiMeasureText(buf, 0.22f) + 16, 20},
+                       {0.1f, 0.1f, 0.15f, 0.8f}, "gui-layout");
+            uiDrawText(buf, 18, 40, 0.22f, {0.6f, 0.8f, 1.0f, 1.0f});
         }
     }
 
-    if (mSelectedId.empty()) return;
-    if (mActiveLayoutFile.empty()) return;
+    renderHierarchyView();
+    renderSnapGuides();
+
+    if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
     const GuiElement* elem = layout.get(mSelectedId);
     if (!elem) return;
 
-    // Convert design coordinates to framebuffer for rendering
-    float sx = uiScaleX(elem->x);
-    float sy = uiScaleY(elem->y);
-    float sw = uiScaleX(elem->w);
-    float sh = uiScaleY(elem->h);
-
-    // Selection highlight rectangle: green = no overlap, red = overlap
-    glm::vec4 outlineColor = mHasOverlap
-        ? glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)
-        : glm::vec4(0.0f, 1.0f, 0.2f, 1.0f);
-
     if (mHasOverlap) {
-        const char* warnText = "[OVERLAP] Element overlaps another";
-        float tw = uiMeasureText(warnText, 0.28f);
-        uiDrawRect({sx - 4, sy - 52, tw + 8, 22},
-                   {0.5f, 0.0f, 0.0f, 0.85f}, "gui-overlap-warn-bg");
-        uiDrawText(warnText, sx + 2, sy - 50, 0.28f, {1.0f, 0.3f, 0.2f, 1.0f});
+        const char* wt = "[OVERLAP]";
+        float tw = uiMeasureText(wt, 0.28f);
+        float sx = uiScaleX(elem->x), sy = uiScaleY(elem->y);
+        uiDrawRect({sx - 4, sy - 28, tw + 8, 22}, {0.5f, 0, 0, 0.85f}, "gui-ow");
+        uiDrawText(wt, sx + 2, sy - 26, 0.28f, {1, 0.3f, 0.2f, 1});
     }
-    uiDrawRectOutline({sx - 2, sy - 2, sw + 4, sh + 4},
-                     outlineColor, "gui-edit-select");
 
-    // Corner handles (4 small squares)
-    float handleSize = 6.0f;
-    glm::vec4 handleColor{1.0f, 1.0f, 0.3f, 1.0f};
-    uiDrawRect({sx - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
-               handleColor, "gui-edit-handle");
-    uiDrawRect({sx + sw - handleSize, sy - handleSize, handleSize * 2, handleSize * 2},
-               handleColor, "gui-edit-handle");
-    uiDrawRect({sx - handleSize, sy + sh - handleSize, handleSize * 2, handleSize * 2},
-               handleColor, "gui-edit-handle");
-    uiDrawRect({sx + sw - handleSize, sy + sh - handleSize, handleSize * 2, handleSize * 2},
-               handleColor, "gui-edit-handle");
-
-    // Element info label (show design coordinates)
-    char info[128];
-    snprintf(info, sizeof(info), "%s  design=(%.0f, %.0f)  %.0f x %.0f  text=(%.0f, %.0f)",
-             mSelectedId.c_str(), elem->x, elem->y, elem->w, elem->h,
-             elem->textOffsetX, elem->textOffsetY);
-    float labelW = uiMeasureText(info, 0.28f);
-    uiDrawRect({sx - 4, sy - 28, labelW + 8, 22},
-               {0.0f, 0.0f, 0.0f, 0.75f}, "gui-edit-label-bg");
-    uiDrawText(info, sx + 2, sy - 26, 0.28f, {1.0f, 0.8f, 0.1f, 1.0f});
+    renderSelectionHandles(*elem);
+    renderPropertyPanel(*elem);
 }

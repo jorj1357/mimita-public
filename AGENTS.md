@@ -532,3 +532,21 @@ devscripts\agent_finish.bat "Fix duel replay flow"
 If the sound file is missing: a warning is printed.
 If the notification fails: a warning is printed.
 The script never crashes.
+
+---
+
+# PAUSE / QUESTION PROTOCOL
+
+Before stopping work or asking the user a question, ALWAYS run:
+
+```
+python devscripts/agent_task_complete.py "(reason)"
+```
+
+This plays a completion sound so the user knows the agent has paused and expects interaction. Examples:
+
+* Before asking the user which phase to work on next
+* Before presenting a choice or asking a question
+* Before stopping work to wait for user input
+
+DO NOT run this for simple status updates mid-task. Only run it when the agent is about to yield control to the user for a decision or because work is complete.

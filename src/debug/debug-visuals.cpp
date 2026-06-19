@@ -1121,6 +1121,23 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         drawCollisionEvents(camera);
     }
 
+    // debug_collisions: render ALL collision triangles as wireframe
+    if (DebugConfig::DEBUG_COLLISION_GRID) {
+        int drawn = 0;
+        int capped = 0;
+        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+            drawLine(camera, tri.a, tri.b, {1.0f, 0.3f, 0.0f, 0.55f});
+            drawLine(camera, tri.b, tri.c, {1.0f, 0.3f, 0.0f, 0.55f});
+            drawLine(camera, tri.c, tri.a, {1.0f, 0.3f, 0.0f, 0.55f});
+            if (++drawn >= 8192) { capped = 1; break; }
+        }
+        if (capped) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "COLLISION TRIANGLE DRAW CAPPED at %d (total %zu)", drawn, world.collisionMesh.triangles.size());
+            drawWorldLabel(player.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT + 1.2f), msg, {1.0f, 0.5f, 0.0f, 1.0f});
+        }
+    }
+
     if (DebugVis::render()) {
         drawLine(camera, camera.pos, camera.pos + camera.front * 5.0f, {0.2f,0.8f,1.0f,1.0f});
 
