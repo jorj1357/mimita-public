@@ -131,6 +131,18 @@ def ensure_dirs():
     os.makedirs(BUILD_DIR, exist_ok=True)
     os.makedirs(OBJ_DIR, exist_ok=True)
 
+    # Remove zero-byte object files left by aborted parallel builds.
+    # When one compilation fails, sys.exit(1) kills other compiler
+    # subprocesses mid-write, leaving empty .o files whose timestamps
+    # are newer than their source files, causing incremental build
+    # to skip them forever. See build-system-investigation task.
+    if os.path.isdir(OBJ_DIR):
+        for f in os.listdir(OBJ_DIR):
+            if f.endswith(".o"):
+                path = os.path.join(OBJ_DIR, f)
+                if os.path.getsize(path) == 0:
+                    os.remove(path)
+
 
 
 
@@ -156,6 +168,11 @@ def source_changed(src):
 
     # no object/dependency yet
     if not os.path.exists(obj) or not os.path.exists(dep):
+        return True
+
+    # zero-byte object file — stale artifact from aborted parallel build
+    if os.path.getsize(obj) == 0:
+        os.remove(obj)
         return True
 
     obj_time = os.path.getmtime(obj)
