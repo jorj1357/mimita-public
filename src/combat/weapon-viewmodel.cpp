@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <unordered_set>
 
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,6 +12,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "camera.h"
+#include "config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "entities/player.h"
@@ -18,6 +20,149 @@
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "world/world.h"
+
+// ─── Weapon-world collision (visual-only) ───────────────────────────
+struct AABB { glm::vec3 min, max; };
+
+static AABB makeTriAABB(const CollisionTriangle& tri) {
+    AABB b;
+    b.min = glm::min(tri.a, glm::min(tri.b, tri.c));
+    b.max = glm::max(tri.a, glm::max(tri.b, tri.c));
+    return b;
+}
+
+static bool overlaps(const AABB& a, const AABB& b) {
+    return a.min.x <= b.max.x && a.max.x >= b.min.x &&
+           a.min.y <= b.max.y && a.max.y >= b.min.y &&
+           a.min.z <= b.max.z && a.max.z >= b.min.z;
+}
+
+static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+    glm::vec3 ab = b - a, ac = c - a, ap = p - a;
+    float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+    glm::vec3 bp = p - b;
+    float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        float v = d1 / (d1 - d3);
+        return a + ab * v;
+    }
+    glm::vec3 cp = p - c;
+    float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        float w = d2 / (d2 - d6);
+        return a + ac * w;
+    }
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + (c - b) * w;
+    }
+    float denom = 1.0f / (va + vb + vc);
+    return a + ab * (vb * denom) + ac * (vc * denom);
+}
+
+static bool sphereTriContact(glm::vec3 center, float radius, const CollisionTriangle& tri, Contact& contact) {
+    glm::vec3 closest = closestPointOnTriangle(center, tri.a, tri.b, tri.c);
+    glm::vec3 diff = center - closest;
+    float dist2 = glm::dot(diff, diff);
+    if (dist2 >= radius * radius) return false;
+    float dist = std::sqrt(dist2);
+    if (dist < 0.000001f) {
+        contact.point = closest; contact.normal = tri.normal; contact.penetration = radius;
+    } else {
+        contact.point = closest; contact.normal = diff / dist; contact.penetration = radius - dist;
+    }
+    return true;
+}
+
+static glm::mat4 resolveWeaponCollision(const World& world, const glm::mat4& weaponTransform,
+                                        const glm::vec3& modelGrip, const glm::vec3& modelMuzzle,
+                                        float weaponRadius = 0.12f, const char* debugName = "weapon")
+{
+    if (world.collisionMesh.triangles.empty()) return weaponTransform;
+    glm::vec3 worldGrip = glm::vec3(weaponTransform * glm::vec4(modelGrip, 1.0f));
+    glm::vec3 worldMuzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));
+    glm::vec3 capAxis = worldMuzzle - worldGrip;
+    float capLen = glm::length(capAxis);
+    if (capLen < 0.001f) return weaponTransform;
+    capAxis /= capLen;
+    Capsule weaponCap;
+    weaponCap.a = worldGrip; weaponCap.b = worldMuzzle; weaponCap.r = weaponRadius;
+    AABB queryBounds;
+    queryBounds.min = glm::min(worldGrip, worldMuzzle) - glm::vec3(weaponRadius);
+    queryBounds.max = glm::max(worldGrip, worldMuzzle) + glm::vec3(weaponRadius);
+    std::vector<int> candidates;
+    candidates.reserve(64);
+    // Broadphase: gather triangles via chunks
+    {
+        const auto& tris = world.collisionMesh.triangles;
+        if (!world.collisionChunks.empty() && world.collisionChunkSize > 0.001f) {
+            auto chunkCoord = [&](const glm::vec3& p) {
+                return glm::ivec3((int)std::floor(p.x / world.collisionChunkSize),
+                                  (int)std::floor(p.y / world.collisionChunkSize),
+                                  (int)std::floor(p.z / world.collisionChunkSize));
+            };
+            glm::ivec3 c0 = chunkCoord(queryBounds.min), c1 = chunkCoord(queryBounds.max);
+            c0 = glm::clamp(c0, glm::ivec3(-1000), glm::ivec3(1000));
+            c1 = glm::clamp(c1, glm::ivec3(-1000), glm::ivec3(1000));
+            std::unordered_set<int> seen;
+            for (int x = c0.x; x <= c1.x; ++x)
+            for (int y = c0.y; y <= c1.y; ++y)
+            for (int z = c0.z; z <= c1.z; ++z) {
+                auto it = world.collisionChunks.find(glm::ivec3(x, y, z));
+                if (it == world.collisionChunks.end()) continue;
+                for (int idx : it->second)
+                    if (seen.insert(idx).second) {
+                        AABB tb = makeTriAABB(tris[idx]);
+                        if (overlaps(queryBounds, tb)) candidates.push_back(idx);
+                    }
+            }
+        } else {
+            for (int i = 0; i < (int)tris.size(); ++i) {
+                AABB tb = makeTriAABB(tris[i]);
+                if (overlaps(queryBounds, tb)) candidates.push_back(i);
+            }
+        }
+    }
+    constexpr int MAX_CANDIDATES = 128;
+    if ((int)candidates.size() > MAX_CANDIDATES) candidates.resize(MAX_CANDIDATES);
+    float maxPen = 0.0f;
+    glm::vec3 avgNormal(0.0f);
+    int penCount = 0;
+    constexpr int SAMPLES = 3;
+    for (int ti : candidates) {
+        const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+        for (int s = 0; s < SAMPLES; ++s) {
+            float st = (float)s / (float)(SAMPLES - 1);
+            glm::vec3 sp = weaponCap.a + (weaponCap.b - weaponCap.a) * st;
+            Contact ct;
+            if (sphereTriContact(sp, weaponCap.r, tri, ct)) {
+                if (ct.penetration > maxPen) { maxPen = ct.penetration; avgNormal = ct.normal; }
+                penCount++;
+            }
+        }
+    }
+    constexpr float MIN_WEAPON_PEN = 0.003f;
+    constexpr float MAX_WEAPON_PUSH = 0.4f;
+    constexpr float WEAPON_PUSH_SCALE = 0.85f;
+    if (maxPen > MIN_WEAPON_PEN && penCount > 0) {
+        float push = std::min(maxPen * WEAPON_PUSH_SCALE, MAX_WEAPON_PUSH);
+        glm::vec3 correction = avgNormal * push;
+        glm::mat4 corrected = weaponTransform;
+        corrected[3][0] += correction.x; corrected[3][1] += correction.y; corrected[3][2] += correction.z;
+        if (DebugConfig::DEBUG_COLLISION_LIMB) {
+            char label[64]; snprintf(label, sizeof(label), "%s_push", debugName);
+            DebugVis::recordDepenetration(glm::vec3(corrected[3]), correction, label);
+        }
+        return corrected;
+    }
+    return weaponTransform;
+}
 
 
 
@@ -68,7 +213,8 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
 }
 
 void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
-                             const WeaponDefinition* def, bool updatePlayerPose) {
+                             const WeaponDefinition* def, bool updatePlayerPose,
+                             const World* world) {
     loadModel(def ? def->modelPath : "");
     if (updatePlayerPose)
         player.updateModelWorldTransforms();
@@ -125,6 +271,14 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                            glm::translate(glm::mat4(1.0f), -modelGrip);
         muzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));
         forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
+
+        // Weapon-world collision: push weapon back if it contacts geometry
+        if (world) {
+            float wpnRad = (def && def->id == "shotgun") ? 0.15f : 0.12f;
+            weaponTransform = resolveWeaponCollision(*world, weaponTransform, modelGrip, modelMuzzle, wpnRad, def ? def->id.c_str() : "weapon");
+            muzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));
+            forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
+        }
         break;
     }
 

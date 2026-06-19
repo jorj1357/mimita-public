@@ -10,6 +10,7 @@
 #include "menus/sign-in-menu.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
+#include "game/bomb-tag-config.h"
 #include "avatar/avatar-menu.h"
 #include "avatar/avatar.h"
 #include "ui-system.h"
@@ -42,11 +43,15 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_HELP:         return "config/gui/help-menu.json";
         case GUI_MENU_REPLAY:       return "config/gui/replay-menu.json";
         case GUI_MENU_AVATAR_CREATOR: return "config/gui/avatar-creator.json";
+        case GUI_MENU_BOMB_TAG_CONFIG: return "config/gui/bomb-tag-config.json";
     }
     return "config/gui/main-menu.json";
 }
 
 static DuelConfigResult gPendingDuelConfig{};
+BombTagConfigResult gPendingBombTagConfig{};
+BombTagConfigResult getPendingBombTagConfig() { return gPendingBombTagConfig; }
+void clearPendingBombTagConfig() { gPendingBombTagConfig = BombTagConfigResult{}; }
 static bool gServerRunning = false;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
@@ -111,6 +116,10 @@ void guiMain(GLFWwindow* win, GameState& state)
             if (r.goDuels)
             {
                 gGuiMenuState = GUI_MENU_DUEL_CONFIG;
+            }
+            else if (r.goBombTag)
+            {
+                gGuiMenuState = GUI_MENU_BOMB_TAG_CONFIG;
             }
             else if (r.goOnline)
             {
@@ -196,6 +205,20 @@ void guiMain(GLFWwindow* win, GameState& state)
             DuelConfigResult r = drawDuelConfigMenu(win);
             if (r.startDuel) {
                 gPendingDuelConfig = r;
+                state = GAME_PLAYING;
+            }
+            else if (r.goBack)
+            {
+                gGuiMenuState = GUI_MENU_PLAY;
+            }
+            break;
+        }
+
+        case GUI_MENU_BOMB_TAG_CONFIG:
+        {
+            BombTagConfigResult r = drawBombTagConfigMenu(win);
+            if (r.start) {
+                gPendingBombTagConfig = r;
                 state = GAME_PLAYING;
             }
             else if (r.goBack)

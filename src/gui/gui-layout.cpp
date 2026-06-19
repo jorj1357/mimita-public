@@ -20,6 +20,51 @@ UIRect makeRect(float x, float y, float w, float h)
 }
 
 // ----------------------------------------------------------------
+// GuiElement color helper implementations
+// ----------------------------------------------------------------
+glm::vec4 GuiElement::getTextColorVec() const
+{
+    if (textColor.size() >= 4)
+        return glm::vec4(textColor[0], textColor[1], textColor[2], textColor[3]);
+    return glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+glm::vec4 GuiElement::getBackgroundColorVec() const
+{
+    if (backgroundColor.size() >= 4)
+        return glm::vec4(backgroundColor[0], backgroundColor[1], backgroundColor[2], backgroundColor[3]);
+    return glm::vec4(0.2f, 0.2f, 0.3f, 1.0f);
+}
+
+glm::vec4 GuiElement::getHoverColorVec() const
+{
+    if (hoverColor.size() >= 4)
+        return glm::vec4(hoverColor[0], hoverColor[1], hoverColor[2], hoverColor[3]);
+    return glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+glm::vec4 GuiElement::getPressedColorVec() const
+{
+    if (pressedColor.size() >= 4)
+        return glm::vec4(pressedColor[0], pressedColor[1], pressedColor[2], pressedColor[3]);
+    return glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+glm::vec4 GuiElement::getOutlineColorVec() const
+{
+    if (outlineColor.size() >= 4)
+        return glm::vec4(outlineColor[0], outlineColor[1], outlineColor[2], outlineColor[3]);
+    return glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+void GuiElement::clearColorOverrides()
+{
+    hoverColor.clear();
+    pressedColor.clear();
+    outlineColor.clear();
+}
+
+// ----------------------------------------------------------------
 // File modification time helpers (cross-platform)
 // ----------------------------------------------------------------
 static int64_t getFileModifiedTime(const std::string& path)
@@ -53,25 +98,55 @@ bool GuiLayout::load(const std::string& filePath)
         if (j.contains("elements") && j["elements"].is_array()) {
             for (const auto& elem : j["elements"]) {
                 GuiElement e;
+                // Identity
                 e.id = elem.value("id", "");
+                e.type = elem.value("type", "button");
+
+                // Layout
                 e.x = elem.value("x", 0.0f);
                 e.y = elem.value("y", 0.0f);
                 e.w = elem.value("width", 0.0f);
                 e.h = elem.value("height", 0.0f);
                 e.textOffsetX = elem.value("textOffsetX", 8.0f);
                 e.textOffsetY = elem.value("textOffsetY", 4.0f);
-                e.fontSize = elem.value("fontSize", 0.0f);
-                e.padding = elem.value("padding", 0.0f);
+                e.padding = elem.value("padding", 8.0f);
                 e.margin = elem.value("margin", 0.0f);
-                e.visible = elem.value("visible", true);
-                e.hoverScale = elem.value("hoverScale", 1.0f);
-                e.hoverSound = elem.value("hoverSound", "");
-                e.clickSound = elem.value("clickSound", "");
-                e.backgroundImage = elem.value("backgroundImage", "");
-                e.backgroundVideo = elem.value("backgroundVideo", "");
+                e.rotation = elem.value("rotation", 0.0f);
                 e.anchorX = elem.value("anchorX", "left");
                 e.anchorY = elem.value("anchorY", "top");
                 e.layer = elem.value("layer", 0);
+
+                // Appearance
+                e.visible = elem.value("visible", true);
+                e.enabled = elem.value("enabled", true);
+                e.opacity = elem.value("opacity", 1.0f);
+                e.hoverScale = elem.value("hoverScale", 1.0f);
+
+                // Text
+                e.text = elem.value("text", "");
+                e.font = elem.value("font", "");
+                e.fontSize = elem.value("fontSize", 0.0f);
+
+                // Colors (read as JSON arrays)
+                if (elem.contains("textColor") && elem["textColor"].is_array())
+                    e.textColor = elem["textColor"].get<std::vector<float>>();
+                if (elem.contains("backgroundColor") && elem["backgroundColor"].is_array())
+                    e.backgroundColor = elem["backgroundColor"].get<std::vector<float>>();
+                if (elem.contains("hoverColor") && elem["hoverColor"].is_array())
+                    e.hoverColor = elem["hoverColor"].get<std::vector<float>>();
+                if (elem.contains("pressedColor") && elem["pressedColor"].is_array())
+                    e.pressedColor = elem["pressedColor"].get<std::vector<float>>();
+                if (elem.contains("outlineColor") && elem["outlineColor"].is_array())
+                    e.outlineColor = elem["outlineColor"].get<std::vector<float>>();
+
+                // Media
+                e.backgroundImage = elem.value("backgroundImage", "");
+                e.backgroundVideo = elem.value("backgroundVideo", "");
+
+                // Sound
+                e.hoverSound = elem.value("hoverSound", "");
+                e.clickSound = elem.value("clickSound", "");
+
                 if (!e.id.empty())
                     loadedElements[e.id] = e;
             }
@@ -94,7 +169,7 @@ bool GuiLayout::save(const std::string& filePath) const
 {
     json j;
     j["format"] = "mimita-gui-layout";
-    j["version"] = 1;
+    j["version"] = 2;
 
     json elementsJson = json::array();
     // Sort elements by ID for stable output
@@ -106,25 +181,50 @@ bool GuiLayout::save(const std::string& filePath) const
     for (const std::string& id : ids) {
         const GuiElement& e = mElements.at(id);
         json obj;
+        // Identity
         obj["id"] = e.id;
+        if (e.type != "button") obj["type"] = e.type;
+
+        // Layout
         obj["x"] = e.x;
         obj["y"] = e.y;
         obj["width"] = e.w;
         obj["height"] = e.h;
         if (e.textOffsetX != 8.0f) obj["textOffsetX"] = e.textOffsetX;
         if (e.textOffsetY != 4.0f) obj["textOffsetY"] = e.textOffsetY;
-        if (e.fontSize != 0.0f) obj["fontSize"] = e.fontSize;
-        if (e.padding != 0.0f) obj["padding"] = e.padding;
+        if (e.padding != 8.0f) obj["padding"] = e.padding;
         if (e.margin != 0.0f) obj["margin"] = e.margin;
-        if (!e.visible) obj["visible"] = false;
-        if (e.hoverScale != 1.0f) obj["hoverScale"] = e.hoverScale;
-        if (!e.hoverSound.empty()) obj["hoverSound"] = e.hoverSound;
-        if (!e.clickSound.empty()) obj["clickSound"] = e.clickSound;
-        if (!e.backgroundImage.empty()) obj["backgroundImage"] = e.backgroundImage;
-        if (!e.backgroundVideo.empty()) obj["backgroundVideo"] = e.backgroundVideo;
+        if (e.rotation != 0.0f) obj["rotation"] = e.rotation;
         if (e.anchorX != "left") obj["anchorX"] = e.anchorX;
         if (e.anchorY != "top") obj["anchorY"] = e.anchorY;
         if (e.layer != 0) obj["layer"] = e.layer;
+
+        // Appearance
+        if (!e.visible) obj["visible"] = false;
+        if (!e.enabled) obj["enabled"] = false;
+        if (e.opacity != 1.0f) obj["opacity"] = e.opacity;
+        if (e.hoverScale != 1.0f) obj["hoverScale"] = e.hoverScale;
+
+        // Text
+        if (!e.text.empty()) obj["text"] = e.text;
+        if (!e.font.empty()) obj["font"] = e.font;
+        if (e.fontSize != 0.0f) obj["fontSize"] = e.fontSize;
+
+        // Colors
+        obj["textColor"] = e.textColor;
+        obj["backgroundColor"] = e.backgroundColor;
+        if (!e.hoverColor.empty()) obj["hoverColor"] = e.hoverColor;
+        if (!e.pressedColor.empty()) obj["pressedColor"] = e.pressedColor;
+        if (!e.outlineColor.empty()) obj["outlineColor"] = e.outlineColor;
+
+        // Media
+        if (!e.backgroundImage.empty()) obj["backgroundImage"] = e.backgroundImage;
+        if (!e.backgroundVideo.empty()) obj["backgroundVideo"] = e.backgroundVideo;
+
+        // Sound
+        if (!e.hoverSound.empty()) obj["hoverSound"] = e.hoverSound;
+        if (!e.clickSound.empty()) obj["clickSound"] = e.clickSound;
+
         elementsJson.push_back(obj);
     }
     j["elements"] = elementsJson;

@@ -25,7 +25,8 @@ struct WeaponViewModel {
 
     void loadModel(const std::string& modelPath);
     void update(const Camera& camera, Player& player, float dt,
-                const WeaponDefinition* def, bool updatePlayerPose = true);
+                const WeaponDefinition* def, bool updatePlayerPose = true,
+                const class World* world = nullptr);
     void render(const Camera& camera, const Player& player, int equippedSlot) const;
     void unload();
 };

@@ -26,7 +26,6 @@
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
-#include "physics/body-part-collision.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "config.h"
@@ -302,103 +301,6 @@ static void appendChunkTrianglesForAABB(
                 out.push_back(triIndex);
         }
     }
-}
-
-// =====================================================
-// Overlap cleanup fallback
-// =====================================================
-
-static inline void resolveOverlap(
-    const AABB& block,
-    AABB& player,
-    Player& p,
-    bool& groundedOut,
-    const Block& b
-)
-{
-    float px1 = block.max.x - player.min.x;
-    float px2 = player.max.x - block.min.x;
-    float py1 = block.max.y - player.min.y;
-    float py2 = player.max.y - block.min.y;
-    float pz1 = block.max.z - player.min.z;
-    float pz2 = player.max.z - block.min.z;
-
-    float penX = std::min(px1, px2);
-    float penY = std::min(py1, py2);
-    float penZ = std::min(pz1, pz2);
-
-    constexpr float SLOP = 0.001f;
-
-    if (penX <= penY && penX <= penZ)
-    {
-        float centerPlayer = (player.min.x + player.max.x) * 0.5f;
-        float centerBlock  = (block.min.x  + block.max.x)  * 0.5f;
-
-        float push = (centerPlayer < centerBlock)
-            ? -(penX + SLOP)
-            :  ( penX + SLOP);
-
-        p.pos.x += push;
-        p.vel.x = 0.0f;
-
-        PHYS_LOG(
-            "[PHYS][COLLISION] X axis | push=%.4f | block=(%.2f %.2f %.2f)\n",
-            push, b.pos.x, b.pos.y, b.pos.z
-        );
-    }
-    else if (penY <= penZ)
-    {
-        float centerPlayer = (player.min.y + player.max.y) * 0.5f;
-        float centerBlock  = (block.min.y  + block.max.y)  * 0.5f;
-
-        float push = (centerPlayer < centerBlock)
-            ? -(penY + SLOP)
-            :  ( penY + SLOP);
-
-        p.pos.y += push;
-        p.vel.y = 0.0f;
-
-        PHYS_LOG(
-            "[PHYS][COLLISION] Y axis | push=%.4f | block=(%.2f %.2f %.2f)\n",
-            push, b.pos.x, b.pos.y, b.pos.z
-        );
-    }
-    else
-    {
-        float centerPlayer = (player.min.z + player.max.z) * 0.5f;
-        float centerBlock  = (block.min.z  + block.max.z)  * 0.5f;
-
-        float push = (centerPlayer < centerBlock)
-            ? -(penZ + SLOP)
-            :  ( penZ + SLOP);
-
-        p.pos.z += push;
-
-        if (push > 0.0f)
-        {
-            groundedOut = true;
-
-            if (p.vel.z < 0.0f)
-                p.vel.z = 0.0f;
-
-            PHYS_LOG(
-                "[PHYS][GROUND] Grounded on block=(%.2f %.2f %.2f)\n",
-                b.pos.x, b.pos.y, b.pos.z
-            );
-        }
-        else
-        {
-            if (p.vel.z > 0.0f)
-                p.vel.z = 0.0f;
-        }
-
-        PHYS_LOG(
-            "[PHYS][COLLISION] Z axis | push=%.4f | block=(%.2f %.2f %.2f)\n",
-            push, b.pos.x, b.pos.y, b.pos.z
-        );
-    }
-
-    player = makePlayerAABB(p);
 }
 
 // =====================================================
@@ -915,31 +817,6 @@ static bool findBlockFallbackEscape(
     return true;
 }
 
-static void applyRecoveryContacts(
-    Player& p,
-    bool& groundedThisFrame,
-    const std::vector<RecoveryContact>& contacts,
-    const glm::vec3& correction,
-    const char* debugLabel
-) {
-    for (const RecoveryContact& c : contacts)
-    {
-        applyCollisionContact(
-            p,
-            groundedThisFrame,
-            c.normal,
-            c.point,
-            c.penetration,
-            c.triangleIndex,
-            c.label
-        );
-    }
-
-    glm::vec3 before = p.pos;
-    p.pos += correction;
-    DebugVis::recordDepenetration(before, correction, debugLabel);
-}
-
 // this is for capsule stuff but idk whre to put it mar 7 2026 
 static bool capsuleSweep(
     const Capsule& cap,
@@ -977,7 +854,7 @@ static void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
-    constexpr float SURFACE_SLOP = 0.0f;
+    constexpr float SURFACE_SLOP = 0.01f;
     constexpr float MAX_CORRECTION = 2.0f;
 
     // CHANGED: No dashVel — dash is now in vel, jun 6 2026
@@ -1491,6 +1368,42 @@ static void doGLBTriangleCollisions(
         }
     }
 
+    // Stuck diagnostic: detect when player has movement input but position
+    // barely changes for several frames (invisible wall / seam wedging).
+    {
+        static int stuckFrames = 0;
+        static glm::vec3 lastStuckPos(0.0f);
+        static float stuckLogTimer = 0.0f;
+        stuckLogTimer += dt;
+        float moveLen = glm::length(totalMove);
+        float posDelta = glm::length(p.pos - lastStuckPos);
+        if (moveLen > 0.01f && posDelta < 0.005f)
+        {
+            stuckFrames++;
+            if (stuckFrames >= 3 && stuckLogTimer >= 0.5f) {
+                Capsule dcap = p.getCapsule();
+                std::vector<int> dcandidates = gatherGLBTriangles(world, dcap, glm::vec3(0.0f));
+                printf("[COLLISION STUCK] frames=%d move=%.4f delta=%.4f pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) candidates=%zu grounded=%d\n",
+                       stuckFrames, moveLen, posDelta,
+                       p.pos.x, p.pos.y, p.pos.z,
+                       p.vel.x, p.vel.y, p.vel.z,
+                       dcandidates.size(), (int)groundedThisFrame);
+                for (int ci = 0; ci < (int)dcandidates.size() && ci < 5; ++ci) {
+                    const CollisionTriangle& tri = world.collisionMesh.triangles[dcandidates[ci]];
+                    printf("  tri=%d normal=(%.3f %.3f %.3f) a=(%.2f %.2f %.2f) b=(%.2f %.2f %.2f) c=(%.2f %.2f %.2f)\n",
+                           dcandidates[ci], tri.normal.x, tri.normal.y, tri.normal.z,
+                           tri.a.x, tri.a.y, tri.a.z,
+                           tri.b.x, tri.b.y, tri.b.z,
+                           tri.c.x, tri.c.y, tri.c.z);
+                }
+                stuckLogTimer = 0.0f;
+            }
+        } else {
+            stuckFrames = 0;
+        }
+        lastStuckPos = p.pos;
+    }
+
     // Rotation safety pass: after all collision resolution, verify the
     // authoritative capsule is not penetrating world geometry due to
     // body/weapon/animation/rotation updates that happened during the frame.
@@ -1583,13 +1496,6 @@ static void doGLBTriangleCollisions(
                 overlapWarnCooldown = 30; // Log at most every 30 frames
             }
         }
-    }
-
-    // Resolve per-body-part world collision (visual push-back only).
-    // This adjusts each body part's worldTransform so limbs visually stop at walls.
-    // The root capsule (player position) is NOT modified.
-    if (DebugConfig::DEBUG_COLLISION_LIMB || true) { // always enabled for correctness
-        resolveBodyPartCollisions(p, world, dt);
     }
 
     // Non-authoritative collider warning: body/weapon colliders no longer

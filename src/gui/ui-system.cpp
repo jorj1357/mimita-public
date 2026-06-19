@@ -463,6 +463,12 @@ bool uiOverlapDebugEnabled() { return gOverlapDebugEnabled; }
 void uiSetCoordDebug(bool enabled) { gCoordDebug = enabled; }
 bool uiCoordDebugEnabled() { return gCoordDebug; }
 
+void uiTrackWidget(const char* id, UIRect designRect)
+{
+    if (id)
+        gTrackedWidgets.push_back({id, designRect, false, false});
+}
+
 const std::vector<UITrackedWidget>& uiGetTrackedWidgets()
 {
     return gTrackedWidgets;

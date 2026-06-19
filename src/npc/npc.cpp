@@ -20,6 +20,7 @@
 #include "npc/npc-combat.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
+// Bomb tag behavior is controlled via Npc::bombTag* flags set by BombTagManager
 
 namespace {
 
@@ -376,6 +377,40 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     glm::vec3 moveDir;
     bool jump, dash, attack;
     computeStateMovement(npc, moveDir, jump, dash, attack);
+
+    // Bomb tag override: chase when holding bomb, flee when not
+    if (npc.bombTagActive)
+    {
+        if (npc.bombTagHasBomb)
+        {
+            // Chase the bomb tag target
+            glm::vec3 toTarget = npc.bombTagChaseTarget - npc.body.pos;
+            float dist = glm::length(toTarget);
+            if (dist > 0.5f)
+            {
+                moveDir = toTarget / dist;
+                jump = dist > 2.0f && npc.body.pos.z < npc.bombTagChaseTarget.z - 0.5f;
+                attack = false;
+                dash = dist > 4.0f && npc.dashCooldown <= 0.0f;
+            }
+            npc.sensors.hasTarget = true;
+            npc.sensors.targetPos = npc.bombTagChaseTarget;
+        }
+        else
+        {
+            // Flee from bomb holder
+            glm::vec3 fromTarget = npc.body.pos - npc.bombTagFleeFrom;
+            float dist = glm::length(fromTarget);
+            if (dist > 0.1f)
+            {
+                moveDir = fromTarget / dist;
+                if (dist < 3.0f && npc.dashCooldown <= 0.0f)
+                    dash = true;
+            }
+            if (dist < 8.0f)
+                npc.sensors.hasTarget = true;
+        }
+    }
 
     // Apply wall avoidance
     {
