@@ -15,6 +15,8 @@ struct WeaponViewModel {
     glm::mat4 weaponTransform{1.0f};
     glm::vec3 modelGrip{0.0f};
     glm::vec3 modelMuzzle{0.0f, 0.0f, 0.7f};
+    float modelCollisionRadius = 0.12f;
+    bool hasModelBounds = false;
     unsigned int vao = 0;
     unsigned int vbo = 0;
     bool modelLoadAttempted = false;

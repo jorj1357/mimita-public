@@ -1114,6 +1114,18 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
             drawWorldLabel(worldCenter + glm::vec3(0.0f, 0.0f, radius + 0.3f),
                           collider.name.c_str(), limbColor);
         }
+
+        if (player.hasWeaponCollisionCapsule) {
+            const glm::vec4 weaponColor{1.0f, 0.85f, 0.15f, 0.9f};
+            const Capsule& weaponCap = player.weaponCollisionCapsule;
+            drawCapsuleWire(camera, weaponCap, weaponColor);
+            glm::vec3 center = (weaponCap.a + weaponCap.b) * 0.5f;
+            drawWorldLabel(center + glm::vec3(0.0f, 0.0f, weaponCap.r + 0.3f),
+                           player.weaponCollisionName.empty()
+                               ? "weapon"
+                               : player.weaponCollisionName.c_str(),
+                           weaponColor);
+        }
     }
 
     // collision_debug system-wide events

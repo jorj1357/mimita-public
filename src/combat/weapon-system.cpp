@@ -112,6 +112,8 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
             }
         }
     } else {
+        player.hasWeaponCollisionCapsule = false;
+        player.weaponCollisionName.clear();
         if (mGodballPhys.active) {
             WeaponGodball::despawnBall(mGodballPhys);
         }
@@ -416,6 +418,8 @@ void WeaponSystem::unequip(Player& player) {
     player.equippedSlot = 0;
     player.hasValidWeapon = false;
     player.equippedWeaponId.clear();
+    player.hasWeaponCollisionCapsule = false;
+    player.weaponCollisionName.clear();
     mCurrentSlot = 0;
     mCurrentWeaponId.clear();
     // Reset arm spring states so arms snap to idle immediately
