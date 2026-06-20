@@ -1,5 +1,6 @@
 #include "settings-menu.h"
 #include "../gui-layout.h"
+#include "../gui-element-render.h"
 #include "../gui-coord.h"
 #include "../ui-system.h"
 #include "camera.h"
@@ -19,28 +20,13 @@
 static const char* kOnOff[] = { "OFF", "ON" };
 
 static const char* kResolutionLabels[] = {
-    "800x600",
-    "1024x768",
-    "1280x720",
-    "1920x1080"
+    "800x600", "1024x768", "1280x720", "1920x1080"
 };
 
 static const char* kGraphicsPresets[] = {
     "Minimal", "Low", "Medium", "High", "Max"
 };
 static const int kNumGraphicsPresets = 5;
-
-static void drawHeading(const char* text, const GuiElement* elem)
-{
-    if (!elem) return;
-    uiDrawText(text, uiScaleX(elem->x), uiScaleY(elem->y), 0.48f, {0.65f, 0.85f, 1.0f, 1.0f});
-}
-
-static void drawLabel(const char* text, const GuiElement* elem)
-{
-    if (!elem) return;
-    uiDrawText(text, uiScaleX(elem->x), uiScaleY(elem->y), 0.32f, {0.8f, 0.85f, 0.95f, 1.0f});
-}
 
 static int drawDropdown(GLFWwindow* win, const GuiElement* elem,
                          const char** options, int numOptions, int currentIdx)
@@ -99,22 +85,25 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     float fbW = uiScreenW(), fbH = uiScreenH();
     uiDrawRect({0, 0, fbW, fbH}, {0.02f, 0.025f, 0.035f, 1.0f}, "settings-bg");
 
-    // Title
-    const GuiElement* titleEl = layout.get("settingsTitle");
-    if (titleEl)
-        uiDrawText("SETTINGS", uiScaleX(titleEl->x), uiScaleY(titleEl->y), 0.65f, {0.9f, 0.95f, 1.0f, 1.0f});
+    // Render all static text/heading elements using the unified renderer
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+
+        // Skip non-text types and special interactive elements
+        if (elem->type != "text" && elem->type != "label") continue;
+
+        drawGuiElement(win, *elem);
+    }
 
     // ===== LEFT COLUMN: AUDIO =====
-    drawHeading("AUDIO", layout.get("audioHeader"));
-
-    drawLabel("Master Volume", layout.get("masterVolumeLabel"));
     if (drawSliderWithValue(win,
         layout.get("masterVolumeSlider"),
         layout.get("masterVolumeValue"),
         &settings.masterVolume, 0.0f, 1.0f))
         SavePlayerSettings();
 
-    drawLabel("Music Volume", layout.get("musicVolumeLabel"));
     if (drawSliderWithValue(win,
         layout.get("musicVolumeSlider"),
         layout.get("musicVolumeValue"),
@@ -124,7 +113,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         SavePlayerSettings();
     }
 
-    drawLabel("Mute", layout.get("muteLabel"));
     {
         const GuiElement* mb = layout.get("muteToggle");
         if (mb && uiCheckbox(win, "MUTE", {mb->x, mb->y, mb->w, mb->h}, &settings.musicMuted))
@@ -135,9 +123,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     }
 
     // ===== LEFT COLUMN: GAMEPLAY =====
-    drawHeading("GAMEPLAY", layout.get("gameplayHeader"));
-
-    drawLabel("Field of View", layout.get("fovLabel"));
     if (drawSliderWithValue(win,
         layout.get("fovSlider"),
         layout.get("fovValue"),
@@ -147,7 +132,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         SavePlayerSettings();
     }
 
-    drawLabel("Sensitivity", layout.get("sensitivityLabel"));
     if (drawSliderWithValue(win,
         layout.get("sensitivitySlider"),
         layout.get("sensitivityValue"),
@@ -157,7 +141,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         SavePlayerSettings();
     }
 
-    drawLabel("Blood Effects", layout.get("bloodFxLabel"));
     {
         const GuiElement* cb = layout.get("bloodFxToggle");
         if (cb && uiCheckbox(win, "BLOOD", {cb->x, cb->y, cb->w, cb->h}, &settings.bloodFX))
@@ -169,10 +152,13 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         }
     }
 
-    // ===== RIGHT COLUMN: VIDEO =====
-    drawHeading("VIDEO", layout.get("videoHeader"));
+    if (drawSliderWithValue(win,
+        layout.get("sfxSlider"),
+        layout.get("sfxValue"),
+        &settings.sfxVolume, 0.0f, 1.0f))
+        SavePlayerSettings();
 
-    drawLabel("Fullscreen", layout.get("fullscreenLabel"));
+    // ===== RIGHT COLUMN: VIDEO =====
     {
         int fsIdx = VideoSettings::instance().fullscreen() ? 1 : 0;
         int next = drawDropdown(win, layout.get("fullscreenToggle"),
@@ -181,7 +167,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
             VideoSettings::instance().setFullscreen(next == 1);
     }
 
-    drawLabel("Resolution", layout.get("resolutionLabel"));
     {
         int idx = VideoSettings::instance().resolutionIndex() - 1;
         if (idx < 0 || idx >= VideoSettings::NUM_RESOLUTIONS) idx = 0;
@@ -191,7 +176,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
             VideoSettings::instance().setResolution(next + 1);
     }
 
-    drawLabel("Graphics Preset", layout.get("graphicsLabel"));
     {
         int idx = -1;
         for (int i = 0; i < kNumGraphicsPresets; ++i)
@@ -207,9 +191,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     }
 
     // ===== RIGHT COLUMN: DEBUG =====
-    drawHeading("DEBUG", layout.get("debugHeader"));
-
-    drawLabel("Physics Debug", layout.get("physicsDebugLabel"));
     {
         static bool physicsDebug = true;
         const GuiElement* tb = layout.get("physicsDebugToggle");
@@ -220,7 +201,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
             physicsDebug = !physicsDebug;
     }
 
-    drawLabel("Render Debug", layout.get("renderDebugLabel"));
     {
         static bool renderDebug = true;
         const GuiElement* tb = layout.get("renderDebugToggle");
@@ -278,7 +258,7 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
     // ===== BACK BUTTON =====
     {
         const GuiElement* bb = layout.get("backButton");
-        if (bb && uiButton(win, "BACK", {bb->x, bb->y, bb->w, bb->h}, {0.7f, 0.2f, 0.2f, 1.0f}).clicked)
+        if (bb && drawGuiElement(win, *bb).clicked)
         {
             printf("[SETTINGS MENU] Back pressed\n");
             r.goBack = true;

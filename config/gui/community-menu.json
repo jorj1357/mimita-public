@@ -1,41 +1,15 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
-      "id": "Start Server",
-      "x": 510.0,
-      "y": 420.0,
-      "width": 195.0,
-      "height": 52.0
-    },
-    {
-      "id": "Stop Server",
-      "x": 510.0,
-      "y": 420.0,
-      "width": 195.0,
-      "height": 52.0
-    },
-    {
-      "id": "Join Server",
-      "x": 725.0,
-      "y": 420.0,
-      "width": 195.0,
-      "height": 52.0
-    },
-    {
-      "id": "Connect",
-      "x": 990.0,
-      "y": 310.0,
-      "width": 420.0,
-      "height": 58.0
-    },
-    {
       "id": "backButton",
-      "x": 40.0,
-      "y": 40.0,
-      "width": 120.0,
-      "height": 50.0
+      "type": "button",
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
   ]
 }

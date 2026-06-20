@@ -1,3 +1,96 @@
 {
-  "elements": []
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "npcCountMinus",
+      "type": "button",
+      "x": 1050, "y": 255, "width": 50, "height": 40,
+      "text": "-",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.15, 0.15, 1.0]
+    },
+    {
+      "id": "npcCountPlus",
+      "type": "button",
+      "x": 1110, "y": 255, "width": 50, "height": 40,
+      "text": "+",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.5, 0.15, 1.0]
+    },
+    {
+      "id": "diffMinus",
+      "type": "button",
+      "x": 1050, "y": 315, "width": 50, "height": 40,
+      "text": "-",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.15, 0.15, 1.0]
+    },
+    {
+      "id": "diffPlus",
+      "type": "button",
+      "x": 1110, "y": 315, "width": 50, "height": 40,
+      "text": "+",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.5, 0.15, 1.0]
+    },
+    {
+      "id": "livesMinus",
+      "type": "button",
+      "x": 1050, "y": 375, "width": 50, "height": 40,
+      "text": "-",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.15, 0.15, 1.0]
+    },
+    {
+      "id": "livesPlus",
+      "type": "button",
+      "x": 1110, "y": 375, "width": 50, "height": 40,
+      "text": "+",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.5, 0.15, 1.0]
+    },
+    {
+      "id": "timeMinus",
+      "type": "button",
+      "x": 1050, "y": 435, "width": 50, "height": 40,
+      "text": "-",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.15, 0.15, 1.0]
+    },
+    {
+      "id": "timePlus",
+      "type": "button",
+      "x": 1110, "y": 435, "width": 50, "height": 40,
+      "text": "+",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.5, 0.15, 1.0]
+    },
+    {
+      "id": "startButton",
+      "type": "button",
+      "x": 820, "y": 540, "width": 300, "height": 80,
+      "text": "START BOMB TAG",
+      "fontSize": 0.50,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.9, 0.25, 0.1, 1.0]
+    },
+    {
+      "id": "backButton",
+      "type": "button",
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
+    }
+  ]
 }

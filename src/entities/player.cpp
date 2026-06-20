@@ -1465,9 +1465,13 @@ void Player::updateAudio(float dt)
         playAirJumpSound();
 
     if (didDash) {
-        playWorldSound("entity/player/dash", pos, 1.0f, 1.0f, 36.0f);
-        // Spawn dash effect at player position
-        EffectPartSystem::instance().spawnDash(pos);
+        bool perfect = (lastDashQuality == 0);
+        playWorldSound("entity/player/dash", pos, perfect ? 1.3f : 1.0f, perfect ? 1.2f : 1.0f, 36.0f);
+        if (perfect)
+            EffectPartSystem::instance().spawnPerfectDash(pos);
+        else
+            EffectPartSystem::instance().spawnDash(pos);
+        lastDashQuality = 0;
     }
 
     // Only trigger land sound on stable air->ground transition

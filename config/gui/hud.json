@@ -1,0 +1,119 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "hudBg",
+      "type": "panel",
+      "x": 14, "y": 78, "width": 260, "height": 92,
+      "backgroundColor": [0, 0, 0, 0.56]
+    },
+    {
+      "id": "playerName",
+      "type": "text",
+      "x": 24, "y": 88, "width": 240, "height": 24,
+      "fontSize": 0.42,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    {
+      "id": "hpText",
+      "type": "text",
+      "x": 24, "y": 116, "width": 200, "height": 24,
+      "fontSize": 0.38,
+      "textColor": [0.35, 1.0, 0.45, 1.0]
+    },
+    {
+      "id": "speedText",
+      "type": "text",
+      "x": 24, "y": 144, "width": 200, "height": 24,
+      "fontSize": 0.38,
+      "textColor": [0.75, 0.9, 1.0, 1.0]
+    },
+    {
+      "id": "deathOverlay",
+      "type": "panel",
+      "x": 690, "y": 460, "width": 540, "height": 160,
+      "backgroundColor": [0, 0, 0, 0.75]
+    },
+    {
+      "id": "deathText",
+      "type": "text",
+      "x": 810, "y": 498, "width": 300, "height": 30,
+      "fontSize": 0.55,
+      "textColor": [1.0, 0.15, 0.15, 1.0]
+    },
+    {
+      "id": "respawnText",
+      "type": "text",
+      "x": 755, "y": 542, "width": 400, "height": 24,
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1]
+    },
+    {
+      "id": "respawnHint",
+      "type": "text",
+      "x": 770, "y": 582, "width": 400, "height": 24,
+      "fontSize": 0.38,
+      "textColor": [0.85, 0.9, 1.0, 1.0]
+    },
+    {
+      "id": "connectionBg",
+      "type": "panel",
+      "x": 780, "y": 32, "width": 360, "height": 58,
+      "backgroundColor": [0.02, 0.025, 0.035, 0.92]
+    },
+    {
+      "id": "connectionText",
+      "type": "text",
+      "x": 798, "y": 54, "width": 340, "height": 24,
+      "fontSize": 0.40
+    },
+    {
+      "id": "modeText",
+      "type": "text",
+      "x": 24, "y": 208, "width": 400, "height": 24,
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 1.0, 1.0]
+    },
+    {
+      "id": "ammoText",
+      "type": "text",
+      "x": 24, "y": 232, "width": 300, "height": 24,
+      "fontSize": 0.42,
+      "textColor": [1.0, 0.82, 0.3, 1.0]
+    },
+    {
+      "id": "reloadText",
+      "type": "text",
+      "x": 24, "y": 248, "width": 300, "height": 24,
+      "fontSize": 0.36,
+      "textColor": [1.0, 0.5, 0.2, 1.0]
+    },
+    {
+      "id": "replayRecordDot",
+      "type": "panel",
+      "x": 1672, "y": 20, "width": 12, "height": 12,
+      "backgroundColor": [1.0, 0.05, 0.05, 1.0]
+    },
+    {
+      "id": "replayRecordText",
+      "type": "text",
+      "x": 1690, "y": 30, "width": 200, "height": 24,
+      "fontSize": 0.34,
+      "textColor": [1.0, 0.12, 0.12, 1.0]
+    },
+    {
+      "id": "replayTickText",
+      "type": "text",
+      "x": 1690, "y": 58, "width": 200, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [1.0, 0.12, 0.12, 1.0]
+    },
+    {
+      "id": "replayHudBg",
+      "type": "panel",
+      "x": 1640, "y": 20, "width": 250, "height": 130,
+      "backgroundColor": [0, 0, 0, 0.7]
+    }
+  ]
+}

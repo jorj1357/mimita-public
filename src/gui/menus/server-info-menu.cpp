@@ -1,8 +1,6 @@
 #include "server-info-menu.h"
-#include "../gui-back.h"
-#include "../gui-button.h"
-#include "../gui-label.h"
 #include "../gui-layout.h"
+#include "../gui-element-render.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <cstring>
@@ -92,7 +90,7 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
 
     uiDrawRect({0, 0, fbW, fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "server-info-bg");
 
-    guiLabel("Host Server", uiScaleX(880.0f), uiScaleY(140.0f));
+    uiDrawText("Host Server", uiScaleX(880.0f), uiScaleY(140.0f), 0.42f, {0.55f, 0.78f, 1.0f, 1.0f});
 
     uiDrawText("Address:", uiScaleX(760.0f), uiScaleY(240.0f), 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
     uiDrawRect({uiScaleX(860.0f), uiScaleY(220.0f), uiScaleX(300.0f), uiScaleY(48.0f)},
@@ -106,25 +104,26 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
         uiDrawText("Status: Running", uiScaleX(760.0f), uiScaleY(330.0f), 0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
         uiDrawText("Server terminal is open in background", uiScaleX(760.0f), uiScaleY(365.0f), 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
-        if (guiButton(win, "Connect",
-            layout.getRectDesign("connect", {835.0f, 400.0f, 250.0f, 60.0f}),
-            {0.2f,0.7f,1.0f,1.0f}, "connect"))
+        const GuiElement* ce = layout.get("connect");
+        if (ce && drawGuiElement(win, *ce).clicked)
             r.connect = true;
     } else {
         uiDrawText("Status: Not Running", uiScaleX(760.0f), uiScaleY(330.0f), 0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
         uiDrawText("Click to start a dedicated server", uiScaleX(760.0f), uiScaleY(365.0f), 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
-        if (guiButton(win, "Start Server",
-            layout.getRectDesign("startServer", {835.0f, 400.0f, 250.0f, 60.0f}),
-            {0.2f,0.8f,0.3f,1.0f}, "startServer"))
+        const GuiElement* se = layout.get("startServer");
+        if (se && drawGuiElement(win, *se).clicked)
         {
             if (launchServerProcess())
                 r.startServer = true;
         }
     }
 
-    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
-        r.goBack = true;
+    {
+        const GuiElement* bb = layout.get("backButton");
+        if (bb && drawGuiElement(win, *bb).clicked)
+            r.goBack = true;
+    }
 
     return r;
 }

@@ -1,8 +1,7 @@
 #include "gui/menus/sign-in-menu.h"
 
-#include "gui/gui-back.h"
-#include "gui/gui-button.h"
 #include "gui/gui-layout.h"
+#include "gui/gui-element-render.h"
 #include "gui/ui-system.h"
 #include "profile/local-profile-system.h"
 
@@ -90,22 +89,30 @@ SignInMenuResult drawSignInMenu(GLFWwindow* window)
                uiScaleX(764.0f), uiScaleY(393.0f), 0.38f, {1,1,1,1});
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/sign-in-menu.json");
-    if (guiButton(window, "Sign In",
-        layout.getRectDesign("signIn", {840.0f, 470.0f, 240.0f, 58.0f}),
-        {0.2f,0.7f,1.0f,1.0f}, "signIn"))
+
+    // Render buttons from layout
+    for (const std::string& id : layout.elementIds())
     {
-        result.signedIn = LocalProfileSystem::instance().signIn(username, password);
-        message = result.signedIn
-            ? "Signed in as " + LocalProfileSystem::instance().currentUsername()
-            : LocalProfileSystem::instance().lastError();
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+
+        UIButtonState s = drawGuiElement(window, *elem);
+        if (!s.clicked) continue;
+
+        if (id == "signIn")
+        {
+            result.signedIn = LocalProfileSystem::instance().signIn(username, password);
+            message = result.signedIn
+                ? "Signed in as " + LocalProfileSystem::instance().currentUsername()
+                : LocalProfileSystem::instance().lastError();
+        }
+        else if (id == "backButton")
+            result.goBack = true;
     }
 
     if (!message.empty())
         uiDrawText(message.c_str(), uiScaleX(790.0f), uiScaleY(550.0f), 0.36f,
                    result.signedIn ? glm::vec4(0.3f,1,0.4f,1)
                                    : glm::vec4(1,0.3f,0.3f,1));
-
-    if (guiBackButton(window, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
-        result.goBack = true;
     return result;
 }

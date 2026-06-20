@@ -478,6 +478,77 @@ Future systems should assume full-body collision is desired.
 
 ==================================================
 
+# Code Architecture
+
+## Function Reuse First
+
+Before writing a new function:
+
+Search the entire repo.
+
+Assume the function already exists until proven otherwise.
+
+## Prove Necessity
+
+Every new function must answer:
+
+Why can't an existing function be reused?
+
+## Delete Duplicates
+
+If two functions perform substantially the same job:
+
+Prefer merging them.
+
+Prefer deleting one.
+
+## One Source of Truth
+
+Common behaviors should have exactly one implementation.
+
+Examples:
+
+weapon grip position
+
+hand attachment
+
+socket lookup
+
+collision queries
+
+world-space labels
+
+NPC targeting
+
+spawn selection
+
+map loading
+
+## Reuse Over Creation
+
+Preferred order:
+
+1. Reuse existing function
+2. Expand existing function
+3. Generalize existing function
+4. Create new function only if required
+
+## Minimize Code Growth
+
+Adding code is not automatically progress.
+
+If a feature can be implemented with:
+
++0 functions
+
+instead of
+
++3 functions
+
+prefer +0.
+
+==================================================
+
 ---
 
 # TASK COMPLETION REQUIREMENTS

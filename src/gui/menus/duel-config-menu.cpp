@@ -1,8 +1,6 @@
 #include "duel-config-menu.h"
-#include "../gui-back.h"
-#include "../gui-button.h"
-#include "../gui-label.h"
 #include "../gui-layout.h"
+#include "../gui-element-render.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <algorithm>
@@ -22,68 +20,50 @@ DuelConfigResult drawDuelConfigMenu(GLFWwindow* win)
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/duel-config-menu.json");
 
-    guiLabel("Duel Mode Settings", uiScaleX(720.0f), uiScaleY(160.0f));
-
-    // NPC Count
+    // Render all layout elements
+    for (const std::string& id : layout.elementIds())
     {
-        char text[128];
-        snprintf(text, sizeof(text), "NPC Count: %d", sNumNpcs);
-        uiDrawText(text, uiScaleX(720.0f), uiScaleY(260.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("NPC Count -", {1070.0f, 255.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f}))
-            sNumNpcs = std::max(1, sNumNpcs - 1);
-        UIRect pr = layout.getRectDesign("NPC Count +", {1130.0f, 255.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f}))
-            sNumNpcs = std::min(20, sNumNpcs + 1);
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+
+        // Skip dynamic text labels — rendered manually below
+        if (id == "header") continue;
+
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+
+        if (id == "npcCountMinus") sNumNpcs = std::max(1, sNumNpcs - 1);
+        else if (id == "npcCountPlus") sNumNpcs = std::min(20, sNumNpcs + 1);
+        else if (id == "killsMinus") sKillsToWin = std::max(1, sKillsToWin - 1);
+        else if (id == "killsPlus") sKillsToWin = std::min(99, sKillsToWin + 1);
+        else if (id == "timeMinus") sDuelLength = std::max(30, sDuelLength - 1);
+        else if (id == "timePlus") sDuelLength = std::min(3600, sDuelLength + 1);
+        else if (id == "diffMinus") sNpcDifficulty = std::max(1.0f, sNpcDifficulty - 1.0f);
+        else if (id == "diffPlus") sNpcDifficulty = std::min(10.0f, sNpcDifficulty + 1.0f);
+        else if (id == "startDuelButton") r.startDuel = true;
+        else if (id == "backButton") r.goBack = true;
     }
 
-    // Kills to Win
-    {
-        char text[128];
-        snprintf(text, sizeof(text), "Kills to Win: %d", sKillsToWin);
-        uiDrawText(text, uiScaleX(720.0f), uiScaleY(320.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("Kills to Win -", {1070.0f, 315.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f}))
-            sKillsToWin = std::max(1, sKillsToWin - 1);
-        UIRect pr = layout.getRectDesign("Kills to Win +", {1130.0f, 315.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f}))
-            sKillsToWin = std::min(99, sKillsToWin + 1);
-    }
+    // Static header
+    const GuiElement* headerEl = layout.get("header");
+    if (headerEl)
+        drawGuiElement(win, *headerEl);
 
-    // Time Limit
-    {
+    // Dynamic labels
+    auto drawLabel = [&](const char* fmt, int val, float y) {
         char text[128];
-        snprintf(text, sizeof(text), "Time Limit (sec): %d", sDuelLength);
-        uiDrawText(text, uiScaleX(720.0f), uiScaleY(380.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("Time Limit -", {1070.0f, 375.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f}))
-            sDuelLength = std::max(30, sDuelLength - 1);
-        UIRect pr = layout.getRectDesign("Time Limit +", {1130.0f, 375.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f}))
-            sDuelLength = std::min(3600, sDuelLength + 1);
-    }
+        snprintf(text, sizeof(text), fmt, val);
+        uiDrawText(text, uiScaleX(720.0f), uiScaleY(y), 0.38f, {1, 1, 1, 1});
+    };
+    drawLabel("NPC Count: %d", sNumNpcs, 260.0f);
+    drawLabel("Kills to Win: %d", sKillsToWin, 320.0f);
+    drawLabel("Time Limit (sec): %d", sDuelLength, 380.0f);
 
-    // Difficulty
     {
         char diffText[64];
         snprintf(diffText, sizeof(diffText), "Difficulty: %.0f/10", sNpcDifficulty);
         uiDrawText(diffText, uiScaleX(720.0f), uiScaleY(440.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("Difficulty -", {1070.0f, 435.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f}))
-            sNpcDifficulty = std::max(1.0f, sNpcDifficulty - 1.0f);
-        UIRect pr = layout.getRectDesign("Difficulty +", {1130.0f, 435.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f}))
-            sNpcDifficulty = std::min(10.0f, sNpcDifficulty + 1.0f);
     }
-
-    {
-        UIRect sd = layout.getRectDesign("START DUEL", {820.0f, 540.0f, 300.0f, 80.0f});
-        if (guiButton(win, "START DUEL", sd.x, sd.y, sd.w, sd.h, {0.9f, 0.25f, 0.1f, 1.0f}))
-            r.startDuel = true;
-    }
-
-    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
-        r.goBack = true;
 
     return r;
 }

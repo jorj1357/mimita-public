@@ -1,14 +1,12 @@
 #include "bomb-tag-config.h"
-#include "../gui/gui-back.h"
-#include "../gui/gui-button.h"
-#include "../gui/gui-label.h"
 #include "../gui/gui-layout.h"
+#include "../gui/gui-element-render.h"
 #include "../gui/ui-system.h"
 #include <cstdio>
 #include <algorithm>
 
 static int sNumNpcs = 3;
-static int sLives = 0; // 0 = infinite
+static int sLives = 0;
 static int sTimeLimit = 180;
 static float sNpcDifficulty = 5.0f;
 
@@ -30,85 +28,66 @@ BombTagConfigResult drawBombTagConfigMenu(GLFWwindow* win)
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/bomb-tag-config.json");
 
-    guiLabel("Bomb Tag Settings", uiScaleX(700.0f), uiScaleY(160.0f));
-
-    // NPC Count
+    // Render +/- buttons and start/back via unified renderer
+    for (const std::string& id : layout.elementIds())
     {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+
+        if (id == "npcCountMinus") sNumNpcs = std::max(1, sNumNpcs - 1);
+        else if (id == "npcCountPlus") sNumNpcs = std::min(20, sNumNpcs + 1);
+        else if (id == "diffMinus") sNpcDifficulty = std::max(1.0f, sNpcDifficulty - 1.0f);
+        else if (id == "diffPlus") sNpcDifficulty = std::min(10.0f, sNpcDifficulty + 1.0f);
+        else if (id == "livesMinus" || id == "livesPlus") {
+            int idx = 0;
+            for (int i = 0; i < kNumLivesOptions; ++i) {
+                if (kLivesValues[i] == sLives) { idx = i; break; }
+            }
+            idx = (id == "livesMinus") ? (idx - 1 + kNumLivesOptions) % kNumLivesOptions
+                                       : (idx + 1) % kNumLivesOptions;
+            sLives = kLivesValues[idx];
+        }
+        else if (id == "timeMinus" || id == "timePlus") {
+            int idx = 0;
+            for (int i = 0; i < kNumTimeOptions; ++i) {
+                if (kTimeValues[i] == sTimeLimit) { idx = i; break; }
+            }
+            idx = (id == "timeMinus") ? (idx - 1 + kNumTimeOptions) % kNumTimeOptions
+                                      : (idx + 1) % kNumTimeOptions;
+            sTimeLimit = kTimeValues[idx];
+        }
+        else if (id == "startButton") r.start = true;
+        else if (id == "backButton") r.goBack = true;
+    }
+
+    // Dynamic labels
+    auto drawVal = [&](const char* fmt, auto val, float y) {
         char text[128];
-        snprintf(text, sizeof(text), "NPC Count: %d", sNumNpcs);
-        uiDrawText(text, uiScaleX(700.0f), uiScaleY(260.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("NPC Count -", {1050.0f, 255.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f}))
-            sNumNpcs = std::max(1, sNumNpcs - 1);
-        UIRect pr = layout.getRectDesign("NPC Count +", {1110.0f, 255.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f}))
-            sNumNpcs = std::min(20, sNumNpcs + 1);
-    }
+        snprintf(text, sizeof(text), fmt, val);
+        uiDrawText(text, uiScaleX(700.0f), uiScaleY(y), 0.38f, {1, 1, 1, 1});
+    };
+    drawVal("NPC Count: %d", sNumNpcs, 260.0f);
+    drawVal("Difficulty: %.0f/10", sNpcDifficulty, 320.0f);
 
-    // NPC Difficulty
-    {
-        char text[64];
-        snprintf(text, sizeof(text), "Difficulty: %.0f/10", sNpcDifficulty);
-        uiDrawText(text, uiScaleX(700.0f), uiScaleY(320.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("Difficulty -", {1050.0f, 315.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f}))
-            sNpcDifficulty = std::max(1.0f, sNpcDifficulty - 1.0f);
-        UIRect pr = layout.getRectDesign("Difficulty +", {1110.0f, 315.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f}))
-            sNpcDifficulty = std::min(10.0f, sNpcDifficulty + 1.0f);
-    }
-
-    // Lives
     {
         int idx = 0;
-        for (int i = 0; i < kNumLivesOptions; ++i) {
+        for (int i = 0; i < kNumLivesOptions; ++i)
             if (kLivesValues[i] == sLives) { idx = i; break; }
-        }
         char text[128];
         snprintf(text, sizeof(text), "Lives: %s", kLivesOptions[idx]);
         uiDrawText(text, uiScaleX(700.0f), uiScaleY(380.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("Lives -", {1050.0f, 375.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f})) {
-            idx = (idx - 1 + kNumLivesOptions) % kNumLivesOptions;
-            sLives = kLivesValues[idx];
-        }
-        UIRect pr = layout.getRectDesign("Lives +", {1110.0f, 375.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f})) {
-            idx = (idx + 1) % kNumLivesOptions;
-            sLives = kLivesValues[idx];
-        }
     }
-
-    // Time Limit
     {
         int idx = 0;
-        for (int i = 0; i < kNumTimeOptions; ++i) {
+        for (int i = 0; i < kNumTimeOptions; ++i)
             if (kTimeValues[i] == sTimeLimit) { idx = i; break; }
-        }
         char text[128];
         snprintf(text, sizeof(text), "Time Limit: %s", kTimeOptions[idx]);
         uiDrawText(text, uiScaleX(700.0f), uiScaleY(440.0f), 0.38f, {1, 1, 1, 1});
-        UIRect mr = layout.getRectDesign("Time Limit -", {1050.0f, 435.0f, 50.0f, 40.0f});
-        if (guiButton(win, "-", mr.x, mr.y, mr.w, mr.h, {0.5f, 0.15f, 0.15f, 1.0f})) {
-            idx = (idx - 1 + kNumTimeOptions) % kNumTimeOptions;
-            sTimeLimit = kTimeValues[idx];
-        }
-        UIRect pr = layout.getRectDesign("Time Limit +", {1110.0f, 435.0f, 50.0f, 40.0f});
-        if (guiButton(win, "+", pr.x, pr.y, pr.w, pr.h, {0.15f, 0.5f, 0.15f, 1.0f})) {
-            idx = (idx + 1) % kNumTimeOptions;
-            sTimeLimit = kTimeValues[idx];
-        }
     }
-
-    // Start
-    {
-        UIRect sd = layout.getRectDesign("START", {820.0f, 540.0f, 300.0f, 80.0f});
-        if (guiButton(win, "START BOMB TAG", sd.x, sd.y, sd.w, sd.h, {0.9f, 0.25f, 0.1f, 1.0f}))
-            r.start = true;
-    }
-
-    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
-        r.goBack = true;
 
     return r;
 }

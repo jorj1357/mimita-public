@@ -1,6 +1,6 @@
 #include "help-menu.h"
-#include "../gui-back.h"
 #include "../gui-layout.h"
+#include "../gui-element-render.h"
 #include "../ui-system.h"
 #include <cstdio>
 
@@ -90,7 +90,9 @@ HelpMenuResult drawHelpMenu(GLFWwindow* win)
     line("Visit https://mimita.fun to get involved.");
     y += 8.0f;
 
-    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
+    // Back button
+    const GuiElement* bb = layout.get("backButton");
+    if (bb && drawGuiElement(win, *bb).clicked)
         r.goBack = true;
 
     return r;

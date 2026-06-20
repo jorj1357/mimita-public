@@ -85,6 +85,7 @@ public:
     EffectPart* spawn(const EffectPart& effect);
     EffectPart* spawnFootstep(glm::vec3 position);
     EffectPart* spawnDash(glm::vec3 position);
+    EffectPart* spawnPerfectDash(glm::vec3 position);
     EffectPart* spawnFreeze(glm::vec3 position, float freezeDuration);
     EffectPart* spawnImpact(glm::vec3 position, glm::vec3 color, const char* label);
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);

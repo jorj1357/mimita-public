@@ -33,6 +33,7 @@ struct NpcSensorContext {
     float targetDistance = 0.0f;
     glm::vec3 selfVel{0.0f};
     bool grounded = false;
+    float time = 0.0f; // accumulated simulation time for history indexing
 };
 
 class Npc {
@@ -62,6 +63,11 @@ public:
     bool bombTagHasBomb = false;
     glm::vec3 bombTagChaseTarget{0.0f};
     glm::vec3 bombTagFleeFrom{0.0f};
+
+    // Position history for difficulty-based reaction delay
+    struct PositionSample { glm::vec3 pos{0.0f}; glm::vec3 vel{0.0f}; float time = 0.0f; };
+    std::vector<PositionSample> posHistory;
+    static constexpr int MAX_HISTORY_SAMPLES = 120;
 
     unsigned int rngState = 1;
 

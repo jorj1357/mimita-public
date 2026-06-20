@@ -9,6 +9,7 @@
 
 #include "../gui/ui-system.h"
 #include "../gui/gui-layout.h"
+#include "../gui/gui-element-render.h"
 #include "../gui/gui-coord.h"
 #include "../gui/gui-media.h"
 #include "../devtools/terminal.h"
@@ -106,7 +107,8 @@ static void drawPicker(GLFWwindow* win, GuiLayout& layout) {
     const GuiElement* closeEl = layout.get("pickerClose");
     float clx = closeEl ? closeEl->x : (pdx + pdw - 36.0f), cly = closeEl ? closeEl->y : (pdy + 8.0f);
     float clw = (closeEl && closeEl->w > 0) ? closeEl->w : 28.0f, clh = (closeEl && closeEl->h > 0) ? closeEl->h : 28.0f;
-    if (uiButton(win, "X", {clx, cly, clw, clh}, {0.5f, 0.15f, 0.15f, 1.0f}).clicked) closePicker();
+    const GuiElement* pc = layout.get("pickerClose");
+    if (pc && drawGuiElement(win, *pc).clicked) closePicker();
     const GuiElement* rowEl = layout.get("pickerRow");
     float rx = rowEl ? rowEl->x : (pdx + 14.0f), ry = rowEl ? rowEl->y : (pdy + 58.0f);
     float rw = rowEl ? rowEl->w : (pdw - 28.0f), rh = rowEl ? rowEl->h : 32.0f;
