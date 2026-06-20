@@ -1,8 +1,9 @@
 #include "gui-editor.h"
 #include "gui-coord.h"
-#include "gui-layout.h"
-#include "ui-system.h"
 
+#include "gui-layout.h"
+#include "gui-element-render.h"
+#include "ui-system.h"
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
@@ -213,17 +214,43 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
-    // Hierarchy click
+    // Hierarchy click (elements start at y=130 now, filter at y=108-128)
     if (pressed && !mDragging && !mResizing) {
-        const float hx = 12.0f, hy = 112.0f, hw = 218.0f;
+        const float hx = 12.0f, hw = 218.0f;
+        // Filter area click
+        if (dx >= hx && dx <= hx + hw && dy >= 108 && dy <= 128 && !mActiveLayoutFile.empty()) {
+            mFilterFocused = !mFilterFocused;
+            if (!mFilterFocused) mHierarchyFilter.clear();
+            return;
+        }
+        // Element list click
+        const float hy = 130.0f;
         if (dx >= hx && dx <= hx + hw && dy >= hy && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-            auto ids = layout.elementIds();
+            auto allIds = layout.elementIds();
+            // Apply filter
+            std::vector<std::string> ids;
+            for (const std::string& id : allIds)
+                if (mHierarchyFilter.empty() || id.find(mHierarchyFilter) != std::string::npos)
+                    ids.push_back(id);
             int idx = (int)((dy - hy) / PP_ROW_H);
             if (idx >= 0 && idx < (int)ids.size()) {
                 mSelectedId = ids[idx];
                 mDragOffsetX = 0; mDragOffsetY = 0;
                 printf("[GUI EDIT] hierarchy selected \"%s\"\n", mSelectedId.c_str());
+                return;
+            }
+        }
+    }
+
+    // Color picker trigger: click on color label area (left of track for rows 5-12)
+    if (pressed && !mDragging && !mResizing && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+        const float labelStartY = PP_Y + 34.0f;
+        if (dy >= labelStartY && dy < labelStartY + 14 * PP_ROW_H) {
+            int row = (int)((dy - labelStartY) / PP_ROW_H);
+            if (row >= 5 && row <= 12 && dx < PP_TRACK_X) { // Color rows, left of track
+                mColorPickerOpen = !mColorPickerOpen;
+                mColorPickerTarget = mColorPickerOpen ? row : -1;
                 return;
             }
         }
@@ -249,11 +276,24 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
-    // Selection click
+    // Selection click with double-click detection for text editing
     if (pressed && !mDragging && !mResizing) {
         for (const auto& w : uiGetTrackedWidgets()) {
             double wx = w.rect.x, wy = w.rect.y, ww = w.rect.w, wh = w.rect.h;
             if (dx >= wx && dx <= wx + ww && dy >= wy && dy <= wy + wh) {
+                // Double-click on same element → enter text editing
+                double now = glfwGetTime();
+                if (w.id == mSelectedId && !mSelectedId.empty() && now - mLastClickTime < 0.5) {
+                    mEditingText = true;
+                    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+                    const GuiElement* elem = layout.get(mSelectedId);
+                    mTextEditBuffer = elem ? elem->text : "";
+                    printf("[GUI EDIT] text editing started for \"%s\": \"%s\"\n",
+                           mSelectedId.c_str(), mTextEditBuffer.c_str());
+                    return;
+                }
+                mEditingText = false;
+                mLastClickTime = now;
                 mSelectedId = w.id;
                 mDragOffsetX = (float)dx - wx;
                 mDragOffsetY = (float)dy - wy;
@@ -342,6 +382,68 @@ void GuiEditor::handleInput(GLFWwindow* win)
 void GuiEditor::handleKeyboard(GLFWwindow* win)
 {
     if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
+
+    // Hierarchy filter keyboard input
+    if (mFilterFocused) {
+        if (glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS) {
+            static bool fbPrev = false;
+            if (!mHierarchyFilter.empty() && !fbPrev) mHierarchyFilter.pop_back();
+            fbPrev = true;
+        } else { static bool fbPrev = false; (void)fbPrev; }
+        if (glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS) { mFilterFocused = false; return; }
+        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) { mFilterFocused = false; mHierarchyFilter.clear(); return; }
+        return;
+    }
+
+    // Text editing mode: keyboard input for text
+    if (mEditingText) {
+        // Backspace
+        if (glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS) {
+            static bool bsPrev = false;
+            if (!mTextEditBuffer.empty() && !bsPrev) {
+                mTextEditBuffer.pop_back();
+                GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+                GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+                if (elem) { elem->text = mTextEditBuffer; layout.setElement(*elem); markEdited(); }
+            }
+            bsPrev = true;
+        } else { static bool bsPrev = false; (void)bsPrev; }
+        // Enter to confirm
+        if (glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS) {
+            mEditingText = false;
+            printf("[GUI EDIT] text editing ended for \"%s\": \"%s\"\n",
+                   mSelectedId.c_str(), mTextEditBuffer.c_str());
+            return;
+        }
+        // Escape to cancel
+        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            mEditingText = false;
+            return;
+        }
+        return; // Don't process movement keys during text editing
+    }
+
+    // Ctrl+D: duplicate selected element
+    if ((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+         glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) &&
+        glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS) {
+        static bool dupPrev = false;
+        if (!dupPrev) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+            GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+            if (elem) {
+                GuiElement dup = *elem;
+                dup.id = elem->id + "_copy";
+                dup.x += 20.0f;
+                dup.y += 20.0f;
+                layout.setElement(dup);
+                mSelectedId = dup.id;
+                markEdited();
+                printf("[GUI EDIT] duplicated \"%s\" -> \"%s\"\n", elem->id.c_str(), dup.id.c_str());
+            }
+            dupPrev = true;
+        }
+    } else { static bool dupPrev = false; (void)dupPrev; }
     float step = 1.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
         glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) step = 10.0f;
@@ -373,6 +475,31 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
     markEdited();
 }
 
+// ── Character input (called from glfw char callback) ──────────────
+void GuiEditor::handleChar(unsigned int codepoint)
+{
+    if (codepoint < 32 || codepoint > 126) return;
+
+    // Hierarchy filter
+    if (mFilterFocused) {
+        if (mHierarchyFilter.size() < 40) {
+            mHierarchyFilter.push_back((char)codepoint);
+        }
+        return;
+    }
+
+    if (!mEditingText || mSelectedId.empty() || mActiveLayoutFile.empty()) return;
+
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+    if (!elem) return;
+
+    mTextEditBuffer.push_back((char)codepoint);
+    elem->text = mTextEditBuffer;
+    layout.setElement(*elem);
+    markEdited();
+}
+
 // ── Selection handles ────────────────────────────────────────────
 void GuiEditor::renderSelectionHandles(const GuiElement& elem)
 {
@@ -390,7 +517,7 @@ void GuiEditor::renderSelectionHandles(const GuiElement& elem)
 }
 
 // ── Property panel ───────────────────────────────────────────────
-void GuiEditor::renderPropertyPanel(const GuiElement& elem)
+void GuiEditor::renderPropertyPanel(GLFWwindow* win, const GuiElement& elem)
 {
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     auto dsx = [&](float x) { return cs.designToScreenX(x); };
@@ -493,14 +620,153 @@ void GuiEditor::renderPropertyPanel(const GuiElement& elem)
                elem.enabled ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
 
     char info[128];
-    snprintf(info, sizeof(info), "Anchor: %s/%s  Layer: %d  Rot: %.0f",
-             elem.anchorX.c_str(), elem.anchorY.c_str(), elem.layer, elem.rotation);
+    snprintf(info, sizeof(info), "Anchor: %s/%s  Rot: %.0f",
+             elem.anchorX.c_str(), elem.anchorY.c_str(), elem.rotation);
     uiDrawText(info, dsx(PP_X + 8), dsy(toy + PP_ROW_H), 0.24f,
                {0.5f, 0.6f, 0.8f, 1.0f});
 
-    if (!elem.text.empty()) {
-        uiDrawText(elem.text.c_str(), dsx(PP_X + 8), dsy(toy + PP_ROW_H * 2),
-                   0.24f, {0.8f, 0.8f, 0.5f, 1.0f});
+    // Layer up/down buttons
+    GuiLayout& layerLayout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    float lyrY = toy + PP_ROW_H * 2 + 4;
+    uiDrawText("Layer:", dsx(PP_X + 8), dsy(lyrY), 0.24f, {0.7f, 0.8f, 0.9f, 1.0f});
+    char layerBuf[16];
+    snprintf(layerBuf, sizeof(layerBuf), "%d", elem.layer);
+    uiDrawText(layerBuf, dsx(PP_X + 56), dsy(lyrY), 0.24f, {1,1,1,1});
+    GuiElement layerBtn;
+    layerBtn.type = "button";
+    layerBtn.textColor = {1,1,1,1};
+    UIRect layerDownRect = {PP_X + 80, lyrY, 24, 20};
+    layerBtn.text = "-";
+    layerBtn.backgroundColor = {0.3f, 0.2f, 0.2f, 1.0f};
+    if (drawGuiElement(win, layerBtn, nullptr, &layerDownRect).clicked) {
+        GuiElement* e = const_cast<GuiElement*>(layerLayout.get(mSelectedId));
+        if (e) { e->layer = std::max(-10, e->layer - 1); layerLayout.setElement(*e); markEdited(); }
+    }
+    UIRect layerUpRect = {PP_X + 108, lyrY, 24, 20};
+    layerBtn.text = "+";
+    layerBtn.backgroundColor = {0.2f, 0.3f, 0.2f, 1.0f};
+    if (drawGuiElement(win, layerBtn, nullptr, &layerUpRect).clicked) {
+        GuiElement* e = const_cast<GuiElement*>(layerLayout.get(mSelectedId));
+        if (e) { e->layer = std::min(10, e->layer + 1); layerLayout.setElement(*e); markEdited(); }
+    }
+
+    {
+        const char* displayText = mEditingText ? mTextEditBuffer.c_str() : elem.text.c_str();
+        char textBuf[256];
+        if (mEditingText) {
+            // Show blinking cursor
+            bool cursorOn = (int)(glfwGetTime() * 2) % 2 == 0;
+            snprintf(textBuf, sizeof(textBuf), "%s%s", displayText, cursorOn ? "|" : " ");
+            uiDrawText(textBuf, dsx(PP_X + 8), dsy(toy + PP_ROW_H * 2),
+                       0.24f, {0.3f, 1.0f, 0.5f, 1.0f});
+        } else if (!elem.text.empty()) {
+            uiDrawText(displayText, dsx(PP_X + 8), dsy(toy + PP_ROW_H * 2),
+                       0.24f, {0.8f, 0.8f, 0.5f, 1.0f});
+        }
+        if (mEditingText) {
+            uiDrawText("[EDITING TEXT - Enter=done Esc=cancel]",
+                       dsx(PP_X + 8), dsy(toy + PP_ROW_H * 3),
+                       0.22f, {0.5f, 1.0f, 0.5f, 1.0f});
+        }
+    }
+}
+
+// ── Color picker palette ──────────────────────────────────────────
+void GuiEditor::renderColorPicker()
+{
+    if (!mColorPickerOpen) return;
+
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    // Palette position: right of property panel, same vertical center
+    float palX = PP_X + PP_W + 8.0f;
+    float palY = PP_Y + 100.0f;
+    float swatchSize = 22.0f;
+    float gap = 2.0f;
+    int cols = 4;
+    float palW = cols * (swatchSize + gap) + 6.0f;
+    int numColors = 12;
+    float palH = ((numColors + cols - 1) / cols) * (swatchSize + gap) + 6.0f;
+
+    // Preset colors (R,G,B)
+    const float presetColors[12][3] = {
+        {1,1,1}, {0.8f,0.8f,0.8f}, {0.5f,0.5f,0.5f}, {0,0,0},
+        {1,0,0}, {1,0.5f,0}, {1,1,0}, {0,1,0},
+        {0,0.5f,1}, {0,0,1}, {0.5f,0,0.5f}, {1,0,1}
+    };
+
+    UIRect palBg = cs.designToScreen({palX, palY, palW, palH});
+    uiDrawRect(palBg, {0.1f, 0.1f, 0.14f, 0.95f}, "color-pal");
+    uiDrawRectOutline(palBg, {0.4f, 0.4f, 0.6f, 0.9f}, "color-pal-border");
+
+    // Close button
+    char closeLabel[16];
+    snprintf(closeLabel, sizeof(closeLabel), "X");
+    float clX = cs.designToScreenX(palX + palW - 18.0f);
+    float clY = cs.designToScreenY(palY + 2);
+    uiDrawText(closeLabel, clX, clY, 0.28f, {1,0.3f,0.3f,1});
+
+    for (int i = 0; i < numColors; ++i) {
+        int row = i / cols;
+        int col = i % cols;
+        float sx = cs.designToScreenX(palX + 3.0f + col * (swatchSize + gap));
+        float sy = cs.designToScreenY(palY + 3.0f + row * (swatchSize + gap));
+        float ss = cs.designToScreenX(swatchSize);
+        uiDrawRect({sx, sy, ss, ss},
+                   {presetColors[i][0], presetColors[i][1], presetColors[i][2], 1.0f},
+                   "pal-color");
+        uiDrawRectOutline({sx, sy, ss, ss}, {0.3f, 0.3f, 0.3f, 0.7f}, "pal-border");
+    }
+
+    // Interaction handled in handleInput
+    // Check if user clicked outside palette to close
+    double mx, my; glfwGetCursorPos(glfwGetCurrentContext(), &mx, &my);
+    double fbx, fby; cs.cursorWindowToScreen(mx, my, fbx, fby);
+    double dx = cs.screenToDesignX((float)fbx);
+    double dy = cs.screenToDesignY((float)fby);
+    bool mouseDown = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    static bool prevDown = false;
+    bool pressed = mouseDown && !prevDown;
+    prevDown = mouseDown;
+
+    if (pressed) {
+        bool hit = (dx >= palX && dx <= palX + palW && dy >= palY && dy <= palY + palH);
+        if (!hit) {
+            mColorPickerOpen = false;
+            return;
+        }
+        // Check color swatch clicks
+        for (int i = 0; i < numColors; ++i) {
+            int row = i / cols;
+            int col = i % cols;
+            float cx = palX + 3.0f + col * (swatchSize + gap);
+            float cy = palY + 3.0f + row * (swatchSize + gap);
+            if (dx >= cx && dx <= cx + swatchSize && dy >= cy && dy <= cy + swatchSize) {
+                // Apply preset color to the target element
+                if (!mSelectedId.empty() && !mActiveLayoutFile.empty() && mColorPickerTarget >= 0) {
+                    GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+                    GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
+                    if (elem) {
+                        // Determine which color vector to update based on target
+                        int idx = mColorPickerTarget;
+                        auto setCol = [&](std::vector<float>& c, float r, float g, float b) {
+                            if (c.size() < 4) c.resize(4, 1.0f);
+                            c[0] = r; c[1] = g; c[2] = b;
+                        };
+                        if (idx >= 5 && idx <= 8) setCol(elem->textColor, presetColors[i][0], presetColors[i][1], presetColors[i][2]);
+                        else if (idx >= 9 && idx <= 12) setCol(elem->backgroundColor, presetColors[i][0], presetColors[i][1], presetColors[i][2]);
+                        layout.setElement(*elem);
+                        markEdited();
+                    }
+                }
+                mColorPickerOpen = false;
+                return;
+            }
+        }
+        // Close button (top-right X area)
+        if (dx >= palX + palW - 18.0f && dx <= palX + palW &&
+            dy >= palY && dy <= palY + 20.0f) {
+            mColorPickerOpen = false;
+        }
     }
 }
 
@@ -509,12 +775,21 @@ void GuiEditor::renderHierarchyView()
 {
     if (mActiveLayoutFile.empty()) return;
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
-    auto ids = layout.elementIds();
-    if (ids.empty()) return;
+    auto allIds = layout.elementIds();
+    if (allIds.empty()) return;
 
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     const float hx = 10.0f, hy = 80.0f, hw = 220.0f;
-    float maxH = std::max(60.0f, (float)ids.size() * PP_ROW_H + 34.0f);
+
+    // Filter
+    std::vector<std::string> ids;
+    for (const std::string& id : allIds) {
+        if (mHierarchyFilter.empty() ||
+            id.find(mHierarchyFilter) != std::string::npos)
+            ids.push_back(id);
+    }
+
+    float maxH = std::max(60.0f, (float)ids.size() * PP_ROW_H + 60.0f);
 
     UIRect bg = cs.designToScreen({hx, hy, hw, maxH});
     uiDrawRect(bg, {0.08f, 0.08f, 0.12f, 0.92f}, "gui-hier");
@@ -522,12 +797,19 @@ void GuiEditor::renderHierarchyView()
 
     uiDrawText("ELEMENTS", cs.designToScreenX(hx + 8), cs.designToScreenY(hy + 4),
                0.28f, {0.4f, 1.0f, 0.6f, 1.0f});
-    uiDrawRect({cs.designToScreenX(hx + 4), cs.designToScreenY(hy + 28),
+
+    // Filter display
+    float filterY = hy + 28.0f;
+    char filterBuf[64];
+    snprintf(filterBuf, sizeof(filterBuf), "Filter: %s", mHierarchyFilter.c_str());
+    uiDrawText(filterBuf, cs.designToScreenX(hx + 4), cs.designToScreenY(filterY),
+               0.22f, {0.6f, 0.7f, 0.9f, 1.0f});
+    uiDrawRect({cs.designToScreenX(hx + 4), cs.designToScreenY(filterY + 18),
                 cs.designToScreenX(hw - 8), 1},
                {0.3f, 0.3f, 0.5f, 0.6f}, "gui-h-div");
 
     for (size_t i = 0; i < ids.size(); ++i) {
-        float ry = hy + 32.0f + i * PP_ROW_H;
+        float ry = hy + 50.0f + i * PP_ROW_H;
         float rsx = cs.designToScreenX(hx + 2);
         float rsy = cs.designToScreenY(ry);
         float rsw = cs.designToScreenX(hw - 4);
@@ -599,6 +881,27 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     renderHierarchyView();
     renderSnapGuides();
 
+    // Debug overlay: show bounds for all elements
+    if (uiDebugEnabled() && !mActiveLayoutFile.empty()) {
+        GuiLayout& dbgLayout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+        for (const std::string& id : dbgLayout.elementIds()) {
+            const GuiElement* de = dbgLayout.get(id);
+            if (!de || id == mSelectedId) continue;
+            float dsx = uiScaleX(de->x), dsy = uiScaleY(de->y);
+            float dsw = uiScaleX(de->w), dsh = uiScaleY(de->h);
+            uiDrawRectOutline({dsx, dsy, dsw, dsh}, {0.3f, 0.3f, 0.5f, 0.35f}, "gui-dbg");
+            // Anchor indicator
+            if (de->anchorX == "center") {
+                float acx = uiScaleX(de->x + de->w * 0.5f);
+                uiDrawRect({acx - 1, dsy, 2, dsh}, {0.5f, 0.5f, 1.0f, 0.3f}, "gui-anchor-x");
+            }
+            if (de->anchorY == "middle") {
+                float acy = uiScaleY(de->y + de->h * 0.5f);
+                uiDrawRect({dsx, acy - 1, dsw, 2}, {0.5f, 0.5f, 1.0f, 0.3f}, "gui-anchor-y");
+            }
+        }
+    }
+
     if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
@@ -614,5 +917,6 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     }
 
     renderSelectionHandles(*elem);
-    renderPropertyPanel(*elem);
+    renderPropertyPanel(win, *elem);
+    renderColorPicker();
 }

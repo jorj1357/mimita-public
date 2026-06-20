@@ -685,6 +685,7 @@ int main(int argc, char** argv)
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
+        GuiEditor::instance().handleChar(codepoint);
     });
     // Terminal key input callback
     glfwSetKeyCallback(engine.window(), [](GLFWwindow*, int key, int scancode, int action, int mods) {
@@ -2269,6 +2270,19 @@ int main(int argc, char** argv)
             Terminal::instance().addLog(on
                 ? "[INPUT] Debug ON: showing key states and buffers"
                 : "[INPUT] Debug OFF");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "gui_debug", "Toggle all GUI debug overlays (bounds, anchors, guides)",
+        "gui_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            bool on = args.empty() ? !uiDebugEnabled() : (args[0] == "1");
+            uiSetDebug(on);
+            uiSetOverlapDebug(on);
+            uiSetCoordDebug(on);
+            Terminal::instance().addLog(on
+                ? "[GUI] Debug ON: showing bounds, anchors, guides"
+                : "[GUI] Debug OFF");
         }
     });
     Terminal::instance().registerCommand({

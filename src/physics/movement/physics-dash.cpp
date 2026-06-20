@@ -12,7 +12,7 @@
 void doAirDash(
     Player& p,
     const glm::vec2& wishMoveXY,
-    bool jumpPressed,
+    bool triggerPressed,
     bool movementPressed,
     bool airborne,
     int movementTicks,
@@ -20,7 +20,7 @@ void doAirDash(
 ) {
     (void)dt;
 
-    if (!jumpPressed) return;
+    if (!triggerPressed) return;
     if (!airborne) return;
     if (!movementPressed) return;
     if (!p.dashAvailable) return;
