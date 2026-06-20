@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <vector>
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
@@ -116,6 +118,85 @@ static void projectRootVelocity(Player& p, const glm::vec3& normal) {
         p.externalImpulse -= normal * intoImp;
 }
 
+static glm::vec3 resolveCapsuleRootCollision(
+    Player& p,
+    const World& world,
+    const Capsule& cap,
+    const char* sourceName,
+    bool weapon,
+    bool* outGrounded)
+{
+    glm::vec3 capHalf = (cap.b - cap.a) * 0.5f;
+    glm::vec3 capCenter = (cap.a + cap.b) * 0.5f;
+    BodyAABB capBounds = { capCenter - glm::abs(capHalf), capCenter + glm::abs(capHalf) };
+    std::vector<int> candidates;
+    gatherCandidates(world, capBounds, cap.r, candidates);
+
+    float maxPen = 0.0f;
+    glm::vec3 bestNormal(0.0f);
+    int penCount = 0;
+
+    for (int ti : candidates) {
+        const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+        for (int s = 0; s < 3; ++s) {
+            float st = (float)s / 2.0f;
+            glm::vec3 sp = cap.a + (cap.b - cap.a) * st;
+            Contact ct;
+            if (sphereTriContact(sp, cap.r, tri, ct)) {
+                if (ct.penetration > maxPen) {
+                    maxPen = ct.penetration;
+                    bestNormal = ct.normal;
+                }
+                penCount++;
+                std::string label = std::string(sourceName) + "_contact";
+                DebugVis::recordContact(ct.point, ct.normal, ct.penetration, ti, label.c_str());
+            }
+        }
+    }
+
+    if (maxPen <= 0.005f || penCount <= 0)
+        return glm::vec3(0.0f);
+
+    glm::vec3 correction = bestNormal * maxPen;
+    glm::vec3 rootBefore = p.pos;
+
+    p.pos += correction;
+    projectRootVelocity(p, bestNormal);
+
+    if (!weapon && bestNormal.z > 0.70f) {
+        if (outGrounded)
+            *outGrounded = true;
+        if (p.vel.z < 0.0f)
+            p.vel.z = 0.0f;
+        if (p.externalImpulse.z < 0.0f)
+            p.externalImpulse.z = 0.0f;
+    }
+
+    p.updateModelWorldTransforms();
+
+    if (weapon) {
+        Debug::logThrottled(Debug::Category::Collision, "weapon-root-response", 0.25f,
+            "[WEAPON COLLISION] weapon=%s penetration=%.4f correction=(%.4f %.4f %.4f) hits=%d\n"
+            "[ROOT RESPONSE] source=weapon correction=(%.4f %.4f %.4f) pos=(%.4f %.4f %.4f)\n",
+            sourceName, maxPen,
+            correction.x, correction.y, correction.z, penCount,
+            correction.x, correction.y, correction.z,
+            p.pos.x, p.pos.y, p.pos.z);
+    } else {
+        Debug::logThrottled(Debug::Category::Collision, "body-root-response", 0.25f,
+            "[BODY COLLISION] part=%s penetration=%.4f correction=(%.4f %.4f %.4f) hits=%d\n"
+            "[ROOT RESPONSE] source=body correction=(%.4f %.4f %.4f) pos=(%.4f %.4f %.4f)\n",
+            sourceName, maxPen,
+            correction.x, correction.y, correction.z, penCount,
+            correction.x, correction.y, correction.z,
+            p.pos.x, p.pos.y, p.pos.z);
+    }
+
+    std::string depLabel = std::string(sourceName) + "_push";
+    DebugVis::recordDepenetration(rootBefore, correction, depLabel.c_str());
+    return correction;
+}
+
 } // namespace
 
 void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
@@ -141,59 +222,8 @@ void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
         }
         if (partIndex < 0) continue;
 
-        glm::vec3 capHalf = (bodyCap.b - bodyCap.a) * 0.5f;
-        glm::vec3 capCenter = (bodyCap.a + bodyCap.b) * 0.5f;
-        BodyAABB capBounds = { capCenter - glm::abs(capHalf), capCenter + glm::abs(capHalf) };
-        std::vector<int> candidates;
-        gatherCandidates(world, capBounds, bodyCap.r, candidates);
-
-        float maxPen = 0.0f;
-        glm::vec3 avgNormal(0.0f);
-        int penCount = 0;
-
-        for (int ti : candidates) {
-            const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
-            for (int s = 0; s < 3; ++s) {
-                float st = (float)s / 2.0f;
-                glm::vec3 sp = bodyCap.a + (bodyCap.b - bodyCap.a) * st;
-                Contact ct;
-                if (sphereTriContact(sp, bodyCap.r, tri, ct)) {
-                    if (ct.penetration > maxPen) { maxPen = ct.penetration; avgNormal = ct.normal; }
-                    penCount++;
-                    std::string label = collider.name + "_contact";
-                    DebugVis::recordContact(ct.point, ct.normal, ct.penetration, ti, label.c_str());
-                }
-            }
-        }
-
-        if (maxPen > 0.005f && penCount > 0) {
-            glm::vec3 correction = avgNormal * maxPen;
-            glm::vec3 rootBefore = p.pos;
-
-            p.pos += correction;
-            projectRootVelocity(p, avgNormal);
-
-            if (avgNormal.z > 0.70f) {
-                bodyGrounded = true;
-                if (p.vel.z < 0.0f)
-                    p.vel.z = 0.0f;
-                if (p.externalImpulse.z < 0.0f)
-                    p.externalImpulse.z = 0.0f;
-            }
-
-            p.updateModelWorldTransforms();
-
-            Debug::logThrottled(Debug::Category::Collision, "body-root-response", 0.25f,
-                "[BODY COLLISION] part=%s penetration=%.4f correction=(%.4f %.4f %.4f) hits=%d\n"
-                "[ROOT RESPONSE] rootCorrection=(%.4f %.4f %.4f) pos=(%.4f %.4f %.4f)\n",
-                collider.name.c_str(), maxPen,
-                correction.x, correction.y, correction.z, penCount,
-                correction.x, correction.y, correction.z,
-                p.pos.x, p.pos.y, p.pos.z);
-
-            std::string depLabel = collider.name + "_push";
-            DebugVis::recordDepenetration(rootBefore, correction, depLabel.c_str());
-        }
+        resolveCapsuleRootCollision(
+            p, world, bodyCap, collider.name.c_str(), false, &bodyGrounded);
     }
 
     if (bodyGrounded) {
@@ -206,4 +236,24 @@ void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
     // Sync render meshes after root-authoritative collision response.
     p.updateModelWorldTransforms();
     p.bodyPartMeshes = p.physicalBody.partMeshes;
+}
+
+glm::vec3 resolveWeaponCollisionCapsule(
+    Player& p,
+    const World& world,
+    const Capsule& weaponCap,
+    const char* weaponName)
+{
+    if (world.collisionMesh.triangles.empty())
+        return glm::vec3(0.0f);
+    if (weaponCap.r <= 0.0f || glm::length(weaponCap.b - weaponCap.a) < 0.001f)
+        return glm::vec3(0.0f);
+
+    return resolveCapsuleRootCollision(
+        p,
+        world,
+        weaponCap,
+        weaponName && weaponName[0] ? weaponName : "weapon",
+        true,
+        nullptr);
 }

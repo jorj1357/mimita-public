@@ -950,6 +950,9 @@ void Player::reset()
     animStateTime = 0.0f;
     currentAnimName = "idle";
     equippedWeaponId.clear();
+    hasWeaponCollisionCapsule = false;
+    weaponCollisionCapsule = Capsule{};
+    weaponCollisionName.clear();
 
     for (BodyPart& part : bodyParts)
     {

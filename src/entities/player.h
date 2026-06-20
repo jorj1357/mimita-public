@@ -324,6 +324,9 @@ public:
 
     // Previous frame body sample positions for limb sweep collisions
     std::vector<glm::vec3> previousBodySamplePositions;
+    bool hasWeaponCollisionCapsule = false;
+    Capsule weaponCollisionCapsule{};
+    std::string weaponCollisionName;
 
     // -------- Combat --------
     void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);
