@@ -154,8 +154,6 @@ private:
     void endRound(DuelTeam winner);
     void endMatch();
     void startCountdown();
-    void freezeAll(Player& player, NpcSystem& npcs);
-    void unfreezeAll(Player& player, NpcSystem& npcs);
     void resetRoundEntities(Player& player, NpcSystem& npcs, World& world);
     bool checkRoundEnd();
 };

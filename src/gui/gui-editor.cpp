@@ -223,21 +223,34 @@ void GuiEditor::handleInput(GLFWwindow* win)
             if (!mFilterFocused) mHierarchyFilter.clear();
             return;
         }
-        // Element list click
+        // Element list click (with shift multi-select)
         const float hy = 130.0f;
         if (dx >= hx && dx <= hx + hw && dy >= hy && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             auto allIds = layout.elementIds();
-            // Apply filter
             std::vector<std::string> ids;
             for (const std::string& id : allIds)
                 if (mHierarchyFilter.empty() || id.find(mHierarchyFilter) != std::string::npos)
                     ids.push_back(id);
             int idx = (int)((dy - hy) / PP_ROW_H);
             if (idx >= 0 && idx < (int)ids.size()) {
-                mSelectedId = ids[idx];
+                bool shiftHeld = glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                                 glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+                if (shiftHeld) {
+                    // Toggle multi-select
+                    auto it = std::find(mMultiSelectedIds.begin(), mMultiSelectedIds.end(), ids[idx]);
+                    if (it != mMultiSelectedIds.end())
+                        mMultiSelectedIds.erase(it);
+                    else
+                        mMultiSelectedIds.push_back(ids[idx]);
+                    if (!mMultiSelectedIds.empty())
+                        mSelectedId = mMultiSelectedIds.back();
+                } else {
+                    mMultiSelectedIds.clear();
+                    mSelectedId = ids[idx];
+                }
                 mDragOffsetX = 0; mDragOffsetY = 0;
-                printf("[GUI EDIT] hierarchy selected \"%s\"\n", mSelectedId.c_str());
+                printf("[GUI EDIT] %sselected \"%s\"\n", shiftHeld ? "multi-" : "", ids[idx].c_str());
                 return;
             }
         }
@@ -629,14 +642,39 @@ void GuiEditor::renderPropertyPanel(GLFWwindow* win, const GuiElement& elem)
                    {0.9f, 0.9f, 0.5f, 1.0f});
     }
 
-    // Visibility / enabled / anchor / text
+    // Visibility / enabled toggles (clickable)
     float toy = PP_Y + 34.0f + numSliders * PP_ROW_H + 4;
-    uiDrawText(elem.visible ? "[VISIBLE]" : "[HIDDEN]",
-               dsx(PP_X + 8), dsy(toy), 0.26f,
-               elem.visible ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
-    uiDrawText(elem.enabled ? "[ENABLED]" : "[DISABLED]",
-               dsx(PP_X + 120), dsy(toy), 0.26f,
-               elem.enabled ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
+    GuiLayout& propLayout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+    {
+        GuiElement visBtn;
+        visBtn.type = "button";
+        visBtn.text = elem.visible ? "VISIBLE" : "HIDDEN";
+        visBtn.textColor = std::vector<float>{1,1,1,1};
+        if (elem.visible)
+            visBtn.backgroundColor = std::vector<float>{0.2f,0.7f,0.3f,1};
+        else
+            visBtn.backgroundColor = std::vector<float>{0.3f,0.2f,0.2f,1};
+        UIRect visRect = {PP_X + 8, toy, 70, 20};
+        if (drawGuiElement(win, visBtn, nullptr, &visRect).clicked) {
+            GuiElement* e = const_cast<GuiElement*>(propLayout.get(mSelectedId));
+            if (e) { e->visible = !e->visible; propLayout.setElement(*e); markEdited(); }
+        }
+    }
+    {
+        GuiElement enBtn;
+        enBtn.type = "button";
+        enBtn.text = elem.enabled ? "ENABLED" : "DISABLED";
+        enBtn.textColor = std::vector<float>{1,1,1,1};
+        if (elem.enabled)
+            enBtn.backgroundColor = std::vector<float>{0.2f,0.7f,0.3f,1};
+        else
+            enBtn.backgroundColor = std::vector<float>{0.3f,0.2f,0.2f,1};
+        UIRect enRect = {PP_X + 86, toy, 80, 20};
+        if (drawGuiElement(win, enBtn, nullptr, &enRect).clicked) {
+            GuiElement* e = const_cast<GuiElement*>(propLayout.get(mSelectedId));
+            if (e) { e->enabled = !e->enabled; propLayout.setElement(*e); markEdited(); }
+        }
+    }
 
     char info[128];
     snprintf(info, sizeof(info), "Anchor: %s/%s  Rot: %.0f",
@@ -833,7 +871,8 @@ void GuiEditor::renderHierarchyView()
         float rsy = cs.designToScreenY(ry);
         float rsw = cs.designToScreenX(hw - 4);
         float rsh = cs.designToScreenY(PP_ROW_H - 2);
-        bool sel = (ids[i] == mSelectedId);
+        bool sel = (ids[i] == mSelectedId) ||
+                   std::find(mMultiSelectedIds.begin(), mMultiSelectedIds.end(), ids[i]) != mMultiSelectedIds.end();
         if (sel)
             uiDrawRect({rsx, rsy, rsw, rsh}, {0.2f, 0.4f, 0.6f, 0.7f}, "gui-h-sel");
 

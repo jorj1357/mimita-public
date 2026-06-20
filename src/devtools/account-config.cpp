@@ -228,7 +228,7 @@ void CreateDefaultAccountConfig() {
     bindsJson["jump"] = "SPACE";
     bindsJson["dash"] = "LEFT_SHIFT";
     bindsJson["ground_return"] = "B";
-    bindsJson["freeze"] = "G";
+    bindsJson["freeze"] = "E";
     j["binds"] = bindsJson;
     
     std::ofstream file(path);

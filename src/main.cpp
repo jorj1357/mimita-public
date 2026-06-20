@@ -1854,6 +1854,40 @@ int main(int argc, char** argv)
         }
     });
     Terminal::instance().registerCommand({
+        "gui_reset_element", "Reset selected element to defaults (position=0, size=100x30)",
+        "gui_reset_element",
+        [](const std::vector<std::string>&) {
+            auto& editor = GuiEditor::instance();
+            if (!editor.hasSelection()) {
+                Terminal::instance().addLog("[GUI] no element selected");
+                return;
+            }
+            std::string file = editor.activeLayout();
+            std::string id = editor.selectedElement();
+            if (file.empty() || id.empty()) {
+                Terminal::instance().addLog("[GUI] no active layout or element");
+                return;
+            }
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(file);
+            GuiElement* el = const_cast<GuiElement*>(layout.get(id));
+            if (!el) {
+                Terminal::instance().addLog("[GUI] element not found");
+                return;
+            }
+            el->x = 100; el->y = 100; el->w = 100; el->h = 30;
+            el->textOffsetX = 8.0f; el->textOffsetY = 4.0f;
+            el->fontSize = 0.0f; el->padding = 8.0f; el->margin = 0.0f;
+            el->visible = true; el->enabled = true; el->opacity = 1.0f;
+            el->rotation = 0.0f; el->hoverScale = 1.0f;
+            el->textColor = {1,1,1,1};
+            el->backgroundColor = {0.2f,0.2f,0.3f,1.0f};
+            el->hoverColor.clear(); el->pressedColor.clear(); el->outlineColor.clear();
+            el->text.clear();
+            layout.setElement(*el);
+            Terminal::instance().addLog("[GUI] reset element \"" + id + "\" to defaults");
+        }
+    });
+    Terminal::instance().registerCommand({
         "gui_reset_all", "Reset all menus to built-in defaults", "gui_reset_all",
         [](const std::vector<std::string>&) {
             GuiLayoutManager::instance().resetAll();
@@ -3193,7 +3227,7 @@ int main(int argc, char** argv)
                 if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) mpInput.wishX += 1.0f;
                 mpInput.jumpHeld = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
                 mpInput.dashPressed = glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-                mpInput.freezeHeld = glfwGetKey(engine.window(), GLFW_KEY_G) == GLFW_PRESS;
+                mpInput.freezeHeld = InputCommandSystem::instance().isFreezeHeld();
                 mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
                 mpInput.equippedSlot = player.equippedSlot;
                 MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);

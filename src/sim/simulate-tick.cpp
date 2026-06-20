@@ -25,6 +25,7 @@ static InputState inputStateFromFrame(const InputFrame& frame)
     state.jumpPressed = frame.jumpPressed;
     state.dashPressed = frame.dashPressed;
     state.movementPressed = frame.movementPressed;
+    state.movementJustPressed = frame.movementJustPressed;
     state.groundReturnPressed = frame.groundReturnPressed;
     state.downDashPressed = frame.downDashPressed;
     state.freezeHeld = frame.freezeHeld;
@@ -61,23 +62,21 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         if (frame.dashPressed) Debug::log(Debug::Category::General, "[COMMAND] tick=%llu dash\n", (unsigned long long)sim.tick);
     }
 
-    bool isMovingThisTick = frame.moveX != 0.0f || frame.moveY != 0.0f;
-    static bool prevMoving = false;
-
     InputState input = inputStateFromFrame(frame);
     if (!sim.player->dead) {
         physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
 
-        if (!prevMoving && isMovingThisTick && sim.player->stableOnGround) {
-            glm::vec2 vel2d(sim.player->vel.x, sim.player->vel.y);
-            float speed = glm::length(vel2d);
-            if (speed > 0.001f) {
-                glm::vec3 dir = glm::normalize(glm::vec3(vel2d.x, vel2d.y, 0.0f));
+        // Spawn movement burst on input keydown transition (not velocity-based)
+        if (frame.movementJustPressed && sim.player->stableOnGround) {
+            glm::vec2 move2d(frame.moveX, frame.moveY);
+            float moveLen = glm::length(move2d);
+            if (moveLen > 0.001f) {
+                glm::vec3 dir = glm::normalize(glm::vec3(move2d.x, move2d.y, 0.0f));
+                float speed = glm::length(glm::vec2(sim.player->vel.x, sim.player->vel.y));
                 HitEffects::spawnMovementDashBurst(sim.player->pos, dir, speed);
             }
         }
     }
-    prevMoving = isMovingThisTick;
     sim.npcSystem->update(*sim.world, *sim.player, TICK_DT);
 
     // Resolve NPC vs Player collisions

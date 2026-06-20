@@ -252,8 +252,11 @@ static void drawSlotRow(GLFWwindow* win, const SlotRow& s, GuiLayout& layout) {
     }
     float bx = vx + vw + uiScaleX(4.0f);
     float bw = uiScaleX(90.0f);
+    GuiElement browseEl;
+    browseEl.type = "button"; browseEl.text = "BROWSE";
+    browseEl.textColor = {1,1,1,1}; browseEl.backgroundColor = {0.25f, 0.35f, 0.5f, 1.0f};
     UIRect browseRect = cs.screenToDesign({bx, ys, bw, hs});
-    if (uiButton(win, "BROWSE", browseRect, {0.25f, 0.35f, 0.5f, 1.0f}).clicked) {
+    if (drawGuiElement(win, browseEl, nullptr, &browseRect).clicked) {
         auto files = AvatarSystem::instance().listPngs(AvatarSystem::instance().currentName());
         if (!files.empty()) openPicker(0, files);
     }
@@ -333,9 +336,15 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
     uiDrawText("Selected Texture", uiScaleX(rightX), uiScaleY(secY), 0.32f, {0.55f, 0.65f, 0.80f, 1.0f});
     secY += 30.0f;
 
+    // Lifted lambda for dynamic buttons (defined early so all uses can reference it)
+    auto dynBtn = [&](const std::string& id, UIRect rect) -> bool {
+        const GuiElement* el = layout.get(id);
+        return el && drawGuiElement(win, *el, nullptr, &rect).clicked;
+    };
+
     // Browse button
     UIRect browseBtn = {rightX, secY, 180.0f, 38.0f};
-    if (uiButton(win, "BROWSE PNG", browseBtn, {0.22f, 0.35f, 0.50f, 1.0f}).clicked) {
+    if (dynBtn("texBrowse", browseBtn)) {
         auto files = av.listPngs(av.currentName());
         if (!files.empty()) openPicker(0, files);
     }
@@ -381,30 +390,30 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
         uiDrawText("Apply To:", uiScaleX(rightX), uiScaleY(secY), 0.32f, {0.75f, 0.85f, 0.95f, 1.0f});
         secY += 28.0f;
 
-        // Quick action buttons
+        // Quick action buttons (from JSON with override positions)
         float qaY = secY;
         float qaH = 28.0f;
-        if (uiButton(win, "All Head", {rightX, qaY, 100.0f, qaH}, {0.18f, 0.30f, 0.40f, 1.0f}).clicked)
+        if (dynBtn("quickAllHead", {rightX, qaY, 100.0f, qaH}))
             applyTextureToPart(gSelectedTexture, "head", r);
-        if (uiButton(win, "All Torso", {rightX + 106.0f, qaY, 105.0f, qaH}, {0.18f, 0.30f, 0.40f, 1.0f}).clicked)
+        if (dynBtn("quickAllTorso", {rightX + 106.0f, qaY, 105.0f, qaH}))
             applyTextureToPart(gSelectedTexture, "torso", r);
-        if (uiButton(win, "Arms", {rightX + 217.0f, qaY, 100.0f, qaH}, {0.18f, 0.30f, 0.40f, 1.0f}).clicked) {
+        if (dynBtn("quickAllArms", {rightX + 217.0f, qaY, 100.0f, qaH})) {
             applyTextureToPart(gSelectedTexture, "leftArm", r);
             applyTextureToPart(gSelectedTexture, "rightArm", r);
         }
         secY += qaH + 2.0f;
-        if (uiButton(win, "Legs", {rightX, secY, 100.0f, qaH}, {0.18f, 0.30f, 0.40f, 1.0f}).clicked) {
+        if (dynBtn("quickAllLegs", {rightX, secY, 100.0f, qaH})) {
             applyTextureToPart(gSelectedTexture, "leftLeg", r);
             applyTextureToPart(gSelectedTexture, "rightLeg", r);
         }
-        if (uiButton(win, "Entire Body", {rightX + 106.0f, secY, 200.0f, qaH}, {0.22f, 0.40f, 0.30f, 1.0f}).clicked)
+        if (dynBtn("quickAllBody", {rightX + 106.0f, secY, 200.0f, qaH}))
             applyTextureToAll(gSelectedTexture, r);
         secY += qaH + 8.0f;
 
         // "Select All / Clear" buttons
-        if (uiButton(win, "Select All", {rightX, secY, 90.0f, 24.0f}, {0.15f, 0.25f, 0.35f, 1.0f}).clicked)
+        if (dynBtn("selectAllBtn", {rightX, secY, 90.0f, 24.0f}))
             checkAllFaces();
-        if (uiButton(win, "Clear", {rightX + 96.0f, secY, 70.0f, 24.0f}, {0.15f, 0.15f, 0.20f, 1.0f}).clicked)
+        if (dynBtn("clearBtn", {rightX + 96.0f, secY, 70.0f, 24.0f}))
             uncheckAllFaces();
         secY += 30.0f;
 
@@ -422,8 +431,7 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
         int visibleParts = std::max(1, (int)(listH / faceSectionH));
 
         if (gAssignScroll > 0) {
-            if (uiButton(win, "^", {rightX + rightW - 30.0f, checkboxStartY, 28.0f, 20.0f},
-                         {0.2f, 0.3f, 0.4f, 1.0f}).clicked)
+            if (dynBtn("pickerScrollUp", {rightX + rightW - 30.0f, checkboxStartY, 28.0f, 20.0f}))
                 gAssignScroll = std::max(0, gAssignScroll - 1);
         }
 
@@ -451,8 +459,7 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
         // Apply Selected button
         float applyY = listMaxY + 4.0f;
         if (!gCheckedFaces.empty()) {
-            if (uiButton(win, "Apply To Selected Faces", {rightX, applyY, rightW, 36.0f},
-                         {0.22f, 0.50f, 0.30f, 1.0f}).clicked) {
+            if (dynBtn("applyFacesBtn", {rightX, applyY, rightW, 36.0f})) {
                 applySelectedTextureToCheckedFaces(gSelectedTexture, r);
                 printf("[AVATAR] Applied %s to %zu faces\n", gSelectedTexture.c_str(), gCheckedFaces.size());
             }
@@ -461,15 +468,13 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
 
         // Scroll down
         if (gAssignScroll + visibleParts < totalFaceRows) {
-            if (uiButton(win, "v", {rightX + rightW - 30.0f, listMaxY - 22.0f, 28.0f, 20.0f},
-                         {0.2f, 0.3f, 0.4f, 1.0f}).clicked)
+            if (dynBtn("pickerScrollDown", {rightX + rightW - 30.0f, listMaxY - 22.0f, 28.0f, 20.0f}))
                 gAssignScroll = std::min(gAssignScroll + 1, totalFaceRows - visibleParts);
         }
 
         // Save/Apply/Back
         float btnY = fbH > 0 ? (float)fbH / cs.scaleY() - 48.0f : 700.0f;
-        if (uiButton(win, "SAVE", {rightX, btnY, 130.0f, 38.0f},
-                     {0.18f, 0.50f, 0.26f, 1.0f}).clicked) {
+        if (dynBtn("saveButton", {rightX, btnY, 130.0f, 38.0f})) {
             if (av.hasAvatar()) {
                 av.saveAdvanced(av.currentName(), av.current());
                 av.loadAvatar(av.currentName());
@@ -477,11 +482,9 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
                 r.goSave = true;
             }
         }
-        if (uiButton(win, "APPLY", {rightX + 140.0f, btnY, 130.0f, 38.0f},
-                     {0.22f, 0.38f, 0.55f, 1.0f}).clicked)
+        if (dynBtn("applyButton", {rightX + 140.0f, btnY, 130.0f, 38.0f}))
             r.goApply = true;
-        if (uiButton(win, "BACK", {rightX + 280.0f, btnY, 130.0f, 38.0f},
-                     {0.50f, 0.18f, 0.18f, 1.0f}).clicked) {
+        if (dynBtn("backButton", {rightX + 280.0f, btnY, 130.0f, 38.0f})) {
             r.goBack = true;
             clearTexturePreview();
         }
@@ -509,8 +512,7 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
         }
         // Save/Apply/Back (also shown when no texture selected)
         float btnY = fbH > 0 ? (float)fbH / cs.scaleY() - 48.0f : 700.0f;
-        if (uiButton(win, "SAVE", {rightX, btnY, 130.0f, 38.0f},
-                     {0.18f, 0.50f, 0.26f, 1.0f}).clicked) {
+        if (dynBtn("saveButton", {rightX, btnY, 130.0f, 38.0f})) {
             if (av.hasAvatar()) {
                 if (av.current().advancedMode) av.saveAdvanced(av.currentName(), av.current());
                 else av.saveSimple(av.currentName(), av.current().simple);
@@ -518,11 +520,9 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
                 r.goSave = true;
             }
         }
-        if (uiButton(win, "APPLY", {rightX + 140.0f, btnY, 130.0f, 38.0f},
-                     {0.22f, 0.38f, 0.55f, 1.0f}).clicked)
+        if (dynBtn("applyButton", {rightX + 140.0f, btnY, 130.0f, 38.0f}))
             r.goApply = true;
-        if (uiButton(win, "BACK", {rightX + 280.0f, btnY, 130.0f, 38.0f},
-                     {0.50f, 0.18f, 0.18f, 1.0f}).clicked) {
+        if (dynBtn("backButton", {rightX + 280.0f, btnY, 130.0f, 38.0f})) {
             r.goBack = true;
         }
     }

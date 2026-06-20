@@ -82,7 +82,7 @@ void updateRenderedReplica(
     if (!interpolation.hasTarget)
         return;
 
-    constexpr double INTERPOLATION_DELAY_MS = 100.0;
+    constexpr double INTERPOLATION_DELAY_MS = 50.0;
     float t = 1.0f;
     if (interpolation.hasPrevious) {
         const double span = double(interpolation.target.receivedMs - interpolation.previous.receivedMs);
@@ -120,7 +120,9 @@ void updateRenderedReplica(
     player.networkWeaponState = interpolation.target.weaponState;
     if (player.networkShootEffectTimer > 0.0f)
         player.networkWeaponState |= 1u;
-    player.aimDirection = interpolation.target.aimDirection;
+    player.aimDirection = interpolation.hasPrevious
+        ? glm::normalize(glm::mix(interpolation.previous.aimDirection, interpolation.target.aimDirection, t))
+        : interpolation.target.aimDirection;
     player.hasAimData = glm::length(player.aimDirection) > 0.001f;
     player.username = interpolation.displayName;
 
