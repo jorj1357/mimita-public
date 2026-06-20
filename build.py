@@ -141,7 +141,10 @@ def ensure_dirs():
             if f.endswith(".o"):
                 path = os.path.join(OBJ_DIR, f)
                 if os.path.getsize(path) == 0:
-                    os.remove(path)
+                    try:
+                        os.remove(path)
+                    except PermissionError:
+                        pass  # file locked by another process, skip
 
 
 

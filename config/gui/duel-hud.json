@@ -1,0 +1,48 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "countdownText",
+      "type": "text",
+      "x": 940, "y": 500, "width": 80, "height": 60,
+      "fontSize": 1.2,
+      "textColor": [1, 1, 1, 1]
+    },
+    {
+      "id": "scoreText",
+      "type": "text",
+      "x": 900, "y": 40, "width": 140, "height": 40,
+      "fontSize": 0.8,
+      "textColor": [1, 0.85, 0.25, 1]
+    },
+    {
+      "id": "timerText",
+      "type": "text",
+      "x": 935, "y": 90, "width": 70, "height": 30,
+      "fontSize": 0.45,
+      "textColor": [1, 1, 1, 0.8]
+    },
+    {
+      "id": "roundText",
+      "type": "text",
+      "x": 920, "y": 130, "width": 100, "height": 24,
+      "fontSize": 0.32,
+      "textColor": [0.7, 0.8, 1.0, 0.9]
+    },
+    {
+      "id": "roundOverText",
+      "type": "text",
+      "x": 860, "y": 540, "width": 200, "height": 40,
+      "fontSize": 0.7,
+      "textColor": [1, 0.85, 0.25, 1]
+    },
+    {
+      "id": "roundOverNextText",
+      "type": "text",
+      "x": 880, "y": 590, "width": 200, "height": 30,
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1]
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "icon",
+      "type": "panel",
+      "x": 1874, "y": 1034, "width": 36, "height": 36,
+      "backgroundColor": [0.12, 0.12, 0.16, 0.85],
+      "outlineColor": [0.4, 0.6, 0.9, 0.8]
+    },
+    {
+      "id": "panel",
+      "type": "panel",
+      "x": 1610, "y": 818, "width": 300, "height": 210,
+      "backgroundColor": [0.06, 0.06, 0.1, 0.95],
+      "outlineColor": [0.3, 0.5, 0.8, 0.9]
+    },
+    {
+      "id": "musicPlayerHeader",
+      "type": "text",
+      "x": 1622, "y": 828, "width": 200, "height": 24,
+      "text": "MUSIC PLAYER",
+      "fontSize": 0.36,
+      "textColor": [0.6, 0.8, 1.0, 1.0]
+    },
+    {
+      "id": "trackInfo",
+      "type": "text",
+      "x": 1622, "y": 854, "width": 280, "height": 20,
+      "fontSize": 0.30,
+      "textColor": [0.85, 0.88, 1.0, 1.0]
+    },
+    {
+      "id": "musicPause",
+      "type": "button",
+      "x": 1622, "y": 880, "width": 50, "height": 26,
+      "fontSize": 0.30,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.3, 0.5, 1.0]
+    },
+    {
+      "id": "musicSkip",
+      "type": "button",
+      "x": 1680, "y": 880, "width": 50, "height": 26,
+      "text": ">>",
+      "fontSize": 0.30,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.3, 0.5, 1.0]
+    },
+    {
+      "id": "musicPrev",
+      "type": "button",
+      "x": 1738, "y": 880, "width": 50, "height": 26,
+      "text": "<<",
+      "fontSize": 0.30,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.3, 0.5, 1.0]
+    },
+    {
+      "id": "volumeLabel",
+      "type": "text",
+      "x": 1622, "y": 920, "width": 100, "height": 20,
+      "text": "VOLUME",
+      "fontSize": 0.28,
+      "textColor": [0.7, 0.9, 1.0, 1.0]
+    },
+    {
+      "id": "musicMute",
+      "type": "button",
+      "x": 1622, "y": 950, "width": 80, "height": 24,
+      "fontSize": 0.28,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.25, 0.55, 0.3, 1.0]
+    },
+    {
+      "id": "speedLabel",
+      "type": "text",
+      "x": 1622, "y": 976, "width": 200, "height": 20,
+      "fontSize": 0.28,
+      "textColor": [0.7, 0.9, 1.0, 1.0]
+    },
+    {
+      "id": "musicSlow",
+      "type": "button",
+      "x": 1622, "y": 998, "width": 60, "height": 22,
+      "text": "Slow",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.3, 0.2, 0.5, 1.0]
+    },
+    {
+      "id": "musicReset",
+      "type": "button",
+      "x": 1688, "y": 998, "width": 60, "height": 22,
+      "text": "Reset",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.3, 0.5, 1.0]
+    },
+    {
+      "id": "musicFast",
+      "type": "button",
+      "x": 1754, "y": 998, "width": 60, "height": 22,
+      "text": "Fast",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.5, 0.3, 1.0]
+    }
+  ]
+}

@@ -1,48 +1,98 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
-      "id": "playButton",
-      "x": 836.0,
-      "y": 490.0,
-      "width": 250.0,
-      "height": 58.0
+      "id": "title",
+      "type": "text",
+      "x": 872,
+      "y": 380,
+      "width": 200,
+      "height": 60,
+      "text": "MiMITA",
+      "fontSize": 1.25,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
     },
     {
-      "id": "replaysButton",
-      "x": 836.0,
-      "y": 565.0,
-      "width": 250.0,
-      "height": 58.0
+      "id": "subtitle",
+      "type": "text",
+      "x": 755,
+      "y": 470,
+      "width": 410,
+      "height": 30,
+      "text": "\"movement is more important than aim\"",
+      "fontSize": 0.46,
+      "textColor": [0.72, 0.82, 0.9, 1.0]
+    },
+    {
+      "id": "profileLine",
+      "type": "text",
+      "x": 815,
+      "y": 428,
+      "width": 300,
+      "height": 24,
+      "fontSize": 0.38,
+      "textColor": [0.45, 1.0, 0.62, 1.0]
+    },
+    {
+      "id": "playButton",
+      "type": "button",
+      "x": 835,
+      "y": 545,
+      "width": 250,
+      "height": 58,
+      "text": "PLAY",
+      "fontSize": 0.42,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.24, 0.82, 0.48, 1.0]
     },
     {
       "id": "settingsButton",
-      "x": 836.0,
-      "y": 640.0,
-      "width": 250.0,
-      "height": 58.0
+      "type": "button",
+      "x": 835,
+      "y": 622,
+      "width": 250,
+      "height": 58,
+      "text": "SETTINGS",
+      "fontSize": 0.42,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.86, 0.74, 0.28, 1.0]
+    },
+    {
+      "id": "replaysButton",
+      "type": "button",
+      "x": 835,
+      "y": 699,
+      "width": 250,
+      "height": 58,
+      "text": "REPLAYS",
+      "fontSize": 0.42,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.55, 0.35, 0.75, 1.0]
     },
     {
       "id": "avatarButton",
-      "x": 836.0,
-      "y": 715.0,
-      "width": 250.0,
-      "height": 58.0
+      "type": "button",
+      "x": 835,
+      "y": 776,
+      "width": 250,
+      "height": 58,
+      "text": "AVATAR",
+      "fontSize": 0.42,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.3, 0.6, 0.5, 1.0]
     },
     {
       "id": "exitButton",
-      "x": 836.0,
-      "y": 790.0,
-      "width": 250.0,
-      "height": 58.0
-    },
-    {
-      "id": "title",
-      "x": 865.0,
-      "y": 375.0,
-      "width": 200.0,
-      "height": 60.0
+      "type": "button",
+      "x": 835,
+      "y": 853,
+      "width": 250,
+      "height": 58,
+      "text": "EXIT",
+      "fontSize": 0.42,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.65, 0.2, 0.2, 1.0]
     }
   ]
 }

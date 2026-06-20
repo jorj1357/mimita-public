@@ -1,8 +1,6 @@
 #include "online-menu.h"
-#include "../gui-back.h"
-#include "../gui-button.h"
-#include "../gui-label.h"
 #include "../gui-layout.h"
+#include "../gui-element-render.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <cstring>
@@ -226,7 +224,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     uiDrawRect({uiScaleX(760.0f), uiScaleY(104.0f), uiScaleX(400.0f), uiScaleY(2.0f)},
                {0.3f, 0.4f, 0.5f, 0.6f}, "online-menu-separator");
 
-    guiLabel("Multiplayer", uiScaleX(880.0f), uiScaleY(130.0f));
+    uiDrawText("Multiplayer", uiScaleX(880.0f), uiScaleY(130.0f), 0.42f, {0.72f, 0.78f, 0.88f, 1.0f});
 
     // Design coordinates: left column at x=510, right column at x=990
     const float left = 510.0f;
@@ -240,19 +238,19 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
                running ? glm::vec4(0.3f, 1.0f, 0.4f, 1.0f)
                        : glm::vec4(0.75f, 0.78f, 0.84f, 1.0f));
     if (!running) {
-        if (guiButton(win, "Start Server",
+        if (uiButton(win, "Start Server",
             layout.getRectDesign("Start Server", {510.0f, 420.0f, 195.0f, 52.0f}),
-            {0.2f,0.8f,0.3f,1.0f}))
+            {0.2f,0.8f,0.3f,1.0f}, "Start Server").clicked)
             r.startServer = launchServerProcess();
     }
     if (running) {
-        if (guiButton(win, "Stop Server",
+        if (uiButton(win, "Stop Server",
             layout.getRectDesign("Stop Server", {510.0f, 420.0f, 195.0f, 52.0f}),
-            {0.85f,0.22f,0.18f,1.0f}))
+            {0.85f,0.22f,0.18f,1.0f}, "Stop Server").clicked)
             r.stopServer = stopServerProcess();
-        if (guiButton(win, "Join Server",
+        if (uiButton(win, "Join Server",
             layout.getRectDesign("Join Server", {725.0f, 420.0f, 195.0f, 52.0f}),
-            {0.2f,0.7f,1.0f,1.0f}))
+            {0.2f,0.7f,1.0f,1.0f}, "Join Server").clicked)
         {
             r.connectToServer = true;
             r.connectAddress = endpoint(hostIp, hostPort);
@@ -263,17 +261,20 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     drawInput(win, "Server IP / hostname", joinIp, InputField::JoinIp, right, 205.0f, 280.0f);
     drawInput(win, "Port", joinPort, InputField::JoinPort, right + 300.0f, 205.0f, 120.0f);
     {
-        if (guiButton(win, "Connect",
+        if (uiButton(win, "Connect",
             layout.getRectDesign("Connect", {990.0f, 310.0f, 420.0f, 58.0f}),
-            {0.2f,0.7f,1.0f,1.0f}))
+            {0.2f,0.7f,1.0f,1.0f}, "Connect").clicked)
         {
             r.connectToServer = true;
             r.connectAddress = endpoint(joinIp, joinPort);
         }
     }
 
-    if (guiBackButton(win, layout.getRectDesign("backButton", {40.0f, 40.0f, 120.0f, 50.0f})))
-        r.goBack = true;
+    {
+        const GuiElement* bb = layout.get("backButton");
+        if (bb && drawGuiElement(win, *bb).clicked)
+            r.goBack = true;
+    }
 
     return r;
 }

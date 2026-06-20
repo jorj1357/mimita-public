@@ -89,14 +89,72 @@ glm::vec3 rotatePlanar(glm::vec3 v, float radians)
     };
 }
 
+// Compute difficulty-based reaction delay in seconds.
+// Difficulty 10 = 0ms, Difficulty 5 = 250-500ms, Difficulty 1 = 1000-1500ms
+static float reactionDelayForDifficulty(float difficulty) {
+    float d01 = std::clamp(difficulty / 10.0f, 0.0f, 1.0f);
+    float baseMs = 1500.0f - d01 * 1500.0f;               // 1500ms at diff1, 0ms at diff10
+    float jitterMs = 200.0f + (1.0f - d01) * 300.0f;       // 500ms jitter at diff1, 200ms at diff10
+    float totalMs = baseMs + (float)(rand() % (int)(jitterMs + 1.0f));
+    return totalMs / 1000.0f;                               // convert to seconds
+}
+
+// Get delayed target position from history based on reaction delay.
+static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
+                                const glm::vec3& currentVel, float delaySeconds) {
+    if (delaySeconds <= 0.001f || npc.posHistory.empty())
+        return currentPos;
+
+    // Find the sample closest to (current_time - delay)
+    float targetTime = npc.posHistory.back().time - delaySeconds;
+    glm::vec3 bestPos = currentPos;
+    glm::vec3 bestVel = currentVel;
+    float bestTime = -999.0f;
+
+    for (int i = (int)npc.posHistory.size() - 1; i >= 0; --i) {
+        if (npc.posHistory[i].time >= targetTime) {
+            bestPos = npc.posHistory[i].pos;
+            bestVel = npc.posHistory[i].vel;
+            bestTime = npc.posHistory[i].time;
+        } else {
+            // Interpolate between this sample and the next
+            if (i + 1 < (int)npc.posHistory.size()) {
+                float t = (targetTime - npc.posHistory[i].time)
+                        / (npc.posHistory[i + 1].time - npc.posHistory[i].time);
+                t = std::clamp(t, 0.0f, 1.0f);
+                bestPos = glm::mix(npc.posHistory[i].pos, npc.posHistory[i + 1].pos, t);
+                bestVel = glm::mix(npc.posHistory[i].vel, npc.posHistory[i + 1].vel, t);
+            }
+            break;
+        }
+    }
+
+    // Add velocity-based prediction to the delayed position
+    // This makes high-difficulty NPCs accurate despite the delay
+    float predictTime = delaySeconds * (1.0f - std::clamp((npc.difficulty / 10.0f), 0.0f, 1.0f));
+    return bestPos + bestVel * predictTime;
+}
+
 void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
     sensors.grounded = npc.body.onGround;
-    sensors.targetPos = player.pos;
-    sensors.targetVel = player.vel + player.externalImpulse;
-    sensors.toTarget = player.pos - npc.body.pos;
+
+    // Record current player state into position history
+    npc.posHistory.push_back({player.pos, player.vel + player.externalImpulse, npc.sensors.time + dt});
+    while ((int)npc.posHistory.size() > Npc::MAX_HISTORY_SAMPLES)
+        npc.posHistory.erase(npc.posHistory.begin());
+
+    // Compute reaction delay based on difficulty
+    float delay = reactionDelayForDifficulty(npc.difficulty);
+
+    // Use delayed player position for sensing
+    glm::vec3 rawPos = player.pos;
+    glm::vec3 rawVel = player.vel + player.externalImpulse;
+    sensors.targetPos = delayedTarget(npc, rawPos, rawVel, delay);
+    sensors.targetVel = rawVel; // velocity is from current frame (always accurate)
+    sensors.toTarget = sensors.targetPos - npc.body.pos;
     sensors.targetDistance = glm::length(sensors.toTarget);
     sensors.hasTarget = npc.difficulty > 0.05f && sensors.targetDistance <= npc.tuning.awarenessRange;
     sensors.predictedTarget = sensors.targetPos + sensors.targetVel * (0.10f + npc.tuning.prediction * 0.55f);
@@ -118,8 +176,8 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     if (sensors.hasTarget && npc.lastTargetLogDistance < 0.0f)
     {
         Debug::log(Debug::Category::General,
-                   "[NPC] id=%u target acquired difficulty=%.1f distance=%.2f\n",
-                   npc.id, npc.difficulty, sensors.targetDistance);
+                   "[NPC] id=%u target acquired difficulty=%.1f distance=%.2f delay=%.0fms\n",
+                   npc.id, npc.difficulty, sensors.targetDistance, delay * 1000.0f);
     }
     if (!sensors.hasTarget && npc.lastTargetLogDistance >= 0.0f)
     {
@@ -152,6 +210,7 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
     input.wishMoveXY = {moveDir.x, moveDir.y};
     input.movementPressed = glm::length(moveDir) > 0.001f;
     input.jumpHeld = jump;
+    input.jumpPressed = jump;
     input.dashPressed = dash;
     input.groundReturnPressed = false;
     input.downDashPressed = downDash;
@@ -492,11 +551,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
     } // Perf::ScopedTimer NpcCollision
 
-    // Dash cooldown
+    // Dash cooldown + effects
     if (input.dashPressed && npc.body.didDash)
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
         Debug::log(Debug::Category::General, "[NPC] id=%u dashed\n", npc.id);
+        EffectPartSystem::instance().spawnDash(npc.body.pos);
+        playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
     }
 
     // Down dash cooldown: detect if down dash was consumed this frame

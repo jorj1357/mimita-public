@@ -872,6 +872,20 @@ EffectPart* EffectPartSystem::spawnDash(glm::vec3 position) {
     return spawn(e);
 }
 
+EffectPart* EffectPartSystem::spawnPerfectDash(glm::vec3 position) {
+    EffectPart e;
+    e.position = position;
+    e.replayType = "dash";
+    e.color = {1.0f, 0.8f, 0.1f};
+    e.maxLifetime = 1.2f;
+    e.scale = 0.7f;
+    e.endScale = 0.05f;
+    e.billboardText = false;
+    e.flatDecal = false;
+    e.sticky = true;
+    return spawn(e);
+}
+
 EffectPart* EffectPartSystem::spawnFreeze(glm::vec3 position, float freezeDuration) {
     EffectPart e;
     e.position = position;

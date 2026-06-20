@@ -13,6 +13,7 @@
 #include "world/world-gltf-loader.h"
 #include "camera.h"
 #include "gui/gui-layout.h"
+#include "gui/gui-element-render.h"
 #include "gui/ui-system.h"
 #include "gui/gui-editor.h"
 #include "debug/debug-log.h"
@@ -409,45 +410,42 @@ void DuelManager::renderHud()
 {
     if (!config.enabled) return;
 
-    float cx = uiScreenW() * 0.5f;
+    GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-hud.json");
+
+    auto drawTextElement = [&](const std::string& id, const std::string& text) {
+        const GuiElement* el = hudLayout.get(id);
+        if (!el) return;
+        float scale = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+        glm::vec4 color = el->getTextColorVec();
+        uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
+    };
 
     if (currentPhase == DuelPhase::Countdown) {
-        char text[64];
-        snprintf(text, sizeof(text), "%.0f", std::ceil(countdown));
-        uiDrawText(text, cx - 20.0f, uiScreenH() * 0.5f - 40.0f, 1.2f, {1, 1, 1, 1});
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.0f", std::ceil(countdown));
+        drawTextElement("countdownText", buf);
         return;
     }
 
     if (currentPhase == DuelPhase::Active) {
-        char scoreText[64];
-        snprintf(
-            scoreText,
-            sizeof(scoreText),
-            "%d - %d",
-            playerRoundsWon_,
-            npcRoundsWon_);
-        uiDrawText(scoreText, cx - 60.0f, 40.0f, 0.8f, {1, 0.85f, 0.25f, 1});
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%d - %d", playerRoundsWon_, npcRoundsWon_);
+        drawTextElement("scoreText", buf);
 
         float remaining = std::max(0.0f, (float)config.duelLengthSeconds - timer);
-        char timerText[32];
-        snprintf(timerText, sizeof(timerText), "%.0f", remaining);
-        uiDrawText(timerText, cx - 25.0f, 90.0f, 0.45f, {1, 1, 1, 0.8f});
+        snprintf(buf, sizeof(buf), "%.0f", remaining);
+        drawTextElement("timerText", buf);
 
-        char roundText[32];
-        snprintf(roundText, sizeof(roundText), "Round %d", currentRound);
-        uiDrawText(roundText, cx - 40.0f, 130.0f, 0.32f, {0.7f, 0.8f, 1.0f, 0.9f});
+        snprintf(buf, sizeof(buf), "Round %d", currentRound);
+        drawTextElement("roundText", buf);
         return;
     }
 
     if (currentPhase == DuelPhase::RoundEnd) {
-        uiDrawText("ROUND OVER", cx - 100.0f, uiScreenH() * 0.5f, 0.7f, {1, 0.85f, 0.25f, 1});
-        char nextText[64];
-        snprintf(nextText, sizeof(nextText), "Next round in %.0f...", std::ceil(roundEndTimer));
-        uiDrawText(nextText, cx - 80.0f, uiScreenH() * 0.5f + 50.0f, 0.38f, {1, 1, 1, 1});
-        return;
-    }
-
-    if (currentPhase == DuelPhase::MatchEnd) {
+        drawTextElement("roundOverText", "ROUND OVER");
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Next round in %.0f...", std::ceil(roundEndTimer));
+        drawTextElement("roundOverNextText", buf);
         return;
     }
 }
@@ -543,22 +541,16 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
 
         GuiLayout& duelLayout = GuiLayoutManager::instance().getLayout("config/gui/duel-match-end.json");
 
-        {
-            UIRect pr = duelLayout.getRectDesign("Play Again", {830.0f, 460.0f, 260.0f, 44.0f});
-            UIButtonState playBtn = uiButton(win, "Play Again", pr, {0.24f, 0.82f, 0.48f, 1.0f}, "duel-play-again");
-            if (playBtn.clicked) {
-                return DuelMenuAction::PlayAgain;
-            }
-        }
+        // Play Again and Exit use unified renderer
+        const GuiElement* playEl = duelLayout.get("Play Again");
+        if (playEl && drawGuiElement(win, *playEl).clicked)
+            return DuelMenuAction::PlayAgain;
 
-        {
-            UIRect er = duelLayout.getRectDesign("Exit To Main Menu", {830.0f, 516.0f, 260.0f, 44.0f});
-            UIButtonState exitBtn = uiButton(win, "Exit To Main Menu", er, {0.86f, 0.3f, 0.3f, 1.0f}, "duel-exit-menu");
-            if (exitBtn.clicked) {
-                return DuelMenuAction::ExitToMenu;
-            }
-        }
+        const GuiElement* exitEl = duelLayout.get("Exit To Main Menu");
+        if (exitEl && drawGuiElement(win, *exitEl).clicked)
+            return DuelMenuAction::ExitToMenu;
 
+        // Save Replay has dynamic state labels — keep manual
         {
             const ReplayExportJob& job = getReplayExportJob();
             bool exportBusy = (job.state == ReplayExportJob::Capturing || job.state == ReplayExportJob::Encoding);
@@ -581,9 +573,8 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
             }
 
             UIButtonState saveBtn = uiButton(win, btnLabel, sr, btnColor, "duel-save-replay");
-            if (!exportBusy && saveBtn.clicked) {
+            if (!exportBusy && saveBtn.clicked)
                 return DuelMenuAction::SaveReplay;
-            }
 
             std::string status = getReplayExportStatusText();
             if (!status.empty()) {

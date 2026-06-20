@@ -69,6 +69,7 @@
 #include "gui/ui-system.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-editor.h"
+#include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/font-stuff/font-loader.h"
 #include "game/game-state.h"
@@ -80,7 +81,7 @@
 #include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
-#include "devtools/dev-menu.h"
+
 #include "devtools/dev-npc-selection.h"
 #include "devtools/dev-teleport.h"
 #include "devtools/dev-commands.h"
@@ -4186,18 +4187,23 @@ int main(int argc, char** argv)
 
             { Perf::ScopedTimer _ui("UI");
             uiBeginFrame(engine.window(), "game-debug-overlay");
+
+            // HUD layout helper: draw dynamic text using JSON positions/colors
+            GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
+            auto hudText = [&](const std::string& id, const std::string& text) {
+                const GuiElement* el = hudLayout.get(id);
+                if (!el) return;
+                float scale = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+                glm::vec4 color = el->getTextColorVec();
+                uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
+            };
+
             drawHitmarker(dt);
             if (mpContext.active && !mpContext.connected)
             {
                 const float boxW = 360.0f;
                 const float boxX = (uiScreenW() - boxW) * 0.5f;
-                uiDrawRect({boxX, 32.0f, boxW, 58.0f},
-                           {0.02f, 0.025f, 0.035f, 0.92f}, "connection-status");
-                uiDrawText(mpContext.connectionStatus.c_str(), boxX + 18.0f, 54.0f,
-                           0.4f,
-                           mpContext.connectFailed
-                               ? glm::vec4(1.0f, 0.25f, 0.2f, 1.0f)
-                               : glm::vec4(0.3f, 0.75f, 1.0f, 1.0f));
+                hudText("connectionText", mpContext.connectionStatus);
             }
             if (gReplayRecorder.isRecording() && !gReplayExportRenderMode) {
                 const float overlayX = uiScreenW() - 230.0f;
@@ -4359,11 +4365,10 @@ int main(int argc, char** argv)
             }
             else
             {
-            uiDrawRect({14, 78, 260, 92}, {0.0f, 0.0f, 0.0f, 0.56f}, "hud-bg");
-            uiDrawText(player.username.c_str(), 24, 88, 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
+            hudText("playerName", player.username);
             char hpText[64];
             snprintf(hpText, sizeof(hpText), "HP: %d/%d", player.currentHp, player.maxHp);
-            uiDrawText(hpText, 24, 116, 0.38f, {0.35f, 1.0f, 0.45f, 1.0f});
+            hudText("hpText", hpText);
             if (player.dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
                 if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen)
                 {
@@ -4378,29 +4383,25 @@ int main(int argc, char** argv)
                     {centerX - 270.0f, centerY - 80.0f, 540.0f, 160.0f},
                     {0.0f, 0.0f, 0.0f, 0.75f},
                     "death-overlay");
-                uiDrawText(deathText.c_str(), centerX - 150.0f, centerY - 42.0f,
-                           0.55f, {1.0f, 0.15f, 0.15f, 1.0f});
-                uiDrawText(respawnText, centerX - 205.0f, centerY + 2.0f,
-                           0.38f, {1.0f, 1.0f, 1.0f, 1.0f});
-                uiDrawText("press space to respawn instantly",
-                           centerX - 190.0f, centerY + 42.0f,
-                           0.38f, {0.85f, 0.9f, 1.0f, 1.0f});
+                hudText("deathText", deathText);
+                hudText("respawnText", respawnText);
+                hudText("respawnHint", "press space to respawn instantly");
                 }
             }
             if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay)
             {
                 glm::vec3 totalVel = player.vel;
                 float speed = glm::length(totalVel);
-                char speedText[64];
-                snprintf(speedText, sizeof(speedText), "Speed: %.2f m/s", speed);
-                uiDrawText(speedText, 24, 144, 0.38f, {0.75f, 0.9f, 1.0f, 1.0f});
+                char spBuf[64];
+                snprintf(spBuf, sizeof(spBuf), "Speed: %.2f m/s", speed);
+                hudText("speedText", spBuf);
             }
             if (!gReplayExportRenderMode || ReplayExportUI::showModeText)
             {
                 char modeText[128];
                 snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
                          editorMode ? "EDITOR" : "PLAYING", activeGameMode.c_str(), player.equippedSlot);
-                uiDrawText(modeText, 24, 208, 0.32f, {0.8f, 0.85f, 1.0f, 1.0f});
+                hudText("modeText", modeText);
                 // Multiplayer HUD
                 if (mpContext.active) {
                     char mpText[128];
@@ -4427,14 +4428,14 @@ int main(int argc, char** argv)
                             snprintf(ammoText, sizeof(ammoText), "%s: %d / %d",
                                      curDef->displayName.c_str(),
                                      rt.currentAmmo, displayReserve);
-                            uiDrawText(ammoText, 24, 232, 0.42f, {1.0f, 0.82f, 0.3f, 1.0f});
+                            hudText("ammoText", ammoText);
 
                             if (rt.isReloading) {
                                 char reloadText[96];
                                 snprintf(reloadText, sizeof(reloadText),
                                          "no bullets! reloading... %.2f",
                                          std::max(0.0f, rt.reloadTimer));
-                                uiDrawText(reloadText, 24, 248, 0.36f, {1.0f, 0.5f, 0.2f, 1.0f});
+                                hudText("reloadText", reloadText);
                             }
                         }
                     }
@@ -4985,6 +4986,12 @@ int main(int argc, char** argv)
             if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)
                 uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
             uiEndFrame();
+
+            // GUI editor for HUD elements
+            if (GuiEditor::instance().isEnabled()) {
+                GuiEditor::instance().setActiveLayout("config/gui/hud.json");
+                GuiEditor::instance().update(engine.window());
+            }
             } // Perf::ScopedTimer UI
 
             // Dev overlay notifications (temporary)

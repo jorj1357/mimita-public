@@ -1,34 +1,121 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
-      "id": "DUELS",
-      "x": 800.0,
-      "y": 470.0,
-      "width": 320.0,
-      "height": 68.0
+      "id": "header",
+      "type": "text",
+      "x": 918,
+      "y": 60,
+      "width": 200,
+      "height": 50,
+      "text": "PLAY",
+      "fontSize": 0.72,
+      "textColor": [0.55, 0.78, 1.0, 1.0]
     },
     {
-      "id": "ONLINE / COMMUNITY SERVERS",
-      "x": 800.0,
-      "y": 615.0,
-      "width": 320.0,
-      "height": 58.0
+      "id": "duelsButton",
+      "type": "button",
+      "x": 800,
+      "y": 430,
+      "width": 320,
+      "height": 58,
+      "text": "DUELS",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.9, 0.28, 0.12, 1.0]
     },
     {
-      "id": "PRACTICE",
-      "x": 800.0,
-      "y": 723.0,
-      "width": 320.0,
-      "height": 58.0
+      "id": "duelsDesc",
+      "type": "text",
+      "x": 825,
+      "y": 498,
+      "width": 300,
+      "height": 24,
+      "text": "Fast 1v1 and PvE combat.",
+      "fontSize": 0.32,
+      "textColor": [0.72, 0.78, 0.88, 1.0]
+    },
+    {
+      "id": "bombTagButton",
+      "type": "button",
+      "x": 800,
+      "y": 545,
+      "width": 320,
+      "height": 58,
+      "text": "BOMB TAG",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.9, 0.5, 0.1, 1.0]
+    },
+    {
+      "id": "bombTagDesc",
+      "type": "text",
+      "x": 825,
+      "y": 613,
+      "width": 300,
+      "height": 24,
+      "text": "Hot potato with explosions.",
+      "fontSize": 0.32,
+      "textColor": [0.72, 0.78, 0.88, 1.0]
+    },
+    {
+      "id": "onlineButton",
+      "type": "button",
+      "x": 800,
+      "y": 660,
+      "width": 320,
+      "height": 58,
+      "text": "ONLINE / COMMUNITY SERVERS",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.22, 0.5, 0.78, 1.0]
+    },
+    {
+      "id": "onlineDesc",
+      "type": "text",
+      "x": 825,
+      "y": 728,
+      "width": 300,
+      "height": 24,
+      "text": "Play with other people.",
+      "fontSize": 0.32,
+      "textColor": [0.72, 0.78, 0.88, 1.0]
+    },
+    {
+      "id": "practiceButton",
+      "type": "button",
+      "x": 800,
+      "y": 768,
+      "width": 320,
+      "height": 58,
+      "text": "PRACTICE",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.25, 0.65, 0.45, 1.0]
+    },
+    {
+      "id": "practiceDesc",
+      "type": "text",
+      "x": 825,
+      "y": 836,
+      "width": 300,
+      "height": 24,
+      "text": "Sandbox and training modes.",
+      "fontSize": 0.32,
+      "textColor": [0.72, 0.78, 0.88, 1.0]
     },
     {
       "id": "backButton",
-      "x": 40.0,
-      "y": 40.0,
-      "width": 120.0,
-      "height": 50.0
+      "type": "button",
+      "x": 40,
+      "y": 40,
+      "width": 120,
+      "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
   ]
 }

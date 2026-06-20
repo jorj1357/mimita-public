@@ -4,274 +4,201 @@
   "elements": [
     {
       "id": "title",
-      "x": 30.0,
-      "y": 20.0,
-      "width": 400.0,
-      "height": 40.0,
-      "fontSize": 0.55
+      "type": "text",
+      "x": 30, "y": 20, "width": 400, "height": 40,
+      "text": "AVATARS",
+      "fontSize": 0.55,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
     },
     {
       "id": "avatarHeading",
-      "x": 30.0,
-      "y": 70.0,
-      "width": 240.0,
-      "height": 30.0,
-      "fontSize": 0.40
+      "type": "text",
+      "x": 30, "y": 70, "width": 240, "height": 30,
+      "text": "My Avatars",
+      "fontSize": 0.32,
+      "textColor": [0.55, 0.65, 0.80, 1.0]
     },
     {
       "id": "avatarEntry",
-      "x": 30.0,
-      "y": 108.0,
-      "width": 230.0,
-      "height": 36.0,
+      "x": 30, "y": 108, "width": 230, "height": 36,
       "fontSize": 0.30
     },
     {
       "id": "avatarEntrySpacing",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 0.0,
-      "height": 4.0
+      "x": 0, "y": 0, "width": 0, "height": 4
     },
     {
       "id": "avatarActiveText",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 230.0,
-      "height": 22.0,
+      "x": 30, "y": 0, "width": 230, "height": 22,
       "fontSize": 0.28
     },
     {
-      "id": "createButton",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 230.0,
-      "height": 32.0
-    },
-    {
-      "id": "renameButton",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 110.0,
-      "height": 30.0
-    },
-    {
-      "id": "deleteButton",
-      "x": 150.0,
-      "y": 0.0,
-      "width": 110.0,
-      "height": 30.0
-    },
-    {
       "id": "texHeading",
-      "x": 30.0,
-      "y": 70.0,
-      "width": 400.0,
-      "height": 30.0,
-      "fontSize": 0.40
-    },
-    {
-      "id": "texSlotRow",
-      "x": 30.0,
-      "y": 108.0,
-      "width": 420.0,
-      "height": 44.0
-    },
-    {
-      "id": "texSlotSpacing",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 0.0,
-      "height": 4.0
-    },
-    {
-      "id": "texLabel",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 80.0,
-      "height": 44.0,
-      "fontSize": 0.30
-    },
-    {
-      "id": "texThumbnail",
-      "x": 115.0,
-      "y": 0.0,
-      "width": 40.0,
-      "height": 40.0
-    },
-    {
-      "id": "texFilename",
-      "x": 160.0,
-      "y": 0.0,
-      "width": 180.0,
-      "height": 44.0,
-      "fontSize": 0.26
+      "type": "text",
+      "x": 1450, "y": 70, "width": 400, "height": 30,
+      "text": "TEXTURES",
+      "fontSize": 0.55,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
     },
     {
       "id": "texBrowse",
-      "x": 350.0,
-      "y": 0.0,
-      "width": 100.0,
-      "height": 44.0
+      "type": "button",
+      "x": 1450, "y": 100, "width": 180, "height": 38,
+      "text": "BROWSE PNG",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.22, 0.35, 0.50, 1.0]
     },
     {
-      "id": "texPreviewHeading",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 200.0,
-      "height": 26.0,
-      "fontSize": 0.35
-    },
-    {
-      "id": "texPreviewImage",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 180.0,
-      "height": 180.0
-    },
-    {
-      "id": "assignHeading",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 400.0,
-      "height": 26.0,
-      "fontSize": 0.35
-    },
-    {
-      "id": "assignFaceSlot",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 200.0,
-      "height": 24.0,
-      "fontSize": 0.26
-    },
-    {
-      "id": "assignFaceSpacing",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 4.0,
-      "height": 0.0
-    },
-    {
-      "id": "assignRowSpacing",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 0.0,
-      "height": 2.0
-    },
-    {
-      "id": "assignListHeight",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 0.0,
-      "height": 420.0
-    },
-    {
-      "id": "quickActionApply",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 200.0,
-      "height": 32.0
+      "id": "applyToLabel",
+      "type": "text",
+      "x": 1450, "y": 0, "width": 200, "height": 26,
+      "text": "Apply To:",
+      "fontSize": 0.35,
+      "textColor": [0.75, 0.85, 0.95, 1.0]
     },
     {
       "id": "quickAllHead",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 28.0
+      "type": "button",
+      "x": 1450, "y": 0, "width": 100, "height": 28,
+      "text": "All Head",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.18, 0.30, 0.40, 1.0]
     },
     {
       "id": "quickAllTorso",
-      "x": 170.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 28.0
+      "type": "button",
+      "x": 1556, "y": 0, "width": 105, "height": 28,
+      "text": "All Torso",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.18, 0.30, 0.40, 1.0]
     },
     {
       "id": "quickAllArms",
-      "x": 310.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 28.0
+      "type": "button",
+      "x": 1667, "y": 0, "width": 100, "height": 28,
+      "text": "Arms",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.18, 0.30, 0.40, 1.0]
     },
     {
       "id": "quickAllLegs",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 28.0
+      "type": "button",
+      "x": 1450, "y": 0, "width": 100, "height": 28,
+      "text": "Legs",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.18, 0.30, 0.40, 1.0]
     },
     {
       "id": "quickAllBody",
-      "x": 170.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 28.0
+      "type": "button",
+      "x": 1556, "y": 0, "width": 200, "height": 28,
+      "text": "Entire Body",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.22, 0.40, 0.30, 1.0]
+    },
+    {
+      "id": "selectAllBtn",
+      "type": "button",
+      "x": 1450, "y": 0, "width": 90, "height": 24,
+      "text": "Select All",
+      "fontSize": 0.24,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.25, 0.35, 1.0]
+    },
+    {
+      "id": "clearBtn",
+      "type": "button",
+      "x": 1546, "y": 0, "width": 70, "height": 24,
+      "text": "Clear",
+      "fontSize": 0.24,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.15, 0.20, 1.0]
+    },
+    {
+      "id": "applyFacesBtn",
+      "type": "button",
+      "x": 1450, "y": 0, "width": 450, "height": 36,
+      "text": "Apply To Selected Faces",
+      "fontSize": 0.30,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.22, 0.50, 0.30, 1.0]
     },
     {
       "id": "saveButton",
-      "x": 30.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 38.0
+      "type": "button",
+      "x": 1450, "y": 0, "width": 130, "height": 38,
+      "text": "SAVE",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.18, 0.50, 0.26, 1.0]
     },
     {
       "id": "applyButton",
-      "x": 175.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 38.0
+      "type": "button",
+      "x": 1590, "y": 0, "width": 130, "height": 38,
+      "text": "APPLY",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.22, 0.38, 0.55, 1.0]
     },
     {
       "id": "backButton",
-      "x": 320.0,
-      "y": 0.0,
-      "width": 130.0,
-      "height": 38.0
+      "type": "button",
+      "x": 1730, "y": 0, "width": 130, "height": 38,
+      "text": "BACK",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.50, 0.18, 0.18, 1.0]
     },
     {
       "id": "pickerPanel",
-      "x": 400.0,
-      "y": 200.0,
-      "width": 700.0,
-      "height": 500.0
+      "x": 400, "y": 200, "width": 700, "height": 500
     },
     {
       "id": "pickerTitle",
-      "x": 414.0,
-      "y": 212.0,
-      "width": 500.0,
-      "height": 32.0,
-      "fontSize": 0.40
+      "type": "text",
+      "x": 414, "y": 212, "width": 500, "height": 32,
+      "text": "SELECT TEXTURE",
+      "fontSize": 0.40,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "pickerClose",
-      "x": 1064.0,
-      "y": 208.0,
-      "width": 28.0,
-      "height": 28.0
+      "type": "button",
+      "x": 1064, "y": 208, "width": 28, "height": 28,
+      "text": "X",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.15, 0.15, 1.0]
     },
     {
       "id": "pickerRow",
-      "x": 414.0,
-      "y": 258.0,
-      "width": 672.0,
-      "height": 32.0,
+      "x": 414, "y": 258, "width": 672, "height": 32,
       "fontSize": 0.28
     },
     {
       "id": "pickerScrollUp",
-      "x": 1050.0,
-      "y": 258.0,
-      "width": 36.0,
-      "height": 20.0
+      "type": "button",
+      "x": 1050, "y": 232, "width": 36, "height": 20,
+      "text": "^",
+      "fontSize": 0.28,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.3, 0.4, 1.0]
     },
     {
       "id": "pickerScrollDown",
-      "x": 1050.0,
-      "y": 0.0,
-      "width": 36.0,
-      "height": 20.0
+      "type": "button",
+      "x": 1050, "y": 0, "width": 36, "height": 20,
+      "text": "v",
+      "fontSize": 0.28,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.3, 0.4, 1.0]
     }
   ]
 }

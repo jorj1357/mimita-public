@@ -165,7 +165,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
     bool released = !mouseDown && prevDown;
     prevDown = mouseDown;
 
-    // Property panel slider dragging
+    // Property panel slider dragging (14 flat sliders)
     static int dragSlider = -1;
     if (dragSlider >= 0) {
         if (mouseDown && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
@@ -174,19 +174,22 @@ void GuiEditor::handleInput(GLFWwindow* win)
             if (elem) {
                 float t = std::clamp((float)(dx - PP_TRACK_X) / PP_TRACK_W, 0.0f, 1.0f);
                 auto setR = [&](float& v, float mn, float mx) { v = mn + t * (mx - mn); };
-                if (dragSlider == 0) setR(elem->x, 0, 1920);
-                else if (dragSlider == 1) setR(elem->y, 0, 1080);
-                else if (dragSlider == 2) setR(elem->w, 10, 800);
-                else if (dragSlider == 3) setR(elem->h, 10, 600);
-                else if (dragSlider == 4 && !elem->textColor.empty()) setR(elem->textColor[0], 0, 1);
-                else if (dragSlider == 5 && elem->textColor.size() > 1) setR(elem->textColor[1], 0, 1);
-                else if (dragSlider == 6 && elem->textColor.size() > 2) setR(elem->textColor[2], 0, 1);
-                else if (dragSlider == 7 && elem->textColor.size() > 3) setR(elem->textColor[3], 0, 1);
-                else if (dragSlider == 8 && !elem->backgroundColor.empty()) setR(elem->backgroundColor[0], 0, 1);
-                else if (dragSlider == 9 && elem->backgroundColor.size() > 1) setR(elem->backgroundColor[1], 0, 1);
-                else if (dragSlider == 10 && elem->backgroundColor.size() > 2) setR(elem->backgroundColor[2], 0, 1);
-                else if (dragSlider == 11 && elem->backgroundColor.size() > 3) setR(elem->backgroundColor[3], 0, 1);
-                else if (dragSlider == 12) setR(elem->opacity, 0, 1);
+                switch (dragSlider) {
+                    case 0:  setR(elem->x, 0, 1920); break;
+                    case 1:  setR(elem->y, 0, 1080); break;
+                    case 2:  setR(elem->w, 10, 800); break;
+                    case 3:  setR(elem->h, 10, 600); break;
+                    case 4:  setR(elem->fontSize, 0, 2); break;
+                    case 5:  if (!elem->textColor.empty()) setR(elem->textColor[0], 0, 1); break;
+                    case 6:  if (elem->textColor.size() > 1) setR(elem->textColor[1], 0, 1); break;
+                    case 7:  if (elem->textColor.size() > 2) setR(elem->textColor[2], 0, 1); break;
+                    case 8:  if (elem->textColor.size() > 3) setR(elem->textColor[3], 0, 1); break;
+                    case 9:  if (!elem->backgroundColor.empty()) setR(elem->backgroundColor[0], 0, 1); break;
+                    case 10: if (elem->backgroundColor.size() > 1) setR(elem->backgroundColor[1], 0, 1); break;
+                    case 11: if (elem->backgroundColor.size() > 2) setR(elem->backgroundColor[2], 0, 1); break;
+                    case 12: if (elem->backgroundColor.size() > 3) setR(elem->backgroundColor[3], 0, 1); break;
+                    case 13: setR(elem->opacity, 0, 1); break;
+                }
                 layout.setElement(*elem);
                 markEdited();
             }
@@ -196,11 +199,14 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
-    // Start slider drag
+    // Start slider drag (14 flat sliders, indices 0-13)
     if (pressed && !mDragging && !mResizing) {
-        if (dx >= PP_TRACK_X && dx <= PP_TRACK_X + PP_TRACK_W && dy >= PP_Y + 30.0f) {
-            int idx = (int)((dy - (PP_Y + 30.0f)) / PP_ROW_H);
-            if (idx >= 0 && idx <= 13) {
+        const float sliderStartY = PP_Y + 34.0f;
+        const int numSliders = 14;
+        if (dx >= PP_TRACK_X && dx <= PP_TRACK_X + PP_TRACK_W &&
+            dy >= sliderStartY && dy < sliderStartY + numSliders * PP_ROW_H) {
+            int idx = (int)((dy - sliderStartY) / PP_ROW_H);
+            if (idx >= 0 && idx < numSliders) {
                 dragSlider = idx;
                 return;
             }
@@ -209,8 +215,8 @@ void GuiEditor::handleInput(GLFWwindow* win)
 
     // Hierarchy click
     if (pressed && !mDragging && !mResizing) {
-        float hx = 12.0f, hy = 110.0f;
-        if (dx >= hx && dx <= hx + 218.0f && dy >= hy && !mActiveLayoutFile.empty()) {
+        const float hx = 12.0f, hy = 112.0f, hw = 218.0f;
+        if (dx >= hx && dx <= hx + hw && dy >= hy && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             auto ids = layout.elementIds();
             int idx = (int)((dy - hy) / PP_ROW_H);
@@ -387,62 +393,75 @@ void GuiEditor::renderSelectionHandles(const GuiElement& elem)
 void GuiEditor::renderPropertyPanel(const GuiElement& elem)
 {
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
-
-    // Background
-    UIRect pbg = cs.designToScreen({PP_X, PP_Y, PP_W, 520.0f});
-    uiDrawRect(pbg, {0.08f, 0.08f, 0.12f, 0.92f}, "gui-prop");
-    uiDrawRectOutline(pbg, {0.3f, 0.3f, 0.4f, 0.8f}, "gui-prop-border");
-
     auto dsx = [&](float x) { return cs.designToScreenX(x); };
     auto dsy = [&](float y) { return cs.designToScreenY(y); };
 
+    // 14 flat sliders (no section header rows to keep index→Y mapping clean)
+    struct SliderDef { const char* label; float val; float mn; float mx; };
+    auto rc = [&](const std::vector<float>& c, int i) {
+        return (int)c.size() > i ? c[i] : (i < 3 ? 0.0f : 1.0f);
+    };
+    SliderDef sliders[] = {
+        {"X",      elem.x, 0, 1920},
+        {"Y",      elem.y, 0, 1080},
+        {"W",      elem.w, 10, 800},
+        {"H",      elem.h, 10, 600},
+        {"FontSz", elem.fontSize, 0, 2},
+        {"T-R",    rc(elem.textColor, 0), 0, 1},
+        {"T-G",    rc(elem.textColor, 1), 0, 1},
+        {"T-B",    rc(elem.textColor, 2), 0, 1},
+        {"T-A",    rc(elem.textColor, 3), 0, 1},
+        {"B-R",    rc(elem.backgroundColor, 0), 0, 1},
+        {"B-G",    rc(elem.backgroundColor, 1), 0, 1},
+        {"B-B",    rc(elem.backgroundColor, 2), 0, 1},
+        {"B-A",    rc(elem.backgroundColor, 3), 0, 1},
+        {"Opacity", elem.opacity, 0, 1},
+    };
+    const int numSliders = sizeof(sliders) / sizeof(sliders[0]);
+
+    // Panel background
+    float panelH = 36.0f + numSliders * PP_ROW_H + 80.0f;
+    UIRect pbg = cs.designToScreen({PP_X, PP_Y, PP_W, panelH});
+    uiDrawRect(pbg, {0.08f, 0.08f, 0.12f, 0.92f}, "gui-prop");
+    uiDrawRectOutline(pbg, {0.3f, 0.3f, 0.4f, 0.8f}, "gui-prop-border");
+
     // Title
     char title[128];
-    snprintf(title, sizeof(title), "PROPERTIES: %s (%s)", elem.id.c_str(), elem.type.c_str());
-    uiDrawText(title, dsx(PP_X + 8), dsy(PP_Y + 4), 0.30f, {0.4f, 1.0f, 0.6f, 1.0f});
+    snprintf(title, sizeof(title), "PROPERTIES: %s (%s)",
+             elem.id.c_str(), elem.type.c_str());
+    uiDrawText(title, dsx(PP_X + 8), dsy(PP_Y + 4), 0.30f,
+               {0.4f, 1.0f, 0.6f, 1.0f});
     uiDrawRect({dsx(PP_X + 4), dsy(PP_Y + 28), dsx(PP_W - 8), 1},
                {0.3f, 0.3f, 0.5f, 0.6f}, "gui-p-div");
 
-    // ── Draw one slider row ──
-    struct R { const char* label; float val; float mn; float mx; int idx; };
-    auto readCol = [&](const std::vector<float>& c, int i) {
-        return (int)c.size() > i ? c[i] : (i < 3 ? 0.0f : 1.0f);
-    };
-    R rows[] = {
-        {"X", elem.x, 0, 1920, 0},
-        {"Y", elem.y, 0, 1080, 1},
-        {"W", elem.w, 10, 800, 2},
-        {"H", elem.h, 10, 600, 3},
-        {"--- Text ---", 0, 0, 0, -1},
-        {"Font", elem.fontSize, 0, 2, -2},
-        {"T-R", readCol(elem.textColor, 0), 0, 1, 4},
-        {"T-G", readCol(elem.textColor, 1), 0, 1, 5},
-        {"T-B", readCol(elem.textColor, 2), 0, 1, 6},
-        {"T-A", readCol(elem.textColor, 3), 0, 1, 7},
-        {"--- BG ---", 0, 0, 0, -1},
-        {"B-R", readCol(elem.backgroundColor, 0), 0, 1, 8},
-        {"B-G", readCol(elem.backgroundColor, 1), 0, 1, 9},
-        {"B-B", readCol(elem.backgroundColor, 2), 0, 1, 10},
-        {"B-A", readCol(elem.backgroundColor, 3), 0, 1, 11},
-        {"--- Misc ---", 0, 0, 0, -1},
-        {"Opacity", elem.opacity, 0, 1, 12},
-        {"Padding", elem.padding, 0, 100, -2},
+    // Color swatch helper: draw a small rect filled with a color
+    auto drawSwatch = [&](float dx, float dy, float r, float g, float b, float a) {
+        float sx = dsx(dx), sy = dsy(dy);
+        float sw = dsx(14.0f), sh = dsy(12.0f);
+        uiDrawRect({sx, sy, sw, sh}, {r, g, b, a}, "swatch");
+        uiDrawRectOutline({sx, sy, sw, sh}, {0.5f, 0.5f, 0.5f, 0.8f}, "swatch-border");
     };
 
-    for (int i = 0; i < (int)(sizeof(rows)/sizeof(rows[0])); ++i) {
+    // Draw each slider
+    for (int i = 0; i < numSliders; ++i) {
         float ry = PP_Y + 34.0f + i * PP_ROW_H;
-        auto& r = rows[i];
-        bool isSection = (r.idx == -1);
-        bool isReadOnly = (r.idx == -2);
 
-        if (isSection) {
-            uiDrawText(r.label, dsx(PP_X + 8), dsy(ry + 2), 0.24f,
-                       {0.5f, 0.6f, 0.8f, 1.0f});
-            continue;
+        // Color swatch before textColor and bgColor rows
+        if (i >= 5 && i <= 8) {
+            float swy = ry + (PP_ROW_H - 12.0f) * 0.5f;
+            drawSwatch(PP_X + 8, swy,
+                       sliders[5].val, sliders[6].val,
+                       sliders[7].val, sliders[8].val);
+        } else if (i >= 9 && i <= 12) {
+            float swy = ry + (PP_ROW_H - 12.0f) * 0.5f;
+            drawSwatch(PP_X + 8, swy,
+                       sliders[9].val, sliders[10].val,
+                       sliders[11].val, sliders[12].val);
         }
 
-        // Label
-        uiDrawText(r.label, dsx(PP_LABEL_X), dsy(ry), 0.26f,
+        // Label (offset for color swatch columns)
+        float labelX = (i >= 5 && i <= 12) ? PP_LABEL_X + 6.0f : PP_LABEL_X;
+        uiDrawText(sliders[i].label, dsx(labelX), dsy(ry), 0.26f,
                    {0.7f, 0.8f, 0.9f, 1.0f});
 
         // Track
@@ -450,18 +469,22 @@ void GuiEditor::renderPropertyPanel(const GuiElement& elem)
         float tsw = dsx(PP_TRACK_W), tsh = dsy(PP_ROW_H);
         uiDrawRect({tsx, tsy, tsw, tsh}, {0.15f, 0.15f, 0.2f, 1.0f}, "st");
 
-        if (!isReadOnly) {
-            float t = (r.mx > r.mn) ? std::clamp((r.val - r.mn) / (r.mx - r.mn), 0.0f, 1.0f) : 0;
-            uiDrawRect({tsx, tsy, tsw * t, tsh}, {0.25f, 0.6f, 0.9f, 1.0f}, "sf");
-        }
+        // Fill
+        float t = (sliders[i].mx > sliders[i].mn)
+            ? std::clamp((sliders[i].val - sliders[i].mn)
+                        / (sliders[i].mx - sliders[i].mn), 0.0f, 1.0f)
+            : 0.0f;
+        uiDrawRect({tsx, tsy, tsw * t, tsh}, {0.25f, 0.6f, 0.9f, 1.0f}, "sf");
 
+        // Value
         char buf[32];
-        snprintf(buf, sizeof(buf), "%.2f", r.val);
-        uiDrawText(buf, dsx(PP_VAL_X), dsy(ry), 0.26f, {0.9f, 0.9f, 0.5f, 1.0f});
+        snprintf(buf, sizeof(buf), "%.2f", sliders[i].val);
+        uiDrawText(buf, dsx(PP_VAL_X), dsy(ry), 0.26f,
+                   {0.9f, 0.9f, 0.5f, 1.0f});
     }
 
-    // Visibility / enabled toggles display
-    float toy = PP_Y + 34.0f + (sizeof(rows)/sizeof(rows[0])) * PP_ROW_H + 4;
+    // Visibility / enabled / anchor / text
+    float toy = PP_Y + 34.0f + numSliders * PP_ROW_H + 4;
     uiDrawText(elem.visible ? "[VISIBLE]" : "[HIDDEN]",
                dsx(PP_X + 8), dsy(toy), 0.26f,
                elem.visible ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
@@ -469,17 +492,15 @@ void GuiEditor::renderPropertyPanel(const GuiElement& elem)
                dsx(PP_X + 120), dsy(toy), 0.26f,
                elem.enabled ? glm::vec4(0.3f,1,0.3f,1) : glm::vec4(1,0.3f,0.3f,1));
 
-    // Anchor info
     char info[128];
     snprintf(info, sizeof(info), "Anchor: %s/%s  Layer: %d  Rot: %.0f",
              elem.anchorX.c_str(), elem.anchorY.c_str(), elem.layer, elem.rotation);
     uiDrawText(info, dsx(PP_X + 8), dsy(toy + PP_ROW_H), 0.24f,
                {0.5f, 0.6f, 0.8f, 1.0f});
 
-    // Text content display
     if (!elem.text.empty()) {
         uiDrawText(elem.text.c_str(), dsx(PP_X + 8), dsy(toy + PP_ROW_H * 2),
-                   0.26f, {0.8f, 0.8f, 0.5f, 1.0f});
+                   0.24f, {0.8f, 0.8f, 0.5f, 1.0f});
     }
 }
 

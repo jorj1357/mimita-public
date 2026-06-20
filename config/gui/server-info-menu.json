@@ -1,27 +1,33 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
       "id": "connect",
-      "x": 835.0,
-      "y": 400.0,
-      "width": 250.0,
-      "height": 60.0
+      "type": "button",
+      "x": 835, "y": 400, "width": 250, "height": 60,
+      "text": "Connect",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.7, 1.0, 1.0]
     },
     {
       "id": "startServer",
-      "x": 835.0,
-      "y": 400.0,
-      "width": 250.0,
-      "height": 60.0
+      "type": "button",
+      "x": 835, "y": 400, "width": 250, "height": 60,
+      "text": "Start Server",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.8, 0.3, 1.0]
     },
     {
       "id": "backButton",
-      "x": 40.0,
-      "y": 40.0,
-      "width": 120.0,
-      "height": 50.0
+      "type": "button",
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
   ]
 }

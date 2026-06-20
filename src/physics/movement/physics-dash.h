@@ -1,21 +1,37 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-dash.h
-// feb 10 2026
-/**
- * piurpose
- * handle alll logic for plr dash
- * wasd, omni directional, etc
- * hold w + dash = dash forward, press anu other wasd keu = quit low air friction,
- * put high ground friciton 
- */
-
 #pragma once
 #include <glm/glm.hpp>
 
 class Player;
 
-// CHANGED: Dash is now a single-frame impulse applied directly to vel, jun 6 2026
-// No persistent dashVel state, no cancelDashVelocity needed.
-// Friction and walk naturally take over on subsequent frames.
+enum class DashQuality {
+    Perfect = 0,
+    Excellent = 1,
+    Good = 2,
+    Okay = 3,
+    Poor = 4
+};
+
+// Returns the impulse multiplier for a given dash quality.
+inline float dashQualityMultiplier(DashQuality q) {
+    switch (q) {
+        case DashQuality::Perfect:   return 1.00f;
+        case DashQuality::Excellent: return 0.85f;
+        case DashQuality::Good:      return 0.70f;
+        case DashQuality::Okay:      return 0.55f;
+        case DashQuality::Poor:      return 0.40f;
+    }
+    return 0.40f;
+}
+
+// Returns quality from airborne movement tick count.
+inline DashQuality dashQualityFromTicks(int ticks) {
+    if (ticks <= 1) return DashQuality::Perfect;
+    if (ticks == 2) return DashQuality::Excellent;
+    if (ticks == 3) return DashQuality::Good;
+    if (ticks == 4) return DashQuality::Okay;
+    return DashQuality::Poor;
+}
+
 void doDash(
     Player& p,
     const glm::vec2& wishMoveXY,
@@ -24,13 +40,12 @@ void doDash(
     float dt
 );
 
-// Air dash: weaker directional impulse triggered by Space+WASD while airborne
-// Preserves full air control - applied directly to vel, not externalImpulse
 void doAirDash(
     Player& p,
     const glm::vec2& wishMoveXY,
     bool jumpPressed,
     bool movementPressed,
     bool airborne,
+    int movementTicks,
     float dt
 );
