@@ -146,8 +146,8 @@ static void physicsMainUpdate_Internal(
         p.dashMovementTicks = 0;
     }
 
-    // air dash: Left Shift+WASD while airborne (use raw grounded state from collision)
-    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt);
+    // air dash: Left Shift+WASD while airborne. Falls back to camera forward if no WASD.
+    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
 
     // down dash: Q key, always works regardless of grounded state
     // 6 14 2026 testing not havingthis at all
