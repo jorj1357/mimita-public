@@ -45,9 +45,6 @@ struct DeadBody {
     glm::vec3 transferredVelocity{0.0f};
     glm::vec3 deathImpulse{0.0f};
 
-    // Death freeze: body is frozen for this duration before physics activates
-    float deathFreezeTimer = 0.0f;
-
     // Debug state
     int debugId = 0;
     bool debugFreeze = false;

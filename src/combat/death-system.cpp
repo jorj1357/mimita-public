@@ -336,12 +336,6 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
 
 void DeathSystem::updateDeadBodyPhysics(DeadBody& body, const World& world, float dt)
 {
-    // Death freeze: skip physics during the initial freeze period
-    if (body.deathFreezeTimer > 0.0f) {
-        body.deathFreezeTimer -= dt;
-        return;
-    }
-
     // Transform debug: capture pre-physics state
     glm::vec3 prePos = body.position;
     glm::vec3 preVel = body.velocity;

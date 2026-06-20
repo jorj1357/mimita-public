@@ -55,6 +55,9 @@ private:
     std::string mHierarchyFilter;
     bool mFilterFocused = false;
 
+    // Multi-select
+    std::vector<std::string> mMultiSelectedIds;
+
     // Color picker
     bool mColorPickerOpen = false;
     int mColorPickerTarget = -1; // which color slider to set (5-12 for T-R through B-A, or -1)
