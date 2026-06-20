@@ -48,8 +48,9 @@ static void updateVisualFacingFromCamera(Player& p, const glm::vec3& camForward,
 
     flat = glm::normalize(flat);
     float targetYaw = glm::degrees(std::atan2(flat.y, flat.x));
-    float turn = std::min(1.0f, dt * 90.0f);
-    p.yaw += shortestAngleDegrees(p.yaw, targetYaw) * turn;
+    // No smoothing: player yaw matches camera yaw exactly.
+    // Remote players use interpolation separately if needed.
+    p.yaw = targetYaw;
 }
 
 // --------------------------------------------------
@@ -134,9 +135,6 @@ static void physicsMainUpdate_Internal(
 
         doCollisions(p, world, groundedThisFrame, subdt);
     }
-
-    // Authoritative body-part collision resolution (once per frame).
-    resolveBodyPartCollisions(p, world, dt);
 
     // Track ticks with movement held while airborne for dash quality.
     // Resets on ground contact or when movement key is released.
