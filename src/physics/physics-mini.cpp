@@ -135,6 +135,9 @@ static void physicsMainUpdate_Internal(
         doCollisions(p, world, groundedThisFrame, subdt);
     }
 
+    // Authoritative body-part collision resolution (once per frame).
+    resolveBodyPartCollisions(p, world, dt);
+
     // Track ticks with movement held while airborne for dash quality.
     // Resets on ground contact or when movement key is released.
     if (!groundedThisFrame && movementPressed) {
@@ -143,8 +146,8 @@ static void physicsMainUpdate_Internal(
         p.dashMovementTicks = 0;
     }
 
-    // air dash: Space+WASD while airborne (use raw grounded state from collision)
-    doAirDash(p, wishMoveXY, jumpPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt);
+    // air dash: Left Shift+WASD while airborne (use raw grounded state from collision)
+    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt);
 
     // down dash: Q key, always works regardless of grounded state
     // 6 14 2026 testing not havingthis at all

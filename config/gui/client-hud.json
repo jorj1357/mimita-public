@@ -1,0 +1,33 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "mpHudBg",
+      "type": "panel",
+      "x": 14, "y": 78, "width": 330, "height": 118,
+      "backgroundColor": [0, 0, 0, 0.56]
+    },
+    {
+      "id": "mpLine1",
+      "type": "text",
+      "x": 24, "y": 88, "width": 300, "height": 24,
+      "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    {
+      "id": "mpLine2",
+      "type": "text",
+      "x": 24, "y": 116, "width": 300, "height": 24,
+      "fontSize": 0.32,
+      "textColor": [0.75, 0.9, 1.0, 1.0]
+    },
+    {
+      "id": "mpLine3",
+      "type": "text",
+      "x": 24, "y": 142, "width": 300, "height": 24,
+      "fontSize": 0.32,
+      "textColor": [0.35, 1.0, 0.45, 1.0]
+    }
+  ]
+}

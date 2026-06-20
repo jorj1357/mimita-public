@@ -43,7 +43,7 @@ void doDash(
 void doAirDash(
     Player& p,
     const glm::vec2& wishMoveXY,
-    bool jumpPressed,
+    bool triggerPressed,
     bool movementPressed,
     bool airborne,
     int movementTicks,

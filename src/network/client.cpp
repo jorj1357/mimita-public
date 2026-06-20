@@ -13,6 +13,7 @@
 #include "render/render-player.h"
 #include "audio/audio.h"
 #include "gui/ui-system.h"
+#include "gui/gui-layout.h"
 #include "gui/font-stuff/font-loader.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
@@ -251,19 +252,25 @@ int runClient(const LaunchOptions& options)
             renderPlayer(kv.second, camera);
 
         uiBeginFrame(engine.window(), "multiplayer-debug-overlay");
-        uiDrawRect({14, 78, 330, 118}, {0.0f, 0.0f, 0.0f, 0.56f}, "mp-hud-bg");
+        GuiLayout& mpLayout = GuiLayoutManager::instance().getLayout("config/gui/client-hud.json");
+        auto mpText = [&](const std::string& id, const std::string& text) {
+            const GuiElement* el = mpLayout.get(id);
+            if (!el) return;
+            float s = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+            uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), s, el->getTextColorVec());
+        };
         char line[160];
         snprintf(line, sizeof(line), "MP id=%u name=%s players=%zu npcs=%zu",
                  localPlayerId, approvedName.c_str(), players.size(), npcs.size());
-        uiDrawText(line, 24, 88, 0.38f, {0.95f, 0.98f, 1.0f, 1.0f});
+        mpText("mpLine1", line);
         snprintf(line, sizeof(line), "snapshot tick=%u sent=%llu recv=%llu", lastSnapshotTick,
                  (unsigned long long)packetsSent, (unsigned long long)packetsReceived);
-        uiDrawText(line, 24, 116, 0.32f, {0.75f, 0.9f, 1.0f, 1.0f});
+        mpText("mpLine2", line);
         if (localIt != players.end())
         {
             const Player& lp = localIt->second;
             snprintf(line, sizeof(line), "pos %.2f %.2f %.2f", lp.pos.x, lp.pos.y, lp.pos.z);
-            uiDrawText(line, 24, 142, 0.32f, {0.35f, 1.0f, 0.45f, 1.0f});
+            mpText("mpLine3", line);
         }
         uiRenderFrameDebugOverlay(engine.window(), "MULTIPLAYER", true);
         uiEndFrame();
