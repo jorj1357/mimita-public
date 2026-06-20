@@ -56,7 +56,7 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
     return rt;
 }
 
-void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs, float dt) {
+void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
     mShotCooldown = std::max(0.0f, mShotCooldown - dt);
     mShootingTimer = std::max(0.0f, mShootingTimer - dt);
     mRecoilValue = std::max(0.0f, mRecoilValue - dt * 15.0f);
@@ -95,7 +95,7 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
         rt->shootEffectTimer = std::max(0.0f, rt->shootEffectTimer - dt);
 
         int idx = slotIndex(def->slot);
-        mViewModels[idx].update(camera, player, dt, def);
+        mViewModels[idx].update(camera, player, dt, def, true, &world);
 
         if (def->behaviorType == WeaponBehaviorType::Godball) {
             if (!mGodballPhys.active) {

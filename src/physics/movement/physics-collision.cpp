@@ -26,7 +26,6 @@
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
-#include "physics/body-part-collision.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "config.h"
@@ -203,11 +202,6 @@ static inline void applyCollisionContact(
 // =====================================================
 // AABB helpers (TEMP until capsule collisions v3)
 // =====================================================
-
-struct AABB {
-    glm::vec3 min;
-    glm::vec3 max;
-};
 
 static inline AABB makeSweptCapsuleAABB(const Capsule& cap, const glm::vec3& move)
 {
@@ -1499,9 +1493,8 @@ static void doGLBTriangleCollisions(
         }
     }
 
-    // Body-part world collision: pushes each limb's worldTransform back from walls.
-    // Does NOT modify the root capsule position (pos/vel).
-    resolveBodyPartCollisions(p, world, dt);
+    // Body-part collision runs in physicsMainUpdate_Internal after animation.
+    // (not here — moved to avoid animation overwrite)
 
     // collision_debug: record additional contact visualization events
     // (actual drawing happens in drawDebugStuff with the camera)

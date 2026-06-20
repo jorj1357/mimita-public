@@ -43,12 +43,4 @@ bool resolveCapsuleVsCapsule(
     bool& groundedB
 );
 
-// Authoritative body-part collision resolution.
-// Runs once per frame (not per substep) to push body colliders back from
-// world geometry. A fraction of the push is applied to the root capsule.
-// Call after doCollisions() completes for the frame.
-void resolveBodyPartCollisions(
-    Player& p,
-    const World& world,
-    float dt
-);
+

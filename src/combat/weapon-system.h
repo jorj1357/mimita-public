@@ -24,7 +24,7 @@ class WeaponSystem {
 public:
     WeaponSystem();
 
-    void update(const Camera& camera, Player& player, NpcSystem& npcs, float dt);
+    void update(const Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt);
     void render(const Camera& camera, const Player& player) const;
     RevolverShotResult fire(
         const Camera& camera,

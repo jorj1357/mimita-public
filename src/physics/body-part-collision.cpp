@@ -12,29 +12,29 @@
 
 namespace {
 
-struct AABB { glm::vec3 min, max; };
+struct BodyAABB { glm::vec3 min, max; };
 
-static AABB makeTriAABB(const CollisionTriangle& tri) {
-    AABB b;
+static BodyAABB makeTriAABB(const CollisionTriangle& tri) {
+    BodyAABB b;
     b.min = glm::min(tri.a, glm::min(tri.b, tri.c));
     b.max = glm::max(tri.a, glm::max(tri.b, tri.c));
     return b;
 }
 
-static bool overlaps(const AABB& a, const AABB& b) {
+static bool overlaps(const BodyAABB& a, const BodyAABB& b) {
     return a.min.x <= b.max.x && a.max.x >= b.min.x &&
            a.min.y <= b.max.y && a.max.y >= b.min.y &&
            a.min.z <= b.max.z && a.max.z >= b.min.z;
 }
 
-static void gatherCandidates(const World& world, const AABB& capsuleBounds,
-                             float capsuleRadius, std::vector<int>& out) {
+static void gatherCandidates(const World& world, const BodyAABB& capBounds,
+                             float capRadius, std::vector<int>& out) {
     const auto& tris = world.collisionMesh.triangles;
-    AABB query = capsuleBounds;
-    query.min -= glm::vec3(capsuleRadius);
-    query.max += glm::vec3(capsuleRadius);
+    BodyAABB query = capBounds;
+    query.min -= glm::vec3(capRadius);
+    query.max += glm::vec3(capRadius);
     for (int i = 0; i < (int)tris.size(); ++i) {
-        AABB tb = makeTriAABB(tris[i]);
+        BodyAABB tb = makeTriAABB(tris[i]);
         if (overlaps(query, tb)) out.push_back(i);
     }
 }
@@ -79,13 +79,13 @@ static bool sphereTriContact(glm::vec3 center, float radius,
     float va = d3 * d6 - d5 * d4;
 
     glm::vec3 closest;
-    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
         closest = tri.a + (d1 / (d1 - d3)) * ab;
-    } else if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+    else if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
         closest = tri.a + (d2 / (d2 - d6)) * ac;
-    } else if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+    else if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
         closest = tri.b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * (tri.c - tri.b);
-    } else {
+    else {
         float denom = 1.0f / (va + vb + vc);
         closest = tri.a + (vb * denom) * ab + (vc * denom) * ac;
     }
@@ -106,16 +106,26 @@ static bool sphereTriContact(glm::vec3 center, float radius,
     return true;
 }
 
+static void projectRootVelocity(Player& p, const glm::vec3& normal) {
+    float intoVel = glm::dot(p.vel, normal);
+    if (intoVel < 0.0f)
+        p.vel -= normal * intoVel;
+
+    float intoImp = glm::dot(p.externalImpulse, normal);
+    if (intoImp < 0.0f)
+        p.externalImpulse -= normal * intoImp;
+}
+
 } // namespace
 
 void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
+    (void)dt;
     if (world.collisionMesh.triangles.empty()) return;
     if (p.bodyColliders.empty()) return;
 
     p.updateModelWorldTransforms();
 
-    static float logTimer = 0.0f;
-    logTimer += dt;
+    bool bodyGrounded = false;
 
     for (size_t ci = 0; ci < p.bodyColliders.size(); ++ci) {
         const Collider& collider = p.bodyColliders[ci];
@@ -133,7 +143,7 @@ void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
 
         glm::vec3 capHalf = (bodyCap.b - bodyCap.a) * 0.5f;
         glm::vec3 capCenter = (bodyCap.a + bodyCap.b) * 0.5f;
-        AABB capBounds = { capCenter - glm::abs(capHalf), capCenter + glm::abs(capHalf) };
+        BodyAABB capBounds = { capCenter - glm::abs(capHalf), capCenter + glm::abs(capHalf) };
         std::vector<int> candidates;
         gatherCandidates(world, capBounds, bodyCap.r, candidates);
 
@@ -157,32 +167,43 @@ void resolveBodyPartCollisions(Player& p, const World& world, float dt) {
         }
 
         if (maxPen > 0.005f && penCount > 0) {
-            float push = std::min(maxPen, 0.15f);
-            glm::vec3 correction = avgNormal * push;
+            glm::vec3 correction = avgNormal * maxPen;
+            glm::vec3 rootBefore = p.pos;
 
-            PhysicalBodyPart& part = p.physicalBody.parts[partIndex];
-            part.worldTransform[3][0] += correction.x;
-            part.worldTransform[3][1] += correction.y;
-            part.worldTransform[3][2] += correction.z;
+            p.pos += correction;
+            projectRootVelocity(p, avgNormal);
 
-            if (part.nodeIndex >= 0 && part.nodeIndex < (int)p.nodes.size()) {
-                p.nodes[part.nodeIndex].worldTransform[3][0] += correction.x;
-                p.nodes[part.nodeIndex].worldTransform[3][1] += correction.y;
-                p.nodes[part.nodeIndex].worldTransform[3][2] += correction.z;
+            if (avgNormal.z > 0.70f) {
+                bodyGrounded = true;
+                if (p.vel.z < 0.0f)
+                    p.vel.z = 0.0f;
+                if (p.externalImpulse.z < 0.0f)
+                    p.externalImpulse.z = 0.0f;
             }
 
-            if (logTimer >= 1.0f) {
-                Debug::log(Debug::Category::Collision,
-                    "[BODY PART] %s push: pen=%.4f norm=(%.2f %.2f %.2f) hits=%d\n",
-                    collider.name.c_str(), maxPen, avgNormal.x, avgNormal.y, avgNormal.z, penCount);
-            }
+            p.updateModelWorldTransforms();
+
+            Debug::logThrottled(Debug::Category::Collision, "body-root-response", 0.25f,
+                "[BODY COLLISION] part=%s penetration=%.4f correction=(%.4f %.4f %.4f) hits=%d\n"
+                "[ROOT RESPONSE] rootCorrection=(%.4f %.4f %.4f) pos=(%.4f %.4f %.4f)\n",
+                collider.name.c_str(), maxPen,
+                correction.x, correction.y, correction.z, penCount,
+                correction.x, correction.y, correction.z,
+                p.pos.x, p.pos.y, p.pos.z);
+
             std::string depLabel = collider.name + "_push";
-            DebugVis::recordDepenetration(part.worldTransform[3], correction, depLabel.c_str());
+            DebugVis::recordDepenetration(rootBefore, correction, depLabel.c_str());
         }
     }
 
-    if (logTimer >= 1.0f) logTimer = 0.0f;
+    if (bodyGrounded) {
+        p.onGround = true;
+        p.stableOnGround = true;
+        p.groundLostTimer = 0.0f;
+        p.airborneTimer = 0.0f;
+    }
 
-    // Sync corrected transforms to render meshes
+    // Sync render meshes after root-authoritative collision response.
+    p.updateModelWorldTransforms();
     p.bodyPartMeshes = p.physicalBody.partMeshes;
 }

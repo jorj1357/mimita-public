@@ -3674,7 +3674,7 @@ int main(int argc, char** argv)
             }
             { Perf::ScopedTimer _wp("Weapons");
             if (!replayPlaybackActive)
-                weapons.update(camera, player, npcSystem, dt);
+                weapons.update(camera, player, npcSystem, world, dt);
             }
             if (mpContext.active)
             {
