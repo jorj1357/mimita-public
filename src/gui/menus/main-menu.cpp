@@ -1,6 +1,7 @@
 #include "main-menu.h"
 #include "../ui-system.h"
 #include "../gui-layout.h"
+#include "../gui-element-render.h"
 #include "profile/local-profile-system.h"
 #include <cstdio>
 #include <filesystem>
@@ -35,53 +36,56 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     if (!bgLoaded)
         uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
 
-    // Text positions: convert from design (1920x1080) to framebuffer using uiScaleX/Y
-    uiDrawText("MiMITA", uiScaleX(872.0f), uiScaleY(380.0f), 1.25f, {0.95f, 0.98f, 1.0f, 1.0f});
-    uiDrawText("\"movement is more important than aim\"", uiScaleX(755.0f), uiScaleY(470.0f), 0.46f, {0.72f, 0.82f, 0.9f, 1.0f});
-    const std::string profileLine =
-        "Logged in as: " + LocalProfileSystem::instance().currentUsername();
-    uiDrawText(profileLine.c_str(), uiScaleX(815.0f), uiScaleY(428.0f), 0.38f,
-               {0.45f, 1.0f, 0.62f, 1.0f});
-
-    // Buttons: design coordinates are converted to framebuffer inside uiButton()
-    if (uiButton(win, "PLAY",
-        layout.getRectDesign("playButton", {835.0f, 545.0f, 250.0f, 58.0f}),
-        {0.24f,0.82f,0.48f,1.0f}).clicked)
+    // Render all layout elements using the unified renderer
+    // profileLine is handled separately because its text is dynamic (includes username)
+    for (const std::string& id : layout.elementIds())
     {
-        printf("[MAIN MENU] Play pressed\n");
-        r.goPlay = true;
+        if (id == "profileLine") continue;
+
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+
+        if (id == "playButton")
+        {
+            printf("[MAIN MENU] Play pressed\n");
+            r.goPlay = true;
+        }
+        else if (id == "settingsButton")
+        {
+            printf("[MAIN MENU] Settings pressed\n");
+            r.goSettings = true;
+        }
+        else if (id == "replaysButton")
+        {
+            printf("[MAIN MENU] Replays pressed\n");
+            r.goReplays = true;
+        }
+        else if (id == "avatarButton")
+        {
+            printf("[MAIN MENU] Avatar Creator pressed\n");
+            r.goAvatarCreator = true;
+        }
+        else if (id == "exitButton")
+        {
+            printf("[MAIN MENU] Exit pressed\n");
+            r.goExit = true;
+        }
     }
 
-    if (uiButton(win, "SETTINGS",
-        layout.getRectDesign("settingsButton", {835.0f, 622.0f, 250.0f, 58.0f}),
-        {0.86f,0.74f,0.28f,1.0f}).clicked)
+    // Render profile line with dynamic username text
+    const GuiElement* profileEl = layout.get("profileLine");
+    if (profileEl)
     {
-        printf("[MAIN MENU] Settings pressed\n");
-        r.goSettings = true;
-    }
-
-    if (uiButton(win, "REPLAYS",
-        layout.getRectDesign("replaysButton", {835.0f, 699.0f, 250.0f, 58.0f}),
-        {0.55f,0.35f,0.75f,1.0f}).clicked)
-    {
-        printf("[MAIN MENU] Replays pressed\n");
-        r.goReplays = true;
-    }
-
-    if (uiButton(win, "AVATAR",
-        layout.getRectDesign("avatarButton", {835.0f, 776.0f, 250.0f, 58.0f}),
-        {0.3f,0.6f,0.5f,1.0f}).clicked)
-    {
-        printf("[MAIN MENU] Avatar Creator pressed\n");
-        r.goAvatarCreator = true;
-    }
-
-    if (uiButton(win, "EXIT",
-        layout.getRectDesign("exitButton", {835.0f, 853.0f, 250.0f, 58.0f}),
-        {0.65f,0.2f,0.2f,1.0f}).clicked)
-    {
-        printf("[MAIN MENU] Exit pressed\n");
-        r.goExit = true;
+        const std::string profileText =
+            "Logged in as: " + LocalProfileSystem::instance().currentUsername();
+        float sx = uiScaleX(profileEl->x);
+        float sy = uiScaleY(profileEl->y);
+        float scale = profileEl->fontSize > 0.0f ? profileEl->fontSize : 0.38f;
+        glm::vec4 color = profileEl->getTextColorVec();
+        uiDrawText(profileText.c_str(), sx, sy, scale, color);
     }
 
     return r;

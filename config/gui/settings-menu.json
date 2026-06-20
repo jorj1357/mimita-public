@@ -1,236 +1,249 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
       "id": "settingsTitle",
-      "x": 840.0,
-      "y": 40.0,
-      "width": 300.0,
-      "height": 50.0
+      "type": "text",
+      "x": 840, "y": 40, "width": 300, "height": 50,
+      "text": "SETTINGS",
+      "fontSize": 0.65,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "audioHeader",
-      "x": 120.0,
-      "y": 120.0,
-      "width": 300.0,
-      "height": 36.0
+      "type": "text",
+      "x": 120, "y": 120, "width": 300, "height": 36,
+      "text": "AUDIO",
+      "fontSize": 0.48,
+      "textColor": [0.65, 0.85, 1.0, 1.0]
     },
     {
       "id": "masterVolumeLabel",
-      "x": 120.0,
-      "y": 176.0,
-      "width": 300.0,
-      "height": 24.0
+      "type": "text",
+      "x": 120, "y": 176, "width": 300, "height": 24,
+      "text": "Master Volume",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "masterVolumeSlider",
-      "x": 120.0,
-      "y": 210.0,
-      "width": 380.0,
-      "height": 28.0
+      "type": "button",
+      "x": 120, "y": 210, "width": 380, "height": 28
     },
     {
       "id": "masterVolumeValue",
-      "x": 518.0,
-      "y": 214.0,
-      "width": 60.0,
-      "height": 24.0
+      "type": "text",
+      "x": 518, "y": 214, "width": 60, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "musicVolumeLabel",
-      "x": 120.0,
-      "y": 262.0,
-      "width": 300.0,
-      "height": 24.0
+      "type": "text",
+      "x": 120, "y": 262, "width": 300, "height": 24,
+      "text": "Music Volume",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "musicVolumeSlider",
-      "x": 120.0,
-      "y": 296.0,
-      "width": 380.0,
-      "height": 28.0
+      "type": "button",
+      "x": 120, "y": 296, "width": 380, "height": 28
     },
     {
       "id": "musicVolumeValue",
-      "x": 518.0,
-      "y": 300.0,
-      "width": 60.0,
-      "height": 24.0
+      "type": "text",
+      "x": 518, "y": 300, "width": 60, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "muteLabel",
-      "x": 120.0,
-      "y": 350.0,
-      "width": 100.0,
-      "height": 24.0
+      "type": "text",
+      "x": 120, "y": 350, "width": 100, "height": 24,
+      "text": "Mute",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "muteToggle",
-      "x": 120.0,
-      "y": 382.0,
-      "width": 72.0,
-      "height": 32.0
+      "type": "checkbox",
+      "x": 120, "y": 382, "width": 72, "height": 32
     },
     {
       "id": "gameplayHeader",
-      "x": 120.0,
-      "y": 450.0,
-      "width": 300.0,
-      "height": 36.0
+      "type": "text",
+      "x": 120, "y": 450, "width": 300, "height": 36,
+      "text": "GAMEPLAY",
+      "fontSize": 0.48,
+      "textColor": [0.65, 0.85, 1.0, 1.0]
     },
     {
       "id": "fovLabel",
-      "x": 120.0,
-      "y": 506.0,
-      "width": 300.0,
-      "height": 24.0
+      "type": "text",
+      "x": 120, "y": 506, "width": 300, "height": 24,
+      "text": "Field of View",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "fovSlider",
-      "x": 120.0,
-      "y": 540.0,
-      "width": 380.0,
-      "height": 28.0
+      "type": "button",
+      "x": 120, "y": 540, "width": 380, "height": 28
     },
     {
       "id": "fovValue",
-      "x": 518.0,
-      "y": 544.0,
-      "width": 60.0,
-      "height": 24.0
+      "type": "text",
+      "x": 518, "y": 544, "width": 60, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "sensitivityLabel",
-      "x": 120.0,
-      "y": 592.0,
-      "width": 300.0,
-      "height": 24.0
+      "type": "text",
+      "x": 120, "y": 592, "width": 300, "height": 24,
+      "text": "Sensitivity",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "sensitivitySlider",
-      "x": 120.0,
-      "y": 626.0,
-      "width": 380.0,
-      "height": 28.0
+      "type": "button",
+      "x": 120, "y": 626, "width": 380, "height": 28
     },
     {
       "id": "sensitivityValue",
-      "x": 518.0,
-      "y": 630.0,
-      "width": 60.0,
-      "height": 24.0
+      "type": "text",
+      "x": 518, "y": 630, "width": 60, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "bloodFxLabel",
-      "x": 120.0,
-      "y": 650.0,
-      "width": 200.0,
-      "height": 24.0
+      "type": "text",
+      "x": 120, "y": 650, "width": 200, "height": 24,
+      "text": "Blood Effects",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "bloodFxToggle",
-      "x": 120.0,
-      "y": 680.0,
-      "width": 72.0,
-      "height": 32.0
+      "type": "checkbox",
+      "x": 120, "y": 680, "width": 72, "height": 32
+    },
+    {
+      "id": "sfxLabel",
+      "type": "text",
+      "x": 120, "y": 730, "width": 300, "height": 24,
+      "text": "SFX Volume",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
+    },
+    {
+      "id": "sfxSlider",
+      "type": "button",
+      "x": 120, "y": 764, "width": 380, "height": 28
+    },
+    {
+      "id": "sfxValue",
+      "type": "text",
+      "x": 518, "y": 768, "width": 60, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "videoHeader",
-      "x": 640.0,
-      "y": 120.0,
-      "width": 300.0,
-      "height": 36.0
+      "type": "text",
+      "x": 640, "y": 120, "width": 300, "height": 36,
+      "text": "VIDEO",
+      "fontSize": 0.48,
+      "textColor": [0.65, 0.85, 1.0, 1.0]
     },
     {
       "id": "fullscreenLabel",
-      "x": 640.0,
-      "y": 176.0,
-      "width": 200.0,
-      "height": 24.0
+      "type": "text",
+      "x": 640, "y": 176, "width": 200, "height": 24,
+      "text": "Fullscreen",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "fullscreenToggle",
-      "x": 640.0,
-      "y": 210.0,
-      "width": 120.0,
-      "height": 56.0,
-      "textOffsetX": 12.0,
-      "textOffsetY": 6.0
+      "type": "button",
+      "x": 640, "y": 210, "width": 120, "height": 56,
+      "textOffsetX": 12, "textOffsetY": 6
     },
     {
       "id": "resolutionLabel",
-      "x": 640.0,
-      "y": 290.0,
-      "width": 200.0,
-      "height": 24.0
+      "type": "text",
+      "x": 640, "y": 290, "width": 200, "height": 24,
+      "text": "Resolution",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "resolutionDropdown",
-      "x": 640.0,
-      "y": 324.0,
-      "width": 240.0,
-      "height": 112.0,
-      "textOffsetX": 12.0,
-      "textOffsetY": 6.0
+      "type": "button",
+      "x": 640, "y": 324, "width": 240, "height": 112,
+      "textOffsetX": 12, "textOffsetY": 6
     },
     {
       "id": "graphicsLabel",
-      "x": 640.0,
-      "y": 462.0,
-      "width": 200.0,
-      "height": 24.0
+      "type": "text",
+      "x": 640, "y": 462, "width": 200, "height": 24,
+      "text": "Graphics Preset",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "graphicsDropdown",
-      "x": 640.0,
-      "y": 496.0,
-      "width": 240.0,
-      "height": 138.0,
-      "textOffsetX": 12.0,
-      "textOffsetY": 6.0
+      "type": "button",
+      "x": 640, "y": 496, "width": 240, "height": 138,
+      "textOffsetX": 12, "textOffsetY": 6
     },
     {
       "id": "debugHeader",
-      "x": 640.0,
-      "y": 670.0,
-      "width": 300.0,
-      "height": 36.0
+      "type": "text",
+      "x": 640, "y": 670, "width": 300, "height": 36,
+      "text": "DEBUG",
+      "fontSize": 0.48,
+      "textColor": [0.65, 0.85, 1.0, 1.0]
     },
     {
       "id": "physicsDebugLabel",
-      "x": 640.0,
-      "y": 726.0,
-      "width": 200.0,
-      "height": 24.0
+      "type": "text",
+      "x": 640, "y": 726, "width": 200, "height": 24,
+      "text": "Physics Debug",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "physicsDebugToggle",
-      "x": 640.0,
-      "y": 758.0,
-      "width": 72.0,
-      "height": 32.0
+      "type": "button",
+      "x": 640, "y": 758, "width": 72, "height": 32
     },
     {
       "id": "renderDebugLabel",
-      "x": 640.0,
-      "y": 800.0,
-      "width": 200.0,
-      "height": 24.0
+      "type": "text",
+      "x": 640, "y": 800, "width": 200, "height": 24,
+      "text": "Render Debug",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.85, 0.95, 1.0]
     },
     {
       "id": "renderDebugToggle",
-      "x": 640.0,
-      "y": 832.0,
-      "width": 72.0,
-      "height": 32.0
+      "type": "button",
+      "x": 640, "y": 832, "width": 72, "height": 32
     },
     {
       "id": "backButton",
-      "x": 840.0,
-      "y": 960.0,
-      "width": 240.0,
-      "height": 48.0
+      "type": "button",
+      "x": 840, "y": 960, "width": 240, "height": 48,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
   ]
 }

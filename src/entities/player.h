@@ -218,6 +218,8 @@ public:
 
     // reset dash when touching object mar 8 2026
     bool dashAvailable = true;
+    int dashMovementTicks = 0;
+    int lastDashQuality = 0;
 
     // -------- Ground Return --------
     // old mar 8 2026

@@ -11,6 +11,8 @@
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
+#include "gui/gui-layout.h"
+#include "gui/gui-element-render.h"
 
 using json = nlohmann::json;
 

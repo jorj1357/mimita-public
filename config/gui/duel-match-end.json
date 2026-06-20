@@ -1,27 +1,33 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
       "id": "Play Again",
-      "x": 830.0,
-      "y": 460.0,
-      "width": 260.0,
-      "height": 44.0
+      "type": "button",
+      "x": 830, "y": 460, "width": 260, "height": 44,
+      "text": "Play Again",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.24, 0.82, 0.48, 1.0]
     },
     {
       "id": "Exit To Main Menu",
-      "x": 830.0,
-      "y": 516.0,
-      "width": 260.0,
-      "height": 44.0
+      "type": "button",
+      "x": 830, "y": 516, "width": 260, "height": 44,
+      "text": "Exit To Main Menu",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.86, 0.3, 0.3, 1.0]
     },
     {
       "id": "Save Replay",
-      "x": 830.0,
-      "y": 572.0,
-      "width": 260.0,
-      "height": 44.0
+      "type": "button",
+      "x": 830, "y": 572, "width": 260, "height": 44,
+      "text": "Save Replay",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.6, 0.3, 1.0]
     }
   ]
 }

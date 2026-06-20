@@ -1,34 +1,65 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
+      "id": "header",
+      "type": "text",
+      "x": 835,
+      "y": 60,
+      "width": 350,
+      "height": 50,
+      "text": "SANDBOX MAPS",
+      "fontSize": 0.72,
+      "textColor": [0.55, 0.78, 1.0, 1.0]
+    },
+    {
       "id": "REFRESH",
-      "x": 870.0,
-      "y": 998.0,
-      "width": 180.0,
-      "height": 46.0
+      "type": "button",
+      "x": 870,
+      "y": 998,
+      "width": 180,
+      "height": 46,
+      "text": "REFRESH",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.24, 0.62, 0.48, 1.0]
     },
     {
       "id": "<",
-      "x": 740.0,
-      "y": 998.0,
-      "width": 62.0,
-      "height": 46.0
+      "type": "button",
+      "x": 740,
+      "y": 998,
+      "width": 62,
+      "height": 46,
+      "text": "<",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.24, 0.35, 0.5, 1.0]
     },
     {
       "id": ">",
-      "x": 1118.0,
-      "y": 998.0,
-      "width": 62.0,
-      "height": 46.0
+      "type": "button",
+      "x": 1118,
+      "y": 998,
+      "width": 62,
+      "height": 46,
+      "text": ">",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.24, 0.35, 0.5, 1.0]
     },
     {
       "id": "backButton",
-      "x": 40.0,
-      "y": 40.0,
-      "width": 120.0,
-      "height": 50.0
+      "type": "button",
+      "x": 40,
+      "y": 40,
+      "width": 120,
+      "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
   ]
 }

@@ -79,6 +79,10 @@ private:
     int mBombHolderIndex = -1;
     float mBombTimer = 15.0f;
     float mPassCooldown = 0.0f;
+    float mTransferCooldown = 0.0f;
+    int mLastTickSecond = -1;
+    float mTickPitch = 1.0f;
+    bool mCooldownSoundPlayed = false;
 
     int mPlayerKills = 0;
     std::vector<int> mNpcKills;
@@ -99,6 +103,7 @@ private:
 
     int mWinnerIndex = -1;
     int mWinnerKills = 0;
+    bool mWinnerIsTie = false;
 
     void assignInitialBomb(Player& player, NpcSystem& npcs);
     void passBomb(Player& player, NpcSystem& npcs);
@@ -107,5 +112,4 @@ private:
     int countLivingNpcs(NpcSystem& npcs);
     void checkMatchEnd(Player& player, NpcSystem& npcs);
     void freezeAll(Player& player, NpcSystem& npcs);
-    glm::vec3 getBombWorldPos(Player& player, NpcSystem& npcs);
 };

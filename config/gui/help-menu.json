@@ -1,13 +1,15 @@
 {
   "format": "mimita-gui-layout",
-  "version": 1,
+  "version": 2,
   "elements": [
     {
       "id": "backButton",
-      "x": 40.0,
-      "y": 40.0,
-      "width": 120.0,
-      "height": 50.0
+      "type": "button",
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
   ]
 }
