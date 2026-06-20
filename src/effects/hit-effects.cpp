@@ -92,6 +92,27 @@ void HitEffects::loadConfig(const std::string& path)
 
         HitFxConfig cfg;
 
+        // Set burst defaults before JSON override
+        cfg.groundJumpBurst.lengthStart = 1.5f;
+        cfg.groundJumpBurst.lengthEnd = 0.5f;
+        cfg.groundJumpBurst.radiusStart = 0.25f;
+        cfg.groundJumpBurst.radiusEnd = 0.15f;
+        cfg.groundJumpBurst.colorStart = {1.0f, 0.85f, 0.2f};
+        cfg.groundJumpBurst.colorEnd = {1.0f, 0.6f, 0.1f};
+        cfg.groundJumpBurst.forwardOffset = 0.0f;
+        cfg.groundJumpBurst.upOffset = 0.0f;
+
+        cfg.airJumpBurst.lengthStart = 3.0f;
+        cfg.airJumpBurst.lengthEnd = 6.0f;
+        cfg.airJumpBurst.radiusStart = 0.4f;
+        cfg.airJumpBurst.radiusEnd = 0.1f;
+        cfg.airJumpBurst.colorStart = {0.5f, 0.3f, 1.0f};
+        cfg.airJumpBurst.colorEnd = {0.2f, 0.1f, 0.8f};
+        cfg.airJumpBurst.forwardOffset = 0.0f;
+        cfg.airJumpBurst.upOffset = -1.5f; // below player for upward propulsion look
+
+        cfg.movementDashBurst.forwardOffset = -0.8f; // behind player
+
         if (j.contains("enabled")) cfg.enabled = j["enabled"];
         if (j.contains("hotReload")) cfg.hotReload = j["hotReload"];
 
@@ -207,31 +228,34 @@ void HitEffects::loadConfig(const std::string& path)
                 cfg.deathEllipsoid.length, cfg.deathEllipsoid.radius);
         }
 
-        if (j.contains("movementDashBurst")) {
-            const json& m = j["movementDashBurst"];
-            if (m.contains("enabled")) cfg.movementDashBurst.enabled = m["enabled"];
-            if (m.contains("lifetimeTicks")) cfg.movementDashBurst.lifetimeTicks = m["lifetimeTicks"];
-            if (m.contains("lengthStart")) cfg.movementDashBurst.lengthStart = m["lengthStart"];
-            if (m.contains("lengthEnd")) cfg.movementDashBurst.lengthEnd = m["lengthEnd"];
-            if (m.contains("radiusStart")) cfg.movementDashBurst.radiusStart = m["radiusStart"];
-            if (m.contains("radiusEnd")) cfg.movementDashBurst.radiusEnd = m["radiusEnd"];
-            if (m.contains("colorStart")) cfg.movementDashBurst.colorStart = readVec3Json(m["colorStart"]);
-            if (m.contains("colorEnd")) cfg.movementDashBurst.colorEnd = readVec3Json(m["colorEnd"]);
-            if (m.contains("alphaStart")) cfg.movementDashBurst.alphaStart = m["alphaStart"];
-            if (m.contains("alphaEnd")) cfg.movementDashBurst.alphaEnd = m["alphaEnd"];
-            if (m.contains("brightnessStart")) cfg.movementDashBurst.brightnessStart = m["brightnessStart"];
-            if (m.contains("brightnessEnd")) cfg.movementDashBurst.brightnessEnd = m["brightnessEnd"];
-            if (m.contains("speedScaling")) cfg.movementDashBurst.speedScaling = m["speedScaling"];
-            if (m.contains("speedThreshold")) cfg.movementDashBurst.speedThreshold = m["speedThreshold"];
-            if (m.contains("speedScaleMin")) cfg.movementDashBurst.speedScaleMin = m["speedScaleMin"];
-            if (m.contains("speedScaleMax")) cfg.movementDashBurst.speedScaleMax = m["speedScaleMax"];
-            if (m.contains("forwardOffset") || m.contains("directionalOffset")) {
-                cfg.movementDashBurst.forwardOffset = m.contains("forwardOffset")
-                    ? (float)m["forwardOffset"] : (float)m["directionalOffset"];
+        auto loadBurstConfig = [&](const json& jc, MovementDashBurstConfig& burstCfg) {
+            if (jc.contains("enabled")) burstCfg.enabled = jc["enabled"];
+            if (jc.contains("lifetimeTicks")) burstCfg.lifetimeTicks = jc["lifetimeTicks"];
+            if (jc.contains("lengthStart")) burstCfg.lengthStart = jc["lengthStart"];
+            if (jc.contains("lengthEnd")) burstCfg.lengthEnd = jc["lengthEnd"];
+            if (jc.contains("radiusStart")) burstCfg.radiusStart = jc["radiusStart"];
+            if (jc.contains("radiusEnd")) burstCfg.radiusEnd = jc["radiusEnd"];
+            if (jc.contains("colorStart")) burstCfg.colorStart = readVec3Json(jc["colorStart"]);
+            if (jc.contains("colorEnd")) burstCfg.colorEnd = readVec3Json(jc["colorEnd"]);
+            if (jc.contains("alphaStart")) burstCfg.alphaStart = jc["alphaStart"];
+            if (jc.contains("alphaEnd")) burstCfg.alphaEnd = jc["alphaEnd"];
+            if (jc.contains("brightnessStart")) burstCfg.brightnessStart = jc["brightnessStart"];
+            if (jc.contains("brightnessEnd")) burstCfg.brightnessEnd = jc["brightnessEnd"];
+            if (jc.contains("speedScaling")) burstCfg.speedScaling = jc["speedScaling"];
+            if (jc.contains("speedThreshold")) burstCfg.speedThreshold = jc["speedThreshold"];
+            if (jc.contains("speedScaleMin")) burstCfg.speedScaleMin = jc["speedScaleMin"];
+            if (jc.contains("speedScaleMax")) burstCfg.speedScaleMax = jc["speedScaleMax"];
+            if (jc.contains("forwardOffset") || jc.contains("directionalOffset")) {
+                burstCfg.forwardOffset = jc.contains("forwardOffset")
+                    ? (float)jc["forwardOffset"] : (float)jc["directionalOffset"];
             }
-            if (m.contains("rightOffset")) cfg.movementDashBurst.rightOffset = m["rightOffset"];
-            if (m.contains("upOffset")) cfg.movementDashBurst.upOffset = m["upOffset"];
-        }
+            if (jc.contains("rightOffset")) burstCfg.rightOffset = jc["rightOffset"];
+            if (jc.contains("upOffset")) burstCfg.upOffset = jc["upOffset"];
+        };
+
+        if (j.contains("movementDashBurst")) loadBurstConfig(j["movementDashBurst"], cfg.movementDashBurst);
+        if (j.contains("groundJumpBurst")) loadBurstConfig(j["groundJumpBurst"], cfg.groundJumpBurst);
+        if (j.contains("airJumpBurst")) loadBurstConfig(j["airJumpBurst"], cfg.airJumpBurst);
 
         gConfig = cfg;
         auto ec = std::filesystem::last_write_time(path);
@@ -516,6 +540,59 @@ void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::ve
     b.alive = true;
     b.dashBurst = true;
     b.dashSpeed = speed;
+    b.burstType = BurstType::Dash;
+}
+
+void HitEffects::spawnGroundJumpBurst(const glm::vec3& position)
+{
+    if (!gConfig.enabled || !gConfig.groundJumpBurst.enabled || !gDashFXEnabled) return;
+    if (gBurstCount >= MAX_BURSTS) {
+        gBursts[0] = gBursts[gBurstCount - 1];
+        gBurstCount--;
+    }
+    const auto& cfg = gConfig.groundJumpBurst;
+    glm::vec3 fwd(0.0f, 0.0f, 1.0f);
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
+    up = glm::normalize(glm::cross(right, fwd));
+    glm::vec3 offset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + offset;
+    HitBurstEffect& b = gBursts[gBurstCount++];
+    b.position = spawnPos;
+    b.direction = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.spawnTick = gGlobalTick;
+    b.totalTicks = cfg.lifetimeTicks;
+    b.alive = true;
+    b.dashBurst = false;
+    b.dashSpeed = 0.0f;
+    b.burstType = BurstType::GroundJump;
+}
+
+void HitEffects::spawnAirJumpBurst(const glm::vec3& position)
+{
+    if (!gConfig.enabled || !gConfig.airJumpBurst.enabled || !gDashFXEnabled) return;
+    if (gBurstCount >= MAX_BURSTS) {
+        gBursts[0] = gBursts[gBurstCount - 1];
+        gBurstCount--;
+    }
+    const auto& cfg = gConfig.airJumpBurst;
+    glm::vec3 fwd(0.0f, 0.0f, 1.0f);
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
+    up = glm::normalize(glm::cross(right, fwd));
+    glm::vec3 offset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + offset;
+    HitBurstEffect& b = gBursts[gBurstCount++];
+    b.position = spawnPos;
+    b.direction = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.spawnTick = gGlobalTick;
+    b.totalTicks = cfg.lifetimeTicks;
+    b.alive = true;
+    b.dashBurst = false;
+    b.dashSpeed = 0.0f;
+    b.burstType = BurstType::AirJump;
 }
 
 void HitEffects::updateHitBursts(float dt)
@@ -537,9 +614,17 @@ void HitEffects::updateHitBursts(float dt)
     }
 }
 
-static void renderMovementDashBurst(const HitBurstEffect& b, int age, const Camera& camera)
+static const MovementDashBurstConfig& burstConfigForType(BurstType type) {
+    switch (type) {
+        case BurstType::GroundJump: return gConfig.groundJumpBurst;
+        case BurstType::AirJump: return gConfig.airJumpBurst;
+        default: return gConfig.movementDashBurst;
+    }
+}
+
+static void renderDirectionalBurst(const HitBurstEffect& b, int age, const Camera& camera)
 {
-    const auto& cfg = gConfig.movementDashBurst;
+    const auto& cfg = burstConfigForType(b.burstType);
     if (!cfg.enabled) return;
     if (age < 0 || age > cfg.lifetimeTicks) return;
 
@@ -557,9 +642,15 @@ static void renderMovementDashBurst(const HitBurstEffect& b, int age, const Came
         len *= scale;
     }
 
+    // For ground/air jump, the direction is always Z-up (vertical elongated sphere)
+    glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);
+
+    // Ground jump and air jump are always vertical along Z
+    if (b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump)
+        dir = glm::vec3(0.0f, 0.0f, 1.0f);
+
     glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
 
-    glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
     DebugVis::drawFilledSphere(camera, b.position, rad, col, scaleVec);
 }
@@ -571,8 +662,8 @@ void HitEffects::renderHitBursts(const Camera& camera)
         if (!b.alive) continue;
         int age = gGlobalTick - b.spawnTick;
 
-        if (b.dashBurst) {
-            renderMovementDashBurst(b, age, camera);
+        if (b.dashBurst || b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump) {
+            renderDirectionalBurst(b, age, camera);
         } else {
             renderSphereTimeline(b, age, camera);
             renderElongatedSphere(b, age, camera);

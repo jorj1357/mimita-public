@@ -47,5 +47,6 @@ void doAirDash(
     bool movementPressed,
     bool airborne,
     int movementTicks,
-    float dt
+    float dt,
+    const glm::vec3& camForward = glm::vec3(1.0f, 0.0f, 0.0f)
 );
