@@ -26,6 +26,7 @@
 #include "physics/movement/physics-ground-return.h"
 #include "physics/movement/physics-down-dash.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/body-part-collision.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
 
@@ -241,6 +242,9 @@ static void physicsMainUpdate_Internal(
     updateVisualFacingFromCamera(p, camForward, dt);
 
     p.updateProceduralAnimation(dt, camForward, debugCamera ? debugCamera->pos : p.pos);
+
+    // Body-part root collision: animation poses body colliders, then contacts push root authority.
+    resolveBodyPartCollisions(p, world, dt);
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {

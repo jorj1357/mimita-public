@@ -15,15 +15,14 @@
 #include "config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
+#include "debug/debug-log.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "world/world.h"
 
-// ─── Weapon-world collision (visual-only) ───────────────────────────
-struct AABB { glm::vec3 min, max; };
-
+// ─── Weapon-world collision ─────────────────────────────────────────
 static AABB makeTriAABB(const CollisionTriangle& tri) {
     AABB b;
     b.min = glm::min(tri.a, glm::min(tri.b, tri.c));
@@ -80,10 +79,26 @@ static bool sphereTriContact(glm::vec3 center, float radius, const CollisionTria
     return true;
 }
 
+static void projectRootVelocity(Player& player, const glm::vec3& normal) {
+    float intoVel = glm::dot(player.vel, normal);
+    if (intoVel < 0.0f)
+        player.vel -= normal * intoVel;
+
+    float intoImp = glm::dot(player.externalImpulse, normal);
+    if (intoImp < 0.0f)
+        player.externalImpulse -= normal * intoImp;
+}
+
 static glm::mat4 resolveWeaponCollision(const World& world, const glm::mat4& weaponTransform,
                                         const glm::vec3& modelGrip, const glm::vec3& modelMuzzle,
-                                        float weaponRadius = 0.12f, const char* debugName = "weapon")
+                                        float weaponRadius = 0.12f, const char* debugName = "weapon",
+                                        glm::vec3* outCorrection = nullptr,
+                                        float* outPenetration = nullptr,
+                                        int* outContactCount = nullptr)
 {
+    if (outCorrection) *outCorrection = glm::vec3(0.0f);
+    if (outPenetration) *outPenetration = 0.0f;
+    if (outContactCount) *outContactCount = 0;
     if (world.collisionMesh.triangles.empty()) return weaponTransform;
     glm::vec3 worldGrip = glm::vec3(weaponTransform * glm::vec4(modelGrip, 1.0f));
     glm::vec3 worldMuzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));
@@ -148,13 +163,13 @@ static glm::mat4 resolveWeaponCollision(const World& world, const glm::mat4& wea
         }
     }
     constexpr float MIN_WEAPON_PEN = 0.003f;
-    constexpr float MAX_WEAPON_PUSH = 0.4f;
-    constexpr float WEAPON_PUSH_SCALE = 0.85f;
     if (maxPen > MIN_WEAPON_PEN && penCount > 0) {
-        float push = std::min(maxPen * WEAPON_PUSH_SCALE, MAX_WEAPON_PUSH);
-        glm::vec3 correction = avgNormal * push;
+        glm::vec3 correction = avgNormal * maxPen;
         glm::mat4 corrected = weaponTransform;
         corrected[3][0] += correction.x; corrected[3][1] += correction.y; corrected[3][2] += correction.z;
+        if (outCorrection) *outCorrection = correction;
+        if (outPenetration) *outPenetration = maxPen;
+        if (outContactCount) *outContactCount = penCount;
         if (DebugConfig::DEBUG_COLLISION_LIMB) {
             char label[64]; snprintf(label, sizeof(label), "%s_push", debugName);
             DebugVis::recordDepenetration(glm::vec3(corrected[3]), correction, label);
@@ -275,7 +290,27 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         // Weapon-world collision: push weapon back if it contacts geometry
         if (world) {
             float wpnRad = (def && def->id == "shotgun") ? 0.15f : 0.12f;
-            weaponTransform = resolveWeaponCollision(*world, weaponTransform, modelGrip, modelMuzzle, wpnRad, def ? def->id.c_str() : "weapon");
+            glm::vec3 rootCorrection(0.0f);
+            float penetration = 0.0f;
+            int contactCount = 0;
+            weaponTransform = resolveWeaponCollision(
+                *world, weaponTransform, modelGrip, modelMuzzle, wpnRad,
+                def ? def->id.c_str() : "weapon",
+                &rootCorrection, &penetration, &contactCount);
+            if (glm::dot(rootCorrection, rootCorrection) > 0.0000001f) {
+                glm::vec3 rootBefore = player.pos;
+                player.pos += rootCorrection;
+                projectRootVelocity(player, glm::normalize(rootCorrection));
+                player.updateModelWorldTransforms();
+                DebugVis::recordDepenetration(rootBefore, rootCorrection, "weapon-root-response");
+                Debug::logThrottled(Debug::Category::Collision, "weapon-root-response", 0.25f,
+                    "[BODY COLLISION] part=Weapon:%s penetration=%.4f correction=(%.4f %.4f %.4f) hits=%d\n"
+                    "[ROOT RESPONSE] rootCorrection=(%.4f %.4f %.4f) pos=(%.4f %.4f %.4f)\n",
+                    def ? def->id.c_str() : "weapon", penetration,
+                    rootCorrection.x, rootCorrection.y, rootCorrection.z, contactCount,
+                    rootCorrection.x, rootCorrection.y, rootCorrection.z,
+                    player.pos.x, player.pos.y, player.pos.z);
+            }
             muzzle = glm::vec3(weaponTransform * glm::vec4(modelMuzzle, 1.0f));
             forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
         }
