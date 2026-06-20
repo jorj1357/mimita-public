@@ -27,6 +27,7 @@
 #include "debug/debug-log.h"
 #include "config.h"
 #include "physics/config.h"
+#include "effects/hit-effects.h"
 #include "debug/gl-debug.h"
 #include "debug/debug-diag.h"
 #include "effects/effect-part.h"
@@ -1459,18 +1460,24 @@ OBB Player::getOBB() const
 
 void Player::updateAudio(float dt)
 {
-    if (didGroundJump) playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
+    if (didGroundJump) {
+        playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
+        HitEffects::spawnGroundJumpBurst(pos);
+    }
 
-    if (didAirJump)
+    if (didAirJump) {
         playAirJumpSound();
+        // Spawn air jump effect below the player for upward-propulsion look
+        glm::vec3 airJumpPos = pos;
+        airJumpPos.z -= 1.0f;
+        HitEffects::spawnAirJumpBurst(airJumpPos);
+    }
 
     if (didDash) {
         bool perfect = (lastDashQuality == 0);
         playWorldSound("entity/player/dash", pos, perfect ? 1.3f : 1.0f, perfect ? 1.2f : 1.0f, 36.0f);
-        if (perfect)
-            EffectPartSystem::instance().spawnPerfectDash(pos);
-        else
-            EffectPartSystem::instance().spawnDash(pos);
+        glm::vec3 dashDir = glm::length(vel) > 0.001f ? glm::normalize(vel) : camForward;
+        HitEffects::spawnMovementDashBurst(pos, dashDir, glm::length(vel));
         lastDashQuality = 0;
     }
 

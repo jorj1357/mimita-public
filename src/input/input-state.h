@@ -19,6 +19,7 @@ struct InputState {
     bool jumpPressed = false;
     bool dashPressed = false;
     bool movementPressed = false;
+    bool movementJustPressed = false;
     bool groundReturnPressed = false;
     bool downDashPressed = false;
     bool freezeHeld = false;

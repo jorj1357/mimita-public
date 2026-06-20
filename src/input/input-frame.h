@@ -10,6 +10,7 @@ struct InputFrame {
     bool jumpPressed = false;
     bool dashPressed = false;
     bool movementPressed = false;
+    bool movementJustPressed = false;
     bool reloadPressed = false;
     bool groundReturnPressed = false;
     bool downDashPressed = false;

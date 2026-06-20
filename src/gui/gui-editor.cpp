@@ -428,7 +428,7 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
          glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) &&
         glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS) {
         static bool dupPrev = false;
-        if (!dupPrev) {
+        if (!dupPrev && !mSelectedId.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
             if (elem) {
@@ -444,6 +444,25 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
             dupPrev = true;
         }
     } else { static bool dupPrev = false; (void)dupPrev; }
+
+    // Delete key: remove selected element
+    if (glfwGetKey(win, GLFW_KEY_DELETE) == GLFW_PRESS && !mSelectedId.empty()) {
+        static bool delPrev = false;
+        if (!delPrev) {
+            GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+            GuiElement removed;
+            removed.id = mSelectedId;
+            // Overwrite with an invisible element (can't delete from map, so make it invisible)
+            removed.visible = false;
+            removed.w = 0;
+            removed.h = 0;
+            layout.setElement(removed);
+            printf("[GUI EDIT] deleted element \"%s\"\n", mSelectedId.c_str());
+            mSelectedId.clear();
+            markEdited();
+            delPrev = true;
+        }
+    } else { static bool delPrev = false; (void)delPrev; }
     float step = 1.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
         glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) step = 10.0f;
@@ -831,6 +850,30 @@ void GuiEditor::renderHierarchyView()
         snprintf(label, sizeof(label), "[%s] %s", icon, ids[i].c_str());
         uiDrawText(label, rsx + 4, rsy, 0.24f,
                    sel ? glm::vec4(1,1,1,1) : glm::vec4(0.7f,0.8f,0.9f,1));
+    }
+
+    // "+" button to create new element
+    float addY = hy + 50.0f + ids.size() * PP_ROW_H + 4;
+    UIRect addBtnRect = {hx + 4, addY, 40, 22};
+    GuiElement addBtn;
+    addBtn.type = "button";
+    addBtn.text = "+";
+    addBtn.textColor = {1,1,1,1};
+    addBtn.backgroundColor = {0.2f, 0.4f, 0.2f, 1.0f};
+    if (drawGuiElement(glfwGetCurrentContext(), addBtn, nullptr, &addBtnRect).clicked) {
+        GuiLayout& lay = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+        int seq = 0;
+        std::string newId = "newElement";
+        while (lay.get(newId)) { seq++; newId = "newElement" + std::to_string(seq); }
+        GuiElement ne;
+        ne.id = newId;
+        ne.type = "text";
+        ne.text = "New Element";
+        ne.x = 100; ne.y = 100; ne.w = 200; ne.h = 30;
+        lay.setElement(ne);
+        mSelectedId = newId;
+        markEdited();
+        printf("[GUI EDIT] created element \"%s\"\n", newId.c_str());
     }
 }
 

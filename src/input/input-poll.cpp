@@ -77,6 +77,12 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
         cmd.getState("walkback").held ||
         cmd.getState("walkleft").held ||
         cmd.getState("walkright").held;
+
+    in.movementJustPressed =
+        cmd.getState("walkforward").pressed ||
+        cmd.getState("walkback").pressed ||
+        cmd.getState("walkleft").pressed ||
+        cmd.getState("walkright").pressed;
     
     in.jumpHeld = cmd.isJumpHeld();
     in.dashPressed = cmd.isDashPressed();
@@ -124,12 +130,17 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     //     cmd.getState("walkforward").pressed || cmd.getState("walkback").pressed ||
     //     cmd.getState("walkleft").pressed || cmd.getState("walkright").pressed;
 
-    // new better with held 6 6 2026 
     frame.movementPressed =
         cmd.getState("walkforward").held ||
         cmd.getState("walkback").held ||
         cmd.getState("walkleft").held ||
         cmd.getState("walkright").held;
+
+    frame.movementJustPressed =
+        cmd.getState("walkforward").pressed ||
+        cmd.getState("walkback").pressed ||
+        cmd.getState("walkleft").pressed ||
+        cmd.getState("walkright").pressed;
 
     frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
     frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;

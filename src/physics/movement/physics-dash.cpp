@@ -16,21 +16,28 @@ void doAirDash(
     bool movementPressed,
     bool airborne,
     int movementTicks,
-    float dt
+    float dt,
+    const glm::vec3& camForward
 ) {
     (void)dt;
+    (void)movementPressed;
 
     if (!triggerPressed) return;
     if (!airborne) return;
-    if (!movementPressed) return;
     if (!p.dashAvailable) return;
     if (p.freezeActive) return;
 
-    glm::vec2 wishLen = wishMoveXY;
-    if (glm::length(wishLen) < 0.001f)
-        return;
+    glm::vec2 dashDir = wishMoveXY;
 
-    glm::vec2 dashDir = glm::normalize(wishLen);
+    // If movement keys are held, use camera-relative WASD direction.
+    // Otherwise, use horizontal camera forward as fallback.
+    if (glm::length(dashDir) < 0.001f) {
+        dashDir = glm::vec2(camForward.x, camForward.y);
+        if (glm::length(dashDir) < 0.001f)
+            return;
+    }
+
+    dashDir = glm::normalize(dashDir);
 
     DashQuality quality = dashQualityFromTicks(movementTicks);
     float mult = dashQualityMultiplier(quality);

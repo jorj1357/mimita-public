@@ -152,6 +152,8 @@ struct HitFxConfig {
     HitFxCurves curves;
     LegacyContactSphereConfig legacyContactSphere;
     MovementDashBurstConfig movementDashBurst;
+    MovementDashBurstConfig groundJumpBurst;
+    MovementDashBurstConfig airJumpBurst;
     DeathEllipsoidConfig deathEllipsoid;
 };
 
@@ -168,6 +170,13 @@ struct HitEvent {
     float knockbackForce = 0.0f;
 };
 
+enum class BurstType {
+    Movement,
+    Dash,
+    GroundJump,
+    AirJump
+};
+
 struct HitBurstEffect {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
@@ -175,8 +184,9 @@ struct HitBurstEffect {
     int spawnTick = 0;
     int totalTicks = 60;
     bool alive = true;
-    bool dashBurst = false;
+    bool dashBurst = false; // kept for backward compat
     float dashSpeed = 0.0f;
+    BurstType burstType = BurstType::Movement;
 };
 
 struct HitBurstSnapshot {
@@ -197,6 +207,8 @@ void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                      const std::string& targetId = "");
 
 void spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
+void spawnGroundJumpBurst(const glm::vec3& position);
+void spawnAirJumpBurst(const glm::vec3& position);
 
 void updateHitBursts(float dt);
 void renderHitBursts(const Camera& camera);
