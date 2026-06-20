@@ -1,0 +1,12 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "notificationBg",
+      "type": "panel",
+      "x": 12, "y": 60, "width": 420, "height": 36,
+      "backgroundColor": [0, 0, 0, 0.85]
+    }
+  ]
+}

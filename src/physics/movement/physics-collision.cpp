@@ -1498,38 +1498,31 @@ static void doGLBTriangleCollisions(
         }
     }
 
-    // Non-authoritative collider warning: body/weapon colliders no longer
-    // push the root capsule. If body samples are penetrating world geometry,
-    // log a warning so developers know their collision volumes are oversized
-    // or their animation poses are causing visual clipping.
+    // Body-part collision warning (non-authoritative — visual-only logging).
+    // Authoritative body-part correction runs in physicsMainUpdate_Internal
+    // once per frame (not per substep) via resolveBodyPartCollisions().
     {
         static float bodyWarnTimer = 0.0f;
         bodyWarnTimer += dt;
-        std::vector<glm::vec3> bodyCheckSamples = collectPlayerBodyCollisionSamples(p);
-        bool anyBodyPen = false;
-        for (glm::vec3 sample : bodyCheckSamples)
+        if (bodyWarnTimer >= 1.0f)
         {
-            AABB sampleBounds = {sample - glm::vec3(BODY_SAMPLE_RADIUS), sample + glm::vec3(BODY_SAMPLE_RADIUS)};
-            std::vector<int> bodyTriCandidates;
-            appendChunkTrianglesForAABB(world, sampleBounds, BODY_SAMPLE_RADIUS, bodyTriCandidates);
-            for (int triIndex : bodyTriCandidates)
+            std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
+            bool anyPen = false;
+            for (int si = 0; si < (int)bodySamples.size() && si < 16; ++si)
             {
-                Contact c;
-                if (sphereTriangleContact(sample, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[triIndex], c))
+                AABB sb = {bodySamples[si] - glm::vec3(BODY_SAMPLE_RADIUS), bodySamples[si] + glm::vec3(BODY_SAMPLE_RADIUS)};
+                std::vector<int> cand;
+                appendChunkTrianglesForAABB(world, sb, BODY_SAMPLE_RADIUS, cand);
+                for (int ti : cand)
                 {
-                    anyBodyPen = true;
-                    if (bodyWarnTimer >= 1.0f)
-                    {
-                        PHYS_LOG("[COLLISION WARNING] non-authoritative collider penetration ignored; source=body/weapon/arm triangleId=%d normal=(%.3f %.3f %.3f) pen=%.4f\n",
-                                 triIndex, c.normal.x, c.normal.y, c.normal.z, c.penetration);
-                    }
-                    break;
+                    Contact c;
+                    if (sphereTriangleContact(bodySamples[si], BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[ti], c))
+                    { anyPen = true; break; }
                 }
+                if (anyPen) break;
             }
-        }
-        if (anyBodyPen && bodyWarnTimer >= 1.0f)
-        {
-            PHYS_LOG("[COLLISION WARNING] body/weapon colliders penetrating world geometry; these do NOT affect root position\n");
+            if (anyPen)
+                PHYS_LOG("[COLLISION WARNING] body/weapon colliders penetrating world; resolved by physics-mini body-part correction\n");
             bodyWarnTimer = 0.0f;
         }
     }
@@ -1965,6 +1958,70 @@ void doCollisions(
             maxPen = std::max(maxPen, rc.penetration);
         printf("[COLLISION] block contacts=%zu penetration=%.4f\n",
                blockContacts.size(), maxPen);
+    }
+}
+
+// =====================================================
+// BODY-PART COLLISION RESOLUTION
+// =====================================================
+// Called once per frame (not per substep) after the movement capsule
+// collision resolves. Pushes body colliders back from world geometry
+// and nudges the root capsule by 30% of the push magnitude.
+// This prevents limbs visually passing through walls without making
+// body collision the primary locomotion driver.
+
+void resolveBodyPartCollisions(Player& p, const World& world, float dt)
+{
+    if (world.collisionMesh.triangles.empty()) return;
+
+    std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
+    constexpr int MAX_SAMPLES = 48;
+    if ((int)bodySamples.size() > MAX_SAMPLES) bodySamples.resize(MAX_SAMPLES);
+
+    float maxPen = 0.0f;
+    glm::vec3 avgNormal(0.0f);
+    int penCount = 0;
+
+    for (const glm::vec3& sample : bodySamples)
+    {
+        AABB sb = {sample - glm::vec3(BODY_SAMPLE_RADIUS), sample + glm::vec3(BODY_SAMPLE_RADIUS)};
+        std::vector<int> cand;
+        appendChunkTrianglesForAABB(world, sb, BODY_SAMPLE_RADIUS, cand);
+        constexpr int MAX_CAND = 64;
+        if ((int)cand.size() > MAX_CAND) cand.resize(MAX_CAND);
+        for (int ti : cand)
+        {
+            Contact c;
+            if (sphereTriangleContact(sample, BODY_SAMPLE_RADIUS, world.collisionMesh.triangles[ti], c))
+            {
+                if (c.penetration > maxPen) { maxPen = c.penetration; avgNormal = c.normal; }
+                penCount++;
+            }
+        }
+    }
+
+    constexpr float MIN_PEN = 0.005f;
+    constexpr float MAX_PUSH = 0.15f;
+    constexpr float ROOT_NUDGE = 0.3f;
+
+    if (maxPen > MIN_PEN && penCount > 0)
+    {
+        float push = std::min(maxPen, MAX_PUSH);
+        p.pos += avgNormal * push * ROOT_NUDGE;
+        if (dt > 0.0f)
+        {
+            static float logTimer = 0.0f;
+            logTimer += dt;
+            if (logTimer >= 0.5f)
+            {
+                PHYS_LOG("[BODY COLLISION] pen=%.4f n=(%.3f,%.3f,%.3f) hits=%d nudge=(%.4f,%.4f,%.4f)\n",
+                         maxPen, avgNormal.x, avgNormal.y, avgNormal.z, penCount,
+                         avgNormal.x * push * ROOT_NUDGE,
+                         avgNormal.y * push * ROOT_NUDGE,
+                         avgNormal.z * push * ROOT_NUDGE);
+                logTimer = 0.0f;
+            }
+        }
     }
 }
 

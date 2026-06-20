@@ -18,6 +18,8 @@
 #include "game/duel.h"
 #include "debug/debug-log.h"
 #include "gui/ui-system.h"
+#include "gui/gui-layout.h"
+#include "gui/gui-element-render.h"
 
 #include "combat/weapon-godball.h"
 #include "debug/debug-visuals.h"
@@ -502,36 +504,41 @@ void BombTagManager::update(float dt, Player& player, NpcSystem& npcs, World& wo
 
 void BombTagManager::renderHud() {
     if (!mConfig.enabled) return;
-    float sw = uiScreenW();
-    float cx = sw * 0.5f;
+    GuiLayout& btLayout = GuiLayoutManager::instance().getLayout("config/gui/bomb-tag-hud.json");
+    auto btText = [&](const std::string& id, const std::string& text) {
+        const GuiElement* el = btLayout.get(id);
+        if (!el) return;
+        float s = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+        uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), s, el->getTextColorVec());
+    };
 
     if (mPhase == BombTagPhase::Countdown) {
         char buf[64];
         snprintf(buf, sizeof(buf), "%.0f", std::ceil(mCountdown));
-        uiDrawText(buf, cx - 20.0f, uiScreenH() * 0.5f - 40.0f, 1.2f, {1,1,1,1});
+        btText("countdownText", buf);
         return;
     }
 
     if (mPhase == BombTagPhase::Active) {
+        char buf[256];
         float remaining = std::max(0.0f, (float)mConfig.timeLimitSeconds - mTimer);
-        char buf[64];
         snprintf(buf, sizeof(buf), "%.0f", remaining);
-        uiDrawText(buf, cx - 20.0f, 30.0f, 0.45f, {1,1,1,0.8f});
+        btText("timerText", buf);
 
         if (mBombHolderIsPlayer) {
             snprintf(buf, sizeof(buf), "YOU HAVE THE BOMB! (%.0fs)", mBombTimer);
-            uiDrawText(buf, cx - 120.0f, 70.0f, 0.4f, {1,0.3f,0.3f,1});
+            btText("bombAlert", buf);
         } else if (mCurrentBombHolderNpc >= 0) {
             snprintf(buf, sizeof(buf), "NPC %d has the bomb", mCurrentBombHolderNpc + 1);
-            uiDrawText(buf, cx - 100.0f, 70.0f, 0.35f, {1,0.6f,0.2f,1});
+            btText("npcBombAlert", buf);
         }
 
         snprintf(buf, sizeof(buf), "Kills: %d", mPlayerKills);
-        uiDrawText(buf, 20.0f, 30.0f, 0.35f, {0.3f,1,0.3f,1});
+        btText("killsText", buf);
 
         if (mConfig.lives > 0) {
             snprintf(buf, sizeof(buf), "Lives: %d/%d", mPlayerLivesRemaining, mConfig.lives);
-            uiDrawText(buf, 20.0f, 65.0f, 0.30f, {1,0.85f,0.25f,1});
+            btText("livesText", buf);
         }
     }
 }
@@ -540,35 +547,39 @@ BombTagMenuAction BombTagManager::renderMatchOverScreen(GLFWwindow* win) {
     if (mPhase != BombTagPhase::MatchEnd) return BombTagMenuAction::None;
     float sw = uiScreenW(), sh = uiScreenH();
 
+    GuiLayout& btLayout = GuiLayoutManager::instance().getLayout("config/gui/bomb-tag-hud.json");
+    auto btText = [&](const std::string& id, const std::string& text) {
+        const GuiElement* el = btLayout.get(id);
+        if (!el) return;
+        float s = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+        uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), s, el->getTextColorVec());
+    };
+
     if (mEndState == BombTagEndState::VictoryScreen) {
-        uiDrawRect({0,0,sw,sh}, {0,0,0,0.6f}, "bt-over");
+        drawGuiElement(win, *btLayout.get("victoryDim"));
         char buf[128];
         if (mWinnerIndex == -2) {
-            // Stalemate: nobody scored
-            uiDrawText("STALEMATE", sw*0.5f-160, sh*0.3f, 1.2f, {0.5f,0.5f,0.5f,1});
-            uiDrawText("Nobody scored a kill.", sw*0.5f-140, sh*0.4f, 0.5f, {0.6f,0.6f,0.6f,1});
+            btText("stalemateText", "STALEMATE");
+            btText("stalemateDesc", "Nobody scored a kill.");
         } else if (mWinnerIsTie) {
-            // Tie: multiple entities share highest kills
-            uiDrawText("TIE", sw*0.5f-80, sh*0.3f, 1.2f, {1,1,0.3f,1});
+            btText("tieText", "TIE");
             snprintf(buf, sizeof(buf), "Kills: %d", mWinnerKills);
-            uiDrawText(buf, sw*0.5f-80, sh*0.4f, 0.5f, {1,1,0.3f,1});
+            btText("tieScoreText", buf);
         } else {
-            // Normal win
             bool playerWon = mWinnerKills >= 0 && mWinnerIndex < 0;
-            if (playerWon) {
-                uiDrawText("WINNER", sw*0.5f-100, sh*0.3f, 1.5f, {0.3f,1,0.3f,1});
-            } else {
-                uiDrawText("GAME OVER", sw*0.5f-140, sh*0.3f, 1.5f, {1,0.3f,0.3f,1});
-            }
+            btText(playerWon ? "winnerText" : "gameOverText",
+                   playerWon ? "WINNER" : "GAME OVER");
             snprintf(buf, sizeof(buf), "Kills: %d  Deaths: %d", mPlayerKills, mPlayerDeaths);
-            uiDrawText(buf, sw*0.5f-120, sh*0.42f, 0.5f, {1,1,1,1});
+            btText("scoreText", buf);
         }
     }
 
     if (mEndState == BombTagEndState::Countdown || mEndState == BombTagEndState::FinalKillReplay) {
-        if (uiButton(win, "PLAY AGAIN", {sw*0.5f-120, sh*0.7f, 240, 50}, {0.2f,0.6f,0.3f,1}).clicked)
+        const GuiElement* pa = btLayout.get("playAgainButton");
+        if (pa && drawGuiElement(win, *pa).clicked)
             return BombTagMenuAction::PlayAgain;
-        if (uiButton(win, "EXIT TO MENU", {sw*0.5f-120, sh*0.7f+60, 240, 50}, {0.6f,0.2f,0.2f,1}).clicked)
+        const GuiElement* ex = btLayout.get("exitButton");
+        if (ex && drawGuiElement(win, *ex).clicked)
             return BombTagMenuAction::ExitToMenu;
     }
     return BombTagMenuAction::None;

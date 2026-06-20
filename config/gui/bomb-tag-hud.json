@@ -1,0 +1,121 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "countdownText",
+      "type": "text",
+      "x": 940, "y": 500, "width": 80, "height": 60,
+      "fontSize": 1.2,
+      "textColor": [1, 1, 1, 1]
+    },
+    {
+      "id": "timerText",
+      "type": "text",
+      "x": 940, "y": 30, "width": 70, "height": 30,
+      "fontSize": 0.45,
+      "textColor": [1, 1, 1, 0.8]
+    },
+    {
+      "id": "bombAlert",
+      "type": "text",
+      "x": 840, "y": 70, "width": 280, "height": 24,
+      "fontSize": 0.40,
+      "textColor": [1, 0.3, 0.3, 1]
+    },
+    {
+      "id": "npcBombAlert",
+      "type": "text",
+      "x": 860, "y": 70, "width": 260, "height": 24,
+      "fontSize": 0.35,
+      "textColor": [1, 0.6, 0.2, 1]
+    },
+    {
+      "id": "killsText",
+      "type": "text",
+      "x": 20, "y": 30, "width": 200, "height": 24,
+      "fontSize": 0.35,
+      "textColor": [0.3, 1, 0.3, 1]
+    },
+    {
+      "id": "livesText",
+      "type": "text",
+      "x": 20, "y": 65, "width": 200, "height": 24,
+      "fontSize": 0.30,
+      "textColor": [1, 0.85, 0.25, 1]
+    },
+    {
+      "id": "victoryDim",
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0, 0, 0, 0.6]
+    },
+    {
+      "id": "winnerText",
+      "type": "text",
+      "x": 860, "y": 324, "width": 280, "height": 60,
+      "fontSize": 1.5,
+      "textColor": [0.3, 1, 0.3, 1]
+    },
+    {
+      "id": "gameOverText",
+      "type": "text",
+      "x": 820, "y": 324, "width": 340, "height": 60,
+      "fontSize": 1.5,
+      "textColor": [1, 0.3, 0.3, 1]
+    },
+    {
+      "id": "scoreText",
+      "type": "text",
+      "x": 840, "y": 453, "width": 300, "height": 30,
+      "fontSize": 0.5,
+      "textColor": [1, 1, 1, 1]
+    },
+    {
+      "id": "stalemateText",
+      "type": "text",
+      "x": 800, "y": 324, "width": 350, "height": 60,
+      "fontSize": 1.2,
+      "textColor": [0.5, 0.5, 0.5, 1]
+    },
+    {
+      "id": "stalemateDesc",
+      "type": "text",
+      "x": 820, "y": 432, "width": 300, "height": 24,
+      "fontSize": 0.5,
+      "textColor": [0.6, 0.6, 0.6, 1]
+    },
+    {
+      "id": "tieText",
+      "type": "text",
+      "x": 880, "y": 324, "width": 200, "height": 60,
+      "fontSize": 1.2,
+      "textColor": [1, 1, 0.3, 1]
+    },
+    {
+      "id": "tieScoreText",
+      "type": "text",
+      "x": 880, "y": 432, "width": 200, "height": 30,
+      "fontSize": 0.5,
+      "textColor": [1, 1, 0.3, 1]
+    },
+    {
+      "id": "playAgainButton",
+      "type": "button",
+      "x": 840, "y": 756, "width": 240, "height": 50,
+      "text": "PLAY AGAIN",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.6, 0.3, 1.0]
+    },
+    {
+      "id": "exitButton",
+      "type": "button",
+      "x": 840, "y": 816, "width": 240, "height": 50,
+      "text": "EXIT TO MENU",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.6, 0.2, 0.2, 1.0]
+    }
+  ]
+}

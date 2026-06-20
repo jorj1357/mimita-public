@@ -1,5 +1,6 @@
 #include "dev-overlay.h"
 #include "gui/ui-system.h"
+#include "gui/gui-layout.h"
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <algorithm>

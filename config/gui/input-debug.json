@@ -1,0 +1,12 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "inputDebugBg",
+      "type": "panel",
+      "x": 10, "y": 76, "width": 380, "height": 200,
+      "backgroundColor": [0, 0, 0, 0.75]
+    }
+  ]
+}

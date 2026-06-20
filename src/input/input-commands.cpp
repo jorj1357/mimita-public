@@ -1,6 +1,7 @@
 #include "input-commands.h"
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
+#include "gui/gui-layout.h"
 #include "devtools/terminal.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
