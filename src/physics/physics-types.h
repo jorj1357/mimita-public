@@ -108,6 +108,11 @@ struct PhysicsBody
     float mass = 1.0f;
 };
 
+struct AABB {
+    glm::vec3 min{0.0f};
+    glm::vec3 max{0.0f};
+};
+
 struct CollisionMeshCache
 {
     std::vector<CollisionTriangle> triangles;
