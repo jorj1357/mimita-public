@@ -242,6 +242,54 @@ static inline bool overlaps(const AABB& a, const AABB& b)
            (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
+static bool rejectBelowTopFaceContact(
+    const Capsule& cap,
+    const CollisionTriangle& tri,
+    const glm::vec3& normal,
+    const glm::vec3& point,
+    int triangleIndex,
+    const char* phase)
+{
+    if (normal.z <= MAX_WALKABLE_SLOPE_DOT)
+        return false;
+
+    const float feetZ = cap.a.z - cap.r;
+    const float tolerance = std::max(
+        GetPlayerSettings().collisionSeamTolerance,
+        COLLISION_SKIN + 0.005f);
+    if (feetZ + tolerance >= point.z)
+        return false;
+
+    const float triMaxZ = std::max({tri.a.z, tri.b.z, tri.c.z});
+    Debug::logThrottled(Debug::Category::Collision, "seam-filter-below-top",
+        DebugConfig::PRINT_INTERVAL,
+        "[SEAM FILTER] ignored top contact reason=below_top_face phase=%s tri=%d contactZ=%.3f feetZ=%.3f triMaxZ=%.3f\n",
+        phase ? phase : "unknown", triangleIndex, point.z, feetZ, triMaxZ);
+    return true;
+}
+
+static bool rejectBelowBlockTopContact(
+    const Capsule& cap,
+    const AABB& block,
+    const RecoveryContact& contact)
+{
+    if (contact.normal.z <= MAX_WALKABLE_SLOPE_DOT)
+        return false;
+
+    const float feetZ = cap.a.z - cap.r;
+    const float tolerance = std::max(
+        GetPlayerSettings().collisionSeamTolerance,
+        COLLISION_SKIN + 0.005f);
+    if (feetZ + tolerance >= block.max.z)
+        return false;
+
+    Debug::logThrottled(Debug::Category::Collision, "seam-filter-block-below-top",
+        DebugConfig::PRINT_INTERVAL,
+        "[SEAM FILTER] ignored top contact reason=below_top_face phase=block-recovery contactZ=%.3f feetZ=%.3f triMaxZ=%.3f\n",
+        contact.point.z, feetZ, block.max.z);
+    return true;
+}
+
 static inline glm::ivec3 collisionChunkCoord(const glm::vec3& p, float size)
 {
     return glm::ivec3(
@@ -539,7 +587,8 @@ static std::vector<RecoveryContact> collectBlockContactsForCapsule(
             float t = (SAMPLE_COUNT == 1) ? 0.0f : (float)i / (float)(SAMPLE_COUNT - 1);
             glm::vec3 sample = cap.a + (cap.b - cap.a) * t;
             RecoveryContact c;
-            if (sphereAABBContact(sample, cap.r, ba, c, b, "block-overlap"))
+            if (sphereAABBContact(sample, cap.r, ba, c, b, "block-overlap") &&
+                !rejectBelowBlockTopContact(cap, ba, c))
                 contacts.push_back(c);
         }
     }
@@ -560,6 +609,9 @@ static std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
         Contact contact;
         if (capsuleTriangleContact(cap, world.collisionMesh.triangles[triIndex], triIndex, contact))
         {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            if (rejectBelowTopFaceContact(cap, tri, contact.normal, contact.point, triIndex, "recovery"))
+                continue;
             contacts.push_back({
                 contact.normal,
                 contact.point,
@@ -590,6 +642,9 @@ static std::vector<RecoveryContact> collectGLBRecoveryContacts(
         Contact contact;
         if (capsuleTriangleContact(cap, world.collisionMesh.triangles[triIndex], triIndex, contact))
         {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            if (rejectBelowTopFaceContact(cap, tri, contact.normal, contact.point, triIndex, "glb-recovery"))
+                continue;
             contacts.push_back({
                 contact.normal,
                 contact.point,
@@ -668,7 +723,7 @@ static glm::vec3 solveBatchedCorrection(
         float preferredScore = -std::numeric_limits<float>::max();
         for (size_t i = 0; i < manifold.size(); ++i) {
             float blocks = std::max(0.0f, -glm::dot(moveDir, manifold[i].normal));
-            float score = manifold[i].penetration - blocks * cfg.collisionMovementBias;
+            float score = manifold[i].penetration + blocks * cfg.collisionMovementBias;
             if (score > preferredScore) {
                 preferredScore = score;
                 preferred = i;
@@ -910,7 +965,9 @@ static void doGLBTriangleCollisions(
         {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             SweepHit hit;
-            if (capsuleTriangleSweep(cap, remainingMove, tri, triIndex, hit) && hit.time < earliest.time)
+            if (capsuleTriangleSweep(cap, remainingMove, tri, triIndex, hit) &&
+                !rejectBelowTopFaceContact(cap, tri, hit.normal, hit.point, triIndex, "sweep") &&
+                hit.time < earliest.time)
                 earliest = hit;
         }
 
