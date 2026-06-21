@@ -2,8 +2,6 @@ import "../App.css"
 
 import Layout from "../components/Layout"
 
-import { Link } from "react-router-dom"
-
 export default function Home() {
   return (
     <Layout>
@@ -33,96 +31,78 @@ export default function Home() {
           </h1>
 
           <p className="tagline">
-            = "Movement is More Important Than Aim"
-            <br></br>
-            NEED FOR MADNESS MOD IS HERE: https://github.com/jorj1357/need-for-madness-mimita-edit
-            <br></br>
-            <br></br>
-            YES  I Know the link  not clicakble...im Sorry.
+            "Movement is More Important Than Aim"
           </p>
 
-          <div className="homeCards">
-
-            <Link
-              to="https://www.roblox.com/games/86943475641569"
-              className="homeCard"
+          <div className="previewArea">
+            <video
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              className="previewVideo"
             >
-              <img
-                src="/ids pvp v2-compressed.jpg"
-                alt="ids pvp"
-                className="cardLogo"
+              <source
+                src="/mimita-preview-small.mp4"
+                type="video/mp4"
               />
+            </video>
+          </div>
 
-              <div className="cardText">
-                IDS: PvP
-              </div>
+          <p className="description">
+            Mimita is a movement-based PvP game where movement matters more than aim.
+          </p>
 
-              <div className="cardSubtext">
-                movement shooter, on roblox, 
-                
-                <br></br>
-                <br></br> 
-                good example of MiMITA PvP i want to make
-              </div>
-            </Link>
-
-            <Link
-              to="https://www.roblox.com/games/126120811396387"
-              className="homeCard"
+          <div className="ctaButtons">
+            <a
+              href="https://github.com/jorj1357/mimita-public"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="downloadButton"
             >
-              <img
-                src="/ids logo v1-optimized.webp"
-                alt="ids"
-                className="cardLogo"
-              />
+              DOWNLOAD v1
+            </a>
 
-              <div className="cardText">
-                infinite dungeon slayer
-              </div>
+            <span className="platformLabel">
+              windows 64-bit
+            </span>
+          </div>
 
-              <div className="cardSubtext">
-                slay lots of monsters • roblox game
-              </div>
-            </Link>
-
-            <Link
-              to="/3cage"
-              className="homeCard"
+          <div className="secondaryButtons">
+            <a
+              href="https://discord.gg/4MRjvpDu7e"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="secondaryButton"
             >
-              <img
-                src="/3cage pfp v2-optimized.webp"
-                alt="3cage"
-                className="cardLogo"
-              />
+              Discord
+            </a>
 
-              <div className="cardText">
-                3cage
-              </div>
-
-              <div className="cardSubtext">
-                project for the roblox games i make
-              </div>
-            </Link>
-
-            <Link
-              to="/jorj"
-              className="homeCard"
+            <a
+              href="https://github.com/jorj1357/mimita-public"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="secondaryButton"
             >
-              <img
-                src="/fake raptv post jorj rav maybe.png JORJ LOGO v8-optimized.webp"
-                alt="jorj1357"
-                className="cardLogo"
-              />
+              GitHub
+            </a>
 
-              <div className="cardText">
-                jorj1357
-              </div>
+            <a
+              href="https://github.com/jorj1357/mimita-public/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="secondaryButton"
+            >
+              Changelog
+            </a>
 
-              <div className="cardSubtext">
-                music project / original internet thing
-              </div>
-            </Link>
-
+            <a
+              href="/about"
+              className="secondaryButton"
+            >
+              Documentation
+            </a>
           </div>
 
         </div>
