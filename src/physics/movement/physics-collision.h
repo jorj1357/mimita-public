@@ -43,4 +43,13 @@ bool resolveCapsuleVsCapsule(
     bool& groundedB
 );
 
+// Gather candidate world triangles within an AABB using chunk spatial hashing.
+// Used by root capsule collision and NPC line-of-sight / navigation.
+void appendChunkTrianglesForAABB(
+    const World& world,
+    const AABB& queryBounds,
+    float expansion,
+    std::vector<int>& out
+);
+
 

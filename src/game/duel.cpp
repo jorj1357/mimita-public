@@ -190,9 +190,11 @@ void DuelManager::beginFight(Player& player, NpcSystem& npcs, World& world)
 
     {
         for (int i = 0; i < config.numNpcs; ++i) {
-            npcs.spawnNpc(config.npcDifficulty);
-            Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d team=NPC spawn=(%.2f %.2f %.2f)",
-                       i, npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z);
+            glm::vec3 spawnPos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
+            uint32_t id = npcs.nextNpcId();
+            npcs.spawnNpc(id, config.npcDifficulty, spawnPos);
+            Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d id=%u team=NPC spawn=(%.2f %.2f %.2f)",
+                       i, id, spawnPos.x, spawnPos.y, spawnPos.z);
         }
     }
 
@@ -598,7 +600,11 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
     npcs.destroyAll();
 
     for (int i = 0; i < config.numNpcs; ++i) {
-        npcs.spawnNpc(config.npcDifficulty);
+        glm::vec3 spawnPos = getTeamSpawn(DuelTeam::NPC, i, config.numNpcs);
+        uint32_t id = npcs.nextNpcId();
+        npcs.spawnNpc(id, config.npcDifficulty, spawnPos);
+        Debug::log(Debug::Category::Duel, "[DUEL SPAWN] NPC %d id=%u team=NPC pos=(%.2f %.2f %.2f)",
+                   i, id, spawnPos.x, spawnPos.y, spawnPos.z);
     }
 
     player.dead = false;

@@ -111,6 +111,13 @@ void doJump(
     if (canGroundJump) {
         float beforeVel = p.vel.z;
 
+        // Restore dash on any ground jump. The collision system's applyTouchResets
+        // should handle this, but coyote-timer jumps may fire on frames where the
+        // collision sweep didn't detect actual ground contact (e.g., stepping off
+        // an edge). Restoring dash here guarantees it's always available after a
+        // ground jump regardless of the collision path.
+        p.dashAvailable = true;
+
         p.vel.z = PHYS.jumpStrength;
         p.onGround = false;
         p.coyoteTimer = 0.0f;
