@@ -9,7 +9,7 @@ export default function ThreeCage() {
       <div className="socialsPage">
 
         <h1 className="socialsTitle">
-          3cage socials
+          3cage
         </h1>
 
         {/* SOCIAL LINKS */}
@@ -84,17 +84,45 @@ export default function ThreeCage() {
           <div className="socialsLinks">
 
             <a
+              href="https://www.roblox.com/games/86943475641569"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="socialLink"
+            >
+              <img
+                src="/ids pvp v2-compressed.jpg"
+                alt="ids pvp"
+                className="socialIcon"
+              />
+
+              <span>
+                IDS: PvP — movement shooter, on roblox
+              </span>
+            </a>
+
+            <a
+              href="https://www.roblox.com/games/126120811396387"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="socialLink"
+            >
+              <img
+                src="/ids logo v1-optimized.webp"
+                alt="ids"
+                className="socialIcon"
+              />
+
+              <span>
+                infinite dungeon slayer
+              </span>
+            </a>
+
+            <a
               href="https://www.roblox.com/games/131875330396600"
               target="_blank"
               rel="noopener noreferrer"
               className="socialLink"
             >
-              {/* <img
-                src="/get teh burger thumb v1-optimized.webp"
-                alt="knife tag"
-                className="socialIcon"
-              /> */}
-
               <span>
                 knife tag!
               </span>
@@ -117,27 +145,9 @@ export default function ThreeCage() {
               </span>
             </a>
 
-            <a
-              href="https://www.roblox.com/games/126120811396387"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="socialLink"
-            >
-              <img
-                src="/ids logo v1-optimized.webp"
-                alt="ids"
-                className="socialIcon"
-              />
-
-              <span>
-                infinite dungeon slayer!!!!!!
-              </span>
-            </a>
-
           </div>
 
         </div>
-
 
         {/* GROUPS */}
 
@@ -204,4 +214,3 @@ export default function ThreeCage() {
     </Layout>
   )
 }
-

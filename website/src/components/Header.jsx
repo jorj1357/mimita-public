@@ -61,41 +61,66 @@ export default function Header() {
                 home
               </Link>
 
-               <Link to="/3cage" onClick={() => setOpen(false)}>
+              <Link to="/3cage" onClick={() => setOpen(false)}>
                 3cage
               </Link>
 
-              <Link to="/about" onClick={() => setOpen(false)}>
-                about
-              </Link>
-
-              <Link to="/contribute" onClick={() => setOpen(false)}>
-                contribute
-                {/* donate */}
+              <Link to="/jorj" onClick={() => setOpen(false)}>
+                jorj
               </Link>
 
               <Link to="/download" onClick={() => setOpen(false)}>
                 download
               </Link>
 
-              <Link to="/newsletter" onClick={() => setOpen(false)}>
-                newsletter
-              </Link>
+              <a
+                href="https://github.com/jorj1357/mimita-public"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpen(false)}
+              >
+                github
+              </a>
 
-              <Link to="/jorj" onClick={() => setOpen(false)}>
-                jorj1357
-              </Link>
+              <a
+                href="https://discord.gg/4MRjvpDu7e"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpen(false)}
+              >
+                discord
+              </a>
 
-              <Link to="/socials" onClick={() => setOpen(false)}>
-                socials
+              <Link to="/about" onClick={() => setOpen(false)}>
+                about
               </Link>
 
               <Link to="/articles" onClick={() => setOpen(false)}>
                 articles
               </Link>
 
+              <Link to="/socials" onClick={() => setOpen(false)}>
+                socials
+              </Link>
+
+              <Link to="/contribute" onClick={() => setOpen(false)}>
+                contribute
+              </Link>
+
+              <Link to="/newsletter" onClick={() => setOpen(false)}>
+                newsletter
+              </Link>
+
               <Link to="/terms" onClick={() => setOpen(false)}>
                 terms
+              </Link>
+
+              <Link to="/signin" onClick={() => setOpen(false)}>
+                sign in
+              </Link>
+
+              <Link to="/account" onClick={() => setOpen(false)}>
+                account
               </Link>
 
             </div>
@@ -105,41 +130,34 @@ export default function Header() {
         </div>
 
         <Link className="headerMainLink" to="/">
-          home
+          mimita
         </Link>
 
-        <Link className="headerMainLink" to="/download">
-          download
-        </Link>
-
-        <Link className="headerMainLink" to="/about">
-          about
-        </Link>
-
-        <Link className="headerMainLink" to="/contribute">
-          {/* contribute */}
-          donate
-        </Link>
-
-        <Link className="headerMainLink" to="/socials">
-          socials
-        </Link>
-
-        <Link className="headerMainLink" to="/signin">
-          sign in
-        </Link>
-
-        <Link className="headerMainLink" to="/account">
-          account
-        </Link>
-{/* 
         <Link className="headerMainLink" to="/3cage">
           3cage
         </Link>
 
         <Link className="headerMainLink" to="/jorj">
-          jorj1357
-        </Link> */}
+          jorj
+        </Link>
+
+        <a
+          className="headerMainLink"
+          href="https://github.com/jorj1357/mimita-public"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          github
+        </a>
+
+        <a
+          className="headerMainLink"
+          href="https://discord.gg/4MRjvpDu7e"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          discord
+        </a>
 
       </div>
 
