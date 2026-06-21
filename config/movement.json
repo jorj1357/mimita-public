@@ -36,8 +36,8 @@
     "groundAccelerate": 8.0,
 
     "airFrictionAmount": 0.0,
-    "airAccelAmount": 6.0,
-    "airSpeedCap": 35.0,
+    "airAccelAmount": 222.0,
+    "airSpeedCap": 1.0,
 
     "dragFrictionMultiplier": 0.25,
     "oppositeFrictionAmount": 0.99,
