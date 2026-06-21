@@ -159,6 +159,10 @@ export default function Header() {
           discord
         </a>
 
+        <Link className="headerMainLink" to="/contribute">
+          donate
+        </Link>
+
       </div>
 
     </header>
