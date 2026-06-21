@@ -36,6 +36,7 @@ void doCollisions(
 );
 
 std::string collisionLastTraceSummary();
+std::string collisionStressRun(const std::string& caseName);
 
 // Resolve collision between two capsules (e.g., player vs NPC)
 // - Mutates positions of both capsules

@@ -1,4 +1,4 @@
-// Unified horizontal movement: ground = instant snap, air = CS-style acceleration.
+// Unified horizontal movement: ground/air = additive acceleration.
 // Handles external impulse steering for knockback.
 // Uses physics/config.h
 // Only modifies p.vel.x / p.vel.y

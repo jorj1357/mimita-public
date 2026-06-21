@@ -8,7 +8,7 @@
 //   3. doGroundReturn — additive slam toward ground
 //   4. doWalk         — instant ground snap / CS air accelerate (horizontal only)
 //   5. doCollisions   — swept capsule collision, 6 substeps
-//   6. doAirDash      — additive horizontal impulse
+//   6. doDash/doAirDash — additive horizontal impulse
 //   7. doDownDash     — additive downward impulse
 //   8. doJump         — sets vel.z to jumpStrength
 //   9. doFriction     — exponential decay of external impulse only
@@ -111,7 +111,10 @@ static void physicsMainUpdate_Internal(
         p.dashMovementTicks = 0;
     }
 
-    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
+    if (groundedThisFrame)
+        doDash(p, wishMoveXY, dashPressed, camForward, dt);
+    else
+        doAirDash(p, wishMoveXY, dashPressed, movementPressed, true, p.dashMovementTicks, dt, camForward);
 
     doDownDash(p, downDashPressed, dt);
 
@@ -191,6 +194,20 @@ static void physicsMainUpdate_Internal(
 
     // store stable state for next frame
     p.wasOnGround = p.stableOnGround;
+
+    if (DebugConfig::DEBUG_MOVEMENT_TRACE)
+    {
+        Debug::logThrottled(Debug::Category::Physics, "movement-trace",
+            DebugConfig::PRINT_INTERVAL,
+            "[MOVEMENT TRACE] pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) external=(%.2f %.2f %.2f) wish=(%.2f %.2f) grounded=%d stable=%d dash=%d freeze=%d didDash=%d didJump=%d\n",
+            p.pos.x, p.pos.y, p.pos.z,
+            p.vel.x, p.vel.y, p.vel.z,
+            p.externalImpulse.x, p.externalImpulse.y, p.externalImpulse.z,
+            wishMoveXY.x, wishMoveXY.y,
+            (int)groundedThisFrame, (int)p.stableOnGround,
+            (int)p.dashAvailable, (int)p.freezeActive,
+            (int)p.didDash, (int)(p.didGroundJump || p.didAirJump));
+    }
 
     updateVisualFacingFromCamera(p, camForward, dt);
 

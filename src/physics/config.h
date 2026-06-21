@@ -28,10 +28,15 @@ struct PlayerCapsule {
     float r;
 };
 
-constexpr float COLLISION_SKIN = 0.02f;
+inline float COLLISION_SKIN = 0.02f;
 inline float MAX_WALKABLE_SLOPE_DOT = 0.80f;
 inline float HOW_DEEP = 0.5f;
-constexpr float ALMOST_ZERO = 0.00001f;
+inline float ALMOST_ZERO = 0.00001f;
+inline float GLB_SURFACE_SLOP = 0.01f;
+inline float GLB_MAX_CORRECTION = 2.0f;
+inline float GLB_MAX_MOVE_PER_ITER = 0.6f;
+inline int GLB_SWEEP_BASE_ITERS = 5;
+inline int GLB_SWEEP_MAX_ITERS = 12;
 inline float CHUNK_SIZE = 3.0f;
 inline float MAX_FALL_SPEED = 400.0f;
 inline float MAX_PLAYER_MOVE_SPEED = 2000.0f;

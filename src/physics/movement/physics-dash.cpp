@@ -64,6 +64,8 @@ void doDash(
     const glm::vec3& camForward,
     float dt
 ) {
+    (void)dt;
+
     if (!dashPressed)
         return;
 
@@ -79,24 +81,31 @@ void doDash(
     glm::vec2 dashDir = wishMoveXY;
 
     if (glm::length(dashDir) < 0.001f)
-        dashDir = glm::normalize(glm::vec2(camForward.x, camForward.y));
-    else
+    {
+        dashDir = glm::vec2(camForward.x, camForward.y);
+        if (glm::length(dashDir) < 0.001f)
+            return;
         dashDir = glm::normalize(dashDir);
+    }
+    else
+    {
+        dashDir = glm::normalize(dashDir);
+    }
 
     glm::vec2 impulse = dashDir * DASH_IMPULSE;
 
-    p.externalImpulse.x += impulse.x;
-    p.externalImpulse.y += impulse.y;
+    p.vel.x += impulse.x;
+    p.vel.y += impulse.y;
 
-    glm::vec2 impulseXY(p.externalImpulse.x, p.externalImpulse.y);
-    float impulseSpeed = glm::length(impulseXY);
-    float maxImpulseSpeed = MAX_EXTERNAL_IMPULSE_SPEED;
+    glm::vec2 velXY(p.vel.x, p.vel.y);
+    float speed = glm::length(velXY);
+    float maxSpeed = MAX_PLAYER_MOVE_SPEED;
 
-    if (impulseSpeed > maxImpulseSpeed)
+    if (speed > maxSpeed)
     {
-        glm::vec2 clamped = (impulseXY / impulseSpeed) * maxImpulseSpeed;
-        p.externalImpulse.x = clamped.x;
-        p.externalImpulse.y = clamped.y;
+        glm::vec2 clamped = (velXY / speed) * maxSpeed;
+        p.vel.x = clamped.x;
+        p.vel.y = clamped.y;
     }
 
     p.dashAvailable = false;

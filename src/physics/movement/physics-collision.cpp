@@ -923,8 +923,8 @@ static void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
-    constexpr float SURFACE_SLOP = 0.01f;
-    constexpr float MAX_CORRECTION = 2.0f;
+    const float SURFACE_SLOP = GLB_SURFACE_SLOP;
+    const float MAX_CORRECTION = GLB_MAX_CORRECTION;
 
     // CHANGED: No dashVel — dash is now in vel, jun 6 2026
     glm::vec3 totalMove = (p.vel + p.externalImpulse) * dt;
@@ -932,6 +932,7 @@ static void doGLBTriangleCollisions(
     Capsule cap = p.getCapsule();
 
     std::vector<int> candidates = gatherGLBTriangles(world, cap, totalMove);
+    std::vector<int> bodyCandidateExtras;
     std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
 
     // Compute per-sample limb motion deltas for sweep collision
@@ -947,13 +948,18 @@ static void doGLBTriangleCollisions(
         glm::vec3 sample = bodySamples[si];
         glm::vec3 sampleMove = totalMove + bodyDeltas[si];
         std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, sampleMove);
-        for (int triIndex : sampleCandidates)
-            if (std::find(candidates.begin(), candidates.end(), triIndex) == candidates.end())
-                candidates.push_back(triIndex);
+        appendUniqueTriangleIndices(bodyCandidateExtras, sampleCandidates);
     }
+    appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
 
     // Save current samples as previous for next frame
     p.previousBodySamplePositions = bodySamples;
+
+    CollisionTraceSnapshot trace;
+    trace.startPos = p.pos;
+    trace.inputMove = totalMove;
+    trace.initialCandidates = (int)candidates.size();
+    trace.maxCandidates = trace.initialCandidates;
 
     static int frameLog = 0;
     if ((frameLog++ % 60) == 0)
@@ -970,16 +976,23 @@ static void doGLBTriangleCollisions(
 
     // Phase 1: Sweep + slide movement (velocity-adaptive iterations)
     // High velocity (dash, knockback) gets more iterations to prevent tunneling.
-    constexpr float MAX_MOVE_PER_ITER = 0.6f;
-    int sweepIters = 5 + (int)(glm::length(totalMove) / MAX_MOVE_PER_ITER);
-    if (sweepIters > 12) sweepIters = 12;
+    const float maxMovePerIter = std::max(0.01f, GLB_MAX_MOVE_PER_ITER);
+    int sweepIters = GLB_SWEEP_BASE_ITERS + (int)(glm::length(totalMove) / maxMovePerIter);
+    sweepIters = std::clamp(sweepIters, 1, std::max(1, GLB_SWEEP_MAX_ITERS));
     glm::vec3 remainingMove = totalMove;
     for (int iter = 0; iter < sweepIters; ++iter)
     {
         SweepHit earliest;
         earliest.time = 1.0f;
+        std::vector<SweepHit> toiHits;
+        constexpr float TOI_EPSILON = 0.001f;
 
         cap = p.getCapsule();
+        candidates = gatherGLBTriangles(world, cap, remainingMove);
+        appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
+        trace.maxCandidates = std::max(trace.maxCandidates, (int)candidates.size());
+        trace.sweepIterations++;
+
         DebugVis::recordMovement(p.pos, remainingMove, "glb-substep-move");
         DebugVis::recordSweep(cap.a, cap.a + remainingMove, "capsule-bottom");
         DebugVis::recordSweep((cap.a + cap.b) * 0.5f, (cap.a + cap.b) * 0.5f + remainingMove, "capsule-mid");
@@ -988,10 +1001,21 @@ static void doGLBTriangleCollisions(
         {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             SweepHit hit;
-            if (capsuleTriangleSweep(cap, remainingMove, tri, triIndex, hit) &&
-                !rejectBelowTopFaceContact(cap, tri, hit.normal, hit.point, triIndex, "sweep") &&
-                hit.time < earliest.time)
+            if (!capsuleTriangleSweep(cap, remainingMove, tri, triIndex, hit))
+                continue;
+            if (rejectBelowTopFaceContact(cap, tri, hit.normal, hit.point, triIndex, "sweep"))
+                continue;
+
+            if (!earliest.hit || hit.time + TOI_EPSILON < earliest.time)
+            {
                 earliest = hit;
+                toiHits.clear();
+                toiHits.push_back(hit);
+            }
+            else if (hit.time <= earliest.time + TOI_EPSILON)
+            {
+                toiHits.push_back(hit);
+            }
         }
 
         glm::vec3 stepMove = remainingMove * earliest.time;
@@ -1000,7 +1024,25 @@ static void doGLBTriangleCollisions(
         cap = p.getCapsule();
 
         if (!earliest.hit)
+        {
+            remainingMove = glm::vec3(0.0f);
             break;
+        }
+
+        trace.sweepHits++;
+        trace.maxSimultaneousTOI = std::max(trace.maxSimultaneousTOI, (int)toiHits.size());
+        for (const SweepHit& hit : toiHits)
+        {
+            if (hit.triangleIndex < 0 || hit.triangleIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            const char* feature = triangleFeatureLabel(world.collisionMesh.triangles[hit.triangleIndex], hit.point);
+            if (feature[0] == 'f')
+                trace.faceHits++;
+            else if (feature[0] == 'e')
+                trace.edgeHits++;
+            else if (feature[0] == 'v')
+                trace.vertexHits++;
+        }
 
         // p.pos += earliest.normal * SURFACE_SLOP;
         // =====================================================
@@ -1138,9 +1180,21 @@ static void doGLBTriangleCollisions(
             depen = glm::normalize(depen);
 
         p.pos += depen * SURFACE_SLOP;
-        DebugVis::recordHit(earliest.point, earliest.normal, earliest.triangleIndex, earliest.colliderName.c_str());
-        DebugVis::recordTriangle(world.collisionMesh.triangles[earliest.triangleIndex], earliest.triangleIndex, "sweep-hit-triangle");
+        for (const SweepHit& hit : toiHits)
+        {
+            if (hit.triangleIndex < 0 || hit.triangleIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            DebugVis::recordHit(hit.point, hit.normal, hit.triangleIndex, hit.colliderName.c_str());
+            DebugVis::recordTriangle(world.collisionMesh.triangles[hit.triangleIndex], hit.triangleIndex, "sweep-hit-triangle");
+        }
         remainingMove -= stepMove;
+
+        for (const SweepHit& hit : toiHits)
+        {
+            float into = glm::dot(remainingMove, hit.normal);
+            if (into < 0.0f)
+                remainingMove -= hit.normal * into;
+        }
 
         // Multi-contact slide: project remaining movement against ALL active
         // contacts, not just the earliest hit. In a corner, this allows the
@@ -1153,6 +1207,7 @@ static void doGLBTriangleCollisions(
             std::vector<int> slideCandidates = gatherGLBTriangles(world, slideCap, glm::vec3(0.0f));
             std::vector<RecoveryContact> slideContacts = collectCapsuleRecoveryContacts(
                 world, slideCap, slideCandidates);
+            trace.maxSlideContacts = std::max(trace.maxSlideContacts, (int)slideContacts.size());
 
             // Gauss-Seidel: multiple passes for numerical stability in acute corners
             constexpr int SLIDE_SOLVER_PASSES = 12;
@@ -1190,20 +1245,24 @@ static void doGLBTriangleCollisions(
             }
         }
 
-        applyCollisionContact(
-            p,
-            groundedThisFrame,
-            earliest.normal,
-            earliest.point,
-            SURFACE_SLOP,
-            earliest.triangleIndex,
-            earliest.colliderName.c_str()
-        );
+        for (const SweepHit& hit : toiHits)
+        {
+            applyCollisionContact(
+                p,
+                groundedThisFrame,
+                hit.normal,
+                hit.point,
+                SURFACE_SLOP,
+                hit.triangleIndex,
+                hit.colliderName.c_str()
+            );
+        }
 
         PHYS_LOG(
-            "[PHYS][GLB HIT] tri=%d t=%.3f normal=(%.2f %.2f %.2f) point=(%.2f %.2f %.2f)\n",
+            "[PHYS][GLB HIT] tri=%d t=%.3f toi=%zu normal=(%.2f %.2f %.2f) point=(%.2f %.2f %.2f)\n",
             earliest.triangleIndex,
             earliest.time,
+            toiHits.size(),
             earliest.normal.x,
             earliest.normal.y,
             earliest.normal.z,
@@ -1234,6 +1293,7 @@ static void doGLBTriangleCollisions(
         std::vector<RecoveryContact> contacts = collectCapsuleRecoveryContacts(
             world, cap, candidates
         );
+        trace.maxRecoveryContacts = std::max(trace.maxRecoveryContacts, (int)contacts.size());
 
         if (contacts.empty())
             break;
@@ -1244,6 +1304,7 @@ static void doGLBTriangleCollisions(
         float iterMaxPen = 0.0f;
         glm::vec3 correction = solveBatchedCorrection(contacts, SURFACE_SLOP, &iterMaxPen, nullptr, totalMove, p.pos);
         maxPenetrationSeen = std::max(maxPenetrationSeen, iterMaxPen);
+        trace.maxPenetration = std::max(trace.maxPenetration, iterMaxPen);
 
         // Clamp correction magnitude to prevent explosive escapes
         float corrLen = glm::length(correction);
@@ -1279,7 +1340,7 @@ static void doGLBTriangleCollisions(
     // player slides naturally out of pockets and around corners.
     {
         p.updateModelWorldTransforms();
-        glm::vec3 curMove = (p.vel + p.externalImpulse) * dt;
+        glm::vec3 curMove = remainingMove;
         float curMoveLen = glm::length(curMove);
         if (curMoveLen > 0.001f)
         {
@@ -1296,6 +1357,7 @@ static void doGLBTriangleCollisions(
             }
             if (resweepHit.hit && resweepHit.time < 1.0f)
             {
+                trace.resweepHits++;
                 glm::vec3 resweepStep = curMove * resweepHit.time;
                 p.pos += resweepStep;
                 p.pos += resweepHit.normal * SURFACE_SLOP;
@@ -1308,6 +1370,12 @@ static void doGLBTriangleCollisions(
                 p.updateModelWorldTransforms();
                 applyCollisionContact(p, groundedThisFrame, resweepHit.normal, resweepHit.point, SURFACE_SLOP, resweepHit.triangleIndex, "post-depen-resweep");
             }
+            else
+            {
+                p.pos += curMove;
+                p.updateModelWorldTransforms();
+            }
+            remainingMove = glm::vec3(0.0f);
         }
     }
 
@@ -1496,6 +1564,7 @@ static void doGLBTriangleCollisions(
                              worstPen, bestPen,
                              bestPos.x - p.pos.x, bestPos.y - p.pos.y, bestPos.z - p.pos.z);
                     p.pos = bestPos;
+                    trace.emergencyEscaped = true;
 
                     // CHANGED: No dashVel, jun 6 2026
                     p.vel = glm::vec3(0.0f);
@@ -1518,6 +1587,9 @@ static void doGLBTriangleCollisions(
     std::vector<RecoveryContact> finalContacts = collectCapsuleRecoveryContacts(
         world, cap, candidates
     );
+    trace.finalContacts = (int)finalContacts.size();
+    for (const RecoveryContact& c : finalContacts)
+        trace.maxPenetration = std::max(trace.maxPenetration, c.penetration);
 
     for (const RecoveryContact& c : finalContacts)
     {
@@ -1585,6 +1657,7 @@ static void doGLBTriangleCollisions(
         std::vector<RecoveryContact> safetyContacts = collectCapsuleRecoveryContacts(
             world, safetyCap, safetyCandidates
         );
+        trace.finalSafetyContacts = std::max(trace.finalSafetyContacts, (int)safetyContacts.size());
 
         if (!safetyContacts.empty())
         {
@@ -1600,6 +1673,7 @@ static void doGLBTriangleCollisions(
                     srcNormal = c.normal;
                 }
             }
+            trace.maxPenetration = std::max(trace.maxPenetration, maxPen);
 
             PHYS_LOG(
                 "[COLLISION] rotation-safety: capsule penetration=%.4f contacts=%zu triangleId=%d normal=(%.3f %.3f %.3f)\n",
@@ -1635,11 +1709,13 @@ static void doGLBTriangleCollisions(
         std::vector<RecoveryContact> finalContacts = collectCapsuleRecoveryContacts(
             world, finalCap, finalCandidates
         );
+        trace.finalSafetyContacts = std::max(trace.finalSafetyContacts, (int)finalContacts.size());
         if (!finalContacts.empty())
         {
             float finalMaxPen = 0.0f;
             for (const auto& fc : finalContacts)
                 finalMaxPen = std::max(finalMaxPen, fc.penetration);
+            trace.maxPenetration = std::max(trace.maxPenetration, finalMaxPen);
             if (finalMaxPen > COLLISION_SKIN * 0.5f)
             {
                 PHYS_LOG(
@@ -1720,11 +1796,48 @@ static void doGLBTriangleCollisions(
             DebugVis::recordContact(c.point, c.normal, c.penetration, c.triangleIndex, c.label);
         }
     }
+
+    trace.finalPos = p.pos;
+    gLastCollisionTrace = trace;
+
+    if (DebugConfig::DEBUG_COLLISION_TRACE)
+    {
+        Debug::logThrottled(Debug::Category::Collision, "collision-trace",
+            DebugConfig::PRINT_INTERVAL,
+            "[COLLISION TRACE] start=(%.2f %.2f %.2f) final=(%.2f %.2f %.2f) move=(%.3f %.3f %.3f) candidates=%d/%d sweeps=%d hits=%d toiMax=%d contacts=%d final=%d safety=%d maxPen=%.4f features(f/e/v)=%d/%d/%d resweep=%d emergency=%d\n",
+            trace.startPos.x, trace.startPos.y, trace.startPos.z,
+            trace.finalPos.x, trace.finalPos.y, trace.finalPos.z,
+            trace.inputMove.x, trace.inputMove.y, trace.inputMove.z,
+            trace.initialCandidates, trace.maxCandidates,
+            trace.sweepIterations, trace.sweepHits, trace.maxSimultaneousTOI,
+            trace.maxRecoveryContacts, trace.finalContacts, trace.finalSafetyContacts,
+            trace.maxPenetration,
+            trace.faceHits, trace.edgeHits, trace.vertexHits,
+            trace.resweepHits, (int)trace.emergencyEscaped);
+    }
 }
 
 // =====================================================
 // PUBLIC ENTRY
 // =====================================================
+
+std::string collisionLastTraceSummary()
+{
+    const CollisionTraceSnapshot& trace = gLastCollisionTrace;
+    char buf[768];
+    std::snprintf(buf, sizeof(buf),
+        "[COLLISION TRACE] start=(%.2f %.2f %.2f) final=(%.2f %.2f %.2f) move=(%.3f %.3f %.3f) candidates=%d/%d sweeps=%d hits=%d toiMax=%d contacts=%d final=%d safety=%d maxPen=%.4f features(f/e/v)=%d/%d/%d resweep=%d emergency=%d",
+        trace.startPos.x, trace.startPos.y, trace.startPos.z,
+        trace.finalPos.x, trace.finalPos.y, trace.finalPos.z,
+        trace.inputMove.x, trace.inputMove.y, trace.inputMove.z,
+        trace.initialCandidates, trace.maxCandidates,
+        trace.sweepIterations, trace.sweepHits, trace.maxSimultaneousTOI,
+        trace.maxRecoveryContacts, trace.finalContacts, trace.finalSafetyContacts,
+        trace.maxPenetration,
+        trace.faceHits, trace.edgeHits, trace.vertexHits,
+        trace.resweepHits, (int)trace.emergencyEscaped);
+    return std::string(buf);
+}
 
 void doCollisions(
     Player& p,
@@ -2195,6 +2308,36 @@ static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, g
     return a + ab * v + ac * w;
 }
 
+static float pointSegmentDistanceSq(glm::vec3 p, glm::vec3 a, glm::vec3 b)
+{
+    glm::vec3 ab = b - a;
+    float abLenSq = glm::dot(ab, ab);
+    if (abLenSq <= 0.00000001f)
+        return glm::dot(p - a, p - a);
+
+    float t = glm::clamp(glm::dot(p - a, ab) / abLenSq, 0.0f, 1.0f);
+    glm::vec3 closest = a + ab * t;
+    return glm::dot(p - closest, p - closest);
+}
+
+static const char* triangleFeatureLabel(const CollisionTriangle& tri, const glm::vec3& point)
+{
+    constexpr float FEATURE_EPS = 0.025f;
+    constexpr float FEATURE_EPS_SQ = FEATURE_EPS * FEATURE_EPS;
+
+    if (glm::dot(point - tri.a, point - tri.a) <= FEATURE_EPS_SQ ||
+        glm::dot(point - tri.b, point - tri.b) <= FEATURE_EPS_SQ ||
+        glm::dot(point - tri.c, point - tri.c) <= FEATURE_EPS_SQ)
+        return "vertex";
+
+    if (pointSegmentDistanceSq(point, tri.a, tri.b) <= FEATURE_EPS_SQ ||
+        pointSegmentDistanceSq(point, tri.b, tri.c) <= FEATURE_EPS_SQ ||
+        pointSegmentDistanceSq(point, tri.c, tri.a) <= FEATURE_EPS_SQ)
+        return "edge";
+
+    return "face";
+}
+
 static bool pointInTriangle(glm::vec3 p, const CollisionTriangle& tri)
 {
     glm::vec3 closest = closestPointOnTriangle(p, tri.a, tri.b, tri.c);
@@ -2613,4 +2756,124 @@ bool resolveCapsuleVsCapsule(
     clampVelocityAgainstNormal(b, -normal);
 
     return true;
+}
+
+static void addStressTriangle(World& world, glm::vec3 a, glm::vec3 b, glm::vec3 c)
+{
+    glm::vec3 n = glm::cross(b - a, c - a);
+    if (glm::length(n) < 0.000001f)
+        return;
+
+    CollisionTriangle tri;
+    tri.a = a;
+    tri.b = b;
+    tri.c = c;
+    tri.normal = glm::normalize(n);
+    world.collisionMesh.triangles.push_back(tri);
+}
+
+static void addStressQuad(World& world, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d)
+{
+    addStressTriangle(world, a, b, c);
+    addStressTriangle(world, a, c, d);
+}
+
+static void addStressFloor(World& world)
+{
+    addStressQuad(world,
+        {-8.0f, -8.0f, 0.0f},
+        { 8.0f, -8.0f, 0.0f},
+        { 8.0f,  8.0f, 0.0f},
+        {-8.0f,  8.0f, 0.0f});
+}
+
+static void addStressWedge(World& world, float degrees)
+{
+    const float halfRad = glm::radians(std::max(0.5f, degrees) * 0.5f);
+    const float backX = -5.0f;
+    const float apexX = 4.0f;
+    const float width = std::max(0.08f, std::tan(halfRad) * (apexX - backX));
+    const float topZ = 4.0f;
+
+    addStressQuad(world,
+        {apexX, 0.0f, 0.0f},
+        {backX, width, 0.0f},
+        {backX, width, topZ},
+        {apexX, 0.0f, topZ});
+    addStressQuad(world,
+        {backX, -width, 0.0f},
+        {apexX,  0.0f, 0.0f},
+        {apexX,  0.0f, topZ},
+        {backX, -width, topZ});
+}
+
+static void addStressCone(World& world)
+{
+    constexpr int SIDES = 16;
+    const float radius = 1.2f;
+    const float height = 3.0f;
+    glm::vec3 tip(1.5f, 0.0f, height);
+    glm::vec3 center(1.5f, 0.0f, 0.0f);
+
+    for (int i = 0; i < SIDES; ++i)
+    {
+        float a0 = (float)i / (float)SIDES * 6.2831853f;
+        float a1 = (float)(i + 1) / (float)SIDES * 6.2831853f;
+        glm::vec3 p0(center.x + std::cos(a0) * radius, center.y + std::sin(a0) * radius, 0.0f);
+        glm::vec3 p1(center.x + std::cos(a1) * radius, center.y + std::sin(a1) * radius, 0.0f);
+        addStressTriangle(world, p0, p1, tip);
+    }
+}
+
+std::string collisionStressRun(const std::string& caseName)
+{
+    World world;
+    addStressFloor(world);
+
+    float speed = 60.0f;
+    std::string selected = caseName.empty() ? "wedge5" : caseName;
+    if (selected == "cone")
+    {
+        addStressCone(world);
+    }
+    else
+    {
+        float angle = 5.0f;
+        if (selected == "wedge1") angle = 1.0f;
+        else if (selected == "wedge10") angle = 10.0f;
+        else if (selected == "wedge20") angle = 20.0f;
+        else if (selected == "dash") { angle = 5.0f; speed = 120.0f; }
+        addStressWedge(world, angle);
+    }
+
+    Player testPlayer;
+    testPlayer.pos = glm::vec3(-4.0f, 0.0f, PLAYER_HEIGHT * 0.5f + 0.05f);
+    testPlayer.vel = glm::vec3(speed, 0.0f, 0.0f);
+    testPlayer.syncLegacyStateToLayers();
+
+    bool grounded = false;
+    constexpr int TICKS = 60;
+    constexpr float DT = 1.0f / 60.0f;
+    for (int i = 0; i < TICKS; ++i)
+    {
+        grounded = false;
+        doCollisions(testPlayer, world, grounded, DT);
+    }
+
+    Capsule cap = testPlayer.getCapsule();
+    std::vector<int> candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
+    std::vector<RecoveryContact> contacts = collectCapsuleRecoveryContacts(world, cap, candidates);
+    float maxPen = 0.0f;
+    for (const RecoveryContact& c : contacts)
+        maxPen = std::max(maxPen, c.penetration);
+
+    char buf[1024];
+    std::snprintf(buf, sizeof(buf),
+        "[COLLISION STRESS] case=%s ticks=%d final=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) contacts=%zu maxPen=%.4f grounded=%d %s",
+        selected.c_str(), TICKS,
+        testPlayer.pos.x, testPlayer.pos.y, testPlayer.pos.z,
+        testPlayer.vel.x, testPlayer.vel.y, testPlayer.vel.z,
+        contacts.size(), maxPen, (int)grounded,
+        collisionLastTraceSummary().c_str());
+    return std::string(buf);
 }

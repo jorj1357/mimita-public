@@ -63,6 +63,7 @@
 #include "physics/physics-mini.h"
 #include "physics/physics-debug-movement.h"
 #include "physics/movement-config.h"
+#include "physics/movement/physics-collision.h"
 #include "audio/audio.h"
 #include "audio/hitmarker-audio.h"
 #include "audio/music-manager.h"
@@ -1720,6 +1721,8 @@ int main(int argc, char** argv)
     registerDebugToggle("godball_debug", DebugConfig::DEBUG_GODBALL);
     registerDebugToggle("final_kill_debug", DebugConfig::DEBUG_NPC_DEATH);  // reuse existing flag
     registerDebugToggle("collision_debug", DebugConfig::DEBUG_COLLISION_SYSTEM);
+    registerDebugToggle("collision_trace", DebugConfig::DEBUG_COLLISION_TRACE);
+    registerDebugToggle("movement_trace", DebugConfig::DEBUG_MOVEMENT_TRACE);
     registerDebugToggle("collision_debug_player", DebugConfig::DEBUG_COLLISION_PLAYER);
     registerDebugToggle("collision_debug_limb", DebugConfig::DEBUG_COLLISION_LIMB);
     registerDebugToggle("show_body_colliders", DebugConfig::DEBUG_COLLISION_LIMB);
@@ -1743,6 +1746,24 @@ int main(int argc, char** argv)
     registerDebugToggle("physics_debug", DebugConfig::DEBUG_PHYSICS);
     registerDebugToggle("combat_debug", DebugConfig::DEBUG_NPC_COMBAT);
     registerDebugToggle("render_debug", DebugConfig::DEBUG_RENDER);
+
+    Terminal::instance().registerCommand({
+        "collision_dump_frame", "Print the last GLB collision trace summary", "collision_dump_frame",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().addLog(collisionLastTraceSummary());
+        },
+        "2026-06-21", CommandCategory::Physics
+    });
+
+    Terminal::instance().registerCommand({
+        "collision_stress_run", "Run a deterministic synthetic collision stress case",
+        "collision_stress_run <wedge1|wedge5|wedge10|wedge20|dash|cone>",
+        [](const std::vector<std::string>& args) {
+            const std::string caseName = args.empty() ? "wedge5" : args[0];
+            Terminal::instance().addLog(collisionStressRun(caseName));
+        },
+        "2026-06-21", CommandCategory::Physics
+    });
 
     Terminal::instance().registerCommand({
         "fakelag_mode", "Set fake lag mode (0=off, 1=random, 2=static)",

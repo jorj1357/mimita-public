@@ -1,7 +1,7 @@
-// Unified movement: instant ground + momentum-preserving air
+// Unified movement: accelerating ground + momentum-preserving air
 //
 // Ground:
-//   1. Instant velocity snap to moveSpeed in wish direction
+//   1. Accelerate toward moveSpeed in wish direction
 //   2. Friction when no input (decelerate to stop)
 //   3. Skip when jumpHeld — preserves air velocity for bhop
 //
@@ -34,6 +34,19 @@ static void applyGroundFriction(glm::vec2& velXY, float dt)
         float newSpeed = std::max(0.0f, speed - drop);
         velXY *= newSpeed / speed;
     }
+}
+
+// Source-style ground acceleration using a high tunable value for snappy feel.
+static void applyGroundAccelerate(glm::vec2& velXY, const glm::vec2& wishDir, float dt)
+{
+    float currentSpeed = glm::dot(velXY, wishDir);
+    float addSpeed = PHYS.moveSpeed - currentSpeed;
+    if (addSpeed <= 0.0f)
+        return;
+
+    float accelSpeed = GROUND_ACCELERATE * PHYS.moveSpeed * dt;
+    addSpeed = std::min(addSpeed, accelSpeed);
+    velXY += wishDir * addSpeed;
 }
 
 // CS-style air acceleration: adds velocity toward wishdir, capped per frame.
@@ -95,11 +108,9 @@ void doWalk(
     {
         if (wishLen > 0.001f)
         {
-            // Instant acceleration: velocity immediately matches wish direction at moveSpeed.
-            // Future: slide mode would replace this with slide physics.
             glm::vec2 wishDir = wishMoveXY / wishLen;
             steerExternalImpulse(p, wishDir, dt);
-            velXY = wishDir * PHYS.moveSpeed;
+            applyGroundAccelerate(velXY, wishDir, dt);
         }
         else
         {

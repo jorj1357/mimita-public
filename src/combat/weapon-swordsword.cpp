@@ -261,12 +261,14 @@ void startSlash(SwordswordState& state, const WeaponDefinition& def,
     state.debugHits.clear();
 
     float slashSpeed = def.customParams.count("slashSpeed") ? def.customParams.at("slashSpeed") : 25.0f;
-    glm::vec3 horzDir = glm::normalize(glm::vec3(state.attackForward.x, state.attackForward.y, 0.0f));
+    glm::vec3 horzDir(state.attackForward.x, state.attackForward.y, 0.0f);
     if (glm::length(horzDir) < 0.001f) horzDir = glm::vec3(0.0f, 1.0f, 0.0f);
-    owner.vel = horzDir * slashSpeed;
+    else horzDir = glm::normalize(horzDir);
+    owner.vel.x += horzDir.x * slashSpeed;
+    owner.vel.y += horzDir.y * slashSpeed;
 
     if (DebugConfig::DEBUG_SWORDSWORD) {
-        Debug::log(Debug::Category::General, "[SWORDSWORD] slash launched vel=%.1f dir=(%.2f,%.2f,%.2f)\n",
+        Debug::log(Debug::Category::General, "[SWORDSWORD] slash impulse=%.1f dir=(%.2f,%.2f,%.2f)\n",
             slashSpeed, horzDir.x, horzDir.y, horzDir.z);
     }
 }
@@ -282,12 +284,14 @@ void startLunge(SwordswordState& state, const WeaponDefinition& def,
     state.debugHits.clear();
 
     float lungeSpeed = def.customParams.count("lungeSpeed") ? def.customParams.at("lungeSpeed") : 40.0f;
-    glm::vec3 horzDir = glm::normalize(glm::vec3(state.attackForward.x, state.attackForward.y, 0.0f));
+    glm::vec3 horzDir(state.attackForward.x, state.attackForward.y, 0.0f);
     if (glm::length(horzDir) < 0.001f) horzDir = glm::vec3(0.0f, 1.0f, 0.0f);
-    owner.vel = horzDir * lungeSpeed;
+    else horzDir = glm::normalize(horzDir);
+    owner.vel.x += horzDir.x * lungeSpeed;
+    owner.vel.y += horzDir.y * lungeSpeed;
 
     if (DebugConfig::DEBUG_SWORDSWORD) {
-        Debug::log(Debug::Category::General, "[SWORDSWORD] lunge launched vel=%.1f dir=(%.2f,%.2f,%.2f)\n",
+        Debug::log(Debug::Category::General, "[SWORDSWORD] lunge impulse=%.1f dir=(%.2f,%.2f,%.2f)\n",
             lungeSpeed, horzDir.x, horzDir.y, horzDir.z);
     }
 }

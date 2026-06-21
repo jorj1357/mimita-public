@@ -65,8 +65,15 @@ bool MovementConfig::load(const std::string& path)
         readValue(root, "playerRadius", PLAYER_RADIUS);
 
         // Collision / general
+        readValue(root, "collisionSkin", COLLISION_SKIN);
         readValue(root, "maxWalkableSlopeDot", MAX_WALKABLE_SLOPE_DOT);
         readValue(root, "howDeep", HOW_DEEP);
+        readValue(root, "almostZero", ALMOST_ZERO);
+        readValue(root, "glbSurfaceSlop", GLB_SURFACE_SLOP);
+        readValue(root, "glbMaxCorrection", GLB_MAX_CORRECTION);
+        readValue(root, "glbMaxMovePerIter", GLB_MAX_MOVE_PER_ITER);
+        readValue(root, "glbSweepBaseIters", GLB_SWEEP_BASE_ITERS);
+        readValue(root, "glbSweepMaxIters", GLB_SWEEP_MAX_ITERS);
         readValue(root, "chunkSize", CHUNK_SIZE);
         readValue(root, "maxFallSpeed", MAX_FALL_SPEED);
         readValue(root, "maxPlayerMoveSpeed", MAX_PLAYER_MOVE_SPEED);

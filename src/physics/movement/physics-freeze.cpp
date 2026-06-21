@@ -87,8 +87,6 @@ void doFreeze(
             return;
         }
 
-        // set velocit to 0 here? idk
-        p.vel = glm::vec3(0.0f);
         p.freezeActive = true;
         p.freezeTimer = 0.0f;
         p.freezeAvailable = false;
@@ -96,7 +94,7 @@ void doFreeze(
 
         playWorldSound("entity/player/freezebegin", p.pos, 1.0f, 1.0f, 30.0f);
 
-        FREEZE_LOG("[FREEZE] begin\n");
+        FREEZE_LOG("[FREEZE] begin vel=(%.2f %.2f %.2f)\n", p.vel.x, p.vel.y, p.vel.z);
     }
 
 
