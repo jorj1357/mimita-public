@@ -25,5 +25,6 @@ class Player;
 void doWalk(
     Player& p,
     const glm::vec2& wishMoveXY,
+    bool jumpHeld,
     float dt
 );

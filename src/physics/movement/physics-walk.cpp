@@ -1,22 +1,15 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-walk.cpp
-// feb 10 2026
-/**
- * purpose
- * all logic for walking goes here
- * literallt just
- * wasd = forward back left right
- * exposes walk(direction, velocity) to other files 
- */
-
+// CS-style ground movement + air acceleration
 //
-// Purpose:
-// - Ground walk (instant response)
-// - Air steering
-// - Momentum preservation
+// Ground:
+//   1. Linear friction (speed-proportional drop)
+//   2. Accelerate toward wishdir up to moveSpeed
 //
-// Uses physics/config.h
-// Debug heavy
-// No friction, no dash, no collisions
+// Air:
+//   1. Accelerate in wishdir using CS air acceleration
+//      (addspeed = maxspeed - dot(vel, wishdir), clamped by accel)
+//   2. Clamp total horizontal speed to AIR_SPEED_CAP
+//
+// Dash external impulse steering preserved.
 
 #include <cstdio>
 #include <algorithm>
@@ -26,141 +19,128 @@
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
-// =====================================================
-// DEBUG
-// =====================================================
-
 #define WALK_LOG(...) Debug::logThrottled(Debug::Category::Physics, "walk", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
-// =====================================================
-// WALK
-// =====================================================
+static void applyGroundFriction(glm::vec2& velXY, float dt)
+{
+    float speed = glm::length(velXY);
+    if (speed > 0.1f)
+    {
+        float drop = speed * GROUND_FRICTION_AMOUNT * dt;
+        float newSpeed = std::max(0.0f, speed - drop);
+        velXY *= newSpeed / speed;
+    }
+}
 
-// CHANGED: Removed checkDashDirectionCancel — dash is now a single impulse in vel, jun 6 2026
+static void applyGroundAccelerate(glm::vec2& velXY, const glm::vec2& wishDir, float dt)
+{
+    float currentSpeed = glm::dot(velXY, wishDir);
+    float addSpeed = PHYS.moveSpeed - currentSpeed;
+    if (addSpeed <= 0.0f)
+        return;
+
+    float accelSpeed = GROUND_ACCELERATE * PHYS.moveSpeed * dt;
+    addSpeed = std::min(addSpeed, accelSpeed);
+    velXY += wishDir * addSpeed;
+}
+
+static void applyAirAccelerate(glm::vec2& velXY, const glm::vec2& wishDir, float dt)
+{
+    float currentSpeed = glm::dot(velXY, wishDir);
+    float addSpeed = PHYS.moveSpeed - currentSpeed;
+    if (addSpeed <= 0.0f)
+        return;
+
+    float accelSpeed = AIR_ACCEL_AMOUNT * PHYS.moveSpeed * dt;
+    addSpeed = std::min(addSpeed, accelSpeed);
+    velXY += wishDir * addSpeed;
+
+    float speed = glm::length(velXY);
+    if (speed > AIR_SPEED_CAP)
+        velXY *= AIR_SPEED_CAP / speed;
+}
+
+static void steerExternalImpulse(Player& p, const glm::vec2& wishDir, float dt)
+{
+    glm::vec2 impulseXY(p.externalImpulse.x, p.externalImpulse.y);
+    float impulseSpeed = glm::length(impulseXY);
+    if (impulseSpeed <= 0.001f)
+        return;
+
+    glm::vec2 impulseDir = impulseXY / impulseSpeed;
+    float alignment = glm::dot(wishDir, impulseDir);
+
+    float steerT = std::min(1.0f, EXTERNAL_IMPULSE_STEER_RATE * dt);
+    glm::vec2 steeredDir = glm::mix(impulseDir, wishDir, steerT);
+    if (glm::length(steeredDir) > 0.001f)
+        impulseDir = glm::normalize(steeredDir);
+
+    if (alignment < 0.0f)
+    {
+        float brake = std::exp(-EXTERNAL_IMPULSE_BRAKE_RATE * -alignment * dt);
+        impulseSpeed *= brake;
+    }
+
+    impulseXY = impulseDir * impulseSpeed;
+    p.externalImpulse.x = impulseXY.x;
+    p.externalImpulse.y = impulseXY.y;
+}
 
 void doWalk(
     Player& p,
     const glm::vec2& wishMoveXY,
+    bool jumpHeld,
     float dt
 ) {
     dt = std::min(dt, 0.033f);
 
     float wishLen = glm::length(wishMoveXY);
-
-    // no movement input
-    if (wishLen < 0.0001f)
-    {
-        // grounded stop should be quick but not destructive
-        if (p.stableOnGround)
-        {
-            // p.vel.x *= 0.80f;
-            // p.vel.y *= 0.80f;
-
-            // 6 6 2026 aoaakka 
-            // float stopDrag = std::exp(-8.0f * dt);
-            float stopDrag = std::exp(-30.0f * dt);
-
-            p.vel.x *= stopDrag;
-            p.vel.y *= stopDrag;
-
-            if (std::abs(p.vel.x) < 0.01f) p.vel.x = 0.0f;
-            if (std::abs(p.vel.y) < 0.01f) p.vel.y = 0.0f;
-        }
-
-        WALK_LOG("[WALK] No input\n");
-        return;
-    }
-
-    glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
-    glm::vec2 impulseXY(
-        p.externalImpulse.x,
-        p.externalImpulse.y
-    );
-    float impulseSpeed = glm::length(impulseXY);
-    if (impulseSpeed > 0.001f)
-    {
-        glm::vec2 impulseDir = impulseXY / impulseSpeed;
-        float alignment = glm::dot(wishDir, impulseDir);
-
-        float steerT =
-            std::min(1.0f, EXTERNAL_IMPULSE_STEER_RATE * dt);
-        glm::vec2 steeredDir =
-            glm::mix(impulseDir, wishDir, steerT);
-
-        if (glm::length(steeredDir) > 0.001f)
-            impulseDir = glm::normalize(steeredDir);
-
-        if (alignment < 0.0f)
-        {
-            float brake =
-                std::exp(-EXTERNAL_IMPULSE_BRAKE_RATE * -alignment * dt);
-            impulseSpeed *= brake;
-        }
-
-        impulseXY = impulseDir * impulseSpeed;
-        p.externalImpulse.x = impulseXY.x;
-        p.externalImpulse.y = impulseXY.y;
-    }
-
-    // ---------------- GROUND ----------------
-    // ---------------- GROUND ----------------
-    // ---------------- GROUND ----------------
+    // ---- GROUND ----
     if (p.stableOnGround)
     {
-        float targetSpeed = PHYS.moveSpeed;
+        // Skip friction when holding jump (bunnyhopping).
+        // Ground friction would kill air-earned velocity during the
+        // single frame of ground contact or during the 80ms stableOnGround
+        // hysteresis window after a jump.
+        if (!jumpHeld)
+            applyGroundFriction(velXY, dt);
 
-        glm::vec2 targetVel =
-            wishDir * targetSpeed;
+        if (wishLen > 0.001f)
+        {
+            glm::vec2 wishDir = wishMoveXY / wishLen;
+            steerExternalImpulse(p, wishDir, dt);
+            applyGroundAccelerate(velXY, wishDir, dt);
+        }
 
-        // very fast response
-        float groundResponse = 28.0f;
+        p.vel.x = velXY.x;
+        p.vel.y = velXY.y;
 
-        float t =
-            std::min(1.0f, groundResponse * dt);
-
-        glm::vec2 currentVel = velXY;
-
-        glm::vec2 newVel =
-            glm::mix(currentVel, targetVel, t);
-
-        p.vel.x = newVel.x;
-        p.vel.y = newVel.y;
-
-        WALK_LOG(
-            "[WALK][GROUND] speed=%.2f\n",
-            glm::length(newVel)
-        );
-
+        WALK_LOG("[WALK][GROUND] speed=%.2f jumpHeld=%d\n", glm::length(velXY), (int)jumpHeld);
         return;
     }
 
-    // ---------------- AIR ----------------
+    // ---- AIR ----
+    if (wishLen > 0.001f)
     {
-        glm::vec2 currentVel = velXY;
+        glm::vec2 wishDir = wishMoveXY / wishLen;
+        steerExternalImpulse(p, wishDir, dt);
+        applyAirAccelerate(velXY, wishDir, dt);
 
-        float airSpeed =
-            PHYS.moveSpeed;
+        p.vel.x = velXY.x;
+        p.vel.y = velXY.y;
 
-        glm::vec2 targetVel =
-            wishDir * airSpeed;
-
-        // same as ground response value 6 6 2026 
-        float airResponse = 28.0f;
-
-        float t =
-            std::min(1.0f, airResponse * dt);
-
-        glm::vec2 newVel =
-            glm::mix(currentVel, targetVel, t);
-
-        p.vel.x = newVel.x;
-        p.vel.y = newVel.y;
-
-        WALK_LOG(
-            "[WALK][AIR] speed=%.2f\n",
-            glm::length(newVel)
-        );
+        WALK_LOG("[WALK][AIR] speed=%.2f\n", glm::length(velXY));
+    }
+    else
+    {
+        // no input in air → coast (no friction)
+        // still steer external impulse in camera-forward dir if any
+        if (glm::length(glm::vec2(p.externalImpulse.x, p.externalImpulse.y)) > 0.001f)
+        {
+            glm::vec2 impulseDir = glm::normalize(glm::vec2(p.externalImpulse.x, p.externalImpulse.y));
+            steerExternalImpulse(p, impulseDir, dt);
+        }
     }
 }

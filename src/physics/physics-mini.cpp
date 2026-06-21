@@ -103,8 +103,7 @@ static void physicsMainUpdate_Internal(
         p.externalImpulse.y = 0.0f;
     }
 
-    if (movementPressed)
-        doWalk(p, wishMoveXY, dt);
+    doWalk(p, wishMoveXY, jumpHeld, dt);
 
     // dash after walk? 6 6 2026 
     // doDash(p, wishMoveXY, dashPressed, camForward, dt);

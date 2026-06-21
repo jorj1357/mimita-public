@@ -3681,6 +3681,12 @@ int main(int argc, char** argv)
                 camera.follow(player.pos);
                 camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt);
             }
+            // Local player facing: camera yaw drives player yaw directly every frame.
+            // This must happen AFTER physics simulation (which runs at 60Hz fixed tick)
+            // to avoid visual jitter when render frame rate exceeds physics tick rate.
+            // physics-mini.cpp also sets player.yaw from camForward, but that only runs
+            // at physics tick rate — this per-frame override keeps it perfectly in sync.
+            player.yaw = camera.yaw;
             setAudioListener(camera.pos, camera.front);
             EffectPartSystem::instance().setWorld(world);
             if (replayPlaybackActive) {

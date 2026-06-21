@@ -963,15 +963,32 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     renderHierarchyView();
     renderSnapGuides();
 
-    // Debug overlay: show bounds for all elements
+    // Debug overlay: show bounds + hover tooltip for all elements
     if (uiDebugEnabled() && !mActiveLayoutFile.empty()) {
         GuiLayout& dbgLayout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+
+        // Hover tooltip: show element ID + type at cursor
+        double mxx, myy; glfwGetCursorPos(glfwGetCurrentContext(), &mxx, &myy);
+        double fbbx, fbby;
+        GuiCoordinateSystem::instance().cursorWindowToScreen(mxx, myy, fbbx, fbby);
+        double hdx = GuiCoordinateSystem::instance().screenToDesignX((float)fbbx);
+        double hdy = GuiCoordinateSystem::instance().screenToDesignY((float)fbby);
+        const GuiElement* hoveredEl = nullptr;
+        std::string hoveredId;
+
         for (const std::string& id : dbgLayout.elementIds()) {
             const GuiElement* de = dbgLayout.get(id);
-            if (!de || id == mSelectedId) continue;
+            if (!de) continue;
             float dsx = uiScaleX(de->x), dsy = uiScaleY(de->y);
             float dsw = uiScaleX(de->w), dsh = uiScaleY(de->h);
-            uiDrawRectOutline({dsx, dsy, dsw, dsh}, {0.3f, 0.3f, 0.5f, 0.35f}, "gui-dbg");
+            if (de->visible && hdx >= de->x && hdx <= de->x + de->w &&
+                hdy >= de->y && hdy <= de->y + de->h) {
+                hoveredEl = de;
+                hoveredId = id;
+            }
+            // Outline for all non-selected elements
+            if (id != mSelectedId)
+                uiDrawRectOutline({dsx, dsy, dsw, dsh}, {0.3f, 0.3f, 0.5f, 0.35f}, "gui-dbg");
             // Anchor indicator
             if (de->anchorX == "center") {
                 float acx = uiScaleX(de->x + de->w * 0.5f);
@@ -981,6 +998,23 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
                 float acy = uiScaleY(de->y + de->h * 0.5f);
                 uiDrawRect({dsx, acy - 1, dsw, 2}, {0.5f, 0.5f, 1.0f, 0.3f}, "gui-anchor-y");
             }
+        }
+
+        // Render hover tooltip
+        if (hoveredEl && hoveredId != mSelectedId) {
+            char tip[256];
+            snprintf(tip, sizeof(tip), "[%s] %s  (%.0f,%.0f) %.0fx%.0f",
+                     hoveredEl->type.c_str(), hoveredId.c_str(),
+                     hoveredEl->x, hoveredEl->y, hoveredEl->w, hoveredEl->h);
+            float tipX = (float)fbbx + 12.0f;
+            float tipY = (float)fbby - 20.0f;
+            if (tipX + 400 > uiScreenW()) tipX = (float)fbbx - 400.0f;
+            if (tipY < 0) tipY = (float)fbby + 12.0f;
+            uiDrawRect({tipX - 4, tipY - 2, uiMeasureText(tip, 0.28f) + 8, 22},
+                       {0.1f, 0.1f, 0.15f, 0.9f}, "gui-tip-bg");
+            uiDrawRectOutline({tipX - 4, tipY - 2, uiMeasureText(tip, 0.28f) + 8, 22},
+                              {0.5f, 0.8f, 1.0f, 0.8f}, "gui-tip-border");
+            uiDrawText(tip, tipX, tipY, 0.28f, {0.5f, 0.9f, 1.0f, 1.0f});
         }
     }
 
