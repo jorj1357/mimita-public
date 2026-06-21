@@ -299,7 +299,7 @@ static inline glm::ivec3 collisionChunkCoord(const glm::vec3& p, float size)
     );
 }
 
-static void appendChunkTrianglesForAABB(
+void appendChunkTrianglesForAABB(
     const World& world,
     const AABB& queryBounds,
     float expansion,

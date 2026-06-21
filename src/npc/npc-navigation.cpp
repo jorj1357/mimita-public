@@ -3,6 +3,8 @@
 
 #include <glm/gtc/constants.hpp>
 
+#include "physics/movement/physics-collision.h"
+#include "physics/physics-types.h"
 #include "world/world.h"
 
 namespace {
@@ -32,6 +34,26 @@ bool rayTriangleIntersect(glm::vec3 origin, glm::vec3 dir, const CollisionTriang
     return outT > 0.01f && outT < maxT;
 }
 
+// Gather candidate world triangles near a position using chunk spatial hashing.
+static void gatherNear(const World& world, glm::vec3 pos, float radius, std::vector<int>& out) {
+    AABB b;
+    b.min = pos - glm::vec3(radius);
+    b.max = pos + glm::vec3(radius);
+    appendChunkTrianglesForAABB(world, b, 0.0f, out);
+}
+
+// Check if a ray intersects any triangle from a pre-gathered candidate list.
+static bool rayHitsAny(glm::vec3 origin, glm::vec3 dir, float maxDist,
+                       const std::vector<int>& candidates, const World& world) {
+    for (int ti : candidates) {
+        if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+        float t;
+        if (rayTriangleIntersect(origin, dir, world.collisionMesh.triangles[ti], maxDist, t))
+            return true;
+    }
+    return false;
+}
+
 } // anonymous namespace
 
 glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world)
@@ -45,50 +67,38 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
     desiredDir /= len;
 
     glm::vec3 origin = npc.body.pos;
-    origin.z += 0.5f; // cast from mid-body height
+    origin.z += 0.5f;
 
     float checkDist = 1.5f;
-    float stepAngle = glm::pi<float>() / 6.0f; // 30 degrees
+    float stepAngle = glm::pi<float>() / 6.0f;
+
+    // Gather candidate triangles once using spatial chunks
+    std::vector<int> candidates;
+    gatherNear(world, origin, checkDist + 1.0f, candidates);
 
     // Check if desired direction is blocked
-    for (const auto& tri : world.collisionMesh.triangles)
+    if (rayHitsAny(origin, desiredDir, checkDist, candidates, world))
     {
-        float t;
-        if (rayTriangleIntersect(origin, desiredDir, tri, checkDist, t))
+        // Blocked! Try angling left and right
+        for (int side = 0; side < 6; ++side)
         {
-            // Blocked! Try angling left and right
-            for (int side = 0; side < 6; ++side)
+            float angle = stepAngle * (side + 1);
+            for (float sign : {1.0f, -1.0f})
             {
-                float angle = stepAngle * (side + 1);
-                for (float sign : {1.0f, -1.0f})
-                {
-                    glm::vec3 altDir = desiredDir;
-                    float c = std::cos(angle * sign);
-                    float s = std::sin(angle * sign);
-                    altDir = {altDir.x * c - altDir.y * s, altDir.x * s + altDir.y * c, 0.0f};
+                glm::vec3 altDir = desiredDir;
+                float c = std::cos(angle * sign);
+                float s = std::sin(angle * sign);
+                altDir = {altDir.x * c - altDir.y * s, altDir.x * s + altDir.y * c, 0.0f};
 
-                    bool blocked = false;
-                    for (const auto& checkTri : world.collisionMesh.triangles)
-                    {
-                        if (rayTriangleIntersect(origin, altDir, checkTri, checkDist, t))
-                        { blocked = true; break; }
-                    }
-                    if (!blocked)
-                        return altDir;
-                }
+                if (!rayHitsAny(origin, altDir, checkDist, candidates, world))
+                    return altDir;
             }
-            // All directions blocked, try perpendicular
-            glm::vec3 perp{-desiredDir.y, desiredDir.x, 0.0f};
-            bool blocked = false;
-            for (const auto& checkTri : world.collisionMesh.triangles)
-            {
-                if (rayTriangleIntersect(origin, perp, checkTri, checkDist, t))
-                { blocked = true; break; }
-            }
-            if (!blocked)
-                return perp;
-            return -perp;
         }
+        // All directions blocked, try perpendicular
+        glm::vec3 perp{-desiredDir.y, desiredDir.x, 0.0f};
+        if (!rayHitsAny(origin, perp, checkDist, candidates, world))
+            return perp;
+        return -perp;
     }
 
     return desiredDir;
@@ -106,9 +116,12 @@ bool NpcNavigation::isStuck(const Npc& npc)
 
 glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, const World& world)
 {
-    // Try several random directions, pick the one with the most open space
     glm::vec3 origin = npc.body.pos;
     origin.z += 0.5f;
+
+    // Gather candidate triangles once using spatial chunks
+    std::vector<int> candidates;
+    gatherNear(world, origin, 10.0f, candidates);
 
     struct DirScore {
         glm::vec3 dir;
@@ -122,10 +135,11 @@ glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, con
         glm::vec3 testDir{std::cos(angle), std::sin(angle), 0.0f};
 
         float closest = 10.0f;
-        for (const auto& tri : world.collisionMesh.triangles)
+        for (int ti : candidates)
         {
+            if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
             float t;
-            if (rayTriangleIntersect(origin, testDir, tri, 10.0f, t))
+            if (rayTriangleIntersect(origin, testDir, world.collisionMesh.triangles[ti], 10.0f, t))
                 closest = std::min(closest, t);
         }
         if (closest > best.maxDist)

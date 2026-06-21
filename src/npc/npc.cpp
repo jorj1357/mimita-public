@@ -99,38 +99,39 @@ static float reactionDelayForDifficulty(float difficulty) {
     return totalMs / 1000.0f;                               // convert to seconds
 }
 
-// Get delayed target position from history based on reaction delay.
+// Get delayed target position from ring buffer based on reaction delay.
 static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
                                 const glm::vec3& currentVel, float delaySeconds) {
-    if (delaySeconds <= 0.001f || npc.posHistory.empty())
+    if (delaySeconds <= 0.001f || npc.posRingCount == 0)
         return currentPos;
 
-    // Find the sample closest to (current_time - delay)
-    float targetTime = npc.posHistory.back().time - delaySeconds;
+    // The most recent sample is at (posRingHead - 1) modulo ring size.
+    int tail = (npc.posRingHead - 1 + Npc::MAX_HISTORY_SAMPLES) % Npc::MAX_HISTORY_SAMPLES;
+    float targetTime = npc.posRing[tail].time - delaySeconds;
     glm::vec3 bestPos = currentPos;
     glm::vec3 bestVel = currentVel;
-    float bestTime = -999.0f;
 
-    for (int i = (int)npc.posHistory.size() - 1; i >= 0; --i) {
-        if (npc.posHistory[i].time >= targetTime) {
-            bestPos = npc.posHistory[i].pos;
-            bestVel = npc.posHistory[i].vel;
-            bestTime = npc.posHistory[i].time;
+    // Walk backward through the ring from newest to oldest
+    int count = std::min(npc.posRingCount, Npc::MAX_HISTORY_SAMPLES);
+    for (int j = 0; j < count; ++j) {
+        int i = (tail - j + Npc::MAX_HISTORY_SAMPLES) % Npc::MAX_HISTORY_SAMPLES;
+        const auto& s = npc.posRing[i];
+        if (s.time >= targetTime) {
+            bestPos = s.pos;
+            bestVel = s.vel;
         } else {
-            // Interpolate between this sample and the next
-            if (i + 1 < (int)npc.posHistory.size()) {
-                float t = (targetTime - npc.posHistory[i].time)
-                        / (npc.posHistory[i + 1].time - npc.posHistory[i].time);
+            // Interpolate with next newer sample
+            int nextIdx = (i + 1) % Npc::MAX_HISTORY_SAMPLES;
+            if (j > 0 && nextIdx < Npc::MAX_HISTORY_SAMPLES) {
+                float t = (targetTime - s.time) / (npc.posRing[nextIdx].time - s.time);
                 t = std::clamp(t, 0.0f, 1.0f);
-                bestPos = glm::mix(npc.posHistory[i].pos, npc.posHistory[i + 1].pos, t);
-                bestVel = glm::mix(npc.posHistory[i].vel, npc.posHistory[i + 1].vel, t);
+                bestPos = glm::mix(s.pos, npc.posRing[nextIdx].pos, t);
+                bestVel = glm::mix(s.vel, npc.posRing[nextIdx].vel, t);
             }
             break;
         }
     }
 
-    // Add velocity-based prediction to the delayed position
-    // This makes high-difficulty NPCs accurate despite the delay
     float predictTime = delaySeconds * (1.0f - std::clamp((npc.difficulty / 10.0f), 0.0f, 1.0f));
     return bestPos + bestVel * predictTime;
 }
@@ -141,10 +142,14 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
     sensors.grounded = npc.body.onGround;
 
-    // Record current player state into position history
-    npc.posHistory.push_back({player.pos, player.vel + player.externalImpulse, npc.sensors.time + dt});
-    while ((int)npc.posHistory.size() > Npc::MAX_HISTORY_SAMPLES)
-        npc.posHistory.erase(npc.posHistory.begin());
+    // Record current player state into position ring buffer
+    {
+        int i = npc.posRingHead;
+        npc.posRing[i] = {player.pos, player.vel + player.externalImpulse, npc.sensors.time + dt};
+        npc.posRingHead = (i + 1) % Npc::MAX_HISTORY_SAMPLES;
+        if (npc.posRingCount < Npc::MAX_HISTORY_SAMPLES)
+            npc.posRingCount++;
+    }
 
     // Compute reaction delay based on difficulty
     float delay = reactionDelayForDifficulty(npc.difficulty);
