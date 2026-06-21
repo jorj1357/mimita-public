@@ -90,6 +90,11 @@ export default function Auth({ mode }) {
 
                     {!signup && (
                         <>
+                           <p>
+                as of 6 20 2026, account creation isnt done yet :( 
+                    <br></br>
+                    working on it tho!!!!!
+                </p>
                             <label htmlFor="identifier">
                                 username or email
                             </label>

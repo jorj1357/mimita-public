@@ -106,6 +106,11 @@ export default function Account() {
         <Layout>
             <section className="authPage">
                 <div className="authCard accountCard">
+                    <p>
+                as of 6 20 2026, account creation isnt done yet :( 
+                    <br></br>
+                    working on it tho!!!!!
+                </p>
                     <h1>ACCOUNT</h1>
                     <p>
                         <Link to={`/users/${user.username}`}>
@@ -163,6 +168,7 @@ export default function Account() {
                     {message && (
                         <p className="authMessage">{message}</p>
                     )}
+                    
                 </div>
             </section>
         </Layout>
