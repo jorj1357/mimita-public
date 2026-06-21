@@ -66,8 +66,10 @@ public:
 
     // Position history for difficulty-based reaction delay
     struct PositionSample { glm::vec3 pos{0.0f}; glm::vec3 vel{0.0f}; float time = 0.0f; };
-    std::vector<PositionSample> posHistory;
     static constexpr int MAX_HISTORY_SAMPLES = 120;
+    PositionSample posRing[MAX_HISTORY_SAMPLES]{};
+    int posRingHead = 0;
+    int posRingCount = 0;
 
     unsigned int rngState = 1;
 

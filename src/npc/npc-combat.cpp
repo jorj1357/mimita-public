@@ -13,6 +13,8 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
+#include "physics/movement/physics-collision.h"
+#include "physics/physics-types.h"
 #include "world/world.h"
 
 bool gNpcForceHit = false;
@@ -46,8 +48,17 @@ bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
     if (maxDist < 0.1f) return false;
     dir /= maxDist;
 
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles)
+    // Use chunk spatial hashing to only test triangles near the ray path
+    AABB rayBounds;
+    rayBounds.min = glm::min(from, to);
+    rayBounds.max = glm::max(from, to);
+    std::vector<int> candidates;
+    appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+
+    for (int ti : candidates)
     {
+        if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+        const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
         glm::vec3 e1 = tri.b - tri.a;
         glm::vec3 e2 = tri.c - tri.a;
         glm::vec3 pVec = glm::cross(dir, e2);

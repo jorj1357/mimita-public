@@ -14,18 +14,18 @@ namespace DebugConfig
     // Runtime debug toggles (controlled via terminal)
     inline bool DEBUG_COLLISION = false;
     inline bool DEBUG_MOVEMENT = false;
-    inline bool DEBUG_PHYSICS = true;
+    inline bool DEBUG_PHYSICS = false;
     inline bool DEBUG_SOUND = false;
-    inline bool DEBUG_RENDER = true;
-    inline bool DEBUG_PLAYERARCH = true;
+    inline bool DEBUG_RENDER = false;
+    inline bool DEBUG_PLAYERARCH = false;
     inline bool DEBUG_WIREFRAME = false;
     inline bool DEBUG_NORMALS = false;
-    inline bool DEBUG_BOUNDS = true;
+    inline bool DEBUG_BOUNDS = false;
     inline bool DEBUG_UVCHECKER = false;
     inline bool DEBUG_LIGHTING_ONLY = false;
     inline bool DEBUG_TEXTURES_ONLY = false;
     inline bool DEBUG_AO_ONLY = false;
-    inline bool DEBUG_COLLISION_VISUALS = true;
+    inline bool DEBUG_COLLISION_VISUALS = false;
     inline bool DEBUG_UI = false;
     inline bool DEBUG_TICKS = false;
     inline bool DEBUG_INPUT = false;
@@ -54,9 +54,9 @@ namespace DebugConfig
     inline bool DEBUG_BOMBTAG = false;
     inline bool DEBUG_NPC_MOVEMENT = false;
     inline bool DEBUG_PERF_MODEL = false;
-    inline bool DEBUG_REPLAY = true;
+    inline bool DEBUG_REPLAY = false;
     inline bool DEBUG_NETWORKING = false;
-    inline bool DEBUG_DUEL = true;
+    inline bool DEBUG_DUEL = false;
     inline bool DEBUG_VISUALS_MASTER = false;
 
     inline void ResetAll()
