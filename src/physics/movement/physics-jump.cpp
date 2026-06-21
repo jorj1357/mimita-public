@@ -100,22 +100,17 @@ void doJump(
     p.jumpHeldPrev = jumpHeld;
 
     // ---------------- CAN JUMP ----------------
-    bool canGroundJump = p.onGround || p.coyoteTimer > 0.0f;
+    bool onActualGround = p.onGround || p.coyoteTimer > 0.0f;
     bool wantsJump = p.jumpIntentTimer > 0.0f;
 
     if (!wantsJump) {
         return;
     }
 
-    // ---------------- GROUND JUMP ----------------
-    if (canGroundJump) {
+    // ---------------- GROUND JUMP (actual ground) ----------------
+    if (onActualGround) {
         float beforeVel = p.vel.z;
 
-        // Restore dash on any ground jump. The collision system's applyTouchResets
-        // should handle this, but coyote-timer jumps may fire on frames where the
-        // collision sweep didn't detect actual ground contact (e.g., stepping off
-        // an edge). Restoring dash here guarantees it's always available after a
-        // ground jump regardless of the collision path.
         p.dashAvailable = true;
 
         p.vel.z = PHYS.jumpStrength;
@@ -123,13 +118,8 @@ void doJump(
         p.coyoteTimer = 0.0f;
         p.jumpIntentTimer = 0.0f;
 
-        // reset air jumps but consume one (the ground jump)
-        // p.airJumpsLeft = AIR_JUMPS_MAX - 1;
-        // testing mar 7 2026 dont consume a jump 
         p.airJumpsLeft = AIR_JUMPS_MAX;
 
-        // put this HERE, so that we DO NOT use air jump 
-        // when intending to only ground jump 
         p.airJumpLocked = true; 
         p.airJumpArmed = false;
         
@@ -137,6 +127,33 @@ void doJump(
 
         JUMP_LOG(
             "[JUMP] GROUND vel.z %.3f -> %.3f | airJumps=%d\n",
+            beforeVel,
+            p.vel.z,
+            p.airJumpsLeft
+        );
+        return;
+    }
+
+    // ---------------- WORLD CONTACT JUMP (wall/slope/ceiling) ----------------
+    // Allows jumping off any world geometry without consuming air jump.
+    // Does NOT lock air jump, enabling continuous wall climbing while holding jump.
+    if (p.hasWorldContact) {
+        float beforeVel = p.vel.z;
+
+        p.vel.z = PHYS.jumpStrength;
+        p.jumpIntentTimer = 0.0f;
+
+        // applyTouchResets already restored airJumpsLeft on contact.
+        // Ensure it's set.
+        p.airJumpsLeft = AIR_JUMPS_MAX;
+
+        // Do NOT lock/arm here — allow repeated wall jumps while holding jump.
+        // airJumpLocked stays false, airJumpArmed stays true (set on release).
+
+        p.didGroundJump = true;
+
+        JUMP_LOG(
+            "[JUMP] WORLD CONTACT vel.z %.3f -> %.3f | airJumps=%d\n",
             beforeVel,
             p.vel.z,
             p.airJumpsLeft

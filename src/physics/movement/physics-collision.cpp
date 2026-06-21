@@ -160,6 +160,8 @@ static inline void applyCollisionContact(
 
     const PlayerSettings& cfg = GetPlayerSettings();
 
+    p.hasWorldContact = true;
+
     // Ground: slope is walkable
     if (normal.z > MAX_WALKABLE_SLOPE_DOT)
     {
@@ -186,6 +188,7 @@ static inline void applyCollisionContact(
     }
     else if (normal.z < -MAX_WALKABLE_SLOPE_DOT)
     {
+        applyTouchResets(p);
         if (p.vel.z > 0.0f)
             p.vel.z = 0.0f;
     }

@@ -16,7 +16,6 @@
 #include "debug/debug-diag.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
-#include "physics/body-part-collision.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "world/world.h"
@@ -195,24 +194,13 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
 
         if (world) {
+            muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
+            forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
+            // Weapon collision capsule tracking (visual-only, resolved in draw)
             Capsule weaponCap = weaponCapsuleFromTransform(
                 weaponTransform, collisionGrip, collisionMuzzle, collisionRadius);
             player.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
-            player.weaponCollisionName = def ? def->id : "weapon";
-
-            glm::vec3 rootCorrection = resolveWeaponCollisionCapsule(
-                player, *world, weaponCap, player.weaponCollisionName.c_str());
-            if (glm::dot(rootCorrection, rootCorrection) > 0.0000001f) {
-                weaponTransform[3][0] += rootCorrection.x;
-                weaponTransform[3][1] += rootCorrection.y;
-                weaponTransform[3][2] += rootCorrection.z;
-                weaponCap.a += rootCorrection;
-                weaponCap.b += rootCorrection;
-                player.weaponCollisionCapsule = weaponCap;
-            }
-            muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
-            forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
         }
         break;
     }
