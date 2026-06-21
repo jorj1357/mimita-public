@@ -547,6 +547,53 @@ instead of
 
 prefer +0.
 
+## Expand Before Creating
+
+Before creating a new function with its own arguments, logic, and responsibilities:
+
+Prefer expanding an existing function's parameters instead.
+
+Examples:
+
+* Adding an optional bool parameter to an existing function.
+* Adding a defaulted enum argument to control behavior.
+* Extending an existing signature rather than writing a parallel function.
+
+A function with 8 parameters that already exists is better than 3 new functions with 3 parameters each.
+
+Existing functions already have:
+
+* Call sites.
+* Test coverage.
+* Known behavior.
+* Integration with surrounding systems.
+
+New functions need all of the above from scratch.
+
+Prefer:
+
+```cpp
+// existing, expanded
+void doJump(Player& p, bool jumpHeld, float dt, bool allowWorldContactJump = false);
+```
+
+Over:
+
+```cpp
+// new, separate
+void doWorldContactJump(Player& p, float dt);
+void doWallJump(Player& p, float dt);
+void doCeilingJump(Player& p, float dt);
+```
+
+This does not mean functions should never be split.
+
+It means:
+
+Expanding an existing function should be the default choice.
+
+Creating a new function requires justification.
+
 ==================================================
 
 ---

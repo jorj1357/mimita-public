@@ -199,6 +199,7 @@ public:
     bool airJumpArmed = false;
     float jumpIntentTimer = 0.0f;
     float coyoteTimer = 0.0f;
+    bool hasWorldContact = false;
 
     // -------- Dash --------
     // mar 8 2026, no dashcharges, its airjump style, touch object = get a dash back
