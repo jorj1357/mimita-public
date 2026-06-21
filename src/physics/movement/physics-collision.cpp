@@ -22,6 +22,7 @@
 #include <vector>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <unordered_set>
 #include <glm/glm.hpp>
 
@@ -101,6 +102,7 @@ static std::vector<int> gatherGLBTrianglesForSphere(
 static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
 static void applyTouchResets(Player& p);
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c);
+static const char* triangleFeatureLabel(const CollisionTriangle& tri, const glm::vec3& point);
 
 struct RecoveryContact
 {
@@ -111,6 +113,39 @@ struct RecoveryContact
     const Block* block = nullptr;
     const char* label = "recovery";
 };
+
+struct CollisionTraceSnapshot
+{
+    glm::vec3 startPos{0.0f};
+    glm::vec3 finalPos{0.0f};
+    glm::vec3 inputMove{0.0f};
+    int initialCandidates = 0;
+    int maxCandidates = 0;
+    int sweepIterations = 0;
+    int sweepHits = 0;
+    int maxSimultaneousTOI = 0;
+    int maxSlideContacts = 0;
+    int maxRecoveryContacts = 0;
+    int finalContacts = 0;
+    int finalSafetyContacts = 0;
+    int resweepHits = 0;
+    int faceHits = 0;
+    int edgeHits = 0;
+    int vertexHits = 0;
+    float maxPenetration = 0.0f;
+    bool emergencyEscaped = false;
+};
+
+static CollisionTraceSnapshot gLastCollisionTrace;
+
+static void appendUniqueTriangleIndices(std::vector<int>& dst, const std::vector<int>& src)
+{
+    for (int triIndex : src)
+    {
+        if (std::find(dst.begin(), dst.end(), triIndex) == dst.end())
+            dst.push_back(triIndex);
+    }
+}
 
 // Project each velocity contributor independently so wall-normal momentum
 // stays removed without sacrificing tangent velocity.
@@ -720,47 +755,10 @@ static glm::vec3 solveBatchedCorrection(
             return a.penetration > b.penetration;
         });
 
-        // Seam filtering: prefer contacts opposing movement, discard shallow seams.
-    // In acute-angle corners, keep ALL contacts to prevent wedge penetration
-    // even if some contacts are shallow. A shallow non-preferred contact in a
-    // corner is still a real surface the player should not pass through.
-    if (glm::dot(intendedMove, intendedMove) > 0.000001f && manifold.size() > 1) {
-        glm::vec3 moveDir = glm::normalize(intendedMove);
-        size_t preferred = 0;
-        float preferredScore = -std::numeric_limits<float>::max();
-        for (size_t i = 0; i < manifold.size(); ++i) {
-            float blocks = std::max(0.0f, -glm::dot(moveDir, manifold[i].normal));
-            float score = manifold[i].penetration + blocks * cfg.collisionMovementBias;
-            if (score > preferredScore) {
-                preferredScore = score;
-                preferred = i;
-            }
-        }
-        // Check if there's a true acute corner: two contacts with normals
-        // pointing in significantly different directions
-        bool hasAcuteCorner = false;
-        for (size_t i = 0; i < manifold.size(); ++i) {
-            for (size_t j = i + 1; j < manifold.size(); ++j) {
-                float dotNJ = glm::dot(manifold[i].normal, manifold[j].normal);
-                if (dotNJ < 0.5f) { // angle > 60° between normals = real corner
-                    hasAcuteCorner = true;
-                    break;
-                }
-            }
-            if (hasAcuteCorner) break;
-        }
-        std::vector<RecoveryContact> filtered;
-        for (size_t i = 0; i < manifold.size(); ++i) {
-            bool shallowSeam = i != preferred &&
-                manifold[i].penetration <= slop &&
-                std::fabs(manifold[i].normal.z) < 0.45f &&
-                !hasAcuteCorner; // Keep all contacts in acute corners
-            if (!shallowSeam)
-                filtered.push_back(manifold[i]);
-        }
-        if (!filtered.empty())
-            manifold.swap(filtered);
-    }
+        // Seam filtering removed: ALL contacts are real surfaces that the player
+        // must not pass through. The Gauss-Seidel solver with sufficient passes
+        // handles redundant and contradictory normals correctly. Discarding
+        // shallow contacts in non-corner cases caused seam penetration.
 
     glm::vec3 correction(0.0f);
     glm::vec3 weightedNormal(0.0f);
@@ -773,8 +771,8 @@ static glm::vec3 solveBatchedCorrection(
     }
 
     // Gauss-Seidel solver with deepest contacts processed first
-    constexpr int SOLVER_PASSES = 16;
-    constexpr float RELAXATION = 0.8f;
+    constexpr int SOLVER_PASSES = 32;
+    constexpr float RELAXATION = 0.85f;
     for (int pass = 0; pass < SOLVER_PASSES; ++pass)
     {
         for (const RecoveryContact& c : manifold)
@@ -1157,7 +1155,7 @@ static void doGLBTriangleCollisions(
                 world, slideCap, slideCandidates);
 
             // Gauss-Seidel: multiple passes for numerical stability in acute corners
-            constexpr int SLIDE_SOLVER_PASSES = 3;
+            constexpr int SLIDE_SOLVER_PASSES = 12;
             for (int slidePass = 0; slidePass < SLIDE_SOLVER_PASSES; ++slidePass)
             {
                 for (const auto& sc : slideContacts)
@@ -1273,6 +1271,44 @@ static void doGLBTriangleCollisions(
 
         if (glm::dot(correction, correction) < 0.0000001f)
             break;
+    }
+
+    // Phase 2.5: Re-sweep from depenetrated position.
+    // Depenetration can push the player into a new free path where remaining
+    // velocity now has clearance. Re-sweep captures this movement so the
+    // player slides naturally out of pockets and around corners.
+    {
+        p.updateModelWorldTransforms();
+        glm::vec3 curMove = (p.vel + p.externalImpulse) * dt;
+        float curMoveLen = glm::length(curMove);
+        if (curMoveLen > 0.001f)
+        {
+            Capsule resweepCap = p.getCapsule();
+            std::vector<int> resweepCandidates = gatherGLBTriangles(world, resweepCap, curMove);
+            SweepHit resweepHit;
+            resweepHit.time = 1.0f;
+            for (int triIndex : resweepCandidates)
+            {
+                SweepHit hit;
+                if (capsuleTriangleSweep(resweepCap, curMove, world.collisionMesh.triangles[triIndex], triIndex, hit)
+                    && hit.time < resweepHit.time)
+                    resweepHit = hit;
+            }
+            if (resweepHit.hit && resweepHit.time < 1.0f)
+            {
+                glm::vec3 resweepStep = curMove * resweepHit.time;
+                p.pos += resweepStep;
+                p.pos += resweepHit.normal * SURFACE_SLOP;
+                p.updateModelWorldTransforms();
+                glm::vec3 afterStep = curMove - resweepStep;
+                float into = glm::dot(afterStep, resweepHit.normal);
+                if (into < 0.0f)
+                    afterStep -= resweepHit.normal * into;
+                p.pos += afterStep;
+                p.updateModelWorldTransforms();
+                applyCollisionContact(p, groundedThisFrame, resweepHit.normal, resweepHit.point, SURFACE_SLOP, resweepHit.triangleIndex, "post-depen-resweep");
+            }
+        }
     }
 
     // Ground snap: if player is very close to ground and not jumping up, snap to ground
@@ -2396,7 +2432,7 @@ static bool capsuleTriangleSweep(
     int triIndex,
     SweepHit& out
 ) {
-    constexpr int NUM_SAMPLES = 7;
+    constexpr int NUM_SAMPLES = 11;
     glm::vec3 samples[NUM_SAMPLES];
     for (int i = 0; i < NUM_SAMPLES; ++i) {
         float t = (float)i / (float)(NUM_SAMPLES - 1);
@@ -2440,7 +2476,7 @@ static bool capsuleTriangleContact(
     int triIndex,
     Contact& out
 ) {
-    constexpr int NUM_SAMPLES = 7;
+    constexpr int NUM_SAMPLES = 11;
     glm::vec3 samples[NUM_SAMPLES];
     for (int i = 0; i < NUM_SAMPLES; ++i) {
         float t = (float)i / (float)(NUM_SAMPLES - 1);

@@ -1,14 +1,19 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\physics-mini.cpp
-// feb 10 2026
-/**
- * purpose
- * is the real phsics file, physics-mini is the real one
- * a physics file that ONLY calls functions from other files
- * theres no logic, theres no glm vec 3 vec 2 whatever 
- * its just like jump(args), dash(args), walk(args) etc
- */
-
-// #pragma message("COMPILING physics-mini.cpp")
+// Physics orchestrator.
+// Calls movement subsystems in order (gravity → freeze → walk → collision → dash → jump → friction).
+// No math, no logic — just delegation.
+//
+// Update order (each function owns its axis):
+//   1. doGravity      — adds gravity to vel.z, clamps to MAX_FALL_SPEED
+//   2. doFreeze       — scales velocity toward zero when held
+//   3. doGroundReturn — additive slam toward ground
+//   4. doWalk         — instant ground snap / CS air accelerate (horizontal only)
+//   5. doCollisions   — swept capsule collision, 6 substeps
+//   6. doAirDash      — additive horizontal impulse
+//   7. doDownDash     — additive downward impulse
+//   8. doJump         — sets vel.z to jumpStrength
+//   9. doFriction     — exponential decay of external impulse only
+//
+// Future: slide, wall-run, climb, grapple all insert new do* calls here.
 
 #include <algorithm>
 #include <cmath>
@@ -33,12 +38,6 @@
 #include "input/input-state.h"
 #include "config.h"
 #include "debug/debug-log.h"
-
-static float shortestAngleDegrees(float from, float to)
-{
-    float delta = std::fmod(to - from + 540.0f, 360.0f) - 180.0f;
-    return delta;
-}
 
 static void updateVisualFacingFromCamera(Player& p, const glm::vec3& camForward, float dt)
 {
@@ -87,52 +86,20 @@ static void physicsMainUpdate_Internal(
 
     doGravity(p, dt);
 
-    // freeze is after gravit and friction, but before everthing else
     doFreeze(p, freezeHeld, dt);
 
     doGroundReturn(p, groundReturnPressed, dt);
-    // doDash(p, wishMoveXY, dashPressed, camForward, dt);
-    // CHANGED: No dashVel — walk always runs when there's movement input, jun 6 2026
-    if (p.didDash && DebugConfig::DEBUG_INPUT)
-        Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
-                   wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
-    // instant movement override kills momentum
-    if (movementPressed)
-    {
-        p.externalImpulse.x = 0.0f;
-        p.externalImpulse.y = 0.0f;
-    }
 
     doWalk(p, wishMoveXY, jumpHeld, dt);
 
-    // dash after walk? 6 6 2026 
-    // doDash(p, wishMoveXY, dashPressed, camForward, dt);
-    // dont do dash at all 6 6 2026 ? 
-    // fast push should be from gun pushing me? idk 
-
-    // testing 6 substeps so we have even more collision checks
-    int steps = 6; // small substep count
+    int steps = 6;
     float subdt = dt / steps;
 
-    // only set grounded here? not sure mar 7 2026 
     bool groundedThisFrame = false;
     p.hasWorldContact = false;
 
     for (int i = 0; i < steps; i++)
     {
-        // p.pos += p.vel * subdt;
-        // pass subdt not dt
-        // and dont do position calc in here
-        // e.g. no p.pos changing here 
-        // do not do p.pos += totalVel * subdt; or antthing similar here
-        // we do p.pos changing in doCollisions function
-        // this file jsut calls fnuctions 
-
-        // mar 8 2026 this added dash velocity wokring here
-        // mar 8 2026 clean comments bc its toomuch 
-        // mar 8 2026 we dont even use this so what 
-        // glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel.x, p.dashVel.y, 0.0f);
-
         doCollisions(p, world, groundedThisFrame, subdt);
     }
 
@@ -144,15 +111,10 @@ static void physicsMainUpdate_Internal(
         p.dashMovementTicks = 0;
     }
 
-    // air dash: Left Shift+WASD while airborne. Falls back to camera forward if no WASD.
     doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
 
-    // down dash: Q key, always works regardless of grounded state
-    // 6 14 2026 testing not havingthis at all
-    // 6 14 2026 i c I NEED IT I NEED TO AHve it i cannot not have it  
     doDownDash(p, downDashPressed, dt);
 
-    // jump AFTER grounded so we actually know it work
     doJump(p, jumpHeld, dt);
     if (DebugConfig::DEBUG_INPUT) {
         if (p.didGroundJump)
@@ -167,14 +129,9 @@ static void physicsMainUpdate_Internal(
                        (int)p.airJumpLocked, (int)p.airJumpArmed);
     }
 
-    // this resets ur dash so u can do it again after ur grounded?
-    // mar 8 2026 we reset dash in like phsics mini, or dash file, or etc
-    // need to centralize this in 1 file
-    // like physics-move-resets.cpp
-    // that just exposes doReset(args)
-    // e.g. doReset(freeze function)
-    // or doReset(airjump function)
-    // reset dash when touching ground
+    // Reset dash when touching ground.
+    // Future: centralize resets (dash, airjump, freeze, etc.) here
+    //   in a single doTouchResets() call.
     if (groundedThisFrame)
     {
         p.dashAvailable = true;
@@ -208,7 +165,6 @@ static void physicsMainUpdate_Internal(
         groundedThisFrame ||
         (p.groundLostTimer < 0.08f);
 
-    // ok now do friction after other stuff 6 6 2026 
     doFriction(p, p.stableOnGround, dt);
 
     // save previous airborne time BEFORE reset
@@ -235,8 +191,6 @@ static void physicsMainUpdate_Internal(
 
     // store stable state for next frame
     p.wasOnGround = p.stableOnGround;
-
-    // CHANGED: No dashVel tracking, jun 6 2026
 
     updateVisualFacingFromCamera(p, camForward, dt);
 

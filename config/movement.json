@@ -1,0 +1,76 @@
+{
+    "gravity": -58.0,
+    "moveSpeed": 20.0,
+    "jumpStrength": 19.0,
+
+    "playerWidth": 1.0,
+    "playerHeight": 3.6,
+    "playerDepth": 0.4,
+    "playerRadius": 0.7,
+
+    "collisionSkin": 0.02,
+    "maxWalkableSlopeDot": 0.80,
+    "howDeep": 0.5,
+    "almostZero": 1e-05,
+    "chunkSize": 3.0,
+    "maxFallSpeed": 400.0,
+    "maxPlayerMoveSpeed": 2000.0,
+    "maxExternalImpulseSpeed": 120.0,
+    "externalImpulseDecay": 0.6,
+    "externalImpulseSteerRate": 40.0,
+    "externalImpulseBrakeRate": 20.0,
+
+    "rotationSnap": 15.0,
+    "positionSnap": 0.1,
+    "collisionsGracePeriod": 0.1,
+    "coyoteJumpTime": 0.001,
+
+    "frictionAmount": 0.2,
+    "groundFrictionAccelAmount": 0.2,
+    "groundFrictionAmount": 4.0,
+    "groundAccelerate": 8.0,
+
+    "airFrictionAmount": 0.0,
+    "airAccelAmount": 6.0,
+    "airSpeedCap": 35.0,
+
+    "dragFrictionMultiplier": 0.25,
+    "oppositeFrictionAmount": 0.99,
+
+    "dashImpulse": 100.0,
+    "airDashImpulse": 50.0,
+    "downDashSpeed": -100.0,
+    "dashMaxCharges": 3,
+    "dashRechargeTime": 1.0,
+    "dashCooldown": 0.001,
+    "dashSpeedMult": 1.5,
+    "dashInfinite": true,
+
+    "freezeMaxTime": 5.0,
+
+    "groundReturnMaxCharges": 3.0,
+    "groundReturnSpeed": -150.0,
+    "groundReturnRechargeTime": 1.0,
+
+    "slopeOverlap": 0.1,
+    "slopeSkin": 0.02,
+    "bodySampleRadius": 0.15,
+    "maxStepHeight": 0.25,
+    "slopeVelocityPushupMult": 1.01,
+    "slopeSnapDist": 0.15,
+    "slopeWallClearance": 2.5,
+    "slopeExitTimer": 0.16,
+    "slopeSupportTimer": 0.16,
+
+    "jumpBufferTime": 0.12,
+    "airJumpsMax": 1,
+
+    "npcRespawnDelaySeconds": 0.01,
+
+    "_todo": {
+        "perGameModeConfigs": "TODO: per-game-mode configs — override values per duel/sandbox/practice mode",
+        "perMapConfigs": "TODO: per-map configs — override values per specific map (e.g., low-grav maps)",
+        "perCharacterConfigs": "TODO: per-character configs — per-character tuning profiles",
+        "serverAuthoritativeConfigs": "TODO: server-authoritative configs — enforce values from server in multiplayer"
+    }
+}

@@ -18,7 +18,8 @@ enum class CommandCategory {
     Debug,
     Player,
     Editor,
-    UI
+    UI,
+    Physics
 };
 
 inline const char* categoryName(CommandCategory c) {
@@ -33,6 +34,7 @@ inline const char* categoryName(CommandCategory c) {
         case CommandCategory::Player: return "Player";
         case CommandCategory::Editor: return "Editor";
         case CommandCategory::UI: return "UI";
+        case CommandCategory::Physics: return "Physics";
         default: return "Uncategorized";
     }
 }

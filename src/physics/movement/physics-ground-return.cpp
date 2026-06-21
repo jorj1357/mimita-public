@@ -1,17 +1,10 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-ground-return.cpp
-// feb 10 2026
-/**
- * purpose
- * handles all logic for ground return
- * just exposes like doGroundReturn(args) or something
- * gravities here are called from gravit function file
- * like applyGravity(args)
- */
-
 // Purpose:
 // - Handle ground return charges + slam impulse
-// - Vertical velocity override only
+// - Additive velocity: does not overwrite existing momentum
 // - No collision / no grounding logic
+//
+// Future: if ground return needs multiple charges or cooldowns,
+//   add tracking here rather than a separate file.
 //
 // Uses physics/config.h
 // Debug heavy
@@ -60,8 +53,8 @@ void doGroundReturn(
 
     float beforeVelZ = p.vel.z;
 
-    // strong downward slam
-    p.vel.z = GROUND_RETURN_SPEED;
+    // Additive: preserves existing upward/downward momentum.
+    p.vel.z += GROUND_RETURN_SPEED;
 
     // consume ability until next surface touch
     p.groundReturnAvailable = false;

@@ -1,15 +1,18 @@
-// CS-style ground movement + air acceleration
+// Unified movement: instant ground + momentum-preserving air
 //
 // Ground:
-//   1. Linear friction (speed-proportional drop)
-//   2. Accelerate toward wishdir up to moveSpeed
+//   1. Instant velocity snap to moveSpeed in wish direction
+//   2. Friction when no input (decelerate to stop)
+//   3. Skip when jumpHeld — preserves air velocity for bhop
 //
 // Air:
-//   1. Accelerate in wishdir using CS air acceleration
-//      (addspeed = maxspeed - dot(vel, wishdir), clamped by accel)
-//   2. Clamp total horizontal speed to AIR_SPEED_CAP
+//   1. CS-style additive acceleration in wish direction
+//   2. Never clamps total speed — dash momentum survives air
+//   3. Zero friction (coast freely)
 //
-// Dash external impulse steering preserved.
+// Future: slide, wall-run, wall-jump, grapple all plug in here
+//   by adding flags (isSliding, isWallRunning) that adjust how
+//   velocity is set vs accumulated.
 
 #include <cstdio>
 #include <algorithm>
@@ -21,6 +24,7 @@
 
 #define WALK_LOG(...) Debug::logThrottled(Debug::Category::Physics, "walk", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
+// Ground friction: speed-proportional deceleration used when no input.
 static void applyGroundFriction(glm::vec2& velXY, float dt)
 {
     float speed = glm::length(velXY);
@@ -32,18 +36,8 @@ static void applyGroundFriction(glm::vec2& velXY, float dt)
     }
 }
 
-static void applyGroundAccelerate(glm::vec2& velXY, const glm::vec2& wishDir, float dt)
-{
-    float currentSpeed = glm::dot(velXY, wishDir);
-    float addSpeed = PHYS.moveSpeed - currentSpeed;
-    if (addSpeed <= 0.0f)
-        return;
-
-    float accelSpeed = GROUND_ACCELERATE * PHYS.moveSpeed * dt;
-    addSpeed = std::min(addSpeed, accelSpeed);
-    velXY += wishDir * addSpeed;
-}
-
+// CS-style air acceleration: adds velocity toward wishdir, capped per frame.
+// Never clamps total speed — preserves dash, bhop, and external momentum.
 static void applyAirAccelerate(glm::vec2& velXY, const glm::vec2& wishDir, float dt)
 {
     float currentSpeed = glm::dot(velXY, wishDir);
@@ -54,10 +48,6 @@ static void applyAirAccelerate(glm::vec2& velXY, const glm::vec2& wishDir, float
     float accelSpeed = AIR_ACCEL_AMOUNT * PHYS.moveSpeed * dt;
     addSpeed = std::min(addSpeed, accelSpeed);
     velXY += wishDir * addSpeed;
-
-    float speed = glm::length(velXY);
-    if (speed > AIR_SPEED_CAP)
-        velXY *= AIR_SPEED_CAP / speed;
 }
 
 static void steerExternalImpulse(Player& p, const glm::vec2& wishDir, float dt)
@@ -98,20 +88,23 @@ void doWalk(
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
     // ---- GROUND ----
-    if (p.stableOnGround)
+    // Skip when jumpHeld is true: preserves air velocity for bhop.
+    // The 80ms stableOnGround hysteresis absorbs seams and collision jitter
+    // without killing bhop speed.
+    if (p.stableOnGround && !jumpHeld)
     {
-        // Skip friction when holding jump (bunnyhopping).
-        // Ground friction would kill air-earned velocity during the
-        // single frame of ground contact or during the 80ms stableOnGround
-        // hysteresis window after a jump.
-        if (!jumpHeld)
-            applyGroundFriction(velXY, dt);
-
         if (wishLen > 0.001f)
         {
+            // Instant acceleration: velocity immediately matches wish direction at moveSpeed.
+            // Future: slide mode would replace this with slide physics.
             glm::vec2 wishDir = wishMoveXY / wishLen;
             steerExternalImpulse(p, wishDir, dt);
-            applyGroundAccelerate(velXY, wishDir, dt);
+            velXY = wishDir * PHYS.moveSpeed;
+        }
+        else
+        {
+            // No input: decelerate to stop.
+            applyGroundFriction(velXY, dt);
         }
 
         p.vel.x = velXY.x;
@@ -121,7 +114,7 @@ void doWalk(
         return;
     }
 
-    // ---- AIR ----
+    // ---- AIR (or bhop ground skip) ----
     if (wishLen > 0.001f)
     {
         glm::vec2 wishDir = wishMoveXY / wishLen;
@@ -135,8 +128,8 @@ void doWalk(
     }
     else
     {
-        // no input in air → coast (no friction)
-        // still steer external impulse in camera-forward dir if any
+        // No input in air: coast (no friction).
+        // Future: air drag / glide would go here.
         if (glm::length(glm::vec2(p.externalImpulse.x, p.externalImpulse.y)) > 0.001f)
         {
             glm::vec2 impulseDir = glm::normalize(glm::vec2(p.externalImpulse.x, p.externalImpulse.y));

@@ -14,6 +14,8 @@ namespace DebugConfig
     // Runtime debug toggles (controlled via terminal)
     inline bool DEBUG_COLLISION = false;
     inline bool DEBUG_MOVEMENT = false;
+    inline bool DEBUG_COLLISION_TRACE = false;
+    inline bool DEBUG_MOVEMENT_TRACE = false;
     inline bool DEBUG_PHYSICS = false;
     inline bool DEBUG_SOUND = false;
     inline bool DEBUG_RENDER = false;
@@ -63,6 +65,8 @@ namespace DebugConfig
     {
         DEBUG_COLLISION = false;
         DEBUG_MOVEMENT = false;
+        DEBUG_COLLISION_TRACE = false;
+        DEBUG_MOVEMENT_TRACE = false;
         DEBUG_PHYSICS = true;
         DEBUG_SOUND = false;
         DEBUG_RENDER = true;

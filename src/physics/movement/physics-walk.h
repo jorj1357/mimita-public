@@ -1,12 +1,7 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-walk.cpp
-// feb 10 2026
-/**
- * purpose
- * all logic for walking goes here
- * literallt just
- * wasd = forward back left right
- * exposes walk(direction, velocity) to other files 
- */
+// Unified horizontal movement: ground = instant snap, air = CS-style acceleration.
+// Handles external impulse steering for knockback.
+// Uses physics/config.h
+// Only modifies p.vel.x / p.vel.y
 
 #pragma once
 

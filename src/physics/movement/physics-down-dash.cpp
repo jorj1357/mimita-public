@@ -1,7 +1,10 @@
 // Purpose:
 // - Immediate downward impulse on Q press
-// - No resource, no cooldown, no scripted behavior
+// - Additive velocity: does not overwrite existing momentum
 // - Collisions naturally handle landing/sliding/bouncing
+//
+// Future: chained down-dash, stomp-on-hit, ground-pound all
+//   add velocity here instead of creating separate systems.
 //
 // Uses physics/config.h
 // No collision / no grounding logic
@@ -33,7 +36,8 @@ void doDownDash(
 
     float beforeVelZ = p.vel.z;
 
-    p.vel.z = DOWN_DASH_SPEED;
+    // Additive: preserves existing upward/downward momentum.
+    p.vel.z += DOWN_DASH_SPEED;
     p.downDashAvailable = false;
 
     DD_LOG(

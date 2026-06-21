@@ -62,6 +62,7 @@
 #include "render/render-player.h"
 #include "physics/physics-mini.h"
 #include "physics/physics-debug-movement.h"
+#include "physics/movement-config.h"
 #include "audio/audio.h"
 #include "audio/hitmarker-audio.h"
 #include "audio/music-manager.h"
@@ -849,6 +850,9 @@ int main(int argc, char** argv)
     ShadowConfig::instance().load("config/shadows.json");
     CrosshairConfig::instance().load();
     registerCrosshairCommands();
+
+    // Load movement config (hot-reloadable via movement_reload command)
+    MovementConfig::instance().load();
     
     // Effect part system init
     EffectPartSystem::instance().init();
@@ -1023,6 +1027,15 @@ int main(int argc, char** argv)
     registerActionCommand("walkright", "Move right for one simulation tick");
     registerActionCommand("jump", "Execute a jump action");
     registerActionCommand("dash", "Execute a dash action");
+
+    Terminal::instance().registerCommand({
+        "movement_reload", "Reload movement config from config/movement.json", "movement_reload",
+        [](const std::vector<std::string>&) {
+            bool ok = MovementConfig::instance().load();
+            Terminal::instance().addLog(ok ? "[MOVEMENT] config reloaded" : "[MOVEMENT] reload failed");
+        },
+        "2026-06-21", CommandCategory::Physics
+    });
 
     Terminal::instance().registerCommand({
         "teleport", "Teleport the local player", "teleport x,y,z",
@@ -2738,6 +2751,7 @@ int main(int argc, char** argv)
         float dt = engine.beginFrame();
         updatePlayerProceduralHotReload(dt);
         CrosshairConfig::instance().pollReload();
+        MovementConfig::instance().pollReload();
         AvatarSystem::instance().pollHotReload();
         bool worldPassRan = false;
 

@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "physics/physics-types.h"
 
 class Player;
@@ -32,6 +34,8 @@ void doCollisions(
     bool& groundedThisFrame,
     float dt
 );
+
+std::string collisionLastTraceSummary();
 
 // Resolve collision between two capsules (e.g., player vs NPC)
 // - Mutates positions of both capsules
