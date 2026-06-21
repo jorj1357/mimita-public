@@ -207,6 +207,7 @@ public:
 
     void seekToTick(uint32_t tick);
     uint32_t currentTick() const { return mCurrentTick; }
+    uint32_t currentSceneFrameIndex() const { return mCurrentSceneFrameIndex; }
     uint32_t totalTicks() const { return mHeader.tickCount; }
 
     const ReplayHeader& header() const { return mHeader; }
@@ -215,12 +216,15 @@ public:
     bool preloadAssets();
 
 private:
+    void resolveSceneFrameAtPlaybackTick();
+
     bool mPlaying = false;
     uint32_t mCurrentTick = 0;
     ReplayHeader mHeader{};
     std::vector<ReplayFrame> mFrames;
     ReplayClip mClip;
     ReplaySceneFrame mInterpolatedFrame;
+    uint32_t mCurrentSceneFrameIndex = 0;
     bool mPaused = false;
     float mPlaybackTick = 0.0f;
     float mTimescale = 1.0f;

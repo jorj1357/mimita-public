@@ -1079,6 +1079,9 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         mPlaybackTick = 0.0f;
         mLastEventTick = -1;
         mOutfitPath.clear();
+        mCurrentSceneFrameIndex = 0;
+        if (!mClip.sceneFrames.empty())
+            mInterpolatedFrame = mClip.sceneFrames.front();
         printf("[REPLAY] clip loaded path=%s sceneFrames=%zu frames=%zu header.tickCount=%u\n",
                path.c_str(), mClip.sceneFrames.size(), mFrames.size(), mHeader.tickCount);
         return true;
@@ -1249,6 +1252,9 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
         }
 
         printf("[REPLAY] Loaded %zu frames from %s\n", mFrames.size(), path.c_str());
+        mCurrentSceneFrameIndex = 0;
+        if (!mClip.sceneFrames.empty())
+            mInterpolatedFrame = mClip.sceneFrames.front();
         return true;
 
     } catch (const std::exception& e) {
@@ -1341,6 +1347,7 @@ void ReplayPlayer::beginPlayback() {
     mLastEventTick = -1;
     mTriggeredEffects.clear();
     mTriggeredSounds.clear();
+    resolveSceneFrameAtPlaybackTick();
     printf("[REPLAY] Playback started ticks=%u currentTick=%u isPlaying=%d\n",
            mHeader.tickCount, mCurrentTick, (int)mPlaying);
 }
@@ -1425,19 +1432,6 @@ void ReplayPlayer::update(float dt)
 
     const int previousTick = (int)std::floor(mPlaybackTick);
     mPlaybackTick += dt * (float)std::max(mHeader.tickRate, 1u) * mTimescale;
-    {   static float logTimer = 0.0f; logTimer -= dt;
-        if (logTimer <= 0.0f) { logTimer = 1.0f;
-            auto* frame = currentSceneFrame();
-            printf("[REPLAY] time=%.2f tick=%.1f frame=%d cameraPos=(%.1f %.1f %.1f) actorCount=%zu sceneFrames=%zu\n",
-                   mPlaybackTick / (float)std::max(mHeader.tickRate, 1u),
-                   mPlaybackTick, frame ? frame->tick : -1,
-                   frame ? frame->camera.position.x : 0.0f,
-                   frame ? frame->camera.position.y : 0.0f,
-                   frame ? frame->camera.position.z : 0.0f,
-                   frame ? frame->actors.size() : 0,
-                   mClip.sceneFrames.size());
-        }
-    }
     const int lastTick = mClip.sceneFrames.back().tick;
     if (mPlaybackTick > (float)lastTick) {
         mPlaybackTick = (float)lastTick;
@@ -1461,6 +1455,28 @@ void ReplayPlayer::update(float dt)
     if (currentEventTick >= previousTick)
         mLastEventTick = currentEventTick;
 
+    resolveSceneFrameAtPlaybackTick();
+    {   static float logTimer = 0.0f; logTimer -= dt;
+        if (logTimer <= 0.0f) { logTimer = 1.0f;
+            auto* frame = currentSceneFrame();
+            printf("[REPLAY] time=%.2f tick=%.1f frame=%d sceneFrameIndex=%u cameraPos=(%.1f %.1f %.1f) actorCount=%zu sceneFrames=%zu\n",
+                   mPlaybackTick / (float)std::max(mHeader.tickRate, 1u),
+                   mPlaybackTick, frame ? frame->tick : -1,
+                   mCurrentSceneFrameIndex,
+                   frame ? frame->camera.position.x : 0.0f,
+                   frame ? frame->camera.position.y : 0.0f,
+                   frame ? frame->camera.position.z : 0.0f,
+                   frame ? frame->actors.size() : 0,
+                   mClip.sceneFrames.size());
+        }
+    }
+}
+
+void ReplayPlayer::resolveSceneFrameAtPlaybackTick()
+{
+    if (mClip.sceneFrames.empty())
+        return;
+
     auto upper = std::lower_bound(
         mClip.sceneFrames.begin(), mClip.sceneFrames.end(), mPlaybackTick,
         [](const ReplaySceneFrame& frame, float tick) {
@@ -1468,16 +1484,21 @@ void ReplayPlayer::update(float dt)
         });
     if (upper == mClip.sceneFrames.begin()) {
         mInterpolatedFrame = *upper;
+        mCurrentSceneFrameIndex = 0;
         return;
     }
     if (upper == mClip.sceneFrames.end()) {
         mInterpolatedFrame = mClip.sceneFrames.back();
+        mCurrentSceneFrameIndex = (uint32_t)(mClip.sceneFrames.size() - 1);
         return;
     }
+    const size_t bIndex = (size_t)std::distance(mClip.sceneFrames.begin(), upper);
+    const size_t aIndex = bIndex - 1;
     const ReplaySceneFrame& b = *upper;
     const ReplaySceneFrame& a = *(upper - 1);
     const float span = (float)std::max(1, b.tick - a.tick);
     const float t = glm::clamp((mPlaybackTick - (float)a.tick) / span, 0.0f, 1.0f);
+    mCurrentSceneFrameIndex = (uint32_t)(t >= 0.5f ? bIndex : aIndex);
     mInterpolatedFrame = a;
     mInterpolatedFrame.tick = (int)mPlaybackTick;
     mInterpolatedFrame.time = mPlaybackTick / (float)std::max(mHeader.tickRate, 1u);
@@ -1498,8 +1519,6 @@ const ReplaySceneFrame* ReplayPlayer::currentSceneFrame() const
 {
     if (mClip.sceneFrames.empty())
         return nullptr;
-    if (mPlaybackTick <= 0.0f)
-        return &mClip.sceneFrames.front();
     return &mInterpolatedFrame;
 }
 
@@ -1537,14 +1556,24 @@ void ReplayPlayer::seekToTick(uint32_t tick) {
     // Clamp against scene frames (visual data) not input frames (which may be empty in clips).
     // Scene frames drive replay rendering; input frames are only for simulation playback.
     size_t maxTicks = mClip.sceneFrames.empty() ? mFrames.size() : mClip.sceneFrames.size();
-    mCurrentTick = std::min(tick, (uint32_t)maxTicks);
-    mPlaybackTick = (float)tick;
-    mLastEventTick = (int)tick - 1;
+    uint32_t clampedTick = tick;
+    if (!mClip.sceneFrames.empty())
+        clampedTick = (uint32_t)std::max(0, std::min((int)tick, mClip.sceneFrames.back().tick));
+    else if (maxTicks > 0)
+        clampedTick = std::min(tick, (uint32_t)maxTicks - 1u);
+    else
+        clampedTick = 0;
+    mCurrentTick = clampedTick;
+    mPlaybackTick = (float)clampedTick;
+    mLastEventTick = (int)clampedTick - 1;
     // Ensure playing state so that subsequent update() interpolates frames
     mPlaying = true;
     mPaused = false;
-    printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u max=%zu frames=%zu scene=%zu playing=1\n",
-           tick, mCurrentTick, maxTicks, mFrames.size(), mClip.sceneFrames.size());
+    resolveSceneFrameAtPlaybackTick();
+    const ReplaySceneFrame* frame = currentSceneFrame();
+    printf("[REPLAY] seekToTick(%u) -> mCurrentTick=%u selectedSceneFrameIndex=%u selectedTick=%d max=%zu frames=%zu scene=%zu playing=1\n",
+           tick, mCurrentTick, mCurrentSceneFrameIndex,
+           frame ? frame->tick : -1, maxTicks, mFrames.size(), mClip.sceneFrames.size());
 }
 
 bool ReplayCameraController::setMode(const std::string& name)

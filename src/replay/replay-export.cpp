@@ -95,6 +95,50 @@ void pollReplayExportConfig()
 #define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
 #define EXPORTTRACE_CRASH(fmt, ...) do { printf("[EXPORT] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
 
+static bool shouldWriteExportTraceSnapshot(uint32_t frameNum)
+{
+    return frameNum == 0 || frameNum == 100 ||
+           frameNum == 500 || frameNum == 1000;
+}
+
+static void writeExportTraceSnapshot(uint32_t exportFrame)
+{
+    if (!shouldWriteExportTraceSnapshot(exportFrame))
+        return;
+
+    const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::path("build") / "replay-export-trace";
+    std::filesystem::create_directories(dir, ec);
+    if (ec)
+        return;
+
+    std::ofstream file(dir / ("frame_" + std::to_string(exportFrame) + ".txt"));
+    if (!file.is_open())
+        return;
+
+    file << "exportFrame=" << exportFrame << "\n";
+    file << "replayTick=" << REPLAY_PLAYER.currentTick() << "\n";
+    file << "sceneFrameIndex=" << REPLAY_PLAYER.currentSceneFrameIndex() << "\n";
+    file << "actorCount=" << (sf ? sf->actors.size() : 0) << "\n";
+    if (!sf)
+        return;
+
+    file << "cameraPos=(" << sf->camera.position.x << ","
+         << sf->camera.position.y << "," << sf->camera.position.z << ")\n";
+    file << "cameraRot=(" << sf->camera.rotation.x << ","
+         << sf->camera.rotation.y << "," << sf->camera.rotation.z << ")\n";
+    file << "effectCount=" << sf->effects.size() << "\n";
+    if (!sf->actors.empty()) {
+        const ReplayActorState& actor = sf->actors.front();
+        file << "actorId=" << actor.id << "\n";
+        file << "actorPos=(" << actor.position.x << ","
+             << actor.position.y << "," << actor.position.z << ")\n";
+        file << "actorRot=(" << actor.rotation.x << ","
+             << actor.rotation.y << "," << actor.rotation.z << ")\n";
+    }
+}
+
 float getReplayExportAudioVolume()
 {
     return gAudioConfig.audioVolumeMultiplier;
@@ -642,20 +686,24 @@ void updateReplayExport()
             EXPORTLOG("frame %u hash=%llu sameAsFrame0=%s", frameNum, (unsigned long long)thisHash, identical ? "YES (STATIC)" : "NO (advancing)");
         }
 
-        // [A] [B] Debug log every 60 frames
-        if (frameNum % 60 == 0) {
-            const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
-            uint32_t ac = sf ? (uint32_t)sf->actors.size() : 0;
-            float replayTime = REPLAY_PLAYER.totalTicks() > 0
-                ? (float)REPLAY_PLAYER.currentTick() / 60.0f : 0.0f;
-            EXPORTLOG("[EXPORT DEBUG] frame=%u tick=%u time=%.2f playing=%d actors=%u",
-                      frameNum, REPLAY_PLAYER.currentTick(), replayTime,
-                      (int)REPLAY_PLAYER.isPlaying(), ac);
-            if (sf && !sf->actors.empty()) {
-                auto& p = sf->actors[0].position;
-                EXPORTLOG("[EXPORT DEBUG] actor0=(%.2f,%.2f,%.2f)", (double)p.x, (double)p.y, (double)p.z);
-            }
+        const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+        uint32_t ac = sf ? (uint32_t)sf->actors.size() : 0;
+        const glm::vec3 cameraPos = sf ? sf->camera.position : glm::vec3(0.0f);
+        const glm::vec3 cameraRot = sf ? sf->camera.rotation : glm::vec3(0.0f);
+        EXPORTLOG("[EXPORT TRACE] exportFrame=%u replayTick=%u sceneFrameIndex=%u actorCount=%u effectCount=%zu cameraPos=(%.2f,%.2f,%.2f) cameraRot=(%.2f,%.2f,%.2f)",
+                  frameNum, REPLAY_PLAYER.currentTick(),
+                  REPLAY_PLAYER.currentSceneFrameIndex(), ac,
+                  sf ? sf->effects.size() : 0,
+                  (double)cameraPos.x, (double)cameraPos.y, (double)cameraPos.z,
+                  (double)cameraRot.x, (double)cameraRot.y, (double)cameraRot.z);
+        if (sf && !sf->actors.empty()) {
+            const ReplayActorState& actor = sf->actors.front();
+            EXPORTLOG("[EXPORT ACTOR TRACE] exportFrame=%u replayTick=%u actorId=%s actorPos=(%.2f,%.2f,%.2f) actorRot=(%.2f,%.2f,%.2f)",
+                      frameNum, REPLAY_PLAYER.currentTick(), actor.id.c_str(),
+                      (double)actor.position.x, (double)actor.position.y, (double)actor.position.z,
+                      (double)actor.rotation.x, (double)actor.rotation.y, (double)actor.rotation.z);
         }
+        writeExportTraceSnapshot(frameNum);
     }
 
     // Flip vertically

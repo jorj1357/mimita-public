@@ -411,8 +411,114 @@ int main(int argc, char** argv)
             else { printf("  PASS: %s\n", name); }
         };
 
-        // 1. Create a tiny replay file
-        printf("\n--- Creating test replay ---\n");
+        // 1. Record and export a tiny replay through the normal recorder path.
+        printf("\n--- Recording/exporting test replay ---\n");
+        const std::filesystem::path selftestDir =
+            std::filesystem::path("build") / "replay-export-selftest";
+        std::error_code ec;
+        std::filesystem::create_directories(selftestDir, ec);
+        std::filesystem::path recordedReplayPath = selftestDir / "recorded-selftest.json";
+        std::filesystem::path recordedValidationPath =
+            generateReplayValidationPath(recordedReplayPath.string());
+        std::filesystem::remove(recordedReplayPath, ec);
+        std::filesystem::remove(recordedValidationPath, ec);
+        std::filesystem::remove(selftestDir / "frame_0.txt", ec);
+        std::filesystem::remove(selftestDir / "frame_5.txt", ec);
+        std::filesystem::remove(selftestDir / "frame_9.txt", ec);
+
+        ReplayRecorder recorder;
+        recorder.beginRecording(123.0f, "selftest-map");
+        ReplayActorState recordedActor;
+        recordedActor.id = "player";
+        recordedActor.name = "player";
+        recordedActor.type = "player";
+        recordedActor.weaponName = "revolver";
+        for (uint32_t i = 0; i < 10; i++) {
+            InputFrame input;
+            input.moveY = 1.0f;
+            input.movementPressed = true;
+            input.lookYaw = (float)i * 3.0f;
+            recorder.recordFrame(input);
+
+            ReplaySceneFrame f;
+            f.tick = (int)i;
+            f.time = (float)i / 60.0f;
+            f.camera.position = {(float)i, (float)i * 0.5f, 2.0f + (float)i * 0.1f};
+            f.camera.rotation = {1.0f + (float)i, 0.0f, 10.0f + (float)i};
+            recordedActor.position = {(float)i * 2.0f, (float)i * 0.25f, 1.0f};
+            recordedActor.rotation = {0.0f, 0.0f, (float)i * 4.0f};
+            f.actors.push_back(recordedActor);
+            if (i == 5) {
+                ReplayEffectEvent effect;
+                effect.type = "selftest_effect";
+                effect.position = recordedActor.position;
+                f.effects.push_back(effect);
+            }
+            recorder.recordSceneFrame(f);
+        }
+        recorder.stopRecording();
+
+        bool recordedExported = recorder.exportToJSON(recordedReplayPath.string());
+        check(recordedExported, "ReplayRecorder exportToJSON succeeds");
+        check(std::filesystem::exists(recordedReplayPath, ec), "recorded replay json exists");
+        check(std::filesystem::exists(recordedValidationPath, ec), "recorded replay validation json exists");
+
+        ReplayPlayer recordedPlayer;
+        bool recordedLoaded = recordedPlayer.loadFromJSON(recordedReplayPath.string());
+        check(recordedLoaded, "recorded replay loads into ReplayPlayer");
+        if (recordedLoaded) {
+            recordedPlayer.beginPlayback();
+            float previousActorX = -1.0f;
+            bool exportSequenceAdvances = true;
+            for (uint32_t exportFrame = 0; exportFrame < 10; ++exportFrame) {
+                recordedPlayer.seekToTick(exportFrame);
+                const ReplaySceneFrame* sf = recordedPlayer.currentSceneFrame();
+                if (!sf || sf->actors.empty() ||
+                    recordedPlayer.currentTick() != exportFrame ||
+                    recordedPlayer.currentSceneFrameIndex() != exportFrame ||
+                    std::fabs(sf->actors.front().position.x - (float)exportFrame * 2.0f) > 0.01f) {
+                    exportSequenceAdvances = false;
+                    break;
+                }
+                if (exportFrame > 0 && sf->actors.front().position.x <= previousActorX) {
+                    exportSequenceAdvances = false;
+                    break;
+                }
+                previousActorX = sf->actors.front().position.x;
+                if (exportFrame == 0 || exportFrame == 5 || exportFrame == 9) {
+                    std::filesystem::path tracePath =
+                        selftestDir / ("frame_" + std::to_string(exportFrame) + ".txt");
+                    FILE* trace = fopen(tracePath.string().c_str(), "w");
+                    if (trace) {
+                        fprintf(trace, "exportFrame=%u\n", exportFrame);
+                        fprintf(trace, "replayTick=%u\n", recordedPlayer.currentTick());
+                        fprintf(trace, "sceneFrameIndex=%u\n", recordedPlayer.currentSceneFrameIndex());
+                        fprintf(trace, "actorCount=%zu\n", sf->actors.size());
+                        fprintf(trace, "cameraPos=(%.2f,%.2f,%.2f)\n",
+                                sf->camera.position.x, sf->camera.position.y, sf->camera.position.z);
+                        fprintf(trace, "cameraRot=(%.2f,%.2f,%.2f)\n",
+                                sf->camera.rotation.x, sf->camera.rotation.y, sf->camera.rotation.z);
+                        fprintf(trace, "actorId=%s\n", sf->actors.front().id.c_str());
+                        fprintf(trace, "actorPos=(%.2f,%.2f,%.2f)\n",
+                                sf->actors.front().position.x,
+                                sf->actors.front().position.y,
+                                sf->actors.front().position.z);
+                        fprintf(trace, "actorRot=(%.2f,%.2f,%.2f)\n",
+                                sf->actors.front().rotation.x,
+                                sf->actors.front().rotation.y,
+                                sf->actors.front().rotation.z);
+                        fclose(trace);
+                    }
+                }
+            }
+            check(exportSequenceAdvances, "export seek sequence advances scene frame, actor, and camera data");
+            check(std::filesystem::exists(selftestDir / "frame_0.txt", ec), "validation output frame_0.txt exists");
+            check(std::filesystem::exists(selftestDir / "frame_5.txt", ec), "validation output frame_5.txt exists");
+            check(std::filesystem::exists(selftestDir / "frame_9.txt", ec), "validation output frame_9.txt exists");
+        }
+
+        // 2. Create a tiny clip file.
+        printf("\n--- Creating test replay clip ---\n");
         ReplayClip clip;
         clip.header.tickRate = 60;
         clip.header.tickCount = 10;
@@ -436,16 +542,12 @@ int main(int argc, char** argv)
             clip.sceneFrames.push_back(f);
         }
 
-        const std::filesystem::path selftestDir =
-            std::filesystem::path("build") / "replay-export-selftest";
-        std::error_code ec;
-        std::filesystem::create_directories(selftestDir, ec);
         std::filesystem::path replayPath = selftestDir / "selftest.mclip.json";
         bool saved = clip.save(replayPath.string());
         check(saved, "create test replay file");
         if (!saved) { printf("[REPLAY EXPORT SELFTEST] FAILED: cannot create replay\n"); return 1; }
 
-        // 2. Verify replay loads and advances
+        // 3. Verify replay loads and advances
         printf("\n--- Verifying replay advances ---\n");
         ReplayPlayer player;
         bool loaded = player.loadFromJSON(replayPath.string());
@@ -461,19 +563,19 @@ int main(int argc, char** argv)
         check(frame0 && frame0->actors[0].position.x == 0.0f, "actor0.x at tick 0 == 0.0");
 
         player.seekToTick(5);
-        player.update(0.0f);
         const ReplaySceneFrame* frame5 = player.currentSceneFrame();
         check(frame5 != nullptr, "seekToTick(5) returns scene frame");
-        check(frame5 && frame5->actors[0].position.x > 0.0f, "actor0.x at tick 5 > 0.0 (advancing)");
+        check(player.currentSceneFrameIndex() == 5, "seekToTick(5) selects scene frame index 5 without update");
+        check(frame5 && std::fabs(frame5->actors[0].position.x - 10.0f) < 0.01f, "actor0.x at tick 5 == 10.0");
 
         player.seekToTick(9);
-        player.update(0.0f);
         const ReplaySceneFrame* frame9 = player.currentSceneFrame();
         check(frame9 != nullptr, "seekToTick(9) returns scene frame");
+        check(player.currentSceneFrameIndex() == 9, "seekToTick(9) selects scene frame index 9 without update");
 
         check(player.currentTick() > 0, "currentTick > 0 (replay advances)");
 
-        // 3. Verify ffmpeg exists
+        // 4. Verify ffmpeg exists
         printf("\n--- Verifying ffmpeg ---\n");
         std::string ffmpegPath = defaultFfmpegPath();
         bool ffmpegExists = std::filesystem::exists(ffmpegPath);
@@ -550,9 +652,8 @@ int main(int argc, char** argv)
             }
         }
 
-        // Cleanup
-        printf("\n--- Cleanup ---\n");
-        std::filesystem::remove_all(selftestDir, ec);
+        printf("\n--- Selftest artifacts ---\n");
+        printf("    %s\n", selftestDir.string().c_str());
 
         printf("\n[REPLAY EXPORT SELFTEST] Results: %d/%d passed, %d failed\n",
                total - failures, total, failures);
@@ -2935,6 +3036,24 @@ int main(int argc, char** argv)
                         uint32_t afterTick = gReplayPlayer.currentTick();
                         Debug::log(Debug::Category::Replay, "[EXPORT DEBUG] REPLAY_PLAYER.update: beforeTick=%u afterTick=%u (seekTick=%u)",
                                    beforeTick, afterTick, seekTick);
+                        if (const ReplaySceneFrame* sf = gReplayPlayer.currentSceneFrame()) {
+                            const glm::vec3 cameraPos = sf->camera.position;
+                            const glm::vec3 cameraRot = sf->camera.rotation;
+                            Debug::log(Debug::Category::Replay,
+                                "[EXPORT TRACE] exportFrame=%u replayTick=%u sceneFrameIndex=%u actorCount=%zu effectCount=%zu cameraPos=(%.2f,%.2f,%.2f) cameraRot=(%.2f,%.2f,%.2f)",
+                                seekTick, afterTick, gReplayPlayer.currentSceneFrameIndex(),
+                                sf->actors.size(), sf->effects.size(),
+                                (double)cameraPos.x, (double)cameraPos.y, (double)cameraPos.z,
+                                (double)cameraRot.x, (double)cameraRot.y, (double)cameraRot.z);
+                            if (!sf->actors.empty()) {
+                                const ReplayActorState& actor = sf->actors.front();
+                                Debug::log(Debug::Category::Replay,
+                                    "[EXPORT ACTOR TRACE] tick=%u actorId=%s actorPos=(%.2f,%.2f,%.2f) actorRot=(%.2f,%.2f,%.2f)",
+                                    afterTick, actor.id.c_str(),
+                                    (double)actor.position.x, (double)actor.position.y, (double)actor.position.z,
+                                    (double)actor.rotation.x, (double)actor.rotation.y, (double)actor.rotation.z);
+                            }
+                        }
                     } else {
                         Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u >= total %u (skip)", seekTick, gReplayPlayer.totalTicks());
                     }
@@ -3529,6 +3648,14 @@ int main(int argc, char** argv)
                         camera, *replayFrame,
                         gReplayPlayer.killerId(),
                         gReplayPlayer.victimId(), dt);
+                    if (getReplayExportJob().state == ReplayExportJob::Capturing) {
+                        Debug::log(Debug::Category::Replay,
+                            "[EXPORT CAMERA APPLY] exportFrame=%u replayTick=%u cameraPos=(%.2f,%.2f,%.2f) cameraRot=(%.2f,%.2f)",
+                            getReplayExportJob().capturedTicks,
+                            gReplayPlayer.currentTick(),
+                            (double)camera.pos.x, (double)camera.pos.y, (double)camera.pos.z,
+                            (double)camera.pitch, (double)camera.yaw);
+                    }
                 }
             }
             if (anyFreecam) {
@@ -3942,6 +4069,21 @@ int main(int argc, char** argv)
                         actor->vel = actorState.velocity;
                         actor->onGround = actorState.grounded;
                         actor->equippedWeaponId = actorState.weaponName;
+                        if (getReplayExportJob().state == ReplayExportJob::Capturing &&
+                            !replayFrame->actors.empty() &&
+                            actorState.id == replayFrame->actors.front().id) {
+                            Debug::log(Debug::Category::Replay,
+                                "[EXPORT ACTOR APPLY] exportFrame=%u replayTick=%u actorId=%s actorPos=(%.2f,%.2f,%.2f) actorRot=(%.2f,%.2f,%.2f)",
+                                getReplayExportJob().capturedTicks,
+                                gReplayPlayer.currentTick(),
+                                actorState.id.c_str(),
+                                (double)actorState.position.x,
+                                (double)actorState.position.y,
+                                (double)actorState.position.z,
+                                (double)actorState.rotation.x,
+                                (double)actorState.rotation.y,
+                                (double)actorState.rotation.z);
+                        }
                         actor->applyReplayPose(
                             actorState.position,
                             actorState.rotation.z,
