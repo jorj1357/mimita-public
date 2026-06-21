@@ -44,4 +44,3 @@ void doFriction(Player& p, bool movementPressed, float dt);
 
 // Collision
 void doCollisions(Player& p, const struct World& world, bool& groundedThisFrame, float dt);
-void resolveBodyPartCollisions(Player& p, const struct World& world, float dt);
