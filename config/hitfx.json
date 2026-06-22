@@ -159,6 +159,55 @@
         "speedScaling": true,
         "speedThreshold": 12.0,
         "speedScaleMin": 1.0,
-        "speedScaleMax": 2.5
+        "speedScaleMax": 2.5,
+        "stretchAxis": "forward"
+    },
+
+    "groundJumpBurst": {
+        "enabled": true,
+        "lifetimeTicks": 10,
+        "lengthStart": 1.5,
+        "lengthEnd": 0.5,
+        "radiusStart": 0.25,
+        "radiusEnd": 0.15,
+        "colorStart": [1.0, 0.85, 0.2],
+        "colorEnd": [1.0, 0.6, 0.1],
+        "stretchAxis": "forward"
+    },
+
+    "airJumpBurst": {
+        "enabled": true,
+        "lifetimeTicks": 14,
+        "lengthStart": 3.0,
+        "lengthEnd": 6.0,
+        "radiusStart": 0.4,
+        "radiusEnd": 0.1,
+        "colorStart": [0.5, 0.3, 1.0],
+        "colorEnd": [0.2, 0.1, 0.8],
+        "stretchAxis": "forward"
+    },
+
+    "walkBurst": {
+        "enabled": true,
+        "lifetimeTicks": 6,
+        "lengthStart": 0.3,
+        "lengthEnd": 0.6,
+        "radiusStart": 0.08,
+        "radiusEnd": 0.04,
+        "colorStart": [0.8, 0.8, 0.8],
+        "colorEnd": [0.4, 0.4, 0.4],
+        "stretchAxis": "forward"
+    },
+
+    "landingBurst": {
+        "enabled": true,
+        "lifetimeTicks": 12,
+        "lengthStart": 0.1,
+        "lengthEnd": 0.1,
+        "radiusStart": 0.6,
+        "radiusEnd": 0.05,
+        "colorStart": [0.6, 0.6, 0.6],
+        "colorEnd": [0.2, 0.2, 0.2],
+        "stretchAxis": "up"
     }
 }

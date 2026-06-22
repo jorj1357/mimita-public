@@ -3,6 +3,7 @@ dotenv.config()
 
 import express from "express"
 import cors from "cors"
+import { performance } from "perf_hooks"
 
 import {
     createSecretToken,
@@ -24,6 +25,9 @@ import {
     sendPasswordChangedEmail,
     sendPasswordChangeCodeEmail
 } from "./mail.js"
+import adminRouter from "./admin.js"
+import debugRouter from "./debug.js"
+import { trackEvent } from "./analytics.js"
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -44,6 +48,35 @@ app.use(cors({
     credentials: true
 }))
 app.use(express.json({ limit: "32kb" }))
+
+const LOG_REQUESTS = process.env.LOG_REQUESTS !== "false"
+
+app.use((req, res, next) => {
+    if (!LOG_REQUESTS) return next()
+
+    const start = performance.now()
+    const timestamp = new Date().toISOString()
+
+    res.on("finish", () => {
+        const duration = Math.round((performance.now() - start) * 100) / 100
+        const logData = {
+            method: req.method,
+            path: req.originalUrl,
+            status: res.statusCode,
+            duration: `${duration}ms`,
+            timestamp
+        }
+
+        if (res.statusCode >= 400) {
+            console.log(`[REQUEST ERROR] ${JSON.stringify(logData)}`)
+        }
+        else {
+            console.log(`[REQUEST] ${JSON.stringify(logData)}`)
+        }
+    })
+
+    next()
+})
 
 function logAuth(action, value) {
     console.log(`[AUTH] ${action}=${value}`)
@@ -728,6 +761,46 @@ app.delete("/api/account", authenticate, async (req, res, next) => {
     }
 })
 
+app.use("/api/admin", adminRouter)
+app.use("/api/debug", debugRouter)
+
+app.post("/api/admin/feedback", async (req, res, next) => {
+    try {
+        const { submitFeedback } = await import("./feedback.js")
+        await submitFeedback({
+            selectedPresets: req.body.selectedPresets,
+            customFeedback: req.body.customFeedback,
+            contactInfo: req.body.contactInfo,
+            pageUrl: req.body.pageUrl,
+            userId: req.body.userId
+        })
+        res.status(201).json({ success: true, message: "feedback submitted" })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+/*
+    TODO: Increment downloads_today when installer download starts.
+    TODO: Increment accounts_created when signup succeeds.
+    TODO: Increment first_match_played when user finishes first match.
+    TODO: Increment returning_users when account logs in on a later day than creation.
+    TODO: Increment donation_page_visits when donation page loads.
+    TODO: Increment donations_total when donation succeeds.
+    TODO: Track session length on disconnect/logout.
+    TODO: Track retention calculations nightly.
+    TODO: Postgres production setup.
+    TODO: Authentication migration.
+    TODO: Email notifications.
+    TODO: Moderation workflow.
+    TODO: Anti-spam protection.
+    TODO: Rate limiting.
+    TODO: Account linking.
+    TODO: Analytics aggregation jobs.
+    TODO: Data retention policies.
+*/
+
 app.post("/api/newsletter", async (req, res, next) => {
     try {
         const validation = validateEmail(req.body.email)
@@ -772,7 +845,24 @@ app.post("/api/newsletter", async (req, res, next) => {
 app.use((error, req, res, next) => {
     void req
     void next
-    console.error(error)
+    const logData = {
+        type: error.constructor?.name || "Error",
+        message: error.message,
+        code: error.code || "unknown",
+        stack: error.stack?.split("\n").slice(0, 3).join(" | ") || ""
+    }
+    console.log(`[SERVER ERROR] ${JSON.stringify(logData)}`)
+
+    if (error.code === "ECONNREFUSED") {
+        console.log("[SERVER] Database connection refused.")
+        console.log("[SERVER] Ensure PostgreSQL is running and accessible.")
+        console.log("[SERVER] Check .env for: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME")
+        return res.status(500).json({
+            success: false,
+            message: "database connection failed. check server logs."
+        })
+    }
+
     res.status(500).json({
         success: false,
         message: "server error"
@@ -780,14 +870,73 @@ app.use((error, req, res, next) => {
 })
 
 async function start() {
-    await runMigrations()
+    const startTime = Date.now()
+
+    console.log("=".repeat(50))
+    console.log("[STARTUP] Mimita Backend Server")
+    console.log("[STARTUP] Environment:", production ? "production" : "development")
+    console.log("[STARTUP] Port:", port)
+    console.log("[STARTUP] Session days:", sessionDays)
+    console.log("[STARTUP] CORS origin:", process.env.APP_ORIGIN || "http://localhost:5173")
+    console.log("[STARTUP] Database host:", process.env.DB_HOST || "localhost")
+    console.log("[STARTUP] Database name:", process.env.DB_NAME || "mimita_db")
+    console.log("[STARTUP] Database user:", process.env.DB_USER || "mimita_user")
+    console.log("[STARTUP] SMTP configured:", Boolean(process.env.SMTP_HOST))
+    console.log("-".repeat(50))
+
+    try {
+        await runMigrations()
+        console.log("[STARTUP] Migrations applied successfully")
+    }
+    catch (error) {
+        console.log("[STARTUP] Migration failed:", error.message)
+        console.log("[STARTUP] Expected environment variables:")
+        console.log("[STARTUP]   DB_HOST     (default: localhost)")
+        console.log("[STARTUP]   DB_PORT     (default: 5432)")
+        console.log("[STARTUP]   DB_NAME     (default: mimita_db)")
+        console.log("[STARTUP]   DB_USER     (default: mimita_user)")
+        console.log("[STARTUP]   DB_PASSWORD (required)")
+        console.log("[STARTUP] Alternative: set DATABASE_URL for single connection string")
+        throw error
+    }
+
     app.listen(port, () => {
-        console.log(`server running on port ${port}`)
+        const elapsed = Date.now() - startTime
+        console.log("-".repeat(50))
+        console.log(`[STARTUP] Server ready on port ${port} (${elapsed}ms)`)
+        console.log("[STARTUP] API base: http://localhost:" + port + "/api")
+        console.log("[STARTUP] Debug:    http://localhost:" + port + "/api/debug/health")
+        console.log("[STARTUP] Catalog:  http://localhost:" + port + "/api/debug/error-catalog")
+        console.log("=".repeat(50))
     })
 }
 
 start().catch((error) => {
-    console.error("database init failed")
-    console.error(error)
+    console.log("[STARTUP] Fatal error during startup:")
+    console.log("[STARTUP] ", error.message)
+
+    if (error.code === "ECONNREFUSED") {
+        console.log("[STARTUP] Could not connect to PostgreSQL.")
+        console.log("[STARTUP] Possible causes:")
+        console.log("[STARTUP]   1. PostgreSQL is not installed/running")
+        console.log("[STARTUP]   2. Wrong host or port in .env")
+        console.log("[STARTUP]   3. Firewall blocking port 5432")
+        console.log("[STARTUP]   4. Invalid database credentials")
+        console.log("[STARTUP] Expected connection:")
+        console.log(`[STARTUP]   DATABASE_URL=postgresql://${process.env.DB_USER || "mimita_user"}:<password>@${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || "mimita_db"}`)
+        console.log("[STARTUP] Or set individual env vars:")
+        console.log("[STARTUP]   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD")
+    }
+    else if (error.code === "28P01") {
+        console.log("[STARTUP] Invalid database password.")
+        console.log("[STARTUP] Check DB_PASSWORD in .env")
+    }
+    else if (error.code === "42P01") {
+        console.log("[STARTUP] Missing tables. Run: npm run migrate")
+    }
+    else {
+        console.log("[STARTUP] Unhandled error:", error.stack)
+    }
+
     process.exitCode = 1
 })

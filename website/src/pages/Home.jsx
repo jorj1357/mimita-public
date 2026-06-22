@@ -1,6 +1,7 @@
 import "../App.css"
 
 import Layout from "../components/Layout"
+import FeedbackBox from "../components/FeedbackBox"
 
 export default function Home() {
   return (
@@ -108,6 +109,8 @@ export default function Home() {
         </div>
 
       </main>
+
+      <FeedbackBox pageName="home" />
 
     </Layout>
   )

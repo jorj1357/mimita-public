@@ -3,6 +3,7 @@ import "../App.css"
 import Layout from "../components/Layout"
 
 import NewsletterBox from "../components/NewsletterBox"
+import FeedbackBox from "../components/FeedbackBox"
 
 export default function Newsletter() {
 
@@ -27,6 +28,8 @@ export default function Newsletter() {
         <NewsletterBox />
 
       </div>
+
+      <FeedbackBox pageName="newsletter" />
 
     </Layout>
   )

@@ -201,6 +201,17 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 weaponTransform, collisionGrip, collisionMuzzle, collisionRadius);
             player.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
+
+            // Store local-space weapon data so physics can recompute
+            // the capsule from a fresh right-arm transform (eliminating
+            // the one-frame latency between viewmodel update and collision).
+            player.weaponLocalToArm = glm::translate(glm::mat4(1.0f), handPoint) *
+                glm::mat4_cast(gripRotation) * customRot *
+                glm::translate(glm::mat4(1.0f), offset) *
+                glm::translate(glm::mat4(1.0f), -collisionGrip);
+            player.weaponGripLocal = collisionGrip;
+            player.weaponMuzzleLocal = collisionMuzzle;
+            player.weaponRadiusLocal = collisionRadius;
         }
         break;
     }

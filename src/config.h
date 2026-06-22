@@ -13,6 +13,7 @@ namespace DebugConfig
 
     // Runtime debug toggles (controlled via terminal)
     inline bool DEBUG_COLLISION = false;
+    inline bool DEBUG_COLLISION_TRACE = false;
     inline bool DEBUG_MOVEMENT = false;
     inline bool DEBUG_PHYSICS = false;
     inline bool DEBUG_SOUND = false;
@@ -49,6 +50,7 @@ namespace DebugConfig
     inline bool DEBUG_COLLISION_SYSTEM = false;
     inline bool DEBUG_COLLISION_PLAYER = false;
     inline bool DEBUG_COLLISION_LIMB = false;
+    inline bool DEBUG_COLLISION_BODY_PUSH = false;
     inline bool DEBUG_COLLISION_GRID = false;
     inline bool DEBUG_COLLISION_VALIDATE = false;
     inline bool DEBUG_BOMBTAG = false;
@@ -62,6 +64,7 @@ namespace DebugConfig
     inline void ResetAll()
     {
         DEBUG_COLLISION = false;
+        DEBUG_COLLISION_TRACE = false;
         DEBUG_MOVEMENT = false;
         DEBUG_PHYSICS = true;
         DEBUG_SOUND = false;
@@ -94,6 +97,7 @@ namespace DebugConfig
         DEBUG_NPC_MOVEMENT = false;
         DEBUG_COLLISION_PLAYER = false;
         DEBUG_COLLISION_LIMB = false;
+        DEBUG_COLLISION_BODY_PUSH = false;
         DEBUG_COLLISION_GRID = false;
         DEBUG_COLLISION_VALIDATE = false;
         DEBUG_BOMBTAG = false;

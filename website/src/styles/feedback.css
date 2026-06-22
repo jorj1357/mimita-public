@@ -60,3 +60,115 @@
   opacity: 0.5;
   font-size: clamp(0.8rem, 1.2vmin, 1.1rem);
 }
+
+/* =========================
+   FEEDBACKBOX COMPONENT
+========================= */
+
+.feedbackBoxComponent {
+  width: 100%;
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.feedbackBoxTitle {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.5;
+  margin: 0;
+}
+
+.feedbackBoxPage {
+  font-size: 0.8rem;
+  opacity: 0.35;
+  margin: 0;
+}
+
+.feedbackBoxPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.feedbackBoxPreset {
+  padding: 0.35rem 0.7rem;
+  background: transparent;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+}
+
+.feedbackBoxPreset:hover {
+  border-color: white;
+}
+
+.feedbackBoxPreset.active {
+  background: white;
+  color: black;
+  border-color: white;
+}
+
+.feedbackBoxTextarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 0.75rem;
+  background: black;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.15);
+  resize: vertical;
+  font-size: 0.9rem;
+}
+
+.feedbackBoxTextarea::placeholder {
+  color: rgba(255,255,255,0.3);
+}
+
+.feedbackBoxContact {
+  width: 100%;
+  padding: 0.6rem;
+  background: black;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.15);
+  font-size: 0.85rem;
+}
+
+.feedbackBoxContact::placeholder {
+  color: rgba(255,255,255,0.3);
+}
+
+.feedbackBoxSubmit {
+  padding: 0.6rem 1rem;
+  background: white;
+  color: black;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.feedbackBoxSubmit:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.feedbackBoxMessage {
+  font-size: 0.85rem;
+  color: #ef4444;
+  margin: 0;
+}
+
+.feedbackBoxThanks {
+  text-align: center;
+  opacity: 0.7;
+  font-style: italic;
+  margin: 0;
+}

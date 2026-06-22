@@ -128,6 +128,18 @@ struct MovementDashBurstConfig {
     float forwardOffset = -1.0f;
     float rightOffset = 0.0f;
     float upOffset = 0.0f;
+    // World-space direct offset added after local-space offset.
+    glm::vec3 offset{0.0f};
+    // Non-uniform per-axis scale multiplier (applied on top of the stretch).
+    glm::vec3 scale{1.0f};
+    // Euler rotation (degrees) applied to the stretch axis.
+    glm::vec3 rotation{0.0f};
+    // Stretch axis for the elongated sphere.
+    // Supported: "forward", "right", "up", "world_x", "world_y", "world_z"
+    // "forward" = direction of movement (default, for trail effects)
+    // "up" = vertical (for landing shockwave flattening)
+    // "right" = horizontal perpendicular (for sideways spread)
+    std::string stretchAxis = "forward";
 };
 
 struct HitFxConfig {
@@ -154,6 +166,8 @@ struct HitFxConfig {
     MovementDashBurstConfig movementDashBurst;
     MovementDashBurstConfig groundJumpBurst;
     MovementDashBurstConfig airJumpBurst;
+    MovementDashBurstConfig walkBurst;
+    MovementDashBurstConfig landingBurst;
     DeathEllipsoidConfig deathEllipsoid;
 };
 
@@ -174,7 +188,9 @@ enum class BurstType {
     Movement,
     Dash,
     GroundJump,
-    AirJump
+    AirJump,
+    Walk,
+    Landing
 };
 
 struct HitBurstEffect {
@@ -207,8 +223,10 @@ void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                      const std::string& targetId = "");
 
 void spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
-void spawnGroundJumpBurst(const glm::vec3& position);
-void spawnAirJumpBurst(const glm::vec3& position);
+void spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction);
+void spawnAirJumpBurst(const glm::vec3& position, const glm::vec3& direction);
+void spawnWalkBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
+void spawnLandingBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
 
 void updateHitBursts(float dt);
 void renderHitBursts(const Camera& camera);
