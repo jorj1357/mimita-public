@@ -94,6 +94,19 @@ export default function AdminDashboard() {
 
     const M = metrics || {}
 
+    function label(value) {
+        return String(value || "—").replaceAll("_", " ")
+    }
+
+    function renderList(items, empty = "—") {
+        if (!items || items.length === 0) return empty
+        return items.map((item, i) => (
+            <span key={`${item.name}-${i}`}>
+                {label(item.name)}: {item.count}
+            </span>
+        ))
+    }
+
     return (
         <div className="adminPage">
             <div className="adminHeader">
@@ -197,6 +210,14 @@ export default function AdminDashboard() {
                         <span>game opens today</span>
                         <span className="adminValue">{M.game_opens_today?.today || 0}</span>
                     </div>
+                    <div className="adminCard">
+                        <span>game sessions today</span>
+                        <span className="adminValue">{M.game_sessions_today?.today || 0}</span>
+                    </div>
+                    <div className="adminCard">
+                        <span>game sessions all time</span>
+                        <span className="adminValue">{M.game_sessions_all?.allTime || 0}</span>
+                    </div>
                 </div>
 
                 {/* Engagement */}
@@ -222,6 +243,47 @@ export default function AdminDashboard() {
                     <div className="adminCard"><span>90 day retention</span><span className="adminValue">{M.retention_90d?.today || 0}%</span></div>
                     <div className="adminCard"><span>365 day retention</span><span className="adminValue">{M.retention_365d?.today || 0}%</span></div>
                     <div className="adminCard"><span>returning users today</span><span className="adminValue">{M.returning_users_today?.today || 0}</span></div>
+                    <div className="adminCard adminCardList">
+                        <span>return events</span>
+                        <span className="adminValueSmall">{renderList(M.retention_returns)}</span>
+                    </div>
+                </div>
+
+                {/* Game Analytics */}
+                <div className="adminSection">
+                    <h2>game analytics</h2>
+                    <div className="adminCard adminCardList">
+                        <span>most played maps</span>
+                        <span className="adminValueSmall">{renderList(M.top_maps)}</span>
+                    </div>
+                    <div className="adminCard adminCardList">
+                        <span>most used weapons</span>
+                        <span className="adminValueSmall">{renderList(M.top_weapons)}</span>
+                    </div>
+                    <div className="adminCard adminCardList">
+                        <span>most used features</span>
+                        <span className="adminValueSmall">{renderList(M.top_features)}</span>
+                    </div>
+                    <div className="adminCard adminCardList">
+                        <span>movement stats</span>
+                        <span className="adminValueSmall">{renderList(M.movement_stats)}</span>
+                    </div>
+                    <div className="adminCard">
+                        <span>analytics opt-out rate</span>
+                        <span className="adminValue">{M.analytics_opt_out_rate ?? 0}%</span>
+                    </div>
+                    <div className="adminCard">
+                        <span>deletion requests today</span>
+                        <span className="adminValue">{M.analytics_deletion_requests?.today || 0}</span>
+                    </div>
+                    <div className="adminCard">
+                        <span>deletion requests pending</span>
+                        <span className="adminValue">{M.analytics_deletion_requests?.pending || 0}</span>
+                    </div>
+                    <div className="adminCard">
+                        <span>deletion requests all time</span>
+                        <span className="adminValue">{M.analytics_deletion_requests?.allTime || 0}</span>
+                    </div>
                 </div>
 
                 {/* Community */}

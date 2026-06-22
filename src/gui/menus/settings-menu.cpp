@@ -3,6 +3,7 @@
 #include "../gui-element-render.h"
 #include "../gui-coord.h"
 #include "../ui-system.h"
+#include "analytics/analytics-manager.h"
 #include "camera.h"
 #include "config/player-settings.h"
 #include "effects/hit-effects.h"
@@ -254,6 +255,8 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         changed |= uiCheckbox(win, "Right", {1450.0f, 658.0f, 72.0f, 32.0f}, &crosshair.showRight);
         if (changed) config.save();
     }
+
+    AnalyticsManager::instance().drawSettingsPanel(win);
 
     // ===== BACK BUTTON =====
     {

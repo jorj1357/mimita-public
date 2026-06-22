@@ -30,6 +30,7 @@
 #include "physics/movement/physics-freeze.h"
 #include "physics/movement/physics-body-collision.h"
 
+#include "analytics/analytics-manager.h"
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
 #include "config.h"
@@ -150,6 +151,8 @@ static void physicsMainUpdate_Internal(
 
     // air dash: Left Shift+WASD while airborne. Falls back to camera forward if no WASD.
     doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
+    if (p.didDash)
+        AnalyticsManager::instance().trackMovement("dash");
 
     // down dash: Q key, always works regardless of grounded state
     // 6 14 2026 testing not havingthis at all
@@ -158,6 +161,11 @@ static void physicsMainUpdate_Internal(
 
     // jump AFTER grounded so we actually know it work
     doJump(p, jumpHeld, dt);
+    if (p.didGroundJump)
+        AnalyticsManager::instance().trackMovement(
+            (p.hasWorldContact && !groundedThisFrame) ? "wall_jump" : "jump");
+    else if (p.didAirJump)
+        AnalyticsManager::instance().trackMovement("air_jump");
     if (DebugConfig::DEBUG_INPUT) {
         if (p.didGroundJump)
             Debug::log(Debug::Category::General, "[JUMP] start ground velocityZ=%.2f\n", p.vel.z);

@@ -11,6 +11,7 @@
 #include <cstdlib>
 
 #include "audio/audio.h"
+#include "analytics/analytics-manager.h"
 #include "camera.h"
 #include "config.h"
 #include "config/player-settings.h"
@@ -227,6 +228,7 @@ RevolverShotResult WeaponSystem::fireHitscan(
 
     WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
     mDisturbance += 1.2f;
+    AnalyticsManager::instance().trackWeaponUsed(def->id);
 
         // TODO(debug): migrate to Debug::log(Debug::Category::Weapons)
         printf("[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d\n",
@@ -325,6 +327,7 @@ void WeaponSystem::fireSwordsword(const Camera& camera, Player& player, NpcSyste
     mShotCooldown = def->fireDelay;
 
     WeaponSwordsword::startSlash(mSwordswordState, *def, player, camera);
+    AnalyticsManager::instance().trackWeaponUsed(def->id);
 
     if (!def->soundShoot.empty()) {
         WeaponAudio::playShootSound(*def, player.pos);
@@ -355,6 +358,7 @@ RevolverShotResult WeaponSystem::fireAlt(
     mShotCooldown = rt->fireCooldown;
 
     WeaponSwordsword::startLunge(mSwordswordState, *def, player, camera);
+    AnalyticsManager::instance().trackWeaponUsed(def->id);
 
     if (!def->soundShoot.empty()) {
         WeaponAudio::playShootSound(*def, player.pos);

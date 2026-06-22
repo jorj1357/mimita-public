@@ -66,6 +66,7 @@
 #include "audio/audio.h"
 #include "audio/hitmarker-audio.h"
 #include "audio/music-manager.h"
+#include "analytics/analytics-manager.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
 #include "gui/gui-layout.h"
@@ -666,6 +667,7 @@ int main(int argc, char** argv)
 
     printf("[MAIN] start\n");
     LogManager::instance().init();
+    AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 
     printf("[LOG] Console output enabled\n");
     printf("[LOG] File logging enabled\n");
@@ -743,6 +745,7 @@ int main(int argc, char** argv)
     InputCommandSystem::instance().loadBinds("config/accounts/default.json");
     RegisterTeleportCommands();
     Terminal::instance().init(engine.window());
+    AnalyticsManager::instance().registerCommands();
 
     // Lighting config
     LightingConfig::instance().load("config/lighting.json");
@@ -2656,6 +2659,7 @@ int main(int argc, char** argv)
         gFramePacer.beginFrame();
         Perf::beginFrame();
         float dt = engine.beginFrame();
+        AnalyticsManager::instance().update(dt);
         updatePlayerProceduralHotReload(dt);
         CrosshairConfig::instance().pollReload();
         AvatarSystem::instance().pollHotReload();
@@ -5176,6 +5180,7 @@ int main(int argc, char** argv)
 
     printf("[MAIN] loop ended\n");
     MimitaNet::mpShutdown(mpContext);
+    AnalyticsManager::instance().shutdown();
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
     LogManager::instance().shutdown();

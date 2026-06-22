@@ -60,21 +60,44 @@ export default function Terms() {
           </p>
 
           <p>
-            Some analytics and third-party services may be used
-            to understand if people are using the platform,
-            or visiting the site,
-            or finding things useful,
-            or care at all.
+            Mimita may collect anonymous gameplay analytics
+            after you answer the first-launch popup.
+            This helps us understand session length,
+            onboarding,
+            maps,
+            weapons,
+            movement,
+            feature use,
+            crashes,
+            disconnects,
+            and retention.
           </p>
 
           <p>
-            This may include:
-            <br></br>
-            Google Analytics,
-            hosting providers,
-            payment systems,
+            We do not sell analytics data.
+            We do not collect passwords,
+            chat contents,
+            auth tokens,
+            or sensitive free-form information
+            through gameplay analytics.
+          </p>
+
+          <p>
+            Analytics can be disabled permanently
+            from the first-launch popup,
+            the in-game settings menu,
+            or the analytics terminal command.
+            Data deletion can be requested from the game settings menu.
+          </p>
+
+          <p>
+            The website may also use infrastructure services
+            such as hosting,
+            email,
             newsletters,
-            or other infrastructure services.
+            payments,
+            Google Analytics,
+            or Metricool.
           </p>
 
           <p>

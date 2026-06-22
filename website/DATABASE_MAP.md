@@ -91,6 +91,57 @@ All tables are in the `public` schema.
 
 ---
 
+### analytics_consent
+
+| Column | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| id | BIGSERIAL | — | PRIMARY KEY |
+| anonymous_id | TEXT | — | NOT NULL, UNIQUE |
+| user_id | BIGINT | — | FK → users(id) ON DELETE SET NULL |
+| username | TEXT | '' | NOT NULL |
+| analytics_enabled | BOOLEAN | TRUE | NOT NULL |
+| permanently_disabled | BOOLEAN | FALSE | NOT NULL |
+| source | TEXT | 'game' | NOT NULL |
+| created_at | TIMESTAMPTZ | CURRENT_TIMESTAMP | NOT NULL |
+| updated_at | TIMESTAMPTZ | CURRENT_TIMESTAMP | NOT NULL |
+
+**Index:** `analytics_consent_user_idx` ON user_id
+
+---
+
+### analytics_deletion_requests
+
+| Column | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| id | BIGSERIAL | — | PRIMARY KEY |
+| user_id | BIGINT | — | FK → users(id) ON DELETE SET NULL |
+| anonymous_id | TEXT | — | — |
+| username | TEXT | '' | NOT NULL |
+| email | TEXT | '' | NOT NULL |
+| source | TEXT | 'game' | NOT NULL |
+| status | TEXT | 'requested' | CHECK IN ('requested','reviewing','completed','rejected') |
+| audit | JSONB | '{}' | NOT NULL |
+| requested_at | TIMESTAMPTZ | CURRENT_TIMESTAMP | NOT NULL |
+
+**Index:** `analytics_deletion_requests_status_idx` ON (status, requested_at DESC)
+
+---
+
+### analytics_audit_log
+
+| Column | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| id | BIGSERIAL | — | PRIMARY KEY |
+| action | TEXT | — | NOT NULL |
+| user_id | BIGINT | — | FK → users(id) ON DELETE SET NULL |
+| anonymous_id | TEXT | — | — |
+| details | JSONB | '{}' | NOT NULL |
+| created_at | TIMESTAMPTZ | CURRENT_TIMESTAMP | NOT NULL |
+
+**Index:** `analytics_audit_log_action_idx` ON (action, created_at DESC)
+
+---
+
 ### analytics_metrics
 
 | Column | Type | Default | Constraints |
@@ -144,6 +195,9 @@ All tables are in the `public` schema.
 users ──1:N──→ sessions
 users ──1:N──→ password_change_codes
 users ──1:N──→ analytics_events (SET NULL on delete)
+users ──1:N──→ analytics_consent (SET NULL on delete)
+users ──1:N──→ analytics_deletion_requests (SET NULL on delete)
+users ──1:N──→ analytics_audit_log (SET NULL on delete)
 users ──1:N──→ feedback (SET NULL on delete)
 ```
 
