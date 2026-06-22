@@ -28,6 +28,11 @@ import {
 import adminRouter from "./admin.js"
 import debugRouter from "./debug.js"
 import { trackEvent } from "./analytics.js"
+import { createRateLimit } from "./rateLimit.js"
+
+const authRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "auth" })
+const adminRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 20, name: "admin" })
+const newsletterRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "newsletter" })
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -205,7 +210,7 @@ async function authenticate(req, res, next) {
     }
 }
 
-app.post("/api/auth/signup", async (req, res, next) => {
+app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
     try {
         const usernameValidation = validateUsername(req.body.username)
         const emailValidation = validateEmail(req.body.email)
@@ -278,7 +283,7 @@ app.post("/api/auth/signup", async (req, res, next) => {
     }
 })
 
-app.post("/api/auth/signin", async (req, res, next) => {
+app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
     try {
         const identifier = String(req.body.identifier || "").trim()
         const result = await pool.query(
@@ -761,7 +766,7 @@ app.delete("/api/account", authenticate, async (req, res, next) => {
     }
 })
 
-app.use("/api/admin", adminRouter)
+app.use("/api/admin", adminRateLimit, adminRouter)
 app.use("/api/debug", debugRouter)
 
 app.post("/api/admin/feedback", async (req, res, next) => {
@@ -801,7 +806,7 @@ app.post("/api/admin/feedback", async (req, res, next) => {
     TODO: Data retention policies.
 */
 
-app.post("/api/newsletter", async (req, res, next) => {
+app.post("/api/newsletter", newsletterRateLimit, async (req, res, next) => {
     try {
         const validation = validateEmail(req.body.email)
 
@@ -890,14 +895,7 @@ async function start() {
     }
     catch (error) {
         console.log("[STARTUP] Migration failed:", error.message)
-        console.log("[STARTUP] Expected environment variables:")
-        console.log("[STARTUP]   DB_HOST     (default: localhost)")
-        console.log("[STARTUP]   DB_PORT     (default: 5432)")
-        console.log("[STARTUP]   DB_NAME     (default: mimita_db)")
-        console.log("[STARTUP]   DB_USER     (default: mimita_user)")
-        console.log("[STARTUP]   DB_PASSWORD (required)")
-        console.log("[STARTUP] Alternative: set DATABASE_URL for single connection string")
-        throw error
+        console.log("[STARTUP] Server will start anyway. Run migrations separately if needed.")
     }
 
     app.listen(port, () => {
