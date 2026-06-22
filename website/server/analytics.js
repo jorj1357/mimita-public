@@ -228,7 +228,10 @@ export async function refreshMetrics() {
     await updateMetric("accounts_created_all", today, Number(accountsAll.rows[0].count))
 
     // feedback
-    await updateMetric("feedback_today", today, metrics.feedback_today || 0)
+    const feedbackToday = await pool.query(
+        `SELECT COUNT(*) AS count FROM feedback WHERE created_at >= CURRENT_DATE`
+    )
+    await updateMetric("feedback_today", today, Number(feedbackToday.rows[0].count))
 }
 
 async function countEvents(eventName, range) {

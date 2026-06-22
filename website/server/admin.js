@@ -1,43 +1,19 @@
 import { Router } from "express"
-import { createSecretToken, hashToken, getClientIp } from "./authCore.js"
+import { hashToken, getClientIp, verifyPassword, usernameKey, normalizeEmail } from "./authCore.js"
 import { pool } from "./db.js"
 import { getMetrics, refreshMetrics } from "./analytics.js"
 import { submitFeedback, getFeedback, FEEDBACK_PRESETS } from "./feedback.js"
 
 const router = Router()
 
-const ADMIN_COOKIE_NAME = "mimita_admin_session"
-const ADMIN_SECRET = process.env.ADMIN_SECRET || "development-admin-secret-change-me"
-const ADMIN_SESSION_DAYS = Number(process.env.ADMIN_SESSION_DAYS || 1)
+const sessionCookieName =
+    process.env.SESSION_COOKIE_NAME || "mimita_session"
+const sessionSecret =
+    process.env.SESSION_SECRET || "development-only-change-me"
+const sessionDays = Number(process.env.SESSION_DAYS || 30)
 const production = process.env.NODE_ENV === "production"
 
-/*
-  TODO: Replace hardcoded admin credentials with proper database-backed authentication.
-  TODO: Implement password hashing.
-  TODO: Implement session expiration.
-  TODO: Implement role-based permissions.
-*/
-const HARDCODED_ADMIN_USERNAME = "admin"
-const HARDCODED_ADMIN_PASSWORD = "admin"
-
-function setAdminCookie(res, token) {
-    res.cookie(ADMIN_COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: production,
-        sameSite: "lax",
-        maxAge: ADMIN_SESSION_DAYS * 24 * 60 * 60 * 1000,
-        path: "/"
-    })
-}
-
-function clearAdminCookie(res) {
-    res.clearCookie(ADMIN_COOKIE_NAME, {
-        httpOnly: true,
-        secure: production,
-        sameSite: "lax",
-        path: "/"
-    })
-}
+const ADMIN_ROLES = ["admin", "owner"]
 
 function parseCookies(req) {
     const result = {}
@@ -51,25 +27,93 @@ function parseCookies(req) {
     return result
 }
 
+function setAdminCookie(res, token) {
+    res.cookie(sessionCookieName, token, {
+        httpOnly: true,
+        secure: production,
+        sameSite: "lax",
+        maxAge: sessionDays * 24 * 60 * 60 * 1000,
+        path: "/"
+    })
+}
+
+function clearAdminCookie(res) {
+    res.clearCookie(sessionCookieName, {
+        httpOnly: true,
+        secure: production,
+        sameSite: "lax",
+        path: "/"
+    })
+}
+
+async function createAdminSession(userId, req, res) {
+    const { createSecretToken } = await import("./authCore.js")
+    const token = createSecretToken()
+    const tokenHash = hashToken(token, sessionSecret)
+
+    await pool.query(
+        `
+        INSERT INTO sessions (
+            user_id, token_hash, user_agent, ip_address, expires_at
+        )
+        VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))
+        `,
+        [
+            userId,
+            tokenHash,
+            req.get("user-agent") || "unknown",
+            getClientIp(req),
+            sessionDays
+        ]
+    )
+
+    setAdminCookie(res, token)
+}
+
 async function requireAdmin(req, res, next) {
     try {
-        const token = parseCookies(req)[ADMIN_COOKIE_NAME]
+        const token = parseCookies(req)[sessionCookieName]
+
         if (!token) {
-            return res.status(401).json({ success: false, message: "admin sign in required" })
+            return res.status(401).json({
+                success: false,
+                message: "sign in required"
+            })
         }
-        const tokenHash = hashToken(token, ADMIN_SECRET)
+
         const result = await pool.query(
             `
-            SELECT id FROM admin_sessions
-            WHERE token_hash = $1 AND expires_at > NOW()
+            SELECT
+                u.id, u.username, u.email, u.role, u.bio
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token_hash = $1
+              AND s.revoked_at IS NULL
+              AND s.expires_at > NOW()
+              AND u.deleted_at IS NULL
             LIMIT 1
             `,
-            [tokenHash]
+            [hashToken(token, sessionSecret)]
         )
+
         if (!result.rowCount) {
             clearAdminCookie(res)
-            return res.status(401).json({ success: false, message: "admin session expired" })
+            return res.status(401).json({
+                success: false,
+                message: "session expired"
+            })
         }
+
+        const user = result.rows[0]
+
+        if (!ADMIN_ROLES.includes(user.role)) {
+            return res.status(403).json({
+                success: false,
+                message: "admin access required"
+            })
+        }
+
+        req.user = user
         next()
     }
     catch (error) {
@@ -79,29 +123,53 @@ async function requireAdmin(req, res, next) {
 
 router.post("/login", async (req, res, next) => {
     try {
-        const username = String(req.body.username || "").trim()
+        const identifier = String(req.body.identifier || "").trim()
         const password = String(req.body.password || "")
 
-        if (username !== HARDCODED_ADMIN_USERNAME || password !== HARDCODED_ADMIN_PASSWORD) {
-            console.log(`[ADMIN] failed login attempt from ${getClientIp(req)}`)
-            return res.status(401).json({ success: false, message: "invalid admin credentials" })
+        if (!identifier || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "identifier and password required"
+            })
         }
 
-        const token = createSecretToken()
-        const tokenHash = hashToken(token, ADMIN_SECRET)
-
-        await pool.query(
+        const result = await pool.query(
             `
-            INSERT INTO admin_sessions (token_hash, expires_at)
-            VALUES ($1, NOW() + ($2 * INTERVAL '1 day'))
+            SELECT id, username, email, role, password_hash
+            FROM users
+            WHERE deleted_at IS NULL
+              AND role = ANY($1)
+              AND (
+                  username_key = $2
+                  OR email = $3
+              )
+            LIMIT 1
             `,
-            [tokenHash, ADMIN_SESSION_DAYS]
+            [ADMIN_ROLES, usernameKey(identifier), normalizeEmail(identifier)]
         )
 
-        setAdminCookie(res, token)
-        console.log(`[ADMIN] login success from ${getClientIp(req)}`)
+        const user = result.rows[0]
 
-        res.json({ success: true, message: "admin authenticated" })
+        if (!user || !(await verifyPassword(password, user.password_hash))) {
+            console.log(`[ADMIN] failed login attempt from ${getClientIp(req)}`)
+            return res.status(401).json({
+                success: false,
+                message: "invalid credentials or insufficient permissions"
+            })
+        }
+
+        await createAdminSession(user.id, req, res)
+        console.log(`[ADMIN] login success user_id=${user.id} username=${user.username} from ${getClientIp(req)}`)
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role
+            }
+        })
     }
     catch (error) {
         next(error)
@@ -110,19 +178,34 @@ router.post("/login", async (req, res, next) => {
 
 router.post("/logout", requireAdmin, async (req, res, next) => {
     try {
-        const token = parseCookies(req)[ADMIN_COOKIE_NAME]
-        const tokenHash = hashToken(token, ADMIN_SECRET)
-        await pool.query(`DELETE FROM admin_sessions WHERE token_hash = $1`, [tokenHash])
+        const token = parseCookies(req)[sessionCookieName]
+        const tokenHash = hashToken(token, sessionSecret)
+
+        await pool.query(
+            `UPDATE sessions SET revoked_at = NOW() WHERE token_hash = $1`,
+            [tokenHash]
+        )
+
         clearAdminCookie(res)
-        res.json({ success: true, message: "admin signed out" })
+        console.log(`[ADMIN] logout user_id=${req.user.id}`)
+        res.json({ success: true, message: "signed out" })
     }
     catch (error) {
         next(error)
     }
 })
 
-router.get("/check", requireAdmin, (req, res) => {
-    res.json({ success: true, admin: true })
+router.get("/me", requireAdmin, (req, res) => {
+    res.json({
+        success: true,
+        user: {
+            id: req.user.id,
+            username: req.user.username,
+            email: req.user.email,
+            role: req.user.role,
+            bio: req.user.bio
+        }
+    })
 })
 
 router.get("/dashboard", requireAdmin, async (req, res, next) => {
@@ -146,6 +229,40 @@ router.post("/dashboard/refresh", requireAdmin, async (req, res, next) => {
     }
 })
 
+router.get("/users", requireAdmin, async (req, res, next) => {
+    try {
+        const limit = Math.min(Number(req.query.limit) || 50, 200)
+        const offset = Number(req.query.offset) || 0
+
+        const result = await pool.query(
+            `
+            SELECT id, username, email, role, bio,
+                   email_notifications_enabled,
+                   created_at, updated_at, deleted_at
+            FROM users
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2
+            `,
+            [limit, offset]
+        )
+
+        const countResult = await pool.query(
+            `SELECT COUNT(*) AS count FROM users`
+        )
+
+        res.json({
+            success: true,
+            users: result.rows,
+            total: Number(countResult.rows[0].count),
+            limit,
+            offset
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 router.get("/feedback", requireAdmin, async (req, res, next) => {
     try {
         const limit = Math.min(Number(req.query.limit) || 20, 100)
@@ -160,22 +277,6 @@ router.get("/feedback", requireAdmin, async (req, res, next) => {
 
 router.get("/feedback/presets", (req, res) => {
     res.json({ success: true, presets: FEEDBACK_PRESETS })
-})
-
-router.post("/feedback", async (req, res, next) => {
-    try {
-        const result = await submitFeedback({
-            selectedPresets: req.body.selectedPresets,
-            customFeedback: req.body.customFeedback,
-            contactInfo: req.body.contactInfo,
-            pageUrl: req.body.pageUrl,
-            userId: req.body.userId
-        })
-        res.status(201).json({ success: true, feedback: result })
-    }
-    catch (error) {
-        next(error)
-    }
 })
 
 export default router
