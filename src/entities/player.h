@@ -94,6 +94,9 @@ struct AnimClip {
     int durationTicks = 60;
     bool loop = true;
     bool speedScaleFromVelocity = true;
+    bool speedBased = true;         // false = fixed tick rate, not velocity-scaled
+    bool inputTriggered = false;    // true = state change on input, not velocity
+    bool tickBasedReturnToIdle = false; // true = play return_to_idle clip before idle
     std::vector<AnimKeyframe> keyframes;
 };
 
@@ -199,7 +202,10 @@ public:
     bool airJumpArmed = false;
     float jumpIntentTimer = 0.0f;
     float coyoteTimer = 0.0f;
+    bool jumpConsumed = false;   // prevents hold-to-multi-ground-jump
+    float landingCooldown = 0.0f; // prevents landing event spam
     bool hasWorldContact = false;
+    float worldContactLostTimer = 0.0f;
 
     // -------- Dash --------
     // mar 8 2026, no dashcharges, its airjump style, touch object = get a dash back
@@ -251,8 +257,13 @@ public:
     bool didDash       = false;
     bool didLand       = false;
 
+    // -------- Body/weapon collision push (debug) --------
+    glm::vec3 debugBodyCollisionPush{0.0f};
+    glm::vec3 debugWeaponCollisionPush{0.0f};
+
     // -------- Audio helpers --------
     bool  wasOnGround = false;
+    bool  rawWasOnGround = false;
     bool  wasGroundedLastFrame = false;
     bool  wasStableGroundedLastFrame = false;
 
@@ -263,6 +274,7 @@ public:
     float collisionBounceCooldown = 0.0f;
 
     float footstepTimer = 0.0f;
+    float jumpSoundTimer = 0.0f;
 
     // -------- Weapon / Aiming --------
     glm::vec3 aimDirection{0.0f, 1.0f, 0.0f};  // Camera forward for aiming
@@ -305,7 +317,7 @@ public:
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
-    void updateProceduralAnimation(float dt, const glm::vec3& camForward = glm::vec3(0,1,0), const glm::vec3& camPos = glm::vec3(0));
+    void updateProceduralAnimation(float dt, const glm::vec3& camForward = glm::vec3(0,1,0), const glm::vec3& camPos = glm::vec3(0), bool movementPressed = false);
 
     // -------- Queries --------
     Capsule getCapsule() const;
@@ -318,6 +330,15 @@ public:
                 const glm::mat4& proj) const;
     void renderDepth(unsigned int shadowShader,
                      const glm::mat4& lightViewProj) const;
+
+    // -------- Weapon collision recomputation data --------
+    // Stored by weapon-viewmodel.cpp so physics can recompute the
+    // weapon collision capsule from a fresh right-arm worldTransform
+    // (eliminating one-frame latency between viewmodel update and physics).
+    glm::mat4 weaponLocalToArm{1.0f};
+    glm::vec3 weaponGripLocal{0.0f};
+    glm::vec3 weaponMuzzleLocal{0.0f};
+    float weaponRadiusLocal = 0.0f;
 
     // -------- Weapon system --------
     std::string equippedWeaponId;

@@ -1,6 +1,7 @@
 import "../App.css"
 
 import Layout from "../components/Layout"
+import FeedbackBox from "../components/FeedbackBox"
 
 export default function Donate() {
   return (
@@ -61,6 +62,8 @@ export default function Donate() {
         </a>
 
       </div>
+
+      <FeedbackBox pageName="donate" />
 
     </Layout>
   )

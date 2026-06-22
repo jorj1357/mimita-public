@@ -17,10 +17,24 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "physics/physics-types.h"
 
+class Block;
 class Player;
 class World;
+
+struct RecoveryContact
+{
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 point{0.0f};
+    float penetration = 0.0f;
+    int triangleIndex = -1;
+    const Block* block = nullptr;
+    const char* label = "recovery";
+};
 
 // Resolves ALL solid block collisions (no slopes)
 // - Mutates player position & velocity
@@ -32,6 +46,9 @@ void doCollisions(
     bool& groundedThisFrame,
     float dt
 );
+
+std::string collisionLastTraceSummary();
+std::string collisionStressRun(const std::string& caseName);
 
 // Resolve collision between two capsules (e.g., player vs NPC)
 // - Mutates positions of both capsules
@@ -50,6 +67,19 @@ void appendChunkTrianglesForAABB(
     const AABB& queryBounds,
     float expansion,
     std::vector<int>& out
+);
+
+// Batched multi-contact depenetration solver.
+// Collects all penetrating contacts and solves them simultaneously using
+// Gauss-Seidel iteration. Returns a single correction vector that satisfies
+// all contact constraints.
+glm::vec3 solveBatchedCorrection(
+    const std::vector<RecoveryContact>& contacts,
+    float slop,
+    float* outMaxPenetration = nullptr,
+    glm::vec3* outWeightedNormal = nullptr,
+    glm::vec3 intendedMove = glm::vec3(0.0f),
+    glm::vec3 debugPosition = glm::vec3(0.0f)
 );
 
 

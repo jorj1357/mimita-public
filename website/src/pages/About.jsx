@@ -1,6 +1,7 @@
 import "../App.css"
 
 import Layout from "../components/Layout"
+import FeedbackBox from "../components/FeedbackBox"
 
 export default function About() {
   return (
@@ -172,6 +173,8 @@ export default function About() {
 
             </div>
         </div>
+
+        <FeedbackBox pageName="about" />
 
     </Layout>
   )

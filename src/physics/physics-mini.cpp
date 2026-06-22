@@ -28,6 +28,7 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
+#include "physics/movement/physics-body-collision.h"
 
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
@@ -77,8 +78,6 @@ static void physicsMainUpdate_Internal(
     dt = std::min(dt, 0.033f);
     p.inputWishMove = wishMoveXY;
 
-    const bool wasOnGround = p.wasOnGround;
-
     // reset per-frame flags
     p.didGroundJump = false;
     p.didAirJump    = false;
@@ -117,7 +116,11 @@ static void physicsMainUpdate_Internal(
 
     // only set grounded here? not sure mar 7 2026 
     bool groundedThisFrame = false;
-    p.hasWorldContact = false;
+
+    // World contact hysteresis: persist contact for a few frames after last actual contact.
+    // This prevents frame-dependent wall climb failures.
+    p.worldContactLostTimer = std::max(0.0f, p.worldContactLostTimer - subdt);
+    p.hasWorldContact = p.worldContactLostTimer > 0.0f;
 
     for (int i = 0; i < steps; i++)
     {
@@ -190,26 +193,13 @@ static void physicsMainUpdate_Internal(
 
     // how long since raw contact was lost
     if (groundedThisFrame)
-    {
         p.groundLostTimer = 0.0f;
-    }
     else
-    {
         p.groundLostTimer += dt;
-    }
 
     // remain grounded briefly after losing contact
-    // this absorbs:
-    // - seams
-    // - tiny gaps
-    // - neighboring cubes
-    // - triangle switching
-    // - collision jitter
-    p.stableOnGround =
-        groundedThisFrame ||
-        (p.groundLostTimer < 0.08f);
+    p.stableOnGround = groundedThisFrame || (p.groundLostTimer < 0.08f);
 
-    // ok now do friction after other stuff 6 6 2026 
     doFriction(p, p.stableOnGround, dt);
 
     // save previous airborne time BEFORE reset
@@ -217,31 +207,55 @@ static void physicsMainUpdate_Internal(
 
     // track stable airborne duration
     if (p.stableOnGround)
-    {
         p.airborneTimer = 0.0f;
-    }
     else
-    {
         p.airborneTimer += dt;
+
+    // Debug: log grounded/contact state transitions (rate-limited)
+    if (DebugConfig::DEBUG_PHYSICS) {
+        static float groundedDebugTimer = 0.0f;
+        groundedDebugTimer += dt;
+        if (p.onGround != p.rawWasOnGround || groundedDebugTimer >= 1.0f)
+        {
+            Debug::logThrottled(Debug::Category::Physics, "grounded", 0.5f,
+                "[GROUND] raw=%d stable=%d lostTimer=%.4f airborneTimer=%.4f worldContact=%.4f didLand=%d jumpConsumed=%d landingCD=%.3f airJmp=%d locked=%d armed=%d\n",
+                (int)groundedThisFrame, (int)p.stableOnGround, p.groundLostTimer,
+                previousAirborneTime, p.worldContactLostTimer, (int)p.didLand,
+                (int)p.jumpConsumed, p.landingCooldown,
+                p.airJumpsLeft, (int)p.airJumpLocked, (int)p.airJumpArmed);
+            groundedDebugTimer = 0.0f;
+        }
+        if (p.hasWorldContact && p.worldContactLostTimer > 0.0f)
+            Debug::logThrottled(Debug::Category::Physics, "worldcontact", 0.5f,
+                "[CONTACT] active timer=%.4f airJumps=%d dash=%d groundReturn=%d\n",
+                p.worldContactLostTimer, p.airJumpsLeft, (int)p.dashAvailable, (int)p.groundReturnAvailable);
     }
 
-    // landing event only after real airtime
-    if (
-        !wasOnGround &&
-        p.stableOnGround &&
-        previousAirborneTime > 0.08f
-    ){
+    // Landing event: fires once per real landing using raw grounded state.
+    // Using rawWasOnGround (previous frame's raw onGround) + groundedThisFrame
+    // avoids double-fire from stableOnGround hysteresis.
+    // Debounce timer prevents repeat lands from state flickering.
+    p.landingCooldown = std::max(0.0f, p.landingCooldown - dt);
+    if (!p.rawWasOnGround && groundedThisFrame && previousAirborneTime > 0.08f && p.landingCooldown <= 0.0f)
+    {
         p.didLand = true;
+        p.landingCooldown = 0.3f;
     }
 
-    // store stable state for next frame
+    // store stable+raw state for next frame
     p.wasOnGround = p.stableOnGround;
+    p.rawWasOnGround = groundedThisFrame;
 
     // CHANGED: No dashVel tracking, jun 6 2026
 
     updateVisualFacingFromCamera(p, camForward, dt);
 
-    p.updateProceduralAnimation(dt, camForward, debugCamera ? debugCamera->pos : p.pos);
+    p.updateProceduralAnimation(dt, camForward, debugCamera ? debugCamera->pos : p.pos, movementPressed);
+
+    // Body part + weapon world collision.
+    // Runs after animation so body part world transforms are current.
+    // Pushes Player::pos outward when limbs/weapons clip geometry.
+    doBodyCollision(p, world, dt);
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {

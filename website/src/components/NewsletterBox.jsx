@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { apiRequest } from "../lib/api.js"
 
 export default function NewsletterBox() {
 
@@ -70,22 +71,18 @@ export default function NewsletterBox() {
                 `[${getTime()}] [STATUS] contacting MiMITA servers...`
             )
 
-            const response = await fetch(
+            const { response, data } = await apiRequestRaw(
                 "/api/newsletter",
                 {
                     method: "POST",
-
                     headers: {
                         "Content-Type": "application/json"
                     },
-
                     body: JSON.stringify({
                         email: cleanedEmail
                     })
                 }
             )
-
-            const data = await response.json()
 
             // too many requests
             if (response.status === 429) {
@@ -96,7 +93,7 @@ export default function NewsletterBox() {
             }
 
             // already signed up
-            else if (data.alreadySubscribed) {
+            else if (data?.alreadySubscribed) {
 
                 setMessage(
                     `[${getTime()}] [INFO] email already signed up`
@@ -104,7 +101,7 @@ export default function NewsletterBox() {
             }
 
             // success
-            else if (data.success) {
+            else if (data?.success) {
 
                 setMessage(
                     `[${getTime()}] [SUCCESS] joined newsletter`
@@ -114,7 +111,7 @@ export default function NewsletterBox() {
             }
 
             // backend custom message
-            else if (data.message) {
+            else if (data?.message) {
 
                 setMessage(
                     `[${getTime()}] [ERROR] ${data.message}`
