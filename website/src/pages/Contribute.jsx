@@ -1,6 +1,7 @@
 import "../App.css"
 
 import Layout from "../components/Layout"
+import FeedbackBox from "../components/FeedbackBox"
 
 export default function Contribute() {
 
@@ -112,6 +113,8 @@ export default function Contribute() {
         </div>
 
       </div>
+
+      <FeedbackBox pageName="contribute" />
 
     </Layout>
 

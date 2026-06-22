@@ -90,11 +90,12 @@ void doJump(
         p.jumpIntentTimer = JUMP_BUFFER_TIME;
     }
 
-    // detect release
+    // detect release — clears jumpConsumed to allow one ground jump per press
     if (!jumpHeld && p.jumpHeldPrev)
     {
         p.airJumpArmed = true;
         p.airJumpLocked = false;
+        p.jumpConsumed = false;
     }
 
     p.jumpHeldPrev = jumpHeld;
@@ -108,7 +109,7 @@ void doJump(
     }
 
     // ---------------- GROUND JUMP (actual ground) ----------------
-    if (onActualGround) {
+    if (onActualGround && !p.jumpConsumed) {
         float beforeVel = p.vel.z;
 
         p.dashAvailable = true;
@@ -124,6 +125,7 @@ void doJump(
         p.airJumpArmed = false;
         
         p.didGroundJump = true;
+        p.jumpConsumed = true;
 
         JUMP_LOG(
             "[JUMP] GROUND vel.z %.3f -> %.3f | airJumps=%d\n",

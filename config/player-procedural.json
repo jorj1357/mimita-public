@@ -45,7 +45,7 @@
   "shotgunRotY": -5.0,
   "shotgunRotZ": -90.0,
 
-  "walkStartTickOnEnter": 7,
+  "walkStartTickOnEnter": 1,
   "animationStateTransitionFrames": 1,
 
   "axisLocks": {
@@ -148,7 +148,10 @@
       "walk": {
         "durationTicks": 30,
         "loop": true,
-        "speedScaleFromVelocity": true,
+        "speedScaleFromVelocity": false,
+        "speedBased": false,
+        "inputTriggered": true,
+        "tickBasedReturnToIdle": true,
         "keyframes": [
           {
             "tick": 0,
@@ -234,6 +237,73 @@
               "rightLeg": {
                 "translation": [0, 0, 0],
                 "rotation": [0, 0, 80]
+              }
+            }
+          }
+        ]
+      },
+
+      "return_to_idle": {
+        "durationTicks": 10,
+        "loop": false,
+        "speedScaleFromVelocity": false,
+        "speedBased": false,
+        "keyframes": [
+          {
+            "tick": 0,
+            "parts": {
+              "torso": {
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, -20]
+              },
+              "head": {
+                "translation": [0.2, 0, 0],
+                "rotation": [0, 0, -10]
+              },
+              "leftArm": {
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, 80]
+              },
+              "rightArm": {
+                "translation": [0.1, 0, 0],
+                "rotation": [0, 0, -80]
+              },
+              "leftLeg": {
+                "translation": [-0.1, 0, 0],
+                "rotation": [0, 0, -80]
+              },
+              "rightLeg": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 80]
+              }
+            }
+          },
+          {
+            "tick": 10,
+            "parts": {
+              "torso": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "head": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "leftArm": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "rightArm": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "leftLeg": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
+              },
+              "rightLeg": {
+                "translation": [0, 0, 0],
+                "rotation": [0, 0, 0]
               }
             }
           }

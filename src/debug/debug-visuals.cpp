@@ -1126,6 +1126,28 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                                : player.weaponCollisionName.c_str(),
                            weaponColor);
         }
+
+        // Draw body/weapon collision push vectors
+        if (DebugConfig::DEBUG_COLLISION_BODY_PUSH)
+        {
+            glm::vec3 bodyPush = player.debugBodyCollisionPush;
+            float bodyPushLen = glm::length(bodyPush);
+            if (bodyPushLen > 0.001f) {
+                glm::vec3 start = player.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.5f);
+                glm::vec3 end = start + bodyPush * (1.0f / bodyPushLen) * std::min(bodyPushLen * 5.0f, 2.0f);
+                drawLine(camera, start, end, glm::vec4(1.0f, 0.3f, 0.1f, 0.9f));
+                drawPointCross(camera, end, 0.1f, glm::vec4(1.0f, 0.3f, 0.1f, 0.9f));
+            }
+
+            glm::vec3 weaponPush = player.debugWeaponCollisionPush;
+            float weaponPushLen = glm::length(weaponPush);
+            if (weaponPushLen > 0.001f) {
+                glm::vec3 start = player.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.5f);
+                glm::vec3 end = start + weaponPush * (1.0f / weaponPushLen) * std::min(weaponPushLen * 5.0f, 2.0f);
+                drawLine(camera, start, end, glm::vec4(0.85f, 1.0f, 0.15f, 0.9f));
+                drawPointCross(camera, end, 0.1f, glm::vec4(0.85f, 1.0f, 0.15f, 0.9f));
+            }
+        }
     }
 
     // collision_debug system-wide events

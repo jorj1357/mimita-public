@@ -41,6 +41,8 @@ import Account from "./pages/Account"
 import PasswordChange from "./pages/PasswordChange"
 import UserProfile from "./pages/UserProfile"
 import PasswordPrinciples from "./pages/PasswordPrinciples"
+import AdminLogin from "./pages/AdminLogin"
+import AdminDashboard from "./pages/AdminDashboard"
 
 /* =========================
    APP
@@ -146,6 +148,21 @@ ReactDOM.createRoot(
         <Route
           path="/articles/:slug"
           element={<ArticlePage />}
+        />
+
+        <Route
+          path="/admin"
+          element={<AdminLogin />}
+        />
+
+        <Route
+          path="/admin/login"
+          element={<AdminLogin />}
+        />
+
+        <Route
+          path="/admin/dashboard"
+          element={<AdminDashboard />}
         />
 
         {/* goes last 5 25 2026

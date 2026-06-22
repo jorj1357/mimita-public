@@ -1,6 +1,7 @@
 import "../App.css"
 
 import Layout from "../components/Layout"
+import FeedbackBox from "../components/FeedbackBox"
 
 export default function Download() {
   return (
@@ -40,6 +41,8 @@ export default function Download() {
         </p>
 
       </div>
+
+      <FeedbackBox pageName="download" />
 
     </Layout>
   )

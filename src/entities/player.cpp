@@ -259,6 +259,9 @@ bool reloadPlayerProceduralConfig()
                     clip.durationTicks = it->value("durationTicks", 60);
                     clip.loop = it->value("loop", true);
                     clip.speedScaleFromVelocity = it->value("speedScaleFromVelocity", true);
+                    clip.speedBased = it->value("speedBased", true);
+                    clip.inputTriggered = it->value("inputTriggered", false);
+                    clip.tickBasedReturnToIdle = it->value("tickBasedReturnToIdle", false);
                     if (it->contains("keyframes")) {
                         for (const auto& kf : it->at("keyframes")) {
                             AnimKeyframe keyframe;
@@ -1138,7 +1141,7 @@ static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
     if (!it->second.z) pose.rotationEuler.z = 0.0f;
 }
 
-void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos)
+void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos, bool movementPressed)
 {
     updatePlayerProceduralHotReload(dt);
 
@@ -1165,21 +1168,55 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     float move01 = std::min(speed / std::max(PHYS.moveSpeed, 0.001f), 1.6f);
     previousProceduralVelocity = vel;
 
-    // === INSTANT ANIMATION STATE TRANSITIONS ===
+    // === ANIMATION STATE MACHINE ===
+    // Walk animation uses inputTriggered when configured; falls back to velocity threshold.
+    auto walkClipIt = gPlayerProcedural.layers.animations.find("walk");
+    bool walkInputTriggered = (walkClipIt != gPlayerProcedural.layers.animations.end())
+        ? walkClipIt->second.inputTriggered : false;
+    bool nowMoving = walkInputTriggered ? movementPressed : (move01 >= 0.01f);
     bool wasMoving = previousMove01 >= 0.01f;
-    bool nowMoving = move01 >= 0.01f;
     previousMove01 = move01;
 
-    std::string activeAnim = nowMoving ? "walk" : "idle";
+    // Determine next state: walk / return_to_idle / idle
+    std::string activeAnim = currentAnimName;
+    if (nowMoving)
+    {
+        activeAnim = "walk";
+    }
+    else if (currentAnimName == "walk")
+    {
+        // Just stopped moving: check if walk clip has tickBasedReturnToIdle
+        if (walkClipIt != gPlayerProcedural.layers.animations.end()
+            && walkClipIt->second.tickBasedReturnToIdle
+            && gPlayerProcedural.layers.animations.find("return_to_idle")
+               != gPlayerProcedural.layers.animations.end())
+            activeAnim = "return_to_idle";
+        else
+            activeAnim = "idle";
+    }
+    else if (currentAnimName == "return_to_idle")
+    {
+        // Stay in return_to_idle until the clip finishes (non-looping)
+        auto retClipIt = gPlayerProcedural.layers.animations.find("return_to_idle");
+        if (retClipIt != gPlayerProcedural.layers.animations.end())
+        {
+            float clipDuration = (float)retClipIt->second.durationTicks / 60.0f;
+            if (animStateTime >= clipDuration)
+                activeAnim = "idle";
+        }
+        else
+        {
+            activeAnim = "idle";
+        }
+    }
 
-    // On state change: reset timer and optionally snap to a start tick
+    // On state change: reset timer and snap walk to start tick
     if (activeAnim != currentAnimName) {
         currentAnimName = activeAnim;
-        if (activeAnim == "walk") {
-            animStateTime = (float)gPlayerProcedural.walkStartTickOnEnter / 60.0f;
-        } else {
+        if (activeAnim == "walk")
+            animStateTime = 1.0f / 60.0f;  // start at tick 1 (exaggerated first pose)
+        else
             animStateTime = 0.0f;
-        }
     }
 
     animStateTime += dt;
@@ -1189,7 +1226,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     std::unordered_map<std::string, AnimOverlayResult> animOverlay;
     if (animIt != gPlayerProcedural.layers.animations.end()) {
         float animSpeedScale = 1.0f;
-        if (animIt->second.speedScaleFromVelocity)
+        if (animIt->second.speedBased && animIt->second.speedScaleFromVelocity)
             animSpeedScale = 0.3f + move01 * 1.2f;
 
         float playbackMultiplier = std::max(0.01f,
@@ -1198,8 +1235,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         animSpeedScale *= playbackMultiplier;
 
         if (DebugConfig::DEBUG_ANIMATION) {
-            printf("[ANIM] walkFrequency=%.2f finalSpeed=%.2f\n",
-                   gPlayerProcedural.walkFrequency,
+            printf("[ANIM] state=%s walkFrequency=%.2f finalSpeed=%.2f\n",
+                   activeAnim.c_str(), gPlayerProcedural.walkFrequency,
                    animSpeedScale);
         }
 
@@ -1463,17 +1500,34 @@ OBB Player::getOBB() const
 
 void Player::updateAudio(float dt)
 {
+    // Jump sound debounce: prevent frame-after-frame spam during wall climb.
+    // Only play if enough time has passed since the last jump sound.
+    jumpSoundTimer = std::max(0.0f, jumpSoundTimer - dt);
+
     if (didGroundJump) {
-        playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
-        HitEffects::spawnGroundJumpBurst(pos);
+        if (jumpSoundTimer <= 0.0f) {
+            playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
+            jumpSoundTimer = 0.08f;
+        }
+        glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
+            ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
+            : glm::vec3(0.0f, 0.0f, 0.0f);
+        glm::vec3 groundJumpPos = pos;
+        groundJumpPos.z -= 0.5f;
+        HitEffects::spawnGroundJumpBurst(groundJumpPos, jumpDir);
     }
 
     if (didAirJump) {
-        playAirJumpSound();
-        // Spawn air jump effect below the player for upward-propulsion look
+        if (jumpSoundTimer <= 0.0f) {
+            playAirJumpSound();
+            jumpSoundTimer = 0.08f;
+        }
+        glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
+            ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
+            : glm::vec3(0.0f, 0.0f, 0.0f);
         glm::vec3 airJumpPos = pos;
         airJumpPos.z -= 1.0f;
-        HitEffects::spawnAirJumpBurst(airJumpPos);
+        HitEffects::spawnAirJumpBurst(airJumpPos, jumpDir);
     }
 
     if (didDash) {
@@ -1484,22 +1538,36 @@ void Player::updateAudio(float dt)
         lastDashQuality = 0;
     }
 
-    // Only trigger land sound on stable air->ground transition
-    // Use stableOnGround to avoid flickering from collision jitter
-    if (!wasStableGroundedLastFrame && stableOnGround)
+    // Landing: sound + directional VFX
+    landingCooldown = std::max(0.0f, landingCooldown - dt);
+    if (!wasStableGroundedLastFrame && stableOnGround && landingCooldown <= 0.0f) {
         playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
+        glm::vec3 landDir = glm::length(inputWishMove) > 0.001f
+            ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
+            : glm::vec3(0.0f, 0.0f, 0.0f);
+        glm::vec3 landPos = pos;
+        landPos.z -= 0.3f;
+        HitEffects::spawnLandingBurst(landPos, landDir, glm::length(glm::vec2(vel.x, vel.y)));
+        landingCooldown = 0.3f;
+    }
     wasStableGroundedLastFrame = stableOnGround;
 
+    // Walk VFX: directional ground spheres offset opposite travel direction
     glm::vec2 xy = glm::vec2(vel.x,vel.y);
-    if (stableOnGround && glm::length(xy) > 0.5f) {
+    float speed = glm::length(xy);
+    if (stableOnGround && speed > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
             playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
-            // Spawn footstep effect at feet position
             Capsule cap = getCapsule();
             glm::vec3 footPos = cap.a;
-            footPos.z -= cap.r; // bottom of capsule
+            footPos.z -= cap.r;
             EffectPartSystem::instance().spawnFootstep(footPos);
+            // Walk burst: opposite direction of travel
+            glm::vec3 walkDir = glm::length(inputWishMove) > 0.001f
+                ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
+                : glm::vec3(0.0f, 0.0f, 0.0f);
+            HitEffects::spawnWalkBurst(pos, -walkDir, speed);
             footstepTimer = 0.35f;
         }
     } else {

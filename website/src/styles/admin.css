@@ -1,0 +1,353 @@
+/* =========================
+   ADMIN
+========================= */
+
+.adminPage {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+
+.adminHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.adminTitle {
+  font-size: clamp(1.5rem, 4vmin, 2.5rem);
+  letter-spacing: 0.05em;
+}
+
+.adminHeaderActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.adminRefreshBtn,
+.adminLogoutBtn {
+  padding: 0.5rem 1rem;
+  background: white;
+  color: black;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.adminRefreshBtn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.adminLogoutBtn {
+  background: #7f1d1d;
+  color: white;
+}
+
+.adminSubtitle {
+  opacity: 0.5;
+  margin-bottom: 2rem;
+  font-size: 0.9rem;
+}
+
+.adminError {
+  color: #ef4444;
+  margin-bottom: 1rem;
+}
+
+.adminGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.adminSection {
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 1rem;
+  background: rgba(255,255,255,0.02);
+}
+
+.adminSectionWide {
+  grid-column: 1 / -1;
+}
+
+.adminSection h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.adminCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 0.9rem;
+}
+
+.adminCard:last-child {
+  border-bottom: none;
+}
+
+.adminValue {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.adminValueSmall {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  opacity: 0.7;
+  text-align: right;
+}
+
+.adminEmpty {
+  opacity: 0.4;
+  font-style: italic;
+}
+
+.adminFeedbackFeed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.adminFeedbackItem {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.9rem;
+}
+
+.adminFeedbackItem:last-child {
+  border-bottom: none;
+}
+
+.adminFeedbackTime {
+  opacity: 0.4;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  min-width: 4rem;
+}
+
+.adminFeedbackText {
+  flex: 1;
+}
+
+.adminFeedbackPage {
+  opacity: 0.35;
+  font-size: 0.8rem;
+}
+
+/* =========================
+   ADMIN LOGIN
+========================= */
+
+.adminLoginPage {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+}
+
+.adminLoginCard {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 2rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.025);
+}
+
+.adminLoginTitle {
+  text-align: center;
+  font-size: clamp(1.5rem, 5vmin, 2.5rem);
+  letter-spacing: 0.08em;
+  margin-bottom: 1rem;
+}
+
+.adminLoginInput {
+  width: 100%;
+  padding: 0.85rem;
+  color: white;
+  background: black;
+  border: 1px solid rgba(255,255,255,0.22);
+}
+
+.adminLoginButton {
+  padding: 0.85rem 1rem;
+  color: black;
+  background: white;
+  border: none;
+  text-align: center;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.adminLoginButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.adminLoginMessage {
+  text-align: center;
+  color: #ef4444;
+  font-size: 0.9rem;
+}
+
+.adminDebugBtn {
+  padding: 0.5rem 1rem;
+  background: #1e1b4b;
+  color: #a78bfa;
+  border: 1px solid #4c1d95;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.adminDebugBanner {
+  margin-bottom: 1.5rem;
+}
+
+/* =========================
+   DEBUG PANEL
+========================= */
+
+.debugPanel {
+  border: 1px solid #4c1d95;
+  background: rgba(76, 29, 149, 0.08);
+  padding: 1rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.debugTitle {
+  color: #a78bfa;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+
+.debugSection {
+  margin-bottom: 1rem;
+}
+
+.debugSection h4 {
+  font-size: 0.8rem;
+  color: #8b5cf6;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.debugHealthGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.debugStatusBadge {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.debugStatusOk {
+  color: #22c55e;
+  border: 1px solid #22c55e33;
+  background: #22c55e11;
+}
+
+.debugStatusError {
+  color: #ef4444;
+  border: 1px solid #ef444433;
+  background: #ef444411;
+}
+
+.debugStatusUnknown {
+  color: #f59e0b;
+  border: 1px solid #f59e0b33;
+  background: #f59e0b11;
+}
+
+.debugStatusInfo {
+  color: #93c5fd;
+  border: 1px solid #93c5fd22;
+  background: #93c5fd11;
+}
+
+.debugDbConfig {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  border: 1px solid rgba(255,255,255,0.06);
+  margin-top: 0.3rem;
+}
+
+.debugLoading {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.debugEmpty {
+  opacity: 0.4;
+  font-style: italic;
+  font-size: 0.75rem;
+}
+
+.debugLogContainer {
+  max-height: 300px;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.3);
+  padding: 0.3rem;
+}
+
+.debugLogLine {
+  padding: 0.15rem 0.3rem;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+}
+
+.debugLogLine:last-child {
+  border-bottom: none;
+}
+
+.debugLogTime {
+  color: #64748b;
+  white-space: nowrap;
+  min-width: 4rem;
+}
+
+.debugLogText {
+  color: #e2e8f0;
+  word-break: break-all;
+}
+
+.debugLogError .debugLogText {
+  color: #fca5a5;
+}
+
+.debugLogWarn .debugLogText {
+  color: #fde68a;
+}

@@ -113,6 +113,28 @@ void HitEffects::loadConfig(const std::string& path)
 
         cfg.movementDashBurst.forwardOffset = -0.8f; // behind player
 
+        cfg.walkBurst.lengthStart = 0.3f;
+        cfg.walkBurst.lengthEnd = 0.6f;
+        cfg.walkBurst.radiusStart = 0.08f;
+        cfg.walkBurst.radiusEnd = 0.04f;
+        cfg.walkBurst.colorStart = {0.8f, 0.8f, 0.8f};
+        cfg.walkBurst.colorEnd = {0.4f, 0.4f, 0.4f};
+        cfg.walkBurst.forwardOffset = -0.6f;
+        cfg.walkBurst.rightOffset = 0.0f;
+        cfg.walkBurst.upOffset = -0.3f;
+        cfg.walkBurst.lifetimeTicks = 6;
+
+        cfg.landingBurst.lengthStart = 1.2f;
+        cfg.landingBurst.lengthEnd = 2.0f;
+        cfg.landingBurst.radiusStart = 0.15f;
+        cfg.landingBurst.radiusEnd = 0.05f;
+        cfg.landingBurst.colorStart = {0.6f, 0.6f, 0.6f};
+        cfg.landingBurst.colorEnd = {0.2f, 0.2f, 0.2f};
+        cfg.landingBurst.forwardOffset = 0.0f;
+        cfg.landingBurst.rightOffset = 0.0f;
+        cfg.landingBurst.upOffset = -0.5f;
+        cfg.landingBurst.lifetimeTicks = 12;
+
         if (j.contains("enabled")) cfg.enabled = j["enabled"];
         if (j.contains("hotReload")) cfg.hotReload = j["hotReload"];
 
@@ -251,11 +273,17 @@ void HitEffects::loadConfig(const std::string& path)
             }
             if (jc.contains("rightOffset")) burstCfg.rightOffset = jc["rightOffset"];
             if (jc.contains("upOffset")) burstCfg.upOffset = jc["upOffset"];
+            if (jc.contains("offset")) burstCfg.offset = readVec3Json(jc["offset"]);
+            if (jc.contains("scale")) burstCfg.scale = readVec3Json(jc["scale"]);
+            if (jc.contains("rotation")) burstCfg.rotation = readVec3Json(jc["rotation"]);
+            if (jc.contains("stretchAxis")) burstCfg.stretchAxis = jc["stretchAxis"];
         };
 
         if (j.contains("movementDashBurst")) loadBurstConfig(j["movementDashBurst"], cfg.movementDashBurst);
         if (j.contains("groundJumpBurst")) loadBurstConfig(j["groundJumpBurst"], cfg.groundJumpBurst);
         if (j.contains("airJumpBurst")) loadBurstConfig(j["airJumpBurst"], cfg.airJumpBurst);
+        if (j.contains("walkBurst")) loadBurstConfig(j["walkBurst"], cfg.walkBurst);
+        if (j.contains("landingBurst")) loadBurstConfig(j["landingBurst"], cfg.landingBurst);
 
         gConfig = cfg;
         auto ec = std::filesystem::last_write_time(path);
@@ -521,14 +549,14 @@ void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::ve
     glm::vec3 right = glm::normalize(glm::cross(fwd, up));
     up = glm::normalize(glm::cross(right, fwd));
 
-    glm::vec3 offset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + offset;
+    glm::vec3 localOffset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + localOffset + cfg.offset;
     spawnPos.z += 0.05f;
 
     Debug::log(Debug::Category::General, "[DASH FX] position=(%.2f,%.2f,%.2f) direction=(%.2f,%.2f,%.2f) offset=(%.2f,%.2f,%.2f) spawn=(%.2f,%.2f,%.2f)",
                position.x, position.y, position.z,
                dir.x, dir.y, dir.z,
-               offset.x, offset.y, offset.z,
+               localOffset.x, localOffset.y, localOffset.z,
                spawnPos.x, spawnPos.y, spawnPos.z);
 
     HitBurstEffect& b = gBursts[gBurstCount++];
@@ -543,7 +571,7 @@ void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::ve
     b.burstType = BurstType::Dash;
 }
 
-void HitEffects::spawnGroundJumpBurst(const glm::vec3& position)
+void HitEffects::spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction)
 {
     if (!gConfig.enabled || !gConfig.groundJumpBurst.enabled || !gDashFXEnabled) return;
     if (gBurstCount >= MAX_BURSTS) {
@@ -551,15 +579,16 @@ void HitEffects::spawnGroundJumpBurst(const glm::vec3& position)
         gBurstCount--;
     }
     const auto& cfg = gConfig.groundJumpBurst;
-    glm::vec3 fwd(0.0f, 0.0f, 1.0f);
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
     glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
-    up = glm::normalize(glm::cross(right, fwd));
-    glm::vec3 offset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + offset;
+    glm::vec3 right = glm::normalize(glm::cross(dir, up));
+    if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
+    up = glm::normalize(glm::cross(right, dir));
+    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + localOffset + cfg.offset;
     HitBurstEffect& b = gBursts[gBurstCount++];
     b.position = spawnPos;
-    b.direction = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.direction = dir;
     b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
     b.spawnTick = gGlobalTick;
     b.totalTicks = cfg.lifetimeTicks;
@@ -569,7 +598,7 @@ void HitEffects::spawnGroundJumpBurst(const glm::vec3& position)
     b.burstType = BurstType::GroundJump;
 }
 
-void HitEffects::spawnAirJumpBurst(const glm::vec3& position)
+void HitEffects::spawnAirJumpBurst(const glm::vec3& position, const glm::vec3& direction)
 {
     if (!gConfig.enabled || !gConfig.airJumpBurst.enabled || !gDashFXEnabled) return;
     if (gBurstCount >= MAX_BURSTS) {
@@ -577,15 +606,16 @@ void HitEffects::spawnAirJumpBurst(const glm::vec3& position)
         gBurstCount--;
     }
     const auto& cfg = gConfig.airJumpBurst;
-    glm::vec3 fwd(0.0f, 0.0f, 1.0f);
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
     glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
-    up = glm::normalize(glm::cross(right, fwd));
-    glm::vec3 offset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + offset;
+    glm::vec3 right = glm::normalize(glm::cross(dir, up));
+    if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
+    up = glm::normalize(glm::cross(right, dir));
+    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + localOffset + cfg.offset;
     HitBurstEffect& b = gBursts[gBurstCount++];
     b.position = spawnPos;
-    b.direction = glm::vec3(0.0f, 0.0f, 1.0f);
+    b.direction = dir;
     b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
     b.spawnTick = gGlobalTick;
     b.totalTicks = cfg.lifetimeTicks;
@@ -593,6 +623,66 @@ void HitEffects::spawnAirJumpBurst(const glm::vec3& position)
     b.dashBurst = false;
     b.dashSpeed = 0.0f;
     b.burstType = BurstType::AirJump;
+}
+
+void HitEffects::spawnWalkBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
+{
+    if (!gConfig.enabled || !gConfig.walkBurst.enabled || !gDashFXEnabled) return;
+    if (gBurstCount >= MAX_BURSTS) {
+        gBursts[0] = gBursts[gBurstCount - 1];
+        gBurstCount--;
+    }
+
+    const auto& cfg = gConfig.walkBurst;
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    glm::vec3 right = glm::normalize(glm::cross(dir, up));
+    if (glm::length(right) < 0.001f) right = glm::vec3(0.0f, 1.0f, 0.0f);
+    up = glm::normalize(glm::cross(right, dir));
+
+    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + localOffset + cfg.offset;
+
+    HitBurstEffect& b = gBursts[gBurstCount++];
+    b.position = spawnPos;
+    b.direction = dir;
+    b.normal = up;
+    b.spawnTick = gGlobalTick;
+    b.totalTicks = cfg.lifetimeTicks;
+    b.alive = true;
+    b.dashBurst = false;
+    b.dashSpeed = speed;
+    b.burstType = BurstType::Walk;
+}
+
+void HitEffects::spawnLandingBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
+{
+    if (!gConfig.enabled || !gConfig.landingBurst.enabled || !gDashFXEnabled) return;
+    if (gBurstCount >= MAX_BURSTS) {
+        gBursts[0] = gBursts[gBurstCount - 1];
+        gBurstCount--;
+    }
+
+    const auto& cfg = gConfig.landingBurst;
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    glm::vec3 right = glm::normalize(glm::cross(dir, up));
+    if (glm::length(right) < 0.001f) right = glm::vec3(0.0f, 1.0f, 0.0f);
+    up = glm::normalize(glm::cross(right, dir));
+
+    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
+    glm::vec3 spawnPos = position + localOffset + cfg.offset;
+
+    HitBurstEffect& b = gBursts[gBurstCount++];
+    b.position = spawnPos;
+    b.direction = dir;
+    b.normal = up;
+    b.spawnTick = gGlobalTick;
+    b.totalTicks = cfg.lifetimeTicks;
+    b.alive = true;
+    b.dashBurst = false;
+    b.dashSpeed = speed;
+    b.burstType = BurstType::Landing;
 }
 
 void HitEffects::updateHitBursts(float dt)
@@ -618,6 +708,8 @@ static const MovementDashBurstConfig& burstConfigForType(BurstType type) {
     switch (type) {
         case BurstType::GroundJump: return gConfig.groundJumpBurst;
         case BurstType::AirJump: return gConfig.airJumpBurst;
+        case BurstType::Walk: return gConfig.walkBurst;
+        case BurstType::Landing: return gConfig.landingBurst;
         default: return gConfig.movementDashBurst;
     }
 }
@@ -642,16 +734,40 @@ static void renderDirectionalBurst(const HitBurstEffect& b, int age, const Camer
         len *= scale;
     }
 
-    // For ground/air jump, the direction is always Z-up (vertical elongated sphere)
-    glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::vec3 fwd = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
+    if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
+    up = glm::normalize(glm::cross(right, fwd));
 
-    // Ground jump and air jump are always vertical along Z
-    if (b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump)
-        dir = glm::vec3(0.0f, 0.0f, 1.0f);
+    // Pick stretch axis from config. Defaults to "forward" (movement direction).
+    glm::vec3 stretchDir;
+    if (cfg.stretchAxis == "right")
+        stretchDir = right;
+    else if (cfg.stretchAxis == "up")
+        stretchDir = up;
+    else if (cfg.stretchAxis == "world_x")
+        stretchDir = glm::vec3(1.0f, 0.0f, 0.0f);
+    else if (cfg.stretchAxis == "world_y")
+        stretchDir = glm::vec3(0.0f, 1.0f, 0.0f);
+    else if (cfg.stretchAxis == "world_z")
+        stretchDir = glm::vec3(0.0f, 0.0f, 1.0f);
+    else
+        stretchDir = fwd; // "forward" (default)
+
+    // Apply Euler rotation (degrees) to the stretch axis.
+    if (glm::length(cfg.rotation) > 0.001f)
+    {
+        glm::vec3 radAngles = glm::radians(cfg.rotation);
+        glm::quat rotQuat = glm::quat(radAngles);
+        stretchDir = rotQuat * stretchDir;
+    }
 
     glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
 
-    glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
+    glm::vec3 scaleVec = stretchDir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - stretchDir;
+    // Apply per-axis scale multiplier from config.
+    scaleVec *= cfg.scale;
     DebugVis::drawFilledSphere(camera, b.position, rad, col, scaleVec);
 }
 
@@ -662,7 +778,8 @@ void HitEffects::renderHitBursts(const Camera& camera)
         if (!b.alive) continue;
         int age = gGlobalTick - b.spawnTick;
 
-        if (b.dashBurst || b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump) {
+        if (b.dashBurst || b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump
+            || b.burstType == BurstType::Walk || b.burstType == BurstType::Landing) {
             renderDirectionalBurst(b, age, camera);
         } else {
             renderSphereTimeline(b, age, camera);
