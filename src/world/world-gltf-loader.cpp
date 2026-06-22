@@ -7,6 +7,7 @@
  */
 
 #include "world-gltf-loader.h"
+#include "analytics/analytics-manager.h"
 #include "map/map_loader.h"
 #include "debug/debug-log.h"
 #include "utils/path_utils.h"
@@ -192,6 +193,10 @@ bool loadWorldFromGLB(World& world, const char* path)
     printf("[WORLD GLB] load success path=%s revision=%llu spawns=%zu unloadMs=%.2f totalMs=%.2f\n",
            path, (unsigned long long)world.renderRevision,
            world.spawnPoints.size(), unloadMs, loadMs);
+    AnalyticsManager::instance().trackMapLoaded(
+        path,
+        (int)world.collisionMesh.triangles.size(),
+        (int)world.spawnPoints.size());
     return true;
 }
 

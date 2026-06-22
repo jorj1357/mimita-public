@@ -130,6 +130,19 @@ All require admin session cookie. Rate limited (20/min).
 Events are inserted via `trackEvent(eventName, data)`:
 - `page_visit` — page views
 - `download` — file downloads
+- registered game events from `/api/game/analytics/events`
+
+### Game Analytics
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/game/analytics/events | No | Accept up to 64 registered game analytics events per request. |
+| POST | /api/game/analytics/consent | No | Upsert anonymous analytics consent/opt-out state. |
+| POST | /api/game/analytics/deletion-request | No | Create audit log, email hello@mimita.fun, and store deletion request. |
+
+Game analytics events use `analytics_events.event_data` JSONB for flexible fields. New events are registered in `server/gameAnalytics.js`; normal event additions do not need schema changes.
+
+The backend rejects password/token/chat/message-style fields from gameplay analytics.
 
 ### Metric aggregation (`analytics_metrics` table)
 Metrics are stored daily. Refresh via:
@@ -140,6 +153,8 @@ Tracked metrics:
 - site_visitors (today, 7d, 30d, all)
 - downloads (today, all)
 - accounts_created (today, all)
+- game sessions, session duration buckets, crashes, disconnects, failed logins
+- live dashboard lists for maps, weapons, features, movement, opt-outs, deletion requests
 - Plus computed: DAU, WAU, MAU, retention, etc.
 
 ### Google Analytics

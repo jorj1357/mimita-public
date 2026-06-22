@@ -101,6 +101,34 @@ export async function sendPasswordChangedEmail(
     })
 }
 
+export async function sendDataDeletionRequestEmail(request) {
+    const requestedAt = request.requestedAt || new Date().toISOString()
+    const accountId = request.accountId || "not provided"
+    const username = request.username || "not provided"
+    const email = request.email || "not provided"
+    const anonymousId = request.anonymousId || "not provided"
+
+    await sendMail({
+        to: "hello@mimita.fun",
+        subject: "Data Deletion Request",
+        text:
+            `Data deletion request\n\n` +
+            `Account id: ${accountId}\n` +
+            `Username: ${username}\n` +
+            `Email: ${email}\n` +
+            `Anonymous analytics id: ${anonymousId}\n` +
+            `Timestamp: ${requestedAt}\n`,
+        html: `
+            <h1>Data Deletion Request</h1>
+            <p><strong>Account id:</strong> ${escapeHtml(accountId)}</p>
+            <p><strong>Username:</strong> ${escapeHtml(username)}</p>
+            <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+            <p><strong>Anonymous analytics id:</strong> ${escapeHtml(anonymousId)}</p>
+            <p><strong>Timestamp:</strong> ${escapeHtml(requestedAt)}</p>
+        `
+    })
+}
+
 function escapeHtml(value) {
     return String(value)
         .replaceAll("&", "&amp;")

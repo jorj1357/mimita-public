@@ -27,12 +27,14 @@ import {
 } from "./mail.js"
 import adminRouter from "./admin.js"
 import debugRouter from "./debug.js"
+import gameAnalyticsRouter from "./gameAnalytics.js"
 import { trackEvent } from "./analytics.js"
 import { createRateLimit } from "./rateLimit.js"
 
 const authRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "auth" })
 const adminRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 20, name: "admin" })
 const newsletterRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "newsletter" })
+const gameAnalyticsRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 120, name: "game_analytics" })
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -257,6 +259,14 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
 
         await createSession(user.id, req, res)
         logAuth("signup", `success user_id=${user.id}`)
+        await trackEvent("account_created", {
+            event_data: {
+                source: "website",
+                username: user.username
+            },
+            user_id: user.id,
+            ip_address: getClientIp(req)
+        })
         await safelySend(
             "welcome_sent",
             () => sendAccountWelcomeEmail(email, username)
@@ -312,6 +322,13 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
             !(await verifyPassword(req.body.password, user.password_hash))
         ) {
             logAuth("signin", "invalid_credentials")
+            await trackEvent("failed_login", {
+                event_data: {
+                    source: "website",
+                    identifier_type: identifier.includes("@") ? "email" : "username"
+                },
+                ip_address: getClientIp(req)
+            })
             return res.status(401).json({
                 success: false,
                 message: "invalid username/email or password"
@@ -321,6 +338,14 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
         await createSession(user.id, req, res)
         delete user.password_hash
         logAuth("signin", `success user_id=${user.id}`)
+        await trackEvent("login", {
+            event_data: {
+                source: "website",
+                username: user.username
+            },
+            user_id: user.id,
+            ip_address: getClientIp(req)
+        })
 
         res.json({
             success: true,
@@ -345,6 +370,14 @@ app.post("/api/auth/signout", authenticate, async (req, res, next) => {
         )
         clearSessionCookie(res)
         logAuth("signout", `success user_id=${req.user.id}`)
+        await trackEvent("logout", {
+            event_data: {
+                source: "website",
+                username: req.user.username
+            },
+            user_id: req.user.id,
+            ip_address: getClientIp(req)
+        })
         res.json({
             success: true,
             message: "Signed out"
@@ -768,6 +801,7 @@ app.delete("/api/account", authenticate, async (req, res, next) => {
 
 app.use("/api/admin", adminRateLimit, adminRouter)
 app.use("/api/debug", debugRouter)
+app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 
 app.post("/api/admin/feedback", async (req, res, next) => {
     try {
