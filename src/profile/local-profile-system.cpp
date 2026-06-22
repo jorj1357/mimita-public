@@ -1,5 +1,7 @@
 #include "profile/local-profile-system.h"
 
+#include "analytics/analytics-manager.h"
+
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -92,6 +94,8 @@ bool LocalProfileSystem::signIn(
             currentUsername_ = username;
             lastError_.clear();
             writeJson(CURRENT_PROFILE_PATH, json{{"username", currentUsername_}});
+            AnalyticsManager::instance().setUser(currentUsername_);
+            AnalyticsManager::instance().track("login", {{"source", "local_profile"}});
             std::printf("[LOCAL PROFILE] sign in success username=\"%s\"\n",
                         currentUsername_.c_str());
             return true;
@@ -99,6 +103,7 @@ bool LocalProfileSystem::signIn(
     }
 
     lastError_ = "Invalid username or password";
+    AnalyticsManager::instance().track("failed_login", {{"source", "local_profile"}});
     std::printf("[LOCAL PROFILE] sign in failed username=\"%s\"\n", username.c_str());
     return false;
 }

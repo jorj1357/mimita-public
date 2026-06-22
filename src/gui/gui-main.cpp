@@ -19,6 +19,7 @@
 #include "render/render-player.h"
 #include "gui-layout.h"
 #include "audio/music-manager.h"
+#include "analytics/analytics-manager.h"
 #include "input/input-commands.h"
 #include "replay/replay-factory.h"
 #include "replay/replay.h"
@@ -90,16 +91,19 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.goSettings)
             {
+                AnalyticsManager::instance().trackUi("settings_opened");
                 gGuiMenuState = GUI_MENU_SETTINGS;
             }
             else if (r.goReplays)
             {
                 printf("[MAIN MENU] switching to replay menu\n");
+                AnalyticsManager::instance().trackUi("replay_viewed");
                 gGuiMenuState = GUI_MENU_REPLAY;
             }
             else if (r.goAvatarCreator)
             {
                 printf("[MAIN MENU] switching to avatar creator\n");
+                AnalyticsManager::instance().trackUi("outfit_editor_opened");
                 gGuiMenuState = GUI_MENU_AVATAR_CREATOR;
             }
             else if (r.goExit)
@@ -355,6 +359,7 @@ void guiMain(GLFWwindow* win, GameState& state)
 
     MusicManager::instance().drawAllOverlay();
     InputCommandSystem::instance().drawInputDebug();
+    AnalyticsManager::instance().drawFirstLaunchPopup(win);
     uiRenderFrameDebugOverlay(win, "MENU", false);
     uiEndFrame();
 

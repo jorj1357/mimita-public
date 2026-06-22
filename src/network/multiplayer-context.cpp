@@ -1,6 +1,7 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "render/outfit-atlas.h"
+#include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "combat/weapon-registry.h"
@@ -298,6 +299,9 @@ void mpShutdown(MultiplayerContext& ctx)
 {
     if (!ctx.active)
         return;
+
+    AnalyticsManager::instance().trackDisconnect(
+        ctx.connected ? "shutdown" : "connection_closed");
 
     if (ctx.localPlayerId)
     {
