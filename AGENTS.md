@@ -708,6 +708,30 @@ DO NOT run this for simple status updates mid-task. Only run it when the agent i
 
 ---
 
+# Architecture Enforcement Rules
+
+One concept = one owner.
+
+One file = one responsibility.
+
+One function = one job.
+
+Before adding a state variable:
+
+Search repository for existing equivalent concepts.
+
+Before adding a new file:
+
+Explain why an existing file cannot own the behavior.
+
+Avoid duplicate sources of truth.
+
+Collision contacts are the source of truth for grounded state.
+
+Timers may not invent collisions.
+
+---
+
 # Asset Management
 
 * `assets/sound/music/ingame/donttrack` is intentionally excluded from source control via `.gitignore`. It contains local music work files, exports, experiments, and temporary audio assets. Any file that should become part of the game must be moved out of this folder into the proper tracked asset location.
