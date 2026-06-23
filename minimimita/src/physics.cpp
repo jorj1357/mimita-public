@@ -119,13 +119,8 @@ void resolveContacts(Player& player, const ContactState& state) {
 void updatePlayer(Player& player, const InputState& input,
                   const std::vector<Triangle>& triangles, float dt) {
     const float WALK_SPEED = 5.0f;
-    const float JUMP_VEL = 5.0f;
 
-    glm::vec3 wishDir(0.0f);
-    if (input.w) wishDir.y += 1.0f;
-    if (input.s) wishDir.y -= 1.0f;
-    if (input.d) wishDir.x += 1.0f;
-    if (input.a) wishDir.x -= 1.0f;
+    glm::vec3 wishDir = input.wishDir;
 
     if (glm::length2(wishDir) > 0.0f)
         wishDir = glm::normalize(wishDir) * WALK_SPEED;
@@ -134,7 +129,7 @@ void updatePlayer(Player& player, const InputState& input,
     player.velocity.y = wishDir.y;
 
     if (input.space && !input.spacePrev && player.grounded)
-        player.velocity.z = JUMP_VEL;
+        player.velocity.z = 5.0f;
 
     player.velocity.z += GRAVITY * dt;
     player.position += player.velocity * dt;
@@ -144,7 +139,6 @@ void updatePlayer(Player& player, const InputState& input,
     resolveContacts(player, state);
     player.contacts = state;
 
-    bool wasGrounded = player.grounded;
     player.grounded = state.touchingFloor;
 
     if (state.touchingFloor && player.velocity.z < 0.0f)

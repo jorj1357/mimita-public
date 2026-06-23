@@ -2190,14 +2190,14 @@ std::string collisionStateSummary(const Player& p)
         "[COLLISION STATE]\n"
         "  pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n"
         "  onGround=%d stableOnGround=%d groundLostTimer=%.4f airborneTimer=%.4f\n"
-        "  rawWasOnGround=%d wasOnGround=%d didLand=%d jumpConsumed=%d\n"
+        "  wasOnGround=%d didLand=%d jumpConsumed=%d\n"
         "  landingCooldown=%.3f worldContact=%.4f\n"
         "  finalPos=(%.2f %.2f %.2f) floorSnapDist=0.25f\n"
         "  frameCandidates=%d/%d sweepHits=%d recovery=%d final=%d maxPen=%.4f\n",
         p.pos.x, p.pos.y, p.pos.z,
         p.vel.x, p.vel.y, p.vel.z,
         (int)p.onGround, (int)p.stableOnGround, p.groundLostTimer, p.airborneTimer,
-        (int)p.rawWasOnGround, (int)p.wasOnGround, (int)p.didLand, (int)p.jumpConsumed,
+        (int)p.wasOnGround, (int)p.didLand, (int)p.jumpConsumed,
         p.landingCooldown, p.worldContactLostTimer,
         tr.finalPos.x, tr.finalPos.y, tr.finalPos.z,
         tr.initialCandidates, tr.maxCandidates,

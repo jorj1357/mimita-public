@@ -29,9 +29,11 @@ if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 %COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\maps.cpp" -o "%BUILD%\maps.o"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\glb-loader.cpp" -o "%BUILD%\glb-loader.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 echo === Linking ===
-%COMPILER% "%BUILD%\glad.o" "%BUILD%\main.o" "%BUILD%\physics.o" "%BUILD%\render.o" "%BUILD%\maps.o" %LIBS% -o "%MINI%\mini-mimita-collision.exe"
+%COMPILER% "%BUILD%\glad.o" "%BUILD%\main.o" "%BUILD%\physics.o" "%BUILD%\render.o" "%BUILD%\maps.o" "%BUILD%\glb-loader.o" %LIBS% -o "%MINI%\mini-mimita-collision.exe"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 echo === Build complete ===
