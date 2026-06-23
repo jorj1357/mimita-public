@@ -42,22 +42,16 @@ export default function AdminDashboard() {
     async function fetchFeedback() {
         try {
             const data = await apiRequest("/api/admin/feedback?limit=10")
-            if (data.success) {
-                setFeedback(data.feedback)
-            }
+            if (data.success) setFeedback(data.feedback)
         }
-        catch {
-            // silent
-        }
+        catch {}
     }
 
     async function handleRefresh() {
         setRefreshing(true)
         try {
             const data = await apiRequest("/api/admin/dashboard/refresh", { method: "POST" })
-            if (data.success) {
-                setMetrics(data.metrics)
-            }
+            if (data.success) setMetrics(data.metrics)
         }
         catch {
             setError("refresh failed")
@@ -107,6 +101,20 @@ export default function AdminDashboard() {
         ))
     }
 
+    function card(label, value) {
+        return (
+            <div className="adminCard">
+                <span>{label}</span>
+                <span className="adminValue">{value ?? "—"}</span>
+            </div>
+        )
+    }
+
+    function cardObj(label, obj, field = "today") {
+        const val = obj ? (obj[field] ?? obj.allTime ?? 0) : 0
+        return card(label, val)
+    }
+
     return (
         <div className="adminPage">
             <div className="adminHeader">
@@ -134,202 +142,128 @@ export default function AdminDashboard() {
 
             <div className="adminGrid">
 
-                {/* Growth */}
+                {/* Tier S - Growth */}
                 <div className="adminSection">
-                    <h2>growth</h2>
-                    <div className="adminCard">
-                        <span>site visitors today</span>
-                        <span className="adminValue">{M.site_visitors_today?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>site visitors 7d</span>
-                        <span className="adminValue">{M.site_visitors_7d?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>site visitors 30d</span>
-                        <span className="adminValue">{M.site_visitors_30d?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>site visitors all time</span>
-                        <span className="adminValue">{M.site_visitors_all?.allTime || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>downloads today</span>
-                        <span className="adminValue">{M.downloads_today?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>downloads all time</span>
-                        <span className="adminValue">{M.downloads_all?.allTime || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>download conversion %</span>
-                        <span className="adminValue">{M.download_conversion_pct ?? "—"}%</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>accounts today</span>
-                        <span className="adminValue">{M.accounts_created_today?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>accounts all time</span>
-                        <span className="adminValue">{M.accounts_created_all?.allTime || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>account conversion %</span>
-                        <span className="adminValue">{M.account_conversion_pct ?? "—"}%</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>total users</span>
-                        <span className="adminValue">{M.total_users || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>active sessions</span>
-                        <span className="adminValue">{M.active_sessions || 0}</span>
-                    </div>
+                    <h2>growth (tier s)</h2>
+                    {cardObj("visitors today", M.site_visitors_today)}
+                    {cardObj("visitors 7d", M.site_visitors_7d)}
+                    {cardObj("visitors 30d", M.site_visitors_30d)}
+                    {cardObj("visitors all time", M.site_visitors_all, "allTime")}
+                    {cardObj("downloads today", M.downloads_today)}
+                    {cardObj("downloads all time", M.downloads_all, "allTime")}
+                    {cardObj("accounts today", M.accounts_created_today)}
+                    {cardObj("accounts 7d", M.accounts_created_7d)}
+                    {cardObj("accounts 30d", M.accounts_created_30d)}
+                    {cardObj("accounts all time", M.accounts_created_all, "allTime")}
+                    {card("total users", M.total_users)}
+                    {card("active sessions", M.active_sessions)}
                 </div>
 
-                {/* Activity */}
+                {/* Tier S - Activity */}
                 <div className="adminSection">
-                    <h2>activity</h2>
-                    <div className="adminCard">
-                        <span>DAU</span>
-                        <span className="adminValue">{M.dau?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>WAU</span>
-                        <span className="adminValue">{M.wau?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>MAU</span>
-                        <span className="adminValue">{M.mau?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>unique players today</span>
-                        <span className="adminValue">{M.unique_players_today?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>game opens today</span>
-                        <span className="adminValue">{M.game_opens_today?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>game sessions today</span>
-                        <span className="adminValue">{M.game_sessions_today?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>game sessions all time</span>
-                        <span className="adminValue">{M.game_sessions_all?.allTime || 0}</span>
-                    </div>
+                    <h2>activity (tier s)</h2>
+                    {cardObj("DAU", M.dau)}
+                    {cardObj("WAU", M.wau)}
+                    {cardObj("MAU", M.mau)}
+                    {cardObj("unique players today", M.unique_players_today)}
+                    {cardObj("game opens today", M.game_opens_today)}
+                    {cardObj("game sessions today", M.game_sessions_today)}
+                    {cardObj("game sessions all time", M.game_sessions_all, "allTime")}
                 </div>
 
-                {/* Engagement */}
+                {/* Tier S - Engagement */}
                 <div className="adminSection">
-                    <h2>engagement</h2>
-                    <div className="adminCard"><span>sessions &gt; 1m</span><span className="adminValue">{M.sessions_gt_1m?.today || 0}</span></div>
-                    <div className="adminCard"><span>sessions &gt; 5m</span><span className="adminValue">{M.sessions_gt_5m?.today || 0}</span></div>
-                    <div className="adminCard"><span>sessions &gt; 10m</span><span className="adminValue">{M.sessions_gt_10m?.today || 0}</span></div>
-                    <div className="adminCard"><span>sessions &gt; 30m</span><span className="adminValue">{M.sessions_gt_30m?.today || 0}</span></div>
-                    <div className="adminCard"><span>sessions &gt; 1h</span><span className="adminValue">{M.sessions_gt_1h?.today || 0}</span></div>
-                    <div className="adminCard"><span>avg session length</span><span className="adminValue">{M.avg_session_length_seconds?.today || 0}s</span></div>
-                    <div className="adminCard"><span>matches played</span><span className="adminValue">{M.matches_played?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>avg matches per user</span><span className="adminValue">{M.avg_matches_per_user?.today || 0}</span></div>
-                    <div className="adminCard"><span>first match played</span><span className="adminValue">{M.first_match_played_count?.allTime || 0}</span></div>
+                    <h2>engagement (tier s)</h2>
+                    {cardObj("sessions > 1m", M.sessions_gt_1m)}
+                    {cardObj("sessions > 5m", M.sessions_gt_5m)}
+                    {cardObj("sessions > 10m", M.sessions_gt_10m)}
+                    {cardObj("sessions > 30m", M.sessions_gt_30m)}
+                    {cardObj("sessions > 1h", M.sessions_gt_1h)}
+                    {cardObj("avg session length", M.avg_session_length_seconds, "today")}
+                    <div className="adminCard"><span>retention 1d</span><span className="adminValue">{M.retention_1d?.today ?? 0}%</span></div>
+                    <div className="adminCard"><span>retention 7d</span><span className="adminValue">{M.retention_7d?.today ?? 0}%</span></div>
+                    <div className="adminCard"><span>retention 30d</span><span className="adminValue">{M.retention_30d?.today ?? 0}%</span></div>
                 </div>
 
-                {/* Retention */}
+                {/* Tier S - Revenue */}
                 <div className="adminSection">
-                    <h2>retention</h2>
-                    <div className="adminCard"><span>1 day retention</span><span className="adminValue">{M.retention_1d?.today || 0}%</span></div>
-                    <div className="adminCard"><span>7 day retention</span><span className="adminValue">{M.retention_7d?.today || 0}%</span></div>
-                    <div className="adminCard"><span>30 day retention</span><span className="adminValue">{M.retention_30d?.today || 0}%</span></div>
-                    <div className="adminCard"><span>90 day retention</span><span className="adminValue">{M.retention_90d?.today || 0}%</span></div>
-                    <div className="adminCard"><span>365 day retention</span><span className="adminValue">{M.retention_365d?.today || 0}%</span></div>
-                    <div className="adminCard"><span>returning users today</span><span className="adminValue">{M.returning_users_today?.today || 0}</span></div>
+                    <h2>revenue (tier s)</h2>
+                    {cardObj("revenue today", M.revenue_today)}
+                    {cardObj("revenue 30d", M.revenue_30d)}
+                    {cardObj("revenue all time", M.revenue_all, "allTime")}
+                    {cardObj("feedback today", M.feedback_today)}
+                    {cardObj("crashes today", M.crashes_today)}
+                </div>
+
+                {/* Server Status */}
+                <div className="adminSection">
+                    <h2>server (tier s)</h2>
+                    {card("server online", M.server_online ?? "—")}
+                    {card("response time", M.server_response_time ? `${M.server_response_time}ms` : "—")}
+                    {card("latest build", M.latest_build_version || "—")}
+                </div>
+
+                {/* Tier A - Maps & Weapons */}
+                <div className="adminSection">
+                    <h2>maps & weapons (tier a)</h2>
                     <div className="adminCard adminCardList">
-                        <span>return events</span>
-                        <span className="adminValueSmall">{renderList(M.retention_returns)}</span>
-                    </div>
-                </div>
-
-                {/* Game Analytics */}
-                <div className="adminSection">
-                    <h2>game analytics</h2>
-                    <div className="adminCard adminCardList">
-                        <span>most played maps</span>
+                        <span>top maps</span>
                         <span className="adminValueSmall">{renderList(M.top_maps)}</span>
                     </div>
                     <div className="adminCard adminCardList">
-                        <span>most used weapons</span>
+                        <span>top weapons</span>
                         <span className="adminValueSmall">{renderList(M.top_weapons)}</span>
-                    </div>
-                    <div className="adminCard adminCardList">
-                        <span>most used features</span>
-                        <span className="adminValueSmall">{renderList(M.top_features)}</span>
                     </div>
                     <div className="adminCard adminCardList">
                         <span>movement stats</span>
                         <span className="adminValueSmall">{renderList(M.movement_stats)}</span>
                     </div>
-                    <div className="adminCard">
-                        <span>analytics opt-out rate</span>
-                        <span className="adminValue">{M.analytics_opt_out_rate ?? 0}%</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>deletion requests today</span>
-                        <span className="adminValue">{M.analytics_deletion_requests?.today || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>deletion requests pending</span>
-                        <span className="adminValue">{M.analytics_deletion_requests?.pending || 0}</span>
-                    </div>
-                    <div className="adminCard">
-                        <span>deletion requests all time</span>
-                        <span className="adminValue">{M.analytics_deletion_requests?.allTime || 0}</span>
-                    </div>
                 </div>
 
-                {/* Community */}
+                {/* Tier A - Community */}
                 <div className="adminSection">
-                    <h2>community</h2>
-                    <div className="adminCard"><span>discord joins</span><span className="adminValue">{M.discord_joins?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>messages sent</span><span className="adminValue">{M.messages_sent?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>friend requests</span><span className="adminValue">{M.friend_requests?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>profiles viewed</span><span className="adminValue">{M.profiles_viewed?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>replays saved</span><span className="adminValue">{M.replays_saved?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>replays shared</span><span className="adminValue">{M.replays_shared?.allTime || 0}</span></div>
+                    <h2>community (tier a)</h2>
+                    {cardObj("replays saved", M.replays_saved, "allTime")}
+                    {cardObj("replays shared", M.replays_shared, "allTime")}
+                    {cardObj("friend requests", M.friend_requests_total, "allTime")}
+                    {cardObj("friend requests today", M.friend_requests_today)}
+                    {cardObj("discord joins", M.discord_joins, "allTime")}
+                    {cardObj("discord joins today", M.discord_joins_today)}
                 </div>
 
-                {/* Revenue */}
+                {/* Tier A - Quality */}
                 <div className="adminSection">
-                    <h2>revenue</h2>
-                    <div className="adminCard"><span>revenue today</span><span className="adminValue">${M.revenue_today?.today || 0}</span></div>
-                    <div className="adminCard"><span>revenue 30d</span><span className="adminValue">${M.revenue_30d?.today || 0}</span></div>
-                    <div className="adminCard"><span>revenue all time</span><span className="adminValue">${M.revenue_all?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>donation page visits</span><span className="adminValue">{M.donation_page_visits?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>donations today</span><span className="adminValue">{M.donations_today?.today || 0}</span></div>
-                    <div className="adminCard"><span>donations all time</span><span className="adminValue">{M.donations_all?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>donors count</span><span className="adminValue">{M.donors_count?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>avg donation</span><span className="adminValue">${M.avg_donation?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>donation conversion %</span><span className="adminValue">{M.donation_conversion_pct ?? "—"}%</span></div>
-                    <div className="adminCard"><span>donation page exit rate</span><span className="adminValue">{M.donation_page_exit_rate?.today || 0}%</span></div>
-                </div>
-
-                {/* Quality */}
-                <div className="adminSection">
-                    <h2>quality</h2>
-                    <div className="adminCard"><span>crashes today</span><span className="adminValue">{M.crashes_today?.today || 0}</span></div>
-                    <div className="adminCard"><span>disconnects today</span><span className="adminValue">{M.disconnects_today?.today || 0}</span></div>
-                    <div className="adminCard"><span>failed downloads</span><span className="adminValue">{M.failed_downloads?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>failed logins</span><span className="adminValue">{M.failed_logins?.allTime || 0}</span></div>
-                    <div className="adminCard"><span>avg ping</span><span className="adminValue">{M.avg_ping?.today || 0}ms</span></div>
-                    <div className="adminCard"><span>avg FPS</span><span className="adminValue">{M.avg_fps?.today || 0}</span></div>
+                    <h2>quality (tier a)</h2>
+                    {cardObj("avg FPS", M.avg_fps_value)}
+                    {cardObj("avg ping", M.avg_ping_value)}
+                    {card("donation conversion %", M.donation_conversion_rate != null ? `${M.donation_conversion_rate}%` : "—")}
+                    {card("most common feedback", M.most_common_feedback || "—")}
+                    {card("most common page", M.most_common_page || "—")}
+                    <div className="adminCard adminCardList">
+                        <span>top referrers</span>
+                        <span className="adminValueSmall">{renderList(M.top_referrers)}</span>
+                    </div>
+                    <div className="adminCard adminCardList">
+                        <span>device breakdown</span>
+                        <span className="adminValueSmall">{renderList(M.device_breakdown)}</span>
+                    </div>
+                    <div className="adminCard adminCardList">
+                        <span>browser breakdown</span>
+                        <span className="adminValueSmall">{renderList(M.browser_breakdown)}</span>
+                    </div>
+                    <div className="adminCard adminCardList">
+                        <span>country breakdown</span>
+                        <span className="adminValueSmall">{renderList(M.country_breakdown)}</span>
+                    </div>
                 </div>
 
                 {/* Feedback Analytics */}
                 <div className="adminSection">
                     <h2>feedback</h2>
-                    <div className="adminCard"><span>total feedback</span><span className="adminValue">{M.total_feedback || 0}</span></div>
-                    <div className="adminCard"><span>feedback today</span><span className="adminValue">{M.feedback_today || 0}</span></div>
-                    <div className="adminCard"><span>most common preset</span><span className="adminValue">{M.most_common_preset || "—"}</span></div>
-                    <div className="adminCard"><span>most common page</span><span className="adminValue">{M.most_common_page || "—"}</span></div>
+                    {card("total feedback", M.total_feedback)}
+                    {card("feedback today", M.feedback_today)}
+                    {card("most common preset", M.most_common_preset || "—")}
+                    {card("most common page (feedback)", M.most_common_page || "—")}
                     {M.feedback_by_category && M.feedback_by_category.length > 0 && (
                         <div className="adminCard adminCardList">
                             <span>by category</span>

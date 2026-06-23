@@ -62,7 +62,28 @@ const DEFAULT_METRICS = [
     "game_sessions_all",
     "analytics_opt_out_rate",
     "analytics_deletion_requests_today",
-    "analytics_deletion_requests_all"
+    "analytics_deletion_requests_all",
+    "server_online",
+    "server_response_time",
+    "latest_build_version",
+    "top_maps",
+    "top_weapons",
+    "movement_stats",
+    "replay_saves",
+    "replay_shares",
+    "friend_requests_total",
+    "friend_requests_today",
+    "discord_joins_today",
+    "avg_fps_value",
+    "avg_ping_value",
+    "donation_conversion_rate",
+    "most_common_feedback",
+    "most_common_page",
+    "top_referrers",
+    "device_breakdown",
+    "browser_breakdown",
+    "country_breakdown",
+    "feedback_today"
 ]
 
 const MOVEMENT_EVENTS = ["jump", "dash", "air_jump", "wall_jump"]
@@ -232,6 +253,8 @@ export async function refreshMetrics() {
 
     // downloads
     await updateMetric("downloads_today", today, await countEvents("download", "day"))
+    await updateMetric("downloads_7d", today, await countEvents("download", "7d"))
+    await updateMetric("downloads_30d", today, await countEvents("download", "30d"))
     await updateMetric("downloads_all", today, await countEvents("download", "all"))
 
     // accounts
@@ -240,10 +263,39 @@ export async function refreshMetrics() {
     )
     await updateMetric("accounts_created_today", today, Number(accountsToday.rows[0].count))
 
+    const accounts7d = await pool.query(
+        `SELECT COUNT(*) AS count FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days' AND deleted_at IS NULL`
+    )
+    await updateMetric("accounts_created_7d", today, Number(accounts7d.rows[0].count))
+
+    const accounts30d = await pool.query(
+        `SELECT COUNT(*) AS count FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '30 days' AND deleted_at IS NULL`
+    )
+    await updateMetric("accounts_created_30d", today, Number(accounts30d.rows[0].count))
+
     const accountsAll = await pool.query(
         `SELECT COUNT(*) AS count FROM users WHERE deleted_at IS NULL`
     )
     await updateMetric("accounts_created_all", today, Number(accountsAll.rows[0].count))
+
+    // DAU / WAU / MAU
+    const dau = await pool.query(`
+        SELECT COUNT(DISTINCT user_id) AS count FROM analytics_events
+        WHERE created_at >= CURRENT_DATE AND user_id IS NOT NULL
+    `)
+    await updateMetric("dau", today, Number(dau.rows[0].count))
+
+    const wau = await pool.query(`
+        SELECT COUNT(DISTINCT user_id) AS count FROM analytics_events
+        WHERE created_at >= CURRENT_DATE - INTERVAL '7 days' AND user_id IS NOT NULL
+    `)
+    await updateMetric("wau", today, Number(wau.rows[0].count))
+
+    const mau = await pool.query(`
+        SELECT COUNT(DISTINCT user_id) AS count FROM analytics_events
+        WHERE created_at >= CURRENT_DATE - INTERVAL '30 days' AND user_id IS NOT NULL
+    `)
+    await updateMetric("mau", today, Number(mau.rows[0].count))
 
     // feedback
     const feedbackToday = await pool.query(
@@ -290,6 +342,55 @@ export async function refreshMetrics() {
             : "sessions_gt_1h"
         await updateMetric(name, today, Number(result.rows[0].count))
     }
+
+    // Retention 1d / 7d / 30d
+    const retention1d = await pool.query(`
+        SELECT
+            COUNT(DISTINCT e.user_id)::float / NULLIF(GREATEST(COUNT(DISTINCT u.id), 1), 0) * 100 AS rate
+        FROM users u
+        LEFT JOIN analytics_events e ON e.user_id = u.id
+            AND e.created_at >= CURRENT_DATE - INTERVAL '1 day'
+        WHERE u.created_at >= CURRENT_DATE - INTERVAL '2 days'
+          AND u.created_at < CURRENT_DATE - INTERVAL '1 day'
+          AND u.deleted_at IS NULL
+    `)
+    await updateMetric("retention_1d", today, Math.round(Number(retention1d.rows[0]?.rate || 0)))
+
+    const retention7d = await pool.query(`
+        SELECT
+            COUNT(DISTINCT e.user_id)::float / NULLIF(GREATEST(COUNT(DISTINCT u.id), 1), 0) * 100 AS rate
+        FROM users u
+        LEFT JOIN analytics_events e ON e.user_id = u.id
+            AND e.created_at >= CURRENT_DATE - INTERVAL '7 days'
+        WHERE u.created_at >= CURRENT_DATE - INTERVAL '14 days'
+          AND u.created_at < CURRENT_DATE - INTERVAL '7 days'
+          AND u.deleted_at IS NULL
+    `)
+    await updateMetric("retention_7d", today, Math.round(Number(retention7d.rows[0]?.rate || 0)))
+
+    const retention30d = await pool.query(`
+        SELECT
+            COUNT(DISTINCT e.user_id)::float / NULLIF(GREATEST(COUNT(DISTINCT u.id), 1), 0) * 100 AS rate
+        FROM users u
+        LEFT JOIN analytics_events e ON e.user_id = u.id
+            AND e.created_at >= CURRENT_DATE - INTERVAL '30 days'
+        WHERE u.created_at >= CURRENT_DATE - INTERVAL '60 days'
+          AND u.created_at < CURRENT_DATE - INTERVAL '30 days'
+          AND u.deleted_at IS NULL
+    `)
+    await updateMetric("retention_30d", today, Math.round(Number(retention30d.rows[0]?.rate || 0)))
+
+    // Replay stats
+    await updateMetric("replays_saved", today, await countEvents("replay_save", "all"))
+    await updateMetric("replays_shared", today, await countEvents("replay_share", "all"))
+
+    // Friend requests
+    await updateMetric("friend_requests_total", today, await countEvents("friend_request", "all"))
+    await updateMetric("friend_requests_today", today, await countEvents("friend_request", "day"))
+
+    // Discord joins
+    await updateMetric("discord_joins", today, await countEvents("discord_join", "all"))
+    await updateMetric("discord_joins_today", today, await countEvents("discord_join", "day"))
 }
 
 async function getGameAnalyticsSummary() {
@@ -427,6 +528,12 @@ async function countEvents(eventName, range) {
     let query
     if (range === "day") {
         query = `SELECT COUNT(*) AS count FROM analytics_events WHERE event_name = $1 AND created_at >= CURRENT_DATE`
+    }
+    else if (range === "7d") {
+        query = `SELECT COUNT(*) AS count FROM analytics_events WHERE event_name = $1 AND created_at >= CURRENT_DATE - INTERVAL '7 days'`
+    }
+    else if (range === "30d") {
+        query = `SELECT COUNT(*) AS count FROM analytics_events WHERE event_name = $1 AND created_at >= CURRENT_DATE - INTERVAL '30 days'`
     }
     else {
         query = `SELECT COUNT(*) AS count FROM analytics_events WHERE event_name = $1`

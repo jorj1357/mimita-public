@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 
 import Layout from "../components/Layout"
+import Username from "../components/Username"
 import { apiRequest } from "../lib/api"
 
 export default function Account() {
@@ -10,6 +11,7 @@ export default function Account() {
     const [bio, setBio] = useState("")
     const [deletePassword, setDeletePassword] = useState("")
     const [message, setMessage] = useState("loading account...")
+    const [uploading, setUploading] = useState(false)
 
     useEffect(() => {
         apiRequest("/api/auth/me")
@@ -23,7 +25,6 @@ export default function Account() {
 
     async function saveProfile(event) {
         event.preventDefault()
-
         try {
             await apiRequest("/api/account/profile", {
                 method: "PATCH",
@@ -36,15 +37,57 @@ export default function Account() {
         }
     }
 
+    async function handleAvatarUpload(event) {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        if (file.size > 5 * 1024 * 1024) {
+            setMessage("file too large (max 5MB)")
+            return
+        }
+
+        const allowed = ["image/jpeg", "image/png", "image/webp"]
+        if (!allowed.includes(file.type)) {
+            setMessage("only jpg, png, and webp allowed")
+            return
+        }
+
+        setUploading(true)
+        setMessage("")
+
+        try {
+            const formData = new FormData()
+            formData.append("avatar", file)
+
+            const response = await fetch("/api/account/avatar", {
+                method: "POST",
+                credentials: "include",
+                body: formData
+            })
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}))
+                throw new Error(err.message || "upload failed")
+            }
+
+            const data = await response.json()
+            setUser((prev) => ({ ...prev, avatar_url: data.avatar_url }))
+            setMessage("avatar updated")
+        }
+        catch (error) {
+            setMessage(error.message)
+        }
+        finally {
+            setUploading(false)
+        }
+    }
+
     async function toggleNotifications(event) {
         const enabled = event.target.checked
-
         try {
             await apiRequest("/api/account/notification-preferences", {
                 method: "PATCH",
-                body: JSON.stringify({
-                    emailNotifications: enabled
-                })
+                body: JSON.stringify({ emailNotifications: enabled })
             })
             setUser((current) => ({
                 ...current,
@@ -59,12 +102,8 @@ export default function Account() {
 
     async function signOut() {
         try {
-            const data = await apiRequest("/api/auth/signout", {
-                method: "POST"
-            })
-            navigate("/signin", {
-                state: { message: data.message }
-            })
+            const data = await apiRequest("/api/auth/signout", { method: "POST" })
+            navigate("/signin", { state: { message: data.message } })
         }
         catch (error) {
             setMessage(error.message)
@@ -73,17 +112,11 @@ export default function Account() {
 
     async function deleteAccount(event) {
         event.preventDefault()
-
-        if (!window.confirm("Permanently delete this account?")) {
-            return
-        }
-
+        if (!window.confirm("Permanently delete this account?")) return
         try {
             await apiRequest("/api/account", {
                 method: "DELETE",
-                body: JSON.stringify({
-                    password: deletePassword
-                })
+                body: JSON.stringify({ password: deletePassword })
             })
             navigate("/signup")
         }
@@ -106,18 +139,39 @@ export default function Account() {
         <Layout>
             <section className="authPage">
                 <div className="authCard accountCard">
-                    <p>
-                as of 6 20 2026, account creation isnt done yet :( 
-                    <br></br>
-                    working on it tho!!!!!
-                </p>
                     <h1>ACCOUNT</h1>
-                    <p>
-                        <Link to={`/users/${user.username}`}>
-                            @{user.username}
-                        </Link>
+
+                    <div className="accountAvatarSection">
+                        <div className="accountAvatarWrap">
+                            {user.avatar_url ? (
+                                <img
+                                    src={user.avatar_url}
+                                    alt="avatar"
+                                    className="accountAvatar"
+                                />
+                            ) : (
+                                <div className="accountAvatarPlaceholder">
+                                    {user.username[0]?.toUpperCase()}
+                                </div>
+                            )}
+                        </div>
+                        <label className="accountUploadBtn">
+                            {uploading ? "uploading..." : "change avatar"}
+                            <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={handleAvatarUpload}
+                                hidden
+                                disabled={uploading}
+                            />
+                        </label>
+                        <p className="accountAvatarHint">jpg, png, webp &middot; max 5MB &middot; 1024x1024</p>
+                    </div>
+
+                    <p className="accountUsername">
+                        <Username user={user} size="lg" />
                     </p>
-                    <p>{user.email}</p>
+                    <p className="accountEmail">{user.email}</p>
 
                     <form onSubmit={saveProfile}>
                         <label htmlFor="bio">bio</label>
@@ -146,29 +200,20 @@ export default function Account() {
                         SIGN OUT
                     </button>
 
-                    <form
-                        className="dangerZone"
-                        onSubmit={deleteAccount}
-                    >
+                    <form className="dangerZone" onSubmit={deleteAccount}>
                         <h2>DELETE ACCOUNT</h2>
-                        <label htmlFor="deletePassword">
-                            confirm password
-                        </label>
+                        <label htmlFor="deletePassword">confirm password</label>
                         <input
                             id="deletePassword"
                             type="password"
                             value={deletePassword}
-                            onChange={(event) =>
-                                setDeletePassword(event.target.value)}
+                            onChange={(event) => setDeletePassword(event.target.value)}
                             required
                         />
                         <button type="submit">DELETE ACCOUNT</button>
                     </form>
 
-                    {message && (
-                        <p className="authMessage">{message}</p>
-                    )}
-                    
+                    {message && <p className="authMessage">{message}</p>}
                 </div>
             </section>
         </Layout>

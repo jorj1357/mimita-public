@@ -225,6 +225,7 @@ static inline void applyCollisionContact(
 
     const PlayerSettings& cfg = GetPlayerSettings();
 
+    p.realWorldContactThisFrame = true;
     p.hasWorldContact = true;
     p.worldContactLostTimer = 0.033f; // 2 frames of hysteresis for consistent wall climb
 
@@ -237,6 +238,11 @@ static inline void applyCollisionContact(
         float feetZ = cap.a.z - cap.r;
         if (point.z <= feetZ + 0.15f)
         {
+            PHYS_LOG("[GROUND SET] source=%s tri=%d normal=(%.3f %.3f %.3f) point=(%.3f %.3f %.3f) feetZ=%.3f dist=%.3f pos=(%.3f %.3f %.3f) reason=walkable_contact\n",
+                label, triangleIndex, normal.x, normal.y, normal.z,
+                point.x, point.y, point.z, feetZ, feetZ - point.z,
+                p.pos.x, p.pos.y, p.pos.z);
+
             groundedThisFrame = true;
             applyTouchResets(p);
 
@@ -253,6 +259,10 @@ static inline void applyCollisionContact(
         }
         else
         {
+            PHYS_LOG("[GROUND REJECT] source=%s tri=%d normal=(%.3f %.3f %.3f) point=(%.3f %.3f %.3f) feetZ=%.3f dist=%.3f pos=(%.3f %.3f %.3f) reason=contact_above_feet\n",
+                label, triangleIndex, normal.x, normal.y, normal.z,
+                point.x, point.y, point.z, feetZ, point.z - feetZ,
+                p.pos.x, p.pos.y, p.pos.z);
             projectVelocityAgainstNormal(p, normal);
         }
     }
@@ -1339,6 +1349,7 @@ static void doGLBTriangleCollisions(
                     }
 
                     groundedThisFrame = true;
+                    applyTouchResets(p);
 
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;
@@ -1546,9 +1557,13 @@ static void doGLBTriangleCollisions(
         }
     }
 
-    // Ground snap: if player is very close to ground and not jumping up, snap to ground
-    // This prevents hovering and flickering grounded state
-    // IMPORTANT: After snapping, re-check for wall penetration
+    // Ground snap: if player is very close to ground and not jumping upward, snap to ground.
+    // This prevents hovering and flickering grounded state.
+    // IMPORTANT: The real fix for "landing on air" is using real Z at the projected point
+    // on the triangle surface (proj.z), not triangle center Z. The velocity check only
+    // prevents snapping when the player is jumping up (vel.z > MAX_UPWARD_VEL_FOR_SNAP).
+    // Downward velocity includes gravity (~-0.67/frame) so we must NOT block falling —
+    // the snap must catch the hovering that naturally occurs after landing.
     {
         constexpr float GROUND_SNAP_DISTANCE = 0.25f;
         constexpr float MAX_UPWARD_VEL_FOR_SNAP = 1.0f;
@@ -1565,7 +1580,13 @@ static void doGLBTriangleCollisions(
             for (int triIndex : groundCandidates)
             {
                 const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
-                if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue; // Only walkable surfaces
+                if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT)
+                {
+                    PHYS_LOG("[GROUND SNAP REJECT] tri=%d reason=non_walkable_normal normal=(%.3f %.3f %.3f) feetZ=%.3f pos=(%.3f %.3f %.3f)\n",
+                        triIndex, tri.normal.x, tri.normal.y, tri.normal.z, feetZ,
+                        p.pos.x, p.pos.y, p.pos.z);
+                    continue;
+                }
                 
                 // Project capsule center onto triangle plane and test actual triangle membership
                 // instead of AABB overlap, which produces false positives for off-center triangles.
@@ -1584,14 +1605,22 @@ static void doGLBTriangleCollisions(
                         if (nearest.z < feetZ && nearest.z > bestGroundZ)
                             bestGroundZ = nearest.z;
                     }
+                    else
+                    {
+                        PHYS_LOG("[GROUND SNAP REJECT] tri=%d reason=outside_capsule_radius nearestDist=%.3f capRadius=%.3f feetZ=%.3f pos=(%.3f %.3f %.3f)\n",
+                            triIndex, sqrtf(dist2), PLAYER_RADIUS * 0.9f, feetZ,
+                            p.pos.x, p.pos.y, p.pos.z);
+                    }
                     continue;
                 }
                 
                 {
-                    // Triangle is under player - check Z
-                    float triCenterZ = (tri.a.z + tri.b.z + tri.c.z) / 3.0f;
-                    if (triCenterZ < feetZ && triCenterZ > bestGroundZ)
-                        bestGroundZ = triCenterZ;
+                    // Use actual Z at the projected point on the triangle surface,
+                    // not the triangle center Z. This prevents "landing on air" when
+                    // the triangle is large or slanted — the centroid Z may differ
+                    // significantly from the Z directly under the player's feet.
+                    if (proj.z < feetZ && proj.z > bestGroundZ)
+                        bestGroundZ = proj.z;
                 }
             }
             
@@ -1603,6 +1632,7 @@ static void doGLBTriangleCollisions(
                     float snapAmount = distToGround;
                     p.pos.z -= snapAmount;
                     groundedThisFrame = true;
+                    applyTouchResets(p);
                     
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;
@@ -1657,13 +1687,29 @@ static void doGLBTriangleCollisions(
         std::vector<int> fCandidates = gatherGLBTriangles(world, fCap, glm::vec3(0.0f));
 
         float bestFloorZ = -FLT_MAX;
+        int bestFloorTri = -1;
         for (int triIndex : fCandidates)
         {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue;
-            float triMaxZ = std::max({tri.a.z, tri.b.z, tri.c.z});
-            if (triMaxZ > bestFloorZ && triMaxZ < fCap.a.z + 1.0f)
-                bestFloorZ = triMaxZ;
+            // Use closest point on triangle surface to the capsule foot, not triMaxZ.
+            // triMaxZ can be far above the actual surface Z under the player's feet,
+            // causing false floor recovery (pulling player up to a triangle's peak
+            // that isn't actually under the player).
+            glm::vec3 footPoint(fCap.a.x, fCap.a.y, feetZ);
+            glm::vec3 closest = closestPointOnTriangle(footPoint, tri.a, tri.b, tri.c);
+            // Horizontal proximity: the closest point must be within the capsule
+            // footprint. A triangle off to the side (wall-adjacent or on a different
+            // structure) should not trigger floor recovery even if its closest point
+            // Z is above the player's feet.
+            float horizDist2 = (closest.x - fCap.a.x) * (closest.x - fCap.a.x)
+                             + (closest.y - fCap.a.y) * (closest.y - fCap.a.y);
+            if (horizDist2 > fCap.r * fCap.r) continue;
+            if (closest.z > bestFloorZ && closest.z < fCap.a.z + 1.0f)
+            {
+                bestFloorZ = closest.z;
+                bestFloorTri = triIndex;
+            }
         }
 
         if (bestFloorZ > -FLT_MAX && feetZ < bestFloorZ - 0.01f)
@@ -1675,8 +1721,8 @@ static void doGLBTriangleCollisions(
                 groundedThisFrame = true;
                 p.externalImpulse.z = std::min(p.externalImpulse.z, 0.0f);
                 p.vel.z = std::min(p.vel.z, 0.0f);
-                PHYS_LOG("[PHYS][FLOOR RECOVERY] feet was %.3f below floor, lifted %.4f\n",
-                         bestFloorZ - feetZ, lift);
+                PHYS_LOG("[PHYS][FLOOR RECOVERY] feet was %.3f below floor (tri=%d closestZ=%.3f), lifted %.4f\n",
+                         bestFloorZ - feetZ, bestFloorTri, bestFloorZ, lift);
             }
         }
     }
@@ -2282,6 +2328,8 @@ void doCollisions(
         // --------------------------------------------------
         if (std::fabs(hitNormal.z) < 0.2f)
         {
+            p.realWorldContactThisFrame = true;
+
             // reset jump (wall contact)
             p.airJumpsLeft = AIR_JUMPS_MAX;
 
@@ -2383,6 +2431,7 @@ void doCollisions(
         if (hitNormal.z > 0.0f)
         {
             groundedThisFrame = true;
+            p.realWorldContactThisFrame = true;
 
             if (p.vel.z <= 0.0f)
             {
@@ -2481,7 +2530,9 @@ void doCollisions(
         }
     }
 
-    // Ground snap for blocks: if player is very close to block top and not jumping up, snap to ground
+    // Ground snap for blocks: if player is very close to block top and not jumping
+    // upward, snap to ground. Same approach as GLB snap — the velocity check only
+    // blocks snapping while jumping upward.
     {
         constexpr float GROUND_SNAP_DISTANCE = 0.25f;
         constexpr float MAX_UPWARD_VEL_FOR_SNAP = 1.0f;
@@ -2516,6 +2567,7 @@ void doCollisions(
                     float snapAmount = distToGround;
                     p.pos.z -= snapAmount;
                     groundedThisFrame = true;
+                    applyTouchResets(p);
                     
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;

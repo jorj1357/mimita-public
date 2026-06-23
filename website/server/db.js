@@ -45,6 +45,9 @@ const MIGRATION_STATEMENTS = [
         email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         bio TEXT NOT NULL DEFAULT '',
+        avatar_url TEXT NOT NULL DEFAULT '',
+        supporter_tier TEXT NOT NULL DEFAULT 'free'
+            CHECK (supporter_tier IN ('free', 'vip', 'super_vip', 'ultra_vip', 'moderator', 'admin', 'owner')),
         role TEXT NOT NULL DEFAULT 'user'
             CHECK (role IN ('owner', 'admin', 'moderator', 'user')),
         email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,

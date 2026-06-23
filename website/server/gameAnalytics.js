@@ -30,7 +30,17 @@ const EVENT_CATALOG = new Map([
     ["day_7_return", "retention"],
     ["day_30_return", "retention"],
     ["crash_detected", "errors"],
-    ["disconnect", "errors"]
+    ["disconnect", "errors"],
+    ["page_visit", "engagement"],
+    ["page_view", "engagement"],
+    ["download", "conversion"],
+    ["game_open", "gameplay"],
+    ["feedback_submit", "engagement"],
+    ["donation", "conversion"],
+    ["replay_save", "engagement"],
+    ["replay_share", "social"],
+    ["friend_request", "social"],
+    ["discord_join", "social"]
 ])
 
 const BLOCKED_KEYS = new Set([
