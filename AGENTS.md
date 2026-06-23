@@ -1,5 +1,42 @@
 Favor deleting code over adding code when both solutions achieve the same result.
 
+# Development Rules
+
+* Local repository is the source of truth.
+* VPS is deployment target only.
+* Development happens locally first.
+* Do not create production-only fixes.
+* Do not edit production files unless investigating.
+* Fixes discovered on VPS must be implemented locally.
+* Test locally before deployment.
+
+SSH inspection command:
+
+ssh root@107.191.48.226
+
+SSH may be used for:
+
+* logs
+* PM2
+* nginx
+* database inspection
+* deployment verification
+* server health checks
+
+SSH should NOT be used as the primary development environment.
+
+Preferred workflow:
+
+1. Inspect
+2. Plan
+3. Implement locally
+4. Test locally
+5. Commit locally
+6. Deploy
+7. Verify
+
+---
+
 # Mimita Engine
 
 This is a C++17 OpenGL game engine.
@@ -668,3 +705,9 @@ This plays a completion sound so the user knows the agent has paused and expects
 * Before stopping work to wait for user input
 
 DO NOT run this for simple status updates mid-task. Only run it when the agent is about to yield control to the user for a decision or because work is complete.
+
+---
+
+# Asset Management
+
+* `assets/sound/music/ingame/donttrack` is intentionally excluded from source control via `.gitignore`. It contains local music work files, exports, experiments, and temporary audio assets. Any file that should become part of the game must be moved out of this folder into the proper tracked asset location.

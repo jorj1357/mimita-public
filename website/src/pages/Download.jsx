@@ -3,7 +3,21 @@ import "../App.css"
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
 
+const API = import.meta.env.VITE_API_ORIGIN || ""
+
 export default function Download() {
+  function handleDownload() {
+    try {
+      fetch(`${API}/api/track/download`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "website", platform: "windows" })
+      }).catch(() => {})
+    }
+    catch {}
+  }
+
   return (
     <Layout>
 
@@ -30,6 +44,7 @@ export default function Download() {
           target="_blank"
           rel="noopener noreferrer"
           className="downloadButton"
+          onClick={handleDownload}
         >
           DOWNLOAD v1
           <br></br>

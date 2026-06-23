@@ -206,6 +206,7 @@ public:
     float landingCooldown = 0.0f; // prevents landing event spam
     bool hasWorldContact = false;
     float worldContactLostTimer = 0.0f;
+    bool realWorldContactThisFrame = false;
 
     // -------- Dash --------
     // mar 8 2026, no dashcharges, its airjump style, touch object = get a dash back

@@ -283,5 +283,38 @@ router.get("/feedback/presets", (req, res) => {
     res.json({ success: true, presets: FEEDBACK_PRESETS })
 })
 
+router.get("/check", async (req, res) => {
+    try {
+        const token = parseCookies(req)[sessionCookieName]
+        if (!token) {
+            return res.json({ success: true, isAdmin: false })
+        }
+
+        const result = await pool.query(
+            `
+            SELECT u.role
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token_hash = $1
+              AND s.revoked_at IS NULL
+              AND s.expires_at > NOW()
+              AND u.deleted_at IS NULL
+            LIMIT 1
+            `,
+            [hashToken(token, sessionSecret)]
+        )
+
+        if (!result.rowCount) {
+            return res.json({ success: true, isAdmin: false })
+        }
+
+        const isAdmin = ADMIN_ROLES.includes(result.rows[0].role)
+        res.json({ success: true, isAdmin, role: result.rows[0].role })
+    }
+    catch {
+        res.json({ success: true, isAdmin: false })
+    }
+})
+
 export default router
 export { requireAdmin }

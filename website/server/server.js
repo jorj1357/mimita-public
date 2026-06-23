@@ -30,6 +30,29 @@ import debugRouter from "./debug.js"
 import gameAnalyticsRouter from "./gameAnalytics.js"
 import { trackEvent } from "./analytics.js"
 import { createRateLimit } from "./rateLimit.js"
+import multer from "multer"
+import sharp from "sharp"
+import path from "path"
+import fs from "fs"
+
+const AVATAR_DIR = path.resolve("public/avatars")
+if (!fs.existsSync(AVATAR_DIR)) {
+    fs.mkdirSync(AVATAR_DIR, { recursive: true })
+}
+
+const storage = multer.memoryStorage()
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ["image/jpeg", "image/png", "image/webp"]
+        if (!allowed.includes(file.mimetype)) {
+            cb(new Error("only jpg, png, and webp allowed"))
+            return
+        }
+        cb(null, true)
+    }
+})
 
 const authRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "auth" })
 const adminRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 20, name: "admin" })
@@ -55,6 +78,7 @@ app.use(cors({
     credentials: true
 }))
 app.use(express.json({ limit: "32kb" }))
+app.use("/avatars", express.static(AVATAR_DIR))
 
 const LOG_REQUESTS = process.env.LOG_REQUESTS !== "false"
 
@@ -183,6 +207,9 @@ async function authenticate(req, res, next) {
                 u.username,
                 u.email,
                 u.bio,
+                u.avatar_url,
+                u.supporter_tier,
+                u.role,
                 u.email_notifications_enabled
             FROM sessions s
             JOIN users u ON u.id = s.user_id
@@ -251,7 +278,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
                 password_hash
             )
             VALUES ($1, $2, $3, $4)
-            RETURNING id, username, email, bio, email_notifications_enabled
+            RETURNING id, username, email, bio, avatar_url, supporter_tier, email_notifications_enabled
             `,
             [username, usernameKey(username), email, passwordHash]
         )
@@ -304,6 +331,8 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
                 email,
                 password_hash,
                 bio,
+                avatar_url,
+                supporter_tier,
                 email_notifications_enabled
             FROM users
             WHERE deleted_at IS NULL
@@ -411,7 +440,7 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
             UPDATE users
             SET bio = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING username, bio
+            RETURNING username, bio, avatar_url, supporter_tier
             `,
             [bio, req.user.id]
         )
@@ -419,6 +448,63 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
         res.json({
             success: true,
             profile: result.rows[0]
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.post("/api/account/avatar", authenticate, upload.single("avatar"), async (req, res, next) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "no file provided"
+            })
+        }
+
+        const sizes = [64, 128, 256, 1024]
+        const ext = path.extname(req.file.originalname) || ".png"
+        const baseName = `user_${req.user.id}_${Date.now()}`
+        const urls = []
+
+        for (const size of sizes) {
+            const fileName = `${baseName}_${size}${ext}`
+            const filePath = path.join(AVATAR_DIR, fileName)
+
+            const img = sharp(req.file.buffer)
+            const metadata = await img.metadata()
+            const maxDim = Math.max(metadata.width || 1024, metadata.height || 1024)
+
+            if (maxDim > 1024) {
+                img.resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+            }
+
+            if (size < 1024) {
+                img.resize(size, size, { fit: "cover" })
+            }
+
+            await img.toFile(filePath)
+            urls.push(`/avatars/${fileName}`)
+        }
+
+        const avatarUrl = urls.find(u => u.includes("_256")) || urls[0]
+
+        const result = await pool.query(
+            `
+            UPDATE users
+            SET avatar_url = $1, updated_at = NOW()
+            WHERE id = $2
+            RETURNING avatar_url
+            `,
+            [avatarUrl, req.user.id]
+        )
+
+        res.json({
+            success: true,
+            avatar_url: result.rows[0].avatar_url,
+            sizes: urls
         })
     }
     catch (error) {
@@ -464,7 +550,7 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT username, bio
+            SELECT username, bio, avatar_url, supporter_tier, created_at
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL
@@ -839,6 +925,24 @@ app.post("/api/admin/feedback", async (req, res, next) => {
     TODO: Analytics aggregation jobs.
     TODO: Data retention policies.
 */
+
+app.post("/api/track/download", async (req, res, next) => {
+    try {
+        await trackEvent("download", {
+            event_data: {
+                source: req.body.source || "website",
+                platform: req.body.platform || "unknown"
+            },
+            user_id: req.user?.id || null,
+            ip_address: getClientIp(req),
+            page_url: "/download"
+        })
+        res.json({ success: true })
+    }
+    catch (error) {
+        next(error)
+    }
+})
 
 app.post("/api/newsletter", newsletterRateLimit, async (req, res, next) => {
     try {

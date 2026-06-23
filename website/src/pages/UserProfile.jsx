@@ -2,7 +2,18 @@ import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 
 import Layout from "../components/Layout"
-import { apiRequest } from "../lib/api"
+import Username from "../components/Username"
+
+const API = import.meta.env.VITE_API_ORIGIN || ""
+
+async function apiRequest(path) {
+    const response = await fetch(`${API}${path}`, { credentials: "include" })
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || "request failed")
+    }
+    return response.json()
+}
 
 export default function UserProfile() {
     const { username } = useParams()
@@ -18,14 +29,44 @@ export default function UserProfile() {
             .catch((error) => setMessage(error.message))
     }, [username])
 
+    function formatDate(dateStr) {
+        if (!dateStr) return ""
+        return new Date(dateStr).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+        })
+    }
+
     return (
         <Layout>
             <section className="profilePage">
                 {user ? (
-                    <>
-                        <h1>@{user.username}</h1>
-                        <p>{user.bio || "No bio yet."}</p>
-                    </>
+                    <div className="profileCard">
+                        <div className="profileAvatarWrap">
+                            {user.avatar_url ? (
+                                <img
+                                    src={user.avatar_url}
+                                    alt={`${user.username}'s avatar`}
+                                    className="profileAvatar"
+                                />
+                            ) : (
+                                <div className="profileAvatarPlaceholder">
+                                    {user.username[0]?.toUpperCase()}
+                                </div>
+                            )}
+                        </div>
+
+                        <h1 className="profileUsername">
+                            <Username user={user} size="lg" />
+                        </h1>
+
+                        {user.bio && <p className="profileBio">{user.bio}</p>}
+
+                        <p className="profileJoined">
+                            Joined {formatDate(user.created_at)}
+                        </p>
+                    </div>
                 ) : (
                     <p>{message}</p>
                 )}

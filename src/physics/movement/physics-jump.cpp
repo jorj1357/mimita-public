@@ -83,12 +83,6 @@ void doJump(
         p.jumpConsumed = false;
     }
 
-    // Auto-bhop: if holding Space and on ground, allow immediate re-jump.
-    // This is intentionally greedy — holding Space while standing on ground
-    // causes a jump. This matches the desired auto-bhop behavior.
-    if (jumpHeld && p.onGround)
-        p.jumpConsumed = false;
-
     p.jumpHeldPrev = jumpHeld;
 
     // ---------------- CAN JUMP ----------------
