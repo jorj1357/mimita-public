@@ -64,37 +64,18 @@ void doJump(
         p.coyoteTimer = COYOTE_JUMP_TIME;
     }
 
-    // ---------------- INPUT ----------------
-    // bool jumpPressed = jumpHeld && !jumpHeldPrev;
-    // set it to just be jump held so we can bhop infinite
-    // bool jumpPressed = jumpHeld;
-    // jumpHeldPrev = jumpHeld;
-    // testing this stuff so we can have hold to jump bhop,
-    // dont consume air jump when ground jumping
-
-    // mar 7 2026 commenting this all out so we can make it so bhop holding
-    // hold space = jump bhop style
-    // bool jumpPressed = jumpHeld && !p.jumpHeldPrev;
-    // p.jumpHeldPrev = jumpHeld;
-
-    // if (jumpPressed) {
-    //     jumpIntentTimer = JUMP_BUFFER_TIME;
-
-    //     JUMP_LOG(
-    //         "[JUMP] Pressed | buffer=%.3f\n",
-    //         jumpIntentTimer
-    //     );
-    // }
+    // ---------------- INTENT MANAGEMENT ----------------
+    // Holding Space keeps jump intent alive every frame.
+    // This enables auto-bhop: landing while holding Space causes immediate re-jump.
+    if (jumpHeld)
+        p.jumpIntentTimer = JUMP_BUFFER_TIME;
 
     bool jumpPressedThisFrame = jumpPressed || (jumpHeld && !p.jumpHeldPrev);
-    bool jumpReleased = !jumpHeld && p.jumpHeldPrev;
-
-    if (jumpPressedThisFrame) {
+    if (jumpPressedThisFrame)
         p.jumpIntentTimer = JUMP_BUFFER_TIME;
-    }
 
-    // Release re-arms jump actions. Holding jump cannot create a second
-    // ground/world-contact jump after the first press has been consumed.
+    // Release re-arms air jump.
+    bool jumpReleased = !jumpHeld && p.jumpHeldPrev;
     if (jumpReleased)
     {
         p.airJumpArmed = true;
@@ -102,21 +83,11 @@ void doJump(
         p.jumpConsumed = false;
     }
 
-    // Hold-to-continuously-jump (auto-bhop):
-    // If Space is held and the player just became grounded this frame
-    // (raw transition from airborne to grounded), prepare for an
-    // immediate re-jump.
-    //
-    // Uses wasOnGround (previous frame's stableOnGround) to prevent
-    // re-arming when raw state flickers but player was already stably
-    // grounded (e.g., from body collision push that briefly lost raw
-    // contact). The auto-bhop should only re-arm on a real landing,
-    // not on a ground-state glitch.
-    if (jumpHeld && !p.rawWasOnGround && p.onGround && !p.wasOnGround)
-    {
+    // Auto-bhop: if holding Space and on ground, allow immediate re-jump.
+    // This is intentionally greedy — holding Space while standing on ground
+    // causes a jump. This matches the desired auto-bhop behavior.
+    if (jumpHeld && p.onGround)
         p.jumpConsumed = false;
-        p.jumpIntentTimer = JUMP_BUFFER_TIME;
-    }
 
     p.jumpHeldPrev = jumpHeld;
 
@@ -124,26 +95,21 @@ void doJump(
     bool onActualGround = p.onGround || p.coyoteTimer > 0.0f;
     bool wantsJump = p.jumpIntentTimer > 0.0f;
 
-    if (!wantsJump) {
+    if (!wantsJump)
         return;
-    }
 
-    // ---------------- GROUND JUMP (actual ground) ----------------
+    // ---------------- GROUND JUMP ----------------
     if (onActualGround && !p.jumpConsumed) {
         float beforeVel = p.vel.z;
 
         p.dashAvailable = true;
-
         p.vel.z = PHYS.jumpStrength;
         p.onGround = false;
         p.coyoteTimer = 0.0f;
         p.jumpIntentTimer = 0.0f;
-
         p.airJumpsLeft = AIR_JUMPS_MAX;
-
-        p.airJumpLocked = true; 
+        p.airJumpLocked = true;
         p.airJumpArmed = false;
-        
         p.didGroundJump = true;
         p.jumpConsumed = true;
 
@@ -156,22 +122,13 @@ void doJump(
         return;
     }
 
-    // ---------------- WORLD CONTACT JUMP (wall/slope/ceiling) ----------------
-    // Allows jumping off any world geometry without consuming air jump.
-    // Does NOT lock air jump, enabling continuous wall climbing while holding jump.
+    // ---------------- WORLD CONTACT JUMP ----------------
     if (p.hasWorldContact && !p.jumpConsumed) {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
         p.jumpIntentTimer = 0.0f;
-
-        // applyTouchResets already restored airJumpsLeft on contact.
-        // Ensure it's set.
         p.airJumpsLeft = AIR_JUMPS_MAX;
-
-        // Do NOT lock/arm here — allow repeated wall jumps while holding jump.
-        // airJumpLocked stays false, airJumpArmed stays true (set on release).
-
         p.didGroundJump = true;
         p.jumpConsumed = true;
 
@@ -184,38 +141,19 @@ void doJump(
         return;
     }
 
-    // ---------------- AIR JUMP ----------------
-    // if (p.airJumpsLeft > 0) {
-    // testing this so we can hold jump 
-    // might not include but holding jump is soooo much easier on  hands and more fun 
-    // and fun is awesome
-
-    // if (!p.didGroundJump && p.airJumpsLeft > 0) 
-
-    // testing this one mar 7 2026 to make it so WE CAN BHOP good
-    // if (!p.didGroundJump && p.airJumpsLeft > 0 && !jumpHeld)
-
-    // air jump locked sounds a lot better lets do that mar 7 2026
-    if (!p.didGroundJump && 
-        p.airJumpsLeft > 0 && 
-        !p.airJumpLocked && 
-        p.airJumpArmed && 
+    // ---------------- AIR JUMP (press only, not hold) ----------------
+    if (!p.didGroundJump &&
+        p.airJumpsLeft > 0 &&
+        !p.airJumpLocked &&
+        p.airJumpArmed &&
         jumpPressedThisFrame)
     {
-
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
         p.airJumpsLeft--;
-
-        // idk if this goes here but this is so i hold space while 
-        // air jumping to climb walls 
         p.airJumpLocked = false;
-        // do NOT set this false, this makes it so we cant hold space to climb wall
-        // p.airJumpArmed = false;
-        
         p.jumpIntentTimer = 0.0f;
-
         p.didAirJump = true;
 
         JUMP_LOG(
