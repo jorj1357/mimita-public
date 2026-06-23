@@ -28,8 +28,6 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
-#include "physics/movement/physics-body-collision.h"
-
 #include "analytics/analytics-manager.h"
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
@@ -96,23 +94,10 @@ static void physicsMainUpdate_Internal(
     if (p.didDash && DebugConfig::DEBUG_INPUT)
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
-    // instant movement override kills momentum
-    if (movementPressed)
-    {
-        p.externalImpulse.x = 0.0f;
-        p.externalImpulse.y = 0.0f;
-    }
-
     if (movementPressed)
         doWalk(p, wishMoveXY, dt);
 
-    // dash after walk? 6 6 2026 
-    // doDash(p, wishMoveXY, dashPressed, camForward, dt);
-    // dont do dash at all 6 6 2026 ? 
-    // fast push should be from gun pushing me? idk 
-
-    // testing 6 substeps so we have even more collision checks
-    int steps = 6; // small substep count
+    int steps = 6;
     float subdt = dt / steps;
 
     // only set grounded here? not sure mar 7 2026 
@@ -125,20 +110,18 @@ static void physicsMainUpdate_Internal(
 
     for (int i = 0; i < steps; i++)
     {
-        // p.pos += p.vel * subdt;
-        // pass subdt not dt
-        // and dont do position calc in here
-        // e.g. no p.pos changing here 
-        // do not do p.pos += totalVel * subdt; or antthing similar here
-        // we do p.pos changing in doCollisions function
-        // this file jsut calls fnuctions 
-
-        // mar 8 2026 this added dash velocity wokring here
-        // mar 8 2026 clean comments bc its toomuch 
-        // mar 8 2026 we dont even use this so what 
-        // glm::vec3 totalVel = p.vel + glm::vec3(p.dashVel.x, p.dashVel.y, 0.0f);
-
         doCollisions(p, world, groundedThisFrame, subdt);
+    }
+
+    // Floor-fall diagnostics: if player is below expected floor and not grounded,
+    // log the exact reason to help debug falling-through-floor bugs.
+    if (DebugConfig::DEBUG_PHYSICS && !groundedThisFrame && p.vel.z < -5.0f)
+    {
+        Capsule debugCap = p.getCapsule();
+        float feetZ = debugCap.a.z - debugCap.r;
+        Debug::log(Debug::Category::Collision,
+            "[DIAG] FALLING feetZ=%.3f vel=%.2f grounded=%d pos=(%.2f %.2f %.2f)\n",
+            feetZ, p.vel.z, (int)groundedThisFrame, p.pos.x, p.pos.y, p.pos.z);
     }
 
     // Track ticks with movement held while airborne for dash quality.
@@ -160,7 +143,7 @@ static void physicsMainUpdate_Internal(
     doDownDash(p, downDashPressed, dt);
 
     // jump AFTER grounded so we actually know it work
-    doJump(p, jumpHeld, dt);
+    doJump(p, jumpHeld, jumpPressed, dt);
     if (p.didGroundJump)
         AnalyticsManager::instance().trackMovement(
             (p.hasWorldContact && !groundedThisFrame) ? "wall_jump" : "jump");
@@ -239,12 +222,12 @@ static void physicsMainUpdate_Internal(
                 p.worldContactLostTimer, p.airJumpsLeft, (int)p.dashAvailable, (int)p.groundReturnAvailable);
     }
 
-    // Landing event: fires once per real landing using raw grounded state.
-    // Using rawWasOnGround (previous frame's raw onGround) + groundedThisFrame
-    // avoids double-fire from stableOnGround hysteresis.
-    // Debounce timer prevents repeat lands from state flickering.
+    // Landing event: fires once per real landing using stableOnGround transition.
+    // stableOnGround has built-in hysteresis (0.08s), so this is robust to raw flicker
+    // from ground snap or body collision push.
     p.landingCooldown = std::max(0.0f, p.landingCooldown - dt);
-    if (!p.rawWasOnGround && groundedThisFrame && previousAirborneTime > 0.08f && p.landingCooldown <= 0.0f)
+    bool stableLanding = !p.wasOnGround && p.stableOnGround;
+    if (stableLanding && previousAirborneTime > 0.08f && p.landingCooldown <= 0.0f)
     {
         p.didLand = true;
         p.landingCooldown = 0.3f;
@@ -259,11 +242,6 @@ static void physicsMainUpdate_Internal(
     updateVisualFacingFromCamera(p, camForward, dt);
 
     p.updateProceduralAnimation(dt, camForward, debugCamera ? debugCamera->pos : p.pos, movementPressed);
-
-    // Body part + weapon world collision.
-    // Runs after animation so body part world transforms are current.
-    // Pushes Player::pos outward when limbs/weapons clip geometry.
-    doBodyCollision(p, world, dt);
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {

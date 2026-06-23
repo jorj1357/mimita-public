@@ -304,6 +304,7 @@ public:
 
     // -------- Construction --------
     Player();
+    explicit Player(bool loadRenderModel);
     void reset();
     bool loadModel(const char* path);
     void applyReplayPose(

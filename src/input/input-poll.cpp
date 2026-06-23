@@ -85,6 +85,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
         cmd.getState("walkright").pressed;
     
     in.jumpHeld = cmd.isJumpHeld();
+    in.jumpPressed = cmd.getState("jump").pressed;
     in.dashPressed = cmd.isDashPressed();
     in.groundReturnPressed = cmd.isGroundReturnPressed();
     in.downDashPressed = cmd.isDownDashPressed();

@@ -104,6 +104,16 @@ static std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
 static void applyTouchResets(Player& p);
 static glm::vec3 closestPointOnTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c);
 static const char* triangleFeatureLabel(const CollisionTriangle& tri, const glm::vec3& point);
+struct BodyWeaponSphere {
+    glm::vec3 center;
+    float radius;
+    const char* label;
+    glm::vec3 sweepDelta;
+};
+static bool computeBodyPartCenter(const glm::mat4& xform, const Collider& collider, glm::vec3& outCenter, float& outRadius);
+static void recomputeWeaponCapsule(Player& p);
+static std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p);
+static std::vector<RecoveryContact> collectBodyWeaponContacts(const Player& p, const World& world, const std::vector<int>& candidates, const std::vector<BodyWeaponSphere>& spheres);
 
 struct CollisionTraceSnapshot
 {
@@ -128,6 +138,34 @@ struct CollisionTraceSnapshot
 };
 
 static CollisionTraceSnapshot gLastCollisionTrace;
+
+static bool isFiniteVec3(const glm::vec3& v)
+{
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+static void recoverInvalidPlayerCollisionState(Player& p, const glm::vec3& frameStart, const char* phase)
+{
+    if (isFiniteVec3(p.pos) && isFiniteVec3(p.vel) && isFiniteVec3(p.externalImpulse))
+        return;
+
+    glm::vec3 recovery = isFiniteVec3(frameStart) ? frameStart : p.respawnPosition;
+    if (!isFiniteVec3(recovery))
+        recovery = glm::vec3(0.0f);
+
+    Debug::log(Debug::Category::Collision,
+        "[COLLISION RECOVER] invalid state phase=%s pos=(%.3f %.3f %.3f) vel=(%.3f %.3f %.3f) external=(%.3f %.3f %.3f)\n",
+        phase ? phase : "unknown",
+        p.pos.x, p.pos.y, p.pos.z,
+        p.vel.x, p.vel.y, p.vel.z,
+        p.externalImpulse.x, p.externalImpulse.y, p.externalImpulse.z);
+
+    p.pos = recovery;
+    p.vel = glm::vec3(0.0f);
+    p.externalImpulse = glm::vec3(0.0f);
+    p.syncLegacyStateToLayers();
+    p.updateModelWorldTransforms();
+}
 
 static void appendUniqueTriangleIndices(std::vector<int>& dst, const std::vector<int>& src)
 {
@@ -898,6 +936,134 @@ static bool findBlockFallbackEscape(
     return true;
 }
 
+// =====================================================
+// BODY / WEAPON CAPSULE HELPERS (merged from physics-body-collision.cpp)
+// =====================================================
+
+static bool computeBodyPartCenter(
+    const glm::mat4& xform,
+    const Collider& collider,
+    glm::vec3& outCenter,
+    float& outRadius
+) {
+    glm::vec3 localCenter = (collider.localMin + collider.localMax) * 0.5f;
+    glm::vec3 localExtents = (collider.localMax - collider.localMin) * 0.5f;
+
+    outCenter = glm::vec3(xform * glm::vec4(localCenter, 1.0f));
+    outRadius = std::max({localExtents.x, localExtents.y, localExtents.z, BODY_SAMPLE_RADIUS});
+    outRadius = std::min(outRadius, 0.35f);
+    return true;
+}
+
+static void recomputeWeaponCapsule(Player& p)
+{
+    if (!p.hasWeaponCollisionCapsule)
+        return;
+
+    for (const PhysicalBodyPart& part : p.physicalBody.parts)
+    {
+        if (part.name != "rightArm")
+            continue;
+
+        glm::mat4 weaponXform = part.worldTransform * p.weaponLocalToArm;
+        p.weaponCollisionCapsule.a = glm::vec3(weaponXform * glm::vec4(p.weaponGripLocal, 1.0f));
+        p.weaponCollisionCapsule.b = glm::vec3(weaponXform * glm::vec4(p.weaponMuzzleLocal, 1.0f));
+        p.weaponCollisionCapsule.r = p.weaponRadiusLocal;
+        return;
+    }
+
+    p.hasWeaponCollisionCapsule = false;
+}
+
+// Collect sphere samples from all body parts + weapon for contact testing.
+// Returns spheres with their movement delta (root movement + animation delta).
+static std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
+{
+    constexpr int SPHERES_PER_CAPSULE = 5;
+    std::vector<BodyWeaponSphere> spheres;
+    spheres.reserve(p.physicalBody.parts.size() * SPHERES_PER_CAPSULE + SPHERES_PER_CAPSULE);
+
+    glm::vec3 rootMove = p.vel * 0.0f; // static check at current position
+
+    // 1. Body part spheres
+    for (const PhysicalBodyPart& part : p.physicalBody.parts)
+    {
+        glm::vec3 center;
+        float radius;
+        if (!computeBodyPartCenter(part.worldTransform, part.collider, center, radius))
+            continue;
+
+        glm::vec3 prevCenter;
+        computeBodyPartCenter(part.previousWorldTransform, part.collider, prevCenter, radius);
+        glm::vec3 sweepDelta = center - prevCenter;
+
+        for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)
+        {
+            spheres.push_back({center, radius, part.name.c_str(), sweepDelta});
+        }
+    }
+
+    // 2. Weapon capsule spheres
+    if (p.hasWeaponCollisionCapsule)
+    {
+        const Capsule& wc = p.weaponCollisionCapsule;
+        for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)
+        {
+            float t = (SPHERES_PER_CAPSULE > 1)
+                ? (float)si / (float)(SPHERES_PER_CAPSULE - 1) : 0.5f;
+            glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
+            spheres.push_back({spherePos, wc.r, "weapon", glm::vec3(0.0f)});
+        }
+    }
+
+    return spheres;
+}
+
+// Collect world-triangle contacts from all body/weapon spheres.
+// Returns RecoveryContacts compatible with the batched solver.
+static std::vector<RecoveryContact> collectBodyWeaponContacts(
+    const Player& p,
+    const World& world,
+    const std::vector<int>& candidates,
+    const std::vector<BodyWeaponSphere>& spheres
+) {
+    std::vector<RecoveryContact> contacts;
+    constexpr float SLIDE_SLOP = 0.002f;
+
+    for (const BodyWeaponSphere& bs : spheres)
+    {
+        for (int triIdx : candidates)
+        {
+            if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())
+                continue;
+
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
+
+            float hitTime = 1.0f;
+            glm::vec3 hitNormal, hitPoint;
+            if (sweepSphereTriangle(bs.center, bs.sweepDelta, bs.radius, tri,
+                                    hitTime, hitNormal, hitPoint) && hitTime < 1.0f)
+            {
+                float depth = bs.radius - glm::dot(bs.center - hitPoint, hitNormal);
+                if (depth > SLIDE_SLOP) {
+                    contacts.push_back({hitNormal, hitPoint, depth, triIdx, nullptr, bs.label});
+                    continue;
+                }
+            }
+
+            glm::vec3 normal;
+            float depth;
+            Contact c;
+            if (sphereTriangleContact(bs.center, bs.radius, tri, c) && c.penetration > SLIDE_SLOP)
+            {
+                contacts.push_back({c.normal, c.point, c.penetration, triIdx, nullptr, bs.label});
+            }
+        }
+    }
+
+    return contacts;
+}
+
 // this is for capsule stuff but idk whre to put it mar 7 2026 
 static bool capsuleSweep(
     const Capsule& cap,
@@ -1373,8 +1539,8 @@ static void doGLBTriangleCollisions(
     // This prevents hovering and flickering grounded state
     // IMPORTANT: After snapping, re-check for wall penetration
     {
-        constexpr float GROUND_SNAP_DISTANCE = 0.15f;
-        constexpr float MAX_UPWARD_VEL_FOR_SNAP = 0.5f;
+        constexpr float GROUND_SNAP_DISTANCE = 0.25f;
+        constexpr float MAX_UPWARD_VEL_FOR_SNAP = 1.0f;
         
         if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
         {
@@ -1462,6 +1628,132 @@ static void doGLBTriangleCollisions(
                                     c.triangleIndex, c.label
                                 );
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Floor penetration recovery: if player's capsule bottom is below a nearby
+    // walkable floor triangle (fell through the floor), push them back up.
+    // This catches cases where the sweep missed a thin floor or the player
+    // was pushed through by high velocity.
+    {
+        p.updateModelWorldTransforms();
+        Capsule fCap = p.getCapsule();
+        float feetZ = fCap.a.z - fCap.r;
+        std::vector<int> fCandidates = gatherGLBTriangles(world, fCap, glm::vec3(0.0f));
+
+        float bestFloorZ = -FLT_MAX;
+        for (int triIndex : fCandidates)
+        {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue;
+            float triMaxZ = std::max({tri.a.z, tri.b.z, tri.c.z});
+            if (triMaxZ > bestFloorZ && triMaxZ < fCap.a.z + 1.0f)
+                bestFloorZ = triMaxZ;
+        }
+
+        if (bestFloorZ > -FLT_MAX && feetZ < bestFloorZ - 0.01f)
+        {
+            float lift = bestFloorZ - feetZ + 0.005f;
+            if (lift > 0.0f && lift < 0.5f)
+            {
+                p.pos.z += lift;
+                groundedThisFrame = true;
+                p.externalImpulse.z = std::min(p.externalImpulse.z, 0.0f);
+                p.vel.z = std::min(p.vel.z, 0.0f);
+                PHYS_LOG("[PHYS][FLOOR RECOVERY] feet was %.3f below floor, lifted %.4f\n",
+                         bestFloorZ - feetZ, lift);
+            }
+        }
+    }
+
+    // Phase 3: Body + weapon collision — unified contact collection at final position.
+    // Body/weapon sphere contacts are merged with root capsule contacts in the
+    // shared manifold so the batched solver produces a single correction that
+    // satisfies all constraints simultaneously.
+    {
+        p.updateModelWorldTransforms();
+        recomputeWeaponCapsule(p);
+        std::vector<BodyWeaponSphere> bwSpheres = collectBodyWeaponSpheres(p);
+
+        if (!bwSpheres.empty())
+        {
+            // Collect world triangles for body/weapon spheres
+            AABB bwBounds;
+            bool boundsSet = false;
+            for (const auto& bs : bwSpheres)
+            {
+                glm::vec3 expand(bs.radius + 0.5f);
+                if (!boundsSet) {
+                    bwBounds.min = bs.center - expand;
+                    bwBounds.max = bs.center + expand;
+                    boundsSet = true;
+                } else {
+                    bwBounds.min = glm::min(bwBounds.min, bs.center - expand);
+                    bwBounds.max = glm::max(bwBounds.max, bs.center + expand);
+                }
+            }
+
+            std::vector<int> bwCandidates;
+            if (boundsSet)
+                appendChunkTrianglesForAABB(world, bwBounds, 0.5f, bwCandidates);
+
+            std::vector<RecoveryContact> bwContacts =
+                collectBodyWeaponContacts(p, world, bwCandidates, bwSpheres);
+
+            if (!bwContacts.empty())
+            {
+                // Separate floor contacts (contribute to grounded) from wall contacts
+                std::vector<RecoveryContact> pushContacts;
+                for (const auto& c : bwContacts)
+                {
+                    if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
+                    {
+                        // Floor contact: contributes to grounded, does NOT push position
+                        // (root capsule already handles floor)
+                        groundedThisFrame = true;
+                    }
+                    else
+                    {
+                        pushContacts.push_back(c);
+                    }
+                }
+
+                if (!pushContacts.empty())
+                {
+                    PHYS_LOG("[PHYS][BODY-WEAPON] %zu contacts (%zu push) at final pos\n",
+                             bwContacts.size(), pushContacts.size());
+
+                    // Collect root cap contacts at same position for combined solving
+                    Capsule bwRootCap = p.getCapsule();
+                    std::vector<int> bwRootCandidates = gatherGLBTriangles(world, bwRootCap, glm::vec3(0.0f));
+                    std::vector<RecoveryContact> bwRootContacts =
+                        collectCapsuleRecoveryContacts(world, bwRootCap, bwRootCandidates);
+
+                    // Merge root + body/weapon into shared manifold
+                    std::vector<RecoveryContact> allContacts;
+                    allContacts.insert(allContacts.end(), bwRootContacts.begin(), bwRootContacts.end());
+                    allContacts.insert(allContacts.end(), pushContacts.begin(), pushContacts.end());
+
+                    glm::vec3 combinedCorrection = solveBatchedCorrection(allContacts, 0.01f);
+                    float combLen = glm::length(combinedCorrection);
+                    if (combLen > 0.001f)
+                    {
+                        constexpr float MAX_BW_CORRECTION = 0.5f;
+                        if (combLen > MAX_BW_CORRECTION)
+                            combinedCorrection *= MAX_BW_CORRECTION / combLen;
+
+                        p.pos += combinedCorrection;
+                        DebugVis::recordDepenetration(p.pos - combinedCorrection, combinedCorrection, "body-weapon-unified");
+
+                        // Apply collision response (velocity dampening) for push contacts
+                        for (const RecoveryContact& pc : pushContacts)
+                        {
+                            if (pc.normal.z <= MAX_WALKABLE_SLOPE_DOT)
+                                projectVelocityAgainstNormal(p, pc.normal);
                         }
                     }
                 }
@@ -1837,6 +2129,29 @@ std::string collisionLastTraceSummary()
     return std::string(buf);
 }
 
+std::string collisionStateSummary(const Player& p)
+{
+    const CollisionTraceSnapshot& tr = gLastCollisionTrace;
+    char buf[1024];
+    std::snprintf(buf, sizeof(buf),
+        "[COLLISION STATE]\n"
+        "  pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n"
+        "  onGround=%d stableOnGround=%d groundLostTimer=%.4f airborneTimer=%.4f\n"
+        "  rawWasOnGround=%d wasOnGround=%d didLand=%d jumpConsumed=%d\n"
+        "  landingCooldown=%.3f worldContact=%.4f\n"
+        "  finalPos=(%.2f %.2f %.2f) floorSnapDist=0.25f\n"
+        "  frameCandidates=%d/%d sweepHits=%d recovery=%d final=%d maxPen=%.4f\n",
+        p.pos.x, p.pos.y, p.pos.z,
+        p.vel.x, p.vel.y, p.vel.z,
+        (int)p.onGround, (int)p.stableOnGround, p.groundLostTimer, p.airborneTimer,
+        (int)p.rawWasOnGround, (int)p.wasOnGround, (int)p.didLand, (int)p.jumpConsumed,
+        p.landingCooldown, p.worldContactLostTimer,
+        tr.finalPos.x, tr.finalPos.y, tr.finalPos.z,
+        tr.initialCandidates, tr.maxCandidates,
+        tr.sweepHits, tr.maxRecoveryContacts, tr.finalContacts, tr.maxPenetration);
+    return std::string(buf);
+}
+
 void doCollisions(
     Player& p,
     const World& world,
@@ -1845,10 +2160,14 @@ void doCollisions(
 )
 {
     Perf::ScopedTimer _colTimer("Collision");
+    const glm::vec3 frameStart = p.pos;
+    recoverInvalidPlayerCollisionState(p, frameStart, "start");
+
     p.collisionBounceCooldown = std::max(0.0f, p.collisionBounceCooldown - dt);
     if (!world.collisionMesh.empty())
     {
         doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
+        recoverInvalidPlayerCollisionState(p, frameStart, "glb");
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
             // Report contact count and max penetration for the frame
@@ -2160,8 +2479,8 @@ void doCollisions(
 
     // Ground snap for blocks: if player is very close to block top and not jumping up, snap to ground
     {
-        constexpr float GROUND_SNAP_DISTANCE = 0.15f;
-        constexpr float MAX_UPWARD_VEL_FOR_SNAP = 0.5f;
+        constexpr float GROUND_SNAP_DISTANCE = 0.25f;
+        constexpr float MAX_UPWARD_VEL_FOR_SNAP = 1.0f;
         
         if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
         {
@@ -2248,6 +2567,8 @@ void doCollisions(
         printf("[COLLISION] block contacts=%zu penetration=%.4f\n",
                blockContacts.size(), maxPen);
     }
+
+    recoverInvalidPlayerCollisionState(p, frameStart, "blocks");
 }
 
 // =====================================================
@@ -2826,14 +3147,52 @@ static void addStressCone(World& world)
     }
 }
 
-std::string collisionStressRun(const std::string& caseName)
+struct CollisionStressResult
+{
+    std::string summary;
+    float maxPenetration = 0.0f;
+    glm::vec3 finalPos{0.0f};
+    bool grounded = false;
+    bool finite = true;
+    bool emergency = false;
+};
+
+static CollisionStressResult runCollisionStressCase(const std::string& caseName)
 {
     World world;
     addStressFloor(world);
 
     float speed = 60.0f;
     std::string selected = caseName.empty() ? "wedge5" : caseName;
-    if (selected == "cone")
+    glm::vec3 startPos(-4.0f, 0.0f, PLAYER_HEIGHT * 0.5f + 0.05f);
+    glm::vec3 startVel(speed, 0.0f, 0.0f);
+
+    if (selected == "floor")
+    {
+        speed = 18.0f;
+        startVel = glm::vec3(speed, 0.0f, 0.0f);
+    }
+    else if (selected == "floor_drop")
+    {
+        startPos = glm::vec3(0.0f, 0.0f, 8.0f);
+        startVel = glm::vec3(0.0f, 0.0f, -180.0f);
+    }
+    else if (selected == "corner")
+    {
+        addStressQuad(world,
+            {1.0f, -5.0f, 0.0f},
+            {1.0f, -5.0f, 4.0f},
+            {1.0f,  5.0f, 4.0f},
+            {1.0f,  5.0f, 0.0f});
+        addStressQuad(world,
+            {-5.0f, 1.0f, 0.0f},
+            { 5.0f, 1.0f, 0.0f},
+            { 5.0f, 1.0f, 4.0f},
+            {-5.0f, 1.0f, 4.0f});
+        startPos = glm::vec3(-4.0f, -4.0f, PLAYER_HEIGHT * 0.5f + 0.05f);
+        startVel = glm::normalize(glm::vec3(1.0f, 1.0f, 0.0f)) * 60.0f;
+    }
+    else if (selected == "cone")
     {
         addStressCone(world);
     }
@@ -2847,9 +3206,9 @@ std::string collisionStressRun(const std::string& caseName)
         addStressWedge(world, angle);
     }
 
-    Player testPlayer;
-    testPlayer.pos = glm::vec3(-4.0f, 0.0f, PLAYER_HEIGHT * 0.5f + 0.05f);
-    testPlayer.vel = glm::vec3(speed, 0.0f, 0.0f);
+    Player testPlayer(false);
+    testPlayer.pos = startPos;
+    testPlayer.vel = startVel;
     testPlayer.syncLegacyStateToLayers();
 
     bool grounded = false;
@@ -2868,6 +3227,13 @@ std::string collisionStressRun(const std::string& caseName)
     for (const RecoveryContact& c : contacts)
         maxPen = std::max(maxPen, c.penetration);
 
+    CollisionStressResult result;
+    result.maxPenetration = maxPen;
+    result.finalPos = testPlayer.pos;
+    result.grounded = grounded;
+    result.finite = isFiniteVec3(testPlayer.pos) && isFiniteVec3(testPlayer.vel);
+    result.emergency = gLastCollisionTrace.emergencyEscaped;
+
     char buf[1024];
     std::snprintf(buf, sizeof(buf),
         "[COLLISION STRESS] case=%s ticks=%d final=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) contacts=%zu maxPen=%.4f grounded=%d %s",
@@ -2876,5 +3242,47 @@ std::string collisionStressRun(const std::string& caseName)
         testPlayer.vel.x, testPlayer.vel.y, testPlayer.vel.z,
         contacts.size(), maxPen, (int)grounded,
         collisionLastTraceSummary().c_str());
-    return std::string(buf);
+    result.summary = std::string(buf);
+    return result;
+}
+
+std::string collisionStressRun(const std::string& caseName)
+{
+    return runCollisionStressCase(caseName).summary;
+}
+
+bool collisionStressSelfTest(std::string* outSummary)
+{
+    const char* cases[] = {
+        "floor",
+        "floor_drop",
+        "corner",
+        "wedge1",
+        "wedge5",
+        "wedge10",
+        "wedge20",
+        "cone",
+        "dash"
+    };
+
+    bool ok = true;
+    std::string summary;
+    for (const char* c : cases)
+    {
+        CollisionStressResult result = runCollisionStressCase(c);
+        const bool caseOk =
+            result.finite &&
+            result.finalPos.z > -0.05f &&
+            result.maxPenetration <= 0.04f &&
+            !result.emergency;
+        ok = ok && caseOk;
+
+        summary += caseOk ? "PASS " : "FAIL ";
+        summary += result.summary;
+        summary += "\n";
+    }
+
+    if (outSummary)
+        *outSummary = summary;
+    return ok;
 }
