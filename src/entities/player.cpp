@@ -908,8 +908,14 @@ static void initCapsuleMesh()
 // =====================================================
 
 Player::Player()
+    : Player(true)
 {
-    loadModel(PLAYER_GLB_PATH);
+}
+
+Player::Player(bool loadRenderModel)
+{
+    if (loadRenderModel)
+        loadModel(PLAYER_GLB_PATH);
     reset();
 }
 

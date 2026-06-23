@@ -12,6 +12,9 @@
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "debug/debug-visuals.h"
+#include "entities/player.h"
+#include "physics/movement/physics-collision.h"
+#include "terminal/terminal-state.h"
 
 extern Renderer* gRenderer;
 
@@ -562,7 +565,28 @@ void registerDiagnosticCommands()
         cmdMapStats
     });
 
-    // Phase 9 — debug_everything
+    // Phase 9 — Collision debug
+    t.registerCommand({
+        "collision_state", "Show current collision state (pos, vel, grounded, contacts)",
+        "collision_state",
+        [](const std::vector<std::string>&) {
+            if (!gpPlayer) {
+                Terminal::instance().addLog("[ERROR] No player available");
+                return;
+            }
+            Terminal::instance().addLog(collisionStateSummary(*gpPlayer));
+        }
+    });
+
+    t.registerCommand({
+        "collision_dump_frame", "Dump last frame's collision trace",
+        "collision_dump_frame",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().addLog(collisionLastTraceSummary());
+        }
+    });
+
+    // Phase 10 — debug_everything
     t.registerCommand({
         "debug_everything", "Run all diagnostics and print one comprehensive report",
         "debug_everything",

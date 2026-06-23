@@ -123,13 +123,17 @@ async function requireAdmin(req, res, next) {
 
 router.post("/login", async (req, res, next) => {
     try {
-        const identifier = String(req.body.identifier || "").trim()
+        console.log("[ADMIN LOGIN] received body keys:", Object.keys(req.body))
+        console.log("[ADMIN LOGIN] username field present:", "username" in req.body)
+        console.log("[ADMIN LOGIN] identifier field present:", "identifier" in req.body)
+
+        const username = String(req.body.username || "").trim()
         const password = String(req.body.password || "")
 
-        if (!identifier || !password) {
+        if (!username || !password) {
             return res.status(400).json({
                 success: false,
-                message: "identifier and password required"
+                message: "username and password required"
             })
         }
 
@@ -145,7 +149,7 @@ router.post("/login", async (req, res, next) => {
               )
             LIMIT 1
             `,
-            [ADMIN_ROLES, usernameKey(identifier), normalizeEmail(identifier)]
+            [ADMIN_ROLES, usernameKey(username), normalizeEmail(username)]
         )
 
         const user = result.rows[0]

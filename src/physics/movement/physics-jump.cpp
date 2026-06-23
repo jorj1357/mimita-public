@@ -52,6 +52,7 @@
 void doJump(
     Player& p,
     bool jumpHeld,
+    bool jumpPressed,
     float dt
 ) {
     // decrement timers
@@ -85,17 +86,36 @@ void doJump(
     //     );
     // }
 
-    // hold jump keeps the buffer alive
-    if (jumpHeld) {
+    bool jumpPressedThisFrame = jumpPressed || (jumpHeld && !p.jumpHeldPrev);
+    bool jumpReleased = !jumpHeld && p.jumpHeldPrev;
+
+    if (jumpPressedThisFrame) {
         p.jumpIntentTimer = JUMP_BUFFER_TIME;
     }
 
-    // detect release — clears jumpConsumed to allow one ground jump per press
-    if (!jumpHeld && p.jumpHeldPrev)
+    // Release re-arms jump actions. Holding jump cannot create a second
+    // ground/world-contact jump after the first press has been consumed.
+    if (jumpReleased)
     {
         p.airJumpArmed = true;
         p.airJumpLocked = false;
         p.jumpConsumed = false;
+    }
+
+    // Hold-to-continuously-jump (auto-bhop):
+    // If Space is held and the player just became grounded this frame
+    // (raw transition from airborne to grounded), prepare for an
+    // immediate re-jump.
+    //
+    // Uses wasOnGround (previous frame's stableOnGround) to prevent
+    // re-arming when raw state flickers but player was already stably
+    // grounded (e.g., from body collision push that briefly lost raw
+    // contact). The auto-bhop should only re-arm on a real landing,
+    // not on a ground-state glitch.
+    if (jumpHeld && !p.rawWasOnGround && p.onGround && !p.wasOnGround)
+    {
+        p.jumpConsumed = false;
+        p.jumpIntentTimer = JUMP_BUFFER_TIME;
     }
 
     p.jumpHeldPrev = jumpHeld;
@@ -139,7 +159,7 @@ void doJump(
     // ---------------- WORLD CONTACT JUMP (wall/slope/ceiling) ----------------
     // Allows jumping off any world geometry without consuming air jump.
     // Does NOT lock air jump, enabling continuous wall climbing while holding jump.
-    if (p.hasWorldContact) {
+    if (p.hasWorldContact && !p.jumpConsumed) {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
@@ -153,6 +173,7 @@ void doJump(
         // airJumpLocked stays false, airJumpArmed stays true (set on release).
 
         p.didGroundJump = true;
+        p.jumpConsumed = true;
 
         JUMP_LOG(
             "[JUMP] WORLD CONTACT vel.z %.3f -> %.3f | airJumps=%d\n",
@@ -179,7 +200,7 @@ void doJump(
         p.airJumpsLeft > 0 && 
         !p.airJumpLocked && 
         p.airJumpArmed && 
-        jumpHeld)
+        jumpPressedThisFrame)
     {
 
         float beforeVel = p.vel.z;

@@ -32,5 +32,6 @@ class Player;
 void doJump(
     Player& p,
     bool jumpHeld,
+    bool jumpPressed,
     float dt
 );
