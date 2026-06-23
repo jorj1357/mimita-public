@@ -100,11 +100,9 @@ static void physicsMainUpdate_Internal(
     int steps = 6;
     float subdt = dt / steps;
 
-    // only set grounded here? not sure mar 7 2026 
     bool groundedThisFrame = false;
 
     // World contact hysteresis: persist contact for a few frames after last actual contact.
-    // This prevents frame-dependent wall climb failures.
     p.worldContactLostTimer = std::max(0.0f, p.worldContactLostTimer - subdt);
     p.hasWorldContact = p.worldContactLostTimer > 0.0f;
 
@@ -113,8 +111,29 @@ static void physicsMainUpdate_Internal(
         doCollisions(p, world, groundedThisFrame, subdt);
     }
 
-    // Floor-fall diagnostics: if player is below expected floor and not grounded,
-    // log the exact reason to help debug falling-through-floor bugs.
+    // --------------------------------------------------
+    // Immediately sync ground state from collision (source of truth)
+    // BEFORE jump, friction, landing events.
+    // doJump may modify p.onGround (set false on jump).
+    // --------------------------------------------------
+
+    // Save previous state for transition detection
+    bool prevOnGround = p.onGround;
+    bool prevStableOnGround = p.stableOnGround;
+
+    p.onGround = groundedThisFrame;
+
+    if (groundedThisFrame)
+        p.groundLostTimer = 0.0f;
+    else
+        p.groundLostTimer += dt;
+
+    p.stableOnGround = groundedThisFrame || (p.groundLostTimer < 0.08f);
+
+    // Track raw/was for next frame's reference
+    p.rawWasOnGround = groundedThisFrame;
+
+    // Floor-fall diagnostics
     if (DebugConfig::DEBUG_PHYSICS && !groundedThisFrame && p.vel.z < -5.0f)
     {
         Capsule debugCap = p.getCapsule();
@@ -125,25 +144,23 @@ static void physicsMainUpdate_Internal(
     }
 
     // Track ticks with movement held while airborne for dash quality.
-    // Resets on ground contact or when movement key is released.
     if (!groundedThisFrame && movementPressed) {
         if (p.dashMovementTicks < 99) p.dashMovementTicks++;
     } else {
         p.dashMovementTicks = 0;
     }
 
-    // air dash: Left Shift+WASD while airborne. Falls back to camera forward if no WASD.
+    // air dash
     doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
     if (p.didDash)
         AnalyticsManager::instance().trackMovement("dash");
 
-    // down dash: Q key, always works regardless of grounded state
-    // 6 14 2026 testing not havingthis at all
-    // 6 14 2026 i c I NEED IT I NEED TO AHve it i cannot not have it  
+    // down dash
     doDownDash(p, downDashPressed, dt);
 
-    // jump AFTER grounded so we actually know it work
+    // jump — now reads fresh p.onGround/p.stableOnGround
     doJump(p, jumpHeld, jumpPressed, dt);
+
     if (p.didGroundJump)
         AnalyticsManager::instance().trackMovement(
             (p.hasWorldContact && !groundedThisFrame) ? "wall_jump" : "jump");
@@ -162,34 +179,11 @@ static void physicsMainUpdate_Internal(
                        (int)p.airJumpLocked, (int)p.airJumpArmed);
     }
 
-    // this resets ur dash so u can do it again after ur grounded?
-    // mar 8 2026 we reset dash in like phsics mini, or dash file, or etc
-    // need to centralize this in 1 file
-    // like physics-move-resets.cpp
-    // that just exposes doReset(args)
-    // e.g. doReset(freeze function)
-    // or doReset(airjump function)
     // reset dash when touching ground
     if (groundedThisFrame)
     {
         p.dashAvailable = true;
     }
-
-    // --------------------------------------------------
-    // stable ground hysteresis
-    // --------------------------------------------------
-
-    // raw ground state from collision system
-    p.onGround = groundedThisFrame;
-
-    // how long since raw contact was lost
-    if (groundedThisFrame)
-        p.groundLostTimer = 0.0f;
-    else
-        p.groundLostTimer += dt;
-
-    // remain grounded briefly after losing contact
-    p.stableOnGround = groundedThisFrame || (p.groundLostTimer < 0.08f);
 
     doFriction(p, p.stableOnGround, dt);
 
