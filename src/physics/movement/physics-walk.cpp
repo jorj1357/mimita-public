@@ -47,26 +47,9 @@ void doWalk(
 
     float wishLen = glm::length(wishMoveXY);
 
-    // no movement input
+    // no movement input — friction (handled separately) will stop the player
     if (wishLen < 0.0001f)
     {
-        // grounded stop should be quick but not destructive
-        if (p.stableOnGround)
-        {
-            // p.vel.x *= 0.80f;
-            // p.vel.y *= 0.80f;
-
-            // 6 6 2026 aoaakka 
-            // float stopDrag = std::exp(-8.0f * dt);
-            float stopDrag = std::exp(-30.0f * dt);
-
-            p.vel.x *= stopDrag;
-            p.vel.y *= stopDrag;
-
-            if (std::abs(p.vel.x) < 0.01f) p.vel.x = 0.0f;
-            if (std::abs(p.vel.y) < 0.01f) p.vel.y = 0.0f;
-        }
-
         WALK_LOG("[WALK] No input\n");
         return;
     }
@@ -74,93 +57,21 @@ void doWalk(
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
-    glm::vec2 impulseXY(
-        p.externalImpulse.x,
-        p.externalImpulse.y
+    // Accel toward target speed along wish direction.
+    // Only increases velocity along the wish axis — never destroys
+    // perpendicular velocity (dash, knockback, recoil, explosions).
+    // If already above target speed (dash momentum), movement does nothing.
+    float targetSpeed = PHYS.moveSpeed;
+    float alongCurrent = glm::dot(velXY, wishDir);
+    if (alongCurrent < targetSpeed)
+    {
+        p.vel.x += (targetSpeed - alongCurrent) * wishDir.x;
+        p.vel.y += (targetSpeed - alongCurrent) * wishDir.y;
+    }
+
+    WALK_LOG(
+        "[WALK] speed=%.2f along=%.2f target=%.2f\n",
+        glm::length(glm::vec2(p.vel.x, p.vel.y)),
+        alongCurrent, targetSpeed
     );
-    float impulseSpeed = glm::length(impulseXY);
-    if (impulseSpeed > 0.001f)
-    {
-        glm::vec2 impulseDir = impulseXY / impulseSpeed;
-        float alignment = glm::dot(wishDir, impulseDir);
-
-        float steerT =
-            std::min(1.0f, EXTERNAL_IMPULSE_STEER_RATE * dt);
-        glm::vec2 steeredDir =
-            glm::mix(impulseDir, wishDir, steerT);
-
-        if (glm::length(steeredDir) > 0.001f)
-            impulseDir = glm::normalize(steeredDir);
-
-        if (alignment < 0.0f)
-        {
-            float brake =
-                std::exp(-EXTERNAL_IMPULSE_BRAKE_RATE * -alignment * dt);
-            impulseSpeed *= brake;
-        }
-
-        impulseXY = impulseDir * impulseSpeed;
-        p.externalImpulse.x = impulseXY.x;
-        p.externalImpulse.y = impulseXY.y;
-    }
-
-    // ---------------- GROUND ----------------
-    // ---------------- GROUND ----------------
-    // ---------------- GROUND ----------------
-    if (p.stableOnGround)
-    {
-        float targetSpeed = PHYS.moveSpeed;
-
-        glm::vec2 targetVel =
-            wishDir * targetSpeed;
-
-        // very fast response
-        float groundResponse = 28.0f;
-
-        float t =
-            std::min(1.0f, groundResponse * dt);
-
-        glm::vec2 currentVel = velXY;
-
-        glm::vec2 newVel =
-            glm::mix(currentVel, targetVel, t);
-
-        p.vel.x = newVel.x;
-        p.vel.y = newVel.y;
-
-        WALK_LOG(
-            "[WALK][GROUND] speed=%.2f\n",
-            glm::length(newVel)
-        );
-
-        return;
-    }
-
-    // ---------------- AIR ----------------
-    {
-        glm::vec2 currentVel = velXY;
-
-        float airSpeed =
-            PHYS.moveSpeed;
-
-        glm::vec2 targetVel =
-            wishDir * airSpeed;
-
-        // same as ground response value 6 6 2026 
-        float airResponse = 28.0f;
-
-        float t =
-            std::min(1.0f, airResponse * dt);
-
-        glm::vec2 newVel =
-            glm::mix(currentVel, targetVel, t);
-
-        p.vel.x = newVel.x;
-        p.vel.y = newVel.y;
-
-        WALK_LOG(
-            "[WALK][AIR] speed=%.2f\n",
-            glm::length(newVel)
-        );
-    }
 }
