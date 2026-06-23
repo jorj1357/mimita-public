@@ -1631,16 +1631,17 @@ static void doGLBTriangleCollisions(
                 {
                     float snapAmount = distToGround;
                     p.pos.z -= snapAmount;
-                    groundedThisFrame = true;
-                    applyTouchResets(p);
+                    // Ground snap moves the player down but does NOT set grounded
+                    // or call applyTouchResets — only actual collision contact
+                    // may prove the capsule touched real world geometry.
                     
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;
                     
                     PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to ground at %.2f (dist=%.4f)\n", snapAmount, bestGroundZ, distToGround);
                     if (DebugConfig::DEBUG_PHYSICS)
-                        Debug::log(Debug::Category::Physics, "[SNAP] distToGround=%.4f snap=%.4f grounded=%d\n",
-                            distToGround, snapAmount, (int)groundedThisFrame);
+                        Debug::log(Debug::Category::Physics, "[SNAP] distToGround=%.4f snap=%.4f\n",
+                            distToGround, snapAmount);
 
                     // SAFETY: After ground snap, re-check for wall penetration
                     // Snapping upward can push player into adjacent walls
@@ -1718,7 +1719,9 @@ static void doGLBTriangleCollisions(
             if (lift > 0.0f && lift < 0.5f)
             {
                 p.pos.z += lift;
-                groundedThisFrame = true;
+                // Floor recovery repositions the player but does NOT set grounded
+                // or call applyTouchResets — only actual collision contact
+                // may prove the capsule touched real world geometry.
                 p.externalImpulse.z = std::min(p.externalImpulse.z, 0.0f);
                 p.vel.z = std::min(p.vel.z, 0.0f);
                 PHYS_LOG("[PHYS][FLOOR RECOVERY] feet was %.3f below floor (tri=%d closestZ=%.3f), lifted %.4f\n",
@@ -2566,8 +2569,9 @@ void doCollisions(
                 {
                     float snapAmount = distToGround;
                     p.pos.z -= snapAmount;
-                    groundedThisFrame = true;
-                    applyTouchResets(p);
+                    // Ground snap moves the player down but does NOT set grounded
+                    // or call applyTouchResets — only actual collision contact
+                    // may prove the capsule touched real world geometry.
                     
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;
