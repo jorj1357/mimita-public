@@ -350,6 +350,20 @@ static int selectWorldTriangle(const World& world, glm::vec3 origin, glm::vec3 d
 
 int main(int argc, char** argv)
 {
+    if (argc > 1 && std::string(argv[1]) == "--collision-selftest") {
+        std::string summary;
+        const bool ok = collisionStressSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[COLLISION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return ok ? 0 : 1;
+    }
+
+    if (argc > 1 && std::string(argv[1]) == "--collision-stress") {
+        const std::string caseName = argc > 2 ? argv[2] : "wedge5";
+        printf("%s\n", collisionStressRun(caseName).c_str());
+        return 0;
+    }
+
     if (argc > 1 && std::string(argv[1]) == "--replay-selftest") {
         ReplayClip clip;
         clip.header.tickRate = 60;

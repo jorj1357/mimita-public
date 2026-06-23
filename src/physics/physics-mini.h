@@ -35,7 +35,7 @@ void doAirDash(
     const glm::vec3& camForward
 );
 void doDownDash(Player& p, bool triggerPressed, float dt);
-void doJump(Player& p, bool jumpHeld, float dt);
+void doJump(Player& p, bool jumpHeld, bool jumpPressed, float dt);
 void doWalk(Player& p, const glm::vec2& wishMoveXY, bool movementPressed, float dt);
 void doGravity(Player& p, float dt);
 void doGroundReturn(Player& p, bool triggerPressed, float dt);
