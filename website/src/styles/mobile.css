@@ -15,6 +15,26 @@
   .menuButton {
     font-size: 1.6rem;
   }
+
+  .headerRight {
+    display: none;
+  }
+
+  .dropdownMenu {
+    min-width: 200px;
+    top: 3.8rem;
+  }
+
+  .profileAvatarWrap,
+  .accountAvatarWrap {
+    width: 96px;
+    height: 96px;
+  }
+
+  .profileAvatarPlaceholder,
+  .accountAvatarPlaceholder {
+    font-size: 2.25rem;
+  }
 }
 
 @media (max-width: 900px) {

@@ -20,3 +20,8 @@ body {
   background: black;
   color: white;
 }
+
+@keyframes rainbow {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}

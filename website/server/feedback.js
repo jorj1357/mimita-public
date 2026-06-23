@@ -1,4 +1,5 @@
 import { pool } from "./db.js"
+import { trackEvent } from "./analytics.js"
 
 export const FEEDBACK_PRESETS = [
     "Cool Site",
@@ -11,6 +12,15 @@ export const FEEDBACK_PRESETS = [
 ]
 
 export async function submitFeedback({ selectedPresets, customFeedback, contactInfo, pageUrl, userId }) {
+    await trackEvent("feedback_submit", {
+        event_data: {
+            has_presets: Boolean(selectedPresets?.length),
+            has_custom: Boolean(customFeedback)
+        },
+        user_id: userId || null,
+        page_url: pageUrl || null
+    })
+
     const result = await pool.query(
         `
         INSERT INTO feedback (selected_presets, custom_feedback, contact_info, page_url, user_id)

@@ -131,6 +131,11 @@ ReactDOM.createRoot(
         />
 
         <Route
+          path="/u/:username"
+          element={<UserProfile />}
+        />
+
+        <Route
           path="/3cage"
           element={<ThreeCage />}
         />

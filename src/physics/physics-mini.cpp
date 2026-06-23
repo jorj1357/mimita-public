@@ -105,6 +105,7 @@ static void physicsMainUpdate_Internal(
     // World contact hysteresis: persist contact for a few frames after last actual contact.
     p.worldContactLostTimer = std::max(0.0f, p.worldContactLostTimer - subdt);
     p.hasWorldContact = p.worldContactLostTimer > 0.0f;
+    p.realWorldContactThisFrame = false;
 
     for (int i = 0; i < steps; i++)
     {
@@ -179,10 +180,14 @@ static void physicsMainUpdate_Internal(
                        (int)p.airJumpLocked, (int)p.airJumpArmed);
     }
 
-    // reset dash when touching ground
+    // reset ALL abilities when grounded (not just dash)
     if (groundedThisFrame)
     {
+        p.airJumpsLeft = AIR_JUMPS_MAX;
         p.dashAvailable = true;
+        p.groundReturnAvailable = true;
+        p.downDashAvailable = true;
+        p.freezeAvailable = true;
     }
 
     doFriction(p, p.stableOnGround, dt);

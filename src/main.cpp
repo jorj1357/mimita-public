@@ -4485,14 +4485,31 @@ int main(int argc, char** argv)
             }
             if (DebugConfig::DEBUG_PHYSICS && (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay))
             {
-                char dbg[256];
+                char dbg[512];
+                int y = 200;
                 snprintf(dbg, sizeof(dbg),
-                    "gnd:%d stb:%d raw:%d pos:(%.1f %.1f %.1f) vel.z:%.1f jit:%.2f jc:%d aj:%d",
+                    "gnd:%d stb:%d raw:%d realC:%d wc:%d pos:(%.1f %.1f %.1f) vel.z:%.1f",
                     (int)player.onGround, (int)player.stableOnGround, (int)player.rawWasOnGround,
+                    (int)player.realWorldContactThisFrame, (int)player.hasWorldContact,
                     player.pos.x, player.pos.y, player.pos.z,
-                    player.vel.z, player.jumpIntentTimer,
-                    (int)player.jumpConsumed, player.airJumpsLeft);
-                uiDrawText(dbg, 24.0f, 200.0f, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f});
+                    player.vel.z);
+                uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f}); y += 16;
+                snprintf(dbg, sizeof(dbg),
+                    "jmpI:%.2f aj:%d da:%d grAv:%d ddAv:%d jc:%d",
+                    player.jumpIntentTimer, player.airJumpsLeft,
+                    (int)player.dashAvailable, (int)player.groundReturnAvailable,
+                    (int)player.downDashAvailable, (int)player.jumpConsumed);
+                uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f}); y += 16;
+                float feetZ = player.pos.z - PLAYER_HEIGHT * 0.5f;
+                snprintf(dbg, sizeof(dbg),
+                    "feetZ:%.2f landCD:%.2f fzAv:%d",
+                    feetZ, player.landingCooldown, (int)player.freezeAvailable);
+                uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f}); y += 16;
+                snprintf(dbg, sizeof(dbg),
+                    "didLand:%d wasGnd:%d stbGnd:%d gLost:%.2f airT:%.2f",
+                    (int)player.didLand, (int)player.wasGroundedLastFrame,
+                    (int)player.wasStableGroundedLastFrame, player.groundLostTimer, player.airborneTimer);
+                uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f});
             }
             if (!gReplayExportRenderMode || ReplayExportUI::showModeText)
             {

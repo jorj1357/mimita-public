@@ -88,3 +88,99 @@
   color: white;
   padding-left: 1.8rem;
 }
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+}
+
+.headerUserInfo {
+  display: flex;
+  align-items: center;
+}
+
+.headerUserLink {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: rgba(255,255,255,0.82);
+  font-weight: 700;
+  font-size: 0.85rem;
+  transition: opacity 0.2s;
+}
+
+.headerUserLink:hover {
+  color: white;
+}
+
+.headerAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.headerAvatarPlaceholder {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.1);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.4);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.headerUserName {
+  display: none;
+}
+
+.headerAuth {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.headerAuthLink {
+  color: rgba(255,255,255,0.82);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition: opacity 0.2s;
+}
+
+.headerAuthLink:hover {
+  color: white;
+}
+
+.headerSignupLink {
+  padding: 0.35rem 0.75rem;
+  background: white;
+  color: black;
+  border-radius: 2px;
+}
+
+.headerSignupLink:hover {
+  background: rgba(255,255,255,0.85);
+  color: black;
+}
+
+.headerAdminLink {
+  color: #a78bfa !important;
+  border: 1px solid #4c1d95;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+}
+
+.headerAdminLink:hover {
+  color: #c4b5fd !important;
+  border-color: #6d28d9;
+}
