@@ -1545,8 +1545,7 @@ void Player::updateAudio(float dt)
     }
 
     // Landing: sound + directional VFX
-    landingCooldown = std::max(0.0f, landingCooldown - dt);
-    if (!wasStableGroundedLastFrame && stableOnGround && landingCooldown <= 0.0f) {
+    if (didLand) {
         playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
         glm::vec3 landDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
@@ -1554,9 +1553,7 @@ void Player::updateAudio(float dt)
         glm::vec3 landPos = pos;
         landPos.z -= 0.3f;
         HitEffects::spawnLandingBurst(landPos, landDir, glm::length(glm::vec2(vel.x, vel.y)));
-        landingCooldown = 0.3f;
     }
-    wasStableGroundedLastFrame = stableOnGround;
 
     // Walk VFX: directional ground spheres offset opposite travel direction
     glm::vec2 xy = glm::vec2(vel.x,vel.y);

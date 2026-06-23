@@ -43,9 +43,12 @@ void setShaderMVP(GLuint shader, const glm::mat4& mvp);
 void setShaderColor(GLuint shader, const glm::vec4& color);
 void drawMeshInstanced(const Mesh& mesh, const glm::mat4& viewProj,
                        const glm::mat4& model, const glm::vec4& color);
-void renderWorld(const std::vector<Triangle>& triangles, const glm::mat4& viewProj);
+
+void rebuildWorldMesh(const std::vector<Triangle>& triangles);
+void renderWorld(const glm::mat4& viewProj, bool wireframe);
 void renderPlayer(const Player& player, const glm::mat4& viewProj);
 void renderContacts(const Player& player, const glm::mat4& viewProj);
-void renderHUD(const Player& player, const TestMap& map, int windowW, int windowH);
+void renderHUD(const Player& player, const TestMap& map, int windowW, int windowH,
+               bool wireframe);
 void flushLines(const glm::mat4& viewProj);
 void shutdownRenderer();

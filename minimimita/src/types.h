@@ -8,7 +8,7 @@
 static const glm::vec3 WORLD_UP(0.0f, 0.0f, 1.0f);
 static const float GRAVITY = -9.81f;
 static const float PHYSICS_DT = 1.0f / 120.0f;
-static const float MAX_GROUND_ANGLE = 0.70710678f; // cos(45 deg)
+static const float MAX_GROUND_ANGLE = 0.70710678f;
 
 struct Contact {
     glm::vec3 point;
@@ -59,18 +59,6 @@ struct Player {
     }
 };
 
-struct Point {
-    glm::vec3 position;
-    glm::vec3 velocity;
-    float radius = 0.1f;
-};
-
-struct Line {
-    glm::vec3 pointA;
-    glm::vec3 pointB;
-    float radius = 0.1f;
-};
-
 struct Camera {
     glm::vec3 target = glm::vec3(0.0f);
     float yaw = 0.0f;
@@ -83,6 +71,18 @@ struct Camera {
         dir.y = cos(pitch) * cos(yaw);
         dir.z = sin(pitch);
         return target + dir * distance;
+    }
+
+    glm::vec3 forward2D() const {
+        glm::vec3 fwd = glm::normalize(target - position());
+        fwd.z = 0.0f;
+        float len = glm::length(fwd);
+        if (len < 0.001f) return glm::vec3(0.0f, -1.0f, 0.0f);
+        return fwd / len;
+    }
+
+    glm::vec3 right2D() const {
+        return glm::normalize(glm::cross(forward2D(), WORLD_UP));
     }
 
     glm::mat4 view() const {
@@ -99,10 +99,11 @@ struct InputState {
     bool space = false;
     bool spacePrev = false;
     bool r = false;
-    int mapIndex = 0;
-    float mouseDX = 0.0f, mouseDY = 0.0f;
-    bool mouseDown = false;
-    double scrollY = 0.0;
+    bool wireframe = false;
+    glm::vec3 wishDir = glm::vec3(0.0f);
+    char commandBuffer[256] = {};
+    int commandLen = 0;
+    bool commandEnter = false;
 };
 
 struct TestMap {

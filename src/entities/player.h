@@ -264,9 +264,6 @@ public:
 
     // -------- Audio helpers --------
     bool  wasOnGround = false;
-    bool  rawWasOnGround = false;
-    bool  wasGroundedLastFrame = false;
-    bool  wasStableGroundedLastFrame = false;
 
     float groundLostTimer = 0.0f;
     float airborneTimer   = 0.0f;

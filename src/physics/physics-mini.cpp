@@ -131,9 +131,6 @@ static void physicsMainUpdate_Internal(
 
     p.stableOnGround = groundedThisFrame || (p.groundLostTimer < 0.08f);
 
-    // Track raw/was for next frame's reference
-    p.rawWasOnGround = groundedThisFrame;
-
     // Floor-fall diagnostics
     if (DebugConfig::DEBUG_PHYSICS && !groundedThisFrame && p.vel.z < -5.0f)
     {
@@ -205,7 +202,7 @@ static void physicsMainUpdate_Internal(
     if (DebugConfig::DEBUG_PHYSICS) {
         static float groundedDebugTimer = 0.0f;
         groundedDebugTimer += dt;
-        if (p.onGround != p.rawWasOnGround || groundedDebugTimer >= 1.0f)
+        if (p.onGround != prevOnGround || groundedDebugTimer >= 1.0f)
         {
             Debug::logThrottled(Debug::Category::Physics, "grounded", 0.5f,
                 "[GROUND] raw=%d stable=%d lostTimer=%.4f airborneTimer=%.4f worldContact=%.4f didLand=%d jumpConsumed=%d landingCD=%.3f airJmp=%d locked=%d armed=%d\n",
