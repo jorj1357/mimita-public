@@ -4483,6 +4483,17 @@ int main(int argc, char** argv)
                 snprintf(spBuf, sizeof(spBuf), "Speed: %.2f m/s", speed);
                 hudText("speedText", spBuf);
             }
+            if (DebugConfig::DEBUG_PHYSICS && (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay))
+            {
+                char dbg[256];
+                snprintf(dbg, sizeof(dbg),
+                    "gnd:%d stb:%d raw:%d pos:(%.1f %.1f %.1f) vel.z:%.1f jit:%.2f jc:%d aj:%d",
+                    (int)player.onGround, (int)player.stableOnGround, (int)player.rawWasOnGround,
+                    player.pos.x, player.pos.y, player.pos.z,
+                    player.vel.z, player.jumpIntentTimer,
+                    (int)player.jumpConsumed, player.airJumpsLeft);
+                uiDrawText(dbg, 24.0f, 200.0f, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f});
+            }
             if (!gReplayExportRenderMode || ReplayExportUI::showModeText)
             {
                 char modeText[128];

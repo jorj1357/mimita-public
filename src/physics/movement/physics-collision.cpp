@@ -228,22 +228,33 @@ static inline void applyCollisionContact(
     p.hasWorldContact = true;
     p.worldContactLostTimer = 0.033f; // 2 frames of hysteresis for consistent wall climb
 
-    // Ground: slope is walkable
+    // Ground: slope is walkable — only if contact is at or below player's feet.
+    // This prevents body/weapon contacts with upward-facing surfaces above the
+    // player from falsely setting grounded.
     if (normal.z > MAX_WALKABLE_SLOPE_DOT)
     {
-        groundedThisFrame = true;
-        applyTouchResets(p);
+        Capsule cap = p.getCapsule();
+        float feetZ = cap.a.z - cap.r;
+        if (point.z <= feetZ + 0.15f)
+        {
+            groundedThisFrame = true;
+            applyTouchResets(p);
 
-        if (p.vel.z < 0.0f)
-            p.vel.z = 0.0f;
+            if (p.vel.z < 0.0f)
+                p.vel.z = 0.0f;
 
-        if (p.vel.z > 0.0f)
-            p.vel.z = 0.0f;
+            if (p.vel.z > 0.0f)
+                p.vel.z = 0.0f;
 
-        if (p.externalImpulse.z > 0.0f)
-            p.externalImpulse.z = 0.0f;
+            if (p.externalImpulse.z > 0.0f)
+                p.externalImpulse.z = 0.0f;
 
-        DebugVis::recordGroundNormal(point, normal, label);
+            DebugVis::recordGroundNormal(point, normal, label);
+        }
+        else
+        {
+            projectVelocityAgainstNormal(p, normal);
+        }
     }
     // Steep slope: not ground, slide along surface
     else if (normal.z > 0.0f)
@@ -1706,20 +1717,13 @@ static void doGLBTriangleCollisions(
 
             if (!bwContacts.empty())
             {
-                // Separate floor contacts (contribute to grounded) from wall contacts
+                // Only wall contacts cause body/weapon push.
+                // Floor contacts are ignored — root capsule already handles ground.
                 std::vector<RecoveryContact> pushContacts;
                 for (const auto& c : bwContacts)
                 {
-                    if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
-                    {
-                        // Floor contact: contributes to grounded, does NOT push position
-                        // (root capsule already handles floor)
-                        groundedThisFrame = true;
-                    }
-                    else
-                    {
+                    if (c.normal.z <= MAX_WALKABLE_SLOPE_DOT)
                         pushContacts.push_back(c);
-                    }
                 }
 
                 if (!pushContacts.empty())

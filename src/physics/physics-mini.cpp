@@ -217,21 +217,16 @@ static void physicsMainUpdate_Internal(
     }
 
     // Landing event: fires once per real landing using stableOnGround transition.
-    // stableOnGround has built-in hysteresis (0.08s), so this is robust to raw flicker
-    // from ground snap or body collision push.
     p.landingCooldown = std::max(0.0f, p.landingCooldown - dt);
-    bool stableLanding = !p.wasOnGround && p.stableOnGround;
+    bool stableLanding = !prevStableOnGround && p.stableOnGround;
     if (stableLanding && previousAirborneTime > 0.08f && p.landingCooldown <= 0.0f)
     {
         p.didLand = true;
         p.landingCooldown = 0.3f;
     }
 
-    // store stable+raw state for next frame
+    // store stable state for next frame
     p.wasOnGround = p.stableOnGround;
-    p.rawWasOnGround = groundedThisFrame;
-
-    // CHANGED: No dashVel tracking, jun 6 2026
 
     updateVisualFacingFromCamera(p, camForward, dt);
 
