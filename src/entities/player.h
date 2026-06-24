@@ -185,7 +185,6 @@ struct JumpState {
     bool airJumpArmed = false;
     float jumpIntentTimer = 0.0f;
     float coyoteTimer = 0.0f;
-    bool jumpConsumed = false;
     bool didGroundJump = false;
     bool didAirJump = false;
     float jumpSoundTimer = 0.0f;
