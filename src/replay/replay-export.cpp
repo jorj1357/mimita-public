@@ -24,7 +24,7 @@
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 #include "render/post-fx.h"
-#include "audio/audio.h"
+#include "audio/audio-codec.h"
 
 static ReplayExportJob gJob;
 

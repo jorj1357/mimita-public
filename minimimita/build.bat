@@ -23,9 +23,23 @@ if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 echo === Compiling source files ===
 %COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\main.cpp" -o "%BUILD%\main.o"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\globals.cpp" -o "%BUILD%\globals.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\input.cpp" -o "%BUILD%\input.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\init.cpp" -o "%BUILD%\init.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\map-utils.cpp" -o "%BUILD%\map-utils.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 %COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\physics.cpp" -o "%BUILD%\physics.o"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
-%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\render.cpp" -o "%BUILD%\render.o"
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\collision-grid.cpp" -o "%BUILD%\collision-grid.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\render-core.cpp" -o "%BUILD%\render-core.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\render-primitives.cpp" -o "%BUILD%\render-primitives.o"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+%COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\render-scene.cpp" -o "%BUILD%\render-scene.o"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 %COMPILER% %CXXFLAGS% %INCLUDES% %DEFINES% -c "%SRC%\maps.cpp" -o "%BUILD%\maps.o"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
@@ -33,7 +47,7 @@ if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 echo === Linking ===
-%COMPILER% "%BUILD%\glad.o" "%BUILD%\main.o" "%BUILD%\physics.o" "%BUILD%\render.o" "%BUILD%\maps.o" "%BUILD%\glb-loader.o" %LIBS% -o "%MINI%\mini-mimita-collision.exe"
+%COMPILER% "%BUILD%\glad.o" "%BUILD%\main.o" "%BUILD%\globals.o" "%BUILD%\input.o" "%BUILD%\init.o" "%BUILD%\map-utils.o" "%BUILD%\physics.o" "%BUILD%\collision-grid.o" "%BUILD%\render-core.o" "%BUILD%\render-primitives.o" "%BUILD%\render-scene.o" "%BUILD%\maps.o" "%BUILD%\glb-loader.o" %LIBS% -o "%MINI%\mini-mimita-collision.exe"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 echo === Build complete ===

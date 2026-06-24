@@ -742,6 +742,31 @@ Timers may not invent collisions.
 
 Before completing any task that modifies code, configuration, scripts, documentation, or build files, invoke the `overseer` skill (`.opencode/skills/overseer/SKILL.md`) and include its combined report.
 
-Do not claim the task is complete until overseer has run.
+## Zero-Tolerance Policy
 
-If overseer cannot run, explain exactly why.
+Overseer is the final authority. Nothing is considered complete until overseer returns:
+
+```
+FINAL STATUS: CLEAN PASS
+```
+
+The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL, or any finding that requires action. Any finding whatsoever — including "acceptable warning," "justified," "known issue," "technical debt," or "follow-up item" — is a failed review.
+
+## Workflow
+
+1. Make code changes
+2. Run overseer
+3. If overseer finds ANY issue — fix it, re-run overseer
+4. Repeat until overseer returns CLEAN PASS with Warnings: 0, Low: 0, Medium: 0, High: 0, Critical: 0
+5. Only then claim the task is complete
+
+## Forbidden
+
+- Arguing that a warning is acceptable
+- Marking work complete with unresolved findings
+- Deferring issues to a follow-up
+- Accepting technical debt without fixing it immediately
+
+## Exceptions
+
+If overseer cannot run (e.g., missing skills), explain exactly why in the completion report. Do not skip the check.

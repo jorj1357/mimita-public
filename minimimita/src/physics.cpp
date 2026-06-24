@@ -1,6 +1,10 @@
 #include "physics.h"
+#include "collision-grid.h"
 #include <algorithm>
-#include <limits>
+#include <cstdio>
+#include <chrono>
+#include <cmath>
+#include <glm/glm.hpp>
 
 glm::vec3 closestPtPointTriangle(glm::vec3 p, const Triangle& tri) {
     const glm::vec3 ab = tri.b - tri.a;
@@ -65,7 +69,7 @@ bool capsuleTriangleCollision(glm::vec3 capA, glm::vec3 capB, float radius,
     const glm::vec3 diff = ptOnSeg - ptOnTri;
     float distSq = glm::length2(diff);
 
-    if (distSq >= radius * radius)
+    if (distSq > radius * radius)
         return false;
 
     float dist = glm::sqrt(distSq);
@@ -93,59 +97,61 @@ bool capsuleTriangleCollision(glm::vec3 capA, glm::vec3 capB, float radius,
     return true;
 }
 
-void collectContacts(const Player& player, const std::vector<Triangle>& triangles,
-                     ContactState& state) {
-    state.clear();
-    glm::vec3 a = player.capA();
-    glm::vec3 b = player.capB();
-
-    for (size_t i = 0; i < triangles.size(); ++i) {
-        Contact contact;
-        if (capsuleTriangleCollision(a, b, player.radius, triangles[i], contact)) {
-            if (contact.side == Contact::FLOOR) state.touchingFloor = true;
-            if (contact.side == Contact::WALL)  state.touchingWall = true;
-            if (contact.side == Contact::CEILING) state.touchingCeiling = true;
-            state.contacts.push_back(contact);
-        }
+static void slideVelocity(Player& player, const ContactState& state) {
+    if (!state.touchingWall && !state.touchingFloor && !state.touchingCeiling)
+        return;
+    for (const auto& contact : state.contacts) {
+        float vDotN = glm::dot(player.velocity, contact.normal);
+        if (vDotN < 0.0f)
+            player.velocity -= vDotN * contact.normal;
     }
 }
 
-void resolveContacts(Player& player, const ContactState& state) {
-    for (const auto& contact : state.contacts) {
-        player.position += contact.normal * contact.depth;
-    }
+void computeWishDir(InputState& input, const Camera& camera) {
+    glm::vec3 fwd = camera.forward2D();
+    glm::vec3 right = camera.right2D();
+    input.wishDir = glm::vec3(0.0f);
+    if (input.w) input.wishDir += fwd;
+    if (input.s) input.wishDir -= fwd;
+    if (input.d) input.wishDir += right;
+    if (input.a) input.wishDir -= right;
 }
 
 void updatePlayer(Player& player, const InputState& input,
                   const std::vector<Triangle>& triangles, float dt) {
+    auto frameStart = std::chrono::high_resolution_clock::now();
+
     const float WALK_SPEED = 5.0f;
-
     glm::vec3 wishDir = input.wishDir;
-
     if (glm::length2(wishDir) > 0.0f)
         wishDir = glm::normalize(wishDir) * WALK_SPEED;
-
     player.velocity.x = wishDir.x;
     player.velocity.y = wishDir.y;
 
-    if (input.space && !input.spacePrev && player.grounded)
+    if (input.space && player.jumpAvailable) {
         player.velocity.z = 5.0f;
+        player.jumpAvailable = false;
+    }
 
     player.velocity.z += GRAVITY * dt;
     player.position += player.velocity * dt;
 
     ContactState state;
     collectContacts(player, triangles, state);
-    resolveContacts(player, state);
+    resolveContactsIterative(player, triangles, state);
+    slideVelocity(player, state);
     player.contacts = state;
 
-    player.grounded = state.touchingFloor;
-
+    if (state.contacts.size() > 0)
+        player.jumpAvailable = true;
     if (state.touchingFloor && player.velocity.z < 0.0f)
         player.velocity.z = 0.0f;
-
     if (player.position.z < -50.0f) {
         player.velocity = glm::vec3(0.0f);
         player.position.z = 0.0f;
     }
+
+    auto frameEnd = std::chrono::high_resolution_clock::now();
+    CollisionProfile& prof = const_cast<CollisionProfile&>(getCollisionProfile());
+    prof.totalTimeMs += std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
 }
