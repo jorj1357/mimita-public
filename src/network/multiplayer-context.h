@@ -179,6 +179,18 @@ void mpSetFakeLagMode(MultiplayerContext& ctx, int mode);
 void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds);
 void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs);
 
+// Called from mpTick (defined in multiplayer-shots.cpp)
+void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event);
+void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEventPacket* event);
+
+// Called from mpTick (defined in multiplayer-chat.cpp)
+void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);
+
+// Interpolation helpers (defined in multiplayer-interpolation.cpp)
+void pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
+void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation, float dt);
+void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
+
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
 extern bool gNetDamageDebug;
 extern bool gNetHitDebug;

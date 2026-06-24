@@ -49,7 +49,6 @@ struct Player {
     glm::vec3 velocity;
     float radius = 0.3f;
     float height = 1.8f;
-    bool jumpAvailable = false;
     ContactState contacts;
 
     glm::vec3 capA() const {

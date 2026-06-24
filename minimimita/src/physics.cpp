@@ -128,12 +128,11 @@ void updatePlayer(Player& player, const InputState& input,
     player.velocity.x = wishDir.x;
     player.velocity.y = wishDir.y;
 
-    if (input.space && player.jumpAvailable) {
-        player.velocity.z = 5.0f;
-        player.jumpAvailable = false;
-    }
-
     player.velocity.z += GRAVITY * dt;
+
+    if (input.space && player.contacts.contacts.size() > 0)
+        player.velocity.z = 5.0f;
+
     player.position += player.velocity * dt;
 
     ContactState state;
@@ -142,8 +141,6 @@ void updatePlayer(Player& player, const InputState& input,
     slideVelocity(player, state);
     player.contacts = state;
 
-    if (state.contacts.size() > 0)
-        player.jumpAvailable = true;
     if (state.touchingFloor && player.velocity.z < 0.0f)
         player.velocity.z = 0.0f;
     if (player.position.z < -50.0f) {
