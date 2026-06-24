@@ -37,6 +37,7 @@ glm::mat4 nodeMatrix(const tinygltf::Node& node)
     return glm::translate(glm::mat4(1.0f), t) * glm::mat4_cast(r) * glm::scale(glm::mat4(1.0f), s);
 }
 
+namespace {
 const unsigned char* accessorPtr(const tinygltf::Model& model, const tinygltf::Accessor& accessor)
 {
     const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
@@ -88,6 +89,8 @@ unsigned int readIndex(const tinygltf::Model& model, const tinygltf::Accessor& a
             return 0;
     }
 }
+
+} // anonymous namespace
 
 bool isPlayerBodyPart(const std::string& name)
 {
