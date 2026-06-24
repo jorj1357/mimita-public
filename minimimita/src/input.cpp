@@ -18,7 +18,6 @@ static void handleNormalKeys(int key, bool pressed) {
                 gPlayer.position = gCurrentMap.spawnPosition;
                 gPlayer.velocity = glm::vec3(0.0f);
                 gPlayer.contacts.clear();
-                gPlayer.jumpAvailable = false;
             }
             break;
         case GLFW_KEY_F:

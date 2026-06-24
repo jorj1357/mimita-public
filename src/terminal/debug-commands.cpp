@@ -1,10 +1,13 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "physics/movement/physics-collision.h"
+#include "config/player-settings.h"
+#include "audio/audio.h"
 
 void registerDebugCommands()
 {
@@ -71,5 +74,47 @@ void registerDebugCommands()
             Terminal::instance().addLog(collisionStressRun(caseName));
         },
         "2026-06-21", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "debug_combat", "Enable combat calculation logging", "debug_combat <true|false>",
+        [](const std::vector<std::string>& args) {
+            bool& enabled = GetPlayerSettings().debugCombat;
+            enabled = args.empty() ? !enabled : (args[0] == "true" || args[0] == "1");
+            SavePlayerSettings();
+            Terminal::instance().addLog(std::string("[DEBUG] debug_combat=") + (enabled ? "true" : "false"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "sound_debug", "Toggle centralized sound logs", "sound_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            bool enabled = args.empty() ? !AudioManager::instance().debug() : args[0] != "0";
+            AudioManager::instance().setDebug(enabled);
+            Terminal::instance().addLog(std::string("[SOUND] debug ") + (enabled ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "dbgvis", "Master toggle for all debug visuals", "dbgvis <0|1>",
+        [](const std::vector<std::string>& args) {
+            bool enabled = args.empty() ? !DebugVis::masterEnabled() : args[0] != "0";
+            DebugVis::setMasterEnabled(enabled);
+            DebugVis::saveConfig();
+            Terminal::instance().addLog(std::string("[DEBUG VISUALS] ") + (enabled ? "enabled" : "disabled"));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "debugvis_status", "Show debug visualization status", "debugvis_status",
+        [](const std::vector<std::string>&) {
+            int enabled = DebugVis::masterEnabled() ? 1 : 0;
+            std::string configPath = "config/debug/debug-settings.json";
+            int configLoaded = std::filesystem::exists(configPath) ? 1 : 0;
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "debugVisualizationEnabled=%d\n"
+                "configLoaded=%d\n"
+                "configPath=%s",
+                enabled, configLoaded, configPath.c_str());
+            Terminal::instance().addLog(buf);
+        }
     });
 }
