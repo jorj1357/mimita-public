@@ -43,14 +43,14 @@ void doGroundReturn(
         return;
 
     // only usable once until touching an object
-    if (!p.groundReturnAvailable)
+    if (!p.groundReturn.available)
     {
         GR_LOG("[GROUND_RETURN] blocked (not available)\n");
         return;
     }
 
     // block if already grounded
-    if (p.onGround)
+    if (p.ground.onGround)
     {
         GR_LOG("[GROUND_RETURN] blocked (already grounded)\n");
         return;
@@ -64,7 +64,7 @@ void doGroundReturn(
     p.vel.z = GROUND_RETURN_SPEED;
 
     // consume ability until next surface touch
-    p.groundReturnAvailable = false;
+    p.groundReturn.available = false;
 
     GR_LOG(
         "[GROUND_RETURN] EXECUTE vel.z %.3f -> %.3f\n",

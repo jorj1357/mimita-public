@@ -24,8 +24,8 @@ void doAirDash(
 
     if (!triggerPressed) return;
     if (!airborne) return;
-    if (!p.dashAvailable) return;
-    if (p.freezeActive) return;
+    if (!p.dash.dashAvailable) return;
+    if (p.freeze.freezeActive) return;
 
     glm::vec2 dashDir = wishMoveXY;
 
@@ -46,10 +46,10 @@ void doAirDash(
     p.vel.x += dashDir.x * impulse;
     p.vel.y += dashDir.y * impulse;
 
-    p.dashAvailable = false;
-    p.didDash = true;
-    p.lastDashQuality = (int)quality;
-    p.airJumpsLeft = 0;
+    p.dash.dashAvailable = false;
+    p.dash.didDash = true;
+    p.dash.lastDashQuality = (int)quality;
+    p.jump.airJumpsLeft = 0;
 
     DASH_LOG(
         "[AIR_DASH] dir=(%.2f %.2f) impulse=%.1f mult=%.2f quality=%d ticks=%d\n",
@@ -67,13 +67,13 @@ void doDash(
     if (!dashPressed)
         return;
 
-    if (!p.dashAvailable)
+    if (!p.dash.dashAvailable)
     {
         DASH_LOG("[DASH][FAIL] dash already used\n");
         return;
     }
 
-    if (p.freezeActive)
+    if (p.freeze.freezeActive)
         return;
 
     glm::vec2 dashDir = wishMoveXY;
@@ -99,8 +99,8 @@ void doDash(
         p.externalImpulse.y = clamped.y;
     }
 
-    p.dashAvailable = false;
-    p.didDash = true;
+    p.dash.dashAvailable = false;
+    p.dash.didDash = true;
 
     DASH_LOG(
         "[DASH] dir=(%.2f %.2f) impulse=(%.2f %.2f)\n",

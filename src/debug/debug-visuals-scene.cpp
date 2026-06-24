@@ -71,7 +71,7 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
     if (DebugConfig::DEBUG_COLLISION_PLAYER) {
         Capsule cap = player.getCapsule();
-        glm::vec4 capColor = player.stableOnGround
+        glm::vec4 capColor = player.ground.stableOnGround
             ? glm::vec4(0.0f, 1.0f, 0.0f, 0.6f)
             : glm::vec4(1.0f, 0.3f, 0.0f, 0.6f);
         drawWireSphere(camera, cap.a, cap.r, capColor);
@@ -84,9 +84,9 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         }
 
         char info[128];
-        if (player.stableOnGround) {
+        if (player.ground.stableOnGround) {
             snprintf(info, sizeof(info), "GROUNDED stable=%d lostTimer=%.3f",
-                     (int)player.onGround, player.groundLostTimer);
+                     (int)player.ground.onGround, player.ground.groundLostTimer);
         } else {
             snprintf(info, sizeof(info), "AIR vel.z=%.2f",
                      player.vel.z);
@@ -133,7 +133,7 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                           collider.name.c_str(), limbColor);
         }
 
-        if (player.hasWeaponCollisionCapsule) {
+        if (player.collision.hasWeaponCollisionCapsule) {
             const glm::vec4 weaponColor{1.0f, 0.85f, 0.15f, 0.9f};
             const Capsule& weaponCap = player.weaponCollisionCapsule;
             drawCapsuleWire(camera, weaponCap, weaponColor);

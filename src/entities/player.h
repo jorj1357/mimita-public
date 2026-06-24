@@ -164,6 +164,64 @@ extern PlayerProceduralConfig gPlayerProcedural;
 // Uses wall-clock 250ms throttle internally.
 void updatePlayerProceduralHotReload(float dt);
 
+// -------- State Groups (prevents duplicate state variables) --------
+struct GroundState {
+    bool onGround = false;
+    bool stableOnGround = true;
+    bool wasOnGround = false;
+    bool hasWorldContact = false;
+    bool realWorldContactThisFrame = false;
+    float groundLostTimer = 0.0f;
+    float airborneTimer = 0.0f;
+    float landingCooldown = 0.0f;
+    float worldContactLostTimer = 0.0f;
+    bool didLand = false;
+};
+
+struct JumpState {
+    int airJumpsLeft = 1;
+    bool jumpHeldPrev = false;
+    bool airJumpLocked = false;
+    bool airJumpArmed = false;
+    float jumpIntentTimer = 0.0f;
+    float coyoteTimer = 0.0f;
+    bool jumpConsumed = false;
+    bool didGroundJump = false;
+    bool didAirJump = false;
+    float jumpSoundTimer = 0.0f;
+};
+
+struct DashState {
+    bool dashAvailable = true;
+    bool downDashAvailable = true;
+    bool dashHeldPrev = false;
+    bool moveHeldPrev = false;
+    int dashMovementTicks = 0;
+    int lastDashQuality = 0;
+    bool didDash = false;
+};
+
+struct FreezeState {
+    bool freezeAvailable = true;
+    bool freezeHeldPrev = false;
+    bool freezeActive = false;
+    float freezeTimer = 0.0f;
+    bool freezeHoldSoundPlayed = false;
+    bool didFreeze = false;
+};
+
+struct CollisionState {
+    int stuckFrames = 0;
+    float bounceCooldown = 0.0f;
+    bool hasWeaponCollisionCapsule = false;
+};
+
+struct GroundReturnState {
+    bool available = true;
+    int charges = 0;
+    float rechargeTimer = 0.0f;
+};
+
 class Player {
 public:
     std::string username = "admin";
@@ -190,90 +248,21 @@ public:
     glm::vec3 externalImpulse{0.0f};
     glm::vec2 inputWishMove{0.0f};
 
-    bool onGround = false;
     float yaw = 0.0f;
 
-    // -------- Jump --------
-    int airJumpsLeft = 1;
-    bool jumpHeldPrev = false;
-    // so we dont use air jump on ground
-    bool airJumpLocked = false;
-    // so we press space to air jump, not let go of space
-    bool airJumpArmed = false;
-    float jumpIntentTimer = 0.0f;
-    float coyoteTimer = 0.0f;
-    bool jumpConsumed = false;   // prevents hold-to-multi-ground-jump
-    float landingCooldown = 0.0f; // prevents landing event spam
-    bool hasWorldContact = false;
-    float worldContactLostTimer = 0.0f;
-    bool realWorldContactThisFrame = false;
-
-    // -------- Dash --------
-    // mar 8 2026, no dashcharges, its airjump style, touch object = get a dash back
-    // int dashCharges = 3;
-    // mar 7 2026 we need to remove cooldowns i think?
-    // i want less cooldowns less waiting no waiting at all
-    // but spamming moves intrinsically limits itself
-    // bc dash will go infinite, but u gain so much speed that u end up crashing into a wall
-    // and dying
-    // removing the need for a artificial cooldown
-    // plauers will cool themselves down
-    // float dashRechargeTimer = 0.0f;
-    // float dashCooldown = 0.0f;
-    // no holding it to dash forever 1000/sec
-    bool dashHeldPrev = false;
-    bool moveHeldPrev = false;
-
-    // reset dash when touching object mar 8 2026
-    bool dashAvailable = true;
-    int dashMovementTicks = 0;
-    int lastDashQuality = 0;
-
-    // -------- Ground Return --------
-    // old mar 8 2026
-    // uncommented but whatever set to 0 mar 8 2026
-    // int   groundReturnCharges = 3;
-    int   groundReturnCharges = 0;
-    float groundReturnRechargeTimer = 0.0f;
-
-    // new cool mar 8 2026 reset when touching smth 
-    bool groundReturnAvailable = true;
-
-    // -------- Down Dash --------
-    bool downDashAvailable = true;
-
-    // -------- Freeze --------
-    bool freezeAvailable = true;
-    bool freezeHeldPrev = false;
-    bool freezeActive = false;
-
-    float freezeTimer = 0.0f;
-
-    // -------- Freeze sounds --------
-    bool freezeHoldSoundPlayed = false;
-
-    // -------- One-Frame Events (set by physics) --------
-    bool didGroundJump = false;
-    bool didAirJump    = false;
-    bool didDash       = false;
-    bool didLand       = false;
-    bool didFreeze     = false;
+    // -------- Grouped State --------
+    GroundState ground;
+    JumpState jump;
+    DashState dash;
+    FreezeState freeze;
+    CollisionState collision;
+    GroundReturnState groundReturn;
 
     // -------- Body/weapon collision push (debug) --------
     glm::vec3 debugBodyCollisionPush{0.0f};
     glm::vec3 debugWeaponCollisionPush{0.0f};
 
-    // -------- Audio helpers --------
-    bool  wasOnGround = false;
-
-    float groundLostTimer = 0.0f;
-    float airborneTimer   = 0.0f;
-    bool  stableOnGround  = true;
-    int collisionStuckFrames = 0;
-    float collisionBounceCooldown = 0.0f;
-
     float footstepTimer = 0.0f;
-    float jumpSoundTimer = 0.0f;
 
     // -------- Weapon / Aiming --------
     glm::vec3 aimDirection{0.0f, 1.0f, 0.0f};  // Camera forward for aiming
@@ -346,7 +335,6 @@ public:
 
     // Previous frame body sample positions for limb sweep collisions
     std::vector<glm::vec3> previousBodySamplePositions;
-    bool hasWeaponCollisionCapsule = false;
     Capsule weaponCollisionCapsule{};
     std::string weaponCollisionName;
 

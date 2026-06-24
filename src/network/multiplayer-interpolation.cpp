@@ -84,7 +84,7 @@ void updateRenderedReplica(
     player.yaw = angleLerpDegrees(interpolation.previous.yaw, interpolation.target.yaw, t);
     player.currentHp = interpolation.target.health;
     player.dead = interpolation.target.health <= 0;
-    player.onGround = interpolation.target.onGround;
+    player.ground.onGround = interpolation.target.onGround;
     player.equippedSlot = interpolation.target.equippedSlot;
     {
         // Look up weapon ID from slot for animation system
@@ -113,7 +113,7 @@ void updateRenderedReplica(
     // Detect dash serial change → trigger dash effect locally
     if (interpolation.target.lastDashSerial != player.networkLastDashSerial)
     {
-        player.didDash = true;
+        player.dash.didDash = true;
         player.networkLastDashSerial = interpolation.target.lastDashSerial;
         EffectPartSystem::instance().spawnDash(player.pos);
         printf("[NET DASH] remote dash serial=%u\n",

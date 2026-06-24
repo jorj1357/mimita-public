@@ -55,7 +55,7 @@ void Player::reset()
     pos = {1,5,60};
     vel = {0,0,0};
     externalImpulse = {0,0,0};
-    onGround = false;
+    ground.onGround = false;
     currentHp = maxHp;
     dead = false;
     proceduralFrozen = false;
@@ -64,28 +64,26 @@ void Player::reset()
     killedBy.clear();
     respawnPosition = pos;
 
-    // put this here so idk? mar 7 2026
-    jumpHeldPrev = false;
-    moveHeldPrev = false;
-    dashHeldPrev = false;
-    jumpIntentTimer = 0.0f;
-    coyoteTimer = 0.0f;
-    airJumpsLeft = 1;
-    // dashCharges = DASH_MAX_CHARGES;
-    groundReturnCharges = GROUND_RETURN_MAX_CHARGES;
+    jump.jumpHeldPrev = false;
+    dash.moveHeldPrev = false;
+    dash.dashHeldPrev = false;
+    jump.jumpIntentTimer = 0.0f;
+    jump.coyoteTimer = 0.0f;
+    jump.airJumpsLeft = 1;
+    groundReturn.charges = GROUND_RETURN_MAX_CHARGES;
 
-    freezeTimer = 0.0f;
-    freezeActive = false;
-    freezeAvailable = true;
-    freezeHeldPrev = false;
-    freezeHoldSoundPlayed = false;
+    freeze.freezeTimer = 0.0f;
+    freeze.freezeActive = false;
+    freeze.freezeAvailable = true;
+    freeze.freezeHeldPrev = false;
+    freeze.freezeHoldSoundPlayed = false;
 
     previousProceduralVelocity = glm::vec3(0.0f);
     proceduralTime = 0.0f;
     animStateTime = 0.0f;
     currentAnimName = "idle";
     equippedWeaponId.clear();
-    hasWeaponCollisionCapsule = false;
+    collision.hasWeaponCollisionCapsule = false;
     weaponCollisionCapsule = Capsule{};
     weaponCollisionName.clear();
 
@@ -118,14 +116,14 @@ void Player::syncLegacyStateToLayers()
     movementCapsule.velocity = vel;
     movementCapsule.radius = PLAYER_RADIUS;
     movementCapsule.height = PLAYER_HEIGHT;
-    movementCapsule.onGround = onGround;
+    movementCapsule.onGround = ground.onGround;
 }
 
 void Player::syncLayersToLegacyState()
 {
     pos = origin.position;
     vel = movementCapsule.velocity;
-    onGround = movementCapsule.onGround;
+    ground.onGround = movementCapsule.onGround;
 }
 
 void Player::updateModelWorldTransforms()
@@ -191,12 +189,12 @@ void Player::updateAudio(float dt)
 {
     // Jump sound debounce: prevent frame-after-frame spam during wall climb.
     // Only play if enough time has passed since the last jump sound.
-    jumpSoundTimer = std::max(0.0f, jumpSoundTimer - dt);
+    jump.jumpSoundTimer = std::max(0.0f, jump.jumpSoundTimer - dt);
 
-    if (didGroundJump) {
-        if (jumpSoundTimer <= 0.0f) {
+    if (jump.didGroundJump) {
+        if (jump.jumpSoundTimer <= 0.0f) {
             playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
-            jumpSoundTimer = 0.08f;
+            jump.jumpSoundTimer = 0.08f;
         }
         glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
@@ -206,10 +204,10 @@ void Player::updateAudio(float dt)
         HitEffects::spawnGroundJumpBurst(groundJumpPos, jumpDir);
     }
 
-    if (didAirJump) {
-        if (jumpSoundTimer <= 0.0f) {
+    if (jump.didAirJump) {
+        if (jump.jumpSoundTimer <= 0.0f) {
             playAirJumpSound();
-            jumpSoundTimer = 0.08f;
+            jump.jumpSoundTimer = 0.08f;
         }
         glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
@@ -219,23 +217,23 @@ void Player::updateAudio(float dt)
         HitEffects::spawnAirJumpBurst(airJumpPos, jumpDir);
     }
 
-    if (didDash) {
-        bool perfect = (lastDashQuality == 0);
+    if (dash.didDash) {
+        bool perfect = (dash.lastDashQuality == 0);
         playWorldSound("entity/player/dash", pos, perfect ? 1.3f : 1.0f, perfect ? 1.2f : 1.0f, 36.0f);
         glm::vec3 dashDir = glm::length(vel) > 0.001f ? glm::normalize(vel) : glm::vec3(0,1,0);
         HitEffects::spawnMovementDashBurst(pos, dashDir, glm::length(vel));
-        lastDashQuality = 0;
+        dash.lastDashQuality = 0;
     }
 
-    if (didFreeze) {
+    if (freeze.didFreeze) {
         playWorldSound("entity/player/freezebegin", pos, 1.0f, 1.0f, 30.0f);
         glm::vec3 freezePos = pos;
         freezePos.z -= 0.3f;
-        EffectPartSystem::instance().spawnFreeze(freezePos, freezeTimer);
+        EffectPartSystem::instance().spawnFreeze(freezePos, freeze.freezeTimer);
     }
 
     // Landing: sound + directional VFX
-    if (didLand) {
+    if (ground.didLand) {
         playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
         glm::vec3 landDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
@@ -248,7 +246,7 @@ void Player::updateAudio(float dt)
     // Walk VFX: directional ground spheres offset opposite travel direction
     glm::vec2 xy = glm::vec2(vel.x,vel.y);
     float speed = glm::length(xy);
-    if (stableOnGround && speed > 0.5f) {
+    if (ground.stableOnGround && speed > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
             playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
@@ -267,7 +265,7 @@ void Player::updateAudio(float dt)
         footstepTimer = 0.0f;
     }
 
-    didGroundJump = didAirJump = didDash = didLand = didFreeze = false;
+    jump.didGroundJump = jump.didAirJump = dash.didDash = ground.didLand = freeze.didFreeze = false;
 }
 
 void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce)

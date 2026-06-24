@@ -78,11 +78,11 @@ static void physicsMainUpdate_Internal(
     p.inputWishMove = wishMoveXY;
 
     // reset per-frame flags
-    p.didGroundJump = false;
-    p.didAirJump    = false;
-    p.didDash       = false;
-    p.didLand       = false;
-    p.didFreeze     = false;
+    p.jump.didGroundJump = false;
+    p.jump.didAirJump    = false;
+    p.dash.didDash       = false;
+    p.ground.didLand       = false;
+    p.freeze.didFreeze     = false;
 
     doGravity(p, dt);
 
@@ -92,7 +92,7 @@ static void physicsMainUpdate_Internal(
     doGroundReturn(p, groundReturnPressed, dt);
     // doDash(p, wishMoveXY, dashPressed, camForward, dt);
     // CHANGED: No dashVel — walk always runs when there's movement input, jun 6 2026
-    if (p.didDash && DebugConfig::DEBUG_INPUT)
+    if (p.dash.didDash && DebugConfig::DEBUG_INPUT)
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
     if (movementPressed)
@@ -104,9 +104,9 @@ static void physicsMainUpdate_Internal(
     bool groundedThisFrame = false;
 
     // World contact hysteresis: persist contact for a few frames after last actual contact.
-    p.worldContactLostTimer = std::max(0.0f, p.worldContactLostTimer - subdt);
-    p.hasWorldContact = p.worldContactLostTimer > 0.0f;
-    p.realWorldContactThisFrame = false;
+    p.ground.worldContactLostTimer = std::max(0.0f, p.ground.worldContactLostTimer - subdt);
+    p.ground.hasWorldContact = p.ground.worldContactLostTimer > 0.0f;
+    p.ground.realWorldContactThisFrame = false;
 
     for (int i = 0; i < steps; i++)
     {
@@ -116,21 +116,21 @@ static void physicsMainUpdate_Internal(
     // --------------------------------------------------
     // Immediately sync ground state from collision (source of truth)
     // BEFORE jump, friction, landing events.
-    // doJump may modify p.onGround (set false on jump).
+    // doJump may modify p.ground.onGround (set false on jump).
     // --------------------------------------------------
 
     // Save previous state for transition detection
-    bool prevOnGround = p.onGround;
-    bool prevStableOnGround = p.stableOnGround;
+    bool prevOnGround = p.ground.onGround;
+    bool prevStableOnGround = p.ground.stableOnGround;
 
-    p.onGround = groundedThisFrame;
+    p.ground.onGround = groundedThisFrame;
 
     if (groundedThisFrame)
-        p.groundLostTimer = 0.0f;
+        p.ground.groundLostTimer = 0.0f;
     else
-        p.groundLostTimer += dt;
+        p.ground.groundLostTimer += dt;
 
-    p.stableOnGround = groundedThisFrame || (p.groundLostTimer < 0.08f);
+    p.ground.stableOnGround = groundedThisFrame || (p.ground.groundLostTimer < 0.08f);
 
     // Floor-fall diagnostics
     if (DebugConfig::DEBUG_PHYSICS && !groundedThisFrame && p.vel.z < -5.0f)
@@ -144,83 +144,83 @@ static void physicsMainUpdate_Internal(
 
     // Track ticks with movement held while airborne for dash quality.
     if (!groundedThisFrame && movementPressed) {
-        if (p.dashMovementTicks < 99) p.dashMovementTicks++;
+        if (p.dash.dashMovementTicks < 99) p.dash.dashMovementTicks++;
     } else {
-        p.dashMovementTicks = 0;
+        p.dash.dashMovementTicks = 0;
     }
 
     // air dash
-    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
+    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dash.dashMovementTicks, dt, camForward);
     // down dash
     doDownDash(p, downDashPressed, dt);
 
-    // jump — now reads fresh p.onGround/p.stableOnGround
+    // jump — now reads fresh p.ground.onGround/p.ground.stableOnGround
     doJump(p, jumpHeld, jumpPressed, dt);
     if (DebugConfig::DEBUG_INPUT) {
-        if (p.didGroundJump)
+        if (p.jump.didGroundJump)
             Debug::log(Debug::Category::General, "[JUMP] start ground velocityZ=%.2f\n", p.vel.z);
-        else if (p.didAirJump)
+        else if (p.jump.didAirJump)
             Debug::log(Debug::Category::General, "[JUMP] start air velocityZ=%.2f remaining=%d\n",
-                       p.vel.z, p.airJumpsLeft);
+                       p.vel.z, p.jump.airJumpsLeft);
         else if (jumpHeld)
             Debug::log(Debug::Category::General,
                        "[JUMP] fail onGround=%d coyote=%.3f airJumps=%d locked=%d armed=%d\n",
-                       (int)p.onGround, p.coyoteTimer, p.airJumpsLeft,
-                       (int)p.airJumpLocked, (int)p.airJumpArmed);
+                       (int)p.ground.onGround, p.jump.coyoteTimer, p.jump.airJumpsLeft,
+                       (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
     }
 
     // reset ALL abilities when grounded (not just dash)
     if (groundedThisFrame)
     {
-        p.airJumpsLeft = AIR_JUMPS_MAX;
-        p.dashAvailable = true;
-        p.groundReturnAvailable = true;
-        p.downDashAvailable = true;
-        p.freezeAvailable = true;
+        p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+        p.dash.dashAvailable = true;
+        p.groundReturn.available = true;
+        p.dash.downDashAvailable = true;
+        p.freeze.freezeAvailable = true;
     }
 
-    doFriction(p, p.stableOnGround, dt);
+    doFriction(p, p.ground.stableOnGround, dt);
 
     // save previous airborne time BEFORE reset
-    float previousAirborneTime = p.airborneTimer;
+    float previousAirborneTime = p.ground.airborneTimer;
 
     // track stable airborne duration
-    if (p.stableOnGround)
-        p.airborneTimer = 0.0f;
+    if (p.ground.stableOnGround)
+        p.ground.airborneTimer = 0.0f;
     else
-        p.airborneTimer += dt;
+        p.ground.airborneTimer += dt;
 
     // Debug: log grounded/contact state transitions (rate-limited)
     if (DebugConfig::DEBUG_PHYSICS) {
         static float groundedDebugTimer = 0.0f;
         groundedDebugTimer += dt;
-        if (p.onGround != prevOnGround || groundedDebugTimer >= 1.0f)
+        if (p.ground.onGround != prevOnGround || groundedDebugTimer >= 1.0f)
         {
             Debug::logThrottled(Debug::Category::Physics, "grounded", 0.5f,
                 "[GROUND] raw=%d stable=%d lostTimer=%.4f airborneTimer=%.4f worldContact=%.4f didLand=%d jumpConsumed=%d landingCD=%.3f airJmp=%d locked=%d armed=%d\n",
-                (int)groundedThisFrame, (int)p.stableOnGround, p.groundLostTimer,
-                previousAirborneTime, p.worldContactLostTimer, (int)p.didLand,
-                (int)p.jumpConsumed, p.landingCooldown,
-                p.airJumpsLeft, (int)p.airJumpLocked, (int)p.airJumpArmed);
+                (int)groundedThisFrame, (int)p.ground.stableOnGround, p.ground.groundLostTimer,
+                previousAirborneTime, p.ground.worldContactLostTimer, (int)p.ground.didLand,
+                (int)p.jump.jumpConsumed, p.ground.landingCooldown,
+                p.jump.airJumpsLeft, (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
             groundedDebugTimer = 0.0f;
         }
-        if (p.hasWorldContact && p.worldContactLostTimer > 0.0f)
+        if (p.ground.hasWorldContact && p.ground.worldContactLostTimer > 0.0f)
             Debug::logThrottled(Debug::Category::Physics, "worldcontact", 0.5f,
                 "[CONTACT] active timer=%.4f airJumps=%d dash=%d groundReturn=%d\n",
-                p.worldContactLostTimer, p.airJumpsLeft, (int)p.dashAvailable, (int)p.groundReturnAvailable);
+                p.ground.worldContactLostTimer, p.jump.airJumpsLeft, (int)p.dash.dashAvailable, (int)p.groundReturn.available);
     }
 
     // Landing event: fires once per real landing using stableOnGround transition.
-    p.landingCooldown = std::max(0.0f, p.landingCooldown - dt);
-    bool stableLanding = !prevStableOnGround && p.stableOnGround;
-    if (stableLanding && previousAirborneTime > 0.08f && p.landingCooldown <= 0.0f)
+    p.ground.landingCooldown = std::max(0.0f, p.ground.landingCooldown - dt);
+    bool stableLanding = !prevStableOnGround && p.ground.stableOnGround;
+    if (stableLanding && previousAirborneTime > 0.08f && p.ground.landingCooldown <= 0.0f)
     {
-        p.didLand = true;
-        p.landingCooldown = 0.3f;
+        p.ground.didLand = true;
+        p.ground.landingCooldown = 0.3f;
     }
 
     // store stable state for next frame
-    p.wasOnGround = p.stableOnGround;
+    p.ground.wasOnGround = p.ground.stableOnGround;
 
     updateVisualFacingFromCamera(p, camForward, dt);
 

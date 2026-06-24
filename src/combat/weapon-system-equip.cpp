@@ -64,7 +64,7 @@ void WeaponSystem::unequip(Player& player) {
     player.equippedSlot = 0;
     player.hasValidWeapon = false;
     player.equippedWeaponId.clear();
-    player.hasWeaponCollisionCapsule = false;
+    player.collision.hasWeaponCollisionCapsule = false;
     player.weaponCollisionName.clear();
     mCurrentSlot = 0;
     mCurrentWeaponId.clear();

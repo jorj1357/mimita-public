@@ -6,14 +6,9 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
 #include "world/world.h"
+#include "npc/npc-internal.h"
 
 namespace {
-
-float random01(unsigned int& state)
-{
-    state = state * 1664525u + 1013904223u;
-    return (float)((state >> 8) & 0x00ffffffu) / (float)0x01000000u;
-}
 
 // Simple line-vs-triangle intersection
 bool rayTriangleIntersect(glm::vec3 origin, glm::vec3 dir, const CollisionTriangle& tri, float maxT, float& outT)
@@ -110,7 +105,7 @@ bool NpcNavigation::isStuck(const Npc& npc)
     bool tryingMove = glm::length(npc.lastMoveInput) > 0.1f;
     glm::vec3 moved = npc.body.pos - npc.previousPosition;
     float moveSpeed = glm::length(moved);
-    bool groundedAndSlow = npc.body.onGround && moveSpeed < 0.02f;
+    bool groundedAndSlow = npc.body.ground.onGround && moveSpeed < 0.02f;
     return tryingMove && groundedAndSlow;
 }
 

@@ -28,7 +28,7 @@ class Player;
 // - Debug heavy
 // - No collision logic
 // - No audio
-// - Caller controls p.onGround before calling
+// - Caller controls p.ground.onGround before calling
 void doJump(
     Player& p,
     bool jumpHeld,

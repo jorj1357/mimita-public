@@ -130,7 +130,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                              const World* world) {
     loadModel(def ? def->modelPath : "");
     if (world)
-        player.hasWeaponCollisionCapsule = false;
+        player.collision.hasWeaponCollisionCapsule = false;
     if (updatePlayerPose)
         player.updateModelWorldTransforms();
 
@@ -199,7 +199,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             // Weapon collision capsule tracking (visual-only, resolved in draw)
             Capsule weaponCap = weaponCapsuleFromTransform(
                 weaponTransform, collisionGrip, collisionMuzzle, collisionRadius);
-            player.hasWeaponCollisionCapsule = true;
+            player.collision.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
 
             // Store local-space weapon data so physics can recompute

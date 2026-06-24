@@ -67,10 +67,10 @@ void doFreeze(
     // EDGE DETECT
     // --------------------------------------------------
 
-    bool freezeJustPressed = freezeHeld && !p.freezeHeldPrev;
-    bool freezeJustReleased = !freezeHeld && p.freezeHeldPrev;
+    bool freezeJustPressed = freezeHeld && !p.freeze.freezeHeldPrev;
+    bool freezeJustReleased = !freezeHeld && p.freeze.freezeHeldPrev;
 
-    p.freezeHeldPrev = freezeHeld;
+    p.freeze.freezeHeldPrev = freezeHeld;
 
 
     // --------------------------------------------------
@@ -79,7 +79,7 @@ void doFreeze(
 
     if (freezeJustPressed)
     {
-        if (!p.freezeAvailable)
+        if (!p.freeze.freezeAvailable)
         {
             FREEZE_LOG("[FREEZE] blocked (not available)\n");
             return;
@@ -87,12 +87,12 @@ void doFreeze(
 
         // set velocit to 0 here? idk
         p.vel = glm::vec3(0.0f);
-        p.freezeActive = true;
-        p.freezeTimer = 0.0f;
-        p.freezeAvailable = false;
-        p.freezeHoldSoundPlayed = false;
+        p.freeze.freezeActive = true;
+        p.freeze.freezeTimer = 0.0f;
+        p.freeze.freezeAvailable = false;
+        p.freeze.freezeHoldSoundPlayed = false;
 
-        p.didFreeze = true;
+        p.freeze.didFreeze = true;
 
         FREEZE_LOG("[FREEZE] begin\n");
     }
@@ -102,9 +102,9 @@ void doFreeze(
     // END FREEZE
     // --------------------------------------------------
 
-    if (freezeJustReleased && p.freezeActive)
+    if (freezeJustReleased && p.freeze.freezeActive)
     {
-        p.freezeActive = false;
+        p.freeze.freezeActive = false;
 
         FREEZE_LOG("[FREEZE] end\n");
 
@@ -115,20 +115,20 @@ void doFreeze(
     // HOLD FREEZE
     // --------------------------------------------------
 
-    if (!p.freezeActive)
+    if (!p.freeze.freezeActive)
         return;
 
-    p.freezeTimer += dt;
+    p.freeze.freezeTimer += dt;
 
-    if (!p.freezeHoldSoundPlayed && p.freezeTimer >= 999.0f)
+    if (!p.freeze.freezeHoldSoundPlayed && p.freeze.freezeTimer >= 999.0f)
     {
-        p.freezeHoldSoundPlayed = true;
+        p.freeze.freezeHoldSoundPlayed = true;
     }
 
-    if (p.freezeTimer > FREEZE_MAX_TIME)
-        p.freezeTimer = FREEZE_MAX_TIME;
+    if (p.freeze.freezeTimer > FREEZE_MAX_TIME)
+        p.freeze.freezeTimer = FREEZE_MAX_TIME;
 
-    float mult = freezeVelocityMultiplier(p.freezeTimer);
+    float mult = freezeVelocityMultiplier(p.freeze.freezeTimer);
 
     // reduce velocity
 
@@ -144,14 +144,14 @@ void doFreeze(
     // testing this might not work mar 8 2026 
     // freeze controls gravity influence instead of scaling velocity
 
-    // float gravityScale = freezeVelocityMultiplier(p.freezeTimer);
+    // float gravityScale = freezeVelocityMultiplier(p.freeze.freezeTimer);
 
     // // apply scaled gravity manually
     // p.vel.z += PHYS.gravity * gravityScale * dt;
 
     FREEZE_LOG(
         "[FREEZE] t=%.2f mult=%.3f\n",
-        p.freezeTimer,
+        p.freeze.freezeTimer,
         mult
     );
 

@@ -27,7 +27,7 @@ static bool computeBodyPartCenter(
 
 void recomputeWeaponCapsule(Player& p)
 {
-    if (!p.hasWeaponCollisionCapsule)
+    if (!p.collision.hasWeaponCollisionCapsule)
         return;
 
     for (const PhysicalBodyPart& part : p.physicalBody.parts)
@@ -42,7 +42,7 @@ void recomputeWeaponCapsule(Player& p)
         return;
     }
 
-    p.hasWeaponCollisionCapsule = false;
+    p.collision.hasWeaponCollisionCapsule = false;
 }
 
 // Collect sphere samples from all body parts + weapon for contact testing.
@@ -74,7 +74,7 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
     }
 
     // 2. Weapon capsule spheres
-    if (p.hasWeaponCollisionCapsule)
+    if (p.collision.hasWeaponCollisionCapsule)
     {
         const Capsule& wc = p.weaponCollisionCapsule;
         for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)

@@ -44,7 +44,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.pos = ctx.localServerPosition;
         player.vel = ctx.localServerVelocity;
         player.yaw = ctx.localServerYaw;
-        player.onGround = ctx.localServerOnGround;
+        player.ground.onGround = ctx.localServerOnGround;
         player.externalImpulse = glm::vec3(0.0f);
         player.syncLegacyStateToLayers();
         player.updateModelWorldTransforms();
