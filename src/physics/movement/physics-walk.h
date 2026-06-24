@@ -14,16 +14,16 @@
 
 class Player;
 
-// Handles horizontal walk / air steer
+// Handles horizontal walk — ground only. No air acceleration.
 // - Uses physics/config.h
-// - Debug heavy
 // - No friction
 // - No dash
 // - No collision
 // - No gravity
-// - Only modifies p.vel.x / p.vel.y
+// - Only modifies p.vel.x / p.vel.y while grounded
 void doWalk(
     Player& p,
     const glm::vec2& wishMoveXY,
+    bool onGround,
     float dt
 );

@@ -11,8 +11,7 @@
 //
 // Purpose:
 // - Ground walk (instant response)
-// - Air steering
-// - Momentum preservation
+// - NO air acceleration
 //
 // Uses physics/config.h
 // Debug heavy
@@ -41,9 +40,17 @@
 void doWalk(
     Player& p,
     const glm::vec2& wishMoveXY,
+    bool onGround,
     float dt
 ) {
     dt = std::min(dt, 0.033f);
+
+    // No air acceleration. Movement input only affects velocity while grounded.
+    if (!onGround)
+    {
+        WALK_LOG("[WALK] Airborne — no acceleration\n");
+        return;
+    }
 
     float wishLen = glm::length(wishMoveXY);
 
@@ -57,10 +64,8 @@ void doWalk(
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velXY(p.vel.x, p.vel.y);
 
-    // Accel toward target speed along wish direction.
-    // Only increases velocity along the wish axis — never destroys
-    // perpendicular velocity (dash, knockback, recoil, explosions).
-    // If already above target speed (dash momentum), movement does nothing.
+    // Set velocity to target speed along wish direction.
+    // Preserves perpendicular velocity (dash, knockback, recoil).
     float targetSpeed = PHYS.moveSpeed;
     float alongCurrent = glm::dot(velXY, wishDir);
     if (alongCurrent < targetSpeed)

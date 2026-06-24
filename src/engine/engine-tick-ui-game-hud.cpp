@@ -140,7 +140,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             "jmpI:%.2f aj:%d da:%d grAv:%d ddAv:%d jc:%d",
             player.jump.jumpIntentTimer, player.jump.airJumpsLeft,
             (int)player.dash.dashAvailable, (int)player.groundReturn.available,
-            (int)player.dash.downDashAvailable, (int)player.jump.jumpConsumed);
+                    (int)player.dash.downDashAvailable);
         uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f}); y += 16;
         float feetZ = player.pos.z - PLAYER_HEIGHT * 0.5f;
         snprintf(dbg, sizeof(dbg),

@@ -66,7 +66,7 @@ void doJump(
 
     // ---------------- INTENT MANAGEMENT ----------------
     // Holding Space keeps jump intent alive every frame.
-    // This enables auto-bhop: landing while holding Space causes immediate re-jump.
+    // This enables continuous jump attempts: landing while holding Space causes immediate re-jump.
     if (jumpHeld)
         p.jump.jumpIntentTimer = JUMP_BUFFER_TIME;
 
@@ -80,7 +80,6 @@ void doJump(
     {
         p.jump.airJumpArmed = true;
         p.jump.airJumpLocked = false;
-        p.jump.jumpConsumed = false;
     }
 
     p.jump.jumpHeldPrev = jumpHeld;
@@ -92,8 +91,8 @@ void doJump(
     if (!wantsJump)
         return;
 
-    // ---------------- GROUND JUMP ----------------
-    if (onActualGround && !p.jump.jumpConsumed) {
+    // ---------------- GROUND JUMP (continuous while holding Space) ----------------
+    if (onActualGround) {
         float beforeVel = p.vel.z;
 
         p.dash.dashAvailable = true;
@@ -105,7 +104,6 @@ void doJump(
         p.jump.airJumpLocked = true;
         p.jump.airJumpArmed = false;
         p.jump.didGroundJump = true;
-        p.jump.jumpConsumed = true;
 
         JUMP_LOG(
             "[JUMP] GROUND vel.z %.3f -> %.3f | airJumps=%d\n",
@@ -116,15 +114,14 @@ void doJump(
         return;
     }
 
-    // ---------------- WORLD CONTACT JUMP ----------------
-    if (p.ground.hasWorldContact && !p.jump.jumpConsumed) {
+    // ---------------- WORLD CONTACT JUMP (continuous while holding Space) ----------------
+    if (p.ground.hasWorldContact) {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
         p.jump.jumpIntentTimer = 0.0f;
         p.jump.airJumpsLeft = AIR_JUMPS_MAX;
         p.jump.didGroundJump = true;
-        p.jump.jumpConsumed = true;
 
         JUMP_LOG(
             "[JUMP] WORLD CONTACT vel.z %.3f -> %.3f | airJumps=%d\n",
