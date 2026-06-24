@@ -43,7 +43,6 @@ inline float FRICTION_AMOUNT = 0.2f;
 inline float GROUND_FRICTION_ACCEL_AMOUNT = 0.2f;
 inline float GROUND_FRICTION_AMOUNT = 10.0f;
 inline float AIR_FRICTION_AMOUNT = 2.0f;
-inline float AIR_ACCEL_AMOUNT = 50.0f;
 inline float DRAG_FRICTION_MULTIPLIER = 0.25f;
 inline float OPPOSITE_FRICTION_AMOUNT = 0.99f;
 inline float DASH_IMPULSE = 100.0f;

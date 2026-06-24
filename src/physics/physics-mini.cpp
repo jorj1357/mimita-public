@@ -90,13 +90,9 @@ static void physicsMainUpdate_Internal(
     doFreeze(p, freezeHeld, dt);
 
     doGroundReturn(p, groundReturnPressed, dt);
-    // doDash(p, wishMoveXY, dashPressed, camForward, dt);
-    // CHANGED: No dashVel — walk always runs when there's movement input, jun 6 2026
     if (p.dash.didDash && DebugConfig::DEBUG_INPUT)
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
-    if (movementPressed)
-        doWalk(p, wishMoveXY, dt);
 
     int steps = 6;
     float subdt = dt / steps;
@@ -169,6 +165,10 @@ static void physicsMainUpdate_Internal(
                        (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
     }
 
+    // Walk applies movement input — only while grounded. No air acceleration.
+    if (movementPressed)
+        doWalk(p, wishMoveXY, groundedThisFrame, dt);
+
     // reset ALL abilities when grounded (not just dash)
     if (groundedThisFrame)
     {
@@ -197,10 +197,10 @@ static void physicsMainUpdate_Internal(
         if (p.ground.onGround != prevOnGround || groundedDebugTimer >= 1.0f)
         {
             Debug::logThrottled(Debug::Category::Physics, "grounded", 0.5f,
-                "[GROUND] raw=%d stable=%d lostTimer=%.4f airborneTimer=%.4f worldContact=%.4f didLand=%d jumpConsumed=%d landingCD=%.3f airJmp=%d locked=%d armed=%d\n",
+                "[GROUND] raw=%d stable=%d lostTimer=%.4f airborneTimer=%.4f worldContact=%.4f didLand=%d landingCD=%.3f airJmp=%d locked=%d armed=%d\n",
                 (int)groundedThisFrame, (int)p.ground.stableOnGround, p.ground.groundLostTimer,
                 previousAirborneTime, p.ground.worldContactLostTimer, (int)p.ground.didLand,
-                (int)p.jump.jumpConsumed, p.ground.landingCooldown,
+                p.ground.landingCooldown,
                 p.jump.airJumpsLeft, (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
             groundedDebugTimer = 0.0f;
         }
