@@ -61,49 +61,6 @@ void setMat4(GLuint shader, const char* name, const glm::mat4& m)
     glUniformMatrix4fv(uniformLoc(shader, name), 1, GL_FALSE, &m[0][0]);
 }
 
-static GLuint gSkyVao = 0;
-static GLuint gSkyVbo = 0;
-static size_t gSkyBuiltVertCount = 0;
-static size_t gSkyBuiltBatchCount = 0;
-static uint64_t gSkyBuiltRevision = 0;
-
-static void uploadSkyIfNeeded(const World& world)
-{
-    const Mesh& mesh = world.skyMesh;
-    if (mesh.verts.empty()) return;
-
-    if (mesh.verts.size() == gSkyBuiltVertCount &&
-        mesh.batches.size() == gSkyBuiltBatchCount &&
-        world.renderRevision == gSkyBuiltRevision)
-        return;
-
-    if (!gSkyVao) {
-        glGenVertexArrays(1, &gSkyVao);
-        glGenBuffers(1, &gSkyVbo);
-    }
-
-    glBindVertexArray(gSkyVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gSkyVbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 mesh.verts.size() * sizeof(Vertex),
-                 mesh.verts.data(),
-                 GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    gSkyBuiltVertCount = mesh.verts.size();
-    gSkyBuiltBatchCount = mesh.batches.size();
-    gSkyBuiltRevision = world.renderRevision;
-}
-
 void uploadMeshIfNeeded(const World& world)
 {
     const Mesh& mesh = world.mesh;
@@ -143,6 +100,8 @@ void uploadMeshIfNeeded(const World& world)
     MIMITA_GL_CHECK("uploadMeshIfNeeded complete");
 }
 
+} // anonymous namespace
+
 void setUniforms(GLuint shader)
 {
     const auto& cfg = LightingConfig::instance();
@@ -164,7 +123,6 @@ void setUniforms(GLuint shader)
     setFloat(shader, "uTextureContrast", cfg.textureContrast());
     setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
 
-    // Shadow uniforms
     bool shadowsEnabled = scfg.enabled() && shadowDepthTex() != 0;
     setInt(shader, "uShadowsEnabled", shadowsEnabled ? 1 : 0);
     if (shadowsEnabled) {
@@ -176,21 +134,14 @@ void setUniforms(GLuint shader)
         setFloat(shader, "uShadowSoftness", scfg.shadowSoftness());
         glm::vec3 tint = scfg.shadowTint();
         setVec3(shader, "uShadowTint", tint);
-        // Restore active texture unit to 0 after bindShadowMap changed it to 1
         glActiveTexture(GL_TEXTURE0);
     }
 }
-
-} // namespace
 
 void setWorldSolidRedDebug(bool enabled) { gSolidRedDebug = enabled; }
 bool worldSolidRedDebug() { return gSolidRedDebug; }
 
 bool gWorldTextureDebug = false;
-
-// Backface rendering control.
-// True  = disable backface culling (interior surfaces visible).
-// False = enable backface culling (interior surfaces hidden).
 bool gRenderBackfaces = true;
 
 void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP)
@@ -221,44 +172,6 @@ void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& 
     glUseProgram(0);
 }
 
-void renderSky(const World& world, const Camera& cam)
-{
-    if (!gRenderer || !gRenderer->shaderProgram || world.skyMesh.verts.empty())
-        return;
-
-    auto& mesh = world.skyMesh;
-    uploadSkyIfNeeded(world);
-
-    GLuint shader = gRenderer->shaderProgram;
-    glUseProgram(shader);
-
-    // Depth disabled: sky renders behind everything
-    glDisable(GL_DEPTH_TEST);
-
-    // Model matrix: follow camera position (sky is infinitely distant)
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), cam.pos);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &model[0][0]);
-
-    glm::mat4 view = cam.getView();
-    glm::mat4 proj = cam.getProj((float)gRenderer->width, (float)gRenderer->height);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &proj[0][0]);
-
-    setUniforms(shader);
-
-    glBindVertexArray(gSkyVao);
-    for (const auto& batch : mesh.batches)
-    {
-        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
-    }
-    glBindVertexArray(0);
-    glUseProgram(0);
-
-    glEnable(GL_DEPTH_TEST);
-}
-
 void renderWorld(const World& world, const Camera& cam)
 {
     if (!gRenderer || !gRenderer->shaderProgram)
@@ -281,8 +194,6 @@ void renderWorld(const World& world, const Camera& cam)
     MIMITA_GL_CLEAR_STAGE("renderWorld");
     uploadMeshIfNeeded(world);
 
-    // Manage backface culling so interior surfaces (e.g. holes cut
-    // into geometry) are visible.  Default: culling OFF.
     if (gRenderBackfaces)
         glDisable(GL_CULL_FACE);
     else
@@ -353,7 +264,6 @@ void renderWorld(const World& world, const Camera& cam)
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
 
-    // Debug: visualize face normals (green = front face, red = back face)
     if (DebugVis::normals())
     {
         const std::vector<Vertex>& verts = mesh.verts;
@@ -367,11 +277,10 @@ void renderWorld(const World& world, const Camera& cam)
             glm::vec3 faceNormal = glm::normalize(glm::cross(b - a, c - a));
             glm::vec3 viewDir = glm::normalize(centroid - cam.pos);
 
-            // Approximate front/back: if normal points toward camera, face is visible (front).
             bool towardCamera = glm::dot(faceNormal, viewDir) < 0.0f;
             glm::vec4 color = towardCamera
-                ? glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)   // green = front
-                : glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);   // red   = back
+                ? glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)
+                : glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
 
             DebugVis::drawLine(cam, centroid, centroid + faceNormal * 0.4f, color);
         }
@@ -472,8 +381,6 @@ void registerWorldTextureCommands()
         "2026-06-18", CommandCategory::Debug
     });
 }
-
-// ---- GLB Debug dump functions ----
 
 void dumpGLBMaterials(Terminal& t)
 {
@@ -593,7 +500,6 @@ void validateGLB(Terminal& t)
              gGLBDebug.images.size(), gGLBDebug.lights.size());
     t.addLog(buf);
 
-    // Check materials
     for (const auto& m : gGLBDebug.materials)
     {
         if (!m.hasTexture && !m.hasColorFactor)
@@ -605,7 +511,6 @@ void validateGLB(Terminal& t)
         }
     }
 
-    // Check images
     for (const auto& img : gGLBDebug.images)
     {
         if (img.width <= 0 || img.height <= 0)

@@ -21,15 +21,15 @@
 
 using json = nlohmann::json;
 
-static constexpr int MAX_BURSTS = 64;
-static HitBurstEffect gBursts[MAX_BURSTS];
-static int gBurstCount = 0;
-static int gGlobalTick = 0;
+constexpr int MAX_BURSTS = 64;
+HitBurstEffect gBursts[MAX_BURSTS];
+int gBurstCount = 0;
+int gGlobalTick = 0;
 
-static HitFxConfig gConfig;
+HitFxConfig gConfig;
 static std::filesystem::file_time_type gConfigLastWrite;
 static std::string gConfigPath = "config/hitfx.json";
-static bool gDebugPanelEnabled = false;
+bool gDebugPanelEnabled = false;
 
 bool gBloodFXEnabled = false;
 bool gHitFxTraceEnabled = false;
@@ -37,24 +37,6 @@ bool gDashFXEnabled = true;
 
 
 extern Renderer* gRenderer;
-
-static float evalCurve(const std::string& curve, float t)
-{
-    t = std::clamp(t, 0.0f, 1.0f);
-    if (curve == "ease_in") return t * t;
-    if (curve == "ease_out") return 1.0f - (1.0f - t) * (1.0f - t);
-    if (curve == "ease_in_out") return t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) * 0.5f;
-    if (curve == "exponential") return t < 0.5f ? std::pow(2.0f, 10.0f * t - 10.0f) * 0.5f : (2.0f - std::pow(2.0f, -10.0f * t + 10.0f)) * 0.5f;
-    if (curve == "linear") return t;
-    return t;
-}
-
-static float lerp(float a, float b, float t) { return a + (b - a) * t; }
-
-static glm::vec3 lerpVec3(const glm::vec3& a, const glm::vec3& b, float t)
-{
-    return glm::vec3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t));
-}
 
 static glm::vec3 readVec3Json(const json& j)
 {
@@ -310,97 +292,6 @@ void HitEffects::pollReload()
 const HitFxConfig& HitEffects::config() { return gConfig; }
 HitFxConfig& HitEffects::mutableConfig() { return gConfig; }
 
-static void renderSphereTimeline(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    for (const auto& kf : gConfig.sphereTimeline) {
-        if (age < kf.startTick || age > kf.endTick) continue;
-        int range = std::max(1, kf.endTick - kf.startTick);
-        float t = (float)(age - kf.startTick) / (float)range;
-        t = evalCurve(gConfig.curves.radiusCurve, t);
-        float radius = lerp(kf.startRadius, kf.endRadius, t);
-        float alpha = lerp(kf.alphaStart, kf.alphaEnd, evalCurve(gConfig.curves.alphaCurve, (float)(age - kf.startTick) / (float)range));
-        float brightness = lerp(kf.brightnessStart, kf.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, (float)(age - kf.startTick) / (float)range));
-        glm::vec3 color = lerpVec3(kf.colorStart, kf.colorEnd, (float)(age - kf.startTick) / (float)range);
-        glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
-        DebugVis::drawFilledSphere(camera, b.position, radius, col);
-    }
-}
-
-static void renderElongatedSphere(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    const auto& cfg = gConfig.elongatedSphere;
-    if (!cfg.enabled || age < cfg.startTick || age > cfg.endTick) return;
-    int range = std::max(1, cfg.endTick - cfg.startTick);
-    float t = (float)(age - cfg.startTick) / (float)range;
-    float len = lerp(cfg.lengthStart, cfg.lengthEnd, evalCurve(gConfig.curves.radiusCurve, t));
-    float rad = lerp(cfg.radiusStart, cfg.radiusEnd, evalCurve(gConfig.curves.radiusCurve, t));
-    float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, evalCurve(gConfig.curves.alphaCurve, t));
-    float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, t));
-    glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
-    glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
-
-    glm::vec3 dir = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);
-    glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
-    DebugVis::drawFilledSphere(camera, b.position, rad, col, scaleVec);
-}
-
-static void renderImpactDisc(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    const auto& cfg = gConfig.impactDisc;
-    if (!cfg.enabled || age < cfg.startTick || age > cfg.endTick) return;
-    int range = std::max(1, cfg.endTick - cfg.startTick);
-    float t = (float)(age - cfg.startTick) / (float)range;
-    float radius = lerp(cfg.radiusStart, cfg.radiusEnd, evalCurve(gConfig.curves.radiusCurve, t));
-    float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, evalCurve(gConfig.curves.alphaCurve, t));
-    float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, evalCurve(gConfig.curves.brightnessCurve, t));
-    glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
-    glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
-    glm::vec3 nrm = glm::length(b.normal) > 0.001f ? glm::normalize(b.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
-    DebugVis::drawFilledDecal(camera, b.position, nrm, radius, col);
-}
-
-static void spawnParticles(const HitBurstEffect& b, int age)
-{
-    const auto& cfg = gConfig.particles;
-    if (!cfg.enabled) return;
-    if (age != 0) return;
-
-    float coneRad = glm::radians(cfg.coneAngleDegrees);
-    glm::vec3 baseDir = b.direction;
-    if (cfg.spawnDirection == "opposite_hit_direction")
-        baseDir = -b.direction;
-    if (glm::length(baseDir) < 0.001f) baseDir = glm::vec3(0.0f, 0.0f, 1.0f);
-    baseDir = glm::normalize(baseDir);
-
-    for (int i = 0; i < cfg.count; ++i) {
-        float angle = (float)std::rand() / (float)RAND_MAX * 6.2831853f;
-        float spread = (float)std::rand() / (float)RAND_MAX * coneRad;
-        float speed = cfg.speed + ((float)std::rand() / (float)RAND_MAX - 0.5f) * 2.0f * cfg.speedRandomness;
-        speed = std::max(0.0f, speed);
-
-        glm::vec3 up(0, 0, 1);
-        if (std::abs(glm::dot(baseDir, up)) > 0.99f) up = glm::vec3(1, 0, 0);
-        glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
-        glm::vec3 localUp = glm::cross(right, baseDir);
-        glm::vec3 vel = glm::normalize(baseDir + (std::cos(angle) * right + std::sin(angle) * localUp) * std::tan(spread)) * speed;
-
-        float startSz = cfg.sizeStart;
-        float endSz = cfg.sizeEnd;
-
-        EffectPart e;
-        e.position = b.position;
-        e.velocity = vel;
-        e.color = glm::vec4(cfg.tintColor.x * cfg.brightness, cfg.tintColor.y * cfg.brightness, cfg.tintColor.z * cfg.brightness, cfg.alpha);
-        e.maxLifetime = (float)cfg.lifetimeTicks / 60.0f;
-        e.scale = startSz;
-        e.endScale = endSz;
-        e.gravity = cfg.gravity;
-        e.thickness = cfg.drag;
-        e.replayType = "hitfx_particle";
-        EffectPartSystem::instance().spawn(e);
-    }
-}
-
 void HitEffects::onHit(const HitEvent& event)
 {
     if (!gConfig.enabled) return;
@@ -526,163 +417,10 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
                    hitPoint.x, hitPoint.y, hitPoint.z, damage);
     }
 
-    spawnParticles(b, 0);
-
     Debug::log(Debug::Category::NpcCombat, "[HITFX] spawned at (%.1f %.1f %.1f) damage=%d dir=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f)",
                hitPoint.x, hitPoint.y, hitPoint.z, damage,
                hitDirection.x, hitDirection.y, hitDirection.z,
                hitNormal.x, hitNormal.y, hitNormal.z);
-}
-
-void HitEffects::spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
-{
-    if (!gConfig.enabled || !gConfig.movementDashBurst.enabled || !gDashFXEnabled) return;
-    if (gBurstCount >= MAX_BURSTS) {
-        gBursts[0] = gBursts[gBurstCount - 1];
-        gBurstCount--;
-    }
-
-    const auto& cfg = gConfig.movementDashBurst;
-    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 fwd = dir;
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
-    up = glm::normalize(glm::cross(right, fwd));
-
-    glm::vec3 localOffset = fwd * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + localOffset + cfg.offset;
-    spawnPos.z += 0.05f;
-
-    Debug::log(Debug::Category::General, "[DASH FX] position=(%.2f,%.2f,%.2f) direction=(%.2f,%.2f,%.2f) offset=(%.2f,%.2f,%.2f) spawn=(%.2f,%.2f,%.2f)",
-               position.x, position.y, position.z,
-               dir.x, dir.y, dir.z,
-               localOffset.x, localOffset.y, localOffset.z,
-               spawnPos.x, spawnPos.y, spawnPos.z);
-
-    HitBurstEffect& b = gBursts[gBurstCount++];
-    b.position = spawnPos;
-    b.direction = dir;
-    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    b.spawnTick = gGlobalTick;
-    b.totalTicks = cfg.lifetimeTicks;
-    b.alive = true;
-    b.dashBurst = true;
-    b.dashSpeed = speed;
-    b.burstType = BurstType::Dash;
-}
-
-void HitEffects::spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction)
-{
-    if (!gConfig.enabled || !gConfig.groundJumpBurst.enabled || !gDashFXEnabled) return;
-    if (gBurstCount >= MAX_BURSTS) {
-        gBursts[0] = gBursts[gBurstCount - 1];
-        gBurstCount--;
-    }
-    const auto& cfg = gConfig.groundJumpBurst;
-    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(dir, up));
-    if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
-    up = glm::normalize(glm::cross(right, dir));
-    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + localOffset + cfg.offset;
-    HitBurstEffect& b = gBursts[gBurstCount++];
-    b.position = spawnPos;
-    b.direction = dir;
-    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    b.spawnTick = gGlobalTick;
-    b.totalTicks = cfg.lifetimeTicks;
-    b.alive = true;
-    b.dashBurst = false;
-    b.dashSpeed = 0.0f;
-    b.burstType = BurstType::GroundJump;
-}
-
-void HitEffects::spawnAirJumpBurst(const glm::vec3& position, const glm::vec3& direction)
-{
-    if (!gConfig.enabled || !gConfig.airJumpBurst.enabled || !gDashFXEnabled) return;
-    if (gBurstCount >= MAX_BURSTS) {
-        gBursts[0] = gBursts[gBurstCount - 1];
-        gBurstCount--;
-    }
-    const auto& cfg = gConfig.airJumpBurst;
-    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(dir, up));
-    if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
-    up = glm::normalize(glm::cross(right, dir));
-    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + localOffset + cfg.offset;
-    HitBurstEffect& b = gBursts[gBurstCount++];
-    b.position = spawnPos;
-    b.direction = dir;
-    b.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    b.spawnTick = gGlobalTick;
-    b.totalTicks = cfg.lifetimeTicks;
-    b.alive = true;
-    b.dashBurst = false;
-    b.dashSpeed = 0.0f;
-    b.burstType = BurstType::AirJump;
-}
-
-void HitEffects::spawnWalkBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
-{
-    if (!gConfig.enabled || !gConfig.walkBurst.enabled || !gDashFXEnabled) return;
-    if (gBurstCount >= MAX_BURSTS) {
-        gBursts[0] = gBursts[gBurstCount - 1];
-        gBurstCount--;
-    }
-
-    const auto& cfg = gConfig.walkBurst;
-    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(dir, up));
-    if (glm::length(right) < 0.001f) right = glm::vec3(0.0f, 1.0f, 0.0f);
-    up = glm::normalize(glm::cross(right, dir));
-
-    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + localOffset + cfg.offset;
-
-    HitBurstEffect& b = gBursts[gBurstCount++];
-    b.position = spawnPos;
-    b.direction = dir;
-    b.normal = up;
-    b.spawnTick = gGlobalTick;
-    b.totalTicks = cfg.lifetimeTicks;
-    b.alive = true;
-    b.dashBurst = false;
-    b.dashSpeed = speed;
-    b.burstType = BurstType::Walk;
-}
-
-void HitEffects::spawnLandingBurst(const glm::vec3& position, const glm::vec3& direction, float speed)
-{
-    if (!gConfig.enabled || !gConfig.landingBurst.enabled || !gDashFXEnabled) return;
-    if (gBurstCount >= MAX_BURSTS) {
-        gBursts[0] = gBursts[gBurstCount - 1];
-        gBurstCount--;
-    }
-
-    const auto& cfg = gConfig.landingBurst;
-    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(dir, up));
-    if (glm::length(right) < 0.001f) right = glm::vec3(0.0f, 1.0f, 0.0f);
-    up = glm::normalize(glm::cross(right, dir));
-
-    glm::vec3 localOffset = dir * cfg.forwardOffset + right * cfg.rightOffset + up * cfg.upOffset;
-    glm::vec3 spawnPos = position + localOffset + cfg.offset;
-
-    HitBurstEffect& b = gBursts[gBurstCount++];
-    b.position = spawnPos;
-    b.direction = dir;
-    b.normal = up;
-    b.spawnTick = gGlobalTick;
-    b.totalTicks = cfg.lifetimeTicks;
-    b.alive = true;
-    b.dashBurst = false;
-    b.dashSpeed = speed;
-    b.burstType = BurstType::Landing;
 }
 
 void HitEffects::updateHitBursts(float dt)
@@ -701,108 +439,6 @@ void HitEffects::updateHitBursts(float dt)
             gBurstCount--;
             i--;
         }
-    }
-}
-
-static const MovementDashBurstConfig& burstConfigForType(BurstType type) {
-    switch (type) {
-        case BurstType::GroundJump: return gConfig.groundJumpBurst;
-        case BurstType::AirJump: return gConfig.airJumpBurst;
-        case BurstType::Walk: return gConfig.walkBurst;
-        case BurstType::Landing: return gConfig.landingBurst;
-        default: return gConfig.movementDashBurst;
-    }
-}
-
-static void renderDirectionalBurst(const HitBurstEffect& b, int age, const Camera& camera)
-{
-    const auto& cfg = burstConfigForType(b.burstType);
-    if (!cfg.enabled) return;
-    if (age < 0 || age > cfg.lifetimeTicks) return;
-
-    float t = cfg.lifetimeTicks > 0 ? (float)age / (float)cfg.lifetimeTicks : 1.0f;
-    t = std::clamp(t, 0.0f, 1.0f);
-
-    float len = lerp(cfg.lengthStart, cfg.lengthEnd, t);
-    float rad = lerp(cfg.radiusStart, cfg.radiusEnd, t);
-    float alpha = lerp(cfg.alphaStart, cfg.alphaEnd, t);
-    float brightness = lerp(cfg.brightnessStart, cfg.brightnessEnd, t);
-    glm::vec3 color = lerpVec3(cfg.colorStart, cfg.colorEnd, t);
-
-    if (cfg.speedScaling && b.dashSpeed > cfg.speedThreshold) {
-        float scale = std::clamp(b.dashSpeed / cfg.speedThreshold, cfg.speedScaleMin, cfg.speedScaleMax);
-        len *= scale;
-    }
-
-    glm::vec3 fwd = glm::length(b.direction) > 0.001f ? glm::normalize(b.direction) : glm::vec3(0.0f, 0.0f, 1.0f);
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(fwd, up));
-    if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
-    up = glm::normalize(glm::cross(right, fwd));
-
-    // Pick stretch axis from config. Defaults to "forward" (movement direction).
-    glm::vec3 stretchDir;
-    if (cfg.stretchAxis == "right")
-        stretchDir = right;
-    else if (cfg.stretchAxis == "up")
-        stretchDir = up;
-    else if (cfg.stretchAxis == "world_x")
-        stretchDir = glm::vec3(1.0f, 0.0f, 0.0f);
-    else if (cfg.stretchAxis == "world_y")
-        stretchDir = glm::vec3(0.0f, 1.0f, 0.0f);
-    else if (cfg.stretchAxis == "world_z")
-        stretchDir = glm::vec3(0.0f, 0.0f, 1.0f);
-    else
-        stretchDir = fwd; // "forward" (default)
-
-    // Apply Euler rotation (degrees) to the stretch axis.
-    if (glm::length(cfg.rotation) > 0.001f)
-    {
-        glm::vec3 radAngles = glm::radians(cfg.rotation);
-        glm::quat rotQuat = glm::quat(radAngles);
-        stretchDir = rotQuat * stretchDir;
-    }
-
-    glm::vec4 col{color.x * brightness, color.y * brightness, color.z * brightness, std::clamp(alpha, 0.0f, 1.0f)};
-
-    glm::vec3 scaleVec = stretchDir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - stretchDir;
-    // Apply per-axis scale multiplier from config.
-    scaleVec *= cfg.scale;
-    DebugVis::drawFilledSphere(camera, b.position, rad, col, scaleVec);
-}
-
-void HitEffects::renderHitBursts(const Camera& camera)
-{
-    for (int i = 0; i < gBurstCount; ++i) {
-        const HitBurstEffect& b = gBursts[i];
-        if (!b.alive) continue;
-        int age = gGlobalTick - b.spawnTick;
-
-        if (b.dashBurst || b.burstType == BurstType::GroundJump || b.burstType == BurstType::AirJump
-            || b.burstType == BurstType::Walk || b.burstType == BurstType::Landing) {
-            renderDirectionalBurst(b, age, camera);
-        } else {
-            renderSphereTimeline(b, age, camera);
-            renderElongatedSphere(b, age, camera);
-            renderImpactDisc(b, age, camera);
-        }
-    }
-
-    if (gDebugPanelEnabled) {
-        char buf[512];
-        int len = std::snprintf(buf, sizeof(buf),
-            "HIT FX\nbursts=%d/%d\nspheres=%zu\nparticles(enabled=%d count=%d)\n"
-            "elongated(enabled=%d)\ndisc(enabled=%d)\nlifetime=%d\n"
-            "LegacySphere: %s\ndmgNum=%d entImpact=%d worldImpact=%d bulletImpact=%d",
-            gBurstCount, MAX_BURSTS, gConfig.sphereTimeline.size(),
-            (int)gConfig.particles.enabled, gConfig.particles.count,
-            (int)gConfig.elongatedSphere.enabled,
-            (int)gConfig.impactDisc.enabled,
-            gConfig.core.lifetimeTicks,
-            gConfig.legacyContactSphere.enabled ? "ON" : "OFF",
-            (int)gConfig.core.damageNumbers, (int)gConfig.core.entityImpact,
-            (int)gConfig.core.worldImpact, (int)gConfig.core.bulletImpact);
-        uiDrawText(buf, 12.0f, 320.0f, 0.32f, {0.3f, 1.0f, 0.5f, 1.0f});
     }
 }
 

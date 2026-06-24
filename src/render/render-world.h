@@ -25,6 +25,7 @@ void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& 
 void setWorldSolidRedDebug(bool enabled);
 bool worldSolidRedDebug();
 void registerWorldTextureCommands();
+void setUniforms(GLuint shader);
 void dumpGLBMaterials(Terminal& t);
 void dumpGLBTextures(Terminal& t);
 void dumpGLBLights(Terminal& t);

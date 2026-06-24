@@ -7,6 +7,8 @@
 
 struct GLFWwindow;
 
+void registerTerminalBuiltins();
+
 enum class CommandCategory {
     Uncategorized,
     Replay,
@@ -90,6 +92,7 @@ private:
     int mExportPickerIndex = 0;
     int mExportPickerScroll = 0;
     Terminal() = default;
+    friend void registerTerminalBuiltins();
 
     void executeCurrent();
     void addHistory(const std::string& input);

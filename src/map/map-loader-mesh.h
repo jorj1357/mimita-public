@@ -12,3 +12,5 @@ void walkGLBScene(
     Mesh& mesh,
     int sceneIndex,
     Mesh* skyMesh = nullptr);
+
+void generateTriangleNormals(std::vector<Vertex>& verts, size_t first, size_t count);

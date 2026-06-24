@@ -175,6 +175,10 @@ uint32_t mpSendShotEvent(
     const glm::vec3& normal,
     const glm::vec3& knockbackImpulse = glm::vec3(0.0f));
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
+
+// Packet queue flush (defined in multiplayer-packets.cpp)
+void flushOutgoingPackets(MultiplayerContext& ctx);
+
 void mpSetFakeLagMode(MultiplayerContext& ctx, int mode);
 void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds);
 void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs);

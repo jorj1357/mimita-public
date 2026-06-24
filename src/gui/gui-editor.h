@@ -62,6 +62,13 @@ private:
     bool mColorPickerOpen = false;
     int mColorPickerTarget = -1; // which color slider to set (5-12 for T-R through B-A, or -1)
 
+    // Property panel layout constants (shared across split files)
+    static constexpr float PP_X = 1460.0f, PP_Y = 80.0f, PP_W = 430.0f;
+    static constexpr float PP_LABEL_X = 1470.0f;
+    static constexpr float PP_TRACK_X = 1560.0f, PP_TRACK_W = 230.0f;
+    static constexpr float PP_VAL_X = 1800.0f;
+    static constexpr float PP_ROW_H = 22.0f;
+
     void handleInput(GLFWwindow* win);
     void handleKeyboard(GLFWwindow* win);
     void checkOverlaps();

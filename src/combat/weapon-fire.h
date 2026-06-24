@@ -97,4 +97,120 @@ bool rayAabb(const glm::vec3& origin, const glm::vec3& direction,
              const glm::vec3& mn, const glm::vec3& mx,
              float& distance, glm::vec3& normal);
 
+void processNpcHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    Npc& victim,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& shotDirection,
+    float nearest,
+    Player& shooter,
+    NpcSystem& npcs,
+    const glm::vec3& muzzlePos,
+    const glm::vec3& muzzleDir);
+
+void processRemotePlayerHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& shotDirection,
+    float nearest,
+    Player& shooter,
+    uint32_t remoteTargetId,
+    const Player* remoteVictim);
+
+void processPlayerHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& shotDirection,
+    float nearest,
+    Player& shooter,
+    Player* targetPlayer);
+
+void processWorldHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const glm::vec3& hitEnd,
+    const glm::vec3& worldNormal,
+    const glm::vec3& shotDirection,
+    const std::string& shooterName);
+
+float computeFalloffDamage(
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    float nearest,
+    int& outDamage);
+
+void processMultiPelletNpcHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    Npc& victim,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& pelletDir,
+    float pelletNearest,
+    Player& shooter,
+    NpcSystem& npcs,
+    const glm::vec3& muzzlePos,
+    float& accumulatedDamage,
+    bool& anyHitEntity,
+    uint32_t& lastTargetId,
+    glm::vec3& accumulatedKnockback,
+    float& nearestPelletDist,
+    glm::vec3& lastPelletEnd,
+    glm::vec3& lastHitNormal);
+
+void processMultiPelletRemoteHit(
+    RevolverShotResult& result,
+    const WeaponDefinition& def,
+    const std::string& hitPart,
+    const glm::vec3& hitNormal,
+    const glm::vec3& hitEnd,
+    const glm::vec3& pelletDir,
+    float pelletNearest,
+    Player& shooter,
+    uint32_t pelletRemoteTargetId,
+    float& accumulatedDamage,
+    bool& anyHitEntity,
+    uint32_t& lastTargetId,
+    glm::vec3& accumulatedKnockback,
+    float& nearestPelletDist,
+    glm::vec3& lastPelletEnd,
+    glm::vec3& lastHitNormal,
+    const std::string& victimName);
+
+void processMultiPelletWorldHit(
+    const WeaponDefinition& def,
+    const glm::vec3& hitEnd,
+    const glm::vec3& worldNml,
+    const glm::vec3& pelletDir,
+    float pelletNearest,
+    Player& shooter,
+    bool& anyHitWorld,
+    float& nearestPelletDist,
+    glm::vec3& lastPelletEnd,
+    glm::vec3& lastHitNormal);
+
+void finalizeMultiPelletResult(
+    RevolverShotResult& outResult,
+    const glm::vec3& muzzlePos,
+    const glm::vec3& lastPelletEnd,
+    const glm::vec3& lastHitNormal,
+    float accumulatedDamage,
+    bool anyHitEntity,
+    bool anyHitWorld,
+    uint32_t lastTargetId,
+    const glm::vec3& accumulatedKnockback,
+    int totalPellets,
+    const WeaponDefinition& def,
+    Player& shooter);
+
 } // namespace WeaponFire
