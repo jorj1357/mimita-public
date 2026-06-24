@@ -57,9 +57,9 @@ void applyCollisionContact(
 
     const PlayerSettings& cfg = GetPlayerSettings();
 
-    p.realWorldContactThisFrame = true;
-    p.hasWorldContact = true;
-    p.worldContactLostTimer = 0.033f;
+    p.ground.realWorldContactThisFrame = true;
+    p.ground.hasWorldContact = true;
+    p.ground.worldContactLostTimer = 0.033f;
 
     if (normal.z > MAX_WALKABLE_SLOPE_DOT)
     {
@@ -117,15 +117,15 @@ void applyCollisionContact(
 
 void applyTouchResets(Player& p)
 {
-    p.airJumpsLeft = AIR_JUMPS_MAX;
-    p.dashAvailable = true;
-    p.groundReturnAvailable = true;
-    p.downDashAvailable = true;
-    p.freezeAvailable = true;
+    p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+    p.dash.dashAvailable = true;
+    p.groundReturn.available = true;
+    p.dash.downDashAvailable = true;
+    p.freeze.freezeAvailable = true;
     if (DebugConfig::DEBUG_PHYSICS)
         Debug::logThrottled(Debug::Category::Physics, "touchreset", 0.25f,
             "[TOUCH RESET] airJumps=%d dash=%d groundReturn=%d freeze=%d\n",
-            p.airJumpsLeft, (int)p.dashAvailable, (int)p.groundReturnAvailable, (int)p.freezeAvailable);
+            p.jump.airJumpsLeft, (int)p.dash.dashAvailable, (int)p.groundReturn.available, (int)p.freeze.freezeAvailable);
 }
 
 glm::vec3 solveBatchedCorrection(

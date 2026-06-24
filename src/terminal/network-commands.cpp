@@ -193,7 +193,7 @@ void registerNetworkCommands()
                 " hp=" + std::to_string(player.currentHp) +
                 " maxHp=" + std::to_string(player.maxHp) +
                 " dead=" + std::to_string((int)player.dead) +
-                " onGround=" + std::to_string((int)player.onGround) +
+                " onGround=" + std::to_string((int)player.ground.onGround) +
                 " slot=" + std::to_string(player.equippedSlot) +
                 " weapon=" + player.equippedWeaponId +
                 " pos=(" + std::to_string(player.pos.x) + "," + std::to_string(player.pos.y) + "," + std::to_string(player.pos.z) + ")" +
@@ -213,7 +213,7 @@ void registerNetworkCommands()
                 Terminal::instance().addLog("PLAYER id=" + std::to_string(kv.first) +
                     " hp=" + std::to_string(kv.second.currentHp) +
                     " dead=" + std::to_string((int)kv.second.dead) +
-                    " onGround=" + std::to_string((int)kv.second.onGround) +
+                    " onGround=" + std::to_string((int)kv.second.ground.onGround) +
                     " slot=" + std::to_string(kv.second.equippedSlot) +
                     " weapon=" + kv.second.equippedWeaponId +
                     " pos=(" + std::to_string((int)kv.second.pos.x) + "," +

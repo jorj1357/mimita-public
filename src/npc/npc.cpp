@@ -88,7 +88,7 @@ void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
-    sensors.grounded = npc.body.onGround;
+    sensors.grounded = npc.body.ground.onGround;
 
     {
         int i = npc.posRingHead;
@@ -328,7 +328,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     if (input.dashPressed)
         npc.dashCommandConsumed = true;
 
-    bool downDashAvailableBefore = npc.body.downDashAvailable;
+    bool downDashAvailableBefore = npc.body.dash.downDashAvailable;
     {
         Perf::ScopedTimer _npcCollision("NpcCollision");
         glm::vec3 velocityBefore = npc.body.vel;
@@ -355,7 +355,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             std::string physKey = "npc-phys-" + std::to_string(npc.id);
             Debug::logThrottled(Debug::Category::General, physKey.c_str(), DebugConfig::PRINT_INTERVAL,
             "[NPC PHYS] id=%u grounded=%d vel=(%.2f %.2f %.2f) finalSpeed=%.2f\n",
-            npc.id, (int)npc.body.onGround,
+            npc.id, (int)npc.body.ground.onGround,
             npc.body.vel.x, npc.body.vel.y, npc.body.vel.z,
             npc.lastFinalSpeed);
     }
@@ -372,7 +372,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
     }
 
-    if (input.dashPressed && npc.body.didDash)
+    if (input.dashPressed && npc.body.dash.didDash)
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
         Debug::log(Debug::Category::General, "[NPC] id=%u dashed\n", npc.id);
@@ -380,7 +380,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
     }
 
-    if (wantDownDash && downDashAvailableBefore && !npc.body.downDashAvailable)
+    if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)
     {
         npc.downDashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.50f;
         Debug::log(Debug::Category::General, "[NPC] id=%u down-dashed\n", npc.id);
@@ -435,7 +435,7 @@ std::vector<DebugVis::NpcDebugInfo> NpcSystem::debugInfo() const
         info.difficulty = npc.difficulty;
         info.awarenessRadius = npc.tuning.awarenessRange;
         info.finalSpeed = npc.lastFinalSpeed;
-        info.grounded = npc.body.stableOnGround;
+        info.grounded = npc.body.ground.stableOnGround;
         info.hasTarget = npc.sensors.hasTarget;
         out.push_back(info);
     }

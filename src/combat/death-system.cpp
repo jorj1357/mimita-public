@@ -259,7 +259,7 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.voidDeathTriggered = false;
     actor.spawnFlashTimer = 10.0f;
     actor.killedBy.clear();
-    actor.onGround = false;
+    actor.ground.onGround = false;
     playWorldSound("entity/player/spawning", actor.pos, 1.0f);
     Debug::log(Debug::Category::Audio, "[SPAWN FX] playing spawning.wav\n");
     actor.syncLegacyStateToLayers();
