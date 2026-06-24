@@ -186,7 +186,7 @@ int runClient(const LaunchOptions& options)
                     p.pos = {entity.px, entity.py, entity.pz};
                     p.vel = {entity.vx, entity.vy, entity.vz};
                     p.yaw = entity.yaw;
-                    p.onGround = entity.onGround != 0;
+                    p.ground.onGround = entity.onGround != 0;
                     p.currentHp = entity.health;
                     p.username = entity.displayName;
                     p.updateProceduralAnimation(dt);

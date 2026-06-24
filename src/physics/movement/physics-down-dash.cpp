@@ -25,21 +25,21 @@ void doDownDash(
     if (!downDashPressed)
         return;
 
-    if (p.freezeActive)
+    if (p.freeze.freezeActive)
         return;
 
-    if (!p.downDashAvailable)
+    if (!p.dash.downDashAvailable)
         return;
 
     float beforeVelZ = p.vel.z;
 
     p.vel.z = DOWN_DASH_SPEED;
-    p.downDashAvailable = false;
+    p.dash.downDashAvailable = false;
 
     DD_LOG(
         "[DOWN_DASH] vel.z %.3f -> %.3f (onGround=%d)\n",
         beforeVelZ,
         p.vel.z,
-        (int)p.onGround
+        (int)p.ground.onGround
     );
 }

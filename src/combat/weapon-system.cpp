@@ -113,7 +113,7 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
             }
         }
     } else {
-        player.hasWeaponCollisionCapsule = false;
+        player.collision.hasWeaponCollisionCapsule = false;
         player.weaponCollisionName.clear();
         if (mGodballPhys.active) {
             WeaponGodball::despawnBall(mGodballPhys);

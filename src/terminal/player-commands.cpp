@@ -72,11 +72,11 @@ void registerPlayerCommands()
             player.vel = glm::vec3(0.0f);
             player.externalImpulse = glm::vec3(0.0f);
             player.inputWishMove = glm::vec2(0.0f);
-            player.onGround = false;
-            player.jumpHeldPrev = false;
-            player.moveHeldPrev = false;
-            player.dashHeldPrev = false;
-            player.freezeHeldPrev = false;
+            player.ground.onGround = false;
+            player.jump.jumpHeldPrev = false;
+            player.dash.moveHeldPrev = false;
+            player.dash.dashHeldPrev = false;
+            player.freeze.freezeHeldPrev = false;
             player.syncLegacyStateToLayers();
             player.updateModelWorldTransforms();
 

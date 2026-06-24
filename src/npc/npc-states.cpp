@@ -7,34 +7,9 @@
 
 #include "config.h"
 #include "debug/debug-log.h"
+#include "npc/npc-internal.h"
 
 namespace {
-
-float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
-float difficulty01(float difficulty) { return clamp01(difficulty / 10.0f); }
-
-float random01(unsigned int& state)
-{
-    state = state * 1664525u + 1013904223u;
-    return (float)((state >> 8) & 0x00ffffffu) / (float)0x01000000u;
-}
-
-glm::vec3 randomPlanarDirection(unsigned int& state)
-{
-    float angle = random01(state) * glm::two_pi<float>();
-    return {std::cos(angle), std::sin(angle), 0.0f};
-}
-
-glm::vec3 rotatePlanar(glm::vec3 v, float radians)
-{
-    float c = std::cos(radians);
-    float s = std::sin(radians);
-    return {
-        v.x * c - v.y * s,
-        v.x * s + v.y * c,
-        0.0f
-    };
-}
 
 bool shouldJump(Npc& npc, float d01)
 {

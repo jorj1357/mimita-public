@@ -67,7 +67,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
 
         // Spawn movement burst on input keydown transition (not velocity-based)
-        if (frame.movementJustPressed && sim.player->stableOnGround) {
+        if (frame.movementJustPressed && sim.player->ground.stableOnGround) {
             glm::vec2 move2d(frame.moveX, frame.moveY);
             float moveLen = glm::length(move2d);
             if (moveLen > 0.001f) {
@@ -103,7 +103,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                    "[PLAYER] tick=%llu pos=(%.3f %.3f %.3f) grounded=%d vel=(%.3f %.3f %.3f)\n",
                    (unsigned long long)sim.tick,
                    sim.player->pos.x, sim.player->pos.y, sim.player->pos.z,
-                   (int)sim.player->onGround,
+                   (int)sim.player->ground.onGround,
                    sim.player->vel.x, sim.player->vel.y, sim.player->vel.z);
 
     sim.tick++;

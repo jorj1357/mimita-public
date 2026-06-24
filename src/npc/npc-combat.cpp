@@ -16,19 +16,11 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
 #include "world/world.h"
+#include "npc/npc-internal.h"
 
 bool gNpcForceHit = false;
 
 namespace {
-
-float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
-float difficulty01(float difficulty) { return clamp01(difficulty / 10.0f); }
-
-float random01(unsigned int& state)
-{
-    state = state * 1664525u + 1013904223u;
-    return (float)((state >> 8) & 0x00ffffffu) / (float)0x01000000u;
-}
 
 glm::vec3 rotatePlanar(glm::vec3 v, float radians)
 {

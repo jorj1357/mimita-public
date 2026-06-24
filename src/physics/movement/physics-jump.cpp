@@ -56,105 +56,105 @@ void doJump(
     float dt
 ) {
     // decrement timers
-    p.jumpIntentTimer = std::max(0.0f, p.jumpIntentTimer - dt);
-    p.coyoteTimer     = std::max(0.0f, p.coyoteTimer - dt);
+    p.jump.jumpIntentTimer = std::max(0.0f, p.jump.jumpIntentTimer - dt);
+    p.jump.coyoteTimer     = std::max(0.0f, p.jump.coyoteTimer - dt);
 
     // update coyote time
-    if (p.onGround) {
-        p.coyoteTimer = COYOTE_JUMP_TIME;
+    if (p.ground.onGround) {
+        p.jump.coyoteTimer = COYOTE_JUMP_TIME;
     }
 
     // ---------------- INTENT MANAGEMENT ----------------
     // Holding Space keeps jump intent alive every frame.
     // This enables auto-bhop: landing while holding Space causes immediate re-jump.
     if (jumpHeld)
-        p.jumpIntentTimer = JUMP_BUFFER_TIME;
+        p.jump.jumpIntentTimer = JUMP_BUFFER_TIME;
 
-    bool jumpPressedThisFrame = jumpPressed || (jumpHeld && !p.jumpHeldPrev);
+    bool jumpPressedThisFrame = jumpPressed || (jumpHeld && !p.jump.jumpHeldPrev);
     if (jumpPressedThisFrame)
-        p.jumpIntentTimer = JUMP_BUFFER_TIME;
+        p.jump.jumpIntentTimer = JUMP_BUFFER_TIME;
 
     // Release re-arms air jump.
-    bool jumpReleased = !jumpHeld && p.jumpHeldPrev;
+    bool jumpReleased = !jumpHeld && p.jump.jumpHeldPrev;
     if (jumpReleased)
     {
-        p.airJumpArmed = true;
-        p.airJumpLocked = false;
-        p.jumpConsumed = false;
+        p.jump.airJumpArmed = true;
+        p.jump.airJumpLocked = false;
+        p.jump.jumpConsumed = false;
     }
 
-    p.jumpHeldPrev = jumpHeld;
+    p.jump.jumpHeldPrev = jumpHeld;
 
     // ---------------- CAN JUMP ----------------
-    bool onActualGround = p.onGround || p.coyoteTimer > 0.0f;
-    bool wantsJump = p.jumpIntentTimer > 0.0f;
+    bool onActualGround = p.ground.onGround || p.jump.coyoteTimer > 0.0f;
+    bool wantsJump = p.jump.jumpIntentTimer > 0.0f;
 
     if (!wantsJump)
         return;
 
     // ---------------- GROUND JUMP ----------------
-    if (onActualGround && !p.jumpConsumed) {
+    if (onActualGround && !p.jump.jumpConsumed) {
         float beforeVel = p.vel.z;
 
-        p.dashAvailable = true;
+        p.dash.dashAvailable = true;
         p.vel.z = PHYS.jumpStrength;
-        p.onGround = false;
-        p.coyoteTimer = 0.0f;
-        p.jumpIntentTimer = 0.0f;
-        p.airJumpsLeft = AIR_JUMPS_MAX;
-        p.airJumpLocked = true;
-        p.airJumpArmed = false;
-        p.didGroundJump = true;
-        p.jumpConsumed = true;
+        p.ground.onGround = false;
+        p.jump.coyoteTimer = 0.0f;
+        p.jump.jumpIntentTimer = 0.0f;
+        p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+        p.jump.airJumpLocked = true;
+        p.jump.airJumpArmed = false;
+        p.jump.didGroundJump = true;
+        p.jump.jumpConsumed = true;
 
         JUMP_LOG(
             "[JUMP] GROUND vel.z %.3f -> %.3f | airJumps=%d\n",
             beforeVel,
             p.vel.z,
-            p.airJumpsLeft
+            p.jump.airJumpsLeft
         );
         return;
     }
 
     // ---------------- WORLD CONTACT JUMP ----------------
-    if (p.hasWorldContact && !p.jumpConsumed) {
+    if (p.ground.hasWorldContact && !p.jump.jumpConsumed) {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
-        p.jumpIntentTimer = 0.0f;
-        p.airJumpsLeft = AIR_JUMPS_MAX;
-        p.didGroundJump = true;
-        p.jumpConsumed = true;
+        p.jump.jumpIntentTimer = 0.0f;
+        p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+        p.jump.didGroundJump = true;
+        p.jump.jumpConsumed = true;
 
         JUMP_LOG(
             "[JUMP] WORLD CONTACT vel.z %.3f -> %.3f | airJumps=%d\n",
             beforeVel,
             p.vel.z,
-            p.airJumpsLeft
+            p.jump.airJumpsLeft
         );
         return;
     }
 
     // ---------------- AIR JUMP (press only, not hold) ----------------
-    if (!p.didGroundJump &&
-        p.airJumpsLeft > 0 &&
-        !p.airJumpLocked &&
-        p.airJumpArmed &&
+    if (!p.jump.didGroundJump &&
+        p.jump.airJumpsLeft > 0 &&
+        !p.jump.airJumpLocked &&
+        p.jump.airJumpArmed &&
         jumpPressedThisFrame)
     {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
-        p.airJumpsLeft--;
-        p.airJumpLocked = false;
-        p.jumpIntentTimer = 0.0f;
-        p.didAirJump = true;
+        p.jump.airJumpsLeft--;
+        p.jump.airJumpLocked = false;
+        p.jump.jumpIntentTimer = 0.0f;
+        p.jump.didAirJump = true;
 
         JUMP_LOG(
             "[JUMP] AIR vel.z %.3f -> %.3f | airJumpsLeft=%d\n",
             beforeVel,
             p.vel.z,
-            p.airJumpsLeft
+            p.jump.airJumpsLeft
         );
         return;
     }
@@ -162,8 +162,8 @@ void doJump(
     // ---------------- FAILED ----------------
     JUMP_LOG(
         "[JUMP] BLOCKED | onGround=%d coyote=%.3f airJumps=%d\n",
-        p.onGround,
-        p.coyoteTimer,
-        p.airJumpsLeft
+        p.ground.onGround,
+        p.jump.coyoteTimer,
+        p.jump.airJumpsLeft
     );
 }

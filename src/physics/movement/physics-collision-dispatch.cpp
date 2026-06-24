@@ -76,9 +76,9 @@ std::string collisionStateSummary(const Player& p)
         "  frameCandidates=%d/%d sweepHits=%d recovery=%d final=%d maxPen=%.4f\n",
         p.pos.x, p.pos.y, p.pos.z,
         p.vel.x, p.vel.y, p.vel.z,
-        (int)p.onGround, (int)p.stableOnGround, p.groundLostTimer, p.airborneTimer,
-        (int)p.wasOnGround, (int)p.didLand, (int)p.jumpConsumed,
-        p.landingCooldown, p.worldContactLostTimer,
+        (int)p.ground.onGround, (int)p.ground.stableOnGround, p.ground.groundLostTimer, p.ground.airborneTimer,
+        (int)p.ground.wasOnGround, (int)p.ground.didLand, (int)p.jump.jumpConsumed,
+        p.ground.landingCooldown, p.ground.worldContactLostTimer,
         tr.finalPos.x, tr.finalPos.y, tr.finalPos.z,
         tr.initialCandidates, tr.maxCandidates,
         tr.sweepHits, tr.maxRecoveryContacts, tr.finalContacts, tr.maxPenetration);
@@ -96,7 +96,7 @@ void doCollisions(
     const glm::vec3 frameStart = p.pos;
     recoverInvalidPlayerCollisionState(p, frameStart, "start");
 
-    p.collisionBounceCooldown = std::max(0.0f, p.collisionBounceCooldown - dt);
+    p.collision.bounceCooldown = std::max(0.0f, p.collision.bounceCooldown - dt);
     if (!world.collisionMesh.empty())
     {
         doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
@@ -186,12 +186,12 @@ void doCollisions(
 
         if (std::fabs(hitNormal.z) < 0.2f)
         {
-            p.realWorldContactThisFrame = true;
+            p.ground.realWorldContactThisFrame = true;
 
-            p.airJumpsLeft = AIR_JUMPS_MAX;
-            p.dashAvailable = true;
-            p.groundReturnAvailable = true;
-            p.freezeAvailable = true;
+            p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+            p.dash.dashAvailable = true;
+            p.groundReturn.available = true;
+            p.freeze.freezeAvailable = true;
 
             float feetZ = cap.a.z - cap.r;
 
@@ -275,14 +275,14 @@ void doCollisions(
         if (hitNormal.z > 0.0f)
         {
             groundedThisFrame = true;
-            p.realWorldContactThisFrame = true;
+            p.ground.realWorldContactThisFrame = true;
 
             if (p.vel.z <= 0.0f)
             {
-                p.airJumpsLeft = AIR_JUMPS_MAX;
-                p.dashAvailable = true;
-                p.groundReturnAvailable = true;
-                p.freezeAvailable = true;
+                p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+                p.dash.dashAvailable = true;
+                p.groundReturn.available = true;
+                p.freeze.freezeAvailable = true;
 
                 p.vel.z = 0.0f;
             }

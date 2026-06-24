@@ -167,11 +167,11 @@ void doGLBTriangleCollisions(
 
         if (worstPen > STUCK_THRESHOLD)
         {
-            p.collisionStuckFrames++;
-            if (p.collisionStuckFrames >= 3)
+            p.collision.stuckFrames++;
+            if (p.collision.stuckFrames >= 3)
             {
                 PHYS_LOG("[PHYS][EMERGENCY] Deep penetration %.4f for %d frames. Searching escape.\n",
-                         worstPen, p.collisionStuckFrames);
+                         worstPen, p.collision.stuckFrames);
 
                 const glm::vec3 searchDirs[] = {
                     { 1, 0, 0}, {-1, 0, 0}, { 0, 1, 0}, { 0,-1, 0},
@@ -235,13 +235,13 @@ void doGLBTriangleCollisions(
                     trace.emergencyEscaped = true;
 
                     p.vel = glm::vec3(0.0f);
-                    p.collisionStuckFrames = 0;
+                    p.collision.stuckFrames = 0;
                 }
             }
         }
         else
         {
-            p.collisionStuckFrames = 0;
+            p.collision.stuckFrames = 0;
         }
     }
 
