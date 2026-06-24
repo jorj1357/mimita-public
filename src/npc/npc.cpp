@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "npc/npc-internal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,7 +13,6 @@
 #include "physics/movement/physics-collision.h"
 #include "render/render-player.h"
 #include "world/world.h"
-#include "config.h"
 #include "audio/audio.h"
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
@@ -20,54 +20,8 @@
 #include "npc/npc-combat.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
-// Bomb tag behavior is controlled via Npc::bombTag* flags set by BombTagManager
 
 namespace {
-
-float clamp01(float v)
-{
-    return std::clamp(v, 0.0f, 1.0f);
-}
-
-float difficulty01(float difficulty)
-{
-    return clamp01(difficulty / 10.0f);
-}
-
-NpcDifficultyTuning tuningForDifficulty(float difficulty)
-{
-    float d = difficulty01(difficulty);
-    NpcDifficultyTuning tuning;
-    // Reaction speed: diff 1 = 0.8s, diff 10 = 0.12s (faster reactions, not stat boosts)
-    tuning.reactionDelay = 0.80f - d * 0.68f;
-    // Decision interval: diff 1 = 0.9s, diff 10 = 0.15s (quicker decisions)
-    tuning.actionInterval = 0.90f - d * 0.75f;
-    // Aggression: diff 1 = 0.15, diff 10 = 0.95 (more aggressive at high diff)
-    tuning.aggression = 0.15f + d * 0.80f;
-    // Dodge chance: diff 1 = 0%, diff 10 = 50%
-    tuning.dodgeChance = d * 0.50f;
-    // Aim error: diff 1 = 12 deg, diff 10 = 0.5 deg (improving aim)
-    tuning.aimErrorRadians = 0.0f; // not used - uses aimErrorDegrees() instead
-    // Movement precision / variety: diff 1 = 0.15, diff 10 = 0.95
-    tuning.movementPrecision = 0.15f + d * 0.80f;
-    // Awareness: diff 1 = 20m, diff 10 = 150m
-    tuning.awarenessRange = 20.0f + d * 130.0f;
-    // Prediction: diff 1 = 0.02, diff 10 = 0.65 (better leading)
-    tuning.prediction = 0.02f + d * 0.63f;
-    return tuning;
-}
-
-float random01(unsigned int& state)
-{
-    state = state * 1664525u + 1013904223u;
-    return (float)((state >> 8) & 0x00ffffffu) / (float)0x01000000u;
-}
-
-glm::vec3 randomPlanarDirection(unsigned int& state)
-{
-    float angle = random01(state) * glm::two_pi<float>();
-    return {std::cos(angle), std::sin(angle), 0.0f};
-}
 
 glm::vec3 safePlanarNormal(glm::vec3 v, glm::vec3 fallback)
 {
@@ -89,29 +43,24 @@ glm::vec3 rotatePlanar(glm::vec3 v, float radians)
     };
 }
 
-// Compute difficulty-based reaction delay in seconds.
-// Difficulty 10 = 0ms, Difficulty 5 = 250-500ms, Difficulty 1 = 1000-1500ms
 static float reactionDelayForDifficulty(float difficulty) {
     float d01 = std::clamp(difficulty / 10.0f, 0.0f, 1.0f);
-    float baseMs = 1500.0f - d01 * 1500.0f;               // 1500ms at diff1, 0ms at diff10
-    float jitterMs = 200.0f + (1.0f - d01) * 300.0f;       // 500ms jitter at diff1, 200ms at diff10
+    float baseMs = 1500.0f - d01 * 1500.0f;
+    float jitterMs = 200.0f + (1.0f - d01) * 300.0f;
     float totalMs = baseMs + (float)(rand() % (int)(jitterMs + 1.0f));
-    return totalMs / 1000.0f;                               // convert to seconds
+    return totalMs / 1000.0f;
 }
 
-// Get delayed target position from ring buffer based on reaction delay.
 static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
                                 const glm::vec3& currentVel, float delaySeconds) {
     if (delaySeconds <= 0.001f || npc.posRingCount == 0)
         return currentPos;
 
-    // The most recent sample is at (posRingHead - 1) modulo ring size.
     int tail = (npc.posRingHead - 1 + Npc::MAX_HISTORY_SAMPLES) % Npc::MAX_HISTORY_SAMPLES;
     float targetTime = npc.posRing[tail].time - delaySeconds;
     glm::vec3 bestPos = currentPos;
     glm::vec3 bestVel = currentVel;
 
-    // Walk backward through the ring from newest to oldest
     int count = std::min(npc.posRingCount, Npc::MAX_HISTORY_SAMPLES);
     for (int j = 0; j < count; ++j) {
         int i = (tail - j + Npc::MAX_HISTORY_SAMPLES) % Npc::MAX_HISTORY_SAMPLES;
@@ -120,7 +69,6 @@ static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
             bestPos = s.pos;
             bestVel = s.vel;
         } else {
-            // Interpolate with next newer sample
             int nextIdx = (i + 1) % Npc::MAX_HISTORY_SAMPLES;
             if (j > 0 && nextIdx < Npc::MAX_HISTORY_SAMPLES) {
                 float t = (targetTime - s.time) / (npc.posRing[nextIdx].time - s.time);
@@ -142,7 +90,6 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
     sensors.grounded = npc.body.onGround;
 
-    // Record current player state into position ring buffer
     {
         int i = npc.posRingHead;
         npc.posRing[i] = {player.pos, player.vel + player.externalImpulse, npc.sensors.time + dt};
@@ -151,14 +98,12 @@ void senseWorld(Npc& npc, const Player& player, float dt)
             npc.posRingCount++;
     }
 
-    // Compute reaction delay based on difficulty
     float delay = reactionDelayForDifficulty(npc.difficulty);
 
-    // Use delayed player position for sensing
     glm::vec3 rawPos = player.pos;
     glm::vec3 rawVel = player.vel + player.externalImpulse;
     sensors.targetPos = delayedTarget(npc, rawPos, rawVel, delay);
-    sensors.targetVel = rawVel; // velocity is from current frame (always accurate)
+    sensors.targetVel = rawVel;
     sensors.toTarget = sensors.targetPos - npc.body.pos;
     sensors.targetDistance = glm::length(sensors.toTarget);
     sensors.hasTarget = npc.difficulty > 0.05f && sensors.targetDistance <= npc.tuning.awarenessRange;
@@ -167,7 +112,6 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     npc.previousPosition = npc.body.pos;
     npc.sensors = sensors;
 
-    // Track last known target
     if (sensors.hasTarget)
     {
         npc.stateMachine.lastKnownTarget = sensors.targetPos;
@@ -221,7 +165,6 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
     input.downDashPressed = downDash;
     input.freezeHeld = false;
 
-    // Face movement direction or target
     if (npc.sensors.hasTarget)
     {
         glm::vec3 toTarget = npc.sensors.predictedTarget - npc.body.pos;
@@ -236,111 +179,6 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
 }
 
 } // anonymous namespace
-
-Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
-    : id(npcId), difficulty(std::clamp(npcDifficulty, 0.0f, 10.0f))
-{
-    tuning = tuningForDifficulty(difficulty);
-    rngState = 0x9e3779b9u ^ (id * 747796405u);
-    body.reset();
-    body.username = "npc-" + std::to_string(id);
-    body.currentHp = body.maxHp;
-    body.pos = spawn;
-    body.respawnPosition = spawn;
-    body.vel = {0.0f, 0.0f, 0.0f};
-    body.syncLegacyStateToLayers();
-    previousPosition = body.pos;
-
-    stateMachine.nextDecisionTime = 0.5f + random01(rngState) * 1.5f;
-    stateMachine.wanderTarget = spawn + randomPlanarDirection(rngState) * 5.0f;
-    stateMachine.wanderTimer = 2.0f + random01(rngState) * 3.0f;
-    stateMachine.orbitAngle = random01(rngState) * glm::two_pi<float>();
-    stateMachine.orbitSwapTimer = 0.5f + random01(rngState) * 2.0f;
-
-    aimTimer = 0.0f;
-    reactionTimer = 0.05f + random01(rngState) * 0.30f;
-    moveNoiseTimer = 0.1f + random01(rngState) * 0.3f;
-    moveOffset = {0.0f, 0.0f};
-
-    Debug::log(Debug::Category::General,
-               "[NPC] spawned id=%u difficulty=%.1f reaction=%.2f aggression=%.2f awareness=%.1f\n",
-               id,
-               difficulty,
-               tuning.reactionDelay,
-               tuning.aggression,
-               tuning.awarenessRange);
-}
-
-void NpcSystem::spawnPrototypeScene()
-{
-    clear();
-    for (int i = 0; i < 5; ++i) {
-        float d = 1.0f + i * 2.0f;
-        if (i == 4) d = 10.0f;
-        spawnNpc(d);
-    }
-}
-
-void NpcSystem::clear()
-{
-    for (const Npc& npc : npcs) {
-        AudioManager::instance().stopOwner(npc.id);
-        EffectPartSystem::instance().destroyOwner(npc.id);
-        Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
-    }
-    npcs.clear();
-    NpcSelectionManager::instance().clear();
-    Debug::log(Debug::Category::General, "[NPC] cleanup complete\n");
-}
-
-void NpcSystem::spawnNpc(float difficulty)
-{
-    Perf::ScopedTimer _spawnTimer("NpcSpawn");
-    float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
-    uint32_t id = nextNpcId();
-    npcs.emplace_back(id, d, npcSpawnPoint);
-    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, npcSpawnPoint, 0.8f, 1.0f, 35.0f, id});
-    Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (global diff=%.1f)\n",
-               id, npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z, d);
-}
-
-void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)
-{
-    Perf::ScopedTimer _spawnTimer("NpcSpawn");
-    float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
-    npcs.emplace_back(id, d, spawnPos);
-    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
-    Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (network, diff=%.1f)\n",
-               id, spawnPos.x, spawnPos.y, spawnPos.z, d);
-}
-
-void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)
-{
-    npcs.erase(std::remove_if(npcs.begin(), npcs.end(), [&](const Npc& npc) {
-        if (std::find(ids.begin(), ids.end(), npc.id) == ids.end()) return false;
-        AudioManager::instance().stopOwner(npc.id);
-        EffectPartSystem::instance().destroyOwner(npc.id);
-        NpcSelectionManager::instance().deselect(npc.id);
-        Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
-        return true;
-    }), npcs.end());
-    Debug::log(Debug::Category::General, "[NPC] cleanup complete\n");
-}
-
-void NpcSystem::destroyAll() { clear(); }
-
-void NpcSystem::setGlobalDifficulty(float d)
-{
-    globalDifficulty_ = std::clamp(d, 1.0f, 10.0f);
-    // Update tuning for all existing NPCs
-    for (Npc& npc : npcs)
-    {
-        npc.difficulty = globalDifficulty_;
-        npc.tuning = tuningForDifficulty(globalDifficulty_);
-    }
-    Debug::log(Debug::Category::General, "[NPC] global difficulty set to %.1f for %zu NPCs\n",
-               globalDifficulty_, npcs.size());
-}
 
 void NpcSystem::update(const World& world, Player& player, float dt)
 {
@@ -358,7 +196,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     float safeDt = std::max(dt, 0.0001f);
 
-    // Update timers
     npc.dashCooldown = std::max(0.0f, npc.dashCooldown - safeDt);
     npc.downDashCooldown = std::max(0.0f, npc.downDashCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
@@ -368,10 +205,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.stateMachine.nextDecisionTime -= safeDt;
     npc.stateMachine.retreatTimer += safeDt;
 
-    // Sense the world
     senseWorld(npc, player, safeDt);
 
-    // Down dash decision: slam down when airborne above the target
     bool wantDownDash = false;
     if (npc.sensors.hasTarget && !npc.sensors.grounded && npc.downDashCooldown <= 0.0f)
     {
@@ -380,7 +215,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             wantDownDash = true;
     }
 
-    // Handle hit reaction
     if (npc.hitReactionTimer > 0.0f)
     {
         npc.stateMachine.currentState = NpcState::Recover;
@@ -388,20 +222,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, npc.hitReactionTimer + 0.1f);
     }
 
-    // Training mode overrides
     if (npc.trainingMode != 2) {
         if (npc.trainingMode == 0) {
-            // Idle: stand still, never attack
             npc.stateMachine.currentState = NpcState::Idle;
             npc.stateMachine.nextDecisionTime = 2.0f;
         } else if (npc.trainingMode == 1) {
-            // Flee: always retreat away from player, never attack
             npc.stateMachine.currentState = NpcState::Retreat;
             npc.stateMachine.retreatTimer = 0.0f;
             npc.stateMachine.nextDecisionTime = 0.3f;
         }
     } else {
-        // trainingMode == 2: normal AI decision
         if (npc.stateMachine.nextDecisionTime <= 0.0f)
         {
             NpcState oldState = npc.stateMachine.currentState;
@@ -437,17 +267,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
-    // Compute movement from current state
     glm::vec3 moveDir;
     bool jump, dash, attack;
     computeStateMovement(npc, moveDir, jump, dash, attack);
 
-    // Bomb tag override: chase when holding bomb, flee when not
     if (npc.bombTagActive)
     {
         if (npc.bombTagHasBomb)
         {
-            // Chase the bomb tag target
             glm::vec3 toTarget = npc.bombTagChaseTarget - npc.body.pos;
             float dist = glm::length(toTarget);
             if (dist > 0.5f)
@@ -462,7 +289,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
         else
         {
-            // Flee from bomb holder
             glm::vec3 fromTarget = npc.body.pos - npc.bombTagFleeFrom;
             float dist = glm::length(fromTarget);
             if (dist > 0.1f)
@@ -476,23 +302,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
-    // Apply wall avoidance
     {
         Perf::ScopedTimer _pathTimer("NpcPathfinding");
         if (glm::length(moveDir) > 0.001f)
             moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world);
 
-        // Stuck detection override
         if (NpcNavigation::isStuck(npc))
         {
             npc.stateMachine.stuckTimer += safeDt;
             if (npc.stateMachine.stuckTimer > 0.3f)
             {
-                // Force unstuck: pick a free direction and jump
                 moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world);
                 jump = true;
                 dash = npc.dashCooldown <= 0.0f;
-                // Force re-evaluation soon
                 npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
             }
         }
@@ -502,12 +324,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
-    // Build input
     InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash);
     if (input.dashPressed)
         npc.dashCommandConsumed = true;
 
-    // Physics update (uses same player movement system)
     bool downDashAvailableBefore = npc.body.downDashAvailable;
     {
         Perf::ScopedTimer _npcCollision("NpcCollision");
@@ -516,7 +336,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
         physicsMainUpdate(npc.body, world, input, safeDt);
 
-        // Track physics stats
         float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
         npc.lastMoveInput = input.wishMoveXY;
         npc.lastAcceleration = (npc.body.vel - velocityBefore) / safeDt;
@@ -524,7 +343,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         npc.lastFrictionDelta = input.movementPressed ? 0.0f : planarSpeedAfter - planarSpeedBefore;
         npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
 
-        // Debug logging
         if (DebugConfig::DEBUG_NPC)
         {
             std::string cmdKey = "npc-cmd-" + std::to_string(npc.id);
@@ -542,11 +360,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.lastFinalSpeed);
     }
 
-    // NPC Combat debug (state, distance, aim error)
     if (DebugConfig::DEBUG_NPC_COMBAT && npc.sensors.hasTarget)
     {
         float aimErrDeg = NpcCombat::aimErrorDegrees(npc.difficulty);
-        // TODO(debug): migrate to Debug::log(Debug::Category::NpcMovement)
         printf("[NPC] id=%u state=%s dist=%.1f aimError=%.2f canSee=%d "
                "aimTimer=%.2f reactionTimer=%.2f\n",
                npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
@@ -554,9 +370,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                (int)(npc.sensors.targetDistance <= npc.tuning.awarenessRange),
                npc.aimTimer, npc.reactionTimer);
     }
-    } // Perf::ScopedTimer NpcCollision
+    }
 
-    // Dash cooldown + effects
     if (input.dashPressed && npc.body.didDash)
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
@@ -565,14 +380,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
     }
 
-    // Down dash cooldown: detect if down dash was consumed this frame
     if (wantDownDash && downDashAvailableBefore && !npc.body.downDashAvailable)
     {
         npc.downDashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.50f;
         Debug::log(Debug::Category::General, "[NPC] id=%u down-dashed\n", npc.id);
     }
 
-    // Reaction delay: random delay before first shot after acquiring target
     if (npc.sensors.hasTarget)
     {
         npc.reactionTimer -= safeDt;
@@ -582,7 +395,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         npc.reactionTimer = 0.05f + random01(npc.rngState) * 0.30f;
     }
 
-    // Attack (disabled for training modes 0 idle and 1 flee)
     if (attack && npc.attackCooldown <= 0.0f && npc.trainingMode == 2 && npc.reactionTimer <= 0.0f)
     {
         Perf::ScopedTimer _combatTimer("NpcCombat");
