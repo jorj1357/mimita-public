@@ -121,6 +121,9 @@ public:
 private:
     EffectPartSystem() = default;
 
+    void updateBloodParticles(float dt);
+    void updateBloodDecals(float dt);
+
     static constexpr unsigned int POOL_SIZE = 4096;
     static constexpr unsigned int MAX_BLOOD_PARTICLES = 512;
     static constexpr unsigned int MAX_BLOOD_DECALS = 256;

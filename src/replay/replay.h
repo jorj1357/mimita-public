@@ -279,6 +279,11 @@ using ReplayFactoryNotifyFn = void(*)(const std::string& killerId,
 extern ReplayFactoryNotifyFn gReplayFactoryNotifyFn;
 void setReplayFactoryNotifyFn(ReplayFactoryNotifyFn fn);
 
+// Global state (defined in replay.cpp, accessible across replay subsystem)
+extern ReplayRecorder* gActiveReplayRecorder;
+extern bool gReplayCaptureEnabled;
+extern ReplayClipSaver* gActiveReplayClipSaver;
+
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
 

@@ -7,6 +7,9 @@
 #include "network/net_mode.h"
 #include "combat/death-system.h"
 #include "input/input-poll.h"
+#include "config/player-settings.h"
+#include "render/outfit-atlas.h"
+#include "network/packets.h"
 
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
 static bool parseTeleportPosition(
@@ -127,6 +130,100 @@ void registerPlayerCommands()
         [](const std::vector<std::string>&) {
             gTerminalInputOverride.groundReturnPressed = true;
             Terminal::instance().addLog("[GAMEPLAY] ground_return");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "chat", "Send a chat message visible above your character", "chat <message>",
+        [](const std::vector<std::string>& args) {
+            Player& player = THE_PLAYER;
+            if (args.empty())
+            {
+                Terminal::instance().addLog("[CHAT] usage: chat <message>");
+                return;
+            }
+            std::string message;
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                if (i > 0) message += " ";
+                message += args[i];
+            }
+            if (message.size() > 240)
+            {
+                message.resize(240);
+                Terminal::instance().addLog("[CHAT] message truncated to 240 characters");
+            }
+
+            printf("[CHAT] %s: %s\n", player.username.c_str(), message.c_str());
+            Terminal::instance().addLog("[CHAT] " + player.username + ": " + message);
+            Terminal::instance().addLog("[CHAT] bubble added");
+
+            addChatMessage(player.chatState, message, player.username);
+            playChatSound((int)message.size());
+
+            {
+                ReplayEffectEvent chatEvent;
+                chatEvent.type = "chat";
+                chatEvent.sourceActorId = player.username;
+                chatEvent.assetId = message;
+                chatEvent.lifetime = computeChatDuration((int)message.size());
+                captureReplayEffect(chatEvent);
+                Terminal::instance().addLog("[CHAT] replay event recorded");
+            }
+
+            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+            if (mpContext.active && mpContext.localPlayerId != 0)
+            {
+                MimitaNet::ChatPacket chatPacket{};
+                chatPacket.header.type = MimitaNet::PACKET_CHAT_MESSAGE;
+                chatPacket.header.tick = mpContext.tick;
+                chatPacket.header.playerId = mpContext.localPlayerId;
+                std::memset(chatPacket.senderName, 0, sizeof(chatPacket.senderName));
+                std::strncpy(chatPacket.senderName, player.username.c_str(),
+                             sizeof(chatPacket.senderName) - 1);
+                std::memset(chatPacket.text, 0, sizeof(chatPacket.text));
+                std::strncpy(chatPacket.text, message.c_str(), sizeof(chatPacket.text) - 1);
+                MimitaNet::mpSendPacket(mpContext, &chatPacket, sizeof(chatPacket));
+                Terminal::instance().addLog("[CHAT] replicated");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "setoutfit", "Set and save the player outfit PNG", "setoutfit <path>",
+        [](const std::vector<std::string>& args) {
+            Player& player = THE_PLAYER;
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: setoutfit <path>");
+                return;
+            }
+            if (OutfitAtlas::instance().apply(player, args[0])) {
+                GetPlayerSettings().outfitPath = args[0];
+                SavePlayerSettings();
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "reloadoutfit", "Reload the current outfit PNG from disk", "reloadoutfit",
+        [](const std::vector<std::string>&) {
+            Player& player = THE_PLAYER;
+            OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath, true);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "outfitdebug", "Print outfit atlas region mapping", "outfitdebug",
+        [](const std::vector<std::string>&) { OutfitAtlas::instance().printDebug(); }
+    });
+    Terminal::instance().registerCommand({
+        "killfeed", "Show recent kills", "killfeed",
+        [](const std::vector<std::string>&) {
+            WeaponSystem& weapons = THE_WEAPONS;
+            if (weapons.killfeed().empty()) {
+                Terminal::instance().addLog("[KILLFEED] no kills");
+                return;
+            }
+            for (const std::string& line : weapons.killfeed())
+                Terminal::instance().addLog("[KILLFEED] " + line);
         }
     });
 }
