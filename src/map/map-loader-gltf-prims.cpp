@@ -8,7 +8,6 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
-#include <unordered_set>
 #include <string>
 #include <vector>
 
@@ -21,8 +20,6 @@
 extern TextureStore gTextures;
 
 #define GLB_LOG(...) Debug::logAuto(Debug::Category::GLB, __VA_ARGS__)
-
-namespace {
 
 void appendPrimitive(
     const tinygltf::Model& model,
@@ -245,5 +242,3 @@ void appendPrimitive(
                 meshIndex, primitiveIndex, batch.materialName.c_str(), batch.count, batch.count / 3, batch.texture);
     loggedPrimitives++;
 }
-
-} // anonymous namespace
