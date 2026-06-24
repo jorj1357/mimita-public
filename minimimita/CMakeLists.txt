@@ -15,8 +15,15 @@ add_definitions(-DGLM_ENABLE_EXPERIMENTAL)
 
 set(SOURCES
     src/main.cpp
+    src/globals.cpp
+    src/input.cpp
+    src/init.cpp
+    src/map-utils.cpp
     src/physics.cpp
-    src/render.cpp
+    src/collision-grid.cpp
+    src/render-core.cpp
+    src/render-primitives.cpp
+    src/render-scene.cpp
     src/maps.cpp
     src/glb-loader.cpp
     ../src/glad.c

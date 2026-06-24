@@ -38,8 +38,15 @@ LIBS = [f"-L{GLFW_LIB}", "-lglfw3", "-lopengl32", "-lgdi32", "-luser32", "-ldwma
 SOURCES = [
     PARENT / "src" / "glad.c",
     SRC / "main.cpp",
+    SRC / "globals.cpp",
+    SRC / "input.cpp",
+    SRC / "init.cpp",
+    SRC / "map-utils.cpp",
     SRC / "physics.cpp",
-    SRC / "render.cpp",
+    SRC / "collision-grid.cpp",
+    SRC / "render-core.cpp",
+    SRC / "render-primitives.cpp",
+    SRC / "render-scene.cpp",
     SRC / "maps.cpp",
     SRC / "glb-loader.cpp",
 ]

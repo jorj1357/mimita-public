@@ -28,7 +28,7 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
-#include "analytics/analytics-manager.h"
+
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
 #include "config.h"
@@ -82,6 +82,7 @@ static void physicsMainUpdate_Internal(
     p.didAirJump    = false;
     p.didDash       = false;
     p.didLand       = false;
+    p.didFreeze     = false;
 
     doGravity(p, dt);
 
@@ -150,20 +151,11 @@ static void physicsMainUpdate_Internal(
 
     // air dash
     doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dashMovementTicks, dt, camForward);
-    if (p.didDash)
-        AnalyticsManager::instance().trackMovement("dash");
-
     // down dash
     doDownDash(p, downDashPressed, dt);
 
     // jump — now reads fresh p.onGround/p.stableOnGround
     doJump(p, jumpHeld, jumpPressed, dt);
-
-    if (p.didGroundJump)
-        AnalyticsManager::instance().trackMovement(
-            (p.hasWorldContact && !groundedThisFrame) ? "wall_jump" : "jump");
-    else if (p.didAirJump)
-        AnalyticsManager::instance().trackMovement("air_jump");
     if (DebugConfig::DEBUG_INPUT) {
         if (p.didGroundJump)
             Debug::log(Debug::Category::General, "[JUMP] start ground velocityZ=%.2f\n", p.vel.z);

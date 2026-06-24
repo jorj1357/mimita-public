@@ -257,6 +257,7 @@ public:
     bool didAirJump    = false;
     bool didDash       = false;
     bool didLand       = false;
+    bool didFreeze     = false;
 
     // -------- Body/weapon collision push (debug) --------
     glm::vec3 debugBodyCollisionPush{0.0f};

@@ -1544,6 +1544,13 @@ void Player::updateAudio(float dt)
         lastDashQuality = 0;
     }
 
+    if (didFreeze) {
+        playWorldSound("entity/player/freezebegin", pos, 1.0f, 1.0f, 30.0f);
+        glm::vec3 freezePos = pos;
+        freezePos.z -= 0.3f;
+        EffectPartSystem::instance().spawnFreeze(freezePos, freezeTimer);
+    }
+
     // Landing: sound + directional VFX
     if (didLand) {
         playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
@@ -1577,7 +1584,7 @@ void Player::updateAudio(float dt)
         footstepTimer = 0.0f;
     }
 
-    didGroundJump = didAirJump = didDash = didLand = false;
+    didGroundJump = didAirJump = didDash = didLand = didFreeze = false;
 }
 
 void Player::render(unsigned int shader,

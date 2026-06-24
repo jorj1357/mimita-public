@@ -17,6 +17,7 @@ Its entire purpose is to invoke all repository health skills and aggregate their
 - file-size-checker
 - function-size-checker
 - physics-architecture-checker
+- repo-hygiene-checker
 
 ## Behavior
 
@@ -28,7 +29,7 @@ Run each skill, collect its findings, and present one combined report.
 
 ## Missing Skills
 
-If any of the five skill directories is missing, report it by name in the report.
+If any of the six skill directories is missing, report it by name in the report.
 Do not silently ignore missing skills.
 
 ## Output Format
@@ -58,6 +59,10 @@ OVERSEER REPORT
 
 (output from physics-architecture-checker)
 
+## Repository Hygiene Issues
+
+(output from repo-hygiene-checker)
+
 ================================
 
 # Summary
@@ -75,4 +80,4 @@ Recommended Actions
 
 ## Trigger
 
-Typing `Use Overseer` automatically executes all five skills and returns the combined report.
+Typing `Use Overseer` automatically executes all six skills and returns the combined report.

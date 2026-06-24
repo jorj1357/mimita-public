@@ -14,6 +14,7 @@ struct Contact {
     glm::vec3 point;
     glm::vec3 normal;
     float depth;
+    int triangleIndex = -1;
     enum Side { FLOOR, WALL, CEILING };
     Side side;
 };
@@ -48,7 +49,7 @@ struct Player {
     glm::vec3 velocity;
     float radius = 0.3f;
     float height = 1.8f;
-    bool grounded = false;
+    bool jumpAvailable = false;
     ContactState contacts;
 
     glm::vec3 capA() const {
@@ -90,7 +91,7 @@ struct Camera {
     }
 
     glm::mat4 projection(float aspect) const {
-        return glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        return glm::perspective(glm::radians(100.0f), aspect, 0.1f, 100.0f);
     }
 };
 
@@ -99,7 +100,6 @@ struct InputState {
     bool space = false;
     bool spacePrev = false;
     bool r = false;
-    bool wireframe = false;
     glm::vec3 wishDir = glm::vec3(0.0f);
     char commandBuffer[256] = {};
     int commandLen = 0;
