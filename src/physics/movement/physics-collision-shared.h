@@ -59,14 +59,6 @@ void applyTouchResets(Player& p);
 
 void recoverInvalidPlayerCollisionState(Player& p, const glm::vec3& frameStart, const char* phase);
 
-bool rejectBelowTopFaceContact(
-    const Capsule& cap,
-    const CollisionTriangle& tri,
-    const glm::vec3& normal,
-    const glm::vec3& point,
-    int triangleIndex,
-    const char* phase);
-
 bool rejectBelowBlockTopContact(
     const Capsule& cap,
     const AABB& block,
@@ -144,6 +136,13 @@ bool sphereTriangleContact(
 // Triangle gathering helpers needed by stress tests
 // =====================================================
 
+std::vector<int> gatherGLBTrianglesForSphere(
+    const World& world,
+    glm::vec3 center,
+    float radius,
+    const glm::vec3& move
+);
+
 std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,
@@ -155,6 +154,22 @@ std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const Capsule& cap,
     const std::vector<int>& candidates
 );
+
+// =====================================================
+// Conversion helper for body collision
+// =====================================================
+
+inline bool rejectBelowTopFaceContact(
+    const Capsule& cap,
+    const CollisionTriangle& tri,
+    const glm::vec3& normal,
+    const glm::vec3& point,
+    int triangleIndex,
+    const char* phase)
+{
+    (void)cap; (void)tri; (void)normal; (void)point; (void)triangleIndex; (void)phase;
+    return false;
+}
 
 // =====================================================
 // Collision trace snapshot (used by stress tests + summary)

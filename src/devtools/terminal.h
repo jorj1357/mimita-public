@@ -93,6 +93,9 @@ private:
     int mExportPickerScroll = 0;
     Terminal() = default;
     friend void registerTerminalBuiltins();
+    friend void registerHelpCommands();
+    friend void registerDebugToggleCommands();
+    friend void registerConfigCommands();
 
     void executeCurrent();
     void addHistory(const std::string& input);
