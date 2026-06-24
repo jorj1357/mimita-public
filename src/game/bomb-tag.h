@@ -9,6 +9,8 @@ class NpcSystem;
 struct World;
 class Camera;
 
+void setArmToWeaponPose(Player& p, bool hasBomb);
+
 enum class BombTagPhase {
     Off,
     Countdown,
