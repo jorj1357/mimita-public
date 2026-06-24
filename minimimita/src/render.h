@@ -37,12 +37,17 @@ struct CylinderRenderer {
 
 extern GLuint gShader;
 extern bool gShaderReady;
+extern SphereRenderer gSphereRenderer;
+extern CylinderRenderer gCylinderRenderer;
+extern LineRenderer gLineRenderer;
+extern Mesh gWorldMesh;
+extern bool gWorldMeshValid;
 
 bool initRenderer();
 void setShaderMVP(GLuint shader, const glm::mat4& mvp);
-void setShaderColor(GLuint shader, const glm::vec4& color);
-void drawMeshInstanced(const Mesh& mesh, const glm::mat4& viewProj,
-                       const glm::mat4& model, const glm::vec4& color);
+void createMesh(Mesh& mesh, const float* verts, int vertCount,
+                const unsigned int* indices, int indexCount);
+void destroyMesh(Mesh& mesh);
 
 void rebuildWorldMesh(const std::vector<Triangle>& triangles);
 void renderWorld(const glm::mat4& viewProj, bool wireframe);
@@ -50,5 +55,7 @@ void renderPlayer(const Player& player, const glm::mat4& viewProj);
 void renderContacts(const Player& player, const glm::mat4& viewProj);
 void renderHUD(const Player& player, const TestMap& map, int windowW, int windowH,
                bool wireframe);
+void doRender(const Player& player, const Camera& camera, const TestMap& map,
+              int windowW, int windowH, bool wireframe);
 void flushLines(const glm::mat4& viewProj);
 void shutdownRenderer();

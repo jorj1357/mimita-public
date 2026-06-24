@@ -33,7 +33,6 @@
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "config/player-settings.h"
-#include "devtools/terminal.h"
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
 

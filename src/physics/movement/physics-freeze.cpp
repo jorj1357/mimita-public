@@ -18,13 +18,11 @@
  *  */
 
 #include <cstdio>
-#include "effects/effect-part.h"
 #include <algorithm>
 #include <cmath>
 
 #include "physics/config.h"
 #include "entities/player.h"
-#include "audio/audio.h"
 #include "physics/movement/physics-freeze.h"
 #include "debug/debug-log.h"
 
@@ -94,7 +92,7 @@ void doFreeze(
         p.freezeAvailable = false;
         p.freezeHoldSoundPlayed = false;
 
-        playWorldSound("entity/player/freezebegin", p.pos, 1.0f, 1.0f, 30.0f);
+        p.didFreeze = true;
 
         FREEZE_LOG("[FREEZE] begin\n");
     }
@@ -110,7 +108,6 @@ void doFreeze(
 
         FREEZE_LOG("[FREEZE] end\n");
 
-        playWorldSound("entity/player/freezeend", p.pos, 1.0f, 1.0f, 30.0f);
     }
 
 
@@ -123,14 +120,8 @@ void doFreeze(
 
     p.freezeTimer += dt;
 
-    // Spawn freeze effect (updates label with current duration)
-    EffectPartSystem::instance().spawnFreeze(p.pos, p.freezeTimer);
-
-    // if (!p.freezeHoldSoundPlayed && p.freezeTimer >= 0.5f)
-    // this is annouing so never plau it
     if (!p.freezeHoldSoundPlayed && p.freezeTimer >= 999.0f)
     {
-        playWorldSound("entity/player/freezehold", p.pos, 0.7f, 1.0f, 24.0f);
         p.freezeHoldSoundPlayed = true;
     }
 
