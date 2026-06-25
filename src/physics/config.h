@@ -7,6 +7,8 @@ struct PhysicsConfig {
     float jumpStrength;
 };
 
+inline float AIR_SPEED = 20.0f;
+
 inline PhysicsConfig PHYS = {
     -58.0f, // gravity
     20.0f,  // move speed

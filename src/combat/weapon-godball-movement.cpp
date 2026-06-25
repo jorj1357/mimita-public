@@ -332,7 +332,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
         float knockbackForce = knockbackBase * (0.5f + 0.5f * speedScale);
 
         npc.body.currentHp = std::max(0, npc.body.currentHp - rounded);
-        npc.body.vel += kbDir * knockbackForce + glm::vec3(0, 0, knockbackForce * 0.4f);
+        npc.body.externalImpulse += kbDir * knockbackForce + glm::vec3(0, 0, knockbackForce * 0.4f);
         npc.hitReactionTimer = 0.25f + std::min(ballSpeed * 0.005f, 0.15f);
 
         {
