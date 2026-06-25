@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <glm/glm.hpp>
+#include <cfloat>
 
 glm::vec3 closestPtPointTriangle(glm::vec3 p, const Triangle& tri) {
     const glm::vec3 ab = tri.b - tri.a;
@@ -59,15 +60,44 @@ glm::vec3 closestPtPointSegment(glm::vec3 p, glm::vec3 a, glm::vec3 b) {
 bool capsuleTriangleCollision(glm::vec3 capA, glm::vec3 capB, float radius,
                               const Triangle& tri, Contact& contact) {
     const float EPS = 1e-8f;
+    float bestDistSq = FLT_MAX;
+    glm::vec3 bestDiff(0.0f);
 
+    // --- Check cylinder (center line) ---
     glm::vec3 ptOnSeg = closestPtPointSegment(tri.a, capA, capB);
     glm::vec3 ptOnTri = closestPtPointTriangle(ptOnSeg, tri);
-
     ptOnSeg = closestPtPointSegment(ptOnTri, capA, capB);
     ptOnTri = closestPtPointTriangle(ptOnSeg, tri);
 
-    const glm::vec3 diff = ptOnSeg - ptOnTri;
+    glm::vec3 diff = ptOnSeg - ptOnTri;
     float distSq = glm::length2(diff);
+    bestDistSq = distSq;
+    bestDiff = diff;
+
+    // --- Check bottom end cap (sphere at capA) ---
+    glm::vec3 aOnTri = closestPtPointTriangle(capA, tri);
+    glm::vec3 aDiff = capA - aOnTri;
+    float aDistSq = glm::length2(aDiff);
+    if (aDistSq < bestDistSq) {
+        bestDistSq = aDistSq;
+        bestDiff = aDiff;
+        ptOnSeg = capA;
+        ptOnTri = aOnTri;
+    }
+
+    // --- Check top end cap (sphere at capB) ---
+    glm::vec3 bOnTri = closestPtPointTriangle(capB, tri);
+    glm::vec3 bDiff = capB - bOnTri;
+    float bDistSq = glm::length2(bDiff);
+    if (bDistSq < bestDistSq) {
+        bestDistSq = bDistSq;
+        bestDiff = bDiff;
+        ptOnSeg = capB;
+        ptOnTri = bOnTri;
+    }
+
+    diff = bestDiff;
+    distSq = bestDistSq;
 
     if (distSq > radius * radius)
         return false;
@@ -76,7 +106,10 @@ bool capsuleTriangleCollision(glm::vec3 capA, glm::vec3 capB, float radius,
     glm::vec3 n;
     if (dist < EPS) {
         n = tri.normal;
-        if (glm::dot(n, ptOnSeg - capA) < 0.0f)
+        glm::vec3 checkPos = (glm::length2(aDiff) < glm::length2(bDiff)) ? capA : capB;
+        if (glm::length2(ptOnSeg - checkPos) > 0.001f)
+            checkPos = (capA + capB) * 0.5f;
+        if (glm::dot(n, ptOnSeg - checkPos) < 0.0f)
             n = -n;
     } else {
         n = diff / dist;
