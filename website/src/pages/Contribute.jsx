@@ -97,7 +97,7 @@ export default function Contribute() {
         <div className="contributeSection">
 
           <a
-            href="https://discord.gg/XvzV9hSz6j"
+            href="https://discord.gg/sY8QHbfG9D"
             target="_blank"
             rel="noopener noreferrer"
             className="donateButton"

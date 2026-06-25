@@ -72,7 +72,7 @@ export default function Home() {
 
           <div className="secondaryButtons">
             <a
-              href="https://discord.gg/4MRjvpDu7e"
+              href="https://discord.gg/sY8QHbfG9D"
               target="_blank"
               rel="noopener noreferrer"
               className="secondaryButton"
