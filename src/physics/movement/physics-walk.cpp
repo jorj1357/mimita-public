@@ -11,7 +11,7 @@
 //
 // Purpose:
 // - Ground walk (instant response)
-// - NO air acceleration
+// - Air movement (instant response, camera-relative)
 //
 // Uses physics/config.h
 // Debug heavy
@@ -45,13 +45,6 @@ void doWalk(
 ) {
     dt = std::min(dt, 0.033f);
 
-    // No air acceleration. Movement input only affects velocity while grounded.
-    if (!onGround)
-    {
-        WALK_LOG("[WALK] Airborne — no acceleration\n");
-        return;
-    }
-
     float wishLen = glm::length(wishMoveXY);
 
     // no movement input — friction (handled separately) will stop the player
@@ -62,16 +55,25 @@ void doWalk(
     }
 
     glm::vec2 wishDir = wishMoveXY / wishLen;
-    glm::vec2 velXY(p.vel.x, p.vel.y);
+    glm::vec2 velBefore(p.vel.x, p.vel.y);
 
     // Set velocity to target speed along wish direction.
     // Preserves perpendicular velocity (dash, knockback, recoil).
     float targetSpeed = PHYS.moveSpeed;
-    float alongCurrent = glm::dot(velXY, wishDir);
+    float alongCurrent = glm::dot(velBefore, wishDir);
     if (alongCurrent < targetSpeed)
     {
         p.vel.x += (targetSpeed - alongCurrent) * wishDir.x;
         p.vel.y += (targetSpeed - alongCurrent) * wishDir.y;
+    }
+
+    // Debug: air control summary (0.5s throttle)
+    if (!onGround)
+    {
+        Debug::logThrottled(Debug::Category::Physics, "airwalk", 0.5f,
+            "[AIR_WALK] grounded=%d wishDir=(%.2f %.2f) velBefore=(%.2f %.2f) velAfter=(%.2f %.2f)\n",
+            (int)onGround, wishDir.x, wishDir.y,
+            velBefore.x, velBefore.y, p.vel.x, p.vel.y);
     }
 
     WALK_LOG(

@@ -165,7 +165,7 @@ static void physicsMainUpdate_Internal(
                        (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
     }
 
-    // Walk applies movement input — only while grounded. No air acceleration.
+    // Walk applies movement input — ground and air.
     if (movementPressed)
         doWalk(p, wishMoveXY, groundedThisFrame, dt);
 
