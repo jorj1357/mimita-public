@@ -104,6 +104,10 @@ static void physicsMainUpdate_Internal(
     p.ground.hasWorldContact = p.ground.worldContactLostTimer > 0.0f;
     p.ground.realWorldContactThisFrame = false;
 
+    // Down dash must run BEFORE collision so the collision system
+    // processes the downward velocity on the same frame — no one-frame delay.
+    doDownDash(p, downDashPressed, dt);
+
     for (int i = 0; i < steps; i++)
     {
         doCollisions(p, world, groundedThisFrame, subdt);
@@ -148,8 +152,13 @@ static void physicsMainUpdate_Internal(
     // Clear external velocity when player takes direct movement control.
     // Movement keys, dash, and freeze get priority over recoil/knockback.
     // Jump does NOT trigger this clear (preserves external velocity through jumps).
+    // Preserve upward external impulse Z so knockback still counteracts downward velocity.
     if (movementPressed || dashPressed || freezeHeld)
+    {
+        float upZ = p.externalImpulse.z > 0.0f ? p.externalImpulse.z : 0.0f;
         p.externalImpulse = glm::vec3(0.0f);
+        p.externalImpulse.z = upZ;
+    }
 
     // Walk applies movement input — ground and air (sets base horizontal velocity).
     if (movementPressed)
@@ -157,8 +166,6 @@ static void physicsMainUpdate_Internal(
 
     // air dash (adds impulse on top of walk velocity)
     doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dash.dashMovementTicks, dt, camForward);
-    // down dash
-    doDownDash(p, downDashPressed, dt);
 
     // jump — now reads fresh p.ground.onGround/p.ground.stableOnGround
     doJump(p, jumpHeld, jumpPressed, dt);
@@ -176,11 +183,15 @@ static void physicsMainUpdate_Internal(
     }
 
     // reset ALL abilities when grounded (not just dash)
+    // applyTouchResets (called during collision contact resolution, above) already
+    // restores airJumpsLeft, airJumpArmed, dash, etc. This block is a safety net
+    // for grounded frames where applyTouchResets may not have fired.
+    // NOTE: do NOT re-arm airJumpArmed here — it runs AFTER doJump and would undo
+    // the air-jump-armed=false that a ground jump just set, causing an immediate
+    // free air jump while holding Space on the next frame.
     if (groundedThisFrame)
     {
         p.jump.airJumpsLeft = AIR_JUMPS_MAX;
-        p.jump.airJumpArmed = true;
-        p.jump.airJumpLocked = false;
         p.dash.dashAvailable = true;
         p.groundReturn.available = true;
         p.dash.downDashAvailable = true;

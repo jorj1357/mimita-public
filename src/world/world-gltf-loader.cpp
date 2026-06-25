@@ -35,7 +35,9 @@ bool loadWorldFromGLB(World& world, const char* path)
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
+    auto tParseStart = std::chrono::steady_clock::now();
     candidate.mesh = loadGLB(path, true, &candidate.skyMesh);
+    auto tParseEnd = std::chrono::steady_clock::now();
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] after loadGLB\n");
 
@@ -53,13 +55,13 @@ bool loadWorldFromGLB(World& world, const char* path)
         return false;
     }
 
-    printf("[WORLD GLB] before collision build\n");
-
+    auto tColStart = std::chrono::steady_clock::now();
     buildCollisionMeshFromRenderMesh(candidate);
+    auto tChunkStart = std::chrono::steady_clock::now();
     buildCollisionChunks(candidate);
+    auto tSpawnStart = std::chrono::steady_clock::now();
     extractSpawnPointsFromGLB(candidate, path);
-
-    printf("[WORLD GLB] after collision build\n");
+    auto tSpawnEnd = std::chrono::steady_clock::now();
 
     const auto unloadStarted = std::chrono::steady_clock::now();
     releaseMeshGLResources(world.mesh);
@@ -69,9 +71,19 @@ bool loadWorldFromGLB(World& world, const char* path)
         std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
     const double loadMs =
         std::chrono::duration<double, std::milli>(finished - loadStarted).count();
-    printf("[WORLD GLB] load success path=%s revision=%llu spawns=%zu unloadMs=%.2f totalMs=%.2f\n",
+
+    auto ms = [](auto start, auto end) {
+        return std::chrono::duration<double, std::milli>(end - start).count();
+    };
+    printf("[WORLD GLB] load phases: parse=%.1fms collision=%.1fms chunks=%.1fms spawns=%.1fms unload=%.1fms total=%.1fms\n",
+           ms(tParseStart, tParseEnd),
+           ms(tColStart, tChunkStart),
+           ms(tChunkStart, tSpawnStart),
+           ms(tSpawnStart, tSpawnEnd),
+           unloadMs, loadMs);
+    printf("[WORLD GLB] load success path=%s revision=%llu spawns=%zu\n",
            path, (unsigned long long)world.renderRevision,
-           world.spawnPoints.size(), unloadMs, loadMs);
+           world.spawnPoints.size());
     AnalyticsManager::instance().trackMapLoaded(
         path,
         (int)world.collisionMesh.triangles.size(),
