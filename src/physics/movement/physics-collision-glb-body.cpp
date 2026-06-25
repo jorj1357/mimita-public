@@ -7,6 +7,7 @@
 #include "debug/debug-visuals.h"
 
 #include <cstdio>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <vector>
 
