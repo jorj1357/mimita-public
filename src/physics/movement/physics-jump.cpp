@@ -114,19 +114,21 @@ void doJump(
         return;
     }
 
-    // ---------------- AIR JUMP (any airborne jump) ----------------
-    // Resets: applyTouchResets (on any collision contact) sets airJumpsLeft = AIR_JUMPS_MAX.
-    // Consumed: on jump, airJumpsLeft is decremented.
-    // This is event-based: contact event → reset → jump → consume.
+    // ---------------- AIR JUMP (requires release to re-arm) ----------------
+    // Resets: applyTouchResets (on any collision contact) sets airJumpsLeft = AIR_JUMPS_MAX and airJumpArmed = true.
+    // Consumed: on jump, airJumpsLeft is decremented and airJumpArmed is set to false.
+    // This prevents holding Space from consuming multiple air jumps.
     if (p.jump.airJumpsLeft > 0 &&
-        !p.jump.didGroundJump)
+        p.jump.airJumpArmed)
     {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
         p.jump.airJumpsLeft--;
+        p.jump.airJumpArmed = false;
+        p.jump.airJumpLocked = true;
         p.jump.jumpIntentTimer = 0.0f;
-        p.jump.didGroundJump = true;
+        p.jump.didAirJump = true;
 
         JUMP_LOG(
             "[JUMP] AIR vel.z %.3f -> %.3f | airJumpsLeft=%d\n",

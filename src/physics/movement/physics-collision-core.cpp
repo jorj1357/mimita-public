@@ -118,14 +118,12 @@ void applyCollisionContact(
 void applyTouchResets(Player& p)
 {
     p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+    p.jump.airJumpArmed = true;
+    p.jump.airJumpLocked = false;
     p.dash.dashAvailable = true;
     p.groundReturn.available = true;
     p.dash.downDashAvailable = true;
     p.freeze.freezeAvailable = true;
-    if (DebugConfig::DEBUG_PHYSICS)
-        Debug::logThrottled(Debug::Category::Physics, "touchreset", 0.25f,
-            "[TOUCH RESET] airJumps=%d dash=%d groundReturn=%d freeze=%d\n",
-            p.jump.airJumpsLeft, (int)p.dash.dashAvailable, (int)p.groundReturn.available, (int)p.freeze.freezeAvailable);
 }
 
 glm::vec3 solveBatchedCorrection(
