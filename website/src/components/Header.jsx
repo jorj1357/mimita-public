@@ -54,7 +54,7 @@ export default function Header() {
               <Link to="/jorj" onClick={() => setOpen(false)}>jorj</Link>
               <Link to="/download" onClick={() => setOpen(false)}>download</Link>
               <a href="https://github.com/jorj1357/mimita-public" target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>github</a>
-              <a href="https://discord.gg/4MRjvpDu7e" target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>discord</a>
+              <a href="https://discord.gg/sY8QHbfG9D" target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>discord</a>
               <Link to="/about" onClick={() => setOpen(false)}>about</Link>
               <Link to="/articles" onClick={() => setOpen(false)}>articles</Link>
               <Link to="/socials" onClick={() => setOpen(false)}>socials</Link>
@@ -75,7 +75,7 @@ export default function Header() {
         <Link className="headerMainLink" to="/3cage">3cage</Link>
         <Link className="headerMainLink" to="/jorj">jorj</Link>
         <a className="headerMainLink" href="https://github.com/jorj1357/mimita-public" target="_blank" rel="noopener noreferrer">github</a>
-        <a className="headerMainLink" href="https://discord.gg/4MRjvpDu7e" target="_blank" rel="noopener noreferrer">discord</a>
+        <a className="headerMainLink" href="https://discord.gg/sY8QHbfG9D" target="_blank" rel="noopener noreferrer">discord</a>
         <Link className="headerMainLink" to="/contribute">donate</Link>
 
         {isAdmin && (
