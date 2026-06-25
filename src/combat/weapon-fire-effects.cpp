@@ -69,7 +69,7 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
     float knockback = damage * distanceFactor * (0.08f + angleFactor * 0.12f);
 
     victim.body.currentHp = std::max(0, victim.body.currentHp - rounded);
-    victim.body.vel += shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
+    victim.body.externalImpulse += shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
     victim.hitReactionTimer = 0.3f;
 
     {

@@ -296,10 +296,10 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     
     playWorldSound("player_hurt", pos, volume, pitch, 35.0f);
     
-    // Apply knockback
+    // Apply knockback to external velocity (cleared on movement input)
     if (knockbackForce > 0.0f && glm::length(knockbackDir) > 0.001f) {
-        vel += glm::normalize(knockbackDir) * knockbackForce;
-        vel.z += knockbackForce * 0.2f; // Slight upward knockback
+        externalImpulse += glm::normalize(knockbackDir) * knockbackForce;
+        externalImpulse.z += knockbackForce * 0.2f; // Slight upward knockback
     }
     
     // Spawn blood effect at player position
