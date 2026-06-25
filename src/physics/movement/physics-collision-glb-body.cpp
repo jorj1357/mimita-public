@@ -55,50 +55,80 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
 
         if (!bwContacts.empty())
         {
-            std::vector<RecoveryContact> pushContacts;
+            PHYS_LOG("[PHYS][BODY-WEAPON] %zu contacts total\n", bwContacts.size());
+
+            // Separate contacts by type:
+            //   walkableContacts     → applyCollisionContact for grounded detection
+            //   bodyPushContacts     → combined with root contacts → pushes root position
+            //   weaponPushContacts   → velocity projection only (no position push)
+            std::vector<RecoveryContact> walkableContacts;
+            std::vector<RecoveryContact> bodyPushContacts;
+            std::vector<RecoveryContact> weaponPushContacts;
+
             for (const auto& c : bwContacts)
             {
-                if (c.normal.z <= MAX_WALKABLE_SLOPE_DOT)
-                    pushContacts.push_back(c);
+                if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
+                {
+                    walkableContacts.push_back(c);
+                }
+                else if (c.label && std::strcmp(c.label, "weapon") == 0)
+                {
+                    weaponPushContacts.push_back(c);
+                }
+                else
+                {
+                    bodyPushContacts.push_back(c);
+                }
             }
 
-            if (!pushContacts.empty())
+            // Walkable body contacts set grounded state (e.g., foot on floor).
+            for (const RecoveryContact& wc : walkableContacts)
             {
-                PHYS_LOG("[PHYS][BODY-WEAPON] %zu contacts (%zu push) at final pos\n",
-                         bwContacts.size(), pushContacts.size());
+                applyCollisionContact(
+                    p, groundedThisFrame,
+                    wc.normal, wc.point, wc.penetration,
+                    wc.triangleIndex, wc.label);
+            }
 
-                // Root capsule contacts correction (separate from weapon/body contacts).
-                // Weapon/body contacts are NOT merged into the root solver — doing so would
-                // cause weapon-wall contact to push the root capsule, creating snagging.
-                Capsule bwRootCap = p.getCapsule();
-                std::vector<int> bwRootCandidates = gatherGLBTriangles(world, bwRootCap, glm::vec3(0.0f));
-                std::vector<RecoveryContact> bwRootContacts =
-                    collectCapsuleRecoveryContacts(world, bwRootCap, bwRootCandidates);
+            // Root capsule contacts + body push contacts combine into one solver.
+            // Body contacts (head, torso, arms, legs) directly push the root capsule
+            // so limbs cannot pass through walls. The skeleton follows the root, so
+            // moving the root moves all body parts.
+            // Weapon contacts are EXCLUDED from the solver to avoid snagging.
+            Capsule bwRootCap = p.getCapsule();
+            std::vector<int> bwRootCandidates = gatherGLBTriangles(world, bwRootCap, glm::vec3(0.0f));
+            std::vector<RecoveryContact> bwRootContacts =
+                collectCapsuleRecoveryContacts(world, bwRootCap, bwRootCandidates);
 
-                if (!bwRootContacts.empty())
+            {
+                std::vector<RecoveryContact> solverContacts;
+                solverContacts.insert(solverContacts.end(), bwRootContacts.begin(), bwRootContacts.end());
+                solverContacts.insert(solverContacts.end(), bodyPushContacts.begin(), bodyPushContacts.end());
+
+                if (!solverContacts.empty())
                 {
-                    glm::vec3 rootCorrection = solveBatchedCorrection(bwRootContacts, 0.01f);
-                    float rootLen = glm::length(rootCorrection);
-                    if (rootLen > 0.001f)
+                    glm::vec3 correction = solveBatchedCorrection(solverContacts, 0.01f);
+                    float corrLen = glm::length(correction);
+                    if (corrLen > 0.001f)
                     {
                         constexpr float MAX_BW_CORRECTION = 0.5f;
-                        if (rootLen > MAX_BW_CORRECTION)
-                            rootCorrection *= MAX_BW_CORRECTION / rootLen;
+                        if (corrLen > MAX_BW_CORRECTION)
+                            correction *= MAX_BW_CORRECTION / corrLen;
 
-                        p.pos += rootCorrection;
-                        DebugVis::recordDepenetration(p.pos - rootCorrection, rootCorrection, "body-weapon-root");
+                        p.pos += correction;
+                        DebugVis::recordDepenetration(
+                            p.pos - correction, correction, "body-weapon-combined");
                     }
                 }
-
-                // Project velocity against weapon/body push contacts for smooth sliding.
-                // This lets the player feel the weapon touching geometry without the
-                // weapon pushing the root capsule position.
-                for (const RecoveryContact& pc : pushContacts)
-                {
-                    if (pc.normal.z <= MAX_WALKABLE_SLOPE_DOT)
-                        projectVelocityAgainstNormal(p, pc.normal);
-                }
             }
+
+            // Project velocity against all non-walkable contacts for smooth sliding.
+            // Weapons get velocity-only response (no position push) — this preserves
+            // the feel of the weapon touching geometry without snagging.
+            for (const RecoveryContact& pc : bodyPushContacts)
+                projectVelocityAgainstNormal(p, pc.normal);
+            for (const RecoveryContact& pc : weaponPushContacts)
+                projectVelocityAgainstNormal(p, pc.normal);
         }
     }
 }
