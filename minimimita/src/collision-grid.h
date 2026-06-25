@@ -22,6 +22,15 @@ struct CollisionProfile {
     int queriesPerFrame = 0;
 };
 
+struct CollisionDebug {
+    std::vector<int> testedTriangleIndices;
+    glm::vec3 playerCapA, playerCapB;
+    float playerRadius = 0.0f;
+    bool drawGrid = true;
+    bool drawCandidates = true;
+    bool drawContacts = true;
+};
+
 void buildCollisionGrid(const std::vector<Triangle>& triangles, float cellSize = 2.0f);
 void clearCollisionGrid();
 void collectContacts(const Player& player, const std::vector<Triangle>& triangles,
@@ -31,3 +40,4 @@ void resolveContactsIterative(Player& player, const std::vector<Triangle>& trian
 const CollisionProfile& getCollisionProfile();
 void resetCollisionProfile();
 void printCollisionProfile();
+CollisionDebug& getCollisionDebug();

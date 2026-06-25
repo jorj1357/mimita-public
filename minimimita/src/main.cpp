@@ -24,11 +24,9 @@ static void runFrame() {
 
     computeWishDir(gInput, gCamera);
 
-    gAccumulator += dt;
-    while (gAccumulator >= PHYSICS_DT) {
-        updatePlayer(gPlayer, gInput, gCurrentMap.triangles, PHYSICS_DT);
-        gAccumulator -= PHYSICS_DT;
-    }
+    // Local player: collision runs every rendered frame for immediate responsiveness.
+    // Uses actual frame dt, not fixed timestep.
+    updatePlayer(gPlayer, gInput, gCurrentMap.triangles, dt);
 
     gCamera.target = gPlayer.position;
     doRender(gPlayer, gCamera, gCurrentMap, gWinW, gWinH, gWireframeMode);

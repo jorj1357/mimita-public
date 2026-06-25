@@ -8,7 +8,7 @@
 static const glm::vec3 WORLD_UP(0.0f, 0.0f, 1.0f);
 static const float GRAVITY = -9.81f;
 static const float PHYSICS_DT = 1.0f / 120.0f;
-static const float MAX_GROUND_ANGLE = 0.70710678f;
+static const float MAX_GROUND_ANGLE = 0.4f;
 
 struct Contact {
     glm::vec3 point;

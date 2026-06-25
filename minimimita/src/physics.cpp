@@ -99,8 +99,22 @@ bool capsuleTriangleCollision(glm::vec3 capA, glm::vec3 capB, float radius,
     diff = bestDiff;
     distSq = bestDistSq;
 
-    if (distSq > radius * radius)
+    // Epsilon tolerance for FP precision on large triangles.
+    // Barycentric closest-point calculations on large meshes can
+    // introduce tiny errors that push distSq just above radius^2.
+    if (distSq > radius * radius + 1e-6f) {
+        if (glm::dot(tri.normal, WORLD_UP) > 0.9f) {
+            printf(
+                "MISS dist=%.5f r=%.5f diff=(%.3f %.3f %.3f)\n",
+                sqrtf(distSq),
+                radius,
+                diff.x,
+                diff.y,
+                diff.z
+            );
+        }
         return false;
+    }
 
     float dist = glm::sqrt(distSq);
     glm::vec3 n;
@@ -127,6 +141,19 @@ bool capsuleTriangleCollision(glm::vec3 capA, glm::vec3 capB, float radius,
     else
         contact.side = Contact::WALL;
 
+    printf(
+        "HIT depth=%.5f normal=(%.2f %.2f %.2f)\n",
+        contact.depth,
+        contact.normal.x,
+        contact.normal.y,
+        contact.normal.z
+    );
+
+    printf(
+        "seg=(%.2f %.2f %.2f) tri=(%.2f %.2f %.2f)\n",
+        ptOnSeg.x, ptOnSeg.y, ptOnSeg.z,
+        ptOnTri.x, ptOnTri.y, ptOnTri.z
+    );
     return true;
 }
 
