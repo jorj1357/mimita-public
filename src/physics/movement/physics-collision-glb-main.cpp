@@ -39,6 +39,10 @@ void doGLBTriangleCollisions(
     constexpr float MAX_CORRECTION = 2.0f;
 
     glm::vec3 totalMove = (p.vel + p.externalImpulse) * dt;
+    // Clamp per-substep downward movement to prevent tunneling.
+    const float maxZStep = PLAYER_RADIUS;
+    if (totalMove.z < -maxZStep)
+        totalMove.z = -maxZStep;
     glm::vec3 remainingMove;
     CollisionTraceSnapshot trace;
     std::vector<int> candidates;
