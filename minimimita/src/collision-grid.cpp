@@ -166,7 +166,8 @@ void resolveContactsIterative(Player& player, const std::vector<Triangle>& trian
     for (const auto& c : state.contacts)
         contactTriIndices.push_back(c.triangleIndex);
 
-    for (int iter = 0; iter < 5; ++iter) {
+    // Phase 1: resolve deepest contacts up to 8 iterations
+    for (int iter = 0; iter < 8; ++iter) {
         float maxDepth;
         int deepestIdx = findDeepestContact(state, maxDepth);
         if (deepestIdx < 0 || maxDepth < 0.000001f)
@@ -178,6 +179,36 @@ void resolveContactsIterative(Player& player, const std::vector<Triangle>& trian
         if (state.contacts.empty())
             break;
     }
+
+    // Phase 2: full-world recollect to catch new contacts from the push
+    if (!contactTriIndices.empty()) {
+        glm::vec3 a = player.capA();
+        glm::vec3 b = player.capB();
+        int tested = 0;
+        state.clear();
+        if (gGrid.valid)
+            collectFromGrid(player, triangles, state, a, b, tested);
+        else
+            collectFromAll(player, triangles, state, a, b, tested);
+        contactTriIndices.clear();
+        for (const auto& c : state.contacts)
+            contactTriIndices.push_back(c.triangleIndex);
+
+        // Phase 3: final resolve pass with full contact set
+        for (int iter = 0; iter < 4; ++iter) {
+            float maxDepth;
+            int deepestIdx = findDeepestContact(state, maxDepth);
+            if (deepestIdx < 0 || maxDepth < 0.000001f)
+                break;
+            gContactIterations = iter + 1;
+            if (maxDepth > gMaxDepth) gMaxDepth = maxDepth;
+            player.position += state.contacts[deepestIdx].normal * maxDepth;
+            recollectContactTriangles(player, triangles, contactTriIndices, state);
+            if (state.contacts.empty())
+                break;
+        }
+    }
+
     auto end = std::chrono::high_resolution_clock::now();
     gProfile.resolveTimeUs += (int)std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     gProfile.depenetrationIters += gContactIterations;

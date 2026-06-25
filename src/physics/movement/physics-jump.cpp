@@ -114,38 +114,19 @@ void doJump(
         return;
     }
 
-    // ---------------- WORLD CONTACT JUMP (continuous while holding Space) ----------------
-    if (p.ground.hasWorldContact) {
-        float beforeVel = p.vel.z;
-
-        p.vel.z = PHYS.jumpStrength;
-        p.jump.jumpIntentTimer = 0.0f;
-        p.jump.airJumpsLeft = AIR_JUMPS_MAX;
-        p.jump.didGroundJump = true;
-
-        JUMP_LOG(
-            "[JUMP] WORLD CONTACT vel.z %.3f -> %.3f | airJumps=%d\n",
-            beforeVel,
-            p.vel.z,
-            p.jump.airJumpsLeft
-        );
-        return;
-    }
-
-    // ---------------- AIR JUMP (press only, not hold) ----------------
-    if (!p.jump.didGroundJump &&
-        p.jump.airJumpsLeft > 0 &&
-        !p.jump.airJumpLocked &&
-        p.jump.airJumpArmed &&
-        jumpPressedThisFrame)
+    // ---------------- AIR JUMP (any airborne jump) ----------------
+    // Resets: applyTouchResets (on any collision contact) sets airJumpsLeft = AIR_JUMPS_MAX.
+    // Consumed: on jump, airJumpsLeft is decremented.
+    // This is event-based: contact event → reset → jump → consume.
+    if (p.jump.airJumpsLeft > 0 &&
+        !p.jump.didGroundJump)
     {
         float beforeVel = p.vel.z;
 
         p.vel.z = PHYS.jumpStrength;
         p.jump.airJumpsLeft--;
-        p.jump.airJumpLocked = false;
         p.jump.jumpIntentTimer = 0.0f;
-        p.jump.didAirJump = true;
+        p.jump.didGroundJump = true;
 
         JUMP_LOG(
             "[JUMP] AIR vel.z %.3f -> %.3f | airJumpsLeft=%d\n",
@@ -158,9 +139,10 @@ void doJump(
 
     // ---------------- FAILED ----------------
     JUMP_LOG(
-        "[JUMP] BLOCKED | onGround=%d coyote=%.3f airJumps=%d\n",
+        "[JUMP] BLOCKED | onGround=%d coyote=%.3f airJumps=%d didGroundJump=%d\n",
         p.ground.onGround,
         p.jump.coyoteTimer,
-        p.jump.airJumpsLeft
+        p.jump.airJumpsLeft,
+        (int)p.jump.didGroundJump
     );
 }
