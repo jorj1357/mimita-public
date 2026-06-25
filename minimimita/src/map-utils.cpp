@@ -45,16 +45,15 @@ void loadGLBMap(const char* name) {
     printf("[MAP] GLB loaded: %s (%zu triangles)\n", name, gCurrentMap.triangles.size());
 }
 
-void processCommand() {
-    if (gInput.commandLen == 0) return;
-    gInput.commandBuffer[gInput.commandLen] = '\0';
+void executeCommand(const char* cmd) {
+    if (!cmd || !cmd[0]) return;
 
-    if (strncmp(gInput.commandBuffer, "loadmap ", 8) == 0) {
-        const char* name = gInput.commandBuffer + 8;
+    if (strncmp(cmd, "loadmap ", 8) == 0) {
+        const char* name = cmd + 8;
         loadGLBMap(name);
-    } else if (strncmp(gInput.commandBuffer, "tp ", 3) == 0) {
+    } else if (strncmp(cmd, "tp ", 3) == 0) {
         float x, y, z;
-        if (sscanf(gInput.commandBuffer + 3, "%f %f %f", &x, &y, &z) == 3) {
+        if (sscanf(cmd + 3, "%f %f %f", &x, &y, &z) == 3) {
             gPlayer.position = glm::vec3(x, y, z);
             gPlayer.velocity = glm::vec3(0.0f);
             printf("[CMD] Teleported to %.2f %.2f %.2f\n", x, y, z);
@@ -62,9 +61,14 @@ void processCommand() {
             printf("[CMD] Usage: tp x y z\n");
         }
     } else {
-        printf("[CMD] Unknown: %s\n", gInput.commandBuffer);
+        printf("[CMD] Unknown: %s\n", cmd);
     }
+}
 
+void processCommand() {
+    if (gInput.commandLen == 0) return;
+    gInput.commandBuffer[gInput.commandLen] = '\0';
+    executeCommand(gInput.commandBuffer);
     gInput.commandLen = 0;
     gInput.commandBuffer[0] = '\0';
 }
