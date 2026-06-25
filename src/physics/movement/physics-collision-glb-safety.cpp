@@ -116,7 +116,7 @@ void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
     }
 }
 
-void doFloorRecovery(Player& p, const World& world)
+void doFloorRecovery(Player& p, const World& world, bool& groundedThisFrame)
 {
     {
         p.updateModelWorldTransforms();
@@ -150,6 +150,7 @@ void doFloorRecovery(Player& p, const World& world)
                 p.pos.z += lift;
                 p.externalImpulse.z = std::min(p.externalImpulse.z, 0.0f);
                 p.vel.z = std::min(p.vel.z, 0.0f);
+                groundedThisFrame = true;
                 PHYS_LOG("[PHYS][FLOOR RECOVERY] feet was %.3f below floor (tri=%d closestZ=%.3f), lifted %.4f\n",
                          bestFloorZ - feetZ, bestFloorTri, bestFloorZ, lift);
             }

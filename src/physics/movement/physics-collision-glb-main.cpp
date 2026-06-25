@@ -151,7 +151,7 @@ void doGLBTriangleCollisions(
     }
 
     doGroundSnap(p, world, groundedThisFrame);
-    doFloorRecovery(p, world);
+    doFloorRecovery(p, world, groundedThisFrame);
     doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
 
     {
