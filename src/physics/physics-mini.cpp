@@ -145,7 +145,17 @@ static void physicsMainUpdate_Internal(
         p.dash.dashMovementTicks = 0;
     }
 
-    // air dash
+    // Clear external velocity when player takes direct movement control.
+    // Movement keys, dash, and freeze get priority over recoil/knockback.
+    // Jump does NOT trigger this clear (preserves external velocity through jumps).
+    if (movementPressed || dashPressed || freezeHeld)
+        p.externalImpulse = glm::vec3(0.0f);
+
+    // Walk applies movement input — ground and air (sets base horizontal velocity).
+    if (movementPressed)
+        doWalk(p, wishMoveXY, groundedThisFrame, dt);
+
+    // air dash (adds impulse on top of walk velocity)
     doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dash.dashMovementTicks, dt, camForward);
     // down dash
     doDownDash(p, downDashPressed, dt);
@@ -164,10 +174,6 @@ static void physicsMainUpdate_Internal(
                        (int)p.ground.onGround, p.jump.coyoteTimer, p.jump.airJumpsLeft,
                        (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
     }
-
-    // Walk applies movement input — ground and air.
-    if (movementPressed)
-        doWalk(p, wishMoveXY, groundedThisFrame, dt);
 
     // reset ALL abilities when grounded (not just dash)
     if (groundedThisFrame)

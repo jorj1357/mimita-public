@@ -107,13 +107,13 @@ void engineTickNet(Engine& engine, float dt)
             if (!localShooter && glm::length(event.knockback) > 0.001f)
             {
                 if (localTarget)
-                    player.vel += event.knockback;
+                    player.externalImpulse += event.knockback;
                 else
                 {
                     auto remote = mpContext.remotePlayers.find(
                         event.targetPlayerId);
                     if (remote != mpContext.remotePlayers.end())
-                        remote->second.vel += event.knockback;
+                        remote->second.externalImpulse += event.knockback;
                 }
             }
 

@@ -57,15 +57,11 @@ void doWalk(
     glm::vec2 wishDir = wishMoveXY / wishLen;
     glm::vec2 velBefore(p.vel.x, p.vel.y);
 
-    // Set velocity to target speed along wish direction.
-    // Preserves perpendicular velocity (dash, knockback, recoil).
-    float targetSpeed = PHYS.moveSpeed;
-    float alongCurrent = glm::dot(velBefore, wishDir);
-    if (alongCurrent < targetSpeed)
-    {
-        p.vel.x += (targetSpeed - alongCurrent) * wishDir.x;
-        p.vel.y += (targetSpeed - alongCurrent) * wishDir.y;
-    }
+    // Set horizontal velocity to max speed along wish direction.
+    // Instant direction change. No additive accumulation.
+    float maxSpeed = onGround ? PHYS.moveSpeed : AIR_SPEED;
+    p.vel.x = wishDir.x * maxSpeed;
+    p.vel.y = wishDir.y * maxSpeed;
 
     // Debug: air control summary (0.5s throttle)
     if (!onGround)
@@ -77,8 +73,8 @@ void doWalk(
     }
 
     WALK_LOG(
-        "[WALK] speed=%.2f along=%.2f target=%.2f\n",
+        "[WALK] speed=%.2f maxSpeed=%.2f wish=(%.2f %.2f)\n",
         glm::length(glm::vec2(p.vel.x, p.vel.y)),
-        alongCurrent, targetSpeed
+        maxSpeed, wishDir.x, wishDir.y
     );
 }
