@@ -80,7 +80,16 @@ bool initGame() {
     printf("[BOOT] player\n");
     printf("[BOOT] map loader\n");
     printf("[BOOT] physics\n");
-    return initScene();
+    if (!initScene()) return false;
+
+    // Debug mode: auto-execute startup commands.
+    // loadGLBMap is synchronous, so teleport happens immediately after.
+    printf("[AUTO] loadmap colltest\n");
+    executeCommand("loadmap colltest");
+    printf("[AUTO] tp 0 0 100\n");
+    executeCommand("tp 0 0 100");
+
+    return true;
 }
 
 void shutdownGame() {

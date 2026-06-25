@@ -1,4 +1,5 @@
 #include "render.h"
+#include "collision-grid.h"
 #include <cstdio>
 #include <vector>
 #include <glm/gtc/matrix_transform.hpp>
@@ -71,8 +72,17 @@ void renderPlayer(const Player& player, const glm::mat4& viewProj) {
     glm::vec4 torsoColor(0.2f, 0.4f, 0.8f, 1.0f);
     glm::vec4 legsColor(0.8f, 0.2f, 0.2f, 1.0f);
 
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+
+    glm::vec3 cylA = a + up * player.radius;
+    glm::vec3 cylB = b - up * player.radius;
+
     gSphereRenderer.draw(viewProj, a, player.radius, legsColor);
-    gCylinderRenderer.draw(viewProj, a, b, player.radius, torsoColor);
+
+    if (cylB.z > cylA.z) {
+        gCylinderRenderer.draw(viewProj, cylA, cylB, player.radius, torsoColor);
+    }
+
     gSphereRenderer.draw(viewProj, b, player.radius, headColor);
 }
 
@@ -113,6 +123,88 @@ void renderHUD(const Player& player, const TestMap& map, int w, int h,
     }
 }
 
+static void renderDebugGrid(const glm::mat4& viewProj, const Player& player) {
+    const auto& dbg = getCollisionDebug();
+    if (!dbg.drawGrid) return;
+    extern CollisionGrid gGrid;
+    if (gGrid.cellsX <= 0 || gGrid.cellsY <= 0) return;
+
+    // Determine player's chunk coordinate
+    float px = player.position.x;
+    float py = player.position.y;
+    int pcx = (int)floor((px - gGrid.originX) / gGrid.cellSize);
+    int pcy = (int)floor((py - gGrid.originY) / gGrid.cellSize);
+
+    // Render chunks within 10m radius (5 chunks each direction at 2m cellSize)
+    const int CHUNK_RADIUS = 5;
+    int cx0 = std::max(0, pcx - CHUNK_RADIUS);
+    int cx1 = std::min(gGrid.cellsX - 1, pcx + CHUNK_RADIUS);
+    int cy0 = std::max(0, pcy - CHUNK_RADIUS);
+    int cy1 = std::min(gGrid.cellsY - 1, pcy + CHUNK_RADIUS);
+
+    // Chunk volume height: from floor to 6m above (covers standard player height + headroom)
+    float chunkZ = 0.0f;
+    float chunkH = 6.0f;
+
+    glm::vec4 gridColor(0.3f, 0.5f, 0.7f, 0.25f);
+    for (int cy = cy0; cy <= cy1; ++cy) {
+        float y0 = gGrid.originY + cy * gGrid.cellSize;
+        float y1 = y0 + gGrid.cellSize;
+        for (int cx = cx0; cx <= cx1; ++cx) {
+            float x0 = gGrid.originX + cx * gGrid.cellSize;
+            float x1 = x0 + gGrid.cellSize;
+
+            // Bottom face
+            glm::vec3 blb(x0, y0, chunkZ), brb(x1, y0, chunkZ);
+            glm::vec3 tlb(x0, y1, chunkZ), trb(x1, y1, chunkZ);
+            // Top face
+            glm::vec3 blt(x0, y0, chunkH), brt(x1, y0, chunkH);
+            glm::vec3 tlt(x0, y1, chunkH), trt(x1, y1, chunkH);
+
+            // Vertical edges
+            gLineRenderer.addLine(blb, blt);
+            gLineRenderer.addLine(brb, brt);
+            gLineRenderer.addLine(tlb, tlt);
+            gLineRenderer.addLine(trb, trt);
+
+            // Bottom horizontal edges
+            gLineRenderer.addLine(blb, brb);
+            gLineRenderer.addLine(brb, trb);
+            gLineRenderer.addLine(trb, tlb);
+            gLineRenderer.addLine(tlb, blb);
+
+            // Top horizontal edges (only draw if within 3 chunks for clarity)
+            if (abs(cx - pcx) <= 2 && abs(cy - pcy) <= 2) {
+                gLineRenderer.addLine(blt, brt);
+                gLineRenderer.addLine(brt, trt);
+                gLineRenderer.addLine(trt, tlt);
+                gLineRenderer.addLine(tlt, blt);
+            }
+        }
+    }
+}
+
+static void renderDebugCandidates(const glm::mat4& viewProj, const TestMap& map) {
+    const auto& dbg = getCollisionDebug();
+    if (!dbg.drawCandidates || dbg.testedTriangleIndices.empty()) return;
+    for (int idx : dbg.testedTriangleIndices) {
+        if (idx < 0 || idx >= (int)map.triangles.size()) continue;
+        const auto& tri = map.triangles[idx];
+        glm::vec4 color(1.0f, 1.0f, 0.0f, 0.3f);
+        gLineRenderer.addLine(tri.a, tri.b);
+        gLineRenderer.addLine(tri.b, tri.c);
+        gLineRenderer.addLine(tri.c, tri.a);
+    }
+}
+
+static void renderDebugCapsule(const glm::mat4& viewProj) {
+    const auto& dbg = getCollisionDebug();
+    if (dbg.playerRadius < 0.01f) return;
+    glm::vec4 wireColor(0.5f, 0.8f, 1.0f, 0.5f);
+    gCylinderRenderer.draw(viewProj, dbg.playerCapA, dbg.playerCapB,
+                          dbg.playerRadius, wireColor);
+}
+
 void doRender(const Player& player, const Camera& camera, const TestMap& map,
               int windowW, int windowH, bool wireframe) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -123,6 +215,9 @@ void doRender(const Player& player, const Camera& camera, const TestMap& map,
     glm::mat4 viewProj = proj * view;
 
     renderWorld(viewProj, wireframe);
+    renderDebugGrid(viewProj, player);
+    renderDebugCandidates(viewProj, map);
+    renderDebugCapsule(viewProj);
     renderPlayer(player, viewProj);
     renderContacts(player, viewProj);
     flushLines(viewProj);

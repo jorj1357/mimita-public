@@ -6,8 +6,9 @@
 #include <cmath>
 #include <cfloat>
 
-static CollisionGrid gGrid;
+CollisionGrid gGrid;
 static CollisionProfile gProfile;
+static CollisionDebug gCollisionDebug;
 static int gContactIterations = 0;
 static float gMaxDepth = 0.0f;
 static std::vector<int> gVisitedTriangles;
@@ -67,15 +68,34 @@ static void collectFromGrid(const Player& player, const std::vector<Triangle>& t
         gVisitedTriangles.resize(triangles.size(), 0);
     gVisitEpoch++;
 
+    gCollisionDebug.testedTriangleIndices.clear();
+    gCollisionDebug.playerCapA = a;
+    gCollisionDebug.playerCapB = b;
+    gCollisionDebug.playerRadius = player.radius;
+
+    // Early Z-rejection: only test triangles whose Z-range overlaps the capsule.
+    float capsuleMinZ = std::min(a.z, b.z) - player.radius;
+    float capsuleMaxZ = std::max(a.z, b.z) + player.radius;
+
     for (int cy = cy0; cy <= cy1; ++cy) {
         for (int cx = cx0; cx <= cx1; ++cx) {
             const auto& cell = gGrid.cells[cy * gGrid.cellsX + cx];
             for (int triIdx : cell) {
                 if (gVisitedTriangles[triIdx] == gVisitEpoch) continue;
                 gVisitedTriangles[triIdx] = gVisitEpoch;
+
+                // Z rejection: skip triangles entirely above or below capsule
+                const auto& tri = triangles[triIdx];
+                float tminZ = std::min({tri.a.z, tri.b.z, tri.c.z});
+                float tmaxZ = std::max({tri.a.z, tri.b.z, tri.c.z});
+                if (tminZ > capsuleMaxZ || tmaxZ < capsuleMinZ)
+                    continue;
+
                 tested++;
+                if (gCollisionDebug.drawCandidates)
+                    gCollisionDebug.testedTriangleIndices.push_back(triIdx);
                 Contact contact;
-                if (capsuleTriangleCollision(a, b, player.radius, triangles[triIdx], contact)) {
+                if (capsuleTriangleCollision(a, b, player.radius, tri, contact)) {
                     contact.triangleIndex = triIdx;
                     if (contact.side == Contact::FLOOR) state.touchingFloor = true;
                     if (contact.side == Contact::WALL)  state.touchingWall = true;
@@ -108,11 +128,25 @@ void collectContacts(const Player& player, const std::vector<Triangle>& triangle
     state.clear();
     glm::vec3 a = player.capA();
     glm::vec3 b = player.capB();
+    printf(
+        "pos=(%.2f %.2f %.2f) A=(%.2f %.2f %.2f) B=(%.2f %.2f %.2f) r=%.2f\n",
+        player.position.x, player.position.y, player.position.z,
+        a.x, a.y, a.z,
+        b.x, b.y, b.z,
+        player.radius
+    );
     int tested = 0;
     if (gGrid.valid)
         collectFromGrid(player, triangles, state, a, b, tested);
     else
         collectFromAll(player, triangles, state, a, b, tested);
+
+    // SAFETY FALLBACK:
+    // If grid found nothing while falling, brute-force all triangles.
+    // This catches floors the grid missed.
+    if (state.contacts.empty() && player.velocity.z < 0.0f) {
+        collectFromAll(player, triangles, state, a, b, tested);
+    }    
     auto end = std::chrono::high_resolution_clock::now();
     gProfile.collectTimeUs += (int)std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     gProfile.trianglesTested += tested;
@@ -240,4 +274,8 @@ void printCollisionProfile() {
            gProfile.contactsGenerated,
            gProfile.depenetrationIters,
            gProfile.queriesPerFrame);
+}
+
+CollisionDebug& getCollisionDebug() {
+    return gCollisionDebug;
 }
