@@ -42,6 +42,17 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
         std::vector<RecoveryContact> bwContacts =
             collectBodyWeaponContacts(p, world, bwCandidates, bwSpheres);
 
+        // Every body-weapon contact with world geometry resets abilities.
+        // The collision manifold already contains only world triangles (GLB mesh),
+        // so no entity filtering (players/NPCs/projectiles) is needed.
+        for (const auto& c : bwContacts)
+        {
+            p.ground.realWorldContactThisFrame = true;
+            p.ground.hasWorldContact = true;
+            p.ground.worldContactLostTimer = 0.033f;
+            applyTouchResets(p);
+        }
+
         if (!bwContacts.empty())
         {
             std::vector<RecoveryContact> pushContacts;
