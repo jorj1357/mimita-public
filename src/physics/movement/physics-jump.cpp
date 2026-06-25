@@ -74,12 +74,14 @@ void doJump(
     if (jumpPressedThisFrame)
         p.jump.jumpIntentTimer = JUMP_BUFFER_TIME;
 
-    // Release re-arms air jump.
+    // Release re-arms air jump for the next press.
+    // Clear jumpIntentTimer so the release itself does not trigger a jump.
     bool jumpReleased = !jumpHeld && p.jump.jumpHeldPrev;
     if (jumpReleased)
     {
         p.jump.airJumpArmed = true;
         p.jump.airJumpLocked = false;
+        p.jump.jumpIntentTimer = 0.0f;
     }
 
     p.jump.jumpHeldPrev = jumpHeld;
