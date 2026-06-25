@@ -179,6 +179,8 @@ static void physicsMainUpdate_Internal(
     if (groundedThisFrame)
     {
         p.jump.airJumpsLeft = AIR_JUMPS_MAX;
+        p.jump.airJumpArmed = true;
+        p.jump.airJumpLocked = false;
         p.dash.dashAvailable = true;
         p.groundReturn.available = true;
         p.dash.downDashAvailable = true;
