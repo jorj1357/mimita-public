@@ -14,13 +14,13 @@
 
 class Player;
 
-// Handles horizontal walk — ground only. No air acceleration.
+// Handles horizontal walk — ground and air. Instant response.
 // - Uses physics/config.h
 // - No friction
 // - No dash
 // - No collision
 // - No gravity
-// - Only modifies p.vel.x / p.vel.y while grounded
+// - Modifies p.vel.x / p.vel.y while grounded or airborne
 void doWalk(
     Player& p,
     const glm::vec2& wishMoveXY,
