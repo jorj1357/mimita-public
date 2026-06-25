@@ -56,7 +56,7 @@ static void fallbackWeaponShape(
     }
 
     length = std::max(length, 0.08f);
-    radius = std::clamp(radius, 0.06f, 0.50f);
+    radius = std::clamp(radius, 0.12f, 0.50f);
     grip = glm::vec3(0.0f);
     muzzle = glm::vec3(0.0f, 0.0f, length);
 }
@@ -107,7 +107,7 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
     int crossA = axis == 0 ? 1 : 0;
     int crossB = axis == 2 ? 1 : 2;
     float smallerAxis = std::min(size[crossA], size[crossB]);
-    modelCollisionRadius = std::clamp(smallerAxis * 0.5f, 0.06f, 0.18f);
+    modelCollisionRadius = std::clamp(smallerAxis * 0.5f, 0.12f, 0.18f);
     hasModelBounds = true;
 
     glGenVertexArrays(1, &vao);
