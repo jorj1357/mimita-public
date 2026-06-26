@@ -8,29 +8,39 @@ bin/
 out/
 dist/
 
-# ── Compiled binaries (must be built, not committed) ─────────────────────────
+# ── Compiled binaries ────────────────────────────────────────────────────────
 *.exe
 *.dll
 *.lib
 *.ilk
 *.pdb
 *.o
+*.obj
 *.gch
 *.pch
 *.d
 *.so
 *.a
+*.exp
 
 # ── Asset pack ───────────────────────────────────────────────────────────────
 *.pak
 .pak-extracted
 
-# ── Audio assets (game loads these from disk; don't touch or commit) ─────────
+# ── Audio: music/production files NEVER tracked ──────────────────────────────
+# Gameplay SFX under entity/, ui/, weapon/ ARE tracked (explicitly un-ignored).
 *.wav
 *.mp3
 *.ogg
 *.flac
 *.aiff
+!assets/sound/entity/**/*.wav
+!assets/sound/entity/**/*.mp3
+!assets/sound/ui/**/*.wav
+!assets/sound/ui/**/*.mp3
+!assets/sound/weapon/**/*.wav
+!assets/sound/weapon/**/*.mp3
+assets/sound/music/
 
 # ── Video ────────────────────────────────────────────────────────────────────
 *.mp4
@@ -38,8 +48,9 @@ dist/
 *.avi
 *.mov
 
-# ── Raw image sources (not game textures) ────────────────────────────────────
+# ── Raw image sources ────────────────────────────────────────────────────────
 *.kra
+*.kra~
 *.psd
 *.xcf
 *.blend
@@ -51,7 +62,7 @@ dist/
 .env
 .env.local
 
-# ── Generated article data ───────────────────────────────────────────────────
+# ── Generated data ───────────────────────────────────────────────────────────
 website/public/articles.generated.json
 
 # ── Temp / cache ─────────────────────────────────────────────────────────────
@@ -82,27 +93,7 @@ Desktop.ini
 *.swo
 *~
 *.bak
+*.tmp
 
 # ── Aider ────────────────────────────────────────────────────────────────────
 .aider*
-# generated
-logs/
-replays/
-*.exe
-*.dll
-*.pdb
-*.obj
-*.ilk
-*.exp
-*.lib
-
-# autosaves/backups
-*.kra
-*.kra~
-*~
-*.autosave
-*.bak
-*.tmp
-
-# intentional no-track asset folders
-assets/sound/music/ingame/donttrack/
