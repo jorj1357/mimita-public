@@ -43,6 +43,7 @@ import UserProfile from "./pages/UserProfile"
 import PasswordPrinciples from "./pages/PasswordPrinciples"
 import AdminLogin from "./pages/AdminLogin"
 import AdminDashboard from "./pages/AdminDashboard"
+import Link from "./pages/Link"
 
 /* =========================
    APP
@@ -168,6 +169,11 @@ ReactDOM.createRoot(
         <Route
           path="/admin/dashboard"
           element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/link"
+          element={<Link />}
         />
 
         {/* goes last 5 25 2026
