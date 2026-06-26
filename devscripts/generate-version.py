@@ -1,5 +1,6 @@
 """Generate version files from config/version.json (single source of truth)."""
 
+import hashlib
 import json
 import os
 
@@ -11,6 +12,15 @@ def load_version():
 
 def ver_str(v):
     return f"{v['major']}.{v['minor']}.{v['patch']}"
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk: break
+            h.update(chunk)
+    return h.hexdigest()
 
 def write_version_h(v):
     s = ver_str(v)
@@ -33,16 +43,19 @@ def write_version_txt(v):
     print(f"[GEN] {os.path.relpath(path, ROOT)}")
 
 def write_server_config(v):
+    installer_path = os.path.join(ROOT, "installer", f"MimitaSetup-{ver_str(v)}.exe")
+    installer_sha = sha256(installer_path) if os.path.isfile(installer_path) else ""
     path = os.path.join(ROOT, "website", "server", "version.json")
     with open(path, "w") as f:
         json.dump({
             "version": ver_str(v),
             "release_date": v["release_date"],
             "file_size_mb": 107,
-            "platform": "windows-64"
+            "platform": "windows-64",
+            "installer_sha256": installer_sha
         }, f, indent=2)
         f.write("\n")
-    print(f"[GEN] {os.path.relpath(path, ROOT)}")
+    print(f"[GEN] {os.path.relpath(path, ROOT)} ({'sha256: ' + installer_sha[:16] + '...' if installer_sha else 'no installer'})")
 
 def update_iss(v):
     s = ver_str(v)
@@ -55,6 +68,7 @@ def update_iss(v):
             old_line = line.strip()
             break
     if old_line:
+        old_line = line.strip()
         new_line = f'#define MyAppVersion "{s}"'
         content = content.replace(old_line, new_line)
         with open(iss_path, "w") as f:

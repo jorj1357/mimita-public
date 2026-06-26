@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom"
 
 import Layout from "../components/Layout"
 import Username from "../components/Username"
+import Avatar from "../components/Avatar"
 import { apiRequest } from "../lib/api"
 
 export default function UserProfile() {
@@ -33,19 +34,7 @@ export default function UserProfile() {
             <section className="profilePage">
                 {user ? (
                     <div className="profileCard">
-                        <div className="profileAvatarWrap">
-                            {user.avatar_url ? (
-                                <img
-                                    src={user.avatar_url}
-                                    alt={`${user.username}'s avatar`}
-                                    className="profileAvatar"
-                                />
-                            ) : (
-                                <div className="profileAvatarPlaceholder">
-                                    {user.username[0]?.toUpperCase()}
-                                </div>
-                            )}
-                        </div>
+                        <Avatar user={user} size="lg" />
 
                         <h1 className="profileUsername">
                             <Username user={user} size="lg" />

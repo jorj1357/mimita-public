@@ -3,6 +3,8 @@ import { useEffect, useState } from "react"
 
 import Layout from "../components/Layout"
 import Username from "../components/Username"
+import Avatar from "../components/Avatar"
+import AvatarCropModal from "../components/AvatarCropModal"
 import { apiRequest } from "../lib/api"
 
 export default function Account() {
@@ -12,6 +14,7 @@ export default function Account() {
     const [deletePassword, setDeletePassword] = useState("")
     const [message, setMessage] = useState("loading account...")
     const [uploading, setUploading] = useState(false)
+    const [cropFile, setCropFile] = useState(null)
 
     useEffect(() => {
         apiRequest("/api/auth/me")
@@ -37,7 +40,7 @@ export default function Account() {
         }
     }
 
-    async function handleAvatarUpload(event) {
+    function handleAvatarSelect(event) {
         const file = event.target.files?.[0]
         if (!file) return
 
@@ -52,12 +55,18 @@ export default function Account() {
             return
         }
 
+        setCropFile(file)
+        event.target.value = ""
+    }
+
+    async function handleCropSave(blob) {
+        setCropFile(null)
         setUploading(true)
         setMessage("")
 
         try {
             const formData = new FormData()
-            formData.append("avatar", file)
+            formData.append("avatar", blob, "avatar.png")
 
             const response = await fetch("/api/account/avatar", {
                 method: "POST",
@@ -71,7 +80,7 @@ export default function Account() {
             }
 
             const data = await response.json()
-            setUser((prev) => ({ ...prev, avatar_url: data.avatar_url }))
+            setUser((prev) => ({ ...prev, avatar_url: data.avatar_url, avatar_updated_at: data.avatar_updated_at }))
             setMessage("avatar updated")
         }
         catch (error) {
@@ -79,6 +88,18 @@ export default function Account() {
         }
         finally {
             setUploading(false)
+        }
+    }
+
+    async function handleRemoveAvatar() {
+        if (!window.confirm("Remove your avatar?")) return
+        try {
+            await apiRequest("/api/account/avatar", { method: "DELETE" })
+            setUser((prev) => ({ ...prev, avatar_url: "", avatar_updated_at: null }))
+            setMessage("avatar removed")
+        }
+        catch (error) {
+            setMessage(error.message)
         }
     }
 
@@ -142,30 +163,27 @@ export default function Account() {
                     <h1>ACCOUNT</h1>
 
                     <div className="accountAvatarSection">
-                        <div className="accountAvatarWrap">
-                            {user.avatar_url ? (
-                                <img
-                                    src={user.avatar_url}
-                                    alt="avatar"
-                                    className="accountAvatar"
-                                />
-                            ) : (
-                                <div className="accountAvatarPlaceholder">
-                                    {user.username[0]?.toUpperCase()}
-                                </div>
-                            )}
-                        </div>
+                        <Avatar user={user} size="lg" />
                         <label className="accountUploadBtn">
                             {uploading ? "uploading..." : "change avatar"}
                             <input
                                 type="file"
                                 accept="image/jpeg,image/png,image/webp"
-                                onChange={handleAvatarUpload}
+                                onChange={handleAvatarSelect}
                                 hidden
                                 disabled={uploading}
                             />
                         </label>
-                        <p className="accountAvatarHint">jpg, png, webp &middot; max 5MB &middot; 1024x1024</p>
+                        {user.avatar_url && (
+                            <button
+                                type="button"
+                                className="accountRemoveBtn"
+                                onClick={handleRemoveAvatar}
+                            >
+                                remove avatar
+                            </button>
+                        )}
+                        <p className="accountAvatarHint">jpg, png, webp &middot; max 5MB &middot; 512x512</p>
                     </div>
 
                     <p className="accountUsername">
@@ -216,6 +234,14 @@ export default function Account() {
                     {message && <p className="authMessage">{message}</p>}
                 </div>
             </section>
+
+            {cropFile && (
+                <AvatarCropModal
+                    file={cropFile}
+                    onSave={handleCropSave}
+                    onClose={() => setCropFile(null)}
+                />
+            )}
         </Layout>
     )
 }

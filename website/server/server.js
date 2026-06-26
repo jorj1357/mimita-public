@@ -142,6 +142,16 @@ app.use((req, res, next) => {
     next()
 })
 
+function detectImageType(buffer) {
+    const sig = buffer.slice(0, 8).toString("hex")
+    if (sig.startsWith("89504e470d0a1a0a")) return "png"
+    if (sig.startsWith("ffd8")) return "jpeg"
+    if (sig.startsWith("52494646")) {
+        if (buffer.length > 12 && buffer.slice(8, 12).toString() === "WEBP") return "webp"
+    }
+    return null
+}
+
 function logAuth(action, value) {
     console.log(`[AUTH] ${action}=${value}`)
 }
@@ -177,6 +187,7 @@ async function authenticate(req, res, next) {
                 u.email,
                 u.bio,
                 u.avatar_url,
+                u.avatar_updated_at,
                 u.supporter_tier,
                 u.role,
                 u.email_notifications_enabled,
@@ -251,7 +262,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
                 email_verification_token
             )
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, email, bio, avatar_url, supporter_tier, email_notifications_enabled
+            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled
             `,
             [username, usernameKey(username), email, passwordHash, verificationTokenHash]
         )
@@ -313,6 +324,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
                 password_hash,
                 bio,
                 avatar_url,
+                avatar_updated_at,
                 supporter_tier,
                 email_notifications_enabled
             FROM users
@@ -471,7 +483,7 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
             UPDATE users
             SET bio = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING username, bio, avatar_url, supporter_tier
+            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier
             `,
             [bio, req.user.id]
         )
@@ -495,45 +507,73 @@ app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("av
             })
         }
 
-        const sizes = [64, 128, 256]
-        const ext = ".webp"
-        const baseName = `user_${req.user.id}_${crypto.randomUUID()}`
-        const urls = []
-
-        for (const size of sizes) {
-            const fileName = `${baseName}_${size}${ext}`
-            const filePath = path.join(AVATAR_DIR, fileName)
-
-            const img = sharp(req.file.buffer, { limitInputPixels: 4_000_000 })
-            const metadata = await img.metadata()
-            const maxDim = Math.max(metadata.width || 1024, metadata.height || 1024)
-
-            if (maxDim > 1024) {
-                img.resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
-            }
-
-            img.resize(size, size, { fit: "cover" })
-
-            await img.toFile(filePath)
-            urls.push(`/avatars/${fileName}`)
+        const imageType = detectImageType(req.file.buffer)
+        if (!imageType) {
+            return res.status(400).json({
+                success: false,
+                message: "invalid image file"
+            })
         }
 
-        const avatarUrl = urls.find(u => u.includes("_256")) || urls[0]
+        const fileName = `user_${req.user.id}_${crypto.randomUUID()}.png`
+        const filePath = path.join(AVATAR_DIR, fileName)
+
+        const img = sharp(req.file.buffer, { limitInputPixels: 4_000_000 })
+        img.resize(512, 512, { fit: "cover" })
+        await img.png().toFile(filePath)
+
+        const now = new Date().toISOString()
+        const avatarUrl = `/avatars/${fileName}`
 
         const result = await pool.query(
             `
             UPDATE users
-            SET avatar_url = $1, updated_at = NOW()
-            WHERE id = $2
-            RETURNING avatar_url
+            SET avatar_url = $1, avatar_updated_at = $2, updated_at = $2
+            WHERE id = $3
+            RETURNING avatar_url, avatar_updated_at
             `,
-            [avatarUrl, req.user.id]
+            [avatarUrl, now, req.user.id]
         )
+
+        if (req.user.avatar_url) {
+            const oldFile = path.join(AVATAR_DIR, path.basename(req.user.avatar_url))
+            if (fs.existsSync(oldFile)) {
+                fs.unlinkSync(oldFile)
+            }
+        }
 
         res.json({
             success: true,
             avatar_url: result.rows[0].avatar_url,
-            sizes: urls
+            avatar_updated_at: result.rows[0].avatar_updated_at
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.delete("/api/account/avatar", authenticate, async (req, res, next) => {
+    try {
+        if (req.user.avatar_url) {
+            const oldFile = path.join(AVATAR_DIR, path.basename(req.user.avatar_url))
+            if (fs.existsSync(oldFile)) {
+                fs.unlinkSync(oldFile)
+            }
+        }
+
+        await pool.query(
+            `
+            UPDATE users
+            SET avatar_url = '', avatar_updated_at = NULL, updated_at = NOW()
+            WHERE id = $1
+            `,
+            [req.user.id]
+        )
+
+        res.json({
+            success: true,
+            message: "avatar removed"
         })
     }
     catch (error) {
@@ -579,7 +619,7 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT username, bio, avatar_url, supporter_tier, created_at
+            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL
@@ -963,28 +1003,41 @@ app.post("/api/admin/feedback", feedbackRateLimit, async (req, res, next) => {
 
 // ── Account Linking ──────────────────────────────────────────────────────────
 // In-memory store for linking codes. Codes are 6 digits, expire after 5 minutes.
+// Security: poll returns only claimed=true/false. Finalize requires one-time grant token.
+
 const linkCodes = new Map()
+const linkRateLimit = createRateLimit({ windowMs: 10 * 1000, max: 10, name: "link" })
+
+function randomHex(bytes) {
+    return crypto.randomBytes(bytes).toString("hex")
+}
 
 function generateLinkCode() {
     const code = String(Math.floor(100000 + Math.random() * 900000))
+    const grantToken = randomHex(32)
     linkCodes.set(code, {
         code,
+        grantToken,
         createdAt: Date.now(),
         claimed: false,
         userId: null,
-        sessionToken: null
+        username: null
     })
-    // Expire old codes
     setTimeout(() => linkCodes.delete(code), 5 * 60 * 1000)
-    return code
+    return { code, grantToken }
 }
 
 app.post("/api/auth/link-code", (req, res) => {
-    const code = generateLinkCode()
-    res.json({ success: true, code, url: "https://mimita.fun/link" })
+    try {
+        const { code, grantToken } = generateLinkCode()
+        res.json({ success: true, code, grantToken, url: "https://mimita.fun/link" })
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: "failed to generate code" })
+    }
 })
 
-app.post("/api/auth/link-claim", async (req, res, next) => {
+app.post("/api/auth/link-claim", linkRateLimit, async (req, res, next) => {
     try {
         const token = parseCookies(req)[sessionCookieName]
         if (!token) {
@@ -1000,32 +1053,80 @@ app.post("/api/auth/link-claim", async (req, res, next) => {
             return res.status(400).json({ success: false, message: "code already used" })
         }
 
-        entry.claimed = true
-        entry.sessionToken = token
+        const result = await pool.query(
+            "SELECT id, username FROM users WHERE id = (SELECT user_id FROM sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW() LIMIT 1)",
+            [hashToken(token, sessionSecret)]
+        )
+        if (!result.rowCount) {
+            return res.status(401).json({ success: false, message: "session invalid" })
+        }
 
-        res.json({ success: true, message: "account linked" })
+        entry.claimed = true
+        entry.userId = result.rows[0].id
+        entry.username = result.rows[0].username
+
+        res.json({ success: true, message: "account linked as " + result.rows[0].username })
     }
     catch (error) {
         next(error)
     }
 })
 
-app.get("/api/auth/link-poll", (req, res) => {
+app.get("/api/auth/link-poll", linkRateLimit, (req, res) => {
     const code = String(req.query.code || "").trim()
     const entry = linkCodes.get(code)
 
     if (!entry) {
-        return res.json({ success: false, claimed: false, message: "invalid or expired code" })
+        return res.json({ success: false, claimed: false })
     }
     if (entry.claimed) {
         return res.json({
             success: true,
             claimed: true,
-            session_token: entry.sessionToken
+            username: entry.username
         })
     }
 
-    res.json({ success: true, claimed: false, message: "waiting for browser..." })
+    res.json({ success: true, claimed: false })
+})
+
+app.post("/api/auth/link-finalize", linkRateLimit, async (req, res, next) => {
+    try {
+        const code = String(req.body.code || "").trim()
+        const grantToken = String(req.body.grant_token || "").trim()
+        const entry = linkCodes.get(code)
+
+        if (!entry || !entry.claimed) {
+            return res.status(404).json({ success: false, message: "invalid or expired code" })
+        }
+        if (entry.grantToken !== grantToken) {
+            return res.status(403).json({ success: false, message: "invalid grant token" })
+        }
+
+        // One-time use — delete immediately
+        linkCodes.delete(code)
+
+        // Create a new session for the linked user
+        const token = createSecretToken()
+        const tokenHash = hashToken(token, sessionSecret)
+        await pool.query(
+            `INSERT INTO sessions (user_id, token_hash, user_agent, ip_address, expires_at)
+             VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))`,
+            [entry.userId, tokenHash, "game-client", getClientIp(req), sessionDays]
+        )
+
+        res.json({
+            success: true,
+            user: {
+                id: entry.userId,
+                username: entry.username
+            },
+            session_token: token
+        })
+    }
+    catch (error) {
+        next(error)
+    }
 })
 // ── End Account Linking ──────────────────────────────────────────────────────
 
@@ -1106,9 +1207,43 @@ app.get("/api/update/latest-version", (req, res) => {
         version: gameVersion.version,
         release_date: gameVersion.release_date,
         download_url: "/api/download/latest",
+        manifest_url: "/api/update/manifest/" + gameVersion.version,
         mandatory: false,
         changelog: "Initial release."
     })
+})
+
+app.get("/api/update/manifest/:version", (req, res) => {
+    const manifestPath = path.resolve("server/manifests/" + req.params.version + ".json")
+    if (fs.existsSync(manifestPath)) {
+        res.sendFile(manifestPath)
+    }
+    else {
+        res.status(404).json({ success: false, message: "manifest not found" })
+    }
+})
+
+app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
+    const safePath = String(req.params[0] || "")
+    const filePath = path.resolve(safePath)
+    const resolved = path.resolve(filePath)
+    const gameDir = path.resolve(".")
+    if (!resolved.startsWith(gameDir)) {
+        return res.status(403).json({ success: false, message: "forbidden" })
+    }
+    if (fs.existsSync(resolved)) {
+        return res.sendFile(resolved)
+    }
+    const rootPath = path.resolve("..", req.params[0] || "")
+    const rootResolved = path.resolve(rootPath)
+    const repoDir = path.resolve("..")
+    if (!rootResolved.startsWith(repoDir)) {
+        return res.status(403).json({ success: false, message: "forbidden" })
+    }
+    if (fs.existsSync(rootResolved)) {
+        return res.sendFile(rootResolved)
+    }
+    res.status(404).json({ success: false, message: "file not found" })
 })
 
 app.get("/api/download/latest", (req, res) => {
