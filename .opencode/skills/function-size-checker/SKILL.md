@@ -1,3 +1,8 @@
+---
+name: function-size-checker
+description: Prevent giant functions. Flag functions over 50 lines.
+---
+
 # Function Size Checker
 
 ## Purpose

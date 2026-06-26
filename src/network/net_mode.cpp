@@ -18,6 +18,8 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.connect = argv[++i];
         else if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc)
             options.name = argv[++i];
+        else if (std::strcmp(argv[i], "--session") == 0 && i + 1 < argc)
+            options.sessionToken = argv[++i];
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
             printLaunchUsage();
     }
@@ -29,6 +31,7 @@ void printLaunchUsage()
     printf("Mimita local multiplayer test mode:\n");
     printf("  mimita.exe --server\n");
     printf("  mimita.exe --client --name client1 --connect 127.0.0.1:1357\n");
+    printf("  mimita.exe --session <token>\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }
 

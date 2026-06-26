@@ -10,6 +10,7 @@ struct LaunchOptions
     bool client = false;
     std::string connect = "127.0.0.1:1357";
     std::string name;
+    std::string sessionToken;
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

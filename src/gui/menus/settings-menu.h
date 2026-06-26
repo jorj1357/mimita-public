@@ -18,6 +18,7 @@
 struct SettingsMenuResult
 {
     bool goBack = false;
+    bool signOut = false;
 };
 
 SettingsMenuResult drawSettingsMenu(GLFWwindow* win);

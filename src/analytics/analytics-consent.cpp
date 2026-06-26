@@ -51,18 +51,19 @@ AnalyticsConsentAction AnalyticsConsent::drawSettingsPanel(
                                 : glm::vec4(1.0f, 0.62f, 0.55f, 1.0f));
 
     AnalyticsConsentAction action = AnalyticsConsentAction::None;
-    const char* disableLabel = permanentlyDisabled ? "DISABLED" : "DISABLE ANALYTICS";
-    if (uiButton(win, disableLabel, {x, 858.0f, 280.0f, 34.0f},
-                 permanentlyDisabled ? glm::vec4(0.18f, 0.18f, 0.18f, 1.0f)
-                                     : glm::vec4(0.42f, 0.16f, 0.16f, 1.0f),
-                 "analytics-settings-disable").clicked && !permanentlyDisabled)
-        action = AnalyticsConsentAction::Disable;
 
-    if (uiButton(win, "REQUEST DATA DELETION", {x, 902.0f, 280.0f, 34.0f},
+    const char* toggleLabel = analyticsEnabled ? "Analytics: ON" : "Analytics: OFF";
+    if (uiButton(win, toggleLabel, {x, 858.0f, 280.0f, 40.0f},
+                 analyticsEnabled ? glm::vec4(0.25f, 0.7f, 0.35f, 1.0f)
+                                  : glm::vec4(0.5f, 0.2f, 0.2f, 1.0f),
+                 "analytics-settings-toggle").clicked)
+        action = AnalyticsConsentAction::Toggle;
+
+    if (uiButton(win, "REQUEST DATA DELETION", {x, 916.0f, 280.0f, 34.0f},
                  {0.18f, 0.22f, 0.32f, 1.0f}, "analytics-settings-delete").clicked)
         action = AnalyticsConsentAction::RequestDeletion;
 
-    if (uiButton(win, "PRIVACY POLICY", {x, 946.0f, 280.0f, 34.0f},
+    if (uiButton(win, "PRIVACY POLICY", {x, 962.0f, 280.0f, 34.0f},
                  {0.14f, 0.24f, 0.34f, 1.0f}, "analytics-settings-privacy").clicked)
         action = AnalyticsConsentAction::ReadMore;
 

@@ -1,3 +1,8 @@
+---
+name: single-responsibility-checker
+description: Prevent duplicate implementations. Enforce one canonical implementation per concept.
+---
+
 # Single Responsibility Checker
 
 ## Purpose

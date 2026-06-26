@@ -34,7 +34,8 @@ enum GuiMenuState
     GUI_MENU_PRACTICE,
     GUI_MENU_REPLAY,
     GUI_MENU_AVATAR_CREATOR,
-    GUI_MENU_BOMB_TAG_CONFIG
+    GUI_MENU_BOMB_TAG_CONFIG,
+    GUI_MENU_AUTH,
 };
 
 extern GuiMenuState gGuiMenuState;

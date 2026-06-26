@@ -29,6 +29,11 @@ public:
     // Convert cursor from window coordinates to framebuffer (screen) coordinates.
     void cursorWindowToScreen(double winX, double winY, double& outFbX, double& outFbY) const;
 
+    // -- Scroll / Translation Stack ----------------------------------------
+
+    void pushTranslate(float designY);
+    void popTranslate();
+
     // -- Accessors ---------------------------------------------------------
 
     float screenW() const { return (float)mScreenW; }
@@ -45,4 +50,6 @@ private:
     int mWindowH = (int)DESIGN_H;
     float mScaleX = 1.0f;
     float mScaleY = 1.0f;
+    float mTranslateY = 0.0f;
+    int mTranslateStack = 0;
 };

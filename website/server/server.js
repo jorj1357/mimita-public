@@ -90,7 +90,14 @@ app.use(cors({
     credentials: true
 }))
 app.use(express.json({ limit: "32kb" }))
-app.use("/avatars", express.static(AVATAR_DIR))
+app.use("/avatars", express.static(AVATAR_DIR, {
+    maxAge: "1h",
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".png")) {
+            res.set("Content-Type", "image/png")
+        }
+    }
+}))
 
 app.use((req, res, next) => {
     res.set("X-Content-Type-Options", "nosniff")
@@ -172,7 +179,14 @@ async function safelySend(label, send) {
 
 async function authenticate(req, res, next) {
     try {
-        const token = parseCookies(req)[sessionCookieName]
+        let token = parseCookies(req)[sessionCookieName]
+
+        if (!token) {
+            const authHeader = req.headers["authorization"]
+            if (authHeader && authHeader.startsWith("Bearer ")) {
+                token = authHeader.slice(7).trim()
+            }
+        }
 
         if (!token) {
             return res.status(401).json({
@@ -195,7 +209,8 @@ async function authenticate(req, res, next) {
                 u.role,
                 u.email_notifications_enabled,
                 u.email_verified_at IS NOT NULL AS email_verified,
-                u.achievements
+                u.achievements,
+                u.created_at
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1
@@ -664,6 +679,66 @@ app.get("/api/users/:username", async (req, res, next) => {
         res.json({
             success: true,
             user: result.rows[0]
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.get("/api/users", async (req, res, next) => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1)
+        const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50))
+        const offset = (page - 1) * limit
+        const search = String(req.query.search || "").trim().toLowerCase()
+        const sort = String(req.query.sort || "newest")
+
+        let where = "WHERE deleted_at IS NULL"
+        const params = []
+
+        if (search) {
+            params.push(`%${search}%`)
+            where += ` AND (LOWER(username) LIKE $${params.length} OR LOWER(bio) LIKE $${params.length})`
+        }
+
+        const sortOrders = {
+            oldest: "created_at ASC",
+            username_az: "username ASC",
+            username_za: "username DESC",
+            achievements: "array_length(achievements, 1) DESC NULLS LAST, username ASC",
+            least_achievements: "array_length(achievements, 1) ASC NULLS LAST, username ASC"
+        }
+        const order = sortOrders[sort] || "created_at DESC"
+
+        const countResult = await pool.query(
+            `SELECT COUNT(*) AS count FROM users ${where}`,
+            params
+        )
+        const total = Number(countResult.rows[0].count)
+
+        params.push(limit)
+        params.push(offset)
+
+        const result = await pool.query(
+            `SELECT username, avatar_url, avatar_updated_at, bio, created_at, achievements
+             FROM users
+             ${where}
+             ORDER BY ${order}
+             LIMIT $${params.length - 1} OFFSET $${params.length}`,
+            params
+        )
+
+        res.json({
+            success: true,
+            users: result.rows.map(({ achievements, ...u }) => ({
+                ...u,
+                achievement_count: Array.isArray(achievements) ? achievements.length : 0
+            })),
+            total,
+            page,
+            limit,
+            pages: Math.ceil(total / limit)
         })
     }
     catch (error) {
@@ -1249,8 +1324,9 @@ app.get("/api/update/manifest/:version", (req, res) => {
     }
 })
 
-app.get("/api/download/file/:path(*)", (req, res) => {
-    const safePath = String(req.params.path || "")
+app.use("/api/download/file", (req, res, next) => {
+    if (req.method !== "GET") return next()
+    const safePath = String(req.path.replace("/api/download/file/", "").replace(/^\/+/, "") || "")
     const filePath = path.resolve(safePath)
     const resolved = path.resolve(filePath)
     const gameDir = path.resolve(".")

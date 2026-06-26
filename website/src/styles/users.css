@@ -1,0 +1,138 @@
+.usersPage {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  padding: 3rem 1.25rem;
+}
+
+.usersPage h1 {
+  margin: 0 0 0.25rem;
+  color: white;
+  font-size: clamp(1.5rem, 5vmin, 2.5rem);
+}
+
+.usersSubtitle {
+  margin: 0 0 1.5rem;
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.4);
+}
+
+.usersControls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.usersSearch {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.7rem 0.85rem;
+  color: white;
+  background: black;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.9rem;
+}
+
+.usersSort {
+  padding: 0.7rem 0.85rem;
+  color: white;
+  background: black;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.usersLoading,
+.usersError,
+.usersEmpty {
+  text-align: center;
+  padding: 2rem;
+  color: rgba(255,255,255,0.5);
+}
+
+.usersError {
+  color: #ef4444;
+}
+
+.usersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 1rem;
+}
+
+.usersCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1.25rem 1rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.02);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: center;
+}
+
+.usersCard:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.usersCardName {
+  font-size: 1rem;
+  color: white;
+  word-break: break-all;
+}
+
+.usersCardAchievements {
+  font-size: 0.75rem;
+  color: #40e0d0;
+}
+
+.usersCardJoined {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.4);
+}
+
+.usersCardBio {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.usersPagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.usersPageBtn {
+  padding: 0.6rem 1.25rem;
+  background: black;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.usersPageBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.usersPageBtn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+}
+
+.usersPageInfo {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.5);
+}

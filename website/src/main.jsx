@@ -29,6 +29,7 @@ import ArticlePage from "./pages/ArticlePage"
 import Account from "./pages/Account"
 import PasswordChange from "./pages/PasswordChange"
 import UserProfile from "./pages/UserProfile"
+import Users from "./pages/Users"
 import PasswordPrinciples from "./pages/PasswordPrinciples"
 import AdminLogin from "./pages/AdminLogin"
 import AdminDashboard from "./pages/AdminDashboard"
@@ -65,6 +66,7 @@ ReactDOM.createRoot(
         <Route path="/change-password" element={<PasswordChange />} />
         <Route path="/password-principles" element={<PasswordPrinciples />} />
 
+        <Route path="/users" element={<Users />} />
         <Route path="/users/:username" element={<UserProfile />} />
         <Route path="/u/:username" element={<UserProfile />} />
         <Route path="/profile" element={<ProfilePage />} />

@@ -647,16 +647,21 @@ Creating a new function requires justification.
 
 Before ending any task:
 
-1. Build if code changed
-2. Run relevant validation/tests
-3. Verify expected outputs exist
-4. Save logs
-5. Trigger completion notification script
-6. Print summary
+1. **Run specialized skills** — Load and execute any skill relevant to the work (collision, physics, state, dependencies, etc.). See "Specialized Skills Check" in the Overseer skill.
+2. **Build** if code changed (using `build_agent.py`)
+3. **Run relevant validation/tests**
+4. **Verify expected outputs exist**
+5. **Run Overseer** — Load the overseer skill via `skill("overseer")` and execute its full checklist.
+6. **Overseer must return CLEAN PASS** before proceeding.
+7. **Save logs**
+8. **Trigger completion notification script**
+9. **Print summary**
 
 Agents should never simply stop after editing files.
 
-They should validate work first.
+They must validate work first.
+
+If Overseer cannot be loaded: treat this as a FAILURE condition. Run the diagnostics section below and report the exact reason.
 
 ---
 
@@ -748,7 +753,7 @@ Timers may not invent collisions.
 
 # Mandatory Final Check
 
-Before completing any task that modifies code, configuration, scripts, documentation, or build files, invoke the `overseer` skill (`.opencode/skills/overseer/SKILL.md`) and include its combined report.
+Before completing any task that modifies code, configuration, scripts, documentation, or build files, invoke the `overseer` skill via `skill("overseer")` and include its combined report.
 
 ## Zero-Tolerance Policy
 
@@ -778,3 +783,40 @@ The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL,
 ## Exceptions
 
 If overseer cannot run (e.g., missing skills), explain exactly why in the completion report. Do not skip the check.
+
+## Skill Discovery Notes
+
+Skills are located under `.opencode/skills/<name>/SKILL.md`.
+
+**IMPORTANT**: The `glob` tool cannot match paths starting with `.` (e.g., `.opencode/skills/overseer/SKILL.md` returns "No files found" even though the file exists). This is a known tool limitation.
+
+To discover skills or verify they exist:
+- Use `skill("name")` to load a skill by name (works for any skill with YAML frontmatter).
+- Use PowerShell: `Test-Path ".opencode/skills/<name>/SKILL.md"` to verify file existence.
+- Use glob `**/SKILL.md` from the workspace root to list all skill files (this pattern works).
+- Use `Get-ChildItem -Recurse ".opencode/skills"` to list all skills.
+
+Do NOT use `glob` with `.opencode/...` patterns — they will falsely return "No files found".
+
+## Diagnostics (when a skill cannot be found)
+
+If `skill("name")` fails or a skill appears missing, run these diagnostics:
+
+```powershell
+Write-Host "=== SKILL DIAGNOSTIC ==="
+Write-Host "CWD: $(Get-Location)"
+Write-Host "Workspace root: C:\important\mimita-priv-v8"
+$path = ".opencode/skills/overseer/SKILL.md"
+Write-Host "Expected path: $path"
+Write-Host "File exists: $(Test-Path -LiteralPath $path)"
+Write-Host "All discovered skills:"
+$skills = Get-ChildItem -Path ".opencode/skills" -Directory
+$skills | ForEach-Object { Write-Host "  $($_.Name)" }
+Write-Host "=== END DIAGNOSTIC ==="
+```
+
+If the file exists (Test-Path returns True) but skill("name") fails, the issue is:
+- Missing or malformed YAML frontmatter in the SKILL.md (requires `name:` and `description:` keys).
+- The system needs to be restarted to re-index skills after adding frontmatter.
+
+Report all diagnostic findings. Do not silently skip.

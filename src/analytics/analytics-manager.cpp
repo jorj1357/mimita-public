@@ -210,6 +210,9 @@ void AnalyticsManager::drawSettingsPanel(GLFWwindow* win)
         case AnalyticsConsentAction::Disable:
             disablePermanently();
             break;
+        case AnalyticsConsentAction::Toggle:
+            setAnalyticsEnabled(!enabled());
+            break;
         case AnalyticsConsentAction::ReadMore:
             openPrivacyPolicy();
             break;
@@ -219,6 +222,27 @@ void AnalyticsManager::drawSettingsPanel(GLFWwindow* win)
         default:
             break;
     }
+}
+
+void AnalyticsManager::setAnalyticsEnabled(bool enabled)
+{
+    if (mConfig.permanentlyDisabled && enabled)
+    {
+        mConfig.permanentlyDisabled = false;
+        mConfig.consentShown = true;
+        mConfig.analyticsEnabled = true;
+    }
+    else
+    {
+        mConfig.consentShown = true;
+        mConfig.analyticsEnabled = enabled;
+    }
+    save();
+    postConsent();
+    mStatusMessage = enabled ? "analytics enabled" : "analytics disabled";
+    std::printf("[ANALYTICS] %s\n", enabled ? "enabled" : "disabled");
+    if (enabled)
+        startSessionIfAllowed();
 }
 
 void AnalyticsManager::disablePermanently()

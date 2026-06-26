@@ -1,10 +1,13 @@
 #include "main-menu.h"
+#include "account-panel.h"
 #include "../ui-system.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
-#include "profile/local-profile-system.h"
+#include "auth/auth-system.h"
+
 #include <cstdio>
 #include <filesystem>
+#include <shellapi.h>
 
 MainMenuResult drawMainMenu(GLFWwindow* win)
 {
@@ -15,7 +18,6 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/main-menu.json");
 
-    // Background covers full screen (in framebuffer coordinates)
     const char* bgPath = "assets/ui/backgrounds/main-menu-bg.png";
     bool bgLoaded = false;
     {
@@ -36,12 +38,9 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     if (!bgLoaded)
         uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
 
-    // Render all layout elements using the unified renderer
-    // profileLine is handled separately because its text is dynamic (includes username)
+    // Left-side layout buttons
     for (const std::string& id : layout.elementIds())
     {
-        if (id == "profileLine") continue;
-
         const GuiElement* elem = layout.get(id);
         if (!elem || !elem->visible) continue;
 
@@ -75,17 +74,32 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
         }
     }
 
-    // Render profile line with dynamic username text
-    const GuiElement* profileEl = layout.get("profileLine");
-    if (profileEl)
+    // Right-side account panel
+    AccountPanelAction account = drawAccountPanel(win);
+    if (account.logIn)
     {
-        const std::string profileText =
-            "Logged in as: " + LocalProfileSystem::instance().currentUsername();
-        float sx = uiScaleX(profileEl->x);
-        float sy = uiScaleY(profileEl->y);
-        float scale = profileEl->fontSize > 0.0f ? profileEl->fontSize : 0.38f;
-        glm::vec4 color = profileEl->getTextColorVec();
-        uiDrawText(profileText.c_str(), sx, sy, scale, color);
+        printf("[MAIN MENU] opening https://www.mimita.fun/login\n");
+        HINSTANCE h = ShellExecuteA(nullptr, "open",
+            "https://www.mimita.fun/login",
+            nullptr, nullptr, SW_SHOWNORMAL);
+        if ((INT_PTR)h <= 32)
+            printf("[MAIN MENU] ShellExecuteA failed: result=%lld\n", (long long)(INT_PTR)h);
+        AuthSystem::instance().startLinkFlow();
+    }
+    else if (account.signUp)
+    {
+        printf("[MAIN MENU] opening https://www.mimita.fun/signup\n");
+        HINSTANCE h = ShellExecuteA(nullptr, "open",
+            "https://www.mimita.fun/signup",
+            nullptr, nullptr, SW_SHOWNORMAL);
+        if ((INT_PTR)h <= 32)
+            printf("[MAIN MENU] ShellExecuteA failed: result=%lld\n", (long long)(INT_PTR)h);
+        AuthSystem::instance().startLinkFlow();
+    }
+    else if (account.continueOffline)
+    {
+        printf("[MAIN MENU] Continue Offline\n");
+        AuthSystem::instance().skipLogin();
     }
 
     return r;

@@ -426,6 +426,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         }
     }
 
+    // ── Check for stored session token ───────────────────────────────────────
+    std::string sessionArg;
+    {
+        std::string authJson = readFile(dir + "\\config\\auth-token.json");
+        std::string token = extractJsonStr(authJson, "session_token");
+        if (!token.empty())
+            sessionArg = " --session \"" + token + "\"";
+    }
+
     // ── Launch game ──────────────────────────────────────────────────────────
     if (GetFileAttributesA(gameExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
         MessageBoxA(nullptr, "Mimita not found. Run MimitaSetup.exe to install.",
@@ -437,7 +446,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     PROCESS_INFORMATION pi;
     DWORD start = GetTickCount();
 
-    if (!CreateProcessA(nullptr, &gameExe[0], nullptr, nullptr, FALSE, 0,
+    std::string commandLine = gameExe + sessionArg;
+    if (!CreateProcessA(nullptr, &commandLine[0], nullptr, nullptr, FALSE, 0,
                         nullptr, dir.c_str(), &si, &pi))
         return 1;
 

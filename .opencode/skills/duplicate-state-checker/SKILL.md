@@ -1,3 +1,8 @@
+---
+name: duplicate-state-checker
+description: Detect duplicate state variables and competing sources of truth (e.g. grounded vs onGround, canDash vs dashReady).
+---
+
 # Duplicate State Checker
 
 ## Purpose

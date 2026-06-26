@@ -9,6 +9,7 @@
 #include <GLFW/glfw3.h>
 #include "gui/gui-coord.h"
 #include "audio/audio.h"
+#include "debug/debug-log.h"
 
 using namespace UISys;
 
@@ -105,4 +106,55 @@ void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)
     uiDrawRect({r.x + 10, r.y + 10, r.w - 20, r.h - 20}, {0.95f,0.2f,0.85f,0.35f}, "missing-image");
     uiDrawText("[MISSING TEXTURE]", r.x + 8, r.y + r.h + 8, 0.35f, {1.0f,0.8f,0.2f,1});
     debugWidget("IMAGE_BUTTON", label, r, s.hovered, s.pressed);
+}
+
+void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScrollState& scroll)
+{
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    UIRect fbArea = cs.designToScreen(area);
+
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((int)fbArea.x, (int)(UISys::gFbH - fbArea.y - fbArea.h),
+              (int)fbArea.w, (int)fbArea.h);
+
+    double mx, my;
+    glfwGetCursorPos(win, &mx, &my);
+    bool inArea = mx >= fbArea.x && mx <= fbArea.x + fbArea.w &&
+                  my >= fbArea.y && my <= fbArea.y + fbArea.h;
+
+    if (inArea)
+    {
+        double scrollDelta = UISys::gScrollYOffset;
+        UISys::gScrollYOffset = 0.0;
+        if (scrollDelta != 0.0)
+            scroll.scrollY -= (float)(scrollDelta * 40.0f);
+    }
+
+    float maxScroll = std::max(0.0f, contentHeight - area.h);
+    scroll.scrollY = std::clamp(scroll.scrollY, 0.0f, maxScroll);
+
+    cs.pushTranslate(scroll.scrollY);
+}
+
+void uiEndScrollArea(UIRect area, float contentHeight, UIScrollState& scroll)
+{
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    cs.popTranslate();
+
+    glDisable(GL_SCISSOR_TEST);
+
+    float maxScroll = std::max(0.0f, contentHeight - area.h);
+    if (maxScroll <= 0.0f) return;
+
+    float sbW = 8.0f;
+    float sbX = area.x + area.w - sbW - 4.0f;
+    float sbTrackH = area.h;
+    float thumbH = std::max(30.0f, sbTrackH * (area.h / contentHeight));
+    float thumbY = area.y + (scroll.scrollY / maxScroll) * (sbTrackH - thumbH);
+
+    UIRect fbTrack = cs.designToScreen({sbX, area.y, sbW, sbTrackH});
+    UIRect fbThumb = cs.designToScreen({sbX, thumbY, sbW, thumbH});
+
+    uiDrawRect(fbTrack, {0.1f, 0.12f, 0.16f, 0.5f}, "scroll-track");
+    uiDrawRect(fbThumb, {0.3f, 0.5f, 0.7f, 0.7f}, "scroll-thumb");
 }
