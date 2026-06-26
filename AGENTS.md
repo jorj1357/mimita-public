@@ -2,10 +2,11 @@ Favor deleting code over adding code when both solutions achieve the same result
 
 # Asset Rules
 
-* `.wav` and `.mp3` files are tracked by `.gitignore` and must NEVER be committed.
+* Gameplay sound effects under `assets/sound/entity/`, `assets/sound/ui/`, `assets/sound/weapon/` ARE tracked in Git.
+* Music production files under `assets/sound/music/` and loose source/production `.wav`/`.mp3` files are IGNORED by `.gitignore` and must NEVER be committed.
 * Game loads audio from `assets/sound/` at runtime.
-* Do not create, modify, or delete `.wav` or `.mp3` files.
-* If a game feature needs new audio, note the requirement in a TODO comment and leave the file untouched.
+* If a game feature needs new gameplay SFX, add the `.wav` or `.mp3` file to `assets/sound/entity/`, `assets/sound/ui/`, or `assets/sound/weapon/` and `git add -f` it (the global ignore allows explicit tracking of gameplay audio).
+* Do not create, modify, or delete music production files.
 
 # Development Rules
 
