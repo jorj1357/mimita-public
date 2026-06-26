@@ -226,4 +226,34 @@ void registerPlayerCommands()
                 Terminal::instance().addLog("[KILLFEED] " + line);
         }
     });
+
+    Terminal::instance().registerCommand({
+        "pos", "Print local player position", "pos",
+        [](const std::vector<std::string>&) {
+            if (!gpPlayer) {
+                Terminal::instance().addLog("No local player.");
+                return;
+            }
+            Player& player = *gpPlayer;
+
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Player Position: (%.3f, %.3f, %.3f)",
+                     player.pos.x, player.pos.y, player.pos.z);
+            Terminal::instance().addLog(buf);
+
+            snprintf(buf, sizeof(buf), "Velocity: (%.3f, %.3f, %.3f)",
+                     player.vel.x, player.vel.y, player.vel.z);
+            Terminal::instance().addLog(buf);
+
+            Terminal::instance().addLog(
+                player.ground.onGround ? "Grounded: true" : "Grounded: false");
+
+            if (gpActiveMapPath && !gpActiveMapPath->empty())
+                Terminal::instance().addLog("Current Map: " + *gpActiveMapPath);
+
+            snprintf(buf, sizeof(buf), "Facing: (%.3f, %.3f, %.3f)",
+                     player.aimDirection.x, player.aimDirection.y, player.aimDirection.z);
+            Terminal::instance().addLog(buf);
+        }
+    });
 }
