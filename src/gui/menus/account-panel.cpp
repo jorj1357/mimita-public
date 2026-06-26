@@ -23,6 +23,7 @@ namespace {
 
 void setPlayerUniforms(GLuint shader)
 {
+    glUseProgram(shader);
     const auto& cfg = LightingConfig::instance();
 
     glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);

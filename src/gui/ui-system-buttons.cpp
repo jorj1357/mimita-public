@@ -22,6 +22,7 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     UIRect fbR = cs.designToScreen(r);
 
+
     double mx = 0.0, my = 0.0;
     glfwGetCursorPos(win, &mx, &my);
     double fbx = mx, fby = my;
