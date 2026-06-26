@@ -210,7 +210,8 @@ async function authenticate(req, res, next) {
                 u.email_notifications_enabled,
                 u.email_verified_at IS NOT NULL AS email_verified,
                 u.achievements,
-                u.created_at
+                u.created_at,
+                u.email_visible
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1
@@ -288,7 +289,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
                 email_verification_token
             )
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled, achievements
+            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled, achievements, email_visible
             `,
             [username, usernameKey(username), email, passwordHash, verificationTokenHash]
         )
@@ -353,7 +354,8 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
                 avatar_updated_at,
                 supporter_tier,
                 email_notifications_enabled,
-                achievements
+                achievements,
+                email_visible
             FROM users
             WHERE deleted_at IS NULL
               AND (
@@ -518,7 +520,7 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
             UPDATE users
             SET bio = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier, achievements
+            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier, achievements, email_visible
             `,
             [bio, req.user.id]
         )
@@ -622,6 +624,35 @@ app.delete("/api/account/avatar", authenticate, async (req, res, next) => {
     }
 })
 
+app.patch("/api/account/email-visibility", authenticate, async (req, res, next) => {
+    try {
+        if (typeof req.body.emailVisible !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "emailVisible must be true or false"
+            })
+        }
+
+        const result = await pool.query(
+            `
+            UPDATE users
+            SET email_visible = $1, updated_at = NOW()
+            WHERE id = $2
+            RETURNING email_visible
+            `,
+            [req.body.emailVisible, req.user.id]
+        )
+
+        res.json({
+            success: true,
+            email_visible: result.rows[0].email_visible
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 app.patch(
     "/api/account/notification-preferences",
     authenticate,
@@ -660,7 +691,8 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at, achievements
+            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at, achievements,
+                   CASE WHEN email_visible THEN email ELSE NULL END AS email
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL

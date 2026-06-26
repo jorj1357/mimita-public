@@ -71,10 +71,12 @@ export default function ProfilePage() {
                                 <span className="profilePageMetaValue">{user.supporter_tier.replace("_", " ")}</span>
                             </div>
                         )}
-                        <div className="profilePageMetaItem">
-                            <span className="profilePageMetaLabel">Email</span>
-                            <span className="profilePageMetaValue">{user.email}</span>
-                        </div>
+                        {user.email_visible && (
+                            <div className="profilePageMetaItem">
+                                <span className="profilePageMetaLabel">Email</span>
+                                <span className="profilePageMetaValue">{user.email}</span>
+                            </div>
+                        )}
                     </div>
 
                     <Link to="/account" className="profilePageEditBtn">

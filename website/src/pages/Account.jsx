@@ -232,6 +232,31 @@ export default function Account() {
                         email notifications
                     </label>
 
+                    <label className="authToggle">
+                        <input
+                            type="checkbox"
+                            checked={user.email_visible}
+                            onChange={async (event) => {
+                                const enabled = event.target.checked
+                                try {
+                                    await apiRequest("/api/account/email-visibility", {
+                                        method: "PATCH",
+                                        body: JSON.stringify({ emailVisible: enabled })
+                                    })
+                                    setUser((current) => ({
+                                        ...current,
+                                        email_visible: enabled
+                                    }))
+                                    setMessage("email visibility updated")
+                                }
+                                catch (error) {
+                                    setMessage(error.message)
+                                }
+                            }}
+                        />
+                        show my email on my public profile
+                    </label>
+
                     <button type="button" onClick={signOut}>
                         SIGN OUT
                     </button>
