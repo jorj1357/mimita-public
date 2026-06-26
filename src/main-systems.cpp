@@ -85,6 +85,7 @@
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 #include "avatar/avatar-menu.h"
+#include "avatar/character-registry.h"
 #include "render/lighting-config.h"
 #include "render/lighting-commands.h"
 #include "render/postfx-commands.h"
@@ -206,6 +207,10 @@ void gameInitSubsystems(Engine& engine)
     static Player player;
     player.username = LocalProfileSystem::instance().currentUsername();
     player.equippedSlot = GetPlayerSettings().equippedSlot;
+    CharacterRegistry::instance().scanAll();
+    if (!GetPlayerSettings().characterName.empty())
+        player.loadCharacter(GetPlayerSettings().characterName);
+
     OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath);
     if (!GetPlayerSettings().avatarName.empty())
         AvatarSystem::instance().loadAvatar(GetPlayerSettings().avatarName);

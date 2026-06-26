@@ -25,3 +25,203 @@ body {
   0% { background-position: 0% center; }
   100% { background-position: 200% center; }
 }
+
+/* =========================
+   PROFILE PAGE
+========================= */
+
+.profilePageContainer {
+  width: min(680px, 100%);
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.profileLoading {
+  text-align: center;
+  opacity: 0.5;
+  padding: 4rem 0;
+}
+
+.profilePageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 2rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.025);
+}
+
+.profilePageHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+.profilePageInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.profilePageRole {
+  font-size: 0.85rem;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.profilePageBio {
+  color: rgba(255,255,255,0.7);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin-top: 0.25rem;
+}
+
+.profilePageMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.profilePageMetaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.profilePageMetaLabel {
+  font-size: 0.75rem;
+  opacity: 0.4;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.profilePageMetaValue {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.profilePageEditBtn {
+  display: inline-block;
+  padding: 0.75rem 1.25rem;
+  background: white;
+  color: black;
+  text-decoration: none;
+  font-weight: 700;
+  text-align: center;
+  transition: opacity 0.2s;
+}
+
+.profilePageEditBtn:hover {
+  opacity: 0.85;
+}
+
+.profilePageSection {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.02);
+}
+
+.profilePageSectionTitle {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.profilePageEmpty {
+  text-align: center;
+  padding: 2rem 0;
+  opacity: 0.4;
+  font-style: italic;
+}
+
+.profilePageGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 600px) {
+  .profilePageGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================
+   ADMIN NO PERMISSION
+========================= */
+
+.adminNoPermPage {
+  width: min(600px, 100%);
+  margin: 0 auto;
+  padding: 3rem 1.25rem 4rem;
+}
+
+.adminNoPermCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 3rem 2rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.025);
+  text-align: center;
+}
+
+.adminNoPermIcon {
+  opacity: 0.8;
+}
+
+.adminNoPermTitle {
+  font-size: clamp(1.2rem, 4vmin, 1.8rem);
+  color: #ef4444;
+  letter-spacing: 0.02em;
+}
+
+.adminNoPermText {
+  color: rgba(255,255,255,0.6);
+  line-height: 1.6;
+  max-width: 420px;
+}
+
+.adminNoPermActions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.adminNoPermBtn {
+  display: inline-block;
+  padding: 0.7rem 1.25rem;
+  background: white;
+  color: black;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+}
+
+.adminNoPermBtn:hover {
+  opacity: 0.85;
+}
+
+.adminNoPermBtnSecondary {
+  background: transparent;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.25);
+}
+
+.adminNoPermBtnSecondary:hover {
+  border-color: rgba(255,255,255,0.5);
+}
+
+

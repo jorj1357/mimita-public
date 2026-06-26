@@ -1,0 +1,25 @@
+{
+  "name": "DefaultGuy",
+  "description": "The default playable character.",
+  "author": "MimitaTeam",
+  "version": "1.0.0",
+  "model": "character.glb",
+  "preview": null,
+  "capsule": {
+    "radius": 0.7,
+    "height": 3.6
+  },
+  "camera": {
+    "distance": 3.5,
+    "height": 1.0,
+    "shoulderOffset": 2.0
+  },
+  "bodyPartRadius": 0.15,
+  "scale": 1.0,
+  "hidden": false,
+  "tags": ["humanoid", "default"],
+  "unlock": null,
+  "cosmetics": [],
+  "skins": [],
+  "sounds": {}
+}

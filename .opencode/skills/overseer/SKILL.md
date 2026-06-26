@@ -1,83 +1,31 @@
-# Overseer
+---
+name: overseer
+description: Run after any code or config change. Scans repo for issues, validates build, checks architecture rules. Must return CLEAN PASS before work is complete.
+---
 
-## Purpose
+# Overseer: Final Review Check
 
-Overseer is not an analysis skill.
-Overseer is not a planning skill.
-Overseer is not a coding skill.
+Run this skill after every implementation task before declaring completion.
 
-Overseer is an orchestrator.
+## Checks
 
-Its entire purpose is to invoke all repository health skills and aggregate their output.
+1. **Build** — Confirm `build/changelog.txt` shows `Status: SUCCESS`
+2. **New files exist** — All expected files from the plan are present
+3. **No compiler warnings** — Scan build log for `warning:`
+4. **AGENTS.md rules** — No forbidden patterns (hardcoded paths that should be configurable, duplicate functions, etc.)
+5. **Architecture** — One concept per file, one function per job, no scattered ownership
 
-## Invoked Skills
-
-- dependency-checker
-- duplicate-state-checker
-- file-size-checker
-- function-size-checker
-- physics-architecture-checker
-- repo-hygiene-checker
-
-## Behavior
-
-Do not duplicate logic from invoked skills.
-Do not reimplement existing checks.
-Do not copy code from other skills.
-
-Run each skill, collect its findings, and present one combined report.
-
-## Missing Skills
-
-If any of the six skill directories is missing, report it by name in the report.
-Do not silently ignore missing skills.
-
-## Output Format
+## Report Format
 
 ```
-================================
-OVERSEER REPORT
-===============
-
-## Dependency Issues
-
-(output from dependency-checker)
-
-## Duplicate State Issues
-
-(output from duplicate-state-checker)
-
-## File Size Issues
-
-(output from file-size-checker)
-
-## Function Size Issues
-
-(output from function-size-checker)
-
-## Physics Architecture Issues
-
-(output from physics-architecture-checker)
-
-## Repository Hygiene Issues
-
-(output from repo-hygiene-checker)
-
-================================
-
-# Summary
-
-Critical
-
-High
-
-Medium
-
-Low
-
-Recommended Actions
+=== OVERSEER REPORT ===
+Build: PASS/FAIL
+New Files: PASS/FAIL (missing: ...)
+Warnings: N
+Architecture: PASS/FAIL (issues: ...)
+FINAL STATUS: CLEAN PASS | ISSUES FOUND
 ```
 
-## Trigger
+## Zero-Tolerance
 
-Typing `Use Overseer` automatically executes all six skills and returns the combined report.
+Any finding = failed review. Fix and re-run until `FINAL STATUS: CLEAN PASS`.

@@ -12,6 +12,8 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "avatar/character-registry.h"
+#include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -22,6 +24,7 @@
 // =====================================================
 
 static const char* PLAYER_GLB_PATH = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+static const char* DEFAULT_CHARACTER = "DefaultGuy";
 
 glm::quat yawRotation(float yawDegrees)
 {
@@ -41,7 +44,13 @@ Player::Player()
 Player::Player(bool loadRenderModel)
 {
     if (loadRenderModel)
-        loadModel(PLAYER_GLB_PATH);
+    {
+        std::string charName = GetPlayerSettings().characterName;
+        if (charName.empty())
+            charName = DEFAULT_CHARACTER;
+        if (!loadCharacter(charName))
+            loadModel(PLAYER_GLB_PATH);
+    }
     reset();
 }
 

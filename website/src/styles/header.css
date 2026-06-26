@@ -4,10 +4,6 @@
 
 .header {
   width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1rem 2rem;
   position: sticky;
   top: 0;
   z-index: 1000;
@@ -16,25 +12,39 @@
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
+.headerInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+}
+
 .headerLeft {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
+  gap: 1.25rem;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .headerMainLink {
   color: rgba(255,255,255,0.82);
   text-decoration: none;
-  font-size: clamp(12px, 1.1vmin, 18px);
+  font-size: clamp(13px, 1.2vmin, 16px);
   font-weight: 900;
-  letter-spacing: 0.16em;
-  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
+  letter-spacing: 0.12em;
+  transition: opacity 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
 }
 
 .headerMainLink:hover {
   color: white;
-  transform: translateY(-1px);
 }
 
 .menuButton {
@@ -42,145 +52,119 @@
   color: rgba(255,255,255,0.9);
   border: none;
   cursor: pointer;
-  font-size: 1.9rem;
+  font-size: 1.6rem;
   font-weight: 900;
   line-height: 1;
-  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
+  padding: 0;
+  transition: opacity 0.2s ease;
 }
 
 .menuButton:hover {
   color: white;
-  transform: scale(1.06);
 }
+
+.headerMenuWrap {
+  position: relative;
+}
+
+/* ── Dropdown / Hamburger ── */
 
 .dropdownMenu {
   position: absolute;
-  top: 4.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  min-width: 260px;
+  top: calc(100% + 0.75rem);
+  left: 0;
+  min-width: 240px;
+  max-height: min(70vh, 500px);
   background: rgba(0,0,0,0.96);
   border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
   backdrop-filter: blur(10px);
-  overflow: hidden;
   z-index: 2000;
+  overflow: hidden;
 }
 
-.dropdownMenu a {
-  color: rgba(255,255,255,0.82);
+.dropdownMenuScroll {
+  overflow-y: auto;
+  max-height: min(70vh, 500px);
+  padding: 0.25rem 0;
+}
+
+.dropdownMenu a,
+.dropdownSignOut {
+  display: block;
+  color: rgba(255,255,255,0.8);
   text-decoration: none;
-  padding: 1rem 1.5rem;
-  font-size: clamp(0.9rem, 1.2vmin, 1.1rem);
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  transition: background 0.2s ease, color 0.2s ease, padding-left 0.2s ease;
+  padding: 0.7rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, padding-left 0.15s ease;
 }
 
-.dropdownMenu a:last-child {
-  border-bottom: none;
-}
-
-.dropdownMenu a:hover {
+.dropdownMenu a:hover,
+.dropdownSignOut:hover {
   background: rgba(255,255,255,0.04);
   color: white;
-  padding-left: 1.8rem;
+  padding-left: 1.5rem;
 }
 
-.headerRight {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-left: auto;
+.dropdownSignOut {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 0.25rem;
+  padding-top: 0.85rem;
 }
 
-.headerUserInfo {
-  display: flex;
-  align-items: center;
-}
+/* ── Profile ── */
 
-.headerUserLink {
+.headerProfileLink {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   text-decoration: none;
-  color: rgba(255,255,255,0.82);
-  font-weight: 700;
-  font-size: 0.85rem;
   transition: opacity 0.2s;
 }
 
-.headerUserLink:hover {
-  color: white;
+.headerProfileLink:hover {
+  opacity: 0.8;
 }
 
-.headerAvatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid rgba(255,255,255,0.15);
-}
-
-.headerAvatarPlaceholder {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255,255,255,0.1);
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: rgba(255,255,255,0.4);
-  border: 1px solid rgba(255,255,255,0.15);
-}
-
-.headerUserName {
-  display: none;
-}
-
-.headerAuth {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.headerAuthLink {
+.headerSignInLink {
   color: rgba(255,255,255,0.82);
   text-decoration: none;
   font-size: 0.85rem;
   font-weight: 700;
-  transition: opacity 0.2s;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid rgba(255,255,255,0.2);
+  transition: border-color 0.2s, color 0.2s;
 }
 
-.headerAuthLink:hover {
+.headerSignInLink:hover {
   color: white;
+  border-color: rgba(255,255,255,0.4);
 }
 
-.headerSignupLink {
-  padding: 0.35rem 0.75rem;
-  background: white;
-  color: black;
+.headerAvatarSkeleton {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+}
+
+/* ── Scrollbar ── */
+
+.dropdownMenuScroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.dropdownMenuScroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdownMenuScroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
   border-radius: 2px;
-}
-
-.headerSignupLink:hover {
-  background: rgba(255,255,255,0.85);
-  color: black;
-}
-
-.headerAdminLink {
-  color: #a78bfa !important;
-  border: 1px solid #4c1d95;
-  padding: 0.2rem 0.6rem;
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
-}
-
-.headerAdminLink:hover {
-  color: #c4b5fd !important;
-  border-color: #6d28d9;
 }

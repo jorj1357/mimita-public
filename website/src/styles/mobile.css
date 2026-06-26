@@ -3,37 +3,78 @@
 ========================= */
 
 @media (max-width: 700px) {
+  .headerInner {
+    padding: 0.6rem 0.9rem;
+  }
+
   .headerLeft {
     gap: 0.8rem;
   }
 
   .headerMainLink {
     font-size: 0.8rem;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
   }
 
   .menuButton {
-    font-size: 1.6rem;
+    font-size: 1.4rem;
   }
 
   .headerRight {
-    display: none;
+    gap: 0.5rem;
+  }
+
+  .headerSignInLink {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.65rem;
   }
 
   .dropdownMenu {
     min-width: 200px;
-    top: 3.8rem;
+    left: 0;
+    max-height: min(65vh, 400px);
   }
 
-  .profileAvatarWrap,
-  .accountAvatarWrap {
-    width: 96px;
-    height: 96px;
+  .dropdownMenuScroll {
+    max-height: min(65vh, 400px);
   }
 
-  .profileAvatarPlaceholder,
-  .accountAvatarPlaceholder {
-    font-size: 2.25rem;
+  .dropdownMenu a,
+  .dropdownSignOut {
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  /* ── Hide top nav links on small screens ── */
+  .headerMainLink:nth-child(n+4) {
+    display: none;
+  }
+
+  .profilePageHeader {
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+  }
+
+  .profilePageMeta {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .profilePageGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminNoPermCard {
+    padding: 1.5rem;
+  }
+
+  .adminNoPermActions {
+    flex-direction: column;
+  }
+
+  .aboutPageContent {
+    padding: 0 1rem;
   }
 }
 

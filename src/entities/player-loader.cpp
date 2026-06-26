@@ -5,8 +5,11 @@
 #include <string>
 #include <vector>
 
+#include "avatar/character-registry.h"
+#include "camera.h"
 #include "debug/debug-log.h"
 #include "map/map_loader.h"
+#include "physics/config.h"
 #include "tinygltf/tiny_gltf.h"
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
@@ -341,4 +344,51 @@ bool Player::loadModel(const char* path)
     printf("[PLAYER GLB] hierarchy nodes=%zu bodyColliders=%zu root=plrOrigin expected\n",
            nodes.size(), bodyColliders.size());
     return modelLoaded;
+}
+
+bool Player::loadCharacter(const std::string& characterName)
+{
+    const CharacterManifest* manifest = CharacterRegistry::instance().get(characterName);
+    if (!manifest)
+    {
+        printf("[PLAYER] character '%s' not found in registry, trying DefaultGuy\n", characterName.c_str());
+        manifest = CharacterRegistry::instance().get("DefaultGuy");
+        if (!manifest)
+        {
+            printf("[PLAYER] DefaultGuy not found either, using hardcoded path\n");
+            return loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+        }
+    }
+
+    std::string glbPath = "Characters/" + characterName + "/" + manifest->model;
+    printf("[PLAYER] loading character '%s' from %s\n", characterName.c_str(), glbPath.c_str());
+    bool ok = loadModel(glbPath.c_str());
+    if (!ok)
+    {
+        printf("[PLAYER] failed to load character GLB, trying DefaultGuy\n");
+        const CharacterManifest* fallback = CharacterRegistry::instance().get("DefaultGuy");
+        if (fallback && fallback->name != characterName)
+        {
+            std::string fallbackPath = "Characters/" + fallback->name + "/" + fallback->model;
+            return loadModel(fallbackPath.c_str());
+        }
+        return loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+    }
+
+    mCharacterName = characterName;
+
+    // Update physics capsule from manifest
+    PLAYER_RADIUS = manifest->capsule.radius;
+    PLAYER_HEIGHT = manifest->capsule.height;
+
+    // Update camera offsets from manifest
+    CAMERA_DISTANCE = manifest->camera.distance;
+    CAMERA_HEIGHT = manifest->camera.height;
+    CAMERA_SHOULDER_OFFSET = manifest->camera.shoulderOffset;
+
+    printf("[PLAYER] character '%s' loaded: capsule=(%.2f, %.2f) camera=(%.2f, %.2f, %.2f)\n",
+           characterName.c_str(),
+           manifest->capsule.radius, manifest->capsule.height,
+           manifest->camera.distance, manifest->camera.height, manifest->camera.shoulderOffset);
+    return true;
 }

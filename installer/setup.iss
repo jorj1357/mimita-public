@@ -46,7 +46,7 @@ Source: "..\glfw3.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\libgcc_s_seh-1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\libstdc++-6.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\libwinpthread-1.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\assets.pak"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\config\accounts\default.json"; DestDir: "{app}\config\accounts"; Flags: ignoreversion
 Source: "..\config\current-profile.json"; DestDir: "{app}\config"; Flags: ignoreversion
 

@@ -47,6 +47,7 @@
 #include "debug/debug-diag.h"
 #include "debug/log-manager.h"
 #include "debug/crash-handler.h"
+#include "utils/pak-file.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
@@ -160,6 +161,25 @@ void gameInit(int argc, char** argv, Engine& engine)
 {
     printf("[MAIN] start\n");
     installCrashHandler();
+
+    // Extract assets.pak if present (extract to app dir so relative paths work)
+    {
+        PakFile pak;
+        if (pak.open("assets.pak")) {
+            // Check if extraction marker exists (faster than checking every file)
+            DWORD marker = GetFileAttributesA(".pak-extracted");
+            bool extracted = (marker != INVALID_FILE_ATTRIBUTES);
+            if (!extracted) {
+                printf("[PAK] Extracting %d files to current directory\n", pak.numFiles());
+                pak.extractAllTo(".");
+                // Write marker file so subsequent launches skip extraction
+                FILE* m = fopen(".pak-extracted", "w");
+                if (m) { fprintf(m, "1"); fclose(m); }
+                printf("[PAK] Extraction complete\n");
+            }
+        }
+    }
+
     LogManager::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 

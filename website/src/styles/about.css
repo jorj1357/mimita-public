@@ -1,17 +1,93 @@
 /* =========================
-   ABOUT SECTION + ABOUT PAGE
+   ABOUT PAGE
 ========================= */
 
-.aboutSection {
-  width: 100%;
+.aboutPage {
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 3vmin;
-  padding-bottom: 12vmin;
+  padding: 4vmin 6vmin;
   text-align: center;
 }
+
+.aboutPageTitle {
+  font-size: clamp(2rem, 6vmin, 6rem);
+  letter-spacing: 0.08em;
+  margin-bottom: 3vmin;
+}
+
+.aboutPageContent {
+  width: min(90vw, 750px);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  text-align: left;
+  padding: 0 1rem;
+}
+
+/* ── Section Blocks ── */
+
+.aboutSection {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.aboutSection:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.aboutSection h2 {
+  font-size: clamp(1.1rem, 3vmin, 1.4rem);
+  color: white;
+  margin-bottom: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.aboutSection p {
+  color: rgba(255,255,255,0.75);
+  line-height: 1.7;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.aboutSection p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── FAQ ── */
+
+.aboutFaq {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.aboutFaqItem {
+  padding: 0.75rem 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 4px;
+  text-align: left;
+}
+
+.aboutFaqItem strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+  color: rgba(255,255,255,0.9);
+}
+
+.aboutFaqItem p {
+  font-size: 0.85rem;
+  margin: 0;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.5;
+}
+
+/* ── Legasy (kept for backward compat) ── */
 
 .aboutBig {
   width: min(90vw, 900px);
@@ -24,39 +100,6 @@
   font-size: clamp(0.8rem, 1.3vmin, 1.4rem);
   opacity: 0.6;
   letter-spacing: 0.15em;
-}
-
-.aboutPage {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 6vmin;
-  text-align: center;
-}
-
-.aboutPageTitle {
-  font-size: clamp(2rem, 6vmin, 6rem);
-  letter-spacing: 0.08em;
-  margin-bottom: 5vmin;
-}
-
-.aboutPageContent {
-  width: min(90vw, 900px);
-  display: flex;
-  flex-direction: column;
-  gap: 2.5vmin;
-  font-size: clamp(1rem, 1.8vmin, 1.5rem);
-  line-height: 1.8;
-  opacity: 0.9;
-}
-
-.aboutList {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 1vmin;
-  opacity: 0.75;
 }
 
 .aboutQuote {

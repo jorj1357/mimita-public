@@ -39,12 +39,11 @@ inline float CAMERA_SHOULDER_OFFSET = 1.2f; // a lil further
 
 // jan 30 2026 values v4 
 // for debugging also we're a caspule for now so thats whi 
-inline float CAMERA_DISTANCE = 3.5f;  // far so i can look 
-inline float CAMERA_HEIGHT   = 1.0f;  // little lower
-inline float CAMERA_SENS     = 0.15f; // same 
-inline float CAMERA_FOV      = 100.0f; // quake pro is 120 but 100 better form em
-// inline float CAMERA_SHOULDER_OFFSET = 1.3f; // tinies bit closer
-inline float CAMERA_SHOULDER_OFFSET = 2.0f; // tinies bit closer
+inline float CAMERA_DISTANCE = 3.5f;
+inline float CAMERA_HEIGHT   = 1.0f;
+inline float CAMERA_SENS     = 0.15f;
+inline float CAMERA_FOV      = 100.0f;
+inline float CAMERA_SHOULDER_OFFSET = 2.0f;
 
 
 class Camera {
