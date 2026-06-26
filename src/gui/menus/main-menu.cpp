@@ -59,6 +59,15 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     if (!bgLoaded)
         uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
 
+    // Cover image at the top
+    {
+        float coverH = fbH * 0.35f;
+        float coverY = 0;
+        float coverW = (float)fbW;
+        uiDrawImage("assets/uitextures/mimita cover in game v1.png",
+                    {0, coverY, coverW, coverH});
+    }
+
     // Render title/subtitle from layout (text elements only)
     for (const std::string& id : layout.elementIds())
     {
