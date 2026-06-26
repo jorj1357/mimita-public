@@ -26,9 +26,10 @@
 
 static std::string readTextFile(const char* path)
 {
-    printf("[RENDERER] opening file: %s\n", path);
+    std::string resolved = resolveAssetPath(path);
+    printf("[RENDERER] opening file: %s\n", resolved.c_str());
 
-    FILE* f = fopen(path, "rb");
+    FILE* f = fopen(resolved.c_str(), "rb");
     if (!f) {
         printf("[RENDERER] fopen failed\n");
         return "";

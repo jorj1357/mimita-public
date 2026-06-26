@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { apiRequest, apiRequestRaw } from "../lib/api.js"
 import DebugPanel from "../components/DebugPanel.jsx"
@@ -11,11 +11,51 @@ export default function AdminDashboard() {
     const [error, setError] = useState("")
     const [refreshing, setRefreshing] = useState(false)
     const [showDebug, setShowDebug] = useState(false)
+    const [admins, setAdmins] = useState(null)
+    const [adminsSearch, setAdminsSearch] = useState("")
+    const [adminsLoading, setAdminsLoading] = useState(true)
+    const [adminsError, setAdminsError] = useState("")
+    const fetchedRef = useRef(false)
 
     useEffect(() => {
+        if (fetchedRef.current) return
+        fetchedRef.current = true
         fetchDashboard()
         fetchFeedback()
+        fetchAdmins()
     }, [])
+
+    async function fetchAdmins() {
+        setAdminsLoading(true)
+        setAdminsError("")
+        try {
+            const { response, data } = await apiRequestRaw("/api/admin/admins")
+            if (response.status === 401) {
+                navigate("/admin/login")
+                return
+            }
+            if (response.status === 403) {
+                navigate("/admin/no-permission")
+                return
+            }
+            if (data?.success) {
+                setAdmins(data.admins || [])
+            }
+            else {
+                setAdminsError(data?.message || "unable to load administrators")
+                setAdmins([])
+                console.log("[ADMIN] admins API error:", response.status, data)
+            }
+        }
+        catch (err) {
+            setAdminsError("unable to load administrators")
+            setAdmins([])
+            console.log("[ADMIN] admins API exception:", err)
+        }
+        finally {
+            setAdminsLoading(false)
+        }
+    }
 
     async function fetchDashboard() {
         try {
@@ -32,11 +72,11 @@ export default function AdminDashboard() {
                 setMetrics(data.metrics)
             }
             else {
-                setError(data?.message || "failed to load dashboard")
+                console.log("[ADMIN] dashboard API error:", response.status, data)
             }
         }
-        catch {
-            setError("unable to reach server")
+        catch (err) {
+            console.log("[ADMIN] dashboard API exception:", err)
         }
         finally {
             setLoading(false)
@@ -48,7 +88,9 @@ export default function AdminDashboard() {
             const data = await apiRequest("/api/admin/feedback?limit=10")
             if (data.success) setFeedback(data.feedback)
         }
-        catch {}
+        catch (err) {
+            console.log("[ADMIN] feedback API error:", err)
+        }
     }
 
     async function handleRefresh() {
@@ -74,18 +116,19 @@ export default function AdminDashboard() {
         return new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     }
 
-    if (loading) {
+    function formatDate(d) {
+        if (!d) return "—"
+        return new Date(d).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric"
+        })
+    }
+
+    if (loading && !metrics) {
         return (
             <div className="adminPage">
                 <p>loading dashboard...</p>
-            </div>
-        )
-    }
-
-    if (error && !metrics) {
-        return (
-            <div className="adminPage">
-                <p className="adminError">{error}</p>
             </div>
         )
     }
@@ -97,7 +140,7 @@ export default function AdminDashboard() {
     }
 
     function renderList(items, empty = "—") {
-        if (!items || items.length === 0) return empty
+        if (!Array.isArray(items) || items.length === 0) return empty
         return items.map((item, i) => (
             <span key={`${item.name}-${i}`}>
                 {label(item.name)}: {item.count}
@@ -280,6 +323,70 @@ export default function AdminDashboard() {
                     )}
                 </div>
 
+                {/* Administrators List */}
+                <div className="adminSection adminSectionWide">
+                    <h2>administrators</h2>
+                    {adminsLoading ? (
+                        <p className="adminEmpty">loading...</p>
+                    ) : adminsError ? (
+                        <div className="adminAdminsError">
+                            <p className="adminError">{adminsError}</p>
+                            <button className="adminRefreshBtn" onClick={fetchAdmins}>retry</button>
+                        </div>
+                    ) : !Array.isArray(admins) || admins.length === 0 ? (
+                        <p className="adminEmpty">no administrators found</p>
+                    ) : (
+                        <>
+                            <input
+                                className="adminSearchInput"
+                                type="text"
+                                placeholder="search by username or email..."
+                                value={adminsSearch}
+                                onChange={e => setAdminsSearch(e.target.value)}
+                            />
+                            <div className="adminAdminsList">
+                                {admins
+                                    .filter(a => {
+                                        if (!adminsSearch) return true
+                                        const q = adminsSearch.toLowerCase()
+                                        return a.username.toLowerCase().includes(q) ||
+                                               a.email.toLowerCase().includes(q)
+                                    })
+                                    .map(a => (
+                                        <a
+                                            key={a.id}
+                                            className="adminAdminsRow"
+                                            href={`/users/${encodeURIComponent(a.username)}`}
+                                            onClick={e => {
+                                                e.preventDefault()
+                                                window.open(`/users/${encodeURIComponent(a.username)}`, "_blank")
+                                            }}
+                                        >
+                                            <span className="adminAdminsAvatar">
+                                                {a.avatar_url ? (
+                                                    <img src={a.avatar_url} alt="" className="adminAdminsAvatarImg" />
+                                                ) : (
+                                                    <span className="adminAdminsAvatarPlaceholder">
+                                                        {a.username[0]?.toUpperCase() || "?"}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className="adminAdminsUsername">{a.username}</span>
+                                            <span className="adminAdminsEmail">{a.email}</span>
+                                            <span className="adminAdminsRole">{a.role}</span>
+                                            <span className="adminAdminsVerified">
+                                                {a.email_verified_at ? "Yes" : "No"}
+                                            </span>
+                                            <span className="adminAdminsCreated">
+                                                {formatDate(a.created_at)}
+                                            </span>
+                                        </a>
+                                    ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+
                 {/* Recent Feedback Feed */}
                 <div className="adminSection adminSectionWide">
                     <h2>recent feedback</h2>
@@ -290,6 +397,16 @@ export default function AdminDashboard() {
                             {feedback.map(f => (
                                 <div key={f.id} className="adminFeedbackItem">
                                     <span className="adminFeedbackTime">{formatTime(f.created_at)}</span>
+                                    <span className="adminFeedbackUser">
+                                        {f.avatar_url ? (
+                                            <img src={f.avatar_url} alt="" className="adminFeedbackAvatar" />
+                                        ) : (
+                                            <span className="adminFeedbackAvatarPlaceholder">
+                                                {(f.username || "?")[0].toUpperCase()}
+                                            </span>
+                                        )}
+                                        <span className="adminFeedbackUsername">{f.username || "guest"}</span>
+                                    </span>
                                     <span className="adminFeedbackText">
                                         {f.custom_feedback ||
                                          (f.selected_presets && f.selected_presets.length > 0

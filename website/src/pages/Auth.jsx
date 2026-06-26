@@ -12,7 +12,8 @@ export default function Auth({ mode }) {
         username: "",
         email: "",
         identifier: "",
-        password: ""
+        password: "",
+        passwordConfirm: ""
     })
     const [message, setMessage] = useState(location.state?.message || "")
     const [loading, setLoading] = useState(false)
@@ -29,22 +30,28 @@ export default function Auth({ mode }) {
         setLoading(true)
         setMessage("")
 
+        if (signup && form.password !== form.passwordConfirm) {
+            setMessage("passwords do not match")
+            setLoading(false)
+            return
+        }
+
         try {
+            const body = signup
+                ? {
+                    username: form.username,
+                    email: form.email,
+                    password: form.password,
+                    passwordConfirm: form.passwordConfirm
+                }
+                : {
+                    identifier: form.identifier,
+                    password: form.password
+                }
+
             const data = await apiRequest(
                 signup ? "/api/auth/signup" : "/api/auth/signin",
-                {
-                    method: "POST",
-                    body: JSON.stringify(signup
-                        ? {
-                            username: form.username,
-                            email: form.email,
-                            password: form.password
-                        }
-                        : {
-                            identifier: form.identifier,
-                            password: form.password
-                        })
-                }
+                { method: "POST", body: JSON.stringify(body) }
             )
 
             navigate(`/users/${encodeURIComponent(data.user.username)}`)
@@ -90,11 +97,11 @@ export default function Auth({ mode }) {
 
                     {!signup && (
                         <>
-                           <p>
+                           {/* <p>
                 as of 6 20 2026, account creation isnt done yet :( 
                     <br></br>
                     working on it tho!!!!!
-                </p>
+                </p> */}
                             <label htmlFor="identifier">
                                 username or email
                             </label>
@@ -123,12 +130,24 @@ export default function Auth({ mode }) {
                     />
 
                     {signup && (
-                        <p className="authHint">
-                            8+ characters, 1 uppercase, 1 symbol.{" "}
-                            <Link to="/password-principles">
-                                Password principles
-                            </Link>
-                        </p>
+                        <>
+                            <label htmlFor="passwordConfirm">confirm password</label>
+                            <input
+                                id="passwordConfirm"
+                                type="password"
+                                value={form.passwordConfirm}
+                                onChange={(event) =>
+                                    update("passwordConfirm", event.target.value)}
+                                autoComplete="new-password"
+                                required
+                            />
+                            <p className="authHint">
+                                8+ characters, 1 uppercase, 1 symbol.{" "}
+                                <Link to="/password-principles">
+                                    Password principles
+                                </Link>
+                            </p>
+                        </>
                     )}
 
                     <button type="submit" disabled={loading}>

@@ -41,9 +41,12 @@ export async function submitFeedback({ selectedPresets, customFeedback, contactI
 export async function getFeedback(limit = 20, offset = 0) {
     const result = await pool.query(
         `
-        SELECT id, selected_presets, custom_feedback, contact_info, page_url, user_id, status, category, created_at
-        FROM feedback
-        ORDER BY created_at DESC
+        SELECT f.id, f.selected_presets, f.custom_feedback, f.contact_info,
+               f.page_url, f.user_id, f.status, f.category, f.created_at,
+               u.username, u.avatar_url
+        FROM feedback f
+        LEFT JOIN users u ON u.id = f.user_id
+        ORDER BY f.created_at DESC
         LIMIT $1 OFFSET $2
         `,
         [limit, offset]

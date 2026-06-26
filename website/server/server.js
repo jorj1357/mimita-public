@@ -7,6 +7,7 @@ import { performance } from "perf_hooks"
 
 import {
     createSixDigitCode,
+    createSecretToken,
     getClientIp,
     hashPassword,
     hashToken,
@@ -132,7 +133,9 @@ app.use((req, res, next) => {
         }
 
         if (res.statusCode >= 400) {
-            console.log(`[REQUEST ERROR] ${JSON.stringify(logData)}`)
+            if (!(res.statusCode === 401 && req.path === "/api/auth/me")) {
+                console.log(`[REQUEST ERROR] ${JSON.stringify(logData)}`)
+            }
         }
         else {
             console.log(`[REQUEST] ${JSON.stringify(logData)}`)
@@ -191,7 +194,8 @@ async function authenticate(req, res, next) {
                 u.supporter_tier,
                 u.role,
                 u.email_notifications_enabled,
-                u.email_verified_at IS NOT NULL AS email_verified
+                u.email_verified_at IS NOT NULL AS email_verified,
+                u.achievements
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1
@@ -247,6 +251,13 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
             })
         }
 
+        if (req.body.password !== req.body.passwordConfirm) {
+            return res.status(400).json({
+                success: false,
+                message: "passwords do not match"
+            })
+        }
+
         const username = usernameValidation.value
         const email = emailValidation.value
         const passwordHash = await hashPassword(req.body.password)
@@ -262,7 +273,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
                 email_verification_token
             )
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled
+            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled, achievements
             `,
             [username, usernameKey(username), email, passwordHash, verificationTokenHash]
         )
@@ -326,7 +337,8 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
                 avatar_url,
                 avatar_updated_at,
                 supporter_tier,
-                email_notifications_enabled
+                email_notifications_enabled,
+                achievements
             FROM users
             WHERE deleted_at IS NULL
               AND (
@@ -422,7 +434,7 @@ app.get("/api/auth/verify-email/:token", async (req, res, next) => {
             SET email_verified_at = NOW(), email_verification_token = NULL
             WHERE email_verification_token = $1
               AND email_verified_at IS NULL
-            RETURNING id
+            RETURNING id, achievements
             `,
             [tokenHash]
         )
@@ -433,6 +445,14 @@ app.get("/api/auth/verify-email/:token", async (req, res, next) => {
             })
         }
         logAuth("verify_email", `success user_id=${result.rows[0].id}`)
+        const user = result.rows[0]
+        if (!user.achievements || !user.achievements.includes("confirmed_email")) {
+            await pool.query(
+                `UPDATE users SET achievements = array_append(COALESCE(achievements, '{}'), 'confirmed_email') WHERE id = $1`,
+                [user.id]
+            )
+            console.log("[ACHIEVEMENT] user_id=" + user.id + " achievement=confirmed_email awarded")
+        }
         res.json({ success: true, message: "email verified" })
     }
     catch (error) {
@@ -483,7 +503,7 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
             UPDATE users
             SET bio = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier
+            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier, achievements
             `,
             [bio, req.user.id]
         )
@@ -501,14 +521,18 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
 app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("avatar"), async (req, res, next) => {
     try {
         if (!req.file) {
+            console.log("[AVATAR] user_id=" + req.user.id + " reason=no_file_provided")
             return res.status(400).json({
                 success: false,
                 message: "no file provided"
             })
         }
 
+        console.log("[AVATAR] user_id=" + req.user.id + " type=" + req.file.mimetype + " size=" + req.file.size)
+
         const imageType = detectImageType(req.file.buffer)
         if (!imageType) {
+            console.log("[AVATAR] user_id=" + req.user.id + " reason=invalid_image_type type=" + req.file.mimetype)
             return res.status(400).json({
                 success: false,
                 message: "invalid image file"
@@ -542,6 +566,7 @@ app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("av
             }
         }
 
+        console.log("[AVATAR] user_id=" + req.user.id + " status=saved file=" + fileName)
         res.json({
             success: true,
             avatar_url: result.rows[0].avatar_url,
@@ -549,6 +574,7 @@ app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("av
         })
     }
     catch (error) {
+        console.log("[AVATAR] user_id=" + req.user.id + " reason=error error=" + error.message)
         next(error)
     }
 })
@@ -619,7 +645,7 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
+            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at, achievements
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL
@@ -1223,8 +1249,8 @@ app.get("/api/update/manifest/:version", (req, res) => {
     }
 })
 
-app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
-    const safePath = String(req.params[0] || "")
+app.get("/api/download/file/:path(*)", (req, res) => {
+    const safePath = String(req.params.path || "")
     const filePath = path.resolve(safePath)
     const resolved = path.resolve(filePath)
     const gameDir = path.resolve(".")
@@ -1234,7 +1260,7 @@ app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
     if (fs.existsSync(resolved)) {
         return res.sendFile(resolved)
     }
-    const rootPath = path.resolve("..", req.params[0] || "")
+    const rootPath = path.resolve("..", safePath)
     const rootResolved = path.resolve(rootPath)
     const repoDir = path.resolve("..")
     if (!rootResolved.startsWith(repoDir)) {

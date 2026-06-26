@@ -15,6 +15,7 @@ export default function Account() {
     const [message, setMessage] = useState("loading account...")
     const [uploading, setUploading] = useState(false)
     const [cropFile, setCropFile] = useState(null)
+    const [dangerOpen, setDangerOpen] = useState(false)
 
     useEffect(() => {
         apiRequest("/api/auth/me")
@@ -59,6 +60,11 @@ export default function Account() {
         event.target.value = ""
     }
 
+    function getCsrfToken() {
+        const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+        return match ? decodeURIComponent(match[1]) : null
+    }
+
     async function handleCropSave(blob) {
         setCropFile(null)
         setUploading(true)
@@ -68,9 +74,14 @@ export default function Account() {
             const formData = new FormData()
             formData.append("avatar", blob, "avatar.png")
 
+            const headers = {}
+            const csrf = getCsrfToken()
+            if (csrf) headers["X-CSRF-Token"] = csrf
+
             const response = await fetch("/api/account/avatar", {
                 method: "POST",
                 credentials: "include",
+                headers,
                 body: formData
             })
 
@@ -160,6 +171,16 @@ export default function Account() {
         <Layout>
             <section className="authPage">
                 <div className="authCard accountCard">
+                    <div className="accountPrivacyBanner">
+                        <p>
+                            <strong>This is your account editor page.</strong> Only you can view and change these settings.
+                        </p>
+                        <p>
+                            This page is private. Your public profile info (bio, avatar) may be visible to other players.
+                            Your username cannot be changed. Bio and avatar are editable below.
+                        </p>
+                    </div>
+
                     <h1>ACCOUNT</h1>
 
                     <div className="accountAvatarSection">
@@ -211,25 +232,40 @@ export default function Account() {
                         email notifications
                     </label>
 
-                    <Link className="authAction" to="/change-password">
-                        change password
-                    </Link>
                     <button type="button" onClick={signOut}>
                         SIGN OUT
                     </button>
 
-                    <form className="dangerZone" onSubmit={deleteAccount}>
-                        <h2>DELETE ACCOUNT</h2>
-                        <label htmlFor="deletePassword">confirm password</label>
-                        <input
-                            id="deletePassword"
-                            type="password"
-                            value={deletePassword}
-                            onChange={(event) => setDeletePassword(event.target.value)}
-                            required
-                        />
-                        <button type="submit">DELETE ACCOUNT</button>
-                    </form>
+                    <div className="dangerSection">
+                        <button
+                            type="button"
+                            className="dangerToggle"
+                            onClick={() => setDangerOpen(!dangerOpen)}
+                        >
+                            {dangerOpen ? "▾" : "▸"} danger zone
+                        </button>
+
+                        {dangerOpen && (
+                            <div className="dangerContent">
+                                <Link className="dangerLink" to="/change-password">
+                                    change password
+                                </Link>
+
+                                <form className="dangerZone" onSubmit={deleteAccount}>
+                                    <h2>DELETE ACCOUNT</h2>
+                                    <label htmlFor="deletePassword">confirm password</label>
+                                    <input
+                                        id="deletePassword"
+                                        type="password"
+                                        value={deletePassword}
+                                        onChange={(event) => setDeletePassword(event.target.value)}
+                                        required
+                                    />
+                                    <button type="submit">DELETE ACCOUNT</button>
+                                </form>
+                            </div>
+                        )}
+                    </div>
 
                     {message && <p className="authMessage">{message}</p>}
                 </div>
