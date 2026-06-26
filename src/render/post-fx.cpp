@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "renderer/renderer.h"
+#include "utils/path_utils.h"
 
 using json = nlohmann::json;
 
@@ -139,7 +140,8 @@ bool PostFX::initQuad(GLuint& vao, GLuint& vbo)
 GLuint PostFX::createShader(const char* vertPath, const char* fragPath)
 {
     auto readFile = [](const char* path) -> std::string {
-        FILE* f = fopen(path, "rb");
+        std::string resolved = resolveAssetPath(path);
+        FILE* f = fopen(resolved.c_str(), "rb");
         if (!f) return {};
         fseek(f, 0, SEEK_END);
         long len = ftell(f);

@@ -45,6 +45,19 @@ export default function UserProfile() {
                         <p className="profileJoined">
                             Joined {formatDate(user.created_at)}
                         </p>
+
+                        {user.achievements && user.achievements.length > 0 && (
+                            <div className="profileAchievements">
+                                <h3>Achievements</h3>
+                                <ul className="achievementsList">
+                                    {user.achievements.map((ach) => (
+                                        <li key={ach} className="achievementItem">
+                                            {ach === "confirmed_email" ? "✅ Confirmed Email" : ach}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <p>{message}</p>

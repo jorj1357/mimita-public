@@ -262,5 +262,44 @@ router.get("/check", async (req, res) => {
     }
 })
 
+router.get("/admins", requireAdmin, async (req, res, next) => {
+    try {
+        const search = String(req.query.search || "").trim().toLowerCase()
+
+        let sql = `
+            SELECT id, username, email, role, avatar_url, avatar_updated_at,
+                   created_at, email_verified_at, achievements
+            FROM users
+            WHERE deleted_at IS NULL
+              AND role = ANY($1)
+        `
+        const params = [ADMIN_ROLES]
+
+        if (search) {
+            sql += ` AND (LOWER(username) LIKE $2 OR LOWER(email) LIKE $2)`
+            params.push(`%${search}%`)
+        }
+
+        sql += ` ORDER BY
+            CASE role
+                WHEN 'owner' THEN 1
+                WHEN 'admin' THEN 2
+                ELSE 3
+            END,
+            username ASC
+        `
+
+        const result = await pool.query(sql, params)
+
+        res.json({
+            success: true,
+            admins: result.rows
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 export default router
 export { requireAdmin }

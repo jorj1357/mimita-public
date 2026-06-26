@@ -44,21 +44,23 @@
 
     </script>
 
-    <!-- Metricool -->
+    <!-- Metricool (disabled on localhost) -->
 
     <script>
-      function loadScript(a){
-        var b=document.getElementsByTagName("head")[0],
-            c=document.createElement("script");
-        c.type="text/javascript";
-        c.src="https://tracker.metricool.com/resources/be.js";
-        c.onreadystatechange=a;
-        c.onload=a;
-        b.appendChild(c);
+      if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+        function loadScript(a){
+          var b=document.getElementsByTagName("head")[0],
+              c=document.createElement("script");
+          c.type="text/javascript";
+          c.src="https://tracker.metricool.com/resources/be.js";
+          c.onreadystatechange=a;
+          c.onload=a;
+          b.appendChild(c);
+        }
+        loadScript(function(){
+          beTracker.t({hash:"4e02f8dbb09bfe3b64150ec0b6407871"});
+        });
       }
-      loadScript(function(){
-        beTracker.t({hash:"4e02f8dbb09bfe3b64150ec0b6407871"});
-      });
     </script>
 
   </head>

@@ -7,7 +7,7 @@ const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8Q
 const HAMBURGER_ITEMS = [
     { label: "3cage", path: "/3cage" },
     { label: "Account", path: "/account", auth: true },
-    { label: "Admin", path: "/admin/dashboard", admin: true },
+    { label: "Admin", path: "/admin/dashboard" },
     { label: "Articles", path: "/articles" },
     { label: "Change Password", path: "/change-password", auth: true },
     { label: "Contact", path: "/contact" },

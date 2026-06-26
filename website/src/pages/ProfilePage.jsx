@@ -99,9 +99,19 @@ export default function ProfilePage() {
 
                     <div className="profilePageSection">
                         <h2 className="profilePageSectionTitle">Achievements</h2>
-                        <div className="profilePageEmpty">
-                            <p>No achievements earned yet.</p>
-                        </div>
+                        {user.achievements && user.achievements.length > 0 ? (
+                            <ul className="achievementsList">
+                                {user.achievements.map((ach) => (
+                                    <li key={ach} className="achievementItem">
+                                        {ach === "confirmed_email" ? "✅ Confirmed Email" : ach}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <div className="profilePageEmpty">
+                                <p>No achievements earned yet.</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
