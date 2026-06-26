@@ -185,6 +185,22 @@
   background: rgba(255,255,255,0.2);
 }
 
+.accountRemoveBtn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.accountRemoveBtn:hover {
+  color: #ef4444;
+  border-color: #7f1d1d;
+}
+
 .accountAvatarHint {
   font-size: 0.75rem;
   color: rgba(255,255,255,0.4);

@@ -186,6 +186,7 @@ router.get("/users", requireAdmin, async (req, res, next) => {
         const result = await pool.query(
             `
             SELECT id, username, email, role, bio,
+                   avatar_url, avatar_updated_at,
                    email_notifications_enabled,
                    created_at, updated_at, deleted_at
             FROM users

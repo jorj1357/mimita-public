@@ -26,9 +26,11 @@ Local dev: `http://localhost:3002/api`
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | PATCH | /api/account/profile | Yes | Update bio (max 500 chars) |
+| POST | /api/account/avatar | Yes | Upload/resize avatar (multipart, max 5MB, ratelimited 3/min) |
+| DELETE | /api/account/avatar | Yes | Remove avatar, revert to placeholder |
 | PATCH | /api/account/notification-preferences | Yes | Toggle email_notifications_enabled |
 | DELETE | /api/account | Yes | Soft-delete account (requires password confirmation) |
-| GET | /api/users/:username | No | Public profile lookup (username + bio only) |
+| GET | /api/users/:username | No | Public profile lookup (username + bio + avatar + supporter_tier) |
 
 ---
 

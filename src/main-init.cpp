@@ -46,6 +46,7 @@
 #include "debug/transform-debug-commands.h"
 #include "debug/debug-diag.h"
 #include "debug/log-manager.h"
+#include "debug/crash-handler.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
@@ -158,6 +159,7 @@ extern Renderer* gRenderer;
 void gameInit(int argc, char** argv, Engine& engine)
 {
     printf("[MAIN] start\n");
+    installCrashHandler();
     LogManager::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 
