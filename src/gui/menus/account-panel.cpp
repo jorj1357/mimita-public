@@ -6,6 +6,7 @@
 #include "auth/auth-system.h"
 #include "physics/config.h"
 #include "renderer/renderer.h"
+#include "render/lighting-config.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -17,6 +18,40 @@ static Player* gPreviewPlayer = nullptr;
 static float gPreviewAngle = 0.0f;
 
 extern Renderer* gRenderer;
+
+namespace {
+
+void setPlayerUniforms(GLuint shader)
+{
+    const auto& cfg = LightingConfig::instance();
+
+    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uDebugView"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uShadowsEnabled"), 0);
+
+    glm::vec3 ld = cfg.lightDir();
+    glUniform3f(glGetUniformLocation(shader, "uLightDir"),
+                ld.x, ld.y, ld.z);
+    glUniform1f(glGetUniformLocation(shader, "uAmbientStrength"),
+                cfg.ambientStrength());
+    glUniform1f(glGetUniformLocation(shader, "uDiffuseStrength"),
+                cfg.diffuseStrength());
+    glUniform1f(glGetUniformLocation(shader, "uEdgeDarkness"),
+                cfg.edgeDarkness());
+    glUniform1f(glGetUniformLocation(shader, "uEdgeWidth"),
+                cfg.edgeWidth());
+    glUniform1f(glGetUniformLocation(shader, "uAODarkness"),
+                cfg.aoDarkness());
+    glUniform1f(glGetUniformLocation(shader, "uAOContrast"),
+                cfg.aoContrast());
+    glUniform1f(glGetUniformLocation(shader, "uTextureContrast"),
+                cfg.textureContrast());
+    glUniform1f(glGetUniformLocation(shader, "uTextureBrightness"),
+                cfg.textureBrightness());
+}
+
+}
 
 static Player* getPreviewPlayer()
 {
@@ -58,7 +93,6 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
     Player* preview = getPreviewPlayer();
     glm::vec3 targetPos = preview ? preview->pos : glm::vec3(0.0f, 0.0f, 1.5f);
 
-    // --- Username / No Account Detected at top ---
     if (auth.state() == AuthState::Authenticated)
     {
         const char* name = auth.user().username.c_str();
@@ -79,7 +113,6 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                    {0.55f, 0.6f, 0.7f, 1.0f});
     }
 
-    // --- 3D character preview ---
     int fbWpx = 0, fbHpx = 0;
     glfwGetFramebufferSize(window, &fbWpx, &fbHpx);
 
@@ -91,7 +124,7 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
 
     if (preview && preview->modelLoaded)
     {
-        gPreviewAngle += 0.015f;
+        gPreviewAngle += 0.045f;
         if (gPreviewAngle > 360.0f)
             gPreviewAngle -= 360.0f;
 
@@ -111,16 +144,10 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         previewCam.up = glm::normalize(
             glm::cross(previewCam.right, previewCam.front));
 
-        printf("[PREVIEW] frame: cam=(%.2f,%.2f,%.2f) target=(%.2f,%.2f,%.2f) dist=%.2f\n",
-               previewCam.pos.x, previewCam.pos.y, previewCam.pos.z,
-               targetPos.x, targetPos.y, targetPos.z + 1.5f, dist);
-
-        // Save GL state that we change
         GLint prevViewport[4];
         glGetIntegerv(GL_VIEWPORT, prevViewport);
         GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
 
-        // Set viewport to cover the preview area in framebuffer coords
         float sx = (float)fbWpx / fbW;
         float sy = (float)fbHpx / fbH;
         int vx = (int)(panelX * sx);
@@ -134,23 +161,15 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         glClearColor(0.04f, 0.045f, 0.06f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        setPlayerUniforms(gRenderer->shaderProgram);
         renderPlayer(*preview, previewCam);
 
-        // Restore GL state
         if (!depthWasEnabled)
             glDisable(GL_DEPTH_TEST);
         glViewport(prevViewport[0], prevViewport[1],
                    prevViewport[2], prevViewport[3]);
-
-        printf("[PREVIEW] renderPlayer called, renderer=%p shaderProgram=%u\n",
-               (void*)gRenderer, gRenderer ? gRenderer->shaderProgram : 0);
-    }
-    else
-    {
-        printf("[PREVIEW] model NOT loaded, cannot render\n");
     }
 
-    // --- Health bar BELOW preview ---
     float hpBarY = previewBottom + uiScaleY(12.0f);
     float hpBarW = uiScaleX(150.0f);
     float hpBarH = uiScaleY(16.0f);
@@ -174,7 +193,6 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                    {1.0f, 1.0f, 1.0f, 0.85f});
     }
 
-    // --- Buttons at bottom ---
     float btnY = previewBottom + previewAreaH > fbH * 0.5f
         ? previewBottom + uiScaleY(65.0f)
         : fbH * 0.5f + uiScaleY(20.0f);
@@ -183,11 +201,11 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
 
     if (auth.state() != AuthState::Authenticated)
     {
-        if (uiButton(window, "Log In",
+        if (uiButton(window, "Sign In",
                      {panelCenterX - btnW * 0.5f, btnY, btnW, btnH},
                      {0.2f, 0.5f, 0.85f, 1.0f}, "account-login").clicked)
         {
-            printf("[PREVIEW] Log In clicked\n");
+            printf("[PREVIEW] Sign In clicked\n");
             result.logIn = true;
         }
 
@@ -198,15 +216,6 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         {
             printf("[PREVIEW] Sign Up clicked\n");
             result.signUp = true;
-        }
-
-        float btn3Y = btn2Y + btnH + uiScaleY(6.0f);
-        if (uiButton(window, "Continue Offline",
-                     {panelCenterX - btnW * 0.5f, btn3Y, btnW, uiScaleY(36.0f)},
-                     {0.3f, 0.3f, 0.35f, 1.0f}, "account-offline").clicked)
-        {
-            printf("[PREVIEW] Continue Offline clicked\n");
-            result.continueOffline = true;
         }
     }
 

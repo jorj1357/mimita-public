@@ -6,7 +6,6 @@ struct AccountPanelAction
 {
     bool logIn = false;
     bool signUp = false;
-    bool continueOffline = false;
 };
 
 AccountPanelAction drawAccountPanel(GLFWwindow* window);

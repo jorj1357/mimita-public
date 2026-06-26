@@ -9,7 +9,6 @@
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
 #include "auth/auth-system.h"
-#include "auth/auth-popup.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "game/bomb-tag-config.h"
@@ -124,26 +123,6 @@ void guiMain(GLFWwindow* win, GameState& state)
             else if (r.goExit)
                 glfwSetWindowShouldClose(win, GLFW_TRUE);
 
-            if (auth.state() == AuthState::NeedsLogin)
-            {
-                AuthPopupAction action = drawAuthPopup(win);
-                if (action == AuthPopupAction::LogIn)
-                {
-                    ShellExecuteA(nullptr, "open",
-                        "https://www.mimita.fun/login",
-                        nullptr, nullptr, SW_SHOWNORMAL);
-                    auth.startLinkFlow();
-                }
-                else if (action == AuthPopupAction::CreateAccount)
-                {
-                    ShellExecuteA(nullptr, "open",
-                        "https://www.mimita.fun/signup",
-                        nullptr, nullptr, SW_SHOWNORMAL);
-                    auth.startLinkFlow();
-                }
-                else if (action == AuthPopupAction::ContinueOffline)
-                    auth.skipLogin();
-            }
             break;
         }
 
@@ -400,6 +379,11 @@ void guiMain(GLFWwindow* win, GameState& state)
     InputCommandSystem::instance().drawInputDebug();
     AnalyticsManager::instance().drawFirstLaunchPopup(win);
     uiRenderFrameDebugOverlay(win, "MENU", false);
+    // DIAGNOSTIC: bright test rect at top-left — should always be visible
+    uiDrawRect({10, 50, 200, 40}, {1.0f, 0.0f, 0.0f, 1.0f}, "diag-rect");
+    printf("[DIAG] guiMain end: gGuiMenuState=%d authState=%d\n",
+           (int)gGuiMenuState, (int)auth.state());
+
     uiEndFrame();
 
     GuiEditor::instance().update(win);

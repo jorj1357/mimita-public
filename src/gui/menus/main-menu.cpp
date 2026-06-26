@@ -9,6 +9,18 @@
 #include <filesystem>
 #include <shellapi.h>
 
+namespace {
+
+void openBrowser(const char* url)
+{
+    printf("[MAIN MENU] opening %s\n", url);
+    HINSTANCE h = ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)h <= 32)
+        printf("[MAIN MENU] ShellExecuteA failed: result=%lld\n", (long long)(INT_PTR)h);
+}
+
+}
+
 MainMenuResult drawMainMenu(GLFWwindow* win)
 {
     MainMenuResult r{};
@@ -38,7 +50,6 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     if (!bgLoaded)
         uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
 
-    // Left-side layout buttons
     for (const std::string& id : layout.elementIds())
     {
         const GuiElement* elem = layout.get(id);
@@ -74,32 +85,16 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
         }
     }
 
-    // Right-side account panel
     AccountPanelAction account = drawAccountPanel(win);
     if (account.logIn)
     {
-        printf("[MAIN MENU] opening https://www.mimita.fun/login\n");
-        HINSTANCE h = ShellExecuteA(nullptr, "open",
-            "https://www.mimita.fun/login",
-            nullptr, nullptr, SW_SHOWNORMAL);
-        if ((INT_PTR)h <= 32)
-            printf("[MAIN MENU] ShellExecuteA failed: result=%lld\n", (long long)(INT_PTR)h);
+        openBrowser("https://www.mimita.fun/signin");
         AuthSystem::instance().startLinkFlow();
     }
     else if (account.signUp)
     {
-        printf("[MAIN MENU] opening https://www.mimita.fun/signup\n");
-        HINSTANCE h = ShellExecuteA(nullptr, "open",
-            "https://www.mimita.fun/signup",
-            nullptr, nullptr, SW_SHOWNORMAL);
-        if ((INT_PTR)h <= 32)
-            printf("[MAIN MENU] ShellExecuteA failed: result=%lld\n", (long long)(INT_PTR)h);
+        openBrowser("https://www.mimita.fun/signup");
         AuthSystem::instance().startLinkFlow();
-    }
-    else if (account.continueOffline)
-    {
-        printf("[MAIN MENU] Continue Offline\n");
-        AuthSystem::instance().skipLogin();
     }
 
     return r;
