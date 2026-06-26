@@ -376,9 +376,3 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dat
         mRegistrationOrder.push_back(alias);
     }
 }
-
-
-
-
-
-
