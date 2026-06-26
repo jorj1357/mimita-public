@@ -6,176 +6,96 @@ import FeedbackBox from "../components/FeedbackBox"
 export default function About() {
   return (
     <Layout>
-
       <div className="aboutPage">
-
-        <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        className="aboutVideo"
-        >
-
-        <source
-            src="/untitled-loop-small.mp4"
-            type="video/mp4"
-        />
-
-        </video>
-
-        <h1 className="aboutPageTitle">
-          ABOUT MiMITA
-        </h1>
-
-
-            <div className="aboutPageContent">
-
-            <p>
-                <span className="bold">MiMITA v1</span>
-                <br></br>
-                is an experimental game engine focused on
-                <span className="highlight"> movement</span>,
-                emergence,
-                editability,
-                and making things that just feel fun.
-            </p>
-                <br></br>
-                
-                                <br></br>
-                                
-                                <br></br>
-
-            <p>
-                The goal is to create gameplay that is:
-                <br></br>
-                responsive,
-                competitive,
-                expressive,
-                physical,
-                and satisfying.
-
-                {/* <br></br>
-                Simultaneously, keep the engine open-source and updated so others can use/adapt it to their needs */}
-            </p>
-                <br></br>
-                
-                                <br></br>
-
-            <p>
-                MiMITA is inspired by games where simple systems create
-                deep emergent gameplay and weird mechanics naturally.
-                <br></br>
-
-                <br></br>
-                Super Smash Brothers Melee is a great example of what is intended:
-                <br></br>
-                                <br></br>
-
-                Wavedashing was never intended to be a mechanic, 
-                                <br></br>
-
-                but because of a short development time (~13 months!)
-                                <br></br>
-
-                and multiple systems interacting together,
-                                <br></br>
-                                <br></br>
-
-                wavedashing was discovered, mastered, and became part of the appeal of SSBM.
-
-                                <br></br>
-                                <br></br>
-                                <br></br>
-                                <br></br>
-                                <br></br>
-
-                {/* and that's what MiMITA aims to do  */}
-            </p>
-
-            <p>
-                Long-term,
-                MiMITA should become a place people want to:
-                <br></br>
-                play,
-                <br></br>
-                create,
-                <br></br>
-                experiment,
-                <br></br>
-                and hang out in.
-                
-                                <br></br>
-                                <br></br>
-
-                Play should seamlessly flow into creation,
-                and creation should flow seamlessly into play. Press a button and instantly go into editor mode.
-  <br></br>
-                                <br></br>
-
-                MiMITA should also not stop at just the game engine.
-                  <br></br>
-                                <br></br>
-
-                Music, sound effects, hardware, software, 2d art, 3d art, movies, shows, shorts...
-                                
-                                    <br></br>
-                                                    <br></br>
-                    I believe these should all flow together as well
-                    <br></br>
-                                <br></br>
-
-                Play a game, auto clip a moment, add images/video overlays, auto upload/post in the background, continue playing
-
-            </p>
-
-            <p>
-                The goal is to make creating things feel as fun and easy
-                as possible:
-                <br></br>
-                games,
-                <br></br>
-                worlds,
-                <br></br>
-                software,
-                <br></br>
-                tools,
-                <br></br>
-                ideas,
-                <br></br>
-                experiments,
-                <br></br>
-                anything.
-            </p>
-
-
-                                <br></br>
-                                <br></br>
-            <p>
-                And ideally,
-                people create here because they want to,
-                not because they are forced to survive.
-                                  <br></br>
-                                <br></br>
-
-                Relates to UBI and economics (mimitabux/mimitacoin/etc)
-            </p>
-
-
-
-                                <br></br>
-                                <br></br>
-            <p>
-                5 25 2026 - 
-                hi
-            </p>
-
-            </div>
+        <div className="aboutPageHeader">
+          <video autoPlay loop muted playsInline preload="auto" className="aboutVideo">
+            <source src="/untitled-loop-small.mp4" type="video/mp4" />
+          </video>
+          <h1 className="aboutPageTitle">ABOUT MiMITA</h1>
         </div>
 
-        <FeedbackBox pageName="about" />
+        <div className="aboutPageContent">
+          <section className="aboutSection">
+            <h2>What is Mimita?</h2>
+            <p>
+              Mimita is an experimental movement-based game engine focused on
+              emergence, editability, and making things that just feel fun.
+              It is not a traditional game — it is a playground for movement,
+              combat, creation, and expression.
+            </p>
+            <p>
+              The engine is open-source, community-driven, and designed to be
+              extended, modified, and reshaped by anyone who wants to build
+              something with it.
+            </p>
+          </section>
 
+          <section className="aboutSection">
+            <h2>Movement &gt; Aim</h2>
+            <p>
+              Mimita is built around a core philosophy: movement matters more than aim.
+            </p>
+            <p>
+              Instead of rewarding who can click the most accurately, Mimita
+              rewards who can move most creatively. Full-body collision physics,
+              momentum-based mechanics, and emergent movement tech create a
+              combat system where positioning, timing, and flow matter more
+              than precision aim.
+            </p>
+            <p>
+              This philosophy extends to all systems — from combat to
+              level design to game modes. Movement should feel expressive,
+              responsive, and satisfying on its own.
+            </p>
+          </section>
+
+          <section className="aboutSection">
+            <h2>Donations Only — No Pay-to-Win</h2>
+            <p>
+              Mimita is supported entirely by donations. There are no
+              microtransactions, no battle passes, no loot boxes, and no
+              pay-to-win mechanics.
+            </p>
+            <p>
+              Supporter perks are cosmetic only — custom colors, badges, and
+              future cosmetics that let you show support without affecting
+              gameplay. Everything gameplay-relevant is available to everyone.
+            </p>
+            <p>
+              Financial contributions go toward server infrastructure,
+              development tools, and keeping the project open and accessible.
+            </p>
+          </section>
+
+          <section className="aboutSection">
+            <h2>Frequently Asked Questions</h2>
+            <div className="aboutFaq">
+              <div className="aboutFaqItem">
+                <strong>Is Mimita free?</strong>
+                <p>Yes. The game and engine are completely free. No purchases required.</p>
+              </div>
+              <div className="aboutFaqItem">
+                <strong>Can I contribute to development?</strong>
+                <p>Yes. The source code is on GitHub. Pull requests, bug reports, and ideas are welcome.</p>
+              </div>
+              <div className="aboutFaqItem">
+                <strong>What platforms are supported?</strong>
+                <p>Currently Windows 64-bit. Other platforms may be added in the future.</p>
+              </div>
+              <div className="aboutFaqItem">
+                <strong>Is there a single-player mode?</strong>
+                <p>Mimita is primarily a multiplayer PvP experience. NPC modes and practice tools are planned.</p>
+              </div>
+              <div className="aboutFaqItem">
+                <strong>How do I report a bug?</strong>
+                <p>Use the feedback form below or open an issue on GitHub.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <FeedbackBox pageName="about" />
     </Layout>
   )
 }

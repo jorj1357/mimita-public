@@ -1,5 +1,6 @@
 #include "avatar-commands.h"
 #include "avatar.h"
+#include "character-registry.h"
 
 #include "devtools/terminal.h"
 #include "entities/player.h"
@@ -59,6 +60,80 @@ void registerAvatarCommands(Player& player) {
                 SavePlayerSettings();
                 Terminal::instance().addLog("[AVATAR] Loaded and applied: " + args[0]);
             }
+        },
+        std::string(),
+        CommandCategory::Player
+    });
+
+    t.registerCommand({
+        "character.list",
+        "List available characters",
+        "character.list",
+        [](const std::vector<std::string>&) {
+            auto names = CharacterRegistry::instance().names();
+            if (names.empty()) {
+                Terminal::instance().addLog("[CHARACTER] No characters found in Characters/");
+                return;
+            }
+            Terminal::instance().addLog("[CHARACTER] Available characters:");
+            for (const auto& name : names)
+                Terminal::instance().addLog("  " + name);
+        },
+        std::string(),
+        CommandCategory::Player
+    });
+
+    t.registerCommand({
+        "character.load",
+        "Load a character by name",
+        "character.load <name>",
+        [&player](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: character.load <name>");
+                return;
+            }
+            if (player.loadCharacter(args[0])) {
+                GetPlayerSettings().characterName = args[0];
+                SavePlayerSettings();
+                Terminal::instance().addLog("[CHARACTER] Loaded: " + args[0]);
+            } else {
+                Terminal::instance().addLog("[ERROR] Failed to load character: " + args[0]);
+            }
+        },
+        std::string(),
+        CommandCategory::Player
+    });
+
+    t.registerCommand({
+        "character.current",
+        "Show the current character name",
+        "character.current",
+        [&player](const std::vector<std::string>&) {
+            Terminal::instance().addLog("[CHARACTER] Current: " + player.characterName());
+        },
+        std::string(),
+        CommandCategory::Player
+    });
+
+    t.registerCommand({
+        "character.validate",
+        "Validate all character manifests and GLB files",
+        "character.validate",
+        [](const std::vector<std::string>&) {
+            CharacterRegistry::instance().scanAll();
+            auto all = CharacterRegistry::instance().all();
+            int ok = 0, fail = 0;
+            for (const auto& m : all) {
+                if (m.isValid()) {
+                    Terminal::instance().addLog("[VALID] " + m.name + " OK");
+                    ok++;
+                } else {
+                    Terminal::instance().addLog("[VALID] " + m.name + " FAIL: " + m.validationError());
+                    fail++;
+                }
+            }
+            Terminal::instance().addLog("[VALID] " + std::to_string(ok) + " valid, " +
+                                        std::to_string(fail) + " failed");
         },
         std::string(),
         CommandCategory::Player

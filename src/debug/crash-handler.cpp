@@ -3,29 +3,41 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <dbghelp.h>
+#include <cstdio>
 
 namespace {
 
 // Stack-only dump path builder — no heap allocation
 void buildDumpPath(char* buf, DWORD size)
 {
+    buf[0] = '\0';
     GetModuleFileNameA(nullptr, buf, size);
-    for (int i = (int)strlen(buf) - 1; i >= 0; --i) {
-        if (buf[i] == '\\' || buf[i] == '/') { buf[i] = '\0'; break; }
-    }
+    buf[size - 1] = '\0';
+
+    // Find last separator
+    int sep = -1;
+    for (int i = 0; buf[i]; ++i)
+        if (buf[i] == '\\' || buf[i] == '/') sep = i;
+    if (sep >= 0) buf[sep] = '\0';
+
     size_t len = strlen(buf);
-    const char* suffix = "\\crash-";
-    for (int i = 0; suffix[i]; ++i) buf[len++] = suffix[i];
+    DWORD remaining = size - (DWORD)len - 1;
+
+    auto append = [&](const char* s) {
+        for (int i = 0; s[i] && remaining > 1; ++i, --remaining)
+            buf[len++] = s[i];
+    };
+
+    append("\\crash-");
 
     SYSTEMTIME st;
     GetLocalTime(&st);
     char timeBuf[32];
     snprintf(timeBuf, sizeof(timeBuf), "%04d%02d%02d_%02d%02d%02d",
              st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-    for (int i = 0; timeBuf[i]; ++i) buf[len++] = timeBuf[i];
+    append(timeBuf);
+    append(".dmp");
 
-    const char* ext = ".dmp";
-    for (int i = 0; ext[i]; ++i) buf[len++] = ext[i];
     buf[len] = '\0';
 }
 

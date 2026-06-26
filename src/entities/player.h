@@ -311,6 +311,10 @@ public:
     Capsule getCapsule() const;
     OBB     getOBB() const;
 
+    // -------- Character Loading --------
+    bool loadCharacter(const std::string& characterName);
+    const std::string& characterName() const { return mCharacterName; }
+
     // -------- Systems --------
     void updateAudio(float dt);
     void render(unsigned int shader,
@@ -330,6 +334,7 @@ public:
 
     // -------- Weapon system --------
     std::string equippedWeaponId;
+    std::string mCharacterName = "DefaultGuy";
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 
     // Previous frame body sample positions for limb sweep collisions

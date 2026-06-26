@@ -11,6 +11,7 @@ struct PlayerSettings {
     int equippedSlot = 1;
     std::string outfitPath = "devscripts/character_outfit_template.png";
     std::string avatarName;
+    std::string characterName = "DefaultGuy";
 
     float collisionSeamTolerance = 0.035f;
     float collisionMovementBias = 0.75f;

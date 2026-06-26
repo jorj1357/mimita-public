@@ -24,6 +24,10 @@ export default function AdminDashboard() {
                 navigate("/admin/login")
                 return
             }
+            if (response.status === 403) {
+                navigate("/admin/no-permission")
+                return
+            }
             if (data?.success) {
                 setMetrics(data.metrics)
             }

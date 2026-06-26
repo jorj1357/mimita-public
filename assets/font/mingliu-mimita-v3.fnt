@@ -1,13 +1,4 @@
-info face="MingLiU" size=48 bold=0 italic=0 charset="" unicode=1 stretchH=100 smooth=1 aa=1 padding=0,0,0,0 spacing=1,1 outline=0
-common lineHeight=48 base=38 scaleW=256 scaleH=256 pages=2 packed=0 alphaChnl=1 redChnl=0 greenChnl=0 blueChnl=0
-page id=0 file="mingliu-mimita-v3_0.png"
-page id=1 file="mingliu-mimita-v3_1.png"
-chars count=140
-char id=1    x=129   y=154   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
-char id=2    x=250   y=59    width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
-char id=3    x=205   y=187   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
-char id=4    x=193   y=187   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
-char id=5    x=247   y=183   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
+   x=247   y=183   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
 char id=6    x=155   y=190   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
 char id=7    x=151   y=190   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
 char id=8    x=147   y=190   width=3     height=1     xoffset=-1    yoffset=47    xadvance=24    page=0  chnl=15
@@ -143,3 +134,6 @@ char id=183  x=184   y=25    width=8     height=7     xoffset=8     yoffset=20  
 char id=184  x=102   y=26    width=8     height=13    xoffset=8     yoffset=32    xadvance=48    page=1  chnl=15
 char id=215  x=22    y=0     width=30    height=29    xoffset=9     yoffset=9     xadvance=48    page=1  chnl=15
 char id=247  x=78    y=0     width=34    height=25    xoffset=7     yoffset=11    xadvance=48    page=1  chnl=15
+‰PNG
+
+   IHDR         \r¨f   	pHYs    ÒÝ~ü    IDATxÚí}¬åeyçáÌÌåÎ™{g˜;ÓXÌ?B0´f”àŒ–ˆ-±RX…X­©K0$bÄ-i‹np®I]B0¢i1°1D2dÃc0Êì.FC«QIñŽS¸gè;ûüŽïs}ÎsßçýøŸsîû&'sæÜÿÇûñ|žÖ3Ž“'O8vìØ5;vìXÀÿ_|ñÅç÷îÝ{Ûi§öÓ^£Aï8øïÿþïöûýÇ¿æŒ3Î¸»ÅsŸ}öÙ+®yþùçoÛ¿ÿ}¼žÕÕÕ¶mÛvfìÞû·{x×®]ïË¹ç¥—^zj~~þ-øþ¯ÿú¯íÞ½û‘^Ï^\\üAÎ”ÜÃçrâÄ‰C´ï²ÜC{ý?ißÞéþ;¤}ûÁsÏ=w3ïŒX^^~;Íÿ€E:ŸŸÒ÷ãûöí»£×ñÀ»i™››»`ûöí¯R{Öø~ýë_¶Åy·Â7~¾á+ÌgéðvÒZà¯ðáÿão¸¦pÏ^ùÕ¯~õçŸyR>C›úÃ“ãc…÷ò³²²ò%¹™ôÿ^xá…'øCÏxZ=ã$ýþ¸|‡{Ï–ÀH€x;æûË_þò¯Äïz7Ç^#î-ÙC u‘ú¬x÷É’g`„èß9™+8¹ÖˆOgz˜ßïúnŸèÎÿpéyk|c8”ø†wYŸXä{³àP.Ú‡äŽÞÎ‡[³è.	 DB & Œ´ˆÌØ³ }àoîà®h±&¬Á‚L|]-¡®! 1"l‘Ü$2à^’ n¦s½š?ø¿#k„†¤•o´ ºr–3d„Ë%ú¸–‰\è¬$1µàöYî‰yï%r¤âÄÃŸ•,Zn2-èä¦øN¿!Uà®šƒÔ›ÀS€j‚#‘Mž –0QN!£$|µH-Hí…¨Zº%Q×spÿÌ¹ÇúþL|3_«™Ÿ„ÿ&“ñ-:Ø4u%ñí‡¬³I±¯†

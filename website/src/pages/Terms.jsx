@@ -80,6 +80,7 @@ export default function Terms() {
             auth tokens,
             or sensitive free-form information
             through gameplay analytics.
+            Cuz that stuff is stupid and unnecessary.
           </p>
 
           <p>
