@@ -9,6 +9,7 @@
   "settings": {
     "avatar_name": "test_avatar",
     "bloodfx": false,
+    "character_name": "DefaultGuy",
     "collision_bounce_max_speed": 45.0,
     "collision_bounce_min_speed": 7.0,
     "collision_bounce_strength": 0.1599999964237213,

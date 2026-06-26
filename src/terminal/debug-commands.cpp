@@ -5,6 +5,7 @@
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/validate-assets.h"
 #include "physics/movement/physics-collision.h"
 #include "config/player-settings.h"
 #include "audio/audio.h"
@@ -114,6 +115,15 @@ void registerDebugCommands()
                 "configLoaded=%d\n"
                 "configPath=%s",
                 enabled, configLoaded, configPath.c_str());
+            Terminal::instance().addLog(buf);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "validate_assets", "Validate all game assets", "validate_assets",
+        [](const std::vector<std::string>&) {
+            int failed = validateAllAssets();
+            char buf[64];
+            snprintf(buf, sizeof(buf), "[VALIDATE] %s", failed ? "SOME ASSETS FAILED" : "All assets OK");
             Terminal::instance().addLog(buf);
         }
     });

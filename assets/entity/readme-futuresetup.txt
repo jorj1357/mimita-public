@@ -1,6 +1,4 @@
-0.392000
-v -0.088333 2.673334 0.520000
-v 0.199667 1.073333 0.808000
-v 0.071667 2.673334 0.680000
-v 0.199667 1.073333 0.392000
-v 0.071667 2.
+this will be the place for different characters
+if there is different ones
+maybe different shapes or styles etc 
+but just modular to be safe 

@@ -1,1 +1,9 @@
-ctor":0.5}}],"meshes":[{"name":"Cube.018","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":3,"material":0}]}],"textures":[{"sampler":0,"source":0}],"images":[{"bufferView":4,"mimeType":"image/png","name":"T_357MagnumRevolver"}],"accessors":[{"bufferView":0,"componentType":5126,"count":538,"max":[0.2474355399608612,0.07976154237985611,0.03090911544
+to kepe githbubha u9grnjeg;jd
+
+we have to keep it all under 50mb
+all maps
+or antthing in the repo at all
+and ummm
+idk how to do that
+maube we just chunk big things into bits and pieces
+like the map has like 10 parts and each part has the origin at the bottom and we do some cool code to get each section to align perfectl idk but  just hae ot keep under 50mb for niceness
