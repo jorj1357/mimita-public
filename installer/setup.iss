@@ -5,6 +5,7 @@
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Mimita"
 #define MyAppURL "https://mimita.fun"
+#define MyAppLauncherName "MimitaLauncher.exe"
 #define MyAppExeName "mimita.exe"
 
 [Setup]
@@ -37,7 +38,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 
 [Files]
+Source: "..\MimitaLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\mimita.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\version.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\glfw3.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\libgcc_s_seh-1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\libstdc++-6.dll"; DestDir: "{app}"; Flags: ignoreversion
@@ -47,11 +50,11 @@ Source: "..\config\accounts\default.json"; DestDir: "{app}\config\accounts"; Fla
 Source: "..\config\current-profile.json"; DestDir: "{app}\config"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppLauncherName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppLauncherName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppLauncherName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

@@ -1020,19 +1020,35 @@ app.post("/api/newsletter", newsletterRateLimit, async (req, res, next) => {
     }
 })
 
+let gameVersion = { version: "1.0.0", release_date: "unknown", file_size_mb: 0, platform: "windows-64" }
+const versionPath = path.resolve("server/version.json")
+if (fs.existsSync(versionPath)) {
+    try {
+        gameVersion = JSON.parse(fs.readFileSync(versionPath, "utf8"))
+    } catch (e) {
+        console.log("[VERSION] Failed to load version.json:", e.message)
+    }
+}
+
 app.get("/api/game/version", (req, res) => {
+    res.json(gameVersion)
+})
+
+app.get("/api/update/latest-version", (req, res) => {
     res.json({
-        version: "1.0.0",
-        release_date: "2026-06-25",
-        file_size_mb: 200,
-        platform: "windows-64"
+        version: gameVersion.version,
+        release_date: gameVersion.release_date,
+        download_url: "/api/download/latest",
+        mandatory: false,
+        changelog: "Initial release."
     })
 })
 
 app.get("/api/download/latest", (req, res) => {
-    const filePath = path.resolve("downloads/MimitaSetup-1.0.0.exe")
+    const filename = "MimitaSetup-" + gameVersion.version + ".exe"
+    const filePath = path.resolve("server/downloads", filename)
     if (fs.existsSync(filePath)) {
-        res.download(filePath, "MimitaSetup-1.0.0.exe")
+        res.download(filePath, filename)
     }
     else {
         res.redirect("https://github.com/jorj1357/mimita-public/releases/latest")
