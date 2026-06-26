@@ -37,14 +37,19 @@ async function sendMail(message) {
     })
 }
 
-export async function sendAccountWelcomeEmail(email, username) {
+export async function sendAccountWelcomeEmail(email, username, verificationToken) {
+    const origin = process.env.APP_ORIGIN || "https://mimita.fun"
+    const verifyUrl = `${origin}/api/auth/verify-email/${verificationToken}`
     await sendMail({
         to: email,
-        subject: "Welcome to Mimita",
-        text: `Welcome to Mimita, ${username}.`,
+        subject: "Welcome to Mimita — verify your email",
+        text: `Welcome to Mimita, ${username}. Verify your email: ${verifyUrl}`,
         html: `
             <h1>Welcome to Mimita</h1>
             <p>Your account is ready, ${escapeHtml(username)}.</p>
+            <p>Verify your email address:</p>
+            <p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:12px 24px;background:#40e0d0;color:#000;text-decoration:none;border-radius:4px">Verify Email</a></p>
+            <p>Or copy this link: ${escapeHtml(verifyUrl)}</p>
             <p><a href="https://mimita.fun">Visit Mimita</a></p>
         `
     })

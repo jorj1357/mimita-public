@@ -2,73 +2,18 @@ import { Router } from "express"
 import { hashToken, getClientIp, verifyPassword, usernameKey, normalizeEmail } from "./authCore.js"
 import { pool } from "./db.js"
 import { getMetrics, refreshMetrics } from "./analytics.js"
-import { submitFeedback, getFeedback, FEEDBACK_PRESETS } from "./feedback.js"
+import { getFeedback, FEEDBACK_PRESETS } from "./feedback.js"
+import {
+    parseCookies,
+    clearSessionCookie,
+    createSession,
+    sessionCookieName,
+    sessionSecret
+} from "./session.js"
 
 const router = Router()
 
-const sessionCookieName =
-    process.env.SESSION_COOKIE_NAME || "mimita_session"
-const sessionSecret =
-    process.env.SESSION_SECRET || "development-only-change-me"
-const sessionDays = Number(process.env.SESSION_DAYS || 30)
-const production = process.env.NODE_ENV === "production"
-
 const ADMIN_ROLES = ["admin", "owner"]
-
-function parseCookies(req) {
-    const result = {}
-    for (const pair of String(req.headers.cookie || "").split(";")) {
-        const separator = pair.indexOf("=")
-        if (separator === -1) continue
-        const key = pair.slice(0, separator).trim()
-        const value = pair.slice(separator + 1).trim()
-        result[key] = decodeURIComponent(value)
-    }
-    return result
-}
-
-function setAdminCookie(res, token) {
-    res.cookie(sessionCookieName, token, {
-        httpOnly: true,
-        secure: production,
-        sameSite: "lax",
-        maxAge: sessionDays * 24 * 60 * 60 * 1000,
-        path: "/"
-    })
-}
-
-function clearAdminCookie(res) {
-    res.clearCookie(sessionCookieName, {
-        httpOnly: true,
-        secure: production,
-        sameSite: "lax",
-        path: "/"
-    })
-}
-
-async function createAdminSession(userId, req, res) {
-    const { createSecretToken } = await import("./authCore.js")
-    const token = createSecretToken()
-    const tokenHash = hashToken(token, sessionSecret)
-
-    await pool.query(
-        `
-        INSERT INTO sessions (
-            user_id, token_hash, user_agent, ip_address, expires_at
-        )
-        VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))
-        `,
-        [
-            userId,
-            tokenHash,
-            req.get("user-agent") || "unknown",
-            getClientIp(req),
-            sessionDays
-        ]
-    )
-
-    setAdminCookie(res, token)
-}
 
 async function requireAdmin(req, res, next) {
     try {
@@ -97,7 +42,7 @@ async function requireAdmin(req, res, next) {
         )
 
         if (!result.rowCount) {
-            clearAdminCookie(res)
+            clearSessionCookie(res)
             return res.status(401).json({
                 success: false,
                 message: "session expired"
@@ -162,7 +107,7 @@ router.post("/login", async (req, res, next) => {
             })
         }
 
-        await createAdminSession(user.id, req, res)
+        await createSession(user.id, req, res)
         console.log(`[ADMIN] login success user_id=${user.id} username=${user.username} from ${getClientIp(req)}`)
 
         res.json({
@@ -190,7 +135,7 @@ router.post("/logout", requireAdmin, async (req, res, next) => {
             [tokenHash]
         )
 
-        clearAdminCookie(res)
+        clearSessionCookie(res)
         console.log(`[ADMIN] logout user_id=${req.user.id}`)
         res.json({ success: true, message: "signed out" })
     }

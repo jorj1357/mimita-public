@@ -5,6 +5,19 @@ import {
     logNetwork
 } from "./api-log.js"
 
+function getCsrfToken() {
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+    return match ? decodeURIComponent(match[1]) : null
+}
+
+function addCsrfHeader(method, headers) {
+    if (["GET", "HEAD", "OPTIONS"].includes(method)) return
+    const token = getCsrfToken()
+    if (token) {
+        headers["X-CSRF-Token"] = token
+    }
+}
+
 export async function apiRequest(path, options = {}) {
     const method = (options.method || "GET").toUpperCase()
     const startTime = performance.now()
@@ -12,14 +25,17 @@ export async function apiRequest(path, options = {}) {
     const body = options.body || null
     logRequestStart(method, path, body ? safeParseBody(body) : null)
 
+    const headers = {
+        "Content-Type": "application/json",
+        ...options.headers
+    }
+    addCsrfHeader(method, headers)
+
     try {
         const response = await fetch(path, {
             credentials: "include",
             ...options,
-            headers: {
-                "Content-Type": "application/json",
-                ...options.headers
-            }
+            headers
         })
 
         const responseClone = response.clone()
@@ -63,10 +79,14 @@ export async function apiRequestRaw(path, options = {}) {
     const body = options.body || null
     logRequestStart(method, path, body ? safeParseBody(body) : null)
 
+    const headers = { ...options.headers }
+    addCsrfHeader(method, headers)
+
     try {
         const response = await fetch(path, {
             credentials: "include",
-            ...options
+            ...options,
+            headers
         })
 
         const endTime = performance.now()

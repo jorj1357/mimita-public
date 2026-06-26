@@ -3,6 +3,18 @@ import { pool, getDbConfig } from "./db.js"
 
 const router = Router()
 
+const production = process.env.NODE_ENV === "production"
+
+router.use((req, res, next) => {
+    if (production) {
+        return res.status(404).json({
+            success: false,
+            message: "not found"
+        })
+    }
+    next()
+})
+
 const ERROR_CATALOG = {
     auth: {
         signup: {

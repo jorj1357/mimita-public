@@ -3,17 +3,7 @@ import { useParams } from "react-router-dom"
 
 import Layout from "../components/Layout"
 import Username from "../components/Username"
-
-const API = import.meta.env.VITE_API_ORIGIN || ""
-
-async function apiRequest(path) {
-    const response = await fetch(`${API}${path}`, { credentials: "include" })
-    if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.message || "request failed")
-    }
-    return response.json()
-}
+import { apiRequest } from "../lib/api"
 
 export default function UserProfile() {
     const { username } = useParams()

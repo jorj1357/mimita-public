@@ -4,8 +4,12 @@ import { getClientIp } from "./authCore.js"
 import { pool } from "./db.js"
 import { trackEvent } from "./analytics.js"
 import { sendDataDeletionRequestEmail } from "./mail.js"
+import { createRateLimit } from "./rateLimit.js"
 
 const router = Router()
+
+const deletionRequestRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 3, name: "game_deletion_request" })
+const analyticsConsentRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 30, name: "game_consent" })
 
 const EVENT_CATALOG = new Map([
     ["account_created", "account"],
@@ -160,7 +164,7 @@ router.post("/events", async (req, res, next) => {
     }
 })
 
-router.post("/consent", async (req, res, next) => {
+router.post("/consent", analyticsConsentRateLimit, async (req, res, next) => {
     try {
         const anonymousId = cleanText(req.body.anonymous_id, 96)
         if (!anonymousId) {
@@ -217,7 +221,7 @@ router.post("/consent", async (req, res, next) => {
     }
 })
 
-router.post("/deletion-request", async (req, res, next) => {
+router.post("/deletion-request", deletionRequestRateLimit, async (req, res, next) => {
     try {
         const requestedAt = new Date().toISOString()
         const userId = cleanUserId(req.body.account_id || req.body.user_id)
