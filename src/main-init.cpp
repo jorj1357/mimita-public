@@ -1,5 +1,6 @@
 #include "main-init.h"
 #include "main-systems.h"
+#include "gui/ui-system-internal.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -214,8 +215,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     });
     glfwSetScrollCallback(engine.window(), [](GLFWwindow*, double, double yOffset) {
         Terminal::instance().handleScroll(yOffset);
-        extern double gScrollYOffset;
-        gScrollYOffset = yOffset;
+        UISys::gScrollYOffset = yOffset;
     });
 
     printf("[MAIN] after glfwSetInputMode\n");

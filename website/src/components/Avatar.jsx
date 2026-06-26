@@ -4,8 +4,11 @@ export default function Avatar({ user, size = "md", className = "" }) {
     if (!user) return null
 
     const pixelSize = SIZE_MAP[size] || 64
+    const cacheBust = user.avatar_updated_at
+        ? new Date(user.avatar_updated_at).getTime()
+        : Date.now()
     const src = user.avatar_url
-        ? `${user.avatar_url}?v=${user.avatar_updated_at || Date.now()}`
+        ? `${user.avatar_url}?_=${cacheBust}`
         : null
 
     const imgStyle = {

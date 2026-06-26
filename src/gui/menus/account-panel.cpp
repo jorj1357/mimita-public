@@ -5,6 +5,7 @@
 #include "camera.h"
 #include "auth/auth-system.h"
 #include "physics/config.h"
+#include "renderer/renderer.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -15,19 +16,25 @@
 static Player* gPreviewPlayer = nullptr;
 static float gPreviewAngle = 0.0f;
 
+extern Renderer* gRenderer;
+
 static Player* getPreviewPlayer()
 {
     if (!gPreviewPlayer)
     {
-        printf("[ACCOUNT PANEL] creating preview player...\n");
+        printf("[PREVIEW] creating preview player...\n");
         gPreviewPlayer = new Player();
-        printf("[ACCOUNT PANEL] preview player: modelLoaded=%d meshVerts=%zu\n",
+        printf("[PREVIEW] modelLoaded=%d meshVerts=%zu bodyParts=%zu partMeshes=%zu\n",
                (int)gPreviewPlayer->modelLoaded,
-               gPreviewPlayer->renderMesh.verts.size());
-        printf("[ACCOUNT PANEL] preview player pos=(%.2f,%.2f,%.2f)\n",
+               gPreviewPlayer->renderMesh.verts.size(),
+               gPreviewPlayer->physicalBody.parts.size(),
+               gPreviewPlayer->physicalBody.partMeshes.size());
+        printf("[PREVIEW] pos=(%.2f,%.2f,%.2f) dead=%d maxHp=%d\n",
                gPreviewPlayer->pos.x,
                gPreviewPlayer->pos.y,
-               gPreviewPlayer->pos.z);
+               gPreviewPlayer->pos.z,
+               (int)gPreviewPlayer->dead,
+               gPreviewPlayer->maxHp);
     }
     return gPreviewPlayer;
 }
@@ -49,6 +56,7 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                       {0.3f, 0.4f, 0.55f, 0.15f}, "account-panel-border");
 
     Player* preview = getPreviewPlayer();
+    glm::vec3 targetPos = preview ? preview->pos : glm::vec3(0.0f, 0.0f, 1.5f);
 
     // --- Username / No Account Detected at top ---
     if (auth.state() == AuthState::Authenticated)
@@ -71,11 +79,9 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                    {0.55f, 0.6f, 0.7f, 1.0f});
     }
 
-    // --- 3D character preview in the middle ---
+    // --- 3D character preview ---
     int fbWpx = 0, fbHpx = 0;
     glfwGetFramebufferSize(window, &fbWpx, &fbHpx);
-    float scaleX = (float)fbWpx / fbW;
-    float scaleY = (float)fbHpx / fbH;
 
     float previewTop = uiScaleY(90.0f);
     float previewAreaH = fbH * 0.40f;
@@ -83,45 +89,65 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         previewAreaH = panelW * 1.2f;
     float previewBottom = previewTop + previewAreaH;
 
-    int ppx = (int)(panelX * scaleX);
-    int ppy = (int)((fbH - previewBottom) * scaleY);
-    int ppw = (int)(panelW * scaleX);
-    int pph = (int)(previewAreaH * scaleY);
-
-    glm::vec3 targetPos = preview ? preview->pos : glm::vec3(0.0f, 0.0f, 1.5f);
-
+    if (preview && preview->modelLoaded)
     {
-        glClear(GL_DEPTH_BUFFER_BIT);
+        gPreviewAngle += 0.015f;
+        if (gPreviewAngle > 360.0f)
+            gPreviewAngle -= 360.0f;
 
-        glEnable(GL_SCISSOR_TEST);
-        glScissor(ppx, ppy, ppw, pph);
+        Camera previewCam;
+        previewCam.fov = 50.0f;
+        float rad = glm::radians(gPreviewAngle);
+        float dist = 8.0f;
+        float height = 2.0f;
+        previewCam.pos = glm::vec3(
+            targetPos.x + std::cos(rad) * dist,
+            targetPos.y + std::sin(rad) * dist,
+            targetPos.z + height);
+        previewCam.front = glm::normalize(
+            targetPos + glm::vec3(0.0f, 0.0f, 1.5f) - previewCam.pos);
+        previewCam.right = glm::normalize(
+            glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
+        previewCam.up = glm::normalize(
+            glm::cross(previewCam.right, previewCam.front));
+
+        printf("[PREVIEW] frame: cam=(%.2f,%.2f,%.2f) target=(%.2f,%.2f,%.2f) dist=%.2f\n",
+               previewCam.pos.x, previewCam.pos.y, previewCam.pos.z,
+               targetPos.x, targetPos.y, targetPos.z + 1.5f, dist);
+
+        // Save GL state that we change
+        GLint prevViewport[4];
+        glGetIntegerv(GL_VIEWPORT, prevViewport);
+        GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+
+        // Set viewport to cover the preview area in framebuffer coords
+        float sx = (float)fbWpx / fbW;
+        float sy = (float)fbHpx / fbH;
+        int vx = (int)(panelX * sx);
+        int vy = (int)((fbH - previewBottom) * sy);
+        int vw = (int)(panelW * sx);
+        int vh = (int)(previewAreaH * sy);
+        glViewport(vx, vy, vw, vh);
+
+        glEnable(GL_DEPTH_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT);
         glClearColor(0.04f, 0.045f, 0.06f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if (preview && preview->modelLoaded)
-        {
-            gPreviewAngle += 0.015f;
-            if (gPreviewAngle > 360.0f)
-                gPreviewAngle -= 360.0f;
+        renderPlayer(*preview, previewCam);
 
-            Camera previewCam;
-            float rad = glm::radians(gPreviewAngle);
-            float dist = 7.0f;
-            float height = 2.5f;
-            previewCam.pos = glm::vec3(
-                targetPos.x + std::cos(rad) * dist,
-                targetPos.y + std::sin(rad) * dist,
-                targetPos.z + height);
-            previewCam.front = glm::normalize(
-                targetPos + glm::vec3(0.0f, 0.0f, 1.5f) - previewCam.pos);
-            previewCam.right = glm::normalize(
-                glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
-            previewCam.up = glm::normalize(
-                glm::cross(previewCam.right, previewCam.front));
+        // Restore GL state
+        if (!depthWasEnabled)
+            glDisable(GL_DEPTH_TEST);
+        glViewport(prevViewport[0], prevViewport[1],
+                   prevViewport[2], prevViewport[3]);
 
-            renderPlayer(*preview, previewCam);
-        }
-        glDisable(GL_SCISSOR_TEST);
+        printf("[PREVIEW] renderPlayer called, renderer=%p shaderProgram=%u\n",
+               (void*)gRenderer, gRenderer ? gRenderer->shaderProgram : 0);
+    }
+    else
+    {
+        printf("[PREVIEW] model NOT loaded, cannot render\n");
     }
 
     // --- Health bar BELOW preview ---
@@ -161,7 +187,7 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                      {panelCenterX - btnW * 0.5f, btnY, btnW, btnH},
                      {0.2f, 0.5f, 0.85f, 1.0f}, "account-login").clicked)
         {
-            printf("[ACCOUNT PANEL] Log In clicked\n");
+            printf("[PREVIEW] Log In clicked\n");
             result.logIn = true;
         }
 
@@ -170,7 +196,7 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                      {panelCenterX - btnW * 0.5f, btn2Y, btnW, btnH},
                      {0.2f, 0.5f, 0.25f, 1.0f}, "account-signup").clicked)
         {
-            printf("[ACCOUNT PANEL] Sign Up clicked\n");
+            printf("[PREVIEW] Sign Up clicked\n");
             result.signUp = true;
         }
 
@@ -179,7 +205,7 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
                      {panelCenterX - btnW * 0.5f, btn3Y, btnW, uiScaleY(36.0f)},
                      {0.3f, 0.3f, 0.35f, 1.0f}, "account-offline").clicked)
         {
-            printf("[ACCOUNT PANEL] Continue Offline clicked\n");
+            printf("[PREVIEW] Continue Offline clicked\n");
             result.continueOffline = true;
         }
     }
