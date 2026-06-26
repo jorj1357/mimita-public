@@ -23,21 +23,14 @@ AnalyticsConsentAction AnalyticsConsent::drawFirstLaunchPopup(GLFWwindow* win)
 
     uiDrawText("MIMITA ANALYTICS", uiScaleX(610.0f), uiScaleY(225.0f), 0.64f,
                {0.72f, 0.88f, 1.0f, 1.0f});
-    line("We collect anonymous gameplay analytics so we can see what people actually use.", 560.0f, 315.0f);
-    line("This helps improve onboarding, maps, weapons, movement, retention, and crashes.", 560.0f, 365.0f);
-    line("We do not sell analytics data.", 560.0f, 415.0f);
-    line("We do not collect passwords, chat contents, or sensitive information.", 560.0f, 465.0f);
-    line("You can disable analytics permanently, and you can request deletion at any time.", 560.0f, 515.0f);
-    line("More information: mimita.fun/terms/privacy", 560.0f, 565.0f);
+    line("Help improve Mimita by anonymously sending crash reports and gameplay analytics.", 560.0f, 380.0f);
+    line("More info: mimita.fun/terms/privacy", 560.0f, 520.0f);
 
-    if (uiButton(win, "CONTINUE", {560.0f, 700.0f, 250.0f, 56.0f},
-                 {0.18f, 0.46f, 0.28f, 1.0f}, "analytics-continue").clicked)
+    if (uiButton(win, "OK, sounds good", {560.0f, 600.0f, 310.0f, 56.0f},
+                 {0.18f, 0.46f, 0.28f, 1.0f}, "analytics-accept").clicked)
         return AnalyticsConsentAction::Continue;
-    if (uiButton(win, "READ MORE", {835.0f, 700.0f, 250.0f, 56.0f},
-                 {0.14f, 0.22f, 0.34f, 1.0f}, "analytics-read-more").clicked)
-        return AnalyticsConsentAction::ReadMore;
-    if (uiButton(win, "DISABLE", {1110.0f, 700.0f, 250.0f, 56.0f},
-                 {0.42f, 0.16f, 0.16f, 1.0f}, "analytics-disable").clicked)
+    if (uiButton(win, "No thanks", {890.0f, 600.0f, 310.0f, 56.0f},
+                 {0.42f, 0.16f, 0.16f, 1.0f}, "analytics-decline").clicked)
         return AnalyticsConsentAction::Disable;
 
     return AnalyticsConsentAction::None;

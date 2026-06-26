@@ -1,6 +1,7 @@
 #include "analytics/analytics-manager.h"
 
 #include "analytics/analytics-events.h"
+#include "game/version.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -75,7 +76,7 @@ void AnalyticsManager::track(const std::string& eventName, const json& propertie
     event["client_event_id"] =
         mSessionId + "-" + std::to_string(++mEventCounter);
     event["username"] = mUsername;
-    event["app_version"] = "dev";
+    event["app_version"] = MIMITA_VERSION_STRING;
     event["occurred_at"] = isoNow();
     event["properties"] = properties.is_object() ? properties : json::object();
     if (!mAccountId.empty())

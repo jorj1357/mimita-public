@@ -36,3 +36,21 @@
   opacity: 0.5;
   font-size: clamp(0.8rem, 1.2vmin, 1.2rem);
 }
+
+.downloadError {
+  color: #ff6b6b;
+  font-size: clamp(0.8rem, 1.2vmin, 1.2rem);
+  max-width: 500px;
+}
+
+.downloadVersion {
+  display: flex;
+  gap: 2rem;
+  opacity: 0.5;
+  font-size: clamp(0.7rem, 1vmin, 1rem);
+}
+
+.downloadButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
