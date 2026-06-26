@@ -163,6 +163,9 @@ const MIGRATION_STATEMENTS = [
     `CREATE INDEX IF NOT EXISTS login_attempts_identifier_idx ON login_attempts(identifier, attempted_at DESC)`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS supporter_tier TEXT NOT NULL DEFAULT 'free' CHECK (supporter_tier IN ('free', 'vip', 'super_vip', 'ultra_vip', 'moderator', 'admin', 'owner'))`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_updated_at TIMESTAMPTZ`,
     `CREATE TABLE IF NOT EXISTS rate_limits (
         id BIGSERIAL PRIMARY KEY,
         key_name TEXT NOT NULL,

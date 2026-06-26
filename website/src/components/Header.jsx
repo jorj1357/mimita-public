@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
+import Avatar from "./Avatar"
 
 export default function Header() {
   const [open, setOpen] = useState(false)
@@ -87,11 +88,7 @@ export default function Header() {
         {user ? (
           <div className="headerUserInfo">
             <Link className="headerUserLink" to={`/u/${user.username}`}>
-              {user.avatar_url ? (
-                <img src={user.avatar_url} alt="" className="headerAvatar" />
-              ) : (
-                <span className="headerAvatarPlaceholder">{user.username[0]?.toUpperCase()}</span>
-              )}
+              <Avatar user={user} size="sm" />
               <span className="headerUserName">{user.username}</span>
             </Link>
           </div>

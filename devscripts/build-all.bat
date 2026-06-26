@@ -28,9 +28,20 @@ echo ==========================================
 echo Building Mimita Launcher...
 echo ==========================================
 
-call src\launcher\build.bat
+call launcher\build.bat
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Launcher build failed
+    exit /b 1
+)
+
+echo.
+echo ==========================================
+echo Generating update manifest...
+echo ==========================================
+
+python devscripts\generate-manifest.py
+if %ERRORLEVEL% neq 0 (
+    echo [FAIL] Manifest generation failed
     exit /b 1
 )
 
@@ -54,10 +65,12 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo ==========================================
-echo Copying installer to website downloads...
+echo Copying files to website directory...
 echo ==========================================
 
 set /p VER=<version.txt
+
+copy /Y manifests\%VER%.json website\server\manifests\%VER%.json
 copy /Y installer\MimitaSetup-%VER%.exe website\server\downloads\MimitaSetup-%VER%.exe
 
 echo.

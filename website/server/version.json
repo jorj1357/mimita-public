@@ -2,5 +2,6 @@
   "version": "1.0.0",
   "release_date": "2026-06-25",
   "file_size_mb": 107,
-  "platform": "windows-64"
+  "platform": "windows-64",
+  "installer_sha256": "194b0a4f43c4240d24d028dd1e6b33f863fcf111f0318e42e6d9145ceb0ddb60"
 }

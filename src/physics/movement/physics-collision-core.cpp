@@ -78,9 +78,6 @@ void applyCollisionContact(
             if (p.vel.z < 0.0f)
                 p.vel.z = 0.0f;
 
-            if (p.vel.z > 0.0f)
-                p.vel.z = 0.0f;
-
             if (p.externalImpulse.z > 0.0f)
                 p.externalImpulse.z = 0.0f;
 

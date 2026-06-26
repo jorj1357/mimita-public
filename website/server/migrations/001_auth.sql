@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    avatar_updated_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

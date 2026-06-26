@@ -1,0 +1,1060 @@
+{
+  "version": "1.0.0",
+  "files": [
+    {
+      "path": "mimita.exe",
+      "size": 239281134,
+      "sha256": "099668aba79421c34b845808d165fb2aebb0fbbea3628bbb1adbeed298aaa4cb"
+    },
+    {
+      "path": "MimitaLauncher.exe",
+      "size": 1061376,
+      "sha256": "fb91b86d60db3334ce3be650cea9d42c6311ed589218f7c49d6dc0161d814748"
+    },
+    {
+      "path": "version.txt",
+      "size": 7,
+      "sha256": "4ca8bbd3c595ee306226c6996b32b8d47a900217c55a7ed0cfc868ee444f34f1"
+    },
+    {
+      "path": "glfw3.dll",
+      "size": 429222,
+      "sha256": "f48d85562258660a10941a485623c7d2bb1399f5a1aea9e77bad2dee4ecf865c"
+    },
+    {
+      "path": "libgcc_s_seh-1.dll",
+      "size": 922573,
+      "sha256": "6aa1dea46d54704c00ed16defff50f17ca2157a9537ceac1eef3140973854a35"
+    },
+    {
+      "path": "libstdc++-6.dll",
+      "size": 2376223,
+      "sha256": "6a67632d2fdd9596ba7f49d05b2a76f1a599e0d46039b1ae19ca8c648e6ff365"
+    },
+    {
+      "path": "libwinpthread-1.dll",
+      "size": 93781,
+      "sha256": "8e59f792bdc733c50dfa9aa6ebb5d9d3f31b92a2c3be27815da24223c8bb4539"
+    },
+    {
+      "path": "assets/readme-howto.txt",
+      "size": 319,
+      "sha256": "365533851e6c3454e81e23a5319e7ec02e3c1e285965e98ff524aac6a8efede5"
+    },
+    {
+      "path": "assets/readme-migratehere.txt",
+      "size": 53,
+      "sha256": "0a49731eec39994eb5fb67b9a477dd1513d62aa17a0ce94fc2adcf28ddae9f8f"
+    },
+    {
+      "path": "assets/readme-orgranization.txt",
+      "size": 183,
+      "sha256": "99b15ba1f0d62fe89f8793fca88a9566a40f9376b270990a17f290f00cc2a34c"
+    },
+    {
+      "path": "assets/avatars/test_avatar/avatar.json",
+      "size": 188,
+      "sha256": "7421d58ddd3209400fc90363b1a26ae8f3c1d7d7f16d1e968e52fc433e9eecdb"
+    },
+    {
+      "path": "assets/avatars/test_avatar/face.png",
+      "size": 208,
+      "sha256": "0177b7ea54fe36afbe25a554bcc48a9030d1bde01ad62c9d26dc4545834d598e"
+    },
+    {
+      "path": "assets/avatars/test_avatar/pants.png",
+      "size": 209,
+      "sha256": "90af37f7ad9667b5d4fbb3a8b3812192c7b4981210a8c901268a2c56ef4b8d4c"
+    },
+    {
+      "path": "assets/avatars/test_avatar/shirt.png",
+      "size": 207,
+      "sha256": "0eaefe6616256d1b2c8be058a85313aa231be3e86a576ea2247bd285c942ba65"
+    },
+    {
+      "path": "assets/avatars/test_avatar/skin.png",
+      "size": 208,
+      "sha256": "b8197317f308e2d8b3f59a7845d26926f6e40cb5b35161cfe5b4d1c30cfbc692"
+    },
+    {
+      "path": "assets/crosshair/crosshairhit.png",
+      "size": 1228,
+      "sha256": "d16d9cbd1de0be09c028fbb853cddf2f675d05cee20417b24dc37b9b558d2fa4"
+    },
+    {
+      "path": "assets/entity/readme-futuresetup.txt",
+      "size": 144,
+      "sha256": "d4d68d4d3ce73757454d1b2b18a5045b58b49ba7c479c83a078897eae8abcde6"
+    },
+    {
+      "path": "assets/entity/player/default/mimita-char-concise-v3.obj",
+      "size": 4185,
+      "sha256": "f51724c7e994b780553e386bfb12dc62973d9858774f091f45130d625f3abbb5"
+    },
+    {
+      "path": "assets/entity/player/default/mimita-char-no-animations-v4.glb",
+      "size": 10204,
+      "sha256": "6cc093dddc606b09d90785d81f6afd97d712198c1b70186c81955115348739e1"
+    },
+    {
+      "path": "assets/entity/player/default/mimita-dev-player-v1.obj",
+      "size": 71524,
+      "sha256": "4d9910545632866cc6f5b60e63290ece06767c2496b9d9c8fa7d214873f10640"
+    },
+    {
+      "path": "assets/font/mingliu-mimita-v3.fnt",
+      "size": 16306,
+      "sha256": "0f1eeafbd2dc1abd63b8257d8c9e6f9c1659876d1f4545f1563ad134b51641fe"
+    },
+    {
+      "path": "assets/font/mingliu-mimita-v3_0.png",
+      "size": 23667,
+      "sha256": "70d8f19c6124f4c7a09d77fc03d3c0ff0ade6f3db5197895e3cb41533179908e"
+    },
+    {
+      "path": "assets/font/mingliu-mimita-v3_0.png~",
+      "size": 15625,
+      "sha256": "edec10a0c048c02d4654fbd81e4b5f7f01aa79beb42e96971bd9f7da3878be6d"
+    },
+    {
+      "path": "assets/font/mingliu-mimita-v3_1.png",
+      "size": 4838,
+      "sha256": "96002def16fac7625e13320cc5c7cc5798c4e6b0a244e72031ca4b433ffde84e"
+    },
+    {
+      "path": "assets/font/mingliu-mimita-v3_1.png~",
+      "size": 3010,
+      "sha256": "619d62cc2f093064f2d078847ce5088dd65af7850ab14f2c7c97b54f74f7b863"
+    },
+    {
+      "path": "assets/font/mingliu.ttf",
+      "size": 6272080,
+      "sha256": "00b16e0dc854c9d045aecc71aab9b0f76b07cad58cccb3e092ef3ef1da2dc997"
+    },
+    {
+      "path": "assets/font/OLDmingliu-mimita-v3_1 - Copy (1).png",
+      "size": 3010,
+      "sha256": "619d62cc2f093064f2d078847ce5088dd65af7850ab14f2c7c97b54f74f7b863"
+    },
+    {
+      "path": "assets/font/OLDmingliu-mimita-v3_1 - Copy (2).png",
+      "size": 15625,
+      "sha256": "edec10a0c048c02d4654fbd81e4b5f7f01aa79beb42e96971bd9f7da3878be6d"
+    },
+    {
+      "path": "assets/maps/colltest.glb",
+      "size": 1501212,
+      "sha256": "4ca5454384ae652e9b90a33820cc7519cf49e8bf7504ac1762ab7aa70f6b0438"
+    },
+    {
+      "path": "assets/maps/funworld.glb",
+      "size": 1832392,
+      "sha256": "dda28f8e8a9cbeb0aac737325fdd5d4864c64d0769f7c91787003cb60a3d3c4b"
+    },
+    {
+      "path": "assets/maps/ideas-map-v1.glb",
+      "size": 985064,
+      "sha256": "8d6688aa922779102c50ad77156311c567ad0c7844f2c8e32ff72863e2af9456"
+    },
+    {
+      "path": "assets/maps/mimita-aabb-only-interior-small-v4.glb",
+      "size": 2357220,
+      "sha256": "5b3e2ac1b67cfc2111bf242ea8d8b082b1df44833667f1e20841099ae5129e67"
+    },
+    {
+      "path": "assets/maps/mimita-duels-map-v3.glb",
+      "size": 1618464,
+      "sha256": "c447c79628c368a0d27a4257c39e24257a5b7629616ba44d9973336c9d0b1e04"
+    },
+    {
+      "path": "assets/maps/mimita-garage-map-v1.glb",
+      "size": 153060,
+      "sha256": "146c0a7d894ff299e7be4503915854478fb995f251e16ad25f208178d0203961"
+    },
+    {
+      "path": "assets/maps/mimita-horror-test-v1.glb",
+      "size": 999188,
+      "sha256": "1b73e5cfb12df72eb91df7418b2c0a0d466d6bca32e70749ae5cbafcdd7a5d8c"
+    },
+    {
+      "path": "assets/maps/mimita-horror-v2.glb",
+      "size": 897008,
+      "sha256": "f66764c0db7bf857d75b890aa71b57dcfc7eb19303e3e229394c47536cdff65c"
+    },
+    {
+      "path": "assets/maps/mimita-memorial.glb",
+      "size": 412376,
+      "sha256": "77180b3d52149b9121bfbce3e1d822c752f0492f67e695c327bfc1e606ea1d4a"
+    },
+    {
+      "path": "assets/maps/readme-tokeepgithubhappy.txt",
+      "size": 379,
+      "sha256": "933439b552895aaed7bdadb66a8f573091b2e4d637dd43c1719b7bb77c6deec0"
+    },
+    {
+      "path": "assets/objects/things/readme.txt",
+      "size": 91,
+      "sha256": "6f2f21b0c51b958e47f839f50f0cdf03596e8dc2e0d9d26d9c50603d6a7f604f"
+    },
+    {
+      "path": "assets/objects/weapons/mimita-revolver-v1.glb",
+      "size": 122348,
+      "sha256": "da0fbed383e2c5709f1cb9adc10ffc550ff56328934ae9c5f416e8d6cf40294c"
+    },
+    {
+      "path": "assets/objects/weapons/mimita-shotgun-v1.glb",
+      "size": 123244,
+      "sha256": "fac90e8330bb031a0636ba8659c36fc90c61adcb4c7f0b23912109fe5ce78a13"
+    },
+    {
+      "path": "assets/outfits/suitv1.png",
+      "size": 470799,
+      "sha256": "15f15733a31f9e791efd83f2e2d91ad40b2b8b816711fae6c2589e333beb372e"
+    },
+    {
+      "path": "assets/outfits/suitv2.png",
+      "size": 953561,
+      "sha256": "d0a1fb9402e5a13c26055c2df4f84e02f5e0ebb4f2188f5d6a1345a81c8c4b5e"
+    },
+    {
+      "path": "assets/outfits/suitv3.png",
+      "size": 1325321,
+      "sha256": "f433762a2e769bc3fd8fee3623d0661b246aa18a17211dd048cd026b08f4bf21"
+    },
+    {
+      "path": "assets/outfits/suitv4debug.png",
+      "size": 1348564,
+      "sha256": "012a0ab76fccc9a927a68ae863bd1aa971c5cab19d38aff802807b22d160738f"
+    },
+    {
+      "path": "assets/skybox/readme-howto.txt",
+      "size": 417,
+      "sha256": "6cbc63d321abdec52dcb067ba5fdb1a4d6c6b1711516350aabc6de361a07c7bd"
+    },
+    {
+      "path": "assets/skybox/blue/back.png",
+      "size": 66219,
+      "sha256": "e6130541cc98784828f58d616427f22f639e1ad41468ce4e5119bd6026158a84"
+    },
+    {
+      "path": "assets/skybox/blue/bottom.png",
+      "size": 43112,
+      "sha256": "d72a4dd1a713d71a5740f96fbfb299c9640b28df185b924b0433c0a7bd1a3fc8"
+    },
+    {
+      "path": "assets/skybox/blue/front.png",
+      "size": 62411,
+      "sha256": "38e21524353bf3c288a29bfb05e10bb46643ea639e1a4c07abcc06261f8fd6a3"
+    },
+    {
+      "path": "assets/skybox/blue/left.png",
+      "size": 65907,
+      "sha256": "0045d7a8efa9df304bba6d719998181d1859b04020277d38f815b1af6775dd79"
+    },
+    {
+      "path": "assets/skybox/blue/right.png",
+      "size": 31401,
+      "sha256": "85c47ce5d5fc2f69a25870ad1baa18ffafc02c91733644b44b98c56c2a0e2b81"
+    },
+    {
+      "path": "assets/skybox/blue/top.png",
+      "size": 66082,
+      "sha256": "9b5809d2f04cf049462b949e8550fbd131d709db9b2b27e381b60ff1ad6fcbf7"
+    },
+    {
+      "path": "assets/skybox/space/back.png",
+      "size": 8518,
+      "sha256": "20d22b9f57b27644d6c694e7ede2214242d972e654a8bdb285f4f1566ce97a60"
+    },
+    {
+      "path": "assets/skybox/space/bottom.png",
+      "size": 5937,
+      "sha256": "7f0adaa1244358b88b37ccd27306d98b496267c00a514806979ee1e2bf51793a"
+    },
+    {
+      "path": "assets/skybox/space/front.png",
+      "size": 10072,
+      "sha256": "53284051868b3becef11040917f87cbcfd4ecca7aed741ecb0f750290225f8b7"
+    },
+    {
+      "path": "assets/skybox/space/left.png",
+      "size": 9694,
+      "sha256": "b1972fa29e54537e6a8c2a3ab1d77d508bdd3b62919603dbd275f596b6aa1257"
+    },
+    {
+      "path": "assets/skybox/space/right.png",
+      "size": 8328,
+      "sha256": "c5b8ac65dbd915c7d8dc9f4836f6bd79d7775d9bf7113c4ca331272be2cb2d01"
+    },
+    {
+      "path": "assets/skybox/space/top.png",
+      "size": 6271,
+      "sha256": "2a84488ba0e6d584eebedb8c56a88aa4edb17477260feb9c0777932aa6bb1e97"
+    },
+    {
+      "path": "assets/sound/hitmarker1.wav",
+      "size": 22400,
+      "sha256": "0f2ee5b7025d9d94899cedd4b5adba46030fcb32402f500708d987a9e3ffb25e"
+    },
+    {
+      "path": "assets/sound/hitworld.mp3",
+      "size": 22000,
+      "sha256": "22509324fcdbc7ec1a504f39683d1dc6ccc296206be64f10bb9b3f47fa562c5c"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav  - ambient bad.mp3",
+      "size": 1248711,
+      "sha256": "8b0979f365f2cb3b13487172d86bf99c919ec1b5b3e1e733530bdf5a88294673"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav  - hit low 1.mp3",
+      "size": 23045,
+      "sha256": "8764abae1acf2488a16056c2811a039fd7f3726e3d38a9081879bf091ba8a5f0"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav  - hit low 1.wav",
+      "size": 92896,
+      "sha256": "a603f12c0e312c57ed53f00343add18f102199b90aa5fa0ef6a09e72256ed955"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - ambience 2 135bpm.mp3",
+      "size": 596694,
+      "sha256": "d3c5ba12721522856756608255b537ab3e7f7703c2e78a9af6725dacdade2e3b"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - ambience 3.mp3",
+      "size": 597739,
+      "sha256": "651baea89a94becb2cc1fa6fa9a8a744383424493457430b7cc9f68d1efd101c"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - bitcrushed hit 2.mp3",
+      "size": 22000,
+      "sha256": "22509324fcdbc7ec1a504f39683d1dc6ccc296206be64f10bb9b3f47fa562c5c"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3",
+      "size": 42898,
+      "sha256": "cbfea734038c39ce2f0118d2ac8fd80a07479351dd17e2b3e681ea7ef5d6ba73"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - hit high 1.mp3",
+      "size": 4237,
+      "sha256": "3e1feac316e68e6c5c4615b1c149d5c69f4eed53c1643cca648ec07216a499a4"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - hit low 2.mp3",
+      "size": 19911,
+      "sha256": "4640f79adc9b790af8eac459fc38791157145b8c65b82b0962209ef1238dce6e"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - hit marker 1.mp3",
+      "size": 4237,
+      "sha256": "0fcbb72344c710ef14309b70315d6e88bb56e2f4736fa087d209d21b9e9b0d10"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - hit ultra lo1.mp3",
+      "size": 27225,
+      "sha256": "f53758963df55c4951214e3e28b3e7817ec65a0da52db481845831a8833544f5"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - hit ultra lo1.wav",
+      "size": 110436,
+      "sha256": "89917c9596dae5ee215c54dfcee0a46a22ddc04c018b87968c0b4c676bbbe020"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - hitting not sure low.wav",
+      "size": 989928,
+      "sha256": "a0ffa41382e13717d6b6861121df7191164840bd4cfe5a3457f63c7a98246297"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - horn1.mp3",
+      "size": 76335,
+      "sha256": "de948b5ca9e324c272f37795f910c8bbfcaed844c62e3bce366349c873a451c6"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - item get 2.mp3",
+      "size": 103502,
+      "sha256": "a8d6d4fab94f4b885e9d0a15e80ff4fde44f0802f64aab869b198b5ff5e715d8"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - item get 3.mp3",
+      "size": 103502,
+      "sha256": "68b8a406257d15db673b2b6dc4713d14a2f42ed0ef3df9c1b0486579a4d7853c"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - item get.mp3",
+      "size": 103502,
+      "sha256": "e3ab17a43103aa69c9ed9c965ec28e6cead5b515cccc35272273c6787c719a13"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - low land.mp3",
+      "size": 14686,
+      "sha256": "04a806f9c746c624eed0d84e13235f6239cd6ec11f3b419e6e9e39f6f1a84815"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - mario whistle end.wav",
+      "size": 352984,
+      "sha256": "026e07129cb1ce3c69e5b6b93a8124d7a289a0477983cd29d21e997e62b22bc3"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - mystery1.mp3",
+      "size": 94098,
+      "sha256": "ab41276d7925ce0f2ea99803524c2f72522393586f475a699b87a84fe10a2059"
+    },
+    {
+      "path": "assets/sound/U mimita sound effects.wav - mystery2.mp3",
+      "size": 94098,
+      "sha256": "e1fe67c47244ca12ed7294dd209607ba706aec0d2e487bbbea3f0aec00a47ccc"
+    },
+    {
+      "path": "assets/sound/entity/player/dash.wav",
+      "size": 50108,
+      "sha256": "fef25b850bb3ebcf1079ae2ab3e3d5c012e27b36687dc85f405d43c781d31f8f"
+    },
+    {
+      "path": "assets/sound/entity/player/doublejump.wav",
+      "size": 12000,
+      "sha256": "e7f8ed514ae5e5b1f342d0acbd925d5c47ff8011628ee48e7823dcc93dc87952"
+    },
+    {
+      "path": "assets/sound/entity/player/freezebegin.wav",
+      "size": 82448,
+      "sha256": "1e5eb711828b4de3e5b5ca08ab35f4f2449abeccc6e3ee10822ce181c540d137"
+    },
+    {
+      "path": "assets/sound/entity/player/freezeend.wav",
+      "size": 44284,
+      "sha256": "1b68819ac8ac8a9f49b2ecb8ff0620ecef371c9e8928635d1968a2e17affb062"
+    },
+    {
+      "path": "assets/sound/entity/player/freezehold.wav",
+      "size": 409804,
+      "sha256": "37f6bebb3df240706d24fdd50572514eb6b135b36da96e20ac60663f0fba360c"
+    },
+    {
+      "path": "assets/sound/entity/player/hurtsmall.wav",
+      "size": 73486,
+      "sha256": "a15b1db4e4a92772c97b9e21236ed479f794f5553b087afc14da52c0be499da3"
+    },
+    {
+      "path": "assets/sound/entity/player/jump.wav",
+      "size": 49692,
+      "sha256": "1804c914d865b9e7cf355c169d62456b97a9240f83861f0c7a9263101bfa0dca"
+    },
+    {
+      "path": "assets/sound/entity/player/land.wav",
+      "size": 85888,
+      "sha256": "ff382a874d81bfc557a74db897b35d940131500c8b186c50ce7790cc74d70490"
+    },
+    {
+      "path": "assets/sound/entity/player/spawning.wav",
+      "size": 5422852,
+      "sha256": "53cc842938f48563440f28439d6d7aa9a4091322d9a01649bb1fafd642e79a18"
+    },
+    {
+      "path": "assets/sound/entity/player/walk1.wav",
+      "size": 45948,
+      "sha256": "5531011f529f3c0f0111199abcbdce0fbd064532049137e9c81a318c90fc57fd"
+    },
+    {
+      "path": "assets/sound/entity/player/walk2.wav",
+      "size": 47196,
+      "sha256": "c4e1c3a218f00cd804c39e07eca7c3f7b1ad91980c654ce624c1567e4aa13999"
+    },
+    {
+      "path": "assets/sound/entity/player/walk3.wav",
+      "size": 42620,
+      "sha256": "55201048f7dd61be259986188069a47b39ddb5d1c290b9337263fb89dc6e3592"
+    },
+    {
+      "path": "assets/sound/entity/player/walk4.wav",
+      "size": 48860,
+      "sha256": "352ba9cd4de783253bc0c34ec7a5765caf88a99125cd8662ee46fb8c29666128"
+    },
+    {
+      "path": "assets/sound/music/credits.json",
+      "size": 362,
+      "sha256": "8e417f0d01ae79b997dfd172f84a7f2063f4511c6351c6879211901e985f1fc0"
+    },
+    {
+      "path": "assets/sound/music/ingame/readmedonttrack.txt",
+      "size": 104,
+      "sha256": "962cfe91391ed4f943c37a1c874da78212332ae0466a851fd7ae12b6319c9b67"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/.gitignore",
+      "size": 94,
+      "sha256": "d183b8e51620a488242ea91fc362055a92e03ae3d2f04e648325445bf5822160"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/i know i.mp3",
+      "size": 1130528,
+      "sha256": "e22b199b71f4c52fae0c5f11203856658b9dfe0046fa141db9f13debc7874d56"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/my audio drivers broke while streaming fortnite.mp3",
+      "size": 1362757,
+      "sha256": "528723eb2c1950139cfaa12cb7b3980893fa254c0711b9f6dbb82134608fefbe"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/README.md",
+      "size": 425,
+      "sha256": "84f3108e26a377042ac4f085e530573e899cb7a9381612ea15ca3dd58bb2804c"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/U ez win 2 shorterr.wav - bhop funk normal.wav",
+      "size": 16962792,
+      "sha256": "547196fefaeeff3ad4c7b297b1347aa08a919d7f90e941847ea418080946081c"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/UW anime  skull kid laugh.wav - full v2 dadian.wav",
+      "size": 83307924,
+      "sha256": "08c37e3ee2bad3cdce563853f67f0d49388feee0adac6ee191df905ba31db07f"
+    },
+    {
+      "path": "assets/sound/music/ingame/donttrack/UW eric scp 066 A creep phonk that  WOTN like.wav dadian.wav",
+      "size": 30268732,
+      "sha256": "75294f9210a7508eeeda86eb37548c59512b56e5044f0caed1cb1a941b5c5db6"
+    },
+    {
+      "path": "assets/sound/music/mainmenu/jorj1357-mimita-theme-v1.mp3",
+      "size": 3123824,
+      "sha256": "25540b4c6cc02900bc1f6bd9792767c801783986586923e34374f746f7619497"
+    },
+    {
+      "path": "assets/sound/ui/click.wav",
+      "size": 11648,
+      "sha256": "91153e53802ccbd7c39217328c7f1ef9042e1b58854afc95b5322ffedf57d9e6"
+    },
+    {
+      "path": "assets/sound/ui/chat/chat1.wav",
+      "size": 14172,
+      "sha256": "0ad7ef999eeec8e88274a77072d072c181830890fcff70c9b70c9776bb0ccc10"
+    },
+    {
+      "path": "assets/sound/weapon/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/sound/weapon/bomb/bombinactive1.wav",
+      "size": 199292,
+      "sha256": "890a7784d607dbab5deb24149f42818cfc8403936eb9f944c2f31ae378f787bb"
+    },
+    {
+      "path": "assets/sound/weapon/bomb/bombpass1.wav",
+      "size": 65184,
+      "sha256": "9783b1d12c00972e5ab35810eee0c653671d9e4132aaf6d69f31f7e9417e0214"
+    },
+    {
+      "path": "assets/sound/weapon/bomb/bombtick1.wav",
+      "size": 65184,
+      "sha256": "4ba50f42f2b2640abbd8867f833ccbb10ffae24463bd1ccf700d652ce5466ad3"
+    },
+    {
+      "path": "assets/sound/weapon/bomb/explosion2.wav",
+      "size": 793198,
+      "sha256": "5465c5b967a1f9f9dd882c2b55ef7c63122089e2ce47d097e388d6b68501644a"
+    },
+    {
+      "path": "assets/sound/weapon/general/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/sound/weapon/godball/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/sound/weapon/godball/godballhit.wav",
+      "size": 20660,
+      "sha256": "e68364a485063101c3df882295d91b667010079ca9afb4d183826007677cfe19"
+    },
+    {
+      "path": "assets/sound/weapon/revolver/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/sound/weapon/revolver/revolverequip.wav",
+      "size": 18236,
+      "sha256": "1c5cb2fd082d802f700ae09f880fbe91a430e20b20a776cb7f495a37592aa561"
+    },
+    {
+      "path": "assets/sound/weapon/revolver/revolverreload.wav",
+      "size": 63184,
+      "sha256": "14511d0d6e3b95cf42265a997e14e172d889dd389af7fbfbbdd638b680b6ea50"
+    },
+    {
+      "path": "assets/sound/weapon/revolver/revolvershoot.wav",
+      "size": 245096,
+      "sha256": "1694f565f2e76420e1381540a050093d71156b571dc7dc1726d119ed79d1713e"
+    },
+    {
+      "path": "assets/sound/weapon/shotgun/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/sound/weapon/shotgun/shotgunequip.wav",
+      "size": 21460,
+      "sha256": "6b9da72bb83d21619f43d1cba5b91d014d2b0e1636cb095c99dae7358c857196"
+    },
+    {
+      "path": "assets/sound/weapon/shotgun/shotgunreload.wav",
+      "size": 89172,
+      "sha256": "240dc9f747cd73c5f936cd6cdbd8ea98856176b320027c5fbda4a3face196183"
+    },
+    {
+      "path": "assets/sound/weapon/shotgun/shotgunshoot.wav",
+      "size": 382908,
+      "sha256": "693081b7a87f8b6a8095813d37613adcf6870e99317f4f26abe8c4d1c5578544"
+    },
+    {
+      "path": "assets/sound/weapon/swordsword/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/sound/weapon/swordsword/swordswordhit1.wav",
+      "size": 18236,
+      "sha256": "ae97101d0fbbb365a90558cb47ef0c107df3be8f50845a0e9244157737af1982"
+    },
+    {
+      "path": "assets/sound/weapon/swordsword/swordswordhit2.wav",
+      "size": 18236,
+      "sha256": "41cca942b229a6ba165884aa2baae4221704a39efe05a66d7dc6371c58ec2d34"
+    },
+    {
+      "path": "assets/sound/weapon/swordsword/swordswordhit3.wav",
+      "size": 18236,
+      "sha256": "292cc2f092bdf3adf2d3c8186da18de39c5d08fc47cdb8b537bc3353d61d3f4f"
+    },
+    {
+      "path": "assets/sound/weapon/swordsword/swordswordhit4.wav",
+      "size": 18236,
+      "sha256": "45ebb61fa548cfde3a6c067541bcf1d65760ccfcc90cbb0faa1504545b083c60"
+    },
+    {
+      "path": "assets/textures/arcadecarpet.png",
+      "size": 12707,
+      "sha256": "c3048078bf790dfe00764620859022c64648329eff38c5f4402b5b42f586c8ff"
+    },
+    {
+      "path": "assets/textures/blood v1.png",
+      "size": 4356,
+      "sha256": "b03ca526059c0e41a39417d37a236fb8cba1a004fec59b0936740c23a7b43c3c"
+    },
+    {
+      "path": "assets/textures/bluev1.png",
+      "size": 9117,
+      "sha256": "54ce005003e4c24e526c19b39491e26d8f54d24dc5524da113afa52173be64a7"
+    },
+    {
+      "path": "assets/textures/bluewire.png",
+      "size": 13001,
+      "sha256": "ebc515b8db102fa67543a44d055d5fdffbbace2592bf2a46a95b7fa026fc9159"
+    },
+    {
+      "path": "assets/textures/boringskyv1.png",
+      "size": 4483,
+      "sha256": "be82eb80b90d997a8d6c03fb6dc0d453e00d857e7a1914ca4b231b8da63d1a47"
+    },
+    {
+      "path": "assets/textures/carpet.png",
+      "size": 9196,
+      "sha256": "cf6ba79f3cc0af079284c30f8f6b7ba5442081f3f8cb595a2ea328961d66e857"
+    },
+    {
+      "path": "assets/textures/carpet2.png",
+      "size": 8032,
+      "sha256": "66a53b79e6fee2005adc424b2c696dca8625e008d585666e815a8dbe72783def"
+    },
+    {
+      "path": "assets/textures/checker.png",
+      "size": 3689,
+      "sha256": "49536ef59aded309d6752d1356f849f6da172e20d35118e31747147903bdd3a3"
+    },
+    {
+      "path": "assets/textures/circuitryv1.png",
+      "size": 11854,
+      "sha256": "28a51839bd235f768e81d6fe187f7b1358f86589f69024b9303f9bce3ced5b60"
+    },
+    {
+      "path": "assets/textures/cursor.png",
+      "size": 6710,
+      "sha256": "1d7249f0877c2ec219de546a4a5c921ff496038604c49914c458133172ac71ab"
+    },
+    {
+      "path": "assets/textures/cursor12.png",
+      "size": 633,
+      "sha256": "8e8868356ffb779867434cafe61573e42314b5c121544a649cb9c21b60223028"
+    },
+    {
+      "path": "assets/textures/cursor1231.png",
+      "size": 23383,
+      "sha256": "d6116c3894bfb972cfbd5c89978ee7f8ba8155594f9be22a66f7ac72c4a5d277"
+    },
+    {
+      "path": "assets/textures/cursor131.png",
+      "size": 653,
+      "sha256": "8bdfa786841a1ed15c24a674d0cb4275faf5ddc449b5d975c0a682b2d153b1b9"
+    },
+    {
+      "path": "assets/textures/default.png",
+      "size": 1658,
+      "sha256": "cacd7fda889c62ad217fd97b5874291f0689cc8899df460831b9db83380c5f1c"
+    },
+    {
+      "path": "assets/textures/dreamthisman.png",
+      "size": 3341,
+      "sha256": "2357ff3a6b77ed00500a8259182c180ed76a4de2d6b26816b2daafddc1b982d3"
+    },
+    {
+      "path": "assets/textures/engineer.png",
+      "size": 12118,
+      "sha256": "9c3af7fd78d53aaab39673e3cb0f0d3ec396e866d535a78a38e7440d9d77478f"
+    },
+    {
+      "path": "assets/textures/enter.png",
+      "size": 8357,
+      "sha256": "f460909e957e12f6533b3d9d4ff55a5708e649c531e22dafb195bd23d82cb276"
+    },
+    {
+      "path": "assets/textures/enterv3.png",
+      "size": 7935,
+      "sha256": "dac76177e285b3d7a46d8a2783e84818a85d81f694df48d977957c87e9e362cd"
+    },
+    {
+      "path": "assets/textures/exclamation.png",
+      "size": 9296,
+      "sha256": "839d761f43626c8bf82ea6178667e318f7ca515f1edafa667d650b40171ba405"
+    },
+    {
+      "path": "assets/textures/floorv2.png",
+      "size": 9316,
+      "sha256": "a7ac79803ad8cf3692fd52f346faee9cee937bd6cd9361043cf8aa3f7de46aae"
+    },
+    {
+      "path": "assets/textures/flutev1.png",
+      "size": 8402,
+      "sha256": "1c5660d135fa7b170f22734bd0acc368a8fce629e09b671f75dbb5b3393100b4"
+    },
+    {
+      "path": "assets/textures/grass.png",
+      "size": 8765,
+      "sha256": "e287732a12c7bcd3863ca6ba62d7dc583956fe6db5a55a3ea14abdfae666f80b"
+    },
+    {
+      "path": "assets/textures/greengoop.png",
+      "size": 10288,
+      "sha256": "9d4b4409528f9cc9da62db2bb07e3f1d84fc4ada5865d3871bde806eb67119ce"
+    },
+    {
+      "path": "assets/textures/greengreenv3.png",
+      "size": 9987,
+      "sha256": "0e1bf11909b47adb66b12d76f0e52eb168a176f6a8f9f2eb2a36d6073e83c0d3"
+    },
+    {
+      "path": "assets/textures/greenwirev1.png",
+      "size": 4358,
+      "sha256": "9f7843955ff2e63aab303a66a16b6d91fb3c917c019bf2a4871d2e0204f26f17"
+    },
+    {
+      "path": "assets/textures/greyskyv1.png",
+      "size": 6906,
+      "sha256": "98028bcd5eb219ef6fd01f8655acdd4b731be41421ec4eb97e2b77a4c7cb3720"
+    },
+    {
+      "path": "assets/textures/grimev1.png",
+      "size": 8332,
+      "sha256": "b55e0fae495dcdfe4d5a82c689201227328f386bb92d42f185130ccc42c46d97"
+    },
+    {
+      "path": "assets/textures/grimev2.png",
+      "size": 10269,
+      "sha256": "7104bf3ab4efbeb09be4e41e731f322c16e8e6cad88dd61f8dabd46954a36f44"
+    },
+    {
+      "path": "assets/textures/grimev3.png",
+      "size": 7665,
+      "sha256": "5d164272985e3b331ae38bf2081e0b3580fc92968b82cb31a757c75002730ede"
+    },
+    {
+      "path": "assets/textures/grimev4.png",
+      "size": 8031,
+      "sha256": "13a81200d514536c70397a36075d8beb3f34e67d500749800dbc23901f965588"
+    },
+    {
+      "path": "assets/textures/grossv1.png",
+      "size": 7877,
+      "sha256": "4d0627f6c45051d5c5e8e8baf558f5d494edd4d800368e99aa2e58865578fa0f"
+    },
+    {
+      "path": "assets/textures/grossv2.png",
+      "size": 8913,
+      "sha256": "47a98315226f12323ac009ba800b1b5336c2f8a64b73f3193f9b64f2a76166cd"
+    },
+    {
+      "path": "assets/textures/grossv3.png",
+      "size": 9957,
+      "sha256": "6a5fc212a367fc021a178ebaccca673613aaa9c55941eb4c1606809f858635e5"
+    },
+    {
+      "path": "assets/textures/hands.png",
+      "size": 5512,
+      "sha256": "4b2c7691c77adedcbc8280cb91d2a457f983d74a5d2d10f43b6dc7d54d5bf3eb"
+    },
+    {
+      "path": "assets/textures/jin.png",
+      "size": 8662,
+      "sha256": "e4da39d7ddfa4d1d70bb3ea275d681f958002628d57119ca2da7a697344331db"
+    },
+    {
+      "path": "assets/textures/player.png",
+      "size": 3137,
+      "sha256": "5cb66ed2f6ab7084658033c652411d7f6a3a713b2f5f2ac8c09a0d821ad7c21a"
+    },
+    {
+      "path": "assets/textures/robloxskies.png",
+      "size": 7904,
+      "sha256": "d5347936758463aa10c714c30fbb6f8b799d8c96c80f6d316d8532c5453db4a9"
+    },
+    {
+      "path": "assets/textures/spiral.png",
+      "size": 9453,
+      "sha256": "17887a0f1e31faa36a08ec38a4abefb763c0b566ef3bc775d53a162d90101b81"
+    },
+    {
+      "path": "assets/textures/stonev2.png",
+      "size": 9612,
+      "sha256": "e8b6a49698fc986c7b49ba4faeedf63e254f175a8d9d805ecb6e1605483fd53f"
+    },
+    {
+      "path": "assets/textures/strayv1.png",
+      "size": 6051,
+      "sha256": "b747e1b261d1fee796bbfb82ff27f3df5b212a64b757869faba7c22a0cadaf65"
+    },
+    {
+      "path": "assets/textures/teethv2.png",
+      "size": 3894,
+      "sha256": "53aa878683838b91c541aa308dbc73c1643ec3831631ccf187e7d22507adf6da"
+    },
+    {
+      "path": "assets/textures/teethv3.png",
+      "size": 6719,
+      "sha256": "2a8fe8c5e2820bb24ec15922f3885a55fcda61f0d24901b59a03763d47972528"
+    },
+    {
+      "path": "assets/textures/text.png",
+      "size": 12657,
+      "sha256": "07ed5b5963750b54770a5afbfdceeb43680988dc42c35267f18552a0fd7bf8bc"
+    },
+    {
+      "path": "assets/textures/tilev2.png",
+      "size": 8677,
+      "sha256": "4a693dfc5a5a93dbae30530a37c88265c1580fc15126ff4e991bb620e73c633a"
+    },
+    {
+      "path": "assets/textures/tilev3.png",
+      "size": 7983,
+      "sha256": "462643310aa50aa09a11aff7bf3a1fdface04db7cd61d2774ee6d6a0dca4a29b"
+    },
+    {
+      "path": "assets/textures/tricksterv2.png",
+      "size": 4277,
+      "sha256": "be1a1996b0b85e7496f58fb19a942e37fe4cb4b6e8c688f4522766c10230eed5"
+    },
+    {
+      "path": "assets/textures/tricksterv3.png",
+      "size": 5898,
+      "sha256": "d36a3c893afb031eb452b6bbe5d4b582d1e5227540a3e50042e2a1f4656af6ff"
+    },
+    {
+      "path": "assets/textures/wallv2.png",
+      "size": 9791,
+      "sha256": "ca799193dcef30757a373bac90c8c0f8d6ad416178d6ac9184c4ca835a57bcfe"
+    },
+    {
+      "path": "assets/textures/wallv4.png",
+      "size": 9361,
+      "sha256": "7c132cee9ab2cb35f996739495da9454bf3f86a4dc9550da9477095383a4dc1c"
+    },
+    {
+      "path": "assets/textures/winxp.png",
+      "size": 8821,
+      "sha256": "693dc529324e19bb627b80ea6e83b40c7c75e0d2255565953beed938466b9121"
+    },
+    {
+      "path": "assets/textureshq/.gross3.png-autosave.kra",
+      "size": 12930833,
+      "sha256": "4ac64391db87ff909914612d36f0dcad732dbcd7804506009b838872848516f2"
+    },
+    {
+      "path": "assets/textureshq/chainwall1.png",
+      "size": 98313,
+      "sha256": "14ab8055601e8aa4402d3a4fa5c669b32c196fc0089b260b9d3a51dda804b4a0"
+    },
+    {
+      "path": "assets/textureshq/crackground1.png",
+      "size": 126720,
+      "sha256": "29cab0ac571bdb520cf684fcff8b339f1afd90830be897414a9f3d46a1872b85"
+    },
+    {
+      "path": "assets/textureshq/dead1.png",
+      "size": 58746,
+      "sha256": "c8b5d885218592717e13b165c046507f7a534fad66d6062a472a5d3c2a41b767"
+    },
+    {
+      "path": "assets/textureshq/floor1.png",
+      "size": 122411,
+      "sha256": "8f4b8c2c4820a253b8c8d660509f771dc2c2a7c51428bdce8c8999b67c704583"
+    },
+    {
+      "path": "assets/textureshq/grass1.png",
+      "size": 140126,
+      "sha256": "aa67a56e107fc3db567d004806f8748998871d81558d1b4d052c8c902f36310a"
+    },
+    {
+      "path": "assets/textureshq/grass2.png",
+      "size": 89010,
+      "sha256": "1ba90ce858392d4396bdc996d001f911c6658b9358069afb1e489f4ab27a5123"
+    },
+    {
+      "path": "assets/textureshq/grate1.png",
+      "size": 92405,
+      "sha256": "8c1bce2f64c43af1c73852d2882d83d76239dfa55281fdbf5a0315b2ae092d45"
+    },
+    {
+      "path": "assets/textureshq/grate2.png",
+      "size": 132323,
+      "sha256": "b984a6895b67cf5f06e3d242819d7e424ec792ad4b6e081b5c380dc47a5ec026"
+    },
+    {
+      "path": "assets/textureshq/gross1.png",
+      "size": 115639,
+      "sha256": "1f15d4125f153ba9bb797d28b88b6a49cb58531c004860f10e2b62186c9b6ec2"
+    },
+    {
+      "path": "assets/textureshq/gross2.png",
+      "size": 91947,
+      "sha256": "9884493d721de999f3d73ca1e617916ad4e499fd265b21fd5099c9651ec3c7a7"
+    },
+    {
+      "path": "assets/textureshq/gross3.png",
+      "size": 91359,
+      "sha256": "e5837fa1126b6f1558637ffd880077ee1b6467e5ad55341ee482f9e957fac320"
+    },
+    {
+      "path": "assets/textureshq/gross3.png~",
+      "size": 91359,
+      "sha256": "e5837fa1126b6f1558637ffd880077ee1b6467e5ad55341ee482f9e957fac320"
+    },
+    {
+      "path": "assets/textureshq/grossground1.png",
+      "size": 147963,
+      "sha256": "f3b49e465c39bd2c20d8a198c3c97fc4322ed2a9442e3cdd521d917a96a51b1e"
+    },
+    {
+      "path": "assets/textureshq/ground1.png",
+      "size": 135868,
+      "sha256": "999c7b3f265c66c52a75849644d12c7f8aef293d1b935460ccc87d2bf9160d79"
+    },
+    {
+      "path": "assets/textureshq/ground2.png",
+      "size": 153531,
+      "sha256": "c223a56c136fc1d8215c8cb845de790a2993375cb1223e217319bf6f1ebbce23"
+    },
+    {
+      "path": "assets/textureshq/ground3.png",
+      "size": 126206,
+      "sha256": "0e60b53bb9a5367e9eb1b2ad45640713d15b2a2f290bc606cd02bc862570c6e2"
+    },
+    {
+      "path": "assets/textureshq/hello1.png",
+      "size": 124023,
+      "sha256": "8ec37b64d9dca72625bdaa021832b01e0c6a7671b3901a6031533b7371ad1280"
+    },
+    {
+      "path": "assets/textureshq/hello2.png",
+      "size": 158579,
+      "sha256": "4f316e7d7d19c38d283b6881855f2af4211311ffba3373d140b080fda6a2c6b1"
+    },
+    {
+      "path": "assets/textureshq/look1.png",
+      "size": 167006,
+      "sha256": "8c7d1a94155247737144d1ff16d194fe6c8b26786725bc5a34f2bd33184cca1f"
+    },
+    {
+      "path": "assets/textureshq/purple1.png",
+      "size": 116472,
+      "sha256": "84f706b39ed836e31cba211f1a482a14579001a400b21362bc8c8f3e3e1fa31b"
+    },
+    {
+      "path": "assets/textureshq/rock1.png",
+      "size": 87672,
+      "sha256": "afe6a894a9721843afa6988da26ac9fe441550ae98faa31c4365e65d7369adbf"
+    },
+    {
+      "path": "assets/textureshq/saw1.png",
+      "size": 147896,
+      "sha256": "660a0fa01496728c7fc7e955c55beb27e921d035aec114f99af6354d5e9fddb8"
+    },
+    {
+      "path": "assets/textureshq/saw2.png",
+      "size": 140683,
+      "sha256": "d883179cc355fe3f61b15b5502ade5f13278fba5680fdbc992c1422d316594e1"
+    },
+    {
+      "path": "assets/textureshq/saw3.png",
+      "size": 104435,
+      "sha256": "dbd056480ba05e7963dc932d5d0594b93aaec43181104cda974bf5a42b6b6f4a"
+    },
+    {
+      "path": "assets/textureshq/sawfloor.png",
+      "size": 157359,
+      "sha256": "9a945850ad2f105dec9d75da275584b97ffa0b8bb900dfb9e1e2630bf0ba1d70"
+    },
+    {
+      "path": "assets/textureshq/tile1.png",
+      "size": 111207,
+      "sha256": "a576f309d1a649c3939990b4abb1f010a61554ce574acda5bfea1681da39b764"
+    },
+    {
+      "path": "assets/textureshq/tile2.png",
+      "size": 105634,
+      "sha256": "2c7b7c6bd15113eb4a0f886766b69f545a5bc7b55fac20d1972d000083447454"
+    },
+    {
+      "path": "assets/textureshq/tilewall1.png",
+      "size": 102806,
+      "sha256": "ad664bd342adaba182fe87d719d5d8a522cc611c2d44dc2719eac9e08d095c7c"
+    },
+    {
+      "path": "assets/textureshq/wall1.png",
+      "size": 77248,
+      "sha256": "5d0e3e22c11e5b82e72ad6735ba0c93d423116abbef8438ca176a96b90705272"
+    },
+    {
+      "path": "assets/textureshq/wall2.png",
+      "size": 60271,
+      "sha256": "d17a13f638643dad2217fd1cd604b8615694d7683dba28d127bbf79b9049eeb9"
+    },
+    {
+      "path": "assets/video/mimitaoutrov1.webm",
+      "size": 639545,
+      "sha256": "bee50ea9fd3141ade7b460033f39b57ac2d397c97c8b66169137f23ece879806"
+    },
+    {
+      "path": "config/accounts/default.json",
+      "size": 1029,
+      "sha256": "42627a75dbc6e5ab6becf308d8f759b77b0de7beb563aef2e93eae1904578fdc"
+    },
+    {
+      "path": "config/current-profile.json",
+      "size": 21,
+      "sha256": "377265e08dc867a72ac91841dd5975c6b953534f426c3c479297600a55ca362a"
+    }
+  ]
+}

@@ -16,6 +16,9 @@ All tables are in the `public` schema.
 | email | TEXT | — | NOT NULL, UNIQUE |
 | password_hash | TEXT | — | NOT NULL |
 | bio | TEXT | '' | NOT NULL |
+| avatar_url | TEXT | '' | NOT NULL |
+| avatar_updated_at | TIMESTAMPTZ | — | Cache-busting timestamp |
+| supporter_tier | TEXT | 'free' | NOT NULL, CHECK IN ('free','vip','super_vip','ultra_vip','moderator','admin','owner') |
 | role | TEXT | 'user' | NOT NULL, CHECK IN ('owner','admin','moderator','user') |
 | email_notifications_enabled | BOOLEAN | TRUE | NOT NULL |
 | created_at | TIMESTAMPTZ | CURRENT_TIMESTAMP | NOT NULL |

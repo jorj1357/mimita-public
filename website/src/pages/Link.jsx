@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 
 import Layout from "../components/Layout"
-import { apiRequest, apiRequestRaw } from "../lib/api"
+import { apiRequest } from "../lib/api"
 
 export default function Link() {
     const [code, setCode] = useState("")
