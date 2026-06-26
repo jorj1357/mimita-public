@@ -85,3 +85,24 @@ Desktop.ini
 
 # ── Aider ────────────────────────────────────────────────────────────────────
 .aider*
+# generated
+logs/
+replays/
+*.exe
+*.dll
+*.pdb
+*.obj
+*.ilk
+*.exp
+*.lib
+
+# autosaves/backups
+*.kra
+*.kra~
+*~
+*.autosave
+*.bak
+*.tmp
+
+# intentional no-track asset folders
+assets/sound/music/ingame/donttrack/
