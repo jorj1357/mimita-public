@@ -957,10 +957,77 @@ app.post("/api/admin/feedback", feedbackRateLimit, async (req, res, next) => {
     TODO: Moderation workflow.
     TODO: Anti-spam protection.
     TODO: Rate limiting.
-    TODO: Account linking.
     TODO: Analytics aggregation jobs.
     TODO: Data retention policies.
 */
+
+// ── Account Linking ──────────────────────────────────────────────────────────
+// In-memory store for linking codes. Codes are 6 digits, expire after 5 minutes.
+const linkCodes = new Map()
+
+function generateLinkCode() {
+    const code = String(Math.floor(100000 + Math.random() * 900000))
+    linkCodes.set(code, {
+        code,
+        createdAt: Date.now(),
+        claimed: false,
+        userId: null,
+        sessionToken: null
+    })
+    // Expire old codes
+    setTimeout(() => linkCodes.delete(code), 5 * 60 * 1000)
+    return code
+}
+
+app.post("/api/auth/link-code", (req, res) => {
+    const code = generateLinkCode()
+    res.json({ success: true, code, url: "https://mimita.fun/link" })
+})
+
+app.post("/api/auth/link-claim", async (req, res, next) => {
+    try {
+        const token = parseCookies(req)[sessionCookieName]
+        if (!token) {
+            return res.status(401).json({ success: false, message: "sign in required" })
+        }
+
+        const code = String(req.body.code || "").trim()
+        const entry = linkCodes.get(code)
+        if (!entry) {
+            return res.status(404).json({ success: false, message: "invalid or expired code" })
+        }
+        if (entry.claimed) {
+            return res.status(400).json({ success: false, message: "code already used" })
+        }
+
+        entry.claimed = true
+        entry.sessionToken = token
+
+        res.json({ success: true, message: "account linked" })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.get("/api/auth/link-poll", (req, res) => {
+    const code = String(req.query.code || "").trim()
+    const entry = linkCodes.get(code)
+
+    if (!entry) {
+        return res.json({ success: false, claimed: false, message: "invalid or expired code" })
+    }
+    if (entry.claimed) {
+        return res.json({
+            success: true,
+            claimed: true,
+            session_token: entry.sessionToken
+        })
+    }
+
+    res.json({ success: true, claimed: false, message: "waiting for browser..." })
+})
+// ── End Account Linking ──────────────────────────────────────────────────────
 
 app.post("/api/track/download", downloadTrackRateLimit, async (req, res, next) => {
     try {
