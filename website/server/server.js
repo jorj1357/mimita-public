@@ -6,7 +6,6 @@ import cors from "cors"
 import { performance } from "perf_hooks"
 
 import {
-    createSecretToken,
     createSixDigitCode,
     getClientIp,
     hashPassword,
@@ -16,7 +15,10 @@ import {
     validateEmail,
     validatePassword,
     validateUsername,
-    verifyPassword
+    verifyPassword,
+    checkBruteForce,
+    recordFailedAttempt,
+    resetFailedAttempts
 } from "./authCore.js"
 import { pool, runMigrations } from "./db.js"
 import {
@@ -30,6 +32,18 @@ import debugRouter from "./debug.js"
 import gameAnalyticsRouter from "./gameAnalytics.js"
 import { trackEvent } from "./analytics.js"
 import { createRateLimit } from "./rateLimit.js"
+import {
+    parseCookies,
+    clearSessionCookie,
+    setCsrfCookie,
+    csrfProtection,
+    createSession,
+    sessionCookieName,
+    sessionSecret,
+    sessionDays,
+    production
+} from "./session.js"
+import crypto from "crypto"
 import multer from "multer"
 import sharp from "sharp"
 import path from "path"
@@ -58,15 +72,12 @@ const authRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "aut
 const adminRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 20, name: "admin" })
 const newsletterRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "newsletter" })
 const gameAnalyticsRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 120, name: "game_analytics" })
+const avatarRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 3, name: "avatar" })
+const feedbackRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "feedback" })
+const downloadTrackRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "download_track" })
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
-const sessionCookieName =
-    process.env.SESSION_COOKIE_NAME || "mimita_session"
-const sessionSecret =
-    process.env.SESSION_SECRET || "development-only-change-me"
-const sessionDays = Number(process.env.SESSION_DAYS || 30)
-const production = process.env.NODE_ENV === "production"
 
 if (production && sessionSecret === "development-only-change-me") {
     throw new Error("SESSION_SECRET is required in production")
@@ -79,6 +90,28 @@ app.use(cors({
 }))
 app.use(express.json({ limit: "32kb" }))
 app.use("/avatars", express.static(AVATAR_DIR))
+
+app.use((req, res, next) => {
+    res.set("X-Content-Type-Options", "nosniff")
+    res.set("X-Frame-Options", "DENY")
+    res.set("Referrer-Policy", "strict-origin-when-cross-origin")
+    if (production) {
+        res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    }
+    next()
+})
+
+app.use((req, res, next) => {
+    if (!parseCookies(req)["csrf_token"]) {
+        setCsrfCookie(res)
+    }
+    next()
+})
+
+app.use((req, res, next) => {
+    if (req.path.startsWith("/api/game/")) return next()
+    return csrfProtection(req, res, next)
+})
 
 const LOG_REQUESTS = process.env.LOG_REQUESTS !== "false"
 
@@ -113,43 +146,6 @@ function logAuth(action, value) {
     console.log(`[AUTH] ${action}=${value}`)
 }
 
-function parseCookies(req) {
-    const result = {}
-
-    for (const pair of String(req.headers.cookie || "").split(";")) {
-        const separator = pair.indexOf("=")
-
-        if (separator === -1) {
-            continue
-        }
-
-        const key = pair.slice(0, separator).trim()
-        const value = pair.slice(separator + 1).trim()
-        result[key] = decodeURIComponent(value)
-    }
-
-    return result
-}
-
-function setSessionCookie(res, token) {
-    res.cookie(sessionCookieName, token, {
-        httpOnly: true,
-        secure: production,
-        sameSite: "lax",
-        maxAge: sessionDays * 24 * 60 * 60 * 1000,
-        path: "/"
-    })
-}
-
-function clearSessionCookie(res) {
-    res.clearCookie(sessionCookieName, {
-        httpOnly: true,
-        secure: production,
-        sameSite: "lax",
-        path: "/"
-    })
-}
-
 async function safelySend(label, send) {
     try {
         await send()
@@ -159,33 +155,6 @@ async function safelySend(label, send) {
         logAuth("mail", `${label}_failed`)
         console.error(error)
     }
-}
-
-async function createSession(userId, req, res) {
-    const token = createSecretToken()
-    const tokenHash = hashToken(token, sessionSecret)
-
-    await pool.query(
-        `
-        INSERT INTO sessions (
-            user_id,
-            token_hash,
-            user_agent,
-            ip_address,
-            expires_at
-        )
-        VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))
-        `,
-        [
-            userId,
-            tokenHash,
-            req.get("user-agent") || "unknown",
-            getClientIp(req),
-            sessionDays
-        ]
-    )
-
-    setSessionCookie(res, token)
 }
 
 async function authenticate(req, res, next) {
@@ -210,7 +179,8 @@ async function authenticate(req, res, next) {
                 u.avatar_url,
                 u.supporter_tier,
                 u.role,
-                u.email_notifications_enabled
+                u.email_notifications_enabled,
+                u.email_verified_at IS NOT NULL AS email_verified
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1
@@ -269,18 +239,21 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
         const username = usernameValidation.value
         const email = emailValidation.value
         const passwordHash = await hashPassword(req.body.password)
+        const verificationToken = createSixDigitCode()
+        const verificationTokenHash = hashToken(verificationToken, sessionSecret)
         const result = await pool.query(
             `
             INSERT INTO users (
                 username,
                 username_key,
                 email,
-                password_hash
+                password_hash,
+                email_verification_token
             )
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, username, email, bio, avatar_url, supporter_tier, email_notifications_enabled
             `,
-            [username, usernameKey(username), email, passwordHash]
+            [username, usernameKey(username), email, passwordHash, verificationTokenHash]
         )
         const user = result.rows[0]
 
@@ -296,7 +269,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
         })
         await safelySend(
             "welcome_sent",
-            () => sendAccountWelcomeEmail(email, username)
+            () => sendAccountWelcomeEmail(email, username, verificationToken)
         )
 
         return res.status(201).json({
@@ -309,9 +282,7 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
             logAuth("signup", "duplicate")
             return res.status(409).json({
                 success: false,
-                message: error.constraint?.includes("username")
-                    ? "username already exists"
-                    : "email already exists"
+                message: "account already exists"
             })
         }
 
@@ -323,6 +294,16 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
 app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
     try {
         const identifier = String(req.body.identifier || "").trim()
+
+        const bruteForce = checkBruteForce(identifier)
+        if (bruteForce.locked) {
+            logAuth("signin", "account_locked")
+            return res.status(429).json({
+                success: false,
+                message: `account locked. try again in ${bruteForce.remaining}s`
+            })
+        }
+
         const result = await pool.query(
             `
             SELECT
@@ -351,6 +332,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
             !(await verifyPassword(req.body.password, user.password_hash))
         ) {
             logAuth("signin", "invalid_credentials")
+            recordFailedAttempt(identifier)
             await trackEvent("failed_login", {
                 event_data: {
                     source: "website",
@@ -364,6 +346,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
             })
         }
 
+        resetFailedAttempts(identifier)
         await createSession(user.id, req, res)
         delete user.password_hash
         logAuth("signin", `success user_id=${user.id}`)
@@ -417,6 +400,54 @@ app.post("/api/auth/signout", authenticate, async (req, res, next) => {
     }
 })
 
+app.get("/api/auth/verify-email/:token", async (req, res, next) => {
+    try {
+        const token = String(req.params.token || "")
+        const tokenHash = hashToken(token, sessionSecret)
+        const result = await pool.query(
+            `
+            UPDATE users
+            SET email_verified_at = NOW(), email_verification_token = NULL
+            WHERE email_verification_token = $1
+              AND email_verified_at IS NULL
+            RETURNING id
+            `,
+            [tokenHash]
+        )
+        if (!result.rowCount) {
+            return res.status(400).json({
+                success: false,
+                message: "invalid or expired verification link"
+            })
+        }
+        logAuth("verify_email", `success user_id=${result.rows[0].id}`)
+        res.json({ success: true, message: "email verified" })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.post("/api/auth/resend-verification", authenticate, async (req, res, next) => {
+    try {
+        if (req.user.email_verified) {
+            return res.json({ success: true, message: "email already verified" })
+        }
+        const code = createSixDigitCode()
+        const codeHash = hashToken(code, sessionSecret)
+        await pool.query(
+            `UPDATE users SET email_verification_token = $1 WHERE id = $2`,
+            [codeHash, req.user.id]
+        )
+        await sendAccountWelcomeEmail(req.user.email, req.user.username, code)
+        logAuth("verify_email", `resent user_id=${req.user.id}`)
+        res.json({ success: true, message: "verification code sent" })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 app.get("/api/auth/me", authenticate, (req, res) => {
     res.json({
         success: true,
@@ -455,7 +486,7 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
     }
 })
 
-app.post("/api/account/avatar", authenticate, upload.single("avatar"), async (req, res, next) => {
+app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("avatar"), async (req, res, next) => {
     try {
         if (!req.file) {
             return res.status(400).json({
@@ -464,16 +495,16 @@ app.post("/api/account/avatar", authenticate, upload.single("avatar"), async (re
             })
         }
 
-        const sizes = [64, 128, 256, 1024]
-        const ext = path.extname(req.file.originalname) || ".png"
-        const baseName = `user_${req.user.id}_${Date.now()}`
+        const sizes = [64, 128, 256]
+        const ext = ".webp"
+        const baseName = `user_${req.user.id}_${crypto.randomUUID()}`
         const urls = []
 
         for (const size of sizes) {
             const fileName = `${baseName}_${size}${ext}`
             const filePath = path.join(AVATAR_DIR, fileName)
 
-            const img = sharp(req.file.buffer)
+            const img = sharp(req.file.buffer, { limitInputPixels: 4_000_000 })
             const metadata = await img.metadata()
             const maxDim = Math.max(metadata.width || 1024, metadata.height || 1024)
 
@@ -481,9 +512,7 @@ app.post("/api/account/avatar", authenticate, upload.single("avatar"), async (re
                 img.resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
             }
 
-            if (size < 1024) {
-                img.resize(size, size, { fit: "cover" })
-            }
+            img.resize(size, size, { fit: "cover" })
 
             await img.toFile(filePath)
             urls.push(`/avatars/${fileName}`)
@@ -581,6 +610,13 @@ app.post(
     authenticate,
     async (req, res, next) => {
         try {
+            if (!req.user.email_verified) {
+                return res.status(403).json({
+                    success: false,
+                    message: "verify your email before changing password"
+                })
+            }
+
             const code = createSixDigitCode()
             const codeHash = hashToken(code, sessionSecret)
 
@@ -889,7 +925,7 @@ app.use("/api/admin", adminRateLimit, adminRouter)
 app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 
-app.post("/api/admin/feedback", async (req, res, next) => {
+app.post("/api/admin/feedback", feedbackRateLimit, async (req, res, next) => {
     try {
         const { submitFeedback } = await import("./feedback.js")
         await submitFeedback({
@@ -926,7 +962,7 @@ app.post("/api/admin/feedback", async (req, res, next) => {
     TODO: Data retention policies.
 */
 
-app.post("/api/track/download", async (req, res, next) => {
+app.post("/api/track/download", downloadTrackRateLimit, async (req, res, next) => {
     try {
         await trackEvent("download", {
             event_data: {
@@ -975,13 +1011,31 @@ app.post("/api/newsletter", newsletterRateLimit, async (req, res, next) => {
     catch (error) {
         if (error.code === "23505") {
             return res.json({
-                success: false,
-                alreadySubscribed: true,
-                message: "email already signed up"
+                success: true,
+                message: "joined newsletter"
             })
         }
 
         next(error)
+    }
+})
+
+app.get("/api/game/version", (req, res) => {
+    res.json({
+        version: "1.0.0",
+        release_date: "2026-06-25",
+        file_size_mb: 200,
+        platform: "windows-64"
+    })
+})
+
+app.get("/api/download/latest", (req, res) => {
+    const filePath = path.resolve("downloads/MimitaSetup-1.0.0.exe")
+    if (fs.existsSync(filePath)) {
+        res.download(filePath, "MimitaSetup-1.0.0.exe")
+    }
+    else {
+        res.redirect("https://github.com/jorj1357/mimita-public/releases/latest")
     }
 })
 

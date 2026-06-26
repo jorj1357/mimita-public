@@ -3,14 +3,12 @@ import { useLocation } from "react-router-dom"
 import Header from "./Header"
 import Footer from "./Footer"
 
-const API = import.meta.env.VITE_API_ORIGIN || ""
-
 export default function Layout({ children }) {
   const location = useLocation()
 
   useEffect(() => {
     try {
-      fetch(`${API}/api/game/analytics/events`, {
+      fetch("/api/game/analytics/events", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -20,7 +18,9 @@ export default function Layout({ children }) {
         })
       }).catch(() => {})
     }
-    catch {}
+    catch {
+      // page visit tracking failure is non-critical
+    }
   }, [location.pathname])
 
   return (

@@ -32,6 +32,13 @@ export function validateUsername(username) {
         }
     }
 
+    if (cleaned.length > 32) {
+        return {
+            ok: false,
+            message: "username must be 32 characters or less"
+        }
+    }
+
     return {
         ok: true,
         value: cleaned
@@ -149,3 +156,55 @@ export function getClientIp(req) {
 
     return req.ip || req.socket?.remoteAddress || "unknown"
 }
+
+const LOGIN_ATTEMPTS = new Map()
+const MAX_FAILED = 10
+const LOCKOUT_MINUTES = 15
+
+export function createCsrfToken() {
+    return crypto.randomBytes(32).toString("base64url")
+}
+
+export function parseCookies(req) {
+    const result = {}
+    for (const pair of String(req.headers.cookie || "").split(";")) {
+        const separator = pair.indexOf("=")
+        if (separator === -1) continue
+        const key = pair.slice(0, separator).trim()
+        const value = pair.slice(separator + 1).trim()
+        result[key] = decodeURIComponent(value)
+    }
+    return result
+}
+
+export function checkBruteForce(identifier) {
+    const record = LOGIN_ATTEMPTS.get(identifier.toLowerCase())
+    if (!record) return { locked: false }
+    if (record.lockedUntil && record.lockedUntil > Date.now()) {
+        const remaining = Math.ceil((record.lockedUntil - Date.now()) / 1000)
+        return { locked: true, remaining }
+    }
+    return { locked: false }
+}
+
+export function recordFailedAttempt(identifier) {
+    const key = identifier.toLowerCase()
+    const now = Date.now()
+    let record = LOGIN_ATTEMPTS.get(key)
+    if (!record || now - record.lastAttempt > LOCKOUT_MINUTES * 60 * 1000) {
+        record = { count: 0, lockedUntil: null, lastAttempt: now }
+    }
+    record.count++
+    record.lastAttempt = now
+    if (record.count >= MAX_FAILED) {
+        record.lockedUntil = now + LOCKOUT_MINUTES * 60 * 1000
+        record.count = 0
+    }
+    LOGIN_ATTEMPTS.set(key, record)
+}
+
+export function resetFailedAttempts(identifier) {
+    LOGIN_ATTEMPTS.delete(identifier.toLowerCase())
+}
+
+export { LOGIN_ATTEMPTS, MAX_FAILED, LOCKOUT_MINUTES }
