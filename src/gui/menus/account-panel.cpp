@@ -178,6 +178,14 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
 
     if (preview && preview->modelLoaded)
     {
+        const char* displayName = auth.state() == AuthState::Authenticated
+            ? auth.user().username.c_str()
+            : "DefaultGuy";
+        float dnW = uiMeasureText(displayName, 0.32f);
+        uiDrawText(displayName, panelCenterX - dnW * 0.5f,
+                   hpBarY - uiScaleY(22.0f), 0.32f,
+                   {1.0f, 1.0f, 1.0f, 0.9f});
+
         float ratio = preview->maxHp > 0
             ? std::clamp((float)preview->currentHp / (float)preview->maxHp, 0.0f, 1.0f)
             : 1.0f;
