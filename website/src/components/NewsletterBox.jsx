@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { apiRequest } from "../lib/api.js"
+import { apiRequestRaw } from "../lib/api.js"
 
 export default function NewsletterBox() {
 

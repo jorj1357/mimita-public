@@ -1,8 +1,6 @@
 import { Link } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
 
-const API = import.meta.env.VITE_API_ORIGIN || ""
-
 export default function Header() {
   const [open, setOpen] = useState(false)
   const [user, setUser] = useState(null)
@@ -10,7 +8,7 @@ export default function Header() {
   const menuRef = useRef()
 
   useEffect(() => {
-    fetch(`${API}/api/auth/me`, { credentials: "include" })
+    fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
@@ -21,7 +19,7 @@ export default function Header() {
       })
       .catch(() => {})
 
-    fetch(`${API}/api/admin/check`, { credentials: "include" })
+    fetch("/api/admin/check", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         if (data.isAdmin) setIsAdmin(true)

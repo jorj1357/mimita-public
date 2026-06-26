@@ -1,3 +1,5 @@
+import { pool } from "./db.js"
+
 const stores = new Map()
 
 export function createRateLimit(options = {}) {
@@ -23,7 +25,8 @@ export function createRateLimit(options = {}) {
     }, windowMs * 2).unref()
 
     return function rateLimitMiddleware(req, res, next) {
-        const key = req.ip || req.connection?.remoteAddress || "unknown"
+        const ip = req.ip || req.connection?.remoteAddress || "unknown"
+        const key = `${name}:${ip}`
         const now = Date.now()
         let entry = store.get(key)
 
@@ -50,7 +53,20 @@ export function createRateLimit(options = {}) {
             })
         }
 
+        persistRateLimit(key, now, windowMs)
         next()
+    }
+}
+
+function persistRateLimit(key, now, windowMs) {
+    try {
+        pool.query(
+            `INSERT INTO rate_limits (key_name, expires_at) VALUES ($1, $2)`,
+            [key, new Date(now + windowMs)]
+        ).catch(() => {})
+    }
+    catch {
+        // persistence is best-effort
     }
 }
 

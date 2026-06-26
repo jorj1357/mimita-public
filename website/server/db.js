@@ -152,7 +152,24 @@ const MIGRATION_STATEMENTS = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         expires_at TIMESTAMPTZ NOT NULL
     )`,
-    `CREATE INDEX IF NOT EXISTS admin_sessions_token_idx ON admin_sessions(token_hash)`
+    `CREATE INDEX IF NOT EXISTS admin_sessions_token_idx ON admin_sessions(token_hash)`,
+    `CREATE TABLE IF NOT EXISTS login_attempts (
+        id BIGSERIAL PRIMARY KEY,
+        identifier TEXT NOT NULL,
+        ip_address TEXT NOT NULL DEFAULT '',
+        attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        success BOOLEAN NOT NULL DEFAULT FALSE
+    )`,
+    `CREATE INDEX IF NOT EXISTS login_attempts_identifier_idx ON login_attempts(identifier, attempted_at DESC)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT`,
+    `CREATE TABLE IF NOT EXISTS rate_limits (
+        id BIGSERIAL PRIMARY KEY,
+        key_name TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMPTZ NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS rate_limits_key_idx ON rate_limits(key_name, created_at DESC)`
 ]
 
 export async function runMigrations() {
