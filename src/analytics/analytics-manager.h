@@ -31,6 +31,7 @@ public:
     void trackUi(const std::string& eventName);
     void trackDisconnect(const std::string& reason);
     void requestDataDeletion();
+    void setAnalyticsEnabled(bool enabled);
     void disablePermanently();
     void openPrivacyPolicy() const;
 

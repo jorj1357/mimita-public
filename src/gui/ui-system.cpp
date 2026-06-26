@@ -12,6 +12,7 @@
 #include "debug/gl-debug.h"
 #include "gui/gui-media.h"
 #include "gui/gui-coord.h"
+#include "gui/ui-tooltip.h"
 
 #include "audio/audio.h"
 
@@ -40,6 +41,7 @@ std::string gHoverOwnerKey;
 std::string gPrevHoverOwnerKey;
 bool gOverlapDebugEnabled = false;
 bool gCoordDebug = false;
+double gScrollYOffset = 0.0;
 }
 
 using namespace UISys;
@@ -203,6 +205,8 @@ void uiEndFrame()
             uiDrawText(buf, x, y, 0.26f, {0.9f, 0.9f, 0.5f, 1.0f}); y += lineH;
         }
     }
+
+    uiDrawTooltip();
 
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());

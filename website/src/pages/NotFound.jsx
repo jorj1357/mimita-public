@@ -33,7 +33,7 @@ export default function NotFound() {
         >
           this page probably does not exist yet,
           moved somewhere else,
-          or exploded.
+          or exploded. Hehehe lol xD c: 
 
           <br></br>
           <br></br>

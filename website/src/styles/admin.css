@@ -191,6 +191,48 @@
   font-size: 0.8rem;
 }
 
+/* Error Boundary */
+.errorBoundaryCard {
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 2rem;
+  background: rgba(255,255,255,0.025);
+  max-width: 600px;
+  margin: 4rem auto;
+  text-align: center;
+}
+
+.errorBoundaryCard h2 {
+  margin: 0 0 1rem;
+  color: white;
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.errorBoundaryActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.errorBoundaryStack {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.75rem;
+  color: #fca5a5;
+  text-align: left;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: monospace;
+}
+
 /* =========================
    ADMIN LOGIN
 ========================= */

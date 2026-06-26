@@ -17,6 +17,21 @@ void GuiCoordinateSystem::update(int fbW, int fbH, int winW, int winH)
     mScaleY = (float)mScreenH / DESIGN_H;
 }
 
+void GuiCoordinateSystem::pushTranslate(float designY)
+{
+    mTranslateY += designY * mScaleY;
+    mTranslateStack++;
+}
+
+void GuiCoordinateSystem::popTranslate()
+{
+    if (mTranslateStack > 0)
+    {
+        mTranslateY = 0.0f;
+        mTranslateStack = 0;
+    }
+}
+
 float GuiCoordinateSystem::designToScreenX(float designX) const
 {
     return designX * mScaleX;
@@ -24,7 +39,7 @@ float GuiCoordinateSystem::designToScreenX(float designX) const
 
 float GuiCoordinateSystem::designToScreenY(float designY) const
 {
-    return designY * mScaleY;
+    return designY * mScaleY - mTranslateY;
 }
 
 UIRect GuiCoordinateSystem::designToScreen(const UIRect& designRect) const

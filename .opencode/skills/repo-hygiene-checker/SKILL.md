@@ -1,3 +1,8 @@
+---
+name: repo-hygiene-checker
+description: Prevent repository debris — temporary files, backups, logs, crash dumps, generated artifacts.
+---
+
 # Repository Hygiene Checker
 
 ## Purpose

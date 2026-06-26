@@ -8,7 +8,8 @@ enum class AnalyticsConsentAction
     Continue,
     ReadMore,
     Disable,
-    RequestDeletion
+    RequestDeletion,
+    Toggle
 };
 
 namespace AnalyticsConsent

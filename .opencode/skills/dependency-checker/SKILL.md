@@ -1,3 +1,8 @@
+---
+name: dependency-checker
+description: Prevent subsystem coupling. Verify bad dependencies (physics -> ui/replay/audio) do not exist.
+---
+
 # Dependency Checker
 
 ## Purpose

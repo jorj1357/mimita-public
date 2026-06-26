@@ -1,3 +1,8 @@
+---
+name: file-size-checker
+description: Prevent giant files. Flag files over 300 lines, main.cpp must be under 100 lines.
+---
+
 # File Size Checker
 
 ## Purpose

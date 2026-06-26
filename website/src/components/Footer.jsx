@@ -3,11 +3,13 @@ export default function Footer() {
     <footer className="footer">
 
       <p>
-        MiMITA © v3 
+        MiMITA Copyleft v4 
         <br></br>
         :D
         <br></br>
-        last website update: 6 20 2026
+        thanks  for visiting i am very grateful 
+        <br></br>
+        last big update: 6 26 2026
         <br></br>
         hello@mimita.fun contact me/us!!! 
       </p>

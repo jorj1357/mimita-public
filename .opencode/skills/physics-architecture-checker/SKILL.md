@@ -1,3 +1,8 @@
+---
+name: physics-architecture-checker
+description: Enforce physics hierarchy. Verify main.cpp does not contain movement, collision, rendering, or networking logic.
+---
+
 # Physics Architecture Checker
 
 ## Purpose

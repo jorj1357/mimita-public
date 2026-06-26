@@ -34,6 +34,7 @@ extern std::string gHoverOwnerKey;
 extern std::string gPrevHoverOwnerKey;
 extern bool gOverlapDebugEnabled;
 extern bool gCoordDebug;
+extern double gScrollYOffset;
 }
 
 inline bool pointIn(double mx, double my, UIRect r)

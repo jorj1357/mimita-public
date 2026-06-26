@@ -21,12 +21,12 @@ export default function UserProfile() {
     }, [username])
 
     function formatDate(dateStr) {
-        if (!dateStr) return ""
-        return new Date(dateStr).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric"
-        })
+        if (!dateStr) return "Unknown"
+        const d = new Date(dateStr)
+        const mm = String(d.getMonth() + 1).padStart(2, "0")
+        const dd = String(d.getDate()).padStart(2, "0")
+        const yyyy = d.getFullYear()
+        return `${mm}-${dd}-${yyyy}`
     }
 
     return (

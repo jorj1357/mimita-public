@@ -90,6 +90,7 @@
 #include "render/lighting-commands.h"
 #include "render/postfx-commands.h"
 #include "hot-reload/hot-reload-system.h"
+#include "auth/auth-system.h"
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
@@ -205,7 +206,7 @@ void gameInitSubsystems(Engine& engine)
     printf("[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first\n");
 
     static Player player;
-    player.username = LocalProfileSystem::instance().currentUsername();
+    player.username = AuthSystem::instance().displayName();
     player.equippedSlot = GetPlayerSettings().equippedSlot;
     CharacterRegistry::instance().scanAll();
     if (!GetPlayerSettings().characterName.empty())

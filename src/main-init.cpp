@@ -214,6 +214,8 @@ void gameInit(int argc, char** argv, Engine& engine)
     });
     glfwSetScrollCallback(engine.window(), [](GLFWwindow*, double, double yOffset) {
         Terminal::instance().handleScroll(yOffset);
+        extern double gScrollYOffset;
+        gScrollYOffset = yOffset;
     });
 
     printf("[MAIN] after glfwSetInputMode\n");

@@ -8,6 +8,8 @@
 #include "menus/duel-config-menu.h"
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
+#include "auth/auth-system.h"
+#include "auth/auth-popup.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "game/bomb-tag-config.h"
@@ -26,8 +28,9 @@
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
 #include <cstdio>
+#include <shellapi.h>
 
-GuiMenuState gGuiMenuState = GUI_MENU_MAIN;
+GuiMenuState gGuiMenuState = GUI_MENU_AUTH;
 
 static const char* layoutFileForMenu(GuiMenuState state)
 {
@@ -45,6 +48,7 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_REPLAY:       return "config/gui/replay-menu.json";
         case GUI_MENU_AVATAR_CREATOR: return "config/gui/avatar-creator.json";
         case GUI_MENU_BOMB_TAG_CONFIG: return "config/gui/bomb-tag-config.json";
+        case GUI_MENU_AUTH:            return "config/gui/main-menu.json";
     }
     return "config/gui/main-menu.json";
 }
@@ -72,23 +76,34 @@ void reportSandboxMapLoadResult(const std::string& message, bool success)
 
 void guiMain(GLFWwindow* win, GameState& state)
 {
+    AuthSystem& auth = AuthSystem::instance();
+
+    if (auth.state() == AuthState::Checking)
+        auth.tickValidate();
+    if (auth.state() == AuthState::Linking)
+        auth.pollLinkFlow();
+
+    if (gGuiMenuState == GUI_MENU_AUTH)
+    {
+        if (auth.state() == AuthState::Authenticated ||
+            auth.state() == AuthState::NeedsLogin ||
+            auth.state() == AuthState::Offline)
+            gGuiMenuState = GUI_MENU_MAIN;
+    }
+
     GuiLayoutManager::instance().pollReload();
-
     uiBeginFrame(win, "menu");
-
-    // Tell the GUI editor which layout file is active for this menu
     GuiEditor::instance().setActiveLayout(layoutFileForMenu(gGuiMenuState));
 
     switch (gGuiMenuState)
     {
+        case GUI_MENU_AUTH:
         case GUI_MENU_MAIN:
         {
             MainMenuResult r = drawMainMenu(win);
 
             if (r.goPlay)
-            {
                 gGuiMenuState = GUI_MENU_PLAY;
-            }
             else if (r.goSettings)
             {
                 AnalyticsManager::instance().trackUi("settings_opened");
@@ -107,8 +122,27 @@ void guiMain(GLFWwindow* win, GameState& state)
                 gGuiMenuState = GUI_MENU_AVATAR_CREATOR;
             }
             else if (r.goExit)
-            {
                 glfwSetWindowShouldClose(win, GLFW_TRUE);
+
+            if (auth.state() == AuthState::NeedsLogin)
+            {
+                AuthPopupAction action = drawAuthPopup(win);
+                if (action == AuthPopupAction::LogIn)
+                {
+                    ShellExecuteA(nullptr, "open",
+                        "https://www.mimita.fun/login",
+                        nullptr, nullptr, SW_SHOWNORMAL);
+                    auth.startLinkFlow();
+                }
+                else if (action == AuthPopupAction::CreateAccount)
+                {
+                    ShellExecuteA(nullptr, "open",
+                        "https://www.mimita.fun/signup",
+                        nullptr, nullptr, SW_SHOWNORMAL);
+                    auth.startLinkFlow();
+                }
+                else if (action == AuthPopupAction::ContinueOffline)
+                    auth.skipLogin();
             }
             break;
         }
@@ -179,7 +213,12 @@ void guiMain(GLFWwindow* win, GameState& state)
         {
             SettingsMenuResult r = drawSettingsMenu(win);
 
-            if (r.goBack)
+            if (r.signOut)
+            {
+                AuthSystem::instance().logout();
+                gGuiMenuState = GUI_MENU_AUTH;
+            }
+            else if (r.goBack)
             {
                 gGuiMenuState = GUI_MENU_MAIN;
             }

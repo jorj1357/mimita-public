@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { apiRequest, apiRequestRaw } from "../lib/api.js"
 import DebugPanel from "../components/DebugPanel.jsx"
+import ErrorBoundary from "../components/ErrorBoundary.jsx"
+import Layout from "../components/Layout"
 
 export default function AdminDashboard() {
     const navigate = useNavigate()
@@ -149,6 +151,9 @@ export default function AdminDashboard() {
     }
 
     function card(label, value) {
+        if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+            value = value.today ?? value.allTime ?? "—"
+        }
         return (
             <div className="adminCard">
                 <span>{label}</span>
@@ -163,6 +168,8 @@ export default function AdminDashboard() {
     }
 
     return (
+        <ErrorBoundary>
+        <Layout>
         <div className="adminPage">
             <div className="adminHeader">
                 <h1 className="adminTitle">mimita admin</h1>
@@ -422,5 +429,7 @@ export default function AdminDashboard() {
 
             </div>
         </div>
+        </Layout>
+        </ErrorBoundary>
     )
 }

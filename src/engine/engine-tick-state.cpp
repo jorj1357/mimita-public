@@ -13,6 +13,7 @@
 #include "network/multiplayer-context.h"
 #include "network/net_mode.h"
 #include "profile/local-profile-system.h"
+#include "auth/auth-system.h"
 #include "devtools/terminal.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/dev-npc-selection.h"
@@ -178,7 +179,7 @@ void engineTickState(Engine& engine, float dt)
                         printf("[MAIN NET] restored server-compatible map=%s\n",
                                activeMapPath.c_str());
                     }
-                    player.username = LocalProfileSystem::instance().currentUsername();
+                    player.username = AuthSystem::instance().displayName();
                     if (MimitaNet::mpInit(mpContext, mci.address, player.username)) {
                         printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
                         glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);

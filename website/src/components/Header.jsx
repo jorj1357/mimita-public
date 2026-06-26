@@ -28,6 +28,7 @@ const HAMBURGER_ITEMS = [
     { label: "Socials", path: "/socials" },
     { label: "Support", path: "/support" },
     { label: "Terms", path: "/terms" },
+    { label: "Users", path: "/users" },
 ]
 
 export default function Header() {

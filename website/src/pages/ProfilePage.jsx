@@ -23,11 +23,11 @@ export default function ProfilePage() {
 
     function formatDate(dateStr) {
         if (!dateStr) return "Unknown"
-        return new Date(dateStr).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric"
-        })
+        const d = new Date(dateStr)
+        const mm = String(d.getMonth() + 1).padStart(2, "0")
+        const dd = String(d.getDate()).padStart(2, "0")
+        const yyyy = d.getFullYear()
+        return `${mm}-${dd}-${yyyy}`
     }
 
     function formatRole(role) {

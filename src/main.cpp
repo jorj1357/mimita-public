@@ -133,6 +133,7 @@
 #include "terminal/terminal-state.h"
 #include "terminal/replay-commands.h"
 #include "terminal/debug-commands.h"
+#include "auth/auth-system.h"
 #include "terminal/player-commands.h"
 #include "terminal/weapon-commands.h"
 #include "terminal/npc-commands.h"
@@ -214,8 +215,9 @@ int main(int argc, char** argv)
 
     LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
+    AuthSystem::instance().init(launchOptions.sessionToken);
     if (launchOptions.name.empty())
-        launchOptions.name = LocalProfileSystem::instance().currentUsername();
+        launchOptions.name = AuthSystem::instance().displayName();
     if (launchOptions.server && launchOptions.client)
     {
         printf("[MAIN] choose only one mode: --server or --client\n");

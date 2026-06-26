@@ -55,6 +55,16 @@ bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value);
 bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float minValue, float maxValue);
 void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r);
 
+struct UIScrollState {
+    float scrollY = 0.0f;
+    bool dragging = false;
+    float dragStartY = 0.0f;
+    float dragScrollStart = 0.0f;
+};
+
+void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScrollState& scroll);
+void uiEndScrollArea(UIRect area, float contentHeight, UIScrollState& scroll);
+
 float uiScaleX(float px);
 float uiScaleY(float px);
 
