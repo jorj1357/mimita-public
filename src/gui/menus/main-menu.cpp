@@ -81,11 +81,11 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
 
     // Render buttons AFTER account panel (same timing as Sign In/Sign Up)
     MenuButton buttons[] = {
-        {"playButton", "PLAY",    270, 280, 300, 62, {0.24f, 0.82f, 0.48f, 1.0f}},
-        {"settingsButton", "SETTINGS", 270, 360, 300, 62, {0.86f, 0.74f, 0.28f, 1.0f}},
-        {"replaysButton", "REPLAYS", 270, 440, 300, 62, {0.55f, 0.35f, 0.75f, 1.0f}},
-        {"avatarButton", "AVATAR", 270, 520, 300, 62, {0.30f, 0.60f, 0.50f, 1.0f}},
-        {"exitButton", "EXIT",    270, 600, 300, 62, {0.65f, 0.20f, 0.20f, 1.0f}},
+        {"playButton", "PLAY",    270, 520, 300, 62, {0.24f, 0.82f, 0.48f, 1.0f}},
+        {"settingsButton", "SETTINGS", 270, 600, 300, 62, {0.86f, 0.74f, 0.28f, 1.0f}},
+        {"replaysButton", "REPLAYS", 270, 680, 300, 62, {0.55f, 0.35f, 0.75f, 1.0f}},
+        {"avatarButton", "AVATAR", 270, 760, 300, 62, {0.30f, 0.60f, 0.50f, 1.0f}},
+        {"exitButton", "EXIT",    270, 840, 300, 62, {0.65f, 0.20f, 0.20f, 1.0f}},
     };
 
     for (const MenuButton& btn : buttons)
