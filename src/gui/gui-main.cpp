@@ -379,11 +379,6 @@ void guiMain(GLFWwindow* win, GameState& state)
     InputCommandSystem::instance().drawInputDebug();
     AnalyticsManager::instance().drawFirstLaunchPopup(win);
     uiRenderFrameDebugOverlay(win, "MENU", false);
-    // DIAGNOSTIC: bright test rect at top-left — should always be visible
-    uiDrawRect({10, 50, 200, 40}, {1.0f, 0.0f, 0.0f, 1.0f}, "diag-rect");
-    printf("[DIAG] guiMain end: gGuiMenuState=%d authState=%d\n",
-           (int)gGuiMenuState, (int)auth.state());
-
     uiEndFrame();
 
     GuiEditor::instance().update(win);

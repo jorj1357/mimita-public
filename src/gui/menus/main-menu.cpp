@@ -3,6 +3,7 @@
 #include "../ui-system.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
+#include "../gui-coord.h"
 #include "auth/auth-system.h"
 
 #include <cstdio>
@@ -19,6 +20,13 @@ void openBrowser(const char* url)
         printf("[MAIN MENU] ShellExecuteA failed: result=%lld\n", (long long)(INT_PTR)h);
 }
 
+struct MenuButton {
+    const char* id;
+    const char* text;
+    float x, y, w, h;
+    glm::vec4 bg;
+};
+
 }
 
 MainMenuResult drawMainMenu(GLFWwindow* win)
@@ -27,6 +35,7 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
 
     int fbW = 0, fbH = 0;
     glfwGetFramebufferSize(win, &fbW, &fbH);
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/main-menu.json");
 
@@ -50,42 +59,39 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     if (!bgLoaded)
         uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "main-menu-background");
 
+    // Render title/subtitle from layout (text elements only)
     for (const std::string& id : layout.elementIds())
     {
         const GuiElement* elem = layout.get(id);
         if (!elem || !elem->visible) continue;
-
-        UIButtonState s = drawGuiElement(win, *elem);
-        if (!s.clicked) continue;
-
-        if (id == "playButton")
-        {
-            printf("[MAIN MENU] Play pressed\n");
-            r.goPlay = true;
-        }
-        else if (id == "settingsButton")
-        {
-            printf("[MAIN MENU] Settings pressed\n");
-            r.goSettings = true;
-        }
-        else if (id == "replaysButton")
-        {
-            printf("[MAIN MENU] Replays pressed\n");
-            r.goReplays = true;
-        }
-        else if (id == "avatarButton")
-        {
-            printf("[MAIN MENU] Avatar Creator pressed\n");
-            r.goAvatarCreator = true;
-        }
-        else if (id == "exitButton")
-        {
-            printf("[MAIN MENU] Exit pressed\n");
-            r.goExit = true;
-        }
+        if (elem->type == "text" || elem->type == "label")
+            drawGuiElement(win, *elem);
     }
 
     AccountPanelAction account = drawAccountPanel(win);
+
+    // Render buttons AFTER account panel (same timing as Sign In/Sign Up)
+    MenuButton buttons[] = {
+        {"playButton", "PLAY",    270, 280, 300, 62, {0.24f, 0.82f, 0.48f, 1.0f}},
+        {"settingsButton", "SETTINGS", 270, 360, 300, 62, {0.86f, 0.74f, 0.28f, 1.0f}},
+        {"replaysButton", "REPLAYS", 270, 440, 300, 62, {0.55f, 0.35f, 0.75f, 1.0f}},
+        {"avatarButton", "AVATAR", 270, 520, 300, 62, {0.30f, 0.60f, 0.50f, 1.0f}},
+        {"exitButton", "EXIT",    270, 600, 300, 62, {0.65f, 0.20f, 0.20f, 1.0f}},
+    };
+
+    for (const MenuButton& btn : buttons)
+    {
+        UIButtonState s = uiButton(win, btn.text,
+            {btn.x, btn.y, btn.w, btn.h}, btn.bg, btn.id);
+        if (!s.clicked) continue;
+
+        printf("[MAIN MENU] %s pressed\n", btn.id);
+        if (btn.id == std::string("playButton")) r.goPlay = true;
+        else if (btn.id == std::string("settingsButton")) r.goSettings = true;
+        else if (btn.id == std::string("replaysButton")) r.goReplays = true;
+        else if (btn.id == std::string("avatarButton")) r.goAvatarCreator = true;
+        else if (btn.id == std::string("exitButton")) r.goExit = true;
+    }
     if (account.logIn)
     {
         openBrowser("https://www.mimita.fun/signin");
