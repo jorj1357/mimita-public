@@ -1,5 +1,12 @@
 Favor deleting code over adding code when both solutions achieve the same result.
 
+# Asset Rules
+
+* `.wav` and `.mp3` files are tracked by `.gitignore` and must NEVER be committed.
+* Game loads audio from `assets/sound/` at runtime.
+* Do not create, modify, or delete `.wav` or `.mp3` files.
+* If a game feature needs new audio, note the requirement in a TODO comment and leave the file untouched.
+
 # Development Rules
 
 * Local repository is the source of truth.
