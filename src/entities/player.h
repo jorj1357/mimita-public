@@ -13,7 +13,7 @@
 #include "gui/hud/chat-bubble.h"
 
 #include "combat/weapon-types.h"
-#include "outfit/outfit-schema.h"
+
 
 struct ReplayBodyPartState;
 
@@ -349,10 +349,7 @@ public:
     // -------- Chat Bubble State --------
     ActorChatState chatState;
 
-    // -------- Cosmetic instances (loaded by OutfitSystem) --------
-    std::vector<struct CosmeticInstance> cosmetics;
-
-    // -------- Per-part color tints (from outfit.json colors) --------
+    // -------- Per-part color tints (from avatar.json colors) --------
     std::vector<glm::vec3> outfitPartColors;
 };
 

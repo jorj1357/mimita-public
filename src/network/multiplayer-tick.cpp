@@ -1,7 +1,6 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "avatar/avatar.h"
-#include "outfit/outfit-system.h"
 #include "config/player-settings.h"
 
 #include <algorithm>
@@ -235,7 +234,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 if (isNew)
                 {
                     if (GetPlayerSettings().avatarName.empty()) {
-                        OutfitSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
+                        AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
                     } else {
                         AvatarSystem::instance().applyToPlayer(p);
                     }
@@ -368,4 +367,5 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 }
 
 } // namespace MimitaNet
+
 

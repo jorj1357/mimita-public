@@ -127,6 +127,9 @@ public:
     bool loadPreset(const std::string& presetName);
     std::vector<std::string> listPresets() const;
 
+    // Apply a single PNG texture to all body parts (replaces OutfitAtlas)
+    static bool applySingleTexture(class Player& player, const std::string& texturePath, bool reloadTexture = false);
+
     // File operations
     static std::string avatarPath(const std::string& name);
     bool importPng(const std::string& sourcePath);

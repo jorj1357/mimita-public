@@ -131,44 +131,6 @@ void Player::renderCurrentPose(unsigned int shader,
             }
         }
 
-        // ── Render cosmetics ────────────────────────────────────────
-        if (!cosmetics.empty()) {
-            for (const auto& cosmetic : cosmetics) {
-                if (cosmetic.renderMesh.verts.empty()) continue;
-
-                // Compute parent bone world transform
-                glm::mat4 parentTransform(1.0f);
-                if (cosmetic.parentBone == "root") {
-                    parentTransform = glm::translate(glm::mat4(1.0f), pos) *
-                                      glm::rotate(glm::mat4(1.0f), glm::radians(yaw), glm::vec3(0, 0, 1));
-                } else {
-                    for (size_t pi = 0; pi < physicalBody.parts.size(); ++pi) {
-                        if (physicalBody.parts[pi].name == cosmetic.parentBone) {
-                            parentTransform = physicalBody.parts[pi].worldTransform;
-                            break;
-                        }
-                    }
-                }
-
-                glm::mat4 local = glm::translate(glm::mat4(1.0f), cosmetic.position) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(cosmetic.rotation.x), glm::vec3(1, 0, 0)) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(cosmetic.rotation.y), glm::vec3(0, 1, 0)) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(cosmetic.rotation.z), glm::vec3(0, 0, 1)) *
-                                  glm::scale(glm::mat4(1.0f), cosmetic.scale);
-                glm::mat4 modelMat = parentTransform * local;
-
-                glUniformMatrix4fv(uModelLoc, 1, 0, &modelMat[0][0]);
-                glm::vec4 cosCol = whiteOverride ? glm::vec4(1.0f) : cosmetic.color;
-                glUniform4f(uColorLoc, cosCol.r, cosCol.g, cosCol.b, cosCol.a);
-                for (const auto& batch : cosmetic.renderMesh.batches) {
-                    GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-                    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
-                    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
-                    diagRenderCountPlayerDraw();
-                }
-            }
-        }
-
         return;
     }
 

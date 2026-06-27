@@ -7,8 +7,8 @@
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
+#include "avatar/avatar.h"
 #include "world/world.h"
-#include "outfit/outfit-system.h"
 #include "npc/npc.h"
 #include "render/render-world.h"
 #include "render/post-fx.h"
@@ -106,7 +106,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                             ? actorState.outfitPath
                             : gReplayPlayer.outfitPath();
                     if (!outfitToUse.empty())
-                        OutfitSystem::applySingleTexture(*actor, outfitToUse);
+                        AvatarSystem::applySingleTexture(*actor, outfitToUse);
                 }
                 actor->username = actorState.name;
                 actor->currentHp = actorState.health;
@@ -400,4 +400,5 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         NpcSelectionManager::instance().drawSelection(npcSystem, camera);
     }
 }
+
 
