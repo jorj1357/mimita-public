@@ -1,5 +1,7 @@
 #include "avatar-menu.h"
 #include "avatar.h"
+#include "avatar-editor-scroll.h"
+#include "avatar-editor-dropdown.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -17,10 +19,7 @@
 
 class Player;
 extern Player* gpPlayer;
-void openPicker(int slot, const std::vector<std::string>& files);
-void closePicker();
 
-// Auto-apply current avatar to gpPlayer for live preview
 static void liveApply()
 {
     if (gpPlayer && AvatarSystem::instance().hasAvatar())
@@ -30,43 +29,25 @@ static void liveApply()
 namespace {
 
 // ── State ───────────────────────────────────────────────────────────
-int gOpenPickerSlot = -1;
-int gPickerScroll = 0;
-std::vector<std::string> gPickerFiles;
-
 std::string gSelectedTexture;
 GLuint gSelectedTextureGL = 0;
 int gSelectedTexW = 0, gSelectedTexH = 0;
 std::unordered_set<int> gCheckedFaces;
-
-int gLibScroll = 0;
-int gAssignScroll = 0;
 int gEditorTab = 0;
-
-// ── Editor clipboard ────────────────────────────────────────────────
 int gCopyPartIdx = -1;
 int gCopyFaceIdx = -1;
-
-// ── Color picker state ──────────────────────────────────────────────
 int gColorPickerPart = -1;
 float gColorPickerHue = 0.0f;
+DropdownState gPartDropdown;
 
 // ── String tables ───────────────────────────────────────────────────
-const char* kSimpleLabels[] = {"Face Image", "Shirt Image", "Pants Image", "Skin Image"};
-const char* kPartLabels[]   = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
-const char* kPartKeys[]     = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
-const char* kFaceLabels[]   = {"Front", "Back", "Left", "Right", "Top", "Bottom"};
-const char* kFaceKeys[]     = {"front", "back", "left", "right", "top", "bottom"};
-const char* kTabLabels[]    = {"Faces", "Colors", "Cosmetics", "Presets"};
-const char* kStretchLabels[] = {"Stretch", "Fit", "Fill", "Crop", "Tile"};
-
-const char* kCosmeticSlots[] = {"head", "torso", "arms", "legs"};
-const char* kCosmeticSlotLabels[] = {"Headwear", "Body", "Arms", "Legs"};
-const char* kCosmeticOptions[] = {"none", "halo", "horns", "fedora", "helmet", "mask", "hair",
-                                  "wings", "cape", "backpack", "sword_pack", "vest", "bandolier",
-                                  "gloves", "shoulder_pads", "armbands",
-                                  "shoes", "chains", "pants", "knee_pads"};
-const int kCosmeticOptionCount = 20;
+const char* kPartLabels[] = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
+const char* kPartKeys[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+const char* kFaceLabels[] = {"Front", "Back", "Left", "Right", "Top", "Bottom"};
+const char* kFaceKeys[] = {"front", "back", "left", "right", "top", "bottom"};
+const char* kTabLabels[] = {"Faces", "Colors", "Cosmetics", "Presets"};
+const int kPartCount = 6;
+const int kFaceCount = 6;
 
 // ── Layout helper ────────────────────────────────────────────────────
 static GuiLayout& getLayout()
@@ -74,51 +55,48 @@ static GuiLayout& getLayout()
     return GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
 }
 
-static float lx(const std::string& id, float defaultV = 0.0f)
+static float lx(const std::string& id, float def = 0.0f)
 {
     const GuiElement* e = getLayout().get(id);
-    return e ? e->x : defaultV;
+    return e ? e->x : def;
 }
-
-static float ly(const std::string& id, float defaultV = 0.0f)
+static float ly(const std::string& id, float def = 0.0f)
 {
     const GuiElement* e = getLayout().get(id);
-    return e ? e->y : defaultV;
+    return e ? e->y : def;
 }
-
-static float lw(const std::string& id, float defaultV = 0.0f)
+static float lw(const std::string& id, float def = 0.0f)
 {
     const GuiElement* e = getLayout().get(id);
-    return e ? e->w : defaultV;
+    return e ? e->w : def;
 }
-
-static float lh(const std::string& id, float defaultV = 0.0f)
+static float lh(const std::string& id, float def = 0.0f)
 {
     const GuiElement* e = getLayout().get(id);
-    return e ? e->h : defaultV;
+    return e ? e->h : def;
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
-void stopInput() {}
+int faceSlotIndex(int part, int face) { return part * kFaceCount + face; }
 
-int faceSlotIndex(int part, int face) { return part * 6 + face; }
-
-void clearTexturePreview() {
+void clearTexturePreview()
+{
     if (gSelectedTextureGL) { glDeleteTextures(1, &gSelectedTextureGL); gSelectedTextureGL = 0; }
     gSelectedTexture.clear();
     gSelectedTexW = gSelectedTexH = 0;
 }
 
-void loadTexturePreview(const std::string& avatarName, const std::string& filename) {
+void loadTexturePreview(const std::string& avatarName, const std::string& filename)
+{
     clearTexturePreview();
     gSelectedTexture = filename;
     std::string fullPath = AvatarSystem::instance().avatarPath(avatarName) + "/" + filename;
     gSelectedTextureGL = loadMediaTexture(fullPath.c_str(), &gSelectedTexW, &gSelectedTexH);
 }
 
-void checkAllFaces() { for (int i = 0; i < 36; ++i) gCheckedFaces.insert(i); }
+void checkAllFaces() { for (int i = 0; i < kPartCount * kFaceCount; ++i) gCheckedFaces.insert(i); }
 void uncheckAllFaces() { gCheckedFaces.clear(); }
-void toggleFaceCheck(int idx) {
+void toggleFaceCheck(int idx)
+{
     if (gCheckedFaces.count(idx)) gCheckedFaces.erase(idx);
     else gCheckedFaces.insert(idx);
 }
@@ -127,9 +105,11 @@ void toggleFaceCheck(int idx) {
 struct SliderRange { float min, max, step; };
 
 static float drawSlider(GLFWwindow* win, float x, float y, float w, float val,
-                         const SliderRange& range, const char* label) {
-    float sx = uiScaleX(x), sy = uiScaleY(y), sw = uiScaleX(w), sh = uiScaleY(20.0f);
-    if (label) uiDrawText(label, sx - uiScaleX(60.0f), sy, 0.25f, {0.7f, 0.8f, 0.9f, 1.0f});
+                         const SliderRange& range, const char* label)
+{
+    float sx = uiScaleX(x), sy = uiScaleY(y), sw = uiScaleX(w), sh = uiScaleY(24.0f);
+    if (label)
+        uiDrawText(label, sx - uiScaleX(60.0f), sy, 0.60f, {0.7f, 0.8f, 0.9f, 1.0f});
 
     UIRect track = {sx, sy + sh * 0.3f, sw, sh * 0.4f};
     uiDrawRect(track, {0.12f, 0.13f, 0.18f, 1.0f}, "slider-track");
@@ -142,7 +122,7 @@ static float drawSlider(GLFWwindow* win, float x, float y, float w, float val,
     UIRect handle = {hx, sy, 8.0f, sh};
     uiDrawRect(handle, {0.6f, 0.85f, 0.7f, 1.0f}, "slider-handle");
 
-    UIRect clickArea = {x, y, w, 20.0f};
+    UIRect clickArea = {x, y, w, 24.0f};
     auto btn = uiButton(win, "", clickArea, {0,0,0,0});
     if (btn.clicked) {
         double mx, my;
@@ -161,381 +141,389 @@ static float drawSlider(GLFWwindow* win, float x, float y, float w, float val,
 
     char buf[32];
     snprintf(buf, sizeof(buf), "%.2f", val);
-    uiDrawText(buf, sx + sw + 4.0f, sy, 0.25f, {1.0f, 1.0f, 1.0f, 1.0f});
+    uiDrawText(buf, sx + sw + 4.0f, sy, 0.60f, {1.0f, 1.0f, 1.0f, 1.0f});
     return val;
 }
 
-// ── Color picker ────────────────────────────────────────────────────
-static void drawColorPicker(GLFWwindow* win, float x, float y, float w, glm::vec3& color) {
-    float sectionH = 140.0f;
-    UIRect bgScreen = {uiScaleX(x), uiScaleY(y), uiScaleX(w), uiScaleY(sectionH)};
-    uiDrawRect(bgScreen, {0.06f, 0.07f, 0.12f, 0.95f}, "colorpicker-bg");
-    uiDrawRectOutline(bgScreen, {0.3f, 0.5f, 0.8f, 0.6f}, "colorpicker-border");
-
-    float cy = y + 4.0f;
-    uiDrawText("Part Color", uiScaleX(x + 4.0f), uiScaleY(cy), 0.28f, {0.8f, 0.9f, 1.0f, 1.0f});
-    cy += 22.0f;
-
-    color.r = drawSlider(win, x + 4.0f, cy, w - 80.0f, color.r, {0, 1, 0.01f}, "R");
-    cy += 22.0f;
-    color.g = drawSlider(win, x + 4.0f, cy, w - 80.0f, color.g, {0, 1, 0.01f}, "G");
-    cy += 22.0f;
-    color.b = drawSlider(win, x + 4.0f, cy, w - 80.0f, color.b, {0, 1, 0.01f}, "B");
-    cy += 22.0f;
-
-    float swatchX = x + w - 70.0f;
-    float swatchY = y + 4.0f;
-    UIRect swatchScreen = {uiScaleX(swatchX), uiScaleY(swatchY), uiScaleX(60.0f), uiScaleY(60.0f)};
-    uiDrawRect(swatchScreen, {color.r, color.g, color.b, 1.0f}, "colorpicker-swatch");
-    uiDrawRectOutline(swatchScreen, {0.5f, 0.5f, 0.5f, 0.8f}, "colorpicker-border");
-
-    cy += 4.0f;
-    if (uiButton(win, "RESET", {x + 4.0f, cy, 80.0f, 22.0f}, {0.3f, 0.15f, 0.15f, 1.0f}).clicked)
-        color = glm::vec3(1.0f);
-}
-
-// ── Draw PNG library thumbnail ──────────────────────────────────────
-static void drawLibraryPanel(GLFWwindow* win, float panelX, float panelY, float panelW, float panelH) {
+// ── Draw LEFT panel: PNG Library ────────────────────────────────────
+static void drawLibraryPanel(GLFWwindow* win, float px, float py, float pw, float ph)
+{
     AvatarSystem& av = AvatarSystem::instance();
     if (!av.hasAvatar()) return;
 
     std::string avatarName = av.currentName();
     auto pngs = av.listPngs(avatarName);
 
-    uiDrawText("PNG Library", uiScaleX(panelX), uiScaleY(panelY), 0.40f, {0.9f, 0.95f, 1.0f, 1.0f});
-    float cy = panelY + 30.0f;
-
-    uiDrawText("Drag PNGs from Explorer into the window", uiScaleX(panelX), uiScaleY(cy), 0.20f, {0.4f, 0.5f, 0.6f, 1.0f});
-    cy += 18.0f;
-    uiDrawText("to add them to your library.", uiScaleX(panelX), uiScaleY(cy), 0.20f, {0.4f, 0.5f, 0.6f, 1.0f});
-    cy += 24.0f;
-
-    int cols = 3;
-    float thumbSize = (panelW - 8.0f - (cols - 1) * 4.0f) / cols;
-    float thumbTotalH = thumbSize + 18.0f;
-    int visibleRows = std::max(1, (int)((panelY + panelH - cy - 10.0f) / thumbTotalH));
-    int visibleCount = visibleRows * cols;
-
-    if (gLibScroll > 0) {
-        if (uiButton(win, "^", {lx("libScrollUp", panelX + panelW - 24.0f), cy - 16.0f, 22.0f, 16.0f}, {0.2f, 0.3f, 0.45f, 1.0f}).clicked)
-            gLibScroll = std::max(0, gLibScroll - cols);
+    if (pngs.empty())
+    {
+        uiDrawText("No PNGs found.", uiScaleX(px), uiScaleY(py + 20.0f), 0.68f, {0.5f, 0.6f, 0.7f, 1.0f});
+        return;
     }
 
-    int startIdx = gLibScroll;
-    int endIdx = std::min((int)pngs.size(), startIdx + visibleCount);
+    // Read layout config for thumbnail grid
+    const GuiElement* colsEl = getLayout().get("thumbCols");
+    const GuiElement* gapEl = getLayout().get("thumbGap");
+    const GuiElement* labelHEl = getLayout().get("thumbLabelH");
+    const GuiElement* padEl = getLayout().get("thumbPadding");
+    const GuiElement* bgNEl = getLayout().get("thumbBgNormal");
+    const GuiElement* bgSEl = getLayout().get("thumbBgSelected");
+    const GuiElement* outEl = getLayout().get("thumbOutlineSelected");
 
-    float tx = panelX + 4.0f;
-    float ty = cy;
-    for (int i = startIdx; i < endIdx; ++i) {
-        int col = (i - startIdx) % cols;
-        int row = (i - startIdx) / cols;
-        float ix = tx + col * (thumbSize + 4.0f);
-        float iy = ty + row * thumbTotalH;
+    int cols = colsEl ? (int)colsEl->x : 3;
+    float gap = gapEl ? gapEl->x : 6.0f;
+    float labelH = labelHEl ? labelHEl->x : 22.0f;
+    float padding = padEl ? padEl->x : 4.0f;
+    glm::vec4 bgNormal = bgNEl ? bgNEl->getBackgroundColorVec() : glm::vec4{0.07f, 0.08f, 0.12f, 1.0f};
+    glm::vec4 bgSelected = bgSEl ? bgSEl->getBackgroundColorVec() : glm::vec4{0.2f, 0.5f, 0.3f, 1.0f};
+    glm::vec4 outlineSel = outEl ? outEl->getTextColorVec() : glm::vec4{0.3f, 0.8f, 0.5f, 1.0f};
+
+    float thumbSize = (pw - padding * 2.0f - (cols - 1) * gap) / cols;
+    float itemH = thumbSize + labelH;
+    float contentH = ((int)pngs.size() + cols - 1) / cols * itemH;
+
+    UIRect scrollArea = {px, py, pw, ph};
+    ScrollState ss;
+    beginScroll(win, scrollArea, contentH, ss);
+
+    float tx = px + padding;
+    for (int i = 0; i < (int)pngs.size(); ++i)
+    {
+        int col = i % cols;
+        int row = i / cols;
+        float ix = tx + col * (thumbSize + gap);
+        float iy = py + row * itemH;
 
         std::string fullPath = av.avatarPath(avatarName) + "/" + pngs[i];
         UIRect thumbRect = {ix, iy, thumbSize, thumbSize};
         UIRect thumbScreen = {uiScaleX(ix), uiScaleY(iy), uiScaleX(thumbSize), uiScaleY(thumbSize)};
         bool isSelected = (pngs[i] == gSelectedTexture);
-        glm::vec4 bgCol = isSelected ? glm::vec4{0.2f, 0.5f, 0.3f, 1.0f} : glm::vec4{0.07f, 0.08f, 0.12f, 1.0f};
+        glm::vec4 bgCol = isSelected ? bgSelected : bgNormal;
         uiDrawRect(thumbScreen, bgCol, "thumb-bg");
-        if (isSelected) uiDrawRectOutline(thumbScreen, {0.3f, 0.8f, 0.5f, 1.0f}, "thumb-sel");
+        if (isSelected)
+            uiDrawRectOutline(thumbScreen, outlineSel, "thumb-sel");
 
         uiDrawImage(fullPath.c_str(), thumbRect);
-        if (uiButton(win, "", thumbRect, bgCol).clicked) {
+        if (uiButton(win, "", thumbRect, bgCol).clicked)
             loadTexturePreview(avatarName, pngs[i]);
-        }
 
         std::string label = pngs[i];
-        if (label.size() > 15) label = label.substr(0, 12) + "...";
-        uiDrawText(label.c_str(), uiScaleX(ix), uiScaleY(iy + thumbSize + 2.0f), 0.20f, {0.6f, 0.7f, 0.8f, 1.0f});
+        if (label.size() > 12) label = label.substr(0, 10) + "...";
+        uiDrawText(label.c_str(), uiScaleX(ix), uiScaleY(iy + thumbSize + 4.0f), 0.48f, {0.6f, 0.7f, 0.8f, 1.0f});
     }
 
-    if (endIdx < (int)pngs.size()) {
-        float scrollBtnY = ty + visibleRows * thumbTotalH + 2.0f;
-        if (uiButton(win, "v", {lx("libScrollDown", panelX + panelW - 24.0f), scrollBtnY, 22.0f, 16.0f}, {0.2f, 0.3f, 0.45f, 1.0f}).clicked)
-            gLibScroll = std::min(gLibScroll + cols, (int)pngs.size() - cols);
-    }
+    endScroll(scrollArea, contentH, ss);
 }
 
-// ── Draw apply & edit panel ─────────────────────────────────────────
-static void drawEditorPanel(GLFWwindow* win, float panelX, float panelY, float panelW, float panelH) {
+// ── Draw CENTER panel: Editor tabs + content ────────────────────────
+static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float ph)
+{
     AvatarSystem& av = AvatarSystem::instance();
     if (!av.hasAvatar()) return;
 
-    float tabH = 26.0f;
-    float tabW = panelW / 4.0f;
-    for (int i = 0; i < 4; ++i) {
+    float tabH = 32.0f;
+    float tabW = (pw - 6.0f) / 4.0f;
+    for (int i = 0; i < 4; ++i)
+    {
         glm::vec4 tabCol = (i == gEditorTab)
             ? glm::vec4{0.2f, 0.45f, 0.3f, 1.0f}
             : glm::vec4{0.08f, 0.09f, 0.14f, 1.0f};
-        UIRect tabRect = {panelX + i * tabW, panelY, tabW - 2.0f, tabH};
-        if (uiButton(win, kTabLabels[i], tabRect, tabCol).clicked)
+        UIRect tabRect = {px + i * (tabW + 2.0f), py, tabW, tabH};
+        if (uiButton(win, kTabLabels[i], tabRect, tabCol, "editor-tab").clicked)
             gEditorTab = i;
     }
-    float cy = panelY + tabH + 4.0f;
-    float remainingH = panelY + panelH - cy;
 
-    switch (gEditorTab) {
-    case 0: { // Faces tab
-        if (gSelectedTexture.empty()) {
-            uiDrawText("Select a PNG from the library to begin.", uiScaleX(panelX), uiScaleY(cy), 0.24f, {0.4f, 0.5f, 0.6f, 1.0f});
-            cy += 20.0f;
-            uiDrawText("Then choose which body parts and faces to apply it to.", uiScaleX(panelX), uiScaleY(cy), 0.24f, {0.4f, 0.5f, 0.6f, 1.0f});
-            break;
+    float cy = py + tabH + 8.0f;
+    float remainingH = py + ph - cy - 50.0f;
+
+    // Scrollable content area for the currently selected tab
+    UIRect contentArea = {px + 4.0f, cy, pw - 8.0f, remainingH};
+    ScrollState cs;
+
+    switch (gEditorTab)
+    {
+    case 0: // Faces tab
+    {
+        float contentH = 500.0f;
+        beginScroll(win, contentArea, contentH, cs);
+
+        if (gSelectedTexture.empty())
+        {
+            uiDrawText("Select a PNG from the library.", uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.5f, 0.6f, 0.7f, 1.0f});
+            cy += 24.0f;
+            uiDrawText("Then assign it to body part faces below.", uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.5f, 0.6f, 0.7f, 1.0f});
+            cy += 28.0f;
         }
-
-        if (gSelectedTextureGL) {
+        else
+        {
+            // Texture preview
             float previewSize = 80.0f;
-            UIRect previewRect = {panelX, cy, previewSize, previewSize};
             std::string texPath = av.avatarPath(av.currentName()) + "/" + gSelectedTexture;
-            uiDrawImage(texPath.c_str(), previewRect);
-            uiDrawText(gSelectedTexture.c_str(), uiScaleX(panelX + previewSize + 6.0f), uiScaleY(cy + 4.0f),
-                       0.22f, {0.6f, 0.9f, 0.6f, 1.0f});
-            if (uiButton(win, "X", {panelX + previewSize - 14.0f, cy - 2.0f, 16.0f, 16.0f},
+            uiDrawImage(texPath.c_str(), {px + 4.0f, cy, previewSize, previewSize});
+uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScaleY(cy + 6.0f),
+                        0.60f, {0.6f, 0.9f, 0.6f, 1.0f});
+            if (uiButton(win, "X", {px + previewSize - 16.0f, cy - 4.0f, 20.0f, 20.0f},
                          {0.5f, 0.15f, 0.15f, 1.0f}).clicked) {
                 clearTexturePreview();
                 uncheckAllFaces();
-                break;
             }
-            cy += previewSize + 6.0f;
+            cy += previewSize + 10.0f;
 
-            float qaH = 24.0f;
-            float btnW = (panelW - 12.0f) / 4.0f;
+            // Quick assign buttons
+            float qaH = 30.0f;
+            float btnW = (pw - 24.0f) / 5.0f;
             auto qBtn = [&](const char* label, float x, const std::string& partKey) {
                 if (uiButton(win, label, {x, cy, btnW, qaH}, {0.15f, 0.3f, 0.5f, 1.0f}).clicked) {
-                    for (int fi = 0; fi < 6; ++fi)
+                    for (int fi = 0; fi < kFaceCount; ++fi)
                         av.setPartFace(partKey, kFaceKeys[fi], gSelectedTexture);
                     checkAllFaces();
                     liveApply();
                 }
             };
-            qBtn("Head", panelX, "head");
-            qBtn("Torso", panelX + btnW + 4.0f, "torso");
-            qBtn("Arms", panelX + 2 * (btnW + 4.0f), "leftArm");
-            cy += qaH + 2.0f;
-            qBtn("Legs", panelX, "legs");
-            if (uiButton(win, "All Body", {panelX + btnW + 4.0f, cy, panelW - btnW - 4.0f, qaH}, {0.2f, 0.4f, 0.25f, 1.0f}).clicked) {
-                for (int pi = 0; pi < 6; ++pi)
-                    for (int fi = 0; fi < 6; ++fi)
+            qBtn("Head", px + 4.0f, "head");
+            qBtn("Torso", px + 4.0f + btnW + 4.0f, "torso");
+            qBtn("Arms", px + 4.0f + 2 * (btnW + 4.0f), "leftArm");
+            qBtn("Legs", px + 4.0f + 3 * (btnW + 4.0f), "leftLeg");
+            if (uiButton(win, "All", {px + 4.0f + 4 * (btnW + 4.0f), cy, btnW, qaH}, {0.2f, 0.4f, 0.25f, 1.0f}).clicked) {
+                for (int pi = 0; pi < kPartCount; ++pi)
+                    for (int fi = 0; fi < kFaceCount; ++fi)
                         av.setPartFace(kPartKeys[pi], kFaceKeys[fi], gSelectedTexture);
                 checkAllFaces();
                 liveApply();
             }
-            cy += qaH + 6.0f;
+            cy += qaH + 8.0f;
 
-            if (uiButton(win, "Select All", {panelX, cy, 80.0f, 20.0f}, {0.15f, 0.25f, 0.4f, 1.0f}).clicked)
+            // Select all / Clear
+            if (uiButton(win, "Select All", {px + 4.0f, cy, 100.0f, 26.0f}, {0.15f, 0.25f, 0.4f, 1.0f}).clicked)
                 checkAllFaces();
-            if (uiButton(win, "Clear", {panelX + 86.0f, cy, 60.0f, 20.0f}, {0.35f, 0.15f, 0.15f, 1.0f}).clicked)
+            if (uiButton(win, "Clear", {px + 112.0f, cy, 80.0f, 26.0f}, {0.35f, 0.15f, 0.15f, 1.0f}).clicked)
                 uncheckAllFaces();
-            cy += 24.0f;
+            cy += 32.0f;
 
-            float faceListH = remainingH - (cy - panelY - tabH - 4.0f) - 40.0f;
-            if (faceListH < 50.0f) faceListH = 50.0f;
+            // Face grid
+            contentH = cy - contentArea.y + kPartCount * 100.0f;
 
-            int totalFaceRows = 6;
-            float faceRowH = 20.0f;
-            float faceRowGap = 1.0f;
-            float faceSectionH = 22.0f + 6.0f * (faceRowH + faceRowGap);
-            int visibleParts = std::max(1, (int)(faceListH / faceSectionH));
+            for (int pi = 0; pi < kPartCount; ++pi)
+            {
+                uiDrawText(kPartLabels[pi], uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.70f, 0.80f, 0.90f, 1.0f});
+                cy += 24.0f;
 
-            if (gAssignScroll > 0) {
-                if (uiButton(win, "u", {panelX + panelW - 20.0f, cy, 18.0f, 14.0f}, {0.2f, 0.3f, 0.45f, 1.0f}).clicked)
-                    gAssignScroll = std::max(0, gAssignScroll - 1);
-            }
-
-            float partY = cy;
-            for (int pi = gAssignScroll; pi < 6 && pi < gAssignScroll + visibleParts; ++pi) {
-                uiDrawText(kPartLabels[pi], uiScaleX(panelX), uiScaleY(partY), 0.26f, {0.70f, 0.80f, 0.90f, 1.0f});
-                partY += 20.0f;
-
-                int facesPerCol = 3;
-                float colW = (panelW - 6.0f) / 2.0f;
-                for (int fi = 0; fi < 6; ++fi) {
-                    int col = fi / facesPerCol;
-                    int row = fi % facesPerCol;
-                    float fx = panelX + col * colW;
-                    float fy = partY + row * (faceRowH + faceRowGap);
+                int facesPerRow = 3;
+                float colW = (pw - 12.0f) / 2.0f;
+                float faceH = 22.0f;
+                for (int fi = 0; fi < kFaceCount; ++fi)
+                {
+                    int col = fi / facesPerRow;
+                    int row = fi % facesPerRow;
+                    float fx = px + 4.0f + col * colW;
+                    float fy = cy + row * (faceH + 2.0f);
                     int idx = faceSlotIndex(pi, fi);
                     bool checked = gCheckedFaces.count(idx) > 0;
 
-                    UIRect chkScreen = {uiScaleX(fx), uiScaleY(fy), uiScaleY(faceRowH), uiScaleY(faceRowH)};
+                    UIRect chkScreen = {uiScaleX(fx), uiScaleY(fy), uiScaleY(faceH), uiScaleY(faceH)};
                     glm::vec4 cbCol = checked ? glm::vec4{0.2f, 0.7f, 0.3f, 1.0f} : glm::vec4{0.12f, 0.12f, 0.16f, 1.0f};
-                    uiDrawRect(chkScreen, cbCol, "chk");
+                    uiDrawRect(chkScreen, cbCol, "face-chk");
                     if (checked)
-                        uiDrawText("\u2713", chkScreen.x + 2.0f, chkScreen.y + 1.0f, 0.22f, {1.0f, 1.0f, 1.0f, 1.0f});
-                    if (uiButton(win, "", {fx, fy, faceRowH, faceRowH}, cbCol).clicked)
-                        toggleFaceCheck(idx);
-                    uiDrawText(kFaceLabels[fi], uiScaleX(fx + faceRowH + 3.0f), uiScaleY(fy + 2.0f),
-                               0.22f, {0.7f, 0.75f, 0.85f, 1.0f});
-                }
-                partY += facesPerCol * (faceRowH + faceRowGap) + 2.0f;
-            }
+                        uiDrawText("\u2713", chkScreen.x + 3.0f, chkScreen.y + 2.0f, 0.52f, {1.0f, 1.0f, 1.0f, 1.0f});
 
-            float applyY = panelY + panelH - 36.0f;
-            if (!gCheckedFaces.empty()) {
-                if (uiButton(win, "APPLY TO CHECKED FACES", {panelX, applyY, panelW, 30.0f},
-                             {0.2f, 0.55f, 0.3f, 1.0f}).clicked) {
-                    for (int idx : gCheckedFaces) {
-                        int pi = idx / 6;
-                        int fi = idx % 6;
-                        av.setPartFace(kPartKeys[pi], kFaceKeys[fi], gSelectedTexture);
-                    }
-                    Terminal::instance().addLog("[AVATAR] Applied to " + std::to_string(gCheckedFaces.size()) + " faces");
-                    liveApply();
+                    if (uiButton(win, "", {fx, fy, faceH, faceH}, cbCol).clicked)
+                        toggleFaceCheck(idx);
+
+                    uiDrawText(kFaceLabels[fi], uiScaleX(fx + faceH + 4.0f), uiScaleY(fy + 2.0f),
+                               0.52f, {0.7f, 0.75f, 0.85f, 1.0f});
                 }
+                cy += facesPerRow * (faceH + 2.0f) + 6.0f;
             }
         }
+
+        // Apply to checked faces button
+        float applyY = cy + 10.0f;
+        if (!gCheckedFaces.empty())
+        {
+            if (uiButton(win, "APPLY TO CHECKED FACES", {px + 4.0f, applyY, pw - 8.0f, 34.0f},
+                         {0.2f, 0.55f, 0.3f, 1.0f}).clicked) {
+                for (int idx : gCheckedFaces) {
+                    int pi = idx / kFaceCount;
+                    int fi = idx % kFaceCount;
+                    av.setPartFace(kPartKeys[pi], kFaceKeys[fi], gSelectedTexture);
+                }
+                Terminal::instance().addLog("[AVATAR] Applied to " + std::to_string(gCheckedFaces.size()) + " faces");
+                liveApply();
+            }
+        }
+
+        endScroll(contentArea, contentH, cs);
         break;
     }
-    case 1: { // Colors tab
-        float colPickerH = 130.0f;
-        int partsPerCol = 3;
-        float colW = (panelW - 8.0f) / 2.0f;
-        float pickerCy = cy;
 
-        for (int pi = 0; pi < 6; ++pi) {
-            int col = pi / partsPerCol;
-            int row = pi % partsPerCol;
-            float px = panelX + col * (colW + 8.0f);
-            float py = pickerCy + row * (colPickerH + 4.0f);
+    case 1: // Colors tab
+    {
+        float contentH = kPartCount * 100.0f;
+        beginScroll(win, contentArea, contentH, cs);
 
+        for (int pi = 0; pi < kPartCount; ++pi)
+        {
             glm::vec3 color = av.partColor(kPartKeys[pi]);
-            UIRect swatchScreen = {uiScaleX(px), uiScaleY(py), uiScaleX(20.0f), uiScaleY(20.0f)};
+            UIRect swatchScreen = {uiScaleX(px + 4.0f), uiScaleY(cy), uiScaleX(24.0f), uiScaleY(24.0f)};
             uiDrawRect(swatchScreen, {color.r, color.g, color.b, 1.0f}, "part-swatch");
-            uiDrawText(kPartLabels[pi], uiScaleX(px + 24.0f), uiScaleY(py), 0.26f, {0.8f, 0.85f, 0.95f, 1.0f});
+            uiDrawText(kPartLabels[pi], uiScaleX(px + 34.0f), uiScaleY(cy), 0.68f, {0.8f, 0.85f, 0.95f, 1.0f});
 
-            float sliderX = px + 4.0f;
-            float sliderY = py + 22.0f;
-            float sliderW = colW - 8.0f;
+            float sliderX = px + 8.0f;
+            float sliderY = cy + 28.0f;
+            float sliderW = pw - 60.0f;
 
-            float newR = drawSlider(win, sliderX, sliderY, sliderW - 50.0f, color.r, {0, 1, 0.01f}, "R");
-            sliderY += 16.0f;
-            float newG = drawSlider(win, sliderX, sliderY, sliderW - 50.0f, color.g, {0, 1, 0.01f}, "G");
-            sliderY += 16.0f;
-            float newB = drawSlider(win, sliderX, sliderY, sliderW - 50.0f, color.b, {0, 1, 0.01f}, "B");
+            float newR = drawSlider(win, sliderX, sliderY, sliderW, color.r, {0, 1, 0.01f}, "R");
+            sliderY += 20.0f;
+            float newG = drawSlider(win, sliderX, sliderY, sliderW, color.g, {0, 1, 0.01f}, "G");
+            sliderY += 20.0f;
+            float newB = drawSlider(win, sliderX, sliderY, sliderW, color.b, {0, 1, 0.01f}, "B");
 
             if (newR != color.r || newG != color.g || newB != color.b) {
                 av.setPartColor(kPartKeys[pi], glm::vec3(newR, newG, newB));
                 liveApply();
             }
+            cy += 90.0f;
         }
+
+        endScroll(contentArea, contentH, cs);
         break;
     }
-    case 2: { // Cosmetics tab
-        uiDrawText("Cosmetics", uiScaleX(panelX), uiScaleY(cy), 0.32f, {0.8f, 0.9f, 1.0f, 1.0f});
-        cy += 26.0f;
 
-        for (int si = 0; si < 4; ++si) {
-            uiDrawText(kCosmeticSlotLabels[si], uiScaleX(panelX), uiScaleY(cy), 0.26f, {0.7f, 0.8f, 0.9f, 1.0f});
-            cy += 20.0f;
+    case 2: // Cosmetics tab
+    {
+        uiDrawText("Cosmetics", uiScaleX(px + 4.0f), uiScaleY(cy), 0.72f, {0.8f, 0.9f, 1.0f, 1.0f});
+        cy += 30.0f;
 
+        // Scan cosmetics folder
+        std::vector<std::string> cosmeticItems;
+        std::string cosDir = "assets/objects/things/cosmetics";
+        if (std::filesystem::exists(cosDir))
+        {
+            for (const auto& entry : std::filesystem::directory_iterator(cosDir))
+            {
+                if (entry.path().extension() == ".glb")
+                    cosmeticItems.push_back(entry.path().filename().string());
+            }
+            std::sort(cosmeticItems.begin(), cosmeticItems.end());
+        }
+
+        const char* kCosmeticSlots[] = {"head", "torso", "arms", "legs"};
+        const char* kCosmeticSlotLabels[] = {"Headwear", "Body", "Arms", "Legs"};
+        float ddItemH = 28.0f;
+
+        for (int si = 0; si < 4; ++si)
+        {
             std::string currentChoice = "none";
-            for (auto& c : av.current().cosmetics) {
-                if (c.slot == kCosmeticSlots[si]) {
+            for (auto& c : av.current().cosmetics)
+            {
+                if (c.slot == kCosmeticSlots[si])
+                {
                     currentChoice = c.choice;
                     break;
                 }
             }
 
-            float optionW = (panelW - 16.0f) / 5.0f;
-            for (int oi = 0; oi < kCosmeticOptionCount; ++oi) {
-                int col = oi % 5;
-                int row = oi / 5;
-                float ox = panelX + col * (optionW + 4.0f);
-                float oy = cy + row * 18.0f;
+            // Find index for dropdown
+            static DropdownState slotStates[4];
 
-                bool active = (currentChoice == kCosmeticOptions[oi]);
-                glm::vec4 btnCol = active ? glm::vec4{0.2f, 0.5f, 0.3f, 1.0f} : glm::vec4{0.08f, 0.09f, 0.13f, 1.0f};
-                if (uiButton(win, kCosmeticOptions[oi], {ox, oy, optionW, 16.0f}, btnCol).clicked) {
-                    auto& cosmetics = const_cast<std::vector<CosmeticSlot>&>(av.current().cosmetics);
-                    bool found = false;
-                    for (auto& c : cosmetics) {
-                        if (c.slot == kCosmeticSlots[si]) {
-                            c.choice = kCosmeticOptions[oi];
-                            found = true;
-                            break;
-                        }
+            uiDrawText(kCosmeticSlotLabels[si], uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.7f, 0.8f, 0.9f, 1.0f});
+            cy += 24.0f;
+
+            int sel = drawDropdown(win, slotStates[si], px + 8.0f, cy, pw - 16.0f, ddItemH,
+                                    nullptr, cosmeticItems.empty() ? std::vector<std::string>{"Nothing found."} : cosmeticItems);
+
+            if (sel >= 0 && sel < (int)cosmeticItems.size())
+            {
+                auto& cosmetics = const_cast<std::vector<CosmeticSlot>&>(av.current().cosmetics);
+                bool found = false;
+                for (auto& c : cosmetics) {
+                    if (c.slot == kCosmeticSlots[si]) {
+                        c.choice = cosmeticItems[sel];
+                        found = true;
+                        break;
                     }
-                    if (!found)
-                        cosmetics.push_back({kCosmeticSlots[si], kCosmeticOptions[oi]});
-                    liveApply();
                 }
+                if (!found)
+                    cosmetics.push_back({kCosmeticSlots[si], cosmeticItems[sel]});
+                liveApply();
             }
-            cy += ((kCosmeticOptionCount + 4) / 5) * 18.0f + 8.0f;
+
+            cy += ddItemH + 12.0f;
         }
         break;
     }
-    case 3: { // Presets tab
-        uiDrawText("Presets", uiScaleX(panelX), uiScaleY(cy), 0.32f, {0.8f, 0.9f, 1.0f, 1.0f});
-        cy += 26.0f;
+
+    case 3: // Presets tab
+    {
+        uiDrawText("Presets", uiScaleX(px + 4.0f), uiScaleY(cy), 0.72f, {0.8f, 0.9f, 1.0f, 1.0f});
+        cy += 30.0f;
 
         static char presetNameBuf[64] = "";
         static bool presetInputActive = false;
 
-        uiDrawText("Save as:", uiScaleX(panelX), uiScaleY(cy), 0.24f, {0.5f, 0.6f, 0.7f, 1.0f});
-        UIRect inputRect = {uiScaleX(panelX + 60.0f), uiScaleY(cy), uiScaleX(160.0f), uiScaleY(22.0f)};
+        uiDrawText("Save as:", uiScaleX(px + 4.0f), uiScaleY(cy), 0.60f, {0.5f, 0.6f, 0.7f, 1.0f});
+        UIRect inputRect = {uiScaleX(px + 80.0f), uiScaleY(cy), uiScaleX(180.0f), uiScaleY(28.0f)};
         uiDrawRect(inputRect, {0.08f, 0.09f, 0.13f, 1.0f}, "preset-input");
-        uiDrawText(presetNameBuf[0] ? presetNameBuf : "name...", inputRect.x + 4.0f, inputRect.y + 3.0f, 0.22f,
+        uiDrawText(presetNameBuf[0] ? presetNameBuf : "name...", inputRect.x + 6.0f, inputRect.y + 4.0f, 0.56f,
                    presetNameBuf[0] ? glm::vec4{1,1,1,1} : glm::vec4{0.4f, 0.4f, 0.5f, 1.0f});
-        if (uiButton(win, "", {panelX + 60.0f, cy, 160.0f, 22.0f}, {0,0,0,0}).clicked)
+        if (uiButton(win, "", {px + 80.0f, cy, 180.0f, 28.0f}, {0,0,0,0}).clicked)
             presetInputActive = true;
 
-        if (uiButton(win, "SAVE", {panelX + 230.0f, cy, 70.0f, 22.0f}, {0.2f, 0.5f, 0.3f, 1.0f}).clicked) {
+        if (uiButton(win, "SAVE", {px + 270.0f, cy, 80.0f, 28.0f}, {0.2f, 0.5f, 0.3f, 1.0f}).clicked)
+        {
             if (presetNameBuf[0]) {
                 av.savePreset(presetNameBuf);
                 memset(presetNameBuf, 0, sizeof(presetNameBuf));
             }
         }
-        cy += 28.0f;
+        cy += 34.0f;
 
         auto presets = av.listPresets();
-        for (auto& p : presets) {
+        for (auto& p : presets)
+        {
             bool active = (p == av.current().activePreset);
             glm::vec4 pCol = active ? glm::vec4{0.2f, 0.45f, 0.28f, 1.0f} : glm::vec4{0.08f, 0.09f, 0.14f, 1.0f};
-            UIRect pr = {panelX, cy, panelW, 24.0f};
-            UIRect ps = {uiScaleX(panelX), uiScaleY(cy), uiScaleX(panelW), uiScaleY(24.0f)};
+            UIRect pr = {px + 4.0f, cy, pw - 8.0f, 28.0f};
+            UIRect ps = {uiScaleX(px + 4.0f), uiScaleY(cy), uiScaleX(pw - 8.0f), uiScaleY(28.0f)};
             uiDrawRect(ps, pCol, "preset-entry");
-            if (active) uiDrawRectOutline(ps, {0.3f, 0.8f, 0.5f, 1.0f}, "preset-active");
-            uiDrawText(p.c_str(), ps.x + 6.0f, ps.y + 4.0f, 0.26f, {1,1,1,1});
-            if (uiButton(win, "", pr, pCol).clicked) {
+            if (active)
+                uiDrawRectOutline(ps, {0.3f, 0.8f, 0.5f, 1.0f}, "preset-active");
+            uiDrawText(p.c_str(), ps.x + 8.0f, ps.y + 4.0f, 0.60f, {1,1,1,1});
+            if (uiButton(win, "", pr, pCol).clicked)
+            {
                 av.loadPreset(p);
                 liveApply();
             }
-            cy += 26.0f;
+            cy += 30.0f;
         }
 
-        if (presets.empty()) {
-            uiDrawText("No presets saved yet.", uiScaleX(panelX), uiScaleY(cy), 0.22f, {0.4f, 0.5f, 0.6f, 1.0f});
-        }
+        if (presets.empty())
+            uiDrawText("No presets saved yet.", uiScaleX(px + 4.0f), uiScaleY(cy), 0.56f, {0.4f, 0.5f, 0.6f, 1.0f});
         break;
     }
     }
-
 }
 
 } // anonymous namespace
 
-AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
+AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
+{
     AvatarMenuResult r{};
     AvatarSystem& av = AvatarSystem::instance();
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     int fbW = 0, fbH = 0;
     glfwGetFramebufferSize(win, &fbW, &fbH);
 
-    // Background
-    uiDrawRect({0, 0, (float)fbW, (float)fbH}, {0.028f, 0.032f, 0.045f, 1.0f}, "avatar-bg");
-
     GuiLayout& layout = getLayout();
 
-    // ── Layout-based panel dimensions ────────────────────────────────
+    // Panel positions from config
     float libX = lx("panelLibrary", 20.0f);
     float libY = ly("panelLibrary", 50.0f);
-    float libW = lw("panelLibrary", 310.0f);
+    float libW = lw("panelLibrary", 280.0f);
     float libH = lh("panelLibrary", 950.0f);
 
-    float editX = lx("panelEditor", 360.0f);
+    float editX = lx("panelEditor", 320.0f);
     float editY = ly("panelEditor", 50.0f);
-    float editW = lw("panelEditor", 730.0f);
+    float editW = lw("panelEditor", 560.0f);
     float editH = lh("panelEditor", 950.0f);
 
     // ── LEFT PANEL: PNG Library ─────────────────────────────────────
@@ -548,9 +536,21 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
                 uiDrawRectOutline(bg, panel->getOutlineColorVec(), "lib-border");
         }
     }
-    drawLibraryPanel(win, libX, libY + 20.0f, libW, libH - 20.0f);
 
-    // ── CENTER PANEL: Apply & Edit ──────────────────────────────────
+    // Lib title + hints
+    const GuiElement* lt = layout.get("libTitle");
+    if (lt) uiDrawText(lt->text.c_str(), cs.designToScreenX(lt->x), cs.designToScreenY(lt->y),
+                        lt->fontSize, lt->getTextColorVec());
+    const GuiElement* lh1 = layout.get("libImportHint");
+    if (lh1) uiDrawText(lh1->text.c_str(), cs.designToScreenX(lh1->x), cs.designToScreenY(lh1->y),
+                         lh1->fontSize, lh1->getTextColorVec());
+    const GuiElement* lh2 = layout.get("libImportHint2");
+    if (lh2) uiDrawText(lh2->text.c_str(), cs.designToScreenX(lh2->x), cs.designToScreenY(lh2->y),
+                         lh2->fontSize, lh2->getTextColorVec());
+
+    drawLibraryPanel(win, libX + 4.0f, libY + 30.0f, libW - 8.0f, libH - 35.0f);
+
+    // ── CENTER PANEL: Editor ────────────────────────────────────────
     {
         const GuiElement* panel = layout.get("panelEditor");
         if (panel) {
@@ -561,15 +561,14 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
         }
     }
 
-    // Title
     const GuiElement* titleEl = layout.get("editorTitle");
-    if (titleEl) {
-        float tx = cs.designToScreenX(titleEl->x);
-        float ty = cs.designToScreenY(titleEl->y);
-        uiDrawText(titleEl->text.c_str(), tx, ty, titleEl->fontSize, titleEl->getTextColorVec());
-    }
+    if (titleEl)
+        uiDrawText(titleEl->text.c_str(), cs.designToScreenX(titleEl->x), cs.designToScreenY(titleEl->y),
+                   titleEl->fontSize, titleEl->getTextColorVec());
 
-    drawEditorPanel(win, editX + 2.0f, editY + 28.0f, editW - 4.0f, editH - 68.0f);
+    drawEditorPanel(win, editX + 4.0f, editY + 34.0f, editW - 8.0f, editH - 70.0f);
+
+    // ── RIGHT PANEL: No UI drawn here — 3D preview renders behind ─────
 
     // ── Bottom buttons: Save, Apply, Back ────────────────────────────
     {
@@ -599,18 +598,17 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
 
     // ── Avatar selector ─────────────────────────────────────────────
     auto avatars = av.listAvatars();
-    float selX = lx("avatarSelectorLabel", libX) + 52.0f;
+    float selX = lx("avatarSelectorLabel", libX) + 60.0f;
     float selY = ly("avatarSelectorLabel", 4.0f);
-    float selH = 22.0f;
-    {
-        const GuiElement* labelEl = layout.get("avatarSelectorLabel");
-        if (labelEl) {
-            uiDrawText(labelEl->text.c_str(), cs.designToScreenX(labelEl->x), cs.designToScreenY(labelEl->y),
-                       labelEl->fontSize, labelEl->getTextColorVec());
-        }
-    }
+    float selH = 26.0f;
+
+    const GuiElement* labelEl = layout.get("avatarSelectorLabel");
+    if (labelEl)
+        uiDrawText(labelEl->text.c_str(), cs.designToScreenX(labelEl->x), cs.designToScreenY(labelEl->y),
+                   labelEl->fontSize, labelEl->getTextColorVec());
+
     for (auto& a : avatars) {
-        if (uiButton(win, a.c_str(), {selX, selY, 80.0f, selH},
+        if (uiButton(win, a.c_str(), {selX, selY, 100.0f, selH},
                      a == av.currentName() ? glm::vec4{0.2f, 0.48f, 0.28f, 1.0f} : glm::vec4{0.09f, 0.11f, 0.16f, 1.0f}).clicked) {
             if (a != av.currentName()) {
                 av.loadAvatar(a);
@@ -619,7 +617,7 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win) {
                 clearTexturePreview();
             }
         }
-        selY += selH + 2.0f;
+        selY += selH + 3.0f;
     }
 
     return r;

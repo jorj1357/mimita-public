@@ -1,76 +1,110 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "coverImage",
+  "version": 3,
+  "elements": {
+    "coverImage": {
       "type": "image",
-      "x": 0,
-      "y": 0,
-      "width": 1920,
-      "height": 680,
-      "backgroundImage": "assets/uitextures/mimita cover in game v1.png",
-      "visible": true
+      "x": 0, "y": 0, "width": 1920, "height": 680,
+      "backgroundImage": "assets/uitextures/mimita cover in game v1.png"
     },
-    {
-      "id": "playButton",
+    "playButton": {
       "type": "button",
-      "x": 270,
-      "y": 520,
-      "width": 300,
-      "height": 62,
+      "x": 480, "y": 524, "width": 304, "height": 93,
       "text": "PLAY",
       "fontSize": 0.44,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.24, 0.82, 0.48, 1.0]
     },
-    {
-      "id": "settingsButton",
+    "settingsButton": {
       "type": "button",
-      "x": 270,
-      "y": 600,
-      "width": 300,
-      "height": 62,
+      "x": 144, "y": 427, "width": 160, "height": 44,
       "text": "SETTINGS",
       "fontSize": 0.44,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.86, 0.74, 0.28, 1.0]
     },
-    {
-      "id": "replaysButton",
+    "replaysButton": {
       "type": "button",
-      "x": 270,
-      "y": 680,
-      "width": 300,
-      "height": 62,
+      "x": 144, "y": 484, "width": 160, "height": 44,
       "text": "REPLAYS",
       "fontSize": 0.44,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.55, 0.35, 0.75, 1.0]
     },
-    {
-      "id": "avatarButton",
+    "avatarButton": {
       "type": "button",
-      "x": 270,
-      "y": 760,
-      "width": 300,
-      "height": 62,
+      "x": 725, "y": 881, "width": 348, "height": 91,
       "text": "AVATAR",
       "fontSize": 0.44,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.3, 0.6, 0.5, 1.0]
     },
-    {
-      "id": "exitButton",
+    "enterSignInCodeButton": {
       "type": "button",
-      "x": 270,
-      "y": 840,
-      "width": 300,
-      "height": 62,
+      "x": 270, "y": 780, "width": 300, "height": 50,
+      "text": "ENTER SIGN-IN CODE",
+      "fontSize": 0.30,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.25, 0.3, 0.5, 1.0]
+    },
+    "exitButton": {
+      "type": "button",
+      "x": 653, "y": 1000, "width": 384, "height": 119,
       "text": "EXIT",
       "fontSize": 0.44,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.65, 0.2, 0.2, 1.0]
+    },
+    "accountLogin": {
+      "type": "button",
+      "x": 1026, "y": 545, "width": 139, "height": 31,
+      "text": "Sign In",
+      "backgroundColor": [0.2, 0.2, 0.3, 1.0],
+      "textColor": [1, 1, 1, 1]
+    },
+    "accountSignup": {
+      "type": "button",
+      "x": 1040, "y": 586, "width": 139, "height": 31,
+      "text": "Sign Up",
+      "backgroundColor": [0.2, 0.2, 0.3, 1.0],
+      "textColor": [1, 1, 1, 1]
+    },
+    "accountSection": {
+      "type": "panel",
+      "x": 1120, "y": 100, "width": 700, "height": 400,
+      "visible": true,
+      "backgroundColor": [0, 0, 0, 0]
+    },
+    "accountContinueLabel": {
+      "type": "text",
+      "x": 1140, "y": 110, "width": 300, "height": 24,
+      "text": "Continue as:",
+      "fontSize": 0.28,
+      "textColor": [0.6, 0.65, 0.75, 0.8]
+    },
+    "accountPlayButton": {
+      "type": "button",
+      "x": 1140, "y": 230, "width": 660, "height": 40,
+      "text": "Play",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.6, 0.3, 1.0]
+    },
+    "accountSwitchButton": {
+      "type": "button",
+      "x": 1140, "y": 280, "width": 660, "height": 34,
+      "text": "Switch Account",
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.25, 0.3, 0.45, 1.0]
+    },
+    "accountLogoutButton": {
+      "type": "button",
+      "x": 1140, "y": 322, "width": 660, "height": 34,
+      "text": "Logout",
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.4, 0.15, 0.15, 1.0]
     }
-  ]
+  }
 }

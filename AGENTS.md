@@ -651,11 +651,28 @@ Before ending any task:
 2. **Build** if code changed (using `build_agent.py`)
 3. **Run relevant validation/tests**
 4. **Verify expected outputs exist**
-5. **Run Overseer** — Load the overseer skill via `skill("overseer")` and execute its full checklist.
-6. **Overseer must return CLEAN PASS** before proceeding.
-7. **Save logs**
-8. **Trigger completion notification script**
-9. **Print summary**
+
+## Final Validation (Required)
+
+Before considering ANY task complete, always execute:
+
+```
+python overseer.py
+```
+
+Every checker must pass.
+
+Do not claim work is complete while any checker reports failures.
+
+If a checker fails:
+
+1. Fix the reported issues.
+2. Run overseer.py again.
+3. Repeat until every checker passes.
+
+5. **Save logs**
+6. **Trigger completion notification script**
+7. **Print summary**
 
 Agents should never simply stop after editing files.
 
@@ -753,14 +770,20 @@ Timers may not invent collisions.
 
 # Mandatory Final Check
 
-Before completing any task that modifies code, configuration, scripts, documentation, or build files, invoke the `overseer` skill via `skill("overseer")` and include its combined report.
+Before completing any task that modifies code, configuration, scripts, documentation, or build files, always execute:
+
+```
+python overseer.py
+```
+
+Every checker must pass.
 
 ## Zero-Tolerance Policy
 
-Overseer is the final authority. Nothing is considered complete until overseer returns:
+Overseer is the final authority. Nothing is considered complete until `python overseer.py` returns:
 
 ```
-FINAL STATUS: CLEAN PASS
+Overall Status:  PASS
 ```
 
 The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL, or any finding that requires action. Any finding whatsoever — including "acceptable warning," "justified," "known issue," "technical debt," or "follow-up item" — is a failed review.
@@ -768,9 +791,9 @@ The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL,
 ## Workflow
 
 1. Make code changes
-2. Run overseer
-3. If overseer finds ANY issue — fix it, re-run overseer
-4. Repeat until overseer returns CLEAN PASS with Warnings: 0, Low: 0, Medium: 0, High: 0, Critical: 0
+2. Run `python overseer.py`
+3. If any checker finds ANY issue — fix it, re-run overseer.py
+4. Repeat until every checker passes
 5. Only then claim the task is complete
 
 ## Forbidden
@@ -782,41 +805,14 @@ The following statuses are NOT acceptable: WARNING, LOW, MEDIUM, HIGH, CRITICAL,
 
 ## Exceptions
 
-If overseer cannot run (e.g., missing skills), explain exactly why in the completion report. Do not skip the check.
+If overseer.py cannot run (e.g., Python not available), explain exactly why in the completion report. Do not skip the check.
 
-## Skill Discovery Notes
+## Extending
 
-Skills are located under `.opencode/skills/<name>/SKILL.md`.
+To add a new checker, create a new directory under `.opencode/skills/<name>/` with a `checker.py` that:
 
-**IMPORTANT**: The `glob` tool cannot match paths starting with `.` (e.g., `.opencode/skills/overseer/SKILL.md` returns "No files found" even though the file exists). This is a known tool limitation.
+- Prints results to stdout
+- Returns exit code 0 for PASS, non-zero for FAIL
+- Runs in under 120 seconds
 
-To discover skills or verify they exist:
-- Use `skill("name")` to load a skill by name (works for any skill with YAML frontmatter).
-- Use PowerShell: `Test-Path ".opencode/skills/<name>/SKILL.md"` to verify file existence.
-- Use glob `**/SKILL.md` from the workspace root to list all skill files (this pattern works).
-- Use `Get-ChildItem -Recurse ".opencode/skills"` to list all skills.
-
-Do NOT use `glob` with `.opencode/...` patterns — they will falsely return "No files found".
-
-## Diagnostics (when a skill cannot be found)
-
-If `skill("name")` fails or a skill appears missing, run these diagnostics:
-
-```powershell
-Write-Host "=== SKILL DIAGNOSTIC ==="
-Write-Host "CWD: $(Get-Location)"
-Write-Host "Workspace root: C:\important\mimita-priv-v8"
-$path = ".opencode/skills/overseer/SKILL.md"
-Write-Host "Expected path: $path"
-Write-Host "File exists: $(Test-Path -LiteralPath $path)"
-Write-Host "All discovered skills:"
-$skills = Get-ChildItem -Path ".opencode/skills" -Directory
-$skills | ForEach-Object { Write-Host "  $($_.Name)" }
-Write-Host "=== END DIAGNOSTIC ==="
-```
-
-If the file exists (Test-Path returns True) but skill("name") fails, the issue is:
-- Missing or malformed YAML frontmatter in the SKILL.md (requires `name:` and `description:` keys).
-- The system needs to be restarted to re-index skills after adding frontmatter.
-
-Report all diagnostic findings. Do not silently skip.
+The overseer automatically discovers and runs all checker scripts. No changes to `overseer.py` are required.

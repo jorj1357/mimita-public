@@ -23,6 +23,9 @@ void GuiEditor::handleInput(GLFWwindow* win)
     bool released = !mouseDown && prevDown;
     prevDown = mouseDown;
 
+    bool shiftHeld = glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                     glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+
     static int dragSlider = -1;
     if (dragSlider >= 0) {
         if (mouseDown && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
@@ -56,6 +59,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
+    // Slider drag detection
     if (pressed && !mDragging && !mResizing) {
         const float sliderStartY = PP_Y + 34.0f;
         const int numSliders = 14;
@@ -69,6 +73,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
+    // Hierarchy filter click
     if (pressed && !mDragging && !mResizing) {
         const float hx = 12.0f, hw = 218.0f;
         if (dx >= hx && dx <= hx + hw && dy >= 108 && dy <= 128 && !mActiveLayoutFile.empty()) {
@@ -76,6 +81,11 @@ void GuiEditor::handleInput(GLFWwindow* win)
             if (!mFilterFocused) mHierarchyFilter.clear();
             return;
         }
+    }
+
+    // Hierarchy list click
+    if (pressed && !mDragging && !mResizing) {
+        const float hx = 12.0f, hw = 218.0f;
         const float hy = 130.0f;
         if (dx >= hx && dx <= hx + hw && dy >= hy && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
@@ -86,8 +96,6 @@ void GuiEditor::handleInput(GLFWwindow* win)
                     ids.push_back(id);
             int idx = (int)((dy - hy) / PP_ROW_H);
             if (idx >= 0 && idx < (int)ids.size()) {
-                bool shiftHeld = glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                                 glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
                 if (shiftHeld) {
                     auto it = std::find(mMultiSelectedIds.begin(), mMultiSelectedIds.end(), ids[idx]);
                     if (it != mMultiSelectedIds.end())
@@ -107,6 +115,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
+    // Color picker click
     if (pressed && !mDragging && !mResizing && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
         const float labelStartY = PP_Y + 34.0f;
         if (dy >= labelStartY && dy < labelStartY + 14 * PP_ROW_H) {
@@ -119,11 +128,12 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
+    // Resize handle detection
     if (pressed && !mDragging && !mResizing && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
         GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
         const GuiElement* elem = layout.get(mSelectedId);
         if (elem) {
-            const float hr = 12.0f;
+            const float hr = 10.0f;
             float cx[4] = {elem->x, elem->x + elem->w, elem->x, elem->x + elem->w};
             float cy[4] = {elem->y, elem->y, elem->y + elem->h, elem->y + elem->h};
             for (int i = 0; i < 4; ++i) {
@@ -132,12 +142,16 @@ void GuiEditor::handleInput(GLFWwindow* win)
                     mResizeCorner = i;
                     mResizeStartX = elem->x; mResizeStartY = elem->y;
                     mResizeStartW = elem->w; mResizeStartH = elem->h;
+                    mDragActive = true;
+                    mCurrentDragX = (float)dx;
+                    mCurrentDragY = (float)dy;
                     return;
                 }
             }
         }
     }
 
+    // Widget selection + drag start
     if (pressed && !mDragging && !mResizing) {
         for (const auto& w : uiGetTrackedWidgets()) {
             double wx = w.rect.x, wy = w.rect.y, ww = w.rect.w, wh = w.rect.h;
@@ -158,6 +172,9 @@ void GuiEditor::handleInput(GLFWwindow* win)
                 mDragOffsetX = (float)dx - wx;
                 mDragOffsetY = (float)dy - wy;
                 mDragging = true;
+                mDragActive = true;
+                mCurrentDragX = (float)dx;
+                mCurrentDragY = (float)dy;
                 mHasOverlap = false;
                 printf("[GUI EDIT] selected \"%s\" (%.0f,%.0f) %.0fx%.0f\n",
                        w.id.c_str(), wx, wy, ww, wh);
@@ -171,15 +188,35 @@ void GuiEditor::handleInput(GLFWwindow* win)
         }
     }
 
+    // Cancel selection on empty click
+    if (pressed && !mDragging && !mResizing) {
+        bool hitWidget = false;
+        for (const auto& w : uiGetTrackedWidgets()) {
+            if (dx >= w.rect.x && dx <= w.rect.x + w.rect.w &&
+                dy >= w.rect.y && dy <= w.rect.y + w.rect.h) {
+                hitWidget = true; break;
+            }
+        }
+        if (!hitWidget && !mSelectedId.empty()) {
+            mSelectedId.clear();
+            mMultiSelectedIds.clear();
+        }
+    }
+
+    // Handle dragging
     if (mDragging) {
         if (mouseDown && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             const GuiElement* elem = layout.get(mSelectedId);
             if (elem) {
+                mCurrentDragX = (float)dx;
+                mCurrentDragY = (float)dy;
                 float nx = (float)dx - mDragOffsetX;
                 float ny = (float)dy - mDragOffsetY;
-                computeSnapGuides(*elem);
-                snapPosition(nx, ny, elem->w, elem->h);
+                if (!shiftHeld) {
+                    computeSnapGuides(*elem);
+                    snapPosition(nx, ny, elem->w, elem->h);
+                }
                 layout.set(mSelectedId, roundCoord(nx), roundCoord(ny),
                            roundValue(elem->w), roundValue(elem->h));
                 checkOverlaps();
@@ -187,16 +224,20 @@ void GuiEditor::handleInput(GLFWwindow* win)
             }
         } else {
             mDragging = false;
+            mDragActive = false;
             mHasOverlap = false;
             mSnapGuides.clear();
         }
     }
 
+    // Handle resizing
     if (mResizing) {
         if (mouseDown && mResizeCorner >= 0 && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
             GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
             if (elem) {
+                mCurrentDragX = (float)dx;
+                mCurrentDragY = (float)dy;
                 float ndx = (float)dx, ndy = (float)dy;
                 float nw = mResizeStartW, nh = mResizeStartH;
                 float nx = mResizeStartX, ny = mResizeStartY;
@@ -222,6 +263,14 @@ void GuiEditor::handleInput(GLFWwindow* win)
                         nh = std::max(10.0f, ndy - mResizeStartY);
                         break;
                 }
+                if (!shiftHeld) {
+                    computeSnapGuides(*elem);
+                    float snapX = nx, snapY = ny;
+                    snapPosition(snapX, snapY, elem->w, elem->h);
+                    nw += (nx - snapX);
+                    nh += (ny - snapY);
+                    nx = snapX; ny = snapY;
+                }
                 elem->w = roundValue(nw); elem->h = roundValue(nh);
                 elem->x = roundCoord(nx); elem->y = roundCoord(ny);
                 layout.setElement(*elem);
@@ -231,6 +280,7 @@ void GuiEditor::handleInput(GLFWwindow* win)
         } else {
             mResizing = false;
             mResizeCorner = -1;
+            mDragActive = false;
             mHasOverlap = false;
         }
     }
@@ -239,6 +289,18 @@ void GuiEditor::handleInput(GLFWwindow* win)
 void GuiEditor::handleKeyboard(GLFWwindow* win)
 {
     if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
+
+    // Ctrl+S: save immediately
+    if ((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+         glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) &&
+        glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS) {
+        static bool savePrev = false;
+        if (!savePrev) {
+            GuiLayoutManager::instance().saveAll();
+            printf("[GUI EDIT] saved all layouts\n");
+            savePrev = true;
+        }
+    } else { static bool savePrev = false; (void)savePrev; }
 
     if (mFilterFocused) {
         if (glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS) {
@@ -275,6 +337,7 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
         return;
     }
 
+    // Ctrl+D: duplicate
     if ((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
          glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) &&
         glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS) {
@@ -312,30 +375,31 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
             delPrev = true;
         }
     } else { static bool delPrev = false; (void)delPrev; }
+
     float step = 1.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
         glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) step = 10.0f;
     if (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
         glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) step = 50.0f;
 
-    float dx = 0, dy = 0;
-    if (glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS) dx -= step;
-    if (glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS) dx += step;
-    if (glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS) dy -= step;
-    if (glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS) dy += step;
-    if (dx == 0 && dy == 0) return;
+    float dkx = 0, dky = 0;
+    if (glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS) dkx -= step;
+    if (glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS) dkx += step;
+    if (glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS) dky -= step;
+    if (glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS) dky += step;
+    if (dkx == 0 && dky == 0) return;
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
     GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
     if (!elem) return;
     if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS) {
-        elem->textOffsetX += dx; elem->textOffsetY += dy;
+        elem->textOffsetX += dkx; elem->textOffsetY += dky;
     } else if (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
                glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
-        elem->w = std::max(10.0f, elem->w + dx);
-        elem->h = std::max(10.0f, elem->h + dy);
+        elem->w = std::max(10.0f, elem->w + dkx);
+        elem->h = std::max(10.0f, elem->h + dky);
     } else {
-        elem->x += dx; elem->y += dy;
+        elem->x += dkx; elem->y += dky;
     }
     elem->x = roundCoord(elem->x); elem->y = roundCoord(elem->y);
     layout.setElement(*elem);

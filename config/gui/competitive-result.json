@@ -1,0 +1,24 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "playAgainButton",
+      "type": "button",
+      "x": 830, "y": 620, "width": 260, "height": 44,
+      "text": "Play Again",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.24, 0.82, 0.48, 1.0]
+    },
+    {
+      "id": "exitButton",
+      "type": "button",
+      "x": 830, "y": 676, "width": 260, "height": 44,
+      "text": "Exit To Main Menu",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
+    }
+  ]
+}

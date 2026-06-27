@@ -84,6 +84,7 @@
 #include "render/outfit-atlas.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
+void registerCompetitiveCommands();
 #include "avatar/avatar-menu.h"
 #include "avatar/character-registry.h"
 #include "render/lighting-config.h"
@@ -411,4 +412,5 @@ void gameInitSubsystems(Engine& engine)
     });
 
     registerDuelCommands();
+    registerCompetitiveCommands();
 }

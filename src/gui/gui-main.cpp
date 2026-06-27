@@ -15,6 +15,9 @@
 #include "game/bomb-tag-config.h"
 #include "avatar/avatar-menu.h"
 #include "avatar/avatar.h"
+#include "competitive/competitive.h"
+#include "competitive/competitive-ui.h"
+#include "competitive/competitive-match.h"
 #include "ui-system.h"
 #include "gui-editor.h"
 #include "camera.h"
@@ -78,6 +81,8 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_REPLAY:       return "config/gui/replay-menu.json";
         case GUI_MENU_AVATAR_CREATOR: return "config/gui/avatar-creator.json";
         case GUI_MENU_BOMB_TAG_CONFIG: return "config/gui/bomb-tag-config.json";
+        case GUI_MENU_COMPETITIVE:      return "config/gui/competitive-menu.json";
+        case GUI_MENU_COMPETITIVE_RESULT: return "config/gui/competitive-result.json";
         case GUI_MENU_AUTH:            return "config/gui/main-menu.json";
     }
     return "config/gui/main-menu.json";
@@ -211,6 +216,11 @@ void guiMain(GLFWwindow* win, GameState& state)
                 printf("[MAIN MENU] logging out\n");
                 auth.logout();
             }
+            else if (r.enterSignInCode)
+            {
+                printf("[MAIN MENU] Enter Sign-In Code clicked\n");
+                authPopupStartCodeInput();
+            }
 
             break;
         }
@@ -219,7 +229,19 @@ void guiMain(GLFWwindow* win, GameState& state)
         {
             PlayMenuResult r = drawPlayMenu(win);
 
-            if (r.goDuels)
+            if (r.goCompetitive)
+            {
+                LoadCompetitiveProfile("default");
+                RefreshCompetitiveProfileFromApi();
+                printf("[COMP] Opening competitive menu, MMR=%d\n",
+                       GetCompetitiveProfile().mmr);
+                gGuiMenuState = GUI_MENU_COMPETITIVE;
+            }
+            else if (r.goCompetitiveSignIn)
+            {
+                gGuiMenuState = GUI_MENU_SIGN_IN;
+            }
+            else if (r.goDuels)
             {
                 gGuiMenuState = GUI_MENU_DUEL_CONFIG;
             }
@@ -237,6 +259,70 @@ void guiMain(GLFWwindow* win, GameState& state)
                 gGuiMenuState = GUI_MENU_PRACTICE;
             }
             else if (r.goBack)
+            {
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            break;
+        }
+
+        case GUI_MENU_COMPETITIVE:
+        {
+            // Refresh MMR animation each frame
+            updateMmrAnimation(0.016f);
+
+            auto action = drawCompetitiveMenu(win);
+            if (action == CompetitiveMenuAction::FindMatch)
+            {
+                // Mark as competitive match before starting
+                setCompetitiveMatchActive(true, 5000);
+                // Start a competitive duel vs NPCs (first to 5 kills)
+                DuelConfig cfg;
+                cfg.numNpcs = 1;
+                cfg.killsToWin = 5;
+                cfg.duelLengthSeconds = 300;
+                cfg.npcDifficulty = 5.0f;
+                cfg.npcNames = {"Competitive Bot"};
+                cfg.enabled = true;
+                gPendingDuelConfig.startDuel = true;
+                gPendingDuelConfig.numNpcs = cfg.numNpcs;
+                gPendingDuelConfig.killsToWin = cfg.killsToWin;
+                gPendingDuelConfig.duelLengthSeconds = cfg.duelLengthSeconds;
+                gPendingDuelConfig.npcDifficulty = cfg.npcDifficulty;
+
+                extern GameState* gpGameState;
+                if (gpGameState) *gpGameState = GAME_PLAYING;
+            }
+            else if (action == CompetitiveMenuAction::GoBack)
+            {
+                gGuiMenuState = GUI_MENU_PLAY;
+            }
+            break;
+        }
+
+        case GUI_MENU_COMPETITIVE_RESULT:
+        {
+            updateMmrAnimation(0.016f);
+            auto action = drawCompetitiveResultScreen(win);
+            if (action == CompetitiveResultAction::PlayAgain)
+            {
+                DuelConfig cfg;
+                cfg.numNpcs = 1;
+                cfg.killsToWin = 5;
+                cfg.duelLengthSeconds = 300;
+                cfg.npcDifficulty = 5.0f;
+                cfg.npcNames = {"Competitive Bot"};
+                cfg.enabled = true;
+                gPendingDuelConfig.startDuel = true;
+                gPendingDuelConfig.numNpcs = cfg.numNpcs;
+                gPendingDuelConfig.killsToWin = cfg.killsToWin;
+                gPendingDuelConfig.duelLengthSeconds = cfg.duelLengthSeconds;
+                gPendingDuelConfig.npcDifficulty = cfg.npcDifficulty;
+
+                extern GameState* gpGameState;
+                if (gpGameState) *gpGameState = GAME_PLAYING;
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            else if (action == CompetitiveResultAction::ExitToMenu)
             {
                 gGuiMenuState = GUI_MENU_MAIN;
             }
@@ -394,31 +480,38 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_AVATAR_CREATOR:
         {
-            // ── 3D Avatar Preview ─────────────────────────────────
-            // Render the player model behind the UI for live preview
+            // ── 3D Avatar Preview (right panel viewport) ──────────
             extern Player* gpPlayer;
             if (gpPlayer)
             {
-                glClear(GL_DEPTH_BUFFER_BIT);
                 setupPlayerPreviewLighting();
 
                 GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
-                const GuiElement* leftPanel = layout.get("panelLibrary");
                 const GuiElement* rightPanel = layout.get("panelPreview3D");
                 int fbW = 0, fbH = 0;
                 glfwGetFramebufferSize(win, &fbW, &fbH);
                 float scaleX = (float)fbW / 1920.0f;
+                float scaleY = (float)fbH / 1080.0f;
 
-                float leftEdge = leftPanel ? (leftPanel->x + leftPanel->w + 10.0f) : 350.0f;
-                float rightEdge = rightPanel ? rightPanel->x : 1120.0f;
-                int previewPX = (int)(leftEdge * scaleX);
-                int previewPW = (int)((rightEdge - leftEdge) * scaleX);
+                float vpX = rightPanel ? rightPanel->x * scaleX : 900.0f * scaleX;
+                float vpY = rightPanel ? (1080.0f - rightPanel->y - rightPanel->h) * scaleY : 50.0f * scaleY;
+                float vpW = rightPanel ? rightPanel->w * scaleX : 1000.0f * scaleX;
+                float vpH = rightPanel ? rightPanel->h * scaleY : 950.0f * scaleY;
 
-                glEnable(GL_SCISSOR_TEST);
-                glScissor(previewPX, 0, previewPW, fbH);
+                GLint prevViewport[4];
+                glGetIntegerv(GL_VIEWPORT, prevViewport);
+                GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+
+                glViewport((int)vpX, (int)vpY, (int)vpW, (int)vpH);
+                glEnable(GL_DEPTH_TEST);
+
+                int prevRW = gRenderer->width;
+                int prevRH = gRenderer->height;
+                gRenderer->width = (int)vpW;
+                gRenderer->height = (int)vpH;
+
                 glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                glDisable(GL_SCISSOR_TEST);
 
                 Camera previewCam;
                 static float previewAngle = 0.0f;
@@ -438,6 +531,11 @@ void guiMain(GLFWwindow* win, GameState& state)
                 previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
 
                 renderPlayer(*gpPlayer, previewCam);
+
+                gRenderer->width = prevRW;
+                gRenderer->height = prevRH;
+                if (!depthWasEnabled) glDisable(GL_DEPTH_TEST);
+                glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
             }
 
             AvatarMenuResult r = drawAvatarMenu(win);
@@ -461,6 +559,9 @@ void guiMain(GLFWwindow* win, GameState& state)
             break;
         }
     }
+
+    // Draw code login dialog if active (from Enter Sign-In Code button)
+    drawAuthCodeDialog(win);
 
     MusicManager::instance().drawAllOverlay();
     InputCommandSystem::instance().drawInputDebug();

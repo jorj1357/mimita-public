@@ -1,14 +1,54 @@
 #include "duel-config-menu.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
+#include "../gui-coord.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <algorithm>
+#include <functional>
 
 static int sNumNpcs = 3;
 static int sKillsToWin = 5;
 static int sDuelLength = 300;
 static float sNpcDifficulty = 5.0f;
+
+// Render elements in consistent Z-order: panels first, then text, then buttons.
+// This prevents opaque backgrounds from covering interactive elements when
+// unordered_map iteration order places them after buttons.
+static void renderElementsInOrder(GLFWwindow* win, GuiLayout& layout,
+                                  std::function<void(const std::string&)> onButtonClick)
+{
+    // Pass 1: panels (background)
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+        if (elem->type == "panel")
+            drawGuiElement(win, *elem);
+    }
+
+    // Pass 2: text and labels
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+        if (elem->type == "text" || elem->type == "label")
+            drawGuiElement(win, *elem);
+    }
+
+    // Pass 3: buttons (clickable)
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+        if (elem->type == "button" || elem->type == "checkbox")
+        {
+            UIButtonState s = drawGuiElement(win, *elem);
+            if (s.clicked && onButtonClick)
+                onButtonClick(id);
+        }
+    }
+}
 
 DuelConfigResult drawDuelConfigMenu(GLFWwindow* win)
 {
@@ -18,20 +58,11 @@ DuelConfigResult drawDuelConfigMenu(GLFWwindow* win)
     r.duelLengthSeconds = sDuelLength;
     r.npcDifficulty = sNpcDifficulty;
 
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/duel-config-menu.json");
 
-    // Render all layout elements
-    for (const std::string& id : layout.elementIds())
-    {
-        const GuiElement* elem = layout.get(id);
-        if (!elem || !elem->visible) continue;
-
-        // Skip dynamic text labels — rendered manually below
-        if (id == "header") continue;
-
-        UIButtonState s = drawGuiElement(win, *elem);
-        if (!s.clicked) continue;
-
+    // Render all elements in correct Z-order
+    renderElementsInOrder(win, layout, [&](const std::string& id) {
         if (id == "npcCountMinus") sNumNpcs = std::max(1, sNumNpcs - 1);
         else if (id == "npcCountPlus") sNumNpcs = std::min(20, sNumNpcs + 1);
         else if (id == "killsMinus") sKillsToWin = std::max(1, sKillsToWin - 1);
@@ -42,28 +73,21 @@ DuelConfigResult drawDuelConfigMenu(GLFWwindow* win)
         else if (id == "diffPlus") sNpcDifficulty = std::min(10.0f, sNpcDifficulty + 1.0f);
         else if (id == "startDuelButton") r.startDuel = true;
         else if (id == "backButton") r.goBack = true;
-    }
+    });
 
-    // Static header
-    const GuiElement* headerEl = layout.get("header");
-    if (headerEl)
-        drawGuiElement(win, *headerEl);
-
-    // Dynamic labels
-    auto drawLabel = [&](const char* fmt, int val, float y) {
+    // Dynamic value labels (use layout positions + dynamic text)
+    auto drawValue = [&](const char* id, const char* fmt, auto val) {
+        const GuiElement* e = layout.get(id);
+        if (!e) return;
         char text[128];
         snprintf(text, sizeof(text), fmt, val);
-        uiDrawText(text, uiScaleX(720.0f), uiScaleY(y), 0.38f, {1, 1, 1, 1});
+        uiDrawText(text, cs.designToScreenX(e->x + e->w + 20),
+                   cs.designToScreenY(e->y), 0.38f, {1, 1, 1, 1});
     };
-    drawLabel("NPC Count: %d", sNumNpcs, 260.0f);
-    drawLabel("Kills to Win: %d", sKillsToWin, 320.0f);
-    drawLabel("Time Limit (sec): %d", sDuelLength, 380.0f);
-
-    {
-        char diffText[64];
-        snprintf(diffText, sizeof(diffText), "Difficulty: %.0f/10", sNpcDifficulty);
-        uiDrawText(diffText, uiScaleX(720.0f), uiScaleY(440.0f), 0.38f, {1, 1, 1, 1});
-    }
+    drawValue("npcCountLabel", "%d", sNumNpcs);
+    drawValue("killsLabel", "%d", sKillsToWin);
+    drawValue("timeLabel", "%d", sDuelLength);
+    drawValue("diffLabel", "%.0f/10", sNpcDifficulty);
 
     return r;
 }

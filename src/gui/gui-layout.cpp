@@ -95,60 +95,70 @@ bool GuiLayout::load(const std::string& filePath)
         file >> j;
         std::unordered_map<std::string, GuiElement> loadedElements;
 
-        if (j.contains("elements") && j["elements"].is_array()) {
-            for (const auto& elem : j["elements"]) {
-                GuiElement e;
-                // Identity
-                e.id = elem.value("id", "");
-                e.type = elem.value("type", "button");
+        // Helper lambda to parse a single element from JSON
+        auto parseElement = [](const json& elem) -> GuiElement {
+            GuiElement e;
+            e.id = elem.value("id", "");
+            e.type = elem.value("type", "button");
 
-                // Layout
-                e.x = elem.value("x", 0.0f);
-                e.y = elem.value("y", 0.0f);
-                e.w = elem.value("width", 0.0f);
-                e.h = elem.value("height", 0.0f);
-                e.textOffsetX = elem.value("textOffsetX", 8.0f);
-                e.textOffsetY = elem.value("textOffsetY", 4.0f);
-                e.padding = elem.value("padding", 8.0f);
-                e.margin = elem.value("margin", 0.0f);
-                e.rotation = elem.value("rotation", 0.0f);
-                e.anchorX = elem.value("anchorX", "left");
-                e.anchorY = elem.value("anchorY", "top");
-                e.layer = elem.value("layer", 0);
+            e.x = elem.value("x", 0.0f);
+            e.y = elem.value("y", 0.0f);
+            e.w = elem.value("width", 0.0f);
+            e.h = elem.value("height", 0.0f);
+            e.textOffsetX = elem.value("textOffsetX", 8.0f);
+            e.textOffsetY = elem.value("textOffsetY", 4.0f);
+            e.padding = elem.value("padding", 8.0f);
+            e.margin = elem.value("margin", 0.0f);
+            e.rotation = elem.value("rotation", 0.0f);
+            e.anchorX = elem.value("anchorX", "left");
+            e.anchorY = elem.value("anchorY", "top");
+            e.layer = elem.value("layer", 0);
 
-                // Appearance
-                e.visible = elem.value("visible", true);
-                e.enabled = elem.value("enabled", true);
-                e.opacity = elem.value("opacity", 1.0f);
-                e.hoverScale = elem.value("hoverScale", 1.0f);
+            e.visible = elem.value("visible", true);
+            e.enabled = elem.value("enabled", true);
+            e.opacity = elem.value("opacity", 1.0f);
+            e.hoverScale = elem.value("hoverScale", 1.0f);
 
-                // Text
-                e.text = elem.value("text", "");
-                e.font = elem.value("font", "");
-                e.fontSize = elem.value("fontSize", 0.0f);
+            e.text = elem.value("text", "");
+            e.font = elem.value("font", "");
+            e.fontSize = elem.value("fontSize", 0.0f);
 
-                // Colors (read as JSON arrays)
-                if (elem.contains("textColor") && elem["textColor"].is_array())
-                    e.textColor = elem["textColor"].get<std::vector<float>>();
-                if (elem.contains("backgroundColor") && elem["backgroundColor"].is_array())
-                    e.backgroundColor = elem["backgroundColor"].get<std::vector<float>>();
-                if (elem.contains("hoverColor") && elem["hoverColor"].is_array())
-                    e.hoverColor = elem["hoverColor"].get<std::vector<float>>();
-                if (elem.contains("pressedColor") && elem["pressedColor"].is_array())
-                    e.pressedColor = elem["pressedColor"].get<std::vector<float>>();
-                if (elem.contains("outlineColor") && elem["outlineColor"].is_array())
-                    e.outlineColor = elem["outlineColor"].get<std::vector<float>>();
+            if (elem.contains("textColor") && elem["textColor"].is_array())
+                e.textColor = elem["textColor"].get<std::vector<float>>();
+            if (elem.contains("backgroundColor") && elem["backgroundColor"].is_array())
+                e.backgroundColor = elem["backgroundColor"].get<std::vector<float>>();
+            if (elem.contains("hoverColor") && elem["hoverColor"].is_array())
+                e.hoverColor = elem["hoverColor"].get<std::vector<float>>();
+            if (elem.contains("pressedColor") && elem["pressedColor"].is_array())
+                e.pressedColor = elem["pressedColor"].get<std::vector<float>>();
+            if (elem.contains("outlineColor") && elem["outlineColor"].is_array())
+                e.outlineColor = elem["outlineColor"].get<std::vector<float>>();
 
-                // Media
-                e.backgroundImage = elem.value("backgroundImage", "");
-                e.backgroundVideo = elem.value("backgroundVideo", "");
+            e.backgroundImage = elem.value("backgroundImage", "");
+            e.backgroundVideo = elem.value("backgroundVideo", "");
 
-                // Sound
-                e.hoverSound = elem.value("hoverSound", "");
-                e.clickSound = elem.value("clickSound", "");
+            e.hoverSound = elem.value("hoverSound", "");
+            e.clickSound = elem.value("clickSound", "");
+            return e;
+        };
 
-                if (!e.id.empty())
+        // Support both v2 array format and v3 object format (keyed by ID)
+        if (j.contains("elements")) {
+            if (j["elements"].is_array()) {
+                for (const auto& elem : j["elements"]) {
+                    GuiElement e = parseElement(elem);
+                    if (!e.id.empty())
+                        loadedElements[e.id] = e;
+                }
+            } else if (j["elements"].is_object()) {
+                for (auto it = j["elements"].begin(); it != j["elements"].end(); ++it) {
+                    const std::string& id = it.key();
+                    json elem = it.value();
+                    // If the element already has an "id" field, use it; otherwise use the key
+                    GuiElement e = parseElement(elem);
+                    if (e.id.empty()) e.id = id;
                     loadedElements[e.id] = e;
+                }
             }
         }
 
@@ -169,9 +179,9 @@ bool GuiLayout::save(const std::string& filePath) const
 {
     json j;
     j["format"] = "mimita-gui-layout";
-    j["version"] = 2;
+    j["version"] = 3;
 
-    json elementsJson = json::array();
+    json elementsJson = json::object();
     // Sort elements by ID for stable output
     std::vector<std::string> ids;
     for (const auto& pair : mElements)
@@ -181,8 +191,6 @@ bool GuiLayout::save(const std::string& filePath) const
     for (const std::string& id : ids) {
         const GuiElement& e = mElements.at(id);
         json obj;
-        // Identity
-        obj["id"] = e.id;
         if (e.type != "button") obj["type"] = e.type;
 
         // Layout
@@ -225,7 +233,7 @@ bool GuiLayout::save(const std::string& filePath) const
         if (!e.hoverSound.empty()) obj["hoverSound"] = e.hoverSound;
         if (!e.clickSound.empty()) obj["clickSound"] = e.clickSound;
 
-        elementsJson.push_back(obj);
+        elementsJson[id] = obj;
     }
     j["elements"] = elementsJson;
 

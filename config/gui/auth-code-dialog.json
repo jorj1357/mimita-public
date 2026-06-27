@@ -1,0 +1,162 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "dialogPanel",
+      "type": "panel",
+      "x": 610,
+      "y": 310,
+      "width": 700,
+      "height": 460,
+      "backgroundColor": [0.06, 0.07, 0.09, 0.97],
+      "outlineColor": [0.4, 0.6, 0.9, 0.8],
+      "visible": true
+    },
+    {
+      "id": "codeInputTitle",
+      "type": "text",
+      "x": 650,
+      "y": 360,
+      "width": 600,
+      "height": 50,
+      "text": "Enter 4-Letter Code",
+      "fontSize": 0.50,
+      "textColor": [0.85, 0.9, 1.0, 1.0],
+      "visible": true
+    },
+    {
+      "id": "codeInputDesc",
+      "type": "text",
+      "x": 650,
+      "y": 420,
+      "width": 600,
+      "height": 60,
+      "text": "Go to mimita.fun/clientsignin in your browser, sign in, and enter the code shown.",
+      "fontSize": 0.28,
+      "textColor": [0.7, 0.75, 0.85, 1.0],
+      "visible": true
+    },
+    {
+      "id": "previewTitle",
+      "type": "text",
+      "x": 650,
+      "y": 360,
+      "width": 600,
+      "height": 50,
+      "text": "Is this you?",
+      "fontSize": 0.50,
+      "textColor": [0.85, 0.9, 1.0, 1.0],
+      "visible": false
+    },
+    {
+      "id": "previewUsername",
+      "type": "text",
+      "x": 650,
+      "y": 440,
+      "width": 600,
+      "height": 60,
+      "text": "",
+      "fontSize": 0.55,
+      "textColor": [0.9, 0.95, 1.0, 1.0],
+      "visible": false
+    },
+    {
+      "id": "previewHandle",
+      "type": "text",
+      "x": 650,
+      "y": 500,
+      "width": 600,
+      "height": 40,
+      "text": "",
+      "fontSize": 0.30,
+      "textColor": [0.6, 0.65, 0.75, 0.7],
+      "visible": false
+    },
+    {
+      "id": "previewAvatar",
+      "type": "panel",
+      "x": 912,
+      "y": 540,
+      "width": 96,
+      "height": 96,
+      "backgroundColor": [0.15, 0.18, 0.22, 1.0],
+      "visible": false
+    },
+    {
+      "id": "cancelButton",
+      "type": "button",
+      "x": 840,
+      "y": 710,
+      "width": 240,
+      "height": 40,
+      "text": "Cancel",
+      "fontSize": 0.30,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.35, 0.15, 0.15, 1.0],
+      "visible": true
+    },
+    {
+      "id": "confirmYesButton",
+      "type": "button",
+      "x": 850,
+      "y": 640,
+      "width": 220,
+      "height": 50,
+      "text": "Yes, link account",
+      "fontSize": 0.30,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.2, 0.6, 0.3, 1.0],
+      "visible": false
+    },
+    {
+      "id": "confirmNoButton",
+      "type": "button",
+      "x": 850,
+      "y": 700,
+      "width": 220,
+      "height": 40,
+      "text": "No",
+      "fontSize": 0.30,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.4, 0.15, 0.15, 1.0],
+      "visible": false
+    },
+    {
+      "id": "hintText",
+      "type": "text",
+      "x": 650,
+      "y": 740,
+      "width": 600,
+      "height": 30,
+      "text": "Paste or type the 4-letter code, then press Enter.",
+      "fontSize": 0.20,
+      "textColor": [0.5, 0.55, 0.65, 0.6],
+      "visible": true
+    },
+    {
+      "id": "errorText",
+      "type": "text",
+      "x": 650,
+      "y": 680,
+      "width": 600,
+      "height": 30,
+      "text": "",
+      "fontSize": 0.28,
+      "textColor": [1.0, 0.3, 0.3, 1.0],
+      "visible": true
+    },
+    {
+      "id": "linkingText",
+      "type": "text",
+      "x": 650,
+      "y": 650,
+      "width": 600,
+      "height": 40,
+      "text": "Linking...",
+      "fontSize": 0.34,
+      "textColor": [0.6, 0.65, 0.75, 1.0],
+      "visible": false
+    }
+  ]
+}

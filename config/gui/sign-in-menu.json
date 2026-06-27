@@ -1,9 +1,41 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "signIn",
+  "version": 3,
+  "elements": {
+    "signInBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "signInTitle": {
+      "type": "text",
+      "x": 830, "y": 120, "width": 400, "height": 60,
+      "text": "Local Dev Sign In",
+      "fontSize": 0.70,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "signInWarning": {
+      "type": "text",
+      "x": 660, "y": 180, "width": 600, "height": 30,
+      "text": "LocalProfileSystem: passwords are stored as plain text for development.",
+      "fontSize": 0.30,
+      "textColor": [1.0, 0.72, 0.3, 1.0]
+    },
+    "usernameLabel": {
+      "type": "text",
+      "x": 750, "y": 245, "width": 200, "height": 30,
+      "text": "Username",
+      "fontSize": 0.34,
+      "textColor": [0.8, 0.86, 0.95, 1.0]
+    },
+    "passwordLabel": {
+      "type": "text",
+      "x": 750, "y": 350, "width": 200, "height": 30,
+      "text": "Password",
+      "fontSize": 0.34,
+      "textColor": [0.8, 0.86, 0.95, 1.0]
+    },
+    "signIn": {
       "type": "button",
       "x": 840, "y": 470, "width": 240, "height": 58,
       "text": "Sign In",
@@ -11,8 +43,7 @@
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.2, 0.7, 1.0, 1.0]
     },
-    {
-      "id": "backButton",
+    "backButton": {
       "type": "button",
       "x": 40, "y": 40, "width": 120, "height": 50,
       "text": "BACK",
@@ -20,5 +51,5 @@
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }

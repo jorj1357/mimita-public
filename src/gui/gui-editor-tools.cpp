@@ -22,15 +22,28 @@ float GuiEditor::roundCoord(float val) { return roundValue(val); }
 void GuiEditor::computeSnapGuides(const GuiElement& elem)
 {
     mSnapGuides.clear();
-    mSnapGuides.push_back({960.0f, true});
-    mSnapGuides.push_back({540.0f, false});
-    mSnapGuides.push_back({0.0f, true});
-    mSnapGuides.push_back({1920.0f, true});
-    mSnapGuides.push_back({0.0f, false});
-    mSnapGuides.push_back({1080.0f, false});
+
+    // Window edges and center (1920x1080 design space)
+    mSnapGuides.push_back({0.0f, true});       // left edge
+    mSnapGuides.push_back({1920.0f, true});     // right edge
+    mSnapGuides.push_back({960.0f, true});      // horizontal center
+    mSnapGuides.push_back({0.0f, false});       // top edge
+    mSnapGuides.push_back({1080.0f, false});    // bottom edge
+    mSnapGuides.push_back({540.0f, false});     // vertical center
+
+    // Snapping grid every 20px
+    const float gridStep = 20.0f;
+    for (float gx = 0; gx <= 1920.0f; gx += gridStep) {
+        mSnapGuides.push_back({gx, true});
+    }
+    for (float gy = 0; gy <= 1080.0f; gy += gridStep) {
+        mSnapGuides.push_back({gy, false});
+    }
 
     if (mActiveLayoutFile.empty()) return;
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+
+    // Other elements' edges and centers
     for (const std::string& id : layout.elementIds()) {
         if (id == mSelectedId) continue;
         const GuiElement* other = layout.get(id);
@@ -88,5 +101,3 @@ void GuiEditor::checkOverlaps()
         }
     }
 }
-
-

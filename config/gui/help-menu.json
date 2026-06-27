@@ -1,9 +1,180 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "backButton",
+  "version": 3,
+  "elements": {
+    "helpBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "helpTitle": {
+      "type": "text",
+      "x": 932, "y": 60, "width": 200, "height": 50,
+      "text": "HELP",
+      "fontSize": 0.70,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_whatIsMimita": {
+      "type": "text", "x": 620, "y": 110, "width": 680, "height": 30,
+      "text": "What is Mimita?", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_line1": {
+      "type": "text", "x": 620, "y": 144, "width": 680, "height": 26,
+      "text": "Mimita is a fast-paced arena shooter focused on movement, flow, and style.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_line2": {
+      "type": "text", "x": 620, "y": 170, "width": 680, "height": 26,
+      "text": "\"Movement is more important than aim.\"",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_howToStart": {
+      "type": "text", "x": 620, "y": 204, "width": 680, "height": 30,
+      "text": "How to start playing", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_start1": {
+      "type": "text", "x": 620, "y": 238, "width": 680, "height": 26,
+      "text": "1. Choose a game mode from the PLAY menu.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_start2": {
+      "type": "text", "x": 620, "y": 264, "width": 680, "height": 26,
+      "text": "2. Pick a map and start playing immediately.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_start3": {
+      "type": "text", "x": 620, "y": 290, "width": 680, "height": 26,
+      "text": "3. No lobbies, no waiting -- just instant action.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_gameModes": {
+      "type": "text", "x": 620, "y": 324, "width": 680, "height": 30,
+      "text": "Game Modes", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_mode1": {
+      "type": "text", "x": 620, "y": 358, "width": 680, "height": 26,
+      "text": "Casual  -- Free-roam sandbox, explore and fight NPCs.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mode2": {
+      "type": "text", "x": 620, "y": 384, "width": 680, "height": 26,
+      "text": "Duels   -- 1vNPC rounds, first to kills wins the match.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mode3": {
+      "type": "text", "x": 620, "y": 410, "width": 680, "height": 26,
+      "text": "Multiplayer -- Connect to servers and fight other players.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mode4": {
+      "type": "text", "x": 620, "y": 436, "width": 680, "height": 26,
+      "text": "Practice -- Spawn training NPCs to test weapons and movement.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_basicControls": {
+      "type": "text", "x": 620, "y": 470, "width": 680, "height": 30,
+      "text": "Basic Controls", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_ctrl1": {
+      "type": "text", "x": 620, "y": 504, "width": 680, "height": 26,
+      "text": "WASD           -- Move", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl2": {
+      "type": "text", "x": 620, "y": 530, "width": 680, "height": 26,
+      "text": "Space          -- Jump (hold for air jumps)", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl3": {
+      "type": "text", "x": 620, "y": 556, "width": 680, "height": 26,
+      "text": "Left Shift     -- Dash (ground + air)", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl4": {
+      "type": "text", "x": 620, "y": 582, "width": 680, "height": 26,
+      "text": "E              -- Freeze (hold to slow velocity)", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl5": {
+      "type": "text", "x": 620, "y": 608, "width": 680, "height": 26,
+      "text": "Q              -- Down dash (slam to ground)", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl6": {
+      "type": "text", "x": 620, "y": 634, "width": 680, "height": 26,
+      "text": "Left Click     -- Shoot weapon", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl7": {
+      "type": "text", "x": 620, "y": 660, "width": 680, "height": 26,
+      "text": "R              -- Reload", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl8": {
+      "type": "text", "x": 620, "y": 686, "width": 680, "height": 26,
+      "text": "1 / 2 / 3      -- Equip weapon slots", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_ctrl9": {
+      "type": "text", "x": 620, "y": 712, "width": 680, "height": 26,
+      "text": "` (grave)      -- Open developer console", "fontSize": 0.32,
+      "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_movement": {
+      "type": "text", "x": 620, "y": 746, "width": 680, "height": 30,
+      "text": "Movement Abilities", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_mov1": {
+      "type": "text", "x": 620, "y": 780, "width": 680, "height": 26,
+      "text": "Jump: Ground jump lifts you up. Hold space in air for air jumps.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mov2": {
+      "type": "text", "x": 620, "y": 806, "width": 680, "height": 26,
+      "text": "Dash: Burst of speed in your movement direction. Resets on touch.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mov3": {
+      "type": "text", "x": 620, "y": 832, "width": 680, "height": 26,
+      "text": "Freeze: Hold E to freeze velocity. Slowly regain control over time.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mov4": {
+      "type": "text", "x": 620, "y": 858, "width": 680, "height": 26,
+      "text": "Down dash: Q to slam downward instantly. One use per touch.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_mov5": {
+      "type": "text", "x": 620, "y": 884, "width": 680, "height": 26,
+      "text": "All abilities reset when you touch the ground or walls.",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_contribute": {
+      "type": "text", "x": 620, "y": 918, "width": 680, "height": 30,
+      "text": "Contribute", "fontSize": 0.38,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "hl_cont1": {
+      "type": "text", "x": 620, "y": 952, "width": 680, "height": 26,
+      "text": "Mimita is an open project. Contributions are welcome:",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_cont2": {
+      "type": "text", "x": 620, "y": 978, "width": 680, "height": 26,
+      "text": "3D Art -- Maps, weapons, player models, effects",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "hl_cont3": {
+      "type": "text", "x": 620, "y": 1004, "width": 680, "height": 26,
+      "text": "Code -- Gameplay, physics, UI, networking, tools",
+      "fontSize": 0.32, "textColor": [0.75, 0.85, 1.0, 1.0]
+    },
+    "backButton": {
       "type": "button",
       "x": 40, "y": 40, "width": 120, "height": 50,
       "text": "BACK",
@@ -11,5 +182,5 @@
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }

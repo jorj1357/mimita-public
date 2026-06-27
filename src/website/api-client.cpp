@@ -190,17 +190,21 @@ GameUserInfo validateSession(const std::string& sessionToken)
 
     try {
         json j = json::parse(body);
+        if (!j.value("success", false)) return info;
+        auto u = j["user"];
         info.valid = true;
-        info.id = j.value("id", 0);
-        info.username = j.value("username", "");
-        info.displayName = j.value("display_name", j.value("username", ""));
-        info.email = j.value("email", "");
-        info.bio = j.value("bio", "");
-        info.avatarUrl = j.value("avatar_url", "");
-        info.supporterTier = j.value("supporter_tier", "free");
-        info.role = j.value("role", "user");
-        info.emailVerified = j.value("email_verified", false);
-        info.createdAt = j.value("created_at", "");
+        info.id = u.value("id", 0);
+        info.username = u.value("username", "");
+        info.displayName = u.value("display_name", "");
+        if (info.displayName.empty())
+            info.displayName = info.username;
+        info.email = u.value("email", "");
+        info.bio = u.value("bio", "");
+        info.avatarUrl = u.value("avatar_url", "");
+        info.supporterTier = u.value("supporter_tier", "free");
+        info.role = u.value("role", "user");
+        info.emailVerified = u.value("email_verified", false);
+        info.createdAt = u.value("created_at", "");
     } catch (...) {}
     return info;
 }
@@ -319,8 +323,8 @@ GameStats getStats(const std::string& sessionToken)
         stats.deaths = s.value("deaths", 0);
         stats.gamesPlayed = s.value("games_played", 0);
         stats.playtimeSeconds = s.value("playtime_seconds", 0LL);
-        stats.highestMmr = s.value("highest_mmr", 1000);
-        stats.currentMmr = s.value("current_mmr", 1000);
+        stats.highestMmr = s.value("highest_mmr", 5000);
+        stats.currentMmr = s.value("current_mmr", 5000);
         stats.accuracy = s.value("accuracy", 0.0f);
         stats.headshots = s.value("headshots", 0);
         stats.bestKillStreak = s.value("best_kill_streak", 0);
@@ -369,8 +373,8 @@ std::vector<LeaderboardEntry> getLeaderboard(const std::string& type, int limit)
             s.deaths = entry.value("deaths", 0);
             s.gamesPlayed = entry.value("games_played", 0);
             s.playtimeSeconds = entry.value("playtime_seconds", 0LL);
-            s.highestMmr = entry.value("highest_mmr", 1000);
-            s.currentMmr = entry.value("current_mmr", 1000);
+            s.highestMmr = entry.value("highest_mmr", 5000);
+            s.currentMmr = entry.value("current_mmr", 5000);
             s.accuracy = entry.value("accuracy", 0.0f);
             s.headshots = entry.value("headshots", 0);
             s.bestKillStreak = entry.value("best_kill_streak", 0);

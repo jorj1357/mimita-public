@@ -22,7 +22,6 @@ public:
     const std::string& selectedElement() const { return mSelectedId; }
     bool hasSelection() const { return !mSelectedId.empty(); }
 
-    // Handle character input for text editing
     void handleChar(unsigned int codepoint);
 
 private:
@@ -38,6 +37,8 @@ private:
     float mDragOffsetY = 0.0f;
     float mResizeStartX = 0.0f, mResizeStartY = 0.0f;
     float mResizeStartW = 0.0f, mResizeStartH = 0.0f;
+    float mCurrentDragX = 0.0f, mCurrentDragY = 0.0f;
+    bool mDragActive = false;
     bool mHasOverlap = false;
 
     double mLastEditTime = 0.0;
@@ -46,26 +47,22 @@ private:
     struct SnapGuide { float pos; bool vertical; };
     std::vector<SnapGuide> mSnapGuides;
 
-    // Inline text editing
     bool mEditingText = false;
     std::string mTextEditBuffer;
     double mLastClickTime = 0.0;
 
-    // Hierarchy filter
     std::string mHierarchyFilter;
     bool mFilterFocused = false;
 
-    // Multi-select
     std::vector<std::string> mMultiSelectedIds;
 
-    // Color picker
     bool mColorPickerOpen = false;
-    int mColorPickerTarget = -1; // which color slider to set (5-12 for T-R through B-A, or -1)
+    int mColorPickerTarget = -1;
 
-    // Property panel layout constants (shared across split files)
-    static constexpr float PP_X = 1460.0f, PP_Y = 80.0f, PP_W = 430.0f;
-    static constexpr float PP_LABEL_X = 1470.0f;
-    static constexpr float PP_TRACK_X = 1560.0f, PP_TRACK_W = 230.0f;
+    // Layout constants (1920x1080 design space)
+    static constexpr float PP_X = 1440.0f, PP_Y = 80.0f, PP_W = 460.0f;
+    static constexpr float PP_LABEL_X = 1450.0f;
+    static constexpr float PP_TRACK_X = 1540.0f, PP_TRACK_W = 250.0f;
     static constexpr float PP_VAL_X = 1800.0f;
     static constexpr float PP_ROW_H = 22.0f;
 
@@ -77,6 +74,9 @@ private:
 
     void renderOverlay(GLFWwindow* win);
     void renderSelectionHandles(const GuiElement& elem);
+    void renderInfoPanel(const GuiElement& elem);
+    void renderDragOverlay(const GuiElement& elem);
+    void renderDebugOverlay();
     void renderPropertyPanel(GLFWwindow* win, const GuiElement& elem);
     void renderHierarchyView();
     void renderSnapGuides();

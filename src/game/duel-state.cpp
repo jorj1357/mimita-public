@@ -1,4 +1,5 @@
 #include "game/duel.h"
+#include "competitive/competitive-match.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -179,10 +180,15 @@ void DuelManager::endMatch()
     currentPhase = DuelPhase::MatchEnd;
     playerStats.matchesWon++;
 
-    if (playerRoundsWon_ >= config.killsToWin)
+    bool playerWon = playerRoundsWon_ >= config.killsToWin;
+    if (playerWon)
         matchWinner_ = DuelTeam::Player;
     else
         matchWinner_ = DuelTeam::NPC;
+
+    // Hook for competitive duels
+    if (isCompetitiveMatchActive())
+        onCompetitiveMatchEnd(*this, playerWon);
 
     duelEndState = DuelEndState::VictoryScreen;
     victoryTimer = 3.0f;

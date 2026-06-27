@@ -15,3 +15,10 @@ void authPopupHandleChar(unsigned int codepoint);
 void authPopupHandleKey(int key, int action);
 bool authPopupIsInCodeInput();
 void authPopupReset();
+
+// Draws just the code input/preview/confirm overlay (no "No Account" intro)
+// Returns true if the dialog is active (draw it each frame)
+bool drawAuthCodeDialog(GLFWwindow* window);
+
+// Start the code input flow (called when user clicks Enter Sign-In Code button)
+void authPopupStartCodeInput();

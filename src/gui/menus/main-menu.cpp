@@ -4,7 +4,9 @@
 #include "../ui-system.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
+#include "../gui-coord.h"
 #include "auth/auth-system.h"
+#include "auth/auth-popup.h"
 #include "avatar/avatar.h"
 #include "entities/player.h"
 #include "entities/player.h"
@@ -98,7 +100,7 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     AccountPanelAction account = drawAccountPanel(win);
 
     // Buttons from layout (positions/sizes/colors editable in main-menu.json)
-    const char* btnIds[] = {"playButton", "settingsButton", "replaysButton", "avatarButton", "exitButton", nullptr};
+    const char* btnIds[] = {"playButton", "settingsButton", "replaysButton", "avatarButton", "enterSignInCodeButton", "exitButton", nullptr};
     float sX = (float)fbW / 1920.0f;
     float sY = (float)fbH / 1080.0f;
     for (int i = 0; btnIds[i]; ++i)
@@ -121,6 +123,7 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
         else if (elem->id == "settingsButton") r.goSettings = true;
         else if (elem->id == "replaysButton") r.goReplays = true;
         else if (elem->id == "avatarButton") r.goAvatarCreator = true;
+        else if (elem->id == "enterSignInCodeButton") r.enterSignInCode = true;
         else if (elem->id == "exitButton") r.goExit = true;
     }
 
@@ -150,55 +153,40 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
         const GuiElement* accountSection = layout.get("accountSection");
         if (accountSection && accountSection->visible)
         {
-            float sx = accountSection->x;
-            float sy = accountSection->y;
-            float sw = accountSection->w;
-            float rx = sx * sX;
-            float ry = sy * sY;
-            float rw = sw * sX;
+            // Draw static labels from layout
+            const GuiElement* contLabel = layout.get("accountContinueLabel");
+            if (contLabel) drawGuiElement(win, *contLabel);
 
-            float labelY = ry + 10.0f * sY;
-            uiDrawText("Continue as:", rx + 20.0f * sX, labelY, 0.25f,
-                       {0.6f, 0.65f, 0.75f, 0.8f});
-
-            float nameY = labelY + 30.0f * sY;
-            float nameSize = 0.40f;
-            std::string display = AuthSystem::instance().displayName();
-            float nameW = uiMeasureText(display.c_str(), nameSize);
-            uiDrawText(display.c_str(), rx + (rw - nameW) * 0.5f, nameY, nameSize,
-                       {0.9f, 0.95f, 1.0f, 1.0f});
-
-            float mmrY = nameY + 35.0f * sY;
-            char mmrBuf[64];
-            snprintf(mmrBuf, sizeof(mmrBuf), "MMR: %d", AuthSystem::instance().user().stats.currentMmr);
-            float mmrW = uiMeasureText(mmrBuf, 0.22f);
-            uiDrawText(mmrBuf, rx + (rw - mmrW) * 0.5f, mmrY, 0.22f,
-                       {0.4f, 0.7f, 0.9f, 0.8f});
-
-            float playBtnY = mmrY + 50.0f * sY;
-            float playBtnW = rw - 40.0f * sX;
-            float playBtnH = 40.0f * sY;
-            if (uiButton(win, "Play",
-                         {rx + 20.0f * sX, playBtnY, playBtnW, playBtnH},
-                         {0.2f, 0.6f, 0.3f, 1.0f}, "account-play").clicked)
-            {
-                r.goPlay = true;
+            // Draw buttons from layout
+            const char* actBtnIds[] = {"accountPlayButton", "accountSwitchButton", "accountLogoutButton"};
+            for (int i = 0; i < 3; ++i) {
+                const GuiElement* be = layout.get(actBtnIds[i]);
+                if (!be || !be->visible) continue;
+                UIButtonState bs = drawGuiElement(win, *be);
+                if (!bs.clicked) continue;
+                if (i == 0) r.goPlay = true;
+                else if (i == 1) r.switchAccount = true;
+                else r.logOut = true;
             }
 
-            float switchBtnY = playBtnY + playBtnH + 8.0f * sY;
-            if (uiButton(win, "Switch Account",
-                         {rx + 20.0f * sX, switchBtnY, playBtnW, playBtnH * 0.8f},
-                         {0.25f, 0.3f, 0.45f, 1.0f}, "account-switch").clicked)
+            // Dynamic username (centered, from layout label position if available)
             {
-                r.switchAccount = true;
-            }
+                GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+                std::string display = AuthSystem::instance().displayName();
+                float nameSize = 0.40f;
+                float nameW = uiMeasureText(display.c_str(), nameSize);
+                float cx = cs.designToScreenX(accountSection->x + accountSection->w * 0.5f);
+                float cy = cs.designToScreenY(150.0f);
+                uiDrawText(display.c_str(), cx - nameW * 0.5f, cy, nameSize,
+                           {0.9f, 0.95f, 1.0f, 1.0f});
 
-            float logoutBtnY = switchBtnY + playBtnH * 0.8f + 8.0f * sY;
-            if (uiButton(win, "Logout",
-                         {rx + 20.0f * sX, logoutBtnY, playBtnW, playBtnH * 0.8f},
-                         {0.4f, 0.15f, 0.15f, 1.0f}, "account-logout").clicked)
-            {
-                r.logOut = true;
+                // MMR
+                char mmrBuf[64];
+                snprintf(mmrBuf, sizeof(mmrBuf), "MMR: %d",
+                         AuthSystem::instance().user().stats.currentMmr);
+                float mmrW = uiMeasureText(mmrBuf, 0.28f);
+                uiDrawText(mmrBuf, cx - mmrW * 0.5f, cy + 30.0f, 0.28f,
+                           {0.4f, 0.7f, 0.9f, 0.8f});
             }
         }
     }

@@ -6,12 +6,47 @@
       "id": "header",
       "type": "text",
       "x": 918,
-      "y": 60,
+      "y": 40,
       "width": 200,
       "height": 50,
       "text": "PLAY",
       "fontSize": 0.72,
       "textColor": [0.55, 0.78, 1.0, 1.0]
+    },
+    {
+      "id": "competitiveButton",
+      "type": "button",
+      "x": 800,
+      "y": 315,
+      "width": 320,
+      "height": 58,
+      "text": "COMPETITIVE DUELS",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.65, 0.12, 0.08, 1.0]
+    },
+    {
+      "id": "competitiveDesc",
+      "type": "text",
+      "x": 825,
+      "y": 383,
+      "width": 300,
+      "height": 24,
+      "text": "Ranked account matchmaking.",
+      "fontSize": 0.32,
+      "textColor": [0.72, 0.78, 0.88, 1.0]
+    },
+    {
+      "id": "competitiveGate",
+      "type": "text",
+      "x": 825,
+      "y": 383,
+      "width": 300,
+      "height": 24,
+      "text": "Sign in to play Competitive.",
+      "fontSize": 0.28,
+      "textColor": [0.9, 0.4, 0.3, 1.0],
+      "visible": false
     },
     {
       "id": "duelsButton",

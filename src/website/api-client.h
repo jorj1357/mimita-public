@@ -38,8 +38,8 @@ struct GameStats
     int deaths = 0;
     int gamesPlayed = 0;
     long long playtimeSeconds = 0;
-    int highestMmr = 1000;
-    int currentMmr = 1000;
+    int highestMmr = 5000;
+    int currentMmr = 5000;
     float accuracy = 0.0f;
     int headshots = 0;
     int bestKillStreak = 0;

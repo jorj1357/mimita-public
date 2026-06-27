@@ -1,65 +1,57 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "header",
+  "version": 3,
+  "elements": {
+    "sandboxBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "sandboxTitle": {
       "type": "text",
-      "x": 835,
-      "y": 60,
-      "width": 350,
-      "height": 50,
-      "text": "SANDBOX MAPS",
-      "fontSize": 0.72,
-      "textColor": [0.55, 0.78, 1.0, 1.0]
+      "x": 720, "y": 40, "width": 400, "height": 50,
+      "text": "SELECT MAP",
+      "fontSize": 0.55,
+      "textColor": [0.85, 0.9, 0.95, 1.0]
     },
-    {
-      "id": "REFRESH",
+    "statusText": {
+      "type": "text",
+      "x": 750, "y": 112, "width": 400, "height": 30,
+      "text": "",
+      "fontSize": 0.34,
+      "textColor": [0.65, 0.85, 1.0, 1.0]
+    },
+    "refreshButton": {
       "type": "button",
-      "x": 870,
-      "y": 998,
-      "width": 180,
-      "height": 46,
+      "x": 680, "y": 100, "width": 100, "height": 40,
       "text": "REFRESH",
-      "fontSize": 0.36,
+      "fontSize": 0.32,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.24, 0.62, 0.48, 1.0]
+      "backgroundColor": [0.2, 0.4, 0.5, 1.0]
     },
-    {
-      "id": "<",
+    "prevPage": {
       "type": "button",
-      "x": 740,
-      "y": 998,
-      "width": 62,
-      "height": 46,
+      "x": 680, "y": 998, "width": 40, "height": 40,
       "text": "<",
       "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.24, 0.35, 0.5, 1.0]
+      "backgroundColor": [0.12, 0.15, 0.2, 1.0]
     },
-    {
-      "id": ">",
+    "nextPage": {
       "type": "button",
-      "x": 1118,
-      "y": 998,
-      "width": 62,
-      "height": 46,
+      "x": 1240, "y": 998, "width": 40, "height": 40,
       "text": ">",
       "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.24, 0.35, 0.5, 1.0]
+      "backgroundColor": [0.12, 0.15, 0.2, 1.0]
     },
-    {
-      "id": "backButton",
+    "backButton": {
       "type": "button",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50,
+      "x": 40, "y": 40, "width": 140, "height": 48,
       "text": "BACK",
-      "fontSize": 0.38,
+      "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }

@@ -1,33 +1,53 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "connect",
-      "type": "button",
-      "x": 835, "y": 400, "width": 250, "height": 60,
-      "text": "Connect",
-      "fontSize": 0.38,
-      "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.2, 0.7, 1.0, 1.0]
+  "version": 3,
+  "elements": {
+    "serverInfoBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
     },
-    {
-      "id": "startServer",
+    "serverInfoTitle": {
+      "type": "text", "x": 720, "y": 80, "width": 480, "height": 50,
+      "text": "SERVER INFORMATION",
+      "fontSize": 0.55,
+      "textColor": [0.85, 0.9, 0.95, 1.0]
+    },
+    "statusLabel": {
+      "type": "text", "x": 760, "y": 140, "width": 400, "height": 30,
+      "text": "Status:",
+      "fontSize": 0.34,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "addressLabel": {
+      "type": "text", "x": 760, "y": 180, "width": 400, "height": 30,
+      "text": "Server Address:",
+      "fontSize": 0.34,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "startServerButton": {
       "type": "button",
-      "x": 835, "y": 400, "width": 250, "height": 60,
+      "x": 760, "y": 240, "width": 220, "height": 48,
       "text": "Start Server",
-      "fontSize": 0.38,
+      "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.2, 0.8, 0.3, 1.0]
+      "backgroundColor": [0.15, 0.5, 0.2, 1.0]
     },
-    {
-      "id": "backButton",
+    "connectButton": {
       "type": "button",
-      "x": 40, "y": 40, "width": 120, "height": 50,
+      "x": 760, "y": 310, "width": 220, "height": 48,
+      "text": "Connect",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.5, 0.6, 1.0]
+    },
+    "backButton": {
+      "type": "button",
+      "x": 40, "y": 40, "width": 140, "height": 48,
       "text": "BACK",
-      "fontSize": 0.38,
+      "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }
