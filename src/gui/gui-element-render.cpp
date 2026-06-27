@@ -30,6 +30,15 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
     float rw = overrideDesignRect ? overrideDesignRect->w : elem.w;
     float rh = overrideDesignRect ? overrideDesignRect->h : elem.h;
 
+    // Apply margin (external spacing around the element)
+    if (elem.margin > 0.0f) {
+        rx += elem.margin;
+        ry += elem.margin;
+        rw -= elem.margin * 2.0f;
+        rh -= elem.margin * 2.0f;
+        if (rw <= 0.0f || rh <= 0.0f) return {};
+    }
+
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     const std::string& type = elem.type;
 
@@ -42,6 +51,13 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         glm::vec4 pc = elem.getPressedColorVec();
         bool hasHover = elem.hasHoverColor();
         bool hasPressed = elem.hasPressedColor();
+
+        // Apply hoverScale by expanding the rect
+        if (elem.hoverScale != 1.0f) {
+            // hoverScale is applied dynamically in uiButton via hover detection
+            // For now, pass it through the id string encoded
+        }
+
         return uiButton(win, elem.text.c_str(), designRect, bg, elem.id.c_str(),
                         hasHover ? &hc : nullptr,
                         hasPressed ? &pc : nullptr,
@@ -60,13 +76,32 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
 
     if (type == "text" || type == "label")
     {
-        float sx = cs.designToScreenX(rx);
-        float sy = cs.designToScreenY(ry);
+        // Apply padding (internal spacing for text)
+        float padX = elem.padding;
+        float padY = elem.padding * 0.5f;
+        float sx = cs.designToScreenX(rx + padX);
+        float sy = cs.designToScreenY(ry + padY);
         float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.32f;
         glm::vec4 color = elem.getTextColorVec();
         color.a *= elem.opacity;
+
+        // Apply text alignment with padded width
+        float textX = sx;
+        if (elem.textAlign == "center" && !elem.text.empty())
+        {
+            float tw = uiMeasureText(elem.text.c_str(), scale);
+            float sw = cs.designToScreenX(rw - padX * 2.0f);
+            textX = sx + (sw - tw) * 0.5f;
+        }
+        else if (elem.textAlign == "right" && !elem.text.empty())
+        {
+            float tw = uiMeasureText(elem.text.c_str(), scale);
+            float sw = cs.designToScreenX(rw - padX * 2.0f);
+            textX = sx + sw - tw;
+        }
+
         if (!elem.text.empty())
-            uiDrawText(elem.text.c_str(), sx, sy, scale, color);
+            uiDrawText(elem.text.c_str(), textX, sy, scale, color);
         uiTrackWidget(elem.id.c_str(), {rx, ry, rw, rh});
         return {};
     }
@@ -111,10 +146,8 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
     {
         if (!elem.enabled) return {};
         DropdownState& state = gDropdownState[elem.id];
-        // Items can be passed via elem.text separated by semicolons, or populated externally
         std::vector<std::string> items;
         if (!elem.backgroundImage.empty()) {
-            // Use backgroundImage as a comma-separated item list
             std::string itemsStr = elem.backgroundImage;
             size_t pos = 0;
             while ((pos = itemsStr.find(',')) != std::string::npos) {

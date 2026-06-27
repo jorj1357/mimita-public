@@ -40,6 +40,7 @@ struct GuiElement {
     std::string text;
     std::string font;
     float fontSize = 0.0f;
+    std::string textAlign = "left"; // "left", "center", "right"
 
     // Colors: [r, g, b, a] each in 0-1 range (empty vector = not set for overrides)
     std::vector<float> textColor = {1.0f, 1.0f, 1.0f, 1.0f};

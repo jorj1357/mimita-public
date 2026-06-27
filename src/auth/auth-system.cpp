@@ -37,6 +37,19 @@ void AuthSystem::init(const std::string& cliSessionToken)
 
     mUser.sessionToken = stored;
     printf("[AUTH] stored session token found\n");
+
+    // Load cached profile so username shows immediately without network call
+    CachedProfile cached = loadProfileCache();
+    if (!cached.username.empty())
+    {
+        mUser.id = cached.id;
+        mUser.username = cached.username;
+        mUser.displayName = cached.displayName;
+        mUser.avatarUrl = cached.avatarUrl;
+        mUser.supporterTier = cached.supporterTier;
+        printf("[AUTH] using cached profile: %s\n", cached.username.c_str());
+        // State stays Checking — tickValidate will re-check with server next frame
+    }
 }
 
 void AuthSystem::tickValidate()
@@ -71,12 +84,22 @@ void AuthSystem::validateStoredToken()
         printf("[AUTH] session validated: user=%s id=%d\n",
                info.username.c_str(), info.id);
 
+        // Update local cache
+        CachedProfile cache;
+        cache.id = info.id;
+        cache.username = info.username;
+        cache.displayName = info.displayName;
+        cache.avatarUrl = info.avatarUrl;
+        cache.supporterTier = info.supporterTier;
+        storeProfileCache(cache);
+
         refreshStats();
     }
     else
     {
         printf("[AUTH] stored session invalid or server unreachable, clearing\n");
         clearSessionToken();
+        clearProfileCache();
         mUser.sessionToken.clear();
         mState = AuthState::NeedsLogin;
     }
@@ -128,13 +151,12 @@ void AuthSystem::refreshStats()
 
 std::string AuthSystem::displayName() const
 {
-    if (mState == AuthState::Authenticated)
-    {
-        if (!mUser.displayName.empty())
-            return mUser.displayName;
-        if (!mUser.username.empty())
-            return mUser.username;
-    }
+    // Always prefer display name if we have user data (cached or live)
+    if (!mUser.displayName.empty())
+        return mUser.displayName;
+    if (!mUser.username.empty())
+        return mUser.username;
+    // Fall back to guest only if no account data at all
     return mGuestName;
 }
 
@@ -249,6 +271,15 @@ void AuthSystem::finishAuth(const std::string& token)
         printf("[AUTH] authenticated: user=%s id=%d\n",
                info.username.c_str(), info.id);
 
+        // Save to local cache for fast startup next time
+        CachedProfile cache;
+        cache.id = info.id;
+        cache.username = info.username;
+        cache.displayName = info.displayName;
+        cache.avatarUrl = info.avatarUrl;
+        cache.supporterTier = info.supporterTier;
+        storeProfileCache(cache);
+
         refreshStats();
     }
     else
@@ -261,6 +292,7 @@ void AuthSystem::finishAuth(const std::string& token)
 void AuthSystem::logout()
 {
     clearSessionToken();
+    clearProfileCache();
     mState = AuthState::NeedsLogin;
     mUser = {};
     mUser.sessionToken.clear();
@@ -271,6 +303,7 @@ void AuthSystem::logout()
 void AuthSystem::clearSession()
 {
     clearSessionToken();
+    clearProfileCache();
     mUser.sessionToken.clear();
     mState = AuthState::NeedsLogin;
     mUser = {};

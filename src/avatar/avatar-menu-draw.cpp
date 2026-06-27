@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <unordered_set>
+#include <unordered_map>
 
 #include "../gui/ui-system.h"
 #include "../gui/gui-layout.h"
@@ -186,6 +187,13 @@ static void drawLibraryPanel(GLFWwindow* win, float px, float py, float pw, floa
     beginScroll(win, scrollArea, contentH, ss);
 
     float tx = px + padding;
+
+    // Hover animation state - stored per-frame using a static map
+    struct HoverAnim {
+        float progress = 0.0f;
+    };
+    static std::unordered_map<std::string, HoverAnim> gHoverAnims;
+
     for (int i = 0; i < (int)pngs.size(); ++i)
     {
         int col = i % cols;
@@ -195,20 +203,77 @@ static void drawLibraryPanel(GLFWwindow* win, float px, float py, float pw, floa
 
         std::string fullPath = av.avatarPath(avatarName) + "/" + pngs[i];
         UIRect thumbRect = {ix, iy, thumbSize, thumbSize};
-        UIRect thumbScreen = {uiScaleX(ix), uiScaleY(iy), uiScaleX(thumbSize), uiScaleY(thumbSize)};
+        float screenX = uiScaleX(ix);
+        float screenY = uiScaleY(iy);
+        float screenSize = uiScaleX(thumbSize);
         bool isSelected = (pngs[i] == gSelectedTexture);
-        glm::vec4 bgCol = isSelected ? bgSelected : bgNormal;
-        uiDrawRect(thumbScreen, bgCol, "thumb-bg");
-        if (isSelected)
-            uiDrawRectOutline(thumbScreen, outlineSel, "thumb-sel");
 
-        uiDrawImage(fullPath.c_str(), thumbRect);
-        if (uiButton(win, "", thumbRect, bgCol).clicked)
+        // Button for interaction
+        auto btn = uiButton(win, "", thumbRect, bgNormal);
+
+        // Hover animation smoothing
+        HoverAnim& anim = gHoverAnims[pngs[i]];
+        float target = btn.hovered ? 1.0f : 0.0f;
+        anim.progress += (target - anim.progress) * 0.15f;
+
+        // Hover scale: slightly enlarge on hover (up to 5%)
+        float hoverScale = 1.0f + anim.progress * 0.05f;
+        float hoverExpand = (hoverScale - 1.0f) * thumbSize * 0.5f;
+
+        // Background rect
+        UIRect bgScreen = {screenX - hoverExpand, screenY - hoverExpand,
+                           screenSize * hoverScale, screenSize * hoverScale};
+
+        glm::vec4 bgCol = isSelected ? bgSelected : bgNormal;
+        if (btn.hovered && !isSelected)
+            bgCol += glm::vec4(0.05f, 0.05f, 0.05f, 0.0f);
+
+        uiDrawRect(bgScreen, bgCol, "thumb-bg");
+
+        // Draw the actual image with aspect-ratio fit and checkerboard
+        // Must use screen coordinates (same as bgScreen) since the renderer draws at raw pixel coords
+        float hoverScreenExpand = (hoverScale - 1.0f) * screenSize * 0.5f;
+        UIRect fitScreen = {screenX - hoverScreenExpand, screenY - hoverScreenExpand,
+                            screenSize * hoverScale, screenSize * hoverScale};
+        uiDrawImageFit(fullPath.c_str(), fitScreen, true);
+
+        // Selected outline (brighter + thicker)
+        if (isSelected) {
+            float outlineThick = 3.0f;
+            glm::vec4 selCol = outlineSel + glm::vec4(0.2f, 0.0f, 0.0f, 0.0f);
+            UIRect os = {bgScreen.x - outlineThick, bgScreen.y - outlineThick,
+                         bgScreen.w + outlineThick * 2, bgScreen.h + outlineThick * 2};
+            uiDrawRectOutline(os, selCol, "thumb-sel");
+            uiDrawRectOutline(bgScreen, outlineSel, "thumb-sel-inner");
+        }
+
+        // Hover highlight border
+        if (btn.hovered && !isSelected) {
+            glm::vec4 hovCol = {0.5f, 0.7f, 1.0f, 0.4f + anim.progress * 0.3f};
+            uiDrawRectOutline(bgScreen, hovCol, "thumb-hover");
+        }
+
+        if (btn.clicked)
             loadTexturePreview(avatarName, pngs[i]);
 
+        // Label
         std::string label = pngs[i];
         if (label.size() > 12) label = label.substr(0, 10) + "...";
         uiDrawText(label.c_str(), uiScaleX(ix), uiScaleY(iy + thumbSize + 4.0f), 0.48f, {0.6f, 0.7f, 0.8f, 1.0f});
+    }
+
+    // Cleanup stale hover anims (keep map small)
+    if (gHoverAnims.size() > pngs.size() * 2) {
+        for (auto it = gHoverAnims.begin(); it != gHoverAnims.end(); ) {
+            bool found = false;
+            for (auto& p : pngs) {
+                if (it->first == p) { found = true; break; }
+            }
+            if (!found && it->second.progress < 0.01f)
+                it = gHoverAnims.erase(it);
+            else
+                ++it;
+        }
     }
 
     endScroll(scrollArea, contentH, ss);
@@ -220,19 +285,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
     AvatarSystem& av = AvatarSystem::instance();
     if (!av.hasAvatar()) return;
 
-    float tabH = 32.0f;
-    float tabW = (pw - 6.0f) / 4.0f;
-    for (int i = 0; i < 4; ++i)
-    {
-        glm::vec4 tabCol = (i == gEditorTab)
-            ? glm::vec4{0.2f, 0.45f, 0.3f, 1.0f}
-            : glm::vec4{0.08f, 0.09f, 0.14f, 1.0f};
-        UIRect tabRect = {px + i * (tabW + 2.0f), py, tabW, tabH};
-        if (uiButton(win, kTabLabels[i], tabRect, tabCol, "editor-tab").clicked)
-            gEditorTab = i;
-    }
-
-    float cy = py + tabH + 8.0f;
+    float cy = py;
     float remainingH = py + ph - cy - 50.0f;
 
     // Scrollable content area for the currently selected tab
@@ -526,49 +579,42 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
     float editW = lw("panelEditor", 560.0f);
     float editH = lh("panelEditor", 950.0f);
 
-    // ── LEFT PANEL: PNG Library ─────────────────────────────────────
+    // ── Draw panels and static text from JSON ──────────────────────
+    for (const std::string& id : layout.elementIds())
     {
-        const GuiElement* panel = layout.get("panelLibrary");
-        if (panel) {
-            UIRect bg = cs.designToScreen({libX, libY, libW, libH});
-            uiDrawRect(bg, panel->getBackgroundColorVec(), "lib-bg");
-            if (panel->hasOutlineColor())
-                uiDrawRectOutline(bg, panel->getOutlineColorVec(), "lib-border");
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+
+        // Skip elements drawn manually below
+        if (id == "tabFaces" || id == "tabColors" || id == "tabCosmetics" || id == "tabPresets")
+            continue;
+
+        // Draw panels and static text through the layout system
+        if (elem->type == "panel" || elem->type == "text" || elem->type == "label")
+        {
+            drawGuiElement(win, *elem);
+            continue;
         }
     }
-
-    // Lib title + hints
-    const GuiElement* lt = layout.get("libTitle");
-    if (lt) uiDrawText(lt->text.c_str(), cs.designToScreenX(lt->x), cs.designToScreenY(lt->y),
-                        lt->fontSize, lt->getTextColorVec());
-    const GuiElement* lh1 = layout.get("libImportHint");
-    if (lh1) uiDrawText(lh1->text.c_str(), cs.designToScreenX(lh1->x), cs.designToScreenY(lh1->y),
-                         lh1->fontSize, lh1->getTextColorVec());
-    const GuiElement* lh2 = layout.get("libImportHint2");
-    if (lh2) uiDrawText(lh2->text.c_str(), cs.designToScreenX(lh2->x), cs.designToScreenY(lh2->y),
-                         lh2->fontSize, lh2->getTextColorVec());
 
     drawLibraryPanel(win, libX + 4.0f, libY + 30.0f, libW - 8.0f, libH - 35.0f);
 
-    // ── CENTER PANEL: Editor ────────────────────────────────────────
-    {
-        const GuiElement* panel = layout.get("panelEditor");
-        if (panel) {
-            UIRect bg = cs.designToScreen({editX, editY, editW, editH});
-            uiDrawRect(bg, panel->getBackgroundColorVec(), "edit-bg");
-            if (panel->hasOutlineColor())
-                uiDrawRectOutline(bg, panel->getOutlineColorVec(), "edit-border");
-        }
+    drawEditorPanel(win, editX + 4.0f, editY + 68.0f, editW - 8.0f, editH - 104.0f);
+
+    // ── Tab buttons from JSON (with active state highlight) ──────────
+    const char* tabIds[] = {"tabFaces", "tabColors", "tabCosmetics", "tabPresets"};
+    for (int ti = 0; ti < 4; ++ti) {
+        const GuiElement* te = layout.get(tabIds[ti]);
+        if (!te || !te->visible) continue;
+        glm::vec4 tabBg = (ti == gEditorTab)
+            ? te->getPressedColorVec()  // Use pressedColor for active tab
+            : te->getBackgroundColorVec();
+        // Fallback if pressedColor is empty
+        if (ti == gEditorTab && !te->hasPressedColor())
+            tabBg = glm::vec4{0.2f, 0.45f, 0.3f, 1.0f};
+        if (uiButton(win, te->text.c_str(), {te->x, te->y, te->w, te->h}, tabBg, te->id.c_str()).clicked)
+            gEditorTab = ti;
     }
-
-    const GuiElement* titleEl = layout.get("editorTitle");
-    if (titleEl)
-        uiDrawText(titleEl->text.c_str(), cs.designToScreenX(titleEl->x), cs.designToScreenY(titleEl->y),
-                   titleEl->fontSize, titleEl->getTextColorVec());
-
-    drawEditorPanel(win, editX + 4.0f, editY + 34.0f, editW - 8.0f, editH - 70.0f);
-
-    // ── RIGHT PANEL: No UI drawn here — 3D preview renders behind ─────
 
     // ── Bottom buttons: Save, Apply, Back ────────────────────────────
     {
@@ -597,27 +643,34 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
     }
 
     // ── Avatar selector ─────────────────────────────────────────────
-    auto avatars = av.listAvatars();
-    float selX = lx("avatarSelectorLabel", libX) + 60.0f;
-    float selY = ly("avatarSelectorLabel", 4.0f);
-    float selH = 26.0f;
+    {
+        auto avatars = av.listAvatars();
+        float selX = lx("avatarSelectorLabel", libX) + 60.0f;
+        float selY = ly("avatarSelectorLabel", 4.0f);
+        float selH = 30.0f;
 
-    const GuiElement* labelEl = layout.get("avatarSelectorLabel");
-    if (labelEl)
-        uiDrawText(labelEl->text.c_str(), cs.designToScreenX(labelEl->x), cs.designToScreenY(labelEl->y),
-                   labelEl->fontSize, labelEl->getTextColorVec());
+        const GuiElement* lbl = layout.get("avatarSelectorLabel");
+        if (lbl)
+            drawGuiElement(win, *lbl);
 
-    for (auto& a : avatars) {
-        if (uiButton(win, a.c_str(), {selX, selY, 100.0f, selH},
-                     a == av.currentName() ? glm::vec4{0.2f, 0.48f, 0.28f, 1.0f} : glm::vec4{0.09f, 0.11f, 0.16f, 1.0f}).clicked) {
-            if (a != av.currentName()) {
-                av.loadAvatar(a);
-                GetPlayerSettings().avatarName = a;
-                SavePlayerSettings();
-                clearTexturePreview();
+        const GuiElement* btnNorm = layout.get("avatarBtnNormal");
+        const GuiElement* btnSel = layout.get("avatarBtnSelected");
+        glm::vec4 normalCol = btnNorm ? btnNorm->getBackgroundColorVec() : glm::vec4{0.09f, 0.11f, 0.16f, 1.0f};
+        glm::vec4 selCol = btnSel ? btnSel->getBackgroundColorVec() : glm::vec4{0.2f, 0.48f, 0.28f, 1.0f};
+
+        for (auto& a : avatars) {
+            bool isCurrent = (a == av.currentName());
+            glm::vec4 col = isCurrent ? selCol : normalCol;
+            if (uiButton(win, a.c_str(), {selX, selY, 120.0f, selH}, col).clicked) {
+                if (!isCurrent) {
+                    av.loadAvatar(a);
+                    GetPlayerSettings().avatarName = a;
+                    SavePlayerSettings();
+                    clearTexturePreview();
+                }
             }
+            selY += selH + 3.0f;
         }
-        selY += selH + 3.0f;
     }
 
     return r;

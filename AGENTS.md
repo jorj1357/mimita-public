@@ -1,5 +1,15 @@
 Favor deleting code over adding code when both solutions achieve the same result.
 
+# Mandatory Overseer Check
+
+Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.
+
+Every checker must pass. If any checker reports a finding — fix it and re-run.
+
+Do not claim work is complete while `overseer.py` returns anything other than `Overall Status: PASS`.
+
+This is the final quality gate. Nothing overrides it.
+
 # Asset Rules
 
 * Gameplay sound effects under `assets/sound/entity/`, `assets/sound/ui/`, `assets/sound/weapon/` ARE tracked in Git.

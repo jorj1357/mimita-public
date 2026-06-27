@@ -122,6 +122,7 @@ bool GuiLayout::load(const std::string& filePath)
             e.text = elem.value("text", "");
             e.font = elem.value("font", "");
             e.fontSize = elem.value("fontSize", 0.0f);
+            e.textAlign = elem.value("textAlign", "left");
 
             if (elem.contains("textColor") && elem["textColor"].is_array())
                 e.textColor = elem["textColor"].get<std::vector<float>>();
@@ -217,6 +218,7 @@ bool GuiLayout::save(const std::string& filePath) const
         if (!e.text.empty()) obj["text"] = e.text;
         if (!e.font.empty()) obj["font"] = e.font;
         if (e.fontSize != 0.0f) obj["fontSize"] = e.fontSize;
+        if (e.textAlign != "left") obj["textAlign"] = e.textAlign;
 
         // Colors
         obj["textColor"] = e.textColor;

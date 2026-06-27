@@ -352,6 +352,70 @@ void uiDrawImage(const char* path, UIRect r, glm::vec4 color)
     drawTexturedQuad(verts, 6, texture, color);
 }
 
+// Draw image scaled to fit within rect, preserving aspect ratio, centered, with optional checkerboard
+void uiDrawImageFit(const char* path, UIRect r, bool checkerboard, glm::vec4 color)
+{
+    if (!path || r.w <= 0.0f || r.h <= 0.0f)
+        return;
+    GLuint texture = gTextures.getPath(path);
+    if (!texture) {
+        // Missing texture placeholder
+        uiDrawRect(r, {0.15f, 0.05f, 0.05f, 1.0f}, "missing-tex-bg");
+        uiDrawRectOutline(r, {0.8f, 0.2f, 0.2f, 1.0f}, "missing-tex-border");
+        float x = r.x + r.w * 0.5f - 40.0f;
+        float y = r.y + r.h * 0.5f - 8.0f;
+        uiDrawText("?", x, y, 0.6f, {1.0f, 0.3f, 0.3f, 1.0f});
+        uiDrawText("MISSING", r.x + 4.0f, r.y + r.h - 16.0f, 0.22f, {1.0f, 0.3f, 0.3f, 1.0f});
+        return;
+    }
+
+    // Get texture dimensions
+    GLint texW = 0, texH = 0;
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+
+    if (texW <= 0 || texH <= 0) {
+        uiDrawRect(r, {0.15f, 0.05f, 0.05f, 1.0f}, "missing-tex-bg");
+        uiDrawText("BAD TEX", r.x + 4.0f, r.y + r.h * 0.5f - 8.0f, 0.3f, {1.0f, 0.3f, 0.3f, 1.0f});
+        return;
+    }
+
+    // Draw checkerboard background for transparency
+    if (checkerboard) {
+        int checkSize = 8;
+        glm::vec4 c1 = {0.25f, 0.25f, 0.25f, 1.0f};
+        glm::vec4 c2 = {0.35f, 0.35f, 0.35f, 1.0f};
+        float sx = r.x, sy = r.y;
+        for (float cy = sy; cy < sy + r.h; cy += checkSize) {
+            for (float cx = sx; cx < sx + r.w; cx += checkSize) {
+                int idx = (int)((cx - sx) / checkSize) + (int)((cy - sy) / checkSize);
+                glm::vec4 c = (idx % 2 == 0) ? c1 : c2;
+                float cw = std::min((float)checkSize, sx + r.w - cx);
+                float ch = std::min((float)checkSize, sy + r.h - cy);
+                float verts[] = {
+                    cx, cy, 0,0, cx+cw, cy, 0,0, cx+cw, cy+ch, 0,0,
+                    cx, cy, 0,0, cx+cw, cy+ch, 0,0, cx, cy+ch, 0,0
+                };
+                drawTriVerts(verts, 6, c, GL_TRIANGLES);
+            }
+        }
+    }
+
+    // Calculate aspect-ratio-preserving rect
+    float scale = std::min(r.w / (float)texW, r.h / (float)texH);
+    float drawW = (float)texW * scale;
+    float drawH = (float)texH * scale;
+    float drawX = r.x + (r.w - drawW) * 0.5f;
+    float drawY = r.y + (r.h - drawH) * 0.5f;
+
+    float verts[] = {
+        drawX, drawY, 0, 0, drawX + drawW, drawY, 1, 0, drawX + drawW, drawY + drawH, 1, 1,
+        drawX, drawY, 0, 0, drawX + drawW, drawY + drawH, 1, 1, drawX, drawY + drawH, 0, 1
+    };
+    drawTexturedQuad(verts, 6, texture, color);
+}
+
 void uiDrawMedia(const char* path, UIRect r, glm::vec4 color)
 {
     if (!path || r.w <= 0.0f || r.h <= 0.0f) return;
