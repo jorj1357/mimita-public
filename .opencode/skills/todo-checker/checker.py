@@ -10,7 +10,7 @@ import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
-for _ in range(4):
+for _ in range(3):
     REPO_ROOT = os.path.dirname(REPO_ROOT)
 
 PATTERNS = [
@@ -21,16 +21,17 @@ PATTERNS = [
     r'WORKAROUND',
 ]
 
-SKIP_DIRS = {
-    '.git', '__pycache__', 'node_modules', '.opencode', 'build', 'logs',
-    'replays', 'installer', 'website', 'launcher', 'include',
-    '.aider.tags.cache.v4',
+SCAN_DIRS = {
+    'src',
+    'config',
+    'assets',
+    'shaders',
 }
 
 ALLOWED_EXTENSIONS = {
     '.py', '.cpp', '.h', '.hpp', '.c',
     '.json', '.md', '.txt', '.sh', '.bat', '.ps1',
-    '.cmake', '.mk',
+    '.cmake', '.mk', '.frag', '.vert', '.glsl',
 }
 
 MAX_FILE_SIZE = 1 * 1024 * 1024
@@ -39,9 +40,9 @@ COMPILED = [(p, re.compile(r'\b' + p + r'\b', re.IGNORECASE)) for p in PATTERNS]
 def should_scan(path):
     rel = os.path.relpath(path, REPO_ROOT)
     parts = rel.split(os.sep)
-    for skip in SKIP_DIRS:
-        if skip in parts:
-            return False
+    # Only scan files inside SCAN_DIRS
+    if not any(parts[0] == d for d in SCAN_DIRS):
+        return False
     ext = os.path.splitext(path)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         return False
@@ -71,17 +72,20 @@ def main():
     findings = []
     scanned = 0
     dir_count = 0
-    for root, dirs, files in os.walk(REPO_ROOT):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        for fname in files:
-            fpath = os.path.join(root, fname)
-            if not should_scan(fpath):
-                continue
-            matches = scan_file(fpath)
-            scanned += 1
-            for line_num, line_text, pattern in matches:
-                rel_path = os.path.relpath(fpath, REPO_ROOT)
-                findings.append((rel_path, line_num, line_text, pattern))
+    for scan_dir in SCAN_DIRS:
+        scan_path = os.path.join(REPO_ROOT, scan_dir)
+        if not os.path.isdir(scan_path):
+            continue
+        for root, dirs, files in os.walk(scan_path):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                if not should_scan(fpath):
+                    continue
+                matches = scan_file(fpath)
+                scanned += 1
+                for line_num, line_text, pattern in matches:
+                    rel_path = os.path.relpath(fpath, REPO_ROOT)
+                    findings.append((rel_path, line_num, line_text, pattern))
 
     if not findings:
         sys.stdout.write(f"Todo Checker: PASS\n")

@@ -351,6 +351,9 @@ public:
 
     // -------- Cosmetic instances (loaded by OutfitSystem) --------
     std::vector<struct CosmeticInstance> cosmetics;
+
+    // -------- Per-part color tints (from outfit.json colors) --------
+    std::vector<glm::vec3> outfitPartColors;
 };
 
 // Upload mesh to shared body-part VAO for ragdoll rendering

@@ -1,0 +1,20 @@
+{
+  "name": "jorj1357",
+  "version": 1,
+  "advanced_mode": false,
+  "simple": {
+    "face": "face.png",
+    "shirt": "shirt.png",
+    "pants": "pants.png",
+    "skin": "skin.png",
+    "clown": "clown1.png"
+  },
+  "colors": {
+    "head": [0.0, 0.0, 0.0],
+    "torso": [0.2, 0.4, 0.8],
+    "leftArm": [1.0, 1.0, 1.0],
+    "rightArm": [1.0, 1.0, 1.0],
+    "leftLeg": [0.3, 0.3, 0.3],
+    "rightLeg": [0.3, 0.3, 0.3]
+  }
+}

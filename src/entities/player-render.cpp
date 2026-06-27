@@ -102,8 +102,6 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniformMatrix4fv(uViewLoc, 1, 0, &view[0][0]);
         glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
         glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
-        if (whiteOverride)
-            glUniform4f(uColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(uTexLoc, 0);
 
         glActiveTexture(GL_TEXTURE0);
@@ -118,6 +116,12 @@ void Player::renderCurrentPose(unsigned int shader,
 
             const glm::mat4& model = part.worldTransform;
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
+
+            // Per-part color tint from outfit.json
+            glm::vec3 tint(1.0f);
+            if (!whiteOverride && i < outfitPartColors.size())
+                tint = outfitPartColors[i];
+            glUniform4f(uColorLoc, tint.r, tint.g, tint.b, 1.0f);
 
             for (const Mesh::Batch& batch : mesh.batches)
             {
@@ -154,6 +158,8 @@ void Player::renderCurrentPose(unsigned int shader,
                 glm::mat4 modelMat = parentTransform * local;
 
                 glUniformMatrix4fv(uModelLoc, 1, 0, &modelMat[0][0]);
+                glm::vec4 cosCol = whiteOverride ? glm::vec4(1.0f) : cosmetic.color;
+                glUniform4f(uColorLoc, cosCol.r, cosCol.g, cosCol.b, cosCol.a);
                 for (const auto& batch : cosmetic.renderMesh.batches) {
                     GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
                     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));

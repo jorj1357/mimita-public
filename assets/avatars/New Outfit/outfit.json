@@ -1,0 +1,40 @@
+{
+  "format": "mimita-outfit",
+  "version": 1,
+  "name": "New Outfit",
+  "textures": {},
+  "faces": {},
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": []
+}
