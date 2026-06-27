@@ -18,8 +18,8 @@ using json = nlohmann::json;
 
 extern TextureStore gTextures;
 
-// AvatarPartFaces
-std::string& AvatarPartFaces::byName(const std::string& name) {
+// FaceVector
+FaceSettings& FaceVector::byName(const std::string& name) {
     if (name == "front") return front;
     if (name == "back") return back;
     if (name == "left") return left;
@@ -28,26 +28,7 @@ std::string& AvatarPartFaces::byName(const std::string& name) {
     return bottom;
 }
 
-const std::string& AvatarPartFaces::byName(const std::string& name) const {
-    if (name == "front") return front;
-    if (name == "back") return back;
-    if (name == "left") return left;
-    if (name == "right") return right;
-    if (name == "top") return top;
-    return bottom;
-}
-
-// FaceSettings
-FaceSettings& PartFaceSettings::byName(const std::string& name) {
-    if (name == "front") return front;
-    if (name == "back") return back;
-    if (name == "left") return left;
-    if (name == "right") return right;
-    if (name == "top") return top;
-    return bottom;
-}
-
-const FaceSettings& PartFaceSettings::byName(const std::string& name) const {
+const FaceSettings& FaceVector::byName(const std::string& name) const {
     if (name == "front") return front;
     if (name == "back") return back;
     if (name == "left") return left;
@@ -58,16 +39,16 @@ const FaceSettings& PartFaceSettings::byName(const std::string& name) const {
 
 // AvatarDefinition
 void AvatarDefinition::expandSimple() {
-    auto fill = [](AvatarPartFaces& part, const std::string& all) {
-        part.front = all;
-        part.back = all;
-        part.left = all;
-        part.right = all;
-        part.top = all;
-        part.bottom = all;
+    auto fill = [](FaceVector& part, const std::string& all) {
+        part.front.texture = all;
+        part.back.texture = all;
+        part.left.texture = all;
+        part.right.texture = all;
+        part.top.texture = all;
+        part.bottom.texture = all;
     };
     fill(head, simple.skin);
-    head.front = simple.face.empty() ? simple.skin : simple.face;
+    head.front.texture = simple.face.empty() ? simple.skin : simple.face;
     fill(torso, simple.shirt);
     fill(leftArm, simple.shirt);
     fill(rightArm, simple.shirt);
@@ -75,8 +56,8 @@ void AvatarDefinition::expandSimple() {
     fill(rightLeg, simple.pants);
 }
 
-std::string AvatarDefinition::resolve(const std::string& part, const std::string& face) const {
-    auto getPart = [&]() -> const AvatarPartFaces* {
+FaceSettings AvatarDefinition::resolve(const std::string& part, const std::string& face) const {
+    auto getPart = [&]() -> const FaceVector* {
         if (part == "head") return &head;
         if (part == "torso") return &torso;
         if (part == "leftArm") return &leftArm;
@@ -85,7 +66,7 @@ std::string AvatarDefinition::resolve(const std::string& part, const std::string
         if (part == "rightLeg") return &rightLeg;
         return nullptr;
     };
-    const AvatarPartFaces* p = getPart();
+    const FaceVector* p = getPart();
     if (!p) return {};
     return p->byName(face);
 }
@@ -127,31 +108,51 @@ std::string AvatarSystem::resolvePath(const std::string& relativePath) const {
 
 // ── JSON helpers ────────────────────────────────────────────────────
 static json serializeTransform(const FaceTransform& t) {
-    return {
-        {"offsetX", t.offsetX},
-        {"offsetY", t.offsetY},
-        {"scale", t.scale},
-        {"rotation", t.rotation},
-        {"stretchMode", t.stretchMode},
-        {"hue", t.hue},
-        {"saturation", t.saturation},
-        {"brightness", t.brightness},
-        {"contrast", t.contrast}
-    };
+    json obj;
+    // Only write non-default values
+    if (t.offsetX != 0.0f) obj["offset_x"] = t.offsetX;
+    if (t.offsetY != 0.0f) obj["offset_y"] = t.offsetY;
+    if (t.rotation != 0.0f) obj["rotation"] = t.rotation;
+    if (t.hueShift != 0.0f) obj["hue_shift"] = t.hueShift;
+    if (t.saturation != 0.0f) obj["saturation"] = t.saturation;
+    if (t.brightness != 0.0f) obj["brightness"] = t.brightness;
+    if (t.stretchMode != 0) obj["stretch_mode"] = t.stretchMode == 1 ? "crop" : "stretch";
+    return obj;
 }
 
 static FaceTransform parseTransform(const json& j) {
     FaceTransform t;
-    t.offsetX = j.value("offsetX", 0.0f);
-    t.offsetY = j.value("offsetY", 0.0f);
-    t.scale = j.value("scale", 1.0f);
+    t.offsetX = j.value("offset_x", 0.0f);
+    t.offsetY = j.value("offset_y", 0.0f);
     t.rotation = j.value("rotation", 0.0f);
-    t.stretchMode = j.value("stretchMode", 0);
-    t.hue = j.value("hue", 0.0f);
-    t.saturation = j.value("saturation", 1.0f);
-    t.brightness = j.value("brightness", 1.0f);
-    t.contrast = j.value("contrast", 1.0f);
+    t.hueShift = j.value("hue_shift", 0.0f);
+    t.saturation = j.value("saturation", 0.0f);
+    t.brightness = j.value("brightness", 0.0f);
+    std::string sm = j.value("stretch_mode", "stretch");
+    t.stretchMode = (sm == "crop") ? 1 : 0;
     return t;
+}
+
+// Serialize a single face slot (new format: object, or old format: string)
+static json serializeFaceSlot(const FaceSettings& fs) {
+    json trans = serializeTransform(fs.transform);
+    // If the only thing to write is the texture, write as string for compactness
+    if (trans.empty())
+        return fs.texture;
+    trans["texture"] = fs.texture;
+    return trans;
+}
+
+// Parse a single face slot — supports both old (string) and new (object) format
+static std::string parseFaceSlot(const json& j, std::string& outTexture, FaceTransform& outTransform) {
+    outTransform = {};
+    if (j.is_string()) {
+        outTexture = j.get<std::string>();
+    } else if (j.is_object()) {
+        outTexture = j.value("texture", "");
+        outTransform = parseTransform(j);
+    }
+    return outTexture;
 }
 
 static json serializePartColors(const PartColors& c) {
@@ -195,6 +196,25 @@ static std::vector<CosmeticSlot> parseCosmetics(const json& arr) {
     return result;
 }
 
+// ── Parse face data from "advanced" section ─────────────────────────
+static void parsePartFacesFromAdvanced(const json& adv, const std::string& prefix,
+                                        FaceVector& out, const std::string& fallbackTexture)
+{
+    const char* faceNames[] = {"front", "back", "left", "right", "top", "bottom"};
+    for (const char* fn : faceNames) {
+        std::string key = prefix + "_" + fn;
+        FaceSettings& fs = out.byName(fn);
+        if (adv.contains(key)) {
+            const json& val = adv[key];
+            FaceTransform tf;
+            parseFaceSlot(val, fs.texture, tf);
+            fs.transform = tf;
+        } else {
+            fs.texture = fallbackTexture;
+        }
+    }
+}
+
 // ── Load / Save ─────────────────────────────────────────────────────
 bool AvatarSystem::loadAvatar(const std::string& avatarName) {
     mAvatarName = avatarName;
@@ -218,114 +238,76 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
         json root;
         file >> root;
 
-        // Detect format: new (textures + faces) vs old (simple or advanced)
-        bool hasNewFormat = root.contains("textures") && root.contains("faces") && root["textures"].is_object() && root["faces"].is_object();
-        bool hasOldSimple = root.contains("simple") && root["simple"].is_object();
-        bool hasOldAdvanced = root.contains("advanced") && root["advanced"].is_object();
-
-        if (hasNewFormat) {
-            printf("[AVATAR] Format: mimita-avatar v1 (new alias-based)\n");
-
-            // Build texture alias map: alias -> resolved file path
-            std::unordered_map<std::string, std::string> aliasMap;
+        // ── Build texture alias table (optional) ──────────────────────
+        std::unordered_map<std::string, std::string> textureAliases;
+        if (root.contains("textures") && root["textures"].is_object()) {
+            printf("[AVATAR] Texture aliases:\n");
             for (auto& [alias, val] : root["textures"].items()) {
                 std::string filename = val.get<std::string>();
                 std::string resolved = mBasePath + "/" + filename;
-                aliasMap[alias] = filename; // store relative filename for AvatarPartFaces
-                printf("[AVATAR]   Alias %s -> %s (%s)\n", alias.c_str(), filename.c_str(),
+                textureAliases[alias] = filename;
+                printf("[AVATAR]   %s -> %s (%s)\n", alias.c_str(), filename.c_str(),
                        std::filesystem::exists(resolved) ? "exists" : "MISSING");
                 if (!std::filesystem::exists(resolved))
                     Terminal::instance().addLog("[AVATAR] Missing texture: " + resolved);
             }
+        }
 
-            // Resolve face assignments: alias -> filename
+        auto resolveAlias = [&](const std::string& val) -> std::string {
+            auto it = textureAliases.find(val);
+            return (it != textureAliases.end()) ? it->second : val;
+        };
+
+        // ── Detect format ─────────────────────────────────────────────
+        bool hasAdvanced = root.contains("advanced") && root["advanced"].is_object();
+        bool hasSimple = root.contains("simple") && root["simple"].is_object();
+
+        if (hasAdvanced) {
+            mAvatar.advancedMode = true;
+            printf("[AVATAR] Format: advanced\n");
+
+            auto& adv = root["advanced"];
             const char* partKeys[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
-            const char* faceKeys[] = {"front", "back", "left", "right", "top", "bottom"};
-            AvatarPartFaces AvatarDefinition::*partPtrs[] = {
+            FaceVector AvatarDefinition::*partPtrs[] = {
                 &AvatarDefinition::head, &AvatarDefinition::torso,
                 &AvatarDefinition::leftArm, &AvatarDefinition::rightArm,
                 &AvatarDefinition::leftLeg, &AvatarDefinition::rightLeg
             };
 
             for (int pi = 0; pi < 6; ++pi) {
-                std::string partKey = partKeys[pi];
-                if (!root["faces"].contains(partKey) || !root["faces"][partKey].is_object()) {
-                    printf("[AVATAR]   %s: no faces defined\n", partKey.c_str());
-                    continue;
-                }
-                for (int fi = 0; fi < 6; ++fi) {
-                    std::string faceKey = faceKeys[fi];
-                    std::string alias;
-                    auto& faceObj = root["faces"][partKey];
-                    if (faceObj.is_object() && faceObj.contains(faceKey)) {
-                        auto& val = faceObj[faceKey];
-                        if (val.is_string())
-                            alias = val.get<std::string>();
-                        else if (val.is_object() && val.contains("texture"))
-                            alias = val["texture"].get<std::string>();
-                    }
-                    if (alias.empty()) continue;
+                FaceVector& part = mAvatar.*partPtrs[pi];
+                // Try to read per-face settings (new object format)
+                // Assemble part name for prefix: e.g. "head", "leftArm"
+                const char* prefix = partKeys[pi];
+                parsePartFacesFromAdvanced(adv, prefix, part, "");
 
-                    auto it = aliasMap.find(alias);
-                    std::string filename = (it != aliasMap.end()) ? it->second : alias;
-                    printf("[AVATAR]     %s.%s -> %s -> %s\n", partKey.c_str(), faceKey.c_str(),
-                           alias.c_str(), filename.c_str());
-
-                    // Check if file actually exists
-                    std::string fullPath = mBasePath + "/" + filename;
-                    if (!std::filesystem::exists(fullPath)) {
-                        printf("[AVATAR]     WARNING: file not found: %s\n", fullPath.c_str());
-                    }
-
-                    // Store resolved filename in AvatarPartFaces
-                    (mAvatar.*partPtrs[pi]).byName(faceKey) = filename;
-                }
+                // Resolve texture aliases
+                const char* faceNames[] = {"front", "back", "left", "right", "top", "bottom"};
+                for (const char* fn : faceNames)
+                    part.byName(fn).texture = resolveAlias(part.byName(fn).texture);
             }
+            printf("[AVATAR] Loaded advanced: %s\n", avatarName.c_str());
 
-            printf("[AVATAR] Loaded new-format avatar: %s\n", avatarName.c_str());
-        } else if (hasOldSimple || hasOldAdvanced) {
-            printf("[AVATAR] Format: legacy (simple/advanced)\n");
-
-            if (hasOldSimple) {
-                auto& s = root["simple"];
-                mAvatar.simple.face = s.value("face", "");
-                mAvatar.simple.shirt = s.value("shirt", "");
-                mAvatar.simple.pants = s.value("pants", "");
-                mAvatar.simple.skin = s.value("skin", "");
-                printf("[AVATAR]   simple: face=%s shirt=%s pants=%s skin=%s\n",
-                       mAvatar.simple.face.c_str(), mAvatar.simple.shirt.c_str(),
-                       mAvatar.simple.pants.c_str(), mAvatar.simple.skin.c_str());
-            }
-
-            mAvatar.advancedMode = root.value("advanced_mode", false);
-
-            if (hasOldAdvanced) {
-                auto readPart = [&](const std::string& p, AvatarPartFaces& part) {
-                    part.front = root["advanced"].value(p + "_front", "");
-                    part.back = root["advanced"].value(p + "_back", "");
-                    part.left = root["advanced"].value(p + "_left", "");
-                    part.right = root["advanced"].value(p + "_right", "");
-                    part.top = root["advanced"].value(p + "_top", "");
-                    part.bottom = root["advanced"].value(p + "_bottom", "");
-                };
-                readPart("head", mAvatar.head);
-                readPart("torso", mAvatar.torso);
-                readPart("leftArm", mAvatar.leftArm);
-                readPart("rightArm", mAvatar.rightArm);
-                readPart("leftLeg", mAvatar.leftLeg);
-                readPart("rightLeg", mAvatar.rightLeg);
-            }
-
-            if (!mAvatar.advancedMode)
-                mAvatar.expandSimple();
+        } else if (hasSimple) {
+            mAvatar.advancedMode = false;
+            printf("[AVATAR] Format: simple\n");
+            auto& s = root["simple"];
+            mAvatar.simple.face  = resolveAlias(s.value("face", ""));
+            mAvatar.simple.shirt = resolveAlias(s.value("shirt", ""));
+            mAvatar.simple.pants = resolveAlias(s.value("pants", ""));
+            mAvatar.simple.skin  = resolveAlias(s.value("skin", ""));
+            mAvatar.expandSimple();
+            printf("[AVATAR]   face=%s shirt=%s pants=%s skin=%s\n",
+                   mAvatar.simple.face.c_str(), mAvatar.simple.shirt.c_str(),
+                   mAvatar.simple.pants.c_str(), mAvatar.simple.skin.c_str());
         } else {
-            printf("[AVATAR] ERROR: avatar.json has no recognized format\n");
+            printf("[AVATAR] ERROR: avatar.json has no recognizable format\n");
             Terminal::instance().addLog("[AVATAR] Unrecognized format in " + jsonPath);
             mHasAvatar = true;
             return false;
         }
 
-        // Shared fields for both formats
+        // ── Shared fields ─────────────────────────────────────────────
         if (root.contains("colors"))
             mAvatar.colors = parsePartColors(root["colors"]);
         if (root.contains("cosmetics"))
@@ -361,7 +343,7 @@ bool AvatarSystem::saveSimple(const std::string& avatarName, const SimpleAvatar&
     root["advanced"] = json::object();
 
     auto fillFace = [&](const std::string& key, const std::string& val) {
-        root["advanced"][key] = val;
+        root["advanced"][key] = val;  // String format for simple avatars
     };
     fillFace("head_front", simple.face.empty() ? simple.skin : simple.face);
     for (const char* f : {"back", "left", "right", "top", "bottom"})
@@ -405,13 +387,12 @@ bool AvatarSystem::saveAdvanced(const std::string& avatarName, const AvatarDefin
     root["simple"]["skin"] = def.simple.skin;
 
     root["advanced"] = json::object();
-    auto writePart = [&](const std::string& p, const AvatarPartFaces& part) {
-        root["advanced"][p + "_front"] = part.front;
-        root["advanced"][p + "_back"] = part.back;
-        root["advanced"][p + "_left"] = part.left;
-        root["advanced"][p + "_right"] = part.right;
-        root["advanced"][p + "_top"] = part.top;
-        root["advanced"][p + "_bottom"] = part.bottom;
+    auto writePart = [&](const std::string& p, const FaceVector& part) {
+        const char* faceNames[] = {"front", "back", "left", "right", "top", "bottom"};
+        for (const char* fn : faceNames) {
+            const FaceSettings& fs = part.byName(fn);
+            root["advanced"][p + "_" + fn] = serializeFaceSlot(fs);
+        }
     };
     writePart("head", def.head);
     writePart("torso", def.torso);
@@ -433,6 +414,20 @@ bool AvatarSystem::saveAdvanced(const std::string& avatarName, const AvatarDefin
     std::error_code ec;
     std::filesystem::rename(tmp, base + "/avatar.json", ec);
     return !ec;
+}
+
+void AvatarSystem::setPartFace(const std::string& part, const std::string& face, const std::string& texturePath) {
+    auto getPart = [&]() -> FaceVector* {
+        if (part == "head") return &mAvatar.head;
+        if (part == "torso") return &mAvatar.torso;
+        if (part == "leftArm") return &mAvatar.leftArm;
+        if (part == "rightArm") return &mAvatar.rightArm;
+        if (part == "leftLeg") return &mAvatar.leftLeg;
+        if (part == "rightLeg") return &mAvatar.rightLeg;
+        return nullptr;
+    };
+    FaceVector* p = getPart();
+    if (p) p->byName(face).texture = texturePath;
 }
 
 void AvatarSystem::setPartColor(const std::string& part, const glm::vec3& color) {
@@ -462,15 +457,11 @@ bool AvatarSystem::savePreset(const std::string& presetName) {
     root["name"] = presetName;
     root["colors"] = serializePartColors(mAvatar.colors);
 
-    // Save all part face textures and transforms
     json adv = json::object();
-    auto writePart = [&](const std::string& p, const AvatarPartFaces& part) {
-        adv[p + "_front"] = part.front;
-        adv[p + "_back"] = part.back;
-        adv[p + "_left"] = part.left;
-        adv[p + "_right"] = part.right;
-        adv[p + "_top"] = part.top;
-        adv[p + "_bottom"] = part.bottom;
+    auto writePart = [&](const std::string& p, const FaceVector& part) {
+        const char* faceNames[] = {"front", "back", "left", "right", "top", "bottom"};
+        for (const char* fn : faceNames)
+            adv[p + "_" + fn] = serializeFaceSlot(part.byName(fn));
     };
     writePart("head", mAvatar.head);
     writePart("torso", mAvatar.torso);
@@ -503,20 +494,15 @@ bool AvatarSystem::loadPreset(const std::string& presetName) {
             mAvatar.colors = parsePartColors(root["colors"]);
 
         if (root.contains("advanced")) {
-            auto readPart = [&](const std::string& p, AvatarPartFaces& part) {
-                part.front = root["advanced"].value(p + "_front", "");
-                part.back = root["advanced"].value(p + "_back", "");
-                part.left = root["advanced"].value(p + "_left", "");
-                part.right = root["advanced"].value(p + "_right", "");
-                part.top = root["advanced"].value(p + "_top", "");
-                part.bottom = root["advanced"].value(p + "_bottom", "");
+            auto& adv = root["advanced"];
+            const char* partKeys[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+            FaceVector AvatarDefinition::*partPtrs[] = {
+                &AvatarDefinition::head, &AvatarDefinition::torso,
+                &AvatarDefinition::leftArm, &AvatarDefinition::rightArm,
+                &AvatarDefinition::leftLeg, &AvatarDefinition::rightLeg
             };
-            readPart("head", mAvatar.head);
-            readPart("torso", mAvatar.torso);
-            readPart("leftArm", mAvatar.leftArm);
-            readPart("rightArm", mAvatar.rightArm);
-            readPart("leftLeg", mAvatar.leftLeg);
-            readPart("rightLeg", mAvatar.rightLeg);
+            for (int pi = 0; pi < 6; ++pi)
+                parsePartFacesFromAdvanced(adv, partKeys[pi], mAvatar.*partPtrs[pi], "");
         }
 
         if (root.contains("cosmetics"))
@@ -573,26 +559,10 @@ std::vector<std::string> AvatarSystem::listPngs(const std::string& avatarName) c
     return result;
 }
 
-void AvatarSystem::setPartFace(const std::string& part, const std::string& face, const std::string& texturePath) {
-    auto getPart = [&]() -> AvatarPartFaces* {
-        if (part == "head") return &mAvatar.head;
-        if (part == "torso") return &mAvatar.torso;
-        if (part == "leftArm") return &mAvatar.leftArm;
-        if (part == "rightArm") return &mAvatar.rightArm;
-        if (part == "leftLeg") return &mAvatar.leftLeg;
-        if (part == "rightLeg") return &mAvatar.rightLeg;
-        return nullptr;
-    };
-    AvatarPartFaces* p = getPart();
-    if (p) p->byName(face) = texturePath;
-}
-
 bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     if (!mHasAvatar || mAvatarName.empty()) return false;
-
     if (!buildAtlas(player, reloadTextures))
         return false;
-
     return applyAtlasToPlayer(player);
 }
 
@@ -631,24 +601,23 @@ bool AvatarSystem::applySingleTexture(Player& player, const std::string& texture
         auto& mesh = player.physicalBody.partMeshes[partIndex];
         if (mesh.verts.empty()) continue;
 
-        // Compute per-triangle UVs (same as atlas but without atlas lookup)
         glm::vec3 mn = mesh.verts[0].pos, mx = mesh.verts[0].pos;
         for (auto& v : mesh.verts) { mn = glm::min(mn, v.pos); mx = glm::max(mx, v.pos); }
         for (size_t i = 0; i + 2 < mesh.verts.size(); i += 3) {
             glm::vec3 normal = mesh.verts[i].normal + mesh.verts[i+1].normal + mesh.verts[i+2].normal;
             if (glm::dot(normal, normal) < 0.000001f)
                 normal = glm::cross(mesh.verts[i+1].pos - mesh.verts[i].pos, mesh.verts[i+2].pos - mesh.verts[i].pos);
-            // Use faceColumnForNormal from avatar-atlas.cpp via a local copy
             glm::vec3 a = glm::abs(normal);
-            int col = (a.z >= a.x && a.z >= a.y) ? (normal.z >= 0 ? 4 : 5) :
-                      (a.y >= a.x) ? (normal.y <= 0 ? 0 : 1) : (normal.x <= 0 ? 2 : 3);
+            int col = (a.y >= a.x && a.y >= a.z) ? (normal.y >= 0 ? 0 : 1) :
+                      (a.z >= a.x) ? (normal.z >= 0 ? 2 : 3) :
+                      (normal.x <= 0 ? 4 : 5);
             glm::vec3 size = glm::max(mx - mn, glm::vec3(0.0001f));
             for (size_t v = i; v < i + 3; ++v) {
                 auto& vert = mesh.verts[v];
                 glm::vec2 uv;
-                if (col == 4 || col == 5)
+                if (col <= 1)
                     uv = {(vert.pos.x - mn.x) / size.x, (vert.pos.y - mn.y) / size.y};
-                else if (col <= 1)
+                else if (col <= 3)
                     uv = {(vert.pos.x - mn.x) / size.x, (vert.pos.z - mn.z) / size.z};
                 else
                     uv = {(vert.pos.y - mn.y) / size.y, (vert.pos.z - mn.z) / size.z};

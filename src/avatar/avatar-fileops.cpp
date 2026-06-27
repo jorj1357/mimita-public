@@ -194,13 +194,13 @@ bool AvatarSystem::saveCurrentOutfit(const std::string& outfitName)
 
     // Collect referenced textures
     std::set<std::string> usedTextures;
-    auto collect = [&](const AvatarPartFaces& part) {
-        if (!part.front.empty()) usedTextures.insert(part.front);
-        if (!part.back.empty()) usedTextures.insert(part.back);
-        if (!part.left.empty()) usedTextures.insert(part.left);
-        if (!part.right.empty()) usedTextures.insert(part.right);
-        if (!part.top.empty()) usedTextures.insert(part.top);
-        if (!part.bottom.empty()) usedTextures.insert(part.bottom);
+    auto collect = [&](const FaceVector& part) {
+        if (!part.front.texture.empty()) usedTextures.insert(part.front.texture);
+        if (!part.back.texture.empty()) usedTextures.insert(part.back.texture);
+        if (!part.left.texture.empty()) usedTextures.insert(part.left.texture);
+        if (!part.right.texture.empty()) usedTextures.insert(part.right.texture);
+        if (!part.top.texture.empty()) usedTextures.insert(part.top.texture);
+        if (!part.bottom.texture.empty()) usedTextures.insert(part.bottom.texture);
     };
     collect(mAvatar.head);
     collect(mAvatar.torso);
