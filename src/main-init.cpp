@@ -90,6 +90,8 @@
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 #include "avatar/avatar-menu.h"
+#include "avatar/avatar-drop-target.h"
+#include "avatar/avatar-menu.h"
 #include "render/lighting-config.h"
 #include "render/lighting-commands.h"
 #include "render/postfx-commands.h"
@@ -220,12 +222,16 @@ void gameInit(int argc, char** argv, Engine& engine)
         Terminal::instance().handleScroll(yOffset);
         UISys::gScrollYOffset = yOffset;
     });
+    glfwSetDropCallback(engine.window(), [](GLFWwindow*, int count, const char** paths) {
+        avatarMenuHandleDrop(count, paths);
+    });
 
     printf("[MAIN] after glfwSetInputMode\n");
 
     fontInit();
     printf("[MAIN] after fontInit()\n");
     uiInit(engine.window());
+    initAvatarDropTarget(engine.window());
     printf("[MAIN] after uiInit()\n");
     DebugVis::init(engine.window());
     DebugVis::loadConfig();

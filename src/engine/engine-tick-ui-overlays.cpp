@@ -17,6 +17,7 @@
 #include "replay/replay-factory.h"
 #include "gui/ui-system.h"
 #include "gui/gui-layout.h"
+#include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-bubble.h"
@@ -75,6 +76,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     auto& gReplayTimeline = REPLAY_TIMELINE;
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
+    GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
 
     if (gDuelManager.phase() == DuelPhase::MatchEnd &&
         (!gReplayExportRenderMode || ReplayExportUI::showDuelDebug))
@@ -371,12 +373,19 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     MusicManager::instance().drawAllOverlay();
     if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps))
     {
-        uiDrawText(gFramePacer.fpsText(), 12.0f, 12.0f, 0.36f,
-                   {0.3f, 1.0f, 0.5f, 1.0f});
+        const GuiElement* fpsEl = hudLayout.get("fpsText");
+        float fx = fpsEl ? fpsEl->x : 12.0f;
+        float fy = fpsEl ? fpsEl->y : 12.0f;
+        float fScale = fpsEl && fpsEl->fontSize > 0.0f ? fpsEl->fontSize : 0.36f;
+        glm::vec4 fCol = fpsEl ? fpsEl->getTextColorVec() : glm::vec4{0.3f, 1.0f, 0.5f, 1.0f};
+        uiDrawText(gFramePacer.fpsText(), uiScaleX(fx), uiScaleY(fy), fScale, fCol);
         if (gFramePacer.frameDebug())
         {
-            uiDrawText(gFramePacer.debugText(), 12.0f, 38.0f, 0.30f,
-                       {0.5f, 0.8f, 1.0f, 1.0f});
+            const GuiElement* dbgEl = hudLayout.get("fpsDebugText");
+            float dy = dbgEl ? dbgEl->y : (fy + 26.0f);
+            float dScale = dbgEl && dbgEl->fontSize > 0.0f ? dbgEl->fontSize : 0.30f;
+            glm::vec4 dCol = dbgEl ? dbgEl->getTextColorVec() : glm::vec4{0.5f, 0.8f, 1.0f, 1.0f};
+            uiDrawText(gFramePacer.debugText(), uiScaleX(fx), uiScaleY(dy), dScale, dCol);
         }
     }
     if (PostFX::instance().debugEnabled && (!gReplayExportRenderMode || ReplayExportUI::showPostFxDebug))

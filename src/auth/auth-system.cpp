@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <random>
 #include <shellapi.h>
+#include "entities/player.h"
+
+extern Player* gpPlayer;
 
 AuthSystem& AuthSystem::instance()
 {
@@ -81,6 +84,11 @@ void AuthSystem::validateStoredToken()
         mUser.emailVerified = info.emailVerified;
         mUser.createdAt = info.createdAt;
         mUser.avatarData = info.avatarData;
+
+        // Propagate account username to the in-game player entity
+        if (gpPlayer)
+            gpPlayer->username = info.username;
+
         printf("[AUTH] session validated: user=%s id=%d\n",
                info.username.c_str(), info.id);
 
@@ -268,6 +276,11 @@ void AuthSystem::finishAuth(const std::string& token)
         mUser.emailVerified = info.emailVerified;
         mUser.createdAt = info.createdAt;
         mUser.avatarData = info.avatarData;
+
+        // Propagate account username to the in-game player entity immediately
+        if (gpPlayer)
+            gpPlayer->username = info.username;
+
         printf("[AUTH] authenticated: user=%s id=%d\n",
                info.username.c_str(), info.id);
 
