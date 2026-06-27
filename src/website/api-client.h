@@ -103,3 +103,26 @@ std::vector<MatchEntry> getMatchHistory(const std::string& sessionToken, int pag
 // Settings
 json getSettings(const std::string& sessionToken);
 bool updateSettings(const std::string& sessionToken, const json& settings);
+
+// Client Login (4-letter code flow)
+struct ClientCodePreview
+{
+    bool valid = false;
+    std::string username;
+    std::string displayName;
+    std::string avatarUrl;
+    json avatarData;
+    std::string supporterTier;
+};
+
+struct ClientCodeConfirm
+{
+    bool success = false;
+    std::string sessionToken;
+    int accountId = 0;
+    std::string username;
+};
+
+ClientCodePreview previewClientCode(const std::string& code);
+ClientCodeConfirm confirmClientCode(const std::string& code);
+std::string createClientCode(); // website-side only, returns raw code

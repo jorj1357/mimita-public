@@ -37,6 +37,7 @@ import AdminNoPermission from "./pages/AdminNoPermission"
 import ProfilePage from "./pages/ProfilePage"
 import Feedback from "./pages/Feedback"
 import Link from "./pages/Link"
+import ClientSignIn from "./pages/ClientSignIn"
 
 /* =========================
    APP
@@ -83,6 +84,7 @@ ReactDOM.createRoot(
 
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/link" element={<Link />} />
+        <Route path="/clientsignin" element={<ClientSignIn />} />
 
         <Route path="*" element={<NotFound />} />
 

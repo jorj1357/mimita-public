@@ -235,7 +235,21 @@ const MIGRATION_STATEMENTS = [
         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
         settings_json JSONB NOT NULL DEFAULT '{}',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`
+    )`,
+
+    // ── Client Login Codes ───────────────────────────────────────────────
+
+    `CREATE TABLE IF NOT EXISTS client_login_codes (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        ip_address TEXT,
+        user_agent TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS client_login_codes_hash_idx ON client_login_codes(code_hash, expires_at)`
 ]
 
 export async function runMigrations() {

@@ -445,3 +445,59 @@ bool updateSettings(const std::string& sessionToken, const json& settings)
     } catch (...) {}
     return false;
 }
+
+// ── Client Login (4-letter code flow) ────────────────────────────────────────
+
+ClientCodePreview previewClientCode(const std::string& code)
+{
+    ClientCodePreview result;
+    json req;
+    req["code"] = code;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/client-login/preview",
+                          req.dump(), "", respBody, httpCode);
+    if (!ok || httpCode != 200) return result;
+
+    try {
+        json j = json::parse(respBody);
+        if (j.value("success", false) && j.value("valid", false))
+        {
+            result.valid = true;
+            result.username = j.value("username", "");
+            result.displayName = j.value("display_name", j.value("username", ""));
+            result.avatarUrl = j.value("avatar_url", "");
+            if (j.contains("avatar_data") && !j["avatar_data"].is_null())
+                result.avatarData = j["avatar_data"];
+            result.supporterTier = j.value("supporter_tier", "free");
+        }
+    } catch (...) {}
+    return result;
+}
+
+ClientCodeConfirm confirmClientCode(const std::string& code)
+{
+    ClientCodeConfirm result;
+    json req;
+    req["code"] = code;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/client-login/confirm",
+                          req.dump(), "", respBody, httpCode);
+    if (!ok || httpCode != 200) return result;
+
+    try {
+        json j = json::parse(respBody);
+        if (j.value("success", false))
+        {
+            result.success = true;
+            result.sessionToken = j.value("session_token", "");
+            auto account = j.value("account", json::object());
+            result.accountId = account.value("id", 0);
+            result.username = account.value("username", "");
+        }
+    } catch (...) {}
+    return result;
+}
