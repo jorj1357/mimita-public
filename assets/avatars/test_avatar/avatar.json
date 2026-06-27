@@ -1,11 +1,82 @@
 {
+  "advanced": {
+    "head_back": "skin.png",
+    "head_bottom": "skin.png",
+    "head_front": "face.png",
+    "head_left": "skin.png",
+    "head_right": "skin.png",
+    "head_top": "skin.png",
+    "leftArm_back": "shirt.png",
+    "leftArm_bottom": "shirt.png",
+    "leftArm_front": "shirt.png",
+    "leftArm_left": "shirt.png",
+    "leftArm_right": "shirt.png",
+    "leftArm_top": "shirt.png",
+    "leftLeg_back": "pants.png",
+    "leftLeg_bottom": "pants.png",
+    "leftLeg_front": "pants.png",
+    "leftLeg_left": "pants.png",
+    "leftLeg_right": "pants.png",
+    "leftLeg_top": "pants.png",
+    "rightArm_back": "shirt.png",
+    "rightArm_bottom": "shirt.png",
+    "rightArm_front": "shirt.png",
+    "rightArm_left": "shirt.png",
+    "rightArm_right": "shirt.png",
+    "rightArm_top": "shirt.png",
+    "rightLeg_back": "pants.png",
+    "rightLeg_bottom": "pants.png",
+    "rightLeg_front": "pants.png",
+    "rightLeg_left": "pants.png",
+    "rightLeg_right": "pants.png",
+    "rightLeg_top": "pants.png",
+    "torso_back": "shirt.png",
+    "torso_bottom": "shirt.png",
+    "torso_front": "shirt.png",
+    "torso_left": "shirt.png",
+    "torso_right": "shirt.png",
+    "torso_top": "shirt.png"
+  },
+  "advanced_mode": true,
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
   "name": "test_avatar",
-  "version": 1,
-  "advanced_mode": false,
   "simple": {
     "face": "face.png",
-    "shirt": "shirt.png",
     "pants": "pants.png",
+    "shirt": "shirt.png",
     "skin": "skin.png"
-  }
+  },
+  "version": 1
 }

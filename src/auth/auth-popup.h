@@ -11,3 +11,7 @@ enum class AuthPopupAction
 };
 
 AuthPopupAction drawAuthPopup(GLFWwindow* window);
+void authPopupHandleChar(unsigned int codepoint);
+void authPopupHandleKey(int key, int action);
+bool authPopupIsInCodeInput();
+void authPopupReset();

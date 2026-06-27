@@ -126,20 +126,17 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
 
     if (account.logIn)
     {
-        openBrowser("https://www.mimita.fun/signin");
-        AuthSystem::instance().startLinkFlow();
+        openBrowser("https://www.mimita.fun/clientsignin");
     }
     else if (account.signUp)
     {
         openBrowser("https://www.mimita.fun/signup");
-        AuthSystem::instance().startLinkFlow();
     }
     else if (account.switchAccount || r.switchAccount)
     {
         r.switchAccount = true;
         AuthSystem::instance().logout();
-        openBrowser("https://www.mimita.fun/signin");
-        AuthSystem::instance().startLinkFlow();
+        openBrowser("https://www.mimita.fun/clientsignin");
     }
     else if (account.logOut || r.logOut)
     {

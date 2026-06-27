@@ -4,6 +4,7 @@
 #include "gui/gui-layout.h"
 #include "devtools/terminal.h"
 #include "gui/menus/sign-in-menu.h"
+#include "auth/auth-popup.h"
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
 #include <GLFW/glfw3.h>
@@ -56,6 +57,7 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
     // the main.cpp key callback before it was overwritten)
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
         Terminal::instance().handleKey(key, mods);
+        authPopupHandleKey(key, action);
         signInMenuHandleKey(key, action);
         serverInfoMenuHandleKey(key, action);
         onlineMenuHandleKey(key, action);

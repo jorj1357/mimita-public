@@ -1,6 +1,7 @@
 #include "main-init.h"
 #include "main-systems.h"
 #include "gui/ui-system-internal.h"
+#include "auth/auth-popup.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -196,6 +197,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
+        authPopupHandleChar(codepoint);
         signInMenuHandleChar(codepoint);
         avatarMenuHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
@@ -206,6 +208,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     glfwSetKeyCallback(engine.window(), [](GLFWwindow*, int key, int scancode, int action, int mods) {
         (void)scancode;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
             avatarMenuHandleKey(key, action);
             serverInfoMenuHandleKey(key, action);

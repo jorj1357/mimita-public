@@ -9,6 +9,7 @@
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
 #include "auth/auth-system.h"
+#include "auth/auth-popup.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
 #include "game/bomb-tag-config.h"
@@ -18,6 +19,7 @@
 #include "gui-editor.h"
 #include "camera.h"
 #include "render/render-player.h"
+#include "render/lighting-config.h"
 #include "gui-layout.h"
 #include "audio/music-manager.h"
 #include "analytics/analytics-manager.h"
@@ -26,10 +28,39 @@
 #include "replay/replay.h"
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
+#include "renderer/renderer.h"
 #include <cstdio>
+#include <glad/glad.h>
 #include <shellapi.h>
 
 GuiMenuState gGuiMenuState = GUI_MENU_AUTH;
+
+extern Renderer* gRenderer;
+
+// Set up lighting uniforms for player preview rendering
+static void setupPlayerPreviewLighting()
+{
+    if (!gRenderer) return;
+    GLuint shader = gRenderer->shaderProgram;
+    glUseProgram(shader);
+    const auto& lcfg = LightingConfig::instance();
+    auto ul = [&](const char* name) { return glGetUniformLocation(shader, name); };
+    glUniform1i(ul("uUseColor"), 0);
+    glUniform1i(ul("uTex"), 0);
+    glUniform1i(ul("uDebugView"), 0);
+    glUniform1i(ul("uShadowsEnabled"), 0);
+    glm::vec3 ld = lcfg.lightDir();
+    glUniform3f(ul("uLightDir"), ld.x, ld.y, ld.z);
+    glUniform1f(ul("uAmbientStrength"), lcfg.ambientStrength());
+    glUniform1f(ul("uDiffuseStrength"), lcfg.diffuseStrength());
+    glUniform1f(ul("uEdgeDarkness"), lcfg.edgeDarkness());
+    glUniform1f(ul("uEdgeWidth"), lcfg.edgeWidth());
+    glUniform1f(ul("uAODarkness"), lcfg.aoDarkness());
+    glUniform1f(ul("uAOContrast"), lcfg.aoContrast());
+    glUniform1f(ul("uTextureContrast"), lcfg.textureContrast());
+    glUniform1f(ul("uTextureBrightness"), lcfg.textureBrightness());
+    glUseProgram(0);
+}
 
 static const char* layoutFileForMenu(GuiMenuState state)
 {
@@ -79,8 +110,6 @@ void guiMain(GLFWwindow* win, GameState& state)
 
     if (auth.state() == AuthState::Checking)
         auth.tickValidate();
-    if (auth.state() == AuthState::Linking)
-        auth.pollLinkFlow();
 
     if (gGuiMenuState == GUI_MENU_AUTH)
     {
@@ -101,6 +130,7 @@ void guiMain(GLFWwindow* win, GameState& state)
         if (gpPlayer && gpPlayer->modelLoaded)
         {
             glClear(GL_DEPTH_BUFFER_BIT);
+            setupPlayerPreviewLighting();
 
             GuiLayout& mmLayout = GuiLayoutManager::instance().getLayout("config/gui/main-menu.json");
             const GuiElement* coverEl = mmLayout.get("coverImage");
@@ -109,11 +139,8 @@ void guiMain(GLFWwindow* win, GameState& state)
             glfwGetFramebufferSize(win, &fbW, &fbH);
             float scaleX = (float)fbW / 1920.0f;
 
-            // Render player preview on the right side of the screen
-            float panelLeft = 650.0f;
-            float panelRight = 1400.0f;
-            if (exitEl) panelLeft = exitEl->x + exitEl->w + 40.0f;
-            if (coverEl) panelRight = (coverEl->x + coverEl->w) * 0.85f;
+            float panelLeft = exitEl ? (exitEl->x + exitEl->w + 40.0f) : 650.0f;
+            float panelRight = coverEl ? (coverEl->x + coverEl->w) * 0.85f : 1400.0f;
 
             int prevPX = (int)(panelLeft * scaleX);
             int prevPW = (int)((panelRight - panelLeft) * scaleX);
@@ -174,10 +201,10 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 printf("[MAIN MENU] switching account\n");
                 auth.clearSession();
+                authPopupReset();
                 ShellExecuteA(nullptr, "open",
-                    "https://mimita.fun/signin",
+                    "https://mimita.fun/clientsignin",
                     nullptr, nullptr, SW_SHOWNORMAL);
-                auth.startLinkFlow();
             }
             else if (r.logOut)
             {
@@ -373,8 +400,8 @@ void guiMain(GLFWwindow* win, GameState& state)
             if (gpPlayer)
             {
                 glClear(GL_DEPTH_BUFFER_BIT);
+                setupPlayerPreviewLighting();
 
-                // Load the avatar creator layout for preview area bounds
                 GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
                 const GuiElement* leftPanel = layout.get("panelLibrary");
                 const GuiElement* rightPanel = layout.get("panelPreview3D");
@@ -382,9 +409,8 @@ void guiMain(GLFWwindow* win, GameState& state)
                 glfwGetFramebufferSize(win, &fbW, &fbH);
                 float scaleX = (float)fbW / 1920.0f;
 
-                // Scissor to the area between left panel end and right panel start
                 float leftEdge = leftPanel ? (leftPanel->x + leftPanel->w + 10.0f) : 350.0f;
-                float rightEdge = rightPanel ? rightPanel->x : 1100.0f;
+                float rightEdge = rightPanel ? rightPanel->x : 1120.0f;
                 int previewPX = (int)(leftEdge * scaleX);
                 int previewPW = (int)((rightEdge - leftEdge) * scaleX);
 
@@ -394,7 +420,6 @@ void guiMain(GLFWwindow* win, GameState& state)
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 glDisable(GL_SCISSOR_TEST);
 
-                // Setup orbiting preview camera
                 Camera previewCam;
                 static float previewAngle = 0.0f;
                 previewAngle += 0.008f;

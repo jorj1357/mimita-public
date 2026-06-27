@@ -20,6 +20,13 @@ extern Player* gpPlayer;
 void openPicker(int slot, const std::vector<std::string>& files);
 void closePicker();
 
+// Auto-apply current avatar to gpPlayer for live preview
+static void liveApply()
+{
+    if (gpPlayer && AvatarSystem::instance().hasAvatar())
+        AvatarSystem::instance().applyToPlayer(*gpPlayer);
+}
+
 namespace {
 
 // ── State ───────────────────────────────────────────────────────────
@@ -89,13 +96,6 @@ static float lh(const std::string& id, float defaultV = 0.0f)
 {
     const GuiElement* e = getLayout().get(id);
     return e ? e->h : defaultV;
-}
-
-// Auto-apply current avatar to gpPlayer for live preview
-static void liveApply()
-{
-    if (gpPlayer && AvatarSystem::instance().hasAvatar())
-        AvatarSystem::instance().applyToPlayer(*gpPlayer);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

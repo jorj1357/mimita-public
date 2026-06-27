@@ -118,6 +118,7 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
     if (req.path.startsWith("/api/game/")) return next()
+    if (req.path.startsWith("/api/client-login/")) return next()
     return csrfProtection(req, res, next)
 })
 
@@ -1626,6 +1627,219 @@ app.get("/api/desktop/detect", (req, res) => {
         launcher_path: "MimitaLauncher.exe",
         description: "Open Mimita?"
     })
+})
+
+// ── Client Login Codes (4-letter) ────────────────────────────────────────────
+
+const clientLoginRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "client_login" })
+const clientLoginPreviewRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 30, name: "client_login_preview" })
+
+function generateClientCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    let code = ""
+    for (let i = 0; i < 4; i++) {
+        code += chars[crypto.randomInt(0, chars.length)]
+    }
+    return code
+}
+
+app.post("/api/client-login/create-code", authRateLimit, async (req, res, next) => {
+    try {
+        const token = parseCookies(req)[sessionCookieName]
+        if (!token) {
+            return res.status(401).json({ success: false, message: "sign in required" })
+        }
+
+        const sessionResult = await pool.query(
+            `SELECT u.id, u.username, u.avatar_url, u.avatar_data, u.display_name, u.supporter_tier
+             FROM sessions s JOIN users u ON u.id = s.user_id
+             WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW() AND u.deleted_at IS NULL
+             LIMIT 1`,
+            [hashToken(token, sessionSecret)]
+        )
+        if (!sessionResult.rowCount) {
+            return res.status(401).json({ success: false, message: "session invalid" })
+        }
+
+        // Invalidate any previous unused codes for this user
+        await pool.query(
+            `UPDATE client_login_codes SET used_at = NOW()
+             WHERE user_id = $1 AND used_at IS NULL AND expires_at > NOW()`,
+            [sessionResult.rows[0].id]
+        )
+
+        const code = generateClientCode()
+        const codeHash = hashToken(code, sessionSecret)
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
+
+        await pool.query(
+            `INSERT INTO client_login_codes (user_id, code_hash, expires_at, ip_address, user_agent)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [sessionResult.rows[0].id, codeHash, expiresAt, getClientIp(req), req.get("user-agent") || "unknown"]
+        )
+
+        logAuth("client_code_create", `user_id=${sessionResult.rows[0].id}`)
+        res.json({
+            success: true,
+            code,
+            expires_at: expiresAt.toISOString()
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.post("/api/client-login/preview", clientLoginPreviewRateLimit, async (req, res, next) => {
+    try {
+        const rawCode = String(req.body.code || "").trim().toUpperCase()
+        if (!/^[A-Z]{4}$/.test(rawCode)) {
+            return res.status(400).json({ success: false, valid: false, message: "invalid code format" })
+        }
+
+        const codeHash = hashToken(rawCode, sessionSecret)
+        const result = await pool.query(
+            `SELECT clc.user_id, u.username, u.display_name, u.avatar_url, u.avatar_data,
+                    u.supporter_tier, u.achievements
+             FROM client_login_codes clc
+             JOIN users u ON u.id = clc.user_id
+             WHERE clc.code_hash = $1
+               AND clc.used_at IS NULL
+               AND clc.expires_at > NOW()
+             LIMIT 1`,
+            [codeHash]
+        )
+
+        if (!result.rowCount) {
+            return res.json({ success: true, valid: false, message: "invalid or expired code" })
+        }
+
+        const user = result.rows[0]
+        res.json({
+            success: true,
+            valid: true,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+            avatar_data: user.avatar_data,
+            supporter_tier: user.supporter_tier,
+            achievements: user.achievements
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+app.post("/api/client-login/confirm", clientLoginRateLimit, async (req, res, next) => {
+    try {
+        const rawCode = String(req.body.code || "").trim().toUpperCase()
+        if (!/^[A-Z]{4}$/.test(rawCode)) {
+            return res.status(400).json({ success: false, message: "invalid code format" })
+        }
+
+        const codeHash = hashToken(rawCode, sessionSecret)
+        const client = await pool.connect()
+
+        try {
+            await client.query("BEGIN")
+
+            const codeResult = await client.query(
+                `SELECT clc.id, clc.user_id
+                 FROM client_login_codes clc
+                 WHERE clc.code_hash = $1
+                   AND clc.used_at IS NULL
+                   AND clc.expires_at > NOW()
+                 LIMIT 1
+                 FOR UPDATE`,
+                [codeHash]
+            )
+
+            if (!codeResult.rowCount) {
+                await client.query("ROLLBACK")
+                return res.status(404).json({ success: false, message: "invalid or expired code" })
+            }
+
+            const userId = codeResult.rows[0].user_id
+
+            // Mark code as used
+            await client.query(
+                `UPDATE client_login_codes SET used_at = NOW() WHERE id = $1`,
+                [codeResult.rows[0].id]
+            )
+
+            // Create game session
+            const sessionToken = createSecretToken()
+            const tokenHash = hashToken(sessionToken, sessionSecret)
+            await client.query(
+                `INSERT INTO sessions (user_id, token_hash, user_agent, ip_address, expires_at)
+                 VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))`,
+                [userId, tokenHash, "game-client", getClientIp(req), sessionDays]
+            )
+
+            // Update last login
+            await client.query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [userId])
+
+            // Fetch full profile
+            const profileResult = await client.query(
+                `SELECT id, username, email, bio, avatar_url, avatar_updated_at, avatar_data,
+                        display_name, supporter_tier, role, achievements,
+                        email_verified_at IS NOT NULL AS email_verified,
+                        created_at
+                 FROM users WHERE id = $1`,
+                [userId]
+            )
+            const profile = profileResult.rows[0]
+
+            const statsResult = await client.query(
+                `SELECT * FROM game_stats WHERE user_id = $1`,
+                [userId]
+            )
+
+            await client.query("COMMIT")
+
+            logAuth("client_login_confirm", `user_id=${userId}`)
+            res.json({
+                success: true,
+                session_token: sessionToken,
+                account: {
+                    id: profile.id,
+                    username: profile.username
+                },
+                profile: {
+                    id: profile.id,
+                    username: profile.username,
+                    display_name: profile.display_name || profile.username,
+                    email: profile.email,
+                    bio: profile.bio,
+                    avatar_url: profile.avatar_url,
+                    avatar_updated_at: profile.avatar_updated_at,
+                    avatar_data: profile.avatar_data,
+                    supporter_tier: profile.supporter_tier,
+                    role: profile.role,
+                    achievements: profile.achievements,
+                    email_verified: profile.email_verified,
+                    created_at: profile.created_at
+                },
+                avatar: {
+                    url: profile.avatar_url,
+                    data: profile.avatar_data,
+                    updated_at: profile.avatar_updated_at
+                },
+                stats: statsResult.rows[0] || null
+            })
+        }
+        catch (error) {
+            await client.query("ROLLBACK")
+            throw error
+        }
+        finally {
+            client.release()
+        }
+    }
+    catch (error) {
+        next(error)
+    }
 })
 
 // ── Account Linking ──────────────────────────────────────────────────────────

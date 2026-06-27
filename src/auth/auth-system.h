@@ -74,9 +74,11 @@ public:
     json getCloudAvatarData();
     bool saveCloudAvatarData(const json& avatarData);
 
+    // Called by auth-popup after successful code confirm
+    void finishAuth(const std::string& token);
+
 private:
     AuthSystem() = default;
-    void finishAuth(const std::string& token);
     void validateStoredToken();
     void fetchFullProfile();
 
