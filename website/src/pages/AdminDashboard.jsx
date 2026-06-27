@@ -184,7 +184,7 @@ export default function AdminDashboard() {
                 </div>
             </div>
 
-            <p className="adminSubtitle">single source of truth</p>
+            <p className="adminSubtitle"> Admin... more like </p>
 
             {error && <p className="adminError">{error}</p>}
 

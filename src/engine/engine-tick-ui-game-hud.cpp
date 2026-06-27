@@ -197,21 +197,43 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         if (player.inventoryOpen)
             uiDrawText("INVENTORY: [1] Revolver [2-10] Empty", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
     }
+
+    // ── Hotbar from JSON config ────────────────────────────────────
     {
-        const float normalSize = 44.0f;
-        const float gap = 7.0f;
-        const float totalWidth = normalSize * 10.0f + gap * 9.0f;
+        auto readVal = [&](const char* id, float defaultVal) -> float {
+            const GuiElement* el = hudLayout.get(id);
+            return el ? el->x : defaultVal;
+        };
+        auto readCol = [&](const char* id, glm::vec4 defaultVal) -> glm::vec4 {
+            const GuiElement* el = hudLayout.get(id);
+            return el ? el->getBackgroundColorVec() : defaultVal;
+        };
+        auto readTextCol = [&](const char* id, glm::vec4 defaultVal) -> glm::vec4 {
+            const GuiElement* el = hudLayout.get(id);
+            return el ? el->getTextColorVec() : defaultVal;
+        };
+
+        float slotSize = readVal("hotbarSlotSize", 44.0f);
+        float gap = readVal("hotbarGap", 7.0f);
+        float yOffset = readVal("hotbarY", 70.0f);
+        int slotCount = (int)readVal("hotbarSlotCount", 10.0f);
+        glm::vec4 bgEq = readCol("hotbarBgEquipped", {0.32f,0.32f,0.36f,0.95f});
+        glm::vec4 bgNorm = readCol("hotbarBgNormal", {0.12f,0.12f,0.14f,0.92f});
+        glm::vec4 borderEq = readTextCol("hotbarBorderEquipped", {1,1,1,1});
+        glm::vec4 borderNorm = readTextCol("hotbarBorderNormal", {0.45f,0.45f,0.48f,1});
+        glm::vec4 wepCol = readTextCol("hotbarWeaponColor", {0.55f,0.55f,0.58f,1});
+        glm::vec4 wepColEq = readTextCol("hotbarWeaponColorEquipped", {1.0f,0.85f,0.35f,1});
+
+        float totalWidth = slotSize * slotCount + gap * (slotCount - 1);
         float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
-        float y = uiScreenH() - 70.0f;
-        for (int slot = 1; slot <= 10; ++slot) {
+        float y = uiScreenH() - yOffset;
+        for (int slot = 1; slot <= slotCount; ++slot) {
             bool equipped = player.equippedSlot == slot;
-            float size = equipped ? normalSize * 1.2f : normalSize;
-            float offset = (size - normalSize) * 0.5f;
+            float size = equipped ? slotSize * 1.2f : slotSize;
+            float offset = (size - slotSize) * 0.5f;
             UIRect rect{x - offset, y - offset, size, size};
-            uiDrawRect(rect, slot == 1 ? glm::vec4(0.32f,0.32f,0.36f,0.95f)
-                                       : glm::vec4(0.12f,0.12f,0.14f,0.92f), "hotbar-slot");
-            uiDrawRectOutline(rect, equipped ? glm::vec4(1,1,1,1)
-                                             : glm::vec4(0.45f,0.45f,0.48f,1), "hotbar-border");
+            uiDrawRect(rect, equipped ? bgEq : bgNorm, "hotbar-slot");
+            uiDrawRectOutline(rect, equipped ? borderEq : borderNorm, "hotbar-border");
             std::string label = slot == 10 ? "0" : std::to_string(slot);
             uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
             const WeaponDefinition* slotDef = nullptr;
@@ -225,21 +247,35 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 std::string shortName = slotDef->id.substr(0, 3);
                 std::transform(shortName.begin(), shortName.end(), shortName.begin(), ::toupper);
                 uiDrawText(shortName.c_str(), rect.x + 13, rect.y + 34, 0.20f,
-                           equipped ? glm::vec4(1,0.85f,0.35f,1) : glm::vec4(0.55f,0.55f,0.58f,1));
+                           equipped ? wepColEq : wepCol);
             } else {
-                uiDrawText("-", rect.x + 13, rect.y + 34, 0.20f, glm::vec4(0.55f,0.55f,0.58f,1));
+                uiDrawText("-", rect.x + 13, rect.y + 34, 0.20f, wepCol);
             }
-            x += normalSize + gap;
+            x += slotSize + gap;
         }
     }
+
+    // ── Self-healthbar (world-space, from JSON config) ─────────────
     if (!replayPlaybackActive) {
     {
         float nameX = 0.0f, nameY = 0.0f;
         if (DebugVis::projectToScreen(camera, player.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.7f),
                                       nameX, nameY)) {
+            auto readVal = [&](const char* id, float defaultVal) -> float {
+                const GuiElement* el = hudLayout.get(id);
+                return el ? el->x : defaultVal;
+            };
+            auto readCol = [&](const char* id, glm::vec4 defaultVal) -> glm::vec4 {
+                const GuiElement* el = hudLayout.get(id);
+                return el ? el->getBackgroundColorVec() : defaultVal;
+            };
+            float barW = readVal("selfHpBarW", 140.0f);
+            float barH = readVal("selfHpBarH", 12.0f);
+            glm::vec4 hpBg = readCol("selfHpBg", {0.55f,0.05f,0.05f,0.95f});
+            glm::vec4 hpFg = readCol("selfHpFg", {0.05f,0.8f,0.15f,0.95f});
             float ratio = player.maxHp > 0 ? (float)player.currentHp / player.maxHp : 0.0f;
-            uiDrawRect({nameX - 70, nameY - 8, 140, 12}, {0.55f,0.05f,0.05f,0.95f}, "self-hp-bg");
-            uiDrawRect({nameX - 70, nameY - 8, 140 * ratio, 12}, {0.05f,0.8f,0.15f,0.95f}, "self-hp-current");
+            uiDrawRect({nameX - barW * 0.5f, nameY - 8, barW, barH}, hpBg, "self-hp-bg");
+            uiDrawRect({nameX - barW * 0.5f, nameY - 8, barW * ratio, barH}, hpFg, "self-hp-current");
             uiDrawText(player.username.c_str(), nameX - 35, nameY - 32, 0.32f, {1,1,1,1});
             uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
         }

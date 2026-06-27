@@ -90,6 +90,7 @@ void engineTickState(Engine& engine, float dt)
                     npcSystem.destroyAll();
                     npcsSpawned = false;
                     player.reset();
+                    player.username = AuthSystem::instance().displayName();
 
                     if (!world.spawnPoints.empty())
                     {

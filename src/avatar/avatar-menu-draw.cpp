@@ -2,6 +2,7 @@
 #include "avatar.h"
 #include "avatar-editor-scroll.h"
 #include "avatar-editor-dropdown.h"
+#include "avatar-drop-target.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -283,7 +284,17 @@ static void drawLibraryPanel(GLFWwindow* win, float px, float py, float pw, floa
 static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float ph)
 {
     AvatarSystem& av = AvatarSystem::instance();
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
     if (!av.hasAvatar()) return;
+
+    auto readVal = [&](const char* id, float def) -> float {
+        const GuiElement* e = layout.get(id);
+        return e ? e->x : def;
+    };
+    auto readBgCol = [&](const char* id, glm::vec4 def) -> glm::vec4 {
+        const GuiElement* e = layout.get(id);
+        return e ? e->getBackgroundColorVec() : def;
+    };
 
     float cy = py;
     float remainingH = py + ph - cy - 50.0f;
@@ -301,18 +312,19 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
 
         if (gSelectedTexture.empty())
         {
-            uiDrawText("Select a PNG from the library.", uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.5f, 0.6f, 0.7f, 1.0f});
-            cy += 24.0f;
-            uiDrawText("Then assign it to body part faces below.", uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.5f, 0.6f, 0.7f, 1.0f});
-            cy += 28.0f;
+            const GuiElement* h1 = layout.get("facesTabHint1");
+            const GuiElement* h2 = layout.get("facesTabHint2");
+            if (h1 && h1->visible) drawGuiElement(win, *h1);
+            if (h2 && h2->visible) { cy = h2->y + h2->h + 4.0f; drawGuiElement(win, *h2); }
+            else { cy += 52.0f; }
         }
         else
         {
             // Texture preview
-            float previewSize = 80.0f;
+            float previewSize = readVal("facesTabPreviewSize", 80.0f);
             std::string texPath = av.avatarPath(av.currentName()) + "/" + gSelectedTexture;
             uiDrawImage(texPath.c_str(), {px + 4.0f, cy, previewSize, previewSize});
-uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScaleY(cy + 6.0f),
+            uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScaleY(cy + 6.0f),
                         0.60f, {0.6f, 0.9f, 0.6f, 1.0f});
             if (uiButton(win, "X", {px + previewSize - 16.0f, cy - 4.0f, 20.0f, 20.0f},
                          {0.5f, 0.15f, 0.15f, 1.0f}).clicked) {
@@ -322,21 +334,23 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
             cy += previewSize + 10.0f;
 
             // Quick assign buttons
-            float qaH = 30.0f;
+            float qaH = readVal("facesTabQaHeight", 30.0f);
             float btnW = (pw - 24.0f) / 5.0f;
-            auto qBtn = [&](const char* label, float x, const std::string& partKey) {
-                if (uiButton(win, label, {x, cy, btnW, qaH}, {0.15f, 0.3f, 0.5f, 1.0f}).clicked) {
+            auto qBtn = [&](const char* label, float x, const std::string& partKey, const char* btnId) {
+                glm::vec4 col = readBgCol(btnId, {0.15f, 0.3f, 0.5f, 1.0f});
+                if (uiButton(win, label, {x, cy, btnW, qaH}, col).clicked) {
                     for (int fi = 0; fi < kFaceCount; ++fi)
                         av.setPartFace(partKey, kFaceKeys[fi], gSelectedTexture);
                     checkAllFaces();
                     liveApply();
                 }
             };
-            qBtn("Head", px + 4.0f, "head");
-            qBtn("Torso", px + 4.0f + btnW + 4.0f, "torso");
-            qBtn("Arms", px + 4.0f + 2 * (btnW + 4.0f), "leftArm");
-            qBtn("Legs", px + 4.0f + 3 * (btnW + 4.0f), "leftLeg");
-            if (uiButton(win, "All", {px + 4.0f + 4 * (btnW + 4.0f), cy, btnW, qaH}, {0.2f, 0.4f, 0.25f, 1.0f}).clicked) {
+            qBtn("Head", px + 4.0f, "head", "facesTabHeadBtn");
+            qBtn("Torso", px + 4.0f + btnW + 4.0f, "torso", "facesTabTorsoBtn");
+            qBtn("Arms", px + 4.0f + 2 * (btnW + 4.0f), "leftArm", "facesTabArmsBtn");
+            qBtn("Legs", px + 4.0f + 3 * (btnW + 4.0f), "leftLeg", "facesTabLegsBtn");
+            glm::vec4 allCol = readBgCol("facesTabAllBtn", {0.2f, 0.4f, 0.25f, 1.0f});
+            if (uiButton(win, "All", {px + 4.0f + 4 * (btnW + 4.0f), cy, btnW, qaH}, allCol).clicked) {
                 for (int pi = 0; pi < kPartCount; ++pi)
                     for (int fi = 0; fi < kFaceCount; ++fi)
                         av.setPartFace(kPartKeys[pi], kFaceKeys[fi], gSelectedTexture);
@@ -346,23 +360,27 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
             cy += qaH + 8.0f;
 
             // Select all / Clear
-            if (uiButton(win, "Select All", {px + 4.0f, cy, 100.0f, 26.0f}, {0.15f, 0.25f, 0.4f, 1.0f}).clicked)
+            glm::vec4 selCol = readBgCol("facesTabSelectAllBtn", {0.15f, 0.25f, 0.4f, 1.0f});
+            glm::vec4 clrCol = readBgCol("facesTabClearBtn", {0.35f, 0.15f, 0.15f, 1.0f});
+            if (uiButton(win, "Select All", {px + 4.0f, cy, 100.0f, 26.0f}, selCol).clicked)
                 checkAllFaces();
-            if (uiButton(win, "Clear", {px + 112.0f, cy, 80.0f, 26.0f}, {0.35f, 0.15f, 0.15f, 1.0f}).clicked)
+            if (uiButton(win, "Clear", {px + 112.0f, cy, 80.0f, 26.0f}, clrCol).clicked)
                 uncheckAllFaces();
             cy += 32.0f;
 
             // Face grid
             contentH = cy - contentArea.y + kPartCount * 100.0f;
+            int facesPerRow = (int)readVal("facesTabFacesPerRow", 3.0f);
+            float faceH = readVal("facesTabFaceRowHeight", 22.0f);
+            glm::vec4 chkOn = readBgCol("facesTabCheckColorOn", {0.2f, 0.7f, 0.3f, 1.0f});
+            glm::vec4 chkOff = readBgCol("facesTabCheckColorOff", {0.12f, 0.12f, 0.16f, 1.0f});
 
             for (int pi = 0; pi < kPartCount; ++pi)
             {
                 uiDrawText(kPartLabels[pi], uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.70f, 0.80f, 0.90f, 1.0f});
                 cy += 24.0f;
-
-                int facesPerRow = 3;
                 float colW = (pw - 12.0f) / 2.0f;
-                float faceH = 22.0f;
+
                 for (int fi = 0; fi < kFaceCount; ++fi)
                 {
                     int col = fi / facesPerRow;
@@ -373,7 +391,7 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
                     bool checked = gCheckedFaces.count(idx) > 0;
 
                     UIRect chkScreen = {uiScaleX(fx), uiScaleY(fy), uiScaleY(faceH), uiScaleY(faceH)};
-                    glm::vec4 cbCol = checked ? glm::vec4{0.2f, 0.7f, 0.3f, 1.0f} : glm::vec4{0.12f, 0.12f, 0.16f, 1.0f};
+                    glm::vec4 cbCol = checked ? chkOn : chkOff;
                     uiDrawRect(chkScreen, cbCol, "face-chk");
                     if (checked)
                         uiDrawText("\u2713", chkScreen.x + 3.0f, chkScreen.y + 2.0f, 0.52f, {1.0f, 1.0f, 1.0f, 1.0f});
@@ -392,8 +410,9 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
         float applyY = cy + 10.0f;
         if (!gCheckedFaces.empty())
         {
+            glm::vec4 applyCol = readBgCol("facesTabApplyBtn", {0.2f, 0.55f, 0.3f, 1.0f});
             if (uiButton(win, "APPLY TO CHECKED FACES", {px + 4.0f, applyY, pw - 8.0f, 34.0f},
-                         {0.2f, 0.55f, 0.3f, 1.0f}).clicked) {
+                         applyCol).clicked) {
                 for (int idx : gCheckedFaces) {
                     int pi = idx / kFaceCount;
                     int fi = idx % kFaceCount;
@@ -413,16 +432,22 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
         float contentH = kPartCount * 100.0f;
         beginScroll(win, contentArea, contentH, cs);
 
+        float swatchSize = readVal("colorsTabSwatchSize", 24.0f);
+        float partSpacing = readVal("colorsTabPartSpacing", 90.0f);
+        float sliderOffX = readVal("colorsTabSliderOffsetX", 8.0f);
+        float sliderWOff = readVal("colorsTabSliderWidthOff", 60.0f);
+
         for (int pi = 0; pi < kPartCount; ++pi)
         {
             glm::vec3 color = av.partColor(kPartKeys[pi]);
-            UIRect swatchScreen = {uiScaleX(px + 4.0f), uiScaleY(cy), uiScaleX(24.0f), uiScaleY(24.0f)};
+            UIRect swatchScreen = {uiScaleX(px + 4.0f), uiScaleY(cy), uiScaleX(swatchSize), uiScaleY(swatchSize)};
             uiDrawRect(swatchScreen, {color.r, color.g, color.b, 1.0f}, "part-swatch");
-            uiDrawText(kPartLabels[pi], uiScaleX(px + 34.0f), uiScaleY(cy), 0.68f, {0.8f, 0.85f, 0.95f, 1.0f});
+            uiDrawText(kPartLabels[pi], uiScaleX(px + 4.0f + swatchSize + 6.0f), uiScaleY(cy),
+                       0.68f, {0.8f, 0.85f, 0.95f, 1.0f});
 
-            float sliderX = px + 8.0f;
+            float sliderX = px + sliderOffX;
             float sliderY = cy + 28.0f;
-            float sliderW = pw - 60.0f;
+            float sliderW = pw - sliderWOff;
 
             float newR = drawSlider(win, sliderX, sliderY, sliderW, color.r, {0, 1, 0.01f}, "R");
             sliderY += 20.0f;
@@ -434,7 +459,7 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
                 av.setPartColor(kPartKeys[pi], glm::vec3(newR, newG, newB));
                 liveApply();
             }
-            cy += 90.0f;
+            cy += partSpacing;
         }
 
         endScroll(contentArea, contentH, cs);
@@ -446,7 +471,6 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
         uiDrawText("Cosmetics", uiScaleX(px + 4.0f), uiScaleY(cy), 0.72f, {0.8f, 0.9f, 1.0f, 1.0f});
         cy += 30.0f;
 
-        // Scan cosmetics folder
         std::vector<std::string> cosmeticItems;
         std::string cosDir = "assets/objects/things/cosmetics";
         if (std::filesystem::exists(cosDir))
@@ -461,23 +485,18 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
 
         const char* kCosmeticSlots[] = {"head", "torso", "arms", "legs"};
         const char* kCosmeticSlotLabels[] = {"Headwear", "Body", "Arms", "Legs"};
-        float ddItemH = 28.0f;
+        float ddItemH = readVal("cosmeticsTabDropdownItemH", 28.0f);
+        float slotSpacing = readVal("cosmeticsTabSlotSpacing", 40.0f);
 
         for (int si = 0; si < 4; ++si)
         {
             std::string currentChoice = "none";
             for (auto& c : av.current().cosmetics)
             {
-                if (c.slot == kCosmeticSlots[si])
-                {
-                    currentChoice = c.choice;
-                    break;
-                }
+                if (c.slot == kCosmeticSlots[si]) { currentChoice = c.choice; break; }
             }
 
-            // Find index for dropdown
             static DropdownState slotStates[4];
-
             uiDrawText(kCosmeticSlotLabels[si], uiScaleX(px + 4.0f), uiScaleY(cy), 0.64f, {0.7f, 0.8f, 0.9f, 1.0f});
             cy += 24.0f;
 
@@ -489,18 +508,13 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
                 auto& cosmetics = const_cast<std::vector<CosmeticSlot>&>(av.current().cosmetics);
                 bool found = false;
                 for (auto& c : cosmetics) {
-                    if (c.slot == kCosmeticSlots[si]) {
-                        c.choice = cosmeticItems[sel];
-                        found = true;
-                        break;
-                    }
+                    if (c.slot == kCosmeticSlots[si]) { c.choice = cosmeticItems[sel]; found = true; break; }
                 }
                 if (!found)
                     cosmetics.push_back({kCosmeticSlots[si], cosmeticItems[sel]});
                 liveApply();
             }
-
-            cy += ddItemH + 12.0f;
+            cy += slotSpacing;
         }
         break;
     }
@@ -521,7 +535,8 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
         if (uiButton(win, "", {px + 80.0f, cy, 180.0f, 28.0f}, {0,0,0,0}).clicked)
             presetInputActive = true;
 
-        if (uiButton(win, "SAVE", {px + 270.0f, cy, 80.0f, 28.0f}, {0.2f, 0.5f, 0.3f, 1.0f}).clicked)
+        glm::vec4 saveCol = readBgCol("presetsTabSaveBtn", {0.2f, 0.5f, 0.3f, 1.0f});
+        if (uiButton(win, "SAVE", {px + 270.0f, cy, 80.0f, 28.0f}, saveCol).clicked)
         {
             if (presetNameBuf[0]) {
                 av.savePreset(presetNameBuf);
@@ -530,19 +545,20 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
         }
         cy += 34.0f;
 
+        float entryH = readVal("presetsTabEntryH", 28.0f);
         auto presets = av.listPresets();
         for (auto& p : presets)
         {
             bool active = (p == av.current().activePreset);
-            glm::vec4 pCol = active ? glm::vec4{0.2f, 0.45f, 0.28f, 1.0f} : glm::vec4{0.08f, 0.09f, 0.14f, 1.0f};
-            UIRect pr = {px + 4.0f, cy, pw - 8.0f, 28.0f};
-            UIRect ps = {uiScaleX(px + 4.0f), uiScaleY(cy), uiScaleX(pw - 8.0f), uiScaleY(28.0f)};
+            glm::vec4 pCol = active ? readBgCol("outfitsEntrySelected", {0.2f, 0.45f, 0.28f, 1.0f})
+                                    : readBgCol("outfitsEntryNormal", {0.08f, 0.09f, 0.14f, 1.0f});
+            UIRect pr = {px + 4.0f, cy, pw - 8.0f, entryH};
+            UIRect ps = {uiScaleX(px + 4.0f), uiScaleY(cy), uiScaleX(pw - 8.0f), uiScaleY(entryH)};
             uiDrawRect(ps, pCol, "preset-entry");
             if (active)
                 uiDrawRectOutline(ps, {0.3f, 0.8f, 0.5f, 1.0f}, "preset-active");
             uiDrawText(p.c_str(), ps.x + 8.0f, ps.y + 4.0f, 0.60f, {1,1,1,1});
-            if (uiButton(win, "", pr, pCol).clicked)
-            {
+            if (uiButton(win, "", pr, pCol).clicked) {
                 av.loadPreset(p);
                 liveApply();
             }
@@ -558,6 +574,35 @@ uiDrawText(gSelectedTexture.c_str(), uiScaleX(px + previewSize + 10.0f), uiScale
 
 } // anonymous namespace
 
+// ── Popup state (definitions, extern in avatar-menu.h) ──────────────
+bool gSavePopupOpen = false;
+char gSaveNameBuf[64] = "";
+bool gRenamePopupOpen = false;
+char gRenameBuf[64] = "";
+bool gDeleteConfirmOpen = false;
+static std::string gRenameTarget;
+static std::string gDeleteTarget;
+
+// ── Drag & drop ─────────────────────────────────────────────────────
+void avatarMenuHandleDrop(int count, const char** paths)
+{
+    AvatarSystem& av = AvatarSystem::instance();
+    if (!av.hasAvatar()) return;
+    int imported = 0;
+    for (int i = 0; i < count; ++i) {
+        std::string p = paths[i];
+        std::string ext = std::filesystem::path(p).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".png") {
+            if (av.importPng(p))
+                imported++;
+        }
+    }
+    if (imported > 0) {
+        Terminal::instance().addLog("[AVATAR] Imported " + std::to_string(imported) + " PNG(s)");
+    }
+}
+
 AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
 {
     AvatarMenuResult r{};
@@ -567,6 +612,27 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
     glfwGetFramebufferSize(win, &fbW, &fbH);
 
     GuiLayout& layout = getLayout();
+
+    // Helper: read numeric value from layout text element (x field used as value)
+    auto readVal = [&](const char* id, float def) -> float {
+        const GuiElement* e = layout.get(id);
+        return e ? e->x : def;
+    };
+    // Helper: read background color from layout element
+    auto readCol = [&](const char* id, glm::vec4 def) -> glm::vec4 {
+        const GuiElement* e = layout.get(id);
+        return e ? e->getBackgroundColorVec() : def;
+    };
+    // Helper: read text color from layout element
+    auto readTextCol = [&](const char* id, glm::vec4 def) -> glm::vec4 {
+        const GuiElement* e = layout.get(id);
+        return e ? e->getTextColorVec() : def;
+    };
+    // Helper: draw a layout element if it exists and is visible
+    auto drawIf = [&](const char* id) {
+        const GuiElement* e = layout.get(id);
+        if (e && e->visible) drawGuiElement(win, *e);
+    };
 
     // Panel positions from config
     float libX = lx("panelLibrary", 20.0f);
@@ -628,10 +694,11 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
             if (!s.clicked) continue;
             if (elem->id == "saveButton") {
                 if (av.hasAvatar()) {
-                    av.saveAdvanced(av.currentName(), av.current());
-                    av.loadAvatar(av.currentName());
-                    Terminal::instance().addLog("[AVATAR] Saved: " + av.currentName());
-                    r.goSave = true;
+                    // Open save popup instead of saving immediately
+                    gSavePopupOpen = true;
+                    memset(gSaveNameBuf, 0, sizeof(gSaveNameBuf));
+                    strncpy(gSaveNameBuf, av.currentName().c_str(), sizeof(gSaveNameBuf) - 1);
+                    r.savePopupOpen = true;
                 }
             } else if (elem->id == "applyButton") {
                 r.goApply = true;
@@ -642,35 +709,247 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
         }
     }
 
-    // ── Avatar selector ─────────────────────────────────────────────
+    // ── Save Outfit Popup (from JSON) ────────────────────────────────
+    if (gSavePopupOpen) {
+        drawIf("savePopupBg");
+        drawIf("savePopupTitle");
+        drawIf("savePopupNameLabel");
+        drawIf("savePopupInput");
+
+        // Text input (dynamic text)
+        const GuiElement* si = layout.get("savePopupInput");
+        if (si) {
+            float inputX = cs.designToScreenX(si->x);
+            float inputY = cs.designToScreenY(si->y);
+            uiDrawText(gSaveNameBuf[0] ? gSaveNameBuf : "name...",
+                       inputX + 6.0f, inputY + 4.0f, 0.32f,
+                       gSaveNameBuf[0] ? glm::vec4{1,1,1,1} : glm::vec4{0.4f, 0.4f, 0.5f, 1.0f});
+        }
+
+        // Save and Cancel buttons
+        const GuiElement* saveBtn = layout.get("savePopupSaveBtn");
+        if (saveBtn && saveBtn->visible) {
+            if (uiButton(win, saveBtn->text.c_str(), {saveBtn->x, saveBtn->y, saveBtn->w, saveBtn->h},
+                         saveBtn->getBackgroundColorVec(), "save-popup-save").clicked) {
+                std::string name(gSaveNameBuf);
+                name.erase(0, name.find_first_not_of(" \t\r\n"));
+                name.erase(name.find_last_not_of(" \t\r\n") + 1);
+                if (!name.empty()) {
+                    av.saveCurrentOutfit(name);
+                    gSavePopupOpen = false;
+                    r.goSave = true;
+                }
+            }
+        }
+        const GuiElement* cancelBtn = layout.get("savePopupCancelBtn");
+        if (cancelBtn && cancelBtn->visible) {
+            if (uiButton(win, cancelBtn->text.c_str(), {cancelBtn->x, cancelBtn->y, cancelBtn->w, cancelBtn->h},
+                         cancelBtn->getBackgroundColorVec(), "save-popup-cancel").clicked) {
+                gSavePopupOpen = false;
+            }
+        }
+    }
+
+    // ── Outfit Browser (right panel) ────────────────────────────────
     {
-        auto avatars = av.listAvatars();
-        float selX = lx("avatarSelectorLabel", libX) + 60.0f;
-        float selY = ly("avatarSelectorLabel", 4.0f);
-        float selH = 30.0f;
+        float outfitX = lx("panelOutfits", 1100.0f);
+        float outfitY = ly("panelOutfits", 50.0f);
+        float outfitW = lw("panelOutfits", 800.0f);
+        float outfitH = lh("panelOutfits", 950.0f);
 
-        const GuiElement* lbl = layout.get("avatarSelectorLabel");
-        if (lbl)
-            drawGuiElement(win, *lbl);
+        // Draw panel background from JSON
+        drawIf("panelOutfits");
 
-        const GuiElement* btnNorm = layout.get("avatarBtnNormal");
-        const GuiElement* btnSel = layout.get("avatarBtnSelected");
-        glm::vec4 normalCol = btnNorm ? btnNorm->getBackgroundColorVec() : glm::vec4{0.09f, 0.11f, 0.16f, 1.0f};
-        glm::vec4 selCol = btnSel ? btnSel->getBackgroundColorVec() : glm::vec4{0.2f, 0.48f, 0.28f, 1.0f};
+        // Title from JSON
+        drawIf("outfitsTitle");
 
-        for (auto& a : avatars) {
-            bool isCurrent = (a == av.currentName());
-            glm::vec4 col = isCurrent ? selCol : normalCol;
-            if (uiButton(win, a.c_str(), {selX, selY, 120.0f, selH}, col).clicked) {
+        float oy = outfitY + 36.0f;
+        float oH = readVal("outfitsEntryHeight", 28.0f);
+        float gap = readVal("outfitsEntryGap", 3.0f);
+
+        // New Outfit button from JSON
+        {
+            const GuiElement* newBtn = layout.get("outfitsNewButton");
+            if (newBtn && newBtn->visible) {
+                UIRect nRect = {newBtn->x, oy, newBtn->w, oH};
+                if (uiButton(win, newBtn->text.c_str(), nRect,
+                             newBtn->getBackgroundColorVec(), "outfits-new").clicked) {
+            std::string baseName = "New Outfit";
+            std::string testName = baseName;
+            int counter = 1;
+            auto existing = av.listAvatars();
+            while (std::find(existing.begin(), existing.end(), testName) != existing.end()) {
+                testName = baseName + " " + std::to_string(counter++);
+            }
+                 av.createOutfit(testName);
+            GetPlayerSettings().avatarName = testName;
+            SavePlayerSettings();
+            clearTexturePreview();
+        }
+            }
+        }
+        oy += oH + gap + 4.0f;
+
+        // Separator from JSON
+        drawIf("outfitsSeparator");
+        oy += 4.0f;
+
+        // Colors from JSON
+        glm::vec4 entrySelCol = readCol("outfitsEntrySelected", {0.2f,0.48f,0.28f,1});
+        glm::vec4 entryNormCol = readCol("outfitsEntryNormal", {0.08f,0.09f,0.14f,1});
+        float btnW2 = readVal("outfitsActionBtnW", 60.0f);
+        float btnH2 = readVal("outfitsActionBtnH", 22.0f);
+        float btnGap = readVal("outfitsActionBtnGap", 4.0f);
+
+        // List all outfits
+        auto outfits = av.listAvatars();
+        for (auto& o : outfits) {
+            bool isCurrent = (o == av.currentName());
+            glm::vec4 col = isCurrent ? entrySelCol : entryNormCol;
+
+            UIRect entryRect = {outfitX + 8.0f, oy, outfitW - 16.0f, oH};
+            uiDrawRect(cs.designToScreen(entryRect), col, "outfit-entry");
+            if (isCurrent)
+                uiDrawRectOutline(cs.designToScreen(entryRect), {0.3f, 0.8f, 0.5f, 1.0f}, "outfit-sel");
+
+            uiDrawText(o.c_str(), cs.designToScreenX(entryRect.x + 6.0f),
+                       cs.designToScreenY(entryRect.y + 4.0f), 0.30f, {1,1,1,1});
+
+            if (uiButton(win, "", entryRect, {0,0,0,0}).clicked) {
                 if (!isCurrent) {
-                    av.loadAvatar(a);
-                    GetPlayerSettings().avatarName = a;
+                    av.loadAvatar(o);
+                    GetPlayerSettings().avatarName = o;
                     SavePlayerSettings();
                     clearTexturePreview();
                 }
             }
-            selY += selH + 3.0f;
+
+            // Operation buttons (rename, copy, delete) on current outfit
+            if (isCurrent) {
+                float bY = oy + oH + 2.0f;
+                glm::vec4 rnCol = readCol("outfitsRenameBtn", {0.15f,0.25f,0.4f,1});
+                glm::vec4 cpCol = readCol("outfitsCopyBtn", {0.2f,0.35f,0.25f,1});
+                glm::vec4 dlCol = readCol("outfitsDeleteBtn", {0.4f,0.12f,0.12f,1});
+
+                if (uiButton(win, "Rename", {outfitX + 8.0f, bY, btnW2, btnH2}, rnCol).clicked) {
+                    gRenamePopupOpen = true;
+                    memset(gRenameBuf, 0, sizeof(gRenameBuf));
+                    strncpy(gRenameBuf, av.currentName().c_str(), sizeof(gRenameBuf) - 1);
+                    gRenameTarget = av.currentName();
+                }
+                if (uiButton(win, "Copy", {outfitX + 8.0f + btnW2 + btnGap, bY, btnW2, btnH2}, cpCol).clicked) {
+                    std::string base = av.currentName() + " Copy";
+                    std::string test = base;
+                    int c = 1;
+                    auto existing = av.listAvatars();
+                    while (std::find(existing.begin(), existing.end(), test) != existing.end())
+                        test = base + " " + std::to_string(c++);
+                    av.duplicateOutfit(av.currentName(), test);
+                }
+                if (uiButton(win, "Delete", {outfitX + 8.0f + 2 * (btnW2 + btnGap), bY, btnW2, btnH2}, dlCol).clicked) {
+                    gDeleteConfirmOpen = true;
+                    gDeleteTarget = av.currentName();
+                }
+                oy += btnH2 + 6.0f;
+            }
+            oy += oH + gap;
         }
+    }
+
+    // ── Rename Popup (from JSON) ───────────────────────────────────
+    if (gRenamePopupOpen) {
+        drawIf("renamePopupBg");
+        drawIf("renamePopupTitle");
+        drawIf("renamePopupInput");
+
+        // Text input (dynamic)
+        const GuiElement* ri = layout.get("renamePopupInput");
+        if (ri) {
+            float rx = cs.designToScreenX(ri->x);
+            float ry = cs.designToScreenY(ri->y);
+            uiDrawText(gRenameBuf[0] ? gRenameBuf : "name...",
+                       rx + 6.0f, ry + 4.0f, 0.32f,
+                       gRenameBuf[0] ? glm::vec4{1,1,1,1} : glm::vec4{0.4f, 0.4f, 0.5f, 1.0f});
+        }
+
+        const GuiElement* rnBtn = layout.get("renamePopupConfirmBtn");
+        if (rnBtn && rnBtn->visible) {
+            if (uiButton(win, rnBtn->text.c_str(), {rnBtn->x, rnBtn->y, rnBtn->w, rnBtn->h},
+                         rnBtn->getBackgroundColorVec()).clicked) {
+                std::string newName(gRenameBuf);
+                newName.erase(0, newName.find_first_not_of(" \t\r\n"));
+                newName.erase(newName.find_last_not_of(" \t\r\n") + 1);
+                if (!newName.empty()) {
+                    if (av.renameOutfit(gRenameTarget, newName)) {
+                        av.loadAvatar(newName);
+                        GetPlayerSettings().avatarName = newName;
+                        SavePlayerSettings();
+                    }
+                    gRenamePopupOpen = false;
+                }
+            }
+        }
+        const GuiElement* cnBtn = layout.get("renamePopupCancelBtn");
+        if (cnBtn && cnBtn->visible) {
+            if (uiButton(win, cnBtn->text.c_str(), {cnBtn->x, cnBtn->y, cnBtn->w, cnBtn->h},
+                         cnBtn->getBackgroundColorVec()).clicked) {
+                gRenamePopupOpen = false;
+            }
+        }
+    }
+
+    // ── Delete Confirmation ─────────────────────────────────────────
+    // ── Delete Confirmation (from JSON) ─────────────────────────────
+    if (gDeleteConfirmOpen) {
+        drawIf("deletePopupBg");
+        drawIf("deletePopupTitle");
+        // Target name
+        const GuiElement* dtEl = layout.get("deletePopupBg");
+        if (dtEl) {
+            float dy = cs.designToScreenY(dtEl->y + 54.0f);
+            uiDrawText((std::string("\"") + gDeleteTarget + "\"").c_str(),
+                       cs.designToScreenX(dtEl->x + 20.0f), dy, 0.32f, {0.6f, 0.7f, 0.8f, 1.0f});
+        }
+
+        const GuiElement* yesBtn = layout.get("deletePopupYesBtn");
+        if (yesBtn && yesBtn->visible) {
+            if (uiButton(win, yesBtn->text.c_str(), {yesBtn->x, yesBtn->y, yesBtn->w, yesBtn->h},
+                         yesBtn->getBackgroundColorVec()).clicked) {
+                std::string deleted = gDeleteTarget;
+                av.deleteOutfit(deleted);
+                auto remaining = av.listAvatars();
+                if (!remaining.empty()) {
+                    av.loadAvatar(remaining[0]);
+                    GetPlayerSettings().avatarName = remaining[0];
+                    SavePlayerSettings();
+                }
+                gDeleteConfirmOpen = false;
+                clearTexturePreview();
+            }
+        }
+        const GuiElement* noBtn = layout.get("deletePopupNoBtn");
+        if (noBtn && noBtn->visible) {
+            if (uiButton(win, noBtn->text.c_str(), {noBtn->x, noBtn->y, noBtn->w, noBtn->h},
+                         noBtn->getBackgroundColorVec()).clicked) {
+                gDeleteConfirmOpen = false;
+            }
+        }
+    }
+
+    // ── Drag & Drop Hover Indicator ─────────────────────────────────
+    if (isDropHoverActive()) {
+        const std::string& hoverPath = getDropHoverPath();
+        float sw = uiScreenW(), sh = uiScreenH();
+
+        // Top banner with file path
+        UIRect banner = {0, 0, sw, 36.0f};
+        uiDrawRect(banner, {0.1f, 0.5f, 0.25f, 0.9f}, "drop-banner");
+        uiDrawRectOutline(banner, {0.2f, 0.8f, 0.4f, 1.0f}, "drop-banner-border");
+
+        std::string display = "Drop PNG: " + hoverPath;
+        if (display.size() > 100) display = "Drop PNG: ..." + display.substr(display.size() - 90);
+        float tw = uiMeasureText(display.c_str(), 0.32f);
+        uiDrawText(display.c_str(), sw * 0.5f - tw * 0.5f, 6.0f, 0.32f, {1.0f, 1.0f, 1.0f, 1.0f});
     }
 
     return r;
