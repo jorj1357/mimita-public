@@ -46,23 +46,21 @@ static void setupPlayerPreviewLighting()
     if (!gRenderer) return;
     GLuint shader = gRenderer->shaderProgram;
     glUseProgram(shader);
-    const auto& lcfg = LightingConfig::instance();
     auto ul = [&](const char* name) { return glGetUniformLocation(shader, name); };
     glUniform1i(ul("uUseColor"), 0);
     glUniform1i(ul("uTex"), 0);
     glUniform1i(ul("uDebugView"), 0);
     glUniform1i(ul("uShadowsEnabled"), 0);
-    glm::vec3 ld = lcfg.lightDir();
-    glUniform3f(ul("uLightDir"), ld.x, ld.y, ld.z);
-    glUniform1f(ul("uAmbientStrength"), lcfg.ambientStrength());
-    glUniform1f(ul("uDiffuseStrength"), lcfg.diffuseStrength());
-    glUniform1f(ul("uEdgeDarkness"), lcfg.edgeDarkness());
-    glUniform1f(ul("uEdgeWidth"), lcfg.edgeWidth());
-    glUniform1f(ul("uAODarkness"), lcfg.aoDarkness());
-    glUniform1f(ul("uAOContrast"), lcfg.aoContrast());
-    glUniform1f(ul("uTextureContrast"), lcfg.textureContrast());
-    glUniform1f(ul("uTextureBrightness"), lcfg.textureBrightness());
-    glUseProgram(0);
+    // Brighter preview lighting (separate from world config)
+    glUniform3f(ul("uLightDir"), -0.35f, -0.1f, -1.0f);
+    glUniform1f(ul("uAmbientStrength"), 0.65f);
+    glUniform1f(ul("uDiffuseStrength"), 0.75f);
+    glUniform1f(ul("uEdgeDarkness"), 0.05f);
+    glUniform1f(ul("uEdgeWidth"), 0.8f);
+    glUniform1f(ul("uAODarkness"), 0.03f);
+    glUniform1f(ul("uAOContrast"), 0.6f);
+    glUniform1f(ul("uTextureContrast"), 1.10f);
+    glUniform1f(ul("uTextureBrightness"), 1.40f);
 }
 
 static const char* layoutFileForMenu(GuiMenuState state)
@@ -518,8 +516,8 @@ void guiMain(GLFWwindow* win, GameState& state)
                 previewAngle += 0.008f;
                 if (previewAngle > 360.0f) previewAngle -= 360.0f;
 
-                float previewDist = 9.0f;
-                float previewHeight = 3.0f;
+                float previewDist = 5.5f;
+                float previewHeight = 2.0f;
                 float rad = glm::radians(previewAngle);
                 previewCam.pos = glm::vec3(
                     gpPlayer->pos.x + std::cos(rad) * previewDist,

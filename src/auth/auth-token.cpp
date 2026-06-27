@@ -5,14 +5,17 @@
 #include <fstream>
 #include <windows.h>
 #include <wincred.h>
+#include <nlohmann/json.hpp>
 
 #pragma comment(lib, "credui.lib")
+
+using json = nlohmann::json;
 
 namespace {
 
 const char* TOKEN_PATH = "config/auth-token.json";
+const char* CACHE_PATH = "config/auth-cache.json";
 const char* CRED_TARGET = "MimitaAuthSession";
-const char* CRED_TYPE_DESC = "Mimita Session Token";
 
 bool storeCredentialManager(const std::string& token)
 {
@@ -105,4 +108,62 @@ void clearSessionToken()
     clearCredentialManager();
     std::filesystem::remove(TOKEN_PATH);
     printf("[AUTH] session token cleared\n");
+}
+
+// ── Profile Cache ────────────────────────────────────────────────────────────
+
+bool storeProfileCache(const CachedProfile& profile)
+{
+    try {
+        std::filesystem::create_directories("config");
+        json j;
+        j["id"] = profile.id;
+        j["username"] = profile.username;
+        j["display_name"] = profile.displayName;
+        j["avatar_url"] = profile.avatarUrl;
+        j["supporter_tier"] = profile.supporterTier;
+
+        std::ofstream out(CACHE_PATH, std::ios::trunc);
+        if (!out)
+        {
+            printf("[AUTH] failed to write profile cache\n");
+            return false;
+        }
+        out << j.dump(2);
+        printf("[AUTH] profile cache saved: %s\n", profile.username.c_str());
+        return out.good();
+    } catch (const std::exception& e) {
+        printf("[AUTH] profile cache write error: %s\n", e.what());
+        return false;
+    }
+}
+
+CachedProfile loadProfileCache()
+{
+    CachedProfile profile;
+    std::ifstream in(CACHE_PATH);
+    if (!in)
+        return profile;
+
+    try {
+        json j;
+        in >> j;
+        profile.id = j.value("id", 0);
+        profile.username = j.value("username", "");
+        profile.displayName = j.value("display_name", "");
+        profile.avatarUrl = j.value("avatar_url", "");
+        profile.supporterTier = j.value("supporter_tier", "free");
+
+        if (!profile.username.empty())
+            printf("[AUTH] profile cache loaded: %s\n", profile.username.c_str());
+    } catch (const std::exception& e) {
+        printf("[AUTH] profile cache read error: %s\n", e.what());
+    }
+    return profile;
+}
+
+void clearProfileCache()
+{
+    std::filesystem::remove(CACHE_PATH);
+    printf("[AUTH] profile cache cleared\n");
 }

@@ -100,19 +100,17 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     if (player.dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
         if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen)
         {
-        const float centerX = uiScreenW() * 0.5f;
-        const float centerY = uiScreenH() * 0.5f;
+        // Draw death overlay from layout JSON
+        const GuiElement* doEl = hudLayout.get("deathOverlay");
+        if (doEl && doEl->visible) drawGuiElement(engine.window(), *doEl);
+
         std::string deathText = "you died to " +
             (player.killedBy.empty() ? std::string("unknown") : player.killedBy);
-        char respawnText[128];
-        snprintf(respawnText, sizeof(respawnText),
+        char respawnBuf[128];
+        snprintf(respawnBuf, sizeof(respawnBuf),
                  "respawning automatically in %.3f...", player.respawnTimer);
-        uiDrawRect(
-            {centerX - 270.0f, centerY - 80.0f, 540.0f, 160.0f},
-            {0.0f, 0.0f, 0.0f, 0.75f},
-            "death-overlay");
         hudText("deathText", deathText);
-        hudText("respawnText", respawnText);
+        hudText("respawnText", respawnBuf);
         hudText("respawnHint", "press space to respawn instantly");
         }
     }

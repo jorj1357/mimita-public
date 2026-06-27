@@ -127,7 +127,14 @@ public:
     bool loadPreset(const std::string& presetName);
     std::vector<std::string> listPresets() const;
 
+    // File operations
     static std::string avatarPath(const std::string& name);
+    bool importPng(const std::string& sourcePath);
+    bool createOutfit(const std::string& name);
+    bool renameOutfit(const std::string& oldName, const std::string& newName);
+    bool duplicateOutfit(const std::string& sourceName, const std::string& destName);
+    bool deleteOutfit(const std::string& name);
+    bool saveCurrentOutfit(const std::string& outfitName);
 
     // Clipboard for copy/paste within the editor session
     FaceSettings clipboardFace;
