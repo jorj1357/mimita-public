@@ -116,7 +116,6 @@
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
 #include "config/player-settings.h"
-#include "render/outfit-atlas.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 #include "avatar/avatar-menu.h"
@@ -243,3 +242,4 @@ int main(int argc, char** argv)
     
     return 0;
 }
+

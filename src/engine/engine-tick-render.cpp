@@ -8,11 +8,11 @@
 #include "camera.h"
 #include "entities/player.h"
 #include "world/world.h"
+#include "outfit/outfit-system.h"
 #include "npc/npc.h"
 #include "render/render-world.h"
 #include "render/post-fx.h"
 #include "render/render-player.h"
-#include "render/outfit-atlas.h"
 #include "shadow/shadow-render.h"
 #include "shadow/shadow-config.h"
 #include "render/lighting-config.h"
@@ -106,7 +106,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                             ? actorState.outfitPath
                             : gReplayPlayer.outfitPath();
                     if (!outfitToUse.empty())
-                        OutfitAtlas::instance().apply(*actor, outfitToUse);
+                        OutfitSystem::applySingleTexture(*actor, outfitToUse);
                 }
                 actor->username = actorState.name;
                 actor->currentHp = actorState.health;
@@ -400,3 +400,4 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         NpcSelectionManager::instance().drawSelection(npcSystem, camera);
     }
 }
+

@@ -1,0 +1,69 @@
+{
+  "format": "mimita-outfit",
+  "version": 1,
+  "name": "test_avatar",
+  "textures": {
+    "face": "face.png",
+    "shirt": "shirt.png",
+    "pants": "pants.png",
+    "skin": "skin.png"
+  },
+  "faces": {
+    "head": {
+      "front": "face",
+      "back": "skin",
+      "left": "skin",
+      "right": "skin",
+      "top": "skin",
+      "bottom": "skin"
+    },
+    "torso": {
+      "front": "shirt",
+      "back": "shirt",
+      "left": "shirt",
+      "right": "shirt",
+      "top": "shirt",
+      "bottom": "shirt"
+    },
+    "leftArm": {
+      "front": "shirt",
+      "back": "shirt",
+      "left": "shirt",
+      "right": "shirt",
+      "top": "shirt",
+      "bottom": "shirt"
+    },
+    "rightArm": {
+      "front": "shirt",
+      "back": "shirt",
+      "left": "shirt",
+      "right": "shirt",
+      "top": "shirt",
+      "bottom": "shirt"
+    },
+    "leftLeg": {
+      "front": "pants",
+      "back": "pants",
+      "left": "pants",
+      "right": "pants",
+      "top": "pants",
+      "bottom": "pants"
+    },
+    "rightLeg": {
+      "front": "pants",
+      "back": "pants",
+      "left": "pants",
+      "right": "pants",
+      "top": "pants",
+      "bottom": "pants"
+    }
+  },
+  "colors": {
+    "head": [1.0, 1.0, 1.0],
+    "torso": [1.0, 1.0, 1.0],
+    "leftArm": [1.0, 1.0, 1.0],
+    "rightArm": [1.0, 1.0, 1.0],
+    "leftLeg": [1.0, 1.0, 1.0],
+    "rightLeg": [1.0, 1.0, 1.0]
+  }
+}

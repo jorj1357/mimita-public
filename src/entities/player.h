@@ -13,6 +13,7 @@
 #include "gui/hud/chat-bubble.h"
 
 #include "combat/weapon-types.h"
+#include "outfit/outfit-schema.h"
 
 struct ReplayBodyPartState;
 
@@ -347,6 +348,9 @@ public:
 
     // -------- Chat Bubble State --------
     ActorChatState chatState;
+
+    // -------- Cosmetic instances (loaded by OutfitSystem) --------
+    std::vector<struct CosmeticInstance> cosmetics;
 };
 
 // Upload mesh to shared body-part VAO for ragdoll rendering

@@ -1,6 +1,5 @@
 #include "network/multiplayer-context.h"
 #include "network/net_common.h"
-#include "render/outfit-atlas.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "combat/weapon-registry.h"
@@ -142,3 +141,4 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
 }
 
 } // namespace MimitaNet
+
