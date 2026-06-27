@@ -1,15 +1,68 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "backButton",
+  "version": 3,
+  "elements": {
+    "communityBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "hostTitle": {
+      "type": "text", "x": 510, "y": 100, "width": 400, "height": 40,
+      "text": "HOST SERVER", "fontSize": 0.50,
+      "textColor": [0.85, 0.9, 0.95, 1.0]
+    },
+    "joinTitle": {
+      "type": "text", "x": 990, "y": 100, "width": 400, "height": 40,
+      "text": "JOIN SERVER", "fontSize": 0.50,
+      "textColor": [0.85, 0.9, 0.95, 1.0]
+    },
+    "hostPortLabel": {
+      "type": "text", "x": 510, "y": 160, "width": 200, "height": 30,
+      "text": "Port:", "fontSize": 0.34,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "joinAddressLabel": {
+      "type": "text", "x": 990, "y": 160, "width": 300, "height": 30,
+      "text": "Server Address:", "fontSize": 0.34,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "separator": {
+      "type": "panel",
+      "x": 960, "y": 100, "width": 2, "height": 600,
+      "backgroundColor": [0.15, 0.2, 0.3, 0.5]
+    },
+    "startServerButton": {
       "type": "button",
-      "x": 40, "y": 40, "width": 120, "height": 50,
+      "x": 510, "y": 260, "width": 220, "height": 48,
+      "text": "Start Server",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.5, 0.2, 1.0]
+    },
+    "stopServerButton": {
+      "type": "button",
+      "x": 750, "y": 260, "width": 180, "height": 48,
+      "text": "Stop Server",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.15, 0.15, 1.0]
+    },
+    "joinServerButton": {
+      "type": "button",
+      "x": 990, "y": 260, "width": 220, "height": 48,
+      "text": "Join Server",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.5, 0.6, 1.0]
+    },
+    "backButton": {
+      "type": "button",
+      "x": 40, "y": 40, "width": 140, "height": 48,
       "text": "BACK",
-      "fontSize": 0.38,
+      "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }

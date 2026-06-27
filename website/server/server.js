@@ -1270,7 +1270,7 @@ app.get("/api/stats", authenticate, async (req, res, next) => {
             stats: result.rows[0] || {
                 wins: 0, losses: 0, kills: 0, deaths: 0,
                 games_played: 0, playtime_seconds: 0,
-                highest_mmr: 1000, current_mmr: 1000,
+                highest_mmr: 5000, current_mmr: 5000,
                 accuracy: 0, headshots: 0, best_kill_streak: 0
             }
         })
@@ -1332,8 +1332,8 @@ app.post("/api/stats", authenticate, async (req, res, next) => {
                     [match_id, req.user.id, req.user.username,
                      kills || 0, deaths || 0, accuracy || 0,
                      headshots || 0, damage_dealt || 0, won,
-                     req.body.mmr_before || 1000,
-                     statsResult.rows[0]?.current_mmr || 1000]
+                     req.body.mmr_before || 5000,
+                     statsResult.rows[0]?.current_mmr || 5000]
                 )
             }
 
@@ -1757,7 +1757,7 @@ app.post("/api/client-login/confirm", clientLoginRateLimit, async (req, res, nex
 
             if (!codeResult.rowCount) {
                 await client.query("ROLLBACK")
-                return res.status(404).json({ success: false, message: "invalid or expired code" })
+                return res.json({ success: false, message: "invalid or expired code" })
             }
 
             const userId = codeResult.rows[0].user_id

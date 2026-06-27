@@ -1,6 +1,7 @@
 #include "server-info-menu.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
+#include "../gui-coord.h"
 #include "../ui-system.h"
 #include <cstdio>
 #include <cstring>
@@ -85,44 +86,62 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
                                     bool serverRunning)
 {
     ServerInfoResult r{};
-    float fbW = uiScreenW(), fbH = uiScreenH();
     activeAddress = serverAddress;
-
-    uiDrawRect({0, 0, fbW, fbH}, {0.035f, 0.04f, 0.052f, 1.0f}, "server-info-bg");
-
-    uiDrawText("Host Server", uiScaleX(880.0f), uiScaleY(140.0f), 0.42f, {0.55f, 0.78f, 1.0f, 1.0f});
-
-    uiDrawText("Address:", uiScaleX(760.0f), uiScaleY(240.0f), 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
-    uiDrawRect({uiScaleX(860.0f), uiScaleY(220.0f), uiScaleX(300.0f), uiScaleY(48.0f)},
-               {0.12f,0.14f,0.18f,1.0f}, "server-address-input");
-    uiDrawText(serverAddress, uiScaleX(872.0f), uiScaleY(240.0f), 0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
-
-    uiDrawText("Port: 1357", uiScaleX(760.0f), uiScaleY(280.0f), 0.38f, {0.7f, 0.75f, 0.85f, 1.0f});
-
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/server-info-menu.json");
-    if (serverRunning) {
-        uiDrawText("Status: Running", uiScaleX(760.0f), uiScaleY(330.0f), 0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
-        uiDrawText("Server terminal is open in background", uiScaleX(760.0f), uiScaleY(365.0f), 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
 
-        const GuiElement* ce = layout.get("connect");
-        if (ce && drawGuiElement(win, *ce).clicked)
-            r.connect = true;
-    } else {
-        uiDrawText("Status: Not Running", uiScaleX(760.0f), uiScaleY(330.0f), 0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
-        uiDrawText("Click to start a dedicated server", uiScaleX(760.0f), uiScaleY(365.0f), 0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
+    // Draw all static elements from layout
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
 
-        const GuiElement* se = layout.get("startServer");
-        if (se && drawGuiElement(win, *se).clicked)
+        if (elem->type == "panel" || elem->type == "text" || elem->type == "label")
+        {
+            drawGuiElement(win, *elem);
+            continue;
+        }
+
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+
+        if (id == "startServerButton")
         {
             if (launchServerProcess())
                 r.startServer = true;
         }
+        else if (id == "connectButton")
+        {
+            r.connect = true;
+        }
+        else if (id == "backButton")
+            r.goBack = true;
     }
 
+    // Dynamic address input
     {
-        const GuiElement* bb = layout.get("backButton");
-        if (bb && drawGuiElement(win, *bb).clicked)
-            r.goBack = true;
+        uiDrawRect(cs.designToScreen({860, 220, 300, 48}),
+                   {0.12f,0.14f,0.18f,1}, "server-addr-input");
+        uiDrawText(serverAddress, cs.designToScreenX(872), cs.designToScreenY(240),
+                   0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
+    }
+
+    // Dynamic status text
+    if (serverRunning)
+    {
+        uiDrawText("Status: Running", cs.designToScreenX(760), cs.designToScreenY(330),
+                   0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
+        uiDrawText("Server terminal is open in background",
+                   cs.designToScreenX(760), cs.designToScreenY(365),
+                   0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
+    }
+    else
+    {
+        uiDrawText("Status: Not Running", cs.designToScreenX(760), cs.designToScreenY(330),
+                   0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
+        uiDrawText("Click to start a dedicated server",
+                   cs.designToScreenX(760), cs.designToScreenY(365),
+                   0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
     }
 
     return r;

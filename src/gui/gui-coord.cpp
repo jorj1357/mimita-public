@@ -46,7 +46,7 @@ UIRect GuiCoordinateSystem::designToScreen(const UIRect& designRect) const
 {
     return {
         designRect.x * mScaleX,
-        designRect.y * mScaleY,
+        designRect.y * mScaleY - mTranslateY,
         designRect.w * mScaleX,
         designRect.h * mScaleY
     };
@@ -59,7 +59,7 @@ float GuiCoordinateSystem::screenToDesignX(float screenX) const
 
 float GuiCoordinateSystem::screenToDesignY(float screenY) const
 {
-    return mScaleY > 0.0f ? screenY / mScaleY : screenY;
+    return mScaleY > 0.0f ? (screenY + mTranslateY) / mScaleY : screenY;
 }
 
 UIRect GuiCoordinateSystem::screenToDesign(const UIRect& screenRect) const
@@ -68,7 +68,7 @@ UIRect GuiCoordinateSystem::screenToDesign(const UIRect& screenRect) const
     float invSy = mScaleY > 0.0f ? 1.0f / mScaleY : 1.0f;
     return {
         screenRect.x * invSx,
-        screenRect.y * invSy,
+        (screenRect.y + mTranslateY) * invSy,
         screenRect.w * invSx,
         screenRect.h * invSy
     };

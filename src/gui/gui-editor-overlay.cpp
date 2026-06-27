@@ -97,6 +97,7 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
 {
     (void)win;
 
+    // Auto-save pending indicator
     if (GuiLayoutManager::instance().hasUnsaved()) {
         const char* text = "[AUTO-SAVE PENDING]";
         float tw = uiMeasureText(text, 0.30f);
@@ -105,6 +106,7 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
         uiDrawText(text, sx, 12, 0.30f, {1.0f, 0.6f, 0.4f, 1.0f});
     }
 
+    // Mode indicator
     {
         const char* mt = "[EDIT MODE] drag=move corner=resize T+arrows=text-offset";
         float tw = uiMeasureText(mt, 0.28f);
@@ -122,6 +124,7 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
     renderHierarchyView();
     renderSnapGuides();
 
+    // Debug bounds overlay
     if (uiDebugEnabled() && !mActiveLayoutFile.empty()) {
         GuiLayout& dbgLayout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
         for (const std::string& id : dbgLayout.elementIds()) {
@@ -141,21 +144,42 @@ void GuiEditor::renderOverlay(GLFWwindow* win)
         }
     }
 
+    // Overlap warning
+    if (mHasOverlap && !mSelectedId.empty() && !mActiveLayoutFile.empty()) {
+        GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
+        const GuiElement* elem = layout.get(mSelectedId);
+        if (elem) {
+            const char* wt = "[OVERLAP]";
+            float tw = uiMeasureText(wt, 0.28f);
+            float sx = uiScaleX(elem->x), sy = uiScaleY(elem->y);
+            uiDrawRect({sx - 4, sy - 28, tw + 8, 22}, {0.5f, 0, 0, 0.85f}, "gui-ow");
+            uiDrawText(wt, sx + 2, sy - 26, 0.28f, {1, 0.3f, 0.2f, 1});
+        }
+    }
+
+    // Debug overlay (activated with gui_debug 1)
+    if (uiDebugEnabled())
+        renderDebugOverlay();
+
+    // Selected element rendering
     if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
     const GuiElement* elem = layout.get(mSelectedId);
     if (!elem) return;
 
-    if (mHasOverlap) {
-        const char* wt = "[OVERLAP]";
-        float tw = uiMeasureText(wt, 0.28f);
-        float sx = uiScaleX(elem->x), sy = uiScaleY(elem->y);
-        uiDrawRect({sx - 4, sy - 28, tw + 8, 22}, {0.5f, 0, 0, 0.85f}, "gui-ow");
-        uiDrawText(wt, sx + 2, sy - 26, 0.28f, {1, 0.3f, 0.2f, 1});
-    }
+    // Drag coordinate overlay
+    renderDragOverlay(*elem);
 
+    // Selection handles (yellow outline + resize points)
     renderSelectionHandles(*elem);
+
+    // Info panel
+    renderInfoPanel(*elem);
+
+    // Property panel
     renderPropertyPanel(win, *elem);
+
+    // Color picker
     renderColorPicker();
 }

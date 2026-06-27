@@ -61,7 +61,7 @@ int runClient(const LaunchOptions& options)
     }
 
     Engine engine;
-    engine.init(800, 600, ("mimita.exe multiplayer - " + options.name).c_str());
+    engine.init(1024, 768, ("mimita.exe multiplayer - " + options.name).c_str());
     if (!engine.window())
     {
         closesocket(sock);

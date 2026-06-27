@@ -191,8 +191,8 @@ const MIGRATION_STATEMENTS = [
         deaths INT NOT NULL DEFAULT 0,
         games_played INT NOT NULL DEFAULT 0,
         playtime_seconds BIGINT NOT NULL DEFAULT 0,
-        highest_mmr INT NOT NULL DEFAULT 1000,
-        current_mmr INT NOT NULL DEFAULT 1000,
+        highest_mmr INT NOT NULL DEFAULT 5000,
+        current_mmr INT NOT NULL DEFAULT 5000,
         accuracy REAL NOT NULL DEFAULT 0.0,
         headshots INT NOT NULL DEFAULT 0,
         best_kill_streak INT NOT NULL DEFAULT 0,
@@ -249,7 +249,17 @@ const MIGRATION_STATEMENTS = [
         ip_address TEXT,
         user_agent TEXT
     )`,
-    `CREATE INDEX IF NOT EXISTS client_login_codes_hash_idx ON client_login_codes(code_hash, expires_at)`
+    `CREATE INDEX IF NOT EXISTS client_login_codes_hash_idx ON client_login_codes(code_hash, expires_at)`,
+
+    // ── Competitive MMR Migration ─────────────────────────────────────────
+    // Fix existing profiles that have old default MMR=1000 and never played.
+    // Safe: only affects profiles with wins=0, losses=0, games_played=0.
+    `UPDATE game_stats
+     SET current_mmr = 5000, highest_mmr = 5000
+     WHERE current_mmr = 1000
+       AND wins = 0
+       AND losses = 0
+       AND games_played = 0`
 ]
 
 export async function runMigrations() {

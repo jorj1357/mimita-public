@@ -15,13 +15,17 @@ using namespace UISys;
 
 void debugWidget(const char* type, const char* name, UIRect r, bool hovered, bool pressed);
 
-UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color, const char* id)
+UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 color,
+                        const char* id,
+                        const glm::vec4* hoverColorOverride,
+                        const glm::vec4* pressedColorOverride,
+                        const char* hoverSound,
+                        const char* clickSound)
 {
     ++gWidgets;
 
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     UIRect fbR = cs.designToScreen(r);
-
 
     double mx = 0.0, my = 0.0;
     glfwGetCursorPos(win, &mx, &my);
@@ -40,9 +44,17 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
         gHoverOwnerKey = key;
     }
 
+    // Apply colors: custom hover/pressed overrides or default lighten/darken
     glm::vec4 c = color;
-    if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);
-    if (s.pressed) c *= glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
+    if (s.pressed && pressedColorOverride) {
+        c = *pressedColorOverride;
+    } else if (s.hovered && hoverColorOverride) {
+        c = *hoverColorOverride;
+    } else {
+        if (s.hovered) c += glm::vec4(0.14f, 0.14f, 0.14f, 0.0f);
+        if (s.pressed) c *= glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
+    }
+
     uiDrawRect(fbR, c, text);
     uiDrawRectOutline(fbR, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
 
@@ -55,9 +67,16 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     if (s.clicked)
     {
         printf("[UI] button clicked: %s\n", text);
+        if (clickSound && clickSound[0]) {
+            printf("[UI] playing click sound: %s\n", clickSound);
+        }
         if (uiCanPlayUISound()) {
             playMenuClick();
         }
+    }
+
+    if (s.hovered && hoverSound && hoverSound[0]) {
+        printf("[UI] playing hover sound: %s\n", hoverSound);
     }
 
     return s;

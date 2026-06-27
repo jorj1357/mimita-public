@@ -8,6 +8,8 @@ struct PlayMenuResult
     bool goOnline = false;
     bool goPractice = false;
     bool goBack = false;
+    bool goCompetitive = false;
+    bool goCompetitiveSignIn = false;
 };
 
 PlayMenuResult drawPlayMenu(GLFWwindow* win);

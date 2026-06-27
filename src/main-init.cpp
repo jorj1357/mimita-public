@@ -191,7 +191,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     printf("[LOG] Mirroring console -> file\n");
 
     printf("[MAIN] before engine.init\n");
-    engine.init(800, 600, "mimita.exe");
+    engine.init(1024, 768, "mimita.exe");
     printf("[MAIN] after engine.init\n");
 
     glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);

@@ -38,40 +38,14 @@ static UIScrollState gScrollAudio;
 static UIScrollState gScrollGame;
 static UIScrollState gScrollExtra;
 
-static const char* tabName(SettingsTab t)
+static const char* tabIdForIndex(int i)
 {
-    switch (t) {
-        case SettingsTab::Video:    return "VIDEO";
-        case SettingsTab::Graphics: return "GRAPHICS";
-        case SettingsTab::Audio:    return "AUDIO";
-        case SettingsTab::Game:     return "GAME";
-        case SettingsTab::Extra:    return "EXTRA";
-    }
-    return "";
+    const char* ids[] = {"tabVideo", "tabGraphics", "tabAudio", "tabGame", "tabExtra"};
+    return (i >= 0 && i < 5) ? ids[i] : ids[0];
 }
 
-static const float TAB_BAR_Y = 90.0f;
-static const float TAB_BAR_H = 50.0f;
 static const float CONTENT_Y = 160.0f;
 static const float CONTENT_H = 820.0f;
-static const float TAB_W = 160.0f;
-static const float TAB_START_X = 440.0f;
-
-static void drawTabBar(GLFWwindow* win)
-{
-    for (int i = 0; i < 5; ++i)
-    {
-        SettingsTab t = (SettingsTab)i;
-        float tx = TAB_START_X + i * (TAB_W + 12.0f);
-        bool active = (gCurrentTab == t);
-        glm::vec4 bg = active
-            ? glm::vec4{0.2f, 0.35f, 0.55f, 1.0f}
-            : glm::vec4{0.08f, 0.1f, 0.14f, 1.0f};
-
-        if (uiButton(win, tabName(t), {tx, TAB_BAR_Y, TAB_W, TAB_BAR_H}, bg, "").clicked)
-            gCurrentTab = t;
-    }
-}
 
 static UIScrollState& scrollForTab(SettingsTab t)
 {
@@ -412,18 +386,67 @@ static void drawExtraTab(GLFWwindow* win, SettingsMenuResult& r)
 SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
 {
     SettingsMenuResult r{};
-    float fbW = uiScreenW(), fbH = uiScreenH();
-    uiDrawRect({0, 0, fbW, fbH}, {0.02f, 0.025f, 0.035f, 1.0f}, "settings-bg");
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/settings-menu.json");
 
-    // Title
-    float titleW = uiMeasureText("SETTINGS", 0.60f);
-    uiDrawText("SETTINGS", (fbW - titleW) * 0.5f, uiScaleY(30.0f), 0.60f,
-               {0.9f, 0.95f, 1.0f, 1.0f});
+    // Draw static background, title, and back button from layout
+    for (const std::string& id : layout.elementIds())
+    {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
 
-    // Tab bar
-    drawTabBar(win);
+        if (elem->type == "panel" || elem->type == "text" || elem->type == "label")
+        {
+            drawGuiElement(win, *elem);
+            continue;
+        }
 
-    // Tab content
+        // Handle tab buttons
+        if (id.find("tab") == 0 && id != "tabVideo")
+        {
+            // Tab buttons: highlight the active one
+            int tabIdx = -1;
+            for (int i = 0; i < 5; ++i) {
+                if (id == tabIdForIndex(i)) { tabIdx = i; break; }
+            }
+            bool active = (tabIdx >= 0 && gCurrentTab == (SettingsTab)tabIdx);
+            glm::vec4 bg = active
+                ? glm::vec4{0.2f, 0.35f, 0.55f, 1.0f}
+                : elem->getBackgroundColorVec();
+
+            if (uiButton(win, elem->text.c_str(), {elem->x, elem->y, elem->w, elem->h},
+                          bg, elem->id.c_str()).clicked && tabIdx >= 0)
+            {
+                gCurrentTab = (SettingsTab)tabIdx;
+            }
+            continue;
+        }
+
+        // First tab (tabVideo) handles click detection too
+        if (id == "tabVideo")
+        {
+            bool active = (gCurrentTab == SettingsTab::Video);
+            glm::vec4 bg = active
+                ? glm::vec4{0.2f, 0.35f, 0.55f, 1.0f}
+                : elem->getBackgroundColorVec();
+            if (uiButton(win, elem->text.c_str(), {elem->x, elem->y, elem->w, elem->h},
+                          bg, elem->id.c_str()).clicked)
+            {
+                gCurrentTab = SettingsTab::Video;
+            }
+            continue;
+        }
+
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+
+        if (id == "backButton")
+        {
+            printf("[SETTINGS MENU] Back pressed\n");
+            r.goBack = true;
+        }
+    }
+
+    // Tab content (still hardcoded for now — uses sliders/checkboxes/dropdowns with runtime state)
     switch (gCurrentTab)
     {
         case SettingsTab::Video:    drawVideoTab(win); break;
@@ -431,14 +454,6 @@ SettingsMenuResult drawSettingsMenu(GLFWwindow* win)
         case SettingsTab::Audio:    drawAudioTab(win); break;
         case SettingsTab::Game:     drawGameTab(win); break;
         case SettingsTab::Extra:    drawExtraTab(win, r); break;
-    }
-
-    // Back button (always visible, bottom-left)
-    if (uiButton(win, "BACK", {40.0f, 1020.0f, 160.0f, 44.0f},
-                 {0.5f, 0.2f, 0.2f, 1.0f}, "settings-back").clicked)
-    {
-        printf("[SETTINGS MENU] Back pressed\n");
-        r.goBack = true;
     }
 
     return r;

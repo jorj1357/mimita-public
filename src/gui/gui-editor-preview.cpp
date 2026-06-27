@@ -12,15 +12,184 @@ void GuiEditor::renderSelectionHandles(const GuiElement& elem)
 {
     float sx = uiScaleX(elem.x), sy = uiScaleY(elem.y);
     float sw = uiScaleX(elem.w), sh = uiScaleY(elem.h);
-    float hs = 6.0f;
-    glm::vec4 oc = mHasOverlap
-        ? glm::vec4(1,0,0,1) : glm::vec4(0,1,0.2f,1);
-    uiDrawRectOutline({sx - 2, sy - 2, sw + 4, sh + 4}, oc, "gui-sel");
-    glm::vec4 hc(1,1,0.3f,1);
-    uiDrawRect({sx - hs, sy - hs, hs * 2, hs * 2}, hc, "gui-h");
-    uiDrawRect({sx + sw - hs, sy - hs, hs * 2, hs * 2}, hc, "gui-h");
-    uiDrawRect({sx - hs, sy + sh - hs, hs * 2, hs * 2}, hc, "gui-h");
-    uiDrawRect({sx + sw - hs, sy + sh - hs, hs * 2, hs * 2}, hc, "gui-h");
+
+    // Bright yellow selection outline
+    glm::vec4 outlineColor = mHasOverlap
+        ? glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)
+        : glm::vec4(1.0f, 0.95f, 0.1f, 1.0f);
+    uiDrawRectOutline({sx - 2, sy - 2, sw + 4, sh + 4}, outlineColor, "gui-sel-outline");
+
+    // Corner resize handles (green-yellow)
+    glm::vec4 hc(0.3f, 1.0f, 0.4f, 1.0f);
+    float hs = 7.0f;
+    const float corners[4][2] = {
+        {sx - hs, sy - hs},
+        {sx + sw - hs, sy - hs},
+        {sx - hs, sy + sh - hs},
+        {sx + sw - hs, sy + sh - hs}
+    };
+    for (int i = 0; i < 4; ++i) {
+        uiDrawRect({corners[i][0], corners[i][1], hs * 2, hs * 2}, hc, "gui-handle");
+        uiDrawRectOutline({corners[i][0], corners[i][1], hs * 2, hs * 2},
+                          {0.1f, 0.1f, 0.1f, 1.0f}, "gui-handle-border");
+    }
+
+    // Midpoint handles (smaller, slightly dimmer)
+    glm::vec4 mhc(0.2f, 0.8f, 0.3f, 0.7f);
+    float mhs = 5.0f;
+    const float midpoints[4][2] = {
+        {sx + sw * 0.5f - mhs, sy - mhs},
+        {sx + sw * 0.5f - mhs, sy + sh - mhs},
+        {sx - mhs, sy + sh * 0.5f - mhs},
+        {sx + sw - mhs, sy + sh * 0.5f - mhs}
+    };
+    for (int i = 0; i < 4; ++i) {
+        uiDrawRect({midpoints[i][0], midpoints[i][1], mhs * 2, mhs * 2}, mhc, "gui-mhandle");
+    }
+
+    // Blue center point
+    float cx = sx + sw * 0.5f, cy = sy + sh * 0.5f;
+    uiDrawRect({cx - 2, cy - 2, 4, 4}, {0.2f, 0.5f, 1.0f, 1.0f}, "gui-center");
+
+    // Red anchor point
+    glm::vec4 ac(1.0f, 0.2f, 0.2f, 1.0f);
+    float ax = sx, ay = sy;
+    if (elem.anchorX == "center") ax = cx;
+    if (elem.anchorY == "middle") ay = cy;
+    uiDrawRect({ax - 3, ay - 3, 6, 6}, ac, "gui-anchor");
+    uiDrawRectOutline({ax - 3, ay - 3, 6, 6}, {0,0,0,0.8f}, "gui-anchor-border");
+}
+
+void GuiEditor::renderInfoPanel(const GuiElement& elem)
+{
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    float px = cs.designToScreenX(10.0f);
+    float py = cs.designToScreenY(540.0f);
+    float lineH = 22.0f;
+    float panelW = cs.designToScreenX(280.0f);
+    float panelH = lineH * 8 + 16.0f;
+
+    uiDrawRect({px, py, panelW, panelH}, {0.08f, 0.08f, 0.12f, 0.92f}, "gui-info-bg");
+    uiDrawRectOutline({px, py, panelW, panelH}, {0.3f, 0.3f, 0.4f, 0.7f}, "gui-info-border");
+
+    char buf[256];
+    float iy = py + 8.0f;
+
+    snprintf(buf, sizeof(buf), "Element: %s", elem.id.c_str());
+    uiDrawText(buf, px + 8.0f, iy, 0.28f, {0.4f, 1.0f, 0.6f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Type: %s", elem.type.c_str());
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {0.7f, 0.8f, 0.9f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Position: X: %.0f  Y: %.0f", elem.x, elem.y);
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {1.0f, 1.0f, 1.0f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Size: W: %.0f  H: %.0f", elem.w, elem.h);
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {1.0f, 1.0f, 1.0f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Anchor: %s / %s", elem.anchorX.c_str(), elem.anchorY.c_str());
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {0.6f, 0.8f, 1.0f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Font Size: %.2f", elem.fontSize);
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {0.8f, 0.9f, 0.6f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Visible: %s  Enabled: %s",
+             elem.visible ? "Yes" : "No", elem.enabled ? "Yes" : "No");
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {0.9f, 0.9f, 0.5f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Layer: %d", elem.layer);
+    uiDrawText(buf, px + 8.0f, iy, 0.26f, {0.6f, 0.7f, 0.9f, 1.0f});
+}
+
+void GuiEditor::renderDragOverlay(const GuiElement& elem)
+{
+    if (!mDragActive) return;
+
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    float px = cs.designToScreenX(elem.x + elem.w + 16.0f);
+    float py = cs.designToScreenY(elem.y);
+    float lineH = 20.0f;
+
+    // Clamp to screen
+    if (px + cs.designToScreenX(180.0f) > cs.screenW())
+        px = cs.designToScreenX(elem.x - 196.0f);
+    if (py < 0) py = 0;
+    if (py + lineH * 4 > cs.screenH())
+        py = cs.screenH() - lineH * 4;
+
+    uiDrawRect({px, py, cs.designToScreenX(180.0f), lineH * 4},
+               {0.1f, 0.1f, 0.15f, 0.9f}, "gui-drag-bg");
+    uiDrawRectOutline({px, py, cs.designToScreenX(180.0f), lineH * 4},
+                      {0.4f, 0.6f, 1.0f, 0.6f}, "gui-drag-border");
+
+    char buf[128];
+    float iy = py + 4.0f;
+    snprintf(buf, sizeof(buf), "X: %.0f", elem.x);
+    uiDrawText(buf, px + 6.0f, iy, 0.28f, {1,1,1,1}); iy += lineH;
+    snprintf(buf, sizeof(buf), "Y: %.0f", elem.y);
+    uiDrawText(buf, px + 6.0f, iy, 0.28f, {1,1,1,1}); iy += lineH;
+    snprintf(buf, sizeof(buf), "Width: %.0f", elem.w);
+    uiDrawText(buf, px + 6.0f, iy, 0.28f, {1,1,1,1}); iy += lineH;
+    snprintf(buf, sizeof(buf), "Height: %.0f", elem.h);
+    uiDrawText(buf, px + 6.0f, iy, 0.28f, {1,1,1,1});
+}
+
+void GuiEditor::renderDebugOverlay()
+{
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    double mx, my;
+    glfwGetCursorPos(glfwGetCurrentContext(), &mx, &my);
+    double fbx, fby;
+    cs.cursorWindowToScreen(mx, my, fbx, fby);
+    double dx = cs.screenToDesignX((float)fbx);
+    double dy = cs.screenToDesignY((float)fby);
+
+    float x = cs.designToScreenX(1060.0f);
+    float y = cs.designToScreenY(80.0f);
+    float lineH = 18.0f;
+    float panelW = cs.designToScreenX(360.0f);
+
+    uiDrawRect({x, y, panelW, lineH * 10 + 12}, {0.05f, 0.05f, 0.1f, 0.88f}, "gui-debug-bg");
+    uiDrawRectOutline({x, y, panelW, lineH * 10 + 12}, {0.3f, 0.3f, 0.5f, 0.6f}, "gui-debug-border");
+
+    char buf[256];
+    float iy = y + 6.0f;
+
+    uiDrawText("GUI DEBUG", x + 6.0f, iy, 0.28f, {0.4f, 1.0f, 0.6f, 1.0f}); iy += lineH;
+
+    int winW, winH;
+    glfwGetWindowSize(glfwGetCurrentContext(), &winW, &winH);
+    snprintf(buf, sizeof(buf), "Window: %dx%d", winW, winH);
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.8f, 0.9f, 1.0f, 1.0f}); iy += lineH;
+
+    int fbW = (int)cs.screenW(), fbH = (int)cs.screenH();
+    snprintf(buf, sizeof(buf), "Framebuffer: %dx%d", fbW, fbH);
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.8f, 0.9f, 1.0f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Mouse Win: %.0f, %.0f", mx, my);
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.9f, 0.9f, 0.5f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Mouse FB: %.0f, %.0f", fbx, fby);
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.9f, 0.9f, 0.5f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Design: %.0f, %.0f", dx, dy);
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.9f, 0.9f, 0.5f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Scale: %.3f, %.3f", cs.scaleX(), cs.scaleY());
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.6f, 0.8f, 1.0f, 1.0f}); iy += lineH;
+
+    snprintf(buf, sizeof(buf), "Viewport: 0, 0  %dx%d", fbW, fbH);
+    uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.6f, 0.8f, 1.0f, 1.0f}); iy += lineH;
+
+    if (!mSelectedId.empty()) {
+        snprintf(buf, sizeof(buf), "Selected: %s", mSelectedId.c_str());
+        uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.4f, 1.0f, 0.6f, 1.0f});
+    } else {
+        uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.6f, 0.6f, 0.6f, 1.0f});
+    }
 }
 
 void GuiEditor::renderPropertyPanel(GLFWwindow* win, const GuiElement& elem)

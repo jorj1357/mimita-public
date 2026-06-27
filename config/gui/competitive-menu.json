@@ -1,0 +1,33 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "findMatchButton",
+      "type": "button",
+      "x": 750, "y": 500, "width": 420, "height": 58,
+      "text": "FIND MATCH",
+      "fontSize": 0.44,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.65, 0.12, 0.08, 1.0]
+    },
+    {
+      "id": "leaderboardButton",
+      "type": "button",
+      "x": 750, "y": 570, "width": 420, "height": 50,
+      "text": "LEADERBOARDS",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.4, 0.6, 1.0]
+    },
+    {
+      "id": "backButton",
+      "type": "button",
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
+    }
+  ]
+}

@@ -1,137 +1,108 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "header",
+  "version": 3,
+  "elements": {
+    "duelBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "header": {
       "type": "text",
-      "x": 720,
-      "y": 160,
-      "width": 400,
-      "height": 40,
+      "x": 720, "y": 160, "width": 400, "height": 40,
       "text": "Duel Mode Settings",
       "fontSize": 0.48,
       "textColor": [0.92, 0.94, 1.0, 1.0]
     },
-    {
-      "id": "npcCountMinus",
+    "npcCountLabel": {
+      "type": "text", "x": 720, "y": 260, "width": 350, "height": 30,
+      "text": "NPC Count:", "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1]
+    },
+    "killsLabel": {
+      "type": "text", "x": 720, "y": 320, "width": 350, "height": 30,
+      "text": "Kills to Win:", "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1]
+    },
+    "timeLabel": {
+      "type": "text", "x": 720, "y": 380, "width": 350, "height": 30,
+      "text": "Time Limit (sec):", "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1]
+    },
+    "diffLabel": {
+      "type": "text", "x": 720, "y": 440, "width": 350, "height": 30,
+      "text": "Difficulty:", "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1]
+    },
+    "npcCountMinus": {
       "type": "button",
-      "x": 1070,
-      "y": 255,
-      "width": 50,
-      "height": 40,
-      "text": "-",
-      "fontSize": 0.42,
+      "x": 1070, "y": 255, "width": 50, "height": 40,
+      "text": "-", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.5, 0.15, 0.15, 1.0]
     },
-    {
-      "id": "npcCountPlus",
+    "npcCountPlus": {
       "type": "button",
-      "x": 1130,
-      "y": 255,
-      "width": 50,
-      "height": 40,
-      "text": "+",
-      "fontSize": 0.42,
+      "x": 1130, "y": 255, "width": 50, "height": 40,
+      "text": "+", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.15, 0.5, 0.15, 1.0]
     },
-    {
-      "id": "killsMinus",
+    "killsMinus": {
       "type": "button",
-      "x": 1070,
-      "y": 315,
-      "width": 50,
-      "height": 40,
-      "text": "-",
-      "fontSize": 0.42,
+      "x": 1070, "y": 315, "width": 50, "height": 40,
+      "text": "-", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.5, 0.15, 0.15, 1.0]
     },
-    {
-      "id": "killsPlus",
+    "killsPlus": {
       "type": "button",
-      "x": 1130,
-      "y": 315,
-      "width": 50,
-      "height": 40,
-      "text": "+",
-      "fontSize": 0.42,
+      "x": 1130, "y": 315, "width": 50, "height": 40,
+      "text": "+", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.15, 0.5, 0.15, 1.0]
     },
-    {
-      "id": "timeMinus",
+    "timeMinus": {
       "type": "button",
-      "x": 1070,
-      "y": 375,
-      "width": 50,
-      "height": 40,
-      "text": "-",
-      "fontSize": 0.42,
+      "x": 1070, "y": 375, "width": 50, "height": 40,
+      "text": "-", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.5, 0.15, 0.15, 1.0]
     },
-    {
-      "id": "timePlus",
+    "timePlus": {
       "type": "button",
-      "x": 1130,
-      "y": 375,
-      "width": 50,
-      "height": 40,
-      "text": "+",
-      "fontSize": 0.42,
+      "x": 1130, "y": 375, "width": 50, "height": 40,
+      "text": "+", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.15, 0.5, 0.15, 1.0]
     },
-    {
-      "id": "diffMinus",
+    "diffMinus": {
       "type": "button",
-      "x": 1070,
-      "y": 435,
-      "width": 50,
-      "height": 40,
-      "text": "-",
-      "fontSize": 0.42,
+      "x": 1070, "y": 435, "width": 50, "height": 40,
+      "text": "-", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.5, 0.15, 0.15, 1.0]
     },
-    {
-      "id": "diffPlus",
+    "diffPlus": {
       "type": "button",
-      "x": 1130,
-      "y": 435,
-      "width": 50,
-      "height": 40,
-      "text": "+",
-      "fontSize": 0.42,
+      "x": 1130, "y": 435, "width": 50, "height": 40,
+      "text": "+", "fontSize": 0.42,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.15, 0.5, 0.15, 1.0]
     },
-    {
-      "id": "startDuelButton",
+    "startDuelButton": {
       "type": "button",
-      "x": 820,
-      "y": 540,
-      "width": 300,
-      "height": 80,
-      "text": "START DUEL",
-      "fontSize": 0.50,
+      "x": 820, "y": 540, "width": 300, "height": 80,
+      "text": "START DUEL", "fontSize": 0.50,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.9, 0.25, 0.1, 1.0]
     },
-    {
-      "id": "backButton",
+    "backButton": {
       "type": "button",
-      "x": 40,
-      "y": 40,
-      "width": 120,
-      "height": 50,
-      "text": "BACK",
-      "fontSize": 0.38,
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "BACK", "fontSize": 0.38,
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.7, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }

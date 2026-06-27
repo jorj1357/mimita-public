@@ -1,72 +1,74 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "accountPanelBg",
+  "version": 3,
+  "elements": {
+    "accountPanelBg": {
       "type": "panel",
-      "x": 1100,
-      "y": 0,
-      "width": 760,
-      "height": 1080,
-      "visible": true
+      "x": 1100, "y": 0, "width": 760, "height": 1080,
+      "backgroundColor": [0.025, 0.03, 0.04, 0.4],
+      "outlineColor": [0.3, 0.4, 0.55, 0.15]
     },
-    {
-      "id": "usernameText",
+    "usernameText": {
       "type": "text",
-      "x": 0,
-      "y": 30,
-      "width": 700,
-      "height": 40,
+      "x": 0, "y": 30, "width": 700, "height": 40,
       "fontSize": 0.45,
-      "textColor": [0.85, 0.9, 1.0, 1.0],
-      "visible": true
+      "textColor": [0.85, 0.9, 1.0, 1.0]
     },
-    {
-      "id": "noAccountText",
+    "noAccountText": {
       "type": "text",
-      "x": 0,
-      "y": 30,
-      "width": 700,
-      "height": 36,
+      "x": 0, "y": 30, "width": 700, "height": 36,
       "fontSize": 0.36,
-      "textColor": [0.75, 0.8, 0.9, 1.0],
-      "visible": true
+      "textColor": [0.75, 0.8, 0.9, 1.0]
     },
-    {
-      "id": "hintText",
+    "hintText": {
       "type": "text",
-      "x": 0,
-      "y": 60,
-      "width": 700,
-      "height": 24,
-      "fontSize": 0.24,
-      "textColor": [0.55, 0.6, 0.7, 1.0],
-      "visible": true
+      "x": 0, "y": 60, "width": 700, "height": 24,
+      "fontSize": 0.28,
+      "textColor": [0.55, 0.6, 0.7, 1.0]
     },
-    {
-      "id": "signInButton",
+    "signInButton": {
       "type": "button",
-      "x": 0,
-      "y": 0,
-      "width": 260,
-      "height": 44,
+      "x": 0, "y": 0, "width": 260, "height": 44,
       "text": "Sign In",
       "fontSize": 0.36,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.2, 0.5, 0.85, 1.0]
     },
-    {
-      "id": "signUpButton",
+    "signUpButton": {
       "type": "button",
-      "x": 0,
-      "y": 0,
-      "width": 260,
-      "height": 44,
+      "x": 0, "y": 0, "width": 260, "height": 44,
       "text": "Sign Up",
       "fontSize": 0.36,
-      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.2, 0.5, 0.25, 1.0]
+    },
+    "mmrText": {
+      "type": "text",
+      "x": 0, "y": 0, "width": 700, "height": 24,
+      "fontSize": 0.28,
+      "textColor": [0.4, 0.7, 0.9, 0.8]
+    },
+    "statsText": {
+      "type": "text",
+      "x": 0, "y": 0, "width": 700, "height": 20,
+      "fontSize": 0.24,
+      "textColor": [0.6, 0.65, 0.75, 0.7]
+    },
+    "accountSwitchButton": {
+      "type": "button",
+      "x": 0, "y": 0, "width": 260, "height": 36,
+      "text": "Switch Account",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.25, 0.3, 0.45, 1.0]
+    },
+    "accountLogoutButton": {
+      "type": "button",
+      "x": 0, "y": 0, "width": 260, "height": 36,
+      "text": "Logout",
+      "fontSize": 0.32,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.4, 0.15, 0.15, 1.0]
     }
-  ]
+  }
 }

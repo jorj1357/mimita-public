@@ -1,14 +1,76 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
-  "elements": [
-    {
-      "id": "settingsTitle",
+  "version": 3,
+  "elements": {
+    "settingsBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.02, 0.025, 0.035, 1.0]
+    },
+    "settingsTitle": {
       "type": "text",
-      "x": 840, "y": 30, "width": 300, "height": 50,
+      "x": 840, "y": 30, "width": 240, "height": 50,
       "text": "SETTINGS",
       "fontSize": 0.60,
       "textColor": [0.9, 0.95, 1.0, 1.0]
+    },
+    "tabVideo": {
+      "type": "button",
+      "x": 440, "y": 90, "width": 160, "height": 50,
+      "text": "VIDEO",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.08, 0.1, 0.14, 1.0],
+      "hoverColor": [0.12, 0.15, 0.2, 1.0],
+      "pressedColor": [0.2, 0.35, 0.55, 1.0]
+    },
+    "tabGraphics": {
+      "type": "button",
+      "x": 612, "y": 90, "width": 160, "height": 50,
+      "text": "GRAPHICS",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.08, 0.1, 0.14, 1.0],
+      "hoverColor": [0.12, 0.15, 0.2, 1.0],
+      "pressedColor": [0.2, 0.35, 0.55, 1.0]
+    },
+    "tabAudio": {
+      "type": "button",
+      "x": 784, "y": 90, "width": 160, "height": 50,
+      "text": "AUDIO",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.08, 0.1, 0.14, 1.0],
+      "hoverColor": [0.12, 0.15, 0.2, 1.0],
+      "pressedColor": [0.2, 0.35, 0.55, 1.0]
+    },
+    "tabGame": {
+      "type": "button",
+      "x": 956, "y": 90, "width": 160, "height": 50,
+      "text": "GAME",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.08, 0.1, 0.14, 1.0],
+      "hoverColor": [0.12, 0.15, 0.2, 1.0],
+      "pressedColor": [0.2, 0.35, 0.55, 1.0]
+    },
+    "tabExtra": {
+      "type": "button",
+      "x": 1128, "y": 90, "width": 160, "height": 50,
+      "text": "EXTRA",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.08, 0.1, 0.14, 1.0],
+      "hoverColor": [0.12, 0.15, 0.2, 1.0],
+      "pressedColor": [0.2, 0.35, 0.55, 1.0]
+    },
+    "backButton": {
+      "type": "button",
+      "x": 40, "y": 1020, "width": 160, "height": 44,
+      "text": "BACK",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.5, 0.2, 0.2, 1.0]
     }
-  ]
+  }
 }

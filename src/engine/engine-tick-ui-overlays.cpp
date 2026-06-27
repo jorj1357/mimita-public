@@ -21,6 +21,10 @@
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/gui-editor.h"
+#include "competitive/competitive-match.h"
+#include "competitive/competitive-ui.h"
+#include "gui/gui-main.h"
+#include "game/game-state.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
 #include "crosshair/crosshair-config.h"
@@ -124,6 +128,20 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     }
 
     if (gDuelManager.phase() == DuelPhase::MatchEnd) {
+        // Intercept competitive match end immediately to show competitive result screen
+        if (isCompetitiveMatchActive())
+        {
+            gameState = GAME_MENU;
+            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            gGuiMenuState = GUI_MENU_COMPETITIVE_RESULT;
+            gDuelManager.stopDuel();
+            gBombTagManager.stop();
+            npcSystem.destroyAll();
+            gReplayPlayer.stopPlayback();
+            if (gReplayRecorder.isRecording())
+                gReplayRecorder.stopRecording();
+        }
+
         DuelMenuAction action = gDuelManager.renderMatchOverScreen(engine.window());
         if (action == DuelMenuAction::PlayAgain) {
             gDuelManager.restartDuel(player, npcSystem, world);
