@@ -94,6 +94,54 @@ void guiMain(GLFWwindow* win, GameState& state)
     uiBeginFrame(win, "menu");
     GuiEditor::instance().setActiveLayout(layoutFileForMenu(gGuiMenuState));
 
+    // ── 3D Avatar Preview for Main Menu ──────────────────────────
+    if (gGuiMenuState == GUI_MENU_AUTH || gGuiMenuState == GUI_MENU_MAIN)
+    {
+        extern Player* gpPlayer;
+        if (gpPlayer && gpPlayer->modelLoaded)
+        {
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            GuiLayout& mmLayout = GuiLayoutManager::instance().getLayout("config/gui/main-menu.json");
+            const GuiElement* coverEl = mmLayout.get("coverImage");
+            const GuiElement* exitEl = mmLayout.get("exitButton");
+            int fbW = 0, fbH = 0;
+            glfwGetFramebufferSize(win, &fbW, &fbH);
+            float scaleX = (float)fbW / 1920.0f;
+
+            // Render player preview on the right side of the screen
+            float panelLeft = 650.0f;
+            float panelRight = 1400.0f;
+            if (exitEl) panelLeft = exitEl->x + exitEl->w + 40.0f;
+            if (coverEl) panelRight = (coverEl->x + coverEl->w) * 0.85f;
+
+            int prevPX = (int)(panelLeft * scaleX);
+            int prevPW = (int)((panelRight - panelLeft) * scaleX);
+
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(prevPX, 0, prevPW, fbH);
+            glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glDisable(GL_SCISSOR_TEST);
+
+            Camera previewCam;
+            static float menuPreviewAngle = 0.0f;
+            menuPreviewAngle += 0.005f;
+            if (menuPreviewAngle > 360.0f) menuPreviewAngle -= 360.0f;
+
+            float rad = glm::radians(menuPreviewAngle);
+            previewCam.pos = glm::vec3(
+                gpPlayer->pos.x + std::cos(rad) * 10.0f,
+                gpPlayer->pos.y + std::sin(rad) * 10.0f,
+                gpPlayer->pos.z + 3.5f);
+            previewCam.front = glm::normalize(gpPlayer->pos + glm::vec3(0, 0, 1.5f) - previewCam.pos);
+            previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0, 0, 1)));
+            previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
+
+            renderPlayer(*gpPlayer, previewCam);
+        }
+    }
+
     switch (gGuiMenuState)
     {
         case GUI_MENU_AUTH:
@@ -122,6 +170,20 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.goExit)
                 glfwSetWindowShouldClose(win, GLFW_TRUE);
+            else if (r.switchAccount)
+            {
+                printf("[MAIN MENU] switching account\n");
+                auth.clearSession();
+                ShellExecuteA(nullptr, "open",
+                    "https://mimita.fun/signin",
+                    nullptr, nullptr, SW_SHOWNORMAL);
+                auth.startLinkFlow();
+            }
+            else if (r.logOut)
+            {
+                printf("[MAIN MENU] logging out\n");
+                auth.logout();
+            }
 
             break;
         }
@@ -306,18 +368,36 @@ void guiMain(GLFWwindow* win, GameState& state)
         case GUI_MENU_AVATAR_CREATOR:
         {
             // ── 3D Avatar Preview ─────────────────────────────────
-            // Render the player model into the center of the screen
-            // behind the menu UI for a live character preview.
+            // Render the player model behind the UI for live preview
             extern Player* gpPlayer;
             if (gpPlayer)
             {
-                // Save & clear depth for clean preview rendering behind UI
                 glClear(GL_DEPTH_BUFFER_BIT);
+
+                // Load the avatar creator layout for preview area bounds
+                GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
+                const GuiElement* leftPanel = layout.get("panelLibrary");
+                const GuiElement* rightPanel = layout.get("panelPreview3D");
+                int fbW = 0, fbH = 0;
+                glfwGetFramebufferSize(win, &fbW, &fbH);
+                float scaleX = (float)fbW / 1920.0f;
+
+                // Scissor to the area between left panel end and right panel start
+                float leftEdge = leftPanel ? (leftPanel->x + leftPanel->w + 10.0f) : 350.0f;
+                float rightEdge = rightPanel ? rightPanel->x : 1100.0f;
+                int previewPX = (int)(leftEdge * scaleX);
+                int previewPW = (int)((rightEdge - leftEdge) * scaleX);
+
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(previewPX, 0, previewPW, fbH);
+                glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                glDisable(GL_SCISSOR_TEST);
 
                 // Setup orbiting preview camera
                 Camera previewCam;
                 static float previewAngle = 0.0f;
-                previewAngle += 0.008f; // auto-rotate
+                previewAngle += 0.008f;
                 if (previewAngle > 360.0f) previewAngle -= 360.0f;
 
                 float previewDist = 9.0f;
@@ -328,33 +408,15 @@ void guiMain(GLFWwindow* win, GameState& state)
                     gpPlayer->pos.y + std::sin(rad) * previewDist,
                     gpPlayer->pos.z + previewHeight
                 );
-                // Look toward player center
                 previewCam.front = glm::normalize(gpPlayer->pos + glm::vec3(0, 0, 1.5f) - previewCam.pos);
                 previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0, 0, 1)));
                 previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
 
-                // Render with an unobtrusive background for the preview area
-                int fbW = 0, fbH = 0;
-                glfwGetFramebufferSize(win, &fbW, &fbH);
-                // Use a scissor rect to only render in the center preview area
-                // (between left panel ~300px and right panel ~1450px in design coords)
-                float scaleX = (float)fbW / 1920.0f;
-                int previewPX = (int)(300.0f * scaleX);
-                int previewPW = (int)((1450.0f - 300.0f) * scaleX);
-                glEnable(GL_SCISSOR_TEST);
-                glScissor(previewPX, 0, previewPW, fbH);
-                glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                glDisable(GL_SCISSOR_TEST);
-
-                // Render the player model
                 renderPlayer(*gpPlayer, previewCam);
             }
 
-            printf("[AVATAR UI] Opening Avatar Creator\n");
             AvatarMenuResult r = drawAvatarMenu(win);
             if (r.goBack) {
-                printf("[AVATAR UI] Closing Avatar Creator\n");
                 gGuiMenuState = GUI_MENU_MAIN;
             }
             if (r.goApply) {

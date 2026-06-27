@@ -1,0 +1,16 @@
+{
+  "format": "mimita-gui-layout-config",
+  "version": 1,
+  "debug": {
+    "showWidgetBounds": false,
+    "showAnchors": false,
+    "showLayoutNames": false,
+    "showAvatarTextureNames": false,
+    "showMissingAssetWarnings": true,
+    "logTextureFailures": true
+  },
+  "hotReload": {
+    "enabled": true,
+    "pollIntervalMs": 500
+  }
+}

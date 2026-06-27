@@ -347,3 +347,96 @@
 .dangerLink:hover {
   background: #111;
 }
+
+/* Desktop Dialog */
+.desktopDialogOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.desktopDialog {
+  background: #1a1b23;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 16px;
+  padding: 2.5rem;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.desktopDialogIcon {
+  margin-bottom: 1rem;
+}
+
+.desktopDialog h2 {
+  color: white;
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+}
+
+.desktopDialogDesc {
+  color: rgba(255,255,255,0.6);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.desktopDialogActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.desktopDialogOpen {
+  padding: 0.85rem 1rem;
+  background: #4A90D9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.desktopDialogOpen:hover {
+  background: #5ba0e9;
+}
+
+.desktopDialogOpen:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.desktopDialogSkip {
+  padding: 0.75rem 1rem;
+  background: transparent;
+  color: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.desktopDialogSkip:hover {
+  color: rgba(255,255,255,0.8);
+  border-color: rgba(255,255,255,0.3);
+}
+
+.desktopDialogNote {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.4);
+}
+
+.desktopDialogNote a {
+  color: #4A90D9;
+}

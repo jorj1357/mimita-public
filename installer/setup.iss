@@ -116,4 +116,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppLauncherName}"; Task
 [Run]
 Filename: "{app}\{#MyAppLauncherName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\mimita"; ValueType: string; ValueName: ""; ValueData: "URL:Mimita Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mimita"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mimita\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppLauncherName},0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mimita\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppLauncherName}"" ""%1"""; Flags: uninsdeletekey
+
 [UninstallRun]

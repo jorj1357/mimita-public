@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useState } from "react"
 
 import Layout from "../components/Layout"
+import DesktopDialog from "../components/DesktopDialog"
 import { apiRequest } from "../lib/api"
 
 export default function Auth({ mode }) {
@@ -17,6 +18,7 @@ export default function Auth({ mode }) {
     })
     const [message, setMessage] = useState(location.state?.message || "")
     const [loading, setLoading] = useState(false)
+    const [showDesktopDialog, setShowDesktopDialog] = useState(false)
 
     function update(field, value) {
         setForm((current) => ({
@@ -49,12 +51,12 @@ export default function Auth({ mode }) {
                     password: form.password
                 }
 
-            const data = await apiRequest(
+            await apiRequest(
                 signup ? "/api/auth/signup" : "/api/auth/signin",
                 { method: "POST", body: JSON.stringify(body) }
             )
 
-            navigate(`/users/${encodeURIComponent(data.user.username)}`)
+            setShowDesktopDialog(true)
         }
         catch (error) {
             setMessage(error.message)
@@ -62,6 +64,11 @@ export default function Auth({ mode }) {
         finally {
             setLoading(false)
         }
+    }
+
+    function handleDesktopDismiss() {
+        setShowDesktopDialog(false)
+        navigate("/profile")
     }
 
     return (
@@ -97,11 +104,6 @@ export default function Auth({ mode }) {
 
                     {!signup && (
                         <>
-                           {/* <p>
-                as of 6 20 2026, account creation isnt done yet :( 
-                    <br></br>
-                    working on it tho!!!!!
-                </p> */}
                             <label htmlFor="identifier">
                                 username or email
                             </label>
@@ -168,6 +170,13 @@ export default function Auth({ mode }) {
                     </p>
                 </form>
             </section>
+
+            {showDesktopDialog && (
+                <DesktopDialog
+                    onClose={() => navigate("/profile")}
+                    onDismiss={handleDesktopDismiss}
+                />
+            )}
         </Layout>
     )
-}
+}  

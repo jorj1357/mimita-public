@@ -11,14 +11,25 @@ enum class AuthState
     Authenticated,
     NeedsLogin,
     Linking,
+    TokenExchange,
 };
 
 struct AuthUser
 {
     int id = 0;
     std::string username;
+    std::string displayName;
+    std::string email;
+    std::string bio;
     std::string avatarUrl;
+    json avatarData;
+    std::string supporterTier;
+    std::string role;
+    std::vector<std::string> achievements;
+    bool emailVerified = false;
+    std::string createdAt;
     std::string sessionToken;
+    GameStats stats;
 };
 
 class AuthSystem
@@ -38,15 +49,36 @@ public:
     const std::string& linkCode() const { return mLinkCode; }
     const std::string& linkError() const { return mLinkError; }
 
+    void startTokenExchange(const std::string& exchangeToken);
+    GameUserInfo finishTokenExchange(const std::string& sessionToken);
+
     void logout();
     void skipLogin();
+    void clearSession();
 
     std::string generateGuestName() const;
+
+    // Profile management
+    void refreshProfile();
+    bool updateProfile(const std::string& displayName, const std::string& bio);
+    bool uploadAvatarData(const json& avatarData);
+
+    // Stats
+    void refreshStats();
+
+    // Settings
+    json getCloudSettings();
+    bool saveCloudSettings(const json& settings);
+
+    // Avatar data
+    json getCloudAvatarData();
+    bool saveCloudAvatarData(const json& avatarData);
 
 private:
     AuthSystem() = default;
     void finishAuth(const std::string& token);
     void validateStoredToken();
+    void fetchFullProfile();
 
     AuthState mState = AuthState::Checking;
     AuthUser mUser;
@@ -56,4 +88,5 @@ private:
     std::string mLinkError;
     float mLinkPollTimer = 0.0f;
     int mLinkPollAttempts = 0;
+    std::string mPendingExchangeToken;
 };

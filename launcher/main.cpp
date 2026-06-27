@@ -128,6 +128,30 @@ bool httpGET(const std::string& url, std::string& out)
     return ok;
 }
 
+bool httpPOST(const std::string& url, const std::string& body, std::string& out)
+{
+    UrlParts u;
+    if (!parseUrl(url, u)) return false;
+    HINTERNET s = hOpen(); if (!s) return false;
+    HINTERNET c = hConnect(s, u); if (!c) { WinHttpCloseHandle(s); return false; }
+    HINTERNET r = hRequest(c, u, L"POST"); if (!r) { WinHttpCloseHandle(c); WinHttpCloseHandle(s); return false; }
+    std::wstring hdrs = L"Content-Type: application/json\r\n";
+    BOOL ok = WinHttpSendRequest(r, hdrs.c_str(), (DWORD)-1L,
+        (LPVOID)body.data(), (DWORD)body.size(), (DWORD)body.size(), 0);
+    if (ok) ok = WinHttpReceiveResponse(r, nullptr);
+    DWORD st = 0, sz = sizeof(st);
+    if (ok) { WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX, &st, &sz, WINHTTP_NO_HEADER_INDEX); ok = (st >= 200 && st < 300); }
+    if (ok) {
+        std::vector<char> b;
+        DWORD rd = 0;
+        do { char t[4096]; if (!WinHttpReadData(r, t, sizeof(t), &rd)) break;         b.insert(b.end(), t, t + rd); } while (rd > 0);
+        out.assign(b.data(), b.size());
+    }
+    WinHttpCloseHandle(r); WinHttpCloseHandle(c); WinHttpCloseHandle(s);
+    return ok;
+}
+
 bool downloadFileTo(const std::string& url, const std::string& dest, DWORD resumeAt = 0)
 {
     std::string partPath = dest + ".part";
@@ -249,8 +273,43 @@ bool spawnSelfUpdate(const std::string& installerPath, const std::string& dir)
 
 }
 
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
+void storeSessionToken(const std::string& dir, const std::string& token)
 {
+    std::string configDir = dir + "\\config";
+    CreateDirectoryA(configDir.c_str(), nullptr);
+    writeFile(configDir + "\\auth-token.json", "{\"session_token\":\"" + token + "\"}\n");
+}
+
+// ── URL decode helper ──────────────────────────────────────────────────────────
+std::string urlDecode(const std::string& input)
+{
+    std::string out;
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        if (input[i] == '%' && i + 2 < input.size())
+        {
+            char hi = input[i + 1];
+            char lo = input[i + 2];
+            auto hex = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return 0;
+            };
+            out += (char)((hex(hi) << 4) | hex(lo));
+            i += 2;
+        }
+        else
+        {
+            out += input[i];
+        }
+    }
+    return out;
+}
+
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int)
+{
+    std::string cmdLine = lpCmdLine ? lpCmdLine : "";
     std::string dir = appDir();
     std::string localVer = readFile(dir + "\\version.txt");
     if (localVer.empty()) localVer = "0.0.0";
@@ -259,6 +318,56 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     // Clean up old files
     DeleteFileA((dir + "\\MimitaLauncher.old.exe").c_str());
+
+    // ── Handle mimita:// protocol ─────────────────────────────────────────────
+    // When the browser launches us with mimita://login?token=<exchange_token>
+    // we exchange the one-time token for a real session and launch the game.
+    if (cmdLine.find("mimita://") != std::string::npos)
+    {
+        // Extract the query string (everything after ?)
+        auto qpos = cmdLine.find('?');
+        if (qpos != std::string::npos)
+        {
+            std::string query = cmdLine.substr(qpos + 1);
+            auto tpos = query.find("token=");
+            if (tpos != std::string::npos)
+            {
+                tpos += 6;
+                auto tend = query.find('&', tpos);
+                if (tend == std::string::npos) tend = query.find(' ', tpos);
+                if (tend == std::string::npos) tend = query.size();
+                std::string exchangeToken = urlDecode(query.substr(tpos, tend - tpos));
+
+                // Exchange the token with the backend
+                std::string reqBody = "{\"exchange_token\":\"" + exchangeToken + "\"}";
+                std::string respBody;
+                if (httpPOST("https://mimita.fun/api/auth/exchange-session", reqBody, respBody))
+                {
+                    std::string sessionToken = extractJsonStr(respBody, "session_token");
+                    if (!sessionToken.empty())
+                    {
+                        // Store session token and launch game directly
+                        storeSessionToken(dir, sessionToken);
+                        std::string cli = gameExe + " --session \"" + sessionToken + "\"";
+                        STARTUPINFOA si = { sizeof(si) };
+                        PROCESS_INFORMATION pi;
+                        if (CreateProcessA(nullptr, &cli[0], nullptr, nullptr, FALSE, 0,
+                                            nullptr, dir.c_str(), &si, &pi))
+                        {
+                            WaitForSingleObject(pi.hProcess, INFINITE);
+                            CloseHandle(pi.hProcess);
+                            CloseHandle(pi.hThread);
+                        }
+                        return 0;
+                    }
+                }
+                // Fallback: store the exchange token as a session token and let game validate
+                storeSessionToken(dir, exchangeToken);
+            }
+        }
+        return 0;
+    }
+    // ── End protocol handling ─────────────────────────────────────────────────
 
     // ── Fetch version + manifest ──────────────────────────────────────────────
     std::string versionJson, manifestJson, latestVer, manifestUrl;

@@ -9,6 +9,18 @@
 
 class Player;
 
+struct FaceTransform {
+    float offsetX = 0.0f;
+    float offsetY = 0.0f;
+    float scale = 1.0f;
+    float rotation = 0.0f;
+    int stretchMode = 0; // 0=stretch,1=fit,2=fill,3=crop,4=tile
+    float hue = 0.0f;
+    float saturation = 1.0f;
+    float brightness = 1.0f;
+    float contrast = 1.0f;
+};
+
 struct AvatarPartFaces {
     std::string front;
     std::string back;
@@ -21,11 +33,49 @@ struct AvatarPartFaces {
     const std::string& byName(const std::string& name) const;
 };
 
+struct PartColors {
+    glm::vec3 head     = glm::vec3(1.0f);
+    glm::vec3 torso    = glm::vec3(1.0f);
+    glm::vec3 leftArm  = glm::vec3(1.0f);
+    glm::vec3 rightArm = glm::vec3(1.0f);
+    glm::vec3 leftLeg  = glm::vec3(1.0f);
+    glm::vec3 rightLeg = glm::vec3(1.0f);
+};
+
+struct FaceSettings {
+    FaceTransform transform;
+    std::string texture;
+};
+
+struct PartFaceSettings {
+    FaceSettings front;
+    FaceSettings back;
+    FaceSettings left;
+    FaceSettings right;
+    FaceSettings top;
+    FaceSettings bottom;
+
+    FaceSettings& byName(const std::string& name);
+    const FaceSettings& byName(const std::string& name) const;
+};
+
 struct SimpleAvatar {
     std::string face;
     std::string shirt;
     std::string pants;
     std::string skin;
+};
+
+struct CosmeticSlot {
+    std::string slot;    // e.g. "head", "torso", "arms", "legs"
+    std::string choice;  // e.g. "halo", "horns", "none"
+};
+
+struct AvatarPreset {
+    std::string name;
+    std::string description;
+    PartColors colors;
+    // Full face settings are stored per-preset in a separate file
 };
 
 struct AvatarDefinition {
@@ -39,6 +89,10 @@ struct AvatarDefinition {
     AvatarPartFaces rightArm;
     AvatarPartFaces leftLeg;
     AvatarPartFaces rightLeg;
+
+    PartColors colors;
+    std::vector<CosmeticSlot> cosmetics;
+    std::string activePreset;
 
     std::string resolve(const std::string& part, const std::string& face) const;
     void expandSimple();
@@ -66,7 +120,20 @@ public:
     void setPartFace(const std::string& part, const std::string& face, const std::string& texturePath);
     void setAdvancedMode(bool v) { mAvatar.advancedMode = v; }
 
+    void setPartColor(const std::string& part, const glm::vec3& color);
+    glm::vec3 partColor(const std::string& part) const;
+
+    bool savePreset(const std::string& presetName);
+    bool loadPreset(const std::string& presetName);
+    std::vector<std::string> listPresets() const;
+
     static std::string avatarPath(const std::string& name);
+
+    // Clipboard for copy/paste within the editor session
+    FaceSettings clipboardFace;
+    PartFaceSettings clipboardPart;
+    bool hasClipboardFace = false;
+    bool hasClipboardPart = false;
 
 private:
     AvatarSystem() = default;

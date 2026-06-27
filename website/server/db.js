@@ -174,7 +174,68 @@ const MIGRATION_STATEMENTS = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         expires_at TIMESTAMPTZ NOT NULL
     )`,
-    `CREATE INDEX IF NOT EXISTS rate_limits_key_idx ON rate_limits(key_name, created_at DESC)`
+    `CREATE INDEX IF NOT EXISTS rate_limits_key_idx ON rate_limits(key_name, created_at DESC)`,
+
+    // ── Account System v2 ───────────────────────────────────────────────
+
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data JSONB`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`,
+
+    `CREATE TABLE IF NOT EXISTS game_stats (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        wins INT NOT NULL DEFAULT 0,
+        losses INT NOT NULL DEFAULT 0,
+        kills INT NOT NULL DEFAULT 0,
+        deaths INT NOT NULL DEFAULT 0,
+        games_played INT NOT NULL DEFAULT 0,
+        playtime_seconds BIGINT NOT NULL DEFAULT 0,
+        highest_mmr INT NOT NULL DEFAULT 1000,
+        current_mmr INT NOT NULL DEFAULT 1000,
+        accuracy REAL NOT NULL DEFAULT 0.0,
+        headshots INT NOT NULL DEFAULT 0,
+        best_kill_streak INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS game_stats_mmr_idx ON game_stats(current_mmr DESC)`,
+    `CREATE INDEX IF NOT EXISTS game_stats_wins_idx ON game_stats(wins DESC)`,
+
+    `CREATE TABLE IF NOT EXISTS match_history (
+        id BIGSERIAL PRIMARY KEY,
+        match_id TEXT NOT NULL UNIQUE,
+        map_name TEXT NOT NULL DEFAULT '',
+        game_mode TEXT NOT NULL DEFAULT '',
+        duration_seconds INT NOT NULL DEFAULT 0,
+        winner_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS match_history_created_idx ON match_history(created_at DESC)`,
+
+    `CREATE TABLE IF NOT EXISTS match_participants (
+        id BIGSERIAL PRIMARY KEY,
+        match_id TEXT NOT NULL REFERENCES match_history(match_id) ON DELETE CASCADE,
+        user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        username TEXT NOT NULL DEFAULT '',
+        mmr_before INT NOT NULL DEFAULT 0,
+        mmr_after INT NOT NULL DEFAULT 0,
+        kills INT NOT NULL DEFAULT 0,
+        deaths INT NOT NULL DEFAULT 0,
+        accuracy REAL NOT NULL DEFAULT 0.0,
+        headshots INT NOT NULL DEFAULT 0,
+        damage_dealt INT NOT NULL DEFAULT 0,
+        team INT NOT NULL DEFAULT 0,
+        won BOOLEAN NOT NULL DEFAULT FALSE,
+        UNIQUE(match_id, user_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS match_participants_user_idx ON match_participants(user_id, created_at DESC)`,
+
+    `CREATE TABLE IF NOT EXISTS user_settings (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        settings_json JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
 ]
 
 export async function runMigrations() {
