@@ -12,34 +12,11 @@ class Player;
 struct FaceTransform {
     float offsetX = 0.0f;
     float offsetY = 0.0f;
-    float scale = 1.0f;
-    float rotation = 0.0f;
-    int stretchMode = 0; // 0=stretch,1=fit,2=fill,3=crop,4=tile
-    float hue = 0.0f;
-    float saturation = 1.0f;
-    float brightness = 1.0f;
-    float contrast = 1.0f;
-};
-
-struct AvatarPartFaces {
-    std::string front;
-    std::string back;
-    std::string left;
-    std::string right;
-    std::string top;
-    std::string bottom;
-
-    std::string& byName(const std::string& name);
-    const std::string& byName(const std::string& name) const;
-};
-
-struct PartColors {
-    glm::vec3 head     = glm::vec3(1.0f);
-    glm::vec3 torso    = glm::vec3(1.0f);
-    glm::vec3 leftArm  = glm::vec3(1.0f);
-    glm::vec3 rightArm = glm::vec3(1.0f);
-    glm::vec3 leftLeg  = glm::vec3(1.0f);
-    glm::vec3 rightLeg = glm::vec3(1.0f);
+    float rotation = 0.0f;       // 0-360 degrees
+    float hueShift = 0.0f;       // 0-360 hue rotation
+    float saturation = 0.0f;     // -10 to 10, 0 = unchanged
+    float brightness = 0.0f;     // -10 to 10, 0 = unchanged
+    int stretchMode = 0;         // 0=stretch, 1=crop
 };
 
 struct FaceSettings {
@@ -47,7 +24,7 @@ struct FaceSettings {
     std::string texture;
 };
 
-struct PartFaceSettings {
+struct FaceVector {
     FaceSettings front;
     FaceSettings back;
     FaceSettings left;
@@ -57,6 +34,15 @@ struct PartFaceSettings {
 
     FaceSettings& byName(const std::string& name);
     const FaceSettings& byName(const std::string& name) const;
+};
+
+struct PartColors {
+    glm::vec3 head     = glm::vec3(1.0f);
+    glm::vec3 torso    = glm::vec3(1.0f);
+    glm::vec3 leftArm  = glm::vec3(1.0f);
+    glm::vec3 rightArm = glm::vec3(1.0f);
+    glm::vec3 leftLeg  = glm::vec3(1.0f);
+    glm::vec3 rightLeg = glm::vec3(1.0f);
 };
 
 struct SimpleAvatar {
@@ -83,18 +69,18 @@ struct AvatarDefinition {
     std::string basePath;
     SimpleAvatar simple;
     bool advancedMode = false;
-    AvatarPartFaces head;
-    AvatarPartFaces torso;
-    AvatarPartFaces leftArm;
-    AvatarPartFaces rightArm;
-    AvatarPartFaces leftLeg;
-    AvatarPartFaces rightLeg;
+    FaceVector head;
+    FaceVector torso;
+    FaceVector leftArm;
+    FaceVector rightArm;
+    FaceVector leftLeg;
+    FaceVector rightLeg;
 
     PartColors colors;
     std::vector<CosmeticSlot> cosmetics;
     std::string activePreset;
 
-    std::string resolve(const std::string& part, const std::string& face) const;
+    FaceSettings resolve(const std::string& part, const std::string& face) const;
     void expandSimple();
     void clear();
 };
@@ -141,7 +127,7 @@ public:
 
     // Clipboard for copy/paste within the editor session
     FaceSettings clipboardFace;
-    PartFaceSettings clipboardPart;
+    FaceVector clipboardPart;
     bool hasClipboardFace = false;
     bool hasClipboardPart = false;
 
