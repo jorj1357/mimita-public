@@ -8,8 +8,8 @@
 #include "combat/death-system.h"
 #include "input/input-poll.h"
 #include "config/player-settings.h"
-#include "render/outfit-atlas.h"
 #include "network/packets.h"
+#include "outfit/outfit-system.h"
 
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
 static bool parseTeleportPosition(
@@ -197,7 +197,7 @@ void registerPlayerCommands()
                 Terminal::instance().addLog("[ERROR] Usage: setoutfit <path>");
                 return;
             }
-            if (OutfitAtlas::instance().apply(player, args[0])) {
+            if (OutfitSystem::applySingleTexture(player, args[0])) {
                 GetPlayerSettings().outfitPath = args[0];
                 SavePlayerSettings();
             }
@@ -207,12 +207,12 @@ void registerPlayerCommands()
         "reloadoutfit", "Reload the current outfit PNG from disk", "reloadoutfit",
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
-            OutfitAtlas::instance().apply(player, GetPlayerSettings().outfitPath, true);
+            OutfitSystem::applySingleTexture(player, GetPlayerSettings().outfitPath, true);
         }
     });
     Terminal::instance().registerCommand({
         "outfitdebug", "Print outfit atlas region mapping", "outfitdebug",
-        [](const std::vector<std::string>&) { OutfitAtlas::instance().printDebug(); }
+        [](const std::vector<std::string>&) {  }
     });
     Terminal::instance().registerCommand({
         "killfeed", "Show recent kills", "killfeed",
@@ -257,3 +257,4 @@ void registerPlayerCommands()
         }
     });
 }
+

@@ -86,7 +86,6 @@
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
 #include "config/player-settings.h"
-#include "render/outfit-atlas.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 #include "avatar/avatar-menu.h"
@@ -240,3 +239,4 @@ void gameInit(int argc, char** argv, Engine& engine)
 
     gameInitSubsystems(engine);
 }
+

@@ -1,6 +1,5 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
-#include "render/outfit-atlas.h"
 #include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
@@ -45,3 +44,4 @@ static const char* disconnectReasonStr(MultiplayerContext& ctx)
 }
 
 } // namespace MimitaNet
+

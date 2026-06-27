@@ -33,7 +33,6 @@
 #include "game/duel.h"
 #include "game/bomb-tag.h"
 #include "config/player-settings.h"
-#include "render/outfit-atlas.h"
 #include "npc/npc-state-machine.h"
 #include "config.h"
 #include "perf/perf.h"
@@ -417,3 +416,4 @@ void engineTickReplay(Engine& engine, float dt)
     ProcessNpcSpawnCommands(npcSystem, camera, world, player);
     ProcessNpcTrainingSpawnCommands(npcSystem, camera, world, player);
 }
+
