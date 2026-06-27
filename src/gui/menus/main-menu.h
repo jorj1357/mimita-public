@@ -23,6 +23,8 @@ struct MainMenuResult
     bool goReplays = false;
     bool goAvatarCreator = false;
     bool goExit = false;
+    bool switchAccount = false;
+    bool logOut = false;
 };
 
 MainMenuResult drawMainMenu(GLFWwindow* win);

@@ -1,0 +1,20 @@
+{
+    "MainMenuAvatar":
+    {
+        "anchor": "RightCenter",
+        "offsetX": -180,
+        "offsetY": 0,
+        "width": 500,
+        "height": 700,
+
+        "cameraDistance": 3.0,
+        "cameraYaw": -20,
+        "cameraPitch": 8,
+        "cameraFOV": 35,
+
+        "slowRotationEnabled": true,
+        "rotationSpeed": 0.15,
+
+        "playerFootOffsetZ": 0.0
+    }
+}

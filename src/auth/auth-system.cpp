@@ -59,9 +59,19 @@ void AuthSystem::validateStoredToken()
         mState = AuthState::Authenticated;
         mUser.id = info.id;
         mUser.username = info.username;
+        mUser.displayName = info.displayName;
+        mUser.email = info.email;
+        mUser.bio = info.bio;
         mUser.avatarUrl = info.avatarUrl;
+        mUser.supporterTier = info.supporterTier;
+        mUser.role = info.role;
+        mUser.emailVerified = info.emailVerified;
+        mUser.createdAt = info.createdAt;
+        mUser.avatarData = info.avatarData;
         printf("[AUTH] session validated: user=%s id=%d\n",
                info.username.c_str(), info.id);
+
+        refreshStats();
     }
     else
     {
@@ -72,10 +82,59 @@ void AuthSystem::validateStoredToken()
     }
 }
 
+void AuthSystem::fetchFullProfile()
+{
+    GameUserInfo info = getProfile(mUser.sessionToken);
+    if (info.valid)
+    {
+        mUser.id = info.id;
+        mUser.username = info.username;
+        mUser.displayName = info.displayName;
+        mUser.email = info.email;
+        mUser.bio = info.bio;
+        mUser.avatarUrl = info.avatarUrl;
+        mUser.avatarData = info.avatarData;
+        mUser.supporterTier = info.supporterTier;
+        mUser.role = info.role;
+        mUser.createdAt = info.createdAt;
+    }
+}
+
+void AuthSystem::refreshProfile()
+{
+    if (mState != AuthState::Authenticated) return;
+    fetchFullProfile();
+}
+
+bool AuthSystem::updateProfile(const std::string& displayName, const std::string& bio)
+{
+    if (mState != AuthState::Authenticated) return false;
+    json updates;
+    if (!displayName.empty()) updates["display_name"] = displayName;
+    if (!bio.empty()) updates["bio"] = bio;
+    bool ok = ::updateProfile(mUser.sessionToken, updates);
+    if (ok) fetchFullProfile();
+    return ok;
+}
+
+void AuthSystem::refreshStats()
+{
+    if (mState != AuthState::Authenticated) return;
+    if (mUser.sessionToken.empty()) return;
+    mUser.stats = getStats(mUser.sessionToken);
+    printf("[AUTH] stats refreshed: mmr=%d wins=%d\n",
+           mUser.stats.currentMmr, mUser.stats.wins);
+}
+
 std::string AuthSystem::displayName() const
 {
-    if (mState == AuthState::Authenticated && !mUser.username.empty())
-        return mUser.username;
+    if (mState == AuthState::Authenticated)
+    {
+        if (!mUser.displayName.empty())
+            return mUser.displayName;
+        if (!mUser.username.empty())
+            return mUser.username;
+    }
     return mGuestName;
 }
 
@@ -146,6 +205,27 @@ void AuthSystem::pollLinkFlow()
     finishAuth(sessionToken);
 }
 
+void AuthSystem::startTokenExchange(const std::string& exchangeToken)
+{
+    mPendingExchangeToken = exchangeToken;
+    mState = AuthState::TokenExchange;
+
+    std::string sessionToken = exchangeTempToken(exchangeToken);
+    if (sessionToken.empty())
+    {
+        printf("[AUTH] token exchange failed\n");
+        mState = AuthState::NeedsLogin;
+        return;
+    }
+
+    finishAuth(sessionToken);
+}
+
+GameUserInfo AuthSystem::finishTokenExchange(const std::string& sessionToken)
+{
+    return validateSession(sessionToken);
+}
+
 void AuthSystem::finishAuth(const std::string& token)
 {
     storeSessionToken(token);
@@ -157,13 +237,23 @@ void AuthSystem::finishAuth(const std::string& token)
         mState = AuthState::Authenticated;
         mUser.id = info.id;
         mUser.username = info.username;
+        mUser.displayName = info.displayName;
+        mUser.email = info.email;
+        mUser.bio = info.bio;
         mUser.avatarUrl = info.avatarUrl;
+        mUser.supporterTier = info.supporterTier;
+        mUser.role = info.role;
+        mUser.emailVerified = info.emailVerified;
+        mUser.createdAt = info.createdAt;
+        mUser.avatarData = info.avatarData;
         printf("[AUTH] authenticated: user=%s id=%d\n",
                info.username.c_str(), info.id);
+
+        refreshStats();
     }
     else
     {
-        printf("[AUTH] session validation failed after finalize\n");
+        printf("[AUTH] session validation failed after auth\n");
         mState = AuthState::NeedsLogin;
     }
 }
@@ -178,8 +268,42 @@ void AuthSystem::logout()
     printf("[AUTH] logged out\n");
 }
 
+void AuthSystem::clearSession()
+{
+    clearSessionToken();
+    mUser.sessionToken.clear();
+    mState = AuthState::NeedsLogin;
+    mUser = {};
+    mGuestName = generateGuestName();
+    printf("[AUTH] session cleared\n");
+}
+
 void AuthSystem::skipLogin()
 {
     mState = AuthState::Offline;
     printf("[AUTH] offline mode, guest name=%s\n", mGuestName.c_str());
+}
+
+json AuthSystem::getCloudSettings()
+{
+    if (mState != AuthState::Authenticated) return {};
+    return getSettings(mUser.sessionToken);
+}
+
+bool AuthSystem::saveCloudSettings(const json& settings)
+{
+    if (mState != AuthState::Authenticated) return false;
+    return updateSettings(mUser.sessionToken, settings);
+}
+
+json AuthSystem::getCloudAvatarData()
+{
+    if (mState != AuthState::Authenticated) return {};
+    return getAvatarData(mUser.sessionToken);
+}
+
+bool AuthSystem::saveCloudAvatarData(const json& avatarData)
+{
+    if (mState != AuthState::Authenticated) return false;
+    return ::uploadAvatarData(mUser.sessionToken, avatarData);
 }

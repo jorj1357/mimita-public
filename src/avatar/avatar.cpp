@@ -18,8 +18,6 @@ using json = nlohmann::json;
 
 extern TextureStore gTextures;
 
-
-
 // AvatarPartFaces
 std::string& AvatarPartFaces::byName(const std::string& name) {
     if (name == "front") return front;
@@ -31,6 +29,25 @@ std::string& AvatarPartFaces::byName(const std::string& name) {
 }
 
 const std::string& AvatarPartFaces::byName(const std::string& name) const {
+    if (name == "front") return front;
+    if (name == "back") return back;
+    if (name == "left") return left;
+    if (name == "right") return right;
+    if (name == "top") return top;
+    return bottom;
+}
+
+// FaceSettings
+FaceSettings& PartFaceSettings::byName(const std::string& name) {
+    if (name == "front") return front;
+    if (name == "back") return back;
+    if (name == "left") return left;
+    if (name == "right") return right;
+    if (name == "top") return top;
+    return bottom;
+}
+
+const FaceSettings& PartFaceSettings::byName(const std::string& name) const {
     if (name == "front") return front;
     if (name == "back") return back;
     if (name == "left") return left;
@@ -84,6 +101,9 @@ void AvatarDefinition::clear() {
     rightArm = {};
     leftLeg = {};
     rightLeg = {};
+    colors = {};
+    cosmetics.clear();
+    activePreset.clear();
 }
 
 // AvatarSystem
@@ -105,6 +125,77 @@ std::string AvatarSystem::resolvePath(const std::string& relativePath) const {
     return mBasePath + "/" + relativePath;
 }
 
+// ── JSON helpers ────────────────────────────────────────────────────
+static json serializeTransform(const FaceTransform& t) {
+    return {
+        {"offsetX", t.offsetX},
+        {"offsetY", t.offsetY},
+        {"scale", t.scale},
+        {"rotation", t.rotation},
+        {"stretchMode", t.stretchMode},
+        {"hue", t.hue},
+        {"saturation", t.saturation},
+        {"brightness", t.brightness},
+        {"contrast", t.contrast}
+    };
+}
+
+static FaceTransform parseTransform(const json& j) {
+    FaceTransform t;
+    t.offsetX = j.value("offsetX", 0.0f);
+    t.offsetY = j.value("offsetY", 0.0f);
+    t.scale = j.value("scale", 1.0f);
+    t.rotation = j.value("rotation", 0.0f);
+    t.stretchMode = j.value("stretchMode", 0);
+    t.hue = j.value("hue", 0.0f);
+    t.saturation = j.value("saturation", 1.0f);
+    t.brightness = j.value("brightness", 1.0f);
+    t.contrast = j.value("contrast", 1.0f);
+    return t;
+}
+
+static json serializePartColors(const PartColors& c) {
+    json j;
+    j["head"]     = {c.head.x, c.head.y, c.head.z};
+    j["torso"]    = {c.torso.x, c.torso.y, c.torso.z};
+    j["leftArm"]  = {c.leftArm.x, c.leftArm.y, c.leftArm.z};
+    j["rightArm"] = {c.rightArm.x, c.rightArm.y, c.rightArm.z};
+    j["leftLeg"]  = {c.leftLeg.x, c.leftLeg.y, c.leftLeg.z};
+    j["rightLeg"] = {c.rightLeg.x, c.rightLeg.y, c.rightLeg.z};
+    return j;
+}
+
+static PartColors parsePartColors(const json& j) {
+    PartColors c;
+    auto read = [&](const std::string& key, glm::vec3& out) {
+        if (j.contains(key) && j[key].is_array() && j[key].size() >= 3)
+            out = {j[key][0], j[key][1], j[key][2]};
+    };
+    read("head", c.head);
+    read("torso", c.torso);
+    read("leftArm", c.leftArm);
+    read("rightArm", c.rightArm);
+    read("leftLeg", c.leftLeg);
+    read("rightLeg", c.rightLeg);
+    return c;
+}
+
+static json serializeCosmetics(const std::vector<CosmeticSlot>& cosmetics) {
+    json arr = json::array();
+    for (auto& c : cosmetics)
+        arr.push_back({{"slot", c.slot}, {"choice", c.choice}});
+    return arr;
+}
+
+static std::vector<CosmeticSlot> parseCosmetics(const json& arr) {
+    std::vector<CosmeticSlot> result;
+    if (!arr.is_array()) return result;
+    for (auto& j : arr)
+        result.push_back({j.value("slot", ""), j.value("choice", "")});
+    return result;
+}
+
+// ── Load / Save ─────────────────────────────────────────────────────
 bool AvatarSystem::loadAvatar(const std::string& avatarName) {
     mAvatarName = avatarName;
     mBasePath = avatarPath(avatarName);
@@ -151,11 +242,18 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
             readPart("rightLeg", mAvatar.rightLeg);
         }
 
+        if (root.contains("colors"))
+            mAvatar.colors = parsePartColors(root["colors"]);
+
+        if (root.contains("cosmetics"))
+            mAvatar.cosmetics = parseCosmetics(root["cosmetics"]);
+
+        mAvatar.activePreset = root.value("active_preset", "");
+
         if (!mAvatar.advancedMode)
             mAvatar.expandSimple();
 
         mHasAvatar = true;
-        // Initialize hot-reload tracker to avoid false reload on first frame
         const std::string jsonPathResolved = mBasePath + "/avatar.json";
         if (std::filesystem::exists(jsonPathResolved))
             mLastWriteTime = std::filesystem::last_write_time(jsonPathResolved);
@@ -183,7 +281,6 @@ bool AvatarSystem::saveSimple(const std::string& avatarName, const SimpleAvatar&
     root["simple"]["skin"] = simple.skin;
     root["advanced"] = json::object();
 
-    // Expand simple to advanced
     auto fillFace = [&](const std::string& key, const std::string& val) {
         root["advanced"][key] = val;
     };
@@ -198,6 +295,11 @@ bool AvatarSystem::saveSimple(const std::string& avatarName, const SimpleAvatar&
         for (const char* f : {"front", "back", "left", "right", "top", "bottom"})
             fillFace(std::string(part) + "_" + f, simple.pants);
     }
+
+    root["colors"] = serializePartColors(mAvatar.colors);
+    root["cosmetics"] = serializeCosmetics(mAvatar.cosmetics);
+    if (!mAvatar.activePreset.empty())
+        root["active_preset"] = mAvatar.activePreset;
 
     const std::string tmp = base + "/avatar.json.tmp";
     std::ofstream out(tmp);
@@ -239,6 +341,11 @@ bool AvatarSystem::saveAdvanced(const std::string& avatarName, const AvatarDefin
     writePart("leftLeg", def.leftLeg);
     writePart("rightLeg", def.rightLeg);
 
+    root["colors"] = serializePartColors(def.colors);
+    root["cosmetics"] = serializeCosmetics(def.cosmetics);
+    if (!def.activePreset.empty())
+        root["active_preset"] = def.activePreset;
+
     const std::string tmp = base + "/avatar.json.tmp";
     std::ofstream out(tmp);
     if (!out.is_open()) return false;
@@ -247,6 +354,114 @@ bool AvatarSystem::saveAdvanced(const std::string& avatarName, const AvatarDefin
     std::error_code ec;
     std::filesystem::rename(tmp, base + "/avatar.json", ec);
     return !ec;
+}
+
+void AvatarSystem::setPartColor(const std::string& part, const glm::vec3& color) {
+    if (part == "head") mAvatar.colors.head = color;
+    else if (part == "torso") mAvatar.colors.torso = color;
+    else if (part == "leftArm") mAvatar.colors.leftArm = color;
+    else if (part == "rightArm") mAvatar.colors.rightArm = color;
+    else if (part == "leftLeg") mAvatar.colors.leftLeg = color;
+    else if (part == "rightLeg") mAvatar.colors.rightLeg = color;
+}
+
+glm::vec3 AvatarSystem::partColor(const std::string& part) const {
+    if (part == "head") return mAvatar.colors.head;
+    if (part == "torso") return mAvatar.colors.torso;
+    if (part == "leftArm") return mAvatar.colors.leftArm;
+    if (part == "rightArm") return mAvatar.colors.rightArm;
+    if (part == "leftLeg") return mAvatar.colors.leftLeg;
+    if (part == "rightLeg") return mAvatar.colors.rightLeg;
+    return glm::vec3(1.0f);
+}
+
+bool AvatarSystem::savePreset(const std::string& presetName) {
+    const std::string base = avatarPath(mAvatarName);
+    std::filesystem::create_directories(base + "/presets");
+
+    json root;
+    root["name"] = presetName;
+    root["colors"] = serializePartColors(mAvatar.colors);
+
+    // Save all part face textures and transforms
+    json adv = json::object();
+    auto writePart = [&](const std::string& p, const AvatarPartFaces& part) {
+        adv[p + "_front"] = part.front;
+        adv[p + "_back"] = part.back;
+        adv[p + "_left"] = part.left;
+        adv[p + "_right"] = part.right;
+        adv[p + "_top"] = part.top;
+        adv[p + "_bottom"] = part.bottom;
+    };
+    writePart("head", mAvatar.head);
+    writePart("torso", mAvatar.torso);
+    writePart("leftArm", mAvatar.leftArm);
+    writePart("rightArm", mAvatar.rightArm);
+    writePart("leftLeg", mAvatar.leftLeg);
+    writePart("rightLeg", mAvatar.rightLeg);
+    root["advanced"] = adv;
+    root["cosmetics"] = serializeCosmetics(mAvatar.cosmetics);
+
+    const std::string path = base + "/presets/" + presetName + ".json";
+    std::ofstream out(path);
+    if (!out.is_open()) return false;
+    out << root.dump(2);
+    out.close();
+    Terminal::instance().addLog("[AVATAR] Saved preset: " + presetName);
+    return true;
+}
+
+bool AvatarSystem::loadPreset(const std::string& presetName) {
+    const std::string path = avatarPath(mAvatarName) + "/presets/" + presetName + ".json";
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+
+    try {
+        json root;
+        file >> root;
+
+        if (root.contains("colors"))
+            mAvatar.colors = parsePartColors(root["colors"]);
+
+        if (root.contains("advanced")) {
+            auto readPart = [&](const std::string& p, AvatarPartFaces& part) {
+                part.front = root["advanced"].value(p + "_front", "");
+                part.back = root["advanced"].value(p + "_back", "");
+                part.left = root["advanced"].value(p + "_left", "");
+                part.right = root["advanced"].value(p + "_right", "");
+                part.top = root["advanced"].value(p + "_top", "");
+                part.bottom = root["advanced"].value(p + "_bottom", "");
+            };
+            readPart("head", mAvatar.head);
+            readPart("torso", mAvatar.torso);
+            readPart("leftArm", mAvatar.leftArm);
+            readPart("rightArm", mAvatar.rightArm);
+            readPart("leftLeg", mAvatar.leftLeg);
+            readPart("rightLeg", mAvatar.rightLeg);
+        }
+
+        if (root.contains("cosmetics"))
+            mAvatar.cosmetics = parseCosmetics(root["cosmetics"]);
+
+        mAvatar.activePreset = presetName;
+        Terminal::instance().addLog("[AVATAR] Loaded preset: " + presetName);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+std::vector<std::string> AvatarSystem::listPresets() const {
+    std::vector<std::string> result;
+    const std::string dir = avatarPath(mAvatarName) + "/presets";
+    if (!std::filesystem::exists(dir)) return result;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".json") {
+            result.push_back(entry.path().stem().string());
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
 std::vector<std::string> AvatarSystem::listAvatars() const {

@@ -1,0 +1,72 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "elements": [
+    {
+      "id": "accountPanelBg",
+      "type": "panel",
+      "x": 1100,
+      "y": 0,
+      "width": 760,
+      "height": 1080,
+      "visible": true
+    },
+    {
+      "id": "usernameText",
+      "type": "text",
+      "x": 0,
+      "y": 30,
+      "width": 700,
+      "height": 40,
+      "fontSize": 0.45,
+      "textColor": [0.85, 0.9, 1.0, 1.0],
+      "visible": true
+    },
+    {
+      "id": "noAccountText",
+      "type": "text",
+      "x": 0,
+      "y": 30,
+      "width": 700,
+      "height": 36,
+      "fontSize": 0.36,
+      "textColor": [0.75, 0.8, 0.9, 1.0],
+      "visible": true
+    },
+    {
+      "id": "hintText",
+      "type": "text",
+      "x": 0,
+      "y": 60,
+      "width": 700,
+      "height": 24,
+      "fontSize": 0.24,
+      "textColor": [0.55, 0.6, 0.7, 1.0],
+      "visible": true
+    },
+    {
+      "id": "signInButton",
+      "type": "button",
+      "x": 0,
+      "y": 0,
+      "width": 260,
+      "height": 44,
+      "text": "Sign In",
+      "fontSize": 0.36,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.2, 0.5, 0.85, 1.0]
+    },
+    {
+      "id": "signUpButton",
+      "type": "button",
+      "x": 0,
+      "y": 0,
+      "width": 260,
+      "height": 44,
+      "text": "Sign Up",
+      "fontSize": 0.36,
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "backgroundColor": [0.2, 0.5, 0.25, 1.0]
+    }
+  ]
+}
