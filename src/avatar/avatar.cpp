@@ -204,6 +204,9 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
     mAvatar.basePath = mBasePath;
 
     const std::string jsonPath = mBasePath + "/avatar.json";
+    printf("[AVATAR] Loading avatar: %s\n", avatarName.c_str());
+    printf("[AVATAR] Path: %s\n", jsonPath.c_str());
+
     std::ifstream file(jsonPath);
     if (!file.is_open()) {
         Terminal::instance().addLog("[AVATAR] No avatar.json found at " + jsonPath + "; using defaults");
@@ -215,53 +218,129 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
         json root;
         file >> root;
 
-        json s = root.value("simple", json::object());
-        mAvatar.simple.face = s.value("face", "");
-        mAvatar.simple.shirt = s.value("shirt", "");
-        mAvatar.simple.pants = s.value("pants", "");
-        mAvatar.simple.skin = s.value("skin", "");
+        // Detect format: new (textures + faces) vs old (simple or advanced)
+        bool hasNewFormat = root.contains("textures") && root.contains("faces") && root["textures"].is_object() && root["faces"].is_object();
+        bool hasOldSimple = root.contains("simple") && root["simple"].is_object();
+        bool hasOldAdvanced = root.contains("advanced") && root["advanced"].is_object();
 
-        mAvatar.advancedMode = root.value("advanced_mode", false);
+        if (hasNewFormat) {
+            printf("[AVATAR] Format: mimita-avatar v1 (new alias-based)\n");
 
-        auto readPart = [&](const std::string& partName, AvatarPartFaces& part) {
-            std::string p = partName;
-            part.front = root["advanced"].value(p + "_front", "");
-            part.back = root["advanced"].value(p + "_back", "");
-            part.left = root["advanced"].value(p + "_left", "");
-            part.right = root["advanced"].value(p + "_right", "");
-            part.top = root["advanced"].value(p + "_top", "");
-            part.bottom = root["advanced"].value(p + "_bottom", "");
-        };
+            // Build texture alias map: alias -> resolved file path
+            std::unordered_map<std::string, std::string> aliasMap;
+            for (auto& [alias, val] : root["textures"].items()) {
+                std::string filename = val.get<std::string>();
+                std::string resolved = mBasePath + "/" + filename;
+                aliasMap[alias] = filename; // store relative filename for AvatarPartFaces
+                printf("[AVATAR]   Alias %s -> %s (%s)\n", alias.c_str(), filename.c_str(),
+                       std::filesystem::exists(resolved) ? "exists" : "MISSING");
+                if (!std::filesystem::exists(resolved))
+                    Terminal::instance().addLog("[AVATAR] Missing texture: " + resolved);
+            }
 
-        if (root.contains("advanced")) {
-            readPart("head", mAvatar.head);
-            readPart("torso", mAvatar.torso);
-            readPart("leftArm", mAvatar.leftArm);
-            readPart("rightArm", mAvatar.rightArm);
-            readPart("leftLeg", mAvatar.leftLeg);
-            readPart("rightLeg", mAvatar.rightLeg);
+            // Resolve face assignments: alias -> filename
+            const char* partKeys[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+            const char* faceKeys[] = {"front", "back", "left", "right", "top", "bottom"};
+            AvatarPartFaces AvatarDefinition::*partPtrs[] = {
+                &AvatarDefinition::head, &AvatarDefinition::torso,
+                &AvatarDefinition::leftArm, &AvatarDefinition::rightArm,
+                &AvatarDefinition::leftLeg, &AvatarDefinition::rightLeg
+            };
+
+            for (int pi = 0; pi < 6; ++pi) {
+                std::string partKey = partKeys[pi];
+                if (!root["faces"].contains(partKey) || !root["faces"][partKey].is_object()) {
+                    printf("[AVATAR]   %s: no faces defined\n", partKey.c_str());
+                    continue;
+                }
+                for (int fi = 0; fi < 6; ++fi) {
+                    std::string faceKey = faceKeys[fi];
+                    std::string alias;
+                    auto& faceObj = root["faces"][partKey];
+                    if (faceObj.is_object() && faceObj.contains(faceKey)) {
+                        auto& val = faceObj[faceKey];
+                        if (val.is_string())
+                            alias = val.get<std::string>();
+                        else if (val.is_object() && val.contains("texture"))
+                            alias = val["texture"].get<std::string>();
+                    }
+                    if (alias.empty()) continue;
+
+                    auto it = aliasMap.find(alias);
+                    std::string filename = (it != aliasMap.end()) ? it->second : alias;
+                    printf("[AVATAR]     %s.%s -> %s -> %s\n", partKey.c_str(), faceKey.c_str(),
+                           alias.c_str(), filename.c_str());
+
+                    // Check if file actually exists
+                    std::string fullPath = mBasePath + "/" + filename;
+                    if (!std::filesystem::exists(fullPath)) {
+                        printf("[AVATAR]     WARNING: file not found: %s\n", fullPath.c_str());
+                    }
+
+                    // Store resolved filename in AvatarPartFaces
+                    (mAvatar.*partPtrs[pi]).byName(faceKey) = filename;
+                }
+            }
+
+            printf("[AVATAR] Loaded new-format avatar: %s\n", avatarName.c_str());
+        } else if (hasOldSimple || hasOldAdvanced) {
+            printf("[AVATAR] Format: legacy (simple/advanced)\n");
+
+            if (hasOldSimple) {
+                auto& s = root["simple"];
+                mAvatar.simple.face = s.value("face", "");
+                mAvatar.simple.shirt = s.value("shirt", "");
+                mAvatar.simple.pants = s.value("pants", "");
+                mAvatar.simple.skin = s.value("skin", "");
+                printf("[AVATAR]   simple: face=%s shirt=%s pants=%s skin=%s\n",
+                       mAvatar.simple.face.c_str(), mAvatar.simple.shirt.c_str(),
+                       mAvatar.simple.pants.c_str(), mAvatar.simple.skin.c_str());
+            }
+
+            mAvatar.advancedMode = root.value("advanced_mode", false);
+
+            if (hasOldAdvanced) {
+                auto readPart = [&](const std::string& p, AvatarPartFaces& part) {
+                    part.front = root["advanced"].value(p + "_front", "");
+                    part.back = root["advanced"].value(p + "_back", "");
+                    part.left = root["advanced"].value(p + "_left", "");
+                    part.right = root["advanced"].value(p + "_right", "");
+                    part.top = root["advanced"].value(p + "_top", "");
+                    part.bottom = root["advanced"].value(p + "_bottom", "");
+                };
+                readPart("head", mAvatar.head);
+                readPart("torso", mAvatar.torso);
+                readPart("leftArm", mAvatar.leftArm);
+                readPart("rightArm", mAvatar.rightArm);
+                readPart("leftLeg", mAvatar.leftLeg);
+                readPart("rightLeg", mAvatar.rightLeg);
+            }
+
+            if (!mAvatar.advancedMode)
+                mAvatar.expandSimple();
+        } else {
+            printf("[AVATAR] ERROR: avatar.json has no recognized format\n");
+            Terminal::instance().addLog("[AVATAR] Unrecognized format in " + jsonPath);
+            mHasAvatar = true;
+            return false;
         }
 
+        // Shared fields for both formats
         if (root.contains("colors"))
             mAvatar.colors = parsePartColors(root["colors"]);
-
         if (root.contains("cosmetics"))
             mAvatar.cosmetics = parseCosmetics(root["cosmetics"]);
-
         mAvatar.activePreset = root.value("active_preset", "");
 
-        if (!mAvatar.advancedMode)
-            mAvatar.expandSimple();
-
         mHasAvatar = true;
-        const std::string jsonPathResolved = mBasePath + "/avatar.json";
-        if (std::filesystem::exists(jsonPathResolved))
-            mLastWriteTime = std::filesystem::last_write_time(jsonPathResolved);
+        if (std::filesystem::exists(jsonPath))
+            mLastWriteTime = std::filesystem::last_write_time(jsonPath);
         mLastCheckTime = std::chrono::steady_clock::now();
         Terminal::instance().addLog("[AVATAR] Loaded avatar: " + avatarName);
         return true;
     } catch (const std::exception& e) {
         Terminal::instance().addLog("[AVATAR] Failed to parse avatar.json: " + std::string(e.what()));
+        printf("[AVATAR] Parse error: %s\n", e.what());
         mHasAvatar = true;
         return false;
     }
@@ -540,4 +619,46 @@ void AvatarSystem::pollHotReload() {
     extern Player* gpPlayer;
     if (gpPlayer)
         applyToPlayer(*gpPlayer, true);
+}
+
+// ── Apply single texture (replaces OutfitAtlas) ─────────────────────
+bool AvatarSystem::applySingleTexture(Player& player, const std::string& texturePath, bool reloadTexture)
+{
+    GLuint texture = gTextures.getPath(texturePath, reloadTexture);
+    if (!texture) return false;
+
+    for (size_t partIndex = 0; partIndex < player.physicalBody.partMeshes.size(); ++partIndex) {
+        auto& mesh = player.physicalBody.partMeshes[partIndex];
+        if (mesh.verts.empty()) continue;
+
+        // Compute per-triangle UVs (same as atlas but without atlas lookup)
+        glm::vec3 mn = mesh.verts[0].pos, mx = mesh.verts[0].pos;
+        for (auto& v : mesh.verts) { mn = glm::min(mn, v.pos); mx = glm::max(mx, v.pos); }
+        for (size_t i = 0; i + 2 < mesh.verts.size(); i += 3) {
+            glm::vec3 normal = mesh.verts[i].normal + mesh.verts[i+1].normal + mesh.verts[i+2].normal;
+            if (glm::dot(normal, normal) < 0.000001f)
+                normal = glm::cross(mesh.verts[i+1].pos - mesh.verts[i].pos, mesh.verts[i+2].pos - mesh.verts[i].pos);
+            // Use faceColumnForNormal from avatar-atlas.cpp via a local copy
+            glm::vec3 a = glm::abs(normal);
+            int col = (a.z >= a.x && a.z >= a.y) ? (normal.z >= 0 ? 4 : 5) :
+                      (a.y >= a.x) ? (normal.y <= 0 ? 0 : 1) : (normal.x <= 0 ? 2 : 3);
+            glm::vec3 size = glm::max(mx - mn, glm::vec3(0.0001f));
+            for (size_t v = i; v < i + 3; ++v) {
+                auto& vert = mesh.verts[v];
+                glm::vec2 uv;
+                if (col == 4 || col == 5)
+                    uv = {(vert.pos.x - mn.x) / size.x, (vert.pos.y - mn.y) / size.y};
+                else if (col <= 1)
+                    uv = {(vert.pos.x - mn.x) / size.x, (vert.pos.z - mn.z) / size.z};
+                else
+                    uv = {(vert.pos.y - mn.y) / size.y, (vert.pos.z - mn.z) / size.z};
+                if (col == 1 || col == 3 || col == 5) uv.x = 1.0f - uv.x;
+                vert.uv = glm::clamp(uv, glm::vec2(0.0f), glm::vec2(1.0f));
+            }
+        }
+        for (auto& batch : mesh.batches)
+            batch.texture = texture;
+    }
+    player.bodyPartMeshes = player.physicalBody.partMeshes;
+    return true;
 }

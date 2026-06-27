@@ -9,7 +9,7 @@
 #include "input/input-poll.h"
 #include "config/player-settings.h"
 #include "network/packets.h"
-#include "outfit/outfit-system.h"
+#include "avatar/avatar.h"
 
 // TODO(main-cleanup): move to devtools/dev-teleport.cpp
 static bool parseTeleportPosition(
@@ -197,7 +197,7 @@ void registerPlayerCommands()
                 Terminal::instance().addLog("[ERROR] Usage: setoutfit <path>");
                 return;
             }
-            if (OutfitSystem::applySingleTexture(player, args[0])) {
+            if (AvatarSystem::applySingleTexture(player, args[0])) {
                 GetPlayerSettings().outfitPath = args[0];
                 SavePlayerSettings();
             }
@@ -207,7 +207,7 @@ void registerPlayerCommands()
         "reloadoutfit", "Reload the current outfit PNG from disk", "reloadoutfit",
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
-            OutfitSystem::applySingleTexture(player, GetPlayerSettings().outfitPath, true);
+            AvatarSystem::applySingleTexture(player, GetPlayerSettings().outfitPath, true);
         }
     });
     Terminal::instance().registerCommand({
@@ -257,4 +257,5 @@ void registerPlayerCommands()
         }
     });
 }
+
 

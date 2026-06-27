@@ -84,7 +84,7 @@
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 void registerCompetitiveCommands();
-#include "outfit/outfit-system.h"
+
 #include "avatar/avatar-menu.h"
 #include "avatar/character-registry.h"
 #include "render/lighting-config.h"
@@ -213,17 +213,11 @@ void gameInitSubsystems(Engine& engine)
     if (!GetPlayerSettings().characterName.empty())
         player.loadCharacter(GetPlayerSettings().characterName);
 
-    OutfitSystem::applySingleTexture(player, GetPlayerSettings().outfitPath);
+
     if (!GetPlayerSettings().avatarName.empty())
         AvatarSystem::instance().loadAvatar(GetPlayerSettings().avatarName);
     if (AvatarSystem::instance().hasAvatar())
         AvatarSystem::instance().applyToPlayer(player);
-
-    // OutfitSystem loads outfit.json on top (overrides avatar atlas)
-    if (!GetPlayerSettings().avatarName.empty()) {
-        if (OutfitSystem::instance().load(GetPlayerSettings().avatarName))
-            OutfitSystem::instance().applyToPlayer(player);
-    }
 
     printf("[MAIN] player made\n");
 

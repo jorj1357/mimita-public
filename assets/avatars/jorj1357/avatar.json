@@ -1,13 +1,65 @@
 {
-  "name": "jorj1357",
+  "format": "mimita-avatar",
   "version": 1,
-  "advanced_mode": false,
-  "simple": {
+  "name": "jorj1357",
+  "textures": {
+    "skin": "skin.png",
     "face": "face.png",
     "shirt": "shirt.png",
     "pants": "pants.png",
-    "skin": "skin.png",
-    "clown": "clown1.png"
+    "evil": "evil1.png",
+    "clown": "clown.jpg",
+    "clown1": "clown1.png"
+  },
+  "faces": {
+    "head": {
+      "front": "clown1",
+      "back": "evil",
+      "left": "skin",
+      "right": "skin",
+      "top": "skin",
+      "bottom": "skin"
+    },
+    "torso": {
+      "front": "shirt",
+      "back": "shirt",
+      "left": "shirt",
+      "right": "shirt",
+      "top": "shirt",
+      "bottom": "shirt"
+    },
+    "leftArm": {
+      "front": "shirt",
+      "back": "shirt",
+      "left": "shirt",
+      "right": "shirt",
+      "top": "shirt",
+      "bottom": "shirt"
+    },
+    "rightArm": {
+      "front": "shirt",
+      "back": "shirt",
+      "left": "shirt",
+      "right": "shirt",
+      "top": "shirt",
+      "bottom": "shirt"
+    },
+    "leftLeg": {
+      "front": "pants",
+      "back": "pants",
+      "left": "pants",
+      "right": "pants",
+      "top": "pants",
+      "bottom": "pants"
+    },
+    "rightLeg": {
+      "front": "pants",
+      "back": "pants",
+      "left": "pants",
+      "right": "pants",
+      "top": "pants",
+      "bottom": "pants"
+    }
   },
   "colors": {
     "head": [0.0, 0.0, 0.0],

@@ -5,7 +5,7 @@
 #include "perf/perf.h"
 #include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
-#include "outfit/outfit-system.h"
+
 #include "crosshair/crosshair-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
@@ -24,10 +24,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     updatePlayerProceduralHotReload(dt);
     CrosshairConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
-    {
-        extern Player* gpPlayer;
-        OutfitSystem::instance().pollHotReload(gpPlayer);
-    }
     worldPassRan = false;
 
     {
