@@ -209,8 +209,14 @@ static void applyScaleAndOffset(std::vector<unsigned char>& pixels,
     if (sy + sampH > srcH) sampH = srcH - sy;
     if (sampW <= 0 || sampH <= 0) return;
 
-    if (sx == 0 && sy == 0 && sampW == srcW && sampH == srcH)
+    if (sx == 0 && sy == 0 && sampW == srcW && sampH == srcH) {
+        if (srcW != USABLE || srcH != USABLE) {
+            std::vector<unsigned char> resized(USABLE * USABLE * 4);
+            stbir_resize_uint8_linear(pixels.data(), srcW, srcH, 0, resized.data(), USABLE, USABLE, 0, STBIR_RGBA);
+            pixels = std::move(resized);
+        }
         return;
+    }
 
     std::vector<unsigned char> cropped(sampW * sampH * 4);
     for (int y = 0; y < sampH; ++y)
