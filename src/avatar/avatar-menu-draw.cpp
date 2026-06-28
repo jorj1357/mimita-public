@@ -47,6 +47,9 @@ float gPendingScaleX = 1.0f;
 float gPendingScaleY = 1.0f;
 float gPendingOffsetX = 0.0f;
 float gPendingOffsetY = 0.0f;
+float gPendingColorR = 1.0f;
+float gPendingColorG = 1.0f;
+float gPendingColorB = 1.0f;
 
 // ── String tables ───────────────────────────────────────────────────
 const char* kPartLabels[] = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
@@ -396,6 +399,13 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                 drawTransformRow("Scale Y:", gPendingScaleY, 0.1f, 0.1f, 10.0f);
                 drawTransformRow("Offset X:", gPendingOffsetX, 1.0f, -1000.0f, 1000.0f);
                 drawTransformRow("Offset Y:", gPendingOffsetY, 1.0f, -1000.0f, 1000.0f);
+
+                // Color multiplier controls
+                uiDrawText("Color:", uiScaleX(px + 4.0f), uiScaleY(cy), 0.50f, {0.4f, 1.0f, 0.6f, 1.0f});
+                cy += 22.0f;
+                drawTransformRow("R:", gPendingColorR, 0.1f, 0.0f, 10.0f);
+                drawTransformRow("G:", gPendingColorG, 0.1f, 0.0f, 10.0f);
+                drawTransformRow("B:", gPendingColorB, 0.1f, 0.0f, 10.0f);
             }
 
             // Face grid
@@ -453,6 +463,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                     tf.scaleY = gPendingScaleY;
                     tf.offsetX = gPendingOffsetX;
                     tf.offsetY = gPendingOffsetY;
+                    tf.color = glm::vec3(gPendingColorR, gPendingColorG, gPendingColorB);
                     av.setPartFaceTransform(kPartKeys[pi], kFaceKeys[fi], tf);
                 }
                 Terminal::instance().addLog("[AVATAR] Applied to " + std::to_string(gCheckedFaces.size()) + " faces");

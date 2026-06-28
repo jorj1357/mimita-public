@@ -307,6 +307,17 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                 cellPixels = std::move(scaled);
             }
 
+            // Apply per-face color multiplier (RGB multiply)
+            if (fs.transform.color != glm::vec3(1.0f)) {
+                for (int py = 0; py < USABLE; ++py)
+                    for (int px = 0; px < USABLE; ++px) {
+                        unsigned char* p = &cellPixels[(py * USABLE + px) * 4];
+                        p[0] = (unsigned char)std::clamp(p[0] * fs.transform.color.r, 0.0f, 255.0f);
+                        p[1] = (unsigned char)std::clamp(p[1] * fs.transform.color.g, 0.0f, 255.0f);
+                        p[2] = (unsigned char)std::clamp(p[2] * fs.transform.color.b, 0.0f, 255.0f);
+                    }
+            }
+
             // Apply default 90-degree CCW rotation, then per-face rotation on top
             float totalRotation = DEFAULT_TEXTURE_ROTATION;
             if (fs.transform.rotation != 0.0f)
