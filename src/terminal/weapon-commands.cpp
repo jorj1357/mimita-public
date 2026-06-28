@@ -75,6 +75,8 @@ void registerWeaponCommands()
                         netWeapon = MimitaNet::NETWORK_WEAPON_GODBALL;
                     else if (wdef->id == "swordsword")
                         netWeapon = MimitaNet::NETWORK_WEAPON_SWORDSWORD;
+                    else if (wdef->id == "rocket_launcher")
+                        netWeapon = MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER;
                 }
                 MimitaNet::mpSendShotEvent(
                     mpContext, targetId, damage, shot.damage,

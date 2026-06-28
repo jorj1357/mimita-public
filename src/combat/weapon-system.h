@@ -8,6 +8,7 @@
 #include "weapon-viewmodel.h"
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
+#include "weapon-rocket-launcher.h"
 
 class Camera;
 class Player;
@@ -24,17 +25,17 @@ class WeaponSystem {
 public:
     WeaponSystem();
 
-    void update(const Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt);
+    void update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt);
     void render(const Camera& camera, const Player& player) const;
     RevolverShotResult fire(
-        const Camera& camera,
+        Camera& camera,
         Player& player,
         NpcSystem& npcs,
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers = nullptr);
 
     RevolverShotResult fireAlt(
-        const Camera& camera,
+        Camera& camera,
         Player& player,
         NpcSystem& npcs,
         const World& world);
@@ -69,6 +70,7 @@ private:
     WeaponViewModel mViewModels[MAX_SLOTS];
     GodballPhysics mGodballPhys;
     SwordswordState mSwordswordState;
+    RocketLauncherState mRocketState;
     float mShotCooldown = 0.0f;
     float mShootingTimer = 0.0f;
     float mRecoilValue = 0.0f;
@@ -87,8 +89,9 @@ private:
         NpcSystem& npcs,
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers);
-    void fireGodball(const Camera& camera, Player& player, NpcSystem& npcs, const World& world);
-    void fireSwordsword(const Camera& camera, Player& player, NpcSystem& npcs);
+    void fireGodball(Camera& camera, Player& player, NpcSystem& npcs, const World& world);
+    void fireSwordsword(Camera& camera, Player& player, NpcSystem& npcs);
+    void fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world);
 
     WeaponRuntime* getCurrentRuntime(Player& player);
 

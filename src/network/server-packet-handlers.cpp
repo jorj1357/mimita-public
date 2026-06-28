@@ -47,7 +47,8 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         shot->weapon == NETWORK_WEAPON_REVOLVER ||
         shot->weapon == NETWORK_WEAPON_GODBALL ||
         shot->weapon == NETWORK_WEAPON_SHOTGUN ||
-        shot->weapon == NETWORK_WEAPON_SWORDSWORD;
+        shot->weapon == NETWORK_WEAPON_SWORDSWORD ||
+        shot->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER;
     const bool validImpact =
         shot->impactType <= SHOT_IMPACT_ENTITY;
     const glm::vec3 origin{

@@ -40,9 +40,18 @@ void engineTick(Engine& engine)
 {
     float dt;
     bool worldPassRan;
-    engineTickSetup(engine, dt, worldPassRan);
-    engineTickAudio(dt);
-    engineTickState(engine, dt);
+    {
+        Perf::ScopedTimer _t("Setup");
+        engineTickSetup(engine, dt, worldPassRan);
+    }
+    {
+        Perf::ScopedTimer _t("Audio");
+        engineTickAudio(dt);
+    }
+    {
+        Perf::ScopedTimer _t("State");
+        engineTickState(engine, dt);
+    }
 
     const bool replayExportForceRender =
         (getReplayExportJob().state == ReplayExportJob::Capturing ||
@@ -50,12 +59,12 @@ void engineTick(Engine& engine)
 
     if (GAME_STATE == GAME_PLAYING || replayExportForceRender)
     {
-        engineTickReplay(engine, dt);
-        engineTickNet(engine, dt);
-        engineTickCamera(engine, dt);
-        engineTickCombat(engine, dt);
-        engineTickRender(engine, dt, worldPassRan);
-        engineTickUI(engine, dt, worldPassRan);
+        { Perf::ScopedTimer _t("Replay"); engineTickReplay(engine, dt); }
+        { Perf::ScopedTimer _t("Networking"); engineTickNet(engine, dt); }
+        { Perf::ScopedTimer _t("Camera"); engineTickCamera(engine, dt); }
+        { Perf::ScopedTimer _t("Combat"); engineTickCombat(engine, dt); }
+        { Perf::ScopedTimer _t("Rendering"); engineTickRender(engine, dt, worldPassRan); }
+        { Perf::ScopedTimer _t("UI"); engineTickUI(engine, dt, worldPassRan); }
 
         if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
             DevOverlay::instance().render();

@@ -57,7 +57,7 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
     return rt;
 }
 
-void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
+void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
     mShotCooldown = std::max(0.0f, mShotCooldown - dt);
     mShootingTimer = std::max(0.0f, mShootingTimer - dt);
     mRecoilValue = std::max(0.0f, mRecoilValue - dt * 15.0f);
@@ -107,6 +107,8 @@ void WeaponSystem::update(const Camera& camera, Player& player, NpcSystem& npcs,
             WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::Swordsword) {
             WeaponSwordsword::update(mSwordswordState, *def, *rt, player, camera, npcs, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+            WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else {
             if (mGodballPhys.active) {
                 WeaponGodball::despawnBall(mGodballPhys);
@@ -149,7 +151,7 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
 }
 
 RevolverShotResult WeaponSystem::fire(
-    const Camera& camera,
+    Camera& camera,
     Player& player,
     NpcSystem& npcs,
     const World& world,
@@ -175,6 +177,11 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::Swordsword) {
         fireSwordsword(camera, player, npcs);
+        return {};
+    }
+
+    if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+        fireRocketLauncher(camera, player, npcs, world);
         return {};
     }
 
@@ -309,12 +316,36 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
     return hits;
 }
 
-void WeaponSystem::fireGodball(const Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
+void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
+    const WeaponDefinition* def = getCurrentDef(player);
+    WeaponRuntime* rt = getCurrentRuntime(player);
+    if (!def || !rt) return;
+
+    if (rt->isReloading || rt->fireCooldown > 0.0f) return;
+
+    if (rt->currentAmmo <= 0) {
+        WeaponAudio::playDryFireSound(*def);
+        if (!rt->isReloading && rt->reserveAmmo > 0)
+            reload(player);
+        return;
+    }
+
+    int idx = slotIndex(def->slot);
+    const WeaponViewModel& vm = mViewModels[idx];
+    glm::vec3 muzzlePos = vm.muzzle;
+    glm::vec3 muzzleDir = vm.forward;
+
+    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, muzzleDir);
+    mShotCooldown = def->fireDelay;
+    AnalyticsManager::instance().trackWeaponUsed(def->id);
+}
+
+void WeaponSystem::fireGodball(Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
     // Overlap damage is handled continuously in update().
     // Fire input is a no-op for godball (always "automatic").
 }
 
-void WeaponSystem::fireSwordsword(const Camera& camera, Player& player, NpcSystem& npcs) {
+void WeaponSystem::fireSwordsword(Camera& camera, Player& player, NpcSystem& npcs) {
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return;
@@ -335,7 +366,7 @@ void WeaponSystem::fireSwordsword(const Camera& camera, Player& player, NpcSyste
 }
 
 RevolverShotResult WeaponSystem::fireAlt(
-    const Camera& camera,
+    Camera& camera,
     Player& player,
     NpcSystem& npcs,
     const World& world) {

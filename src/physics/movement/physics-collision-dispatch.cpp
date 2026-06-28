@@ -13,6 +13,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "perf/perf.h"
 #include "config/player-settings.h"
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"

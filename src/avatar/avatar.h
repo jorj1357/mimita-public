@@ -20,6 +20,7 @@ struct FaceTransform {
     float brightness = 0.0f;     // -10 to 10, 0 = unchanged
     int stretchMode = 0;         // 0=stretch, 1=crop
     glm::vec3 color = glm::vec3(1.0f); // Per-face color multiplier (RGB multiply)
+    float transparency = 0.0f;   // 0=opaque, 1=invisible
 };
 
 struct FaceSettings {
