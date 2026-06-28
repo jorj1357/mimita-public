@@ -86,11 +86,13 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
         return;
     }
     modelLoadAttempted = true;
+    printf("[Weapon] Loading model: %s\n", modelPath.c_str());
     heldMesh = loadGLB(modelPath);
     if (heldMesh.verts.empty()) {
-        printf("[VIEWMODEL] model failed to load: %s\n", modelPath.c_str());
+        printf("[Weapon ERROR] Failed to load model:\n  %s\n", modelPath.c_str());
         return;
     }
+    printf("[Weapon] Loaded successfully: %s (verts=%zu)\n", modelPath.c_str(), heldMesh.verts.size());
 
     glm::vec3 boundsMin = heldMesh.verts.front().pos;
     glm::vec3 boundsMax = boundsMin;
@@ -132,6 +134,8 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                              const WeaponDefinition* def, bool updatePlayerPose,
                              const World* world) {
     loadModel(def ? def->modelPath : "");
+    if (def && def->id == "rocket_launcher" && !def->modelPath.empty())
+        printf("[Weapon] Rocket launcher using: %s\n", def->modelPath.c_str());
     if (world)
         player.collision.hasWeaponCollisionCapsule = false;
     if (updatePlayerPose)
