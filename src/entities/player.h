@@ -302,7 +302,8 @@ public:
     void renderCurrentPose(unsigned int shader,
                            const glm::mat4& view,
                            const glm::mat4& proj,
-                           bool whiteOverride = false) const;
+                           bool whiteOverride = false,
+                           bool hideHead = false) const;
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
@@ -320,7 +321,8 @@ public:
     void updateAudio(float dt);
     void render(unsigned int shader,
                 const glm::mat4& view,
-                const glm::mat4& proj) const;
+                const glm::mat4& proj,
+                bool hideHead = false) const;
     void renderDepth(unsigned int shadowShader,
                      const glm::mat4& lightViewProj) const;
 

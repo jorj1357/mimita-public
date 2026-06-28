@@ -24,11 +24,12 @@ void uploadPlayerMeshIfNeeded(const Mesh& mesh);
 
 void Player::render(unsigned int shader,
                     const glm::mat4& view,
-                    const glm::mat4& proj) const
+                    const glm::mat4& proj,
+                    bool hideHead) const
 {
     const_cast<Player*>(this)->updateModelWorldTransforms();
     bool flash = spawnFlashTimer > 0.0f;
-    renderCurrentPose(shader, view, proj, flash);
+    renderCurrentPose(shader, view, proj, flash, hideHead);
 }
 
 void Player::applyReplayPose(
@@ -63,7 +64,8 @@ void Player::applyReplayPose(
 void Player::renderCurrentPose(unsigned int shader,
                                const glm::mat4& view,
                                const glm::mat4& proj,
-                               bool whiteOverride) const
+                               bool whiteOverride,
+                               bool hideHead) const
 {
     {
         static bool perfModelLogged = false;
@@ -110,6 +112,8 @@ void Player::renderCurrentPose(unsigned int shader,
             const PhysicalBodyPart& part = physicalBody.parts[i];
             const Mesh& mesh = physicalBody.partMeshes[i];
             if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
+                continue;
+            if (hideHead && part.name == "head")
                 continue;
 
             uploadBodyPartMeshPart(mesh, (int)i);

@@ -13,6 +13,7 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "renderer/renderer.h"
+#include "terminal/terminal-state.h"
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -73,10 +74,12 @@ void renderPlayerInternal(
         lastLogMs[networkEntityId] = nowMs;
     }
 
+    bool hideHead = isLocal && !cam.thirdPerson;
     player.render(
         gRenderer->shaderProgram,
         view,
-        proj
+        proj,
+        hideHead
     );
 }
 

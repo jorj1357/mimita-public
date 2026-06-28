@@ -19,6 +19,7 @@
 #include "game/duel.h"
 #include "devtools/terminal.h"
 #include "game/game-state.h"
+#include "physics/config.h"
 
 extern DuelManager gDuelManager;
 
@@ -76,6 +77,12 @@ void engineTickCamera(Engine& engine, float dt)
     } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
         camera.follow(gDuelManager.winnerCameraTarget());
         camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt);
+    } else if (!camera.thirdPerson) {
+        // First-person camera at eye height
+        float eyeHeight = PLAYER_HEIGHT * 0.52f;
+        camera.pos = player.pos + glm::vec3(0.0f, 0.0f, eyeHeight);
+        // Apply punch for weapon recoil
+        camera.pos += camera.front * glm::vec3(0.0f, 0.0f, 0.0f); // no offset
     } else {
         camera.follow(player.pos);
         camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt);
