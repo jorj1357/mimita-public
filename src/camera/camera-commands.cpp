@@ -6,6 +6,8 @@
 #include "config/player-settings.h"
 #include "replay/replay.h"
 
+#include "physics/config.h"
+
 void registerCameraCommands()
 {
     Terminal::instance().registerCommand({
@@ -62,6 +64,16 @@ void registerCameraCommands()
             float val = std::clamp(std::stof(args[0]), 0.0f, 10.0f);
             THE_CAMERA.smoothness = val;
             Terminal::instance().addLog("camera_smoothness set to " + std::to_string(val));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "thirdp", "Toggle third-person / first-person camera", "thirdp <0|1>",
+        [](const std::vector<std::string>& args) {
+            Camera& cam = THE_CAMERA;
+            bool was = cam.thirdPerson;
+            cam.thirdPerson = args.empty() ? !was : args[0] != "0";
+            Terminal::instance().addLog(std::string("Camera Mode: ") +
+                (cam.thirdPerson ? "Third Person" : "First Person"));
         }
     });
 }

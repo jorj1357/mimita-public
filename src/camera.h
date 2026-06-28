@@ -63,6 +63,8 @@ bool firstMouse = true;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;
 
+    bool thirdPerson = true;
+
     void updateVectors(); 
     void decayPunch(float dt);
     void addPunch(float pitchAmount, float yawAmount);
