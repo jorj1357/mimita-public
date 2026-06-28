@@ -39,7 +39,7 @@ static void doSaveInstantReplay()
 }
 
 // ============================================================
-// rplx list - List replay JSON files newest first
+// rplx list - List 30 most recent replay files
 // ============================================================
 static void doReplayList()
 {
@@ -49,20 +49,39 @@ static void doReplayList()
         return;
     }
 
+    int count = std::min((size_t)30, clips.size());
     char buf[256];
-    std::snprintf(buf, sizeof(buf), "[REPLAY] %zu replay(s) found (newest first):", clips.size());
+    std::snprintf(buf, sizeof(buf), "Replay Library (%d most recent)", count);
     Terminal::instance().addLog(buf);
+    Terminal::instance().addLog("");
 
-    int count = std::min((size_t)50, clips.size());
     for (int i = 0; i < count; i++) {
         std::filesystem::path p(clips[i]);
         std::string filename = p.filename().string();
-        std::snprintf(buf, sizeof(buf), "  %d  %s", i + 1, filename.c_str());
-        Terminal::instance().addLog(buf);
-    }
-    if ((size_t)count < clips.size()) {
-        std::snprintf(buf, sizeof(buf), "  ... and %zu more", clips.size() - count);
-        Terminal::instance().addLog(buf);
+
+        // Extract date from parent directory name (MM-DD-YYYY)
+        std::string dateStr = p.parent_path().filename().string();
+        // Extract time from filename prefix (HH-MM-SS-replay.json)
+        std::string timeStr;
+        for (size_t ci = 0; ci < filename.size() && filename[ci] != '-'; ci++)
+            timeStr += filename[ci];
+        // Build readable time
+        char timeBuf[32] = "??";
+        if (filename.size() >= 8) {
+            int h = 0, m = 0, s = 0;
+            if (std::sscanf(filename.c_str(), "%d-%d-%d", &h, &m, &s) >= 2)
+                std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", h, m, s);
+        }
+
+        char line[128];
+        if (dateStr.size() == 10 && timeBuf[0] != '?') {
+            std::snprintf(line, sizeof(line), "%d  %s %s", i + 1, dateStr.c_str(), timeBuf);
+            Terminal::instance().addLog(line);
+            std::snprintf(line, sizeof(line), "   %s", filename.c_str());
+        } else {
+            std::snprintf(line, sizeof(line), "%d  %s", i + 1, filename.c_str());
+        }
+        Terminal::instance().addLog(line);
     }
 }
 
