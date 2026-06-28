@@ -189,6 +189,7 @@ async function authenticate(req, res, next) {
                 s.id AS session_id,
                 u.id,
                 u.username,
+                u.display_name,
                 u.email,
                 u.bio,
                 u.avatar_url,
