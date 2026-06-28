@@ -12,8 +12,8 @@ class Player;
 struct FaceTransform {
     float offsetX = 0.0f;
     float offsetY = 0.0f;
-    float scaleX = 1.0f;         // 0.1-inf, 1.0 = original size
-    float scaleY = 1.0f;         // 0.1-inf, 1.0 = original size
+    float scaleX = 1.0f;         // 0.001-inf, 1.0 = original size
+    float scaleY = 1.0f;         // 0.001-inf, 1.0 = original size
     float rotation = 0.0f;       // 0-360 degrees
     float hueShift = 0.0f;       // 0-360 hue rotation
     float saturation = 0.0f;     // -10 to 10, 0 = unchanged

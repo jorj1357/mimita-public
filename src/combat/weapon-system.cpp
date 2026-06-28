@@ -96,7 +96,9 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         rt->shootEffectTimer = std::max(0.0f, rt->shootEffectTimer - dt);
 
         int idx = slotIndex(def->slot);
+        printf("[VMTRACE] WeaponSystem::update calling mViewModels[%d].update for %s\n", idx, def->id.c_str());
         mViewModels[idx].update(camera, player, dt, def, true, &world);
+        printf("[VMTRACE] WeaponSystem::update done for %s (slot=%d idx=%d)\n", def->id.c_str(), def->slot, idx);
 
         if (def->behaviorType == WeaponBehaviorType::Godball) {
             if (!mGodballPhys.active) {
@@ -127,10 +129,14 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
 
 void WeaponSystem::render(const Camera& camera, const Player& player) const {
     const WeaponDefinition* def = getCurrentDef(player);
+    printf("[VMTRACE] WeaponSystem::render: def=%p id=%s slot=%d\n",
+           (void*)def, def ? def->id.c_str() : "(null)", def ? def->slot : -1);
     if (!def) return;
 
     int idx = slotIndex(def->slot);
+    printf("[VMTRACE] WeaponSystem::render calling mViewModels[%d].render\n", idx);
     mViewModels[idx].render(camera, player, def->slot);
+    printf("[VMTRACE] WeaponSystem::render done\n");
 
     if (def->behaviorType == WeaponBehaviorType::Godball && mGodballPhys.active) {
         glm::vec3 handPos = WeaponGodball::getHandPosition(player);

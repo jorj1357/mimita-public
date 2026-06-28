@@ -26,10 +26,10 @@ constexpr int PADDING = 40;
 constexpr int INSET = 2;
 constexpr int USABLE = CELL_SIZE - INSET * 2;
 
-// Default 90-degree counter-clockwise rotation applied to all avatar face textures.
-// Source images are often oriented for a different coordinate convention than the
-// mesh expects. This compensates without changing the JSON schema.
-constexpr float DEFAULT_TEXTURE_ROTATION = 270.0f; // 270 CW = 90 CCW
+// Default rotation applied to all avatar face textures.
+// Set to 0 since projectedUV now uses consistent face-relative coordinates.
+// Previously was 270 to compensate for inconsistent UV axes across faces.
+constexpr float DEFAULT_TEXTURE_ROTATION = 0.0f;
 
 // ── Coordinate system (Y-up, Z-forward GLTF convention) ──────────────
 //   +Y = top        -Y = bottom
@@ -95,12 +95,14 @@ const char* faceName(int column) {
 glm::vec2 projectedUV(const Vertex& vertex, int face, glm::vec3 mn, glm::vec3 mx) {
     glm::vec3 size = glm::max(mx - mn, glm::vec3(0.0001f));
     glm::vec2 uv;
+    // Each face uses consistent local axes: U along the horizontal, V along the vertical.
+    // Top/bottom (0,1): horizontal plane = XZ, front/back (2,3): vertical plane = XY, left/right (4,5): vertical plane = ZY
     if (face <= 1)
-        uv = {(vertex.pos.x - mn.x) / size.x, (vertex.pos.y - mn.y) / size.y};
-    else if (face <= 3)
         uv = {(vertex.pos.x - mn.x) / size.x, (vertex.pos.z - mn.z) / size.z};
+    else if (face <= 3)
+        uv = {(vertex.pos.x - mn.x) / size.x, (vertex.pos.y - mn.y) / size.y};
     else
-        uv = {(vertex.pos.y - mn.y) / size.y, (vertex.pos.z - mn.z) / size.z};
+        uv = {(vertex.pos.z - mn.z) / size.z, (vertex.pos.y - mn.y) / size.y};
     if (face == 1 || face == 3 || face == 5)
         uv.x = 1.0f - uv.x;
     return glm::clamp(uv, glm::vec2(0.0f), glm::vec2(1.0f));
@@ -211,8 +213,8 @@ static void applyScaleAndOffset(std::vector<unsigned char>& pixels,
                                  float scaleX, float scaleY,
                                  float offsetX, float offsetY)
 {
-    if (scaleX <= 0.0f) scaleX = 0.1f;
-    if (scaleY <= 0.0f) scaleY = 0.1f;
+    if (scaleX < 0.001f) scaleX = 0.001f;
+    if (scaleY < 0.001f) scaleY = 0.001f;
 
     int sampW = std::max(1, (int)(srcW / scaleX));
     int sampH = std::max(1, (int)(srcH / scaleY));
