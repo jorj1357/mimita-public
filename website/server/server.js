@@ -59,8 +59,6 @@ if (!fs.existsSync(AVATAR_DIR)) {
     fs.mkdirSync(AVATAR_DIR, { recursive: true })
 }
 
-const DEFAULT_AVATAR_PATH = path.join(AVATAR_DIR, "_default.svg")
-
 const storage = multer.memoryStorage()
 const upload = multer({
     storage,
@@ -539,32 +537,25 @@ app.delete("/api/account/avatar", authenticate, async (req, res, next) => {
     }
 })
 
-const AVATAR_COLORS = [
-    "#4A90D9", "#E74C3C", "#2ECC71", "#F39C12", "#9B59B6",
-    "#1ABC9C", "#E67E22", "#3498DB", "#E91E63", "#00BCD4",
-    "#FF9800", "#8BC34A", "#795548", "#607D8B", "#FF5722"
-]
-
-function getAvatarColor(name) {
-    let hash = 0
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
-}
-
 app.get("/api/avatar/initials", (req, res) => {
     const name = String(req.query.name || "?").trim()
     const initial = name.length > 0 ? name[0].toUpperCase() : "?"
     const size = Math.min(Math.max(Number(req.query.size) || 64, 16), 512)
-    const color = getAvatarColor(name)
     const fontSize = Math.round(size * 0.45)
+    const borderW = Math.max(Math.round(size * 0.04), 2)
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-        <rect width="${size}" height="${size}" rx="${size * 0.15}" fill="${color}"/>
+        <defs>
+            <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1a1a1a"/>
+                <stop offset="100%" stop-color="#000000"/>
+            </linearGradient>
+        </defs>
+        <rect width="${size}" height="${size}" rx="${size * 0.06}" fill="url(#bg)" stroke="#555555" stroke-width="${borderW}"/>
         <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle"
-              font-family="sans-serif" font-size="${fontSize}" font-weight="700"
-              fill="white">${initial}</text>
+              font-family="MingLiU, MingLiU-ExtB, MingLiU_HKSCS-ExtB, serif"
+              font-size="${fontSize}" font-weight="400"
+              fill="#bbbbbb">${initial}</text>
     </svg>`
 
     res.set("Content-Type", "image/svg+xml")
