@@ -396,8 +396,8 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
 
                 uiDrawText("Face Transform:", uiScaleX(px + 4.0f), uiScaleY(cy), 0.50f, {0.4f, 1.0f, 0.6f, 1.0f});
                 cy += 24.0f;
-                drawTransformRow("Scale X:", gPendingScaleX, 0.1f, 0.1f, 10.0f);
-                drawTransformRow("Scale Y:", gPendingScaleY, 0.1f, 0.1f, 10.0f);
+                drawTransformRow("Scale X:", gPendingScaleX, 0.001f, 0.001f, 10.0f);
+                drawTransformRow("Scale Y:", gPendingScaleY, 0.001f, 0.001f, 10.0f);
                 drawTransformRow("Offset X:", gPendingOffsetX, 1.0f, -1000.0f, 1000.0f);
                 drawTransformRow("Offset Y:", gPendingOffsetY, 1.0f, -1000.0f, 1000.0f);
 
