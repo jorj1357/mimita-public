@@ -252,7 +252,7 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.usesPhysicsProjectile = false;
 
     def.poseId = "shotgun";
-    def.soundShoot = "shotgunshoot";
+    def.soundShoot = "rocketlauncher/rocketshoot";
     def.soundReload = "";
     def.soundHit = "";
     def.soundDryFire = "ui/click";
@@ -260,11 +260,12 @@ WeaponDefinition createRocketLauncherDefinition() {
 
     def.customParams["rocketSpeed"] = 45.0f;
     def.customParams["rocketRadius"] = 0.4f;
-    def.customParams["splashRadius"] = 8.0f;
+    def.customParams["splashRadius"] = 12.0f;
     def.customParams["splashExponent"] = 2.0f;
     def.customParams["rocketDirectDamage"] = 150.0f;
-    def.customParams["knockbackStrength"] = 40.0f;
-    def.customParams["selfKnockbackMultiplier"] = 0.8f;
+    def.customParams["knockbackStrength"] = 160.0f;
+    def.customParams["selfKnockbackMultiplier"] = 1.0f;
+    def.customParams["firingRecoilStrength"] = 30.0f;
     def.customParams["reserveAmmo"] = 1337.0f;
 
     return def;

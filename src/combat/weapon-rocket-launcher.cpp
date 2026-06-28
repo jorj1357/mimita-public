@@ -89,7 +89,9 @@ static void doExplosion(
         npc.body.currentHp -= finalDmg;
         if (npc.body.currentHp < 0) npc.body.currentHp = 0;
 
-        float knockScale = 1.0f - dist / splashRadius;
+        float t = dist / splashRadius;
+        float knockScale = 1.0f - t * t;
+        knockScale = knockScale * 0.85f + 0.15f;
         npc.body.externalImpulse += dir * knockbackStrength * knockScale;
 
         HitEvent ev;
@@ -115,7 +117,10 @@ static void doExplosion(
                 dmg = baseDamage * std::exp(-std::pow(dist / splashRadius, 2.0f) * splashExponent);
             }
             int finalDmg = std::max(1, (int)std::round(dmg));
-            owner.takeDamage(finalDmg, dir, knockbackStrength * selfKnockbackMul * (1.0f - dist / splashRadius));
+            float t = dist / splashRadius;
+            float knockScale = 1.0f - t * t;
+            knockScale = knockScale * 0.85f + 0.15f;
+            owner.takeDamage(finalDmg, dir, knockbackStrength * selfKnockbackMul * knockScale);
         }
     }
 }
@@ -278,36 +283,42 @@ void update(
 
         rocket.position = newPos;
 
-        // ── Render rocket as grey cylinder facing movement direction ──
+        // ── Render rocket as bright yellow cylinder facing movement direction ──
         {
             glm::vec3 velDir = glm::normalize(rocket.velocity);
-            float cylRadius = 0.12f;
-            float cylHeight = 0.5f;
+            // Main body: bright yellow cylinder
+            float cylRadius = 0.18f;
+            float cylHeight = 0.6f;
             DebugVis::drawFilledCylinder(camera, rocket.position, velDir, cylRadius, cylHeight,
-                {0.5f, 0.5f, 0.5f, 1.0f});
-
-            // Bright yellow tip (nose cone)
-            glm::vec3 tipPos = rocket.position + velDir * (cylHeight * 0.5f);
-            DebugVis::drawFilledSphere(camera, tipPos, cylRadius * 1.2f,
                 {1.0f, 1.0f, 0.0f, 1.0f});
+
+            // Nose cone: bright sphere at the front tip
+            glm::vec3 tipPos = rocket.position + velDir * (cylHeight * 0.5f + 0.1f);
+            DebugVis::drawFilledSphere(camera, tipPos, cylRadius * 1.3f,
+                {1.0f, 0.95f, 0.1f, 1.0f});
+
+            // Outer glow: large semi-transparent sphere for visibility
+            DebugVis::drawFilledSphere(camera, rocket.position, 0.5f,
+                {1.0f, 0.8f, 0.0f, 0.3f});
         }
 
         // ── Smoke trail ──
         {
-            glm::vec3 trailPos = rocket.position - glm::normalize(rocket.velocity) * 0.3f;
-            for (int ti = 0; ti < 2; ++ti) {
+            glm::vec3 velDir = glm::normalize(rocket.velocity);
+            glm::vec3 trailPos = rocket.position - velDir * 0.3f;
+            for (int ti = 0; ti < 3; ++ti) {
                 EffectPart p;
                 p.position = trailPos;
                 p.velocity = glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * 1.5f,
-                    ((float)rand() / RAND_MAX - 0.5f) * 1.5f,
-                    ((float)rand() / RAND_MAX - 0.5f) * 1.5f);
+                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
+                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
+                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f);
                 float t = (float)rand() / RAND_MAX;
-                p.color = {1.0f, 0.5f + t * 0.3f, 0.1f};
-                p.maxLifetime = 0.3f + t * 0.2f;
-                p.scale = 0.05f + t * 0.05f;
-                p.endScale = 0.15f + t * 0.1f;
-                p.alpha = 0.7f;
+                p.color = {1.0f, 0.6f + t * 0.3f, 0.1f};
+                p.maxLifetime = 0.4f + t * 0.2f;
+                p.scale = 0.08f + t * 0.06f;
+                p.endScale = 0.2f + t * 0.12f;
+                p.alpha = 0.85f;
                 p.replayType = "rocket_trail";
                 EffectPartSystem::instance().spawn(p);
             }
