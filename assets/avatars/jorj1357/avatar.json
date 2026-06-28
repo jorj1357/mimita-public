@@ -2,6 +2,7 @@
   "name": "jorj1357",
   "version": 1,
   "advanced_mode": true,
+  "player_model": "assets/entity/player/girl/mimita-girl-char-NO-Y-UP-NO-TRANSFORMS.glb",
   "textures": {
     "clown1": "clown1.png",
     "evil": "evil1.png",

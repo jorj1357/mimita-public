@@ -5,6 +5,22 @@ const router = Router()
 
 const production = process.env.NODE_ENV === "production"
 
+router.get("/health", async (req, res) => {
+    let dbOk = false
+    try {
+        await pool.query("SELECT 1")
+        dbOk = true
+    }
+    catch {}
+    res.json({
+        success: true,
+        environment: production ? "production" : "development",
+        uptime: process.uptime(),
+        database: dbOk ? "connected" : "disconnected",
+        timestamp: new Date().toISOString()
+    })
+})
+
 router.use((req, res, next) => {
     if (production) {
         return res.status(404).json({

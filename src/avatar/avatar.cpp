@@ -85,6 +85,7 @@ void AvatarDefinition::clear() {
     colors = {};
     cosmetics.clear();
     activePreset.clear();
+    playerModel.clear();
 }
 
 // AvatarSystem
@@ -321,6 +322,27 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
         if (root.contains("cosmetics"))
             mAvatar.cosmetics = parseCosmetics(root["cosmetics"]);
         mAvatar.activePreset = root.value("active_preset", "");
+
+        // ── Optional player_model / character_model ────────────────────
+        // Prefer character_model if both are set
+        std::string pm;
+        if (root.contains("character_model") && root["character_model"].is_string())
+            pm = root["character_model"].get<std::string>();
+        else if (root.contains("player_model") && root["player_model"].is_string())
+            pm = root["player_model"].get<std::string>();
+
+        if (!pm.empty()) {
+            printf("[AVATAR] player_model field: %s\n", pm.c_str());
+            if (std::filesystem::exists(pm)) {
+                mAvatar.playerModel = pm;
+                printf("[AVATAR] Using custom player model from avatar.json\n");
+            } else {
+                printf("[AVATAR ERROR] player_model path does not exist:\n  %s\n", pm.c_str());
+                Terminal::instance().addLog("[AVATAR ERROR] player_model not found: " + pm);
+            }
+        } else {
+            printf("[AVATAR] No player_model field; using default player model\n");
+        }
 
         mHasAvatar = true;
         if (std::filesystem::exists(jsonPath))
@@ -581,10 +603,52 @@ std::vector<std::string> AvatarSystem::listPngs(const std::string& avatarName) c
     return result;
 }
 
+static bool validatePlayerBodyParts(const Player& player) {
+    const char* required[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+    bool allFound = true;
+    std::string missing;
+    for (const char* name : required) {
+        bool found = false;
+        for (const auto& part : player.physicalBody.parts) {
+            if (part.name == name) { found = true; break; }
+        }
+        if (!found) {
+            if (!missing.empty()) missing += ", ";
+            missing += name;
+            allFound = false;
+        }
+    }
+    if (!allFound) {
+        printf("[AVATAR ERROR] Avatar player_model failed validation:\n");
+        printf("  missing required node%s: %s\n",
+               missing.find(',') != std::string::npos ? "s" : "", missing.c_str());
+        printf("  actual node names:");
+        for (const auto& part : player.physicalBody.parts)
+            printf(" %s", part.name.c_str());
+        printf("\n");
+        Terminal::instance().addLog("[AVATAR] Model validation failed: missing " + missing);
+    }
+    return allFound;
+}
+
 bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     if (!mHasAvatar || mAvatarName.empty()) return false;
+
+    // If avatar specifies a custom player model, load it first
+    if (!mAvatar.playerModel.empty()) {
+        printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
+        bool modelOk = player.loadModel(mAvatar.playerModel.c_str());
+        if (modelOk) {
+            validatePlayerBodyParts(player);
+        } else {
+            printf("[AVATAR ERROR] Failed to load player model: %s\n", mAvatar.playerModel.c_str());
+            Terminal::instance().addLog("[AVATAR] Failed to load model: " + mAvatar.playerModel);
+        }
+    }
+
     if (!buildAtlas(player, reloadTextures))
         return false;
+    printf("[AVATAR] Applying avatar texture atlas after model load\n");
     return applyAtlasToPlayer(player);
 }
 

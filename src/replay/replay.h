@@ -1,9 +1,3 @@
-// C:\important\mimita-priv-v8\src\replay\replay.h
-// 6 7 2026
-/** purpose
- * fragmovies
- */
-
 #pragma once
 
 #include <cstdint>
@@ -61,7 +55,6 @@ struct ReplayClip {
     std::vector<ReplayFrame> frames;
     std::vector<ReplaySceneFrame> sceneFrames;
     std::vector<ReplaySoundEvent> soundEvents;
-
     bool save(const std::string& path) const;
     bool load(const std::string& path);
 };
@@ -69,11 +62,8 @@ struct ReplayClip {
 class ReplayRecorder {
 public:
     void beginRecording(float randomSeed, const char* mapName);
-
     void recordFrame(const InputFrame& frame);
-
     void recordSceneFrame(const ReplaySceneFrame& frame);
-
     void stopRecording();
 
     void registerAsset(
@@ -89,11 +79,8 @@ public:
     void recordEffectEvent(const ReplayEffectEvent& event);
     void recordSoundEvent(const ReplaySoundEvent& event);
     void setMaxTicks(uint32_t maxTicks) { mMaxTicks = maxTicks; }
-    ReplayClip makeClip(uint32_t startTick, uint32_t endTick,
-                        uint32_t killTick,
-                        const std::string& killerId,
-                        const std::string& victimId) const;
-
+    ReplayClip makeClip(uint32_t startTick, uint32_t endTick, uint32_t killTick,
+                        const std::string& killerId, const std::string& victimId) const;
     bool isRecording() const {
         return mRecording;
     }
@@ -103,7 +90,6 @@ public:
     }
 
     bool exportToJSON(const std::string& path) const;
-
     bool exportToBinary(const std::string& path) const;
 
     const ReplayHeader& header() const {
@@ -128,16 +114,11 @@ public:
 
 private:
     bool mRecording = false;
-
     uint32_t mTick = 0;
     uint32_t mEventTick = 0;
-
     ReplayHeader mHeader{};
-
     std::vector<ReplayFrame> mFrames;
-
     std::vector<ReplaySceneFrame> mSceneFrames;
-
     std::vector<ReplayAsset> mAssets;
     ReplayWorldMetadata mWorld;
     ReplayLightingState mLighting;
@@ -158,7 +139,10 @@ enum class ReplayCameraMode {
     FirstPerson,
     Victim,
     Orbit,
-    Freecam
+    Freecam,
+    ThirdPerson,
+    Spectator,
+    TopDown
 };
 
 class ReplayCameraController {
@@ -235,14 +219,10 @@ private:
 class ReplayClipSaver {
 public:
     explicit ReplayClipSaver(ReplayRingBuffer& ring) : mRing(ring) {}
-
-    void notifyKill(const std::string& killerId,
-                    const std::string& victimId,
-                    bool roundWinning);
+    void notifyKill(const std::string& killerId, const std::string& victimId, bool roundWinning);
     void update();
     bool saveLastKill(std::string* savedPath = nullptr);
     bool hasLastKill() const { return mLastKill.has_value(); }
-
 private:
     struct KillInfo {
         uint32_t tick = 0;
@@ -256,12 +236,12 @@ private:
     std::optional<KillInfo> mLastKill;
 };
 
-// outside classes ? 6 7 2026
 std::string generateReplayExportPath();
 std::string generateReplayValidationPath(const std::string& replayPath);
 std::string generateReplayClipPath();
 std::string generateInstantReplayPath();
 std::vector<std::string> listReplayClips();
+std::string saveInstantReplay(ReplayRingBuffer& ring, uint32_t durationSeconds = 15);
 
 void setActiveReplayRecorder(ReplayRecorder* recorder);
 void setReplayCaptureEnabled(bool enabled);

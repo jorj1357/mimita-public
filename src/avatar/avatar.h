@@ -84,9 +84,15 @@ struct AvatarDefinition {
     std::vector<CosmeticSlot> cosmetics;
     std::string activePreset;
 
+    // Optional custom player model GLB path
+    std::string playerModel;
+
     FaceSettings resolve(const std::string& part, const std::string& face) const;
     void expandSimple();
     void clear();
+
+    // Get the effective player model path (empty = use default)
+    const std::string& getPlayerModel() const { return playerModel; }
 };
 
 class AvatarSystem {

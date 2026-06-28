@@ -89,3 +89,67 @@ export async function createSession(userId, req, res) {
     setSessionCookie(res, token)
     setCsrfCookie(res)
 }
+
+export async function authenticate(req, res, next) {
+    try {
+        let token = parseCookies(req)[sessionCookieName]
+        if (!token) {
+            const authHeader = req.headers["authorization"]
+            if (authHeader && authHeader.startsWith("Bearer ")) {
+                token = authHeader.slice(7)
+            }
+        }
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: "sign in required"
+            })
+        }
+
+        const result = await pool.query(
+            `
+            SELECT
+                s.id AS session_id,
+                u.id,
+                u.username,
+                u.display_name,
+                u.email,
+                u.bio,
+                u.avatar_url,
+                u.avatar_updated_at,
+                u.supporter_tier,
+                u.role,
+                u.email_notifications_enabled,
+                u.email_verified_at IS NOT NULL AS email_verified
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token_hash = $1
+              AND s.revoked_at IS NULL
+              AND s.expires_at > NOW()
+              AND u.deleted_at IS NULL
+            LIMIT 1
+            `,
+            [hashToken(token, sessionSecret)]
+        )
+
+        if (!result.rowCount) {
+            clearSessionCookie(res)
+            return res.status(401).json({
+                success: false,
+                message: "session expired"
+            })
+        }
+
+        const user = result.rows[0]
+        if (!user.avatar_url) {
+            const encoded = encodeURIComponent(user.username || "?")
+            user.avatar_url = `/api/avatar/initials?name=${encoded}&size=128`
+        }
+        req.user = user
+        req.sessionTokenHash = hashToken(token, sessionSecret)
+        next()
+    }
+    catch (error) {
+        next(error)
+    }
+}
