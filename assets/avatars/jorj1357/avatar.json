@@ -34,10 +34,11 @@
     "fishnetfrontleg": "fishnetfrontleg.png",
     "fishnetsidelegs": "fishnetsidelegs.png",
     "fishnetbottomfoot": "fishnetbottomfoot.png",
-    "fishnettopface": "fishnettopface.png"
+    "fishnettopface": "fishnettopface.png",
+    "girlface4": "girlface4.png"
   },
   "advanced": {
-    "head_front": { "texture": "girlface3", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0 },
+    "head_front": { "texture": "girlface4", "scale_x": 1.0, "scale_y": 1.8, "offset_x": 0, "offset_y": 100, "color": [1.0, 1.0, 1.0], "transparency": 0.0 },
     "head_back":  { "texture": "hairsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 200, "color": [1.0, 1.0, 1.0], "transparency": 0.0 },
     "head_left":  { "texture": "hairsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0 },
     "head_right": { "texture": "hairsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0 },
