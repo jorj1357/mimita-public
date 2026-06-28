@@ -137,12 +137,14 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 std::unique_ptr<Player>& actor =
                     replayActorModels[actorState.id];
                 if (!actor) {
-                    actor = std::make_unique<Player>();
-                    // Load the correct model if the replay recorded one
-                    if (!actorState.modelPath.empty())
+                    // Create player without loading current account's character
+                    actor = std::make_unique<Player>(false);
+                    // Load the recorded character (not the current account's)
+                    if (!actorState.characterName.empty())
+                        actor->loadCharacter(actorState.characterName);
+                    else if (!actorState.modelPath.empty())
                         actor->loadModel(actorState.modelPath.c_str());
-                    // Apply outfit texture directly to mesh batches without
-                    // destroying model UVs (unlike applySingleTexture).
+                    // Apply the recorded outfit texture at recorded UVs
                     const std::string& outfitToUse =
                         !actorState.outfitPath.empty()
                             ? actorState.outfitPath
@@ -156,6 +158,11 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                             actor->bodyPartMeshes = actor->physicalBody.partMeshes;
                         }
                     }
+                    printf("[REPLAY] loaded actor '%s' character=%s model=%s outfit=%s\n",
+                           actorState.id.c_str(),
+                           actorState.characterName.c_str(),
+                           actorState.modelPath.c_str(),
+                           outfitToUse.c_str());
                 }
                 actor->username = actorState.name;
                 actor->currentHp = actorState.health;

@@ -76,6 +76,8 @@ struct ReplayActorState {
     std::string modelPath;
     std::string weaponModelPath;
     std::string outfitPath;
+    std::string characterName;
+    std::string avatarName;
 
     glm::vec3 position {};
     glm::vec3 rotation {};

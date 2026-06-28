@@ -297,6 +297,8 @@ void engineTickReplay(Engine& engine, float dt)
             playerActor.collidable = !player.dead;
             playerActor.fade = 0.0f;
             playerActor.outfitPath = GetPlayerSettings().outfitPath;
+            playerActor.characterName = GetPlayerSettings().characterName;
+            playerActor.avatarName = GetPlayerSettings().avatarName;
             {
                 const WeaponDefinition* wdef = weapons.getCurrentDef(player);
                 if (wdef) {

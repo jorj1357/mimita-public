@@ -59,7 +59,7 @@ static bool writeWavFile(const std::string& path, const std::vector<int16_t>& sa
     fwrite(&sampleRate, 4, 1, f);
     fwrite(&byteRate, 4, 1, f);
     fwrite(&blockAlign, 2, 1, f);
-    fwrite(&bitsPerSample, 16, 1, f);
+    fwrite(&bitsPerSample, 2, 1, f);
     fwrite("data", 1, 4, f);
     fwrite(&dataBytes, 4, 1, f);
     fwrite(samples.data(), 1, dataBytes, f);
@@ -70,17 +70,20 @@ static bool writeWavFile(const std::string& path, const std::vector<int16_t>& sa
 static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 {
     const auto& events = REPLAY_PLAYER.soundEvents();
+    printf("[RPLX AUDIO] Audio system initialized\n");
+    printf("[RPLX AUDIO] Total sound events in replay: %zu\n", events.size());
+
     if (events.empty())
     {
+        printf("[RPLX AUDIO] No sound events found, creating silent track\n");
         std::vector<int16_t> silent(48000 * 2, 0);
         return writeWavFile(wavPath, silent, 48000);
     }
 
-    EXPORTLOG("[REPLAY AUDIO] events=%zu", events.size());
     for (const auto& ev : events)
     {
         if (ev.tick % 60 == 0 || ev.tick == 0)
-            EXPORTLOG("[REPLAY AUDIO] event=%s tick=%d", ev.soundPath.c_str(), ev.tick);
+            printf("[RPLX AUDIO] Sound event: %s tick=%d\n", ev.soundPath.c_str(), ev.tick);
     }
 
     uint32_t sampleRate = 48000;
@@ -219,6 +222,11 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         EXPORTLOG("[EXPORT AUDIO] events=%u wavBytes=%llu sampleRate=%u channels=%u duration=%.1f",
                   decodedCount, (unsigned long long)wavBytes, sampleRate, numChannels, totalDurationSec);
         EXPORTLOG("[EXPORT AUDIO] peak=%.2f clippedSamples=%llu", peak, (unsigned long long)clippedSamples);
+        printf("[RPLX AUDIO] Sounds triggered: %u\n", decodedCount);
+        printf("[RPLX AUDIO] Samples written: %zu\n", output.size());
+        printf("[RPLX AUDIO] Audio duration: %.1f sec\n", totalDurationSec);
+    } else {
+        printf("[RPLX AUDIO] FAILED to write WAV file: %s\n", wavPath.c_str());
     }
     return ok;
 }
@@ -364,6 +372,7 @@ void encodeReplayToMp4()
         encodeOk = encodeVideo(outputPath, false);
         if (encodeOk) {
             printf("[RPLX WARN] audio export failed, created video-only MP4\n");
+            printf("[RPLX AUDIO] Mux successful: no\n");
             EXPORTLOG("[RPLX WARN] audio export failed, created video-only MP4");
         }
     }
@@ -387,6 +396,7 @@ void encodeReplayToMp4()
     EXPORTLOG("PASS: output file exists, size=%llu bytes (%.1f KB)",
               (unsigned long long)gJob.mp4FileBytes, (double)gJob.mp4FileBytes / 1024.0);
     printf("[RPLX] PASS: output exists, size=%llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
+    printf("[RPLX AUDIO] Mux successful: yes\n");
 
     EXPORTLOG("[AUTO OUTRO] starting");
     appendOutroToFinishedMp4(outputPath.c_str());
