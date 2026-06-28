@@ -17,13 +17,14 @@
     "suitarm": "suitarm.png",
     "jeansbackleft": "jeansbackleft.png",
     "jeansbackright": "jeansbackright.png",
-    "jeansmisc": "jeansmisc.png"
+    "jeansmisc": "jeansmisc.png",
+    "hairsides": "hairsides.png"
   },
   "advanced": {
     "head_front": { "texture": "hi", "scale_x": 1.2, "scale_y": 2.0, "offset_x": 0, "offset_y": 20 },
-    "head_back":  { "texture": "clown", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
-    "head_left":  { "texture": "clown", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
-    "head_right": { "texture": "clown", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
+    "head_back":  { "texture": "hairsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
+    "head_left":  { "texture": "hairsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
+    "head_right": { "texture": "hairsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
     "head_top":   { "texture": "evil", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
     "head_bottom":{ "texture": "clown", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
     "torso_front": { "texture": "suitfront", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0 },
