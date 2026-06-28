@@ -7,7 +7,6 @@ import { performance } from "perf_hooks"
 
 import {
     createSixDigitCode,
-    createSecretToken,
     getClientIp,
     hashPassword,
     hashToken,
@@ -90,14 +89,7 @@ app.use(cors({
     credentials: true
 }))
 app.use(express.json({ limit: "32kb" }))
-app.use("/avatars", express.static(AVATAR_DIR, {
-    maxAge: "1h",
-    setHeaders: (res, filePath) => {
-        if (filePath.endsWith(".png")) {
-            res.set("Content-Type", "image/png")
-        }
-    }
-}))
+app.use("/avatars", express.static(AVATAR_DIR))
 
 app.use((req, res, next) => {
     res.set("X-Content-Type-Options", "nosniff")
@@ -118,7 +110,6 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
     if (req.path.startsWith("/api/game/")) return next()
-    if (req.path.startsWith("/api/client-login/")) return next()
     return csrfProtection(req, res, next)
 })
 
@@ -141,9 +132,7 @@ app.use((req, res, next) => {
         }
 
         if (res.statusCode >= 400) {
-            if (!(res.statusCode === 401 && req.path === "/api/auth/me")) {
-                console.log(`[REQUEST ERROR] ${JSON.stringify(logData)}`)
-            }
+            console.log(`[REQUEST ERROR] ${JSON.stringify(logData)}`)
         }
         else {
             console.log(`[REQUEST] ${JSON.stringify(logData)}`)
@@ -181,14 +170,12 @@ async function safelySend(label, send) {
 async function authenticate(req, res, next) {
     try {
         let token = parseCookies(req)[sessionCookieName]
-
         if (!token) {
             const authHeader = req.headers["authorization"]
             if (authHeader && authHeader.startsWith("Bearer ")) {
-                token = authHeader.slice(7).trim()
+                token = authHeader.slice(7)
             }
         }
-
         if (!token) {
             return res.status(401).json({
                 success: false,
@@ -209,13 +196,7 @@ async function authenticate(req, res, next) {
                 u.supporter_tier,
                 u.role,
                 u.email_notifications_enabled,
-                u.email_verified_at IS NOT NULL AS email_verified,
-                u.achievements,
-                u.created_at,
-                u.email_visible,
-                u.display_name,
-                u.avatar_data,
-                u.last_login_at
+                u.email_verified_at IS NOT NULL AS email_verified
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1
@@ -271,13 +252,6 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
             })
         }
 
-        if (req.body.password !== req.body.passwordConfirm) {
-            return res.status(400).json({
-                success: false,
-                message: "passwords do not match"
-            })
-        }
-
         const username = usernameValidation.value
         const email = emailValidation.value
         const passwordHash = await hashPassword(req.body.password)
@@ -293,14 +267,12 @@ app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
                 email_verification_token
             )
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled, achievements, email_visible
+            RETURNING id, username, email, bio, avatar_url, avatar_updated_at, supporter_tier, email_notifications_enabled
             `,
             [username, usernameKey(username), email, passwordHash, verificationTokenHash]
         )
         const user = result.rows[0]
 
-        await pool.query(`UPDATE users SET last_login_at = NOW(), display_name = $1 WHERE id = $2`,
-            [username, user.id])
         await createSession(user.id, req, res)
         logAuth("signup", `success user_id=${user.id}`)
         await trackEvent("account_created", {
@@ -359,9 +331,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
                 avatar_url,
                 avatar_updated_at,
                 supporter_tier,
-                email_notifications_enabled,
-                achievements,
-                email_visible
+                email_notifications_enabled
             FROM users
             WHERE deleted_at IS NULL
               AND (
@@ -395,7 +365,6 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
 
         resetFailedAttempts(identifier)
         await createSession(user.id, req, res)
-        await pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [user.id])
         delete user.password_hash
         logAuth("signin", `success user_id=${user.id}`)
         await trackEvent("login", {
@@ -458,7 +427,7 @@ app.get("/api/auth/verify-email/:token", async (req, res, next) => {
             SET email_verified_at = NOW(), email_verification_token = NULL
             WHERE email_verification_token = $1
               AND email_verified_at IS NULL
-            RETURNING id, achievements
+            RETURNING id
             `,
             [tokenHash]
         )
@@ -469,14 +438,6 @@ app.get("/api/auth/verify-email/:token", async (req, res, next) => {
             })
         }
         logAuth("verify_email", `success user_id=${result.rows[0].id}`)
-        const user = result.rows[0]
-        if (!user.achievements || !user.achievements.includes("confirmed_email")) {
-            await pool.query(
-                `UPDATE users SET achievements = array_append(COALESCE(achievements, '{}'), 'confirmed_email') WHERE id = $1`,
-                [user.id]
-            )
-            console.log("[ACHIEVEMENT] user_id=" + user.id + " achievement=confirmed_email awarded")
-        }
         res.json({ success: true, message: "email verified" })
     }
     catch (error) {
@@ -527,7 +488,7 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
             UPDATE users
             SET bio = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier, achievements, email_visible
+            RETURNING username, bio, avatar_url, avatar_updated_at, supporter_tier
             `,
             [bio, req.user.id]
         )
@@ -545,18 +506,14 @@ app.patch("/api/account/profile", authenticate, async (req, res, next) => {
 app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("avatar"), async (req, res, next) => {
     try {
         if (!req.file) {
-            console.log("[AVATAR] user_id=" + req.user.id + " reason=no_file_provided")
             return res.status(400).json({
                 success: false,
                 message: "no file provided"
             })
         }
 
-        console.log("[AVATAR] user_id=" + req.user.id + " type=" + req.file.mimetype + " size=" + req.file.size)
-
         const imageType = detectImageType(req.file.buffer)
         if (!imageType) {
-            console.log("[AVATAR] user_id=" + req.user.id + " reason=invalid_image_type type=" + req.file.mimetype)
             return res.status(400).json({
                 success: false,
                 message: "invalid image file"
@@ -590,7 +547,6 @@ app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("av
             }
         }
 
-        console.log("[AVATAR] user_id=" + req.user.id + " status=saved file=" + fileName)
         res.json({
             success: true,
             avatar_url: result.rows[0].avatar_url,
@@ -598,7 +554,6 @@ app.post("/api/account/avatar", authenticate, avatarRateLimit, upload.single("av
         })
     }
     catch (error) {
-        console.log("[AVATAR] user_id=" + req.user.id + " reason=error error=" + error.message)
         next(error)
     }
 })
@@ -624,35 +579,6 @@ app.delete("/api/account/avatar", authenticate, async (req, res, next) => {
         res.json({
             success: true,
             message: "avatar removed"
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.patch("/api/account/email-visibility", authenticate, async (req, res, next) => {
-    try {
-        if (typeof req.body.emailVisible !== "boolean") {
-            return res.status(400).json({
-                success: false,
-                message: "emailVisible must be true or false"
-            })
-        }
-
-        const result = await pool.query(
-            `
-            UPDATE users
-            SET email_visible = $1, updated_at = NOW()
-            WHERE id = $2
-            RETURNING email_visible
-            `,
-            [req.body.emailVisible, req.user.id]
-        )
-
-        res.json({
-            success: true,
-            email_visible: result.rows[0].email_visible
         })
     }
     catch (error) {
@@ -698,8 +624,7 @@ app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
             `
-            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at, achievements,
-                   CASE WHEN email_visible THEN email ELSE NULL END AS email
+            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
             FROM users
             WHERE username_key = $1
               AND deleted_at IS NULL
@@ -718,66 +643,6 @@ app.get("/api/users/:username", async (req, res, next) => {
         res.json({
             success: true,
             user: result.rows[0]
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.get("/api/users", async (req, res, next) => {
-    try {
-        const page = Math.max(1, Number(req.query.page) || 1)
-        const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50))
-        const offset = (page - 1) * limit
-        const search = String(req.query.search || "").trim().toLowerCase()
-        const sort = String(req.query.sort || "newest")
-
-        let where = "WHERE deleted_at IS NULL"
-        const params = []
-
-        if (search) {
-            params.push(`%${search}%`)
-            where += ` AND (LOWER(username) LIKE $${params.length} OR LOWER(bio) LIKE $${params.length})`
-        }
-
-        const sortOrders = {
-            oldest: "created_at ASC",
-            username_az: "username ASC",
-            username_za: "username DESC",
-            achievements: "array_length(achievements, 1) DESC NULLS LAST, username ASC",
-            least_achievements: "array_length(achievements, 1) ASC NULLS LAST, username ASC"
-        }
-        const order = sortOrders[sort] || "created_at DESC"
-
-        const countResult = await pool.query(
-            `SELECT COUNT(*) AS count FROM users ${where}`,
-            params
-        )
-        const total = Number(countResult.rows[0].count)
-
-        params.push(limit)
-        params.push(offset)
-
-        const result = await pool.query(
-            `SELECT username, avatar_url, avatar_updated_at, bio, created_at, achievements
-             FROM users
-             ${where}
-             ORDER BY ${order}
-             LIMIT $${params.length - 1} OFFSET $${params.length}`,
-            params
-        )
-
-        res.json({
-            success: true,
-            users: result.rows.map(({ achievements, ...u }) => ({
-                ...u,
-                achievement_count: Array.isArray(achievements) ? achievements.length : 0
-            })),
-            total,
-            page,
-            limit,
-            pages: Math.ceil(total / limit)
         })
     }
     catch (error) {
@@ -1141,707 +1006,6 @@ app.post("/api/admin/feedback", feedbackRateLimit, async (req, res, next) => {
     TODO: Data retention policies.
 */
 
-// ── Account Profile ──────────────────────────────────────────────────────────
-
-app.get("/api/profile", authenticate, async (req, res, next) => {
-    try {
-        const statsResult = await pool.query(
-            `SELECT * FROM game_stats WHERE user_id = $1`,
-            [req.user.id]
-        )
-        const settingsResult = await pool.query(
-            `SELECT settings_json FROM user_settings WHERE user_id = $1`,
-            [req.user.id]
-        )
-        res.json({
-            success: true,
-            profile: {
-                id: req.user.id,
-                username: req.user.username,
-                email: req.user.email,
-                bio: req.user.bio,
-                display_name: req.user.display_name || req.user.username,
-                avatar_url: req.user.avatar_url,
-                avatar_updated_at: req.user.avatar_updated_at,
-                avatar_data: req.user.avatar_data,
-                supporter_tier: req.user.supporter_tier,
-                role: req.user.role,
-                achievements: req.user.achievements,
-                email_verified: req.user.email_verified,
-                email_visible: req.user.email_visible,
-                created_at: req.user.created_at
-            },
-            stats: statsResult.rows[0] || null,
-            settings: settingsResult.rows[0]?.settings_json || {}
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.patch("/api/profile", authenticate, async (req, res, next) => {
-    try {
-        const { display_name, bio } = req.body
-        const updates = []
-        const params = []
-        let idx = 1
-
-        if (display_name !== undefined) {
-            if (String(display_name).length > 32) {
-                return res.status(400).json({ success: false, message: "display name too long" })
-            }
-            updates.push(`display_name = $${idx++}`)
-            params.push(String(display_name).trim())
-        }
-        if (bio !== undefined) {
-            if (String(bio).length > 500) {
-                return res.status(400).json({ success: false, message: "bio too long" })
-            }
-            updates.push(`bio = $${idx++}`)
-            params.push(String(bio).trim())
-        }
-
-        if (!updates.length) {
-            return res.status(400).json({ success: false, message: "nothing to update" })
-        }
-
-        updates.push(`updated_at = NOW()`)
-        params.push(req.user.id)
-
-        const result = await pool.query(
-            `UPDATE users SET ${updates.join(", ")} WHERE id = $${idx}
-             RETURNING username, bio, display_name, avatar_url, avatar_updated_at, supporter_tier`,
-            params
-        )
-
-        logAuth("profile_update", `user_id=${req.user.id}`)
-        res.json({ success: true, profile: result.rows[0] })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── Avatar Data (JSON) ──────────────────────────────────────────────────────
-
-app.get("/api/avatar/data", authenticate, async (req, res, next) => {
-    try {
-        res.json({
-            success: true,
-            avatar_data: req.user.avatar_data || null
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.put("/api/avatar/data", authenticate, async (req, res, next) => {
-    try {
-        const avatarData = req.body.avatar_data
-        if (!avatarData) {
-            return res.status(400).json({ success: false, message: "avatar_data required" })
-        }
-
-        await pool.query(
-            `UPDATE users SET avatar_data = $1, avatar_updated_at = NOW(), updated_at = NOW() WHERE id = $2`,
-            [JSON.stringify(avatarData), req.user.id]
-        )
-
-        logAuth("avatar_data_update", `user_id=${req.user.id}`)
-        res.json({ success: true, message: "avatar data saved" })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── Stats ────────────────────────────────────────────────────────────────────
-
-app.get("/api/stats", authenticate, async (req, res, next) => {
-    try {
-        const result = await pool.query(
-            `SELECT * FROM game_stats WHERE user_id = $1`,
-            [req.user.id]
-        )
-        res.json({
-            success: true,
-            stats: result.rows[0] || {
-                wins: 0, losses: 0, kills: 0, deaths: 0,
-                games_played: 0, playtime_seconds: 0,
-                highest_mmr: 5000, current_mmr: 5000,
-                accuracy: 0, headshots: 0, best_kill_streak: 0
-            }
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.post("/api/stats", authenticate, async (req, res, next) => {
-    try {
-        const {
-            won, kills, deaths, accuracy, headshots,
-            damage_dealt, playtime_seconds, game_mode, map_name,
-            match_id, participants
-        } = req.body
-
-        // Server-authoritative stats update
-        const client = await pool.connect()
-        try {
-            await client.query("BEGIN")
-
-            // Upsert game_stats
-            const statsResult = await client.query(
-                `INSERT INTO game_stats (user_id, wins, losses, kills, deaths, games_played, playtime_seconds, accuracy, headshots)
-                 VALUES ($1,
-                     CASE WHEN $2 THEN 1 ELSE 0 END,
-                     CASE WHEN $2 THEN 0 ELSE 1 END,
-                     $3, $4, 1, $5, $6, $7)
-                 ON CONFLICT (user_id) DO UPDATE SET
-                     wins = game_stats.wins + CASE WHEN $2 THEN 1 ELSE 0 END,
-                     losses = game_stats.losses + CASE WHEN $2 THEN 0 ELSE 1 END,
-                     kills = game_stats.kills + $3,
-                     deaths = game_stats.deaths + $4,
-                     games_played = game_stats.games_played + 1,
-                     playtime_seconds = game_stats.playtime_seconds + $5,
-                     headshots = game_stats.headshots + $7,
-                     accuracy = (game_stats.accuracy * game_stats.games_played + $6) / (game_stats.games_played + 1),
-                     highest_mmr = GREATEST(game_stats.highest_mmr, game_stats.current_mmr),
-                     updated_at = NOW()
-                 RETURNING *`,
-                [req.user.id, won, kills || 0, deaths || 0,
-                 playtime_seconds || 0, accuracy || 0, headshots || 0]
-            )
-
-            // Record match if match_id provided
-            if (match_id) {
-                await client.query(
-                    `INSERT INTO match_history (match_id, map_name, game_mode, duration_seconds, winner_id)
-                     VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN $6 ELSE NULL END)
-                     ON CONFLICT (match_id) DO NOTHING`,
-                    [match_id, map_name || '', game_mode || '', playtime_seconds || 0, won, req.user.id]
-                )
-
-                await client.query(
-                    `INSERT INTO match_participants (match_id, user_id, username, kills, deaths, accuracy, headshots, damage_dealt, won, mmr_before, mmr_after)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                     ON CONFLICT (match_id, user_id) DO NOTHING`,
-                    [match_id, req.user.id, req.user.username,
-                     kills || 0, deaths || 0, accuracy || 0,
-                     headshots || 0, damage_dealt || 0, won,
-                     req.body.mmr_before || 5000,
-                     statsResult.rows[0]?.current_mmr || 5000]
-                )
-            }
-
-            await client.query("COMMIT")
-            logAuth("stats_update", `user_id=${req.user.id}`)
-            res.json({ success: true, stats: statsResult.rows[0] })
-        }
-        catch (error) {
-            await client.query("ROLLBACK")
-            throw error
-        }
-        finally {
-            client.release()
-        }
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── Leaderboard ──────────────────────────────────────────────────────────────
-
-app.get("/api/leaderboard", async (req, res, next) => {
-    try {
-        const type = String(req.query.type || "mmr")
-        const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50))
-        const period = String(req.query.period || "all") // all, daily, weekly, monthly
-
-        let orderBy = "current_mmr DESC"
-        let selectExtra = ""
-        let joinExtra = ""
-
-        switch (type) {
-            case "wins":
-                orderBy = "gs.wins DESC"
-                break
-            case "playtime":
-                orderBy = "gs.playtime_seconds DESC"
-                break
-            case "accuracy":
-                orderBy = "gs.accuracy DESC"
-                break
-            case "killstreak":
-                orderBy = "gs.best_kill_streak DESC"
-                break
-            case "kills":
-                orderBy = "gs.kills DESC"
-                break
-            case "daily":
-                orderBy = "gs.current_mmr DESC"
-                joinExtra = "AND u.last_login_at >= CURRENT_DATE"
-                break
-            case "weekly":
-                orderBy = "gs.current_mmr DESC"
-                joinExtra = "AND u.last_login_at >= CURRENT_DATE - INTERVAL '7 days'"
-                break
-            case "monthly":
-                orderBy = "gs.current_mmr DESC"
-                joinExtra = "AND u.last_login_at >= CURRENT_DATE - INTERVAL '30 days'"
-                break
-            default:
-                orderBy = "gs.current_mmr DESC"
-                break
-        }
-
-        const result = await pool.query(
-            `SELECT u.id, u.username, u.avatar_url, u.avatar_updated_at, u.supporter_tier,
-                    gs.wins, gs.losses, gs.kills, gs.deaths, gs.games_played,
-                    gs.playtime_seconds, gs.current_mmr, gs.highest_mmr,
-                    gs.accuracy, gs.headshots, gs.best_kill_streak
-             FROM game_stats gs
-             JOIN users u ON u.id = gs.user_id
-             WHERE u.deleted_at IS NULL ${joinExtra}
-             ORDER BY ${orderBy}
-             LIMIT $1`,
-            [limit]
-        )
-
-        res.json({
-            success: true,
-            leaderboard: result.rows.map((row, idx) => ({
-                rank: idx + 1,
-                ...row
-            })),
-            type,
-            limit
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── Match History ────────────────────────────────────────────────────────────
-
-app.get("/api/match-history", authenticate, async (req, res, next) => {
-    try {
-        const page = Math.max(1, Number(req.query.page) || 1)
-        const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20))
-        const offset = (page - 1) * limit
-
-        const countResult = await pool.query(
-            `SELECT COUNT(*) AS count FROM match_participants WHERE user_id = $1`,
-            [req.user.id]
-        )
-        const total = Number(countResult.rows[0].count)
-
-        const result = await pool.query(
-            `SELECT mh.match_id, mh.map_name, mh.game_mode, mh.duration_seconds,
-                    mh.created_at, mp.kills, mp.deaths, mp.accuracy, mp.headshots,
-                    mp.damage_dealt, mp.won, mp.mmr_before, mp.mmr_after
-             FROM match_participants mp
-             JOIN match_history mh ON mh.match_id = mp.match_id
-             WHERE mp.user_id = $1
-             ORDER BY mh.created_at DESC
-             LIMIT $2 OFFSET $3`,
-            [req.user.id, limit, offset]
-        )
-
-        res.json({
-            success: true,
-            matches: result.rows,
-            total,
-            page,
-            limit,
-            pages: Math.ceil(total / limit)
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── User Settings (Cloud Sync) ───────────────────────────────────────────────
-
-app.get("/api/settings", authenticate, async (req, res, next) => {
-    try {
-        const result = await pool.query(
-            `SELECT settings_json FROM user_settings WHERE user_id = $1`,
-            [req.user.id]
-        )
-        res.json({
-            success: true,
-            settings: result.rows[0]?.settings_json || {}
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.put("/api/settings", authenticate, async (req, res, next) => {
-    try {
-        const settingsJson = req.body.settings || {}
-
-        await pool.query(
-            `INSERT INTO user_settings (user_id, settings_json, updated_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT (user_id) DO UPDATE SET
-                 settings_json = $2,
-                 updated_at = NOW()`,
-            [req.user.id, JSON.stringify(settingsJson)]
-        )
-
-        logAuth("settings_update", `user_id=${req.user.id}`)
-        res.json({ success: true, message: "settings saved" })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── Token Exchange (mimita:// flow) ──────────────────────────────────────────
-
-const exchangeTokens = new Map()
-
-app.post("/api/auth/token-exchange", authRateLimit, async (req, res, next) => {
-    try {
-        // Authenticated user on website generates a one-time exchange token
-        const token = parseCookies(req)[sessionCookieName]
-        if (!token) {
-            return res.status(401).json({ success: false, message: "sign in required" })
-        }
-
-        const sessionResult = await pool.query(
-            `SELECT u.id, u.username, u.avatar_url, u.supporter_tier, u.role
-             FROM sessions s JOIN users u ON u.id = s.user_id
-             WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW() AND u.deleted_at IS NULL
-             LIMIT 1`,
-            [hashToken(token, sessionSecret)]
-        )
-        if (!sessionResult.rowCount) {
-            return res.status(401).json({ success: false, message: "session invalid" })
-        }
-
-        const user = sessionResult.rows[0]
-        const exchangeToken = crypto.randomBytes(32).toString("hex")
-        exchangeTokens.set(exchangeToken, {
-            userId: user.id,
-            username: user.username,
-            avatarUrl: user.avatar_url,
-            supporterTier: user.supporter_tier,
-            role: user.role,
-            createdAt: Date.now()
-        })
-        setTimeout(() => exchangeTokens.delete(exchangeToken), 60 * 1000) // 1 min expiry
-
-        // Update last login
-        await pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [user.id])
-
-        res.json({
-            success: true,
-            exchange_token: exchangeToken,
-            expires_in: 60
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.post("/api/auth/exchange-session", authRateLimit, async (req, res, next) => {
-    try {
-        const exchangeToken = String(req.body.exchange_token || "").trim()
-        const entry = exchangeTokens.get(exchangeToken)
-
-        if (!entry) {
-            return res.status(404).json({ success: false, message: "invalid or expired exchange token" })
-        }
-
-        exchangeTokens.delete(exchangeToken)
-
-        // Create a game session for this user
-        const sessionToken = createSecretToken()
-        const tokenHash = hashToken(sessionToken, sessionSecret)
-        await pool.query(
-            `INSERT INTO sessions (user_id, token_hash, user_agent, ip_address, expires_at)
-             VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))`,
-            [entry.userId, tokenHash, "game-client", getClientIp(req), sessionDays]
-        )
-
-        // Get full profile data
-        const profileResult = await pool.query(
-            `SELECT id, username, email, bio, avatar_url, avatar_updated_at, avatar_data,
-                    supporter_tier, role, achievements, email_verified_at IS NOT NULL AS email_verified,
-                    created_at, display_name, last_login_at
-             FROM users WHERE id = $1`,
-            [entry.userId]
-        )
-        const profile = profileResult.rows[0]
-
-        const statsResult = await pool.query(
-            `SELECT * FROM game_stats WHERE user_id = $1`,
-            [entry.userId]
-        )
-
-        res.json({
-            success: true,
-            session_token: sessionToken,
-            user: {
-                id: profile.id,
-                username: profile.username,
-                display_name: profile.display_name || profile.username,
-                email: profile.email,
-                bio: profile.bio,
-                avatar_url: profile.avatar_url,
-                avatar_updated_at: profile.avatar_updated_at,
-                avatar_data: profile.avatar_data,
-                supporter_tier: profile.supporter_tier,
-                role: profile.role,
-                achievements: profile.achievements,
-                email_verified: profile.email_verified,
-                created_at: profile.created_at
-            },
-            stats: statsResult.rows[0] || null
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-// ── Desktop Detection ────────────────────────────────────────────────────────
-
-app.get("/api/desktop/detect", (req, res) => {
-    // The frontend checks if the mimita:// protocol is registered
-    // by attempting to create a hidden iframe or checking navigator
-    res.json({
-        success: true,
-        protocol: "mimita://",
-        launcher_path: "MimitaLauncher.exe",
-        description: "Open Mimita?"
-    })
-})
-
-// ── Client Login Codes (4-letter) ────────────────────────────────────────────
-
-const clientLoginRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "client_login" })
-const clientLoginPreviewRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 30, name: "client_login_preview" })
-
-function generateClientCode() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-    let code = ""
-    for (let i = 0; i < 4; i++) {
-        code += chars[crypto.randomInt(0, chars.length)]
-    }
-    return code
-}
-
-app.post("/api/client-login/create-code", authRateLimit, async (req, res, next) => {
-    try {
-        const token = parseCookies(req)[sessionCookieName]
-        if (!token) {
-            return res.status(401).json({ success: false, message: "sign in required" })
-        }
-
-        const sessionResult = await pool.query(
-            `SELECT u.id, u.username, u.avatar_url, u.avatar_data, u.display_name, u.supporter_tier
-             FROM sessions s JOIN users u ON u.id = s.user_id
-             WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW() AND u.deleted_at IS NULL
-             LIMIT 1`,
-            [hashToken(token, sessionSecret)]
-        )
-        if (!sessionResult.rowCount) {
-            return res.status(401).json({ success: false, message: "session invalid" })
-        }
-
-        // Invalidate any previous unused codes for this user
-        await pool.query(
-            `UPDATE client_login_codes SET used_at = NOW()
-             WHERE user_id = $1 AND used_at IS NULL AND expires_at > NOW()`,
-            [sessionResult.rows[0].id]
-        )
-
-        const code = generateClientCode()
-        const codeHash = hashToken(code, sessionSecret)
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
-
-        await pool.query(
-            `INSERT INTO client_login_codes (user_id, code_hash, expires_at, ip_address, user_agent)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [sessionResult.rows[0].id, codeHash, expiresAt, getClientIp(req), req.get("user-agent") || "unknown"]
-        )
-
-        logAuth("client_code_create", `user_id=${sessionResult.rows[0].id}`)
-        res.json({
-            success: true,
-            code,
-            expires_at: expiresAt.toISOString()
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.post("/api/client-login/preview", clientLoginPreviewRateLimit, async (req, res, next) => {
-    try {
-        const rawCode = String(req.body.code || "").trim().toUpperCase()
-        if (!/^[A-Z]{4}$/.test(rawCode)) {
-            return res.status(400).json({ success: false, valid: false, message: "invalid code format" })
-        }
-
-        const codeHash = hashToken(rawCode, sessionSecret)
-        const result = await pool.query(
-            `SELECT clc.user_id, u.username, u.display_name, u.avatar_url, u.avatar_data,
-                    u.supporter_tier, u.achievements
-             FROM client_login_codes clc
-             JOIN users u ON u.id = clc.user_id
-             WHERE clc.code_hash = $1
-               AND clc.used_at IS NULL
-               AND clc.expires_at > NOW()
-             LIMIT 1`,
-            [codeHash]
-        )
-
-        if (!result.rowCount) {
-            return res.json({ success: true, valid: false, message: "invalid or expired code" })
-        }
-
-        const user = result.rows[0]
-        res.json({
-            success: true,
-            valid: true,
-            username: user.username,
-            display_name: user.display_name || user.username,
-            avatar_url: user.avatar_url,
-            avatar_data: user.avatar_data,
-            supporter_tier: user.supporter_tier,
-            achievements: user.achievements
-        })
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
-app.post("/api/client-login/confirm", clientLoginRateLimit, async (req, res, next) => {
-    try {
-        const rawCode = String(req.body.code || "").trim().toUpperCase()
-        if (!/^[A-Z]{4}$/.test(rawCode)) {
-            return res.status(400).json({ success: false, message: "invalid code format" })
-        }
-
-        const codeHash = hashToken(rawCode, sessionSecret)
-        const client = await pool.connect()
-
-        try {
-            await client.query("BEGIN")
-
-            const codeResult = await client.query(
-                `SELECT clc.id, clc.user_id
-                 FROM client_login_codes clc
-                 WHERE clc.code_hash = $1
-                   AND clc.used_at IS NULL
-                   AND clc.expires_at > NOW()
-                 LIMIT 1
-                 FOR UPDATE`,
-                [codeHash]
-            )
-
-            if (!codeResult.rowCount) {
-                await client.query("ROLLBACK")
-                return res.json({ success: false, message: "invalid or expired code" })
-            }
-
-            const userId = codeResult.rows[0].user_id
-
-            // Mark code as used
-            await client.query(
-                `UPDATE client_login_codes SET used_at = NOW() WHERE id = $1`,
-                [codeResult.rows[0].id]
-            )
-
-            // Create game session
-            const sessionToken = createSecretToken()
-            const tokenHash = hashToken(sessionToken, sessionSecret)
-            await client.query(
-                `INSERT INTO sessions (user_id, token_hash, user_agent, ip_address, expires_at)
-                 VALUES ($1, $2, $3, $4, NOW() + ($5 * INTERVAL '1 day'))`,
-                [userId, tokenHash, "game-client", getClientIp(req), sessionDays]
-            )
-
-            // Update last login
-            await client.query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [userId])
-
-            // Fetch full profile
-            const profileResult = await client.query(
-                `SELECT id, username, email, bio, avatar_url, avatar_updated_at, avatar_data,
-                        display_name, supporter_tier, role, achievements,
-                        email_verified_at IS NOT NULL AS email_verified,
-                        created_at
-                 FROM users WHERE id = $1`,
-                [userId]
-            )
-            const profile = profileResult.rows[0]
-
-            const statsResult = await client.query(
-                `SELECT * FROM game_stats WHERE user_id = $1`,
-                [userId]
-            )
-
-            await client.query("COMMIT")
-
-            logAuth("client_login_confirm", `user_id=${userId}`)
-            res.json({
-                success: true,
-                session_token: sessionToken,
-                account: {
-                    id: profile.id,
-                    username: profile.username
-                },
-                profile: {
-                    id: profile.id,
-                    username: profile.username,
-                    display_name: profile.display_name || profile.username,
-                    email: profile.email,
-                    bio: profile.bio,
-                    avatar_url: profile.avatar_url,
-                    avatar_updated_at: profile.avatar_updated_at,
-                    avatar_data: profile.avatar_data,
-                    supporter_tier: profile.supporter_tier,
-                    role: profile.role,
-                    achievements: profile.achievements,
-                    email_verified: profile.email_verified,
-                    created_at: profile.created_at
-                },
-                avatar: {
-                    url: profile.avatar_url,
-                    data: profile.avatar_data,
-                    updated_at: profile.avatar_updated_at
-                },
-                stats: statsResult.rows[0] || null
-            })
-        }
-        catch (error) {
-            await client.query("ROLLBACK")
-            throw error
-        }
-        finally {
-            client.release()
-        }
-    }
-    catch (error) {
-        next(error)
-    }
-})
-
 // ── Account Linking ──────────────────────────────────────────────────────────
 // In-memory store for linking codes. Codes are 6 digits, expire after 5 minutes.
 // Security: poll returns only claimed=true/false. Finalize requires one-time grant token.
@@ -2064,9 +1228,8 @@ app.get("/api/update/manifest/:version", (req, res) => {
     }
 })
 
-app.use("/api/download/file", (req, res, next) => {
-    if (req.method !== "GET") return next()
-    const safePath = String(req.path.replace("/api/download/file/", "").replace(/^\/+/, "") || "")
+app.get(/^\/api\/download\/file\/(.+)/, (req, res) => {
+    const safePath = String(req.params[0] || "")
     const filePath = path.resolve(safePath)
     const resolved = path.resolve(filePath)
     const gameDir = path.resolve(".")
@@ -2076,7 +1239,7 @@ app.use("/api/download/file", (req, res, next) => {
     if (fs.existsSync(resolved)) {
         return res.sendFile(resolved)
     }
-    const rootPath = path.resolve("..", safePath)
+    const rootPath = path.resolve("..", req.params[0] || "")
     const rootResolved = path.resolve(rootPath)
     const repoDir = path.resolve("..")
     if (!rootResolved.startsWith(repoDir)) {
