@@ -12,6 +12,8 @@ class Player;
 struct FaceTransform {
     float offsetX = 0.0f;
     float offsetY = 0.0f;
+    float scaleX = 1.0f;         // 0.1-inf, 1.0 = original size
+    float scaleY = 1.0f;         // 0.1-inf, 1.0 = original size
     float rotation = 0.0f;       // 0-360 degrees
     float hueShift = 0.0f;       // 0-360 hue rotation
     float saturation = 0.0f;     // -10 to 10, 0 = unchanged
@@ -104,6 +106,7 @@ public:
 
     void setSimple(const SimpleAvatar& simple) { mAvatar.simple = simple; mAvatar.expandSimple(); }
     void setPartFace(const std::string& part, const std::string& face, const std::string& texturePath);
+    void setPartFaceTransform(const std::string& part, const std::string& face, const FaceTransform& transform);
     void setAdvancedMode(bool v) { mAvatar.advancedMode = v; }
 
     void setPartColor(const std::string& part, const glm::vec3& color);
