@@ -9,6 +9,7 @@
 class Camera;
 class Player;
 struct WeaponDefinition;
+struct WeaponViewModelConfig;
 
 struct WeaponViewModel {
     Mesh heldMesh;

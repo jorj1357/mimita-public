@@ -103,6 +103,7 @@ static void doBatchExport(int count)
         return;
     }
 
+    printf("[RPLX] scanning replay folders...\n");
     std::vector<std::string> clips = listReplayClips();
     if (clips.empty()) {
         Terminal::instance().addLog("[ERROR] No replay files to export");
@@ -110,9 +111,20 @@ static void doBatchExport(int count)
     }
 
     int actual = std::min(count, (int)clips.size());
+    printf("[RPLX] found %zu replay(s)\n", clips.size());
+    printf("[RPLX] selected newest replay: %s\n", std::filesystem::path(clips[0]).filename().string().c_str());
+    {
+        std::error_code ec;
+        printf("[RPLX] replay file exists: %s\n", std::filesystem::exists(clips[0], ec) ? "yes" : "no");
+        if (std::filesystem::exists(clips[0], ec))
+            printf("[RPLX] replay file size: %llu bytes\n", (unsigned long long)std::filesystem::file_size(clips[0], ec));
+    }
+
     gBatchExportQueue.clear();
-    for (int i = 0; i < actual; i++)
+    for (int i = 0; i < actual; i++) {
+        printf("[RPLX] found replay: path=%s\n", clips[i].c_str());
         gBatchExportQueue.push_back(clips[i]);
+    }
 
     gBatchExportTotal = actual;
     gBatchExportCurrent = 0;
@@ -220,6 +232,12 @@ void registerReplayCaptureCommands()
                     Terminal::instance().addLog("[ERROR] Usage: rplx [list|<count>|all]");
                     return;
                 }
+                printf("[RPLX] command received: rplx %ld\n", n);
+                printf("[RPLX] selected replay count: %ld\n", n);
+                printf("[RPLX] replay root: %s\n",
+                       std::filesystem::absolute("replays").string().c_str());
+                printf("[RPLX] export root: %s\n",
+                       std::filesystem::absolute("replays/exports").string().c_str());
                 doBatchExport((int)n);
             }
         },

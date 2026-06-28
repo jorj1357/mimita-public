@@ -60,6 +60,7 @@ namespace DebugConfig
     inline bool DEBUG_NETWORKING = false;
     inline bool DEBUG_DUEL = false;
     inline bool DEBUG_VISUALS_MASTER = false;
+    inline bool DEBUG_WEAPON_VIEWMODEL = false;
 
     inline void ResetAll()
     {

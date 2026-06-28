@@ -1,0 +1,31 @@
+{
+  "id": "rocket_launcher",
+  "display_name": "Rocket Launcher",
+
+  "model": {
+    "path": "assets/objects/weapons/mimita-rpg-v3.glb"
+  },
+
+  "viewmodel": {
+    "enabled": true,
+
+    "position": [0.35, -0.75, -0.35],
+    "rotation_degrees": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+
+    "first_person_offset": [0.35, -0.75, -0.35],
+    "third_person_offset": [0.0, 0.0, 0.0],
+
+    "fov_scale": 1.0,
+    "visible_in_first_person": true,
+    "visible_in_third_person": true
+  },
+
+  "debug": {
+    "force_render": false,
+    "draw_origin": false,
+    "draw_bounds": false,
+    "draw_wireframe": false,
+    "log_reload": true
+  }
+}

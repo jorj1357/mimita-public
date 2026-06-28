@@ -186,15 +186,35 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         return false;
     }
 
+    printf("[RPLX] loading replay JSON...\n");
+    ReplayClip loadCheck;
+    bool parseOk = loadCheck.load(jsonPath);
+    printf("[RPLX] json parse: %s\n", parseOk ? "success" : "FAIL");
+    printf("[RPLX] replay tick count: %u\n", loadCheck.header.tickCount);
+    if (!loadCheck.frames.empty()) {
+        printf("[RPLX] first tick: %u\n", loadCheck.frames.front().tick);
+        printf("[RPLX] last tick: %u\n", loadCheck.frames.back().tick);
+    }
+    printf("[RPLX] sound event count: %zu\n", loadCheck.soundEvents.size());
+    if (!loadCheck.sceneFrames.empty()) {
+        size_t maxActors = 0;
+        for (auto& sf : loadCheck.sceneFrames)
+            if (sf.actors.size() > maxActors) maxActors = sf.actors.size();
+        printf("[RPLX] player/npc count (max in any frame): %zu\n", maxActors);
+    }
+
     if (!REPLAY_PLAYER.loadFromJSON(jsonPath)) {
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "Failed to load replay into player:\n" + jsonPath;
+        printf("[RPLX ERROR] loadFromJSON failed for: %s\n", jsonPath.c_str());
         return false;
     }
     REPLAY_PLAYER.beginPlayback();
     REPLAY_PLAYER.seekToTick(0);
 
     std::string ffmpeg = defaultFfmpegPath();
+    printf("[RPLX] ffmpeg path: %s\n", ffmpeg.c_str());
+    printf("[RPLX] ffmpeg exists: %s\n", std::filesystem::exists(ffmpeg) ? "yes" : "no");
     if (!std::filesystem::exists(ffmpeg))
     {
         gJob.state = ReplayExportJob::Failed;
@@ -242,6 +262,10 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         gJob.errorMsg = "Cannot create temp raw file:\n" + rawTempPath;
         return false;
     }
+
+    printf("[RPLX] output path: %s\n", outputPath.c_str());
+    printf("[RPLX] capture resolution: %dx%d\n", captureW, captureH);
+    printf("[RPLX] total ticks to render: %u\n", totalTicks);
 
     gJob.state = ReplayExportJob::Capturing;
     gJob.jsonPath = jsonPath;
