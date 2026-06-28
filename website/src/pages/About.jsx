@@ -20,7 +20,7 @@ export default function About() {
             <p>
               Mimita is an experimental movement-based game engine focused on
               emergence, editability, and making things that just feel fun.
-              It is not a traditional game — it is a playground for movement,
+              It is not a traditional game....... it is a playground for movement,
               combat, creation, and expression.
             </p>
             <p>
