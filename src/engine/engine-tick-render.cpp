@@ -42,6 +42,16 @@ extern bool gReplayExportRenderMode;
 extern bool gNetPresentationDebug;
 extern bool gNetDebugEntities;
 
+// Cinematic impact frame state for replay export
+struct KillImpactFrame {
+    bool active = false;
+    int remainingTicks = 0;
+    glm::vec3 victimPosition{0.0f};
+    std::string victimId;
+};
+static KillImpactFrame gKillImpactFrame;
+static std::unordered_map<std::string, bool> gActorPrevDead;
+
 void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 {
     Player& player = THE_PLAYER;
@@ -57,10 +67,37 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     auto& gReplayPlayer = REPLAY_PLAYER;
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
+    const bool isExporting = getReplayExportJob().state == ReplayExportJob::Capturing;
     bool replayRenderActive = replayPlaybackActive ||
-        (getReplayExportJob().state == ReplayExportJob::Capturing && gReplayPlayer.totalTicks() > 0);
-    if (getReplayExportJob().state == ReplayExportJob::Capturing) {
+        (isExporting && gReplayPlayer.totalTicks() > 0);
+    if (isExporting) {
         replayRenderActive = true;
+    }
+
+    // During replay export: detect kills and apply cinematic impact frame
+    if (isExporting && replayRenderActive) {
+        if (gKillImpactFrame.active) {
+            gKillImpactFrame.remainingTicks--;
+            if (gKillImpactFrame.remainingTicks <= 0)
+                gKillImpactFrame.active = false;
+        }
+        if (const ReplaySceneFrame* rf = gReplayPlayer.currentSceneFrame()) {
+            for (const ReplayActorState& as : rf->actors) {
+                bool& wasDead = gActorPrevDead[as.id];
+                if (!wasDead && as.dead) {
+                    gKillImpactFrame.active = true;
+                    gKillImpactFrame.remainingTicks = 3;
+                    gKillImpactFrame.victimPosition = as.position;
+                    gKillImpactFrame.victimId = as.id;
+                }
+                wasDead = as.dead;
+            }
+        }
+    } else {
+        gKillImpactFrame.active = false;
+        gKillImpactFrame.remainingTicks = 0;
+        gKillImpactFrame.victimId.clear();
+        gActorPrevDead.clear();
     }
 
     { Perf::ScopedTimer _ren("Rendering");
@@ -100,7 +137,6 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     replayActorModels[actorState.id];
                 if (!actor) {
                     actor = std::make_unique<Player>();
-                    // Restore per-actor outfit
                     const std::string& outfitToUse =
                         !actorState.outfitPath.empty()
                             ? actorState.outfitPath
@@ -125,9 +161,19 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                         ReplayCameraMode::FirstPerson &&
                     actorState.id == gReplayPlayer.killerId();
                 if (!hideFirstPersonActor) {
-                    actor->renderCurrentPose(
-                        engine.renderer->shaderProgram,
-                        replayView, replayProj);
+                    const bool isImpactVictim = gKillImpactFrame.active &&
+                        actorState.id == gKillImpactFrame.victimId;
+                    if (isImpactVictim) {
+                        GLuint shader = engine.renderer->shaderProgram;
+                        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+                        glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+                        actor->renderCurrentPose(shader, replayView, replayProj);
+                        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+                    } else {
+                        actor->renderCurrentPose(
+                            engine.renderer->shaderProgram,
+                            replayView, replayProj);
+                    }
                 }
 
                 const WeaponDefinition* definition =
@@ -144,6 +190,37 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     viewModel.render(
                         camera, *actor, definition->slot);
                 }
+            }
+            if (gKillImpactFrame.active) {
+                // Red sphere at death position
+                EffectPartSystem::instance().spawnDeathEllipsoid(
+                    gKillImpactFrame.victimPosition,
+                    glm::vec3(0.0f, 0.0f, 1.0f), 0.5f, 2.0f, 0.3f);
+                // Full-screen black overlay (impact frame)
+                static GLuint impactVao = 0, impactVbo = 0;
+                if (!impactVao) {
+                    float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+                    glGenVertexArrays(1, &impactVao);
+                    glGenBuffers(1, &impactVbo);
+                    glBindVertexArray(impactVao);
+                    glBindBuffer(GL_ARRAY_BUFFER, impactVbo);
+                    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+                    glEnableVertexAttribArray(0);
+                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+                }
+                GLuint shader = engine.renderer->shaderProgram;
+                glDisable(GL_DEPTH_TEST);
+                glUseProgram(shader);
+                glm::mat4 id(1.0f);
+                glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+                glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+                glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+                glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 0.6f);
+                glBindVertexArray(impactVao);
+                glDrawArrays(GL_TRIANGLES, 0, 3);
+                glEnable(GL_DEPTH_TEST);
+                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
             }
         }
     } else {
