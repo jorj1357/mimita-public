@@ -184,16 +184,45 @@ static void rotateImage(std::vector<unsigned char>& pixels, int size, float rota
     }
 }
 
-static void applyOffset(std::vector<unsigned char>& pixels, int size, float offsetX, float offsetY) {
-    if (offsetX == 0.0f && offsetY == 0.0f) return;
-    int dx = ((int)std::round(offsetX) % size + size) % size;
-    int dy = ((int)std::round(offsetY) % size + size) % size;
-    if (dx == 0 && dy == 0) return;
-    std::vector<unsigned char> tmp = pixels;
-    for (int y = 0; y < size; ++y)
-        for (int x = 0; x < size; ++x)
-            for (int c = 0; c < 4; ++c)
-                pixels[(y * size + x) * 4 + c] = tmp[(((y + dy) % size) * size + ((x + dx) % size)) * 4 + c];
+// Apply scale and offset by sampling a sub-rect from the source image.
+// Scale operates around the center of the face. Offset shifts the sampling window.
+// Applied BEFORE rotation and HSB in the rendering pipeline.
+static void applyScaleAndOffset(std::vector<unsigned char>& pixels,
+                                 int srcW, int srcH,
+                                 float scaleX, float scaleY,
+                                 float offsetX, float offsetY)
+{
+    if (scaleX <= 0.0f) scaleX = 0.1f;
+    if (scaleY <= 0.0f) scaleY = 0.1f;
+
+    int sampW = std::max(1, (int)(srcW / scaleX));
+    int sampH = std::max(1, (int)(srcH / scaleY));
+
+    int cx = srcW / 2 + (int)offsetX;
+    int cy = srcH / 2 + (int)offsetY;
+
+    int sx = cx - sampW / 2;
+    int sy = cy - sampH / 2;
+    if (sx < 0) sx = 0;
+    if (sy < 0) sy = 0;
+    if (sx + sampW > srcW) sampW = srcW - sx;
+    if (sy + sampH > srcH) sampH = srcH - sy;
+    if (sampW <= 0 || sampH <= 0) return;
+
+    if (sx == 0 && sy == 0 && sampW == srcW && sampH == srcH)
+        return;
+
+    std::vector<unsigned char> cropped(sampW * sampH * 4);
+    for (int y = 0; y < sampH; ++y)
+        std::memcpy(&cropped[y * sampW * 4], &pixels[(sy + y) * srcW * 4 + sx * 4], sampW * 4);
+
+    if (sampW == USABLE && sampH == USABLE) {
+        std::memcpy(pixels.data(), cropped.data(), USABLE * USABLE * 4);
+    } else {
+        std::vector<unsigned char> resized(USABLE * USABLE * 4);
+        stbir_resize_uint8_linear(cropped.data(), sampW, sampH, 0, resized.data(), USABLE, USABLE, 0, STBIR_RGBA);
+        std::memcpy(pixels.data(), resized.data(), USABLE * USABLE * 4);
+    }
 }
 
 static void applyCrop(std::vector<unsigned char>& pixels, int srcW, int srcH) {
@@ -250,13 +279,25 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                 continue;
             }
 
-            // Load and resize to atlas cell
+            bool hasScaleOffset = (fs.transform.scaleX != 1.0f || fs.transform.scaleY != 1.0f ||
+                                   fs.transform.offsetX != 0.0f || fs.transform.offsetY != 0.0f);
+
+            // Rendering pipeline: load → scale+offset → resize → rotation → HSB
             std::vector<unsigned char> cellPixels;
-            if (fs.transform.stretchMode == 1) {
+            if (hasScaleOffset) {
+                // Apply scale+offset on full-resolution data, then resize to USABLE
+                cellPixels.assign(data, data + w * h * 4);
+                stbi_image_free(data);
+                applyScaleAndOffset(cellPixels, w, h,
+                                    fs.transform.scaleX, fs.transform.scaleY,
+                                    fs.transform.offsetX, fs.transform.offsetY);
+            } else if (fs.transform.stretchMode == 1) {
+                // Crop mode: preserve aspect ratio, fill cell
                 cellPixels.assign(data, data + w * h * 4);
                 stbi_image_free(data);
                 applyCrop(cellPixels, w, h);
             } else {
+                // Stretch mode: resize directly to fill cell
                 std::vector<unsigned char> scaled(USABLE * USABLE * 4);
                 if (w != USABLE || h != USABLE)
                     stbir_resize_uint8_linear(data, w, h, 0, scaled.data(), USABLE, USABLE, 0, STBIR_RGBA);
@@ -265,10 +306,6 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                 stbi_image_free(data);
                 cellPixels = std::move(scaled);
             }
-
-            // Apply per-face transforms (offset, rotation, HSB)
-            if (fs.transform.offsetX != 0.0f || fs.transform.offsetY != 0.0f)
-                applyOffset(cellPixels, USABLE, fs.transform.offsetX, fs.transform.offsetY);
 
             // Apply default 90-degree CCW rotation, then per-face rotation on top
             float totalRotation = DEFAULT_TEXTURE_ROTATION;

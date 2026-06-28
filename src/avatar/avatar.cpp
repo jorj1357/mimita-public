@@ -109,9 +109,10 @@ std::string AvatarSystem::resolvePath(const std::string& relativePath) const {
 // ── JSON helpers ────────────────────────────────────────────────────
 static json serializeTransform(const FaceTransform& t) {
     json obj;
-    // Only write non-default values
-    if (t.offsetX != 0.0f) obj["offset_x"] = t.offsetX;
-    if (t.offsetY != 0.0f) obj["offset_y"] = t.offsetY;
+    if (t.offsetX != 0.0f) obj["offset_x"] = (int)t.offsetX;
+    if (t.offsetY != 0.0f) obj["offset_y"] = (int)t.offsetY;
+    if (t.scaleX != 1.0f) obj["scale_x"] = t.scaleX;
+    if (t.scaleY != 1.0f) obj["scale_y"] = t.scaleY;
     if (t.rotation != 0.0f) obj["rotation"] = t.rotation;
     if (t.hueShift != 0.0f) obj["hue_shift"] = t.hueShift;
     if (t.saturation != 0.0f) obj["saturation"] = t.saturation;
@@ -122,8 +123,10 @@ static json serializeTransform(const FaceTransform& t) {
 
 static FaceTransform parseTransform(const json& j) {
     FaceTransform t;
-    t.offsetX = j.value("offset_x", 0.0f);
-    t.offsetY = j.value("offset_y", 0.0f);
+    t.offsetX = (float)j.value("offset_x", 0);
+    t.offsetY = (float)j.value("offset_y", 0);
+    t.scaleX = j.value("scale_x", 1.0f);
+    t.scaleY = j.value("scale_y", 1.0f);
     t.rotation = j.value("rotation", 0.0f);
     t.hueShift = j.value("hue_shift", 0.0f);
     t.saturation = j.value("saturation", 0.0f);
@@ -428,6 +431,20 @@ void AvatarSystem::setPartFace(const std::string& part, const std::string& face,
     };
     FaceVector* p = getPart();
     if (p) p->byName(face).texture = texturePath;
+}
+
+void AvatarSystem::setPartFaceTransform(const std::string& part, const std::string& face, const FaceTransform& transform) {
+    auto getPart = [&]() -> FaceVector* {
+        if (part == "head") return &mAvatar.head;
+        if (part == "torso") return &mAvatar.torso;
+        if (part == "leftArm") return &mAvatar.leftArm;
+        if (part == "rightArm") return &mAvatar.rightArm;
+        if (part == "leftLeg") return &mAvatar.leftLeg;
+        if (part == "rightLeg") return &mAvatar.rightLeg;
+        return nullptr;
+    };
+    FaceVector* p = getPart();
+    if (p) p->byName(face).transform = transform;
 }
 
 void AvatarSystem::setPartColor(const std::string& part, const glm::vec3& color) {

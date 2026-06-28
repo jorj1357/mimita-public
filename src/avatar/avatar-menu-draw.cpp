@@ -42,6 +42,12 @@ int gColorPickerPart = -1;
 float gColorPickerHue = 0.0f;
 DropdownState gPartDropdown;
 
+// ── Pending per-face transform values (applied with APPLY TO CHECKED FACES) ──
+float gPendingScaleX = 1.0f;
+float gPendingScaleY = 1.0f;
+float gPendingOffsetX = 0.0f;
+float gPendingOffsetY = 0.0f;
+
 // ── String tables ───────────────────────────────────────────────────
 const char* kPartLabels[] = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
 const char* kPartKeys[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
@@ -368,6 +374,30 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                 uncheckAllFaces();
             cy += 32.0f;
 
+            // Per-face transform controls (scale_x, scale_y, offset_x, offset_y)
+            if (!gSelectedTexture.empty())
+            {
+                // Helper: draw a +/- control row
+                auto drawTransformRow = [&](const char* label, float& value, float step, float minVal, float maxVal) {
+                    uiDrawText(label, uiScaleX(px + 4.0f), uiScaleY(cy), 0.50f, {0.7f, 0.8f, 0.9f, 1.0f});
+                    if (uiButton(win, "-", {px + 110.0f, cy, 24.0f, 22.0f}, {0.5f, 0.15f, 0.15f, 1.0f}).clicked)
+                        value = std::max(minVal, value - step);
+                    char buf[32];
+                    snprintf(buf, sizeof(buf), "%.1f", value);
+                    uiDrawText(buf, uiScaleX(px + 142.0f), uiScaleY(cy + 2.0f), 0.50f, {1,1,1,1});
+                    if (uiButton(win, "+", {px + 190.0f, cy, 24.0f, 22.0f}, {0.15f, 0.5f, 0.15f, 1.0f}).clicked)
+                        value = std::min(maxVal, value + step);
+                    cy += 26.0f;
+                };
+
+                uiDrawText("Face Transform:", uiScaleX(px + 4.0f), uiScaleY(cy), 0.50f, {0.4f, 1.0f, 0.6f, 1.0f});
+                cy += 24.0f;
+                drawTransformRow("Scale X:", gPendingScaleX, 0.1f, 0.1f, 10.0f);
+                drawTransformRow("Scale Y:", gPendingScaleY, 0.1f, 0.1f, 10.0f);
+                drawTransformRow("Offset X:", gPendingOffsetX, 1.0f, -1000.0f, 1000.0f);
+                drawTransformRow("Offset Y:", gPendingOffsetY, 1.0f, -1000.0f, 1000.0f);
+            }
+
             // Face grid
             contentH = cy - contentArea.y + kPartCount * 100.0f;
             int facesPerRow = (int)readVal("facesTabFacesPerRow", 3.0f);
@@ -417,6 +447,13 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                     int pi = idx / kFaceCount;
                     int fi = idx % kFaceCount;
                     av.setPartFace(kPartKeys[pi], kFaceKeys[fi], gSelectedTexture);
+                    // Also copy pending transform values
+                    FaceTransform tf;
+                    tf.scaleX = gPendingScaleX;
+                    tf.scaleY = gPendingScaleY;
+                    tf.offsetX = gPendingOffsetX;
+                    tf.offsetY = gPendingOffsetY;
+                    av.setPartFaceTransform(kPartKeys[pi], kFaceKeys[fi], tf);
                 }
                 Terminal::instance().addLog("[AVATAR] Applied to " + std::to_string(gCheckedFaces.size()) + " faces");
                 liveApply();
