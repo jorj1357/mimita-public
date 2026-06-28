@@ -4,6 +4,7 @@
 #include "weapon-registry.h"
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
+#include "weapon-rocket-launcher.h"
 
 #include <cstdio>
 
@@ -80,4 +81,5 @@ void WeaponSystem::unequip(Player& player) {
         WeaponGodball::despawnBall(mGodballPhys);
     }
     mSwordswordState = SwordswordState{};
+    WeaponRocketLauncher::clear(mRocketState);
 }

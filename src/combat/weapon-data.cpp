@@ -222,6 +222,54 @@ WeaponDefinition createAa12Definition() {
     return def;
 }
 
+WeaponDefinition createRocketLauncherDefinition() {
+    WeaponDefinition def;
+    def.id = "rocket_launcher";
+    def.displayName = "Rocket Launcher";
+    def.slot = 7;
+
+    def.modelPath = "";
+    def.viewModelOffset = {0.0f, 0.0f, 0.0f};
+    def.viewModelRotation = {0.0f, 0.0f, 0.0f};
+    def.weaponScale = 1.0f;
+
+    def.damage = 0.0f;
+    def.headshotMultiplier = 1.0f;
+    def.fireDelay = 0.7f;
+    def.reloadTime = 2.0f;
+    def.magazineSize = 4;
+    def.pelletCount = 1;
+
+    def.spread = 0.0f;
+    def.recoil = 50.0f;
+    def.projectileSpeed = 45.0f;
+    def.projectileRadius = 0.4f;
+    def.projectileLifetime = 5.0f;
+
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::RocketLauncher;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+
+    def.poseId = "shotgun";
+    def.soundShoot = "shotgunshoot";
+    def.soundReload = "";
+    def.soundHit = "";
+    def.soundDryFire = "ui/click";
+    def.soundEquip = "";
+
+    def.customParams["rocketSpeed"] = 45.0f;
+    def.customParams["rocketRadius"] = 0.4f;
+    def.customParams["splashRadius"] = 8.0f;
+    def.customParams["splashExponent"] = 2.0f;
+    def.customParams["rocketDirectDamage"] = 150.0f;
+    def.customParams["knockbackStrength"] = 40.0f;
+    def.customParams["selfKnockbackMultiplier"] = 0.8f;
+    def.customParams["reserveAmmo"] = 1337.0f;
+
+    return def;
+}
+
 void registerBuiltinWeapons() {
     WeaponRegistry::instance().registerWeapon(createRevolverDefinition());
     WeaponRegistry::instance().registerWeapon(createGodballDefinition());
@@ -229,7 +277,8 @@ void registerBuiltinWeapons() {
     WeaponRegistry::instance().registerWeapon(createSwordswordDefinition());
     WeaponRegistry::instance().registerWeapon(createOpRevolverDefinition());
     WeaponRegistry::instance().registerWeapon(createAa12Definition());
-    Debug::log(Debug::Category::Weapons, "[AA12] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12");
+    WeaponRegistry::instance().registerWeapon(createRocketLauncherDefinition());
+    Debug::log(Debug::Category::Weapons, "[AA12] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher");
 }
 
 } // namespace WeaponData

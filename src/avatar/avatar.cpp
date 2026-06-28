@@ -119,6 +119,7 @@ static json serializeTransform(const FaceTransform& t) {
     if (t.brightness != 0.0f) obj["brightness"] = t.brightness;
     if (t.stretchMode != 0) obj["stretch_mode"] = t.stretchMode == 1 ? "crop" : "stretch";
     if (t.color != glm::vec3(1.0f)) obj["color"] = {t.color.r, t.color.g, t.color.b};
+    if (t.transparency != 0.0f) obj["transparency"] = t.transparency;
     return obj;
 }
 
@@ -136,6 +137,7 @@ static FaceTransform parseTransform(const json& j) {
     t.stretchMode = (sm == "crop") ? 1 : 0;
     if (j.contains("color") && j["color"].is_array() && j["color"].size() >= 3)
         t.color = glm::vec3(j["color"][0], j["color"][1], j["color"][2]);
+    t.transparency = j.value("transparency", 0.0f);
     return t;
 }
 

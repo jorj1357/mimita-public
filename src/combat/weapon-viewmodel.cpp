@@ -52,6 +52,9 @@ static void fallbackWeaponShape(
                 ? def->projectileRadius
                 : customParamOr(def, "ballRadius", 0.5f);
             length = radius * 2.0f;
+        } else if (def->id == "rocket_launcher") {
+            radius = 0.25f;
+            length = 0.6f;
         }
     }
 

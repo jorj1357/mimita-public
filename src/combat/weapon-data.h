@@ -10,6 +10,7 @@ WeaponDefinition createShotgunDefinition();
 WeaponDefinition createSwordswordDefinition();
 WeaponDefinition createOpRevolverDefinition();
 WeaponDefinition createAa12Definition();
+WeaponDefinition createRocketLauncherDefinition();
 
 void registerBuiltinWeapons();
 

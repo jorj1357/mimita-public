@@ -1,5 +1,6 @@
 #include "sim/sim-context.h"
 #include "input/input-frame.h"
+#include "perf/perf.h"
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
@@ -46,6 +47,8 @@ static constexpr float TICK_DT = 1.0f / 60.0f;
 void simulateTick(SimContext& sim, const InputFrame& frame)
 {
     if (!sim.player || !sim.world || !sim.npcSystem) return;
+
+    Perf::ScopedTimer _t("Simulation");
 
     if (DebugConfig::DEBUG_TICKS)
         Debug::log(Debug::Category::General, "[TICK] number=%llu\n", (unsigned long long)sim.tick);

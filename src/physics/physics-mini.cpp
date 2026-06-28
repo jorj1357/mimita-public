@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include "input/input-commands.h"
+#include "perf/perf.h"
 
 #include "entities/player.h"
 #include "world/world.h"
@@ -74,6 +75,7 @@ static void physicsMainUpdate_Internal(
     const Camera* debugCamera,
     bool freezeHeld
 ){
+    Perf::ScopedTimer _t("Physics");
     dt = std::min(dt, 0.033f);
     p.inputWishMove = wishMoveXY;
 

@@ -207,7 +207,10 @@ static void applyScaleAndOffset(std::vector<unsigned char>& pixels,
     if (sy < 0) sy = 0;
     if (sx + sampW > srcW) sampW = srcW - sx;
     if (sy + sampH > srcH) sampH = srcH - sy;
-    if (sampW <= 0 || sampH <= 0) return;
+    if (sampW <= 0 || sampH <= 0) {
+        pixels.assign(USABLE * USABLE * 4, 0);
+        return;
+    }
 
     if (sx == 0 && sy == 0 && sampW == srcW && sampH == srcH) {
         if (srcW != USABLE || srcH != USABLE) {
@@ -223,11 +226,12 @@ static void applyScaleAndOffset(std::vector<unsigned char>& pixels,
         std::memcpy(&cropped[y * sampW * 4], &pixels[(sy + y) * srcW * 4 + sx * 4], sampW * 4);
 
     if (sampW == USABLE && sampH == USABLE) {
+        pixels.resize(USABLE * USABLE * 4);
         std::memcpy(pixels.data(), cropped.data(), USABLE * USABLE * 4);
     } else {
         std::vector<unsigned char> resized(USABLE * USABLE * 4);
         stbir_resize_uint8_linear(cropped.data(), sampW, sampH, 0, resized.data(), USABLE, USABLE, 0, STBIR_RGBA);
-        std::memcpy(pixels.data(), resized.data(), USABLE * USABLE * 4);
+        pixels = std::move(resized);
     }
 }
 
@@ -246,7 +250,7 @@ static void applyCrop(std::vector<unsigned char>& pixels, int srcW, int srcH) {
         for (int x = 0; x < USABLE && cropX + x < newW; ++x)
             for (int c = 0; c < 4; ++c)
                 cropped[(y * USABLE + x) * 4 + c] = scaled[((cropY + y) * newW + (cropX + x)) * 4 + c];
-    std::memcpy(pixels.data(), cropped.data(), USABLE * USABLE * 4);
+    pixels.assign(cropped.begin(), cropped.end());
 }
 
 } // anonymous namespace
@@ -255,7 +259,7 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     if (!mAvatar.advancedMode)
         const_cast<AvatarDefinition&>(mAvatar).expandSimple();
 
-    std::vector<unsigned char> atlasPixels(ATLAS_SIZE * ATLAS_SIZE * 4, 128);
+    std::vector<unsigned char> atlasPixels(ATLAS_SIZE * ATLAS_SIZE * 4, 0);
 
     const std::string parts[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
     const std::string faces[] = {"top", "bottom", "front", "back", "left", "right"};
@@ -313,14 +317,17 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                 cellPixels = std::move(scaled);
             }
 
-            // Apply per-face color multiplier (RGB multiply)
-            if (fs.transform.color != glm::vec3(1.0f)) {
+            // Apply per-face color multiplier (RGB multiply) and transparency (alpha multiply)
+            float opacity = 1.0f - std::clamp(fs.transform.transparency, 0.0f, 1.0f);
+            if (fs.transform.color != glm::vec3(1.0f) || opacity < 1.0f) {
                 for (int py = 0; py < USABLE; ++py)
                     for (int px = 0; px < USABLE; ++px) {
                         unsigned char* p = &cellPixels[(py * USABLE + px) * 4];
                         p[0] = (unsigned char)std::clamp(p[0] * fs.transform.color.r, 0.0f, 255.0f);
                         p[1] = (unsigned char)std::clamp(p[1] * fs.transform.color.g, 0.0f, 255.0f);
                         p[2] = (unsigned char)std::clamp(p[2] * fs.transform.color.b, 0.0f, 255.0f);
+                        if (opacity < 1.0f)
+                            p[3] = (unsigned char)((float)p[3] * opacity);
                     }
             }
 

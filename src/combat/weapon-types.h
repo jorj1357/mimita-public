@@ -15,7 +15,8 @@ enum class WeaponBehaviorType {
     Projectile,
     Godball,
     Melee,
-    Swordsword
+    Swordsword,
+    RocketLauncher
 };
 
 enum class WeaponFireMode {

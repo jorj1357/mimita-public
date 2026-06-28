@@ -8,6 +8,7 @@
 
 #include "combat/weapon-hit.h"
 #include "debug/debug-log.h"
+#include "perf/perf.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
@@ -408,6 +409,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
 void NpcSystem::render(const Camera& camera) const
 {
+    Perf::ScopedTimer _t("NpcRender");
     for (const Npc& npc : npcs)
         renderPlayer(npc.body, camera);
 }
