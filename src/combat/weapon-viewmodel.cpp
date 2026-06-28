@@ -1,5 +1,6 @@
 #include "weapon-viewmodel.h"
 #include "weapon-types.h"
+#include "weapon-config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -81,18 +82,13 @@ extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
 void WeaponViewModel::loadModel(const std::string& modelPath) {
-    printf("[VMTRACE] loadModel entered: path=\"%s\" modelLoadAttempted=%d vao=%u verts=%zu\n",
-           modelPath.c_str(), (int)modelLoadAttempted, vao, heldMesh.verts.size());
     if (modelLoadAttempted || modelPath.empty()) {
-        printf("[VMTRACE] loadModel EARLY RETURN: modelLoadAttempted=%d empty=%d\n",
-               (int)modelLoadAttempted, (int)modelPath.empty());
         modelLoadAttempted = true;
         return;
     }
     modelLoadAttempted = true;
     printf("[Weapon] Loading model: %s\n", modelPath.c_str());
     heldMesh = loadGLB(modelPath);
-    printf("[VMTRACE] loadGLB returned: verts=%zu batches=%zu\n", heldMesh.verts.size(), heldMesh.batches.size());
     if (heldMesh.verts.empty()) {
         printf("[Weapon ERROR] Failed to load model:\n  %s\n", modelPath.c_str());
         return;
@@ -106,10 +102,6 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
         boundsMax = glm::max(boundsMax, vertex.pos);
     }
     glm::vec3 size = boundsMax - boundsMin;
-    printf("[VMTRACE] model bounds: min=(%.3f,%.3f,%.3f) max=(%.3f,%.3f,%.3f) size=(%.3f,%.3f,%.3f)\n",
-           boundsMin.x, boundsMin.y, boundsMin.z,
-           boundsMax.x, boundsMax.y, boundsMax.z,
-           size.x, size.y, size.z);
     int axis = size.y > size.x ? 1 : 0;
     if (size.z > size[axis])
         axis = 2;
@@ -126,7 +118,6 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
 
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
-    printf("[VMTRACE] Created VAO=%u VBO=%u\n", vao, vbo);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, heldMesh.verts.size() * sizeof(Vertex), heldMesh.verts.data(), GL_STATIC_DRAW);
@@ -137,49 +128,30 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
     glBindVertexArray(0);
-    printf("[VIEWMODEL] model loaded: path=%s verts=%zu vao=%u batches=%zu\n",
-           modelPath.c_str(), heldMesh.verts.size(), vao, heldMesh.batches.size());
+    printf("[VIEWMODEL] model loaded verts=%zu vao=%u\n", heldMesh.verts.size(), vao);
 }
 
 void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                              const WeaponDefinition* def, bool updatePlayerPose,
                              const World* world) {
-    printf("[VMTRACE] update entered: def=%p id=%s slot=%d modelPath=%s\n",
-           (void*)def, def ? def->id.c_str() : "(null)",
-           def ? def->slot : -1,
-           def ? def->modelPath.c_str() : "(null)");
-    loadModel(def ? def->modelPath : "");
-    printf("[VMTRACE] update after loadModel: vao=%u hasModelBounds=%d verts=%zu batches=%zu\n",
-           vao, (int)hasModelBounds, heldMesh.verts.size(), heldMesh.batches.size());
-
-    // FORCED DEBUG: render the loaded mesh at the player position using the main shader
-    // to verify the mesh renders at all, independent of weapon attachment.
-    if (vao && !heldMesh.verts.empty() && gRenderer && gRenderer->shaderProgram && def && def->id == "rocket_launcher") {
-        printf("[VMTRACE] FORCED DEBUG RENDER at player pos\n");
-        const unsigned int shader = gRenderer->shaderProgram;
-        glm::mat4 view = camera.getView();
-        glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), player.pos + glm::vec3(0, 2, 0));
-        model = glm::scale(model, glm::vec3(2.0f));
-        glUseProgram(shader);
-        glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &proj[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &model[0][0]);
-        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-        glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-        glActiveTexture(GL_TEXTURE0);
-        glBindVertexArray(vao);
-        for (const Mesh::Batch& batch : heldMesh.batches) {
-            GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-            glBindTexture(GL_TEXTURE_2D, tex);
-            glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
-        }
-        glBindVertexArray(0);
-        printf("[VMTRACE] FORCED DEBUG RENDER done\n");
+    // Attempt to load weapon config for this weapon (supports hot reload)
+    WeaponConfig& wc = WeaponConfig::instance();
+    bool hasConfig = false;
+    const WeaponViewModelConfig* vmcfg = nullptr;
+    if (def && !def->id.empty()) {
+        wc.pollHotReload(def->id);
+        vmcfg = wc.get(def->id);
+        hasConfig = (vmcfg != nullptr);
     }
 
-    if (def && def->id == "rocket_launcher" && !def->modelPath.empty())
-        printf("[Weapon] Rocket launcher using: %s\n", def->modelPath.c_str());
+    // Use config modelPath if available, otherwise fall back to definition
+    std::string modelPath;
+    if (hasConfig && vmcfg && !vmcfg->modelPath.empty())
+        modelPath = vmcfg->modelPath;
+    else if (def)
+        modelPath = def->modelPath;
+
+    loadModel(modelPath);
     if (world)
         player.collision.hasWeaponCollisionCapsule = false;
     if (updatePlayerPose)
@@ -235,27 +207,37 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             customRot = glm::rotate(customRot, glm::radians(rotEuler.y), glm::vec3(0,1,0));
             customRot = glm::rotate(customRot, glm::radians(rotEuler.z), glm::vec3(0,0,1));
         }
+
+        // Build the base weapon transform from arm attachment
         weaponTransform = part.worldTransform *
                            glm::translate(glm::mat4(1.0f), handPoint) *
                            glm::mat4_cast(gripRotation) *
                            customRot *
                            glm::translate(glm::mat4(1.0f), offset) *
                            glm::translate(glm::mat4(1.0f), -collisionGrip);
+
+        // Apply JSON config viewmodel transforms (local space: +Y = forward/barrel, +X = right, +Z = up)
+        if (hasConfig && vmcfg && vmcfg->enabled) {
+            glm::mat4 confTransform(1.0f);
+            confTransform = glm::translate(confTransform, vmcfg->positionOffset);
+            confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.x), glm::vec3(1,0,0));
+            confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.y), glm::vec3(0,1,0));
+            confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.z), glm::vec3(0,0,1));
+            confTransform = glm::scale(confTransform, vmcfg->scale);
+            weaponTransform = weaponTransform * confTransform;
+        }
+
         muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
         forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
 
         if (world) {
             muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
             forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
-            // Weapon collision capsule tracking (visual-only, resolved in draw)
             Capsule weaponCap = weaponCapsuleFromTransform(
                 weaponTransform, collisionGrip, collisionMuzzle, collisionRadius);
             player.collision.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
 
-            // Store local-space weapon data so physics can recompute
-            // the capsule from a fresh right-arm transform (eliminating
-            // the one-frame latency between viewmodel update and collision).
             player.weaponLocalToArm = glm::translate(glm::mat4(1.0f), handPoint) *
                 glm::mat4_cast(gripRotation) * customRot *
                 glm::translate(glm::mat4(1.0f), offset) *
@@ -289,38 +271,13 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
 }
 
 void WeaponViewModel::render(const Camera& camera, const Player& player, int equippedSlot) const {
-    printf("[VMTRACE] render entered: slotMatch=%d gRenderer=%p shader=%u vao=%u verts=%zu batches=%zu\n",
-           (int)(player.equippedSlot == equippedSlot),
-           (void*)gRenderer,
-           gRenderer ? gRenderer->shaderProgram : 0,
-           vao, heldMesh.verts.size(), heldMesh.batches.size());
-
-    if (player.equippedSlot != equippedSlot || !gRenderer || !gRenderer->shaderProgram || !vao || heldMesh.verts.empty()) {
-        printf("[VMTRACE] render SKIP: slotEq=%d gR=%d shader=%d vaoNZ=%d vertsNonEmpty=%d\n",
-               (int)(player.equippedSlot == equippedSlot),
-               (int)(gRenderer != nullptr),
-               (int)(gRenderer && gRenderer->shaderProgram != 0),
-               (int)(vao != 0),
-               (int)(!heldMesh.verts.empty()));
+    if (player.equippedSlot != equippedSlot || !gRenderer || !gRenderer->shaderProgram || !vao || heldMesh.verts.empty())
         return;
-    }
 
     const unsigned int shader = gRenderer->shaderProgram;
     glm::mat4 view = camera.getView();
     glm::mat4 projection = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
     glUseProgram(shader);
-
-    // Log the weapon transform for every rocket frame
-    {
-        glm::vec3 trans = glm::vec3(weaponTransform[3]);
-        glm::vec3 scale;
-        scale.x = glm::length(glm::vec3(weaponTransform[0]));
-        scale.y = glm::length(glm::vec3(weaponTransform[1]));
-        scale.z = glm::length(glm::vec3(weaponTransform[2]));
-        printf("[VMTRACE] weaponTransform: pos=(%.3f,%.3f,%.3f) scale=(%.3f,%.3f,%.3f)\n",
-               trans.x, trans.y, trans.z, scale.x, scale.y, scale.z);
-    }
-
     glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &weaponTransform[0][0]);
@@ -329,12 +286,9 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vao);
     for (const Mesh::Batch& batch : heldMesh.batches) {
-        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-        printf("[VMTRACE] drawing batch: first=%zu count=%zu texture=%u\n", batch.first, batch.count, tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
+        glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
         glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
         diagRenderCountWeaponDraw();
     }
     glBindVertexArray(0);
-    printf("[VMTRACE] render DONE\n");
 }

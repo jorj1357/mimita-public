@@ -71,6 +71,12 @@ void updateReplayExport()
     if (frameNum == 0) {
         EXPORTTRACE("=== updateReplayExport: first frame ===");
         EXPORTLOG("STAGE 7/8: capturing frames");
+        printf("[RPLX] render start\n");
+        printf("[RPLX] resolution: %dx%d\n", w, h);
+        printf("[RPLX] fps: 60\n");
+        printf("[RPLX] tick rate: 60\n");
+        printf("[RPLX] total ticks: %u\n", gJob.totalTicks);
+        printf("[RPLX] expected frames: %u\n", gJob.totalTicks);
     }
 
     EXPORTTRACE("Frame %u/%u: allocating pixels buffer (%dx%d*3=%d bytes)",
@@ -96,10 +102,16 @@ void updateReplayExport()
     glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
 
     GLenum glErr = glGetError();
-    if (glErr != GL_NO_ERROR)
+    if (glErr != GL_NO_ERROR) {
         EXPORTTRACE("Frame %u: glReadPixels GL ERROR=0x%x", frameNum, glErr);
-    else
+        printf("[RPLX ERROR] glReadPixels failed at frame %u: 0x%x\n", frameNum, glErr);
+    } else {
         EXPORTTRACE("Frame %u: glReadPixels OK", frameNum);
+    }
+
+    // Log first 3 frames and last frame
+    if (frameNum < 3 || frameNum >= gJob.totalTicks - 1)
+        printf("[RPLX] rendered frame %u/%u\n", frameNum + 1, gJob.totalTicks);
 
     // Sample first pixel and compute rolling hash
     {
@@ -179,6 +191,9 @@ void updateReplayExport()
 
     if (gJob.capturedTicks >= gJob.totalTicks)
     {
+        printf("[RPLX] rendered frame %u/%u\n", gJob.capturedTicks, gJob.totalTicks);
+        printf("[RPLX] render complete\n");
+        printf("[RPLX] actual frames rendered: %u\n", gJob.capturedTicks);
         EXPORTTRACE("=== ALL FRAMES WRITTEN (%u) ===", gJob.capturedTicks);
 
         // [G] Verify raw file size on disk before closing

@@ -238,21 +238,31 @@ static void debugLaunchFfmpegVisible(const std::string& cmd)
     }
 }
 
-void encodeReplayToMp4()
+// Run ffmpeg via batch file and capture its exit code + stderr output.
+// Returns ffmpeg exit code (0 = success). On failure, stderr is populated.
+static int runFfmpegWithLog(const std::string& batPath, std::string& stderrOut)
+{
+    std::string cmd = "\"" + batPath + "\" 2>&1";
+    FILE* pipe = _popen(cmd.c_str(), "r");
+    if (!pipe) {
+        stderrOut = "_popen failed";
+        return -1;
+    }
+    char buf[1024];
+    while (fgets(buf, sizeof(buf), pipe))
+        stderrOut += buf;
+    return _pclose(pipe);
+}
+
+static bool encodeVideo(const std::string& nativeOutput, bool withAudio)
 {
     namespace fs = std::filesystem;
-    std::string nativeOutput = fs::path(gJob.outputPath).make_preferred().string();
     std::string nativeRaw = fs::path(gJob.rawTempPath).make_preferred().string();
-    std::string nativeWav = (fs::path("replays") / "exports" / "_tmp" / "export_audio.wav").make_preferred().string();
+    std::string nativeWav = fs::absolute(fs::path("replays") / "exports" / "_tmp" / "export_audio.wav").make_preferred().string();
 
-    EXPORTLOG("[EXPORT AUDIO] Building audio WAV from replay sound events");
-    bool audioOk = buildExportAudio(nativeWav, gJob.totalTicks);
-    if (!audioOk) {
-        EXPORTLOG("[EXPORT AUDIO] buildExportAudio failed, creating silent fallback");
-        std::vector<int16_t> silence(48000 * 2, 0);
-        audioOk = writeWavFile(nativeWav, silence, 48000, 2);
-    }
-    EXPORTLOG("[EXPORT AUDIO] buildExportAudio=%s", audioOk ? "OK" : "FAILED (silent fallback)");
+    // Remove any previous output file
+    std::error_code ec;
+    fs::remove(nativeOutput, ec);
 
     std::string scaleFilter;
     if (gJob.outputWidth > 0 && gJob.outputHeight > 0 &&
@@ -260,24 +270,28 @@ void encodeReplayToMp4()
         scaleFilter = "-vf scale=" + std::to_string(gJob.outputWidth) + ":" + std::to_string(gJob.outputHeight);
     }
 
-    std::string audioInput = "-i \"" + nativeWav + "\"";
-    std::string audioCodec = "-c:a aac -b:a 192k";
+    std::string audioInput;
+    std::string audioCodec;
+    if (withAudio) {
+        audioInput = "-i \"" + nativeWav + "\"";
+        audioCodec = "-c:a aac -b:a 192k";
+    }
 
     std::string batContent = "@echo off\r\n"
-        "\"" + gJob.ffmpegPath + "\" -y -f rawvideo -pixel_format rgb24 "
+        "\"" + fs::absolute(gJob.ffmpegPath).make_preferred().string() + "\" -y -f rawvideo -pixel_format rgb24 "
         "-video_size " + std::to_string(gJob.capWidth) + "x" + std::to_string(gJob.capHeight) + " "
-        "-framerate 60 -i \"" + nativeRaw + "\" "
+        "-framerate 60 -i \"" + fs::absolute(nativeRaw).make_preferred().string() + "\" "
         + audioInput + " "
         + scaleFilter + " "
         "-c:v libx264 -preset fast -pix_fmt yuv420p "
         "-crf 18 "
         + audioCodec + " "
-        "-shortest \""
-        + nativeOutput + "\" "
-        "-loglevel error\r\n"
+        + (withAudio ? "-shortest " : "") +
+        "\"" + nativeOutput + "\" "
+        "2>&1\r\n"
         "exit /b %ERRORLEVEL%\r\n";
 
-    std::string batPath = (fs::path("replays") / "exports" / "_tmp" / "encode.bat").make_preferred().string();
+    std::string batPath = fs::absolute(fs::path("replays") / "exports" / "_tmp" / (withAudio ? "encode_video.bat" : "encode_video_only.bat")).make_preferred().string();
     {
         FILE* bf = fopen(batPath.c_str(), "w");
         if (bf) {
@@ -286,51 +300,100 @@ void encodeReplayToMp4()
         }
     }
 
-    EXPORTLOG("[EXPORT DEBUG] ffmpeg command=%s", batContent.c_str());
+    printf("[RPLX] ffmpeg command:\n%s\n", batContent.c_str());
 
-    int encodeResult = std::system(batPath.c_str());
-    gJob.ffmpegExitCode = encodeResult;
+    std::string stderrOut;
+    int exitCode = runFfmpegWithLog(batPath, stderrOut);
+    gJob.ffmpegExitCode = exitCode;
 
-    EXPORTLOG("[EXPORT DEBUG] ffmpeg exit code=%d", encodeResult);
+    printf("[RPLX] ffmpeg exit code: %d\n", exitCode);
+    if (!stderrOut.empty())
+        printf("[RPLX] ffmpeg output:\n%s\n", stderrOut.c_str());
 
-    {
-        std::error_code ec;
-        std::filesystem::remove(gJob.rawTempPath, ec);
-        std::filesystem::remove(batPath, ec);
-        std::filesystem::remove(nativeWav, ec);
+    fs::remove(batPath, ec);
+
+    printf("[RPLX] output exists after encode: %s\n",
+           fs::exists(nativeOutput, ec) ? "yes" : "no");
+    if (fs::exists(nativeOutput, ec)) {
+        uint64_t size = fs::file_size(nativeOutput, ec);
+        printf("[RPLX] output size: %llu bytes\n", (unsigned long long)size);
+        return true;
+    }
+    return false;
+}
+
+void encodeReplayToMp4()
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    EXPORTLOG("=== ENCODE START ===");
+
+    std::string outputPath = fs::absolute(gJob.outputPath).make_preferred().string();
+    std::string nativeRaw = fs::absolute(gJob.rawTempPath).make_preferred().string();
+    std::string nativeWav = fs::absolute(fs::path("replays") / "exports" / "_tmp" / "export_audio.wav").make_preferred().string();
+
+    // Ensure temp directory exists
+    fs::create_directories(fs::path("replays") / "exports" / "_tmp", ec);
+
+    printf("[RPLX] output folder: %s\n", fs::path(outputPath).parent_path().string().c_str());
+    printf("[RPLX] output folder exists: %s\n", fs::exists(fs::path(outputPath).parent_path(), ec) ? "yes" : "no");
+    printf("[RPLX] output mp4 path: %s\n", outputPath.c_str());
+    printf("[RPLX] temp raw path: %s\n", nativeRaw.c_str());
+    printf("[RPLX] raw file exists: %s\n", fs::exists(nativeRaw, ec) ? "yes" : "no");
+    if (fs::exists(nativeRaw, ec))
+        printf("[RPLX] raw file size: %llu bytes\n", (unsigned long long)fs::file_size(nativeRaw, ec));
+    printf("[RPLX] temp audio path: %s\n", nativeWav.c_str());
+
+    // Step 1: Build audio WAV
+    printf("[RPLX] building audio WAV from replay sound events...\n");
+    bool audioOk = buildExportAudio(nativeWav, gJob.totalTicks);
+    if (!audioOk) {
+        printf("[RPLX WARN] buildExportAudio failed, creating silent fallback\n");
+        std::vector<int16_t> silence(48000 * 2, 0);
+        audioOk = writeWavFile(nativeWav, silence, 48000, 2);
+    }
+    printf("[RPLX] audio export: %s\n", audioOk ? "OK" : "FAILED");
+
+    // Step 2: Try video+audio encode
+    printf("[RPLX] encoding video with audio...\n");
+    bool encodeOk = encodeVideo(outputPath, true);
+
+    // Step 3: If video+audio failed, try video-only
+    if (!encodeOk) {
+        printf("[RPLX WARN] video+audio encode failed, retrying video-only\n");
+        encodeOk = encodeVideo(outputPath, false);
+        if (encodeOk) {
+            printf("[RPLX WARN] audio export failed, created video-only MP4\n");
+            EXPORTLOG("[RPLX WARN] audio export failed, created video-only MP4");
+        }
     }
 
-    if (!std::filesystem::exists(gJob.outputPath))
+    // Clean up temp files
     {
-        EXPORTLOG("FAIL: output file missing after encoding (exit code %d)", encodeResult);
+        fs::remove(gJob.rawTempPath, ec);
+        fs::remove(nativeWav, ec);
+    }
+
+    if (!encodeOk) {
+        EXPORTLOG("FAIL: output file missing after encoding (exit code %d)", gJob.ffmpegExitCode);
+        printf("[RPLX] FAIL: output missing after encode\n");
         gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "FFmpeg encoding failed, output missing. Exit code=" + std::to_string(encodeResult);
+        gJob.errorMsg = "FFmpeg encoding failed, output missing. Exit code=" + std::to_string(gJob.ffmpegExitCode);
         return;
     }
 
-    uint64_t outSize = 0;
-    {
-        std::error_code ec;
-        outSize = std::filesystem::file_size(gJob.outputPath, ec);
-    }
-    if (outSize == 0)
-    {
-        EXPORTLOG("FAIL: output file is empty (0 bytes, exit code %d)", encodeResult);
-        gJob.state = ReplayExportJob::Failed;
-        gJob.errorMsg = "Output file is empty:\n" + gJob.outputPath;
-        return;
-    }
-
+    uint64_t outSize = fs::file_size(outputPath, ec);
     gJob.mp4FileBytes = outSize;
-    EXPORTLOG("[EXPORT DEBUG] mp4 size=%llu", (unsigned long long)gJob.mp4FileBytes);
-
     EXPORTLOG("PASS: output file exists, size=%llu bytes (%.1f KB)",
               (unsigned long long)gJob.mp4FileBytes, (double)gJob.mp4FileBytes / 1024.0);
-    EXPORTLOG("=== EXPORT COMPLETE ===");
+    printf("[RPLX] PASS: output exists, size=%llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
 
     EXPORTLOG("[AUTO OUTRO] starting");
-    appendOutroToFinishedMp4(gJob.outputPath.c_str());
+    appendOutroToFinishedMp4(outputPath.c_str());
     EXPORTLOG("[AUTO OUTRO] done");
 
     gJob.state = ReplayExportJob::Done;
+    printf("[RPLX] export complete\n");
+    printf("[RPLX] output exists: yes\n");
+    printf("[RPLX] output size: %llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
 }
