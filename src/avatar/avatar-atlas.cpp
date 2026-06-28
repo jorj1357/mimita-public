@@ -161,26 +161,45 @@ static void applyHSB(unsigned char* pixel, float hueShift, float saturation, flo
 }
 
 static void rotateImage(std::vector<unsigned char>& pixels, int size, float rotationDeg) {
-    int rot = ((int)std::round(rotationDeg) % 360 + 360) % 360;
-    if (rot == 0) return;
-    if (rot == 90) {
-        std::vector<unsigned char> tmp = pixels;
-        for (int y = 0; y < size; ++y)
-            for (int x = 0; x < size; ++x)
-                for (int c = 0; c < 4; ++c)
-                    pixels[(x * size + (size - 1 - y)) * 4 + c] = tmp[(y * size + x) * 4 + c];
-    } else if (rot == 180) {
-        std::vector<unsigned char> tmp = pixels;
-        for (int y = 0; y < size; ++y)
-            for (int x = 0; x < size; ++x)
-                for (int c = 0; c < 4; ++c)
-                    pixels[((size - 1 - y) * size + (size - 1 - x)) * 4 + c] = tmp[(y * size + x) * 4 + c];
-    } else if (rot == 270) {
-        std::vector<unsigned char> tmp = pixels;
-        for (int y = 0; y < size; ++y)
-            for (int x = 0; x < size; ++x)
-                for (int c = 0; c < 4; ++c)
-                    pixels[((size - 1 - x) * size + y) * 4 + c] = tmp[(y * size + x) * 4 + c];
+    float rot = fmod(rotationDeg, 360.0f);
+    if (rot < 0.0f) rot += 360.0f;
+    if (rot < 0.001f || rot > 359.999f) return;
+
+    float rad = glm::radians(rot);
+    float cosA = std::cos(rad);
+    float sinA = std::sin(rad);
+    float half = size * 0.5f;
+
+    std::vector<unsigned char> tmp = pixels;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            float sx = (x - half) * cosA - (y - half) * sinA + half;
+            float sy = (x - half) * sinA + (y - half) * cosA + half;
+
+            // Bilinear interpolation with clamp-to-edge
+            int ix = (int)sx;
+            int iy = (int)sy;
+            float fx = sx - ix;
+            float fy = sy - iy;
+            if (ix < 0) { ix = 0; fx = 0.0f; }
+            if (iy < 0) { iy = 0; fy = 0.0f; }
+            if (ix >= size - 1) { ix = size - 2; fx = 1.0f; }
+            if (iy >= size - 1) { iy = size - 2; fy = 1.0f; }
+
+            const unsigned char* p00 = &tmp[(iy * size + ix) * 4];
+            const unsigned char* p10 = &tmp[(iy * size + (ix + 1)) * 4];
+            const unsigned char* p01 = &tmp[((iy + 1) * size + ix) * 4];
+            const unsigned char* p11 = &tmp[((iy + 1) * size + (ix + 1)) * 4];
+
+            unsigned char* dst = &pixels[(y * size + x) * 4];
+            for (int c = 0; c < 4; ++c) {
+                float v = (1.0f - fx) * (1.0f - fy) * p00[c]
+                        + fx * (1.0f - fy) * p10[c]
+                        + (1.0f - fx) * fy * p01[c]
+                        + fx * fy * p11[c];
+                dst[c] = (unsigned char)std::clamp(std::round(v), 0.0f, 255.0f);
+            }
+        }
     }
 }
 
@@ -292,7 +311,7 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
             bool hasScaleOffset = (fs.transform.scaleX != 1.0f || fs.transform.scaleY != 1.0f ||
                                    fs.transform.offsetX != 0.0f || fs.transform.offsetY != 0.0f);
 
-            // Rendering pipeline: load → scale+offset → resize → rotation → HSB
+            // Rendering pipeline: load → scale+offset → resize → rotation → color/transparency → HSB
             std::vector<unsigned char> cellPixels;
             if (hasScaleOffset) {
                 // Apply scale+offset on full-resolution data, then resize to USABLE
@@ -317,6 +336,23 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                 cellPixels = std::move(scaled);
             }
 
+            // Apply default 90-degree CCW rotation, then per-face rotation on top.
+            // Rotation is applied before color/transparency so rotation works on
+            // the original pixel values and color/transparency are the final pass.
+            float totalRotation = DEFAULT_TEXTURE_ROTATION;
+            if (fs.transform.rotation != 0.0f)
+                totalRotation = fmod(totalRotation + fs.transform.rotation, 360.0f);
+            if (totalRotation != 0.0f)
+                rotateImage(cellPixels, USABLE, totalRotation);
+
+            if (totalRotation != 0.0f || fs.transform.scaleX != 1.0f || fs.transform.scaleY != 1.0f ||
+                fs.transform.offsetX != 0.0f || fs.transform.offsetY != 0.0f) {
+                printf("[Avatar] %s/%s rotation=%.1f° scale=%.2f,%.2f offset=%.0f,%.0f\n",
+                       parts[pi].c_str(), faces[fi].c_str(),
+                       totalRotation, fs.transform.scaleX, fs.transform.scaleY,
+                       fs.transform.offsetX, fs.transform.offsetY);
+            }
+
             // Apply per-face color multiplier (RGB multiply) and transparency (alpha multiply)
             float opacity = 1.0f - std::clamp(fs.transform.transparency, 0.0f, 1.0f);
             if (fs.transform.color != glm::vec3(1.0f) || opacity < 1.0f) {
@@ -330,13 +366,6 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
                             p[3] = (unsigned char)((float)p[3] * opacity);
                     }
             }
-
-            // Apply default 90-degree CCW rotation, then per-face rotation on top
-            float totalRotation = DEFAULT_TEXTURE_ROTATION;
-            if (fs.transform.rotation != 0.0f)
-                totalRotation = fmod(totalRotation + fs.transform.rotation, 360.0f);
-            if (totalRotation != 0.0f)
-                rotateImage(cellPixels, USABLE, totalRotation);
 
             if (fs.transform.hueShift != 0.0f || fs.transform.saturation != 0.0f || fs.transform.brightness != 0.0f) {
                 for (int py = 0; py < USABLE; ++py)
