@@ -30,6 +30,7 @@
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "replay/replay-factory.h"
+#include "world/texture-store.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "devtools/dev-npc-selection.h"
@@ -137,12 +138,24 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     replayActorModels[actorState.id];
                 if (!actor) {
                     actor = std::make_unique<Player>();
+                    // Load the correct model if the replay recorded one
+                    if (!actorState.modelPath.empty())
+                        actor->loadModel(actorState.modelPath.c_str());
+                    // Apply outfit texture directly to mesh batches without
+                    // destroying model UVs (unlike applySingleTexture).
                     const std::string& outfitToUse =
                         !actorState.outfitPath.empty()
                             ? actorState.outfitPath
                             : gReplayPlayer.outfitPath();
-                    if (!outfitToUse.empty())
-                        AvatarSystem::applySingleTexture(*actor, outfitToUse);
+                    if (!outfitToUse.empty()) {
+                        GLuint tex = gTextures.getPath(outfitToUse);
+                        if (tex) {
+                            for (auto& mesh : actor->physicalBody.partMeshes)
+                                for (auto& batch : mesh.batches)
+                                    batch.texture = tex;
+                            actor->bodyPartMeshes = actor->physicalBody.partMeshes;
+                        }
+                    }
                 }
                 actor->username = actorState.name;
                 actor->currentHp = actorState.health;

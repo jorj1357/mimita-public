@@ -165,22 +165,9 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         }
         }
 
-        if (rFrame && !rFrame->actors.empty()) {
-            const ReplayActorState& primary = rFrame->actors[0];
-            if (!primary.weaponName.empty() && primary.weaponName != "none") {
-                updateCrosshairDynamic(
-                    dt, glm::length(glm::vec2(primary.velocity)),
-                    primary.grounded, false, primary.shooting);
-                drawCrosshair(uiScreenW() * 0.5f, uiScreenH() * 0.5f);
-                char ammoLine[48];
-                snprintf(ammoLine, sizeof(ammoLine), "%d / %d",
-                         primary.currentAmmo, primary.reserveAmmo);
-                const float ammoW = uiMeasureText(ammoLine, 0.34f);
-                uiDrawText(ammoLine, uiScreenW() * 0.5f - ammoW * 0.5f,
-                           uiScreenH() * 0.5f - 42.0f,
-                           0.34f, {1.0f, 0.82f, 0.3f, 1.0f});
-            }
-        }
+        // Game HUD (engineTickUIGameHUD) handles crosshair, ammo, health,
+        // and other gameplay UI during replay. This replay HUD only adds
+        // replay-specific overlays (timeline, controls help, healthbars).
         if (const ReplaySceneFrame* hbFrame = gReplayPlayer.currentSceneFrame()) {
             for (const ReplayActorState& actorState : hbFrame->actors) {
                 auto mit = replayActorModels.find(actorState.id);

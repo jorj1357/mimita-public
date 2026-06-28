@@ -69,6 +69,15 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
+    // During replay playback, read from the viewed replay actor instead of
+    // the local player so HUD displays correct values at correct positions.
+    const ReplayActorState* replayViewedActor = nullptr;
+    if (replayPlaybackActive) {
+        const ReplaySceneFrame* rf = gReplayPlayer.currentSceneFrame();
+        if (rf && !rf->actors.empty())
+            replayViewedActor = &rf->actors[0];
+    }
+
     GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
     auto hudText = [&](const std::string& id, const std::string& text) {
         const GuiElement* el = hudLayout.get(id);
@@ -78,11 +87,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
     };
 
-    if (!replayPlaybackActive || gReplayCinematicMode) {
-        if (weapons.getCurrentDef(player)) {
-            updateCrosshairDynamic(
-                dt, glm::length(glm::vec2(player.vel)), player.ground.onGround,
-                player.dash.didDash, weapons.isShooting());
+    {
+        glm::vec3 vel = replayViewedActor ? replayViewedActor->velocity : player.vel;
+        bool grounded = replayViewedActor ? replayViewedActor->grounded : player.ground.onGround;
+        bool shooting = replayViewedActor ? replayViewedActor->shooting : weapons.isShooting();
+        bool didDash = replayViewedActor ? false : player.dash.didDash;
+        if (replayViewedActor || weapons.getCurrentDef(player)) {
+            updateCrosshairDynamic(dt, glm::length(glm::vec2(vel)), grounded, didDash, shooting);
             drawCrosshair(uiScreenW() * 0.5f, uiScreenH() * 0.5f);
         }
     }
@@ -93,11 +104,14 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
     else
     {
-    hudText("playerName", player.username);
+    hudText("playerName", replayViewedActor ? replayViewedActor->name : player.username);
+    int hp = replayViewedActor ? replayViewedActor->health : player.currentHp;
+    int maxHp = replayViewedActor ? replayViewedActor->maxHealth : player.maxHp;
+    bool dead = replayViewedActor ? replayViewedActor->dead : player.dead;
     char hpText[64];
-    snprintf(hpText, sizeof(hpText), "HP: %d/%d", player.currentHp, player.maxHp);
+    snprintf(hpText, sizeof(hpText), "HP: %d/%d", hp, maxHp);
     hudText("hpText", hpText);
-    if (player.dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
+    if (dead && gDuelManager.phase() != DuelPhase::MatchEnd) {
         if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen)
         {
         // Draw death overlay from layout JSON
@@ -116,7 +130,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
     if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay)
     {
-        glm::vec3 totalVel = player.vel;
+        glm::vec3 totalVel = replayViewedActor ? replayViewedActor->velocity : player.vel;
         float speed = glm::length(totalVel);
         char spBuf[64];
         snprintf(spBuf, sizeof(spBuf), "Speed: %.2f m/s", speed);
@@ -165,7 +179,16 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                      mpContext.serverAddress.c_str());
             uiDrawText(mpText, 24, 232, 0.32f, {0.7f, 0.9f, 1.0f, 1.0f});
         }
-        {
+        if (replayViewedActor) {
+            char ammoText[96];
+            const char* weaponName = replayViewedActor->weaponName.empty() ? "?" : replayViewedActor->weaponName.c_str();
+            snprintf(ammoText, sizeof(ammoText), "%s: %d / %d",
+                     weaponName, replayViewedActor->currentAmmo, replayViewedActor->reserveAmmo);
+            hudText("ammoText", ammoText);
+            if (replayViewedActor->reloading) {
+                hudText("reloadText", "reloading...");
+            }
+        } else {
             const WeaponDefinition* curDef = nullptr;
             for (const auto& pair : WeaponRegistry::instance().all()) {
                 if (pair.second.slot == player.equippedSlot) {
@@ -194,7 +217,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 }
             }
         }
-        if (player.inventoryOpen)
+        if (!replayViewedActor && player.inventoryOpen)
             uiDrawText("INVENTORY: [1] Revolver [2-10] Empty", 24, 260, 0.36f, {0.9f,0.9f,1.0f,1.0f});
     }
 
@@ -256,7 +279,6 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Self-healthbar (world-space, from JSON config) ─────────────
-    if (!replayPlaybackActive) {
     {
         float nameX = 0.0f, nameY = 0.0f;
         if (DebugVis::projectToScreen(camera, player.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.7f),
@@ -280,12 +302,11 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
         }
     }
-        for (const Npc& npc : npcSystem.all()) {
-            if (npc.body.dead) {
-                continue;
-            }
-            drawPlayerHealthbar(npc.body, camera, "npc-hp");
+    for (const Npc& npc : npcSystem.all()) {
+        if (npc.body.dead) {
+            continue;
         }
+        drawPlayerHealthbar(npc.body, camera, "npc-hp");
     }
 
     renderChatBubbles(player.chatState, player, camera);
