@@ -135,6 +135,8 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                         actor.reserveAmmo = a.value("reserveAmmo", 0);
                         actor.dead = a.value("dead", false);
                         actor.outfitPath = a.value("outfitPath", "");
+                        actor.characterName = a.value("characterName", "");
+                        actor.avatarName = a.value("avatarName", "");
                         actor.weaponName = a.value("weaponName", "");
                         actor.weaponModelPath = a.value("weaponModelPath", "");
                         actor.shooting = a.value("shooting", false);

@@ -74,6 +74,8 @@ ReplayActorState parseActor(const json& value)
     actor.modelPath = value.value("modelPath", "");
     actor.weaponModelPath = value.value("weaponModelPath", "");
     actor.outfitPath = value.value("outfitPath", "");
+    actor.characterName = value.value("characterName", "");
+    actor.avatarName = value.value("avatarName", "");
     actor.position = jsonVec3(value.value("position", json::array()));
     actor.rotation = jsonVec3(value.value("rotation", json::array()));
     actor.velocity = jsonVec3(value.value("velocity", json::array()));
@@ -112,6 +114,7 @@ json actorJson(const ReplayActorState& actor)
         {"id", actor.id}, {"name", actor.name}, {"type", actor.type},
         {"modelPath", actor.modelPath}, {"weaponModelPath", actor.weaponModelPath},
         {"outfitPath", actor.outfitPath},
+        {"characterName", actor.characterName}, {"avatarName", actor.avatarName},
         {"position", vec3Json(actor.position)}, {"rotation", vec3Json(actor.rotation)},
         {"velocity", vec3Json(actor.velocity)}, {"health", actor.health},
         {"maxHealth", actor.maxHealth}, {"currentAmmo", actor.currentAmmo},
