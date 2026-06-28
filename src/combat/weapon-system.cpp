@@ -321,10 +321,15 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return;
 
-    if (rt->isReloading || rt->fireCooldown > 0.0f) return;
+    if (rt->isReloading || rt->fireCooldown > 0.0f) {
+        // Dry-fire on cooldown (heavy click, lower pitch)
+        playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+        return;
+    }
 
     if (rt->currentAmmo <= 0) {
-        WeaponAudio::playDryFireSound(*def);
+        // Heavy dry-fire for out of ammo (lower pitch)
+        playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         if (!rt->isReloading && rt->reserveAmmo > 0)
             reload(player);
         return;
@@ -333,9 +338,17 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
     int idx = slotIndex(def->slot);
     const WeaponViewModel& vm = mViewModels[idx];
     glm::vec3 muzzlePos = vm.muzzle;
-    glm::vec3 muzzleDir = vm.forward;
 
-    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, muzzleDir);
+    // Compute aim direction from camera crosshair raycast (full 3D)
+    WeaponFire::AimTarget aim = WeaponFire::computeAimTarget(camera, world, npcs, nullptr);
+    glm::vec3 dir = glm::normalize(aim.worldPoint - muzzlePos);
+
+    // Firing recoil: push player opposite the rocket direction
+    float recoilStrength = def->customParams.count("firingRecoilStrength")
+        ? def->customParams.at("firingRecoilStrength") : 30.0f;
+    player.externalImpulse -= dir * recoilStrength;
+
+    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
     mShotCooldown = def->fireDelay;
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 }

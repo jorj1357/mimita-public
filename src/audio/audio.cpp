@@ -68,6 +68,7 @@ static std::string soundPath(const std::string& name)
     if (name == "shotgunshoot") return "assets/sound/weapon/shotgun/shotgunshoot.wav";
     if (name == "shotgunreload") return "assets/sound/weapon/shotgun/shotgunreload.wav";
     if (name == "godballhit") return "assets/sound/weapon/godball/godballhit.wav";
+    if (name == "rocketlauncher/rocketshoot") return "assets/sound/weapon/rocketlauncher/rocketshoot.wav";
     if (name == "swordswordhit1") return "assets/sound/weapon/swordsword/swordswordhit1.wav";
     if (name == "swordswordhit2") return "assets/sound/weapon/swordsword/swordswordhit2.wav";
     if (name == "swordswordhit3") return "assets/sound/weapon/swordsword/swordswordhit3.wav";
