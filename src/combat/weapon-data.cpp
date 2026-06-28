@@ -148,8 +148,8 @@ WeaponDefinition createSwordswordDefinition() {
     def.displayName = "Swordsword";
     def.slot = 4;
 
-    def.modelPath = "";
-    def.viewModelOffset = {0.5f, 0.8f, 0.3f};
+    def.modelPath = "assets/objects/weapons/mimita-rpg-v3.glb";
+    def.viewModelOffset = {0.0f, 0.0f, 0.0f};
     def.viewModelRotation = {0.0f, 0.0f, 0.0f};
     def.weaponScale = 1.0f;
 
