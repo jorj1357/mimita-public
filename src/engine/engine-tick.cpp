@@ -143,6 +143,8 @@ void engineTick(Engine& engine)
 
     if (isReplayExportActive()) {
         updateReplayExport();
+    } else if (isReplayBatchExportActive()) {
+        updateReplayBatchExport();
     }
 
     Terminal::instance().render();

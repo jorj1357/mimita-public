@@ -152,4 +152,33 @@ void registerAvatarCommands(Player& player) {
         std::string(),
         CommandCategory::Player
     });
+
+    t.registerCommand({
+        "avatar.debugModel",
+        "Print loaded GLB node names and avatar player_model path",
+        "avatar.debugModel",
+        [&player](const std::vector<std::string>&) {
+            auto& av = AvatarSystem::instance();
+            if (!av.hasAvatar()) {
+                Terminal::instance().addLog("[AVATAR] No avatar loaded.");
+                return;
+            }
+            Terminal::instance().addLog("[AVATAR] Avatar: " + av.currentName());
+            const auto& pm = av.current().getPlayerModel();
+            if (pm.empty())
+                Terminal::instance().addLog("[AVATAR] player_model: (none, using default)");
+            else
+                Terminal::instance().addLog("[AVATAR] player_model: " + pm);
+
+            Terminal::instance().addLog("[AVATAR] Loaded GLB body parts:");
+            for (const auto& part : player.physicalBody.parts)
+                Terminal::instance().addLog("  " + part.name);
+
+            Terminal::instance().addLog("[AVATAR] All skeleton nodes:");
+            for (const auto& node : player.nodes)
+                Terminal::instance().addLog("  " + node.name);
+        },
+        std::string(),
+        CommandCategory::Player
+    });
 }

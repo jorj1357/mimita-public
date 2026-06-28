@@ -52,3 +52,7 @@ std::string generateExportOutputPath();
 std::string makeCmdKArgs(const std::string& cmd);
 void pollReplayExportConfig();
 float getReplayExportAudioVolume();
+
+// Batch export
+void updateReplayBatchExport();
+bool isReplayBatchExportActive();

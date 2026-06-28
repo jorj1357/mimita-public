@@ -216,6 +216,12 @@ bool ReplayCameraController::setMode(const std::string& name)
         mMode = ReplayCameraMode::Orbit;
     else if (name == "freecam")
         mMode = ReplayCameraMode::Freecam;
+    else if (name == "thirdperson" || name == "tp")
+        mMode = ReplayCameraMode::ThirdPerson;
+    else if (name == "spectator" || name == "spec")
+        mMode = ReplayCameraMode::Spectator;
+    else if (name == "topdown" || name == "td")
+        mMode = ReplayCameraMode::TopDown;
     else
         return false;
     return true;
@@ -233,6 +239,9 @@ const char* ReplayCameraController::modeName() const
         case ReplayCameraMode::Victim: return "victim";
         case ReplayCameraMode::Orbit: return "orbit";
         case ReplayCameraMode::Freecam: return "freecam";
+        case ReplayCameraMode::ThirdPerson: return "thirdperson";
+        case ReplayCameraMode::Spectator: return "spectator";
+        case ReplayCameraMode::TopDown: return "topdown";
     }
     return "fp";
 }
@@ -261,7 +270,7 @@ void ReplayCameraController::update(
     }
 
     const std::string targetId =
-        mMode == ReplayCameraMode::Victim ? victimId : killerId;
+        (mMode == ReplayCameraMode::Victim) ? victimId : killerId;
     const ReplayActorState* target = findActor(frame, targetId);
     if (!target && !frame.actors.empty())
         target = &frame.actors.front();
@@ -269,11 +278,45 @@ void ReplayCameraController::update(
         return;
 
     const glm::vec3 focus = target->position + glm::vec3(0.0f, 0.0f, 1.35f);
+
     if (mMode == ReplayCameraMode::Victim) {
         camera.pos = focus;
         camera.yaw = target->rotation.z;
         camera.pitch = 0.0f;
         camera.updateVectors();
+        return;
+    }
+
+    if (mMode == ReplayCameraMode::ThirdPerson) {
+        const float dist = 4.0f;
+        const float height = 2.5f;
+        const float yawRad = glm::radians(target->rotation.z);
+        camera.pos = focus - glm::vec3(std::cos(yawRad) * dist,
+                                        std::sin(yawRad) * dist, -height);
+        camera.yaw = target->rotation.z;
+        camera.pitch = -15.0f;
+        camera.updateVectors();
+        return;
+    }
+
+    if (mMode == ReplayCameraMode::TopDown) {
+        camera.pos = focus + glm::vec3(0.0f, 0.0f, 15.0f);
+        camera.pitch = -90.0f;
+        camera.yaw = 0.0f;
+        camera.updateVectors();
+        return;
+    }
+
+    if (mMode == ReplayCameraMode::Spectator) {
+        mOrbitAngle += dt * 25.0f;
+        const float radians = glm::radians(mOrbitAngle);
+        const float dist = 8.0f;
+        camera.pos = focus + glm::vec3(std::cos(radians) * dist,
+                                        std::sin(radians) * dist, 3.0f);
+        camera.front = glm::normalize(focus - camera.pos);
+        camera.right = glm::normalize(
+            glm::cross(camera.front, glm::vec3(0, 0, 1)));
+        camera.up = glm::normalize(glm::cross(camera.right, camera.front));
         return;
     }
 

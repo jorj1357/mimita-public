@@ -6,6 +6,7 @@ import cors from "cors"
 import { performance } from "perf_hooks"
 
 import {
+    createSecretToken,
     createSixDigitCode,
     getClientIp,
     hashPassword,
@@ -30,6 +31,9 @@ import {
 import adminRouter from "./admin.js"
 import debugRouter from "./debug.js"
 import gameAnalyticsRouter from "./gameAnalytics.js"
+import tokenExchangeRouter from "./token-exchange.js"
+import clientLoginRouter from "./client-login.js"
+import gameApiRouter from "./game-api.js"
 import { trackEvent } from "./analytics.js"
 import { createRateLimit } from "./rateLimit.js"
 import {
@@ -38,6 +42,7 @@ import {
     setCsrfCookie,
     csrfProtection,
     createSession,
+    authenticate,
     sessionCookieName,
     sessionSecret,
     sessionDays,
@@ -49,10 +54,12 @@ import sharp from "sharp"
 import path from "path"
 import fs from "fs"
 
-const AVATAR_DIR = path.resolve("public/avatars")
+const AVATAR_DIR = process.env.AVATAR_DIR || path.resolve("public/avatars")
 if (!fs.existsSync(AVATAR_DIR)) {
     fs.mkdirSync(AVATAR_DIR, { recursive: true })
 }
+
+const DEFAULT_AVATAR_PATH = path.join(AVATAR_DIR, "_default.svg")
 
 const storage = multer.memoryStorage()
 const upload = multer({
@@ -110,6 +117,9 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
     if (req.path.startsWith("/api/game/")) return next()
+    if (req.path === "/api/auth/exchange-session") return next()
+    if (req.path.startsWith("/api/client-login/")) return next()
+    if (req.headers["authorization"]?.startsWith("Bearer ")) return next()
     return csrfProtection(req, res, next)
 })
 
@@ -167,64 +177,6 @@ async function safelySend(label, send) {
     }
 }
 
-async function authenticate(req, res, next) {
-    try {
-        let token = parseCookies(req)[sessionCookieName]
-        if (!token) {
-            const authHeader = req.headers["authorization"]
-            if (authHeader && authHeader.startsWith("Bearer ")) {
-                token = authHeader.slice(7)
-            }
-        }
-        if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: "sign in required"
-            })
-        }
-
-        const result = await pool.query(
-            `
-            SELECT
-                s.id AS session_id,
-                u.id,
-                u.username,
-                u.display_name,
-                u.email,
-                u.bio,
-                u.avatar_url,
-                u.avatar_updated_at,
-                u.supporter_tier,
-                u.role,
-                u.email_notifications_enabled,
-                u.email_verified_at IS NOT NULL AS email_verified
-            FROM sessions s
-            JOIN users u ON u.id = s.user_id
-            WHERE s.token_hash = $1
-              AND s.revoked_at IS NULL
-              AND s.expires_at > NOW()
-              AND u.deleted_at IS NULL
-            LIMIT 1
-            `,
-            [hashToken(token, sessionSecret)]
-        )
-
-        if (!result.rowCount) {
-            clearSessionCookie(res)
-            return res.status(401).json({
-                success: false,
-                message: "session expired"
-            })
-        }
-
-        req.user = result.rows[0]
-        req.sessionTokenHash = hashToken(token, sessionSecret)
-        next()
-    }
-    catch (error) {
-        next(error)
-    }
-}
 
 app.post("/api/auth/signup", authRateLimit, async (req, res, next) => {
     try {
@@ -587,6 +539,39 @@ app.delete("/api/account/avatar", authenticate, async (req, res, next) => {
     }
 })
 
+const AVATAR_COLORS = [
+    "#4A90D9", "#E74C3C", "#2ECC71", "#F39C12", "#9B59B6",
+    "#1ABC9C", "#E67E22", "#3498DB", "#E91E63", "#00BCD4",
+    "#FF9800", "#8BC34A", "#795548", "#607D8B", "#FF5722"
+]
+
+function getAvatarColor(name) {
+    let hash = 0
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+app.get("/api/avatar/initials", (req, res) => {
+    const name = String(req.query.name || "?").trim()
+    const initial = name.length > 0 ? name[0].toUpperCase() : "?"
+    const size = Math.min(Math.max(Number(req.query.size) || 64, 16), 512)
+    const color = getAvatarColor(name)
+    const fontSize = Math.round(size * 0.45)
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <rect width="${size}" height="${size}" rx="${size * 0.15}" fill="${color}"/>
+        <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle"
+              font-family="sans-serif" font-size="${fontSize}" font-weight="700"
+              fill="white">${initial}</text>
+    </svg>`
+
+    res.set("Content-Type", "image/svg+xml")
+    res.set("Cache-Control", "public, max-age=86400")
+    res.send(svg)
+})
+
 app.patch(
     "/api/account/notification-preferences",
     authenticate,
@@ -621,6 +606,74 @@ app.patch(
     }
 )
 
+app.get("/api/users", async (req, res, next) => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1)
+        const limit = Math.min(Number(req.query.limit) || 50, 200)
+        const offset = (page - 1) * limit
+        const sort = req.query.sort || "newest"
+        const search = String(req.query.search || "").trim()
+
+        let whereClause = "WHERE deleted_at IS NULL"
+        const params = []
+        let paramIndex = 1
+
+        if (search) {
+            whereClause += ` AND (username ILIKE $${paramIndex} OR bio ILIKE $${paramIndex})`
+            params.push(`%${search}%`)
+            paramIndex++
+        }
+
+        let orderClause
+        switch (sort) {
+            case "oldest":
+                orderClause = "ORDER BY created_at ASC"
+                break
+            case "username_az":
+                orderClause = "ORDER BY username ASC"
+                break
+            case "username_za":
+                orderClause = "ORDER BY username DESC"
+                break
+            default:
+                orderClause = "ORDER BY created_at DESC"
+        }
+
+        const countResult = await pool.query(
+            `SELECT COUNT(*) FROM users ${whereClause}`, params
+        )
+        const total = Number(countResult.rows[0].count)
+
+        params.push(limit, offset)
+        const result = await pool.query(
+            `SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
+             FROM users ${whereClause} ${orderClause}
+             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+            params
+        )
+
+        const users = result.rows.map(u => {
+            if (!u.avatar_url) {
+                const encoded = encodeURIComponent(u.username || "?")
+                u.avatar_url = `/api/avatar/initials?name=${encoded}&size=128`
+            }
+            return u
+        })
+
+        res.json({
+            success: true,
+            users,
+            total,
+            pages: Math.ceil(total / limit),
+            page,
+            limit
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
@@ -641,9 +694,15 @@ app.get("/api/users/:username", async (req, res, next) => {
             })
         }
 
+        const u = result.rows[0]
+        if (!u.avatar_url) {
+            const encoded = encodeURIComponent(u.username || "?")
+            u.avatar_url = `/api/avatar/initials?name=${encoded}&size=128`
+        }
+
         res.json({
             success: true,
-            user: result.rows[0]
+            user: u
         })
     }
     catch (error) {
@@ -970,6 +1029,7 @@ app.delete("/api/account", authenticate, async (req, res, next) => {
 app.use("/api/admin", adminRateLimit, adminRouter)
 app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
+app.use("/api", gameApiRouter)
 
 app.post("/api/admin/feedback", feedbackRateLimit, async (req, res, next) => {
     try {
@@ -1036,7 +1096,7 @@ function generateLinkCode() {
 app.post("/api/auth/link-code", (req, res) => {
     try {
         const { code, grantToken } = generateLinkCode()
-        res.json({ success: true, code, grantToken, url: "https://mimita.fun/link" })
+        res.json({ success: true, code, grant_token: grantToken, url: "https://mimita.fun/link" })
     }
     catch (error) {
         res.status(500).json({ success: false, message: "failed to generate code" })
@@ -1135,6 +1195,9 @@ app.post("/api/auth/link-finalize", linkRateLimit, async (req, res, next) => {
     }
 })
 // ── End Account Linking ──────────────────────────────────────────────────────
+
+app.use("/api/auth", tokenExchangeRouter)
+app.use("/api/client-login", clientLoginRouter)
 
 app.post("/api/track/download", downloadTrackRateLimit, async (req, res, next) => {
     try {

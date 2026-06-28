@@ -332,7 +332,14 @@ void gameInitSubsystems(Engine& engine)
     registerEditorCommands();
     registerNetworkCommands();
 
+    registerReplayCaptureCommands();
     registerReplayCommands();
+
+    // Bind F3 to save instant replay
+    {
+        auto& binds = G_COMMAND_BINDS;
+        binds[GLFW_KEY_F3] = "replay.save";
+    }
     registerAvatarCommands(player);
     registerVoidDeathCommands();
     registerHitmarkerAudioCommands();
