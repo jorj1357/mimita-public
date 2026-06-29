@@ -21,6 +21,19 @@
     "visible_in_third_person": true
   },
 
+  "animations": {
+    "fire": {
+      "duration": 0.12,
+      "position_offset": [-0.08, 0.03, -0.18],
+      "rotation_offset": [-8, 3, 2],
+      "recover": true
+    },
+    "reload_pose": {
+      "position": [0.15, -0.45, -0.10],
+      "rotation": [-40, 15, 35]
+    }
+  },
+
   "debug": {
     "force_render": false,
     "draw_origin": false,

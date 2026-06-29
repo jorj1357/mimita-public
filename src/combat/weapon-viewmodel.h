@@ -26,6 +26,12 @@ struct WeaponViewModel {
     float recoil = 0.0f;
     float disturbance = 0.0f;
 
+    // Per-weapon animation state
+    float mFireTimer = 0.0f;
+    float mReloadBlend = 0.0f;       // 0=idle, 1=reload_pose (spring target)
+    float mReloadBlendCurrent = 0.0f; // spring-smoothed actual value
+    float mReloadBlendVelocity = 0.0f;
+
     void loadModel(const std::string& modelPath);
     void update(const Camera& camera, Player& player, float dt,
                 const WeaponDefinition* def, bool updatePlayerPose = true,

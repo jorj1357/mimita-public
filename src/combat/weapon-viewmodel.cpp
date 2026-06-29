@@ -225,6 +225,65 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.z), glm::vec3(0,0,1));
             confTransform = glm::scale(confTransform, vmcfg->scale);
             weaponTransform = weaponTransform * confTransform;
+
+            // ── Per-weapon animation blending ──────────────────────────
+            // Priority: Reload pose > Fire animation > Idle
+
+            // Check if weapon is reloading
+            bool isReloading = false;
+            if (def && player.weaponRuntimes.count(def->id))
+                isReloading = player.weaponRuntimes.at(def->id).isReloading;
+
+            // Fire animation timer
+            if (hasConfig && vmcfg->hasFireAnim && recoil > recoil * 0.5f && !isReloading) {
+                // Detected a fire event (recoil snapped up)
+                mFireTimer = vmcfg->fireAnim.duration;
+            }
+            mFireTimer = std::max(0.0f, mFireTimer - dt);
+
+            // Reload pose blend target
+            mReloadBlend = isReloading && vmcfg->hasReloadPose ? 1.0f : 0.0f;
+
+            // Spring-smooth reload blend
+            float springK = 12.0f;
+            float springDamp = 6.0f;
+            float force = springK * (mReloadBlend - mReloadBlendCurrent) - springDamp * mReloadBlendVelocity;
+            mReloadBlendVelocity += force * dt;
+            mReloadBlendCurrent += mReloadBlendVelocity * dt;
+            mReloadBlendCurrent = glm::clamp(mReloadBlendCurrent, 0.0f, 1.0f);
+
+            // Apply fire animation offset (local space)
+            if (mFireTimer > 0.0f && vmcfg->hasFireAnim) {
+                float progress = 1.0f - (mFireTimer / vmcfg->fireAnim.duration);
+                float easeOut = 1.0f - (1.0f - progress) * (1.0f - progress);
+                glm::vec3 firePos = vmcfg->fireAnim.positionOffset * (1.0f - easeOut);
+                glm::vec3 fireRot = vmcfg->fireAnim.rotationOffset * (1.0f - easeOut);
+                weaponTransform = glm::translate(weaponTransform, firePos);
+                weaponTransform = glm::rotate(weaponTransform, glm::radians(fireRot.x), glm::vec3(1,0,0));
+                weaponTransform = glm::rotate(weaponTransform, glm::radians(fireRot.y), glm::vec3(0,1,0));
+                weaponTransform = glm::rotate(weaponTransform, glm::radians(fireRot.z), glm::vec3(0,0,1));
+
+                if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
+                    printf("[WeaponAnim] %s State: Fire Animation: fire Progress: %.2f\n",
+                           def ? def->id.c_str() : "?", easeOut);
+                }
+            }
+
+            // Apply reload pose blend (overrides idle, fire anim stops if reload started)
+            if (vmcfg->hasReloadPose && mReloadBlendCurrent > 0.001f) {
+                float b = mReloadBlendCurrent;
+                glm::vec3 rpPos = vmcfg->reloadPose.position * b;
+                glm::vec3 rpRot = vmcfg->reloadPose.rotation * b;
+                weaponTransform = glm::translate(weaponTransform, rpPos);
+                weaponTransform = glm::rotate(weaponTransform, glm::radians(rpRot.x), glm::vec3(1,0,0));
+                weaponTransform = glm::rotate(weaponTransform, glm::radians(rpRot.y), glm::vec3(0,1,0));
+                weaponTransform = glm::rotate(weaponTransform, glm::radians(rpRot.z), glm::vec3(0,0,1));
+
+                if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
+                    printf("[WeaponAnim] %s State: Reload Pose: reload_pose Blend: %.2f\n",
+                           def ? def->id.c_str() : "?", b);
+                }
+            }
         }
 
         muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));

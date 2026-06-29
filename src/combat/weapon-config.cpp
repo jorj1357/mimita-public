@@ -20,7 +20,7 @@ static std::string configPath(const std::string& weaponId) {
 
 static WeaponViewModelConfig defaults() {
     WeaponViewModelConfig cfg;
-    cfg.modelPath = "assets/objects/weapons/mimita-rpg-v3.glb";
+    // modelPath intentionally empty — viewmodel falls back to WeaponDefinition::modelPath
     cfg.positionOffset = glm::vec3(0.35f, -0.75f, -0.35f);
     cfg.rotationDegrees = glm::vec3(0.0f);
     cfg.scale = glm::vec3(1.0f);
@@ -67,6 +67,31 @@ bool WeaponConfig::load(const std::string& weaponId) {
                 cfg.scale = glm::vec3((float)vm["scale"][0], (float)vm["scale"][1], (float)vm["scale"][2]);
         }
 
+        // animations block
+        if (root.contains("animations") && root["animations"].is_object()) {
+            auto& anims = root["animations"];
+
+            if (anims.contains("fire") && anims["fire"].is_object()) {
+                auto& fire = anims["fire"];
+                cfg.hasFireAnim = true;
+                cfg.fireAnim.duration = fire.value("duration", 0.12f);
+                if (fire.contains("position_offset") && fire["position_offset"].is_array() && fire["position_offset"].size() >= 3)
+                    cfg.fireAnim.positionOffset = glm::vec3((float)fire["position_offset"][0], (float)fire["position_offset"][1], (float)fire["position_offset"][2]);
+                if (fire.contains("rotation_offset") && fire["rotation_offset"].is_array() && fire["rotation_offset"].size() >= 3)
+                    cfg.fireAnim.rotationOffset = glm::vec3((float)fire["rotation_offset"][0], (float)fire["rotation_offset"][1], (float)fire["rotation_offset"][2]);
+                cfg.fireAnim.recover = fire.value("recover", true);
+            }
+
+            if (anims.contains("reload_pose") && anims["reload_pose"].is_object()) {
+                auto& rp = anims["reload_pose"];
+                cfg.hasReloadPose = true;
+                if (rp.contains("position") && rp["position"].is_array() && rp["position"].size() >= 3)
+                    cfg.reloadPose.position = glm::vec3((float)rp["position"][0], (float)rp["position"][1], (float)rp["position"][2]);
+                if (rp.contains("rotation") && rp["rotation"].is_array() && rp["rotation"].size() >= 3)
+                    cfg.reloadPose.rotation = glm::vec3((float)rp["rotation"][0], (float)rp["rotation"][1], (float)rp["rotation"][2]);
+            }
+        }
+
         mConfig = cfg;
         mLoaded = true;
 
@@ -82,6 +107,16 @@ bool WeaponConfig::load(const std::string& weaponId) {
                cfg.rotationDegrees.x, cfg.rotationDegrees.y, cfg.rotationDegrees.z);
         printf("[WEAPON CONFIG] %s scale = %.2f,%.2f,%.2f\n", weaponId.c_str(),
                cfg.scale.x, cfg.scale.y, cfg.scale.z);
+        if (cfg.hasFireAnim)
+            printf("[WEAPON CONFIG] %s fire_anim duration=%.3f offset=(%.2f,%.2f,%.2f) rot=(%.1f,%.1f,%.1f)\n",
+                   weaponId.c_str(), cfg.fireAnim.duration,
+                   cfg.fireAnim.positionOffset.x, cfg.fireAnim.positionOffset.y, cfg.fireAnim.positionOffset.z,
+                   cfg.fireAnim.rotationOffset.x, cfg.fireAnim.rotationOffset.y, cfg.fireAnim.rotationOffset.z);
+        if (cfg.hasReloadPose)
+            printf("[WEAPON CONFIG] %s reload_pose position=(%.2f,%.2f,%.2f) rotation=(%.1f,%.1f,%.1f)\n",
+                   weaponId.c_str(),
+                   cfg.reloadPose.position.x, cfg.reloadPose.position.y, cfg.reloadPose.position.z,
+                   cfg.reloadPose.rotation.x, cfg.reloadPose.rotation.y, cfg.reloadPose.rotation.z);
         Terminal::instance().addLog("[WEAPON CONFIG] Loaded " + path);
         return true;
 

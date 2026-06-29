@@ -64,7 +64,7 @@
     "rightArm_bottom":{ "texture": "croptoparmsides", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 0 },
     "leftLeg_front": { "texture": "fishnetfrontleg", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 180 },
     "leftLeg_back":  { "texture": "fishnetsidelegs", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 180 },
-    "leftLeg_left":  { "texture": "fishnetsidelegs", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 0 },
+    "leftLeg_left":  { "texture": "fishnetsidelegs", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 180 },
     "leftLeg_right": { "texture": "fishnetsidelegs", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 0 },
     "leftLeg_top":   { "texture": "fishnetsidelegs", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 0 },
     "leftLeg_bottom":{ "texture": "fishnetbottomfoot", "scale_x": 1.0, "scale_y": 1.0, "offset_x": 0, "offset_y": 0, "color": [1.0, 1.0, 1.0], "transparency": 0.0, "rotation": 0 },
