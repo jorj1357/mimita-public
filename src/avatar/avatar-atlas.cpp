@@ -277,8 +277,12 @@ static void applyCrop(std::vector<unsigned char>& pixels, int srcW, int srcH) {
 } // anonymous namespace
 
 bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
-    if (!mAvatar.advancedMode)
+    printf("[AVATAR ATLAS] buildAtlas: advancedMode=%d relayTextures=%d\n",
+           (int)mAvatar.advancedMode, (int)reloadTextures);
+    if (!mAvatar.advancedMode) {
+        printf("[AVATAR ATLAS] NOT in advanced mode! Running expandSimple()\n");
         const_cast<AvatarDefinition&>(mAvatar).expandSimple();
+    }
 
     std::vector<unsigned char> atlasPixels(ATLAS_SIZE * ATLAS_SIZE * 4, 0);
 
@@ -295,7 +299,15 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
         for (int fi = 0; fi < 6; ++fi) {
             const FaceSettings& fs = part.byName(faces[fi]);
             std::string path = fs.texture;
-            if (path.empty()) continue;
+            if (path.empty()) {
+                printf("[AVATAR ATLAS] %s/%s: NO TEXTURE ASSIGNED\n", parts[pi].c_str(), faces[fi].c_str());
+                continue;
+            }
+
+            printf("[AVATAR ATLAS] %s/%s: texture='%s' rotation=%.1f scale=(%.2f,%.2f) offset=(%.0f,%.0f)\n",
+                   parts[pi].c_str(), faces[fi].c_str(), path.c_str(),
+                   fs.transform.rotation, fs.transform.scaleX, fs.transform.scaleY,
+                   fs.transform.offsetX, fs.transform.offsetY);
 
             std::string fullPath = resolvePath(path);
             if (!std::filesystem::exists(fullPath)) {
@@ -405,19 +417,30 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     glGenerateMipmap(GL_TEXTURE_2D);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
+    printf("[AVATAR ATLAS] Built atlas texture ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
     Terminal::instance().addLog("[AVATAR] Built atlas texture for: " + mAvatarName);
     return true;
 }
 
 bool AvatarSystem::applyAtlasToPlayer(Player& player) {
-    if (!mAtlasTexture) return false;
+    printf("[AVATAR ATLAS] applyAtlasToPlayer: mAtlasTexture=%u parts=%zu partMeshes=%zu\n",
+           mAtlasTexture, player.physicalBody.parts.size(), player.physicalBody.partMeshes.size());
+    if (!mAtlasTexture) {
+        printf("[AVATAR ATLAS] No atlas texture to apply!\n");
+        return false;
+    }
 
     for (size_t partIndex = 0; partIndex < player.physicalBody.parts.size(); ++partIndex) {
         if (partIndex >= player.physicalBody.partMeshes.size())
             break;
         const std::string& name = player.physicalBody.parts[partIndex].name;
         const int row = partRow(name);
-        if (row < 0) continue;
+        printf("[AVATAR ATLAS]  part[%zu] name='%s' row=%d verts=%zu\n",
+               partIndex, name.c_str(), row, player.physicalBody.partMeshes[partIndex].verts.size());
+        if (row < 0) {
+            printf("[AVATAR ATLAS]  SKIP: unknown part name\n");
+            continue;
+        }
 
         Mesh& mesh = player.physicalBody.partMeshes[partIndex];
         if (mesh.verts.empty()) continue;
@@ -446,6 +469,7 @@ bool AvatarSystem::applyAtlasToPlayer(Player& player) {
             batch.texture = mAtlasTexture;
     }
 
+    printf("[AVATAR ATLAS] bodyPartMeshes copied (%zu parts)\n", player.physicalBody.partMeshes.size());
     player.bodyPartMeshes = player.physicalBody.partMeshes;
     Terminal::instance().addLog("[AVATAR] Applied atlas to player");
     return true;

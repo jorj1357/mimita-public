@@ -653,7 +653,11 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
 }
 
 void AvatarSystem::pollHotReload() {
-    if (!mHasAvatar || mAvatarName.empty()) return;
+    if (!mHasAvatar || mAvatarName.empty()) {
+        printf("[AVATAR HR] pollHotReload SKIP: mHasAvatar=%d mAvatarName='%s'\n",
+               (int)mHasAvatar, mAvatarName.c_str());
+        return;
+    }
 
     auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration<float>(now - mLastCheckTime).count() < mPollInterval)
@@ -661,20 +665,35 @@ void AvatarSystem::pollHotReload() {
     mLastCheckTime = now;
 
     const std::string jsonPath = mBasePath + "/avatar.json";
-    if (!std::filesystem::exists(jsonPath))
+    printf("[AVATAR HR] Checking %s...\n", jsonPath.c_str());
+    if (!std::filesystem::exists(jsonPath)) {
+        printf("[AVATAR HR] File does not exist\n");
         return;
+    }
 
     auto writeTime = std::filesystem::last_write_time(jsonPath);
-    if (writeTime == mLastWriteTime)
+    printf("[AVATAR HR] writeTime=%lld lastWriteTime=%lld diff=%lld\n",
+           (long long)writeTime.time_since_epoch().count(),
+           (long long)mLastWriteTime.time_since_epoch().count(),
+           (long long)(writeTime.time_since_epoch().count() - mLastWriteTime.time_since_epoch().count()));
+    if (writeTime == mLastWriteTime) {
+        printf("[AVATAR HR] No change detected\n");
         return;
+    }
     mLastWriteTime = writeTime;
 
+    printf("[AVATAR HR] CHANGE DETECTED! Reloading...\n");
     Terminal::instance().addLog("[AVATAR] Hot reload detected for: " + mAvatarName);
     loadAvatar(mAvatarName);
 
     extern Player* gpPlayer;
-    if (gpPlayer)
+    if (gpPlayer) {
+        printf("[AVATAR HR] Calling applyToPlayer...\n");
         applyToPlayer(*gpPlayer, true);
+        printf("[AVATAR HR] applyToPlayer done\n");
+    } else {
+        printf("[AVATAR HR] gpPlayer is null\n");
+    }
 }
 
 // ── Apply single texture (replaces OutfitAtlas) ─────────────────────

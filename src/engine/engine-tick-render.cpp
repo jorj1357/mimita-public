@@ -144,25 +144,42 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                         actor->loadCharacter(actorState.characterName);
                     else if (!actorState.modelPath.empty())
                         actor->loadModel(actorState.modelPath.c_str());
-                    // Apply the recorded outfit texture at recorded UVs
-                    const std::string& outfitToUse =
-                        !actorState.outfitPath.empty()
-                            ? actorState.outfitPath
-                            : gReplayPlayer.outfitPath();
-                    if (!outfitToUse.empty()) {
-                        GLuint tex = gTextures.getPath(outfitToUse);
-                        if (tex) {
-                            for (auto& mesh : actor->physicalBody.partMeshes)
-                                for (auto& batch : mesh.batches)
-                                    batch.texture = tex;
-                            actor->bodyPartMeshes = actor->physicalBody.partMeshes;
+
+                    printf("[RPLX AVATAR] Replay player created\n");
+                    printf("[RPLX AVATAR] Loading avatar via AvatarSystem::applyToPlayer\n");
+                    printf("[RPLX AVATAR] Current avatar in system: %s\n",
+                           AvatarSystem::instance().hasAvatar()
+                               ? AvatarSystem::instance().currentName().c_str()
+                               : "(none)");
+
+                    // Reuse the game's avatar pipeline instead of manual texture loading.
+                    // AvatarSystem::applyToPlayer handles atlas building, UV mapping,
+                    // per-part coloring, cosmetics — exactly like normal gameplay.
+                    bool avatarApplied = AvatarSystem::instance().applyToPlayer(*actor);
+                    if (avatarApplied) {
+                        printf("[RPLX AVATAR] Avatar applied via gameplay avatar pipeline\n");
+                        printf("[RPLX AVATAR] Avatar initialization complete\n");
+                    } else {
+                        printf("[RPLX AVATAR] No avatar loaded in system, applying outfit texture directly\n");
+                        // Fallback: apply the recorded outfit texture
+                        const std::string& outfitToUse =
+                            !actorState.outfitPath.empty()
+                                ? actorState.outfitPath
+                                : gReplayPlayer.outfitPath();
+                        if (!outfitToUse.empty()) {
+                            GLuint tex = gTextures.getPath(outfitToUse);
+                            if (tex) {
+                                for (auto& mesh : actor->physicalBody.partMeshes)
+                                    for (auto& batch : mesh.batches)
+                                        batch.texture = tex;
+                                actor->bodyPartMeshes = actor->physicalBody.partMeshes;
+                            }
                         }
                     }
-                    printf("[REPLAY] loaded actor '%s' character=%s model=%s outfit=%s\n",
+                    printf("[REPLAY] loaded actor '%s' character=%s model=%s\n",
                            actorState.id.c_str(),
                            actorState.characterName.c_str(),
-                           actorState.modelPath.c_str(),
-                           outfitToUse.c_str());
+                           actorState.modelPath.c_str());
                 }
                 actor->username = actorState.name;
                 actor->currentHp = actorState.health;
