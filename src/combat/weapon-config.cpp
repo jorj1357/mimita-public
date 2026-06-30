@@ -30,6 +30,8 @@ static WeaponViewModelConfig parseOne(const json& root) {
             cfg.rotationDegrees = glm::vec3((float)vm["rotation_degrees"][0], (float)vm["rotation_degrees"][1], (float)vm["rotation_degrees"][2]);
         if (vm.contains("scale") && vm["scale"].is_array() && vm["scale"].size() >= 3)
             cfg.scale = glm::vec3((float)vm["scale"][0], (float)vm["scale"][1], (float)vm["scale"][2]);
+        if (vm.contains("color") && vm["color"].is_array() && vm["color"].size() >= 3)
+            cfg.color = glm::vec3((float)vm["color"][0], (float)vm["color"][1], (float)vm["color"][2]);
     }
 
     if (root.contains("animations") && root["animations"].is_object()) {

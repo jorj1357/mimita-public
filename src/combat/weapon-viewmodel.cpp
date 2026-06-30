@@ -181,6 +181,14 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         modelPath = def->modelPath;
 
     loadModel(modelPath);
+
+    // Resolve tint: viewmodel config overrides weapon definition
+    mTint = glm::vec3(1.0f);
+    if (def)
+        mTint = def->tint;
+    if (hasConfig && vmcfg)
+        mTint = vmcfg->color;
+
     if (world)
         player.collision.hasWeaponCollisionCapsule = false;
     if (updatePlayerPose)
@@ -356,6 +364,7 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &weaponTransform[0][0]);
     glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
     glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glUniform3f(glGetUniformLocation(shader, "uTint"), mTint.r, mTint.g, mTint.b);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vao);
     for (const Mesh::Batch& batch : heldMesh.batches) {

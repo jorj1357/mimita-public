@@ -48,6 +48,24 @@
     "snapIn": true
   },
 
+  "freezePose": {
+    "torsoRotation": [18, 0, -10],
+    "torsoTranslation": [0.15, -0.05, 0],
+    "headRotation": [-10, 0, -8],
+    "headTranslation": [0.1, -0.05, 0],
+    "leftArmRotation": [-20, 20, 85],
+    "leftArmTranslation": [0.18, 0.05, 0],
+    "rightArmRotation": [10, -15, -55],
+    "rightArmTranslation": [0.12, -0.05, 0],
+    "leftLegRotation": [12, 0, -10],
+    "leftLegTranslation": [0, 0, 0],
+    "rightLegRotation": [12, 0, 10],
+    "rightLegTranslation": [0, 0, 0],
+    "blendInTime": 0.03,
+    "blendOutTime": 0.05,
+    "snapIn": true
+  },
+
   "axisLocks": {
     "leftArm": { "rotation": [true, true, true] },
     "rightArm": { "rotation": [true, true, true] },

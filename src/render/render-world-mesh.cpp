@@ -107,6 +107,7 @@ void setUniforms(GLuint shader)
     setInt(shader, "uTex", 0);
     setInt(shader, "uDebugView", DebugVis::shaderDebugView());
 
+    setVec3(shader, "uTint", glm::vec3(1.0f));
     setVec3(shader, "uLightDir", cfg.lightDir());
     setFloat(shader, "uAmbientStrength", cfg.ambientStrength());
     setFloat(shader, "uDiffuseStrength", cfg.diffuseStrength());
