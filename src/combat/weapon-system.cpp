@@ -24,10 +24,15 @@
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
 
+static float weaponParamOr(const WeaponDefinition& def, const char* key, float fallback)
+{
+    auto it = def.customParams.find(key);
+    return it != def.customParams.end() ? it->second : fallback;
+}
+
 WeaponSystem::WeaponSystem() {
     WeaponData::registerBuiltinWeapons();
-    // TODO(debug): migrate to Debug::log(Debug::Category::Weapons)
-    printf("[WEAPON SYSTEM] initialized\n");
+    Debug::log(Debug::Category::Weapons, "[WEAPON SYSTEM] initialized");
 }
 
 const WeaponDefinition* WeaponSystem::getDefForSlot(int slot) const {
@@ -58,6 +63,9 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
 }
 
 void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
+    if (WeaponData::reloadBuiltinWeaponsIfChanged())
+        Terminal::instance().addLog("[WEAPON] Reloaded config/weapons.json");
+
     mShotCooldown = std::max(0.0f, mShotCooldown - dt);
     mShootingTimer = std::max(0.0f, mShootingTimer - dt);
     mRecoilValue = std::max(0.0f, mRecoilValue - dt * 15.0f);
@@ -94,6 +102,9 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
 
         rt->fireCooldown = std::max(0.0f, rt->fireCooldown - dt);
         rt->shootEffectTimer = std::max(0.0f, rt->shootEffectTimer - dt);
+        auto equipTimer = rt->customFloats.find("equipTimer");
+        if (equipTimer != rt->customFloats.end())
+            equipTimer->second = std::max(0.0f, equipTimer->second - dt);
 
         int idx = slotIndex(def->slot);
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
@@ -224,6 +235,7 @@ RevolverShotResult WeaponSystem::fireHitscan(
 
     rt->currentAmmo--;
     rt->fireCooldown = def->fireDelay;
+    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;
     mShootingTimer = 0.1f;
 
@@ -248,8 +260,7 @@ RevolverShotResult WeaponSystem::fireHitscan(
     mDisturbance += 1.2f;
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 
-        // TODO(debug): migrate to Debug::log(Debug::Category::Weapons)
-        printf("[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d\n",
+        Debug::log(Debug::Category::Weapons, "[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d",
            def->slot, def->id.c_str(), rt->currentAmmo);
         if (def->id == "aa12")
             Debug::log(Debug::Category::Weapons, "[AA12] Fired: ammo=%d, cooldown=%.2f", rt->currentAmmo, rt->fireCooldown);
@@ -360,6 +371,7 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
     player.externalImpulse -= dir * recoilStrength;
 
     WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 }
@@ -379,6 +391,7 @@ void WeaponSystem::fireSwordsword(Camera& camera, Player& player, NpcSystem& npc
     if (mSwordswordState.currentAttack != SwordswordState::AttackType::None) return;
 
     rt->fireCooldown = def->fireDelay;
+    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;
 
     WeaponSwordsword::startSlash(mSwordswordState, *def, player, camera);

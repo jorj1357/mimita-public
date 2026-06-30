@@ -1,6 +1,7 @@
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "devtools/dev-config.h"
+#include "entities/player.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -249,6 +250,23 @@ void registerDebugToggleCommands()
         [](const std::vector<std::string>&) {
             DebugConfig::DEBUG_ANIMATION = true;
             Terminal::instance().addLog("[OK] animation dump queued (will print next frame)");
+        }
+    });
+
+    term.registerCommand({
+        "idle_test",
+        "Set idle animation debug strength multiplier (default 1.0, e.g. 10 for exaggerated motion)",
+        "idle_test <multiplier>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[OK] idle_test strength = " + std::to_string(gPlayerProcedural.idleDebugStrength));
+                return;
+            }
+            float val = std::atof(args[0].c_str());
+            gPlayerProcedural.idleDebugStrength = std::max(0.0f, val);
+            Terminal::instance().addLog(
+                "[OK] idle_test strength set to " + std::to_string(gPlayerProcedural.idleDebugStrength));
         }
     });
 }

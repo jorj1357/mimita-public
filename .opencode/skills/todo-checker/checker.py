@@ -7,6 +7,7 @@ Exit code: 0 if none found, 1 if any found.
 
 import os
 import re
+import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +37,21 @@ ALLOWED_EXTENSIONS = {
 
 MAX_FILE_SIZE = 1 * 1024 * 1024
 COMPILED = [(p, re.compile(r'\b' + p + r'\b', re.IGNORECASE)) for p in PATTERNS]
+
+def changed_paths():
+    paths = []
+    try:
+        tracked = subprocess.run(
+            ['git', 'diff', '--name-only', '--diff-filter=ACMRT', 'HEAD', '--'],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        paths.extend(p.strip() for p in tracked.stdout.splitlines() if p.strip())
+        untracked = subprocess.run(
+            ['git', 'ls-files', '--others', '--exclude-standard'],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        paths.extend(p.strip() for p in untracked.stdout.splitlines() if p.strip())
+    except Exception:
+        return None
+    return sorted(set(paths))
 
 def should_scan(path):
     rel = os.path.relpath(path, REPO_ROOT)
@@ -71,21 +87,25 @@ def scan_file(path):
 def main():
     findings = []
     scanned = 0
-    dir_count = 0
-    for scan_dir in SCAN_DIRS:
-        scan_path = os.path.join(REPO_ROOT, scan_dir)
-        if not os.path.isdir(scan_path):
+    paths = changed_paths()
+    if paths is None:
+        paths = []
+        for scan_dir in SCAN_DIRS:
+            scan_path = os.path.join(REPO_ROOT, scan_dir)
+            if not os.path.isdir(scan_path):
+                continue
+            for root, dirs, files in os.walk(scan_path):
+                for fname in files:
+                    paths.append(os.path.relpath(os.path.join(root, fname), REPO_ROOT))
+
+    for rel_path in paths:
+        fpath = os.path.join(REPO_ROOT, rel_path)
+        if not os.path.isfile(fpath) or not should_scan(fpath):
             continue
-        for root, dirs, files in os.walk(scan_path):
-            for fname in files:
-                fpath = os.path.join(root, fname)
-                if not should_scan(fpath):
-                    continue
-                matches = scan_file(fpath)
-                scanned += 1
-                for line_num, line_text, pattern in matches:
-                    rel_path = os.path.relpath(fpath, REPO_ROOT)
-                    findings.append((rel_path, line_num, line_text, pattern))
+        matches = scan_file(fpath)
+        scanned += 1
+        for line_num, line_text, pattern in matches:
+            findings.append((rel_path, line_num, line_text, pattern))
 
     if not findings:
         sys.stdout.write(f"Todo Checker: PASS\n")

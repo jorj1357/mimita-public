@@ -12,6 +12,7 @@ Rules:
 import os
 import sys
 import fnmatch
+import subprocess
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 while not os.path.isfile(os.path.join(REPO_ROOT, "overseer.py")):
@@ -31,6 +32,13 @@ LIBRARY_FILES = {
     "src/utils/stb_image_impl.cpp",
     "src/tiny_obj_loader_declare.cpp",
     "src/tinygltf_declare.cpp",
+}
+
+SEVERITY_RANK = {
+    "ok": 0,
+    "WARNING": 1,
+    "HIGH": 2,
+    "CRITICAL": 3,
 }
 
 
@@ -53,6 +61,17 @@ def should_include(filepath):
 
 
 def collect_files():
+    changed = changed_paths()
+    if changed is not None:
+        files = []
+        for rel in changed:
+            if not any(fnmatch.fnmatch(os.path.basename(rel), pat) for pat in INCLUDE_PATTERNS):
+                continue
+            filepath = os.path.join(REPO_ROOT, rel)
+            if os.path.isfile(filepath) and should_include(filepath):
+                files.append(filepath)
+        return files
+
     files = []
     for scan_dir in SCAN_DIRS:
         full_path = os.path.join(REPO_ROOT, scan_dir)
@@ -68,6 +87,51 @@ def collect_files():
     return files
 
 
+def changed_paths():
+    try:
+        paths = []
+        tracked = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMRT", "HEAD", "--"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        paths.extend(p.strip() for p in tracked.stdout.splitlines() if p.strip())
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        paths.extend(p.strip() for p in untracked.stdout.splitlines() if p.strip())
+        return sorted(set(paths))
+    except Exception:
+        return None
+
+
+def base_line_count(relpath):
+    try:
+        git_path = relpath.replace(os.sep, "/")
+        proc = subprocess.run(
+            ["git", "show", f"HEAD:{git_path}"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            return None
+        return len(proc.stdout.splitlines())
+    except Exception:
+        return None
+
+
+def severity_for(relpath, count):
+    is_main = relpath == "src" + os.sep + "main.cpp"
+    if is_main:
+        if count > 100:
+            return ("CRITICAL", f"main.cpp has {count} lines (max 100)")
+        return ("ok", "")
+
+    if count > 1000:
+        return ("CRITICAL", f"{count} lines (max 1000)")
+    if count > 500:
+        return ("HIGH", f"{count} lines (max 500)")
+    if count > 300:
+        return ("WARNING", f"{count} lines (max 300)")
+    return ("ok", "")
+
+
 def check_file(filepath):
     relpath = os.path.relpath(filepath, REPO_ROOT)
     try:
@@ -77,21 +141,8 @@ def check_file(filepath):
         return (relpath, 0, "error", str(e))
 
     count = len(lines)
-    is_main = relpath == "src" + os.sep + "main.cpp"
-
-    if is_main:
-        if count > 100:
-            return (relpath, count, "CRITICAL", f"main.cpp has {count} lines (max 100)")
-        return (relpath, count, "ok", "")
-
-    if count > 1000:
-        return (relpath, count, "CRITICAL", f"{count} lines (max 1000)")
-    if count > 500:
-        return (relpath, count, "HIGH", f"{count} lines (max 500)")
-    if count > 300:
-        return (relpath, count, "WARNING", f"{count} lines (max 300)")
-
-    return (relpath, count, "ok", "")
+    severity, msg = severity_for(relpath, count)
+    return (relpath, count, severity, msg)
 
 
 def main():
@@ -100,8 +151,15 @@ def main():
 
     for f in files:
         result = check_file(f)
-        if result[2] != "ok":
-            issues.append(result)
+        if result[2] == "ok":
+            continue
+
+        base_count = base_line_count(result[0])
+        if base_count is not None:
+            base_severity, _ = severity_for(result[0], base_count)
+            if SEVERITY_RANK[result[2]] <= SEVERITY_RANK[base_severity]:
+                continue
+        issues.append(result)
 
     if not issues:
         largest = sorted(

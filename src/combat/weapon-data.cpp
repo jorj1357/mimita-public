@@ -1,4 +1,5 @@
 #include "weapon-data.h"
+#include "weapon-json-config.h"
 #include "weapon-registry.h"
 #include "../debug/debug-log.h"
 
@@ -272,13 +273,14 @@ WeaponDefinition createRocketLauncherDefinition() {
 }
 
 void registerBuiltinWeapons() {
-    WeaponRegistry::instance().registerWeapon(createRevolverDefinition());
-    WeaponRegistry::instance().registerWeapon(createGodballDefinition());
-    WeaponRegistry::instance().registerWeapon(createShotgunDefinition());
-    WeaponRegistry::instance().registerWeapon(createSwordswordDefinition());
-    WeaponRegistry::instance().registerWeapon(createOpRevolverDefinition());
-    WeaponRegistry::instance().registerWeapon(createAa12Definition());
-    WeaponRegistry::instance().registerWeapon(createRocketLauncherDefinition());
+    loadWeaponJsonConfig();
+    registerWeaponFromJson(createRevolverDefinition());
+    registerWeaponFromJson(createGodballDefinition());
+    registerWeaponFromJson(createShotgunDefinition());
+    registerWeaponFromJson(createSwordswordDefinition());
+    registerWeaponFromJson(createOpRevolverDefinition());
+    registerWeaponFromJson(createAa12Definition());
+    registerWeaponFromJson(createRocketLauncherDefinition());
     Debug::log(Debug::Category::Weapons, "[AA12] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher");
 }
 

@@ -96,25 +96,10 @@ def main():
         if len(active) >= 2:
             findings.append(("Duplicate concept implementations", active, dict(concept_usage)))
 
-    # Group 2: Check for similarly named functions across files
-    func_usage = defaultdict(list)
-    for filepath in files:
-        relpath = os.path.relpath(filepath, REPO_ROOT)
-        func_names = extract_function_names(filepath)
-        for fn in func_names:
-            func_usage[fn].append(relpath)
-
-    # Flag functions that appear in 5+ different files as potentially overused
-    for fn, locations in sorted(func_usage.items()):
-        if len(locations) >= 5:
-            # Only flag if it's in genuinely different subsystems
-            dirs = set(os.path.dirname(l) for l in locations)
-            if len(dirs) >= 3:
-                findings.append((
-                    f"Function '{fn}' used in {len(locations)} files across {len(dirs)} directories",
-                    None,
-                    {"locations": locations}
-                ))
+    # Do not flag repeated helper or local variable names as responsibility
+    # violations. Ownership issues are enforced through explicit concept groups
+    # above; broad same-name heuristics produced false positives such as
+    # `file`, `out`, and `normal` across unrelated local scopes.
 
     if not findings:
         print("Single responsibility: PASS — no duplicate implementations detected.")

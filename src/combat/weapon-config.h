@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <chrono>
 #include <filesystem>
 #include <glm/glm.hpp>
@@ -34,15 +35,15 @@ class WeaponConfig {
 public:
     static WeaponConfig& instance();
 
-    bool load(const std::string& weaponId);
     const WeaponViewModelConfig* get(const std::string& weaponId) const;
-    void pollHotReload(const std::string& weaponId);
+    void pollHotReload();
+    void reloadNow();
 
 private:
-    WeaponConfig() = default;
+    WeaponConfig();
+    void load();
 
-    std::string mWeaponId;
-    WeaponViewModelConfig mConfig;
+    std::unordered_map<std::string, WeaponViewModelConfig> mConfigs;
     std::filesystem::file_time_type mLastWriteTime;
     std::chrono::steady_clock::time_point mLastCheckTime;
     float mPollInterval = 0.25f;

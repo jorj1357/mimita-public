@@ -33,6 +33,8 @@ struct WeaponDefinition {
     std::string modelPath;
     glm::vec3 viewModelOffset{0.0f};
     glm::vec3 viewModelRotation{0.0f};
+    glm::vec3 attachmentOffset{0.0f};
+    glm::vec3 attachmentRotation{0.0f};
     float weaponScale = 1.0f;
 
     float damage = 0.0f;

@@ -1,45 +1,569 @@
 {
-  "advanced": {
-    "head_back": "shirt.png",
-    "head_bottom": "shirt.png",
-    "head_front": "skin.png",
-    "head_left": "shirt.png",
-    "head_right": "shirt.png",
-    "head_top": "clown1.png",
-    "leftArm_back": "shirt.png",
-    "leftArm_bottom": "shirt.png",
-    "leftArm_front": "shirt.png",
-    "leftArm_left": "shirt.png",
-    "leftArm_right": "shirt.png",
-    "leftArm_top": "shirt.png",
-    "leftLeg_back": "shirt.png",
-    "leftLeg_bottom": "shirt.png",
-    "leftLeg_front": "shirt.png",
-    "leftLeg_left": "shirt.png",
-    "leftLeg_right": "shirt.png",
-    "leftLeg_top": "shirt.png",
-    "rightArm_back": "shirt.png",
-    "rightArm_bottom": "shirt.png",
-    "rightArm_front": "shirt.png",
-    "rightArm_left": "shirt.png",
-    "rightArm_right": "shirt.png",
-    "rightArm_top": "shirt.png",
-    "rightLeg_back": "shirt.png",
-    "rightLeg_bottom": "shirt.png",
-    "rightLeg_front": "shirt.png",
-    "rightLeg_left": "shirt.png",
-    "rightLeg_right": "shirt.png",
-    "rightLeg_top": "shirt.png",
-    "torso_back": "shirt.png",
-    "torso_bottom": "shirt.png",
-    "torso_front": "shirt.png",
-    "torso_left": "shirt.png",
-    "torso_right": "shirt.png",
-    "torso_top": "shirt.png"
-  },
+  "name": "test_avatar",
+  "version": 1,
   "advanced_mode": true,
+  "simple": {
+    "face": "face.png",
+    "shirt": "shirt.png",
+    "pants": "pants.png",
+    "skin": "skin.png"
+  },
+  "advanced": {
+    "head_front": {
+      "texture": "skin.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_back": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_left": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_right": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_top": {
+      "texture": "clown1.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_bottom": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_front": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_back": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_left": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_right": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_top": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_bottom": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_front": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_back": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_left": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_right": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_top": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_bottom": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_front": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_back": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_left": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_right": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_top": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_bottom": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_front": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_back": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_left": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_right": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_top": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_bottom": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_front": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_back": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_left": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_right": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_top": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_bottom": {
+      "texture": "shirt.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    }
+  },
+  "textures": {
+    "clown1": "clown1.png",
+    "face": "face.png",
+    "pants": "pants.png",
+    "shirt": "shirt.png",
+    "skin": "skin.png"
+  },
   "colors": {
     "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
       1.0,
       1.0,
       1.0
@@ -49,12 +573,12 @@
       1.0,
       1.0
     ],
-    "leftLeg": [
+    "rightArm": [
       1.0,
       1.0,
       1.0
     ],
-    "rightArm": [
+    "leftLeg": [
       1.0,
       1.0,
       1.0
@@ -63,20 +587,7 @@
       1.0,
       1.0,
       1.0
-    ],
-    "torso": [
-      1.0,
-      1.0,
-      1.0
     ]
   },
-  "cosmetics": [],
-  "name": "test_avatar",
-  "simple": {
-    "face": "face.png",
-    "pants": "pants.png",
-    "shirt": "shirt.png",
-    "skin": "skin.png"
-  },
-  "version": 1
+  "cosmetics": []
 }

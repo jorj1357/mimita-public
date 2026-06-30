@@ -118,7 +118,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         return;
     }
 
-    // Store aim data for weapon positioning
     if (glm::length(camForward) > 0.001f) {
         aimDirection = glm::normalize(camForward);
         aimPosition = camPos;
@@ -171,7 +170,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // On state change: reset timer and snap walk to start tick
     if (activeAnim != currentAnimName) {
         currentAnimName = activeAnim;
         if (activeAnim == "walk")
@@ -181,6 +179,36 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     animStateTime += dt;
+
+    // === DASH POSE TIMER ===
+    if (dash.didDash)
+        dashPoseTimer = 0.0f;
+
+    float dashWeight = 0.0f;
+    if (forceDashPose) {
+        dashWeight = 1.0f;
+    } else if (dashPoseTimer >= 0.0f) {
+        const auto& dp = gPlayerProcedural.dashPose;
+        if (dp.snapIn && dashPoseTimer == 0.0f) {
+            dashWeight = 1.0f;
+            dashPoseTimer = dp.blendInTime;
+        }
+        dashPoseTimer += dt;
+        float holdDuration = 0.15f;
+        float totalDuration = dp.blendInTime + holdDuration + dp.blendOutTime;
+        if (dashPoseTimer <= dp.blendInTime) {
+            float t = dashPoseTimer / dp.blendInTime;
+            dashWeight = t * t * (3.0f - 2.0f * t);
+        } else if (dashPoseTimer <= dp.blendInTime + holdDuration) {
+            dashWeight = 1.0f;
+        } else if (dashPoseTimer <= totalDuration) {
+            float t = (dashPoseTimer - dp.blendInTime - holdDuration) / dp.blendOutTime;
+            dashWeight = 1.0f - t * t * (3.0f - 2.0f * t);
+        } else {
+            dashWeight = 0.0f;
+            dashPoseTimer = -1.0f;
+        }
+    }
 
     // === COMPUTE JSON KEYFRAME ANIMATION ===
     auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
@@ -204,26 +232,49 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         animOverlay = interpolateAnimClip(animIt->second, animStateTime, animSpeedScale);
     }
 
-    // Reload state
-    bool isReloading = false;
-    for (const auto& pair : weaponRuntimes) {
-        if (pair.first == "revolver" || pair.first == "shotgun") {
-            if (pair.second.isReloading) {
-                isReloading = true;
-                break;
-            }
-        }
-    }
-
     // Weapon state
     bool weaponEquipped = hasValidWeapon && (equippedSlot >= 1);
     std::string weaponId = equippedWeaponId;
     std::string poseLookupId = weaponId;
+    const WeaponRuntime* currentWeaponRuntime = nullptr;
+    auto runtimeIt = weaponRuntimes.find(weaponId);
+    if (runtimeIt != weaponRuntimes.end())
+        currentWeaponRuntime = &runtimeIt->second;
+    bool isReloading = currentWeaponRuntime && currentWeaponRuntime->isReloading;
     {
         const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
         if (def && !def->poseId.empty())
             poseLookupId = def->poseId;
     }
+
+    auto tryWeaponPoseState = [&](const char* stateName) {
+        const std::string stateKey = poseLookupId + ":" + stateName;
+        auto stateIt = gPlayerProcedural.weaponPoses.find(stateKey);
+        if (stateIt == gPlayerProcedural.weaponPoses.end() || !stateIt->second.useWeaponPose)
+            return false;
+        poseLookupId = stateKey;
+        return true;
+    };
+    if (weaponEquipped && currentWeaponRuntime) {
+        auto equipIt = currentWeaponRuntime->customFloats.find("equipTimer");
+        const bool equipping = equipIt != currentWeaponRuntime->customFloats.end() && equipIt->second > 0.0f;
+        if (equipping) {
+            if (!tryWeaponPoseState("equipping"))
+                tryWeaponPoseState("equip");
+        } else if (isReloading) {
+            if (!tryWeaponPoseState("reloading"))
+                tryWeaponPoseState("reload");
+        } else if (currentWeaponRuntime->shootEffectTimer > 0.0f) {
+            if (!tryWeaponPoseState("shooting"))
+                tryWeaponPoseState("fire");
+        } else if (currentWeaponRuntime->fireCooldown > 0.0f) {
+            if (!tryWeaponPoseState("cooldown"))
+                tryWeaponPoseState("just_shot");
+        } else if (!tryWeaponPoseState("idle")) {
+            tryWeaponPoseState("equipped");
+        }
+    }
+
     bool hasWeaponPose = false;
     WeaponPoseConfig* weaponPoseCfg = nullptr;
     if (weaponEquipped) {
@@ -233,14 +284,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             weaponPoseCfg = &wpIt->second;
         }
     }
-
-    // Weapon sway computation (arms only, when weapon has a pose)
-    float swayPhase = weaponSwayTime * gPlayerProcedural.weaponSwaySpeed;
-    float swayAmount = hasWeaponPose ? gPlayerProcedural.weaponSwayAmount + move01 * 0.1f : 0.0f;
-    float swayX = std::sin(swayPhase) * swayAmount;
-    float swayY = std::cos(swayPhase * 1.3f) * swayAmount * 0.6f;
-    float swayZ = std::sin(swayPhase * 0.7f) * swayAmount * 0.4f;
-    float idleSway = hasWeaponPose ? std::sin(weaponSwayTime * gPlayerProcedural.idleSwaySpeed) * gPlayerProcedural.idleSwayAmount : 0.0f;
 
     // Aim tracking for weapon-equipped upper body
     float aimYaw = 0.0f, aimPitch = 0.0f;
@@ -263,7 +306,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         ProceduralPose target;
 
-        // JSON keyframe values are the base target
         {
             auto ovIt = animOverlay.find(part.name);
             if (ovIt != animOverlay.end()) {
@@ -272,7 +314,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
 
-        // Per-weapon pose replaces arm rotation when the weapon defines one
         if (hasWeaponPose && weaponPoseCfg) {
             if (part.name == "leftArm") {
                 target.rotationEuler = weaponPoseCfg->leftArm.rotation;
@@ -283,14 +324,57 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
 
-        // Reload overlay (additive arm lowering)
         if (isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
             target.rotationEuler += gPlayerProcedural.layers.reloadOverlay.rotation;
             target.translation += gPlayerProcedural.layers.reloadOverlay.translation;
         }
 
+        if (dashWeight > 0.0f) {
+            bool partHasWeaponPose = hasWeaponPose && (part.name == "leftArm" || part.name == "rightArm");
+            if (!partHasWeaponPose) {
+                const auto& dp = gPlayerProcedural.dashPose;
+                if (part.name == "torso") {
+                    target.rotationEuler = glm::mix(target.rotationEuler, dp.torsoRotation, dashWeight);
+                    target.translation = glm::mix(target.translation, dp.torsoTranslation, dashWeight);
+                } else if (part.name == "head") {
+                    target.rotationEuler = glm::mix(target.rotationEuler, dp.headRotation, dashWeight);
+                    target.translation = glm::mix(target.translation, dp.headTranslation, dashWeight);
+                } else if (part.name == "leftArm") {
+                    target.rotationEuler = glm::mix(target.rotationEuler, dp.leftArmRotation, dashWeight);
+                    target.translation = glm::mix(target.translation, dp.leftArmTranslation, dashWeight);
+                } else if (part.name == "rightArm") {
+                    target.rotationEuler = glm::mix(target.rotationEuler, dp.rightArmRotation, dashWeight);
+                    target.translation = glm::mix(target.translation, dp.rightArmTranslation, dashWeight);
+                } else if (part.name == "leftLeg") {
+                    target.rotationEuler = glm::mix(target.rotationEuler, dp.leftLegRotation, dashWeight);
+                    target.translation = glm::mix(target.translation, dp.leftLegTranslation, dashWeight);
+                } else if (part.name == "rightLeg") {
+                    target.rotationEuler = glm::mix(target.rotationEuler, dp.rightLegRotation, dashWeight);
+                    target.translation = glm::mix(target.translation, dp.rightLegTranslation, dashWeight);
+                }
+            }
+        }
+
         // Axis locks: clamp unwanted axes to 0
         applyAxisLocks(target, part.name);
+
+        if (activeAnim == "idle") {
+            auto& c = gPlayerProcedural;
+            float t = weaponSwayTime, str = c.idleDebugStrength;
+            if (part.name == "leftArm")
+                target.rotationEuler.x += std::sin(t * c.idleArmSpeed) * c.idleArmRotationDeg * str;
+            else if (part.name == "rightArm")
+                target.rotationEuler.x += std::sin(t * c.idleArmSpeed + 1.5f) * c.idleArmRotationDeg * str;
+            else if (part.name == "leftLeg")
+                target.rotationEuler.x += std::sin(t * c.idleLegSpeed) * c.idleLegRotationDeg * str;
+            else if (part.name == "rightLeg")
+                target.rotationEuler.x += std::sin(t * c.idleLegSpeed + 2.0f) * c.idleLegRotationDeg * str;
+            else if (part.name == "torso") {
+                target.rotationEuler.z += std::sin(t * c.idleTorsoSpeed) * c.idleTorsoRotationDeg * str;
+                target.translation.y += std::sin(t * c.idleBreathingSpeed) * c.idleBreathingAmount * str;
+            } else if (part.name == "head")
+                target.rotationEuler.x += std::sin(t * c.idleHeadSpeed) * c.idleHeadRotationDeg * str;
+        }
 
         // Store the clean perfect pose (exact JSON target, no smoothing)
         part.perfectPose = target;
@@ -306,7 +390,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             perfectPoseSkeleton.restLocalTransforms[part.nodeIndex] *
             poseMatrix(part.pose);
 
-        // Sync legacy body parts
         for (BodyPart& legacyPart : bodyParts)
         {
             if (legacyPart.nodeIndex != part.nodeIndex)
@@ -318,7 +401,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // Pose debug logging (always enabled for debug builds)
     if (DebugConfig::DEBUG_ANIMATION) {
         static float poseDebugTimer2 = 0.0f;
         poseDebugTimer2 -= dt;
@@ -340,7 +422,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // Arm debug logging (enable with `anim_debug_arms 1`)
     if (DebugConfig::DEBUG_ANIM_ARMS) {
         static float armDebugTimer = 0.0f;
         armDebugTimer -= dt;
@@ -399,7 +480,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // Debug logging (enable with `animation_debug 1`)
     if (DebugConfig::DEBUG_ANIMATION) {
         static float debugTimer = 0.0f;
         debugTimer -= dt;
