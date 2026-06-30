@@ -209,4 +209,27 @@ void registerWeaponCommands()
         std::string(),
         CommandCategory::Player
     });
+
+}
+
+void registerWeaponDebugCommand()
+{
+    Terminal::instance().registerCommand({
+        "weapon_debug",
+        "Toggle weapon debug logging (0=off, 1=on). Prints shotgun stats and pellet directions on each shot.",
+        "weapon_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                WeaponFire::setWeaponDebug(!WeaponFire::weaponDebugEnabled());
+            } else {
+                WeaponFire::setWeaponDebug(args[0] != "0");
+            }
+            Terminal::instance().addLog(
+                WeaponFire::weaponDebugEnabled()
+                ? "[OK] weapon debug enabled"
+                : "[OK] weapon debug disabled");
+        },
+        "2026-06-30",
+        CommandCategory::Weapon
+    });
 }

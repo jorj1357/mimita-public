@@ -1,0 +1,27 @@
+{
+  "anchor": "RightCenter",
+  "offsetX": -180.0,
+  "offsetY": 0.0,
+  "width": 500.0,
+  "height": 700.0,
+
+  "camera": {
+    "position": [0.0, -3.0, 1.2],
+    "target": [0.0, 0.0, 1.0],
+    "fov": 35.0,
+    "near": 0.01,
+    "far": 1000.0
+  },
+
+  "character": {
+    "position": [0.0, 0.0, 0.0],
+    "rotation_degrees": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0]
+  },
+
+  "rotation": {
+    "enabled": true,
+    "degrees_per_second": 120.0,
+    "clockwise": true
+  }
+}

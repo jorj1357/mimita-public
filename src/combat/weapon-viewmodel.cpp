@@ -190,8 +190,56 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         mTint = vmcfg->color;
 
     // Store collision config from weapon definition
-    if (def)
+    if (def) {
         player.weaponCollisionConfig = def->collision;
+
+        // Generate fallback colliders if enabled but no explicit colliders configured
+        if (player.weaponCollisionConfig.enabled && player.weaponCollisionConfig.colliders.empty()) {
+            WeaponColliderConfig fb;
+            fb.name = def->id;
+            fb.shape = WeaponColliderShape::Box;
+            fb.pushPlayerRoot = true;
+            fb.supportPlayerWeight = true;
+            fb.blocksWorld = true;
+
+            if (def->id == "shotgun") {
+                fb.position = glm::vec3(0.0f, 0.0f, -0.4f);
+                fb.size = glm::vec3(0.20f, 0.20f, 1.8f);
+            } else if (def->id == "revolver") {
+                fb.position = glm::vec3(0.0f, 0.0f, -0.2f);
+                fb.size = glm::vec3(0.16f, 0.16f, 1.0f);
+            } else if (def->id == "rocket_launcher") {
+                fb.position = glm::vec3(0.0f, 0.0f, -0.3f);
+                fb.size = glm::vec3(0.30f, 0.30f, 1.6f);
+            } else if (def->id == "swordsword") {
+                fb.position = glm::vec3(0.0f, 0.0f, -0.5f);
+                fb.size = glm::vec3(0.10f, 0.10f, 1.8f);
+            } else if (def->id == "godball") {
+                fb.shape = WeaponColliderShape::Capsule;
+                fb.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                fb.size = glm::vec3(0.4f, 0.4f, 0.4f);
+            } else {
+                // Generic fallback from model bounds or viewmodel size
+                float len = 0.6f;
+                float rad = 0.14f;
+                if (hasModelBounds) {
+                    glm::vec3 half = (modelGrip + modelMuzzle) * 0.5f;
+                    fb.position = -half;
+                    glm::vec3 ms = modelMuzzle - modelGrip;
+                    len = std::max(glm::length(ms), 0.3f);
+                }
+                fb.position = glm::vec3(0.0f, 0.0f, -len * 0.4f);
+                fb.size = glm::vec3(rad, rad, len);
+            }
+            player.weaponCollisionConfig.colliders.push_back(fb);
+            printf("[WEAPON_COLLISION_CONFIG] weapon=%s using generated fallback collider\n"
+                   "  edit config/weapons.json -> %s.collision.colliders to tune it\n",
+                   def->id.c_str(), def->id.c_str());
+        } else if (player.weaponCollisionConfig.enabled) {
+            printf("[WEAPON_COLLISION_CONFIG] weapon=%s using JSON colliders from config/weapons.json -> %s.collision.colliders\n",
+                   def->id.c_str(), def->id.c_str());
+        }
+    }
 
     if (world)
         player.collision.hasWeaponCollisionCapsule = false;

@@ -13,12 +13,12 @@
 
 namespace WeaponFire {
 
-static float partBaseDamage(const std::string& part, float height) {
-    if (part == "head") return 100.0f;
-    if (part == "torso") return height >= 0.5f ? 50.0f : 30.0f;
-    if (part.find("Arm") != std::string::npos) return height >= 0.5f ? 20.0f : 10.0f;
-    if (part.find("Leg") != std::string::npos) return height >= 0.5f ? 25.0f : 15.0f;
-    return 10.0f;
+static float partBaseDamage(const std::string& part, float baseDmg, float headshotMul) {
+    if (part == "head") return baseDmg * headshotMul;
+    if (part == "torso") return baseDmg;
+    if (part.find("Arm") != std::string::npos) return baseDmg * 0.5f;
+    if (part.find("Leg") != std::string::npos) return baseDmg * 0.75f;
+    return baseDmg * 0.5f;
 }
 
 void applyRecoil(Player& shooter, const WeaponDefinition& def,
@@ -49,7 +49,7 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
                          const WeaponDefinition& def, Player& shooter,
                          NpcSystem& npcs, const glm::vec3& muzzlePos,
                          const glm::vec3& shotDirection) {
-    float base = partBaseDamage(ctx.bodyPart, ctx.hitPosition.z);
+    float base = partBaseDamage(ctx.bodyPart, ctx.baseDamage, def.headshotMultiplier);
     float distanceFalloffStart = 110.0f;
     auto it = def.customParams.find("distanceFalloffStart");
     if (it != def.customParams.end()) distanceFalloffStart = it->second;

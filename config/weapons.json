@@ -125,7 +125,7 @@
     "reload_time": 1.5,
     "magazine_size": 2,
     "pellet_count": 15,
-    "spread": 3.0,
+    "spread": 15.0,
     "recoil": 130.0,
     "projectile_speed": 0.0,
     "projectile_radius": 0.0,
@@ -145,7 +145,6 @@
       "distanceFalloffStart": 60.0,
       "minDamageFraction": 0.05,
       "minAngleFactor": 0.15,
-      "gridSpreadDegrees": 3.0,
       "shootPoseTime": 0.14,
       "equipPoseTime": 0.22
     },

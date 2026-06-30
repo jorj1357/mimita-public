@@ -6,23 +6,31 @@
 struct Player;
 class Camera;
 
-struct MenuAvatarPreviewConfig
+struct MenuCharacterPreviewConfig
 {
+    // Viewport (used by MenuAvatarPreview card, not the hero background)
     std::string anchor = "RightCenter";
     float offsetX = -180.0f;
     float offsetY = 0.0f;
     float width = 500.0f;
     float height = 700.0f;
 
-    float cameraDistance = 3.0f;
-    float cameraYaw = -20.0f;
-    float cameraPitch = 8.0f;
+    // Camera
+    glm::vec3 cameraPosition{0.0f, -3.0f, 1.2f};
+    glm::vec3 cameraTarget{0.0f, 0.0f, 1.0f};
     float cameraFOV = 35.0f;
+    float cameraNear = 0.01f;
+    float cameraFar = 1000.0f;
 
-    bool slowRotationEnabled = true;
-    float rotationSpeed = 0.15f;
+    // Character transform
+    glm::vec3 characterPosition{0.0f, 0.0f, 0.0f};
+    glm::vec3 characterRotationDeg{0.0f, 0.0f, 0.0f};
+    glm::vec3 characterScale{1.0f, 1.0f, 1.0f};
 
-    float playerFootOffsetZ = 0.0f;
+    // Auto-rotation
+    bool rotationEnabled = true;
+    float rotationDegreesPerSecond = 120.0f;
+    bool rotationClockwise = true;
 };
 
 class MenuAvatarPreview
@@ -39,6 +47,10 @@ public:
     Player* ensurePlayer();
     Player* player() const { return mPlayer; }
 
+    // Shared config access for gui-main.cpp hero/avatar previews
+    const MenuCharacterPreviewConfig& config() const { return mConfig; }
+    float rotationAngle() const { return mRotationAngle; }
+
 private:
     MenuAvatarPreview() = default;
 
@@ -46,9 +58,10 @@ private:
     void setupCamera(Camera& cam, const glm::vec3& target, int vpW, int vpH);
 
     Player* mPlayer = nullptr;
-    MenuAvatarPreviewConfig mConfig;
-    std::string mConfigPath;
+    MenuCharacterPreviewConfig mConfig;
+    std::string mConfigPath = "config/main_menu_character_preview.json";
     int64_t mLastModified = 0;
     int64_t mLastCheckTime = 0;
     float mRotationAngle = 0.0f;
+    int mHotReloadCount = 0;
 };

@@ -2,10 +2,11 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "render/render-player.h"
+#include "renderer/renderer.h"
 #include "gui/ui-system.h"
 #include "gui/hud/player-nameplates.h"
 #include "auth/auth-system.h"
-#include "renderer/renderer.h"
+#include "config.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -61,7 +62,7 @@ void MenuAvatarPreview::loadConfig(const std::string& path)
     std::ifstream file(path);
     if (!file.is_open())
     {
-        printf("[MENU AVATAR] No config file: %s (using defaults)\n", path.c_str());
+        printf("[MENU PREVIEW] No config file: %s (using defaults)\n", path.c_str());
         mLastModified = getFileModifiedTimeMs(path);
         return;
     }
@@ -71,43 +72,60 @@ void MenuAvatarPreview::loadConfig(const std::string& path)
         json j;
         file >> j;
 
-        if (!j.contains("MainMenuAvatar"))
-        {
-            printf("[MENU AVATAR] Config missing MainMenuAvatar section\n");
-            return;
+        MenuCharacterPreviewConfig cfg;
+
+        auto readV3 = [&](const json& o, const char* k, glm::vec3& v) {
+            if (o.contains(k) && o[k].is_array() && o[k].size() >= 3)
+                v = glm::vec3(o[k][0].get<float>(), o[k][1].get<float>(), o[k][2].get<float>());
+        };
+
+        cfg.anchor = j.value("anchor", cfg.anchor);
+        cfg.offsetX = j.value("offsetX", cfg.offsetX);
+        cfg.offsetY = j.value("offsetY", cfg.offsetY);
+        cfg.width = j.value("width", cfg.width);
+        cfg.height = j.value("height", cfg.height);
+
+        if (j.contains("camera")) {
+            auto& c = j["camera"];
+            readV3(c, "position", cfg.cameraPosition);
+            readV3(c, "target", cfg.cameraTarget);
+            cfg.cameraFOV = c.value("fov", cfg.cameraFOV);
+            cfg.cameraNear = c.value("near", cfg.cameraNear);
+            cfg.cameraFar = c.value("far", cfg.cameraFar);
         }
 
-        auto& c = j["MainMenuAvatar"];
-        MenuAvatarPreviewConfig cfg;
+        if (j.contains("character")) {
+            auto& ch = j["character"];
+            readV3(ch, "position", cfg.characterPosition);
+            readV3(ch, "rotation_degrees", cfg.characterRotationDeg);
+            readV3(ch, "scale", cfg.characterScale);
+        }
 
-        cfg.anchor = c.value("anchor", cfg.anchor);
-        cfg.offsetX = c.value("offsetX", cfg.offsetX);
-        cfg.offsetY = c.value("offsetY", cfg.offsetY);
-        cfg.width = c.value("width", cfg.width);
-        cfg.height = c.value("height", cfg.height);
-
-        cfg.cameraDistance = c.value("cameraDistance", cfg.cameraDistance);
-        cfg.cameraYaw = c.value("cameraYaw", cfg.cameraYaw);
-        cfg.cameraPitch = c.value("cameraPitch", cfg.cameraPitch);
-        cfg.cameraFOV = c.value("cameraFOV", cfg.cameraFOV);
-
-        cfg.slowRotationEnabled = c.value("slowRotationEnabled", cfg.slowRotationEnabled);
-        cfg.rotationSpeed = c.value("rotationSpeed", cfg.rotationSpeed);
-        cfg.playerFootOffsetZ = c.value("playerFootOffsetZ", cfg.playerFootOffsetZ);
+        if (j.contains("rotation")) {
+            auto& rot = j["rotation"];
+            cfg.rotationEnabled = rot.value("enabled", cfg.rotationEnabled);
+            cfg.rotationDegreesPerSecond = rot.value("degrees_per_second", cfg.rotationDegreesPerSecond);
+            cfg.rotationClockwise = rot.value("clockwise", cfg.rotationClockwise);
+        }
 
         mConfig = cfg;
         mLastModified = getFileModifiedTimeMs(path);
-        printf("[MENU AVATAR] Loaded config from %s\n", path.c_str());
+        mHotReloadCount++;
+        printf("[MENU PREVIEW] Loaded config from %s\n", path.c_str());
     }
     catch (const std::exception& e)
     {
-        printf("[MENU AVATAR] Error loading %s: %s\n", path.c_str(), e.what());
+        printf("[MENU PREVIEW] Error loading %s: %s\n", path.c_str(), e.what());
     }
 }
 
 void MenuAvatarPreview::pollHotReload()
 {
-    if (mConfigPath.empty()) return;
+    if (mConfigPath.empty())
+    {
+        loadConfig("config/main_menu_character_preview.json");
+        return;
+    }
 
     int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -117,7 +135,7 @@ void MenuAvatarPreview::pollHotReload()
     int64_t current = getFileModifiedTimeMs(mConfigPath);
     if (current != mLastModified && current != 0)
     {
-        printf("[MENU AVATAR] Config changed, reloading...\n");
+        printf("[MENU PREVIEW] Config changed, reloading...\n");
         loadConfig(mConfigPath);
     }
 }
@@ -126,7 +144,7 @@ Player* MenuAvatarPreview::ensurePlayer()
 {
     if (!mPlayer)
     {
-        printf("[MENU AVATAR] Creating preview player...\n");
+        printf("[MENU PREVIEW] Creating preview player...\n");
         mPlayer = new Player();
     }
     return mPlayer;
@@ -142,37 +160,30 @@ void MenuAvatarPreview::computeViewport(int fbW, int fbH, int& vpX, int& vpY, in
     vpW = (int)(designW * scaleX);
     vpH = (int)(designH * scaleY);
 
-    if (mConfig.anchor == "RightCenter")
-    {
-        vpX = fbW - vpW + (int)(mConfig.offsetX * scaleX);
-        vpY = (fbH - vpH) / 2 + (int)(mConfig.offsetY * scaleY);
-    }
-    else if (mConfig.anchor == "LeftCenter")
-    {
-        vpX = (int)(mConfig.offsetX * scaleX);
-        vpY = (fbH - vpH) / 2 + (int)(mConfig.offsetY * scaleY);
-    }
-    else
-    {
-        vpX = (fbW - vpW) / 2 + (int)(mConfig.offsetX * scaleX);
-        vpY = (fbH - vpH) / 2 + (int)(mConfig.offsetY * scaleY);
-    }
+    vpX = mConfig.anchor == "RightCenter" ? fbW - vpW : (fbW - vpW) / 2;
+    vpX += (int)(mConfig.offsetX * scaleX);
+    vpY = (fbH - vpH) / 2 + (int)(mConfig.offsetY * scaleY);
 }
 
 void MenuAvatarPreview::setupCamera(Camera& cam, const glm::vec3& target, int vpW, int vpH)
 {
+    (void)target; (void)vpW; (void)vpH;
     cam.fov = mConfig.cameraFOV;
 
-    float yawRad = glm::radians(mConfig.cameraYaw + mRotationAngle);
-    float pitchRad = glm::radians(mConfig.cameraPitch);
-
-    cam.pos = target + glm::vec3(
-        std::sin(yawRad) * std::cos(pitchRad) * mConfig.cameraDistance,
-        std::cos(yawRad) * std::cos(pitchRad) * mConfig.cameraDistance,
-        std::sin(pitchRad) * mConfig.cameraDistance
+    // Orbital camera around target with yaw from rotation angle
+    float yawRad = glm::radians(mRotationAngle);
+    glm::vec3 offset = mConfig.cameraPosition;
+    float cosA = std::cos(yawRad);
+    float sinA = std::sin(yawRad);
+    glm::vec3 rotated(
+        offset.x * cosA - offset.y * sinA,
+        offset.x * sinA + offset.y * cosA,
+        offset.z
     );
 
-    glm::vec3 lookTarget = target + glm::vec3(0.0f, 0.0f, 1.2f);
+    cam.pos = mConfig.cameraTarget + rotated;
+
+    glm::vec3 lookTarget = mConfig.cameraTarget;
     cam.front = glm::normalize(lookTarget - cam.pos);
     cam.right = glm::normalize(glm::cross(cam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
     cam.up = glm::normalize(glm::cross(cam.right, cam.front));
@@ -183,10 +194,12 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
     Player* p = ensurePlayer();
     if (!p) return;
 
-    if (mConfig.slowRotationEnabled)
+    if (mConfig.rotationEnabled)
     {
-        mRotationAngle += mConfig.rotationSpeed * dt;
+        float dir = mConfig.rotationClockwise ? 1.0f : -1.0f;
+        mRotationAngle += mConfig.rotationDegreesPerSecond * dir * dt;
         if (mRotationAngle > 360.0f) mRotationAngle -= 360.0f;
+        if (mRotationAngle < 0.0f) mRotationAngle += 360.0f;
     }
 
     p->ground.onGround = true;
@@ -197,6 +210,20 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
         p->username = auth.user().username;
     else
         p->username = "DefaultGuy";
+
+    // Debug logging
+    if (DebugConfig::DEBUG_MENU_PREVIEW) {
+        static float logTimer = 0.0f;
+        logTimer -= dt;
+        if (logTimer <= 0.0f) {
+            logTimer = 1.0f;
+            printf("[MENU PREVIEW] rot=%.1f fov=%.0f cam=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) speed=%.0f reloads=%d\n",
+                   mRotationAngle, mConfig.cameraFOV,
+                   mConfig.cameraPosition.x, mConfig.cameraPosition.y, mConfig.cameraPosition.z,
+                   mConfig.cameraTarget.x, mConfig.cameraTarget.y, mConfig.cameraTarget.z,
+                   mConfig.rotationDegreesPerSecond, mHotReloadCount);
+        }
+    }
 }
 
 void MenuAvatarPreview::draw(int fbW, int fbH)
@@ -204,8 +231,8 @@ void MenuAvatarPreview::draw(int fbW, int fbH)
     Player* p = ensurePlayer();
     if (!p) return;
 
-    p->pos = glm::vec3(0.0f, 0.0f, mConfig.playerFootOffsetZ);
-    p->yaw = 180.0f + mConfig.cameraYaw + mRotationAngle;
+    p->pos = mConfig.characterPosition;
+    p->yaw = mConfig.characterRotationDeg.z + mRotationAngle;
 
     int vpX, vpY, vpW, vpH;
     computeViewport(fbW, fbH, vpX, vpY, vpW, vpH);
@@ -214,28 +241,19 @@ void MenuAvatarPreview::draw(int fbW, int fbH)
     Camera previewCam;
     setupCamera(previewCam, p->pos, vpW, vpH);
 
-    GLint prevViewport[4];
-    glGetIntegerv(GL_VIEWPORT, prevViewport);
-    GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-
+    GLint prevVp[4]; glGetIntegerv(GL_VIEWPORT, prevVp);
+    GLboolean depthEn = glIsEnabled(GL_DEPTH_TEST);
     glViewport(vpX, vpY, vpW, vpH);
     glEnable(GL_DEPTH_TEST);
 
-    int prevRW = gRenderer->width;
-    int prevRH = gRenderer->height;
-    gRenderer->width = vpW;
-    gRenderer->height = vpH;
-
+    int prevRW = gRenderer->width, prevRH = gRenderer->height;
+    gRenderer->width = vpW; gRenderer->height = vpH;
     glClearColor(0.04f, 0.045f, 0.06f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     renderPlayer(*p, previewCam);
-
-    gRenderer->width = prevRW;
-    gRenderer->height = prevRH;
-
-    if (!depthWasEnabled) glDisable(GL_DEPTH_TEST);
-    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    gRenderer->width = prevRW; gRenderer->height = prevRH;
+    if (!depthEn) glDisable(GL_DEPTH_TEST);
+    glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
 
     if (p->dead || p->currentHp <= 0) return;
 

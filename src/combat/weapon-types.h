@@ -36,7 +36,7 @@ struct WeaponColliderConfig {
 };
 
 struct WeaponCollisionConfig {
-    bool enabled = false;
+    bool enabled = true;
     bool authoritative = true;
     std::vector<WeaponColliderConfig> colliders;
 };

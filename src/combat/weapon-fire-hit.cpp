@@ -20,6 +20,13 @@
 
 namespace WeaponFire {
 
+namespace {
+bool gDebugWeapon = false;
+}
+
+void setWeaponDebug(bool enabled) { gDebugWeapon = enabled; }
+bool weaponDebugEnabled() { return gDebugWeapon; }
+
 RevolverShotResult tryFireHitscan(
     const WeaponDefinition& def,
     WeaponRuntime& runtime,
@@ -268,13 +275,12 @@ void fireMultiPellet(
         playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
     }
 
-    float spreadDeg = def.spread;
-    auto it = def.customParams.find("gridSpreadDegrees");
-    if (it != def.customParams.end()) spreadDeg = it->second;
-    spreadDeg = std::max(0.1f, spreadDeg);
+    float spreadDeg = std::max(0.1f, def.spread);
 
     AimTarget aim = computeAimTarget(camera, world, npcs, remotePlayers);
     glm::vec3 baseDir = glm::normalize(aim.worldPoint - muzzlePos);
+    if (glm::length(baseDir) < 0.001f)
+        baseDir = camera.front;
 
     glm::vec3 up(0.0f, 0.0f, 1.0f);
     if (std::fabs(glm::dot(baseDir, up)) > 0.99f)
@@ -284,8 +290,9 @@ void fireMultiPellet(
 
     float halfAngleRad = glm::radians(spreadDeg * 0.5f);
 
-    constexpr int COLS = 5;
-    constexpr int ROWS = 3;
+    int pelletCount = std::max(1, def.pelletCount);
+    int cols = std::max(1, (int)std::ceil(std::sqrt((float)pelletCount)));
+    int rows = std::max(1, (int)std::ceil((float)pelletCount / (float)cols));
     int totalPellets = 0;
     float accumulatedDamage = 0.0f;
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
@@ -297,12 +304,18 @@ void fireMultiPellet(
     glm::vec3 accumulatedKnockback(0.0f);
     float nearestPelletDist = MAX_SHOT_DISTANCE;
 
-    for (int row = -1; row <= 1; ++row) {
-        for (int col = -2; col <= 2; ++col) {
-            totalPellets++;
+    if (gDebugWeapon) {
+        printf("[SHOTGUN]\nweapon=%s\npellets=%d\nspread=%.1f\ndamage=%.0f\nheadshotMultiplier=%.0f\nrecoil=%.0f\nfireDelay=%.2f\nreloadTime=%.1f\nmagazine=%d\n",
+               def.id.c_str(), pelletCount, spreadDeg, def.damage, def.headshotMultiplier, def.recoil, def.fireDelay, def.reloadTime, def.magazineSize);
+    }
 
-            float hAngle = halfAngleRad * (col / 2.0f);
-            float vAngle = halfAngleRad * (row / 1.0f);
+    int pelletIndex = 0;
+    for (int row = 0; row < rows && pelletIndex < pelletCount; ++row) {
+        for (int col = 0; col < cols && pelletIndex < pelletCount; ++col, ++pelletIndex) {
+            float fracX = cols > 1 ? (col / ((float)cols - 1.0f)) * 2.0f - 1.0f : 0.0f;
+            float fracY = rows > 1 ? (row / ((float)rows - 1.0f)) * 2.0f - 1.0f : 0.0f;
+            float hAngle = halfAngleRad * fracX;
+            float vAngle = halfAngleRad * fracY;
             glm::quat rot = glm::angleAxis(hAngle, localUp) * glm::angleAxis(vAngle, right);
             glm::vec3 pelletDir = glm::normalize(rot * baseDir);
 
@@ -377,6 +390,9 @@ void fireMultiPellet(
             }
 
             glm::vec3 pelletEnd = muzzlePos + pelletDir * pelletNearest;
+
+            if (gDebugWeapon && pelletIndex < 3)
+                printf("pellet%d direction=(%.4f %.4f %.4f)\n", pelletIndex, pelletDir.x, pelletDir.y, pelletDir.z);
 
             EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username);
 
