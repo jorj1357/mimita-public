@@ -1,6 +1,7 @@
 #include "engine/engine-tick-camera.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include <cmath>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "world/world.h"
@@ -23,6 +24,42 @@
 
 extern DuelManager gDuelManager;
 
+static void syncPlayerYawFromCamera(Player& player, const Camera& camera)
+{
+    if (player.dead) return;
+    glm::vec2 flat(camera.front.x, camera.front.y);
+    if (glm::length(flat) > 0.0001f) {
+        flat = glm::normalize(flat);
+        player.yaw = glm::degrees(std::atan2(flat.y, flat.x));
+    }
+}
+
+static void logRotationDebug(const Player& player, const Camera& camera, float dt)
+{
+    if (!DebugConfig::DEBUG_ROTATION) return;
+    static float timer = 0.0f;
+    timer -= dt;
+    if (timer > 0.0f) return;
+    timer = 0.25f;
+
+    float cameraYaw = camera.yaw;
+    float rootYaw = player.yaw;
+    float capsuleYaw = 0.0f;
+    glm::vec3 capsuleFwd = player.movementCapsule.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+    if (glm::length(capsuleFwd) > 0.0001f)
+        capsuleYaw = glm::degrees(std::atan2(capsuleFwd.y, capsuleFwd.x));
+
+    float aimYaw = 0.0f;
+    if (player.hasAimData) {
+        glm::vec3 flatAim = glm::normalize(glm::vec3(player.aimDirection.x, player.aimDirection.y, 0.0f));
+        aimYaw = glm::degrees(std::atan2(flatAim.y, flatAim.x) - glm::radians(rootYaw));
+    }
+
+    Debug::log(Debug::Category::General,
+        "[ROTATION] cameraYaw=%.2f rootYaw=%.2f capsuleYaw=%.2f aimYaw=%.2f diff(cam-root)=%.2f diff(root-cap)=%.2f\n",
+        cameraYaw, rootYaw, capsuleYaw, aimYaw, cameraYaw - rootYaw, rootYaw - capsuleYaw);
+}
+
 void engineTickCamera(Engine& engine, float dt)
 {
     Player& player = THE_PLAYER;
@@ -41,6 +78,10 @@ void engineTickCamera(Engine& engine, float dt)
 
     camera.decayPunch(dt);
     camera.updateVectors();
+
+    // Camera is the source of truth: player root yaw = camera yaw, no smoothing.
+    syncPlayerYawFromCamera(player, camera);
+    logRotationDebug(player, camera, dt);
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool replayFreecam =

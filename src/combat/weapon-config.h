@@ -25,6 +25,8 @@ struct WeaponViewModelConfig {
     glm::vec3 scale{1.0f};
     bool enabled = true;
 
+    glm::vec3 color{1.0f};  // tint override (only from viewmodel section)
+
     WeaponFireAnim fireAnim;
     WeaponReloadPose reloadPose;
     bool hasFireAnim = false;

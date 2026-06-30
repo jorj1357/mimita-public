@@ -254,6 +254,25 @@ void registerDebugToggleCommands()
     });
 
     term.registerCommand({
+        "rotation_debug",
+        "Toggle rotation debug logging (0=off, 1=on). Prints cameraYaw, rootYaw, capsuleYaw, modelYaw, weaponYaw, aimYaw every 0.25s",
+        "rotation_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_ROTATION = !DebugConfig::DEBUG_ROTATION;
+            } else {
+                DebugConfig::DEBUG_ROTATION = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_ROTATION
+                ? "[OK] rotation debug enabled"
+                : "[OK] rotation debug disabled");
+        },
+        "2026-06-30",
+        CommandCategory::Debug
+    });
+
+    term.registerCommand({
         "idle_test",
         "Set idle animation debug strength multiplier (default 1.0, e.g. 10 for exaggerated motion)",
         "idle_test <multiplier>",

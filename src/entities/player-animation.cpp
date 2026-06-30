@@ -210,6 +210,39 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    // === FREEZE POSE TIMER ===
+    bool wasFreezeActive = freezePoseActive;
+    freezePoseActive = freeze.freezeActive;
+    if (freeze.freezeActive && !wasFreezeActive)
+        freezePoseTimer = 0.0f;
+    else if (!freeze.freezeActive && wasFreezeActive)
+        freezePoseTimer = 0.0f;
+
+    float freezeWeight = 0.0f;
+    if (freezePoseTimer >= 0.0f) {
+        freezePoseTimer += dt;
+        const auto& fp = gPlayerProcedural.freezePose;
+        if (freeze.freezeActive) {
+            if (fp.snapIn) {
+                freezeWeight = 1.0f;
+                freezePoseTimer = fp.blendInTime;
+            } else if (freezePoseTimer <= fp.blendInTime) {
+                float t = freezePoseTimer / fp.blendInTime;
+                freezeWeight = t * t * (3.0f - 2.0f * t);
+            } else {
+                freezeWeight = 1.0f;
+            }
+        } else {
+            if (freezePoseTimer <= fp.blendOutTime) {
+                float t = freezePoseTimer / fp.blendOutTime;
+                freezeWeight = 1.0f - t * t * (3.0f - 2.0f * t);
+            } else {
+                freezeWeight = 0.0f;
+                freezePoseTimer = -1.0f;
+            }
+        }
+    }
+
     // === COMPUTE JSON KEYFRAME ANIMATION ===
     auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
     std::unordered_map<std::string, AnimOverlayResult> animOverlay;
@@ -285,19 +318,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // Aim tracking for weapon-equipped upper body
-    float aimYaw = 0.0f, aimPitch = 0.0f;
-    if (hasAimData && hasWeaponPose) {
-        glm::vec3 flatAim = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.0f));
-        glm::vec3 flatForward = glm::normalize(glm::vec3(movementCapsule.rotation * glm::vec3(0,1,0)));
-        aimYaw = std::atan2(flatAim.y, flatAim.x) - std::atan2(flatForward.y, flatForward.x);
-        while (aimYaw > 3.14159265f) aimYaw -= 2.0f * 3.14159265f;
-        while (aimYaw < -3.14159265f) aimYaw += 2.0f * 3.14159265f;
-        aimYaw = std::clamp(aimYaw, -1.0f, 1.0f);
-        aimPitch = std::asin(std::clamp(aimDirection.z, -1.0f, 1.0f));
-        aimPitch = std::clamp(aimPitch, -0.8f, 0.8f);
-    }
-
     // === PERFECT POSE GENERATION ===
     for (PhysicalBodyPart& part : physicalBody.parts)
     {
@@ -327,6 +347,27 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         if (isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
             target.rotationEuler += gPlayerProcedural.layers.reloadOverlay.rotation;
             target.translation += gPlayerProcedural.layers.reloadOverlay.translation;
+        }
+
+        // Freeze pose blending (overrides base, before dash/weapon)
+        if (freezeWeight > 0.0f) {
+            const auto& fp = gPlayerProcedural.freezePose;
+            auto blend = [&](const glm::vec3& rot, const glm::vec3& trans) {
+                target.rotationEuler = glm::mix(target.rotationEuler, rot, freezeWeight);
+                target.translation = glm::mix(target.translation, trans, freezeWeight);
+            };
+            if (part.name == "torso")
+                blend(fp.torsoRotation, fp.torsoTranslation);
+            else if (part.name == "head")
+                blend(fp.headRotation, fp.headTranslation);
+            else if (part.name == "leftArm")
+                blend(fp.leftArmRotation, fp.leftArmTranslation);
+            else if (part.name == "rightArm")
+                blend(fp.rightArmRotation, fp.rightArmTranslation);
+            else if (part.name == "leftLeg")
+                blend(fp.leftLegRotation, fp.leftLegTranslation);
+            else if (part.name == "rightLeg")
+                blend(fp.rightLegRotation, fp.rightLegTranslation);
         }
 
         if (dashWeight > 0.0f) {
@@ -361,17 +402,18 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         if (activeAnim == "idle") {
             auto& c = gPlayerProcedural;
             float t = weaponSwayTime, str = c.idleDebugStrength;
+            float breathMult = freeze.freezeActive ? 0.2f : 1.0f;
             if (part.name == "leftArm")
-                target.rotationEuler.x += std::sin(t * c.idleArmSpeed) * c.idleArmRotationDeg * str;
+                target.rotationEuler.x += std::sin(t * c.idleArmSpeed) * c.idleArmRotationDeg * str * (freeze.freezeActive ? 0.0f : 1.0f);
             else if (part.name == "rightArm")
-                target.rotationEuler.x += std::sin(t * c.idleArmSpeed + 1.5f) * c.idleArmRotationDeg * str;
+                target.rotationEuler.x += std::sin(t * c.idleArmSpeed + 1.5f) * c.idleArmRotationDeg * str * (freeze.freezeActive ? 0.0f : 1.0f);
             else if (part.name == "leftLeg")
-                target.rotationEuler.x += std::sin(t * c.idleLegSpeed) * c.idleLegRotationDeg * str;
+                target.rotationEuler.x += std::sin(t * c.idleLegSpeed) * c.idleLegRotationDeg * str * (freeze.freezeActive ? 0.0f : 1.0f);
             else if (part.name == "rightLeg")
-                target.rotationEuler.x += std::sin(t * c.idleLegSpeed + 2.0f) * c.idleLegRotationDeg * str;
+                target.rotationEuler.x += std::sin(t * c.idleLegSpeed + 2.0f) * c.idleLegRotationDeg * str * (freeze.freezeActive ? 0.0f : 1.0f);
             else if (part.name == "torso") {
                 target.rotationEuler.z += std::sin(t * c.idleTorsoSpeed) * c.idleTorsoRotationDeg * str;
-                target.translation.y += std::sin(t * c.idleBreathingSpeed) * c.idleBreathingAmount * str;
+                target.translation.y += std::sin(t * c.idleBreathingSpeed) * c.idleBreathingAmount * breathMult * str;
             } else if (part.name == "head")
                 target.rotationEuler.x += std::sin(t * c.idleHeadSpeed) * c.idleHeadRotationDeg * str;
         }

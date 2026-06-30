@@ -62,6 +62,8 @@ struct WeaponDefinition {
     std::string soundEquip;
     std::string poseId;  // which weapon pose config to use (empty = use own id)
 
+    glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
+
     std::unordered_map<std::string, float> customParams;
 
     bool validate() const;

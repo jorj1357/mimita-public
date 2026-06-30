@@ -164,6 +164,14 @@ void applyWeaponCustomParamsJson(WeaponDefinition& def, const json& root)
     }
 }
 
+void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
+{
+    if (root.contains("render") && root["render"].is_object())
+        weaponJsonVec3(root["render"], "color", def.tint);
+    else if (root.contains("color") && root["color"].is_array())
+        weaponJsonVec3(root, "color", def.tint);
+}
+
 void applyWeaponJson(WeaponDefinition& def, const json& root)
 {
     if (!root.is_object())
@@ -172,6 +180,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
     applyWeaponStatsJson(def, root);
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);
+    applyWeaponRenderJson(def, root);
 }
 
 } // namespace

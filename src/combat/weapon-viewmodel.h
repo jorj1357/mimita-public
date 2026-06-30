@@ -27,6 +27,8 @@ struct WeaponViewModel {
     float recoil = 0.0f;
     float disturbance = 0.0f;
 
+    glm::vec3 mTint{1.0f};  // current tint for rendering
+
     // Per-weapon animation state
     float mFireTimer = 0.0f;
     float mReloadBlend = 0.0f;       // 0=idle, 1=reload_pose (spring target)

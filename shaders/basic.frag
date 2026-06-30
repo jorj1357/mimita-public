@@ -23,6 +23,10 @@ uniform sampler2D uTex;
 uniform int  uUseColor;
 uniform vec4 uColor;
 
+// Per-object tint multiplier applied to textured output.
+// Set to (1,1,1) by default; weapons and future items override for color tinting.
+uniform vec3 uTint;
+
 // Debug mode:
 // 0 normal stylized render
 // 1 UV checkerboard
@@ -120,7 +124,7 @@ void main()
     // UVs address a 2D image. Mipmaps selected by OpenGL reduce shimmer at distance.
     // The C++ texture loader controls filtering/wrapping; this shader just samples.
     vec4 texel = texture(uTex, vUV);
-    vec3 texColor = applyTextureTuning(texel.rgb);
+    vec3 texColor = applyTextureTuning(texel.rgb) * uTint;
 
     // Dot product lighting:
     // dot(N, L)=1 means the surface faces the light.
