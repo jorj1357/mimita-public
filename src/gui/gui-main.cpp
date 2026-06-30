@@ -1,5 +1,6 @@
 #include "gui-main.h"
 #include "menus/main-menu.h"
+#include "menus/menu-avatar-preview.h"
 #include "menus/play-menu.h"
 #include "menus/online-menu.h"
 #include "menus/practice-menu.h"
@@ -61,6 +62,7 @@ static void setupPlayerPreviewLighting()
     glUniform1f(ul("uAOContrast"), 0.6f);
     glUniform1f(ul("uTextureContrast"), 1.10f);
     glUniform1f(ul("uTextureBrightness"), 1.40f);
+    glUniform3f(ul("uTint"), 1.0f, 1.0f, 1.0f);
 }
 
 static const char* layoutFileForMenu(GuiMenuState state)
@@ -129,6 +131,9 @@ void guiMain(GLFWwindow* win, GameState& state)
     // ── 3D Avatar Preview for Main Menu ──────────────────────────
     if (gGuiMenuState == GUI_MENU_AUTH || gGuiMenuState == GUI_MENU_MAIN)
     {
+        MenuAvatarPreview& av = MenuAvatarPreview::instance();
+        av.pollHotReload();
+
         extern Player* gpPlayer;
         if (gpPlayer && gpPlayer->modelLoaded)
         {
@@ -154,18 +159,23 @@ void guiMain(GLFWwindow* win, GameState& state)
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glDisable(GL_SCISSOR_TEST);
 
+            const auto& cfg = av.config();
             Camera previewCam;
-            static float menuPreviewAngle = 0.0f;
-            menuPreviewAngle += 0.005f;
-            if (menuPreviewAngle > 360.0f) menuPreviewAngle -= 360.0f;
+            previewCam.fov = cfg.cameraFOV;
 
-            float rad = glm::radians(menuPreviewAngle);
-            previewCam.pos = glm::vec3(
-                gpPlayer->pos.x + std::cos(rad) * 10.0f,
-                gpPlayer->pos.y + std::sin(rad) * 10.0f,
-                gpPlayer->pos.z + 3.5f);
-            previewCam.front = glm::normalize(gpPlayer->pos + glm::vec3(0, 0, 1.5f) - previewCam.pos);
-            previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0, 0, 1)));
+            float yawRad = glm::radians(av.rotationAngle());
+            glm::vec3 offset = cfg.cameraPosition;
+            float cosA = std::cos(yawRad);
+            float sinA = std::sin(yawRad);
+            glm::vec3 rotated(
+                offset.x * cosA - offset.y * sinA,
+                offset.x * sinA + offset.y * cosA,
+                offset.z
+            );
+            previewCam.pos = cfg.cameraTarget + rotated;
+            glm::vec3 lookTarget = cfg.cameraTarget;
+            previewCam.front = glm::normalize(lookTarget - previewCam.pos);
+            previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
             previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
 
             renderPlayer(*gpPlayer, previewCam);
@@ -479,6 +489,9 @@ void guiMain(GLFWwindow* win, GameState& state)
         case GUI_MENU_AVATAR_CREATOR:
         {
             // ── 3D Avatar Preview (right panel viewport) ──────────
+            MenuAvatarPreview& av = MenuAvatarPreview::instance();
+            av.pollHotReload();
+
             extern Player* gpPlayer;
             if (gpPlayer)
             {
@@ -511,21 +524,23 @@ void guiMain(GLFWwindow* win, GameState& state)
                 glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+                const auto& cfg = av.config();
                 Camera previewCam;
-                static float previewAngle = 0.0f;
-                previewAngle += 0.008f;
-                if (previewAngle > 360.0f) previewAngle -= 360.0f;
+                previewCam.fov = cfg.cameraFOV;
 
-                float previewDist = 5.5f;
-                float previewHeight = 2.0f;
-                float rad = glm::radians(previewAngle);
-                previewCam.pos = glm::vec3(
-                    gpPlayer->pos.x + std::cos(rad) * previewDist,
-                    gpPlayer->pos.y + std::sin(rad) * previewDist,
-                    gpPlayer->pos.z + previewHeight
+                float yawRad = glm::radians(av.rotationAngle());
+                glm::vec3 offset = cfg.cameraPosition;
+                float cosA = std::cos(yawRad);
+                float sinA = std::sin(yawRad);
+                glm::vec3 rotated(
+                    offset.x * cosA - offset.y * sinA,
+                    offset.x * sinA + offset.y * cosA,
+                    offset.z
                 );
-                previewCam.front = glm::normalize(gpPlayer->pos + glm::vec3(0, 0, 1.5f) - previewCam.pos);
-                previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0, 0, 1)));
+                previewCam.pos = cfg.cameraTarget + rotated;
+                glm::vec3 lookTarget = cfg.cameraTarget;
+                previewCam.front = glm::normalize(lookTarget - previewCam.pos);
+                previewCam.right = glm::normalize(glm::cross(previewCam.front, glm::vec3(0.0f, 0.0f, 1.0f)));
                 previewCam.up = glm::normalize(glm::cross(previewCam.right, previewCam.front));
 
                 renderPlayer(*gpPlayer, previewCam);

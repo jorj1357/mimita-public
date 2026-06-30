@@ -213,4 +213,7 @@ void finalizeMultiPelletResult(
     const WeaponDefinition& def,
     Player& shooter);
 
+void setWeaponDebug(bool enabled);
+bool weaponDebugEnabled();
+
 } // namespace WeaponFire

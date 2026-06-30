@@ -317,6 +317,7 @@ void gameInitSubsystems(Engine& engine)
 
     registerPlayerCommands();
     registerWeaponCommands();
+    registerWeaponDebugCommand();
     registerCameraCommands();
     registerGuiEditorCommands();
     registerPostFxCommands();

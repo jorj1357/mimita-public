@@ -59,6 +59,7 @@ void registerDebugCommands()
     registerDebugToggle("physics_debug", DebugConfig::DEBUG_PHYSICS);
     registerDebugToggle("combat_debug", DebugConfig::DEBUG_NPC_COMBAT);
     registerDebugToggle("render_debug", DebugConfig::DEBUG_RENDER);
+    registerDebugToggle("menu_preview_debug", DebugConfig::DEBUG_MENU_PREVIEW);
 
     Terminal::instance().registerCommand({
         "collision_dump_frame", "Print the last GLB collision trace summary", "collision_dump_frame",

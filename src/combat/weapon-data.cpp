@@ -138,7 +138,6 @@ WeaponDefinition createShotgunDefinition() {
     def.customParams["distanceFalloffStart"] = 60.0f;
     def.customParams["minDamageFraction"] = 0.05f;
     def.customParams["minAngleFactor"] = 0.15f;
-    def.customParams["gridSpreadDegrees"] = 3.0f;
 
     return def;
 }

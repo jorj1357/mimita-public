@@ -11,6 +11,7 @@
 #include <cstring>
 #include <glm/glm.hpp>
 #include <vector>
+#include <unordered_map>
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
@@ -71,6 +72,11 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
             std::vector<RecoveryContact> weaponPushContacts;
             bool weaponCfgPushes = p.weaponCollisionConfig.enabled && p.weaponCollisionConfig.authoritative;
 
+            // Build a name->config lookup so we can check per-collider flags
+            std::unordered_map<std::string, const WeaponColliderConfig*> colliderConfigMap;
+            for (const auto& cc : p.weaponCollisionConfig.colliders)
+                colliderConfigMap[cc.name] = &cc;
+
             for (const auto& c : bwContacts)
             {
                 if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
@@ -93,12 +99,28 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
             }
 
             // Walkable body contacts set floor contact state (foot on floor).
+            // This uses the standard feet-proximity check; weapon contacts far
+            // above feet will be rejected for grounding here.
+            bool groundedByWeapon = false;
             for (const RecoveryContact& wc : walkableContacts)
             {
                 applyCollisionContact(
                     p, groundedThisFrame,
                     wc.normal, wc.point, wc.penetration,
                     wc.triangleIndex, wc.label);
+
+                // If this is a weapon collider contact with support_player_weight=true,
+                // force grounding even if the contact is above the player's feet.
+                if (!groundedByWeapon && wc.label && std::strcmp(wc.label, "weapon") != 0) {
+                    auto cfgIt = colliderConfigMap.find(wc.label);
+                    if (cfgIt != colliderConfigMap.end() && cfgIt->second->supportPlayerWeight) {
+                        groundedByWeapon = true;
+                        groundedThisFrame = true;
+                        applyTouchResets(p);
+                        if (p.vel.z < 0.0f) p.vel.z = 0.0f;
+                        DebugVis::recordGroundNormal(wc.point, wc.normal, wc.label);
+                    }
+                }
             }
 
             // Root capsule contacts + body push contacts combine into one solver.
@@ -145,20 +167,36 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
                 wcDebugTimer -= 0.016f;
                 if (wcDebugTimer <= 0.0f) {
                     wcDebugTimer = 0.25f;
-                    int contactCount = 0;
+                    int contactCount = 0, pushCount = 0, supportCount = 0, blockCount = 0;
                     float maxPen = 0.0f;
-                    bool supporting = false, blocking = false;
                     for (const auto& c : bwContacts) {
                         if (c.label && std::strcmp(c.label, "weapon") == 0) continue;
-                        if (c.penetration > maxPen) maxPen = c.penetration;
-                        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT) supporting = true;
-                        else blocking = true;
                         ++contactCount;
-                        printf("[WEAPON_COLLISION]   contact label=%s pen=%.3f normal=(%.2f %.2f %.2f)\n",
-                               c.label ? c.label : "?", c.penetration, c.normal.x, c.normal.y, c.normal.z);
+                        if (c.penetration > maxPen) maxPen = c.penetration;
+                        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT) ++supportCount;
+                        else ++blockCount;
+                        auto cfgIt = colliderConfigMap.find(c.label ? c.label : "");
+                        bool pushes = cfgIt != colliderConfigMap.end() && cfgIt->second->pushPlayerRoot;
+                        if (pushes) ++pushCount;
+                        printf("[WEAPON_COLLISION]   contact label=%s pen=%.3f normal=(%.2f %.2f %.2f) push=%d support=%d\n",
+                               c.label ? c.label : "?", c.penetration, c.normal.x, c.normal.y, c.normal.z,
+                               (int)pushes, (int)(c.normal.z > MAX_WALKABLE_SLOPE_DOT));
                     }
-                    printf("[WEAPON_COLLISION] colliders=%zu contacts=%d maxPen=%.3f supporting=%d blocking=%d\n",
-                           p.weaponCollisionConfig.colliders.size(), contactCount, maxPen, (int)supporting, (int)blocking);
+                    printf("[WEAPON_COLLISION] colliders=%zu contacts=%d push=%d support=%d block=%d maxPen=%.3f groundedByWeapon=%d\n",
+                           p.weaponCollisionConfig.colliders.size(), contactCount, pushCount, supportCount, blockCount,
+                           maxPen, (int)groundedByWeapon);
+
+                    // Print per-collider support info
+                    for (const auto& c : bwContacts) {
+                        if (c.label && std::strcmp(c.label, "weapon") == 0) continue;
+                        if (c.normal.z <= MAX_WALKABLE_SLOPE_DOT) continue;
+                        auto cfgIt = colliderConfigMap.find(c.label ? c.label : "");
+                        if (cfgIt != colliderConfigMap.end() && cfgIt->second->supportPlayerWeight) {
+                            printf("[WEAPON_SUPPORT] weapon=%s collider=%s normal=(%.2f %.2f %.2f) pen=%.3f groundedByWeapon=%d\n",
+                                   p.equippedWeaponId.c_str(), c.label ? c.label : "?",
+                                   c.normal.x, c.normal.y, c.normal.z, c.penetration, (int)groundedByWeapon);
+                        }
+                    }
                 }
             }
         }

@@ -61,6 +61,8 @@ namespace DebugConfig
     inline bool DEBUG_DUEL = false;
     inline bool DEBUG_VISUALS_MASTER = false;
     inline bool DEBUG_WEAPON_VIEWMODEL = false;
+    inline bool DEBUG_MENU_PREVIEW = false;
+    // does this even do antthing 6 30 2026 
     inline bool DEBUG_WEAPON_COLLISION = true;
     inline bool DEBUG_ROTATION = false;
 
