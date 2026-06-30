@@ -211,6 +211,7 @@ struct BodyWeaponSphere {
 };
 
 void recomputeWeaponCapsule(Player& p);
+void collectWeaponConfigSpheres(Player& p, std::vector<BodyWeaponSphere>& spheres);
 std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p);
 std::vector<RecoveryContact> collectBodyWeaponContacts(
     const Player& p,

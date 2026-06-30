@@ -16,21 +16,21 @@
             "tick": 0,
             "parts": {
               "torso": { "translation": [0, 0, 0], "rotation": [0, 0, 0] },
-              "head": { "translation": [0, 0, 0], "rotation": [0, 0, 0] }
+              "head": { "translation": [0, -0.02, 0], "rotation": [0, 0, 0] }
             }
           },
           {
             "tick": 30,
             "parts": {
               "torso": { "translation": [0.05, 0, 0], "rotation": [0, 0, -2] },
-              "head": { "translation": [0.05, 0, 0], "rotation": [0, 0, -1] }
+              "head": { "translation": [0.05, -0.02, 0], "rotation": [0, 0, -1] }
             }
           },
           {
             "tick": 60,
             "parts": {
               "torso": { "translation": [0, 0, 0], "rotation": [0, 0, 0] },
-              "head": { "translation": [0, 0, 0], "rotation": [0, 0, 0] }
+              "head": { "translation": [0, -0.02, 0], "rotation": [0, 0, 0] }
             }
           }
         ]
@@ -47,7 +47,7 @@
             "tick": 0,
             "parts": {
               "torso": { "translation": [0.1, 0, 0], "rotation": [0, 0, -20] },
-              "head": { "translation": [0.2, 0, 0], "rotation": [0, 0, -10] },
+              "head": { "translation": [0.2, -0.02, 0], "rotation": [0, 0, -10] },
               "leftArm": { "translation": [0.1, 0, 0], "rotation": [0, 0, 80] },
               "rightArm": { "translation": [0.1, 0, 0], "rotation": [0, 0, -80] },
               "leftLeg": { "translation": [-0.1, 0, 0], "rotation": [0, 0, -80] },
@@ -58,7 +58,7 @@
             "tick": 15,
             "parts": {
               "torso": { "translation": [0.1, 0, 0], "rotation": [0, 0, -20] },
-              "head": { "translation": [0.2, 0, 0], "rotation": [0, 0, -10] },
+              "head": { "translation": [0.2, -0.02, 0], "rotation": [0, 0, -10] },
               "leftArm": { "translation": [0.1, 0, 0], "rotation": [0, 0, -80] },
               "rightArm": { "translation": [0.1, 0, 0], "rotation": [0, 0, 80] },
               "leftLeg": { "translation": [0, 0, 0], "rotation": [0, 0, 80] },
@@ -69,7 +69,7 @@
             "tick": 30,
             "parts": {
               "torso": { "translation": [0.1, 0, 0], "rotation": [0, 0, -20] },
-              "head": { "translation": [0.2, 0, 0], "rotation": [0, 0, -10] },
+              "head": { "translation": [0.2, -0.02, 0], "rotation": [0, 0, -10] },
               "leftArm": { "translation": [0.1, 0, 0], "rotation": [0, 0, 80] },
               "rightArm": { "translation": [0.1, 0, 0], "rotation": [0, 0, -80] },
               "leftLeg": { "translation": [-0.1, 0, 0], "rotation": [0, 0, -80] },
@@ -120,23 +120,23 @@
       "poses": {
         "idle": {
           "useWeaponPose": true,
-          "leftArm": { "translation": [0.0, 0.0, 0.2], "rotation": [0.0, -20.0, 75.0] },
-          "rightArm": { "translation": [0.0, 0.0, -0.1], "rotation": [0.0, 5.0, 80.0] }
+          "leftArm": { "translation": [0.2, -0.1, 0.2], "rotation": [0.0, -20.0, 75.0] },
+          "rightArm": { "translation": [0.2, -0.1, -0.1], "rotation": [0.0, 5.0, 80.0] }
         },
         "shooting": {
           "useWeaponPose": true,
-          "leftArm": { "translation": [0.0, 0.0, 0.22], "rotation": [-2.0, -20.0, 77.0] },
-          "rightArm": { "translation": [-0.04, 0.0, -0.12], "rotation": [-6.0, 5.0, 83.0] }
+          "leftArm": { "translation": [-0.8, 0.0, 0.22], "rotation": [-2.0, -20.0, 67.0] },
+          "rightArm": { "translation": [-1.04, 0.0, -0.12], "rotation": [-6.0, 15.0, 100.0] }
         },
         "just_shot": {
           "useWeaponPose": true,
           "leftArm": { "translation": [0.0, 0.0, 0.2], "rotation": [0.0, -20.0, 75.0] },
-          "rightArm": { "translation": [-0.02, 0.0, -0.1], "rotation": [-2.0, 5.0, 81.0] }
+          "rightArm": { "translation": [-0.02, 0.0, -0.1], "rotation": [-2.0, 5.0, 181.0] }
         },
         "reloading": {
           "useWeaponPose": true,
-          "leftArm": { "translation": [0.1, -0.08, 0.0], "rotation": [-18.0, -8.0, 55.0] },
-          "rightArm": { "translation": [-0.05, -0.08, -0.18], "rotation": [-24.0, 8.0, 62.0] }
+          "leftArm": { "translation": [0.2, -0.3, 0.0], "rotation": [-18.0, -35.0, 35.0] },
+          "rightArm": { "translation": [-0.05, -0.08, -0.18], "rotation": [2.0, 8.0, 42.0] }
         },
         "equipping": {
           "useWeaponPose": true,

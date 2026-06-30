@@ -39,10 +39,78 @@ void recomputeWeaponCapsule(Player& p)
         p.weaponCollisionCapsule.a = glm::vec3(weaponXform * glm::vec4(p.weaponGripLocal, 1.0f));
         p.weaponCollisionCapsule.b = glm::vec3(weaponXform * glm::vec4(p.weaponMuzzleLocal, 1.0f));
         p.weaponCollisionCapsule.r = p.weaponRadiusLocal;
+
+        // Compute world transform for configurable weapon colliders
+        glm::mat4 wcWorld = weaponXform;
+        p.weaponCollisionWorld = wcWorld;
         return;
     }
 
     p.collision.hasWeaponCollisionCapsule = false;
+    p.weaponCollisionWorld = glm::mat4(1.0f);
+}
+
+// Generate sphere samples for configurable weapon colliders from JSON collision config.
+// Each collider is sampled as SPHERES_PER_CAPSULE spheres distributed along its dominant axis.
+void collectWeaponConfigSpheres(
+    Player& p,
+    std::vector<BodyWeaponSphere>& spheres
+) {
+    constexpr int SPHERES_PER_CAPSULE = 5;
+    auto& cfg = p.weaponCollisionConfig;
+    if (!cfg.enabled || cfg.colliders.empty())
+        return;
+
+    glm::mat4 weaponWorld = p.weaponCollisionWorld;
+
+    for (const auto& wc : cfg.colliders)
+    {
+        // Build collider local transform
+        glm::mat4 local(1.0f);
+        local = glm::translate(local, wc.position);
+        local = glm::rotate(local, glm::radians(wc.rotationDegrees.x), glm::vec3(1,0,0));
+        local = glm::rotate(local, glm::radians(wc.rotationDegrees.y), glm::vec3(0,1,0));
+        local = glm::rotate(local, glm::radians(wc.rotationDegrees.z), glm::vec3(0,0,1));
+
+        glm::mat4 worldXform = weaponWorld * local;
+        glm::vec3 halfSize = wc.size * 0.5f;
+
+        // Find dominant axis
+        float ex = std::fabs(halfSize.x);
+        float ey = std::fabs(halfSize.y);
+        float ez = std::fabs(halfSize.z);
+        int domAxis = 0;
+        float domLen = ex;
+        if (ey > domLen) { domAxis = 1; domLen = ey; }
+        if (ez > domLen) { domAxis = 2; domLen = ez; }
+
+        // Local axis direction in world space
+        glm::vec3 axisDir(0.0f);
+        axisDir[domAxis] = 1.0f;
+        glm::vec3 worldAxis = glm::normalize(glm::vec3(worldXform * glm::vec4(axisDir, 0.0f)));
+
+        // Center point in world space
+        glm::vec3 center = glm::vec3(worldXform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+        // Sphere radius = half of the smaller-face diagonal, clamped to reasonable range
+        float r = 0.15f;
+        {
+            float s1 = (domAxis == 0) ? ey : ex;
+            float s2 = (domAxis == 2) ? ey : ez;
+            r = std::sqrt(s1 * s1 + s2 * s2);
+            r = std::max(r, 0.12f);
+            r = std::min(r, 0.40f);
+        }
+
+        for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)
+        {
+            float t = (SPHERES_PER_CAPSULE > 1)
+                ? (float)si / (float)(SPHERES_PER_CAPSULE - 1) * 2.0f - 1.0f
+                : 0.0f;
+            glm::vec3 pos = center + worldAxis * domLen * t;
+            spheres.push_back({pos, r, wc.name.c_str(), glm::vec3(0.0f)});
+        }
+    }
 }
 
 // Collect sphere samples from all body parts + weapon for contact testing.
@@ -85,6 +153,9 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
             spheres.push_back({spherePos, wc.r, "weapon", glm::vec3(0.0f)});
         }
     }
+
+    // 3. Configurable weapon collider spheres (from weapon JSON collision config)
+    collectWeaponConfigSpheres(p, spheres);
 
     return spheres;
 }

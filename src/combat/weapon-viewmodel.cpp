@@ -189,6 +189,10 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     if (hasConfig && vmcfg)
         mTint = vmcfg->color;
 
+    // Store collision config from weapon definition
+    if (def)
+        player.weaponCollisionConfig = def->collision;
+
     if (world)
         player.collision.hasWeaponCollisionCapsule = false;
     if (updatePlayerPose)
@@ -319,10 +323,45 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             player.collision.hasWeaponCollisionCapsule = true;
             player.weaponCollisionCapsule = weaponCap;
 
-            player.weaponLocalToArm = glm::translate(glm::mat4(1.0f), handPoint) *
+            // Base transform from arm to weapon model space (no viewmodel config)
+            glm::mat4 armToWeapon = glm::translate(glm::mat4(1.0f), handPoint) *
                 glm::mat4_cast(gripRotation) * customRot *
                 glm::translate(glm::mat4(1.0f), offset) *
                 glm::translate(glm::mat4(1.0f), -collisionGrip);
+
+            // Include viewmodel config and animation transforms so physics
+            // recompute matches the rendered weapon position exactly.
+            glm::mat4 extraTransform(1.0f);
+            if (hasConfig && vmcfg && vmcfg->enabled) {
+                glm::mat4 confTransform(1.0f);
+                confTransform = glm::translate(confTransform, vmcfg->positionOffset);
+                confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.x), glm::vec3(1,0,0));
+                confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.y), glm::vec3(0,1,0));
+                confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.z), glm::vec3(0,0,1));
+                confTransform = glm::scale(confTransform, vmcfg->scale);
+                extraTransform = confTransform;
+
+                if (mFireTimer > 0.0f && vmcfg->hasFireAnim) {
+                    float progress = 1.0f - (mFireTimer / vmcfg->fireAnim.duration);
+                    float easeOut = 1.0f - (1.0f - progress) * (1.0f - progress);
+                    glm::vec3 firePos = vmcfg->fireAnim.positionOffset * (1.0f - easeOut);
+                    glm::vec3 fireRot = vmcfg->fireAnim.rotationOffset * (1.0f - easeOut);
+                    extraTransform = glm::translate(extraTransform, firePos);
+                    extraTransform = glm::rotate(extraTransform, glm::radians(fireRot.x), glm::vec3(1,0,0));
+                    extraTransform = glm::rotate(extraTransform, glm::radians(fireRot.y), glm::vec3(0,1,0));
+                    extraTransform = glm::rotate(extraTransform, glm::radians(fireRot.z), glm::vec3(0,0,1));
+                }
+                if (vmcfg->hasReloadPose && mReloadBlendCurrent > 0.001f) {
+                    float b = mReloadBlendCurrent;
+                    glm::vec3 rpPos = vmcfg->reloadPose.position * b;
+                    glm::vec3 rpRot = vmcfg->reloadPose.rotation * b;
+                    extraTransform = glm::translate(extraTransform, rpPos);
+                    extraTransform = glm::rotate(extraTransform, glm::radians(rpRot.x), glm::vec3(1,0,0));
+                    extraTransform = glm::rotate(extraTransform, glm::radians(rpRot.y), glm::vec3(0,1,0));
+                    extraTransform = glm::rotate(extraTransform, glm::radians(rpRot.z), glm::vec3(0,0,1));
+                }
+            }
+            player.weaponLocalToArm = armToWeapon * extraTransform;
             player.weaponGripLocal = collisionGrip;
             player.weaponMuzzleLocal = collisionMuzzle;
             player.weaponRadiusLocal = collisionRadius;
