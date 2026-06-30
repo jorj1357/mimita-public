@@ -93,6 +93,8 @@ void Player::reset()
     currentAnimName = "idle";
     dashPoseTimer = -1.0f;
     forceDashPose = false;
+    freezePoseTimer = -1.0f;
+    freezePoseActive = false;
     equippedWeaponId.clear();
     collision.hasWeaponCollisionCapsule = false;
     weaponCollisionCapsule = Capsule{};

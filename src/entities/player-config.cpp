@@ -86,6 +86,26 @@ bool reloadPlayerProceduralConfig()
             readJsonValue(dp, "snapIn", loaded.dashPose.snapIn);
         }
 
+        // Parse freeze pose config
+        if (j.contains("freezePose")) {
+            const auto& fp = j["freezePose"];
+            readJsonVec3(fp, "torsoRotation", loaded.freezePose.torsoRotation);
+            readJsonVec3(fp, "torsoTranslation", loaded.freezePose.torsoTranslation);
+            readJsonVec3(fp, "headRotation", loaded.freezePose.headRotation);
+            readJsonVec3(fp, "headTranslation", loaded.freezePose.headTranslation);
+            readJsonVec3(fp, "leftArmRotation", loaded.freezePose.leftArmRotation);
+            readJsonVec3(fp, "leftArmTranslation", loaded.freezePose.leftArmTranslation);
+            readJsonVec3(fp, "rightArmRotation", loaded.freezePose.rightArmRotation);
+            readJsonVec3(fp, "rightArmTranslation", loaded.freezePose.rightArmTranslation);
+            readJsonVec3(fp, "leftLegRotation", loaded.freezePose.leftLegRotation);
+            readJsonVec3(fp, "leftLegTranslation", loaded.freezePose.leftLegTranslation);
+            readJsonVec3(fp, "rightLegRotation", loaded.freezePose.rightLegRotation);
+            readJsonVec3(fp, "rightLegTranslation", loaded.freezePose.rightLegTranslation);
+            readJsonValue(fp, "blendInTime", loaded.freezePose.blendInTime);
+            readJsonValue(fp, "blendOutTime", loaded.freezePose.blendOutTime);
+            readJsonValue(fp, "snapIn", loaded.freezePose.snapIn);
+        }
+
         // Parse idle procedural animation config
         if (j.contains("idle")) {
             const auto& idle = j["idle"];

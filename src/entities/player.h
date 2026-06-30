@@ -111,22 +111,57 @@ struct LayeredAnimConfig {
     AnimKeyframePart reloadOverlay;
 };
 
-struct DashPoseConfig {
-    glm::vec3 torsoRotation{10.0f, 0.0f, 0.0f};
-    glm::vec3 torsoTranslation{0.1f, 0.0f, 0.0f};
-    glm::vec3 headRotation{5.0f, 0.0f, 0.0f};
-    glm::vec3 headTranslation{0.05f, 0.0f, 0.0f};
-    glm::vec3 leftArmRotation{0.0f, 0.0f, 160.0f};
-    glm::vec3 leftArmTranslation{0.0f, 0.0f, 0.0f};
-    glm::vec3 rightArmRotation{0.0f, 0.0f, -160.0f};
-    glm::vec3 rightArmTranslation{0.0f, 0.0f, 0.0f};
-    glm::vec3 leftLegRotation{0.0f, 0.0f, -30.0f};
-    glm::vec3 leftLegTranslation{0.0f, 0.0f, 0.0f};
-    glm::vec3 rightLegRotation{0.0f, 0.0f, 50.0f};
-    glm::vec3 rightLegTranslation{0.0f, 0.0f, 0.0f};
+// Generic pose overlay config — used by dashPose, freezePose, etc.
+// Each body part has rotation (Euler degrees) + translation (meters).
+struct PoseOverlayConfig {
+    glm::vec3 torsoRotation{0.0f};
+    glm::vec3 torsoTranslation{0.0f};
+    glm::vec3 headRotation{0.0f};
+    glm::vec3 headTranslation{0.0f};
+    glm::vec3 leftArmRotation{0.0f};
+    glm::vec3 leftArmTranslation{0.0f};
+    glm::vec3 rightArmRotation{0.0f};
+    glm::vec3 rightArmTranslation{0.0f};
+    glm::vec3 leftLegRotation{0.0f};
+    glm::vec3 leftLegTranslation{0.0f};
+    glm::vec3 rightLegRotation{0.0f};
+    glm::vec3 rightLegTranslation{0.0f};
     float blendInTime = 0.08f;
     float blendOutTime = 0.12f;
     bool snapIn = false;
+};
+
+struct DashPoseConfig : PoseOverlayConfig {
+    DashPoseConfig() {
+        torsoRotation = {10.0f, 0.0f, 0.0f};
+        torsoTranslation = {0.1f, 0.0f, 0.0f};
+        headRotation = {5.0f, 0.0f, 0.0f};
+        headTranslation = {0.05f, 0.0f, 0.0f};
+        leftArmRotation = {0.0f, 0.0f, 160.0f};
+        rightArmRotation = {0.0f, 0.0f, -160.0f};
+        leftLegRotation = {0.0f, 0.0f, -30.0f};
+        rightLegRotation = {0.0f, 0.0f, 50.0f};
+        blendInTime = 0.08f;
+        blendOutTime = 0.12f;
+    }
+};
+
+struct FreezePoseConfig : PoseOverlayConfig {
+    FreezePoseConfig() {
+        torsoRotation = {18.0f, 0.0f, -10.0f};
+        torsoTranslation = {0.15f, -0.05f, 0.0f};
+        headRotation = {-10.0f, 0.0f, -8.0f};
+        headTranslation = {0.1f, -0.05f, 0.0f};
+        leftArmRotation = {-20.0f, 20.0f, 85.0f};
+        leftArmTranslation = {0.18f, 0.05f, 0.0f};
+        rightArmRotation = {10.0f, -15.0f, -55.0f};
+        rightArmTranslation = {0.12f, -0.05f, 0.0f};
+        leftLegRotation = {12.0f, 0.0f, -10.0f};
+        rightLegRotation = {12.0f, 0.0f, 10.0f};
+        blendInTime = 0.03f;
+        blendOutTime = 0.05f;
+        snapIn = true;
+    }
 };
 
 struct PlayerProceduralConfig
@@ -161,6 +196,7 @@ struct PlayerProceduralConfig
     std::unordered_map<std::string, WeaponPoseConfig> weaponPoses;
     std::unordered_map<std::string, AxisLock> axisLocks;
     DashPoseConfig dashPose;
+    FreezePoseConfig freezePose;
     int walkStartTickOnEnter = 7;
     int animationStateTransitionFrames = 1;
 };
@@ -359,9 +395,11 @@ public:
     // -------- Chat Bubble State --------
     ActorChatState chatState;
 
-    // -------- Dash pose state --------
+    // -------- Pose overlay state (dash, freeze, etc.) --------
     float dashPoseTimer = -1.0f;
     bool forceDashPose = false;
+    float freezePoseTimer = -1.0f;
+    bool freezePoseActive = false;
 
     // -------- Per-part color tints (from avatar.json colors) --------
     std::vector<glm::vec3> outfitPartColors;
