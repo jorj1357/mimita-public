@@ -370,11 +370,14 @@ public:
     void renderDepth(unsigned int shadowShader,
                      const glm::mat4& lightViewProj) const;
 
-    // -------- Weapon collision recomputation data --------
-    // Stored by weapon-viewmodel.cpp so physics can recompute the
-    // weapon collision capsule from a fresh right-arm worldTransform
-    // (eliminating one-frame latency between viewmodel update and physics).
+    // Current weapon collision config (set from WeaponDefinition during viewmodel update)
+    WeaponCollisionConfig weaponCollisionConfig;
+
+    // Full weapon local-to-arm transform including viewmodel config and animations.
+    // Set during viewmodel update, used by physics to recompute colliders at the
+    // correct position matching the rendered weapon.
     glm::mat4 weaponLocalToArm{1.0f};
+    glm::mat4 weaponCollisionWorld{1.0f};  // Full weapon world transform for configurable colliders
     glm::vec3 weaponGripLocal{0.0f};
     glm::vec3 weaponMuzzleLocal{0.0f};
     float weaponRadiusLocal = 0.0f;

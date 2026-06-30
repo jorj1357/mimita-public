@@ -5,6 +5,7 @@
 #include "entities/player.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "config.h"
 
 #include <cstdio>
 #include <cstring>
@@ -59,12 +60,16 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
             PHYS_LOG("[PHYS][BODY-WEAPON] %zu contacts total\n", bwContacts.size());
 
             // Separate contacts by type:
-            //   walkableContacts     → applyCollisionContact for grounded detection
+            //   walkableContacts     → applyCollisionContact for floor contact detection
             //   bodyPushContacts     → combined with root contacts → pushes root position
             //   weaponPushContacts   → velocity projection only (no position push)
+            //
+            // Weapon contacts from configurable colliders (non-"weapon" labels) are treated
+            // as body push contacts when the collision config says push_player_root is true.
             std::vector<RecoveryContact> walkableContacts;
             std::vector<RecoveryContact> bodyPushContacts;
             std::vector<RecoveryContact> weaponPushContacts;
+            bool weaponCfgPushes = p.weaponCollisionConfig.enabled && p.weaponCollisionConfig.authoritative;
 
             for (const auto& c : bwContacts)
             {
@@ -76,13 +81,18 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
                 {
                     weaponPushContacts.push_back(c);
                 }
+                else if (c.label && weaponCfgPushes)
+                {
+                    // Configurable weapon collider contact → push root like body parts
+                    bodyPushContacts.push_back(c);
+                }
                 else
                 {
                     bodyPushContacts.push_back(c);
                 }
             }
 
-            // Walkable body contacts set grounded state (e.g., foot on floor).
+            // Walkable body contacts set floor contact state (foot on floor).
             for (const RecoveryContact& wc : walkableContacts)
             {
                 applyCollisionContact(
@@ -123,13 +133,34 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
                 }
             }
 
-            // Project velocity against all non-walkable contacts for smooth sliding.
-            // Weapons get velocity-only response (no position push) — this preserves
-            // the feel of the weapon touching geometry without snagging.
             for (const RecoveryContact& pc : bodyPushContacts)
                 projectVelocityAgainstNormal(p, pc.normal);
             for (const RecoveryContact& pc : weaponPushContacts)
                 projectVelocityAgainstNormal(p, pc.normal);
+
+            // Debug console logging for weapon colliders
+            if (DebugConfig::DEBUG_WEAPON_COLLISION)
+            {
+                static float wcDebugTimer = 0.0f;
+                wcDebugTimer -= 0.016f;
+                if (wcDebugTimer <= 0.0f) {
+                    wcDebugTimer = 0.25f;
+                    int contactCount = 0;
+                    float maxPen = 0.0f;
+                    bool supporting = false, blocking = false;
+                    for (const auto& c : bwContacts) {
+                        if (c.label && std::strcmp(c.label, "weapon") == 0) continue;
+                        if (c.penetration > maxPen) maxPen = c.penetration;
+                        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT) supporting = true;
+                        else blocking = true;
+                        ++contactCount;
+                        printf("[WEAPON_COLLISION]   contact label=%s pen=%.3f normal=(%.2f %.2f %.2f)\n",
+                               c.label ? c.label : "?", c.penetration, c.normal.x, c.normal.y, c.normal.z);
+                    }
+                    printf("[WEAPON_COLLISION] colliders=%zu contacts=%d maxPen=%.3f supporting=%d blocking=%d\n",
+                           p.weaponCollisionConfig.colliders.size(), contactCount, maxPen, (int)supporting, (int)blocking);
+                }
+            }
         }
     }
 }

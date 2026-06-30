@@ -164,6 +164,46 @@ void applyWeaponCustomParamsJson(WeaponDefinition& def, const json& root)
     }
 }
 
+void applyWeaponCollisionJson(WeaponDefinition& def, const json& root)
+{
+    if (!root.contains("collision") || !root["collision"].is_object())
+        return;
+    const auto& cj = root["collision"];
+    def.collision.enabled = cj.value("enabled", false);
+    def.collision.authoritative = cj.value("authoritative", true);
+
+    if (cj.contains("colliders") && cj["colliders"].is_array()) {
+        def.collision.colliders.clear();
+        for (const auto& item : cj["colliders"]) {
+            if (!item.is_object()) continue;
+            WeaponColliderConfig cc;
+            cc.name = item.value("name", "weapon_collider");
+            std::string shapeStr = item.value("shape", "box");
+            cc.shape = (shapeStr == "capsule") ? WeaponColliderShape::Capsule : WeaponColliderShape::Box;
+            weaponJsonVec3(item, "position", cc.position);
+            weaponJsonVec3(item, "rotation_degrees", cc.rotationDegrees);
+            weaponJsonVec3(item, "size", cc.size);
+            cc.pushPlayerRoot = item.value("push_player_root", true);
+            cc.supportPlayerWeight = item.value("support_player_weight", true);
+            cc.blocksWorld = item.value("blocks_world", true);
+            def.collision.colliders.push_back(cc);
+        }
+    } else {
+        // Single collider inline
+        WeaponColliderConfig cc;
+        cc.name = cj.value("name", "weapon_collider");
+        std::string shapeStr = cj.value("shape", "box");
+        cc.shape = (shapeStr == "capsule") ? WeaponColliderShape::Capsule : WeaponColliderShape::Box;
+        weaponJsonVec3(cj, "position", cc.position);
+        weaponJsonVec3(cj, "rotation_degrees", cc.rotationDegrees);
+        weaponJsonVec3(cj, "size", cc.size);
+        cc.pushPlayerRoot = cj.value("push_player_root", true);
+        cc.supportPlayerWeight = cj.value("support_player_weight", true);
+        cc.blocksWorld = cj.value("blocks_world", true);
+        def.collision.colliders.push_back(cc);
+    }
+}
+
 void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
 {
     if (root.contains("render") && root["render"].is_object())
@@ -181,6 +221,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);
     applyWeaponRenderJson(def, root);
+    applyWeaponCollisionJson(def, root);
 }
 
 } // namespace

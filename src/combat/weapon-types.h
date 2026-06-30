@@ -19,6 +19,28 @@ enum class WeaponBehaviorType {
     RocketLauncher
 };
 
+enum class WeaponColliderShape {
+    Box,
+    Capsule
+};
+
+struct WeaponColliderConfig {
+    std::string name = "weapon_collider";
+    WeaponColliderShape shape = WeaponColliderShape::Box;
+    glm::vec3 position{0.0f};
+    glm::vec3 rotationDegrees{0.0f};
+    glm::vec3 size{0.18f, 0.18f, 1.0f};
+    bool pushPlayerRoot = true;
+    bool supportPlayerWeight = true;
+    bool blocksWorld = true;
+};
+
+struct WeaponCollisionConfig {
+    bool enabled = false;
+    bool authoritative = true;
+    std::vector<WeaponColliderConfig> colliders;
+};
+
 enum class WeaponFireMode {
     SemiAuto,
     Automatic,
@@ -63,6 +85,8 @@ struct WeaponDefinition {
     std::string poseId;  // which weapon pose config to use (empty = use own id)
 
     glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
+
+    WeaponCollisionConfig collision;
 
     std::unordered_map<std::string, float> customParams;
 

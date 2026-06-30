@@ -61,6 +61,7 @@ namespace DebugConfig
     inline bool DEBUG_DUEL = false;
     inline bool DEBUG_VISUALS_MASTER = false;
     inline bool DEBUG_WEAPON_VIEWMODEL = false;
+    inline bool DEBUG_WEAPON_COLLISION = true;
     inline bool DEBUG_ROTATION = false;
 
     inline void ResetAll()
