@@ -82,15 +82,26 @@ extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
 void WeaponViewModel::loadModel(const std::string& modelPath) {
-    if (modelLoadAttempted || modelPath.empty()) {
+    if (modelPath.empty()) {
+        if (!loadedModelPath.empty() || vao || vbo || !heldMesh.verts.empty())
+            unload();
         modelLoadAttempted = true;
         return;
     }
+
+    if (modelLoadAttempted && modelPath == loadedModelPath)
+        return;
+
+    if (modelLoadAttempted || vao || vbo || !heldMesh.verts.empty())
+        unload();
+
     modelLoadAttempted = true;
+    loadedModelPath = modelPath;
     printf("[Weapon] Loading model: %s\n", modelPath.c_str());
     heldMesh = loadGLB(modelPath);
     if (heldMesh.verts.empty()) {
         printf("[Weapon ERROR] Failed to load model:\n  %s\n", modelPath.c_str());
+        loadedModelPath.clear();
         return;
     }
     printf("[Weapon] Loaded successfully: %s (verts=%zu)\n", modelPath.c_str(), heldMesh.verts.size());
@@ -131,15 +142,33 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
     printf("[VIEWMODEL] model loaded verts=%zu vao=%u\n", heldMesh.verts.size(), vao);
 }
 
+void WeaponViewModel::unload() {
+    if (vbo) {
+        glDeleteBuffers(1, &vbo);
+        vbo = 0;
+    }
+    if (vao) {
+        glDeleteVertexArrays(1, &vao);
+        vao = 0;
+    }
+    heldMesh = Mesh{};
+    modelGrip = glm::vec3(0.0f);
+    modelMuzzle = glm::vec3(0.0f, 0.0f, 0.7f);
+    modelCollisionRadius = 0.12f;
+    hasModelBounds = false;
+    modelLoadAttempted = false;
+    loadedModelPath.clear();
+}
+
 void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                              const WeaponDefinition* def, bool updatePlayerPose,
                              const World* world) {
     // Attempt to load weapon config for this weapon (supports hot reload)
     WeaponConfig& wc = WeaponConfig::instance();
+    wc.pollHotReload();
     bool hasConfig = false;
     const WeaponViewModelConfig* vmcfg = nullptr;
     if (def && !def->id.empty()) {
-        wc.pollHotReload(def->id);
         vmcfg = wc.get(def->id);
         hasConfig = (vmcfg != nullptr);
     }
@@ -183,23 +212,8 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         glm::vec3 offset(0.0f);
         glm::vec3 rotEuler(0.0f);
         if (def) {
-            if (def->id == "revolver") {
-                offset = glm::vec3(gPlayerProcedural.revolverOffsetX,
-                                   gPlayerProcedural.revolverOffsetY,
-                                   gPlayerProcedural.revolverOffsetZ);
-                rotEuler = glm::vec3(gPlayerProcedural.revolverRotX,
-                                     gPlayerProcedural.revolverRotY,
-                                     gPlayerProcedural.revolverRotZ);
-            } else if (def->id == "shotgun") {
-                offset = glm::vec3(gPlayerProcedural.shotgunOffsetX,
-                                   gPlayerProcedural.shotgunOffsetY,
-                                   gPlayerProcedural.shotgunOffsetZ);
-                rotEuler = glm::vec3(gPlayerProcedural.shotgunRotX,
-                                     gPlayerProcedural.shotgunRotY,
-                                     gPlayerProcedural.shotgunRotZ);
-            } else {
-                offset = def->viewModelOffset;
-            }
+            offset = def->attachmentOffset;
+            rotEuler = def->attachmentRotation;
         }
         glm::mat4 customRot(1.0f);
         if (glm::length(rotEuler) > 0.001f) {

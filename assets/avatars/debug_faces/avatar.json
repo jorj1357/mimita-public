@@ -9,50 +9,586 @@
     "skin": "front_red.png"
   },
   "advanced": {
-    "head_front": "front_red.png",
-    "head_back": "back_green.png",
-    "head_left": "left_blue.png",
-    "head_right": "right_yellow.png",
-    "head_top": "top_white.png",
-    "head_bottom": "bottom_black.png",
-    "torso_front": "front_red.png",
-    "torso_back": "back_green.png",
-    "torso_left": "left_blue.png",
-    "torso_right": "right_yellow.png",
-    "torso_top": "top_white.png",
-    "torso_bottom": "bottom_black.png",
-    "leftArm_front": "front_red.png",
-    "leftArm_back": "back_green.png",
-    "leftArm_left": "left_blue.png",
-    "leftArm_right": "right_yellow.png",
-    "leftArm_top": "top_white.png",
-    "leftArm_bottom": "bottom_black.png",
-    "rightArm_front": "front_red.png",
-    "rightArm_back": "back_green.png",
-    "rightArm_left": "left_blue.png",
-    "rightArm_right": "right_yellow.png",
-    "rightArm_top": "top_white.png",
-    "rightArm_bottom": "bottom_black.png",
-    "leftLeg_front": "front_red.png",
-    "leftLeg_back": "back_green.png",
-    "leftLeg_left": "left_blue.png",
-    "leftLeg_right": "right_yellow.png",
-    "leftLeg_top": "top_white.png",
-    "leftLeg_bottom": "bottom_black.png",
-    "rightLeg_front": "front_red.png",
-    "rightLeg_back": "back_green.png",
-    "rightLeg_left": "left_blue.png",
-    "rightLeg_right": "right_yellow.png",
-    "rightLeg_top": "top_white.png",
-    "rightLeg_bottom": "bottom_black.png"
+    "head_front": {
+      "texture": "front_red.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_back": {
+      "texture": "back_green.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_left": {
+      "texture": "left_blue.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_right": {
+      "texture": "right_yellow.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_top": {
+      "texture": "top_white.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_bottom": {
+      "texture": "bottom_black.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_front": {
+      "texture": "front_red.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_back": {
+      "texture": "back_green.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_left": {
+      "texture": "left_blue.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_right": {
+      "texture": "right_yellow.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_top": {
+      "texture": "top_white.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_bottom": {
+      "texture": "bottom_black.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_front": {
+      "texture": "front_red.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_back": {
+      "texture": "back_green.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_left": {
+      "texture": "left_blue.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_right": {
+      "texture": "right_yellow.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_top": {
+      "texture": "top_white.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_bottom": {
+      "texture": "bottom_black.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_front": {
+      "texture": "front_red.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_back": {
+      "texture": "back_green.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_left": {
+      "texture": "left_blue.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_right": {
+      "texture": "right_yellow.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_top": {
+      "texture": "top_white.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_bottom": {
+      "texture": "bottom_black.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_front": {
+      "texture": "front_red.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_back": {
+      "texture": "back_green.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_left": {
+      "texture": "left_blue.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_right": {
+      "texture": "right_yellow.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_top": {
+      "texture": "top_white.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_bottom": {
+      "texture": "bottom_black.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_front": {
+      "texture": "front_red.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_back": {
+      "texture": "back_green.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_left": {
+      "texture": "left_blue.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_right": {
+      "texture": "right_yellow.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_top": {
+      "texture": "top_white.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_bottom": {
+      "texture": "bottom_black.png",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    }
+  },
+  "textures": {
+    "back_green": "back_green.png",
+    "bottom_black": "bottom_black.png",
+    "front_red": "front_red.png",
+    "left_blue": "left_blue.png",
+    "right_yellow": "right_yellow.png",
+    "top_white": "top_white.png"
   },
   "colors": {
-    "head": [1, 1, 1],
-    "torso": [1, 1, 1],
-    "leftArm": [1, 1, 1],
-    "rightArm": [1, 1, 1],
-    "leftLeg": [1, 1, 1],
-    "rightLeg": [1, 1, 1]
+    "head": [
+      1,
+      1,
+      1
+    ],
+    "torso": [
+      1,
+      1,
+      1
+    ],
+    "leftArm": [
+      1,
+      1,
+      1
+    ],
+    "rightArm": [
+      1,
+      1,
+      1
+    ],
+    "leftLeg": [
+      1,
+      1,
+      1
+    ],
+    "rightLeg": [
+      1,
+      1,
+      1
+    ]
   },
   "cosmetics": []
 }

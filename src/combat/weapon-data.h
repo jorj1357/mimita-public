@@ -13,5 +13,6 @@ WeaponDefinition createAa12Definition();
 WeaponDefinition createRocketLauncherDefinition();
 
 void registerBuiltinWeapons();
+bool reloadBuiltinWeaponsIfChanged();
 
 } // namespace WeaponData

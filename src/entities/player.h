@@ -50,7 +50,6 @@ struct MovementCapsule {
     glm::vec3 velocity{0.0f};
     float radius = 0.0f;
     float height = 0.0f;
-    bool onGround = false;
 };
 
 struct PerfectPoseSkeleton {
@@ -112,48 +111,56 @@ struct LayeredAnimConfig {
     AnimKeyframePart reloadOverlay;
 };
 
+struct DashPoseConfig {
+    glm::vec3 torsoRotation{10.0f, 0.0f, 0.0f};
+    glm::vec3 torsoTranslation{0.1f, 0.0f, 0.0f};
+    glm::vec3 headRotation{5.0f, 0.0f, 0.0f};
+    glm::vec3 headTranslation{0.05f, 0.0f, 0.0f};
+    glm::vec3 leftArmRotation{0.0f, 0.0f, 160.0f};
+    glm::vec3 leftArmTranslation{0.0f, 0.0f, 0.0f};
+    glm::vec3 rightArmRotation{0.0f, 0.0f, -160.0f};
+    glm::vec3 rightArmTranslation{0.0f, 0.0f, 0.0f};
+    glm::vec3 leftLegRotation{0.0f, 0.0f, -30.0f};
+    glm::vec3 leftLegTranslation{0.0f, 0.0f, 0.0f};
+    glm::vec3 rightLegRotation{0.0f, 0.0f, 50.0f};
+    glm::vec3 rightLegTranslation{0.0f, 0.0f, 0.0f};
+    float blendInTime = 0.08f;
+    float blendOutTime = 0.12f;
+    bool snapIn = false;
+};
+
 struct PlayerProceduralConfig
 {
-    float leftArmRaise;
-    float leftArmForward;
-    float leftArmTwist;
-    float rightArmRaise;
-    float rightArmForward;
-    float rightArmTwist;
-    float weaponSwayAmount;
-    float weaponSwaySpeed;
-    float torsoAimYawStrength;
-    float torsoAimPitchStrength;
-    float armAimYawStrength;
-    float armAimPitchStrength;
-    float armSwingAmount;
-    float legSwingAmount;
-    float torsoLeanAmount;
-    float headCounterAmount;
-    float bobHeight;
-    float walkFrequency;
-    float walkFrequencyMultiplier;
-    float reloadArmLowerZ;
-    float reloadArmLowerX;
-    float reloadHandLower;
-    float armInfluenceMultiplier;
-    float idleSwayAmount;
-    float idleSwaySpeed;
-    float revolverOffsetX;
-    float revolverOffsetY;
-    float revolverOffsetZ;
-    float revolverRotX;
-    float revolverRotY;
-    float revolverRotZ;
-    float shotgunOffsetX;
-    float shotgunOffsetY;
-    float shotgunOffsetZ;
-    float shotgunRotX;
-    float shotgunRotY;
-    float shotgunRotZ;
+    float weaponSwayAmount = 0.15f;
+    float weaponSwaySpeed = 8.0f;
+    float torsoAimYawStrength = 0.6f;
+    float torsoAimPitchStrength = 0.3f;
+    float armAimYawStrength = 0.25f;
+    float armAimPitchStrength = 0.45f;
+    float armSwingAmount = 75.0f;
+    float legSwingAmount = 65.0f;
+    float torsoLeanAmount = -20.0f;
+    float headCounterAmount = 12.0f;
+    float bobHeight = 0.12f;
+    float walkFrequency = 6.5f;
+    float walkFrequencyMultiplier = 6.0f;
+    float idleSwayAmount = 0.05f;
+    float idleSwaySpeed = 3.0f;
+    float idleArmRotationDeg = 3.0f;
+    float idleLegRotationDeg = 3.0f;
+    float idleTorsoRotationDeg = 1.0f;
+    float idleHeadRotationDeg = 0.5f;
+    float idleArmSpeed = 2.0f;
+    float idleLegSpeed = 1.8f;
+    float idleTorsoSpeed = 1.5f;
+    float idleHeadSpeed = 1.0f;
+    float idleBreathingAmount = 0.02f;
+    float idleBreathingSpeed = 1.0f;
+    float idleDebugStrength = 1.0f;
     LayeredAnimConfig layers;
     std::unordered_map<std::string, WeaponPoseConfig> weaponPoses;
     std::unordered_map<std::string, AxisLock> axisLocks;
+    DashPoseConfig dashPose;
     int walkStartTickOnEnter = 7;
     int animationStateTransitionFrames = 1;
 };
@@ -164,6 +171,7 @@ extern PlayerProceduralConfig gPlayerProcedural;
 // Call each frame from main loop to ensure hot reload works regardless of physics state.
 // Uses wall-clock 250ms throttle internally.
 void updatePlayerProceduralHotReload(float dt);
+bool reloadPlayerProceduralConfig();
 
 // -------- State Groups (prevents duplicate state variables) --------
 struct GroundState {
@@ -350,6 +358,10 @@ public:
 
     // -------- Chat Bubble State --------
     ActorChatState chatState;
+
+    // -------- Dash pose state --------
+    float dashPoseTimer = -1.0f;
+    bool forceDashPose = false;
 
     // -------- Per-part color tints (from avatar.json colors) --------
     std::vector<glm::vec3> outfitPartColors;

@@ -154,6 +154,26 @@ void registerAvatarCommands(Player& player) {
     });
 
     t.registerCommand({
+        "avatar.reload",
+        "Reload current avatar JSON and apply it",
+        "avatar.reload",
+        [&player](const std::vector<std::string>&) {
+            auto& av = AvatarSystem::instance();
+            if (!av.hasAvatar()) {
+                Terminal::instance().addLog("[AVATAR] No avatar loaded. Use avatar.load <name>");
+                return;
+            }
+            const std::string name = av.currentName();
+            if (av.loadAvatar(name)) {
+                av.applyToPlayer(player, true);
+                Terminal::instance().addLog("[AVATAR] Reloaded: " + name);
+            }
+        },
+        std::string(),
+        CommandCategory::Player
+    });
+
+    t.registerCommand({
         "avatar.debugModel",
         "Print loaded GLB node names and avatar player_model path",
         "avatar.debugModel",

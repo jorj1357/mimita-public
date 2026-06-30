@@ -9,6 +9,7 @@
 #include "physics/movement/physics-collision.h"
 #include "config/player-settings.h"
 #include "audio/audio.h"
+#include "terminal/terminal-state.h"
 
 void registerDebugCommands()
 {
@@ -126,5 +127,23 @@ void registerDebugCommands()
             snprintf(buf, sizeof(buf), "[VALIDATE] %s", failed ? "SOME ASSETS FAILED" : "All assets OK");
             Terminal::instance().addLog(buf);
         }
+    });
+
+    Terminal::instance().registerCommand({
+        "forcedash", "Force the dash pose on/off for testing", "forcedash <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (!gpPlayer) {
+                Terminal::instance().addLog("[ERROR] no player");
+                return;
+            }
+            if (args.empty()) {
+                gpPlayer->forceDashPose = !gpPlayer->forceDashPose;
+            } else {
+                gpPlayer->forceDashPose = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                std::string("[DEBUG] forcedash=") + (gpPlayer->forceDashPose ? "1" : "0"));
+        },
+        "2026-06-28", CommandCategory::Debug
     });
 }

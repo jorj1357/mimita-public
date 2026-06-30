@@ -52,6 +52,11 @@ void WeaponSystem::equip(Player& player, int slot) {
         player.equippedWeaponId = def->id;
         mCurrentSlot = slot;
         mCurrentWeaponId = def->id;
+        if (WeaponRuntime* rt = getCurrentRuntime(player)) {
+            auto it = def->customParams.find("equipPoseTime");
+            rt->customFloats["equipTimer"] =
+                it != def->customParams.end() ? it->second : 0.18f;
+        }
         WeaponAudio::playEquipSound(*def);
         printf("[WEAPON] equipped '%s' slot %d\n", def->id.c_str(), slot);
         if (def->id == "aa12")

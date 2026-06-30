@@ -12,6 +12,7 @@ Known duplicates to detect:
 
 import os
 import re
+import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +37,10 @@ DUPLICATE_GROUPS = [
 
 
 def find_files():
+    changed = changed_files()
+    if changed is not None:
+        return changed
+
     files = []
     for root, dirs, names in os.walk(SRC_DIR):
         dirs[:] = [d for d in dirs if d not in ("node_modules", ".opencode", "build", ".git", "__pycache__")]
@@ -43,6 +48,28 @@ def find_files():
             if name.endswith((".cpp", ".h")):
                 files.append(os.path.join(root, name))
     return files
+
+
+def changed_files():
+    try:
+        paths = []
+        tracked = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMRT", "HEAD", "--", "src"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        paths.extend(p.strip() for p in tracked.stdout.splitlines() if p.strip())
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "src"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+        paths.extend(p.strip() for p in untracked.stdout.splitlines() if p.strip())
+        files = []
+        for rel in sorted(set(paths)):
+            if rel.endswith((".cpp", ".h")):
+                full = os.path.join(REPO_ROOT, rel)
+                if os.path.isfile(full):
+                    files.append(full)
+        return files
+    except Exception:
+        return None
 
 
 def main():
@@ -64,6 +91,10 @@ def main():
             for varname in group:
                 for i, line in enumerate(lines, 1):
                     if re.search(r'\b' + re.escape(varname) + r'\b', line):
+                        # Skip struct member declarations (e.g. "bool onGround = false;")
+                        member_decl = re.match(r'^\s+\w+\s+' + re.escape(varname) + r'\b.*;\s*$', line)
+                        if member_decl:
+                            continue
                         usages.setdefault(varname, []).append((relpath, i))
 
         # Count how many different variables from this group are actually used

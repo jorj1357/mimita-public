@@ -1,0 +1,363 @@
+{
+  "revolver": {
+    "id": "revolver",
+    "display_name": "Revolver",
+    "slot": 1,
+    "model": { "path": "assets/objects/weapons/mimita-revolver-v1.glb" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "attachment": {
+        "position": [-0.2, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 50.0,
+    "headshot_multiplier": 2.0,
+    "fire_delay": 0.08,
+    "reload_time": 1.0,
+    "magazine_size": 6,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 99.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "hitscan",
+    "hitscan": true,
+    "uses_physics_projectile": false,
+    "sound": {
+      "shoot": "revolvershoot",
+      "reload": "revolverreload",
+      "hit": "player_hurt",
+      "dry_fire": "ui/click",
+      "equip": "revolverequip"
+    },
+    "custom_params": {
+      "distanceFalloffStart": 110.0,
+      "minDamageFraction": 0.1,
+      "minAngleFactor": 0.15,
+      "shootPoseTime": 0.12,
+      "equipPoseTime": 0.18
+    },
+    "animations": {
+      "fire": {
+        "duration": 0.12,
+        "position_offset": [-0.06, 0.02, -0.08],
+        "rotation_offset": [-6.0, 1.5, 1.0],
+        "recover": true
+      },
+      "reload_pose": {
+        "position": [0.04, -0.12, -0.04],
+        "rotation": [-18.0, 5.0, 8.0]
+      }
+    }
+  },
+  "godball": {
+    "id": "godball",
+    "display_name": "Godball",
+    "slot": 2,
+    "model": { "path": "" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 10.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.0,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 0.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.5,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "automatic",
+    "behavior_type": "godball",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "sound": {
+      "shoot": "",
+      "reload": "",
+      "hit": "godballhit",
+      "dry_fire": "",
+      "equip": ""
+    },
+    "custom_params": {
+      "ballRadius": 0.5,
+      "ballMass": 0.18,
+      "ropeLength": 2.8,
+      "ropeStiffness": 50.0,
+      "ropeDamping": 1.0,
+      "linearDamping": 0.0,
+      "baseDamagePerTick": 10.0,
+      "damageTickInterval": 0.15,
+      "speedDamageFactor": 3.0,
+      "maxDamageCap": 200.0,
+      "relativeVelocityFactor": 2.0,
+      "swingDirectionFactor": 2.0
+    }
+  },
+  "shotgun": {
+    "id": "shotgun",
+    "display_name": "Shotgun",
+    "slot": 3,
+    "model": { "path": "assets/objects/weapons/mimita-shotgun-v1.glb" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.5],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "attachment": {
+        "position": [0.0, 0.05, -1.5],
+        "rotation_degrees": [0.0, -5.0, -90.0]
+      },
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 12.0,
+    "headshot_multiplier": 2.0,
+    "fire_delay": 0.25,
+    "reload_time": 1.5,
+    "magazine_size": 2,
+    "pellet_count": 15,
+    "spread": 3.0,
+    "recoil": 130.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "hitscan",
+    "hitscan": true,
+    "uses_physics_projectile": false,
+    "sound": {
+      "shoot": "shotgunshoot",
+      "reload": "shotgunreload",
+      "hit": "player_hurt",
+      "dry_fire": "ui/click",
+      "equip": "shotgunequip"
+    },
+    "custom_params": {
+      "distanceFalloffStart": 60.0,
+      "minDamageFraction": 0.05,
+      "minAngleFactor": 0.15,
+      "gridSpreadDegrees": 3.0,
+      "shootPoseTime": 0.14,
+      "equipPoseTime": 0.22
+    },
+    "animations": {
+      "fire": {
+        "duration": 0.14,
+        "position_offset": [-0.08, 0.03, -0.18],
+        "rotation_offset": [-8.0, 3.0, 2.0],
+        "recover": true
+      },
+      "reload_pose": {
+        "position": [0.15, -0.35, -0.08],
+        "rotation": [-32.0, 10.0, 22.0]
+      }
+    }
+  },
+  "swordsword": {
+    "id": "swordsword",
+    "display_name": "Swordsword",
+    "slot": 4,
+    "model": { "path": "" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.5, 0.8, 0.3],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 35.0,
+    "headshot_multiplier": 1.5,
+    "fire_delay": 0.3,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 10.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "swordsword",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "sound": {
+      "shoot": "",
+      "reload": "",
+      "hit": "",
+      "dry_fire": "",
+      "equip": ""
+    },
+    "custom_params": {
+      "range": 4.0,
+      "arcDegrees": 120.0,
+      "slashDamage": 35.0,
+      "slashKnockback": 25.0,
+      "slashSpeed": 22.0,
+      "slashDuration": 0.25,
+      "lungeDamage": 55.0,
+      "lungeKnockback": 40.0,
+      "lungeSpeed": 35.0,
+      "lungeDuration": 0.3,
+      "lungeRange": 6.0,
+      "lungeCooldown": 0.5,
+      "bladeLength": 1.5,
+      "shootPoseTime": 0.18,
+      "equipPoseTime": 0.2
+    }
+  },
+  "op_revolver": {
+    "id": "op_revolver",
+    "display_name": "OP Revolver",
+    "slot": 5,
+    "model": { "path": "assets/objects/weapons/mimita-revolver-v1.glb" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 50.0,
+    "headshot_multiplier": 2.0,
+    "fire_delay": 0.01,
+    "reload_time": 1.0,
+    "magazine_size": 999,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 99.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "automatic",
+    "behavior_type": "hitscan",
+    "hitscan": true,
+    "uses_physics_projectile": false,
+    "pose_id": "revolver",
+    "sound": {
+      "shoot": "revolvershoot",
+      "reload": "revolverreload",
+      "hit": "player_hurt",
+      "dry_fire": "ui/click",
+      "equip": "revolverequip"
+    },
+    "custom_params": {
+      "distanceFalloffStart": 110.0,
+      "minDamageFraction": 0.1,
+      "minAngleFactor": 0.15,
+      "reserveAmmo": 9999.0,
+      "shootPoseTime": 0.08,
+      "equipPoseTime": 0.18
+    }
+  },
+  "aa12": {
+    "id": "aa12",
+    "display_name": "AA12",
+    "slot": 6,
+    "model": { "path": "assets/objects/weapons/mimita-shotgun-v1.glb" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.5],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 12.0,
+    "headshot_multiplier": 2.0,
+    "fire_delay": 0.1,
+    "reload_time": 1.5,
+    "magazine_size": 999,
+    "pellet_count": 15,
+    "spread": 3.0,
+    "recoil": 130.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "automatic",
+    "behavior_type": "hitscan",
+    "hitscan": true,
+    "uses_physics_projectile": false,
+    "pose_id": "shotgun",
+    "sound": {
+      "shoot": "shotgunshoot",
+      "reload": "shotgunreload",
+      "hit": "player_hurt",
+      "dry_fire": "ui/click",
+      "equip": "shotgunequip"
+    },
+    "custom_params": {
+      "distanceFalloffStart": 60.0,
+      "minDamageFraction": 0.05,
+      "minAngleFactor": 0.15,
+      "gridSpreadDegrees": 3.0,
+      "reserveAmmo": 9999.0,
+      "shootPoseTime": 0.1,
+      "equipPoseTime": 0.22
+    }
+  },
+  "rocket_launcher": {
+    "id": "rocket_launcher",
+    "display_name": "Rocket Launcher",
+    "slot": 7,
+    "model": { "path": "assets/objects/weapons/mimita-rpg-v3.glb" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.2, 0.0, -1.5],
+      "rotation_degrees": [0.0, 0.0, -90.0],
+      "scale": [1.5, 1.5, 1.5]
+    },
+    "damage": 0.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.7,
+    "reload_time": 2.0,
+    "magazine_size": 4,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 50.0,
+    "projectile_speed": 45.0,
+    "projectile_radius": 0.4,
+    "projectile_lifetime": 5.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "rocket_launcher",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "pose_id": "rocket_launcher",
+    "sound": {
+      "shoot": "rocketlauncher/rocketshoot",
+      "reload": "",
+      "hit": "",
+      "dry_fire": "ui/click",
+      "equip": ""
+    },
+    "custom_params": {
+      "rocketSpeed": 45.0,
+      "rocketRadius": 0.4,
+      "splashRadius": 12.0,
+      "splashExponent": 2.0,
+      "rocketDirectDamage": 150.0,
+      "knockbackStrength": 160.0,
+      "selfKnockbackMultiplier": 1.0,
+      "firingRecoilStrength": 30.0,
+      "reserveAmmo": 1337.0,
+      "shootPoseTime": 0.12,
+      "equipPoseTime": 0.24
+    },
+    "animations": {
+      "fire": {
+        "duration": 0.12,
+        "position_offset": [-0.08, 0.03, -0.18],
+        "rotation_offset": [-8.0, 3.0, 2.0],
+        "recover": true
+      },
+      "reload_pose": {
+        "position": [0.15, -0.45, -0.10],
+        "rotation": [-40.0, 15.0, 35.0]
+      }
+    }
+  }
+}

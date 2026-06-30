@@ -5,9 +5,13 @@
 #include "terminal/terminal-state.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-fire.h"
+#include "combat/weapon-data.h"
+#include "combat/weapon-config.h"
+#include "combat/weapon-registry.h"
 #include "network/net_mode.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+#include "entities/player-animation-config.h"
 
 void registerWeaponCommands()
 {
@@ -142,5 +146,67 @@ void registerWeaponCommands()
             WeaponSystem& weapons = THE_WEAPONS;
             weapons.inspect();
         }
+    });
+
+    Terminal::instance().registerCommand({
+        "weapon_config_reload",
+        "Reload config/weapons.json",
+        "weapon_config_reload",
+        [](const std::vector<std::string>&) {
+            WeaponConfig::instance().reloadNow();
+            WeaponData::registerBuiltinWeapons();
+            Terminal::instance().addLog("[WEAPON CONFIG] Reloaded config/weapons.json");
+        },
+        std::string(),
+        CommandCategory::Weapon
+    });
+
+    Terminal::instance().registerCommand({
+        "weapon_config_inspect",
+        "List registered weapon config data",
+        "weapon_config_inspect",
+        [](const std::vector<std::string>&) {
+            const auto& all = WeaponRegistry::instance().all();
+            Terminal::instance().addLog("[WEAPON CONFIG] Registered weapons: " + std::to_string(all.size()));
+            for (const auto& pair : all) {
+                const WeaponDefinition& def = pair.second;
+                Terminal::instance().addLog(
+                    "  " + def.id + " slot=" + std::to_string(def.slot) +
+                    " model=" + def.modelPath +
+                    " damage=" + std::to_string((int)def.damage));
+            }
+        },
+        std::string(),
+        CommandCategory::Weapon
+    });
+
+    Terminal::instance().registerCommand({
+        "animation_config_reload",
+        "Reload config/animations.json",
+        "animation_config_reload",
+        [](const std::vector<std::string>&) {
+            if (reloadPlayerProceduralConfig()) {
+                Terminal::instance().addLog("[ANIMATION CONFIG] Reloaded config/animations.json");
+            } else {
+                Terminal::instance().addLog("[ANIMATION CONFIG] Reload failed");
+            }
+        },
+        std::string(),
+        CommandCategory::Player
+    });
+
+    Terminal::instance().registerCommand({
+        "animation_config_inspect",
+        "List loaded animation config counts",
+        "animation_config_inspect",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().addLog(
+                "[ANIMATION CONFIG] clips=" + std::to_string(gPlayerProcedural.layers.animations.size()) +
+                " weaponPoses=" + std::to_string(gPlayerProcedural.weaponPoses.size()));
+            for (const auto& pair : gPlayerProcedural.layers.animations)
+                Terminal::instance().addLog("  clip " + pair.first);
+        },
+        std::string(),
+        CommandCategory::Player
     });
 }

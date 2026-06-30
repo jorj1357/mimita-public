@@ -21,6 +21,7 @@ struct WeaponViewModel {
     unsigned int vao = 0;
     unsigned int vbo = 0;
     bool modelLoadAttempted = false;
+    std::string loadedModelPath;
     glm::vec3 muzzle{0.0f};
     glm::vec3 forward{0.0f, 1.0f, 0.0f};
     float recoil = 0.0f;

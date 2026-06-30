@@ -1,15 +1,4 @@
 {
-  "leftArmRaise": 70,
-  "leftArmForward": 10,
-  "leftArmTwist": -20,
-
-  "rightArmRaise": 70,
-  "rightArmForward": 10,
-  "rightArmTwist": 20,
-
-  "weaponSwayAmount": 0.15,
-  "weaponSwaySpeed": 8.0,
-
   "torsoAimYawStrength": 0.1,
   "torsoAimPitchStrength": 0.05,
 
@@ -24,296 +13,45 @@
   "walkFrequency": 0.3,
   "walkFrequencyMultiplier": 1.0,
 
-  "reloadArmLowerZ": -15.0,
-  "reloadArmLowerX": -8.0,
-  "reloadHandLower": -5.0,
-  "armInfluenceMultiplier": 0.06,
-  "idleSwayAmount": 0.05,
-  "idleSwaySpeed": 3.0,
-
-  "revolverOffsetX": -0.2,
-  "revolverOffsetY": 0.0,
-  "revolverOffsetZ": 0.0,
-  "revolverRotX": 0.0,
-  "revolverRotY": 0.0,
-  "revolverRotZ": 0.0,
-
-  "shotgunOffsetX": 0.0,
-  "shotgunOffsetY": 0.05,
-  "shotgunOffsetZ": -1.5,
-  "shotgunRotX": 0.0,
-  "shotgunRotY": -5.0,
-  "shotgunRotZ": -90.0,
-
   "walkStartTickOnEnter": 1,
   "animationStateTransitionFrames": 1,
+
+  "idle": {
+    "armRotationDegrees": 3.0,
+    "legRotationDegrees": 3.0,
+    "torsoRotationDegrees": 1.0,
+    "headRotationDegrees": 0.5,
+    "armSpeed": 2.0,
+    "legSpeed": 1.8,
+    "torsoSpeed": 1.5,
+    "headSpeed": 1.0,
+    "breathingAmount": 0.02,
+    "breathingSpeed": 1.0,
+    "debugStrength": 1.0
+  },
+
+  "dashPose": {
+    "torsoRotation": [15, 0, -5],
+    "torsoTranslation": [0.25, 0, 0],
+    "headRotation": [0, 0, -15],
+    "headTranslation": [0.48, -0.1, 0],
+    "leftArmRotation": [0, 0, 60],
+    "leftArmTranslation": [0, 0, 0],
+    "rightArmRotation": [0, 0, -50],
+    "rightArmTranslation": [0, 0, 0],
+    "leftLegRotation": [0, 0, -25],
+    "leftLegTranslation": [0, 0, 0],
+    "rightLegRotation": [0, 0, 45],
+    "rightLegTranslation": [0, 0, 0],
+    "blendInTime": 0.01,
+    "blendOutTime": 0.5,
+    "snapIn": true
+  },
 
   "axisLocks": {
     "leftArm": { "rotation": [true, true, true] },
     "rightArm": { "rotation": [true, true, true] },
     "leftLeg": { "rotation": [true, true, true] },
     "rightLeg": { "rotation": [true, true, true] }
-  },
-
-  "revolver": {
-    "useWeaponPose": true,
-    "leftArm": {
-      "translation": [0, 0, 0.2],
-      "rotation": [0, -20, 75]
-    },
-    "rightArm": {
-      "translation": [0, 0, -0.1],
-      "rotation": [0, 5, 80]
-    }
-  },
-
-  "shotgun": {
-    "useWeaponPose": true,
-     "leftArm": {
-      "translation": [1.0, -0.1, 0.2],
-      "rotation": [0, -10, 85]
-    },
-    "rightArm": {
-      "translation": [-0.5, -0.2, 0.2],
-      "rotation": [15, 15, 90]
-    }
-  },
-
-  "godball": {
-    "useWeaponPose": false
-  },
-
-  "sword": {
-    "useWeaponPose": true,
-    "leftArm": {
-      "translation": [0, 0, 0],
-      "rotation": [60, 5, -40]
-    },
-    "rightArm": {
-      "translation": [0, 0, 0],
-      "rotation": [60, 5, 40]
-    }
-  },
-
-  "layers": {
-    "animations": {
-     "idle": {
-        "durationTicks": 60,
-        "loop": true,
-        "speedScaleFromVelocity": false,
-        "keyframes": [
-          {
-            "tick": 0,
-            "parts": {
-              "torso": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "head": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              }
-            }
-          },
-          {
-            "tick": 30,
-            "parts": {
-              "torso": {
-                "translation": [0.05, 0, 0],
-                "rotation": [0, 0, -2]
-              },
-              "head": {
-                "translation": [0.05, 0, 0],
-                "rotation": [0, 0, -1]
-              }
-            }
-          },
-          {
-            "tick": 60,
-            "parts": {
-              "torso": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "head": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              }
-            }
-          }
-        ]
-      },
-
-      
-      "walk": {
-        "durationTicks": 30,
-        "loop": true,
-        "speedScaleFromVelocity": false,
-        "speedBased": false,
-        "inputTriggered": true,
-        "tickBasedReturnToIdle": true,
-        "keyframes": [
-          {
-            "tick": 0,
-            "parts": {
-              "torso": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -20]
-              },
-              "head": {
-                "translation": [0.2, 0, 0],
-                "rotation": [0, 0, -10]
-              },
-              "leftArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, 80]
-              },
-              "rightArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "leftLeg": {
-                "translation": [-0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "rightLeg": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 80]
-              }
-            }
-          },
-          {
-            "tick": 15,
-            "parts": {
-              "torso": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -20]
-              },
-              "head": {
-                "translation": [0.2, 0, 0],
-                "rotation": [0, 0, -10]
-              },
-              "leftArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "rightArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, 80]
-              },
-              "leftLeg": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 80]
-              },
-              "rightLeg": {
-                "translation": [-0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              }
-            }
-          },
-          {
-            "tick": 30,
-            "parts": {
-              "torso": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -20]
-              },
-              "head": {
-                "translation": [0.2, 0, 0],
-                "rotation": [0, 0, -10]
-              },
-              "leftArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, 80]
-              },
-              "rightArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "leftLeg": {
-                "translation": [-0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "rightLeg": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 80]
-              }
-            }
-          }
-        ]
-      },
-
-      "return_to_idle": {
-        "durationTicks": 10,
-        "loop": false,
-        "speedScaleFromVelocity": false,
-        "speedBased": false,
-        "keyframes": [
-          {
-            "tick": 0,
-            "parts": {
-              "torso": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -20]
-              },
-              "head": {
-                "translation": [0.2, 0, 0],
-                "rotation": [0, 0, -10]
-              },
-              "leftArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, 80]
-              },
-              "rightArm": {
-                "translation": [0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "leftLeg": {
-                "translation": [-0.1, 0, 0],
-                "rotation": [0, 0, -80]
-              },
-              "rightLeg": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 80]
-              }
-            }
-          },
-          {
-            "tick": 10,
-            "parts": {
-              "torso": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "head": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "leftArm": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "rightArm": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "leftLeg": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              },
-              "rightLeg": {
-                "translation": [0, 0, 0],
-                "rotation": [0, 0, 0]
-              }
-            }
-          }
-        ]
-      }
-    },
-
-    "reloadOverlay": {
-      "translation": [0, 0, 0],
-      "rotation": [-15, 0, 0]
-    }
   }
 }

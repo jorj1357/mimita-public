@@ -91,6 +91,8 @@ void Player::reset()
     proceduralTime = 0.0f;
     animStateTime = 0.0f;
     currentAnimName = "idle";
+    dashPoseTimer = -1.0f;
+    forceDashPose = false;
     equippedWeaponId.clear();
     collision.hasWeaponCollisionCapsule = false;
     weaponCollisionCapsule = Capsule{};
@@ -125,14 +127,12 @@ void Player::syncLegacyStateToLayers()
     movementCapsule.velocity = vel;
     movementCapsule.radius = PLAYER_RADIUS;
     movementCapsule.height = PLAYER_HEIGHT;
-    movementCapsule.onGround = ground.onGround;
 }
 
 void Player::syncLayersToLegacyState()
 {
     pos = origin.position;
     vel = movementCapsule.velocity;
-    ground.onGround = movementCapsule.onGround;
 }
 
 void Player::updateModelWorldTransforms()
