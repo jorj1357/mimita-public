@@ -129,7 +129,8 @@ void doGLBTriangleCollisions(
     }
 
     // ── 4. Ground snap + floor recovery ──────────────────
-    doGroundSnap(p, world, groundedThisFrame);
+    // testing if this even does atnthing 7 1 2026 
+    // doGroundSnap(p, world, groundedThisFrame);
     doFloorRecovery(p, world, groundedThisFrame);
 
     // ── 5. Body + weapon collision ───────────────────────
