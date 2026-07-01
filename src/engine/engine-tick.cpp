@@ -9,6 +9,7 @@
 #include "engine/engine-tick-render.h"
 #include "engine/engine-tick-ui.h"
 
+#include <chrono>
 #include <cstdio>
 #include <shellapi.h>
 #include <windows.h>
@@ -36,8 +37,27 @@ extern BombTagManager gBombTagManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 
+// Heartbeat: logs at most once per 0.5s, used to identify where the frame loop stops.
+#define HEARTBEAT(MSG) \
+    Debug::logThrottled(Debug::Category::General, "heartbeat", 0.5f, "[HB] " MSG "\n")
+
+// Spike detection: warns if a stage takes too long.
+#define CHECK_SPIKE(NAME, MS, THRESHOLD) \
+    do { \
+        if ((MS) > (THRESHOLD)) { \
+            const char* __colors[] = {"", "\033[33m", "\033[38;5;214m", "\033[31m"}; \
+            int __idx = (MS) > 20.0f ? 3 : ((MS) > 10.0f ? 2 : ((MS) > 5.0f ? 1 : 0)); \
+            Debug::warn(Debug::Category::General, \
+                "\033[33m[SPIKE]\033[0m %s %.1fms (threshold=%dms)\n", \
+                (NAME), (MS), (THRESHOLD)); \
+        } \
+    } while(0)
+
 void engineTick(Engine& engine)
 {
+    auto tFrameStart = std::chrono::steady_clock::now();
+    HEARTBEAT("FRAME START");
+
     float dt;
     bool worldPassRan;
     {
@@ -52,6 +72,7 @@ void engineTick(Engine& engine)
         Perf::ScopedTimer _t("State");
         engineTickState(engine, dt);
     }
+    HEARTBEAT("after state");
 
     const bool replayExportForceRender =
         (getReplayExportJob().state == ReplayExportJob::Capturing ||
@@ -59,12 +80,12 @@ void engineTick(Engine& engine)
 
     if (GAME_STATE == GAME_PLAYING || replayExportForceRender)
     {
-        { Perf::ScopedTimer _t("Replay"); engineTickReplay(engine, dt); }
-        { Perf::ScopedTimer _t("Networking"); engineTickNet(engine, dt); }
-        { Perf::ScopedTimer _t("Camera"); engineTickCamera(engine, dt); }
-        { Perf::ScopedTimer _t("Combat"); engineTickCombat(engine, dt); }
-        { Perf::ScopedTimer _t("Rendering"); engineTickRender(engine, dt, worldPassRan); }
-        { Perf::ScopedTimer _t("UI"); engineTickUI(engine, dt, worldPassRan); }
+        { Perf::ScopedTimer _t("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
+        { Perf::ScopedTimer _t("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
+        { Perf::ScopedTimer _t("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
+        { Perf::ScopedTimer _t("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
+        { Perf::ScopedTimer _t("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
+        { Perf::ScopedTimer _t("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
 
         if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
             DevOverlay::instance().render();
@@ -147,12 +168,31 @@ void engineTick(Engine& engine)
         updateReplayBatchExport();
     }
 
+    HEARTBEAT("before terminal");
     Terminal::instance().render();
     diagRenderStage(8);
 
+    HEARTBEAT("end frame");
     engine.endFrame();
     diagRenderStage(9);
     diagRenderFrameEnd();
     Perf::endFrame();
     gFramePacer.endFrame();
+
+    // ── Frame timing breakdown ───────────────────────
+    {
+        auto tNow = std::chrono::steady_clock::now();
+        float frameMs = std::chrono::duration<float, std::milli>(tNow - tFrameStart).count();
+        CHECK_SPIKE("FRAME TOTAL", frameMs, 20);
+
+        static auto sLastReport = std::chrono::steady_clock::now();
+        float sinceReport = std::chrono::duration<float>(tNow - sLastReport).count();
+        if (sinceReport >= 1.0f) {
+            sLastReport = tNow;
+
+            Debug::logThrottled(Debug::Category::General, "frame-timing", 1.0f,
+                "[FRAME TIMING] %.1fms  fps=%.0f  dt=%.3f\n",
+                frameMs, 1000.0f / (frameMs > 0.1f ? frameMs : 1.0f), dt);
+        }
+    }
 }

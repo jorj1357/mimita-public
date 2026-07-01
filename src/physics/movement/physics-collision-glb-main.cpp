@@ -48,8 +48,30 @@ struct CollisionFrameDiag {
     bool emergencyTriggered = false;
 };
 
+// Spike detection: warns if a stage takes too long.
+#define CHECK_COLL_SPIKE(NAME, MS) \
+    do { \
+        if ((MS) > 20.0f) \
+            Debug::warn(Debug::Category::Collision, \
+                "\033[31m[SPIKE]\033[0m %s %.1fms (threshold=20ms)\n", (NAME), (MS)); \
+        else if ((MS) > 10.0f) \
+            Debug::warn(Debug::Category::Collision, \
+                "\033[38;5;214m[SPIKE]\033[0m %s %.1fms (threshold=10ms)\n", (NAME), (MS)); \
+        else if ((MS) > 5.0f) \
+            Debug::warn(Debug::Category::Collision, \
+                "\033[33m[SPIKE]\033[0m %s %.1fms (threshold=5ms)\n", (NAME), (MS)); \
+    } while(0)
+
 static void logFrameSummary(const CollisionFrameDiag& d)
 {
+    CHECK_COLL_SPIKE("SweepSlide", d.sweepSlideMs);
+    CHECK_COLL_SPIKE("Depen", d.depenGatherMs + d.depenSolveMs);
+    CHECK_COLL_SPIKE("FloorRecovery", d.floorRecoveryMs);
+    CHECK_COLL_SPIKE("BodyWeapon", d.bodyWeaponMs);
+    CHECK_COLL_SPIKE("Emergency", d.emergencyCheckMs + d.emergencySearchMs);
+    CHECK_COLL_SPIKE("StuckTracking", d.stuckTrackMs);
+    CHECK_COLL_SPIKE("DebugVis", d.debugVisMs);
+
     Debug::logThrottled(Debug::Category::Collision, "frame-summary", 1.0f,
         "[COLLISION FRAME]\n"
         "  SweepSlide ......... %.2f ms\n"
@@ -360,6 +382,26 @@ void doGLBTriangleCollisions(
     // ── Growth tracking ──────────────────────────────────
     int bodySphereCount = (int)collectPlayerBodyCollisionSamples(p).size();
     trackGrowth(p, trace.maxCandidates, trace.maxRecoveryContacts, bodySphereCount);
+
+    // ── Trend detection: detect if any stage time grows for 5+ consecutive frames ──
+    {
+        static double prevSweepMs = 0, prevBodyMs = 0, prevDepenMs = 0;
+        static int sweepGrowthFrames = 0, bodyGrowthFrames = 0, depenGrowthFrames = 0;
+
+        auto checkTrend = [&](const char* name, double current, double& prev, int& frames) {
+            if (current > prev + 0.1) frames++;
+            else if (current < prev - 0.1) frames = 0;
+            if (frames >= 5)
+                Debug::warn(Debug::Category::Collision,
+                    "[TREND WARNING] %s increasing for %d frames (now=%.2fms, prev=%.2fms)\n",
+                    name, frames, current, prev);
+            prev = current;
+        };
+
+        checkTrend("SweepSlide", diag.sweepSlideMs, prevSweepMs, sweepGrowthFrames);
+        checkTrend("BodyWeapon", diag.bodyWeaponMs, prevBodyMs, bodyGrowthFrames);
+        checkTrend("Depen", diag.depenGatherMs + diag.depenSolveMs, prevDepenMs, depenGrowthFrames);
+    }
 
     if (DebugConfig::DEBUG_COLLISION_TRACE)
         Debug::logThrottled(Debug::Category::Collision, "collision-trace",
