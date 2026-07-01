@@ -67,8 +67,10 @@ namespace DebugConfig
     inline bool DEBUG_VISUALS_MASTER = false;
     inline bool DEBUG_WEAPON_VIEWMODEL = false;
     inline bool DEBUG_MENU_PREVIEW = false;
-    // does this even do antthing 6 30 2026 
-    inline bool DEBUG_WEAPON_COLLISION = true;
+    inline bool DEBUG_WEAPON_COLLISION = false;
+    // Was true before 7/1/2026 — caused debugBodyWeaponPhase to run every 0.25s
+    // doing a full second BodyWeapon pass (sphere gen + broadphase + triangle tests).
+    // Also had a printf inside the rate-limited path.
     // Collision diagnostics: always-on pipeline instrumentation.
     // Set false to suppress all collision diagnostics.
     inline bool DEBUG_COLLISION_DIAGNOSTICS = true;
