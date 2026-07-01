@@ -2,18 +2,29 @@ import { Router } from "express"
 import { hashToken, getClientIp } from "./authCore.js"
 import { pool } from "./db.js"
 import { parseCookies, sessionCookieName, sessionSecret } from "./session.js"
+import crypto from "crypto"
 
 const router = Router()
 
+function debugAim(...args) {
+    console.log("[AimTrainerAPI]", ...args)
+}
+
+function makeDebugId() {
+    return "aim_" + crypto.randomBytes(4).toString("hex")
+}
+
 async function authenticateToken(req, res, next) {
     try {
-        const authHeader = req.headers["authorization"]
-        let token
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.slice(7)
+        let token = parseCookies(req)[sessionCookieName]
+        if (!token) {
+            const authHeader = req.headers["authorization"]
+            if (authHeader && authHeader.startsWith("Bearer ")) {
+                token = authHeader.slice(7)
+            }
         }
         if (!token) {
-            return res.status(401).json({ success: false, message: "sign in required" })
+            return res.status(401).json({ success: false, error: "auth_required", message: "sign in required" })
         }
 
         const result = await pool.query(
@@ -31,7 +42,7 @@ async function authenticateToken(req, res, next) {
         )
 
         if (!result.rowCount) {
-            return res.status(401).json({ success: false, message: "session expired" })
+            return res.status(401).json({ success: false, error: "session_expired", message: "session expired" })
         }
 
         req.user = result.rows[0]
@@ -322,42 +333,83 @@ router.put("/settings", authenticateToken, async (req, res, next) => {
 router.get("/games/:gameId/scores", authenticateToken, async (req, res, next) => {
     try {
         const { gameId } = req.params
+        const userId = req.user.id
+
+        debugAim("[Scores] GET request", JSON.stringify({ gameId, userId, method: req.method, path: req.originalUrl, origin: req.get("origin") || "none", ip: getClientIp(req) }))
+
         const bestResult = await pool.query(
             `SELECT score_value, created_at FROM game_scores
              WHERE user_id = $1 AND game_id = $2 AND deleted_at IS NULL
              ORDER BY score_value ASC LIMIT 1`,
-            [req.user.id, gameId]
+            [userId, gameId]
         )
         const recentResult = await pool.query(
             `SELECT score_value, created_at FROM game_scores
              WHERE user_id = $1 AND game_id = $2 AND deleted_at IS NULL
              ORDER BY created_at DESC LIMIT 10`,
-            [req.user.id, gameId]
+            [userId, gameId]
         )
-        res.json({
+
+        const response = {
             success: true,
             best: bestResult.rowCount ? bestResult.rows[0].score_value : null,
             recent: recentResult.rows.map(r => ({ time: r.score_value, date: r.created_at })),
-        })
+        }
+        debugAim("[Scores] GET response", JSON.stringify({ userId, gameId, best: response.best, recentCount: response.recent.length }))
+        res.json(response)
     } catch (error) {
         next(error)
     }
 })
 
 router.post("/games/:gameId/scores", authenticateToken, async (req, res, next) => {
+    const debugId = makeDebugId()
     try {
         const { gameId } = req.params
         const scoreValue = req.body.time
-        if (typeof scoreValue !== 'number' || scoreValue <= 0) {
-            return res.status(400).json({ success: false, message: "invalid score" })
+        const userId = req.user.id
+        const username = req.user.username
+
+        debugAim("[Submit] request received", JSON.stringify({
+            debugId,
+            method: req.method,
+            path: req.originalUrl,
+            origin: req.get("origin") || "none",
+            referer: req.get("referer") || "none",
+            ip: getClientIp(req),
+            contentType: req.get("content-type"),
+            userAgent: (req.get("user-agent") || "").slice(0, 80),
+            body: JSON.stringify(req.body),
+            gameId,
+            userId,
+            username,
+        }))
+
+        if (typeof scoreValue !== "number" || scoreValue <= 0) {
+            debugAim("[Submit] rejected", JSON.stringify({ debugId, reason: "invalid_payload", details: `scoreValue=${scoreValue} type=${typeof scoreValue}` }))
+            return res.status(400).json({ success: false, error: "invalid_payload", message: "time must be a positive number", debugId })
         }
-        await pool.query(
+
+        const result = await pool.query(
             `INSERT INTO game_scores (user_id, game_id, score_value, created_at)
-             VALUES ($1, $2, $3, NOW())`,
-            [req.user.id, gameId, scoreValue]
+             VALUES ($1, $2, $3, NOW())
+             RETURNING id, created_at`,
+            [userId, gameId, scoreValue]
         )
-        res.json({ success: true })
+
+        debugAim("[Submit] inserted score", JSON.stringify({
+            debugId,
+            scoreId: result.rows[0].id,
+            userId,
+            username,
+            gameId,
+            timeMs: scoreValue,
+            createdAt: result.rows[0].created_at,
+        }))
+
+        res.json({ success: true, scoreId: result.rows[0].id, stored: true })
     } catch (error) {
+        debugAim("[Submit] rejected", JSON.stringify({ debugId, reason: "db_error", details: error.message }))
         next(error)
     }
 })
@@ -367,6 +419,15 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
     try {
         const { gameId } = req.params
         const limit = Math.min(Number(req.query.limit) || 10, 100)
+
+        debugAim("[Leaderboard] request received", JSON.stringify({
+            method: req.method,
+            path: req.originalUrl,
+            origin: req.get("origin") || "none",
+            limit,
+            gameId,
+        }))
+
         const result = await pool.query(
             `SELECT
                 ROW_NUMBER() OVER (ORDER BY gs.score_value ASC) AS rank,
@@ -379,7 +440,15 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
              LIMIT $2`,
             [gameId, limit]
         )
-        res.json({ success: true, leaderboard: result.rows })
+
+        const rows = result.rows
+        debugAim("[Leaderboard] response", JSON.stringify({
+            entries: rows.length,
+            firstEntry: rows.length > 0 ? { rank: rows[0].rank, username: rows[0].username, score: rows[0].score_value } : null,
+            lastEntry: rows.length > 0 ? { rank: rows[rows.length - 1].rank, username: rows[rows.length - 1].username, score: rows[rows.length - 1].score_value } : null,
+        }))
+
+        res.json({ success: true, leaderboard: rows })
     } catch (error) {
         next(error)
     }

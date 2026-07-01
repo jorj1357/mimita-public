@@ -327,6 +327,46 @@
   flex-wrap: wrap;
 }
 
+/* ── Debug Panel ── */
+
+.gameDebugPanel {
+  background: rgba(0,0,0,0.85);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem auto;
+  max-width: 600px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  font-size: 0.75rem;
+}
+
+.gameDebugPanel h4 {
+  margin: 0 0 0.4rem;
+  color: #fbbf24;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gameDebugPanel table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.gameDebugPanel td {
+  padding: 0.15rem 0.3rem;
+  color: rgba(255,255,255,0.7);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.gameDebugPanel td:first-child {
+  color: rgba(255,255,255,0.4);
+  width: 7em;
+}
+
 /* ── Mobile ── */
 
 @media (max-width: 600px) {
