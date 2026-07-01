@@ -75,7 +75,8 @@ public:
     bool saveCloudAvatarData(const json& avatarData);
 
     // Called by auth-popup after successful code confirm
-    void finishAuth(const std::string& token);
+    // Uses optional userInfo to avoid depending on validateSession for identity data.
+    void finishAuth(const std::string& token, const GameUserInfo* userInfo = nullptr);
 
 private:
     AuthSystem() = default;

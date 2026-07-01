@@ -22,7 +22,8 @@ namespace Debug
         Networking,
         Audio,
         World,
-        Duel
+        Duel,
+        Auth
     };
 
     bool enabled(Category category);

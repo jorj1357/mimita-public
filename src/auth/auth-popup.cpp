@@ -305,7 +305,12 @@ AuthPopupAction drawAuthPopup(GLFWwindow* window)
                 if (confirm.success)
                 {
                     printf("[AUTH] code confirmed, session: %s\n", confirm.sessionToken.c_str());
-                    auth.finishAuth(confirm.sessionToken);
+                    GameUserInfo confirmInfo;
+                    confirmInfo.valid = true;
+                    confirmInfo.id = confirm.accountId;
+                    confirmInfo.username = confirm.username;
+                    confirmInfo.displayName = confirm.username;
+                    auth.finishAuth(confirm.sessionToken, &confirmInfo);
                     gConfirmed = true;
                     gFlowState = CodeFlowState::None;
                 }
@@ -477,7 +482,12 @@ bool drawAuthCodeDialog(GLFWwindow* window)
                 if (confirm.success)
                 {
                     printf("[AUTH] code confirmed\n");
-                    auth.finishAuth(confirm.sessionToken);
+                    GameUserInfo confirmInfo;
+                    confirmInfo.valid = true;
+                    confirmInfo.id = confirm.accountId;
+                    confirmInfo.username = confirm.username;
+                    confirmInfo.displayName = confirm.username;
+                    auth.finishAuth(confirm.sessionToken, &confirmInfo);
                     gConfirmed = true;
                     gFlowState = CodeFlowState::None;
                 }

@@ -38,6 +38,8 @@ import ProfilePage from "./pages/ProfilePage"
 import Feedback from "./pages/Feedback"
 import Link from "./pages/Link"
 import ClientSignIn from "./pages/ClientSignIn"
+import Games from "./pages/Games"
+import AimTestV1 from "./pages/AimTestV1"
 
 /* =========================
    APP
@@ -85,6 +87,9 @@ ReactDOM.createRoot(
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/link" element={<Link />} />
         <Route path="/clientsignin" element={<ClientSignIn />} />
+
+        <Route path="/games" element={<Games />} />
+        <Route path="/games/aim-test-v1" element={<AimTestV1 />} />
 
         <Route path="*" element={<NotFound />} />
 

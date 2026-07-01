@@ -1,8 +1,8 @@
 #include "auth/auth-system.h"
 #include "auth/auth-token.h"
 #include "website/api-client.h"
+#include "debug/debug-log.h"
 
-#include <cstdio>
 #include <cstdlib>
 #include <random>
 #include <shellapi.h>
@@ -16,15 +16,41 @@ AuthSystem& AuthSystem::instance()
     return system;
 }
 
+static void applyInfo(AuthUser& user, const GameUserInfo& info)
+{
+    user.id = info.id;
+    user.username = info.username;
+    user.displayName = info.displayName;
+    user.email = info.email;
+    user.bio = info.bio;
+    user.avatarUrl = info.avatarUrl;
+    user.avatarData = info.avatarData;
+    user.supporterTier = info.supporterTier;
+    user.role = info.role;
+    user.emailVerified = info.emailVerified;
+    user.createdAt = info.createdAt;
+}
+
+static void cacheAndFinish(AuthUser& user)
+{
+    CachedProfile cache;
+    cache.id = user.id;
+    cache.username = user.username;
+    cache.displayName = user.displayName;
+    cache.avatarUrl = user.avatarUrl;
+    cache.supporterTier = user.supporterTier;
+    storeProfileCache(cache);
+}
+
 void AuthSystem::init(const std::string& cliSessionToken)
 {
     mGuestName = generateGuestName();
     mState = AuthState::Checking;
-    printf("[AUTH] checking for stored session...\n");
+    Debug::warn(Debug::Category::Auth, "checking for stored session...\n");
 
     if (!cliSessionToken.empty())
     {
-        printf("[AUTH] received session token from command line\n");
+        Debug::warn(Debug::Category::Auth, "received session token from command line\n");
         mUser.sessionToken = cliSessionToken;
         storeSessionToken(cliSessionToken);
         return;
@@ -33,15 +59,14 @@ void AuthSystem::init(const std::string& cliSessionToken)
     std::string stored = loadSessionToken();
     if (stored.empty())
     {
-        printf("[AUTH] no stored session found\n");
+        Debug::warn(Debug::Category::Auth, "no stored session found\n");
         mState = AuthState::NeedsLogin;
         return;
     }
 
     mUser.sessionToken = stored;
-    printf("[AUTH] stored session token found\n");
+    Debug::log(Debug::Category::Auth, "stored session token found, loading cached profile\n");
 
-    // Load cached profile so username shows immediately without network call
     CachedProfile cached = loadProfileCache();
     if (!cached.username.empty())
     {
@@ -50,8 +75,7 @@ void AuthSystem::init(const std::string& cliSessionToken)
         mUser.displayName = cached.displayName;
         mUser.avatarUrl = cached.avatarUrl;
         mUser.supporterTier = cached.supporterTier;
-        printf("[AUTH] using cached profile: %s\n", cached.username.c_str());
-        // State stays Checking — tickValidate will re-check with server next frame
+        Debug::warn(Debug::Category::Auth, "using cached profile: %s\n", cached.username.c_str());
     }
 }
 
@@ -73,39 +97,24 @@ void AuthSystem::validateStoredToken()
     if (info.valid)
     {
         mState = AuthState::Authenticated;
-        mUser.id = info.id;
-        mUser.username = info.username;
-        mUser.displayName = info.displayName;
-        mUser.email = info.email;
-        mUser.bio = info.bio;
-        mUser.avatarUrl = info.avatarUrl;
-        mUser.supporterTier = info.supporterTier;
-        mUser.role = info.role;
-        mUser.emailVerified = info.emailVerified;
-        mUser.createdAt = info.createdAt;
-        mUser.avatarData = info.avatarData;
-
-        // Propagate account username to the in-game player entity
+        if (!info.username.empty()) {
+            applyInfo(mUser, info);
+            Debug::warn(Debug::Category::Auth,
+                "session restored: username=%s displayName=%s userId=%d\n",
+                info.username.c_str(), info.displayName.c_str(), info.id);
+        } else {
+            Debug::warn(Debug::Category::Auth,
+                "server returned empty user data, preserving cached profile: %s\n",
+                mUser.username.c_str());
+        }
         if (gpPlayer)
-            gpPlayer->username = info.username;
-
-        printf("[AUTH] session validated: user=%s id=%d\n",
-               info.username.c_str(), info.id);
-
-        // Update local cache
-        CachedProfile cache;
-        cache.id = info.id;
-        cache.username = info.username;
-        cache.displayName = info.displayName;
-        cache.avatarUrl = info.avatarUrl;
-        cache.supporterTier = info.supporterTier;
-        storeProfileCache(cache);
-
+            gpPlayer->username = displayName();
+        cacheAndFinish(mUser);
         refreshStats();
     }
     else
     {
-        printf("[AUTH] stored session invalid or server unreachable, clearing\n");
+        Debug::warn(Debug::Category::Auth, "stored session invalid or unreachable, clearing\n");
         clearSessionToken();
         clearProfileCache();
         mUser.sessionToken.clear();
@@ -116,18 +125,16 @@ void AuthSystem::validateStoredToken()
 void AuthSystem::fetchFullProfile()
 {
     GameUserInfo info = getProfile(mUser.sessionToken);
-    if (info.valid)
+    if (info.valid && !info.username.empty())
     {
-        mUser.id = info.id;
-        mUser.username = info.username;
-        mUser.displayName = info.displayName;
-        mUser.email = info.email;
-        mUser.bio = info.bio;
-        mUser.avatarUrl = info.avatarUrl;
-        mUser.avatarData = info.avatarData;
-        mUser.supporterTier = info.supporterTier;
-        mUser.role = info.role;
-        mUser.createdAt = info.createdAt;
+        applyInfo(mUser, info);
+        Debug::log(Debug::Category::Auth,
+            "profile refreshed: username=%s displayName=%s\n",
+            info.username.c_str(), info.displayName.c_str());
+    }
+    else if (info.valid)
+    {
+        Debug::log(Debug::Category::Auth, "profile refresh returned empty data, preserving current\n");
     }
 }
 
@@ -153,18 +160,16 @@ void AuthSystem::refreshStats()
     if (mState != AuthState::Authenticated) return;
     if (mUser.sessionToken.empty()) return;
     mUser.stats = getStats(mUser.sessionToken);
-    printf("[AUTH] stats refreshed: mmr=%d wins=%d\n",
-           mUser.stats.currentMmr, mUser.stats.wins);
+    Debug::log(Debug::Category::Auth, "stats refreshed: mmr=%d wins=%d\n",
+               mUser.stats.currentMmr, mUser.stats.wins);
 }
 
 std::string AuthSystem::displayName() const
 {
-    // Always prefer display name if we have user data (cached or live)
     if (!mUser.displayName.empty())
         return mUser.displayName;
     if (!mUser.username.empty())
         return mUser.username;
-    // Fall back to guest only if no account data at all
     return mGuestName;
 }
 
@@ -183,7 +188,7 @@ void AuthSystem::startLinkFlow()
     if (!link.ok)
     {
         mLinkError = "Failed to reach authentication server.";
-        printf("[AUTH] link code request failed\n");
+        Debug::warn(Debug::Category::Auth, "link code request failed\n");
         return;
     }
 
@@ -195,25 +200,22 @@ void AuthSystem::startLinkFlow()
 
     std::string url = "https://mimita.fun/signin?redirect=/link";
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    printf("[AUTH] opened browser for sign in, code=%s\n", mLinkCode.c_str());
+    Debug::warn(Debug::Category::Auth, "opened browser for sign in, code=%s\n", mLinkCode.c_str());
 }
 
 void AuthSystem::pollLinkFlow()
 {
-    if (mState != AuthState::Linking)
-        return;
-    if (mLinkCode.empty() || mGrantToken.empty())
-        return;
+    if (mState != AuthState::Linking) return;
+    if (mLinkCode.empty() || mGrantToken.empty()) return;
 
     mLinkPollTimer += 1.0f / 60.0f;
-    if (mLinkPollTimer < 2.0f)
-        return;
+    if (mLinkPollTimer < 2.0f) return;
     mLinkPollTimer = 0.0f;
 
     mLinkPollAttempts++;
     if (mLinkPollAttempts > 150)
     {
-        printf("[AUTH] link polling timed out\n");
+        Debug::warn(Debug::Category::Auth, "link polling timed out\n");
         mState = AuthState::NeedsLogin;
         mLinkError = "Timed out waiting for authentication.";
         return;
@@ -222,11 +224,11 @@ void AuthSystem::pollLinkFlow()
     bool claimed = pollLinkStatus(mLinkCode);
     if (!claimed) return;
 
-    printf("[AUTH] link code claimed, finalizing...\n");
+    Debug::log(Debug::Category::Auth, "link code claimed, finalizing...\n");
     std::string sessionToken = finalizeLink(mLinkCode, mGrantToken);
     if (sessionToken.empty())
     {
-        printf("[AUTH] link finalize failed\n");
+        Debug::warn(Debug::Category::Auth, "link finalize failed\n");
         mState = AuthState::NeedsLogin;
         mLinkError = "Authentication finalization failed.";
         return;
@@ -243,7 +245,7 @@ void AuthSystem::startTokenExchange(const std::string& exchangeToken)
     std::string sessionToken = exchangeTempToken(exchangeToken);
     if (sessionToken.empty())
     {
-        printf("[AUTH] token exchange failed\n");
+        Debug::warn(Debug::Category::Auth, "token exchange failed\n");
         mState = AuthState::NeedsLogin;
         return;
     }
@@ -256,49 +258,65 @@ GameUserInfo AuthSystem::finishTokenExchange(const std::string& sessionToken)
     return validateSession(sessionToken);
 }
 
-void AuthSystem::finishAuth(const std::string& token)
+void AuthSystem::finishAuth(const std::string& token, const GameUserInfo* userInfo)
 {
     storeSessionToken(token);
     mUser.sessionToken = token;
 
-    GameUserInfo info = validateSession(token);
-    if (info.valid)
+    int loggedIn = 0;
+
+    if (userInfo && userInfo->valid && !userInfo->username.empty())
     {
         mState = AuthState::Authenticated;
-        mUser.id = info.id;
-        mUser.username = info.username;
-        mUser.displayName = info.displayName;
-        mUser.email = info.email;
-        mUser.bio = info.bio;
-        mUser.avatarUrl = info.avatarUrl;
-        mUser.supporterTier = info.supporterTier;
-        mUser.role = info.role;
-        mUser.emailVerified = info.emailVerified;
-        mUser.createdAt = info.createdAt;
-        mUser.avatarData = info.avatarData;
+        applyInfo(mUser, *userInfo);
+        loggedIn = 1;
 
-        // Propagate account username to the in-game player entity immediately
-        if (gpPlayer)
-            gpPlayer->username = info.username;
+        Debug::warn(Debug::Category::Auth,
+            "LOGIN SUCCESS (from confirm) username=%s displayName=%s userId=%d\n",
+            userInfo->username.c_str(), userInfo->displayName.c_str(), userInfo->id);
 
-        printf("[AUTH] authenticated: user=%s id=%d\n",
-               info.username.c_str(), info.id);
-
-        // Save to local cache for fast startup next time
-        CachedProfile cache;
-        cache.id = info.id;
-        cache.username = info.username;
-        cache.displayName = info.displayName;
-        cache.avatarUrl = info.avatarUrl;
-        cache.supporterTier = info.supporterTier;
-        storeProfileCache(cache);
-
-        refreshStats();
+        GameUserInfo serverInfo = validateSession(token);
+        if (serverInfo.valid && !serverInfo.username.empty())
+        {
+            applyInfo(mUser, serverInfo);
+            Debug::warn(Debug::Category::Auth,
+                "LOGIN SUCCESS (from server) username=%s displayName=%s userId=%d\n",
+                serverInfo.username.c_str(), serverInfo.displayName.c_str(), serverInfo.id);
+        }
+        else if (serverInfo.valid)
+        {
+            Debug::warn(Debug::Category::Auth,
+                "server returned empty user data, using confirm data\n");
+        }
     }
     else
     {
-        printf("[AUTH] session validation failed after auth\n");
-        mState = AuthState::NeedsLogin;
+        GameUserInfo info = validateSession(token);
+        if (info.valid)
+        {
+            mState = AuthState::Authenticated;
+            applyInfo(mUser, info);
+            loggedIn = 1;
+
+            Debug::warn(Debug::Category::Auth,
+                "LOGIN SUCCESS (server only) username=%s displayName=%s userId=%d\n",
+                info.username.c_str(), info.displayName.c_str(), info.id);
+        }
+        else
+        {
+            Debug::warn(Debug::Category::Auth, "session validation failed after auth\n");
+            mState = AuthState::NeedsLogin;
+        }
+    }
+
+    if (loggedIn)
+    {
+        if (gpPlayer)
+            gpPlayer->username = displayName();
+        Debug::warn(Debug::Category::Auth, "current username=%s logged in=1\n",
+               displayName().c_str());
+        cacheAndFinish(mUser);
+        refreshStats();
     }
 }
 
@@ -310,7 +328,9 @@ void AuthSystem::logout()
     mUser = {};
     mUser.sessionToken.clear();
     mGuestName = generateGuestName();
-    printf("[AUTH] logged out\n");
+    if (gpPlayer)
+        gpPlayer->username = displayName();
+    Debug::warn(Debug::Category::Auth, "logged out\n");
 }
 
 void AuthSystem::clearSession()
@@ -321,13 +341,15 @@ void AuthSystem::clearSession()
     mState = AuthState::NeedsLogin;
     mUser = {};
     mGuestName = generateGuestName();
-    printf("[AUTH] session cleared\n");
+    if (gpPlayer)
+        gpPlayer->username = displayName();
+    Debug::warn(Debug::Category::Auth, "session cleared\n");
 }
 
 void AuthSystem::skipLogin()
 {
     mState = AuthState::Offline;
-    printf("[AUTH] offline mode, guest name=%s\n", mGuestName.c_str());
+    Debug::warn(Debug::Category::Auth, "offline mode, guest name=%s\n", mGuestName.c_str());
 }
 
 json AuthSystem::getCloudSettings()

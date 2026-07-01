@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <shellapi.h>
+#include "debug/debug-log.h"
 
 namespace {
 
@@ -173,6 +174,9 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
             {
                 GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
                 std::string display = AuthSystem::instance().displayName();
+                Debug::logThrottled(Debug::Category::Gui, "menu-username", 3.0f,
+                    "username being displayed=%s source=AuthSystem.displayName()\n",
+                    display.c_str());
                 float nameSize = 0.40f;
                 float nameW = uiMeasureText(display.c_str(), nameSize);
                 float cx = cs.designToScreenX(accountSection->x + accountSection->w * 0.5f);

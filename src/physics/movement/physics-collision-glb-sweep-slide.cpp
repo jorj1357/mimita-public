@@ -26,6 +26,7 @@ extern std::vector<int> gatherGLBTrianglesForSphere(
 );
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+#define LOG_COLLISION(K, ...) Debug::logThrottled(Debug::Category::Collision, K, 0.25f, __VA_ARGS__)
 
 void doGLBSweepSlide(
     Player& p,
@@ -81,8 +82,7 @@ void doGLBSweepSlide(
         );
     }
 
-    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-        printf("[COLL] doGLBSweepSlide start pos=(%.2f %.2f %.2f) totalMove=(%.4f %.4f %.4f) candidates=%zu\n",
+    Debug::log(Debug::Category::Collision, "[COLL] doGLBSweepSlide start pos=(%.2f %.2f %.2f) totalMove=(%.4f %.4f %.4f) candidates=%zu",
                p.pos.x, p.pos.y, p.pos.z, totalMove.x, totalMove.y, totalMove.z, candidates.size());
 
     remainingMove = totalMove;
@@ -101,12 +101,33 @@ void doGLBSweepSlide(
 
         cap = p.getCapsule();
         candidates = gatherGLBTriangles(world, cap, remainingMove);
+        LOG_COLLISION(
+            "candidate_count",
+            "[CANDIDATES] count=%zu",
+            candidates.size()
+        );
+
+        for (int tri : candidates)
+        {
+            const auto& t = world.collisionMesh.triangles[tri];
+
+            LOG_COLLISION(
+                "candidate_tri",
+                " tri=%d normal=(%.2f %.2f %.2f) a=(%.2f %.2f %.2f)",
+                tri,
+                t.normal.x,
+                t.normal.y,
+                t.normal.z,
+                t.a.x,
+                t.a.y,
+                t.a.z
+            );
+        }
         appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
         trace.maxCandidates = std::max(trace.maxCandidates, (int)candidates.size());
         trace.sweepIterations++;
 
-        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-            printf("[COLL]   iter=%d remaining=(%.4f %.4f %.4f) candidates=%zu pos=(%.2f %.2f %.2f)\n",
+        Debug::log(Debug::Category::Collision, "[COLL]   iter=%d remaining=(%.4f %.4f %.4f) candidates=%zu pos=(%.2f %.2f %.2f)",
                    iter, remainingMove.x, remainingMove.y, remainingMove.z, candidates.size(),
                    p.pos.x, p.pos.y, p.pos.z);
 
@@ -136,6 +157,18 @@ void doGLBSweepSlide(
         }
 
         glm::vec3 stepMove = remainingMove * earliest.time;
+
+        LOG_COLLISION(
+            "sweep_step",
+            "[SWEEP STEP] iter=%d hit=%d t=%.4f stepMove=(%.4f %.4f %.4f) remainingBefore=(%.4f %.4f %.4f) posBefore=(%.2f %.2f %.2f)",
+            iter,
+            (int)earliest.hit,
+            earliest.time,
+            stepMove.x, stepMove.y, stepMove.z,
+            remainingMove.x, remainingMove.y, remainingMove.z,
+            p.pos.x, p.pos.y, p.pos.z
+        );
+
         p.pos += stepMove;
         p.updateModelWorldTransforms();
         cap = p.getCapsule();
@@ -143,18 +176,31 @@ void doGLBSweepSlide(
         if (!earliest.hit)
         {
             if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                printf("[COLL]   no hit remaining=0 iter=%d\n", iter);
+                Debug::log(Debug::Category::Collision, "[COLL]   no hit remaining=0 iter=%d", iter);
+            LOG_COLLISION(
+                "slope_hit",
+                "[SLOPE HIT] tri=%d normal=(%.3f %.3f %.3f) type=%s t=%.4f point=(%.2f %.2f %.2f) feetZ=%.3f remaining=(%.4f %.4f %.4f)",
+                earliest.triangleIndex,
+                earliest.normal.x, earliest.normal.y, earliest.normal.z,
+                earliest.normal.z >= MAX_WALKABLE_SLOPE_DOT ? "WALKABLE" :
+                earliest.normal.z <= 0.0f ? "BACKFACE" :
+                std::fabs(earliest.normal.z) < 0.2f ? "WALL" : "SLOPE",
+                earliest.time,
+                earliest.point.x, earliest.point.y, earliest.point.z,
+                cap.a.z - cap.r,
+                remainingMove.x, remainingMove.y, remainingMove.z
+            );
             remainingMove = glm::vec3(0.0f);
             break;
         }
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-            printf("[COLL]   HIT tri=%d normal=(%.3f,%.3f,%.3f) point=(%.2f,%.2f,%.2f) t=%.3f toi=%zu feature=%s\n",
-                   earliest.triangleIndex, earliest.normal.x, earliest.normal.y, earliest.normal.z,
-                   earliest.point.x, earliest.point.y, earliest.point.z, earliest.time, toiHits.size(),
-                   earliest.normal.z >= MAX_WALKABLE_SLOPE_DOT ? "WALKABLE" :
-                   earliest.normal.z <= 0.0f ? "BACKFACE" :
-                   std::fabs(earliest.normal.z) < 0.2f ? "WALL" : "SLOPE");
+            Debug::log(Debug::Category::Collision, "[COLL]   HIT tri=%d normal=(%.3f,%.3f,%.3f) point=(%.2f,%.2f,%.2f) t=%.3f toi=%zu feature=%s",
+                       earliest.triangleIndex, earliest.normal.x, earliest.normal.y, earliest.normal.z,
+                       earliest.point.x, earliest.point.y, earliest.point.z, earliest.time, toiHits.size(),
+                       earliest.normal.z >= MAX_WALKABLE_SLOPE_DOT ? "WALKABLE" :
+                       earliest.normal.z <= 0.0f ? "BACKFACE" :
+                       std::fabs(earliest.normal.z) < 0.2f ? "WALL" : "SLOPE");
 
         trace.sweepHits++;
         trace.maxSimultaneousTOI = std::max(trace.maxSimultaneousTOI, (int)toiHits.size());
@@ -175,8 +221,7 @@ void doGLBSweepSlide(
         {
             float feetZ = cap.a.z - cap.r;
             bool stepWall = std::fabs(earliest.normal.z) < 0.2f;
-            if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                printf("[COLL]   stepUpCheck: stepWall=%d feetZ=%.3f hitPointZ=%.3f stepH=%.3f maxStep=%.3f\n",
+            Debug::log(Debug::Category::Collision, "[COLL]   stepUpCheck: stepWall=%d feetZ=%.3f hitPointZ=%.3f stepH=%.3f maxStep=%.3f",
                        (int)stepWall, feetZ, earliest.point.z, earliest.point.z - feetZ, MAX_STEP_HEIGHT);
         }
 
@@ -211,13 +256,11 @@ void doGLBSweepSlide(
                 }
                 bool consistentStep = (consistentSamples >= 3);
 
-                if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                    printf("[COLL]   stepUp: consistent=%d/%d stepH=%.3f feetZ=%.3f\n",
+                Debug::log(Debug::Category::Collision, "[COLL]   stepUp: consistent=%d/%d stepH=%.3f feetZ=%.3f",
                            consistentSamples, totalSamples, stepHeight, feetZ);
 
                 if (!consistentStep) {
-                    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                        printf("[COLL]   stepUp FAILED consistency restore pos=(%.2f,%.2f,%.2f)\n",
+                    Debug::log(Debug::Category::Collision, "[COLL]   stepUp FAILED consistency restore pos=(%.2f,%.2f,%.2f)",
                                originalPos.x, originalPos.y, originalPos.z);
                     p.pos = originalPos;
                     p.updateModelWorldTransforms();
@@ -255,8 +298,7 @@ void doGLBSweepSlide(
                     }
                 }
 
-                if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                    printf("[COLL]   stepUp: blocked=%d\n", (int)blocked);
+                Debug::log(Debug::Category::Collision, "[COLL]   stepUp: blocked=%d", (int)blocked);
 
                 if (!blocked)
                 {
@@ -277,7 +319,7 @@ void doGLBSweepSlide(
                     }
 
                     if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                        printf("[COLL]   stepUp: hasFloor=%d\n", (int)hasFloor);
+                        Debug::log(Debug::Category::Collision, "[COLL]   stepUp: hasFloor=%d\n", (int)hasFloor);
 
                     if (!hasFloor) {
                         p.pos = originalPos;
@@ -293,82 +335,93 @@ void doGLBSweepSlide(
 
                     remainingMove -= stepMove;
 
-                    PHYS_LOG(
-                        "[GLB STEP] stepped up %.3f remainingMove=(%.4f %.4f %.4f)\n",
-                        stepHeight,
-                        remainingMove.x, remainingMove.y, remainingMove.z
-                    );
-
+                    LOG_COLLISION("step_success", "[STEP] succeeded stepH=%.3f remaining=(%.4f,%.4f,%.4f)",
+                                  stepHeight, remainingMove.x, remainingMove.y, remainingMove.z);
                     continue;
                 }
 
+                LOG_COLLISION("step_blocked", "[STEP] blocked stepH=%.3f reason=no_landing_or_blocked",
+                              stepHeight);
                 p.pos = originalPos;
                 p.updateModelWorldTransforms();
             }
         }
-        // SEAM TRANSITION: if the earliest hit is non-walkable near the player's feet
-        // (edge, backface, or wall at a mesh seam that step-up couldn't handle),
-        // scan candidates for a walkable normal and project remaining move against THAT
-        // instead of the edge/wall/backface normal. This lets the player flow onto a
-        // slope at a mesh seam without getting blocked.
+        // SEAM TRANSITION: when the sweep hits a non-walkable surface (edge, backface,
+        // or wall at a mesh seam), check for a walkable surface ahead and project
+        // movement against THAT surface instead of the blocking edge.
         {
             float feetZ = cap.a.z - cap.r;
             float horizMove = glm::length(glm::vec2(remainingMove.x, remainingMove.y));
-            bool nonWalkableHit = earliest.normal.z < MAX_WALKABLE_SLOPE_DOT;
-            bool nearFeet = earliest.point.z > feetZ - MAX_STEP_HEIGHT;
-            if (nonWalkableHit && nearFeet && horizMove > 0.01f)
+            if (earliest.normal.z < MAX_WALKABLE_SLOPE_DOT && horizMove > 0.01f &&
+                earliest.point.z > feetZ - MAX_STEP_HEIGHT)
             {
                 glm::vec3 moveDir = glm::normalize(glm::vec3(remainingMove.x, remainingMove.y, 0.0f));
                 if (glm::length(moveDir) < 0.001f) moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
+                int bestTri = -1;
                 float bestScore = -1.0f;
-                glm::vec3 bestWalkableNormal(0.0f);
+                int walkableCandidates = 0, totalChecked = 0;
 
-                for (int idx : preMoveCandidates) {
+                // Scan current iteration's sweep candidates first (fresh, with remainingMove)
+                for (int idx : candidates) {
                     const auto& tri = world.collisionMesh.triangles[idx];
+                    ++totalChecked;
                     if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue;
+                    ++walkableCandidates;
                     float score = -glm::dot(moveDir, tri.normal);
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestWalkableNormal = tri.normal;
+                    if (score > bestScore) { bestScore = score; bestTri = idx; }
+                }
+
+                // Fallback: scan pre-move candidates if current set had no walkable
+                if (bestTri < 0) {
+                    for (int idx : preMoveCandidates) {
+                        const auto& tri = world.collisionMesh.triangles[idx];
+                        ++totalChecked;
+                        if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT) continue;
+                        ++walkableCandidates;
+                        float score = -glm::dot(moveDir, tri.normal);
+                        if (score > bestScore) { bestScore = score; bestTri = idx; }
                     }
                 }
 
-                // Subtract stepMove before projection
-                remainingMove -= stepMove;
-
-                bool projected = false;
-                if (glm::length(bestWalkableNormal) > 0.001f && bestScore > 0.0f) {
-                    float vn = glm::dot(remainingMove, bestWalkableNormal);
-                    if (vn < 0.0f) {
-                        remainingMove -= bestWalkableNormal * vn;
-                        projected = true;
-                    }
-                }
-
-                if (projected || bestScore > 0.0f) {
-                    // Upward nudge to avoid re-hitting the edge
+                if (bestTri >= 0 && bestScore > 0.0f) {
+                    const auto& walkTri = world.collisionMesh.triangles[bestTri];
+                    remainingMove -= stepMove;
+                    float vn = glm::dot(remainingMove, walkTri.normal);
+                    if (vn < 0.0f)
+                        remainingMove -= walkTri.normal * vn;
                     p.pos.z += 0.01f;
                     p.updateModelWorldTransforms();
-                    printf("[SEAM] edgeTri=%d edgeNormal=(%.3f,%.3f,%.3f) walkNormal=(%.3f,%.3f,%.3f) score=%.3f remaining=(%.4f,%.4f,%.4f)\n",
-                           earliest.triangleIndex,
-                           earliest.normal.x, earliest.normal.y, earliest.normal.z,
-                           bestWalkableNormal.x, bestWalkableNormal.y, bestWalkableNormal.z,
-                           bestScore, remainingMove.x, remainingMove.y, remainingMove.z);
+                    LOG_COLLISION("seam", "[SEAM] edgeTri=%d edgeN=(%.3f,%.3f,%.3f) walkTri=%d walkN=(%.3f,%.3f,%.3f)"
+                                  " score=%.3f remaining=(%.4f,%.4f,%.4f) walkableCand=%d totalCand=%d",
+                                  earliest.triangleIndex,
+                                  earliest.normal.x, earliest.normal.y, earliest.normal.z,
+                                  bestTri, walkTri.normal.x, walkTri.normal.y, walkTri.normal.z,
+                                  bestScore, remainingMove.x, remainingMove.y, remainingMove.z,
+                                  walkableCandidates, totalChecked);
                     if (glm::dot(remainingMove, remainingMove) < 0.000001f) break;
                     continue;
+                } else {
+                    LOG_COLLISION("seam_fail", "[SEAM_FAIL] edgeTri=%d edgeN=(%.3f,%.3f,%.3f)"
+                                  " walkableCand=%d totalCand=%d bestScore=%.3f horizMove=%.3f"
+                                  " feetZ=%.3f hitPointZ=%.3f",
+                                  earliest.triangleIndex,
+                                  earliest.normal.x, earliest.normal.y, earliest.normal.z,
+                                  walkableCandidates, totalChecked, bestScore,
+                                  horizMove, feetZ, earliest.point.z);
                 }
-                // No walkable normal found — restore stepMove and fall through to normal slide
-                remainingMove += stepMove;
             }
         }
 
         glm::vec3 depen = earliest.normal;
 
-        if (depen.z > 0.0f && depen.z < 0.7f)
+        // Only zero depenetration Z for near-horizontal normals (walls).
+        // Moderate slopes (z >= 0.2) keep upward push — without this the
+        // player gets pushed horizontally into the slope instead of riding up it.
+        if (depen.z > 0.0f && depen.z < 0.2f)
             depen.z = 0.0f;
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-            printf("[COLL]   normalSlide: preSlideDepen=(%.3f,%.3f,%.3f) stepMove=(%.4f,%.4f,%.4f)\n",
+            Debug::log(Debug::Category::Collision, "[COLL]   normalSlide: preSlideDepen=(%.3f,%.3f,%.3f) stepMove=(%.4f,%.4f,%.4f)\n",
                    depen.x, depen.y, depen.z, stepMove.x, stepMove.y, stepMove.z);
 
         if (glm::length(depen) > 0.0001f)
@@ -382,25 +435,19 @@ void doGLBSweepSlide(
             DebugVis::recordHit(hit.point, hit.normal, hit.triangleIndex, hit.colliderName.c_str());
             DebugVis::recordTriangle(world.collisionMesh.triangles[hit.triangleIndex], hit.triangleIndex, "sweep-hit-triangle");
         }
-        if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
-            glm::vec3 beforeProj = remainingMove;
+        {
+            glm::vec3 beforeSlide = remainingMove;
             remainingMove -= stepMove;
             for (const SweepHit& hit : toiHits) {
                 float vn = glm::dot(remainingMove, hit.normal);
                 if (vn < 0.0f)
                     remainingMove -= hit.normal * vn;
             }
-            printf("[COLL]   slideProj: before=(%.4f,%.4f,%.4f) after=(%.4f,%.4f,%.4f)\n",
-                   beforeProj.x, beforeProj.y, beforeProj.z,
-                   remainingMove.x, remainingMove.y, remainingMove.z);
-        } else {
-            remainingMove -= stepMove;
-            for (const SweepHit& hit : toiHits)
-            {
-                float vn = glm::dot(remainingMove, hit.normal);
-                if (vn < 0.0f)
-                    remainingMove -= hit.normal * vn;
-            }
+            LOG_COLLISION("slide_proj", "[SLIDE] before=(%.4f,%.4f,%.4f) after=(%.4f,%.4f,%.4f) stepMove=(%.4f,%.4f,%.4f) hitNormal=(%.3f,%.3f,%.3f)",
+                          beforeSlide.x, beforeSlide.y, beforeSlide.z,
+                          remainingMove.x, remainingMove.y, remainingMove.z,
+                          stepMove.x, stepMove.y, stepMove.z,
+                          earliest.normal.x, earliest.normal.y, earliest.normal.z);
         }
 
         {
@@ -410,6 +457,7 @@ void doGLBSweepSlide(
                 world, slideCap, slideCandidates);
             trace.maxSlideContacts = std::max(trace.maxSlideContacts, (int)slideContacts.size());
 
+            glm::vec3 before8Pass = remainingMove;
             constexpr int SLIDE_SOLVER_PASSES = 8;
             for (int slidePass = 0; slidePass < SLIDE_SOLVER_PASSES; ++slidePass)
             {
@@ -419,6 +467,13 @@ void doGLBSweepSlide(
                     if (vn < 0.0f)
                         remainingMove -= sc.normal * vn;
                 }
+            }
+            glm::vec3 after8Pass = remainingMove;
+            glm::vec3 slideDelta = after8Pass - before8Pass;
+            if (glm::length(slideDelta) > 0.001f) {
+                LOG_COLLISION("slide8", "[SLIDE] 8-pass: before=(%.4f,%.4f,%.4f) after=(%.4f,%.4f,%.4f) contacts=%zu",
+                              before8Pass.x, before8Pass.y, before8Pass.z,
+                              after8Pass.x, after8Pass.y, after8Pass.z, slideContacts.size());
             }
         }
 
@@ -447,6 +502,11 @@ void doGLBSweepSlide(
             earliest.point.y,
             earliest.point.z
         );
+
+        LOG_COLLISION("iter_end", "[SWEEP] iter=%d end: pos=(%.2f,%.2f,%.2f) remaining=(%.4f,%.4f,%.4f) grounded=%d",
+                      iter, p.pos.x, p.pos.y, p.pos.z,
+                      remainingMove.x, remainingMove.y, remainingMove.z,
+                      (int)groundedThisFrame);
 
         if (glm::dot(remainingMove, remainingMove) < 0.000001f)
             break;

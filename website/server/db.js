@@ -259,7 +259,20 @@ const MIGRATION_STATEMENTS = [
      WHERE current_mmr = 1000
        AND wins = 0
        AND losses = 0
-       AND games_played = 0`
+       AND games_played = 0`,
+
+    // ── Mini Game Scores (Aim Test, etc.) ────────────────────────────────
+
+    `CREATE TABLE IF NOT EXISTS game_scores (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        game_id TEXT NOT NULL,
+        score_value REAL NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMPTZ
+    )`,
+    `CREATE INDEX IF NOT EXISTS game_scores_user_game_idx ON game_scores(user_id, game_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS game_scores_leaderboard_idx ON game_scores(game_id, score_value ASC) WHERE deleted_at IS NULL`,
 ]
 
 export async function runMigrations() {

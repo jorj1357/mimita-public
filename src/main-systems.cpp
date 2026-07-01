@@ -208,6 +208,7 @@ void gameInitSubsystems(Engine& engine)
 
     static Player player;
     player.username = AuthSystem::instance().displayName();
+    Debug::warn(Debug::Category::Auth, "[BOOT] player.username=%s\n", player.username.c_str());
     player.equippedSlot = GetPlayerSettings().equippedSlot;
     CharacterRegistry::instance().scanAll();
     if (!GetPlayerSettings().characterName.empty())
