@@ -22,7 +22,6 @@ static int runBodyWeaponPass(
     const std::unordered_map<std::string, const WeaponColliderConfig*>& cfgMap,
     bool& groundedByWeapon, int pass, int maxPasses)
 {
-    // Reset per-pass BW diagnostics
     gBW = BWInvestigate{};
 
     auto t0 = std::chrono::steady_clock::now();
@@ -31,26 +30,18 @@ static int runBodyWeaponPass(
     std::vector<BodyWeaponSphere> bwSpheres = collectBodyWeaponSpheres(p);
     if (bwSpheres.empty()) return -1;
 
-    auto tb0 = std::chrono::steady_clock::now();
-    AABB bwBounds;
-    bool boundsSet = false;
-    for (const auto& bs : bwSpheres) {
-        glm::vec3 expand(bs.radius + 0.5f);
-        if (!boundsSet) { bwBounds.min = bs.center - expand; bwBounds.max = bs.center + expand; boundsSet = true; }
-        else { bwBounds.min = glm::min(bwBounds.min, bs.center - expand); bwBounds.max = glm::max(bwBounds.max, bs.center + expand); }
-    }
-    auto tbBounds = std::chrono::steady_clock::now();
-    gBW.computeBoundsMs = std::chrono::duration<float, std::milli>(tbBounds - tb0).count();
+    // ── Single broadphase query using the PLAYER'S root capsule AABB ──
+    // This is tight (player-sized + 1m padding) and cannot explode into
+    // a monster AABB like the old combined-sphere approach.
+    // The root capsule covers all body parts and most weapon positions.
+    char rootTag[64];
+    std::snprintf(rootTag, sizeof(rootTag), "body_root_pass_%d", pass);
+    Capsule rootCap = p.getCapsule();
+    std::vector<int> sharedCandidates = gatherGLBTriangles(world, rootCap, glm::vec3(0.0f), rootTag);
+    gBW.candidateCount = (int)sharedCandidates.size();
 
-    std::vector<int> bwCandidates;
-    if (boundsSet) {
-        auto tp0 = std::chrono::steady_clock::now();
-        appendChunkTrianglesForAABB(world, bwBounds, 0.5f, bwCandidates);
-        auto tp1 = std::chrono::steady_clock::now();
-        gBW.broadphaseMs = std::chrono::duration<float, std::milli>(tp1 - tp0).count();
-    }
-
-    std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, bwCandidates, bwSpheres);
+    // ── Body/weapon sphere contact testing against shared candidates ──
+    std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, sharedCandidates, bwSpheres);
     for (const auto& c : bwContacts) {
         p.ground.realWorldContactThisFrame = true;
         p.ground.hasWorldContact = true;
@@ -61,6 +52,7 @@ static int runBodyWeaponPass(
     if (bwContacts.empty())
         return (pass == 0) ? -1 : 0;
 
+    // ── Classify contacts ──
     std::vector<RecoveryContact> walkableContacts, bodyPushContacts, weaponPushContacts;
     for (const auto& c : bwContacts) {
         bool isConfigWeapon = c.label && std::strcmp(c.label, "weapon") != 0;
@@ -83,6 +75,7 @@ static int runBodyWeaponPass(
         }
     }
 
+    // ── Walkable contacts ──
     for (const RecoveryContact& wc : walkableContacts) {
         applyCollisionContact(p, groundedThisFrame, wc.normal, wc.point, wc.penetration, wc.triangleIndex, wc.label);
         if (!groundedByWeapon && wc.label && std::strcmp(wc.label, "weapon") != 0) {
@@ -97,13 +90,12 @@ static int runBodyWeaponPass(
         }
     }
 
-    char rootTag[64];
-    std::snprintf(rootTag, sizeof(rootTag), "body_root_pass_%d", pass);
-    Capsule bwRootCap = p.getCapsule();
-    std::vector<int> bwRootCandidates = gatherGLBTriangles(world, bwRootCap, glm::vec3(0.0f), rootTag);
-    std::vector<RecoveryContact> bwRootContacts = collectCapsuleRecoveryContacts(world, bwRootCap, bwRootCandidates);
+    // ── Root capsule contacts (reuses the same shared candidates) ──
+    std::vector<RecoveryContact> bwRootContacts = collectCapsuleRecoveryContacts(world, rootCap, sharedCandidates);
 
+    // ── Solver: combines root + body push contacts ──
     std::vector<RecoveryContact> solverContacts;
+    solverContacts.reserve(bwRootContacts.size() + bodyPushContacts.size());
     solverContacts.insert(solverContacts.end(), bwRootContacts.begin(), bwRootContacts.end());
     solverContacts.insert(solverContacts.end(), bodyPushContacts.begin(), bodyPushContacts.end());
 
@@ -126,28 +118,25 @@ static int runBodyWeaponPass(
     auto t1 = std::chrono::steady_clock::now();
     double totalMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
-    // BW investigation report
+    // BW report
     Debug::logThrottled(Debug::Category::Collision, "bw-report", 1.0f,
         "[BW REPORT] pass=%d totalMs=%.2f\n"
-        "  spheres=%d (body=%d weaponCapsule=%d config=%d colliders=%d) candidates=%d\n"
+        "  spheres=%d (body=%d weaponCapsule=%d config=%d colliders=%d) sharedCandidates=%d\n"
         "  triangleTests=%d sweepTests=%d staticTests=%d contacts=%d\n"
-        "  collectSpheres=%.3fms bodyParts=%.3fms weaponCap=%.3fms config=%.3fms\n"
-        "  computeBounds=%.3fms broadphase=%.3fms collectContacts=%.3fms\n"
+        "  collectSpheres=%.3fms collectContacts=%.3fms\n"
         "  sweepTriangle=%.3fms sphereContact=%.3fms\n",
         pass, totalMs,
         gBW.sphereCount, gBW.bodyPartSphereCount, gBW.weaponCapsuleSphereCount,
         gBW.configSphereCount, gBW.configColliderCount,
         gBW.candidateCount,
         gBW.triangleTests, gBW.sweepTests, gBW.staticTests, gBW.contactsProduced,
-        gBW.collectSpheresMs, gBW.bodyPartSpheresMs, gBW.weaponCapsuleSpheresMs, gBW.configSpheresMs,
-        gBW.computeBoundsMs, gBW.broadphaseMs, gBW.collectContactsMs,
+        gBW.collectSpheresMs, gBW.collectContactsMs,
         gBW.sweepSphereTriangleMs, gBW.sphereTriangleContactMs);
 
     BODY_LOG(
-        "[BODY PASS] pass=%d spheres=%zu candidates=%zu bwCandidates=%zu rootCandidates=%zu "
+        "[BODY PASS] pass=%d spheres=%zu sharedCandidates=%zu "
         "bwContacts=%zu walkable=%zu bodyPush=%zu weaponPush=%zu rootContacts=%zu solverContacts=%zu elapsedMs=%.2f\n",
-        pass, bwSpheres.size(), bwCandidates.size() + bwRootCandidates.size(),
-        bwCandidates.size(), bwRootCandidates.size(),
+        pass, bwSpheres.size(), sharedCandidates.size(),
         bwContacts.size(), walkableContacts.size(), bodyPushContacts.size(), weaponPushContacts.size(),
         bwRootContacts.size(), solverContacts.size(), totalMs);
 
@@ -182,7 +171,7 @@ static void debugBodyWeaponPhase(
             else { dbgBounds.min = glm::min(dbgBounds.min, bs.center - expand); dbgBounds.max = glm::max(dbgBounds.max, bs.center + expand); }
         }
         std::vector<int> dbgCandidates;
-        if (dbgSet) appendChunkTrianglesForAABB(world, dbgBounds, 0.5f, dbgCandidates);
+        if (dbgSet) appendChunkTrianglesForAABB(world, dbgBounds, 0.5f, dbgCandidates, "debugBodyWeaponPhase");
         auto dbgContacts = collectBodyWeaponContacts(p, world, dbgCandidates, debugSpheres);
         for (const auto& c : dbgContacts) {
             if (c.label && std::strcmp(c.label, "weapon") == 0) continue;

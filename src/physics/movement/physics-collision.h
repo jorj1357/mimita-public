@@ -68,7 +68,8 @@ void appendChunkTrianglesForAABB(
     const World& world,
     const AABB& queryBounds,
     float expansion,
-    std::vector<int>& out
+    std::vector<int>& out,
+    const char* caller = nullptr
 );
 
 // Batched multi-contact depenetration solver.

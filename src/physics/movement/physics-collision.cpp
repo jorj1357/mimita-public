@@ -52,14 +52,16 @@ void appendChunkTrianglesForAABB(
     const World& world,
     const AABB& queryBounds,
     float expansion,
-    std::vector<int>& out
+    std::vector<int>& out,
+    const char* caller
 ) {
     auto t0 = std::chrono::steady_clock::now();
 
     // ── NaN/Inf guard ─────────────────────────────────
     if (!isFiniteAABB(queryBounds))
     {
-        CHUNK_WARN("[CHUNK GUARD] Non-finite queryBounds min=(%f %f %f) max=(%f %f %f)\n",
+        CHUNK_WARN("[CHUNK GUARD] caller=%s Non-finite queryBounds min=(%f %f %f) max=(%f %f %f)\n",
+                    caller ? caller : "?",
                     queryBounds.min.x, queryBounds.min.y, queryBounds.min.z,
                     queryBounds.max.x, queryBounds.max.y, queryBounds.max.z);
         return;
@@ -86,8 +88,8 @@ void appendChunkTrianglesForAABB(
         }
         auto t1 = std::chrono::steady_clock::now();
         float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
-        CHUNK_LOG("[CHUNK FALLBACK] totalTris=%zu candidates=%zu elapsedMs=%.3f\n",
-                   world.collisionMesh.triangles.size(), out.size(), ms);
+        CHUNK_LOG("[CHUNK FALLBACK] caller=%s totalTris=%zu candidates=%zu elapsedMs=%.3f\n",
+                   caller ? caller : "?", world.collisionMesh.triangles.size(), out.size(), ms);
         return;
     }
 
@@ -107,9 +109,10 @@ void appendChunkTrianglesForAABB(
     if (cellsX <= 0 || cellsY <= 0 || cellsZ <= 0 ||
         cellsX > MAX_CELLS_PER_AXIS || cellsY > MAX_CELLS_PER_AXIS || cellsZ > MAX_CELLS_PER_AXIS)
     {
-        CHUNK_WARN("[CHUNK GUARD] Excessive cell range clamped: "
+        CHUNK_WARN("[CHUNK GUARD] caller=%s Excessive cell range clamped: "
                     "aabb min=(%.1f %.1f %.1f) max=(%.1f %.1f %.1f) "
                     "cells=(%lld %lld %lld) c0=(%d %d %d) c1=(%d %d %d)\n",
+                    caller ? caller : "?",
                     clamped.min.x, clamped.min.y, clamped.min.z,
                     clamped.max.x, clamped.max.y, clamped.max.z,
                     (long long)cellsX, (long long)cellsY, (long long)cellsZ,
@@ -167,16 +170,18 @@ void appendChunkTrianglesForAABB(
     // Log whenever cells or triangles are suspiciously high
     if (cellCount > 200 || out.size() > 500)
     {
-        CHUNK_WARN("[CHUNK QUERY] aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) "
+        CHUNK_WARN("[CHUNK QUERY] caller=%s aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) "
                     "cells=%d/%lld uniqueTris=%zu elapsedMs=%.3f\n",
+                    caller ? caller : "?",
                     clamped.min.x, clamped.min.y, clamped.min.z,
                     clamped.max.x, clamped.max.y, clamped.max.z,
                     cellCount, (long long)totalCells, out.size(), ms);
     }
     else
     {
-        CHUNK_LOG("[CHUNK QUERY] aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) "
+        CHUNK_LOG("[CHUNK QUERY] caller=%s aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) "
                    "cells=%d uniqueTris=%zu elapsedMs=%.3f\n",
+                   caller ? caller : "?",
                    clamped.min.x, clamped.min.y, clamped.min.z,
                    clamped.max.x, clamped.max.y, clamped.max.z,
                    cellCount, out.size(), ms);

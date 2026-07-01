@@ -32,7 +32,7 @@ std::vector<int> gatherGLBTrianglesForSphere(
     AABB sweepBounds;
     sweepBounds.min = glm::min(center, center + move) - glm::vec3(radius);
     sweepBounds.max = glm::max(center, center + move) + glm::vec3(radius);
-    appendChunkTrianglesForAABB(world, sweepBounds, radius, out);
+    appendChunkTrianglesForAABB(world, sweepBounds, radius, out, "gatherGLBTrianglesForSphere");
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     if (caller) {
