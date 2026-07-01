@@ -22,12 +22,16 @@ static int runBodyWeaponPass(
     const std::unordered_map<std::string, const WeaponColliderConfig*>& cfgMap,
     bool& groundedByWeapon, int pass, int maxPasses)
 {
+    // Reset per-pass BW diagnostics
+    gBW = BWInvestigate{};
+
     auto t0 = std::chrono::steady_clock::now();
     p.updateModelWorldTransforms();
     recomputeWeaponCapsule(p);
     std::vector<BodyWeaponSphere> bwSpheres = collectBodyWeaponSpheres(p);
     if (bwSpheres.empty()) return -1;
 
+    auto tb0 = std::chrono::steady_clock::now();
     AABB bwBounds;
     bool boundsSet = false;
     for (const auto& bs : bwSpheres) {
@@ -35,10 +39,16 @@ static int runBodyWeaponPass(
         if (!boundsSet) { bwBounds.min = bs.center - expand; bwBounds.max = bs.center + expand; boundsSet = true; }
         else { bwBounds.min = glm::min(bwBounds.min, bs.center - expand); bwBounds.max = glm::max(bwBounds.max, bs.center + expand); }
     }
+    auto tbBounds = std::chrono::steady_clock::now();
+    gBW.computeBoundsMs = std::chrono::duration<float, std::milli>(tbBounds - tb0).count();
 
     std::vector<int> bwCandidates;
-    if (boundsSet)
+    if (boundsSet) {
+        auto tp0 = std::chrono::steady_clock::now();
         appendChunkTrianglesForAABB(world, bwBounds, 0.5f, bwCandidates);
+        auto tp1 = std::chrono::steady_clock::now();
+        gBW.broadphaseMs = std::chrono::duration<float, std::milli>(tp1 - tp0).count();
+    }
 
     std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, bwCandidates, bwSpheres);
     for (const auto& c : bwContacts) {
@@ -114,14 +124,32 @@ static int runBodyWeaponPass(
     }
 
     auto t1 = std::chrono::steady_clock::now();
-    float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    double totalMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+
+    // BW investigation report
+    Debug::logThrottled(Debug::Category::Collision, "bw-report", 1.0f,
+        "[BW REPORT] pass=%d totalMs=%.2f\n"
+        "  spheres=%d (body=%d weaponCapsule=%d config=%d colliders=%d) candidates=%d\n"
+        "  triangleTests=%d sweepTests=%d staticTests=%d contacts=%d\n"
+        "  collectSpheres=%.3fms bodyParts=%.3fms weaponCap=%.3fms config=%.3fms\n"
+        "  computeBounds=%.3fms broadphase=%.3fms collectContacts=%.3fms\n"
+        "  sweepTriangle=%.3fms sphereContact=%.3fms\n",
+        pass, totalMs,
+        gBW.sphereCount, gBW.bodyPartSphereCount, gBW.weaponCapsuleSphereCount,
+        gBW.configSphereCount, gBW.configColliderCount,
+        gBW.candidateCount,
+        gBW.triangleTests, gBW.sweepTests, gBW.staticTests, gBW.contactsProduced,
+        gBW.collectSpheresMs, gBW.bodyPartSpheresMs, gBW.weaponCapsuleSpheresMs, gBW.configSpheresMs,
+        gBW.computeBoundsMs, gBW.broadphaseMs, gBW.collectContactsMs,
+        gBW.sweepSphereTriangleMs, gBW.sphereTriangleContactMs);
+
     BODY_LOG(
         "[BODY PASS] pass=%d spheres=%zu candidates=%zu bwCandidates=%zu rootCandidates=%zu "
         "bwContacts=%zu walkable=%zu bodyPush=%zu weaponPush=%zu rootContacts=%zu solverContacts=%zu elapsedMs=%.2f\n",
         pass, bwSpheres.size(), bwCandidates.size() + bwRootCandidates.size(),
         bwCandidates.size(), bwRootCandidates.size(),
         bwContacts.size(), walkableContacts.size(), bodyPushContacts.size(), weaponPushContacts.size(),
-        bwRootContacts.size(), solverContacts.size(), elapsedMs);
+        bwRootContacts.size(), solverContacts.size(), totalMs);
 
     return (int)bwContacts.size();
 }
@@ -189,9 +217,9 @@ static void debugBodyWeaponPhase(
                 if (sphereTriangleContact(tipPos, r, tri, tipContact) && tipContact.penetration > 0.002f) {
                     tipPenetrating = true;
                     tipCollider = wc.name.c_str();
-                    printf("[WEAPON_TIP_CONTACT] weapon=%s collider=%s tip=end pen=%.3f normal=(%.2f %.2f %.2f)\n",
-                           p.equippedWeaponId.c_str(), wc.name.c_str(),
-                           tipContact.penetration, tipContact.normal.x, tipContact.normal.y, tipContact.normal.z);
+                    Debug::log(Debug::Category::Weapons, "[WEAPON_TIP_CONTACT] weapon=%s collider=%s tip=end pen=%.3f normal=(%.2f %.2f %.2f)\n",
+                               p.equippedWeaponId.c_str(), wc.name.c_str(),
+                               tipContact.penetration, tipContact.normal.x, tipContact.normal.y, tipContact.normal.z);
                 }
             }
         }

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <vector>
 #include <cmath>
@@ -9,6 +10,10 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "debug/debug-log.h"
+
+#define BWLOG(...) Debug::logThrottled(Debug::Category::Collision, "bw-investigate", 1.0f, __VA_ARGS__)
+
+BWInvestigate gBW;
 
 static bool computeBodyPartCenter(
     const glm::mat4& xform,
@@ -58,7 +63,9 @@ void collectWeaponConfigSpheres(
     Player& p,
     std::vector<BodyWeaponSphere>& spheres
 ) {
+    auto t0 = std::chrono::steady_clock::now();
     auto& cfg = p.weaponCollisionConfig;
+    gBW.configColliderCount = (int)cfg.colliders.size();
     if (!cfg.enabled || cfg.colliders.empty())
         return;
 
@@ -110,6 +117,8 @@ void collectWeaponConfigSpheres(
         float totalLen = domLen * 2.0f;
         int sampleCount = std::max(5, std::min(64, (int)(totalLen / sampleSpacing) + 1));
 
+        gBW.configSpheresGenerated += sampleCount;
+
         for (int si = 0; si < sampleCount; ++si)
         {
             float t = (sampleCount > 1)
@@ -119,56 +128,75 @@ void collectWeaponConfigSpheres(
             spheres.push_back({pos, r, wc.name.c_str(), glm::vec3(0.0f)});
         }
     }
+
+    auto t1 = std::chrono::steady_clock::now();
+    gBW.configSpheresMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
 }
 
 // Collect sphere samples from all body parts + weapon for contact testing.
 // Returns spheres with their movement delta (root movement + animation delta).
 std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
 {
-    constexpr int SPHERES_PER_CAPSULE = 5;
+    auto t0 = std::chrono::steady_clock::now();
     std::vector<BodyWeaponSphere> spheres;
-    spheres.reserve(p.physicalBody.parts.size() * SPHERES_PER_CAPSULE + SPHERES_PER_CAPSULE);
+    spheres.reserve(p.physicalBody.parts.size() + 64);
 
-    glm::vec3 rootMove = p.vel * 0.0f; // static check at current position
+    glm::vec3 rootMove = p.vel * 0.0f;
 
-    // 1. Body part spheres
-    for (const PhysicalBodyPart& part : p.physicalBody.parts)
+    // 1. Body part spheres (one per part — no redundancy)
     {
-        glm::vec3 center;
-        float radius;
-        if (!computeBodyPartCenter(part.worldTransform, part.collider, center, radius))
-            continue;
-
-        glm::vec3 prevCenter;
-        computeBodyPartCenter(part.previousWorldTransform, part.collider, prevCenter, radius);
-        glm::vec3 sweepDelta = center - prevCenter;
-
-        for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)
+        auto tb0 = std::chrono::steady_clock::now();
+        int partCount = 0;
+        for (const PhysicalBodyPart& part : p.physicalBody.parts)
         {
+            glm::vec3 center;
+            float radius;
+            if (!computeBodyPartCenter(part.worldTransform, part.collider, center, radius))
+                continue;
+            ++partCount;
+
+            glm::vec3 prevCenter;
+            computeBodyPartCenter(part.previousWorldTransform, part.collider, prevCenter, radius);
+            glm::vec3 sweepDelta = center - prevCenter;
+
             spheres.push_back({center, radius, part.name.c_str(), sweepDelta});
         }
+        auto tb1 = std::chrono::steady_clock::now();
+        gBW.bodyPartSphereCount = partCount;
+        gBW.bodyPartSpheresMs = std::chrono::duration<float, std::milli>(tb1 - tb0).count();
     }
 
     // 2. Weapon capsule spheres (dense sampling)
-    if (p.collision.hasWeaponCollisionCapsule)
     {
-        const Capsule& wc = p.weaponCollisionCapsule;
-        float capLen = glm::length(wc.b - wc.a);
-        float sampleSpacing = std::max(wc.r * 0.75f, 0.05f);
-        int capSamples = (capLen > 0.001f)
-            ? std::max(5, std::min(64, (int)(capLen / sampleSpacing) + 1))
-            : 5;
-        for (int si = 0; si < capSamples; ++si)
+        auto tw0 = std::chrono::steady_clock::now();
+        if (p.collision.hasWeaponCollisionCapsule)
         {
-            float t = (capSamples > 1)
-                ? (float)si / (float)(capSamples - 1) : 0.5f;
-            glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
-            spheres.push_back({spherePos, wc.r, "weapon", glm::vec3(0.0f)});
+            const Capsule& wc = p.weaponCollisionCapsule;
+            float capLen = glm::length(wc.b - wc.a);
+            float sampleSpacing = std::max(wc.r * 0.75f, 0.05f);
+            int capSamples = (capLen > 0.001f)
+                ? std::max(5, std::min(64, (int)(capLen / sampleSpacing) + 1))
+                : 5;
+            gBW.weaponCapsuleSphereCount = capSamples;
+            for (int si = 0; si < capSamples; ++si)
+            {
+                float t = (capSamples > 1)
+                    ? (float)si / (float)(capSamples - 1) : 0.5f;
+                glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
+                spheres.push_back({spherePos, wc.r, "weapon", glm::vec3(0.0f)});
+            }
         }
+        auto tw1 = std::chrono::steady_clock::now();
+        gBW.weaponCapsuleSpheresMs = std::chrono::duration<float, std::milli>(tw1 - tw0).count();
     }
 
     // 3. Configurable weapon collider spheres (from weapon JSON collision config)
     collectWeaponConfigSpheres(p, spheres);
+    gBW.configSphereCount = gBW.configSpheresGenerated;
+
+    gBW.sphereCount = (int)spheres.size();
+    auto t1 = std::chrono::steady_clock::now();
+    gBW.collectSpheresMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
     return spheres;
 }
@@ -181,39 +209,67 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
     const std::vector<int>& candidates,
     const std::vector<BodyWeaponSphere>& spheres
 ) {
+    auto t0 = std::chrono::steady_clock::now();
     std::vector<RecoveryContact> contacts;
     constexpr float SLIDE_SLOP = 0.002f;
+
+    gBW.candidateCount = (int)candidates.size();
+    int totalTests = 0;
+    int sweepHits = 0;
 
     for (const BodyWeaponSphere& bs : spheres)
     {
         for (int triIdx : candidates)
         {
+            ++totalTests;
             if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())
                 continue;
 
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
 
-            float hitTime = 1.0f;
-            glm::vec3 hitNormal, hitPoint;
-            if (sweepSphereTriangle(bs.center, bs.sweepDelta, bs.radius, tri,
-                                    hitTime, hitNormal, hitPoint) && hitTime < 1.0f)
+            // Sweep test: skip for static spheres (no movement delta)
+            // to avoid paying for sweepSphereTriangle when it always early-outs.
+            if (glm::dot(bs.sweepDelta, bs.sweepDelta) > 0.000001f)
             {
-                float depth = bs.radius - glm::dot(bs.center - hitPoint, hitNormal);
-                if (depth > SLIDE_SLOP) {
-                    contacts.push_back({hitNormal, hitPoint, depth, triIdx, nullptr, bs.label});
-                    continue;
+                float hitTime = 1.0f;
+                glm::vec3 hitNormal, hitPoint;
+                auto tsw0 = std::chrono::steady_clock::now();
+                bool sweepHit = sweepSphereTriangle(bs.center, bs.sweepDelta, bs.radius, tri,
+                                                    hitTime, hitNormal, hitPoint);
+                auto tsw1 = std::chrono::steady_clock::now();
+                gBW.sweepSphereTriangleMs += std::chrono::duration<float, std::milli>(tsw1 - tsw0).count();
+                gBW.sweepTests++;
+
+                if (sweepHit && hitTime < 1.0f)
+                {
+                    float depth = bs.radius - glm::dot(bs.center - hitPoint, hitNormal);
+                    if (depth > SLIDE_SLOP) {
+                        contacts.push_back({hitNormal, hitPoint, depth, triIdx, nullptr, bs.label});
+                        ++sweepHits;
+                        continue;
+                    }
                 }
             }
 
-            glm::vec3 normal;
-            float depth;
+            auto tst0 = std::chrono::steady_clock::now();
             Contact c;
-            if (sphereTriangleContact(bs.center, bs.radius, tri, c) && c.penetration > SLIDE_SLOP)
+            bool staticHit = sphereTriangleContact(bs.center, bs.radius, tri, c);
+            auto tst1 = std::chrono::steady_clock::now();
+            gBW.sphereTriangleContactMs += std::chrono::duration<float, std::milli>(tst1 - tst0).count();
+            gBW.staticTests++;
+
+            if (staticHit && c.penetration > SLIDE_SLOP)
             {
                 contacts.push_back({c.normal, c.point, c.penetration, triIdx, nullptr, bs.label});
             }
         }
     }
+
+    gBW.triangleTests = totalTests;
+    gBW.contactsProduced = (int)contacts.size();
+
+    auto t1 = std::chrono::steady_clock::now();
+    gBW.collectContactsMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
     return contacts;
 }
