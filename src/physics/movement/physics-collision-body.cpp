@@ -51,12 +51,13 @@ void recomputeWeaponCapsule(Player& p)
 }
 
 // Generate sphere samples for configurable weapon colliders from JSON collision config.
-// Each collider is sampled as SPHERES_PER_CAPSULE spheres distributed along its dominant axis.
+// Uses dense sampling with dynamic count based on collider length and radius,
+// ensuring no gaps exist between samples (sampleSpacing = radius * 0.75).
+// Always includes explicit endpoint spheres at both ends.
 void collectWeaponConfigSpheres(
     Player& p,
     std::vector<BodyWeaponSphere>& spheres
 ) {
-    constexpr int SPHERES_PER_CAPSULE = 5;
     auto& cfg = p.weaponCollisionConfig;
     if (!cfg.enabled || cfg.colliders.empty())
         return;
@@ -83,6 +84,7 @@ void collectWeaponConfigSpheres(
         float domLen = ex;
         if (ey > domLen) { domAxis = 1; domLen = ey; }
         if (ez > domLen) { domAxis = 2; domLen = ez; }
+        if (domLen < 0.001f) domLen = 0.001f;
 
         // Local axis direction in world space
         glm::vec3 axisDir(0.0f);
@@ -92,20 +94,26 @@ void collectWeaponConfigSpheres(
         // Center point in world space
         glm::vec3 center = glm::vec3(worldXform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
-        // Sphere radius = half of the smaller-face diagonal, clamped to reasonable range
+        // Sphere radius = half of the smaller-face diagonal, clamped
         float r = 0.15f;
         {
             float s1 = (domAxis == 0) ? ey : ex;
             float s2 = (domAxis == 2) ? ey : ez;
             r = std::sqrt(s1 * s1 + s2 * s2);
-            r = std::max(r, 0.12f);
+            r = std::max(r, 0.10f);
             r = std::min(r, 0.40f);
         }
 
-        for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)
+        // Dynamic sample count: spacing = radius * 0.75 ensures overlap
+        // between adjacent spheres so there are no gaps.
+        float sampleSpacing = std::max(r * 0.75f, 0.05f);
+        float totalLen = domLen * 2.0f;
+        int sampleCount = std::max(5, std::min(64, (int)(totalLen / sampleSpacing) + 1));
+
+        for (int si = 0; si < sampleCount; ++si)
         {
-            float t = (SPHERES_PER_CAPSULE > 1)
-                ? (float)si / (float)(SPHERES_PER_CAPSULE - 1) * 2.0f - 1.0f
+            float t = (sampleCount > 1)
+                ? (float)si / (float)(sampleCount - 1) * 2.0f - 1.0f
                 : 0.0f;
             glm::vec3 pos = center + worldAxis * domLen * t;
             spheres.push_back({pos, r, wc.name.c_str(), glm::vec3(0.0f)});
@@ -141,14 +149,19 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
         }
     }
 
-    // 2. Weapon capsule spheres
+    // 2. Weapon capsule spheres (dense sampling)
     if (p.collision.hasWeaponCollisionCapsule)
     {
         const Capsule& wc = p.weaponCollisionCapsule;
-        for (int si = 0; si < SPHERES_PER_CAPSULE; ++si)
+        float capLen = glm::length(wc.b - wc.a);
+        float sampleSpacing = std::max(wc.r * 0.75f, 0.05f);
+        int capSamples = (capLen > 0.001f)
+            ? std::max(5, std::min(64, (int)(capLen / sampleSpacing) + 1))
+            : 5;
+        for (int si = 0; si < capSamples; ++si)
         {
-            float t = (SPHERES_PER_CAPSULE > 1)
-                ? (float)si / (float)(SPHERES_PER_CAPSULE - 1) : 0.5f;
+            float t = (capSamples > 1)
+                ? (float)si / (float)(capSamples - 1) : 0.5f;
             glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
             spheres.push_back({spherePos, wc.r, "weapon", glm::vec3(0.0f)});
         }
