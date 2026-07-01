@@ -1,10 +1,14 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-glb-sweep.h"
 
+#include <chrono>
 #include <cmath>
 #include <glm/glm.hpp>
 #include <cstdio>
 #include "world/world.h"
+#include "debug/debug-log.h"
+
+#define CONTACT_LOG(...) Debug::logThrottled(Debug::Category::Collision, "contact-collect", 1.0f, __VA_ARGS__)
 
 bool sphereTriangleContact(
     glm::vec3 center,
@@ -91,6 +95,7 @@ std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const Capsule& cap,
     const std::vector<int>& candidates
 ) {
+    auto t0 = std::chrono::steady_clock::now();
     std::vector<RecoveryContact> contacts;
     constexpr int SAMPLE_COUNT = 5;
     for (int triIndex : candidates)
@@ -116,6 +121,16 @@ std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
             }
         }
     }
+    auto t1 = std::chrono::steady_clock::now();
+    float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    CONTACT_LOG(
+        "[CONTACT_CAPSULE] candidates=%zu contacts=%zu samples=%d elapsedMs=%.2f\n",
+        candidates.size(), contacts.size(), SAMPLE_COUNT, elapsedMs);
+    if (contacts.size() > 50) {
+        Debug::warn(Debug::Category::Collision,
+            "[CONTACT WARNING] collectCapsuleRecoveryContacts: %zu contacts exceeds threshold 50\n",
+            contacts.size());
+    }
     return contacts;
 }
 
@@ -126,7 +141,9 @@ std::vector<RecoveryContact> collectGLBRecoveryContacts(
     const std::vector<int>& candidates,
     float bodySampleRadius
 ) {
+    auto t0 = std::chrono::steady_clock::now();
     std::vector<RecoveryContact> contacts;
+    int capsuleHits = 0, sphereHits = 0;
     for (int triIndex : candidates)
     {
         if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
@@ -143,6 +160,7 @@ std::vector<RecoveryContact> collectGLBRecoveryContacts(
             rc.block = nullptr;
             rc.label = "glb-body-recovery";
             contacts.push_back(rc);
+            ++capsuleHits;
         }
         for (const glm::vec3& sample : bodySamples)
         {
@@ -157,8 +175,14 @@ std::vector<RecoveryContact> collectGLBRecoveryContacts(
                 rc.block = nullptr;
                 rc.label = "glb-sphere-recovery";
                 contacts.push_back(rc);
+                ++sphereHits;
             }
         }
     }
+    auto t1 = std::chrono::steady_clock::now();
+    float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    CONTACT_LOG(
+        "[CONTACT_GLB] candidates=%zu capsuleHits=%d sphereHits=%d total=%zu bodySamples=%zu elapsedMs=%.2f\n",
+        candidates.size(), capsuleHits, sphereHits, contacts.size(), bodySamples.size(), elapsedMs);
     return contacts;
 }

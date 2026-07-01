@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <vector>
 #include <cmath>
@@ -20,6 +21,7 @@
 #include "physics/movement/physics-collision-shared.h"
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+#define BLOCK_LOG(...) Debug::logThrottled(Debug::Category::Collision, "block-pipeline", 1.0f, __VA_ARGS__)
 
 extern CollisionTraceSnapshot gLastCollisionTrace;
 
@@ -105,20 +107,21 @@ void doCollisions(
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
             Capsule debugCap = p.getCapsule();
-            std::vector<int> debugCands = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f));
+            std::vector<int> debugCands = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "dispatch_debug");
             std::vector<glm::vec3> debugSamps = collectPlayerBodyCollisionSamples(p);
             std::vector<RecoveryContact> reportContacts = collectGLBRecoveryContacts(
                 world, debugCap, debugSamps, debugCands, BODY_SAMPLE_RADIUS);
             float maxPen = 0.0f;
             for (const auto& rc : reportContacts)
                 maxPen = std::max(maxPen, rc.penetration);
-            printf("[COLLISION] contacts=%zu penetration=%.4f\n",
-                   reportContacts.size(), maxPen);
+            Debug::log(Debug::Category::Collision, "[COLLISION] contacts=%zu penetration=%.4f\n",
+                       reportContacts.size(), maxPen);
         }
 
         return;
     }
 
+    auto tBlockStart = std::chrono::steady_clock::now();
     glm::vec3 move = (p.vel + p.externalImpulse) * dt;
 
     Capsule cap = p.getCapsule();
@@ -145,8 +148,13 @@ void doCollisions(
     }
     nearbyBlocks = uniqueNearbyBlocks;
 
+    BLOCK_LOG("[BLOCK INIT] nearbyBlocks=%zu move=(%.3f %.3f %.3f)\n",
+              nearbyBlocks.size(), move.x, move.y, move.z);
+
+    int blockSweepIters = 0;
     for (int i = 0; i < 4; i++)
     {
+        blockSweepIters++;
         float earliest = 1.0f;
         glm::vec3 hitNormal(0.0f);
         glm::vec3 sweepStart = p.pos;
@@ -257,7 +265,7 @@ void doCollisions(
 
                     if (!blocked)
                     {
-                        PHYS_LOG("[STEP] stepped up %.3f\n", stepHeight);
+                        BLOCK_LOG("[BLOCK STEP] stepped up %.3f\n", stepHeight);
                         cap = p.getCapsule();
                         groundedThisFrame = true;
 
@@ -305,49 +313,58 @@ void doCollisions(
         p.pos += nudge;
         DebugVis::recordDepenetration(sweepStart + stepMove, nudge, "block-sweep-margin");
     }
+    BLOCK_LOG("[BLOCK SWEEP] iters=%d remaining=(%.4f %.4f %.4f)\n",
+              blockSweepIters, move.x, move.y, move.z);
 
     constexpr float BLOCK_DEPEN_SLOP = 0.002f;
     constexpr float BLOCK_MAX_CORRECTION = 2.0f;
     constexpr int MAX_BLOCK_RECOVERY_ITERATIONS = 6;
-    for (int recoverIter = 0; recoverIter < MAX_BLOCK_RECOVERY_ITERATIONS; ++recoverIter)
+    int blockDepenIters = 0;
+    int blockDepenContacts = 0;
     {
-        cap = p.getCapsule();
-        std::vector<RecoveryContact> contacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
-
-        if (contacts.empty())
-            break;
-
-        glm::vec3 correction = solveBatchedCorrection(contacts, BLOCK_DEPEN_SLOP, nullptr, nullptr, move, p.pos);
-        float corrLen = glm::length(correction);
-        if (corrLen > BLOCK_MAX_CORRECTION)
-            correction *= BLOCK_MAX_CORRECTION / corrLen;
-
-        p.pos += correction;
-
-        for (const RecoveryContact& c : contacts)
+        auto t0 = std::chrono::steady_clock::now();
+        for (int recoverIter = 0; recoverIter < MAX_BLOCK_RECOVERY_ITERATIONS; ++recoverIter)
         {
-            applyCollisionContact(
-                p, groundedThisFrame,
-                c.normal, c.point, c.penetration,
-                c.triangleIndex, c.label
-            );
+            blockDepenIters++;
+            cap = p.getCapsule();
+            std::vector<RecoveryContact> contacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
+            blockDepenContacts = (int)contacts.size();
+
+            if (contacts.empty())
+                break;
+
+            glm::vec3 correction = solveBatchedCorrection(contacts, BLOCK_DEPEN_SLOP, nullptr, nullptr, move, p.pos);
+            float corrLen = glm::length(correction);
+            if (corrLen > BLOCK_MAX_CORRECTION)
+                correction *= BLOCK_MAX_CORRECTION / corrLen;
+
+            p.pos += correction;
+
+            for (const RecoveryContact& c : contacts)
+            {
+                applyCollisionContact(
+                    p, groundedThisFrame,
+                    c.normal, c.point, c.penetration,
+                    c.triangleIndex, c.label
+                );
+            }
+
+            DebugVis::recordDepenetration(p.pos - correction, correction, "block-batched-depen");
+
+            if (glm::dot(correction, correction) < 0.0000001f)
+                break;
         }
-
-        DebugVis::recordDepenetration(p.pos - correction, correction, "block-batched-depen");
-
-        PHYS_LOG(
-            "[PHYS][BLOCK DEPEN] iter=%d contacts=%zu correction=(%.4f %.4f %.4f)\n",
-            recoverIter, contacts.size(),
-            correction.x, correction.y, correction.z
-        );
-
-        if (glm::dot(correction, correction) < 0.0000001f)
-            break;
+        auto t1 = std::chrono::steady_clock::now();
+        float depenMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        BLOCK_LOG("[BLOCK DEPEN] iters=%d contacts=%d elapsedMs=%.2f\n",
+                  blockDepenIters, blockDepenContacts, depenMs);
     }
 
     cap = p.getCapsule();
     {
+        auto t0 = std::chrono::steady_clock::now();
         std::vector<RecoveryContact> remaining = collectBlockContactsForCapsule(cap, nearbyBlocks);
+        bool escaped = false;
         if (!remaining.empty()) {
             glm::vec3 weightedNormal(0.0f);
             for (const RecoveryContact& c : remaining)
@@ -358,16 +375,21 @@ void doCollisions(
                 p.pos += escape;
                 p.vel = glm::vec3(0.0f);
                 DebugVis::recordDepenetration(before, escape, "block-overlap-escape");
-                PHYS_LOG("[PHYS][BLOCK ESCAPE] contacts=%zu correction=(%.4f %.4f %.4f)\n",
-                         remaining.size(), escape.x, escape.y, escape.z);
+                escaped = true;
             }
         }
+        auto t1 = std::chrono::steady_clock::now();
+        float escapeMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        BLOCK_LOG("[BLOCK ESCAPE] remaining=%zu escaped=%d elapsedMs=%.2f\n",
+                  remaining.size(), (int)escaped, escapeMs);
     }
 
     {
+        auto t0 = std::chrono::steady_clock::now();
         constexpr float GROUND_SNAP_DISTANCE = 0.25f;
         constexpr float MAX_UPWARD_VEL_FOR_SNAP = 1.0f;
 
+        float snapAmount = 0.0f;
         if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
         {
             Capsule checkCap = p.getCapsule();
@@ -394,13 +416,11 @@ void doCollisions(
                 float distToGround = feetZ - bestGroundZ;
                 if (distToGround > 0.0f && distToGround < GROUND_SNAP_DISTANCE)
                 {
-                    float snapAmount = distToGround;
+                    snapAmount = distToGround;
                     p.pos.z -= snapAmount;
 
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;
-
-                    PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to block ground at %.2f\n", snapAmount, bestGroundZ);
 
                     {
                         Capsule postSnapCap = p.getCapsule();
@@ -421,32 +441,37 @@ void doCollisions(
                 }
             }
         }
+        auto t1 = std::chrono::steady_clock::now();
+        float snapMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        BLOCK_LOG("[BLOCK GROUND SNAP] snapped=%.4f elapsedMs=%.2f\n", snapAmount, snapMs);
     }
 
     cap = p.getCapsule();
-    std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
-    for (const RecoveryContact& c : blockContacts)
     {
-        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
-            continue;
-
-        glm::vec3 beforeVel = p.vel;
-        projectVelocityAgainstNormal(p, c.normal);
-
-        if (DebugConfig::DEBUG_COLLISION_SYSTEM && glm::length(beforeVel - p.vel) > 0.01f) {
-            printf("[COLLISION SLIDE] block before=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) after=(%.2f %.2f %.2f)\n",
-                beforeVel.x, beforeVel.y, beforeVel.z,
-                c.normal.x, c.normal.y, c.normal.z,
-                p.vel.x, p.vel.y, p.vel.z);
+        auto t0 = std::chrono::steady_clock::now();
+        std::vector<RecoveryContact> blockContacts = collectBlockContactsForCapsule(cap, nearbyBlocks);
+        for (const RecoveryContact& c : blockContacts)
+        {
+            if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
+                continue;
+            projectVelocityAgainstNormal(p, c.normal);
         }
-    }
+        auto t1 = std::chrono::steady_clock::now();
+        float slideMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
-    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
         float maxPen = 0.0f;
         for (const auto& rc : blockContacts)
             maxPen = std::max(maxPen, rc.penetration);
-        printf("[COLLISION] block contacts=%zu penetration=%.4f\n",
-               blockContacts.size(), maxPen);
+        BLOCK_LOG("[BLOCK SLIDE] contacts=%zu maxPen=%.4f elapsedMs=%.2f\n",
+                  blockContacts.size(), maxPen, slideMs);
+    }
+
+    // Block pipeline total time
+    {
+        auto tBlockEnd = std::chrono::steady_clock::now();
+        float blockTotalMs = std::chrono::duration<float, std::milli>(tBlockEnd - tBlockStart).count();
+        BLOCK_LOG("[BLOCK FRAME] totalMs=%.2f sweepIters=%d depenIters=%d depenContacts=%d\n",
+                  blockTotalMs, blockSweepIters, blockDepenIters, blockDepenContacts);
     }
 
     recoverInvalidPlayerCollisionState(p, frameStart, "blocks");

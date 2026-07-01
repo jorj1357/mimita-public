@@ -258,6 +258,14 @@ struct CollisionState {
     int stuckFrames = 0;
     float bounceCooldown = 0.0f;
     bool hasWeaponCollisionCapsule = false;
+
+    // Diagnostics: track values that should never grow unbounded
+    int diagPrevCandidates = 0;
+    int diagCandidateGrowthFrames = 0;
+    int diagPrevContacts = 0;
+    int diagContactGrowthFrames = 0;
+    int diagPrevBodySpheres = 0;
+    int diagBodySphereGrowthFrames = 0;
 };
 
 struct GroundReturnState {

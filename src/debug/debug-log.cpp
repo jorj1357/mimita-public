@@ -79,7 +79,8 @@ bool Debug::enabled(Category category)
         case Category::GLB: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::GLB_VERBOSE;
         case Category::Collision: return DebugConfig::COLLISION_VERBOSE ||
                                           DebugConfig::DEBUG_COLLISION_SYSTEM ||
-                                          DebugConfig::DEBUG_COLLISION_TRACE;
+                                          DebugConfig::DEBUG_COLLISION_TRACE ||
+                                          DebugConfig::DEBUG_COLLISION_DIAGNOSTICS;
         case Category::Physics: return DebugConfig::PHYSICS_VERBOSE;
         case Category::Render: return DebugConfig::ENABLE_DEBUG_LOGS && DebugConfig::RENDER_VERBOSE;
         case Category::NpcCombat: return DebugConfig::DEBUG_NPC_COMBAT;

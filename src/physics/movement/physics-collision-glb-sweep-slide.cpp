@@ -2,6 +2,7 @@
 #include "physics/movement/physics-collision-glb-sweep.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -22,11 +23,29 @@ extern std::vector<int> gatherGLBTrianglesForSphere(
     const World& world,
     glm::vec3 center,
     float radius,
-    const glm::vec3& move
+    const glm::vec3& move,
+    const char* caller
 );
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define LOG_COLLISION(K, ...) Debug::logThrottled(Debug::Category::Collision, K, 0.25f, __VA_ARGS__)
+
+struct SweepSlideDiag {
+    int initialCandidates = 0;
+    int bodySampleCount = 0;
+    int sweepIterations = 0;
+    int totalHits = 0;
+    int maxTOI = 0;
+    int maxSlideContacts = 0;
+    int stepUpAttempts = 0;
+    int seamTransitions = 0;
+    double broadphaseMs = 0.0;
+    double bodyExtraMs = 0.0;
+    double sweepMs = 0.0;
+    double slideMs = 0.0;
+    double stepUpMs = 0.0;
+    double seamMs = 0.0;
+};
 
 void doGLBSweepSlide(
     Player& p,
@@ -39,28 +58,48 @@ void doGLBSweepSlide(
     std::vector<int>& candidates
 )
 {
+    SweepSlideDiag diag;
+    auto tSweepStart = std::chrono::steady_clock::now();
     constexpr float SURFACE_SLOP = 0.01f;
     constexpr float MAX_CORRECTION = 2.0f;
 
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
 
-    candidates = gatherGLBTriangles(world, cap, totalMove);
+    {
+        auto t0 = std::chrono::steady_clock::now();
+        candidates = gatherGLBTriangles(world, cap, totalMove, "sweep_initial");
+        auto t1 = std::chrono::steady_clock::now();
+        diag.broadphaseMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    }
+    diag.initialCandidates = (int)candidates.size();
+
     std::vector<int> bodyCandidateExtras;
     std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
+    diag.bodySampleCount = (int)bodySamples.size();
 
-    std::vector<glm::vec3> bodyDeltas(bodySamples.size(), glm::vec3(0.0f));
-    for (size_t si = 0; si < bodySamples.size() && si < p.previousBodySamplePositions.size(); ++si)
-        bodyDeltas[si] = bodySamples[si] - p.previousBodySamplePositions[si];
-
-    for (size_t si = 0; si < bodySamples.size(); ++si)
     {
-        glm::vec3 sample = bodySamples[si];
-        glm::vec3 sampleMove = totalMove + bodyDeltas[si];
-        std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, sampleMove);
-        appendUniqueTriangleIndices(bodyCandidateExtras, sampleCandidates);
+        auto t0 = std::chrono::steady_clock::now();
+        std::vector<glm::vec3> bodyDeltas(bodySamples.size(), glm::vec3(0.0f));
+        for (size_t si = 0; si < bodySamples.size() && si < p.previousBodySamplePositions.size(); ++si)
+            bodyDeltas[si] = bodySamples[si] - p.previousBodySamplePositions[si];
+
+        for (size_t si = 0; si < bodySamples.size(); ++si)
+        {
+            glm::vec3 sample = bodySamples[si];
+            glm::vec3 sampleMove = totalMove + bodyDeltas[si];
+            char tag[64];
+            std::snprintf(tag, sizeof(tag), "body_sample_%zu", si);
+            std::vector<int> sampleCandidates = gatherGLBTrianglesForSphere(world, sample, BODY_SAMPLE_RADIUS, sampleMove);
+            Debug::logThrottled(Debug::Category::Collision, tag, 1.0f,
+                "[GATHER_SPHERE] caller=%s sample=%zu/%zu candidates=%zu\n",
+                tag, si + 1, bodySamples.size(), sampleCandidates.size());
+            appendUniqueTriangleIndices(bodyCandidateExtras, sampleCandidates);
+        }
+        appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
+        auto t1 = std::chrono::steady_clock::now();
+        diag.bodyExtraMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
-    appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
 
     p.previousBodySamplePositions = bodySamples;
 
@@ -69,30 +108,13 @@ void doGLBSweepSlide(
     trace.initialCandidates = (int)candidates.size();
     trace.maxCandidates = trace.initialCandidates;
 
-    static int frameLog = 0;
-    if ((frameLog++ % 60) == 0)
-    {
-        PHYS_LOG(
-            "[PHYS][GLB] tris=%zu candidates=%zu bodySamples=%zu pos=(%.2f %.2f %.2f) move=(%.3f %.3f %.3f)\n",
-            world.collisionMesh.triangles.size(),
-            candidates.size(),
-            bodySamples.size(),
-            p.pos.x, p.pos.y, p.pos.z,
-            totalMove.x, totalMove.y, totalMove.z
-        );
-    }
-
-    Debug::log(Debug::Category::Collision, "[COLL] doGLBSweepSlide start pos=(%.2f %.2f %.2f) totalMove=(%.4f %.4f %.4f) candidates=%zu",
-               p.pos.x, p.pos.y, p.pos.z, totalMove.x, totalMove.y, totalMove.z, candidates.size());
-
     remainingMove = totalMove;
 
-    // Snapshot of initial candidates (pre-move) for seam transition walkable scan.
-    // These include triangles ahead of the capsule in the movement direction.
     std::vector<int> preMoveCandidates = candidates;
 
     for (int iter = 0; iter < 5; ++iter)
     {
+        auto tIterStart = std::chrono::steady_clock::now();
         SweepHit earliest;
         earliest.time = 1.0f;
         std::vector<SweepHit> toiHits;
@@ -100,60 +122,13 @@ void doGLBSweepSlide(
         constexpr float TOI_EPSILON = 0.001f;
 
         cap = p.getCapsule();
-        candidates = gatherGLBTriangles(world, cap, remainingMove);
-        LOG_COLLISION(
-            "candidate_count",
-            "[CANDIDATES] count=%zu",
-            candidates.size()
-        );
-
-        for (int tri : candidates)
         {
-            const auto& t = world.collisionMesh.triangles[tri];
-
-            LOG_COLLISION(
-                "candidate_tri",
-                " tri=%d normal=(%.2f %.2f %.2f) a=(%.2f %.2f %.2f)",
-                tri,
-                t.normal.x,
-                t.normal.y,
-                t.normal.z,
-                t.a.x,
-                t.a.y,
-                t.a.z
-            );
-        }
-        appendUniqueTriangleIndices(candidates, bodyCandidateExtras);
-        trace.maxCandidates = std::max(trace.maxCandidates, (int)candidates.size());
-        trace.sweepIterations++;
-
-        Debug::log(Debug::Category::Collision, "[COLL]   iter=%d remaining=(%.4f %.4f %.4f) candidates=%zu pos=(%.2f %.2f %.2f)",
-                   iter, remainingMove.x, remainingMove.y, remainingMove.z, candidates.size(),
-                   p.pos.x, p.pos.y, p.pos.z);
-
-        DebugVis::recordMovement(p.pos, remainingMove, "glb-substep-move");
-        DebugVis::recordSweep(cap.a, cap.a + remainingMove, "capsule-bottom");
-        DebugVis::recordSweep((cap.a + cap.b) * 0.5f, (cap.a + cap.b) * 0.5f + remainingMove, "capsule-mid");
-        DebugVis::recordSweep(cap.b, cap.b + remainingMove, "capsule-top");
-        for (int triIndex : candidates)
-        {
-            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
-            SweepHit hit;
-            if (!capsuleTriangleSweep(cap, remainingMove, tri, triIndex, hit))
-                continue;
-            if (rejectBelowTopFaceContact(cap, tri, hit.normal, hit.point, triIndex, "sweep"))
-                continue;
-
-            if (!earliest.hit || hit.time + TOI_EPSILON < earliest.time)
-            {
-                earliest = hit;
-                toiHits.clear();
-                toiHits.push_back(hit);
-            }
-            else if (hit.time <= earliest.time + TOI_EPSILON)
-            {
-                toiHits.push_back(hit);
-            }
+            auto t0 = std::chrono::steady_clock::now();
+            char iterTag[64];
+            std::snprintf(iterTag, sizeof(iterTag), "sweep_iter_%d", iter);
+            candidates = gatherGLBTriangles(world, cap, remainingMove, iterTag);
+            auto t1 = std::chrono::steady_clock::now();
+            diag.sweepMs += std::chrono::duration<float, std::milli>(t1 - t0).count();
         }
 
         glm::vec3 stepMove = remainingMove * earliest.time;
@@ -452,7 +427,7 @@ void doGLBSweepSlide(
 
         {
             Capsule slideCap = p.getCapsule();
-            std::vector<int> slideCandidates = gatherGLBTriangles(world, slideCap, glm::vec3(0.0f));
+            std::vector<int> slideCandidates = gatherGLBTriangles(world, slideCap, glm::vec3(0.0f), "slide_contacts");
             std::vector<RecoveryContact> slideContacts = collectCapsuleRecoveryContacts(
                 world, slideCap, slideCandidates);
             trace.maxSlideContacts = std::max(trace.maxSlideContacts, (int)slideContacts.size());
@@ -503,7 +478,7 @@ void doGLBSweepSlide(
             earliest.point.z
         );
 
-        LOG_COLLISION("iter_end", "[SWEEP] iter=%d end: pos=(%.2f,%.2f,%.2f) remaining=(%.4f,%.4f,%.4f) grounded=%d",
+        LOG_COLLISION("iter_end", "[SWEEP] iter=%d end: pos=(%.2f,%.2f,%.2f) remaining=(%.4f,%.4f,%.4f) gnd=%d",
                       iter, p.pos.x, p.pos.y, p.pos.z,
                       remainingMove.x, remainingMove.y, remainingMove.z,
                       (int)groundedThisFrame);
@@ -511,4 +486,14 @@ void doGLBSweepSlide(
         if (glm::dot(remainingMove, remainingMove) < 0.000001f)
             break;
     }
+
+    auto tSweepEnd = std::chrono::steady_clock::now();
+    float sweepTotalMs = std::chrono::duration<float, std::milli>(tSweepEnd - tSweepStart).count();
+    Debug::logThrottled(Debug::Category::Collision, "sweep_diag_summary", 1.0f,
+        "[SWEEP DIAG] totalMs=%.2f initialCand=%d bodySamples=%d iters=%d hits=%d maxTOI=%d "
+        "stepUp=%d seam=%d broadphaseMs=%.2f bodyExtraMs=%.2f sweepMs=%.2f\n",
+        sweepTotalMs, diag.initialCandidates, diag.bodySampleCount,
+        trace.sweepIterations, trace.sweepHits, trace.maxSimultaneousTOI,
+        diag.stepUpAttempts, diag.seamTransitions,
+        diag.broadphaseMs, diag.bodyExtraMs, diag.sweepMs);
 }

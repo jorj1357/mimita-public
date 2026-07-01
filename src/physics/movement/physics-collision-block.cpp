@@ -106,7 +106,7 @@ bool capsuleVsBlock(
     const Capsule& cap,
     const AABB& block,
     glm::vec3& correction,
-    bool& grounded
+    bool& outGrounded
 )
 {
     glm::vec3 testPoints[2] = { cap.a, cap.b };
@@ -144,7 +144,7 @@ bool capsuleVsBlock(
         correction = normal * (penetration + PUSH_OUT_MARGIN);
 
         if (normal.z >= MAX_WALKABLE_SLOPE_DOT)
-            grounded = true;
+            outGrounded = true;
 
         return true;
     }
@@ -413,8 +413,8 @@ bool resolveCapsuleVsCapsule(
     Capsule capB = b.getCapsule();
 
     glm::vec3 correctionA;
-    bool grounded = false;
-    if (!capsuleVsCapsule(capA, capB, correctionA, grounded))
+    bool capsuleHit = false;
+    if (!capsuleVsCapsule(capA, capB, correctionA, capsuleHit))
         return false;
 
     // Split correction between both bodies (mass-based or 50/50)
@@ -425,8 +425,8 @@ bool resolveCapsuleVsCapsule(
     a.pos += correctionA * SPLIT_RATIO;
     b.pos += correctionB * SPLIT_RATIO;
 
-    groundedA = grounded;
-    groundedB = grounded;
+    groundedA = capsuleHit;
+    groundedB = capsuleHit;
 
     // Clamp velocities against collision normal
     glm::vec3 normal = glm::normalize(correctionA);

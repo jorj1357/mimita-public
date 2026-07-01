@@ -69,6 +69,9 @@ namespace DebugConfig
     inline bool DEBUG_MENU_PREVIEW = false;
     // does this even do antthing 6 30 2026 
     inline bool DEBUG_WEAPON_COLLISION = true;
+    // Collision diagnostics: always-on pipeline instrumentation.
+    // Set false to suppress all collision diagnostics.
+    inline bool DEBUG_COLLISION_DIAGNOSTICS = true;
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;
 

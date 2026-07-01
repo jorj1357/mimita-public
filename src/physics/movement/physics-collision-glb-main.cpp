@@ -4,6 +4,7 @@
 #include "physics/movement/physics-collision-glb-safety.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -24,10 +25,81 @@ extern std::vector<int> gatherGLBTrianglesForSphere(
     const World& world,
     glm::vec3 center,
     float radius,
-    const glm::vec3& move
+    const glm::vec3& move,
+    const char* caller
 );
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+
+struct CollisionFrameDiag {
+    double sweepSlideMs = 0.0;
+    double depenGatherMs = 0.0;
+    double depenSolveMs = 0.0;
+    double floorRecoveryMs = 0.0;
+    double bodyWeaponMs = 0.0;
+    double emergencyCheckMs = 0.0;
+    double emergencySearchMs = 0.0;
+    double stuckTrackMs = 0.0;
+    double debugVisMs = 0.0;
+    double totalMs = 0.0;
+    int depenIterations = 0;
+    int depenContacts = 0;
+    int emergencyDirsSearched = 0;
+    bool emergencyTriggered = false;
+};
+
+static void logFrameSummary(const CollisionFrameDiag& d)
+{
+    Debug::logThrottled(Debug::Category::Collision, "frame-summary", 1.0f,
+        "[COLLISION FRAME]\n"
+        "  SweepSlide ......... %.2f ms\n"
+        "  Depen .............. %.2f ms (gather=%.2f solve=%.2f iters=%d contacts=%d)\n"
+        "  FloorRecovery ...... %.2f ms\n"
+        "  BodyWeapon ......... %.2f ms\n"
+        "  Emergency .......... %.2f ms (search=%.2f dirs=%d triggered=%d)\n"
+        "  StuckTracking ...... %.2f ms\n"
+        "  DebugVis ........... %.2f ms\n"
+        "  Total .............. %.2f ms\n",
+        d.sweepSlideMs,
+        d.depenGatherMs + d.depenSolveMs, d.depenGatherMs, d.depenSolveMs,
+        d.depenIterations, d.depenContacts,
+        d.floorRecoveryMs,
+        d.bodyWeaponMs,
+        d.emergencyCheckMs + d.emergencySearchMs, d.emergencySearchMs,
+        d.emergencyDirsSearched, (int)d.emergencyTriggered,
+        d.stuckTrackMs,
+        d.debugVisMs,
+        d.totalMs);
+}
+
+static void trackGrowth(Player& p, int candidates, int contacts, int bodySpheres)
+{
+    auto& d = p.collision;
+    if (candidates > d.diagPrevCandidates) d.diagCandidateGrowthFrames++;
+    else if (candidates < d.diagPrevCandidates) d.diagCandidateGrowthFrames = 0;
+    d.diagPrevCandidates = candidates;
+
+    if (contacts > d.diagPrevContacts) d.diagContactGrowthFrames++;
+    else if (contacts < d.diagPrevContacts) d.diagContactGrowthFrames = 0;
+    d.diagPrevContacts = contacts;
+
+    if (bodySpheres > d.diagPrevBodySpheres) d.diagBodySphereGrowthFrames++;
+    else if (bodySpheres < d.diagPrevBodySpheres) d.diagBodySphereGrowthFrames = 0;
+    d.diagPrevBodySpheres = bodySpheres;
+
+    if (d.diagCandidateGrowthFrames >= 10)
+        Debug::warn(Debug::Category::Collision,
+            "[GROWTH WARNING] candidates increasing for %d frames (current=%d prev=%d)\n",
+            d.diagCandidateGrowthFrames, candidates, d.diagPrevCandidates);
+    if (d.diagContactGrowthFrames >= 10)
+        Debug::warn(Debug::Category::Collision,
+            "[GROWTH WARNING] contacts increasing for %d frames (current=%d prev=%d)\n",
+            d.diagContactGrowthFrames, contacts, d.diagPrevContacts);
+    if (d.diagBodySphereGrowthFrames >= 10)
+        Debug::warn(Debug::Category::Collision,
+            "[GROWTH WARNING] bodySpheres increasing for %d frames (current=%d prev=%d)\n",
+            d.diagBodySphereGrowthFrames, bodySpheres, d.diagPrevBodySpheres);
+}
 
 void doGLBTriangleCollisions(
     Player& p,
@@ -35,6 +107,8 @@ void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
+    CollisionFrameDiag diag;
+    auto tFrameStart = std::chrono::steady_clock::now();
     constexpr float SURFACE_SLOP = 0.01f;
     constexpr float MAX_CORRECTION = 2.0f;
 
@@ -48,30 +122,24 @@ void doGLBTriangleCollisions(
     candidates.reserve(512);
 
     // ── 1. Sweep + slide ─────────────────────────────────
-    doGLBSweepSlide(p, world, groundedThisFrame, dt, totalMove, remainingMove, trace, candidates);
-
-    // ── 2. Apply leftover remaining move ──────────────────
-    // If the sweep-slide didn't consume all movement (5-iteration limit, t=0 contacts),
-    // apply the rest directly so the player isn't robbed of momentum.
-    
-    // 7 1 2026 testing colision fixes idk waht happened bro 
-    
-    // if (glm::length(remainingMove) > 0.001f) {
-    //     if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-    //         Debug::log(Debug::Category::Collision, "[COLL] applying remainingMove=(%.4f,%.4f,%.4f)\n",
-    //                remainingMove.x, remainingMove.y, remainingMove.z);
-    //     p.pos += remainingMove;
-    //     p.updateModelWorldTransforms();
-    //     remainingMove = glm::vec3(0.0f);
-    // }
-
-    // ── 3. Batched depenetration ─────────────────────────
-    // Cache the candidate gather: the capsule barely moves during depen iterations,
-    // so we gather once and reuse. This eliminates 3 of 4 gatherGLBTriangles calls.
     {
+        auto t0 = std::chrono::steady_clock::now();
+        doGLBSweepSlide(p, world, groundedThisFrame, dt, totalMove, remainingMove, trace, candidates);
+        auto t1 = std::chrono::steady_clock::now();
+        diag.sweepSlideMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    }
+
+    // ── 2. Batched depenetration ─────────────────────────
+    {
+        auto t0 = std::chrono::steady_clock::now();
         p.updateModelWorldTransforms();
         Capsule cap = p.getCapsule();
-        candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
+        {
+            auto tg0 = std::chrono::steady_clock::now();
+            candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f), "depen");
+            auto tg1 = std::chrono::steady_clock::now();
+            diag.depenGatherMs = std::chrono::duration<float, std::milli>(tg1 - tg0).count();
+        }
 
         for (int depenIter = 0; depenIter < 4; ++depenIter)
         {
@@ -82,6 +150,8 @@ void doGLBTriangleCollisions(
 
             if (contacts.empty())
                 break;
+            diag.depenIterations++;
+            diag.depenContacts = (int)contacts.size();
 
             float iterMaxPen = 0.0f;
             glm::vec3 correction = solveBatchedCorrection(contacts, SURFACE_SLOP, &iterMaxPen, nullptr, totalMove, p.pos);
@@ -91,32 +161,7 @@ void doGLBTriangleCollisions(
                 correction *= MAX_CORRECTION / corrLen;
 
             p.pos += correction;
-            PHYS_LOG(
-                "[DEPEN TEST] iter=%d contacts=%zu maxPen=%.4f correction=(%.4f %.4f %.4f) move=(%.4f %.4f %.4f) pos=(%.2f %.2f %.2f)\n",
-                depenIter,
-                contacts.size(),
-                iterMaxPen,
-                correction.x, correction.y, correction.z,
-                totalMove.x, totalMove.y, totalMove.z,
-                p.pos.x, p.pos.y, p.pos.z
-            );
-
-            for (const RecoveryContact& c : contacts) {
-                PHYS_LOG(
-                    "[CONTACT TEST] tri=%d normal=(%.3f %.3f %.3f) pen=%.4f point=(%.2f %.2f %.2f) label=%s\n",
-                    c.triangleIndex,
-                    c.normal.x, c.normal.y, c.normal.z,
-                    c.penetration,
-                    c.point.x, c.point.y, c.point.z,
-                    c.label ? c.label : "?"
-                );
-            }
-            cap = p.getCapsule();  // update capsule for next iter's contact collection
-
-            if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                Debug::log(Debug::Category::Collision, "[COLL]   depen iter=%d contacts=%zu maxPen=%.4f correction=(%.4f,%.4f,%.4f)\n",
-                       depenIter, contacts.size(), iterMaxPen,
-                       correction.x, correction.y, correction.z);
+            cap = p.getCapsule();
 
             for (const RecoveryContact& c : contacts)
                 applyCollisionContact(p, groundedThisFrame, c.normal, c.point, c.penetration, c.triangleIndex, c.label);
@@ -126,24 +171,35 @@ void doGLBTriangleCollisions(
             if (glm::dot(correction, correction) < 0.0000001f)
                 break;
         }
+        auto t1 = std::chrono::steady_clock::now();
+        diag.depenSolveMs = std::chrono::duration<float, std::milli>(t1 - t0).count() - diag.depenGatherMs;
     }
 
-    // ── 4. Ground snap + floor recovery ──────────────────
-    // testing if this even does atnthing 7 1 2026 
-    // doGroundSnap(p, world, groundedThisFrame);
-    doFloorRecovery(p, world, groundedThisFrame);
-
-    // ── 5. Body + weapon collision ───────────────────────
-    doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
-
-    // ── 6. Emergency stuck escape ────────────────────────
+    // ── 3. Floor recovery ────────────────────────────────
     {
+        auto t0 = std::chrono::steady_clock::now();
+        doFloorRecovery(p, world, groundedThisFrame);
+        auto t1 = std::chrono::steady_clock::now();
+        diag.floorRecoveryMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    }
+
+    // ── 4. Body + weapon collision ───────────────────────
+    {
+        auto t0 = std::chrono::steady_clock::now();
+        doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
+        auto t1 = std::chrono::steady_clock::now();
+        diag.bodyWeaponMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    }
+
+    // ── 5. Emergency stuck escape ────────────────────────
+    {
+        auto t0 = std::chrono::steady_clock::now();
         constexpr float STUCK_THRESHOLD = 0.05f;
         const float EMERGENCY_SEARCH_RADIUS = PLAYER_HEIGHT + PLAYER_RADIUS * 4.0f;
 
         p.updateModelWorldTransforms();
         Capsule stuckCheckCap = p.getCapsule();
-        std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f));
+        std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f), "emergency_check");
         std::vector<RecoveryContact> stuckContacts = collectCapsuleRecoveryContacts(
             world, stuckCheckCap, stuckCandidates
         );
@@ -157,9 +213,7 @@ void doGLBTriangleCollisions(
             p.collision.stuckFrames++;
             if (p.collision.stuckFrames >= 3)
             {
-                PHYS_LOG("[PHYS][EMERGENCY] Deep penetration %.4f for %d frames.\n",
-                         worstPen, p.collision.stuckFrames);
-
+                diag.emergencyTriggered = true;
                 const glm::vec3 searchDirs[] = {
                     { 1, 0, 0}, {-1, 0, 0}, { 0, 1, 0}, { 0,-1, 0},
                     { 0, 0, 1}, { 1, 1, 0}, { 1,-1, 0}, {-1, 1, 0}, {-1,-1, 0},
@@ -169,6 +223,7 @@ void doGLBTriangleCollisions(
                 glm::vec3 bestPos = p.pos;
                 float bestPen = worstPen;
                 bool foundFree = false;
+                int dirsSearched = 0;
 
                 for (glm::vec3 dir : searchDirs)
                 {
@@ -177,11 +232,14 @@ void doGLBTriangleCollisions(
 
                     for (float dist = 0.05f; dist <= EMERGENCY_SEARCH_RADIUS; dist += 0.05f)
                     {
+                        ++dirsSearched;
                         glm::vec3 testPos = p.pos + dir * dist;
                         Player testP = p;
                         testP.pos = testPos;
                         Capsule testCap = testP.getCapsule();
-                        std::vector<int> testCandidates = gatherGLBTriangles(world, testCap, glm::vec3(0.0f));
+                        char searchTag[64];
+                        std::snprintf(searchTag, sizeof(searchTag), "emergency_search_%d", dirsSearched);
+                        std::vector<int> testCandidates = gatherGLBTriangles(world, testCap, glm::vec3(0.0f), searchTag);
                         std::vector<RecoveryContact> testContacts;
                         {
                             std::vector<int> triCandidates = testCandidates;
@@ -210,6 +268,7 @@ void doGLBTriangleCollisions(
                     }
                     if (foundFree) break;
                 }
+                diag.emergencyDirsSearched = dirsSearched;
 
                 if (foundFree || bestPen < worstPen)
                 {
@@ -225,10 +284,13 @@ void doGLBTriangleCollisions(
         {
             p.collision.stuckFrames = 0;
         }
+        auto t1 = std::chrono::steady_clock::now();
+        diag.emergencyCheckMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
-    // ── 7. Stuck position tracking (logging only) ────────
+    // ── 6. Stuck position tracking ───────────────────────
     {
+        auto t0 = std::chrono::steady_clock::now();
         static int sf = 0;
         static glm::vec3 lastPos(0.0f);
         static float logTimer = 0.0f;
@@ -240,7 +302,7 @@ void doGLBTriangleCollisions(
             sf++;
             if (sf >= 3 && logTimer >= 0.5f) {
                 Capsule dcap = p.getCapsule();
-                std::vector<int> dc = gatherGLBTriangles(world, dcap, glm::vec3(0.0f));
+                std::vector<int> dc = gatherGLBTriangles(world, dcap, glm::vec3(0.0f), "stuck_tracking");
                 PHYS_LOG(
                         "[COLLISION STUCK] frames=%d move=%.4f delta=%.4f pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) candidates=%zu gnd=%d\n",
                         sf, moveLen, posDelta,
@@ -264,23 +326,40 @@ void doGLBTriangleCollisions(
             sf = 0;
         }
         lastPos = p.pos;
+        auto t1 = std::chrono::steady_clock::now();
+        diag.stuckTrackMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
-    // ── Debug visualization ──────────────────────────────
-    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+    // ── 7. Debug visualization ───────────────────────────
     {
-        Capsule debugCap = p.getCapsule();
-        std::vector<int> debugCandidates = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f));
-        std::vector<glm::vec3> debugSamples = collectPlayerBodyCollisionSamples(p);
-        std::vector<RecoveryContact> debugContacts = collectGLBRecoveryContacts(
-            world, debugCap, debugSamples, debugCandidates, BODY_SAMPLE_RADIUS
-        );
-        for (const RecoveryContact& c : debugContacts)
-            DebugVis::recordContact(c.point, c.normal, c.penetration, c.triangleIndex, c.label);
+        auto t0 = std::chrono::steady_clock::now();
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+        {
+            Capsule debugCap = p.getCapsule();
+            std::vector<int> debugCandidates = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "debug_visualization");
+            std::vector<glm::vec3> debugSamples = collectPlayerBodyCollisionSamples(p);
+            std::vector<RecoveryContact> debugContacts = collectGLBRecoveryContacts(
+                world, debugCap, debugSamples, debugCandidates, BODY_SAMPLE_RADIUS
+            );
+            for (const RecoveryContact& c : debugContacts)
+                DebugVis::recordContact(c.point, c.normal, c.penetration, c.triangleIndex, c.label);
+        }
+        auto t1 = std::chrono::steady_clock::now();
+        diag.debugVisMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
     trace.finalPos = p.pos;
     gLastCollisionTrace = trace;
+
+    auto tFrameEnd = std::chrono::steady_clock::now();
+    diag.totalMs = std::chrono::duration<float, std::milli>(tFrameEnd - tFrameStart).count();
+
+    // ── Per-frame summary ────────────────────────────────
+    logFrameSummary(diag);
+
+    // ── Growth tracking ──────────────────────────────────
+    int bodySphereCount = (int)collectPlayerBodyCollisionSamples(p).size();
+    trackGrowth(p, trace.maxCandidates, trace.maxRecoveryContacts, bodySphereCount);
 
     if (DebugConfig::DEBUG_COLLISION_TRACE)
         Debug::logThrottled(Debug::Category::Collision, "collision-trace",
