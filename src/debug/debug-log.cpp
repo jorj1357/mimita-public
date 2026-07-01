@@ -36,6 +36,7 @@ const char* categoryName(Debug::Category category)
         case Debug::Category::Audio: return "AUDIO";
         case Debug::Category::World: return "WORLD";
         case Debug::Category::Duel: return "DUEL";
+        case Debug::Category::Auth: return "AUTH";
         default: return "DEBUG";
     }
 }
@@ -94,6 +95,8 @@ bool Debug::enabled(Category category)
         case Category::Audio: return DebugConfig::DEBUG_SOUND;
         case Category::World: return DebugConfig::ENABLE_DEBUG_LOGS;
         case Category::Duel: return DebugConfig::DEBUG_DUEL;
+        case Category::Auth: return DebugConfig::ENABLE_DEBUG_LOGS ||
+                                   DebugConfig::DEBUG_AUTH;
         default:
             return DebugConfig::ENABLE_DEBUG_LOGS ||
                    DebugConfig::DEBUG_TICKS ||

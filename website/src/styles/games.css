@@ -1,0 +1,304 @@
+/* =========================
+   GAMES PAGE
+   ========================= */
+
+.gamesPage {
+  flex: 1;
+  background: #0a0a0f;
+  color: #fff;
+}
+
+.gamesInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem;
+}
+
+.gamesTitle {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+
+.gamesSubtitle {
+  color: rgba(255,255,255,0.55);
+  font-size: clamp(0.9rem, 2vw, 1.1rem);
+  margin-bottom: 2.5rem;
+}
+
+.gamesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+/* ── Card ── */
+
+.gameCard {
+  display: block;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gameCard:hover {
+  border-color: rgba(255,255,255,0.18);
+}
+
+.gameCardThumb {
+  aspect-ratio: 16 / 9;
+  background: rgba(255,255,255,0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gameCardThumbPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.gameCardThumbIcon {
+  font-size: 3rem;
+  opacity: 0.6;
+}
+
+.gameCardBody {
+  padding: 1rem 1.1rem 1.2rem;
+}
+
+.gameCardTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
+}
+
+.gameCardSubtitle {
+  color: rgba(255,255,255,0.5);
+  font-size: 0.85rem;
+}
+
+/* =========================
+   GAME PLAY
+   ========================= */
+
+.gamePage {
+  flex: 1;
+  background: #0a0a0f;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.gameInner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+/* ── Start Screen ── */
+
+.gameStartScreen {
+  text-align: center;
+  max-width: 500px;
+}
+
+.gameTitle {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+
+.gameSubtitle {
+  color: rgba(255,255,255,0.55);
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  margin-bottom: 2rem;
+}
+
+.gameStartBtn {
+  display: inline-block;
+  background: #22c55e;
+  color: #000;
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  padding: 0.85rem 2.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.gameStartBtn:hover {
+  background: #2dd96b;
+}
+
+.gameExitBtn {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8);
+  margin-left: 1rem;
+}
+
+.gameExitBtn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+/* ── HUD ── */
+
+.gameHud {
+  text-align: center;
+  margin-bottom: 1rem;
+  width: 100%;
+  max-width: 800px;
+}
+
+.gameTimer {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+
+.gameTargetCount {
+  font-size: 1rem;
+  color: rgba(255,255,255,0.4);
+  margin-top: 0.25rem;
+}
+
+/* ── Play Area ── */
+
+.gamePlayArea {
+  position: relative;
+  width: 100%;
+  max-width: 533px;
+  aspect-ratio: 4 / 3;
+  max-height: 60vh;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.gameTarget {
+  position: absolute;
+  border-radius: 50%;
+  background: #ef4444;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+/* ── Results Screen ── */
+
+.gameResultsScreen {
+  text-align: center;
+  max-width: 600px;
+  width: 100%;
+}
+
+.gameFinalTime {
+  font-size: clamp(2.8rem, 7vw, 4.5rem);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #22c55e;
+  margin: 0.5rem 0 2rem;
+}
+
+.gameLeaderboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  text-align: left;
+}
+
+.gameLeaderboardCol h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+.gameLeaderboardList {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.gameLeaderboardRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  border-radius: 4px;
+}
+
+.gameLeaderboardRowBest {
+  background: rgba(34,197,94,0.1);
+  font-weight: 800;
+}
+
+.gameLbRank {
+  color: rgba(255,255,255,0.3);
+  min-width: 2em;
+}
+
+.gameLbName {
+  flex: 1;
+  text-align: left;
+  margin-left: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255,255,255,0.7);
+}
+
+.gameLbTime {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.gameLbEmpty {
+  color: rgba(255,255,255,0.25);
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  text-align: center;
+}
+
+.gameResultsButtons {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* ── Mobile ── */
+
+@media (max-width: 600px) {
+  .gameLeaderboard {
+    grid-template-columns: 1fr;
+  }
+
+  .gamePlayArea {
+    aspect-ratio: 3 / 4;
+  }
+}

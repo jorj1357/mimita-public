@@ -7,6 +7,7 @@
 #include "gui/hud/player-nameplates.h"
 #include "auth/auth-system.h"
 #include "config.h"
+#include "debug/debug-log.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -201,9 +202,9 @@ void MenuAvatarPreview::update(float dt, const glm::vec3& camForward)
     p->ground.onGround = true;
     p->updateProceduralAnimation(speedDt, camForward, glm::vec3(0.0f), false);
 
-    AuthSystem& auth = AuthSystem::instance();
-    p->username = (auth.state() == AuthState::Authenticated)
-        ? auth.user().username : "DefaultGuy";
+    p->username = AuthSystem::instance().displayName();
+    Debug::logThrottled(Debug::Category::Gui, "avatar-username", 3.0f,
+        "username=%s source=AuthSystem.displayName()\n", p->username.c_str());
     if (DebugConfig::DEBUG_MENU_PREVIEW)
     {
         static float logTimer = 0.0f;

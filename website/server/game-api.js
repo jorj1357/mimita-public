@@ -317,4 +317,72 @@ router.put("/settings", authenticateToken, async (req, res, next) => {
     }
 })
 
+// ── Game Scores (aim-test-v1, reaction-test, etc.) ──
+
+router.get("/games/:gameId/scores", authenticateToken, async (req, res, next) => {
+    try {
+        const { gameId } = req.params
+        const bestResult = await pool.query(
+            `SELECT score_value, created_at FROM game_scores
+             WHERE user_id = $1 AND game_id = $2 AND deleted_at IS NULL
+             ORDER BY score_value ASC LIMIT 1`,
+            [req.user.id, gameId]
+        )
+        const recentResult = await pool.query(
+            `SELECT score_value, created_at FROM game_scores
+             WHERE user_id = $1 AND game_id = $2 AND deleted_at IS NULL
+             ORDER BY created_at DESC LIMIT 10`,
+            [req.user.id, gameId]
+        )
+        res.json({
+            success: true,
+            best: bestResult.rowCount ? bestResult.rows[0].score_value : null,
+            recent: recentResult.rows.map(r => ({ time: r.score_value, date: r.created_at })),
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.post("/games/:gameId/scores", authenticateToken, async (req, res, next) => {
+    try {
+        const { gameId } = req.params
+        const scoreValue = req.body.time
+        if (typeof scoreValue !== 'number' || scoreValue <= 0) {
+            return res.status(400).json({ success: false, message: "invalid score" })
+        }
+        await pool.query(
+            `INSERT INTO game_scores (user_id, game_id, score_value, created_at)
+             VALUES ($1, $2, $3, NOW())`,
+            [req.user.id, gameId, scoreValue]
+        )
+        res.json({ success: true })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// Public leaderboard for mini games
+router.get("/games/:gameId/leaderboard", async (req, res, next) => {
+    try {
+        const { gameId } = req.params
+        const limit = Math.min(Number(req.query.limit) || 10, 100)
+        const result = await pool.query(
+            `SELECT
+                ROW_NUMBER() OVER (ORDER BY gs.score_value ASC) AS rank,
+                u.id, u.username, u.avatar_url, u.supporter_tier,
+                gs.score_value, gs.created_at
+             FROM game_scores gs
+             JOIN users u ON u.id = gs.user_id
+             WHERE gs.game_id = $1 AND gs.deleted_at IS NULL AND u.deleted_at IS NULL
+             ORDER BY gs.score_value ASC
+             LIMIT $2`,
+            [gameId, limit]
+        )
+        res.json({ success: true, leaderboard: result.rows })
+    } catch (error) {
+        next(error)
+    }
+})
+
 export default router

@@ -150,8 +150,8 @@ static void debugBodyWeaponPhase(
             if (c.normal.z > MAX_WALKABLE_SLOPE_DOT) ++supportCount; else ++blockCount;
             auto it = cfgMap.find(c.label ? c.label : "");
             if (it != cfgMap.end() && it->second->pushPlayerRoot) ++pushCount;
-            printf("[WEAPON_COLLISION]   contact label=%s pen=%.3f normal=(%.2f %.2f %.2f)\n",
-                   c.label ? c.label : "?", c.penetration, c.normal.x, c.normal.y, c.normal.z);
+            // printf("[WEAPON_COLLISION]   contact label=%s pen=%.3f normal=(%.2f %.2f %.2f)\n",
+            //        c.label ? c.label : "?", c.penetration, c.normal.x, c.normal.y, c.normal.z);
         }
         for (const auto& wc : p.weaponCollisionConfig.colliders) {
             glm::mat4 local(1.0f);
@@ -184,11 +184,11 @@ static void debugBodyWeaponPhase(
         }
     }
 
-    printf("[WEAPON_COLLISION] weapon=%s colliders=%zu samples=%zu contacts=%d push=%d support=%d block=%d"
-           " maxPen=%.3f groundedByWeapon=%d tipPen=%d tipCollider=%s passes=%d\n",
-           p.equippedWeaponId.c_str(), p.weaponCollisionConfig.colliders.size(), debugSpheres.size(),
-           totalContacts, pushCount, supportCount, blockCount, maxPen,
-           (int)groundedByWeapon, (int)tipPenetrating, tipCollider ? tipCollider : "none", passesUsed);
+    // printf("[WEAPON_COLLISION] weapon=%s colliders=%zu samples=%zu contacts=%d push=%d support=%d block=%d"
+    //        " maxPen=%.3f groundedByWeapon=%d tipPen=%d tipCollider=%s passes=%d\n",
+    //        p.equippedWeaponId.c_str(), p.weaponCollisionConfig.colliders.size(), debugSpheres.size(),
+    //        totalContacts, pushCount, supportCount, blockCount, maxPen,
+    //        (int)groundedByWeapon, (int)tipPenetrating, tipCollider ? tipCollider : "none", passesUsed);
 }
 
 void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThisFrame)

@@ -232,12 +232,12 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 fb.size = glm::vec3(rad, rad, len);
             }
             player.weaponCollisionConfig.colliders.push_back(fb);
-            printf("[WEAPON_COLLISION_CONFIG] weapon=%s using generated fallback collider\n"
-                   "  edit config/weapons.json -> %s.collision.colliders to tune it\n",
-                   def->id.c_str(), def->id.c_str());
+            // printf("[WEAPON_COLLISION_CONFIG] weapon=%s using generated fallback collider\n"
+            //        "  edit config/weapons.json -> %s.collision.colliders to tune it\n",
+            //        def->id.c_str(), def->id.c_str());
         } else if (player.weaponCollisionConfig.enabled) {
-            printf("[WEAPON_COLLISION_CONFIG] weapon=%s using JSON colliders from config/weapons.json -> %s.collision.colliders\n",
-                   def->id.c_str(), def->id.c_str());
+            // printf("[WEAPON_COLLISION_CONFIG] weapon=%s using JSON colliders from config/weapons.json -> %s.collision.colliders\n",
+            //        def->id.c_str(), def->id.c_str());
         }
     }
 

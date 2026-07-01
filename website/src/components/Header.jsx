@@ -5,6 +5,7 @@ import Avatar from "./Avatar"
 const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8QHbfG9D"
 
 const HAMBURGER_ITEMS = [
+    { label: "Games", path: "/games" },
     { label: "3cage", path: "/3cage" },
     { label: "Account", path: "/account", auth: true },
     { label: "Admin", path: "/admin/dashboard" },
@@ -135,6 +136,7 @@ export default function Header() {
                     </div>
 
                     <Link className="headerMainLink" to="/">Home</Link>
+                    <Link className="headerMainLink" to="/games">Games</Link>
                     <Link className="headerMainLink" to="/about">About</Link>
                     <a
                         className="headerMainLink"

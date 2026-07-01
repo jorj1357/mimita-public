@@ -407,6 +407,35 @@ sixty identical logs per second
 
 ---
 
+## Logging Rules
+
+NEVER use printf for debug logging.
+
+Always use the centralized Debug::log / Debug::warn / Debug::logThrottled system.
+
+Every log must:
+
+* Use a specific category (Auth, Gui, Weapons, etc.)
+* Support throttling — never print identical messages every frame
+* Explain expected state, actual state, and why the engine made a decision
+* Include enough context to diagnose issues without recompiling
+
+Spam is forbidden.
+
+If a message repeats identically more than once per second, it must use logThrottled.
+
+Console output should maximize signal and minimize noise.
+
+When adding a new log:
+
+1. Pick the right category (add a new one if needed)
+2. Use Debug::warn for important state transitions (always visible)
+3. Use Debug::log for detailed diagnostics (gated by debug flags)
+4. Use Debug::logThrottled for per-frame checks
+5. Never use printf
+
+---
+
 # Accessibility
 
 Design for the widest possible audience.

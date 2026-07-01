@@ -47,7 +47,8 @@ namespace DebugConfig
     inline bool DEBUG_GODBALL = false;
     inline bool DEBUG_GODBALL_HITSTOP = false;
     inline bool DEBUG_ANIM_ARMS = false;
-    inline bool DEBUG_COLLISION_SYSTEM = false;
+    // inline bool DEBUG_COLLISION_SYSTEM = false;
+    inline bool DEBUG_COLLISION_SYSTEM = true;
     inline bool DEBUG_COLLISION_PLAYER = false;
     inline bool DEBUG_COLLISION_LIMB = false;
     inline bool DEBUG_COLLISION_BODY_PUSH = false;
@@ -65,6 +66,7 @@ namespace DebugConfig
     // does this even do antthing 6 30 2026 
     inline bool DEBUG_WEAPON_COLLISION = true;
     inline bool DEBUG_ROTATION = false;
+    inline bool DEBUG_AUTH = false;
 
     inline void ResetAll()
     {
