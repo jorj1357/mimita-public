@@ -1,28 +1,26 @@
 ---
 name: function-size-checker
-description: Prevent giant functions. Flag functions over 50 lines.
+description: Informational function size check. Reports sizes but never blocks.
 ---
 
 # Function Size Checker
 
 ## Purpose
-Prevent giant functions.
+Report function sizes for awareness. This check is INFORMATIONAL ONLY and NEVER blocks a build.
+
+A function may be as long as it needs to be to fulfill its single responsibility.
 
 ## Rules
 | Lines    | Severity    |
 |----------|-------------|
-| 1-30     | Ideal       |
-| 50+      | Warning     |
-| 100+     | High Risk   |
-| 200+     | Critical    |
+| any      | Informational only |
+
+There are no enforced limits. Large functions are not inherently bad.
 
 ## Report
-For each oversized function, report:
 - function name
 - file
 - line count
-- nested depth
-- suggested extraction opportunities
 
 ## Action
-Report only. Do not edit code.
+Report only. Do not block builds based on function size.

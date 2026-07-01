@@ -15,6 +15,26 @@
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
+static void applyPostSnapCorrection(Player& p, const World& world, bool& groundedThisFrame)
+{
+    constexpr float SURFACE_SLOP = 0.01f;
+    constexpr float MAX_CORRECTION = 2.0f;
+    p.updateModelWorldTransforms();
+    Capsule psc = p.getCapsule();
+    auto cands = gatherGLBTriangles(world, psc, glm::vec3(0.0f));
+    auto contacts = collectCapsuleRecoveryContacts(world, psc, cands);
+    if (contacts.empty()) return;
+    glm::vec3 corr = solveBatchedCorrection(contacts, SURFACE_SLOP, nullptr, nullptr);
+    float clen = glm::length(corr);
+    if (clen > MAX_CORRECTION) corr *= MAX_CORRECTION / clen;
+    p.pos += corr;
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+        printf("[COLL]   postSnapCorrection=(%.4f,%.4f,%.4f) contacts=%zu\n", corr.x, corr.y, corr.z, contacts.size());
+    DebugVis::recordDepenetration(p.pos - corr, corr, "post-snap-wall-fix");
+    for (const auto& c : contacts)
+        applyCollisionContact(p, groundedThisFrame, c.normal, c.point, c.penetration, c.triangleIndex, c.label);
+}
+
 void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
 {
     constexpr float SURFACE_SLOP = 0.01f;
@@ -22,22 +42,33 @@ void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
     constexpr float GROUND_SNAP_DISTANCE = 0.25f;
     constexpr float MAX_UPWARD_VEL_FOR_SNAP = 1.0f;
 
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+        printf("[COLL] doGroundSnap enter vel.z=%.3f maxUp=%.3f\n", p.vel.z, MAX_UPWARD_VEL_FOR_SNAP);
+
     if (p.vel.z <= MAX_UPWARD_VEL_FOR_SNAP)
     {
         Capsule checkCap = p.getCapsule();
         float feetZ = checkCap.a.z - checkCap.r;
 
         std::vector<int> groundCandidates = gatherGLBTriangles(world, checkCap, {0, 0, -GROUND_SNAP_DISTANCE});
+
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+            printf("[COLL]   groundCandidates=%zu feetZ=%.3f\n", groundCandidates.size(), feetZ);
+
         float bestGroundZ = -FLT_MAX;
+        int bestTri = -1;
+        int nRejected = 0;
 
         for (int triIndex : groundCandidates)
         {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT)
             {
-                PHYS_LOG("[GROUND SNAP REJECT] tri=%d reason=non_walkable_normal normal=(%.3f %.3f %.3f) feetZ=%.3f pos=(%.3f %.3f %.3f)\n",
-                    triIndex, tri.normal.x, tri.normal.y, tri.normal.z, feetZ,
-                    p.pos.x, p.pos.y, p.pos.z);
+                ++nRejected;
+                if (DebugConfig::DEBUG_COLLISION_SYSTEM && nRejected <= 3)
+                    printf("[COLL]   snapReject tri=%d normal=(%.3f,%.3f,%.3f)%s\n",
+                           triIndex, tri.normal.x, tri.normal.y, tri.normal.z,
+                           tri.normal.z <= 0.0f ? " [BACKFACE]" : "");
                 continue;
             }
 
@@ -50,23 +81,29 @@ void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
                 float dist2 = glm::dot(nearest - capCenter, nearest - capCenter);
                 if (dist2 < (PLAYER_RADIUS * 0.9f) * (PLAYER_RADIUS * 0.9f))
                 {
-                    if (nearest.z < feetZ && nearest.z > bestGroundZ)
+                    if (nearest.z < feetZ && nearest.z > bestGroundZ) {
                         bestGroundZ = nearest.z;
+                        bestTri = triIndex;
+                    }
                 }
                 else
                 {
-                    PHYS_LOG("[GROUND SNAP REJECT] tri=%d reason=outside_capsule_radius nearestDist=%.3f capRadius=%.3f feetZ=%.3f pos=(%.3f %.3f %.3f)\n",
-                        triIndex, sqrtf(dist2), PLAYER_RADIUS * 0.9f, feetZ,
-                        p.pos.x, p.pos.y, p.pos.z);
+                    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                        printf("[COLL]   snapReject tri=%d reason=outsideRadius dist=%.3f\n",
+                               triIndex, sqrtf(dist2));
                 }
                 continue;
             }
 
-            {
-                if (proj.z < feetZ && proj.z > bestGroundZ)
-                    bestGroundZ = proj.z;
+            if (proj.z < feetZ && proj.z > bestGroundZ) {
+                bestGroundZ = proj.z;
+                bestTri = triIndex;
             }
         }
+
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+            printf("[COLL]   snapResult: bestTri=%d bestZ=%.3f feetZ=%.3f dist=%.3f rejected=%d\n",
+                   bestTri, bestGroundZ, feetZ, feetZ - bestGroundZ, nRejected);
 
         if (bestGroundZ > -FLT_MAX)
         {
@@ -79,38 +116,11 @@ void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
                 if (p.vel.z < 0.0f)
                     p.vel.z = 0.0f;
 
-                PHYS_LOG("[PHYS][GROUND SNAP] snapped %.4f to ground at %.2f (dist=%.4f)\n", snapAmount, bestGroundZ, distToGround);
-                if (DebugConfig::DEBUG_PHYSICS)
-                    Debug::log(Debug::Category::Physics, "[SNAP] distToGround=%.4f snap=%.4f\n",
-                        distToGround, snapAmount);
+                if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                    printf("[COLL]   SNAPPED down %.4f to groundZ=%.3f (was feetZ=%.3f) tri=%d\n",
+                           snapAmount, bestGroundZ, feetZ, bestTri);
 
-                {
-                    p.updateModelWorldTransforms();
-                    Capsule postSnapCap = p.getCapsule();
-                    std::vector<int> postSnapCandidates = gatherGLBTriangles(world, postSnapCap, glm::vec3(0.0f));
-                    std::vector<RecoveryContact> postSnapContacts = collectCapsuleRecoveryContacts(
-                        world, postSnapCap, postSnapCandidates
-                    );
-
-                    if (!postSnapContacts.empty())
-                    {
-                        glm::vec3 snapCorrection = solveBatchedCorrection(postSnapContacts, SURFACE_SLOP, nullptr, nullptr);
-                        float snapCorrLen = glm::length(snapCorrection);
-                        if (snapCorrLen > MAX_CORRECTION)
-                            snapCorrection *= MAX_CORRECTION / snapCorrLen;
-                        p.pos += snapCorrection;
-                        DebugVis::recordDepenetration(p.pos - snapCorrection, snapCorrection, "post-snap-wall-fix");
-
-                        for (const RecoveryContact& c : postSnapContacts)
-                        {
-                            applyCollisionContact(
-                                p, groundedThisFrame,
-                                c.normal, c.point, c.penetration,
-                                c.triangleIndex, c.label
-                            );
-                        }
-                    }
-                }
+                applyPostSnapCorrection(p, world, groundedThisFrame);
             }
         }
     }
