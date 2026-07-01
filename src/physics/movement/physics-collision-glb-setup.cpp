@@ -31,7 +31,7 @@ std::vector<int> gatherGLBTriangles(
     sweepBounds.min.z -= EXTRA_Z_DOWN;
     sweepBounds.max.z += EXTRA_Z_UP;
 
-    appendChunkTrianglesForAABB(world, sweepBounds, cap.r + EXTRA_XY, out);
+    appendChunkTrianglesForAABB(world, sweepBounds, cap.r + EXTRA_XY, out, "gatherGLBTriangles");
 
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();

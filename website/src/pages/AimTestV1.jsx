@@ -11,6 +11,7 @@ const LEADERBOARD_KEY = "aimtestv1_leaderboard"
 const LEADERBOARD_CACHE_MS = 60000
 
 const ASSET_PATHS = {
+  crosshairImage: "/assets/images/aimcursor.png",
   targetImage: "/assets/images/target-placeholder.png",
   hitSound: "/assets/audio/target-hit.wav",
   missSound: "/assets/audio/miss-click.wav",
@@ -114,10 +115,11 @@ export default function AimTestV1() {
 
   function verifyAsset(path, type) {
     console.log("[AimTrainer][Assets]", JSON.stringify({ [type]: path }))
-    if (type === "targetImage") {
+    if (type === "targetImage" || type === "crosshairImage") {
       const img = new Image()
-      img.onload = () => console.log("[AimTrainer][Assets] target image loaded", JSON.stringify({ src: path, width: img.width, height: img.height }))
-      img.onerror = () => console.log("[AimTrainer][Assets] target image failed", JSON.stringify({ src: path }))
+      const label = type === "targetImage" ? "target image" : "crosshair image"
+      img.onload = () => console.log("[AimTrainer][Assets] " + label + " loaded", JSON.stringify({ src: path, width: img.width, height: img.height }))
+      img.onerror = () => console.log("[AimTrainer][Assets] " + label + " failed", JSON.stringify({ src: path }))
       img.src = path
     } else {
       const audio = new Audio(path)
@@ -128,6 +130,7 @@ export default function AimTestV1() {
 
   useEffect(() => {
     console.log("[AimTrainer][Assets]", JSON.stringify(ASSET_PATHS))
+    verifyAsset(ASSET_PATHS.crosshairImage, "crosshairImage")
     verifyAsset(ASSET_PATHS.targetImage, "targetImage")
     verifyAsset(ASSET_PATHS.hitSound, "hitSound")
     verifyAsset(ASSET_PATHS.missSound, "missSound")
@@ -354,6 +357,7 @@ export default function AimTestV1() {
     <div className="gameDebugPanel">
       <h4>Aim Trainer Debug</h4>
       <table><tbody>
+        <tr><td>Crosshair image</td><td>{ASSET_PATHS.crosshairImage}</td></tr>
         <tr><td>Target image</td><td>{ASSET_PATHS.targetImage}</td></tr>
         <tr><td>Hit sound</td><td>{ASSET_PATHS.hitSound}</td></tr>
         <tr><td>Miss sound</td><td>{ASSET_PATHS.missSound}</td></tr>
