@@ -1,20 +1,78 @@
 {
-    "MainMenuAvatar":
-    {
-        "anchor": "RightCenter",
-        "offsetX": -180,
-        "offsetY": 0,
-        "width": 500,
-        "height": 700,
+    "anchor": "RightCenter",
+    "offsetX": -180.0,
+    "offsetY": 0.0,
+    "width": 500.0,
+    "height": 900.0,
 
-        "cameraDistance": 3.0,
-        "cameraYaw": -20,
-        "cameraPitch": 8,
-        "cameraFOV": 35,
+    "camera": {
+        "position": [5.0, -3.0, 1.2],
+        "target": [0, 0.0, 1.0],
+        "fov": 45.0,
+        "near": 0.1,
+        "far": 1.0,
+        "orbit_distance": 1.0,
+        "orbit_height": -1.2,
+        "orbit_yaw": 0.0,
+        "orbit_pitch": 120.0
+    },
 
-        "slowRotationEnabled": true,
-        "rotationSpeed": 0.15,
+    "character": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, -30.0],
+        "scale": [1.0, 1.0, 1.0],
+        "initial_yaw": 0.0,
+        "initial_pitch": 0.0,
+        "initial_roll": 0.0
+    },
 
-        "playerFootOffsetZ": 0.0
+    "rotation": {
+        "enabled": true,
+        "degrees_per_second": 20.0,
+        "clockwise": true,
+        "start_angle": 0.0,
+        "pause_when_hovered": false,
+        "reverse": false,
+        "acceleration": 0.0
+    },
+
+    "lighting": {
+        "ambient": [0.04, 0.045, 0.06],
+        "exposure": 1.0,
+        "brightness": 1.0,
+        "gamma": 2.2
+    },
+
+    "render": {
+        "draw_weapon": true,
+        "draw_nameplate": true,
+        "draw_healthbar": true,
+        "draw_shadow": false,
+        "draw_outline": false
+    },
+
+    "animation": {
+        "idle_animation": "idle",
+        "idle_speed": 1.0,
+        "idle_start_time": 0.0,
+        "animation_speed": 1.0
+    },
+
+    "background": {
+        "enabled": true,
+        "blur": 0.0,
+        "opacity": 1.0
+    },
+
+    "model": {
+        "offset": [0.0, 0.0, 0.0],
+        "look_at_camera": false,
+        "floor_offset": 0.0
+    },
+
+    "camera_controls": {
+        "zoom": 1.0,
+        "min_zoom": 0.5,
+        "max_zoom": 3.0
     }
 }
