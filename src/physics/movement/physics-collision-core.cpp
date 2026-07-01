@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <vector>
 #include <cmath>
@@ -138,6 +139,7 @@ glm::vec3 solveBatchedCorrection(
     glm::vec3 intendedMove,
     glm::vec3 debugPosition
 ) {
+    auto t0 = std::chrono::steady_clock::now();
     const PlayerSettings& cfg = GetPlayerSettings();
     std::vector<RecoveryContact> manifold;
     for (const RecoveryContact& contact : contacts) {
@@ -156,6 +158,8 @@ glm::vec3 solveBatchedCorrection(
         if (!found)
             manifold.push_back(merged);
     }
+
+    int manifoldIn = (int)manifold.size();
 
     std::sort(manifold.begin(), manifold.end(),
         [](const RecoveryContact& a, const RecoveryContact& b) {
@@ -215,12 +219,18 @@ glm::vec3 solveBatchedCorrection(
     correction.y = glm::clamp(correction.y, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
     correction.z = glm::clamp(correction.z, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
 
-    if (DebugConfig::DEBUG_COLLISION_SYSTEM && !manifold.empty()) {
-        Debug::log(Debug::Category::Collision, "[COLL] solveBatched: manifold=%zu contacts=%zu correction=(%.4f,%.4f,%.4f) passes=%d\n",
-               manifold.size(), contacts.size(), correction.x, correction.y, correction.z, SOLVER_PASSES);
-        for (size_t mi = 0; mi < manifold.size() && mi < 3; ++mi)
-            Debug::log(Debug::Category::Collision, "[COLL]   man[%zu]: normal=(%.3f,%.3f,%.3f) pen=%.4f\n",
-                   mi, manifold[mi].normal.x, manifold[mi].normal.y, manifold[mi].normal.z, manifold[mi].penetration);
+    auto t1 = std::chrono::steady_clock::now();
+    float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+
+    LOG_COLLISION("solver_summary", "[SOLVER] contacts=%zu manifoldIn=%d manifoldOut=%zu passes=%d "
+                  "maxPen=%.4f corr=(%.4f %.4f %.4f) elapsedMs=%.2f\n",
+                  contacts.size(), manifoldIn, manifold.size(), SOLVER_PASSES,
+                  maxPenetration, correction.x, correction.y, correction.z, elapsedMs);
+
+    if (manifold.size() > 20) {
+        Debug::warn(Debug::Category::Collision,
+            "[SOLVER WARNING] large manifold: contacts=%zu manifold=%zu maxPen=%.4f\n",
+            contacts.size(), manifold.size(), maxPenetration);
     }
 
     if (outMaxPenetration)

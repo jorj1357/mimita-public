@@ -140,13 +140,15 @@ std::vector<int> gatherGLBTrianglesForSphere(
     const World& world,
     glm::vec3 center,
     float radius,
-    const glm::vec3& move
+    const glm::vec3& move,
+    const char* caller = nullptr
 );
 
 std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,
-    const glm::vec3& move
+    const glm::vec3& move,
+    const char* caller = nullptr
 );
 
 std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
@@ -256,7 +258,7 @@ bool capsuleVsBlock(
     const Capsule& cap,
     const AABB& block,
     glm::vec3& correction,
-    bool& grounded
+    bool& outGrounded
 );
 
 std::vector<RecoveryContact> collectBlockContactsForCapsule(

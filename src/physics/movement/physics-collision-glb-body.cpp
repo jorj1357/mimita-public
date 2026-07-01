@@ -7,6 +7,7 @@
 #include "debug/debug-visuals.h"
 #include "config.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <glm/glm.hpp>
@@ -14,12 +15,14 @@
 #include <unordered_map>
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+#define BODY_LOG(...) Debug::logThrottled(Debug::Category::Collision, "body-weapon", 1.0f, __VA_ARGS__)
 
 static int runBodyWeaponPass(
     Player& p, const World& world, bool& groundedThisFrame,
     const std::unordered_map<std::string, const WeaponColliderConfig*>& cfgMap,
     bool& groundedByWeapon, int pass, int maxPasses)
 {
+    auto t0 = std::chrono::steady_clock::now();
     p.updateModelWorldTransforms();
     recomputeWeaponCapsule(p);
     std::vector<BodyWeaponSphere> bwSpheres = collectBodyWeaponSpheres(p);
@@ -47,8 +50,6 @@ static int runBodyWeaponPass(
 
     if (bwContacts.empty())
         return (pass == 0) ? -1 : 0;
-
-    PHYS_LOG("[PHYS][BODY-WEAPON] pass=%d contacts=%zu\n", pass, bwContacts.size());
 
     std::vector<RecoveryContact> walkableContacts, bodyPushContacts, weaponPushContacts;
     for (const auto& c : bwContacts) {
@@ -86,8 +87,10 @@ static int runBodyWeaponPass(
         }
     }
 
+    char rootTag[64];
+    std::snprintf(rootTag, sizeof(rootTag), "body_root_pass_%d", pass);
     Capsule bwRootCap = p.getCapsule();
-    std::vector<int> bwRootCandidates = gatherGLBTriangles(world, bwRootCap, glm::vec3(0.0f));
+    std::vector<int> bwRootCandidates = gatherGLBTriangles(world, bwRootCap, glm::vec3(0.0f), rootTag);
     std::vector<RecoveryContact> bwRootContacts = collectCapsuleRecoveryContacts(world, bwRootCap, bwRootCandidates);
 
     std::vector<RecoveryContact> solverContacts;
@@ -109,6 +112,16 @@ static int runBodyWeaponPass(
         for (const auto& pc : bodyPushContacts) projectVelocityAgainstNormal(p, pc.normal);
         for (const auto& pc : weaponPushContacts) projectVelocityAgainstNormal(p, pc.normal);
     }
+
+    auto t1 = std::chrono::steady_clock::now();
+    float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    BODY_LOG(
+        "[BODY PASS] pass=%d spheres=%zu candidates=%zu bwCandidates=%zu rootCandidates=%zu "
+        "bwContacts=%zu walkable=%zu bodyPush=%zu weaponPush=%zu rootContacts=%zu solverContacts=%zu elapsedMs=%.2f\n",
+        pass, bwSpheres.size(), bwCandidates.size() + bwRootCandidates.size(),
+        bwCandidates.size(), bwRootCandidates.size(),
+        bwContacts.size(), walkableContacts.size(), bodyPushContacts.size(), weaponPushContacts.size(),
+        bwRootContacts.size(), solverContacts.size(), elapsedMs);
 
     return (int)bwContacts.size();
 }
@@ -193,6 +206,7 @@ static void debugBodyWeaponPhase(
 
 void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThisFrame)
 {
+    auto t0 = std::chrono::steady_clock::now();
     constexpr int MAX_PASSES = 3;
     int passesUsed = 0;
     bool groundedByWeapon = false;
@@ -206,6 +220,12 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
         if (result < 0) { passesUsed = pass + 1; break; }
         passesUsed = pass + 1;
     }
+
+    auto t1 = std::chrono::steady_clock::now();
+    float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    BODY_LOG(
+        "[BODY PHASE] passes=%d totalMs=%.2f groundedByWeapon=%d\n",
+        passesUsed, elapsedMs, (int)groundedByWeapon);
 
     if (DebugConfig::DEBUG_WEAPON_COLLISION)
         debugBodyWeaponPhase(p, world, cfgMap, groundedByWeapon, passesUsed);
