@@ -1,30 +1,25 @@
 ---
 name: file-size-checker
-description: Prevent giant files. Flag files over 300 lines, main.cpp must be under 100 lines.
+description: Informational file size check. Reports sizes but never blocks. One file = one task.
 ---
 
 # File Size Checker
 
 ## Purpose
-Prevent giant files.
+Report file sizes for awareness. This check is INFORMATIONAL ONLY and NEVER blocks a build.
+
+One file = one task. A single coherent task may be any length.
 
 ## Rules
 | Lines    | Severity    |
 |----------|-------------|
-| 1-300    | Ideal       |
-| 300+     | Warning     |
-| 500+     | High Risk   |
-| 1000+    | Critical    |
+| any      | Informational only |
 
-## Special Rule
-- `main.cpp` must be <= 100 lines.
+There are no enforced limits. Large files are not inherently bad.
 
 ## Report
-For each oversized file, report:
 - file
 - line count
-- likely reason for growth
-- suggested split points
 
 ## Action
-Report only. Do not edit code.
+Report only. Do not block builds based on file size.

@@ -67,10 +67,10 @@ void applyCollisionContact(
         float feetZ = cap.a.z - cap.r;
         if (point.z <= feetZ + 0.15f)
         {
-            PHYS_LOG("[GROUND SET] source=%s tri=%d normal=(%.3f %.3f %.3f) point=(%.3f %.3f %.3f) feetZ=%.3f dist=%.3f pos=(%.3f %.3f %.3f) reason=walkable_contact\n",
-                label, triangleIndex, normal.x, normal.y, normal.z,
-                point.x, point.y, point.z, feetZ, feetZ - point.z,
-                p.pos.x, p.pos.y, p.pos.z);
+            if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                printf("[COLL] applyContact GROUND SET label=%s tri=%d normal=(%.3f,%.3f,%.3f) point.z=%.3f feetZ=%.3f pen=%.4f vel.z=%.3f\n",
+                       label ? label : "?", triangleIndex, normal.x, normal.y, normal.z,
+                       point.z, feetZ, penetration, p.vel.z);
 
             groundedThisFrame = true;
             applyTouchResets(p);
@@ -94,17 +94,26 @@ void applyCollisionContact(
     }
     else if (normal.z > 0.0f)
     {
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+            printf("[COLL] applyContact SLOPE label=%s normal=(%.3f,%.3f,%.3f) vel projected\n",
+                   label ? label : "?", normal.x, normal.y, normal.z);
         applyTouchResets(p);
         projectVelocityAgainstNormal(p, normal);
     }
     else if (normal.z < -MAX_WALKABLE_SLOPE_DOT)
     {
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+            printf("[COLL] applyContact CEILING label=%s normal=(%.3f,%.3f,%.3f) vel.z=%.3f\n",
+                   label ? label : "?", normal.x, normal.y, normal.z, p.vel.z);
         applyTouchResets(p);
         if (p.vel.z > 0.0f)
             p.vel.z = 0.0f;
     }
     else
     {
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+            printf("[COLL] applyContact WALL label=%s normal=(%.3f,%.3f,%.3f) vel.z=%.3f\n",
+                   label ? label : "?", normal.x, normal.y, normal.z, p.vel.z);
         projectVelocityAgainstNormal(p, normal);
         applyTouchResets(p);
     }
@@ -207,6 +216,14 @@ glm::vec3 solveBatchedCorrection(
     correction.x = glm::clamp(correction.x, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
     correction.y = glm::clamp(correction.y, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
     correction.z = glm::clamp(correction.z, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
+
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM && !manifold.empty()) {
+        printf("[COLL] solveBatched: manifold=%zu contacts=%zu correction=(%.4f,%.4f,%.4f) passes=%d\n",
+               manifold.size(), contacts.size(), correction.x, correction.y, correction.z, SOLVER_PASSES);
+        for (size_t mi = 0; mi < manifold.size() && mi < 3; ++mi)
+            printf("[COLL]   man[%zu]: normal=(%.3f,%.3f,%.3f) pen=%.4f\n",
+                   mi, manifold[mi].normal.x, manifold[mi].normal.y, manifold[mi].normal.z, manifold[mi].penetration);
+    }
 
     if (outMaxPenetration)
         *outMaxPenetration = maxPenetration;

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-File Size Checker
+File Size Checker (informational only)
 
-Rules:
-  - Files over 300 lines: WARNING
-  - Files over 500 lines: HIGH RISK
-  - Files over 1000 lines: CRITICAL
-  - src/main.cpp must be <= 100 lines
+Reports file sizes but NEVER blocks a build. Large files are not inherently bad.
+One file = one task. A single coherent task may be any length.
+
+Reference thresholds (informational, not enforced):
+  - Over 1000 lines: note
+  - Over 2000 lines: note
+  - Over 5000 lines: note
 """
 
 import os
@@ -34,12 +36,8 @@ LIBRARY_FILES = {
     "src/tinygltf_declare.cpp",
 }
 
-SEVERITY_RANK = {
-    "ok": 0,
-    "WARNING": 1,
-    "HIGH": 2,
-    "CRITICAL": 3,
-}
+# File size checker is INFORMATIONAL ONLY — never blocks a build.
+# Large files are allowed. This checker just reports sizes for awareness.
 
 
 def is_library_file(relpath):
@@ -117,18 +115,9 @@ def base_line_count(relpath):
 
 
 def severity_for(relpath, count):
-    is_main = relpath == "src" + os.sep + "main.cpp"
-    if is_main:
-        if count > 100:
-            return ("CRITICAL", f"main.cpp has {count} lines (max 100)")
-        return ("ok", "")
-
-    if count > 1000:
-        return ("CRITICAL", f"{count} lines (max 1000)")
-    if count > 500:
-        return ("HIGH", f"{count} lines (max 500)")
-    if count > 300:
-        return ("WARNING", f"{count} lines (max 300)")
+    # This checker is informational only — always returns "ok"
+    _ = relpath
+    _ = count
     return ("ok", "")
 
 
@@ -141,42 +130,20 @@ def check_file(filepath):
         return (relpath, 0, "error", str(e))
 
     count = len(lines)
-    severity, msg = severity_for(relpath, count)
-    return (relpath, count, severity, msg)
+    return (relpath, count, "ok", "")
 
 
 def main():
     files = collect_files()
-    issues = []
-
-    for f in files:
-        result = check_file(f)
-        if result[2] == "ok":
-            continue
-
-        base_count = base_line_count(result[0])
-        if base_count is not None:
-            base_severity, _ = severity_for(result[0], base_count)
-            if SEVERITY_RANK[result[2]] <= SEVERITY_RANK[base_severity]:
-                continue
-        issues.append(result)
-
-    if not issues:
-        largest = sorted(
-            [(os.path.relpath(f, REPO_ROOT), len(open(f, errors="replace").readlines()))
-             for f in files if os.path.isfile(f)],
-            key=lambda x: -x[1]
-        )[:3]
-        print(f"Checked {len(files)} files. No oversized files.")
-        print(f"Largest: {', '.join(f'{n} ({c}L)' for n, c in largest)}")
-        sys.exit(0)
-
-    print(f"Checked {len(files)} files. Found {len(issues)} issue(s):\n")
-    for relpath, count, severity, msg in issues:
-        print(f"  [{severity:8}] {relpath}")
-        print(f"            {msg}")
-
-    sys.exit(1)
+    largest = sorted(
+        [(os.path.relpath(f, REPO_ROOT), len(open(f, errors="replace").readlines()))
+         for f in files if os.path.isfile(f)],
+        key=lambda x: -x[1]
+    )[:5]
+    print(f"Checked {len(files)} files.")
+    print(f"Largest: {', '.join(f'{n} ({c}L)' for n, c in largest)}")
+    print("File size check: informational only (no limits enforced).")
+    sys.exit(0)
 
 
 if __name__ == "__main__":

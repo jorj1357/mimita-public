@@ -49,6 +49,12 @@ void doGLBTriangleCollisions(
 
     doGLBSweepSlide(p, world, groundedThisFrame, dt, totalMove, remainingMove, trace, candidates);
 
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+        printf("[COLL] after sweepSlide: pos=(%.2f,%.2f,%.2f) gnd=%d remaining=(%.4f,%.4f,%.4f) vel=(%.2f,%.2f,%.2f)\n",
+               p.pos.x, p.pos.y, p.pos.z, (int)groundedThisFrame,
+               remainingMove.x, remainingMove.y, remainingMove.z,
+               p.vel.x, p.vel.y, p.vel.z);
+
     Capsule cap = p.getCapsule();
     p.updateModelWorldTransforms();
     cap = p.getCapsule();
@@ -80,6 +86,12 @@ void doGLBTriangleCollisions(
             correction *= MAX_CORRECTION / corrLen;
 
         p.pos += correction;
+
+        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+            printf("[COLL]   depen iter=%d contacts=%zu maxPen=%.4f correction=(%.4f,%.4f,%.4f) pos=(%.2f,%.2f,%.2f)\n",
+                   depenIter, contacts.size(), iterMaxPen,
+                   correction.x, correction.y, correction.z,
+                   p.pos.x, p.pos.y, p.pos.z);
 
         for (const RecoveryContact& c : contacts)
         {
@@ -150,7 +162,16 @@ void doGLBTriangleCollisions(
         }
     }
 
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+        printf("[COLL] before safety: pos=(%.2f,%.2f,%.2f) gnd=%d vel.z=%.3f\n",
+               p.pos.x, p.pos.y, p.pos.z, (int)groundedThisFrame, p.vel.z);
+
     doGroundSnap(p, world, groundedThisFrame);
+
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+        printf("[COLL] after groundSnap: pos=(%.2f,%.2f,%.2f) gnd=%d vel.z=%.3f\n",
+               p.pos.x, p.pos.y, p.pos.z, (int)groundedThisFrame, p.vel.z);
+
     doFloorRecovery(p, world, groundedThisFrame);
     doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
 
@@ -290,7 +311,7 @@ void doGLBTriangleCollisions(
             if (stuckFrames >= 3 && stuckLogTimer >= 0.5f) {
                 Capsule dcap = p.getCapsule();
                 std::vector<int> dcandidates = gatherGLBTriangles(world, dcap, glm::vec3(0.0f));
-                printf("[COLLISION STUCK] frames=%d move=%.4f delta=%.4f pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) candidates=%zu grounded=%d\n",
+                printf("[COLLISION STUCK] frames=%d move=%.4f delta=%.4f pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) candidates=%zu gnd=%d\n",
                        stuckFrames, moveLen, posDelta,
                        p.pos.x, p.pos.y, p.pos.z,
                        p.vel.x, p.vel.y, p.vel.z,
@@ -311,8 +332,25 @@ void doGLBTriangleCollisions(
         lastStuckPos = p.pos;
     }
 
-    doRotationSafetyPass(p, world, groundedThisFrame, trace);
-    doFinalSafetyPass(p, world, trace);
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
+        glm::vec3 beforeRot = p.pos;
+        doRotationSafetyPass(p, world, groundedThisFrame, trace);
+        glm::vec3 rotDelta = p.pos - beforeRot;
+        if (glm::length(rotDelta) > 0.001f)
+            printf("[COLL] rotationSafety moved by (%.4f,%.4f,%.4f)\n", rotDelta.x, rotDelta.y, rotDelta.z);
+    } else {
+        doRotationSafetyPass(p, world, groundedThisFrame, trace);
+    }
+
+    if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
+        glm::vec3 beforeFinal = p.pos;
+        doFinalSafetyPass(p, world, trace);
+        glm::vec3 finalDelta = p.pos - beforeFinal;
+        if (glm::length(finalDelta) > 0.001f)
+            printf("[COLL] finalSafety moved by (%.4f,%.4f,%.4f)\n", finalDelta.x, finalDelta.y, finalDelta.z);
+    } else {
+        doFinalSafetyPass(p, world, trace);
+    }
 
     {
         static int overlapWarnCooldown = 0;
