@@ -10,6 +10,12 @@ const RESULTS_KEY = "aimtestv1_results"
 const LEADERBOARD_KEY = "aimtestv1_leaderboard"
 const LEADERBOARD_CACHE_MS = 60000
 
+const ASSET_PATHS = {
+  targetImage: "/assets/images/target-placeholder.png",
+  hitSound: "/assets/audio/target-hit.wav",
+  missSound: "/assets/audio/miss-click.wav",
+}
+
 function loadLocalBest() {
   try { const raw = localStorage.getItem(BEST_KEY); return raw ? parseFloat(raw) : null }
   catch { return null }
@@ -54,6 +60,24 @@ function randomInRect(playW, playH, radius) {
   }
 }
 
+function safeJson(resp) {
+  return resp.text().then(text => {
+    try {
+      return JSON.parse(text)
+    } catch (e) {
+      console.log("[AimTrainer][Submit] JSON parse failed", JSON.stringify({
+        rawTextFirst500: text.slice(0, 500),
+        errorMessage: e.message,
+      }))
+      throw new Error("JSON parse failed: " + e.message)
+    }
+  })
+}
+
+function isDebugMode() {
+  return typeof window !== "undefined" && window.location.search.includes("debugAim=1")
+}
+
 export default function AimTestV1() {
   const [phase, setPhase] = useState("start")
   const [time, setTime] = useState(0)
@@ -77,27 +101,47 @@ export default function AimTestV1() {
   const missIdRef = useRef(0)
   const hitAudioRef = useRef(null)
   const missAudioRef = useRef(null)
+  const debugMode = isDebugMode()
 
   function getHitAudio() {
-    if (!hitAudioRef.current) hitAudioRef.current = new Audio("/assets/audio/target-hit.wav")
+    if (!hitAudioRef.current) hitAudioRef.current = new Audio(ASSET_PATHS.hitSound)
     return hitAudioRef.current
   }
   function getMissAudio() {
-    if (!missAudioRef.current) missAudioRef.current = new Audio("/assets/audio/miss-click.wav")
+    if (!missAudioRef.current) missAudioRef.current = new Audio(ASSET_PATHS.missSound)
     return missAudioRef.current
   }
 
+  function verifyAsset(path, type) {
+    console.log("[AimTrainer][Assets]", JSON.stringify({ [type]: path }))
+    if (type === "targetImage") {
+      const img = new Image()
+      img.onload = () => console.log("[AimTrainer][Assets] target image loaded", JSON.stringify({ src: path, width: img.width, height: img.height }))
+      img.onerror = () => console.log("[AimTrainer][Assets] target image failed", JSON.stringify({ src: path }))
+      img.src = path
+    } else {
+      const audio = new Audio(path)
+      audio.oncanplaythrough = () => console.log("[AimTrainer][Assets] " + type + " loaded", JSON.stringify({ src: path }))
+      audio.onerror = (e) => console.log("[AimTrainer][Assets] " + type + " failed", JSON.stringify({ src: path, error: e.message || "unknown", networkState: audio.networkState, readyState: audio.readyState }))
+    }
+  }
+
   useEffect(() => {
+    console.log("[AimTrainer][Assets]", JSON.stringify(ASSET_PATHS))
+    verifyAsset(ASSET_PATHS.targetImage, "targetImage")
+    verifyAsset(ASSET_PATHS.hitSound, "hitSound")
+    verifyAsset(ASSET_PATHS.missSound, "missSound")
+
     setLocalBest(loadLocalBest())
     setLocalResults(loadLocalResults())
 
     fetch("/api/auth/me", { credentials: "include" })
-      .then(r => r.json())
+      .then(safeJson)
       .then(data => {
         if (data.success) {
           setUser(data.user)
           fetch("/api/games/aim-test-v1/scores", { credentials: "include" })
-            .then(r => r.json())
+            .then(safeJson)
             .then(d => {
               if (d.success) {
                 if (d.best != null) setServerBest(d.best)
@@ -120,7 +164,7 @@ export default function AimTestV1() {
     setLeaderboardLoading(true)
     setLeaderboardError(false)
     fetch("/api/games/aim-test-v1/leaderboard")
-      .then(r => r.json())
+      .then(safeJson)
       .then(d => {
         if (d.success && d.leaderboard) {
           setLeaderboard(d.leaderboard)
@@ -209,25 +253,67 @@ export default function AimTestV1() {
     setLocalBest(best)
     setPhase("results")
     setSubmissionStatus("submitting")
-    console.log("[AimTrainer] Submitting score...")
+
+    const durationMs = elapsed * 1000
+    const payload = { time: elapsed }
+
+    console.log("[AimTrainer][Result]", JSON.stringify({
+      durationMs,
+      hits: targetsHitRef.current,
+      misses: missIdRef.current,
+      averageReactionMs: null,
+      bestReactionMs: null,
+      worstReactionMs: null,
+      accuracy: null,
+      finalScore: elapsed,
+      submittedPayload: payload,
+    }))
+
+    // Validate payload
+    for (const key of Object.keys(payload)) {
+      const val = payload[key]
+      if (val === null || val === undefined || val === "" || (typeof val === "number" && (isNaN(val) || val < 0))) {
+        console.log("[AimTrainer][Result] invalid local score", JSON.stringify({ field: key, value: val }))
+        setSubmissionStatus("error")
+        return
+      }
+    }
+
+    console.log("[AimTrainer][Submit] start", JSON.stringify({
+      url: "/api/games/aim-test-v1/scores",
+      method: "POST",
+      payload,
+      pageOrigin: window.location.origin,
+      pathname: window.location.pathname,
+      userAgent: navigator.userAgent.slice(0, 80),
+      timestamp: new Date().toISOString(),
+    }))
 
     const doSubmit = user
       ? fetch("/api/games/aim-test-v1/scores", {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ time: elapsed }),
-        }).then(r => {
-          if (!r.ok) throw new Error("HTTP " + r.status)
-          return r.json()
+          body: JSON.stringify(payload),
+        }).then(resp => {
+          console.log("[AimTrainer][Submit] response", JSON.stringify({
+            status: resp.status,
+            statusText: resp.statusText,
+            ok: resp.ok,
+            contentType: resp.headers.get("content-type"),
+          }))
+          if (!resp.ok) throw new Error("HTTP " + resp.status)
+          return safeJson(resp)
         }).then(d => {
-          if (!d.success) throw new Error("rejected")
-          console.log("[AimTrainer] Score submitted.")
+          if (!d.success) throw new Error("rejected: " + (d.error || d.message || "unknown"))
+          console.log("[AimTrainer] Score submitted.", JSON.stringify(d))
           setSubmissionStatus("success")
         }).catch(err => {
           console.log("[AimTrainer] Score submission failed: " + err.message)
+          console.log("[AimTrainer][Submit] error", JSON.stringify({ message: err.message, stack: (err.stack || "").slice(0, 200) }))
           setSubmissionStatus("error")
         })
       : Promise.resolve().then(() => {
+          console.log("[AimTrainer] Score submission skipped (not logged in)")
           setSubmissionStatus("success")
         })
 
@@ -237,7 +323,7 @@ export default function AimTestV1() {
       setLeaderboardError(false)
       return fetch("/api/games/aim-test-v1/leaderboard")
     })
-    .then(r => r.json())
+    .then(safeJson)
     .then(d => {
       if (d.success && d.leaderboard) {
         setLeaderboard(d.leaderboard)
@@ -264,10 +350,24 @@ export default function AimTestV1() {
     return () => cancelAnimationFrame(timerRef.current)
   }, [])
 
+  const debugPanel = debugMode ? (
+    <div className="gameDebugPanel">
+      <h4>Aim Trainer Debug</h4>
+      <table><tbody>
+        <tr><td>Target image</td><td>{ASSET_PATHS.targetImage}</td></tr>
+        <tr><td>Hit sound</td><td>{ASSET_PATHS.hitSound}</td></tr>
+        <tr><td>Miss sound</td><td>{ASSET_PATHS.missSound}</td></tr>
+        <tr><td>Auth status</td><td>{user ? "Logged in as " + user.username : "Not logged in"}</td></tr>
+        <tr><td>Phase</td><td>{phase}</td></tr>
+      </tbody></table>
+    </div>
+  ) : null
+
   if (phase === "start") {
     return (
       <Layout>
         <div className="gamePage">
+          {debugPanel}
           <div className="gameInner">
             <div className="gameStartScreen">
               <h1 className="gameTitle">Aim Test v1</h1>
@@ -284,6 +384,7 @@ export default function AimTestV1() {
     return (
       <Layout>
         <div className="gamePage">
+          {debugPanel}
           <div className="gameInner">
             <div className="gameHud">
               <div className="gameTimer">{time.toFixed(2)}</div>
@@ -315,6 +416,7 @@ export default function AimTestV1() {
   return (
     <Layout>
       <div className="gamePage">
+        {debugPanel}
         <div className="gameInner">
           <div className="gameResultsScreen">
             <h1 className="gameTitle">Final Time</h1>
@@ -357,6 +459,9 @@ export default function AimTestV1() {
                     </p>
                   )}
                 </div>
+                {submissionStatus === "submitting" && !user && (
+                  <p className="gameLbEmpty" style={{marginTop:'0.5rem'}}>Not logged in — score saved locally only.</p>
+                )}
                 {submissionStatus === "error" && (
                   <p className="gameSubmissionError">Unable to submit score.</p>
                 )}

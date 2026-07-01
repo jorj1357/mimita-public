@@ -115,6 +115,7 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
     if (req.path.startsWith("/api/game/")) return next()
+    if (req.path.startsWith("/api/games/")) return next()
     if (req.path === "/api/auth/exchange-session") return next()
     if (req.path.startsWith("/api/client-login/")) return next()
     if (req.headers["authorization"]?.startsWith("Bearer ")) return next()
