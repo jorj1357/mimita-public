@@ -47,8 +47,12 @@ namespace DebugConfig
     inline bool DEBUG_GODBALL = false;
     inline bool DEBUG_GODBALL_HITSTOP = false;
     inline bool DEBUG_ANIM_ARMS = false;
-    // inline bool DEBUG_COLLISION_SYSTEM = false;
-    inline bool DEBUG_COLLISION_SYSTEM = true;
+    // 7 1 2026 I MADE A GIT COMMIT ON THIS DA
+    // TO MIMITA REPO
+    // IDK WAHT CHANGED OR WHAT WAS WRONG BUT SLOPES WORK AND
+    // OMGOSH FINALLY BRO. OMGSOSH.
+    inline bool DEBUG_COLLISION_SYSTEM = false;
+    // inline bool DEBUG_COLLISION_SYSTEM = true;
     inline bool DEBUG_COLLISION_PLAYER = false;
     inline bool DEBUG_COLLISION_LIMB = false;
     inline bool DEBUG_COLLISION_BODY_PUSH = false;
