@@ -196,8 +196,9 @@ void doGLBSweepSlide(
         {
             float feetZ = cap.a.z - cap.r;
             bool stepWall = std::fabs(earliest.normal.z) < 0.2f;
-            Debug::log(Debug::Category::Collision, "[COLL]   stepUpCheck: stepWall=%d feetZ=%.3f hitPointZ=%.3f stepH=%.3f maxStep=%.3f",
-                       (int)stepWall, feetZ, earliest.point.z, earliest.point.z - feetZ, MAX_STEP_HEIGHT);
+            if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                Debug::log(Debug::Category::Collision, "[COLL]   stepUpCheck: stepWall=%d feetZ=%.3f hitPointZ=%.3f stepH=%.3f maxStep=%.3f",
+                           (int)stepWall, feetZ, earliest.point.z, earliest.point.z - feetZ, MAX_STEP_HEIGHT);
         }
 
         if (std::fabs(earliest.normal.z) < 0.2f)
@@ -231,12 +232,14 @@ void doGLBSweepSlide(
                 }
                 bool consistentStep = (consistentSamples >= 3);
 
-                Debug::log(Debug::Category::Collision, "[COLL]   stepUp: consistent=%d/%d stepH=%.3f feetZ=%.3f",
-                           consistentSamples, totalSamples, stepHeight, feetZ);
+                if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                    Debug::log(Debug::Category::Collision, "[COLL]   stepUp: consistent=%d/%d stepH=%.3f feetZ=%.3f",
+                               consistentSamples, totalSamples, stepHeight, feetZ);
 
                 if (!consistentStep) {
-                    Debug::log(Debug::Category::Collision, "[COLL]   stepUp FAILED consistency restore pos=(%.2f,%.2f,%.2f)",
-                               originalPos.x, originalPos.y, originalPos.z);
+                    if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                        Debug::log(Debug::Category::Collision, "[COLL]   stepUp FAILED consistency restore pos=(%.2f,%.2f,%.2f)",
+                                   originalPos.x, originalPos.y, originalPos.z);
                     p.pos = originalPos;
                     p.updateModelWorldTransforms();
                     continue;
@@ -273,7 +276,8 @@ void doGLBSweepSlide(
                     }
                 }
 
-                Debug::log(Debug::Category::Collision, "[COLL]   stepUp: blocked=%d", (int)blocked);
+                if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                    Debug::log(Debug::Category::Collision, "[COLL]   stepUp: blocked=%d", (int)blocked);
 
                 if (!blocked)
                 {
