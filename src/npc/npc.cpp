@@ -502,10 +502,11 @@ void NpcSystem::drawDebug(const Camera& camera) const
         // Target point (red sphere)
         DebugVis::drawWireSphere(camera, playerEye, 0.1f, glm::vec4(1.0f, 0.0f, 0.0f, 0.9f));
 
-        // Weapon info label
+        // Accuracy info label
+        float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
         char label[192];
-        int n = snprintf(label, sizeof(label), "NPC %u %s",
-            npc.id, npc.body.equippedWeaponId.c_str());
+        int n = snprintf(label, sizeof(label), "NPC %u aimAcc=%.2f maxErr=%.1fdeg",
+            npc.id, gNpcAimAccuracy, maxErr);
         const WeaponDefinition* wDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
         if (wDef)
         {
