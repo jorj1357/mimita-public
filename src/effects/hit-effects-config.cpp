@@ -195,6 +195,57 @@ void HitEffects::loadConfig(const std::string& path)
             if (l.contains("endRadius")) cfg.legacyContactSphere.endRadius = l["endRadius"];
         }
 
+        if (j.contains("damageNumbers")) {
+            const json& d = j["damageNumbers"];
+            if (d.contains("enabled")) cfg.damageNumber.enabled = d["enabled"];
+            if (d.contains("fontSize")) cfg.damageNumber.fontSize = d["fontSize"];
+            if (d.contains("lifetime")) cfg.damageNumber.lifetime = d["lifetime"];
+            if (d.contains("startOpacity")) cfg.damageNumber.startOpacity = d["startOpacity"];
+            if (d.contains("endOpacity")) cfg.damageNumber.endOpacity = d["endOpacity"];
+            if (d.contains("fadeStart")) cfg.damageNumber.fadeStart = d["fadeStart"];
+            if (d.contains("fadeEnd")) cfg.damageNumber.fadeEnd = d["fadeEnd"];
+            if (d.contains("worldOffset") && d["worldOffset"].is_array() && d["worldOffset"].size() >= 3)
+                cfg.damageNumber.worldOffsetX = d["worldOffset"][0];
+                cfg.damageNumber.worldOffsetY = d["worldOffset"][1];
+                cfg.damageNumber.worldOffsetZ = d["worldOffset"][2];
+            if (d.contains("screenOffset") && d["screenOffset"].is_array() && d["screenOffset"].size() >= 2) {
+                cfg.damageNumber.screenOffsetX = d["screenOffset"][0];
+                cfg.damageNumber.screenOffsetY = d["screenOffset"][1];
+            }
+            if (d.contains("moveVelocity") && d["moveVelocity"].is_array() && d["moveVelocity"].size() >= 3) {
+                cfg.damageNumber.moveX = d["moveVelocity"][0];
+                cfg.damageNumber.moveY = d["moveVelocity"][1];
+                cfg.damageNumber.moveZ = d["moveVelocity"][2];
+            }
+            if (d.contains("moveSpeed")) cfg.damageNumber.moveSpeed = d["moveSpeed"];
+            if (d.contains("startScale")) cfg.damageNumber.startScale = d["startScale"];
+            if (d.contains("endScale")) cfg.damageNumber.endScale = d["endScale"];
+            if (d.contains("randomHorizontalSpread")) cfg.damageNumber.randomHorizontalSpread = d["randomHorizontalSpread"];
+            if (d.contains("randomVerticalSpread")) cfg.damageNumber.randomVerticalSpread = d["randomVerticalSpread"];
+            if (d.contains("spawnJitter")) cfg.damageNumber.spawnJitter = d["spawnJitter"];
+            if (d.contains("spawnDelay")) cfg.damageNumber.spawnDelay = d["spawnDelay"];
+            if (d.contains("textColor") && d["textColor"].is_array() && d["textColor"].size() >= 3)
+                cfg.damageNumber.textColor = readVec3Json(d["textColor"]);
+            if (d.contains("criticalColor") && d["criticalColor"].is_array() && d["criticalColor"].size() >= 3)
+                cfg.damageNumber.criticalColor = readVec3Json(d["criticalColor"]);
+            if (d.contains("healingColor") && d["healingColor"].is_array() && d["healingColor"].size() >= 3)
+                cfg.damageNumber.healingColor = readVec3Json(d["healingColor"]);
+            if (d.contains("outlineEnabled")) cfg.damageNumber.outlineEnabled = d["outlineEnabled"];
+            if (d.contains("outlineThickness")) cfg.damageNumber.outlineThickness = d["outlineThickness"];
+            if (d.contains("outlineColor") && d["outlineColor"].is_array() && d["outlineColor"].size() >= 3)
+                cfg.damageNumber.outlineColor = readVec3Json(d["outlineColor"]);
+            if (d.contains("shadowEnabled")) cfg.damageNumber.shadowEnabled = d["shadowEnabled"];
+            if (d.contains("shadowOffset") && d["shadowOffset"].is_array() && d["shadowOffset"].size() >= 2) {
+                cfg.damageNumber.shadowOffset.x = d["shadowOffset"][0];
+                cfg.damageNumber.shadowOffset.y = d["shadowOffset"][1];
+            }
+            if (d.contains("bold")) cfg.damageNumber.bold = d["bold"];
+            if (d.contains("italic")) cfg.damageNumber.italic = d["italic"];
+            Debug::log(Debug::Category::NpcCombat,
+                "[HITFX CONFIG] damageNumbers enabled=%d fontSize=%.4f lifetime=%.2f\n",
+                (int)cfg.damageNumber.enabled, cfg.damageNumber.fontSize, cfg.damageNumber.lifetime);
+        }
+
         if (j.contains("deathEllipsoid")) {
             const json& d = j["deathEllipsoid"];
             if (d.contains("enabled")) cfg.deathEllipsoid.enabled = d["enabled"];

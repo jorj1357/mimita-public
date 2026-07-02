@@ -104,6 +104,41 @@ struct LegacyContactSphereConfig {
     float endRadius = 0.27f;
 };
 
+struct DamageNumberConfig {
+    bool enabled = true;
+    float fontSize = 0.014f;
+    float lifetime = 1.0f;
+    float startOpacity = 1.0f;
+    float endOpacity = 0.0f;
+    float fadeStart = 0.0f;
+    float fadeEnd = 1.0f;
+    float worldOffsetX = 0.0f;
+    float worldOffsetY = 0.0f;
+    float worldOffsetZ = 0.25f;
+    float screenOffsetX = 0.0f;
+    float screenOffsetY = 0.0f;
+    float moveX = 0.0f;
+    float moveY = 0.0f;
+    float moveZ = 0.8f;
+    float moveSpeed = 1.0f;
+    float startScale = 1.0f;
+    float endScale = 1.0f;
+    float randomHorizontalSpread = 0.0f;
+    float randomVerticalSpread = 0.0f;
+    float spawnJitter = 0.0f;
+    float spawnDelay = 0.0f;
+    glm::vec3 textColor{1.0f, 0.15f, 0.15f};
+    glm::vec3 criticalColor{1.0f, 0.9f, 0.1f};
+    glm::vec3 healingColor{0.15f, 1.0f, 0.15f};
+    bool outlineEnabled = false;
+    float outlineThickness = 1.0f;
+    glm::vec3 outlineColor{0.0f, 0.0f, 0.0f};
+    bool shadowEnabled = false;
+    glm::vec2 shadowOffset{1.0f, 1.0f};
+    bool bold = false;
+    bool italic = false;
+};
+
 struct MovementDashBurstConfig {
     bool enabled = true;
     int lifetimeTicks = 8;
@@ -169,6 +204,7 @@ struct HitFxConfig {
     MovementDashBurstConfig walkBurst;
     MovementDashBurstConfig landingBurst;
     DeathEllipsoidConfig deathEllipsoid;
+    DamageNumberConfig damageNumber;
 };
 
 struct HitEvent {
