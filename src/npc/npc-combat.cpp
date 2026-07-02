@@ -40,7 +40,6 @@ bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
     if (maxDist < 0.1f) return false;
     dir /= maxDist;
 
-    // Use chunk spatial hashing to only test triangles near the ray path
     AABB rayBounds;
     rayBounds.min = glm::min(from, to);
     rayBounds.max = glm::max(from, to);
@@ -73,12 +72,20 @@ bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
     return true;
 }
 
+float effectiveRange(const WeaponDefinition& def)
+{
+    auto it = def.customParams.find("effectiveRange");
+    if (it != def.customParams.end()) return it->second;
+    if (def.projectileSpeed > 0.0f)
+        return def.projectileSpeed * std::max(def.projectileLifetime, 2.0f);
+    return 150.0f;
+}
+
 } // anonymous namespace
 
 float NpcCombat::aimErrorDegrees(float difficulty)
 {
     float d = std::clamp(difficulty, 1.0f, 10.0f);
-    // Diff 1 = 12 deg, Diff 5 = 4 deg, Diff 10 = 0.5 deg
     float t = (d - 1.0f) / 9.0f;
     if (t <= 0.5f)
         return 12.0f - (t / 0.5f) * 8.0f;
@@ -86,9 +93,6 @@ float NpcCombat::aimErrorDegrees(float difficulty)
         return 4.0f - ((t - 0.5f) / 0.5f) * 3.5f;
 }
 
-// Ray vs capsule (line segment + radius) intersection test.
-// Uses segment-segment closest-points to correctly handle rays
-// where the infinite-line closest approach is behind the ray origin.
 bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
                            const glm::vec3& a, const glm::vec3& b, float radius,
                            float& outDist, glm::vec3& outNormal)
@@ -100,7 +104,6 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     if (abLen < 0.0001f) return false;
     glm::vec3 abDir = ab / abLen;
 
-    // Treat the ray as a finite segment for correct segment-segment distance
     glm::vec3 rayEnd = origin + dir * MAX_RAY;
     glm::vec3 raySeg = rayEnd - origin;
     float rayLen = glm::length(raySeg);
@@ -123,11 +126,6 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
         s = (a_dot_b * a_dot_r - b_dot_r) / denom;
     }
 
-    // Check distance at the unclamped s (if within segment), or at both endpoints
-    // when the infinite-line closest point falls outside the capsule segment.
-    // The nearest-endpoint clamp alone misses the case where the ray passes closer
-    // to the FAR end (e.g., NPC above player — s wants to be below capsule bottom,
-    // clamps to bottom, but the actual closest approach is at the capsule top).
     struct { float s, t, d; } best = {s, 0.0f, 1e30f};
     auto checkS = [&](float sVal) {
         float tVal = (sVal <= 0.0f) ? a_dot_r : a_dot_r + a_dot_b * sVal;
@@ -136,10 +134,10 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
         if (dVal < best.d) { best = {sVal, tVal, dVal}; }
     };
     if (s >= 0.0f && s <= abLen) {
-        checkS(s); // unclamped point is within segment
+        checkS(s);
     } else {
-        checkS(0.0f);       // capsule bottom
-        checkS(abLen);      // capsule top — may be closer than bottom!
+        checkS(0.0f);
+        checkS(abLen);
     }
     t = best.t; s = best.s;
 
@@ -147,13 +145,6 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     glm::vec3 closestSeg = a + abDir * s;
     glm::vec3 diff = closestRay - closestSeg;
     float dist = glm::length(diff);
-
-    Debug::log(Debug::Category::NpcCombat,
-        "[RAY CAPSULE] closestRay=(%.3f %.3f %.3f) closestCapsule=(%.3f %.3f %.3f) "
-        "distBetween=%.4f radius=%.4f t=%.4f s=%.4f",
-        closestRay.x, closestRay.y, closestRay.z,
-        closestSeg.x, closestSeg.y, closestSeg.z,
-        dist, radius, t, s);
 
     if (dist < radius) {
         outDist = t;
@@ -165,10 +156,6 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
 
 glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos, glm::vec3 targetVel)
 {
-    // Aim at the player's center mass (z = +0.8m above ground) instead of feet.
-    // The NPC fires from chest height (npcPos.z ≈ 0.8). Without this offset the
-    // natural aimDir would point slightly downward, but the old code forced z=0
-    // which made the horizontal ray miss the player capsule at low aim error.
     glm::vec3 aimTarget = targetPos + glm::vec3(0.0f, 0.0f, 0.8f);
     glm::vec3 toTarget = aimTarget - npcPos;
     float dist = glm::length(toTarget);
@@ -186,14 +173,52 @@ glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 tar
 
     float errorDeg = aimErrorDegrees(npc.difficulty);
     float errorRad = glm::radians(errorDeg) * (random01(const_cast<Npc&>(npc).rngState) * 2.0f - 1.0f);
-    // Apply error in the horizontal plane, preserving the natural vertical component
     {
         float c = std::cos(errorRad);
         float s = std::sin(errorRad);
         float dx = aimDir.x * c - aimDir.y * s;
         float dy = aimDir.x * s + aimDir.y * c;
         aimDir.x = dx; aimDir.y = dy;
-        // Z component preserved so the ray passes through the player capsule
+    }
+
+    return aimDir;
+}
+
+static glm::vec3 aimAtTargetProjectile(const Npc& npc, glm::vec3 npcPos, glm::vec3 targetPos, glm::vec3 targetVel, float projectileSpeed, float gravity)
+{
+    glm::vec3 aimTarget = targetPos + glm::vec3(0.0f, 0.0f, 0.8f);
+    glm::vec3 toTarget = aimTarget - npcPos;
+    float dist = glm::length(toTarget);
+    if (dist < 0.1f || projectileSpeed < 0.1f)
+        return glm::vec3{1.0f, 0.0f, 0.0f};
+
+    float travelTime = dist / projectileSpeed;
+    float d01 = difficulty01(npc.difficulty);
+    float predictionQuality = 0.3f + d01 * 0.6f;
+    travelTime *= predictionQuality;
+
+    glm::vec3 predicted = aimTarget + targetVel * travelTime;
+
+    if (gravity > 0.0f)
+    {
+        predicted.z += 0.5f * gravity * travelTime * travelTime;
+    }
+
+    glm::vec3 aimDir = predicted - npcPos;
+    float aimLen = glm::length(aimDir);
+    if (aimLen < 0.001f)
+        aimDir = {1.0f, 0.0f, 0.0f};
+    else
+        aimDir /= aimLen;
+
+    float errorDeg = NpcCombat::aimErrorDegrees(npc.difficulty) * 0.8f;
+    float errorRad = glm::radians(errorDeg) * (random01(const_cast<Npc&>(npc).rngState) * 2.0f - 1.0f);
+    {
+        float c = std::cos(errorRad);
+        float s = std::sin(errorRad);
+        float dx = aimDir.x * c - aimDir.y * s;
+        float dy = aimDir.x * s + aimDir.y * c;
+        aimDir.x = dx; aimDir.y = dy;
     }
 
     return aimDir;
@@ -205,37 +230,73 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         return false;
 
     float dist = npc.sensors.targetDistance;
-    if (dist > 150.0f)
-        return false;
-
-    // Auto-equip weapon if not set
-    if (npc.body.equippedSlot < 1 || npc.body.equippedWeaponId.empty()) {
-        float d01 = difficulty01(npc.difficulty);
-        if (d01 < 0.4f) {
-            npc.body.equippedSlot = 1;
-            npc.body.equippedWeaponId = "revolver";
-        } else if (d01 < 0.7f) {
-            npc.body.equippedSlot = (rand() % 2 == 0) ? 1 : 3;
-            npc.body.equippedWeaponId = (npc.body.equippedSlot == 1) ? "revolver" : "shotgun";
-        } else {
-            npc.body.equippedSlot = (rand() % 2 == 0) ? 3 : 1;
-            npc.body.equippedWeaponId = (npc.body.equippedSlot == 3) ? "shotgun" : "revolver";
-        }
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC WEAPON] npc=%u auto-equipped slot=%d weapon=%s",
-            npc.id, npc.body.equippedSlot, npc.body.equippedWeaponId.c_str());
-    }
 
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-    if (!def) return false;
+    if (!def)
+    {
+        // Auto-equip weapon if none set
+        float d01 = difficulty01(npc.difficulty);
+        std::vector<std::string> allWeapons = WeaponRegistry::instance().getAllIds();
+        if (!allWeapons.empty())
+        {
+            int idx = (int)(random01(npc.rngState) * (float)allWeapons.size());
+            idx = std::min(idx, (int)allWeapons.size() - 1);
+            npc.body.equippedWeaponId = allWeapons[idx];
+            def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        }
+        if (!def) return false;
+        npc.body.equippedSlot = 1;
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC WEAPON] npc=%u auto-equipped weapon=%s",
+            npc.id, def->id.c_str());
+    }
+
+    // Check effective range
+    float maxRange = effectiveRange(*def);
+    if (dist > maxRange)
+        return false;
+
+    auto& rt = npc.body.weaponRuntimes[def->id];
 
     // Initialize runtime if needed
-    auto& rt = npc.body.weaponRuntimes[def->id];
-    if (rt.currentAmmo <= 0 && def->magazineSize > 0) {
-        rt.currentAmmo = def->magazineSize;
+    if (rt.currentAmmo <= 0 && !rt.isReloading && def->magazineSize > 0)
+    {
         auto it = def->customParams.find("reserveAmmo");
         rt.reserveAmmo = (it != def->customParams.end()) ? (int)it->second : 999;
     }
+
+    // Reload if empty
+    if (rt.currentAmmo <= 0 && rt.reserveAmmo > 0 && !rt.isReloading)
+    {
+        rt.isReloading = true;
+        rt.reloadTimer = def->reloadTime;
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC RELOAD] npc=%u weapon=%s start reload=%.2fs",
+            npc.id, def->id.c_str(), def->reloadTime);
+        return false;
+    }
+
+    // Handle active reload
+    if (rt.isReloading)
+    {
+        rt.reloadTimer -= dt;
+        if (rt.reloadTimer <= 0.0f)
+        {
+            int toLoad = def->magazineSize - rt.currentAmmo;
+            int available = std::min(toLoad, rt.reserveAmmo);
+            rt.currentAmmo += available;
+            rt.reserveAmmo -= available;
+            rt.isReloading = false;
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC RELOAD] npc=%u weapon=%s complete ammo=%d reserve=%d",
+                npc.id, def->id.c_str(), rt.currentAmmo, rt.reserveAmmo);
+        }
+        return false;
+    }
+
+    // No ammo and no reserve — can't fire
+    if (rt.currentAmmo <= 0)
+        return false;
 
     float settleTime = 0.1f + (1.0f - difficulty01(npc.difficulty)) * 0.5f;
     npc.aimTimer += dt;
@@ -247,38 +308,51 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     if (!lineOfSight(npcPos, player.pos, world))
         return false;
 
-    glm::vec3 aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
+    glm::vec3 aimDir;
+    bool isProjectile = (def->behaviorType == WeaponBehaviorType::Projectile ||
+                         def->behaviorType == WeaponBehaviorType::RocketLauncher);
+
+    if (isProjectile && def->projectileSpeed > 0.0f)
+    {
+        float gravity = 0.0f;
+        auto git = def->customParams.find("projectileGravity");
+        if (git != def->customParams.end()) gravity = git->second;
+        aimDir = aimAtTargetProjectile(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel, def->projectileSpeed, gravity);
+    }
+    else
+    {
+        aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
+    }
 
     // Decrement ammo
     if (def->magazineSize > 0)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
-    // Fire using shared weapon system
-    RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
-        *def, rt, npc.body, world, npcPos, aimDir, &player);
+    RevolverShotResult shot;
+    if (isProjectile && def->spread > 0.0f)
+    {
+        glm::vec3 spreadDir = WeaponFire::computeSpreadDirection(aimDir, def->spread, const_cast<Npc&>(npc).rngState);
+        shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player);
+    }
+    else
+    {
+        shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+    }
 
     Debug::log(Debug::Category::NpcCombat,
-        "[NPC WEAPON FIRE] npc=%u weapon=%s origin=(%.2f %.2f %.2f) "
-        "aimDir=(%.2f %.2f %.2f) ammo=%d",
-        npc.id, def->id.c_str(), npcPos.x, npcPos.y, npcPos.z,
-        aimDir.x, aimDir.y, aimDir.z, rt.currentAmmo);
-    Debug::log(Debug::Category::NpcCombat,
-        "[NPC WEAPON RESULT] npc=%u fired=%d hitEntity=%d hitWorld=%d "
-        "damage=%.0f hpAfter=%d",
-        npc.id, (int)shot.fired, (int)shot.hitEntity, (int)shot.hitWorld,
-        shot.damage, player.currentHp);
-
-    Debug::log(Debug::Category::NpcCombat,
-        "[NPC SHOT] hit=%d weapon=%s damage=%.0f hpAfter=%d dist=%.1f aimError=%.1fdeg",
-        (int)shot.hitEntity, def->id.c_str(), shot.damage, player.currentHp, dist,
-        aimErrorDegrees(npc.difficulty));
+        "[NPC WEAPON FIRE] npc=%u weapon=%s behavior=%d origin=(%.2f %.2f %.2f) "
+        "aimDir=(%.2f %.2f %.2f) ammo=%d dist=%.1f",
+        npc.id, def->id.c_str(), (int)def->behaviorType,
+        npcPos.x, npcPos.y, npcPos.z,
+        aimDir.x, aimDir.y, aimDir.z, rt.currentAmmo, dist);
 
     npc.aimTimer = 0.0f;
 
     float d01 = difficulty01(npc.difficulty);
-    float rangeFactor = std::clamp(dist / 150.0f, 0.0f, 1.0f);
-    float cd = 0.45f - d01 * 0.35f;
-    cd += rangeFactor * 0.5f;
+    float rangeFactor = std::clamp(dist / maxRange, 0.0f, 1.0f);
+    float cd = std::max(def->fireDelay * 1.2f, 0.06f);
+    cd -= d01 * 0.25f;
+    cd += rangeFactor * 0.3f;
     cd = std::max(cd, 0.06f);
     npc.attackCooldown = cd;
     return true;
