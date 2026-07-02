@@ -363,6 +363,25 @@ static void registerWorldXhCommands()
     });
 
     term.registerCommand({
+        "world_xh_centerdot",
+        "Show/hide world-space crosshair center dot. 0=hidden, 1=visible.",
+        "world_xh_centerdot <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] centerdot=" + std::to_string((int)DebugConfig::WORLD_XH_CENTERDOT));
+                return;
+            }
+            DebugConfig::WORLD_XH_CENTERDOT = args[0] != "0";
+            Terminal::instance().addLog(
+                DebugConfig::WORLD_XH_CENTERDOT
+                ? "[OK] world_xh_centerdot enabled"
+                : "[OK] world_xh_centerdot disabled");
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
         "world_xh_dynamic",
         "Enable/disable distance-based crosshair scaling. 0=fixed size, 1=dynamic.",
         "world_xh_dynamic <0|1>",

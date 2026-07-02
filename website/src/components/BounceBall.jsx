@@ -1,5 +1,4 @@
-import { useRef, useEffect } from "react"
-import { createPortal } from "react-dom"
+import { useEffect, useRef } from "react"
 
 const R = 18
 const GRAVITY = 0.35
@@ -14,172 +13,182 @@ function debugLog(...args) {
   }
 }
 
+function docW() {
+  return Math.max(
+    document.documentElement.scrollWidth,
+    document.body.scrollWidth,
+    window.innerWidth
+  )
+}
+
+function docH() {
+  return Math.max(
+    document.documentElement.scrollHeight,
+    document.body.scrollHeight,
+    window.innerHeight
+  )
+}
+
 export default function BounceBall() {
-  const el = useRef(null)
-  const pos = useRef({ x: 0, y: 0 })
-  const vel = useRef({ x: 1, y: 6 })
-  const drag = useRef(false)
-  const off = useRef({ x: 0, y: 0 })
-  const hist = useRef([])
-  const raf = useRef(null)
-  const bounds = useRef({ w: 0, h: 0 })
+  const cleanup = useRef(null)
 
   useEffect(() => {
-    function updateBounds() {
-      bounds.current.w = window.innerWidth - R * 2
-      bounds.current.h = window.innerHeight - R * 2
-    }
+    const maxX = docW() - R * 2
+    const maxY = docH() - R * 2
 
-    updateBounds()
-    pos.current.x = bounds.current.w / 2
-    pos.current.y = R
+    const pos = { x: maxX / 2, y: 0 }
+    const vel = { x: 1, y: 6 }
+    let drag = false
+    const off = { x: 0, y: 0 }
+    const hist = []
+    let rafId = null
+    let boundsW = maxX
+    let boundsH = maxY
 
-    debugLog("Ball bounds:", {
-      left: 0,
-      right: bounds.current.w + R * 2,
-      top: 0,
-      bottom: bounds.current.h + R * 2,
-      ballRadius: R,
+    debugLog("Ball Position", { x: pos.x, y: pos.y })
+    debugLog("Document Bounds", { width: docW(), height: docH() })
+    debugLog("Viewport", {
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
     })
 
+    const container = document.createElement("div")
+    container.style.cssText =
+      "position:absolute;top:0;left:0;width:0;height:0;pointer-events:none"
+    document.body.appendChild(container)
+
+    const ball = document.createElement("div")
+    ball.style.cssText =
+      "position:absolute;" +
+      `left:${pos.x}px;` +
+      `top:${pos.y}px;` +
+      `width:${R * 2}px;` +
+      `height:${R * 2}px;` +
+      "border-radius:50%;" +
+      "background:radial-gradient(circle at 35% 35%, #ff4488, #aa0044);" +
+      "cursor:grab;" +
+      "touch-action:none;" +
+      "pointer-events:auto;" +
+      "z-index:99999;" +
+      "box-shadow:0 0 12px rgba(255,68,136,0.5);" +
+      "user-select:none;"
+    container.appendChild(ball)
+
+    function measureBounds() {
+      boundsW = docW() - R * 2
+      boundsH = docH() - R * 2
+    }
+
     function tick() {
-      if (!drag.current) {
-        vel.current.y += GRAVITY
-        vel.current.x *= FRICTION
-        vel.current.y *= FRICTION
+      if (!drag) {
+        vel.y += GRAVITY
+        vel.x *= FRICTION
+        vel.y *= FRICTION
 
-        pos.current.x += vel.current.x
-        pos.current.y += vel.current.y
+        pos.x += vel.x
+        pos.y += vel.y
 
-        const { w: maxX, h: maxY } = bounds.current
-
-        if (pos.current.x < 0) {
-          pos.current.x = 0
-          vel.current.x = Math.abs(vel.current.x) * RESTITUTION
-        } else if (pos.current.x > maxX) {
-          pos.current.x = maxX
-          vel.current.x = -Math.abs(vel.current.x) * RESTITUTION
+        if (pos.x < 0) {
+          pos.x = 0
+          vel.x = Math.abs(vel.x) * RESTITUTION
+        } else if (pos.x > boundsW) {
+          pos.x = boundsW
+          vel.x = -Math.abs(vel.x) * RESTITUTION
         }
 
-        if (pos.current.y < 0) {
-          pos.current.y = 0
-          vel.current.y = Math.abs(vel.current.y) * RESTITUTION
-        } else if (pos.current.y > maxY) {
-          pos.current.y = maxY
-          vel.current.y = -Math.abs(vel.current.y) * RESTITUTION
-          if (Math.abs(vel.current.x) < 0.3 && Math.abs(vel.current.y) < 0.3) {
-            vel.current.x = 0
-            vel.current.y = 0
+        if (pos.y < 0) {
+          pos.y = 0
+          vel.y = Math.abs(vel.y) * RESTITUTION
+        } else if (pos.y > boundsH) {
+          pos.y = boundsH
+          vel.y = -Math.abs(vel.y) * RESTITUTION
+          if (Math.abs(vel.x) < 0.3 && Math.abs(vel.y) < 0.3) {
+            vel.x = 0
+            vel.y = 0
           }
         }
       }
 
-      if (el.current) {
-        el.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`
-      }
+      ball.style.left = pos.x + "px"
+      ball.style.top = pos.y + "px"
 
-      raf.current = requestAnimationFrame(tick)
+      rafId = requestAnimationFrame(tick)
     }
 
-    raf.current = requestAnimationFrame(tick)
+    rafId = requestAnimationFrame(tick)
 
     function onPointerDown(e) {
       e.preventDefault()
-      drag.current = true
-      off.current.x = e.clientX - pos.current.x
-      off.current.y = e.clientY - pos.current.y
-      hist.current = []
-      if (el.current) {
-        el.current.style.cursor = "grabbing"
-        el.current.setPointerCapture(e.pointerId)
-      }
+      drag = true
+      off.x = e.clientX + window.scrollX - pos.x
+      off.y = e.clientY + window.scrollY - pos.y
+      hist.length = 0
+      ball.style.cursor = "grabbing"
       document.body.style.cursor = "grabbing"
+      ball.setPointerCapture(e.pointerId)
     }
 
     function onPointerMove(e) {
-      if (!drag.current) return
+      if (!drag) return
       e.preventDefault()
-      const { w: maxX, h: maxY } = bounds.current
-      pos.current.x = Math.max(0, Math.min(maxX, e.clientX - off.current.x))
-      pos.current.y = Math.max(0, Math.min(maxY, e.clientY - off.current.y))
-      hist.current.push({ x: e.clientX, y: e.clientY, t: performance.now() })
-      if (hist.current.length > FRAME_HISTORY) hist.current.shift()
+      const dx = e.clientX + window.scrollX - off.x
+      const dy = e.clientY + window.scrollY - off.y
+      pos.x = Math.max(0, Math.min(boundsW, dx))
+      pos.y = Math.max(0, Math.min(boundsH, dy))
+      hist.push({ x: e.clientX + window.scrollX, y: e.clientY + window.scrollY, t: performance.now() })
+      if (hist.length > FRAME_HISTORY) hist.shift()
     }
 
     function onPointerUp(e) {
-      if (!drag.current) return
-      drag.current = false
+      if (!drag) return
+      drag = false
       document.body.style.cursor = ""
-      if (el.current) {
-        el.current.style.cursor = "grab"
-        el.current.releasePointerCapture(e.pointerId)
-      }
+      ball.style.cursor = "grab"
+      ball.releasePointerCapture(e.pointerId)
 
-      if (hist.current.length >= 2) {
-        const first = hist.current[0]
-        const last = hist.current[hist.current.length - 1]
+      if (hist.length >= 2) {
+        const first = hist[0]
+        const last = hist[hist.length - 1]
         const dt = Math.max(last.t - first.t, 16)
-        vel.current.x = ((last.x - first.x) / dt) * 16 * 1.2
-        vel.current.y = ((last.y - first.y) / dt) * 16 * 1.2
-
+        vel.x = ((last.x - first.x) / dt) * 16 * 1.2
+        vel.y = ((last.y - first.y) / dt) * 16 * 1.2
         const maxV = 25
-        const spd = Math.sqrt(vel.current.x * vel.current.x + vel.current.y * vel.current.y)
+        const spd = Math.sqrt(vel.x * vel.x + vel.y * vel.y)
         if (spd > maxV) {
-          vel.current.x = (vel.current.x / spd) * maxV
-          vel.current.y = (vel.current.y / spd) * maxV
+          vel.x = (vel.x / spd) * maxV
+          vel.y = (vel.y / spd) * maxV
         }
       }
     }
 
-    function onResizeOrScroll() {
-      updateBounds()
-      const { w: maxX, h: maxY } = bounds.current
-      pos.current.x = Math.min(pos.current.x, maxX)
-      pos.current.y = Math.min(pos.current.y, maxY)
+    function onResize() {
+      measureBounds()
+      pos.x = Math.min(pos.x, boundsW)
+      pos.y = Math.min(pos.y, boundsH)
     }
 
-    const ball = el.current
-    if (ball) {
-      ball.addEventListener("pointerdown", onPointerDown)
-    }
+    ball.addEventListener("pointerdown", onPointerDown)
     document.addEventListener("pointermove", onPointerMove)
     document.addEventListener("pointerup", onPointerUp)
-    window.addEventListener("resize", onResizeOrScroll)
-    window.addEventListener("scroll", onResizeOrScroll)
+    window.addEventListener("resize", onResize)
 
-    return () => {
-      if (raf.current) cancelAnimationFrame(raf.current)
-      if (ball) {
-        ball.removeEventListener("pointerdown", onPointerDown)
-      }
+    cleanup.current = () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      ball.removeEventListener("pointerdown", onPointerDown)
       document.removeEventListener("pointermove", onPointerMove)
       document.removeEventListener("pointerup", onPointerUp)
-      window.removeEventListener("resize", onResizeOrScroll)
-      window.removeEventListener("scroll", onResizeOrScroll)
+      window.removeEventListener("resize", onResize)
+      container.remove()
     }
   }, [])
 
-  const ball = (
-    <div
-      ref={el}
-      style={{
-        position: "fixed",
-        left: 0,
-        top: 0,
-        width: R * 2,
-        height: R * 2,
-        borderRadius: "50%",
-        background: "radial-gradient(circle at 35% 35%, #ff4488, #aa0044)",
-        cursor: "grab",
-        touchAction: "none",
-        zIndex: 99999,
-        pointerEvents: "auto",
-        willChange: "transform",
-        boxShadow: "0 0 12px rgba(255,68,136,0.5)",
-        userSelect: "none",
-      }}
-    />
-  )
+  useEffect(() => {
+    return () => {
+      if (cleanup.current) cleanup.current()
+    }
+  }, [])
 
-  return createPortal(ball, document.body)
+  return null
 }

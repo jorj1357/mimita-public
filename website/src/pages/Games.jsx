@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import Layout from "../components/Layout"
 import StickerLayer from "../components/StickerLayer"
 import RainbowText from "../components/RainbowText"
+import ChaosBox from "../components/ChaosBox"
 
 function seededRandom(seed) {
   let s = seed
@@ -91,11 +92,15 @@ export default function Games() {
                 <StickerLayer count={6} />
 
                 <div className="gamesInner" style={{ position: "relative", zIndex: 1 }}>
-                    <RainbowText as="h1" className="gamesTitle">
-                        Games
-                    </RainbowText>
-                    <p className="gamesSubtitle">Freaky slenderman: Collect my pagesssssahhhhh👅👅👅
-                        Freaky  mimita: Play my gamesssssahhhhhhh 👅👅👅👅👅</p>
+                    <ChaosBox seed="GamesTitle">
+                        <RainbowText as="h1" className="gamesTitle">
+                            Games
+                        </RainbowText>
+                    </ChaosBox>
+                    <ChaosBox seed="GamesSubtitle">
+                        <p className="gamesSubtitle">Freaky slenderman: Collect my pagesssssahhhhh👅👅👅
+                            Freaky  mimita: Play my gamesssssahhhhhhh 👅👅👅👅👅</p>
+                    </ChaosBox>
 
                     <div className="gamesGrid">
                         {GAMES.map((game) => (

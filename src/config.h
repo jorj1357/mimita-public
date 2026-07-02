@@ -90,6 +90,7 @@ namespace DebugConfig
     inline bool  WORLD_XH_DYNAMIC = true;      // 0=fixed size, 1=distance-based scaling
     inline float WORLD_XH_MAXSIZE = 2.0f;      // max scale multiplier, clamped ≥ 0
     inline float WORLD_XH_MINSIZE = 0.5f;      // min scale multiplier, clamped ≥ 0
+    inline bool  WORLD_XH_CENTERDOT = false;   // 0=hidden, 1=visible
 
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;

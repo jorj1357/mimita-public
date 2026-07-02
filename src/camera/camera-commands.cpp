@@ -76,4 +76,24 @@ void registerCameraCommands()
                 (cam.thirdPerson ? "Third Person" : "First Person"));
         }
     });
+
+    Terminal::instance().registerCommand({
+        "fov", "Set camera field of view (1-359). Default is 100.",
+        "fov <1-359>",
+        [](const std::vector<std::string>& args) {
+            Camera& cam = THE_CAMERA;
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[FOV] current=" + std::to_string(cam.fov));
+                return;
+            }
+            float val = std::stof(args[0]);
+            val = std::clamp(val, 1.0f, 359.0f);
+            cam.fov = val;
+            Terminal::instance().addLog(
+                "[FOV] set to " + std::to_string(cam.fov));
+        },
+        "2026-07-02",
+        CommandCategory::Weapon
+    });
 }

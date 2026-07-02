@@ -76,10 +76,11 @@ void HitEffects::onHit(const HitEvent& event)
     if (gConfig.core.damageNumbers) {
         EffectPart e;
         e.position = event.position;
-        e.color = glm::vec4(1.0f, 0.9f, 0.1f, 1.0f);
-        e.maxLifetime = 1.2f;
+        e.color = glm::vec4(1.0f, 0.15f, 0.15f, 1.0f);
+        e.velocity = glm::vec3(0.0f, 0.0f, 0.8f);
+        e.maxLifetime = 1.0f;
         e.scale = 0.35f;
-        e.label = std::to_string(event.damage);
+        e.label = "-" + std::to_string(event.damage);
         e.replayType = "damage_number";
         EffectPartSystem::instance().spawn(e);
     }

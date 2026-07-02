@@ -8,6 +8,7 @@ import PixelBox from "../components/PixelBox"
 import RandomRotation from "../components/RandomRotation"
 import ProceduralOffset from "../components/ProceduralOffset"
 import NoiseBackground from "../components/NoiseBackground"
+import ChaosBox from "../components/ChaosBox"
 import BounceBall from "../components/BounceBall"
 
 export default function Home() {
@@ -40,41 +41,49 @@ export default function Home() {
 
         <div className="heroContent">
 
-          <div className="heroLogoWrap">
-            <RainbowText as="h1" className="mainLogo">
-              MiMITA
-            </RainbowText>
-          </div>
-
-          <RandomRotation maxDeg={1}>
-            <p className="tagline">
-              &ldquo;Movement is More Important Than Aim&rdquo;
-            </p>
-          </RandomRotation>
-
-          <PixelBox style={{ width: "100%", maxWidth: "720px", margin: "0 auto 28px auto", border: "none" }}>
-            <div className="previewArea">
-              <video
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="auto"
-                className="previewVideo"
-              >
-                <source
-                  src="/mimita-preview-small.mp4"
-                  type="video/mp4"
-                />
-              </video>
+          <ChaosBox seed="HomeHeroTitle">
+            <div className="heroLogoWrap">
+              <RainbowText as="h1" className="mainLogo">
+                MiMITA
+              </RainbowText>
             </div>
-          </PixelBox>
+          </ChaosBox>
 
-          <ProceduralOffset max={2}>
-            <p className="description">
-              Mimita is a movement-based PvP game where movement matters more than aim.
-            </p>
-          </ProceduralOffset>
+          <ChaosBox seed="HomeTagline">
+            <RandomRotation maxDeg={1}>
+              <p className="tagline">
+                &ldquo;Movement is More Important Than Aim&rdquo;
+              </p>
+            </RandomRotation>
+          </ChaosBox>
+
+          <ChaosBox seed="HomePreview">
+            <PixelBox style={{ width: "100%", maxWidth: "720px", margin: "0 auto 28px auto", border: "none" }}>
+              <div className="previewArea">
+                <video
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="auto"
+                  className="previewVideo"
+                >
+                  <source
+                    src="/mimita-preview-small.mp4"
+                    type="video/mp4"
+                  />
+                </video>
+              </div>
+            </PixelBox>
+          </ChaosBox>
+
+          <ChaosBox seed="HomeDescription">
+            <ProceduralOffset max={2}>
+              <p className="description">
+                Mimita is a movement-based PvP game where movement matters more than aim.
+              </p>
+            </ProceduralOffset>
+          </ChaosBox>
 
           <div className="ctaButtons">
             <a
