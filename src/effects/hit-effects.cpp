@@ -72,26 +72,28 @@ void HitEffects::onHit(const HitEvent& event)
             event.attacker, event.victim);
     }
 
-    // 6. Damage number (only for entity hits, not world geometry)
-    if (gConfig.core.damageNumbers && event.hitEntity) {
+    // 6. Damage number — only for entity hits (not world geometry)
+    if (gConfig.damageNumber.enabled && event.hitEntity && gConfig.core.damageNumbers) {
+        const auto& dn = gConfig.damageNumber;
         EffectPart e;
-        e.position = event.position;
-        e.color = glm::vec4(1.0f, 0.15f, 0.15f, 1.0f);
-        e.velocity = glm::vec3(0.0f, 0.0f, 0.6f);
-        e.maxLifetime = 1.0f;
-        e.scale = 0.5f;
+        e.position = event.position + glm::vec3(dn.worldOffsetX, dn.worldOffsetY, dn.worldOffsetZ);
+        e.color = glm::vec4(dn.textColor.x, dn.textColor.y, dn.textColor.z, 1.0f);
+        e.velocity = glm::vec3(dn.moveX, dn.moveY, dn.moveZ) * dn.moveSpeed;
+        e.maxLifetime = dn.lifetime;
+        e.scale = dn.fontSize;
         e.label = "-" + std::to_string(event.damage);
         e.replayType = "damage_number";
         EffectPart* spawned = EffectPartSystem::instance().spawn(e);
         if (spawned) {
             Debug::log(Debug::Category::General,
-                "[DAMAGE POPUP] damage=%d pos=(%.2f %.2f %.2f) label=%s scale=%.2f lifetime=%.2f poolIdx=%d\n",
-                event.damage, event.position.x, event.position.y, event.position.z,
+                "[DAMAGE NUMBERS] entity=%d damage=%d pos=(%.2f %.2f %.2f) label=%s "
+                "size=%.4f lifetime=%.2f color=(%.2f %.2f %.2f) configLoaded=1\n",
+                (int)event.hitEntity, event.damage, event.position.x, event.position.y, event.position.z,
                 e.label.c_str(), e.scale, e.maxLifetime,
-                (int)(spawned - EffectPartSystem::instance().poolData()));
+                dn.textColor.x, dn.textColor.y, dn.textColor.z);
         } else {
             Debug::warn(Debug::Category::General,
-                "[DAMAGE POPUP] FAILED to spawn — pool full. damage=%d\n", event.damage);
+                "[DAMAGE NUMBERS] FAILED to spawn — pool full. damage=%d\n", event.damage);
         }
     }
 

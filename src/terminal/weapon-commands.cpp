@@ -480,128 +480,149 @@ void registerWeaponDebugCommand()
     });
 }
 
+// ── World crosshair config loader ──
+// Loads config/crosshair-world.json and directly assigns to DebugConfig variables.
+// Uses direct assignment instead of Terminal::execute() to eliminate parsing issues.
+
 static const char* WORLD_XH_CONFIG_PATH = "config/crosshair-world.json";
 
-void loadWorldCrosshairConfig()
+static bool loadWorldCrosshairFromJSON()
 {
     using json = nlohmann::json;
-    auto& term = Terminal::instance();
 
-    printf("[WORLD_XH] Loading world crosshair config...\n");
-    printf("[WORLD_XH] Config path: %s\n", WORLD_XH_CONFIG_PATH);
-    term.addLog("[WORLD_XH] Loading world crosshair config...");
+    printf("[WorldCrosshair] Loaded config:\n{\n");
 
-    std::string fullPath = WORLD_XH_CONFIG_PATH;
-    std::ifstream file(fullPath);
+    std::ifstream file(WORLD_XH_CONFIG_PATH);
     if (!file.is_open()) {
-        printf("[WORLD_XH] ERROR: Could not open config file at '%s'. Using defaults.\n", fullPath.c_str());
-        term.addLog(std::string("[WORLD_XH] ERROR: Could not open config file. Using defaults."));
-        return;
+        printf("  [ERROR] Could not open: %s\n", WORLD_XH_CONFIG_PATH);
+        printf("}\n");
+        return false;
     }
 
     json j;
     try {
         file >> j;
     } catch (const std::exception& e) {
-        printf("[WORLD_XH] ERROR: Failed to parse JSON: %s\n", e.what());
-        term.addLog(std::string("[WORLD_XH] ERROR: Failed to parse JSON: ") + e.what());
-        return;
+        printf("  [ERROR] Parse failed: %s\n", e.what());
+        printf("}\n");
+        return false;
     }
 
-    printf("[WORLD_XH] JSON parsed successfully. Checking fields...\n");
-
-    auto apply = [&](const std::string& key, const std::string& cmdPrefix, const std::string& value) {
-        std::string fullCmd = cmdPrefix + " " + value;
-        printf("[WORLD_XH] Executing: %s\n", fullCmd.c_str());
-        term.execute(fullCmd);
-        printf("[WORLD_XH] Loaded: %s = %s\n", key.c_str(), value.c_str());
-        term.addLog(std::string("[WORLD_XH] Loaded: ") + key);
-    };
-
-    // Scalar float fields
-    struct FloatField { const char* key; const char* cmd; };
-    static const FloatField floatFields[] = {
-        {"world_xh_alpha",        "world_xh_alpha"},
-        {"world_xh_length",       "world_xh_length"},
-        {"world_xh_gap",          "world_xh_gap"},
-        {"world_xh_thickness",    "world_xh_thickness"},
-        {"world_xh_outline_alpha","world_xh_outline_alpha"},
-        {"world_xh_minsize",      "world_xh_minsize"},
-        {"world_xh_maxsize",      "world_xh_maxsize"},
-    };
-
-    for (const auto& f : floatFields) {
-        if (j.contains(f.key)) {
-            try {
-                float v = j[f.key].get<float>();
-                apply(f.key, f.cmd, std::to_string(v));
-            } catch (const std::exception& e) {
-                printf("[WORLD_XH] WARNING: skipping invalid %s (%s)\n", f.key, e.what());
-                term.addLog(std::string("[WORLD_XH] WARNING: skipping invalid ") + f.key);
-            }
+    // Float fields
+    auto loadFloat = [&](const char* key, float& var) {
+        if (j.contains(key)) {
+            float v = j[key].get<float>();
+            var = v;
+            printf("  %s: %.4f\n", key, (double)v);
         } else {
-            printf("[WORLD_XH] Field not present (using default): %s\n", f.key);
+            printf("  %s: (default %.4f)\n", key, (double)var);
         }
-    }
+    };
+
+    loadFloat("world_xh_alpha",        DebugConfig::WORLD_XH_ALPHA);
+    loadFloat("world_xh_length",       DebugConfig::WORLD_XH_LENGTH);
+    loadFloat("world_xh_gap",          DebugConfig::WORLD_XH_GAP);
+    loadFloat("world_xh_thickness",    DebugConfig::WORLD_XH_THICKNESS);
+    loadFloat("world_xh_outline_alpha",DebugConfig::WORLD_XH_OUTLINE_ALPHA);
+    loadFloat("world_xh_minsize",      DebugConfig::WORLD_XH_MINSIZE);
+    loadFloat("world_xh_maxsize",      DebugConfig::WORLD_XH_MAXSIZE);
 
     // Boolean fields
-    struct BoolField { const char* key; const char* cmd; };
-    static const BoolField boolFields[] = {
-        {"world_xh_outline",   "world_xh_outline"},
-        {"world_xh_dynamic",   "world_xh_dynamic"},
-        {"world_xh_centerdot", "world_xh_centerdot"},
+    auto loadBool = [&](const char* key, bool& var) {
+        if (j.contains(key)) {
+            var = j[key].get<int>() != 0;
+            printf("  %s: %s\n", key, var ? "true" : "false");
+        } else {
+            printf("  %s: (default %s)\n", key, var ? "true" : "false");
+        }
     };
 
-    for (const auto& b : boolFields) {
-        if (j.contains(b.key)) {
-            try {
-                int v = j[b.key].get<int>();
-                apply(b.key, b.cmd, std::to_string(v));
-            } catch (const std::exception& e) {
-                printf("[WORLD_XH] WARNING: skipping invalid %s (%s)\n", b.key, e.what());
-                term.addLog(std::string("[WORLD_XH] WARNING: skipping invalid ") + b.key);
-            }
-        } else {
-            printf("[WORLD_XH] Field not present (using default): %s\n", b.key);
-        }
-    }
+    loadBool("world_xh_outline",   DebugConfig::WORLD_XH_OUTLINE);
+    loadBool("world_xh_dynamic",   DebugConfig::WORLD_XH_DYNAMIC);
+    loadBool("world_xh_centerdot", DebugConfig::WORLD_XH_CENTERDOT);
 
-    // Color field — expects array of 3 floats
+    // Color field — expects [R, G, B] each 0-1
     if (j.contains("world_xh_color")) {
-        try {
-            auto& arr = j["world_xh_color"];
-            if (arr.is_array() && arr.size() >= 3) {
-                float r = arr[0].get<float>();
-                float g = arr[1].get<float>();
-                float b = arr[2].get<float>();
-                std::string val = std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b);
-                apply("world_xh_color", "world_xh_color", val);
-            } else {
-                printf("[WORLD_XH] WARNING: world_xh_color must be an array of 3 floats\n");
-                term.addLog("[WORLD_XH] WARNING: world_xh_color must be an array of 3 floats");
-            }
-        } catch (const std::exception& e) {
-            printf("[WORLD_XH] WARNING: skipping invalid world_xh_color (%s)\n", e.what());
-            term.addLog("[WORLD_XH] WARNING: skipping invalid world_xh_color");
+        auto& arr = j["world_xh_color"];
+        if (arr.is_array() && arr.size() >= 3) {
+            DebugConfig::WORLD_XH_R = arr[0].get<float>();
+            DebugConfig::WORLD_XH_G = arr[1].get<float>();
+            DebugConfig::WORLD_XH_B = arr[2].get<float>();
+            printf("  world_xh_color: [%.4f, %.4f, %.4f]\n",
+                (double)DebugConfig::WORLD_XH_R,
+                (double)DebugConfig::WORLD_XH_G,
+                (double)DebugConfig::WORLD_XH_B);
+        } else {
+            printf("  world_xh_color: (invalid array, keeping default)\n");
         }
     } else {
-        printf("[WORLD_XH] Field not present (using default): world_xh_color\n");
+        printf("  world_xh_color: (default [%.4f, %.4f, %.4f])\n",
+            (double)DebugConfig::WORLD_XH_R,
+            (double)DebugConfig::WORLD_XH_G,
+            (double)DebugConfig::WORLD_XH_B);
     }
 
-    printf("[WORLD_XH] World crosshair config loaded successfully.\n");
-    term.addLog("[WORLD_XH] World crosshair config loaded successfully.");
+    printf("}\n");
+    return true;
+}
+
+static void logCurrentCrosshairState()
+{
+    printf("[WorldCrosshair] Current runtime values:\n{\n");
+    printf("  world_xh_alpha: %.4f\n", (double)DebugConfig::WORLD_XH_ALPHA);
+    printf("  world_xh_color: [%.4f, %.4f, %.4f]\n",
+        (double)DebugConfig::WORLD_XH_R,
+        (double)DebugConfig::WORLD_XH_G,
+        (double)DebugConfig::WORLD_XH_B);
+    printf("  world_xh_gap: %.4f\n", (double)DebugConfig::WORLD_XH_GAP);
+    printf("  world_xh_length: %.4f\n", (double)DebugConfig::WORLD_XH_LENGTH);
+    printf("  world_xh_outline: %s\n", DebugConfig::WORLD_XH_OUTLINE ? "true" : "false");
+    printf("  world_xh_outline_alpha: %.4f\n", (double)DebugConfig::WORLD_XH_OUTLINE_ALPHA);
+    printf("  world_xh_thickness: %.4f\n", (double)DebugConfig::WORLD_XH_THICKNESS);
+    printf("  world_xh_dynamic: %s\n", DebugConfig::WORLD_XH_DYNAMIC ? "true" : "false");
+    printf("  world_xh_minsize: %.4f\n", (double)DebugConfig::WORLD_XH_MINSIZE);
+    printf("  world_xh_maxsize: %.4f\n", (double)DebugConfig::WORLD_XH_MAXSIZE);
+    printf("  world_xh_centerdot: %s\n", DebugConfig::WORLD_XH_CENTERDOT ? "true" : "false");
+    printf("}\n");
+}
+
+void loadWorldCrosshairConfig()
+{
+    printf("[WorldCrosshair] Loading config from: %s\n", WORLD_XH_CONFIG_PATH);
+    if (loadWorldCrosshairFromJSON()) {
+        printf("[WorldCrosshair] Config loaded and applied.\n");
+        logCurrentCrosshairState();
+    } else {
+        printf("[WorldCrosshair] Using default values.\n");
+    }
 }
 
 void applyStartupDefaults()
 {
-    auto& term = Terminal::instance();
+    printf("[WorldCrosshair] Applying startup defaults...\n");
 
-    printf("[WORLD_XH] Applying startup defaults...\n");
+    DebugConfig::DEBUG_WPN_SHOT_LINE = false;
+    printf("[WorldCrosshair] DEBUG_WPN_SHOT_LINE = false  (wpn_shot_line disabled)\n");
+}
 
-    // Disable the weapon shot debug line by default.
-    // The red debug beam and sphere are noisy; the world-space crosshair is sufficient.
-    printf("[WORLD_XH] Executing: wpn_shot_line 0\n");
-    term.execute("wpn_shot_line 0");
-    printf("[WORLD_XH] Applied: wpn_shot_line = false\n");
-    term.addLog("[WORLD_XH] Applied: wpn_shot_line = false");
+// Hot-reload command: re-reads the JSON and applies values immediately.
+// Register this after Terminal is initialized.
+void registerWorldXhReloadCommand()
+{
+    Terminal::instance().registerCommand({
+        "world_xh_reload",
+        "Reload config/crosshair-world.json and apply changes immediately.",
+        "world_xh_reload",
+        [](const std::vector<std::string>&) {
+            printf("[WorldCrosshair] Hot reload triggered.\n");
+            Terminal::instance().addLog("[WorldCrosshair] Reloading config...");
+            if (loadWorldCrosshairFromJSON()) {
+                printf("[WorldCrosshair] Hot reload applied.\n");
+                logCurrentCrosshairState();
+                Terminal::instance().addLog("[WorldCrosshair] Config reloaded.");
+            } else {
+                Terminal::instance().addLog("[WorldCrosshair] Reload failed, using previous values.");
+            }
+        }
+    });
 }
