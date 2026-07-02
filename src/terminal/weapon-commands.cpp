@@ -487,12 +487,15 @@ void loadWorldCrosshairConfig()
     using json = nlohmann::json;
     auto& term = Terminal::instance();
 
+    printf("[WORLD_XH] Loading world crosshair config...\n");
+    printf("[WORLD_XH] Config path: %s\n", WORLD_XH_CONFIG_PATH);
     term.addLog("[WORLD_XH] Loading world crosshair config...");
-    term.addLog(std::string("[WORLD_XH] Config path: ") + WORLD_XH_CONFIG_PATH);
 
-    std::ifstream file(WORLD_XH_CONFIG_PATH);
+    std::string fullPath = WORLD_XH_CONFIG_PATH;
+    std::ifstream file(fullPath);
     if (!file.is_open()) {
-        term.addLog("[WORLD_XH] ERROR: Could not open config file. Using defaults.");
+        printf("[WORLD_XH] ERROR: Could not open config file at '%s'. Using defaults.\n", fullPath.c_str());
+        term.addLog(std::string("[WORLD_XH] ERROR: Could not open config file. Using defaults."));
         return;
     }
 
@@ -500,13 +503,18 @@ void loadWorldCrosshairConfig()
     try {
         file >> j;
     } catch (const std::exception& e) {
+        printf("[WORLD_XH] ERROR: Failed to parse JSON: %s\n", e.what());
         term.addLog(std::string("[WORLD_XH] ERROR: Failed to parse JSON: ") + e.what());
         return;
     }
 
+    printf("[WORLD_XH] JSON parsed successfully. Checking fields...\n");
+
     auto apply = [&](const std::string& key, const std::string& cmdPrefix, const std::string& value) {
         std::string fullCmd = cmdPrefix + " " + value;
+        printf("[WORLD_XH] Executing: %s\n", fullCmd.c_str());
         term.execute(fullCmd);
+        printf("[WORLD_XH] Loaded: %s = %s\n", key.c_str(), value.c_str());
         term.addLog(std::string("[WORLD_XH] Loaded: ") + key);
     };
 
@@ -527,9 +535,12 @@ void loadWorldCrosshairConfig()
             try {
                 float v = j[f.key].get<float>();
                 apply(f.key, f.cmd, std::to_string(v));
-            } catch (...) {
+            } catch (const std::exception& e) {
+                printf("[WORLD_XH] WARNING: skipping invalid %s (%s)\n", f.key, e.what());
                 term.addLog(std::string("[WORLD_XH] WARNING: skipping invalid ") + f.key);
             }
+        } else {
+            printf("[WORLD_XH] Field not present (using default): %s\n", f.key);
         }
     }
 
@@ -546,9 +557,12 @@ void loadWorldCrosshairConfig()
             try {
                 int v = j[b.key].get<int>();
                 apply(b.key, b.cmd, std::to_string(v));
-            } catch (...) {
+            } catch (const std::exception& e) {
+                printf("[WORLD_XH] WARNING: skipping invalid %s (%s)\n", b.key, e.what());
                 term.addLog(std::string("[WORLD_XH] WARNING: skipping invalid ") + b.key);
             }
+        } else {
+            printf("[WORLD_XH] Field not present (using default): %s\n", b.key);
         }
     }
 
@@ -563,13 +577,18 @@ void loadWorldCrosshairConfig()
                 std::string val = std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b);
                 apply("world_xh_color", "world_xh_color", val);
             } else {
+                printf("[WORLD_XH] WARNING: world_xh_color must be an array of 3 floats\n");
                 term.addLog("[WORLD_XH] WARNING: world_xh_color must be an array of 3 floats");
             }
-        } catch (...) {
+        } catch (const std::exception& e) {
+            printf("[WORLD_XH] WARNING: skipping invalid world_xh_color (%s)\n", e.what());
             term.addLog("[WORLD_XH] WARNING: skipping invalid world_xh_color");
         }
+    } else {
+        printf("[WORLD_XH] Field not present (using default): world_xh_color\n");
     }
 
+    printf("[WORLD_XH] World crosshair config loaded successfully.\n");
     term.addLog("[WORLD_XH] World crosshair config loaded successfully.");
 }
 
@@ -577,8 +596,12 @@ void applyStartupDefaults()
 {
     auto& term = Terminal::instance();
 
+    printf("[WORLD_XH] Applying startup defaults...\n");
+
     // Disable the weapon shot debug line by default.
     // The red debug beam and sphere are noisy; the world-space crosshair is sufficient.
+    printf("[WORLD_XH] Executing: wpn_shot_line 0\n");
     term.execute("wpn_shot_line 0");
+    printf("[WORLD_XH] Applied: wpn_shot_line = false\n");
     term.addLog("[WORLD_XH] Applied: wpn_shot_line = false");
 }
