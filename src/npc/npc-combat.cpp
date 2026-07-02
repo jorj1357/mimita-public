@@ -19,6 +19,8 @@
 #include "npc/npc-internal.h"
 
 bool gNpcForceHit = false;
+// DEBUG MODE: default ±0.5° for near-perfect aim (temporary)
+float gNpcMaxInaccuracyDegrees = 0.5f;
 
 namespace {
 
@@ -85,6 +87,8 @@ float effectiveRange(const WeaponDefinition& def)
 
 float NpcCombat::aimErrorDegrees(float difficulty)
 {
+    if (gNpcMaxInaccuracyDegrees >= 0.0f)
+        return gNpcMaxInaccuracyDegrees;
     float d = std::clamp(difficulty, 1.0f, 10.0f);
     float t = (d - 1.0f) / 9.0f;
     // Difficulty 1 = 6 deg (poor), Diff 5 = 1.5 deg (competent), Diff 10 = 0.2 deg (near-perfect)
@@ -294,17 +298,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         return false;
     }
 
-    // Minimal aim settle — only enough to prevent instant firing on state transitions
-    // The weapon's own fireDelay handles fire rate. We just need a tiny grace period.
-    float settleTime = 0.05f;
-    npc.aimTimer += dt;
-    if (npc.aimTimer < settleTime)
-    {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-aim",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: aiming %.2f/%.2f\n",
-            npc.id, npc.aimTimer, settleTime);
-        return false;
-    }
+    // DEBUG MODE: no aim settle timer (temporary)
+    npc.aimTimer = 0.0f;
 
     glm::vec3 npcPos = npc.body.pos;
     npcPos.z += 0.8f;
@@ -332,6 +327,18 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
     }
 
+    glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
+    float errorDeg = aimErrorDegrees(npc.difficulty);
+
+    printf("[NPC SHOT] id=%u target=%s dist=%.1fm idealDir=(%.3f,%.3f,%.3f) "
+           "inaccuracy=%.1fdeg finalDir=(%.3f,%.3f,%.3f) weapon=%s ready=%s\n",
+           npc.id, "player", dist,
+           idealDir.x, idealDir.y, idealDir.z,
+           errorDeg,
+           aimDir.x, aimDir.y, aimDir.z,
+           def->id.c_str(),
+           rt.currentAmmo > 0 ? "yes" : "empty");
+
     // Decrement ammo BEFORE firing
     if (def->magazineSize > 0)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
@@ -347,19 +354,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
     }
 
-    Debug::log(Debug::Category::NpcCombat,
-        "[NPC SHOT] npc=%u weapon=%s ammo=%d/%d dist=%.1f hit=%d dmg=%.0f aimDir=(%.3f %.3f %.3f) error=%.1fdeg",
-        npc.id, def->id.c_str(), rt.currentAmmo, def->magazineSize, dist,
-        (int)shot.hitEntity, shot.damage,
-        aimDir.x, aimDir.y, aimDir.z,
-        aimErrorDegrees(npc.difficulty));
+    printf("[NPC RESULT] id=%u hit=%d damage=%.0f%s\n",
+           npc.id, (int)shot.hitEntity, shot.damage,
+           shot.hitEntity ? "" : " missReason=inaccuracy");
 
-    npc.aimTimer = 0.0f;
-
-    // Use weapon's natural fire delay as cooldown
-    float d01 = difficulty01(npc.difficulty);
-    float cd = def->fireDelay * (1.1f - d01 * 0.2f);
-    cd = std::max(cd, def->fireDelay * 0.85f);
-    npc.attackCooldown = cd;
+    // DEBUG MODE: use exact fireDelay as cooldown, no scaling (temporary)
+    npc.attackCooldown = def->fireDelay;
     return true;
 }

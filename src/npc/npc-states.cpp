@@ -70,6 +70,8 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             outMoveDir = chaseDir + glm::vec3(npc.moveOffset, 0.0f);
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
+            if (npc.attackCooldown <= 0.0f && sensors.hasTarget)
+                outAttack = true;
             return;
         }
 
@@ -102,6 +104,8 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
+            if (npc.attackCooldown <= 0.0f && sensors.hasTarget)
+                outAttack = true;
             return;
         }
 

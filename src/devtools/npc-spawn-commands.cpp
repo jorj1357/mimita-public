@@ -80,7 +80,7 @@ void ProcessNpcSpawnCommands(NpcSystem& npcSystem, const Camera& camera, const W
     gPendingNpcSpawnCommands.clear();
 }
 
-int gNpcTrainingMode = 0;
+int gNpcTrainingMode = 2;
 int gNpcTrainingHealth = 100;
 
 static std::vector<std::vector<std::string>> gPendingTrainingSpawnCommands;
