@@ -178,21 +178,42 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             }
         }
 
-        // World-space crosshair: a billboard crosshair at the predicted hit point.
-        // Offset a few mm along the surface normal to avoid z-fighting.
+        // World-space crosshair: a billboard crosshair at the predicted hit point,
+        // always rendered on top of world geometry (depth-test disabled).
         glm::vec3 crossPos = hitPoint + hitNormal * 0.003f;
 
-        // Distance-based scaling: clamp between 0.5x and 2.0x.
         float distScale = glm::clamp(20.0f / std::max(nearest, 1.0f), 0.5f, 2.0f);
 
-        // Base crosshair dimensions at scale 1.0 (in world meters).
         const float baseSize = 0.15f;
         const float baseGap = 0.025f;
         const float baseThickness = 0.025f;
 
-        DebugVis::drawCrosshairBillboard(camera, crossPos,
-            baseSize * distScale, baseGap * distScale, baseThickness * distScale,
-            true, glm::vec4(1.0f, 0.5f, 0.0f, 0.9f));
+        float lenMul = DebugConfig::WORLD_XH_LENGTH;
+        float gapMul = DebugConfig::WORLD_XH_GAP;
+        float thickMul = DebugConfig::WORLD_XH_THICKNESS;
+        float alpha = 1.0f - DebugConfig::WORLD_XH_ALPHA;
+        glm::vec4 col = glm::vec4(
+            DebugConfig::WORLD_XH_R,
+            DebugConfig::WORLD_XH_G,
+            DebugConfig::WORLD_XH_B,
+            alpha);
+
+        DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
+            baseSize * distScale * lenMul,
+            baseGap * distScale * gapMul,
+            baseThickness * distScale * thickMul,
+            true, col);
+
+        // Outline pass (if enabled)
+        if (DebugConfig::WORLD_XH_OUTLINE) {
+            float oAlpha = 1.0f - DebugConfig::WORLD_XH_OUTLINE_ALPHA;
+            float outlineW = baseThickness * distScale * thickMul * 0.3f;
+            DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
+                baseSize * distScale * lenMul + outlineW,
+                baseGap * distScale * gapMul,
+                baseThickness * distScale * thickMul + outlineW * 2.0f,
+                false, glm::vec4(0.0f, 0.0f, 0.0f, oAlpha));
+        }
 
         // Debug shot line + sphere — only when wpn_shot_line is enabled
         if (DebugConfig::DEBUG_WPN_SHOT_LINE) {

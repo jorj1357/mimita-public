@@ -76,6 +76,18 @@ namespace DebugConfig
     inline bool DEBUG_COLLISION_DIAGNOSTICS = true;
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
     inline bool DEBUG_WPN_SHOT_LINE = true;
+
+    // World-space crosshair settings (live-updated via console commands)
+    inline float WORLD_XH_ALPHA = 0.0f;       // 0=opaque, 1=invisible
+    inline float WORLD_XH_LENGTH = 1.0f;       // arm length multiplier
+    inline float WORLD_XH_R = 1.0f;            // red
+    inline float WORLD_XH_G = 0.5f;            // green
+    inline float WORLD_XH_B = 0.0f;            // blue
+    inline float WORLD_XH_GAP = 1.0f;          // center gap multiplier
+    inline float WORLD_XH_THICKNESS = 1.0f;    // arm thickness multiplier
+    inline bool  WORLD_XH_OUTLINE = false;     // outline enabled
+    inline float WORLD_XH_OUTLINE_ALPHA = 0.0f; // 0=opaque, 1=invisible
+
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;
 
