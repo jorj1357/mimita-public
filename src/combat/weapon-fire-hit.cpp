@@ -51,11 +51,25 @@ RevolverShotResult tryFireHitscan(
     result.fired = true;
     result.start = muzzlePos;
 
-    AimTarget aim = computeAimTarget(camera, world, npcs, remotePlayers);
-    glm::vec3 shotDirection = aim.worldPoint - muzzlePos;
+    // Fixed aim point: always 100 units in front of the camera.
+    // This decouples shot direction from whatever world geometry happens to be under the crosshair.
+    constexpr float AIM_DISTANCE = 100.0f;
+    glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
+    glm::vec3 shotDirection = aimPoint - muzzlePos;
     if (glm::length(shotDirection) <= 0.001f)
         shotDirection = camera.front;
     shotDirection = glm::normalize(shotDirection);
+
+    if (gDebugWeapon) {
+        printf("[AIM FIXED] cameraPos=(%.2f %.2f %.2f) cameraFront=(%.3f %.3f %.3f) "
+               "aimPoint=(%.2f %.2f %.2f) muzzlePos=(%.2f %.2f %.2f) "
+               "shotDir=(%.4f %.4f %.4f)\n",
+               camera.pos.x, camera.pos.y, camera.pos.z,
+               camera.front.x, camera.front.y, camera.front.z,
+               aimPoint.x, aimPoint.y, aimPoint.z,
+               muzzlePos.x, muzzlePos.y, muzzlePos.z,
+               shotDirection.x, shotDirection.y, shotDirection.z);
+    }
 
     static unsigned int spreadRng = 1;
     shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
@@ -277,8 +291,9 @@ void fireMultiPellet(
 
     float spreadDeg = std::max(0.1f, def.spread);
 
-    AimTarget aim = computeAimTarget(camera, world, npcs, remotePlayers);
-    glm::vec3 baseDir = glm::normalize(aim.worldPoint - muzzlePos);
+    constexpr float AIM_DISTANCE = 100.0f;
+    glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
+    glm::vec3 baseDir = glm::normalize(aimPoint - muzzlePos);
     if (glm::length(baseDir) < 0.001f)
         baseDir = camera.front;
 
