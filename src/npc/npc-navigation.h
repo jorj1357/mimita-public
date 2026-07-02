@@ -20,4 +20,8 @@ bool isClimbableWall(const Npc& npc, glm::vec3 moveDir, const World& world, glm:
 // Returns true if there's an obstacle (wall) in the movement direction within checkDist.
 bool obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world);
 
+// Returns a direction toward nearby cover (a position where LOS to threatPos is blocked).
+// Returns zero vector if no nearby cover found.
+glm::vec3 findCoverDirection(const Npc& npc, glm::vec3 threatPos, const World& world);
+
 } // namespace NpcNavigation
