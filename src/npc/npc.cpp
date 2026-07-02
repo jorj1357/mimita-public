@@ -23,6 +23,8 @@
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
 
+static constexpr float SEARCH_TIMEOUT = 8.0f;
+
 float targetCanSeeNpc(const Npc& npc, const World& world)
 {
     glm::vec3 fromTarget = npc.sensors.targetPos;
@@ -160,7 +162,6 @@ void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
-    sensors.grounded = npc.body.ground.onGround;
 
     {
         int i = npc.posRingHead;
@@ -182,14 +183,26 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     sensors.predictedTarget = sensors.targetPos + sensors.targetVel * (0.10f + npc.tuning.prediction * 0.55f);
 
     npc.previousPosition = npc.body.pos;
+
+    // During search phase, use last known position as pseudo-target
+    if (!sensors.hasTarget && npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT && npc.stateMachine.lastKnownAge > 0.5f)
+    {
+        sensors.targetPos = npc.stateMachine.lastKnownTarget;
+        sensors.toTarget = sensors.targetPos - npc.body.pos;
+        sensors.targetDistance = glm::length(sensors.toTarget);
+        sensors.hasTarget = sensors.targetDistance <= npc.tuning.awarenessRange * 1.5f;
+        sensors.targetVel = glm::vec3(0.0f);
+        sensors.predictedTarget = sensors.targetPos;
+    }
+
     npc.sensors = sensors;
 
-    if (sensors.hasTarget)
+    if (sensors.hasTarget && npc.stateMachine.lastKnownAge < 0.1f)
     {
         npc.stateMachine.lastKnownTarget = sensors.targetPos;
         npc.stateMachine.lastKnownAge = 0.0f;
     }
-    else
+    else if (!sensors.hasTarget)
     {
         npc.stateMachine.lastKnownAge += dt;
     }
@@ -262,11 +275,46 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
 
 } // anonymous namespace
 
+void NpcSystem::notifyCombatSound(glm::vec3 position, float intensity)
+{
+    int i = heardSoundHead;
+    heardSounds[i] = {position, currentTime, intensity};
+    heardSoundHead = (i + 1) % MAX_HEARD_SOUNDS;
+    if (heardSoundCount < MAX_HEARD_SOUNDS)
+        heardSoundCount++;
+}
+
+bool NpcSystem::recentCombatSoundNear(glm::vec3 pos, float maxAge, float maxDist, glm::vec3& outSource) const
+{
+    int count = std::min(heardSoundCount, MAX_HEARD_SOUNDS);
+    int tail = (heardSoundHead - 1 + MAX_HEARD_SOUNDS) % MAX_HEARD_SOUNDS;
+    for (int j = 0; j < count; ++j)
+    {
+        int i = (tail - j + MAX_HEARD_SOUNDS) % MAX_HEARD_SOUNDS;
+        const auto& s = heardSounds[i];
+        if (currentTime - s.time > maxAge)
+            continue;
+        float d = glm::length(s.position - pos);
+        if (d < maxDist)
+        {
+            outSource = s.position;
+            return true;
+        }
+    }
+    return false;
+}
+
 void NpcSystem::update(const World& world, Player& player, float dt)
 {
     Perf::ScopedTimer _updateTimer("NpcUpdate");
-    for (Npc& npc : npcs)
-        updateOneNpc(npc, world, player, dt);
+    currentTime += dt;
+    for (Npc& nc : npcs)
+    {
+        // Register NPC weapon fire for other NPCs' hearing
+        if (nc.attackCooldown > 0.0f && nc.sensors.hasTarget)
+            notifyCombatSound(nc.body.pos, 0.5f);
+        updateOneNpc(nc, world, player, dt);
+    }
 }
 
 void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)
@@ -288,6 +336,22 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.stateMachine.retreatTimer += safeDt;
 
     senseWorld(npc, player, safeDt);
+
+    // Hearing: if no target, react to nearby combat sounds
+    if (!npc.sensors.hasTarget && npc.stateMachine.lastKnownAge > 2.0f)
+    {
+        glm::vec3 soundSource;
+        float hearRange = 20.0f + npc.tuning.awarenessRange * 0.5f;
+        if (recentCombatSoundNear(npc.body.pos, 3.0f, hearRange, soundSource))
+        {
+            npc.stateMachine.lastKnownTarget = soundSource;
+            npc.stateMachine.lastKnownAge = 0.0f;
+            Debug::log(Debug::Category::General,
+                "[NPC] id=%u heard combat at (%.1f %.1f) distance=%.1f\n",
+                npc.id, soundSource.x, soundSource.y,
+                glm::length(soundSource - npc.body.pos));
+        }
+    }
 
     bool wantDownDash = false;
     if (npc.sensors.hasTarget && !npc.sensors.grounded && npc.downDashCooldown <= 0.0f)
@@ -378,6 +442,34 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
         float targetCanSee = targetCanSeeNpc(npc, world);
         dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, def, targetCanSee > 0.5f);
+    }
+
+    // Cover seeking: blend toward cover when vulnerable (reloading, low HP, recovering)
+    if (npc.sensors.hasTarget && glm::length(moveDir) > 0.001f)
+    {
+        bool wantsCover = npc.stateMachine.currentState == NpcState::Recover;
+        if (!wantsCover)
+        {
+            float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
+            wantsCover = healthFraction < 0.4f;
+        }
+        if (!wantsCover)
+        {
+            const auto& rt = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+            wantsCover = rt != npc.body.weaponRuntimes.end() && rt->second.isReloading;
+        }
+
+        if (wantsCover)
+        {
+            glm::vec3 coverDir = NpcNavigation::findCoverDirection(npc, npc.sensors.targetPos, world);
+            if (glm::length(coverDir) > 0.001f)
+            {
+                float coverBlend = 0.5f;
+                moveDir = glm::normalize(moveDir + coverDir * coverBlend);
+                Debug::logThrottled(Debug::Category::General, "npc-cover",
+                    DebugConfig::PRINT_INTERVAL, "[NPC] id=%u seeking cover\n", npc.id);
+            }
+        }
     }
 
     if (npc.bombTagActive)

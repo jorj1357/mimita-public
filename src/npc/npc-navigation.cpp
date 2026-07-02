@@ -3,6 +3,8 @@
 
 #include <glm/gtc/constants.hpp>
 
+static constexpr float COVER_CHECK_DIST = 4.0f;
+
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
 #include "world/world.h"
@@ -180,6 +182,70 @@ bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const Wor
     }
 
     return false;
+}
+
+glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos, const World& world)
+{
+    glm::vec3 fromNpc = threatPos - npc.body.pos;
+    float threatDist = glm::length(fromNpc);
+    if (threatDist < 1.0f) return glm::vec3(0.0f);
+    glm::vec3 toThreat = fromNpc / threatDist;
+
+    // Test directions: perpendicular (left/right) and backward
+    glm::vec3 perpL(-toThreat.y, toThreat.x, 0.0f);
+    glm::vec3 perpR(toThreat.y, -toThreat.x, 0.0f);
+    glm::vec3 back(-toThreat.x, -toThreat.y, 0.0f);
+
+    glm::vec3 testDirs[] = {perpL, perpR, back, perpL * 0.7f + back * 0.3f, perpR * 0.7f + back * 0.3f};
+
+    glm::vec3 origin = npc.body.pos;
+    origin.z += 0.8f;
+
+    for (const auto& dir : testDirs)
+    {
+        glm::vec3 testPos = npc.body.pos + dir * COVER_CHECK_DIST;
+        testPos.z += 0.8f;
+
+        // Check if this position has LOS blocked to the threat
+        glm::vec3 toThreatFromCover = threatPos - testPos;
+        float coverToThreat = glm::length(toThreatFromCover);
+        if (coverToThreat < 1.0f) continue;
+        toThreatFromCover /= coverToThreat;
+
+        AABB rayBounds;
+        rayBounds.min = glm::min(testPos, threatPos);
+        rayBounds.max = glm::max(testPos, threatPos);
+        std::vector<int> candidates;
+        appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+
+        for (int ti : candidates)
+        {
+            if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+            const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+            glm::vec3 e1 = tri.b - tri.a;
+            glm::vec3 e2 = tri.c - tri.a;
+            glm::vec3 pVec = glm::cross(toThreatFromCover, e2);
+            float det = glm::dot(e1, pVec);
+            if (std::fabs(det) < 0.0001f) continue;
+            float invDet = 1.0f / det;
+            glm::vec3 tVec = testPos - tri.a;
+            float u = glm::dot(tVec, pVec) * invDet;
+            if (u < 0.0f || u > 1.0f) continue;
+            glm::vec3 qVec = glm::cross(tVec, e1);
+            float v = glm::dot(toThreatFromCover, qVec) * invDet;
+            if (v < 0.0f || u + v > 1.0f) continue;
+            float t = glm::dot(e2, qVec) * invDet;
+            // If a triangle blocks LOS near the cover position
+            if (t > 0.1f && t < coverToThreat - 1.0f)
+            {
+                // Verify the direction is walkable (no wall right in front)
+                if (!obstacleInDirection(npc, dir, 1.5f, world))
+                    return glm::normalize(dir);
+            }
+        }
+    }
+
+    return glm::vec3(0.0f);
 }
 
 bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world)

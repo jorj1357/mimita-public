@@ -32,8 +32,7 @@ struct NpcSensorContext {
     glm::vec3 predictedTarget{0.0f};
     float targetDistance = 0.0f;
     glm::vec3 selfVel{0.0f};
-    bool grounded = false;
-    float time = 0.0f; // accumulated simulation time for history indexing
+    float time = 0.0f;
 };
 
 class Npc {
@@ -87,6 +86,12 @@ public:
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);
 };
 
+struct CombatSoundEvent {
+    glm::vec3 position{0.0f};
+    float time = 0.0f;
+    float intensity = 1.0f;
+};
+
 class NpcSystem {
 public:
     void spawnPrototypeScene();
@@ -107,10 +112,23 @@ public:
     void setGlobalDifficulty(float d);
     float globalDifficulty() const { return globalDifficulty_; }
 
+    // Register a combat sound for NPC hearing system
+    void notifyCombatSound(glm::vec3 position, float intensity = 1.0f);
+
+    // Query most recent combat sound near a position
+    bool recentCombatSoundNear(glm::vec3 pos, float maxAge, float maxDist, glm::vec3& outSource) const;
+
 private:
     std::vector<Npc> npcs;
     uint32_t nextId = 100;
     float globalDifficulty_ = -1.0f;
+    float currentTime = 0.0f;
+
+    // Ring buffer of recent combat sounds for NPC hearing
+    static constexpr int MAX_HEARD_SOUNDS = 16;
+    CombatSoundEvent heardSounds[MAX_HEARD_SOUNDS]{};
+    int heardSoundHead = 0;
+    int heardSoundCount = 0;
 
     void updateOneNpc(Npc& npc, const World& world, Player& player, float dt);
 };

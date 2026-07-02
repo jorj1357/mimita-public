@@ -70,7 +70,9 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
 
     victim.body.currentHp = std::max(0, victim.body.currentHp - rounded);
     victim.body.externalImpulse += shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);
-    victim.hitReactionTimer = 0.3f;
+    victim.hitReactionTimer = 0.15f + std::min((float)rounded / 50.0f, 0.5f);
+    // Add aim flinch proportional to damage
+    victim.aimTimer = -std::min((float)rounded / 30.0f, 0.4f);
 
     {
         HitEvent ev;

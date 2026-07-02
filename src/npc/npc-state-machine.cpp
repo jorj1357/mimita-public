@@ -10,6 +10,10 @@
 #include "npc/npc-internal.h"
 #include "combat/weapon-registry.h"
 
+// Search and cover constants
+static constexpr float SEARCH_TIMEOUT = 8.0f;
+static constexpr float COVER_CHECK_DIST = 4.0f;
+
 namespace {
 
 float scoreState(NpcState s, const Npc& npc, float d01)
@@ -159,7 +163,7 @@ NpcState pickNextState(Npc& npc)
 
     if (NpcNavigation::isStuck(npc))
     {
-        npc.stateMachine.stuckTimer += 0.016f;
+        npc.stateMachine.stuckTimer = std::min(npc.stateMachine.stuckTimer + 0.016f, 1.0f);
         if (npc.stateMachine.stuckTimer > 0.3f)
         {
             if (random01(npc.rngState) < 0.5f)
@@ -178,6 +182,16 @@ NpcState pickNextState(Npc& npc)
 
     if (!sensors.hasTarget)
     {
+        // Search phase: move toward last known position before giving up
+        if (npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT && npc.stateMachine.lastKnownAge > 0.5f)
+        {
+            float distToLastKnown = glm::length(npc.stateMachine.lastKnownTarget - npc.body.pos);
+            if (distToLastKnown > 2.0f)
+                return NpcState::Chase; // Chase toward last known position (acts as "search")
+            // If close to last known, circle around looking
+            return NpcState::Circle;
+        }
+        // Give up and wander
         if (random01(npc.rngState) < 0.4f)
             return NpcState::Idle;
         return NpcState::RandomWalk;
