@@ -1,4 +1,5 @@
 #include "weapon-system.h"
+#include "physics/movement/physics-collision.h"
 #include "weapon-audio.h"
 #include "weapon-data.h"
 #include "weapon-fire.h"
