@@ -138,33 +138,31 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         }
     }
 
-    // ── Debug aim ray ──────────────────────────────────────
-    // Every frame, compute the exact ray that would be fired and draw it.
-    if (DebugConfig::DEBUG_AIM_RAY && def && rt) {
+    // ── World-space aim crosshair (permanent) ──────────────
+    // Every frame, compute the exact ray that would be fired and place a
+    // marker at the first hit point. This is the shared aiming visualization
+    // for all weapons — always visible, always updated, no debug dependency.
+    if (def && rt) {
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
 
-        // Same fixed aim point as tryFireHitscan()
+        // Same fixed aim point and direction used by all firing functions
         constexpr float AIM_DISTANCE = 100.0f;
         glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
         glm::vec3 shotDir = glm::normalize(aimPoint - muzzlePos);
 
-        // Raycast against world triangles, NPC body parts
         constexpr float MAX_DIST = 100.0f;
         float nearest = MAX_DIST;
         glm::vec3 hitPoint = muzzlePos + shotDir * MAX_DIST;
-        glm::vec3 hitNormal = -shotDir;
 
         for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
             float d = 0.0f;
             if (WeaponFire::rayTriangle(muzzlePos, shotDir, tri, d) && d < nearest) {
                 nearest = d;
                 hitPoint = muzzlePos + shotDir * d;
-                hitNormal = tri.normal;
             }
         }
-        // Check all living NPC body parts
         for (Npc& npc : npcs.all()) {
             if (npc.body.currentHp <= 0) continue;
             npc.body.updateModelWorldTransforms();
@@ -177,14 +175,17 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 if (WeaponFire::rayAabb(muzzlePos, shotDir, center - half, center + half, d, nml) && d < nearest) {
                     nearest = d;
                     hitPoint = muzzlePos + shotDir * d;
-                    hitNormal = nml;
                 }
             }
         }
 
-        // Draw the aim ray
-        DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, 0.05f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
-        DebugVis::drawFilledSphere(camera, hitPoint, 0.15f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        // World-space crosshair marker — always visible, NOT debug
+        DebugVis::drawFilledSphere(camera, hitPoint, 0.15f, glm::vec4(1.0f, 0.2f, 0.0f, 0.9f));
+
+        // Debug shot line — only when wpn_shot_line is enabled
+        if (DebugConfig::DEBUG_WPN_SHOT_LINE) {
+            DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, 0.05f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        }
     }
 
     mCurrentSlot = player.equippedSlot;
@@ -411,9 +412,10 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
     const WeaponViewModel& vm = mViewModels[idx];
     glm::vec3 muzzlePos = vm.muzzle;
 
-    // Compute aim direction from camera crosshair raycast (full 3D)
-    WeaponFire::AimTarget aim = WeaponFire::computeAimTarget(camera, world, npcs, nullptr);
-    glm::vec3 dir = glm::normalize(aim.worldPoint - muzzlePos);
+    // Shared aiming: fixed point 100m in front of camera (same as all other weapons)
+    constexpr float AIM_DISTANCE = 100.0f;
+    glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
+    glm::vec3 dir = glm::normalize(aimPoint - muzzlePos);
 
     // Firing recoil: push player opposite the rocket direction
     float recoilStrength = def->customParams.count("firingRecoilStrength")

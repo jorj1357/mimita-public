@@ -215,6 +215,26 @@ void registerWeaponCommands()
 void registerWeaponDebugCommand()
 {
     Terminal::instance().registerCommand({
+        "wpn_shot_line",
+        "Toggle weapon shot debug line (0=off, 1=on). "
+        "Shows red beam and sphere. World-space crosshair is independent.",
+        "wpn_shot_line <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_WPN_SHOT_LINE = !DebugConfig::DEBUG_WPN_SHOT_LINE;
+            } else {
+                DebugConfig::DEBUG_WPN_SHOT_LINE = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_WPN_SHOT_LINE
+                ? "[OK] wpn_shot_line enabled (red beam + sphere visible)"
+                : "[OK] wpn_shot_line disabled (world-space crosshair still visible)");
+        },
+        "2026-07-02",
+        CommandCategory::Weapon
+    });
+
+    Terminal::instance().registerCommand({
         "weapon_debug",
         "Toggle weapon debug logging (0=off, 1=on). Prints shotgun stats and pellet directions on each shot.",
         "weapon_debug <0|1>",
