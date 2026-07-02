@@ -290,7 +290,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
 
         // Debug shot line + sphere — only when wpn_shot_line is enabled
         if (DebugConfig::DEBUG_WPN_SHOT_LINE) {
-            DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, 0.05f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+            float visThickness = (def && def->beamThickness > 0.0f) ? def->beamThickness : 0.05f;
+            DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, visThickness, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
             DebugVis::drawFilledSphere(camera, hitPoint, 0.08f, glm::vec4(1.0f, 0.0f, 0.0f, 0.7f));
         }
     }

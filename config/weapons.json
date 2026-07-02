@@ -28,6 +28,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
+    "beam_thickness": 1.0,
     "uses_physics_projectile": false,
     "sound": {
       "shoot": "revolvershoot",
@@ -38,8 +39,8 @@
     },
     "custom_params": {
       "distanceFalloffStart": 110.0,
-      "minDamageFraction": 0.1,
-      "minAngleFactor": 0.15,
+      "minDamageFraction": 0.5,
+      "minAngleFactor": 0.45,
       "shootPoseTime": 0.12,
       "equipPoseTime": 0.18
     },
@@ -133,6 +134,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
+    "beam_thickness": 1.0,
     "uses_physics_projectile": false,
     "sound": {
       "shoot": "shotgunshoot",
@@ -237,6 +239,7 @@
     "fire_mode": "automatic",
     "behavior_type": "hitscan",
     "hitscan": true,
+    "beam_thickness": 0.0,
     "uses_physics_projectile": false,
     "pose_id": "revolver",
     "sound": {
@@ -280,6 +283,7 @@
     "fire_mode": "automatic",
     "behavior_type": "hitscan",
     "hitscan": true,
+    "beam_thickness": 0.0,
     "uses_physics_projectile": false,
     "pose_id": "shotgun",
     "sound": {

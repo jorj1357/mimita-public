@@ -138,6 +138,7 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonFireMode(root, def);
     weaponJsonBehaviorType(root, def);
     weaponJsonBool(root, "hitscan", def.hitscan);
+    weaponJsonFloat(root, "beam_thickness", def.beamThickness);
     weaponJsonBool(root, "uses_physics_projectile", def.usesPhysicsProjectile);
     weaponJsonString(root, "pose_id", def.poseId);
 }
