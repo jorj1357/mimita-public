@@ -80,6 +80,7 @@
 #include "crosshair/crosshair-commands.h"
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
+#include "config/gameplay-config.h"
 #include "config/player-settings.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
@@ -189,6 +190,7 @@ void gameInitSubsystems(Engine& engine)
 
     LightingConfig::instance().load("config/lighting.json");
     ShadowConfig::instance().load("config/shadows.json");
+    GameplayConfig::instance().load("config/gameplay.json");
     CrosshairConfig::instance().load();
     // World-space crosshair replaces HUD crosshair — hide the HUD one by default.
     CrosshairConfig::instance().edit().alpha = 0;

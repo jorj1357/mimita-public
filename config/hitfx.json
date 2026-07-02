@@ -135,7 +135,7 @@
 
     "damageNumbers": {
         "enabled": true,
-        "fontSize": 0.016,
+        "fontSize": 0.96,
         "lifetime": 1.0,
         "startOpacity": 1.0,
         "endOpacity": 0.0,
@@ -143,9 +143,9 @@
         "fadeEnd": 1.0,
         "worldOffset": [0.0, 0.0, 0.20],
         "screenOffset": [0.0, 0.0],
-        "moveVelocity": [0.0, 0.0, 0.8],
+        "moveVelocity": [1.0, 0.0, 0.8],
         "moveSpeed": 1.0,
-        "startScale": 1.0,
+        "startScale": 0.01,
         "endScale": 1.0,
         "randomHorizontalSpread": 0.0,
         "randomVerticalSpread": 0.0,

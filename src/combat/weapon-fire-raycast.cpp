@@ -4,6 +4,8 @@
 #include <cmath>
 #include <glm/glm.hpp>
 #include "camera.h"
+#include "config/gameplay-config.h"
+#include "debug/debug-log.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "npc/npc.h"
@@ -11,19 +13,92 @@
 
 namespace WeaponFire {
 
+namespace {
+constexpr float kMaxShotDistance = 100.0f;
+}
+
+const char* aimHitKindName(AimHitKind kind)
+{
+    switch (kind) {
+        case AimHitKind::World: return "world";
+        case AimHitKind::Npc: return "npc";
+        case AimHitKind::RemotePlayer: return "remote_player";
+        case AimHitKind::None:
+        default: return "none";
+    }
+}
+
+AimSolution computeAim(
+    const Camera& camera,
+    const World& world,
+    NpcSystem& npcs,
+    const glm::vec3& muzzlePos,
+    const std::unordered_map<uint32_t, Player>* remotePlayers)
+{
+    AimSolution result;
+    result.origin = muzzlePos;
+    result.cameraDistance = kMaxShotDistance;
+
+    const GameplayAimMode mode = GameplayConfig::instance().aimMode();
+    if (mode == GameplayAimMode::Crosshair) {
+        AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers);
+        result.aimPoint = target.worldPoint;
+        result.cameraDistance = target.cameraDistance;
+        result.modeName = "crosshair";
+        result.cameraHitKind = target.hitKind;
+        result.usesCameraTarget = true;
+    } else {
+        result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
+        result.modeName = "world_hit";
+        result.cameraHitKind = AimHitKind::None;
+        result.usesCameraTarget = false;
+    }
+
+    glm::vec3 direction = result.aimPoint - muzzlePos;
+    if (glm::length(direction) <= 0.001f)
+        direction = camera.front;
+    result.direction = glm::normalize(direction);
+    return result;
+}
+
+void logAimDebug(const char* label, const Camera& camera, const AimSolution& aim)
+{
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] %s\n"
+        "Aim Mode: %s\n"
+        "Camera Position: (%.2f, %.2f, %.2f)\n"
+        "Camera Forward: (%.4f, %.4f, %.4f)\n"
+        "Camera Hit: %s at distance %.2f\n"
+        "Camera Hit Position: (%.2f, %.2f, %.2f)\n"
+        "Computed Target Point: (%.2f, %.2f, %.2f)\n"
+        "Muzzle Position: (%.2f, %.2f, %.2f)\n"
+        "Computed Direction: (%.4f, %.4f, %.4f)\n",
+        label,
+        aim.modeName,
+        camera.pos.x, camera.pos.y, camera.pos.z,
+        camera.front.x, camera.front.y, camera.front.z,
+        aimHitKindName(aim.cameraHitKind), aim.cameraDistance,
+        aim.aimPoint.x, aim.aimPoint.y, aim.aimPoint.z,
+        aim.aimPoint.x, aim.aimPoint.y, aim.aimPoint.z,
+        aim.origin.x, aim.origin.y, aim.origin.z,
+        aim.direction.x, aim.direction.y, aim.direction.z);
+}
+
 AimTarget computeAimTarget(
     const Camera& camera,
     const World& world,
     NpcSystem& npcs,
     const std::unordered_map<uint32_t, Player>* remotePlayers)
 {
-    constexpr float MAX_SHOT_DISTANCE = 100.0f;
-    float cameraNearest = MAX_SHOT_DISTANCE;
+    float cameraNearest = kMaxShotDistance;
+    AimHitKind hitKind = AimHitKind::None;
 
     for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
         float d = 0.0f;
-        if (rayTriangle(camera.pos, camera.front, tri, d))
-            cameraNearest = std::min(cameraNearest, d);
+        if (rayTriangle(camera.pos, camera.front, tri, d) && d < cameraNearest) {
+            cameraNearest = d;
+            hitKind = AimHitKind::World;
+        }
     }
     for (Npc& npc : npcs.all()) {
         if (npc.body.currentHp <= 0) continue;
@@ -34,8 +109,10 @@ AimTarget computeAimTarget(
             glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
             float d = 0.0f;
             glm::vec3 nml;
-            if (rayAabb(camera.pos, camera.front, center - half, center + half, d, nml))
-                cameraNearest = std::min(cameraNearest, d);
+            if (rayAabb(camera.pos, camera.front, center - half, center + half, d, nml) && d < cameraNearest) {
+                cameraNearest = d;
+                hitKind = AimHitKind::Npc;
+            }
         }
     }
     if (remotePlayers) {
@@ -54,14 +131,17 @@ AimTarget computeAimTarget(
             const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);
             float d = 0.0f;
             glm::vec3 nml;
-            if (rayAabb(camera.pos, camera.front, mn, mx, d, nml))
-                cameraNearest = std::min(cameraNearest, d);
+            if (rayAabb(camera.pos, camera.front, mn, mx, d, nml) && d < cameraNearest) {
+                cameraNearest = d;
+                hitKind = AimHitKind::RemotePlayer;
+            }
         }
     }
 
     AimTarget result;
     result.worldPoint = camera.pos + camera.front * cameraNearest;
     result.cameraDistance = cameraNearest;
+    result.hitKind = hitKind;
     return result;
 }
 

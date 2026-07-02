@@ -6,21 +6,45 @@
 #include "config.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <glm/glm.hpp>
 
+static float randomSignedRange(float amount)
+{
+    if (amount <= 0.0f) return 0.0f;
+    const float t = (float)std::rand() / (float)RAND_MAX;
+    return (t * 2.0f - 1.0f) * amount;
+}
+
 EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string& victim, int damage) {
-    if (!HitEffects::config().core.damageNumbers) return nullptr;
+    const auto& cfg = HitEffects::config();
+    const auto& dn = cfg.damageNumber;
+    if (!cfg.core.damageNumbers || !dn.enabled) return nullptr;
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part-particles.cpp Type=damage_number pos=(%.1f,%.1f,%.1f) damage=%d victim=%s\n",
                    position.x, position.y, position.z, damage, victim.c_str());
     }
+
+    const float horizontalSpread = dn.randomHorizontalSpread + dn.spawnJitter;
+    const float verticalSpread = dn.randomVerticalSpread + dn.spawnJitter;
+    glm::vec3 jitter{
+        randomSignedRange(horizontalSpread),
+        randomSignedRange(horizontalSpread),
+        randomSignedRange(verticalSpread)
+    };
+
     EffectPart e;
-    e.position = position;
-    e.color = {1.0f, 0.0f, 0.0f};
-    e.maxLifetime = 1.0f;
-    e.label = victim + " took " + std::to_string(damage) + " damage!!";
+    e.position = position + glm::vec3(dn.worldOffsetX, dn.worldOffsetY, dn.worldOffsetZ) + jitter;
+    e.color = damage < 0 ? dn.healingColor : (damage >= 100 ? dn.criticalColor : dn.textColor);
+    e.velocity = glm::vec3(dn.moveX, dn.moveY, dn.moveZ) * dn.moveSpeed;
+    e.maxLifetime = std::max(0.01f, dn.lifetime);
+    e.lifetime = -std::max(0.0f, dn.spawnDelay);
+    e.label = damage < 0 ? ("+" + std::to_string(-damage)) : std::to_string(damage);
     e.replayType = "damage_number";
-    e.scale = 0.24f;
+    e.billboardText = true;
+    e.scale = std::max(0.0f, dn.startScale);
+    e.endScale = std::max(0.0f, dn.endScale);
+    e.alpha = std::clamp(dn.startOpacity, 0.0f, 1.0f);
     return spawn(e);
 }
 

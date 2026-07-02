@@ -251,7 +251,8 @@ void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName)
     drawTriVerts(verts, 8, color, GL_LINES);
 }
 
-void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color)
+void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color,
+                float italicShear)
 {
     if (!text) return;
 
@@ -302,9 +303,10 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
                 continue;
             }
 
+            const float topShift = italicShear * (y1 - y0);
             float verts[] = {
-                x0,y0,u0,v0, x1,y0,u1,v0, x1,y1,u1,v1,
-                x0,y0,u0,v0, x1,y1,u1,v1, x0,y1,u0,v1
+                x0 + topShift,y0,u0,v0, x1 + topShift,y0,u1,v0, x1,y1,u1,v1,
+                x0 + topShift,y0,u0,v0, x1,y1,u1,v1, x0,y1,u0,v1
             };
             drawTexturedQuad(verts, 6, pageTex, color);
 

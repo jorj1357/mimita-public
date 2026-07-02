@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -230,6 +234,25 @@ static bool parseFloats(const std::string& s, std::vector<float>& out, int expec
     return out.size() == (size_t)expected;
 }
 
+static float clamp01(float v)
+{
+    return std::max(0.0f, std::min(1.0f, v));
+}
+
+static void setWorldXhAlpha(float v) { DebugConfig::WORLD_XH_ALPHA = clamp01(v); }
+static void setWorldXhLength(float v) { DebugConfig::WORLD_XH_LENGTH = std::max(0.0f, v); }
+static void setWorldXhGap(float v) { DebugConfig::WORLD_XH_GAP = v; }
+static void setWorldXhThickness(float v) { DebugConfig::WORLD_XH_THICKNESS = std::max(0.0f, v); }
+static void setWorldXhOutlineAlpha(float v) { DebugConfig::WORLD_XH_OUTLINE_ALPHA = clamp01(v); }
+static void setWorldXhMinSize(float v) { DebugConfig::WORLD_XH_MINSIZE = std::max(0.0f, v); }
+static void setWorldXhMaxSize(float v) { DebugConfig::WORLD_XH_MAXSIZE = std::max(0.0f, v); }
+static void setWorldXhColor(float r, float g, float b)
+{
+    DebugConfig::WORLD_XH_R = clamp01(r);
+    DebugConfig::WORLD_XH_G = clamp01(g);
+    DebugConfig::WORLD_XH_B = clamp01(b);
+}
+
 static void registerWorldXhCommands()
 {
     auto& term = Terminal::instance();
@@ -244,8 +267,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] alpha=" + std::to_string(DebugConfig::WORLD_XH_ALPHA));
                 return;
             }
-            float v = std::stof(args[0]);
-            DebugConfig::WORLD_XH_ALPHA = std::max(0.0f, std::min(1.0f, v));
+            setWorldXhAlpha(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_alpha=" + std::to_string(DebugConfig::WORLD_XH_ALPHA));
         },
@@ -262,7 +284,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] length=" + std::to_string(DebugConfig::WORLD_XH_LENGTH));
                 return;
             }
-            DebugConfig::WORLD_XH_LENGTH = std::max(0.0f, std::stof(args[0]));
+            setWorldXhLength(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_length=" + std::to_string(DebugConfig::WORLD_XH_LENGTH));
         },
@@ -279,7 +301,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] gap=" + std::to_string(DebugConfig::WORLD_XH_GAP));
                 return;
             }
-            DebugConfig::WORLD_XH_GAP = std::stof(args[0]);
+            setWorldXhGap(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_gap=" + std::to_string(DebugConfig::WORLD_XH_GAP));
         },
@@ -296,7 +318,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] thickness=" + std::to_string(DebugConfig::WORLD_XH_THICKNESS));
                 return;
             }
-            DebugConfig::WORLD_XH_THICKNESS = std::max(0.0f, std::stof(args[0]));
+            setWorldXhThickness(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_thickness=" + std::to_string(DebugConfig::WORLD_XH_THICKNESS));
         },
@@ -320,9 +342,7 @@ static void registerWorldXhCommands()
                 Terminal::instance().addLog("[ERROR] usage: world_xh_color R,G,B");
                 return;
             }
-            DebugConfig::WORLD_XH_R = std::max(0.0f, std::min(1.0f, vals[0]));
-            DebugConfig::WORLD_XH_G = std::max(0.0f, std::min(1.0f, vals[1]));
-            DebugConfig::WORLD_XH_B = std::max(0.0f, std::min(1.0f, vals[2]));
+            setWorldXhColor(vals[0], vals[1], vals[2]);
             Terminal::instance().addLog("[OK] world_xh_color set");
         },
         "2026-07-02", CommandCategory::Weapon
@@ -357,7 +377,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] outline_alpha=" + std::to_string(DebugConfig::WORLD_XH_OUTLINE_ALPHA));
                 return;
             }
-            DebugConfig::WORLD_XH_OUTLINE_ALPHA = std::max(0.0f, std::min(1.0f, std::stof(args[0])));
+            setWorldXhOutlineAlpha(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_outline_alpha=" + std::to_string(DebugConfig::WORLD_XH_OUTLINE_ALPHA));
         },
@@ -412,7 +432,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] maxsize=" + std::to_string(DebugConfig::WORLD_XH_MAXSIZE));
                 return;
             }
-            DebugConfig::WORLD_XH_MAXSIZE = std::max(0.0f, std::stof(args[0]));
+            setWorldXhMaxSize(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_maxsize=" + std::to_string(DebugConfig::WORLD_XH_MAXSIZE));
         },
@@ -429,7 +449,7 @@ static void registerWorldXhCommands()
                     "[WORLD_XH] minsize=" + std::to_string(DebugConfig::WORLD_XH_MINSIZE));
                 return;
             }
-            DebugConfig::WORLD_XH_MINSIZE = std::max(0.0f, std::stof(args[0]));
+            setWorldXhMinSize(std::stof(args[0]));
             Terminal::instance().addLog(
                 "[OK] world_xh_minsize=" + std::to_string(DebugConfig::WORLD_XH_MINSIZE));
         },
@@ -480,22 +500,89 @@ void registerWeaponDebugCommand()
     });
 }
 
-// ── World crosshair config loader ──
-// Loads config/crosshair-world.json and directly assigns to DebugConfig variables.
-// Uses direct assignment instead of Terminal::execute() to eliminate parsing issues.
-
 static const char* WORLD_XH_CONFIG_PATH = "config/crosshair-world.json";
+static int64_t gWorldXhLastModified = 0;
+static bool gWorldXhWatchLogged = false;
+
+struct WorldXhState {
+    float alpha = 0.0f;
+    float length = 1.0f;
+    float gap = 1.0f;
+    float thickness = 1.0f;
+    float outlineAlpha = 0.0f;
+    float minSize = 0.5f;
+    float maxSize = 2.0f;
+    float r = 1.0f;
+    float g = 0.5f;
+    float b = 0.0f;
+    bool outline = false;
+    bool dynamic = true;
+    bool centerDot = false;
+};
+
+static int64_t worldXhModifiedTime()
+{
+    std::error_code ec;
+    const auto time = std::filesystem::last_write_time(WORLD_XH_CONFIG_PATH, ec);
+    if (ec) return 0;
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        time.time_since_epoch()).count();
+}
+
+static WorldXhState currentWorldXhState()
+{
+    WorldXhState s;
+    s.alpha = DebugConfig::WORLD_XH_ALPHA;
+    s.length = DebugConfig::WORLD_XH_LENGTH;
+    s.gap = DebugConfig::WORLD_XH_GAP;
+    s.thickness = DebugConfig::WORLD_XH_THICKNESS;
+    s.outlineAlpha = DebugConfig::WORLD_XH_OUTLINE_ALPHA;
+    s.minSize = DebugConfig::WORLD_XH_MINSIZE;
+    s.maxSize = DebugConfig::WORLD_XH_MAXSIZE;
+    s.r = DebugConfig::WORLD_XH_R;
+    s.g = DebugConfig::WORLD_XH_G;
+    s.b = DebugConfig::WORLD_XH_B;
+    s.outline = DebugConfig::WORLD_XH_OUTLINE;
+    s.dynamic = DebugConfig::WORLD_XH_DYNAMIC;
+    s.centerDot = DebugConfig::WORLD_XH_CENTERDOT;
+    return s;
+}
+
+static void logWorldXh(const std::string& message)
+{
+    Debug::warn(Debug::Category::Weapons, "%s\n", message.c_str());
+    Terminal::instance().addLog(message);
+}
+
+static void logWorldXhWatchOnce()
+{
+    if (gWorldXhWatchLogged) return;
+    gWorldXhWatchLogged = true;
+    logWorldXh("[WorldCrosshair] Watching: crosshair-world.json");
+}
+
+static void applyWorldXhState(const WorldXhState& s)
+{
+    setWorldXhAlpha(s.alpha);
+    setWorldXhLength(s.length);
+    setWorldXhGap(s.gap);
+    setWorldXhThickness(s.thickness);
+    setWorldXhOutlineAlpha(s.outlineAlpha);
+    setWorldXhMinSize(s.minSize);
+    setWorldXhMaxSize(s.maxSize);
+    setWorldXhColor(s.r, s.g, s.b);
+    DebugConfig::WORLD_XH_OUTLINE = s.outline;
+    DebugConfig::WORLD_XH_DYNAMIC = s.dynamic;
+    DebugConfig::WORLD_XH_CENTERDOT = s.centerDot;
+}
 
 static bool loadWorldCrosshairFromJSON()
 {
     using json = nlohmann::json;
 
-    printf("[WorldCrosshair] Loaded config:\n{\n");
-
     std::ifstream file(WORLD_XH_CONFIG_PATH);
     if (!file.is_open()) {
-        printf("  [ERROR] Could not open: %s\n", WORLD_XH_CONFIG_PATH);
-        printf("}\n");
+        logWorldXh(std::string("[WorldCrosshair] ERROR: could not open ") + WORLD_XH_CONFIG_PATH);
         return false;
     }
 
@@ -503,106 +590,121 @@ static bool loadWorldCrosshairFromJSON()
     try {
         file >> j;
     } catch (const std::exception& e) {
-        printf("  [ERROR] Parse failed: %s\n", e.what());
-        printf("}\n");
+        logWorldXh(std::string("[WorldCrosshair] Parse error in ") +
+                   WORLD_XH_CONFIG_PATH + ": " + e.what());
         return false;
     }
 
-    // Float fields
-    auto loadFloat = [&](const char* key, float& var) {
-        if (j.contains(key)) {
-            float v = j[key].get<float>();
-            var = v;
-            printf("  %s: %.4f\n", key, (double)v);
-        } else {
-            printf("  %s: (default %.4f)\n", key, (double)var);
+    WorldXhState next = currentWorldXhState();
+    std::vector<const char*> applied;
+
+    auto readFloat = [&](const char* key, float& field, auto normalize) -> bool {
+        if (!j.contains(key)) return true;
+        try {
+            field = normalize(j.at(key).get<float>());
+            applied.push_back(key);
+            return true;
+        } catch (const std::exception& e) {
+            logWorldXh(std::string("[WorldCrosshair] Parse error for ") +
+                       key + ": " + e.what());
+            return false;
         }
     };
 
-    loadFloat("world_xh_alpha",        DebugConfig::WORLD_XH_ALPHA);
-    loadFloat("world_xh_length",       DebugConfig::WORLD_XH_LENGTH);
-    loadFloat("world_xh_gap",          DebugConfig::WORLD_XH_GAP);
-    loadFloat("world_xh_thickness",    DebugConfig::WORLD_XH_THICKNESS);
-    loadFloat("world_xh_outline_alpha",DebugConfig::WORLD_XH_OUTLINE_ALPHA);
-    loadFloat("world_xh_minsize",      DebugConfig::WORLD_XH_MINSIZE);
-    loadFloat("world_xh_maxsize",      DebugConfig::WORLD_XH_MAXSIZE);
+    auto identity = [](float v) { return v; };
+    auto nonNegative = [](float v) { return std::max(0.0f, v); };
+    if (!readFloat("world_xh_alpha", next.alpha, clamp01)) return false;
+    if (!readFloat("world_xh_length", next.length, nonNegative)) return false;
+    if (!readFloat("world_xh_gap", next.gap, identity)) return false;
+    if (!readFloat("world_xh_thickness", next.thickness, nonNegative)) return false;
+    if (!readFloat("world_xh_outline_alpha", next.outlineAlpha, clamp01)) return false;
+    if (!readFloat("world_xh_minsize", next.minSize, nonNegative)) return false;
+    if (!readFloat("world_xh_maxsize", next.maxSize, nonNegative)) return false;
 
-    // Boolean fields
-    auto loadBool = [&](const char* key, bool& var) {
-        if (j.contains(key)) {
-            var = j[key].get<int>() != 0;
-            printf("  %s: %s\n", key, var ? "true" : "false");
+    auto readBool = [&](const char* key, bool& field) -> bool {
+        if (!j.contains(key)) return true;
+        const json& value = j.at(key);
+        if (value.is_boolean()) {
+            field = value.get<bool>();
+        } else if (value.is_number()) {
+            field = value.get<float>() != 0.0f;
         } else {
-            printf("  %s: (default %s)\n", key, var ? "true" : "false");
+            logWorldXh(std::string("[WorldCrosshair] Parse error for ") +
+                       key + ": expected boolean or number");
+            return false;
         }
+        applied.push_back(key);
+        return true;
     };
 
-    loadBool("world_xh_outline",   DebugConfig::WORLD_XH_OUTLINE);
-    loadBool("world_xh_dynamic",   DebugConfig::WORLD_XH_DYNAMIC);
-    loadBool("world_xh_centerdot", DebugConfig::WORLD_XH_CENTERDOT);
+    if (!readBool("world_xh_outline", next.outline)) return false;
+    if (!readBool("world_xh_dynamic", next.dynamic)) return false;
+    if (!readBool("world_xh_centerdot", next.centerDot)) return false;
 
-    // Color field — expects [R, G, B] each 0-1
     if (j.contains("world_xh_color")) {
-        auto& arr = j["world_xh_color"];
-        if (arr.is_array() && arr.size() >= 3) {
-            DebugConfig::WORLD_XH_R = arr[0].get<float>();
-            DebugConfig::WORLD_XH_G = arr[1].get<float>();
-            DebugConfig::WORLD_XH_B = arr[2].get<float>();
-            printf("  world_xh_color: [%.4f, %.4f, %.4f]\n",
-                (double)DebugConfig::WORLD_XH_R,
-                (double)DebugConfig::WORLD_XH_G,
-                (double)DebugConfig::WORLD_XH_B);
-        } else {
-            printf("  world_xh_color: (invalid array, keeping default)\n");
+        const json& arr = j.at("world_xh_color");
+        if (!arr.is_array() || arr.size() < 3) {
+            logWorldXh("[WorldCrosshair] Parse error for world_xh_color: expected [r,g,b]");
+            return false;
         }
-    } else {
-        printf("  world_xh_color: (default [%.4f, %.4f, %.4f])\n",
-            (double)DebugConfig::WORLD_XH_R,
-            (double)DebugConfig::WORLD_XH_G,
-            (double)DebugConfig::WORLD_XH_B);
+        try {
+            next.r = clamp01(arr.at(0).get<float>());
+            next.g = clamp01(arr.at(1).get<float>());
+            next.b = clamp01(arr.at(2).get<float>());
+            applied.push_back("world_xh_color");
+        } catch (const std::exception& e) {
+            logWorldXh(std::string("[WorldCrosshair] Parse error for world_xh_color: ") + e.what());
+            return false;
+        }
     }
 
-    printf("}\n");
+    applyWorldXhState(next);
+    logWorldXh("[WorldCrosshair] Loaded successfully.");
+    for (const char* key : applied)
+        logWorldXh(std::string("[WorldCrosshair] Applied: ") + key);
     return true;
-}
-
-static void logCurrentCrosshairState()
-{
-    printf("[WorldCrosshair] Current runtime values:\n{\n");
-    printf("  world_xh_alpha: %.4f\n", (double)DebugConfig::WORLD_XH_ALPHA);
-    printf("  world_xh_color: [%.4f, %.4f, %.4f]\n",
-        (double)DebugConfig::WORLD_XH_R,
-        (double)DebugConfig::WORLD_XH_G,
-        (double)DebugConfig::WORLD_XH_B);
-    printf("  world_xh_gap: %.4f\n", (double)DebugConfig::WORLD_XH_GAP);
-    printf("  world_xh_length: %.4f\n", (double)DebugConfig::WORLD_XH_LENGTH);
-    printf("  world_xh_outline: %s\n", DebugConfig::WORLD_XH_OUTLINE ? "true" : "false");
-    printf("  world_xh_outline_alpha: %.4f\n", (double)DebugConfig::WORLD_XH_OUTLINE_ALPHA);
-    printf("  world_xh_thickness: %.4f\n", (double)DebugConfig::WORLD_XH_THICKNESS);
-    printf("  world_xh_dynamic: %s\n", DebugConfig::WORLD_XH_DYNAMIC ? "true" : "false");
-    printf("  world_xh_minsize: %.4f\n", (double)DebugConfig::WORLD_XH_MINSIZE);
-    printf("  world_xh_maxsize: %.4f\n", (double)DebugConfig::WORLD_XH_MAXSIZE);
-    printf("  world_xh_centerdot: %s\n", DebugConfig::WORLD_XH_CENTERDOT ? "true" : "false");
-    printf("}\n");
 }
 
 void loadWorldCrosshairConfig()
 {
-    printf("[WorldCrosshair] Loading config from: %s\n", WORLD_XH_CONFIG_PATH);
-    if (loadWorldCrosshairFromJSON()) {
-        printf("[WorldCrosshair] Config loaded and applied.\n");
-        logCurrentCrosshairState();
-    } else {
-        printf("[WorldCrosshair] Using default values.\n");
+    logWorldXhWatchOnce();
+    logWorldXh(std::string("[WorldCrosshair] Loading config from: ") + WORLD_XH_CONFIG_PATH);
+    loadWorldCrosshairFromJSON();
+    gWorldXhLastModified = worldXhModifiedTime();
+}
+
+bool pollWorldCrosshairConfig()
+{
+    logWorldXhWatchOnce();
+
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point nextCheck;
+    const auto now = Clock::now();
+    if (now < nextCheck) return false;
+    nextCheck = now + std::chrono::milliseconds(100);
+
+    const int64_t current = worldXhModifiedTime();
+    if (current == 0) return false;
+    if (gWorldXhLastModified == 0) {
+        gWorldXhLastModified = current;
+        return false;
     }
+    if (current == gWorldXhLastModified) return false;
+
+    gWorldXhLastModified = current;
+    logWorldXh("[WorldCrosshair] Detected change. Reloading...");
+    if (!loadWorldCrosshairFromJSON()) {
+        logWorldXh("[WorldCrosshair] Reload failed; keeping previous valid settings.");
+        return false;
+    }
+    return true;
 }
 
 void applyStartupDefaults()
 {
-    printf("[WorldCrosshair] Applying startup defaults...\n");
-
     DebugConfig::DEBUG_WPN_SHOT_LINE = false;
-    printf("[WorldCrosshair] DEBUG_WPN_SHOT_LINE = false  (wpn_shot_line disabled)\n");
+    Debug::warn(Debug::Category::Weapons,
+        "[WorldCrosshair] DEBUG_WPN_SHOT_LINE = false (wpn_shot_line disabled)\n");
 }
 
 // Hot-reload command: re-reads the JSON and applies values immediately.
@@ -614,14 +716,11 @@ void registerWorldXhReloadCommand()
         "Reload config/crosshair-world.json and apply changes immediately.",
         "world_xh_reload",
         [](const std::vector<std::string>&) {
-            printf("[WorldCrosshair] Hot reload triggered.\n");
-            Terminal::instance().addLog("[WorldCrosshair] Reloading config...");
+            logWorldXh("[WorldCrosshair] Detected change. Reloading...");
             if (loadWorldCrosshairFromJSON()) {
-                printf("[WorldCrosshair] Hot reload applied.\n");
-                logCurrentCrosshairState();
-                Terminal::instance().addLog("[WorldCrosshair] Config reloaded.");
+                gWorldXhLastModified = worldXhModifiedTime();
             } else {
-                Terminal::instance().addLog("[WorldCrosshair] Reload failed, using previous values.");
+                logWorldXh("[WorldCrosshair] Reload failed; keeping previous valid settings.");
             }
         }
     });

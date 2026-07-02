@@ -106,7 +106,7 @@ struct LegacyContactSphereConfig {
 
 struct DamageNumberConfig {
     bool enabled = true;
-    float fontSize = 0.014f;
+    float fontSize = 0.96f;
     float lifetime = 1.0f;
     float startOpacity = 1.0f;
     float endOpacity = 0.0f;
@@ -256,7 +256,8 @@ void onHit(const HitEvent& event);
 void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                      const glm::vec3& hitNormal, int damage,
                      const std::string& sourceId = "",
-                     const std::string& targetId = "");
+                     const std::string& targetId = "",
+                     bool spawnDamageNumber = true);
 
 void spawnMovementDashBurst(const glm::vec3& position, const glm::vec3& direction, float speed = 0.0f);
 void spawnGroundJumpBurst(const glm::vec3& position, const glm::vec3& direction);
@@ -271,7 +272,7 @@ int activeBurstCount();
 int debugBurstCount();
 int collectBurstSnapshots(HitBurstSnapshot* out, int maxCount);
 
-    void loadConfig(const std::string& path);
+    bool loadConfig(const std::string& path);
     void pollReload();
     const HitFxConfig& config();
     HitFxConfig& mutableConfig();

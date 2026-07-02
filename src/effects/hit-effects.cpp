@@ -72,34 +72,13 @@ void HitEffects::onHit(const HitEvent& event)
             event.attacker, event.victim);
     }
 
-    // 6. Damage number — only for entity hits (not world geometry)
-    if (gConfig.damageNumber.enabled && event.hitEntity && gConfig.core.damageNumbers) {
-        const auto& dn = gConfig.damageNumber;
-        EffectPart e;
-        e.position = event.position + glm::vec3(dn.worldOffsetX, dn.worldOffsetY, dn.worldOffsetZ);
-        e.color = glm::vec4(dn.textColor.x, dn.textColor.y, dn.textColor.z, 1.0f);
-        e.velocity = glm::vec3(dn.moveX, dn.moveY, dn.moveZ) * dn.moveSpeed;
-        e.maxLifetime = dn.lifetime;
-        e.scale = dn.fontSize;
-        e.label = "-" + std::to_string(event.damage);
-        e.replayType = "damage_number";
-        EffectPart* spawned = EffectPartSystem::instance().spawn(e);
-        if (spawned) {
-            Debug::log(Debug::Category::General,
-                "[DAMAGE NUMBERS] entity=%d damage=%d pos=(%.2f %.2f %.2f) label=%s "
-                "size=%.4f lifetime=%.2f color=(%.2f %.2f %.2f) configLoaded=1\n",
-                (int)event.hitEntity, event.damage, event.position.x, event.position.y, event.position.z,
-                e.label.c_str(), e.scale, e.maxLifetime,
-                dn.textColor.x, dn.textColor.y, dn.textColor.z);
-        } else {
-            Debug::warn(Debug::Category::General,
-                "[DAMAGE NUMBERS] FAILED to spawn — pool full. damage=%d\n", event.damage);
-        }
-    }
+    // 6. Damage number - only for entity hits (not world geometry)
+    if (event.hitEntity)
+        EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
 
     // 7. HitFX timeline (burst)
     spawnHitEffects(event.position, event.direction, event.normal, event.damage,
-                    event.attacker, event.victim);
+                    event.attacker, event.victim, false);
 
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat,
@@ -117,7 +96,8 @@ void HitEffects::onHit(const HitEvent& event)
 void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,
                                   const glm::vec3& hitNormal, int damage,
                                   const std::string& sourceId,
-                                  const std::string& targetId)
+                                  const std::string& targetId,
+                                  bool spawnDamageNumber)
 {
     (void)sourceId;
     (void)targetId;
@@ -153,16 +133,8 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
         e.replayType = "contact_sphere";
         EffectPartSystem::instance().spawn(e);
     }
-    if (gConfig.core.damageNumbers) {
-        EffectPart e;
-        e.position = hitPoint;
-        e.color = glm::vec4(1.0f, 0.9f, 0.1f, 1.0f);
-        e.maxLifetime = 1.2f;
-        e.scale = 0.35f;
-        e.label = std::to_string(damage);
-        e.replayType = "damage_number";
-        EffectPartSystem::instance().spawn(e);
-    }
+    if (spawnDamageNumber)
+        EffectPartSystem::instance().spawnDamage(hitPoint, targetId, damage);
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=hit-effects.cpp Type=contact_sphere pos=(%.1f,%.1f,%.1f)\n",
                    hitPoint.x, hitPoint.y, hitPoint.z);
@@ -179,7 +151,6 @@ void HitEffects::spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirecti
 void HitEffects::updateHitBursts(float dt)
 {
     (void)dt;
-    pollReload();
     gGlobalTick++;
     for (int i = 0; i < gBurstCount; ++i) {
         HitBurstEffect& b = gBursts[i];

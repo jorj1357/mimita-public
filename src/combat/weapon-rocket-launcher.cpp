@@ -14,6 +14,7 @@
 #include "entities/player.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "npc/npc.h"
 #include "world/world.h"
@@ -138,10 +139,17 @@ void fire(
 
     unsigned int rng = (unsigned int)(runtime.shootEffectTimer * 1000.0f) + 1;
     glm::vec3 dir = WeaponFire::computeSpreadDirection(muzzleDir, def.spread, rng);
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Final Direction Used By Projectile: (%.4f, %.4f, %.4f)\n",
+        dir.x, dir.y, dir.z);
 
     // Spawn well in front of the muzzle (outside player capsule)
     float spawnAhead = 1.2f;
     glm::vec3 spawnPos = muzzlePos + dir * spawnAhead;
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Projectile Origin: (%.2f, %.2f, %.2f) spawn=(%.2f, %.2f, %.2f)\n",
+        muzzlePos.x, muzzlePos.y, muzzlePos.z,
+        spawnPos.x, spawnPos.y, spawnPos.z);
 
     RocketLauncherState::Rocket rocket;
     rocket.position = spawnPos;

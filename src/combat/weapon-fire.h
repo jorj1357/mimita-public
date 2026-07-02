@@ -16,9 +16,29 @@ struct WeaponRuntime;
 
 namespace WeaponFire {
 
+enum class AimHitKind {
+    None,
+    World,
+    Npc,
+    RemotePlayer
+};
+
+const char* aimHitKindName(AimHitKind kind);
+
 struct AimTarget {
     glm::vec3 worldPoint;
     float cameraDistance;
+    AimHitKind hitKind = AimHitKind::None;
+};
+
+struct AimSolution {
+    glm::vec3 origin;
+    glm::vec3 aimPoint;
+    glm::vec3 direction;
+    float cameraDistance;
+    const char* modeName;
+    AimHitKind cameraHitKind = AimHitKind::None;
+    bool usesCameraTarget = false;
 };
 
 AimTarget computeAimTarget(
@@ -27,6 +47,16 @@ AimTarget computeAimTarget(
     NpcSystem& npcs,
     const std::unordered_map<uint32_t, Player>* remotePlayers
 );
+
+AimSolution computeAim(
+    const Camera& camera,
+    const World& world,
+    NpcSystem& npcs,
+    const glm::vec3& muzzlePos,
+    const std::unordered_map<uint32_t, Player>* remotePlayers
+);
+
+void logAimDebug(const char* label, const Camera& camera, const AimSolution& aim);
 
 RevolverShotResult tryFireHitscan(
     const WeaponDefinition& def,

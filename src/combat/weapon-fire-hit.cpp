@@ -10,6 +10,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
 #include "entities/player.h"
@@ -51,28 +52,15 @@ RevolverShotResult tryFireHitscan(
     result.fired = true;
     result.start = muzzlePos;
 
-    // Fixed aim point: always 100 units in front of the camera.
-    // This decouples shot direction from whatever world geometry happens to be under the crosshair.
-    constexpr float AIM_DISTANCE = 100.0f;
-    glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
-    glm::vec3 shotDirection = aimPoint - muzzlePos;
-    if (glm::length(shotDirection) <= 0.001f)
-        shotDirection = camera.front;
-    shotDirection = glm::normalize(shotDirection);
-
-    if (gDebugWeapon) {
-        printf("[AIM FIXED] cameraPos=(%.2f %.2f %.2f) cameraFront=(%.3f %.3f %.3f) "
-               "aimPoint=(%.2f %.2f %.2f) muzzlePos=(%.2f %.2f %.2f) "
-               "shotDir=(%.4f %.4f %.4f)\n",
-               camera.pos.x, camera.pos.y, camera.pos.z,
-               camera.front.x, camera.front.y, camera.front.z,
-               aimPoint.x, aimPoint.y, aimPoint.z,
-               muzzlePos.x, muzzlePos.y, muzzlePos.z,
-               shotDirection.x, shotDirection.y, shotDirection.z);
-    }
+    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
+    logAimDebug("hitscan", camera, aim);
+    glm::vec3 shotDirection = aim.direction;
 
     static unsigned int spreadRng = 1;
     shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
+        shotDirection.x, shotDirection.y, shotDirection.z);
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
     float nearest = MAX_SHOT_DISTANCE;
@@ -160,6 +148,13 @@ RevolverShotResult tryFireHitscan(
 
     result.end = muzzlePos + shotDirection * nearest;
     result.hitNormal = victim || remoteVictim ? hitNormal : worldNormal;
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n"
+        "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s distance=%.2f\n",
+        shotDirection.x, shotDirection.y, shotDirection.z,
+        result.end.x, result.end.y, result.end.z,
+        victim || remoteVictim ? "entity" : (hitWorld ? "world" : "none"),
+        nearest);
 
     ReplayEffectEvent gunshotEvent;
     gunshotEvent.type = "gunshot";
@@ -291,11 +286,12 @@ void fireMultiPellet(
 
     float spreadDeg = std::max(0.1f, def.spread);
 
-    constexpr float AIM_DISTANCE = 100.0f;
-    glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
-    glm::vec3 baseDir = glm::normalize(aimPoint - muzzlePos);
-    if (glm::length(baseDir) < 0.001f)
-        baseDir = camera.front;
+    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
+    logAimDebug("multi_pellet", camera, aim);
+    glm::vec3 baseDir = aim.direction;
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
+        baseDir.x, baseDir.y, baseDir.z);
 
     glm::vec3 up(0.0f, 0.0f, 1.0f);
     if (std::fabs(glm::dot(baseDir, up)) > 0.99f)
@@ -408,6 +404,11 @@ void fireMultiPellet(
 
             if (gDebugWeapon && pelletIndex < 3)
                 printf("pellet%d direction=(%.4f %.4f %.4f)\n", pelletIndex, pelletDir.x, pelletDir.y, pelletDir.z);
+            if (pelletIndex == 0) {
+                Debug::warn(Debug::Category::Weapons,
+                    "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n",
+                    pelletDir.x, pelletDir.y, pelletDir.z);
+            }
 
             EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username);
 
@@ -431,6 +432,10 @@ void fireMultiPellet(
     }
 
     finalizeMultiPelletResult(outResult, muzzlePos, lastPelletEnd, lastHitNormal, accumulatedDamage, anyHitEntity, anyHitWorld, lastTargetId, accumulatedKnockback, totalPellets, def, shooter);
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s\n",
+        outResult.end.x, outResult.end.y, outResult.end.z,
+        outResult.hitEntity ? "entity" : (outResult.hitWorld ? "world" : "none"));
 }
 
 } // namespace WeaponFire

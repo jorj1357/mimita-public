@@ -7,10 +7,13 @@
 #include "avatar/avatar.h"
 
 #include "crosshair/crosshair-config.h"
+#include "config/gameplay-config.h"
+#include "effects/hit-effects.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
 #include "devtools/terminal.h"
+#include "terminal/weapon-commands.h"
 
 extern FramePacer gFramePacer;
 
@@ -22,7 +25,10 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     dt = engine.beginFrame();
     AnalyticsManager::instance().update(dt);
     updatePlayerProceduralHotReload(dt);
+    GameplayConfig::instance().pollReload();
     CrosshairConfig::instance().pollReload();
+    pollWorldCrosshairConfig();
+    HitEffects::pollReload();
     AvatarSystem::instance().pollHotReload();
     worldPassRan = false;
 
