@@ -212,6 +212,7 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     ReplayEffectEvent event;
     event.type = effect.replayType;
+    event.label = effect.label;
     event.position = effect.position;
     event.from = effect.position;
     event.to = effect.endPosition;

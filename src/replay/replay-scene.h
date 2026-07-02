@@ -105,6 +105,7 @@ struct ReplayActorState {
 
 struct ReplayEffectEvent {
     std::string type;
+    std::string label;
 
     glm::vec3 position {};
     glm::vec3 direction {};

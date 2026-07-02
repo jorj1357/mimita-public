@@ -210,8 +210,8 @@ void senseWorld(Npc& npc, const Player& player, float dt)
     if (sensors.hasTarget && npc.lastTargetLogDistance < 0.0f)
     {
         Debug::log(Debug::Category::General,
-                   "[NPC] id=%u target acquired difficulty=%.1f distance=%.2f delay=%.0fms\n",
-                   npc.id, npc.difficulty, sensors.targetDistance, delay * 1000.0f);
+                   "[NPC] id=%u target acquired difficulty=%.1f distance=%.2f\n",
+                   npc.id, npc.difficulty, sensors.targetDistance);
     }
     if (!sensors.hasTarget && npc.lastTargetLogDistance >= 0.0f)
     {

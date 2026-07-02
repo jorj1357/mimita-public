@@ -34,6 +34,7 @@ ReplayEffectEvent parseEffect(const json& value)
 {
     ReplayEffectEvent effect;
     effect.type = value.value("type", "");
+    effect.label = value.value("label", "");
     effect.position = jsonVec3(value.value("position", json::array()));
     effect.direction = jsonVec3(value.value("direction", json::array()));
     effect.from = jsonVec3(value.value("from", json::array()));
@@ -147,8 +148,9 @@ json materialJson(const ReplayMaterialReference& material)
 
 json effectJson(const ReplayEffectEvent& effect)
 {
-    return {
+    json entry = {
         {"type", effect.type},
+        {"label", effect.label},
         {"position", vec3Json(effect.position)},
         {"direction", vec3Json(effect.direction)},
         {"from", vec3Json(effect.from)},
@@ -176,6 +178,7 @@ json effectJson(const ReplayEffectEvent& effect)
         {"texturePath", effect.texturePath},
         {"material", effect.materialName}
     };
+    return entry;
 }
 
 json transformJson(

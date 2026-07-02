@@ -99,6 +99,7 @@
 #include "replay/replay.h"
 #include "replay/replay-export-ui.h"
 #include "replay/replay-factory.h"
+#include "replay/replay-camera.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
 #include "shadow/shadow-commands.h"
@@ -185,6 +186,7 @@ ReplayClipSaver* gpReplayClipSaver = nullptr;
 ReplayFactory* gpReplayFactory = nullptr;
 ReplayBrowser* gpReplayBrowser = nullptr;
 ReplayTimeline* gpReplayTimeline = nullptr;
+ReplayCameraMgr* gpReplayCameraMgr = nullptr;
 std::unordered_map<std::string, ActorChatState>* gpReplayChatStates = nullptr;
 std::vector<std::string>* gpReplayClipsCache = nullptr;
 
