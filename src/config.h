@@ -74,6 +74,7 @@ namespace DebugConfig
     // Collision diagnostics: always-on pipeline instrumentation.
     // Set false to suppress all collision diagnostics.
     inline bool DEBUG_COLLISION_DIAGNOSTICS = true;
+    inline bool DEBUG_AIM_RAY = true;
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;
 
