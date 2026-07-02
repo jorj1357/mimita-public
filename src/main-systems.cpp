@@ -321,6 +321,8 @@ void gameInitSubsystems(Engine& engine)
     registerPlayerCommands();
     registerWeaponCommands();
     registerWeaponDebugCommand();
+    loadWorldCrosshairConfig();
+    applyStartupDefaults();
     registerCameraCommands();
     registerGuiEditorCommands();
     registerPostFxCommands();

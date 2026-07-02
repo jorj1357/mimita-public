@@ -7,7 +7,7 @@
         "spawnAtHitLocation": false,
         "directional": true,
         "useBlood": false,
-        "damageNumbers": false,
+        "damageNumbers": true,
         "entityImpact": false,
         "worldImpact": true,
         "bulletImpact": true

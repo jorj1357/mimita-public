@@ -72,17 +72,27 @@ void HitEffects::onHit(const HitEvent& event)
             event.attacker, event.victim);
     }
 
-    // 6. Damage number
-    if (gConfig.core.damageNumbers) {
+    // 6. Damage number (only for entity hits, not world geometry)
+    if (gConfig.core.damageNumbers && event.hitEntity) {
         EffectPart e;
         e.position = event.position;
         e.color = glm::vec4(1.0f, 0.15f, 0.15f, 1.0f);
-        e.velocity = glm::vec3(0.0f, 0.0f, 0.8f);
+        e.velocity = glm::vec3(0.0f, 0.0f, 0.6f);
         e.maxLifetime = 1.0f;
-        e.scale = 0.35f;
+        e.scale = 0.5f;
         e.label = "-" + std::to_string(event.damage);
         e.replayType = "damage_number";
-        EffectPartSystem::instance().spawn(e);
+        EffectPart* spawned = EffectPartSystem::instance().spawn(e);
+        if (spawned) {
+            Debug::log(Debug::Category::General,
+                "[DAMAGE POPUP] damage=%d pos=(%.2f %.2f %.2f) label=%s scale=%.2f lifetime=%.2f poolIdx=%d\n",
+                event.damage, event.position.x, event.position.y, event.position.z,
+                e.label.c_str(), e.scale, e.maxLifetime,
+                (int)(spawned - EffectPartSystem::instance().poolData()));
+        } else {
+            Debug::warn(Debug::Category::General,
+                "[DAMAGE POPUP] FAILED to spawn — pool full. damage=%d\n", event.damage);
+        }
     }
 
     // 7. HitFX timeline (burst)

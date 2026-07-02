@@ -73,7 +73,7 @@ namespace DebugConfig
     // Also had a printf inside the rate-limited path.
     // Collision diagnostics: always-on pipeline instrumentation.
     // Set false to suppress all collision diagnostics.
-    inline bool DEBUG_COLLISION_DIAGNOSTICS = true;
+    inline bool DEBUG_COLLISION_DIAGNOSTICS = false;
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
     inline bool DEBUG_WPN_SHOT_LINE = true;
 

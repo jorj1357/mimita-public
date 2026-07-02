@@ -87,10 +87,11 @@ float NpcCombat::aimErrorDegrees(float difficulty)
 {
     float d = std::clamp(difficulty, 1.0f, 10.0f);
     float t = (d - 1.0f) / 9.0f;
+    // Difficulty 1 = 6 deg (poor), Diff 5 = 1.5 deg (competent), Diff 10 = 0.2 deg (near-perfect)
     if (t <= 0.5f)
-        return 12.0f - (t / 0.5f) * 8.0f;
+        return 6.0f - (t / 0.5f) * 4.5f;
     else
-        return 4.0f - ((t - 0.5f) / 0.5f) * 3.5f;
+        return 1.5f - ((t - 0.5f) / 0.5f) * 1.3f;
 }
 
 bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
@@ -227,42 +228,41 @@ static glm::vec3 aimAtTargetProjectile(const Npc& npc, glm::vec3 npcPos, glm::ve
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
     if (npc.attackCooldown > 0.0f)
+    {
+        Debug::logThrottled(Debug::Category::NpcCombat, "npc-cd",
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: attackCooldown=%.2f\n",
+            npc.id, npc.attackCooldown);
         return false;
+    }
 
     float dist = npc.sensors.targetDistance;
 
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
     if (!def)
     {
-        // Auto-equip weapon if none set
-        float d01 = difficulty01(npc.difficulty);
-        std::vector<std::string> allWeapons = WeaponRegistry::instance().getAllIds();
-        if (!allWeapons.empty())
-        {
-            int idx = (int)(random01(npc.rngState) * (float)allWeapons.size());
-            idx = std::min(idx, (int)allWeapons.size() - 1);
-            npc.body.equippedWeaponId = allWeapons[idx];
-            def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-        }
-        if (!def) return false;
-        npc.body.equippedSlot = 1;
         Debug::log(Debug::Category::NpcCombat,
-            "[NPC WEAPON] npc=%u auto-equipped weapon=%s",
-            npc.id, def->id.c_str());
+            "[NPC] id=%u fire blocked: no weapon equipped\n", npc.id);
+        return false;
     }
 
-    // Check effective range
     float maxRange = effectiveRange(*def);
     if (dist > maxRange)
+    {
+        Debug::logThrottled(Debug::Category::NpcCombat, "npc-range",
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: dist=%.1f > maxRange=%.1f\n",
+            npc.id, dist, maxRange);
         return false;
+    }
 
     auto& rt = npc.body.weaponRuntimes[def->id];
 
-    // Initialize runtime if needed
-    if (rt.currentAmmo <= 0 && !rt.isReloading && def->magazineSize > 0)
+    // No ammo and no reserve — can't fire
+    if (rt.currentAmmo <= 0 && rt.reserveAmmo <= 0)
     {
-        auto it = def->customParams.find("reserveAmmo");
-        rt.reserveAmmo = (it != def->customParams.end()) ? (int)it->second : 999;
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC] id=%u fire blocked: no ammo (current=%d reserve=%d)\n",
+            npc.id, rt.currentAmmo, rt.reserveAmmo);
+        return false;
     }
 
     // Reload if empty
@@ -271,42 +271,50 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         rt.isReloading = true;
         rt.reloadTimer = def->reloadTime;
         Debug::log(Debug::Category::NpcCombat,
-            "[NPC RELOAD] npc=%u weapon=%s start reload=%.2fs",
-            npc.id, def->id.c_str(), def->reloadTime);
+            "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
+            npc.id, def->id.c_str(), def->reloadTime, rt.currentAmmo, rt.reserveAmmo);
         return false;
     }
 
-    // Handle active reload
+    // Currently reloading
     if (rt.isReloading)
     {
-        rt.reloadTimer -= dt;
-        if (rt.reloadTimer <= 0.0f)
-        {
-            int toLoad = def->magazineSize - rt.currentAmmo;
-            int available = std::min(toLoad, rt.reserveAmmo);
-            rt.currentAmmo += available;
-            rt.reserveAmmo -= available;
-            rt.isReloading = false;
-            Debug::log(Debug::Category::NpcCombat,
-                "[NPC RELOAD] npc=%u weapon=%s complete ammo=%d reserve=%d",
-                npc.id, def->id.c_str(), rt.currentAmmo, rt.reserveAmmo);
-        }
+        Debug::logThrottled(Debug::Category::NpcCombat, "npc-reloading",
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: reloading %.2fs left\n",
+            npc.id, rt.reloadTimer);
         return false;
     }
 
-    // No ammo and no reserve — can't fire
+    // No ammo in magazine
     if (rt.currentAmmo <= 0)
+    {
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC] id=%u fire blocked: magazine empty but reserve=%d (should have triggered reload)\n",
+            npc.id, rt.reserveAmmo);
         return false;
+    }
 
-    float settleTime = 0.1f + (1.0f - difficulty01(npc.difficulty)) * 0.5f;
+    // Minimal aim settle — only enough to prevent instant firing on state transitions
+    // The weapon's own fireDelay handles fire rate. We just need a tiny grace period.
+    float settleTime = 0.05f;
     npc.aimTimer += dt;
     if (npc.aimTimer < settleTime)
+    {
+        Debug::logThrottled(Debug::Category::NpcCombat, "npc-aim",
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: aiming %.2f/%.2f\n",
+            npc.id, npc.aimTimer, settleTime);
         return false;
+    }
 
     glm::vec3 npcPos = npc.body.pos;
     npcPos.z += 0.8f;
-    if (!lineOfSight(npcPos, player.pos, world))
+    if (!lineOfSight(npcPos, player.pos + glm::vec3(0.0f, 0.0f, 0.8f), world))
+    {
+        Debug::logThrottled(Debug::Category::NpcCombat, "npc-los",
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: no line of sight\n",
+            npc.id);
         return false;
+    }
 
     glm::vec3 aimDir;
     bool isProjectile = (def->behaviorType == WeaponBehaviorType::Projectile ||
@@ -324,7 +332,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         aimDir = aimAtTarget(npc, npcPos, npc.sensors.targetPos, npc.sensors.targetVel);
     }
 
-    // Decrement ammo
+    // Decrement ammo BEFORE firing
     if (def->magazineSize > 0)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
@@ -340,20 +348,18 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     }
 
     Debug::log(Debug::Category::NpcCombat,
-        "[NPC WEAPON FIRE] npc=%u weapon=%s behavior=%d origin=(%.2f %.2f %.2f) "
-        "aimDir=(%.2f %.2f %.2f) ammo=%d dist=%.1f",
-        npc.id, def->id.c_str(), (int)def->behaviorType,
-        npcPos.x, npcPos.y, npcPos.z,
-        aimDir.x, aimDir.y, aimDir.z, rt.currentAmmo, dist);
+        "[NPC SHOT] npc=%u weapon=%s ammo=%d/%d dist=%.1f hit=%d dmg=%.0f aimDir=(%.3f %.3f %.3f) error=%.1fdeg",
+        npc.id, def->id.c_str(), rt.currentAmmo, def->magazineSize, dist,
+        (int)shot.hitEntity, shot.damage,
+        aimDir.x, aimDir.y, aimDir.z,
+        aimErrorDegrees(npc.difficulty));
 
     npc.aimTimer = 0.0f;
 
+    // Use weapon's natural fire delay as cooldown
     float d01 = difficulty01(npc.difficulty);
-    float rangeFactor = std::clamp(dist / maxRange, 0.0f, 1.0f);
-    float cd = std::max(def->fireDelay * 1.2f, 0.06f);
-    cd -= d01 * 0.25f;
-    cd += rangeFactor * 0.3f;
-    cd = std::max(cd, 0.06f);
+    float cd = def->fireDelay * (1.1f - d01 * 0.2f);
+    cd = std::max(cd, def->fireDelay * 0.85f);
     npc.attackCooldown = cd;
     return true;
 }

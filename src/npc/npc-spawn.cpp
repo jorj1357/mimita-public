@@ -65,7 +65,7 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     body.syncLegacyStateToLayers();
     previousPosition = body.pos;
 
-    stateMachine.nextDecisionTime = 0.5f + random01(rngState) * 1.5f;
+    stateMachine.nextDecisionTime = 0.2f + random01(rngState) * 0.4f;
     stateMachine.wanderTarget = spawn + randomPlanarDirection(rngState) * 5.0f;
     stateMachine.wanderTimer = 2.0f + random01(rngState) * 3.0f;
     stateMachine.orbitAngle = random01(rngState) * glm::two_pi<float>();
@@ -75,6 +75,34 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     reactionTimer = 0.05f + random01(rngState) * 0.30f;
     moveNoiseTimer = 0.1f + random01(rngState) * 0.3f;
     moveOffset = {0.0f, 0.0f};
+
+    // Equip weapon immediately
+    std::vector<std::string> allWeapons = WeaponRegistry::instance().getAllIds();
+    if (!allWeapons.empty())
+    {
+        // Prefer revolver for reliable behavior
+        if (WeaponRegistry::instance().has("revolver"))
+        {
+            body.equippedWeaponId = "revolver";
+        }
+        else
+        {
+            int idx = (int)(random01(rngState) * (float)allWeapons.size());
+            idx = std::min(idx, (int)allWeapons.size() - 1);
+            body.equippedWeaponId = allWeapons[idx];
+        }
+        body.equippedSlot = 1;
+        const WeaponDefinition* def = WeaponRegistry::instance().get(body.equippedWeaponId);
+        if (def)
+        {
+            auto& rt = body.weaponRuntimes[def->id];
+            rt.currentAmmo = def->magazineSize;
+            rt.reserveAmmo = 999;
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC WEAPON] npc=%u immediate equip weapon=%s magazine=%d",
+                id, def->id.c_str(), def->magazineSize);
+        }
+    }
 
     Debug::log(Debug::Category::General,
                "[NPC] spawned id=%u difficulty=%.1f reaction=%.2f aggression=%.2f awareness=%.1f\n",

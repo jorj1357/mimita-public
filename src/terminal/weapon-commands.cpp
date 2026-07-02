@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "combat/weapon-system.h"
@@ -476,4 +478,107 @@ void registerWeaponDebugCommand()
         "2026-06-30",
         CommandCategory::Weapon
     });
+}
+
+static const char* WORLD_XH_CONFIG_PATH = "config/crosshair-world.json";
+
+void loadWorldCrosshairConfig()
+{
+    using json = nlohmann::json;
+    auto& term = Terminal::instance();
+
+    term.addLog("[WORLD_XH] Loading world crosshair config...");
+    term.addLog(std::string("[WORLD_XH] Config path: ") + WORLD_XH_CONFIG_PATH);
+
+    std::ifstream file(WORLD_XH_CONFIG_PATH);
+    if (!file.is_open()) {
+        term.addLog("[WORLD_XH] ERROR: Could not open config file. Using defaults.");
+        return;
+    }
+
+    json j;
+    try {
+        file >> j;
+    } catch (const std::exception& e) {
+        term.addLog(std::string("[WORLD_XH] ERROR: Failed to parse JSON: ") + e.what());
+        return;
+    }
+
+    auto apply = [&](const std::string& key, const std::string& cmdPrefix, const std::string& value) {
+        std::string fullCmd = cmdPrefix + " " + value;
+        term.execute(fullCmd);
+        term.addLog(std::string("[WORLD_XH] Loaded: ") + key);
+    };
+
+    // Scalar float fields
+    struct FloatField { const char* key; const char* cmd; };
+    static const FloatField floatFields[] = {
+        {"world_xh_alpha",        "world_xh_alpha"},
+        {"world_xh_length",       "world_xh_length"},
+        {"world_xh_gap",          "world_xh_gap"},
+        {"world_xh_thickness",    "world_xh_thickness"},
+        {"world_xh_outline_alpha","world_xh_outline_alpha"},
+        {"world_xh_minsize",      "world_xh_minsize"},
+        {"world_xh_maxsize",      "world_xh_maxsize"},
+    };
+
+    for (const auto& f : floatFields) {
+        if (j.contains(f.key)) {
+            try {
+                float v = j[f.key].get<float>();
+                apply(f.key, f.cmd, std::to_string(v));
+            } catch (...) {
+                term.addLog(std::string("[WORLD_XH] WARNING: skipping invalid ") + f.key);
+            }
+        }
+    }
+
+    // Boolean fields
+    struct BoolField { const char* key; const char* cmd; };
+    static const BoolField boolFields[] = {
+        {"world_xh_outline",   "world_xh_outline"},
+        {"world_xh_dynamic",   "world_xh_dynamic"},
+        {"world_xh_centerdot", "world_xh_centerdot"},
+    };
+
+    for (const auto& b : boolFields) {
+        if (j.contains(b.key)) {
+            try {
+                int v = j[b.key].get<int>();
+                apply(b.key, b.cmd, std::to_string(v));
+            } catch (...) {
+                term.addLog(std::string("[WORLD_XH] WARNING: skipping invalid ") + b.key);
+            }
+        }
+    }
+
+    // Color field — expects array of 3 floats
+    if (j.contains("world_xh_color")) {
+        try {
+            auto& arr = j["world_xh_color"];
+            if (arr.is_array() && arr.size() >= 3) {
+                float r = arr[0].get<float>();
+                float g = arr[1].get<float>();
+                float b = arr[2].get<float>();
+                std::string val = std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b);
+                apply("world_xh_color", "world_xh_color", val);
+            } else {
+                term.addLog("[WORLD_XH] WARNING: world_xh_color must be an array of 3 floats");
+            }
+        } catch (...) {
+            term.addLog("[WORLD_XH] WARNING: skipping invalid world_xh_color");
+        }
+    }
+
+    term.addLog("[WORLD_XH] World crosshair config loaded successfully.");
+}
+
+void applyStartupDefaults()
+{
+    auto& term = Terminal::instance();
+
+    // Disable the weapon shot debug line by default.
+    // The red debug beam and sphere are noisy; the world-space crosshair is sufficient.
+    term.execute("wpn_shot_line 0");
+    term.addLog("[WORLD_XH] Applied: wpn_shot_line = false");
 }
