@@ -87,6 +87,9 @@ namespace DebugConfig
     inline float WORLD_XH_THICKNESS = 1.0f;    // arm thickness multiplier
     inline bool  WORLD_XH_OUTLINE = false;     // outline enabled
     inline float WORLD_XH_OUTLINE_ALPHA = 0.0f; // 0=opaque, 1=invisible
+    inline bool  WORLD_XH_DYNAMIC = true;      // 0=fixed size, 1=distance-based scaling
+    inline float WORLD_XH_MAXSIZE = 2.0f;      // max scale multiplier, clamped ≥ 0
+    inline float WORLD_XH_MINSIZE = 0.5f;      // min scale multiplier, clamped ≥ 0
 
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;

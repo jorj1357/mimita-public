@@ -1,7 +1,7 @@
 import { useRef } from "react"
 import { Link } from "react-router-dom"
 import Layout from "../components/Layout"
-import Sticker from "../components/Sticker"
+import StickerLayer from "../components/StickerLayer"
 import RainbowText from "../components/RainbowText"
 
 function seededRandom(seed) {
@@ -88,12 +88,7 @@ export default function Games() {
     return (
         <Layout>
             <div className="gamesPage" style={{ position: "relative" }}>
-                <div className="stickerLayer">
-                    <Sticker index={1} />
-                    <Sticker index={3} />
-                    <Sticker index={5} />
-                    <Sticker index={7} />
-                </div>
+                <StickerLayer count={6} />
 
                 <div className="gamesInner" style={{ position: "relative", zIndex: 1 }}>
                     <RainbowText as="h1" className="gamesTitle">

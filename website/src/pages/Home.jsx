@@ -3,7 +3,7 @@ import "../App.css"
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
 import RainbowText from "../components/RainbowText"
-import Sticker from "../components/Sticker"
+import StickerLayer from "../components/StickerLayer"
 import PixelBox from "../components/PixelBox"
 import RandomRotation from "../components/RandomRotation"
 import ProceduralOffset from "../components/ProceduralOffset"
@@ -20,14 +20,7 @@ export default function Home() {
 
         <NoiseBackground opacity={0.02} style={{ position: "absolute", inset: 0 }} />
 
-        <div className="stickerLayer">
-          <Sticker index={0} />
-          <Sticker index={1} />
-          <Sticker index={2} />
-          <Sticker index={3} />
-          <Sticker index={4} />
-          <Sticker index={5} />
-        </div>
+        <StickerLayer count={8} />
 
         <video
           autoPlay

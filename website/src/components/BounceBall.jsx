@@ -7,25 +7,40 @@ const FRICTION = 0.992
 const RESTITUTION = 0.88
 const FRAME_HISTORY = 5
 
+function debugLog(...args) {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("debugWebsite") === "1") {
+    console.log("[WebsiteDecor]", ...args)
+  }
+}
+
 export default function BounceBall() {
   const el = useRef(null)
-  const pos = useRef({ x: 120, y: 80 })
-  const vel = useRef({ x: 2, y: -3 })
+  const pos = useRef({ x: 0, y: 0 })
+  const vel = useRef({ x: 1, y: 6 })
   const drag = useRef(false)
   const off = useRef({ x: 0, y: 0 })
   const hist = useRef([])
   const raf = useRef(null)
-  const inited = useRef(false)
+  const bounds = useRef({ w: 0, h: 0 })
 
   useEffect(() => {
-    if (inited.current) return
-    inited.current = true
+    function updateBounds() {
+      bounds.current.w = window.innerWidth - R * 2
+      bounds.current.h = window.innerHeight - R * 2
+    }
 
-    const W = () => window.innerWidth - R * 2
-    const H = () => window.innerHeight - R * 2
+    updateBounds()
+    pos.current.x = bounds.current.w / 2
+    pos.current.y = R
 
-    pos.current.x = Math.min(pos.current.x, W())
-    pos.current.y = Math.min(pos.current.y, H())
+    debugLog("Ball bounds:", {
+      left: 0,
+      right: bounds.current.w + R * 2,
+      top: 0,
+      bottom: bounds.current.h + R * 2,
+      ballRadius: R,
+    })
 
     function tick() {
       if (!drag.current) {
@@ -36,8 +51,7 @@ export default function BounceBall() {
         pos.current.x += vel.current.x
         pos.current.y += vel.current.y
 
-        const maxX = W()
-        const maxY = H()
+        const { w: maxX, h: maxY } = bounds.current
 
         if (pos.current.x < 0) {
           pos.current.x = 0
@@ -70,26 +84,24 @@ export default function BounceBall() {
     raf.current = requestAnimationFrame(tick)
 
     function onPointerDown(e) {
-      if (e.target !== el.current) return
       e.preventDefault()
       drag.current = true
       off.current.x = e.clientX - pos.current.x
       off.current.y = e.clientY - pos.current.y
       hist.current = []
-      el.current.style.cursor = "grabbing"
+      if (el.current) {
+        el.current.style.cursor = "grabbing"
+        el.current.setPointerCapture(e.pointerId)
+      }
       document.body.style.cursor = "grabbing"
-      el.current.setPointerCapture(e.pointerId)
     }
 
     function onPointerMove(e) {
       if (!drag.current) return
       e.preventDefault()
-      pos.current.x = e.clientX - off.current.x
-      pos.current.y = e.clientY - off.current.y
-      const maxX = W()
-      const maxY = H()
-      pos.current.x = Math.max(0, Math.min(maxX, pos.current.x))
-      pos.current.y = Math.max(0, Math.min(maxY, pos.current.y))
+      const { w: maxX, h: maxY } = bounds.current
+      pos.current.x = Math.max(0, Math.min(maxX, e.clientX - off.current.x))
+      pos.current.y = Math.max(0, Math.min(maxY, e.clientY - off.current.y))
       hist.current.push({ x: e.clientX, y: e.clientY, t: performance.now() })
       if (hist.current.length > FRAME_HISTORY) hist.current.shift()
     }
@@ -97,9 +109,11 @@ export default function BounceBall() {
     function onPointerUp(e) {
       if (!drag.current) return
       drag.current = false
-      el.current.style.cursor = "grab"
       document.body.style.cursor = ""
-      el.current.releasePointerCapture(e.pointerId)
+      if (el.current) {
+        el.current.style.cursor = "grab"
+        el.current.releasePointerCapture(e.pointerId)
+      }
 
       if (hist.current.length >= 2) {
         const first = hist.current[0]
@@ -117,15 +131,31 @@ export default function BounceBall() {
       }
     }
 
-    document.addEventListener("pointerdown", onPointerDown)
+    function onResizeOrScroll() {
+      updateBounds()
+      const { w: maxX, h: maxY } = bounds.current
+      pos.current.x = Math.min(pos.current.x, maxX)
+      pos.current.y = Math.min(pos.current.y, maxY)
+    }
+
+    const ball = el.current
+    if (ball) {
+      ball.addEventListener("pointerdown", onPointerDown)
+    }
     document.addEventListener("pointermove", onPointerMove)
     document.addEventListener("pointerup", onPointerUp)
+    window.addEventListener("resize", onResizeOrScroll)
+    window.addEventListener("scroll", onResizeOrScroll)
 
     return () => {
       if (raf.current) cancelAnimationFrame(raf.current)
-      document.removeEventListener("pointerdown", onPointerDown)
+      if (ball) {
+        ball.removeEventListener("pointerdown", onPointerDown)
+      }
       document.removeEventListener("pointermove", onPointerMove)
       document.removeEventListener("pointerup", onPointerUp)
+      window.removeEventListener("resize", onResizeOrScroll)
+      window.removeEventListener("scroll", onResizeOrScroll)
     }
   }, [])
 
@@ -144,7 +174,6 @@ export default function BounceBall() {
         touchAction: "none",
         zIndex: 99999,
         pointerEvents: "auto",
-        transform: `translate(${pos.current.x}px, ${pos.current.y}px)`,
         willChange: "transform",
         boxShadow: "0 0 12px rgba(255,68,136,0.5)",
         userSelect: "none",
