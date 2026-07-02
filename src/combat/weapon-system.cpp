@@ -178,8 +178,59 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             }
         }
 
-        // World-space crosshair at the predicted hit point (always-on-top overlay).
-        glm::vec3 crossPos = hitPoint + hitNormal * 0.003f;
+        // World-space crosshair at the predicted hit point.
+        // Visibility ray from camera to hitPoint: if something is between
+        // the camera and the hit point, the crosshair is hidden. Otherwise
+        // it renders as an overlay (not occluded by the hit surface itself).
+        glm::vec3 crossPos = hitPoint;
+        bool crosshairVisible = true;
+        {
+            glm::vec3 camToHit = hitPoint - camera.pos;
+            float camDist = glm::length(camToHit);
+            if (camDist > 0.5f)
+            {
+                glm::vec3 camDir = camToHit / camDist;
+                // Check world triangles between camera and hit point
+                AABB rayBounds;
+                rayBounds.min = glm::min(camera.pos, hitPoint);
+                rayBounds.max = glm::max(camera.pos, hitPoint);
+                std::vector<int> candidates;
+                appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+                for (int ti : candidates)
+                {
+                    if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+                    float d = 0.0f;
+                    if (WeaponFire::rayTriangle(camera.pos, camDir, world.collisionMesh.triangles[ti], d) && d < camDist - 0.3f)
+                    {
+                        crosshairVisible = false;
+                        break;
+                    }
+                }
+                // Check NPCs between camera and hit point
+                if (crosshairVisible)
+                {
+                    for (Npc& npc : npcs.all())
+                    {
+                        if (npc.body.currentHp <= 0) continue;
+                        npc.body.updateModelWorldTransforms();
+                        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts)
+                        {
+                            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                            glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                            float d = 0.0f;
+                            glm::vec3 nml;
+                            if (WeaponFire::rayAabb(camera.pos, camDir, center - half, center + half, d, nml) && d < camDist - 0.3f)
+                            {
+                                crosshairVisible = false;
+                                break;
+                            }
+                        }
+                        if (!crosshairVisible) break;
+                    }
+                }
+            }
+        }
 
         // ── Distance scaling ──
         // world_xh_maxsize → size at close range (maximum rendered size)
@@ -217,11 +268,11 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         float tk = baseThickness * distScale * thickMul;
 
         // ── Outline pass (drawn first, behind main crosshair) ──
-        if (DebugConfig::WORLD_XH_OUTLINE) {
+        if (DebugConfig::WORLD_XH_OUTLINE && crosshairVisible) {
             float oAlpha = 1.0f - DebugConfig::WORLD_XH_OUTLINE_ALPHA;
             glm::vec4 oCol(0.0f, 0.0f, 0.0f, oAlpha);
             float outlineWidth = tk * 0.35f;
-            DebugVis::drawCrosshairBillboard(camera, crossPos,
+            DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
                 sz + outlineWidth,
                 gp + outlineWidth,
                 tk + outlineWidth * 2.0f,
@@ -229,8 +280,9 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         }
 
         // ── Main crosshair pass (drawn second, on top of outline) ──
-        DebugVis::drawCrosshairBillboard(camera, crossPos,
-            sz, gp, tk, showDot, col);
+        if (crosshairVisible)
+            DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
+                sz, gp, tk, showDot, col);
 
         // Debug shot line + sphere — only when wpn_shot_line is enabled
         if (DebugConfig::DEBUG_WPN_SHOT_LINE) {

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <glm/glm.hpp>
+#include <cstring>
 
 void EffectPartSystem::render(const Camera& camera) const {
     for (const auto& effect : mPool) {
@@ -47,15 +48,34 @@ void EffectPartSystem::render(const Camera& camera) const {
             glm::vec3 scaleVec = dir * (len / std::max(rad, 0.001f)) + glm::vec3(1.0f) - dir;
             DebugVis::drawFilledSphere(camera, effect.position, rad, drawColor, scaleVec);
         }
-        else {
+        else if (!effect.billboardText) {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
         }
         
         if (effect.billboardText && !effect.label.empty()) {
-            float x, y;
-            if (DebugVis::projectToScreen(camera, effect.position + glm::vec3(0, 0, effect.scale + 0.15f), x, y)) {
+            float x = 0.0f, y = 0.0f;
+            // Project position slightly above where the damage occurred
+            bool projected = DebugVis::projectToScreen(camera, effect.position + glm::vec3(0, 0, effect.scale + 0.15f), x, y);
+            if (!projected) {
+                Debug::logThrottled(Debug::Category::General, "popup-project-fail", 2.0f,
+                    "[DAMAGE POPUP] projectToScreen failed label=%s pos=(%.2f %.2f %.2f) camDist=%.1f\n",
+                    effect.label.c_str(), effect.position.x, effect.position.y, effect.position.z,
+                    glm::length(effect.position - camera.pos));
+            } else {
+                // Apply upward drift: move text up over its lifetime
+                float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
+                float driftPx = (1.0f - t) * 60.0f;
                 glm::vec4 textColor = {effect.color.x, effect.color.y, effect.color.z, alpha};
-                uiDrawText(effect.label.c_str(), x, y, 0.3f * effect.scale, textColor);
+                float fontSize = 48.0f;
+                uiDrawText(effect.label.c_str(), x, y - driftPx, fontSize, textColor);
+                Debug::logThrottled(Debug::Category::General, "popup-render", 1.0f,
+                    "[DAMAGE POPUP] RENDER label=%s screen=(%.0f %.0f) alpha=%.2f fontSize=%.0f "
+                    "worldPos=(%.2f %.2f %.2f) camDist=%.1f lifetime=%.2f/%.2f drift=%.1f color=(%.2f %.2f %.2f)\n",
+                    effect.label.c_str(), x, y - driftPx, alpha, fontSize,
+                    effect.position.x, effect.position.y, effect.position.z,
+                    glm::length(effect.position - camera.pos),
+                    effect.lifetime, effect.maxLifetime, driftPx,
+                    effect.color.x, effect.color.y, effect.color.z);
             }
         }
     }

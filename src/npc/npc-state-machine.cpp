@@ -95,21 +95,21 @@ float stateMinTime(NpcState s, float d01)
     (void)d01;
     switch (s)
     {
-        case NpcState::Idle:        return 0.5f;
-        case NpcState::RandomWalk:  return 1.0f;
-        case NpcState::Chase:       return 0.5f;
-        case NpcState::Circle:      return 0.5f;
-        case NpcState::Strafe:      return 0.5f;
-        case NpcState::Retreat:     return 0.3f;
-        case NpcState::Attack:      return 0.1f;
-        case NpcState::Recover:     return 0.15f;
-        case NpcState::Advance:     return 0.5f;
-        case NpcState::HoldPosition: return 0.5f;
-        case NpcState::Peek:        return 0.4f;
-        case NpcState::Aim:         return 0.2f;
-        case NpcState::ZigZag:      return 0.6f;
+        case NpcState::Idle:        return 0.3f;
+        case NpcState::RandomWalk:  return 0.5f;
+        case NpcState::Chase:       return 0.3f;
+        case NpcState::Circle:      return 0.3f;
+        case NpcState::Strafe:      return 0.3f;
+        case NpcState::Retreat:     return 0.2f;
+        case NpcState::Attack:      return 0.08f;
+        case NpcState::Recover:     return 0.1f;
+        case NpcState::Advance:     return 0.3f;
+        case NpcState::HoldPosition: return 0.3f;
+        case NpcState::Peek:        return 0.3f;
+        case NpcState::Aim:         return 0.15f;
+        case NpcState::ZigZag:      return 0.4f;
     }
-    return 0.3f;
+    return 0.2f;
 }
 
 float stateMaxTime(NpcState s, float d01)

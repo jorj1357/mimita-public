@@ -85,6 +85,11 @@ void EffectPartSystem::update(float dt) {
             if (glm::length(fx.angularVelocity) > 0.0f)
                 fx.rotation += fx.angularVelocity * dt;
             if (fx.lifetime >= fx.maxLifetime) {
+                if (fx.replayType == "damage_number") {
+                    Debug::log(Debug::Category::General,
+                        "[DAMAGE POPUP] DESTROY label=%s lifetime=%.2f\n",
+                        fx.label.c_str(), fx.lifetime);
+                }
                 fx.alive = false;
                 fx.resetStrings();
                 --mActiveCount;

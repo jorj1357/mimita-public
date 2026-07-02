@@ -1,0 +1,13 @@
+{
+  "world_xh_alpha": 0,
+  "world_xh_color": [0, 0, 0],
+  "world_xh_gap": 1,
+  "world_xh_length": 1,
+  "world_xh_outline": 0,
+  "world_xh_outline_alpha": 0,
+  "world_xh_thickness": 1,
+  "world_xh_dynamic": 1,
+  "world_xh_minsize": 0.5,
+  "world_xh_maxsize": 2,
+  "world_xh_centerdot": 0
+}

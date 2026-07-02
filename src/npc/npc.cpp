@@ -374,6 +374,30 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.stateMachine.nextDecisionTime -= safeDt;
     npc.stateMachine.retreatTimer += safeDt;
 
+    // Process reload in main update (not inside tryFire) so it ticks during movement states
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        if (def)
+        {
+            auto& rt = npc.body.weaponRuntimes[def->id];
+            if (rt.isReloading)
+            {
+                rt.reloadTimer -= safeDt;
+                if (rt.reloadTimer <= 0.0f)
+                {
+                    int toLoad = def->magazineSize - rt.currentAmmo;
+                    int available = std::min(toLoad, rt.reserveAmmo);
+                    rt.currentAmmo += available;
+                    rt.reserveAmmo -= available;
+                    rt.isReloading = false;
+                    Debug::log(Debug::Category::NpcCombat,
+                        "[NPC RELOAD] npc=%u weapon=%s complete ammo=%d reserve=%d",
+                        npc.id, def->id.c_str(), rt.currentAmmo, rt.reserveAmmo);
+                }
+            }
+        }
+    }
+
     senseWorld(npc, player, safeDt);
 
     // Hearing: if no target, react to nearby combat sounds
