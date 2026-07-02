@@ -144,8 +144,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
 
-        constexpr float AIM_DISTANCE = 100.0f;
-        glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
+        constexpr float FWD_DIST = 100.0f;
+        glm::vec3 aimPoint = camera.pos + camera.front * FWD_DIST;
         glm::vec3 shotDir = glm::normalize(aimPoint - muzzlePos);
 
         constexpr float MAX_DIST = 100.0f;
@@ -178,16 +178,25 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             }
         }
 
-        // World-space crosshair: a billboard crosshair at the predicted hit point,
-        // always rendered on top of world geometry (depth-test disabled).
+        // World-space crosshair at the predicted hit point (always-on-top overlay).
         glm::vec3 crossPos = hitPoint + hitNormal * 0.003f;
+
+        // ── Distance scaling ──
+        // world_xh_maxsize → size at close range (maximum rendered size)
+        // world_xh_minsize  → size at far  range (minimum rendered size)
+        // Each variable independently controls its own end of the interpolation.
+        // No swap: changing one never affects the other end.
+        constexpr float NEAR_DIST = 5.0f;
+        float closeSize = DebugConfig::WORLD_XH_MAXSIZE;
+        float farSize   = DebugConfig::WORLD_XH_MINSIZE;
 
         float distScale = 1.0f;
         if (DebugConfig::WORLD_XH_DYNAMIC) {
-            float raw = 20.0f / std::max(nearest, 1.0f);
-            distScale = glm::clamp(raw, DebugConfig::WORLD_XH_MINSIZE, DebugConfig::WORLD_XH_MAXSIZE);
+            float t = glm::clamp((nearest - NEAR_DIST) / (FWD_DIST - NEAR_DIST), 0.0f, 1.0f);
+            distScale = glm::mix(closeSize, farSize, t);
         }
 
+        // ── Base dimensions ──
         const float baseSize = 0.15f;
         const float baseGap = 0.025f;
         const float baseThickness = 0.025f;
@@ -201,23 +210,27 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             DebugConfig::WORLD_XH_G,
             DebugConfig::WORLD_XH_B,
             alpha);
+        bool showDot = DebugConfig::WORLD_XH_CENTERDOT;
 
-        DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
-            baseSize * distScale * lenMul,
-            baseGap * distScale * gapMul,
-            baseThickness * distScale * thickMul,
-            true, col);
+        float sz = baseSize * distScale * lenMul;
+        float gp = baseGap * distScale * gapMul;
+        float tk = baseThickness * distScale * thickMul;
 
-        // Outline pass (if enabled)
+        // ── Outline pass (drawn first, behind main crosshair) ──
         if (DebugConfig::WORLD_XH_OUTLINE) {
             float oAlpha = 1.0f - DebugConfig::WORLD_XH_OUTLINE_ALPHA;
-            float outlineW = baseThickness * distScale * thickMul * 0.3f;
+            glm::vec4 oCol(0.0f, 0.0f, 0.0f, oAlpha);
+            float outlineWidth = tk * 0.35f;
             DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
-                baseSize * distScale * lenMul + outlineW,
-                baseGap * distScale * gapMul,
-                baseThickness * distScale * thickMul + outlineW * 2.0f,
-                false, glm::vec4(0.0f, 0.0f, 0.0f, oAlpha));
+                sz + outlineWidth,
+                gp + outlineWidth,
+                tk + outlineWidth * 2.0f,
+                showDot, oCol);
         }
+
+        // ── Main crosshair pass (drawn second, on top of outline) ──
+        DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
+            sz, gp, tk, showDot, col);
 
         // Debug shot line + sphere — only when wpn_shot_line is enabled
         if (DebugConfig::DEBUG_WPN_SHOT_LINE) {

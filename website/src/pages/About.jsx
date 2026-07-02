@@ -7,6 +7,7 @@ import StickerLayer from "../components/StickerLayer"
 import PixelBox from "../components/PixelBox"
 import ProceduralOffset from "../components/ProceduralOffset"
 import RandomRotation from "../components/RandomRotation"
+import ChaosBox from "../components/ChaosBox"
 
 export default function About() {
   return (
@@ -18,13 +19,15 @@ export default function About() {
           <video autoPlay loop muted playsInline preload="auto" className="aboutVideo">
             <source src="/untitled-loop-small.mp4" type="video/mp4" />
           </video>
-          <RandomRotation maxDeg={1}>
-            <h1 className="aboutPageTitle">ABOUT MiMITA</h1>
-          </RandomRotation>
+          <ChaosBox seed="AboutTitle">
+            <RandomRotation maxDeg={1}>
+              <h1 className="aboutPageTitle">ABOUT MiMITA</h1>
+            </RandomRotation>
+          </ChaosBox>
         </div>
 
         <div className="aboutPageContent">
-          <section className="aboutSection">
+          <ChaosBox seed="AboutSection1" as="section" className="aboutSection">
             <GrossHeading>What is Mimita?</GrossHeading>
             <p>
               Mimita is an experimental movement-based game engine focused on
@@ -37,10 +40,11 @@ export default function About() {
               extended, modified, and reshaped by anyone who wants to build
               something with it.
             </p>
-          </section>
+          </ChaosBox>
 
-          <PixelBox style={{ margin: "1.5rem 0", padding: "1rem" }}>
-            <section className="aboutSection" style={{ borderBottom: "none", margin: 0, padding: 0 }}>
+          <ChaosBox seed="AboutMovementBox">
+            <PixelBox style={{ margin: "1.5rem 0", padding: "1rem" }}>
+              <section className="aboutSection" style={{ borderBottom: "none", margin: 0, padding: 0 }}>
               <GrossHeading>Movement &gt; Aim</GrossHeading>
               <p>
                 Mimita is built around a core philosophy:::::;;; movement matters more than aim.
@@ -64,8 +68,9 @@ export default function About() {
               </p>
             </section>
           </PixelBox>
+          </ChaosBox>
 
-          <section className="aboutSection">
+          <ChaosBox seed="AboutDonations" as="section" className="aboutSection">
             <GrossHeading>Donations Only&mdash; NO Pay-to-Win Chuddery here</GrossHeading>
             <p>
               Mimita is supported entirely by donations. There are no
@@ -94,9 +99,9 @@ export default function About() {
                 so idk need more thought  - 6 28 2026
               </p>
             </ProceduralOffset>
-          </section>
+          </ChaosBox>
 
-          <section className="aboutSection">
+          <ChaosBox seed="AboutFAQ" as="section" className="aboutSection">
             <GrossHeading>Frequently Asked Questions</GrossHeading>
             <div className="aboutFaq">
               <PixelBox style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}>
@@ -137,7 +142,7 @@ export default function About() {
                 </div>
               </PixelBox>
             </div>
-          </section>
+          </ChaosBox>
         </div>
       </div>
 
