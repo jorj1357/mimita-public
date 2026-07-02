@@ -13,6 +13,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "replay/replay.h"
+#include "replay/replay-camera.h"
 #include "gui/hud/chat-bubble.h"
 #include "ui/hitmarker.h"
 #include "config/player-settings.h"
@@ -70,6 +71,7 @@ void engineTickCamera(Engine& engine, float dt)
     bool& freecamEnabled = FREECAM_ENABLED;
     GameState& gameState = GAME_STATE;
     auto& gReplayPlayer = REPLAY_PLAYER;
+    auto& gReplayCameraMgr = REPLAY_CAMERA_MGR;
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& mpContext = MP_CONTEXT;
 
@@ -86,17 +88,22 @@ void engineTickCamera(Engine& engine, float dt)
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool replayFreecam =
         replayPlaybackActive &&
-        gReplayPlayer.cameraController().mode() ==
-            ReplayCameraMode::Freecam;
+        (gReplayPlayer.cameraController().mode() ==
+            ReplayCameraMode::Freecam ||
+         gReplayCameraMgr.mode() == "freecam");
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
                             !Terminal::instance().isOpen();
-    if (replayPlaybackActive && !anyFreecam) {
-        if (const ReplaySceneFrame* replayFrame =
-                gReplayPlayer.currentSceneFrame()) {
-            gReplayPlayer.cameraController().update(
-                camera, *replayFrame,
-                gReplayPlayer.killerId(),
-                gReplayPlayer.victimId(), dt);
+    if (replayPlaybackActive) {
+        if (gReplayCameraMgr.mode() == "keyframed") {
+            gReplayCameraMgr.update(gReplayPlayer.currentTick(), camera, dt);
+        } else if (!anyFreecam) {
+            if (const ReplaySceneFrame* replayFrame =
+                    gReplayPlayer.currentSceneFrame()) {
+                gReplayPlayer.cameraController().update(
+                    camera, *replayFrame,
+                    gReplayPlayer.killerId(),
+                    gReplayPlayer.victimId(), dt);
+            }
         }
     }
     if (anyFreecam) {
@@ -133,6 +140,10 @@ void engineTickCamera(Engine& engine, float dt)
     if (replayPlaybackActive) {
         for (const ReplayEffectEvent& effect :
              gReplayPlayer.takeTriggeredEffects()) {
+            printf("[REPLAY EFFECT] type=%s pos=(%.1f %.1f %.1f) label=%s\n",
+                   effect.type.c_str(),
+                   effect.position.x, effect.position.y, effect.position.z,
+                   effect.label.c_str());
             if (effect.type == "chat") {
                 ActorChatState& chatState = gReplayChatStates[effect.sourceActorId];
                 addChatMessage(chatState, effect.assetId, effect.sourceActorId);
@@ -153,34 +164,18 @@ void engineTickCamera(Engine& engine, float dt)
             } else if (effect.type == "footstep") {
                 EffectPartSystem::instance().spawnFootstep(effect.position);
             } else if (effect.type == "impact_world") {
-                HitEvent ev;
-                ev.position = effect.position;
-                ev.normal = effect.normal;
-                ev.direction = effect.direction;
-                ev.hitWorld = true;
-                ev.damage = 0;
-                ev.attacker = effect.sourceActorId;
-                ev.victim = effect.targetActorId;
-                ev.weaponSource = "replay";
-                HitEffects::onHit(ev);
+                // Visual effects (debris, bullet impact) are separate events.
+                // Only spawn world debris here; HitEffects::onHit is NOT called
+                // because damage numbers and hit burst are separate events.
                 EffectPartSystem::instance().spawnWorldDebris(
                     effect.position, effect.normal, 1.0f);
             } else if (effect.type == "debris_block") {
                 EffectPartSystem::instance().spawnWorldDebris(
                     effect.position, effect.normal, 1.5f);
             } else if (effect.type == "hit_burst") {
-                HitEffects::spawnHitEffects(effect.position, effect.normal, effect.normal, 0, "replay", "replay");
+                // Already handled as separate effect events; no action needed.
             } else if (effect.type == "impact_entity") {
-                HitEvent ev;
-                ev.position = effect.position;
-                ev.normal = effect.normal;
-                ev.direction = effect.direction;
-                ev.hitEntity = true;
-                ev.damage = 0;
-                ev.attacker = effect.sourceActorId;
-                ev.victim = effect.targetActorId;
-                ev.weaponSource = "replay";
-                HitEffects::onHit(ev);
+                // Visual effects are separate events; no action needed.
             } else if (effect.type == "muzzle_flash") {
                 EffectPartSystem::instance().spawnMuzzleFlash(
                     effect.position, effect.sourceActorId);
@@ -196,12 +191,27 @@ void engineTickCamera(Engine& engine, float dt)
                 float rad = effect.scale.x > 0.0f ? effect.scale.x : deCfg.radius;
                 EffectPartSystem::instance().spawnDeathEllipsoid(
                     effect.from, dir, len, rad, std::max(effect.lifetime, 0.1f));
+            } else if (effect.type == "damage_number") {
+                if (!effect.label.empty()) {
+                    int damage = 0;
+                    try { damage = std::stoi(effect.label); } catch (...) {}
+                    EffectPartSystem::instance().spawnDamage(
+                        effect.position, effect.targetActorId, damage);
+                }
             } else if (!effect.type.empty() &&
                        effect.type != "corpse_spawn") {
-                EffectPartSystem::instance().spawnCustom(
-                    effect.position, glm::vec3(effect.color),
-                    std::max(effect.lifetime, 0.1f),
-                    effect.type.c_str());
+                EffectPart spawnParams;
+                spawnParams.position = effect.position;
+                spawnParams.color = effect.color;
+                spawnParams.velocity = effect.velocity;
+                spawnParams.maxLifetime = std::max(effect.lifetime, 0.1f);
+                spawnParams.replayType = effect.type;
+                spawnParams.label = effect.label;
+                spawnParams.scale = effect.scale.x > 0.0f ? effect.scale.x : 0.2f;
+                spawnParams.endScale = effect.endScale.x > 0.0f ? effect.endScale.x : 0.01f;
+                spawnParams.alpha = effect.alpha;
+                spawnParams.billboardText = false;
+                EffectPartSystem::instance().spawn(spawnParams);
             }
         }
         {

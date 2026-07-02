@@ -12,6 +12,7 @@
 #include "combat/weapon-system.h"
 #include "replay/replay.h"
 #include "replay/replay-factory.h"
+#include "replay/replay-camera.h"
 #include "network/multiplayer-context.h"
 #include "game/duel.h"
 #include "game/game-state.h"
@@ -41,6 +42,7 @@ extern ReplayClipSaver* gpReplayClipSaver;
 extern ReplayFactory* gpReplayFactory;
 extern ReplayBrowser* gpReplayBrowser;
 extern ReplayTimeline* gpReplayTimeline;
+extern ReplayCameraMgr* gpReplayCameraMgr;
 extern std::unordered_map<std::string, ActorChatState>* gpReplayChatStates;
 extern std::vector<std::string>* gpReplayClipsCache;
 extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels;
@@ -60,6 +62,7 @@ extern GameState* gpGameState;
 #define REPLAY_FACTORY (*gpReplayFactory)
 #define REPLAY_BROWSER (*gpReplayBrowser)
 #define REPLAY_TIMELINE (*gpReplayTimeline)
+#define REPLAY_CAMERA_MGR (*gpReplayCameraMgr)
 #define REPLAY_CHAT_STATES (*gpReplayChatStates)
 #define REPLAY_CLIPS_CACHE (*gpReplayClipsCache)
 #define REPLAY_ACTOR_MODELS (*gpReplayActorModels)

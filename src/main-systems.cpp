@@ -80,6 +80,7 @@
 #include "crosshair/crosshair-commands.h"
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
+#include "replay/replay-camera.h"
 #include "config/gameplay-config.h"
 #include "config/player-settings.h"
 #include "avatar/avatar.h"
@@ -140,6 +141,7 @@ extern ReplayClipSaver* gpReplayClipSaver;
 extern ReplayFactory* gpReplayFactory;
 extern ReplayBrowser* gpReplayBrowser;
 extern ReplayTimeline* gpReplayTimeline;
+extern ReplayCameraMgr* gpReplayCameraMgr;
 extern std::unordered_map<std::string, ActorChatState>* gpReplayChatStates;
 extern std::vector<std::string>* gpReplayClipsCache;
 extern std::unordered_map<int, std::string>* gpCommandBinds;
@@ -245,6 +247,7 @@ void gameInitSubsystems(Engine& engine)
     static ReplayFactory gReplayFactory(gReplayRecorder);
     static ReplayBrowser gReplayBrowser;
     static ReplayTimeline gReplayTimeline;
+    static ReplayCameraMgr gReplayCameraMgr;
 
     static GameState gameState = GAME_MENU;
 
@@ -304,6 +307,7 @@ void gameInitSubsystems(Engine& engine)
     gpReplayFactory = &gReplayFactory;
     gpReplayBrowser = &gReplayBrowser;
     gpReplayTimeline = &gReplayTimeline;
+    gpReplayCameraMgr = &gReplayCameraMgr;
     gpReplayChatStates = &gReplayChatStates;
     gpReplayClipsCache = &G_REPLAY_CLIPS_CACHE;
     gpCommandBinds = &G_COMMAND_BINDS;
@@ -343,6 +347,7 @@ void gameInitSubsystems(Engine& engine)
 
     registerReplayCaptureCommands();
     registerReplayCommands();
+    registerReplayCameraCommands();
 
     // Bind F3 to save instant replay
     {
