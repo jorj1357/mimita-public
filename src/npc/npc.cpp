@@ -270,7 +270,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     glm::vec3 moveDir;
     bool jump, dash, attack;
-    computeStateMovement(npc, moveDir, jump, dash, attack);
+    computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
 
     if (npc.bombTagActive)
     {

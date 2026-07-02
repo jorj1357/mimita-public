@@ -11,10 +11,10 @@ const LEADERBOARD_KEY = "aimtestv1_leaderboard"
 const LEADERBOARD_CACHE_MS = 60000
 
 const ASSET_PATHS = {
-  crosshairImage: "/assets/images/aimcursor.png",
-  targetImage: "/assets/images/target-placeholder.png",
-  hitSound: "/assets/audio/target-hit.wav",
-  missSound: "/assets/audio/miss-click.wav",
+  crosshairImage: "/assets/images/aimcursor.png?v=2",
+  targetImage: "/assets/images/target-placeholder.png?v=2",
+  hitSound: "/assets/audio/target-hit.wav?v=2",
+  missSound: "/assets/audio/miss-click.wav?v=2",
 }
 
 function loadLocalBest() {

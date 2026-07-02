@@ -28,7 +28,7 @@ bool shouldDash(Npc& npc, float d01, float distance)
 
 } // anonymous namespace
 
-void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack)
+void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack, float dt)
 {
     float d01 = difficulty01(npc.difficulty);
     const auto& sensors = npc.sensors;
@@ -48,7 +48,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
     float dist = sensors.targetDistance;
 
-    npc.moveNoiseTimer -= 0.016f;
+    npc.moveNoiseTimer -= dt;
     if (npc.moveNoiseTimer <= 0.0f)
     {
         npc.moveNoiseTimer = 0.1f + random01(npc.rngState) * 0.4f;
@@ -65,7 +65,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::RandomWalk:
         {
-            sm.wanderTimer -= 0.016f;
+            sm.wanderTimer -= dt;
             if (sm.wanderTimer <= 0.0f)
             {
                 float range = 4.0f + random01(npc.rngState) * 8.0f;
@@ -103,7 +103,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Circle:
         {
-            sm.orbitSwapTimer -= 0.016f;
+            sm.orbitSwapTimer -= dt;
             if (sm.orbitSwapTimer <= 0.0f)
             {
                 sm.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
@@ -112,7 +112,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             }
 
             float angleSpeed = 2.0f + d01 * 3.0f;
-            sm.orbitAngle += angleSpeed * 0.016f * sm.orbitDirection;
+            sm.orbitAngle += angleSpeed * dt * sm.orbitDirection;
 
             glm::vec3 orbitTarget = sensors.hasTarget
                 ? sensors.targetPos
@@ -140,7 +140,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Strafe:
         {
-            sm.strafeSwapTimer -= 0.016f;
+            sm.strafeSwapTimer -= dt;
             if (sm.strafeSwapTimer <= 0.0f)
             {
                 sm.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
@@ -222,7 +222,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
-            sm.holdTimer += 0.016f;
+            sm.holdTimer += dt;
 
             if (npc.attackCooldown <= 0.0f)
                 outAttack = true;
@@ -231,7 +231,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Peek:
         {
-            sm.peekTimer -= 0.016f;
+            sm.peekTimer -= dt;
             if (sm.peekTimer <= 0.0f)
             {
                 sm.peekDir *= -1.0f;
@@ -264,7 +264,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::ZigZag:
         {
-            sm.zigTimer -= 0.016f;
+            sm.zigTimer -= dt;
             if (sm.zigTimer <= 0.0f)
             {
                 sm.zigPhase = random01(npc.rngState) * glm::two_pi<float>();
@@ -273,7 +273,7 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
             float zigFreq = 3.0f + d01 * 4.0f;
             float zigAmp = 1.0f + (1.0f - d01) * 2.0f;
-            sm.zigPhase += zigFreq * 0.016f;
+            sm.zigPhase += zigFreq * dt;
 
             outMoveDir = chaseDir + lateral * std::sin(sm.zigPhase) * zigAmp;
             outMoveDir += glm::vec3(npc.moveOffset, 0.0f);

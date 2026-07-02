@@ -194,7 +194,7 @@
   border-radius: 8px;
   overflow: hidden;
   touch-action: none;
-  cursor: url('/assets/images/aimcursor.png') 0 0, crosshair;
+  cursor: url('/assets/images/aimcursor.png?v=2') 0 0, crosshair;
 }
 
 .gameTarget {
@@ -202,7 +202,7 @@
   border-radius: 50%;
   width: 100px;
   height: 100px;
-  background: url("/assets/images/target-placeholder.png") no-repeat center / cover;
+  background: url("/assets/images/target-placeholder.png?v=2") no-repeat center / cover;
   pointer-events: none;
   transform: translate(-50%, -50%);
 }

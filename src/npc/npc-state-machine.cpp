@@ -188,12 +188,13 @@ NpcState pickNextState(Npc& npc)
         NpcState state;
         float score;
     };
-    std::vector<Candidate> candidates;
+    Candidate candidates[10];
+    int candidateCount = 0;
 
     auto add = [&](NpcState s) {
         float score = scoreState(s, npc, d01);
-        if (score > 0.01f)
-            candidates.push_back({s, score});
+        if (score > 0.01f && candidateCount < 10)
+            candidates[candidateCount++] = {s, score};
     };
 
     add(NpcState::Chase);
@@ -208,27 +209,29 @@ NpcState pickNextState(Npc& npc)
     add(NpcState::ZigZag);
 
     float randomness = 0.15f + d01 * 0.20f;
-    for (auto& c : candidates)
-        c.score *= (1.0f - randomness * random01(npc.rngState));
+    for (int i = 0; i < candidateCount; ++i)
+        candidates[i].score *= (1.0f - randomness * random01(npc.rngState));
 
     if (npc.tuning.aggression > 0.6f && dist > 4.0f)
     {
-        for (auto& c : candidates)
-            if (c.state == NpcState::Retreat)
-                c.score *= 0.1f;
+        for (int i = 0; i < candidateCount; ++i)
+            if (candidates[i].state == NpcState::Retreat)
+                candidates[i].score *= 0.1f;
     }
 
-    for (auto& c : candidates)
+    for (int i = 0; i < candidateCount; ++i)
     {
-        if (c.state == npc.stateMachine.currentState)
-            c.score *= 0.7f;
+        if (candidates[i].state == npc.stateMachine.currentState)
+            candidates[i].score *= 0.7f;
     }
 
-    if (candidates.empty())
+    if (candidateCount == 0)
         return NpcState::Chase;
 
-    auto best = std::max_element(candidates.begin(), candidates.end(),
-        [](const Candidate& a, const Candidate& b) { return a.score < b.score; });
+    int bestIdx = 0;
+    for (int i = 1; i < candidateCount; ++i)
+        if (candidates[i].score > candidates[bestIdx].score)
+            bestIdx = i;
 
-    return best->state;
+    return candidates[bestIdx].state;
 }

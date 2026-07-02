@@ -25,7 +25,7 @@ enum class NpcState
 
 std::string npcStateName(NpcState s);
 NpcState pickNextState(Npc& npc);
-void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack);
+void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack, float dt);
 
 float stateMinTime(NpcState s, float d01);
 float stateMaxTime(NpcState s, float d01);
