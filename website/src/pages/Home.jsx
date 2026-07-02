@@ -2,12 +2,29 @@ import "../App.css"
 
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
+import RainbowText from "../components/RainbowText"
+import Sticker from "../components/Sticker"
+import PixelBox from "../components/PixelBox"
+import RandomRotation from "../components/RandomRotation"
+import ProceduralOffset from "../components/ProceduralOffset"
+import NoiseBackground from "../components/NoiseBackground"
 
 export default function Home() {
   return (
     <Layout>
 
-      <main className="hero">
+      <main className="hero heroNoise">
+
+        <NoiseBackground opacity={0.02} style={{ position: "absolute", inset: 0 }} />
+
+        <div className="stickerLayer">
+          <Sticker index={0} />
+          <Sticker index={1} />
+          <Sticker index={2} />
+          <Sticker index={3} />
+          <Sticker index={4} />
+          <Sticker index={5} />
+        </div>
 
         <video
           autoPlay
@@ -27,33 +44,41 @@ export default function Home() {
 
         <div className="heroContent">
 
-          <h1 className="mainLogo">
-            MiMITA
-          </h1>
-
-          <p className="tagline">
-            "Movement is More Important Than Aim"
-          </p>
-
-          <div className="previewArea">
-            <video
-              autoPlay
-              loop
-              muted
-              playsInline
-              preload="auto"
-              className="previewVideo"
-            >
-              <source
-                src="/mimita-preview-small.mp4"
-                type="video/mp4"
-              />
-            </video>
+          <div className="heroLogoWrap">
+            <RainbowText as="h1" className="mainLogo">
+              MiMITA
+            </RainbowText>
           </div>
 
-          <p className="description">
-            Mimita is a movement-based PvP game where movement matters more than aim.
-          </p>
+          <RandomRotation maxDeg={1}>
+            <p className="tagline">
+              &ldquo;Movement is More Important Than Aim&rdquo;
+            </p>
+          </RandomRotation>
+
+          <PixelBox style={{ width: "100%", maxWidth: "720px", margin: "0 auto 28px auto", border: "none" }}>
+            <div className="previewArea">
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="auto"
+                className="previewVideo"
+              >
+                <source
+                  src="/mimita-preview-small.mp4"
+                  type="video/mp4"
+                />
+              </video>
+            </div>
+          </PixelBox>
+
+          <ProceduralOffset max={2}>
+            <p className="description">
+              Mimita is a movement-based PvP game where movement matters more than aim.
+            </p>
+          </ProceduralOffset>
 
           <div className="ctaButtons">
             <a

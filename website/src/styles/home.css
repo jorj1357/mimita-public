@@ -68,7 +68,6 @@
   width: 100%;
   max-width: 720px;
   margin: 0 auto 28px auto;
-  border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.1);
 }
@@ -137,7 +136,6 @@
 
 @media (max-width: 700px) {
   .previewArea {
-    border-radius: 8px;
   }
 
   .secondaryButtons {

@@ -301,7 +301,7 @@ void drawNpcDebugStuff(const std::vector<NpcDebugInfo>& npcs,
             camera,
             npc.position + glm::vec3(0.0f, 0.0f, 0.15f),
             0.18f,
-            npc.grounded ? groundedColor : airborneColor
+            npc.onFloor ? groundedColor : airborneColor
         );
 
         if (npc.hasTarget)
@@ -314,11 +314,11 @@ void drawNpcDebugStuff(const std::vector<NpcDebugInfo>& npcs,
                  npc.difficulty,
                  npc.action.c_str(),
                  npc.finalSpeed,
-                 npc.grounded ? "grounded" : "airborne");
+                 npc.onFloor ? "grounded" : "airborne");
         ::drawWorldLabel(
             npc.position + glm::vec3(0.0f, 0.0f, 2.25f),
             label,
-            npc.grounded ? groundedColor : airborneColor
+            npc.onFloor ? groundedColor : airborneColor
         );
     }
 }

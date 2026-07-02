@@ -139,15 +139,11 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
     }
 
     // ── World-space aim crosshair (permanent) ──────────────
-    // Every frame, compute the exact ray that would be fired and place a
-    // marker at the first hit point. This is the shared aiming visualization
-    // for all weapons — always visible, always updated, no debug dependency.
     if (def && rt) {
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
 
-        // Same fixed aim point and direction used by all firing functions
         constexpr float AIM_DISTANCE = 100.0f;
         glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
         glm::vec3 shotDir = glm::normalize(aimPoint - muzzlePos);
@@ -155,12 +151,14 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         constexpr float MAX_DIST = 100.0f;
         float nearest = MAX_DIST;
         glm::vec3 hitPoint = muzzlePos + shotDir * MAX_DIST;
+        glm::vec3 hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
         for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
             float d = 0.0f;
             if (WeaponFire::rayTriangle(muzzlePos, shotDir, tri, d) && d < nearest) {
                 nearest = d;
                 hitPoint = muzzlePos + shotDir * d;
+                hitNormal = tri.normal;
             }
         }
         for (Npc& npc : npcs.all()) {
@@ -175,16 +173,31 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 if (WeaponFire::rayAabb(muzzlePos, shotDir, center - half, center + half, d, nml) && d < nearest) {
                     nearest = d;
                     hitPoint = muzzlePos + shotDir * d;
+                    hitNormal = nml;
                 }
             }
         }
 
-        // World-space crosshair marker — always visible, NOT debug
-        DebugVis::drawFilledSphere(camera, hitPoint, 0.15f, glm::vec4(1.0f, 0.2f, 0.0f, 0.9f));
+        // World-space crosshair: a billboard crosshair at the predicted hit point.
+        // Offset a few mm along the surface normal to avoid z-fighting.
+        glm::vec3 crossPos = hitPoint + hitNormal * 0.003f;
 
-        // Debug shot line — only when wpn_shot_line is enabled
+        // Distance-based scaling: clamp between 0.5x and 2.0x.
+        float distScale = glm::clamp(20.0f / std::max(nearest, 1.0f), 0.5f, 2.0f);
+
+        // Base crosshair dimensions at scale 1.0 (in world meters).
+        const float baseSize = 0.15f;
+        const float baseGap = 0.025f;
+        const float baseThickness = 0.025f;
+
+        DebugVis::drawCrosshairBillboard(camera, crossPos,
+            baseSize * distScale, baseGap * distScale, baseThickness * distScale,
+            true, glm::vec4(1.0f, 0.5f, 0.0f, 0.9f));
+
+        // Debug shot line + sphere — only when wpn_shot_line is enabled
         if (DebugConfig::DEBUG_WPN_SHOT_LINE) {
             DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, 0.05f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+            DebugVis::drawFilledSphere(camera, hitPoint, 0.08f, glm::vec4(1.0f, 0.0f, 0.0f, 0.7f));
         }
     }
 

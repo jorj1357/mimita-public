@@ -2,21 +2,36 @@ import "../App.css"
 
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
+import GrossHeading from "../components/GrossHeading"
+import Sticker from "../components/Sticker"
+import PixelBox from "../components/PixelBox"
+import ProceduralOffset from "../components/ProceduralOffset"
+import RandomRotation from "../components/RandomRotation"
 
 export default function About() {
   return (
     <Layout>
       <div className="aboutPage">
+        <div className="stickerLayer">
+          <Sticker index={0} />
+          <Sticker index={2} />
+          <Sticker index={4} />
+          <Sticker index={6} />
+          <Sticker index={8} />
+        </div>
+
         <div className="aboutPageHeader">
           <video autoPlay loop muted playsInline preload="auto" className="aboutVideo">
             <source src="/untitled-loop-small.mp4" type="video/mp4" />
           </video>
-          <h1 className="aboutPageTitle">ABOUT MiMITA</h1>
+          <RandomRotation maxDeg={1}>
+            <h1 className="aboutPageTitle">ABOUT MiMITA</h1>
+          </RandomRotation>
         </div>
 
         <div className="aboutPageContent">
           <section className="aboutSection">
-            <h2>What is Mimita?</h2>
+            <GrossHeading>What is Mimita?</GrossHeading>
             <p>
               Mimita is an experimental movement-based game engine focused on
               emergence, editability, and making things that just feel fun.
@@ -27,35 +42,37 @@ export default function About() {
               The engine is open-source, community-driven, and designed to be
               extended, modified, and reshaped by anyone who wants to build
               something with it.
-          </p>
-          </section>
-
-          <section className="aboutSection">
-            <h2>Movement &gt; Aim</h2>
-            <p>
-              Mimita is built around a core philosophy:::::;;; movement matters more than aim.
-            </p>
-            <p>
-              Instead of rewarding who can click the most accurately BC I SUCK AT AIMING 
-              
-              <br></br> 
-              Mimita
-              rewards who can move most creatively. 
-               Full-body collision physics, (arms and weapon collide with world + push u around)
-              momentum-based mechanics, and emergent movement tech (Slopes  ahve never been so fun)
-              create a
-              combat system where positioning, timing, and flow matter more
-              than precision aim.
-            </p>
-            <p>
-              This philosophy extends to all systems.!!!?/!!!....... from combat to
-              level design to game modes. Movement should feel expressive,
-              responsive, and satisfying on its own.
             </p>
           </section>
 
+          <PixelBox style={{ margin: "1.5rem 0", padding: "1rem" }}>
+            <section className="aboutSection" style={{ borderBottom: "none", margin: 0, padding: 0 }}>
+              <GrossHeading>Movement &gt; Aim</GrossHeading>
+              <p>
+                Mimita is built around a core philosophy:::::;;; movement matters more than aim.
+              </p>
+              <p>
+                Instead of rewarding who can click the most accurately BC I SUCK AT AIMING
+
+                <br></br>
+                Mimita
+                rewards who can move most creatively.
+                Full-body collision physics, (arms and weapon collide with world + push u around)
+                momentum-based mechanics, and emergent movement tech (Slopes  ahve never been so fun)
+                create a
+                combat system where positioning, timing, and flow matter more
+                than precision aim.
+              </p>
+              <p>
+                This philosophy extends to all systems.!!!?/!!!....... from combat to
+                level design to game modes. Movement should feel expressive,
+                responsive, and satisfying on its own.
+              </p>
+            </section>
+          </PixelBox>
+
           <section className="aboutSection">
-            <h2>Donations Only-------- NO Pay-to-Win Chuddery here</h2>
+            <GrossHeading>Donations Only&mdash; NO Pay-to-Win Chuddery here</GrossHeading>
             <p>
               Mimita is supported entirely by donations. There are no
               microtransactions, no battle passes, no loot boxes, and no
@@ -64,59 +81,73 @@ export default function About() {
               <br></br>
               like i might add those later but i lowk dont even  want to  especially loot boxes
               <br></br>
-              cuz its  real life money i dont want to start addictions like that 
+              cuz its  real life money i dont want to start addictions like that
             </p>
             <p>
               Supporter perks are cosmetic only;;;; custom colors, badges, and
               future cosmetics that let you show support without affecting
               gameplay. Everything gameplay-relevant is available to everyone ALL the time WITHOUT exception Always . Alwasy!!
             </p>
-            <p>
-              Financial contributions go toward server infrastructure,
-              development tools, and keeping the project open and accessible.
-              <br></br>
-              Also  it hepls me to idk
-              do more fun stuff 
-              like imagine there was a ctual money ppl could make from doing stuff here 
-              that would be so sick 
-              so idk need more thought  - 6 28 2026
-            </p>
+            <ProceduralOffset max={2}>
+              <p>
+                Financial contributions go toward server infrastructure,
+                development tools, and keeping the project open and accessible.
+                <br></br>
+                Also  it hepls me to idk
+                do more fun stuff
+                like imagine there was a ctual money ppl could make from doing stuff here
+                that would be so sick
+                so idk need more thought  - 6 28 2026
+              </p>
+            </ProceduralOffset>
           </section>
 
           <section className="aboutSection">
-            <h2>Frequently Asked Questions</h2>
+            <GrossHeading>Frequently Asked Questions</GrossHeading>
             <div className="aboutFaq">
-              <div className="aboutFaqItem">
-                <strong>Is Mimita free?</strong>
-                <p>Yes. !!!!!!!!!!!! The game and engine are completely free. Its all on github u can downlaod it clone it fork it whatever. No purchases required. I encourage u yes go clone it and mod it do whatever </p>
-              </div>
-              <div className="aboutFaqItem">
-                <strong>Can I contribute to development?</strong>
-                <p>Yes. T!!!!!!!!!!!he source code is on GitHub. Pull requests, bug reports, and ideas are welcome. And suggestions in mimita discord server its attttt https://discord.com/invite/sY8QHbfG9D</p>
-              </div>
-              <div className="aboutFaqItem">
-                <strong>What platforms are supported?</strong>
-                <p>Currently Windows 64-bit. Other platforms added in the future. DUDE i need this on my phone. Dude i need this on  my tv DUDE I NEED THIS ON PS5 ANX XBOX. I want to do that stuff SO  BADD THAT WOLD BE SO SICK</p>
-              </div>
-              <div className="aboutFaqItem">
-                <strong>Is there a single-player mode?</strong>
-                <p>YES!!!!! In coming time there should be madness combat modes
-                  <br></br>
-                  clear out this whole facility of grunts and then get the final boss of that level 
-                  <br></br>
-                  new level = new boss new mehcanics etc fun stuff 
-                  
-                  <br></br>
-                  ideally its a multiplayer PvP experience. NPC modes and practice tools are planned.</p>
-              </div>
-              <div className="aboutFaqItem">
-                <strong>How do I report a bug?</strong>
-                <p>Use the feedback form below or open an issue on GitHub. Or on discord u can @MiMITA in any channel and say Hey bro this  thing is broken </p>
-              </div>
+              <PixelBox style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}>
+                <div className="aboutFaqItem" style={{ border: "none", padding: 0, background: "none" }}>
+                  <strong>Is Mimita free?</strong>
+                  <p>Yes. !!!!!!!!!!!! The game and engine are completely free. Its all on github u can downlaod it clone it fork it whatever. No purchases required. I encourage u yes go clone it and mod it do whatever </p>
+                </div>
+              </PixelBox>
+              <PixelBox style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}>
+                <div className="aboutFaqItem" style={{ border: "none", padding: 0, background: "none" }}>
+                  <strong>Can I contribute to development?</strong>
+                  <p>Yes. T!!!!!!!!!!!he source code is on GitHub. Pull requests, bug reports, and ideas are welcome. And suggestions in mimita discord server its attttt https://discord.com/invite/sY8QHbfG9D</p>
+                </div>
+              </PixelBox>
+              <PixelBox style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}>
+                <div className="aboutFaqItem" style={{ border: "none", padding: 0, background: "none" }}>
+                  <strong>What platforms are supported?</strong>
+                  <p>Currently Windows 64-bit. Other platforms added in the future. DUDE i need this on my phone. Dude i need this on  my tv DUDE I NEED THIS ON PS5 ANX XBOX. I want to do that stuff SO  BADD THAT WOLD BE SO SICK</p>
+                </div>
+              </PixelBox>
+              <PixelBox style={{ marginBottom: "0.75rem", padding: "0.75rem 1rem" }}>
+                <div className="aboutFaqItem" style={{ border: "none", padding: 0, background: "none" }}>
+                  <strong>Is there a single-player mode?</strong>
+                  <p>YES!!!!! In coming time there should be madness combat modes
+                    <br></br>
+                    clear out this whole facility of grunts and then get the final boss of that level
+                    <br></br>
+                    new level = new boss new mehcanics etc fun stuff
+
+                    <br></br>
+                    ideally its a multiplayer PvP experience. NPC modes and practice tools are planned.</p>
+                </div>
+              </PixelBox>
+              <PixelBox style={{ padding: "0.75rem 1rem" }}>
+                <div className="aboutFaqItem" style={{ border: "none", padding: 0, background: "none" }}>
+                  <strong>How do I report a bug?</strong>
+                  <p>Use the feedback form below or open an issue on GitHub. Or on discord u can @MiMITA in any channel and say Hey bro this  thing is broken </p>
+                </div>
+              </PixelBox>
             </div>
           </section>
         </div>
       </div>
+
+      <div className="wackySeparator" />
 
       <FeedbackBox pageName="about" />
     </Layout>

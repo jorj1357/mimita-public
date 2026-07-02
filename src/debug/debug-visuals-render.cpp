@@ -276,3 +276,42 @@ void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, g
 }
 
 } // namespace DebugVis
+
+static void drawCrosshairRect(const Camera& camera, glm::vec3 center,
+    glm::vec3 halfExtent, glm::vec4 color)
+{
+    glm::vec3 r = camera.right * halfExtent.x;
+    glm::vec3 u = camera.up * halfExtent.y;
+    glm::vec3 corners[4] = {
+        center - r - u,
+        center + r - u,
+        center + r + u,
+        center - r + u,
+    };
+    gTriVerts.push_back({corners[0], color});
+    gTriVerts.push_back({corners[1], color});
+    gTriVerts.push_back({corners[3], color});
+    gTriVerts.push_back({corners[1], color});
+    gTriVerts.push_back({corners[2], color});
+    gTriVerts.push_back({corners[3], color});
+}
+
+namespace DebugVis {
+
+void drawCrosshairBillboard(const Camera& camera, glm::vec3 position,
+    float size, float gap, float thickness,
+    bool showDot, glm::vec4 color)
+{
+    glm::vec3 hs = glm::vec3(size * 0.5f, thickness * 0.5f, 0.0f);
+    glm::vec3 ht = glm::vec3(thickness * 0.5f, size * 0.5f, 0.0f);
+    glm::vec3 hd = glm::vec3(thickness * 0.5f, thickness * 0.5f, 0.0f);
+    drawCrosshairRect(camera, position + camera.right * (-gap - size * 0.5f), hs, color);
+    drawCrosshairRect(camera, position + camera.right * ( gap + size * 0.5f), hs, color);
+    drawCrosshairRect(camera, position + camera.up * (-gap - size * 0.5f), ht, color);
+    drawCrosshairRect(camera, position + camera.up * ( gap + size * 0.5f), ht, color);
+    if (showDot) {
+        drawCrosshairRect(camera, position, hd, color);
+    }
+}
+
+} // namespace DebugVis
