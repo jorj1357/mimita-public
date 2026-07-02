@@ -7,6 +7,7 @@ class Player;
 class Npc;
 
 extern bool gNpcForceHit;
+extern float gNpcMaxInaccuracyDegrees;
 
 namespace NpcCombat {
 

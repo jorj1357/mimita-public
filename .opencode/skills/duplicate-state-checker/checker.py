@@ -95,6 +95,10 @@ def main():
                         member_decl = re.match(r'^\s+\w+\s+' + re.escape(varname) + r'\b.*;\s*$', line)
                         if member_decl:
                             continue
+                        # Skip struct member access (e.g. "actor.grounded" or "a[\"health\"]")
+                        member_access = re.search(r'\.\s*' + re.escape(varname) + r'\b', line)
+                        if member_access:
+                            continue
                         usages.setdefault(varname, []).append((relpath, i))
 
         # Count how many different variables from this group are actually used

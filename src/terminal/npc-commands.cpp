@@ -5,6 +5,7 @@
 #include "terminal/terminal-state.h"
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
+extern float gNpcMaxInaccuracyDegrees;
 #include "devtools/dev-npc-selection.h"
 #include "physics/config.h"
 #include "network/net_mode.h"
@@ -58,6 +59,17 @@ void registerNpcCommands()
             NpcSystem& npcSystem = THE_NPC_SYSTEM;
             npcSystem.destroyAll();
             Terminal::instance().addLog("[NPC COMMAND] npc_delete_all");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_revolver_inaccuracy", "Set NPC revolver aim inaccuracy in degrees (-1 = use difficulty default)", "npc_revolver_inaccuracy <degrees>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[NPC] npc_revolver_inaccuracy = " + std::to_string(gNpcMaxInaccuracyDegrees) + " (-1 = difficulty-based)");
+                return;
+            }
+            gNpcMaxInaccuracyDegrees = std::stof(args[0]);
+            Terminal::instance().addLog("[NPC] npc_revolver_inaccuracy set to " + std::to_string(gNpcMaxInaccuracyDegrees));
         }
     });
     Terminal::instance().registerCommand({
