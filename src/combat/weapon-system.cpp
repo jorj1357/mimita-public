@@ -145,9 +145,9 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
 
-        constexpr float FWD_DIST = 100.0f;
-        glm::vec3 aimPoint = camera.pos + camera.front * FWD_DIST;
-        glm::vec3 shotDir = glm::normalize(aimPoint - muzzlePos);
+        WeaponFire::AimSolution aim = WeaponFire::computeAim(
+            camera, world, npcs, muzzlePos, nullptr);
+        glm::vec3 shotDir = aim.direction;
 
         constexpr float MAX_DIST = 100.0f;
         float nearest = MAX_DIST;
@@ -179,22 +179,25 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             }
         }
 
-        // World-space crosshair at the predicted hit point.
-        // Visibility ray from camera to hitPoint: if something is between
+        // In crosshair mode the reticle is the camera-ray target. In world_hit
+        // mode it keeps the old predicted muzzle-impact behavior.
+        glm::vec3 crossPos = aim.usesCameraTarget ? aim.aimPoint : hitPoint;
+        float crossDistance = aim.usesCameraTarget ? aim.cameraDistance : nearest;
+
+        // Visibility ray from camera to crossPos: if something is between
         // the camera and the hit point, the crosshair is hidden. Otherwise
         // it renders as an overlay (not occluded by the hit surface itself).
-        glm::vec3 crossPos = hitPoint;
         bool crosshairVisible = true;
         {
-            glm::vec3 camToHit = hitPoint - camera.pos;
+            glm::vec3 camToHit = crossPos - camera.pos;
             float camDist = glm::length(camToHit);
             if (camDist > 0.5f)
             {
                 glm::vec3 camDir = camToHit / camDist;
                 // Check world triangles between camera and hit point
                 AABB rayBounds;
-                rayBounds.min = glm::min(camera.pos, hitPoint);
-                rayBounds.max = glm::max(camera.pos, hitPoint);
+                rayBounds.min = glm::min(camera.pos, crossPos);
+                rayBounds.max = glm::max(camera.pos, crossPos);
                 std::vector<int> candidates;
                 appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
                 for (int ti : candidates)
@@ -244,7 +247,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
 
         float distScale = 1.0f;
         if (DebugConfig::WORLD_XH_DYNAMIC) {
-            float t = glm::clamp((nearest - NEAR_DIST) / (FWD_DIST - NEAR_DIST), 0.0f, 1.0f);
+            float t = glm::clamp((crossDistance - NEAR_DIST) / (MAX_DIST - NEAR_DIST), 0.0f, 1.0f);
             distScale = glm::mix(closeSize, farSize, t);
         }
 
@@ -516,10 +519,13 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
     const WeaponViewModel& vm = mViewModels[idx];
     glm::vec3 muzzlePos = vm.muzzle;
 
-    // Shared aiming: fixed point 100m in front of camera (same as all other weapons)
-    constexpr float AIM_DISTANCE = 100.0f;
-    glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
-    glm::vec3 dir = glm::normalize(aimPoint - muzzlePos);
+    WeaponFire::AimSolution aim = WeaponFire::computeAim(
+        camera, world, npcs, muzzlePos, nullptr);
+    WeaponFire::logAimDebug("rocket_launcher", camera, aim);
+    glm::vec3 dir = aim.direction;
+    Debug::warn(Debug::Category::Weapons,
+        "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
+        dir.x, dir.y, dir.z);
 
     // Firing recoil: push player opposite the rocket direction
     float recoilStrength = def->customParams.count("firingRecoilStrength")

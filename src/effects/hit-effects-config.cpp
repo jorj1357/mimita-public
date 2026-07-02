@@ -1,6 +1,7 @@
 #include "effects/hit-effects.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,7 +17,21 @@ using json = nlohmann::json;
 HitFxConfig gConfig;
 static std::filesystem::file_time_type gConfigLastWrite;
 static std::string gConfigPath = "config/hitfx.json";
+static bool gHitFxWatchLogged = false;
 bool gDebugPanelEnabled = false;
+
+static void logHitFxWatchOnce(const std::string& path)
+{
+    if (gHitFxWatchLogged) return;
+    gHitFxWatchLogged = true;
+    const std::string fileName = std::filesystem::path(path).filename().string();
+    Debug::warn(Debug::Category::NpcCombat, "[HITFX] Watching: %s\n", fileName.c_str());
+}
+
+static void logHitFxApplied(const char* key)
+{
+    Debug::warn(Debug::Category::NpcCombat, "[HITFX] Applied: %s\n", key);
+}
 
 static glm::vec3 readVec3Json(const json& j)
 {
@@ -40,19 +55,24 @@ static void readKeyframe(const json& j, HitFxKeyframe& k)
     if (j.contains("brightnessEnd")) k.brightnessEnd = j["brightnessEnd"];
 }
 
-void HitEffects::loadConfig(const std::string& path)
+bool HitEffects::loadConfig(const std::string& path)
 {
     gConfigPath = path;
+    logHitFxWatchOnce(path);
     std::ifstream file(path);
     if (!file.is_open()) {
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] config not found: %s\n", path.c_str());
-        return;
+        Debug::warn(Debug::Category::NpcCombat, "[HITFX] config not found: %s\n", path.c_str());
+        return false;
     }
     try {
         json j;
         file >> j;
 
         HitFxConfig cfg;
+        std::vector<const char*> appliedKeys;
+        auto markHitFxApplied = [&](const char* key) {
+            appliedKeys.push_back(key);
+        };
 
         // Set burst defaults before JSON override
         cfg.groundJumpBurst.lengthStart = 1.5f;
@@ -197,50 +217,120 @@ void HitEffects::loadConfig(const std::string& path)
 
         if (j.contains("damageNumbers")) {
             const json& d = j["damageNumbers"];
-            if (d.contains("enabled")) cfg.damageNumber.enabled = d["enabled"];
-            if (d.contains("fontSize")) cfg.damageNumber.fontSize = d["fontSize"];
-            if (d.contains("lifetime")) cfg.damageNumber.lifetime = d["lifetime"];
-            if (d.contains("startOpacity")) cfg.damageNumber.startOpacity = d["startOpacity"];
-            if (d.contains("endOpacity")) cfg.damageNumber.endOpacity = d["endOpacity"];
-            if (d.contains("fadeStart")) cfg.damageNumber.fadeStart = d["fadeStart"];
-            if (d.contains("fadeEnd")) cfg.damageNumber.fadeEnd = d["fadeEnd"];
-            if (d.contains("worldOffset") && d["worldOffset"].is_array() && d["worldOffset"].size() >= 3)
+            if (d.contains("enabled")) {
+                cfg.damageNumber.enabled = d["enabled"];
+                markHitFxApplied("hitfx_damage_numbers_enabled");
+            }
+            if (d.contains("fontSize")) {
+                cfg.damageNumber.fontSize = d["fontSize"];
+                markHitFxApplied("hitfx_text_size");
+            }
+            if (d.contains("lifetime")) {
+                cfg.damageNumber.lifetime = d["lifetime"];
+                markHitFxApplied("hitfx_lifetime");
+            }
+            if (d.contains("startOpacity")) {
+                cfg.damageNumber.startOpacity = d["startOpacity"];
+                markHitFxApplied("hitfx_start_alpha");
+            }
+            if (d.contains("endOpacity")) {
+                cfg.damageNumber.endOpacity = d["endOpacity"];
+                markHitFxApplied("hitfx_end_alpha");
+            }
+            if (d.contains("fadeStart")) {
+                cfg.damageNumber.fadeStart = d["fadeStart"];
+                markHitFxApplied("hitfx_fade_start");
+            }
+            if (d.contains("fadeEnd")) {
+                cfg.damageNumber.fadeEnd = d["fadeEnd"];
+                markHitFxApplied("hitfx_fade_end");
+            }
+            if (d.contains("worldOffset") && d["worldOffset"].is_array() && d["worldOffset"].size() >= 3) {
                 cfg.damageNumber.worldOffsetX = d["worldOffset"][0];
                 cfg.damageNumber.worldOffsetY = d["worldOffset"][1];
                 cfg.damageNumber.worldOffsetZ = d["worldOffset"][2];
+                markHitFxApplied("hitfx_world_offset");
+            }
             if (d.contains("screenOffset") && d["screenOffset"].is_array() && d["screenOffset"].size() >= 2) {
                 cfg.damageNumber.screenOffsetX = d["screenOffset"][0];
                 cfg.damageNumber.screenOffsetY = d["screenOffset"][1];
+                markHitFxApplied("hitfx_screen_offset");
             }
             if (d.contains("moveVelocity") && d["moveVelocity"].is_array() && d["moveVelocity"].size() >= 3) {
                 cfg.damageNumber.moveX = d["moveVelocity"][0];
                 cfg.damageNumber.moveY = d["moveVelocity"][1];
                 cfg.damageNumber.moveZ = d["moveVelocity"][2];
+                markHitFxApplied("hitfx_move_velocity");
             }
-            if (d.contains("moveSpeed")) cfg.damageNumber.moveSpeed = d["moveSpeed"];
-            if (d.contains("startScale")) cfg.damageNumber.startScale = d["startScale"];
-            if (d.contains("endScale")) cfg.damageNumber.endScale = d["endScale"];
-            if (d.contains("randomHorizontalSpread")) cfg.damageNumber.randomHorizontalSpread = d["randomHorizontalSpread"];
-            if (d.contains("randomVerticalSpread")) cfg.damageNumber.randomVerticalSpread = d["randomVerticalSpread"];
-            if (d.contains("spawnJitter")) cfg.damageNumber.spawnJitter = d["spawnJitter"];
-            if (d.contains("spawnDelay")) cfg.damageNumber.spawnDelay = d["spawnDelay"];
-            if (d.contains("textColor") && d["textColor"].is_array() && d["textColor"].size() >= 3)
+            if (d.contains("moveSpeed")) {
+                cfg.damageNumber.moveSpeed = d["moveSpeed"];
+                markHitFxApplied("hitfx_move_speed");
+            }
+            if (d.contains("startScale")) {
+                cfg.damageNumber.startScale = d["startScale"];
+                markHitFxApplied("hitfx_start_scale");
+            }
+            if (d.contains("endScale")) {
+                cfg.damageNumber.endScale = d["endScale"];
+                markHitFxApplied("hitfx_end_scale");
+            }
+            if (d.contains("randomHorizontalSpread")) {
+                cfg.damageNumber.randomHorizontalSpread = d["randomHorizontalSpread"];
+                markHitFxApplied("hitfx_horizontal_spread");
+            }
+            if (d.contains("randomVerticalSpread")) {
+                cfg.damageNumber.randomVerticalSpread = d["randomVerticalSpread"];
+                markHitFxApplied("hitfx_vertical_spread");
+            }
+            if (d.contains("spawnJitter")) {
+                cfg.damageNumber.spawnJitter = d["spawnJitter"];
+                markHitFxApplied("hitfx_spawn_jitter");
+            }
+            if (d.contains("spawnDelay")) {
+                cfg.damageNumber.spawnDelay = d["spawnDelay"];
+                markHitFxApplied("hitfx_spawn_delay");
+            }
+            if (d.contains("textColor") && d["textColor"].is_array() && d["textColor"].size() >= 3) {
                 cfg.damageNumber.textColor = readVec3Json(d["textColor"]);
-            if (d.contains("criticalColor") && d["criticalColor"].is_array() && d["criticalColor"].size() >= 3)
+                markHitFxApplied("hitfx_text_color");
+            }
+            if (d.contains("criticalColor") && d["criticalColor"].is_array() && d["criticalColor"].size() >= 3) {
                 cfg.damageNumber.criticalColor = readVec3Json(d["criticalColor"]);
-            if (d.contains("healingColor") && d["healingColor"].is_array() && d["healingColor"].size() >= 3)
+                markHitFxApplied("hitfx_critical_color");
+            }
+            if (d.contains("healingColor") && d["healingColor"].is_array() && d["healingColor"].size() >= 3) {
                 cfg.damageNumber.healingColor = readVec3Json(d["healingColor"]);
-            if (d.contains("outlineEnabled")) cfg.damageNumber.outlineEnabled = d["outlineEnabled"];
-            if (d.contains("outlineThickness")) cfg.damageNumber.outlineThickness = d["outlineThickness"];
-            if (d.contains("outlineColor") && d["outlineColor"].is_array() && d["outlineColor"].size() >= 3)
+                markHitFxApplied("hitfx_healing_color");
+            }
+            if (d.contains("outlineEnabled")) {
+                cfg.damageNumber.outlineEnabled = d["outlineEnabled"];
+                markHitFxApplied("hitfx_outline_enabled");
+            }
+            if (d.contains("outlineThickness")) {
+                cfg.damageNumber.outlineThickness = d["outlineThickness"];
+                markHitFxApplied("hitfx_outline_thickness");
+            }
+            if (d.contains("outlineColor") && d["outlineColor"].is_array() && d["outlineColor"].size() >= 3) {
                 cfg.damageNumber.outlineColor = readVec3Json(d["outlineColor"]);
-            if (d.contains("shadowEnabled")) cfg.damageNumber.shadowEnabled = d["shadowEnabled"];
+                markHitFxApplied("hitfx_outline_color");
+            }
+            if (d.contains("shadowEnabled")) {
+                cfg.damageNumber.shadowEnabled = d["shadowEnabled"];
+                markHitFxApplied("hitfx_shadow_enabled");
+            }
             if (d.contains("shadowOffset") && d["shadowOffset"].is_array() && d["shadowOffset"].size() >= 2) {
                 cfg.damageNumber.shadowOffset.x = d["shadowOffset"][0];
                 cfg.damageNumber.shadowOffset.y = d["shadowOffset"][1];
+                markHitFxApplied("hitfx_shadow_offset");
             }
-            if (d.contains("bold")) cfg.damageNumber.bold = d["bold"];
-            if (d.contains("italic")) cfg.damageNumber.italic = d["italic"];
+            if (d.contains("bold")) {
+                cfg.damageNumber.bold = d["bold"];
+                markHitFxApplied("hitfx_bold");
+            }
+            if (d.contains("italic")) {
+                cfg.damageNumber.italic = d["italic"];
+                markHitFxApplied("hitfx_italic");
+            }
             Debug::log(Debug::Category::NpcCombat,
                 "[HITFX CONFIG] damageNumbers enabled=%d fontSize=%.4f lifetime=%.2f\n",
                 (int)cfg.damageNumber.enabled, cfg.damageNumber.fontSize, cfg.damageNumber.lifetime);
@@ -301,22 +391,37 @@ void HitEffects::loadConfig(const std::string& path)
         gConfig = cfg;
         auto ec = std::filesystem::last_write_time(path);
         gConfigLastWrite = ec;
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] Loaded %s\n", path.c_str());
+        Debug::warn(Debug::Category::NpcCombat, "[HITFX] Loaded successfully: %s\n", path.c_str());
+        for (const char* key : appliedKeys)
+            logHitFxApplied(key);
+        return true;
     } catch (const std::exception& e) {
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] ERROR parsing config, keeping previous values: %s\n", e.what());
+        Debug::warn(Debug::Category::NpcCombat,
+            "[HITFX] Parse error in %s: %s. Keeping previous valid settings.\n",
+            path.c_str(), e.what());
+        return false;
     }
 }
 
 void HitEffects::pollReload()
 {
     if (!gConfig.hotReload || gConfigPath.empty()) return;
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point nextCheck;
+    const auto now = Clock::now();
+    if (now < nextCheck) return;
+    nextCheck = now + std::chrono::milliseconds(100);
+
     std::error_code ec;
     auto wt = std::filesystem::last_write_time(gConfigPath, ec);
     if (ec) return;
     if (wt != gConfigLastWrite) {
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] File changed\n");
-        loadConfig(gConfigPath);
-        Debug::log(Debug::Category::NpcCombat, "[HITFX] Reloaded %s\n", gConfigPath.c_str());
+        gConfigLastWrite = wt;
+        Debug::warn(Debug::Category::NpcCombat, "[HITFX] Detected change. Reloading...\n");
+        if (!loadConfig(gConfigPath)) {
+            Debug::warn(Debug::Category::NpcCombat,
+                "[HITFX] Reload failed; keeping previous valid settings.\n");
+        }
     }
 }
 

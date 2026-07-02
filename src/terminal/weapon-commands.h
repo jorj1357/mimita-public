@@ -2,5 +2,6 @@
 void registerWeaponCommands();
 void registerWeaponDebugCommand();
 void loadWorldCrosshairConfig();
+bool pollWorldCrosshairConfig();
 void applyStartupDefaults();
 void registerWorldXhReloadCommand();
