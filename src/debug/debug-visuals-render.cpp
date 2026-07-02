@@ -15,6 +15,7 @@ struct DebugTriVertex
 };
 
 extern std::vector<DebugTriVertex> gTriVerts;
+extern std::vector<DebugTriVertex> gOverlayTriVerts;
 
 // =====================================================
 // Solid triangle rendering
@@ -312,6 +313,33 @@ void drawCrosshairBillboard(const Camera& camera, glm::vec3 position,
     if (showDot) {
         drawCrosshairRect(camera, position, hd, color);
     }
+}
+
+void drawCrosshairBillboardOverlay(const Camera& camera, glm::vec3 position,
+    float size, float gap, float thickness,
+    bool showDot, glm::vec4 color)
+{
+    auto drawRect = [&](glm::vec3 c, glm::vec3 he) {
+        glm::vec3 r = camera.right * he.x;
+        glm::vec3 u = camera.up * he.y;
+        glm::vec3 corners[4] = {
+            c - r - u, c + r - u, c + r + u, c - r + u,
+        };
+        gOverlayTriVerts.push_back({corners[0], color});
+        gOverlayTriVerts.push_back({corners[1], color});
+        gOverlayTriVerts.push_back({corners[3], color});
+        gOverlayTriVerts.push_back({corners[1], color});
+        gOverlayTriVerts.push_back({corners[2], color});
+        gOverlayTriVerts.push_back({corners[3], color});
+    };
+    glm::vec3 hs = glm::vec3(size * 0.5f, thickness * 0.5f, 0.0f);
+    glm::vec3 ht = glm::vec3(thickness * 0.5f, size * 0.5f, 0.0f);
+    glm::vec3 hd = glm::vec3(thickness * 0.5f, thickness * 0.5f, 0.0f);
+    drawRect(position + camera.right * (-gap - size * 0.5f), hs);
+    drawRect(position + camera.right * ( gap + size * 0.5f), hs);
+    drawRect(position + camera.up * (-gap - size * 0.5f), ht);
+    drawRect(position + camera.up * ( gap + size * 0.5f), ht);
+    if (showDot) drawRect(position, hd);
 }
 
 } // namespace DebugVis

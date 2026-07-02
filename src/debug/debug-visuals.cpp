@@ -46,6 +46,7 @@ struct DebugTriVertex
 };
 
 std::vector<DebugTriVertex> gTriVerts;
+std::vector<DebugTriVertex> gOverlayTriVerts; // always-on-top overlay
 
 GLFWwindow* gWindow = nullptr;
 DebugColors gColors;

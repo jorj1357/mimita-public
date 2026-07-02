@@ -8,10 +8,13 @@ import PixelBox from "../components/PixelBox"
 import RandomRotation from "../components/RandomRotation"
 import ProceduralOffset from "../components/ProceduralOffset"
 import NoiseBackground from "../components/NoiseBackground"
+import BounceBall from "../components/BounceBall"
 
 export default function Home() {
   return (
     <Layout>
+
+      <BounceBall />
 
       <main className="hero heroNoise">
 

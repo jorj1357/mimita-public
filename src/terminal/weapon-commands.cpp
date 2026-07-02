@@ -212,8 +212,160 @@ void registerWeaponCommands()
 
 }
 
+// Helper: split a comma-separated string into floats.
+static bool parseFloats(const std::string& s, std::vector<float>& out, int expected)
+{
+    out.clear();
+    size_t start = 0;
+    while (out.size() < (size_t)expected) {
+        size_t end = s.find(',', start);
+        if (end == std::string::npos) end = s.size();
+        try { out.push_back(std::stof(s.substr(start, end - start))); }
+        catch (...) { return false; }
+        if (end == s.size()) break;
+        start = end + 1;
+    }
+    return out.size() == (size_t)expected;
+}
+
+static void registerWorldXhCommands()
+{
+    auto& term = Terminal::instance();
+
+    term.registerCommand({
+        "world_xh_alpha",
+        "Set world-space crosshair alpha. 0=opaque, 1=invisible. Range [0,1].",
+        "world_xh_alpha <0-1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] alpha=" + std::to_string(DebugConfig::WORLD_XH_ALPHA));
+                return;
+            }
+            float v = std::stof(args[0]);
+            DebugConfig::WORLD_XH_ALPHA = std::max(0.0f, std::min(1.0f, v));
+            Terminal::instance().addLog(
+                "[OK] world_xh_alpha=" + std::to_string(DebugConfig::WORLD_XH_ALPHA));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_length",
+        "Set world-space crosshair arm length multiplier. 1=default. Clamped >= 0.",
+        "world_xh_length <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] length=" + std::to_string(DebugConfig::WORLD_XH_LENGTH));
+                return;
+            }
+            DebugConfig::WORLD_XH_LENGTH = std::max(0.0f, std::stof(args[0]));
+            Terminal::instance().addLog(
+                "[OK] world_xh_length=" + std::to_string(DebugConfig::WORLD_XH_LENGTH));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_gap",
+        "Set world-space crosshair center gap multiplier. 1=default. Negative allowed.",
+        "world_xh_gap <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] gap=" + std::to_string(DebugConfig::WORLD_XH_GAP));
+                return;
+            }
+            DebugConfig::WORLD_XH_GAP = std::stof(args[0]);
+            Terminal::instance().addLog(
+                "[OK] world_xh_gap=" + std::to_string(DebugConfig::WORLD_XH_GAP));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_thickness",
+        "Set world-space crosshair arm thickness multiplier. 1=default. Clamped >= 0.",
+        "world_xh_thickness <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] thickness=" + std::to_string(DebugConfig::WORLD_XH_THICKNESS));
+                return;
+            }
+            DebugConfig::WORLD_XH_THICKNESS = std::max(0.0f, std::stof(args[0]));
+            Terminal::instance().addLog(
+                "[OK] world_xh_thickness=" + std::to_string(DebugConfig::WORLD_XH_THICKNESS));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_color",
+        "Set world-space crosshair RGB. Format: R,G,B (each 0-1).",
+        "world_xh_color <R,G,B>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[WORLD_XH] color=" +
+                    std::to_string(DebugConfig::WORLD_XH_R) + "," +
+                    std::to_string(DebugConfig::WORLD_XH_G) + "," +
+                    std::to_string(DebugConfig::WORLD_XH_B));
+                return;
+            }
+            std::vector<float> vals;
+            if (!parseFloats(args[0], vals, 3)) {
+                Terminal::instance().addLog("[ERROR] usage: world_xh_color R,G,B");
+                return;
+            }
+            DebugConfig::WORLD_XH_R = std::max(0.0f, std::min(1.0f, vals[0]));
+            DebugConfig::WORLD_XH_G = std::max(0.0f, std::min(1.0f, vals[1]));
+            DebugConfig::WORLD_XH_B = std::max(0.0f, std::min(1.0f, vals[2]));
+            Terminal::instance().addLog("[OK] world_xh_color set");
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_outline",
+        "Enable/disable world-space crosshair outline. 0=off, 1=on.",
+        "world_xh_outline <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] outline=" + std::to_string((int)DebugConfig::WORLD_XH_OUTLINE));
+                return;
+            }
+            DebugConfig::WORLD_XH_OUTLINE = args[0] != "0";
+            Terminal::instance().addLog(
+                DebugConfig::WORLD_XH_OUTLINE
+                ? "[OK] world_xh_outline enabled"
+                : "[OK] world_xh_outline disabled");
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_outline_alpha",
+        "Set world-space crosshair outline alpha. 0=opaque, 1=invisible. Range [0,1].",
+        "world_xh_outline_alpha <0-1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] outline_alpha=" + std::to_string(DebugConfig::WORLD_XH_OUTLINE_ALPHA));
+                return;
+            }
+            DebugConfig::WORLD_XH_OUTLINE_ALPHA = std::max(0.0f, std::min(1.0f, std::stof(args[0])));
+            Terminal::instance().addLog(
+                "[OK] world_xh_outline_alpha=" + std::to_string(DebugConfig::WORLD_XH_OUTLINE_ALPHA));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+}
+
 void registerWeaponDebugCommand()
 {
+    registerWorldXhCommands();
     Terminal::instance().registerCommand({
         "wpn_shot_line",
         "Toggle weapon shot debug line (0=off, 1=on). "
