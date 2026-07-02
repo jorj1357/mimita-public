@@ -120,6 +120,29 @@ int applyDamageToEntity(
     const glm::vec3& shotDirection
 );
 
+struct BeamCollisionResult {
+    float nearest;
+    bool hitWorld;
+    glm::vec3 worldNormal;
+    Npc* victim;
+    std::string hitPart;
+    glm::vec3 hitNormal;
+    float localHeight;
+    uint32_t remoteTargetId;
+    const Player* remoteVictim;
+};
+
+BeamCollisionResult collideBeam(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float maxDistance,
+    float beamThickness,
+    const World& world,
+    NpcSystem* npcs,
+    const std::unordered_map<uint32_t, Player>* remotePlayers,
+    const Player* targetPlayer
+);
+
 bool rayTriangle(const glm::vec3& origin, const glm::vec3& direction,
                  const CollisionTriangle& tri, float& distance);
 

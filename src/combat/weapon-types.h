@@ -86,6 +86,8 @@ struct WeaponDefinition {
 
     glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
 
+    float beamThickness = 0.0f;  // hitscan collision radius (0 = thin ray)
+
     WeaponCollisionConfig collision;
 
     std::unordered_map<std::string, float> customParams;

@@ -63,98 +63,38 @@ RevolverShotResult tryFireHitscan(
         shotDirection.x, shotDirection.y, shotDirection.z);
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
-    float nearest = MAX_SHOT_DISTANCE;
-    bool hitWorld = false;
-    glm::vec3 worldNormal = -shotDirection;
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        float distance = 0.0f;
-        if (rayTriangle(muzzlePos, shotDirection, tri, distance) && distance < nearest) {
-            nearest = distance;
-            hitWorld = true;
-            worldNormal = tri.normal;
-        }
-    }
 
-    Npc* victim = nullptr;
-    std::string hitPart;
-    glm::vec3 hitNormal{0.0f};
-    float localHeight = 0.5f;
-    uint32_t remoteTargetId = 0;
-    const Player* remoteVictim = nullptr;
-    for (Npc& npc : npcs.all()) {
-        if (npc.body.currentHp <= 0) continue;
-        npc.body.updateModelWorldTransforms();
-        for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
-            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-            glm::vec3 half = (part.collider.localMax - part.collider.localMin) * 0.5f;
-            half = glm::max(half, glm::vec3(0.12f));
-            float distance = 0.0f;
-            glm::vec3 normal;
-            if (rayAabb(muzzlePos, shotDirection, center - half, center + half, distance, normal) && distance < nearest) {
-                nearest = distance;
-                hitWorld = false;
-                victim = &npc;
-                hitPart = part.name;
-                hitNormal = normal;
-                glm::vec3 hit = muzzlePos + shotDirection * distance;
-                localHeight = std::clamp((hit.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
-            }
-        }
-    }
-    if (remotePlayers) {
-        for (const auto& entry : *remotePlayers) {
-            const Player& remote = entry.second;
-            if (remote.dead || remote.currentHp <= 0) continue;
-            const Capsule capsule = remote.getCapsule();
-            const glm::vec3 mn(
-                remote.pos.x - capsule.r,
-                remote.pos.y - capsule.r,
-                capsule.a.z - capsule.r);
-            const glm::vec3 mx(
-                remote.pos.x + capsule.r,
-                remote.pos.y + capsule.r,
-                capsule.b.z + capsule.r);
-            float distance = 0.0f;
-            glm::vec3 normal;
-            if (MimitaNet::gNetHitDebug) {
-                printf("[NET HIT TEST] remote id=%u capsul mn=(%.1f,%.1f,%.1f) "
-                       "mx=(%.1f,%.1f,%.1f) muzzle=(%.1f,%.1f,%.1f) "
-                       "dir=(%.2f,%.2f,%.2f)\n",
-                       entry.first, mn.x, mn.y, mn.z, mx.x, mx.y, mx.z,
-                       muzzlePos.x, muzzlePos.y, muzzlePos.z,
-                       shotDirection.x, shotDirection.y, shotDirection.z);
-            }
-            if (rayAabb(muzzlePos, shotDirection, mn, mx, distance, normal) &&
-                distance < nearest) {
-                if (MimitaNet::gNetHitDebug)
-                    printf("[NET HIT REMOTE] id=%u distance=%.2f\n",
-                           entry.first, distance);
-                nearest = distance;
-                hitWorld = false;
-                victim = nullptr;
-                remoteVictim = &remote;
-                remoteTargetId = entry.first;
-                hitNormal = normal;
-                glm::vec3 hit = muzzlePos + shotDirection * distance;
-                localHeight = std::clamp(
-                    (hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f),
-                    0.0f, 1.0f);
-                hitPart = localHeight > 0.78f ? "head" :
-                    localHeight > 0.32f ? "torso" : "leg";
-            }
-        }
-    }
+    Debug::log(Debug::Category::Weapons,
+        "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
+        def.id.c_str(), def.beamThickness,
+        (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
+
+    BeamCollisionResult beam = collideBeam(
+        muzzlePos, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
+        world, &npcs, remotePlayers, nullptr);
+
+    float nearest = beam.nearest;
+    bool hitWorld = beam.hitWorld;
+    glm::vec3 worldNormal = beam.worldNormal;
+    Npc* victim = beam.victim;
+    std::string hitPart = beam.hitPart;
+    glm::vec3 hitNormal = beam.hitNormal;
+    float localHeight = beam.localHeight;
+    uint32_t remoteTargetId = beam.remoteTargetId;
+    const Player* remoteVictim = beam.remoteVictim;
 
     result.end = muzzlePos + shotDirection * nearest;
     result.hitNormal = victim || remoteVictim ? hitNormal : worldNormal;
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n"
-        "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s distance=%.2f\n",
+        "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s distance=%.2f\n"
+        "[BEAM] beamThickness=%.2f collisionType=%s\n",
         shotDirection.x, shotDirection.y, shotDirection.z,
         result.end.x, result.end.y, result.end.z,
         victim || remoteVictim ? "entity" : (hitWorld ? "world" : "none"),
-        nearest);
+        nearest,
+        def.beamThickness,
+        (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
 
     ReplayEffectEvent gunshotEvent;
     gunshotEvent.type = "gunshot";
@@ -204,41 +144,23 @@ RevolverShotResult tryFireHitscanDir(
     shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
-    float nearest = MAX_SHOT_DISTANCE;
-    bool hitWorld = false;
-    glm::vec3 worldNormal = -shotDirection;
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        float distance = 0.0f;
-        if (rayTriangle(muzzlePos, shotDirection, tri, distance) && distance < nearest) {
-            nearest = distance;
-            hitWorld = true;
-            worldNormal = tri.normal;
-        }
-    }
 
-    bool hitPlayer = false;
-    std::string hitPart;
-    glm::vec3 hitNormal{0.0f};
-    float localHeight = 0.5f;
+    Debug::log(Debug::Category::Weapons,
+        "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
+        def.id.c_str(), def.beamThickness,
+        (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
 
-    if (targetPlayer && !targetPlayer->dead && targetPlayer->currentHp > 0) {
-        Capsule cap = targetPlayer->getCapsule();
-        glm::vec3 mn(cap.a.x - cap.r, cap.a.y - cap.r, cap.a.z - cap.r);
-        glm::vec3 mx(cap.b.x + cap.r, cap.b.y + cap.r, cap.b.z + cap.r);
-        float distance = 0.0f;
-        glm::vec3 normal;
-        if (rayAabb(muzzlePos, shotDirection, mn, mx, distance, normal) && distance < nearest) {
-            nearest = distance;
-            hitWorld = false;
-            hitPlayer = true;
-            hitNormal = normal;
-            glm::vec3 hit = muzzlePos + shotDirection * distance;
-            localHeight = std::clamp(
-                (hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
-            hitPart = localHeight > 0.78f ? "head" :
-                      localHeight > 0.32f ? "torso" : "leg";
-        }
-    }
+    BeamCollisionResult beam = collideBeam(
+        muzzlePos, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
+        world, nullptr, nullptr, targetPlayer);
+
+    float nearest = beam.nearest;
+    bool hitWorld = beam.hitWorld;
+    glm::vec3 worldNormal = beam.worldNormal;
+    bool hitPlayer = (beam.victim || beam.remoteVictim || (beam.hitPart.length() > 0));
+    std::string hitPart = beam.hitPart;
+    glm::vec3 hitNormal = beam.hitNormal;
+    float localHeight = beam.localHeight;
 
     result.end = muzzlePos + shotDirection * nearest;
     result.hitNormal = hitPlayer ? hitNormal : worldNormal;
@@ -320,6 +242,11 @@ void fireMultiPellet(
                def.id.c_str(), pelletCount, spreadDeg, def.damage, def.headshotMultiplier, def.recoil, def.fireDelay, def.reloadTime, def.magazineSize);
     }
 
+    Debug::log(Debug::Category::Weapons,
+        "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
+        def.id.c_str(), def.beamThickness,
+        (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
+
     int pelletIndex = 0;
     for (int row = 0; row < rows && pelletIndex < pelletCount; ++row) {
         for (int col = 0; col < cols && pelletIndex < pelletCount; ++col, ++pelletIndex) {
@@ -330,75 +257,19 @@ void fireMultiPellet(
             glm::quat rot = glm::angleAxis(hAngle, localUp) * glm::angleAxis(vAngle, right);
             glm::vec3 pelletDir = glm::normalize(rot * baseDir);
 
-            float pelletNearest = MAX_SHOT_DISTANCE;
-            glm::vec3 worldNml = -pelletDir;
-            bool hitW = false;
-            for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-                float d = 0.0f;
-                if (rayTriangle(muzzlePos, pelletDir, tri, d) && d < pelletNearest) {
-                    pelletNearest = d;
-                    hitW = true;
-                    worldNml = tri.normal;
-                }
-            }
+            BeamCollisionResult pelletBeam = collideBeam(
+                muzzlePos, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
+                world, &npcs, remotePlayers, nullptr);
 
-            Npc* pelletVictim = nullptr;
-            std::string pelletPart;
-            glm::vec3 pelletHitNml(0.0f);
-            float pelletHeight = 0.5f;
-            for (Npc& npc : npcs.all()) {
-                if (npc.body.currentHp <= 0) continue;
-                npc.body.updateModelWorldTransforms();
-                for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
-                    glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-                    glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-                    glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
-                    float d = 0.0f;
-                    glm::vec3 nml;
-                    if (rayAabb(muzzlePos, pelletDir, center - half, center + half, d, nml) && d < pelletNearest) {
-                        pelletNearest = d;
-                        hitW = false;
-                        pelletVictim = &npc;
-                        pelletPart = part.name;
-                        pelletHitNml = nml;
-                        glm::vec3 hit = muzzlePos + pelletDir * d;
-                        pelletHeight = std::clamp((hit.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
-                    }
-                }
-            }
-
-            uint32_t pelletRemoteTargetId = 0;
-            const Player* pelletRemoteVictim = nullptr;
-    if (remotePlayers) {
-        for (const auto& entry : *remotePlayers) {
-            const Player& remote = entry.second;
-            if (remote.dead || remote.currentHp <= 0) {
-                if (MimitaNet::gNetHitDebug)
-                    printf("[NET HIT SKIP] remote id=%u reason=%s hp=%d\n",
-                           entry.first,
-                           remote.dead ? "dead" : "hp-zero",
-                           remote.currentHp);
-                continue;
-            }
-                    const Capsule capsule = remote.getCapsule();
-                    const glm::vec3 mn(remote.pos.x - capsule.r, remote.pos.y - capsule.r, capsule.a.z - capsule.r);
-                    const glm::vec3 mx(remote.pos.x + capsule.r, remote.pos.y + capsule.r, capsule.b.z + capsule.r);
-                    float d = 0.0f;
-                    glm::vec3 nml;
-                    if (rayAabb(muzzlePos, pelletDir, mn, mx, d, nml) && d < pelletNearest) {
-                        pelletNearest = d;
-                        hitW = false;
-                        pelletVictim = nullptr;
-                        pelletRemoteVictim = &remote;
-                        pelletRemoteTargetId = entry.first;
-                        pelletHitNml = nml;
-                        glm::vec3 hit = muzzlePos + pelletDir * d;
-                        pelletHeight = std::clamp((hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
-                        pelletPart = pelletHeight > 0.78f ? "head" :
-                            pelletHeight > 0.32f ? "torso" : "leg";
-                    }
-                }
-            }
+            float pelletNearest = pelletBeam.nearest;
+            bool hitW = pelletBeam.hitWorld;
+            glm::vec3 worldNml = pelletBeam.worldNormal;
+            Npc* pelletVictim = pelletBeam.victim;
+            std::string pelletPart = pelletBeam.hitPart;
+            glm::vec3 pelletHitNml = pelletBeam.hitNormal;
+            float pelletHeight = pelletBeam.localHeight;
+            uint32_t pelletRemoteTargetId = pelletBeam.remoteTargetId;
+            const Player* pelletRemoteVictim = pelletBeam.remoteVictim;
 
             glm::vec3 pelletEnd = muzzlePos + pelletDir * pelletNearest;
 
