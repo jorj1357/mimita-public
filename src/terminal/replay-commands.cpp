@@ -328,4 +328,60 @@ void registerReplayCommands()
             Terminal::instance().addLog(buf);
         }
     });
+
+    // Short command aliases
+    Terminal::instance().registerCommand({
+        "rplload", "Load replay", "rplload <path>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("Usage: rplload <path>"); return; }
+            Terminal::instance().execute("replay.load " + args[0]);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rplplay", "Play loaded replay", "rplplay",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().execute("replay.play");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rplpause", "Pause replay playback", "rplpause",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().execute("replay_pause");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rplstop", "Stop replay playback", "rplstop",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().execute("replay.stop");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rplf", "Skip forward N seconds", "rplf <seconds>",
+        [](const std::vector<std::string>& args) {
+            int sec = args.empty() ? 1 : std::atoi(args[0].c_str());
+            if (sec < 1) sec = 1;
+            char buf[64];
+            snprintf(buf, sizeof(buf), "replay_forward_1s");
+            for (int i = 0; i < sec; i++)
+                Terminal::instance().execute(buf);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rplb", "Skip backward N seconds", "rplb <seconds>",
+        [](const std::vector<std::string>& args) {
+            int sec = args.empty() ? 1 : std::atoi(args[0].c_str());
+            if (sec < 1) sec = 1;
+            char buf[64];
+            snprintf(buf, sizeof(buf), "replay_rewind_1s");
+            for (int i = 0; i < sec; i++)
+                Terminal::instance().execute(buf);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "rpltick", "Jump to tick", "rpltick <tick>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("Usage: rpltick <tick>"); return; }
+            Terminal::instance().execute("replay_seek_tick " + args[0]);
+        }
+    });
 }

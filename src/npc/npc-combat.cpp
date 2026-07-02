@@ -19,8 +19,8 @@
 #include "npc/npc-internal.h"
 
 bool gNpcForceHit = false;
-// DEBUG MODE: default ±0.5° for near-perfect aim (temporary)
-float gNpcMaxInaccuracyDegrees = 0.5f;
+// 0.0 = worst aim, 1.0 = perfect aim. Default 0.3.
+float gNpcAimAccuracy = 0.3f;
 
 namespace {
 
@@ -85,17 +85,18 @@ float effectiveRange(const WeaponDefinition& def)
 
 } // anonymous namespace
 
-float NpcCombat::aimErrorDegrees(float difficulty)
+float NpcCombat::aimErrorDegrees(float)
 {
-    if (gNpcMaxInaccuracyDegrees >= 0.0f)
-        return gNpcMaxInaccuracyDegrees;
-    float d = std::clamp(difficulty, 1.0f, 10.0f);
-    float t = (d - 1.0f) / 9.0f;
-    // Difficulty 1 = 6 deg (poor), Diff 5 = 1.5 deg (competent), Diff 10 = 0.2 deg (near-perfect)
-    if (t <= 0.5f)
-        return 6.0f - (t / 0.5f) * 4.5f;
-    else
-        return 1.5f - ((t - 0.5f) / 0.5f) * 1.3f;
+    float acc = std::clamp(gNpcAimAccuracy, 0.0f, 1.0f);
+    float t = 1.0f - acc;
+    return t * t * 30.0f;
+}
+
+float NpcCombat::maxAngularErrorForAccuracy(float acc)
+{
+    acc = std::clamp(acc, 0.0f, 1.0f);
+    float t = 1.0f - acc;
+    return t * t * 30.0f;
 }
 
 bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
@@ -329,13 +330,16 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 
     glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
     float errorDeg = aimErrorDegrees(npc.difficulty);
+    float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, aimDir), -1.0f, 1.0f)));
 
-    printf("[NPC SHOT] id=%u target=%s dist=%.1fm idealDir=(%.3f,%.3f,%.3f) "
-           "inaccuracy=%.1fdeg finalDir=(%.3f,%.3f,%.3f) weapon=%s ready=%s\n",
-           npc.id, "player", dist,
+    printf("[NPC SHOT] id=%u dist=%.1fm aimAcc=%.2f maxError=%.1fdeg "
+           "ideal=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f) diff=%.1fdeg "
+           "weapon=%s ready=%s\n",
+           npc.id, dist,
+           gNpcAimAccuracy, errorDeg,
            idealDir.x, idealDir.y, idealDir.z,
-           errorDeg,
            aimDir.x, aimDir.y, aimDir.z,
+           angleDiff,
            def->id.c_str(),
            rt.currentAmmo > 0 ? "yes" : "empty");
 

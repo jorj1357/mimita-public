@@ -170,10 +170,11 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         // replay-specific overlays (timeline, controls help, healthbars).
         if (const ReplaySceneFrame* hbFrame = gReplayPlayer.currentSceneFrame()) {
             for (const ReplayActorState& actorState : hbFrame->actors) {
-                auto mit = replayActorModels.find(actorState.id);
-                if (mit == replayActorModels.end() || !mit->second || mit->second->dead) {
+                if (actorState.dead || actorState.health <= 0)
                     continue;
-                }
+                auto mit = replayActorModels.find(actorState.id);
+                if (mit == replayActorModels.end() || !mit->second)
+                    continue;
                 drawPlayerHealthbar(*mit->second, camera, "replay-hp");
             }
         }

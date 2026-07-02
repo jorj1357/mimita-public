@@ -16,6 +16,7 @@
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "replay/replay.h"
 #include "npc/npc.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
@@ -162,6 +163,26 @@ void fire(
     rocket.spawnTime = state.gameTime;
 
     state.activeRockets.push_back(rocket);
+
+    // Record projectile spawn for replay
+    {
+        ReplayEffectEvent projEvent;
+        projEvent.type = "projectile_spawn";
+        projEvent.position = spawnPos;
+        projEvent.velocity = dir * rocketSpeed;
+        projEvent.lifetime = rocket.lifetime;
+        projEvent.sourceActorId = std::to_string(rocket.ownerId);
+        captureReplayEffect(projEvent);
+    }
+    // Record gunshot (muzzle flash + tracer) for replay
+    {
+        ReplayEffectEvent gunshotEvent;
+        gunshotEvent.type = "gunshot";
+        gunshotEvent.from = muzzlePos;
+        gunshotEvent.to = muzzlePos + dir * 2.0f;
+        gunshotEvent.sourceActorId = std::to_string(rocket.ownerId);
+        captureReplayEffect(gunshotEvent);
+    }
 
     runtime.currentAmmo--;
     runtime.fireCooldown = def.fireDelay;

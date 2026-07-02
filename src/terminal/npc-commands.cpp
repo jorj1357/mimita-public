@@ -5,7 +5,6 @@
 #include "terminal/terminal-state.h"
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
-extern float gNpcMaxInaccuracyDegrees;
 #include "devtools/dev-npc-selection.h"
 #include "physics/config.h"
 #include "network/net_mode.h"
@@ -62,14 +61,18 @@ void registerNpcCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "npc_revolver_inaccuracy", "Set NPC revolver aim inaccuracy in degrees (-1 = use difficulty default)", "npc_revolver_inaccuracy <degrees>",
+        "npc_aim_acc", "Set NPC aim accuracy (0.0 = worst, 1.0 = perfect, default 0.3)", "npc_aim_acc <0.0-1.0>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                Terminal::instance().addLog("[NPC] npc_revolver_inaccuracy = " + std::to_string(gNpcMaxInaccuracyDegrees) + " (-1 = difficulty-based)");
+                float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
+                Terminal::instance().addLog("[NPC] npc_aim_acc = " + std::to_string(gNpcAimAccuracy)
+                    + " (max angular error = " + std::to_string(maxErr) + " deg)");
                 return;
             }
-            gNpcMaxInaccuracyDegrees = std::stof(args[0]);
-            Terminal::instance().addLog("[NPC] npc_revolver_inaccuracy set to " + std::to_string(gNpcMaxInaccuracyDegrees));
+            gNpcAimAccuracy = std::clamp(std::stof(args[0]), 0.0f, 1.0f);
+            float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
+            Terminal::instance().addLog("[NPC] npc_aim_acc set to " + std::to_string(gNpcAimAccuracy)
+                + " (max angular error = " + std::to_string(maxErr) + " deg)");
         }
     });
     Terminal::instance().registerCommand({
