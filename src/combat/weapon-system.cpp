@@ -23,6 +23,7 @@
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
+#include "world/world.h"
 
 static float weaponParamOr(const WeaponDefinition& def, const char* key, float fallback)
 {
@@ -135,6 +136,55 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         if (mGodballPhys.active) {
             WeaponGodball::despawnBall(mGodballPhys);
         }
+    }
+
+    // ── Debug aim ray ──────────────────────────────────────
+    // Every frame, compute the exact ray that would be fired and draw it.
+    if (DebugConfig::DEBUG_AIM_RAY && def && rt) {
+        int idx = slotIndex(def->slot);
+        const WeaponViewModel& vm = mViewModels[idx];
+        glm::vec3 muzzlePos = vm.muzzle;
+
+        // Same fixed aim point as tryFireHitscan()
+        constexpr float AIM_DISTANCE = 100.0f;
+        glm::vec3 aimPoint = camera.pos + camera.front * AIM_DISTANCE;
+        glm::vec3 shotDir = glm::normalize(aimPoint - muzzlePos);
+
+        // Raycast against world triangles, NPC body parts
+        constexpr float MAX_DIST = 100.0f;
+        float nearest = MAX_DIST;
+        glm::vec3 hitPoint = muzzlePos + shotDir * MAX_DIST;
+        glm::vec3 hitNormal = -shotDir;
+
+        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+            float d = 0.0f;
+            if (WeaponFire::rayTriangle(muzzlePos, shotDir, tri, d) && d < nearest) {
+                nearest = d;
+                hitPoint = muzzlePos + shotDir * d;
+                hitNormal = tri.normal;
+            }
+        }
+        // Check all living NPC body parts
+        for (Npc& npc : npcs.all()) {
+            if (npc.body.currentHp <= 0) continue;
+            npc.body.updateModelWorldTransforms();
+            for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
+                glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                float d = 0.0f;
+                glm::vec3 nml;
+                if (WeaponFire::rayAabb(muzzlePos, shotDir, center - half, center + half, d, nml) && d < nearest) {
+                    nearest = d;
+                    hitPoint = muzzlePos + shotDir * d;
+                    hitNormal = nml;
+                }
+            }
+        }
+
+        // Draw the aim ray
+        DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, 0.05f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        DebugVis::drawFilledSphere(camera, hitPoint, 0.15f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
     }
 
     mCurrentSlot = player.equippedSlot;

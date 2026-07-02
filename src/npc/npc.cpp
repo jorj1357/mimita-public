@@ -19,8 +19,79 @@
 #include "devtools/dev-npc-selection.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat.h"
+#include "combat/weapon-registry.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
+
+float targetCanSeeNpc(const Npc& npc, const World& world)
+{
+    glm::vec3 fromTarget = npc.sensors.targetPos;
+    fromTarget.z += 0.8f;
+    glm::vec3 toNpc = npc.body.pos - fromTarget;
+    float dist = glm::length(toNpc);
+    if (dist < 0.5f) return 0.0f;
+    toNpc /= dist;
+
+    AABB rayBounds;
+    rayBounds.min = glm::min(fromTarget, npc.body.pos);
+    rayBounds.max = glm::max(fromTarget, npc.body.pos);
+    std::vector<int> candidates;
+    appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+
+    for (int ti : candidates)
+    {
+        if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+        const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+        glm::vec3 e1 = tri.b - tri.a;
+        glm::vec3 e2 = tri.c - tri.a;
+        glm::vec3 pVec = glm::cross(toNpc, e2);
+        float det = glm::dot(e1, pVec);
+        if (std::fabs(det) < 0.0001f) continue;
+        float invDet = 1.0f / det;
+        glm::vec3 tVec = fromTarget - tri.a;
+        float u = glm::dot(tVec, pVec) * invDet;
+        if (u < 0.0f || u > 1.0f) continue;
+        glm::vec3 qVec = glm::cross(tVec, e1);
+        float v = glm::dot(toNpc, qVec) * invDet;
+        if (v < 0.0f || u + v > 1.0f) continue;
+        float t = glm::dot(e2, qVec) * invDet;
+        if (t > 0.1f && t < dist - 0.5f)
+            return 0.0f;
+    }
+    return 1.0f;
+}
+
+bool shouldJump(Npc& npc, float d01, const World& world)
+{
+    if (glm::length(npc.lastMoveInput) > 0.1f)
+    {
+        glm::vec3 moveDir{npc.lastMoveInput.x, npc.lastMoveInput.y, 0.0f};
+        if (NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world))
+            return true;
+    }
+    if (NpcNavigation::isStuck(npc))
+        return true;
+    return random01(npc.rngState) < (0.02f + d01 * 0.05f);
+}
+
+bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe)
+{
+    if (npc.dashCooldown > 0.0f)
+        return false;
+
+    float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
+
+    if (distance > 10.0f && d01 > 0.3f)
+        return random01(npc.rngState) < 0.6f;
+
+    if (healthFraction < 0.35f && distance < 8.0f)
+        return random01(npc.rngState) < 0.7f;
+
+    if (targetCanSeeMe && d01 > 0.2f)
+        return random01(npc.rngState) < (0.15f + d01 * 0.25f);
+
+    return random01(npc.rngState) < (0.05f + d01 * 0.15f);
+}
 
 namespace {
 
@@ -166,7 +237,17 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
     input.downDashPressed = downDash;
     input.freezeHeld = false;
 
-    if (npc.sensors.hasTarget)
+    if (!npc.body.ground.onGround && input.movementPressed)
+    {
+        // Air strafe: align camera forward with movement direction for air control
+        glm::vec3 airMoveDir{moveDir.x, moveDir.y, 0.0f};
+        float airLen = glm::length(airMoveDir);
+        if (airLen > 0.001f)
+            input.camForward = airMoveDir / airLen;
+        else
+            input.camForward = {1.0f, 0.0f, 0.0f};
+    }
+    else if (npc.sensors.hasTarget)
     {
         glm::vec3 toTarget = npc.sensors.predictedTarget - npc.body.pos;
         input.camForward = safePlanarNormal(toTarget, {1.0f, 0.0f, 0.0f});
@@ -271,6 +352,33 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     glm::vec3 moveDir;
     bool jump, dash, attack;
     computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
+
+    // Situational override: jump if obstacle ahead or stuck
+    if (npc.sensors.grounded && jump == false && glm::length(moveDir) > 0.1f)
+    {
+        jump = NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world)
+            || NpcNavigation::isStuck(npc);
+    }
+
+    // Wall climb: if grounded, moving toward a climbable wall, and not already jumping
+    if (npc.sensors.grounded && !jump && glm::length(moveDir) > 0.1f)
+    {
+        glm::vec3 wallNormal;
+        if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal))
+        {
+            jump = true;
+            Debug::log(Debug::Category::General,
+                "[NPC] id=%u wall climb attempt\n", npc.id);
+        }
+    }
+
+    // Situational dash
+    if (dash == false && npc.sensors.hasTarget)
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        float targetCanSee = targetCanSeeNpc(npc, world);
+        dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, def, targetCanSee > 0.5f);
+    }
 
     if (npc.bombTagActive)
     {

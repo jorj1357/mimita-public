@@ -1,32 +1,10 @@
 #include "npc-state-machine.h"
 #include "npc.h"
-#include "npc-navigation.h"
 
 #include <algorithm>
 #include <glm/gtc/constants.hpp>
 
-#include "config.h"
-#include "debug/debug-log.h"
 #include "npc/npc-internal.h"
-
-namespace {
-
-bool shouldJump(Npc& npc, float d01)
-{
-    return random01(npc.rngState) < (0.05f + d01 * 0.10f);
-}
-
-bool shouldDash(Npc& npc, float d01, float distance)
-{
-    if (npc.dashCooldown > 0.0f)
-        return false;
-    float chance = 0.10f + d01 * 0.20f;
-    if (distance > 5.0f)
-        chance += 0.10f;
-    return random01(npc.rngState) < chance;
-}
-
-} // anonymous namespace
 
 void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack, float dt)
 {
@@ -84,8 +62,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             {
                 outMoveDir = toWander / wLen;
             }
-            if (sensors.grounded && random01(npc.rngState) < 0.02f)
-                outJump = true;
             return;
         }
 
@@ -94,10 +70,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             outMoveDir = chaseDir + glm::vec3(npc.moveOffset, 0.0f);
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
-            if (sensors.grounded && shouldJump(npc, d01))
-                outJump = true;
-            if (shouldDash(npc, d01, dist))
-                outDash = true;
             return;
         }
 
@@ -130,11 +102,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
-
-            if (sensors.grounded && shouldJump(npc, d01))
-                outJump = true;
-            if (shouldDash(npc, d01, dist) && random01(npc.rngState) < 0.3f)
-                outDash = true;
             return;
         }
 
@@ -153,8 +120,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
 
-            if (sensors.grounded && shouldJump(npc, d01))
-                outJump = true;
             if (npc.attackCooldown <= 0.0f)
                 outAttack = true;
             return;
@@ -171,8 +136,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
             if (npc.attackCooldown <= 0.0f && dist < 20.0f)
                 outAttack = true;
-            if (sensors.grounded && shouldJump(npc, d01))
-                outJump = true;
             return;
         }
 
@@ -193,8 +156,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             outMoveDir += glm::vec3(npc.moveOffset, 0.0f);
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
-            if (sensors.grounded && random01(npc.rngState) < 0.3f)
-                outJump = true;
             return;
         }
 
@@ -205,10 +166,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
 
-            if (sensors.grounded && shouldJump(npc, d01))
-                outJump = true;
-            if (shouldDash(npc, d01, dist))
-                outDash = true;
             if (npc.attackCooldown <= 0.0f)
                 outAttack = true;
             return;
@@ -280,8 +237,6 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
             float len = glm::length(outMoveDir);
             if (len > 0.001f) outMoveDir /= len;
 
-            if (sensors.grounded && shouldJump(npc, d01))
-                outJump = true;
             if (npc.attackCooldown <= 0.0f)
                 outAttack = true;
             return;
