@@ -221,7 +221,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             float oAlpha = 1.0f - DebugConfig::WORLD_XH_OUTLINE_ALPHA;
             glm::vec4 oCol(0.0f, 0.0f, 0.0f, oAlpha);
             float outlineWidth = tk * 0.35f;
-            DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
+            DebugVis::drawCrosshairBillboard(camera, crossPos,
                 sz + outlineWidth,
                 gp + outlineWidth,
                 tk + outlineWidth * 2.0f,
@@ -229,7 +229,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         }
 
         // ── Main crosshair pass (drawn second, on top of outline) ──
-        DebugVis::drawCrosshairBillboardOverlay(camera, crossPos,
+        DebugVis::drawCrosshairBillboard(camera, crossPos,
             sz, gp, tk, showDot, col);
 
         // Debug shot line + sphere — only when wpn_shot_line is enabled
