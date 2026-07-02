@@ -801,6 +801,171 @@ Timers may not invent collisions.
 
 ---
 
+# Mimita Website Design Philosophy v1
+
+Mimita should NOT feel like:
+
+- a startup
+- SaaS
+- modern corporate UI
+- conversion optimized
+- investor friendly
+- clean minimalism
+- Apple
+- Stripe
+- Discord
+
+Instead it should feel like:
+
+- Yale School of Art
+- old Newgrounds
+- old Miniclip
+- early Roblox
+- early 4chan
+- Blingee
+- PicMix
+- Windows XP
+- Windows 7
+- weird internet art
+- pages made by someone who genuinely thought "this looks cool"
+
+The site should make visitors think:
+
+"What is this?"
+"This is crazy."
+"I want to explore."
+"I want to become good at Mimita."
+"I want to contribute."
+
+## Core Principles
+
+### 1. Usability always wins.
+
+Important actions remain simple:
+
+- login
+- signup
+- reset password
+- delete account
+- donations
+- reports
+- downloads
+
+Serious flows should be calmer than the rest of the website.
+
+### 2. The website is a toy.
+
+Every page should contain something fun.
+
+Examples:
+
+- draggable objects
+- global counters
+- silly NPCs
+- interactive buttons
+- small physics toys
+- playful animations
+
+### 3. Controlled chaos.
+
+Things should feel intentionally imperfect.
+
+Examples:
+
+- random 1-3px offsets
+- occasional overlapping decorations
+- slightly rotated stickers
+- images shifted a few pixels
+
+Never enough to hurt usability.
+
+### 4. Dark first.
+
+Use OLED black backgrounds.
+
+Bright colors exist inside darkness.
+
+### 5. Ugly color theory.
+
+Use combinations people normally avoid.
+
+Examples:
+
+acid green
+blood red
+purple
+cyan
+yellow
+beige
+dark blue
+
+Never because they convert better.
+
+Only because they have personality.
+
+### 6. Variation.
+
+Different pages should feel different.
+
+Different:
+
+- colors
+- decorations
+- backgrounds
+- toys
+- accents
+
+The site should not feel template-driven.
+
+### 7. Procedural personality.
+
+Small decorative randomness is encouraged.
+
+Safe randomness:
+
+- rotation
+- hue shift
+- sticker position
+- decorative images
+- tiny offsets
+
+Never randomize:
+
+- important buttons
+- forms
+- navigation
+- accessibility
+
+### 8. Animations.
+
+Animations should feel like:
+
+Windows XP
+Windows 7
+Flash
+old web
+
+Not because they are actually lagging.
+
+The illusion is jank.
+
+Implementation should remain smooth.
+
+### 9. Boxes.
+
+Default style:
+
+- square corners
+- mostly 1px borders
+- occasional thick borders
+- occasional no borders
+
+Avoid rounded corners.
+
+### 10. Everything should encourage curiosity instead of conversion.
+
+---
+
 # Asset Management
 
 * `assets/sound/music/ingame/donttrack` is intentionally excluded from source control via `.gitignore`. It contains local music work files, exports, experiments, and temporary audio assets. Any file that should become part of the game must be moved out of this folder into the proper tracked asset location.

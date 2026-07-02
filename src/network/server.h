@@ -86,6 +86,13 @@ struct ServerPlayer
     std::deque<PositionHistoryEntry> posHistory;
 };
 
+enum class ServerNpcState {
+    Chase,
+    Strafe,
+    Retreat,
+    Orbit
+};
+
 struct ServerNpc
 {
     uint32_t entityId = 0;
@@ -98,6 +105,10 @@ struct ServerNpc
     float phase = 0.0f;
     float difficulty = 1.0f;
     float lastAttackTime = 0.0f;
+    float strafeDir = 1.0f;
+    float stateTimer = 0.0f;
+    float orbitAngle = 0.0f;
+    ServerNpcState aiState = ServerNpcState::Chase;
 };
 
 // Timestamp

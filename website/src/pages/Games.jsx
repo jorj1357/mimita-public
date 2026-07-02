@@ -1,5 +1,79 @@
+import { useRef } from "react"
 import { Link } from "react-router-dom"
 import Layout from "../components/Layout"
+import Sticker from "../components/Sticker"
+import RainbowText from "../components/RainbowText"
+
+function seededRandom(seed) {
+  let s = seed
+  return function () {
+    s = (s * 16807) % 2147483647
+    return (s - 1) / 2147483646
+  }
+}
+
+const BORDERS = [1, 1, 1, 2, 2, 3, 3, 4]
+const ACCENTS = [
+  "#00ff41",
+  "#ff0044",
+  "#aa3bff",
+  "#00ffff",
+  "#ffff00",
+  "#ff6600",
+  "#ff00ff",
+  "#66ff00",
+]
+const BADGES = ["★", "✦", "✧", "⚡", "🔥", "💀", "🎮", "👾"]
+
+function GameCardDecorator({ children, gameId }) {
+  const rand = useRef(seededRandom(gameId ? gameId.charCodeAt(0) * 999 + gameId.length : Date.now()))
+  const r = rand.current
+
+  const borderW = BORDERS[Math.floor(r() * BORDERS.length)]
+  const accent = ACCENTS[Math.floor(r() * ACCENTS.length)]
+  const rot = (r() - 0.5) * 2
+  const badge = BADGES[Math.floor(r() * BADGES.length)]
+  const badgeX = 5 + r() * 15
+  const badgeY = 5 + r() * 10
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        display: "block",
+        background: "rgba(255,255,255,0.03)",
+        border: `${borderW}px solid ${accent}`,
+        overflow: "hidden",
+        textDecoration: "none",
+        color: "inherit",
+        transform: `rotate(${rot}deg)`,
+        transition: "transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease",
+        margin: "4px 0",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.transform = `rotate(${rot}deg) scale(1.02)` }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.transform = `rotate(${rot}deg)` }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: `${badgeY}%`,
+          right: `${badgeX}%`,
+          fontSize: "14px",
+          opacity: 0.4,
+          pointerEvents: "none",
+          userSelect: "none",
+        }}
+      >
+        {badge}
+      </span>
+      <span className="pixelCorner pixelCornerTL" style={{ color: accent, opacity: 0.4 }} />
+      <span className="pixelCorner pixelCornerTR" style={{ color: accent, opacity: 0.4 }} />
+      <span className="pixelCorner pixelCornerBL" style={{ color: accent, opacity: 0.4 }} />
+      <span className="pixelCorner pixelCornerBR" style={{ color: accent, opacity: 0.4 }} />
+      {children}
+    </div>
+  )
+}
 
 const GAMES = [
     {
@@ -13,24 +87,35 @@ const GAMES = [
 export default function Games() {
     return (
         <Layout>
-            <div className="gamesPage">
-                <div className="gamesInner">
-                    <h1 className="gamesTitle">Games</h1>
+            <div className="gamesPage" style={{ position: "relative" }}>
+                <div className="stickerLayer">
+                    <Sticker index={1} />
+                    <Sticker index={3} />
+                    <Sticker index={5} />
+                    <Sticker index={7} />
+                </div>
+
+                <div className="gamesInner" style={{ position: "relative", zIndex: 1 }}>
+                    <RainbowText as="h1" className="gamesTitle">
+                        Games
+                    </RainbowText>
                     <p className="gamesSubtitle">Freaky slenderman: Collect my pagesssssahhhhh👅👅👅
                         Freaky  mimita: Play my gamesssssahhhhhhh 👅👅👅👅👅</p>
 
                     <div className="gamesGrid">
                         {GAMES.map((game) => (
-                            <Link key={game.id} to={game.path} className="gameCard">
-                                <div className="gameCardThumb">
-                                    <div className="gameCardThumbPlaceholder">
-                                        <span className="gameCardThumbIcon">🎯</span>
+                            <Link key={game.id} to={game.path} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                                <GameCardDecorator gameId={game.id}>
+                                    <div className="gameCardThumb">
+                                        <div className="gameCardThumbPlaceholder">
+                                            <span className="gameCardThumbIcon">🎯</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="gameCardBody">
-                                    <h2 className="gameCardTitle">{game.title}</h2>
-                                    <p className="gameCardSubtitle">{game.subtitle}</p>
-                                </div>
+                                    <div className="gameCardBody">
+                                        <h2 className="gameCardTitle">{game.title}</h2>
+                                        <p className="gameCardSubtitle">{game.subtitle}</p>
+                                    </div>
+                                </GameCardDecorator>
                             </Link>
                         ))}
                     </div>

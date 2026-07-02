@@ -32,6 +32,7 @@ struct NpcSensorContext {
     glm::vec3 predictedTarget{0.0f};
     float targetDistance = 0.0f;
     glm::vec3 selfVel{0.0f};
+    bool touchFloor = false;
     float time = 0.0f;
 };
 
@@ -117,6 +118,15 @@ public:
 
     // Query most recent combat sound near a position
     bool recentCombatSoundNear(glm::vec3 pos, float maxAge, float maxDist, glm::vec3& outSource) const;
+
+    // NPC communication: check if another NPC is near a position (avoids clustering)
+    bool isNpcNear(glm::vec3 pos, float radius, uint32_t excludeId) const;
+
+    // NPC communication: find nearest other NPC to a position
+    float nearestOtherNpc(glm::vec3 pos, uint32_t excludeId, glm::vec3& outPos) const;
+
+    // NPC communication: count how many NPCs are targeting the same position
+    int npcCountNear(glm::vec3 pos, float radius) const;
 
 private:
     std::vector<Npc> npcs;

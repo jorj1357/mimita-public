@@ -162,6 +162,7 @@ void senseWorld(Npc& npc, const Player& player, float dt)
 {
     NpcSensorContext sensors;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
+    sensors.touchFloor = npc.body.ground.onGround;
 
     {
         int i = npc.posRingHead;
@@ -250,7 +251,7 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
     input.downDashPressed = downDash;
     input.freezeHeld = false;
 
-    if (!npc.body.ground.onGround && input.movementPressed)
+    if (!npc.sensors.touchFloor && input.movementPressed)
     {
         // Air strafe: align camera forward with movement direction for air control
         glm::vec3 airMoveDir{moveDir.x, moveDir.y, 0.0f};
@@ -304,6 +305,44 @@ bool NpcSystem::recentCombatSoundNear(glm::vec3 pos, float maxAge, float maxDist
     return false;
 }
 
+bool NpcSystem::isNpcNear(glm::vec3 pos, float radius, uint32_t excludeId) const
+{
+    for (const Npc& n : npcs)
+    {
+        if (n.id == excludeId) continue;
+        if (glm::length(n.body.pos - pos) < radius)
+            return true;
+    }
+    return false;
+}
+
+float NpcSystem::nearestOtherNpc(glm::vec3 pos, uint32_t excludeId, glm::vec3& outPos) const
+{
+    float bestDist = 1e9f;
+    for (const Npc& n : npcs)
+    {
+        if (n.id == excludeId) continue;
+        float d = glm::length(n.body.pos - pos);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            outPos = n.body.pos;
+        }
+    }
+    return bestDist;
+}
+
+int NpcSystem::npcCountNear(glm::vec3 pos, float radius) const
+{
+    int count = 0;
+    for (const Npc& n : npcs)
+    {
+        if (glm::length(n.body.pos - pos) < radius)
+            count++;
+    }
+    return count;
+}
+
 void NpcSystem::update(const World& world, Player& player, float dt)
 {
     Perf::ScopedTimer _updateTimer("NpcUpdate");
@@ -354,7 +393,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
 
     bool wantDownDash = false;
-    if (npc.sensors.hasTarget && !npc.sensors.grounded && npc.downDashCooldown <= 0.0f)
+    if (npc.sensors.hasTarget && !npc.sensors.touchFloor && npc.downDashCooldown <= 0.0f)
     {
         float heightAbove = npc.body.pos.z - npc.sensors.targetPos.z;
         if (heightAbove > 3.0f)
@@ -392,13 +431,39 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             if (newState == NpcState::Circle && oldState != NpcState::Circle)
             {
                 npc.stateMachine.orbitSwapTimer = 0.1f + random01(npc.rngState) * 1.5f;
-                npc.stateMachine.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                // Prefer opposite direction from nearby NPCs to spread out
+                glm::vec3 otherPos;
+                float nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos);
+                if (nearest < 8.0f)
+                {
+                    glm::vec2 toOther(otherPos.x - npc.body.pos.x, otherPos.y - npc.body.pos.y);
+                    glm::vec2 toTarget(npc.sensors.targetPos.x - npc.body.pos.x, npc.sensors.targetPos.y - npc.body.pos.y);
+                    float cross = toTarget.x * toOther.y - toTarget.y * toOther.x;
+                    npc.stateMachine.orbitDirection = cross > 0.0f ? 1.0f : -1.0f;
+                }
+                else
+                {
+                    npc.stateMachine.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                }
                 npc.stateMachine.orbitDistance = 1.0f + random01(npc.rngState) * 9.0f;
             }
 
             if (newState == NpcState::Strafe && oldState != NpcState::Strafe)
             {
-                npc.stateMachine.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                // Prefer opposite strafe direction from nearby NPCs
+                glm::vec3 otherPos;
+                float nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos);
+                if (nearest < 8.0f)
+                {
+                    glm::vec2 toOther(otherPos.x - npc.body.pos.x, otherPos.y - npc.body.pos.y);
+                    glm::vec2 toTarget(npc.sensors.targetPos.x - npc.body.pos.x, npc.sensors.targetPos.y - npc.body.pos.y);
+                    float cross = toTarget.x * toOther.y - toTarget.y * toOther.x;
+                    npc.stateMachine.strafeDirection = cross > 0.0f ? -1.0f : 1.0f;
+                }
+                else
+                {
+                    npc.stateMachine.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                }
                 npc.stateMachine.strafeSwapTimer = 0.3f + random01(npc.rngState) * 2.0f;
             }
 
@@ -418,14 +483,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
 
     // Situational override: jump if obstacle ahead or stuck
-    if (npc.sensors.grounded && jump == false && glm::length(moveDir) > 0.1f)
+    if (npc.sensors.touchFloor && jump == false && glm::length(moveDir) > 0.1f)
     {
         jump = NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world)
             || NpcNavigation::isStuck(npc);
     }
 
-    // Wall climb: if grounded, moving toward a climbable wall, and not already jumping
-    if (npc.sensors.grounded && !jump && glm::length(moveDir) > 0.1f)
+    // Wall climb: if on ground, moving toward a climbable wall, and not already jumping
+    if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
     {
         glm::vec3 wallNormal;
         if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal))
@@ -555,8 +620,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
             std::string physKey = "npc-phys-" + std::to_string(npc.id);
             Debug::logThrottled(Debug::Category::General, physKey.c_str(), DebugConfig::PRINT_INTERVAL,
-            "[NPC PHYS] id=%u grounded=%d vel=(%.2f %.2f %.2f) finalSpeed=%.2f\n",
-            npc.id, (int)npc.body.ground.onGround,
+            "[NPC PHYS] id=%u floor=%d vel=(%.2f %.2f %.2f) finalSpeed=%.2f\n",
+            npc.id, (int)npc.sensors.touchFloor,
             npc.body.vel.x, npc.body.vel.y, npc.body.vel.z,
             npc.lastFinalSpeed);
     }
@@ -637,7 +702,7 @@ std::vector<DebugVis::NpcDebugInfo> NpcSystem::debugInfo() const
         info.difficulty = npc.difficulty;
         info.awarenessRadius = npc.tuning.awarenessRange;
         info.finalSpeed = npc.lastFinalSpeed;
-        info.grounded = npc.body.ground.stableOnGround;
+        info.onFloor = npc.sensors.touchFloor;
         info.hasTarget = npc.sensors.hasTarget;
         out.push_back(info);
     }
