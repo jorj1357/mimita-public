@@ -8,6 +8,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "npc/npc-internal.h"
+#include "combat/weapon-registry.h"
 
 namespace {
 
@@ -22,6 +23,12 @@ float scoreState(NpcState s, const Npc& npc, float d01)
     float hasTarget = sensors.hasTarget ? 1.0f : 0.0f;
     float agg = npc.tuning.aggression;
 
+    // Weapon range awareness: prefer distances matching weapon effective range
+    float wepRange = weaponEffectiveRange(npc);
+    float idealDist = std::clamp(wepRange * 0.6f, 5.0f, wepRange);
+    float rangeMatch = 1.0f - std::fabs(dist - idealDist) / std::max(wepRange, 20.0f);
+    rangeMatch = clamp01(rangeMatch);
+
     switch (s)
     {
         case NpcState::Idle:
@@ -31,45 +38,48 @@ float scoreState(NpcState s, const Npc& npc, float d01)
             return (1.0f - hasTarget) * 0.6f + 0.2f;
 
         case NpcState::Chase:
-            return hasTarget * (0.3f + far01 * 0.6f + (1.0f - close01) * 0.3f * agg);
+            return hasTarget * (0.3f + far01 * 0.6f + (1.0f - close01) * 0.3f * agg)
+                 * (0.8f + 0.2f * (1.0f - rangeMatch));
 
         case NpcState::Circle:
-            return hasTarget * (close01 * 0.5f + mid01 * 0.4f * agg);
+            return hasTarget * (close01 * 0.5f + mid01 * 0.4f * agg)
+                 * (0.7f + 0.3f * rangeMatch);
 
         case NpcState::Strafe:
-            return hasTarget * (0.15f + mid01 * 0.5f + (1.0f - longRange01) * 0.3f);
+            return hasTarget * (0.15f + mid01 * 0.5f + (1.0f - longRange01) * 0.3f)
+                 * (0.7f + 0.3f * rangeMatch);
 
         case NpcState::Retreat:
             return hasTarget * (close01 * 0.3f + (1.0f - agg) * 0.2f);
 
         case NpcState::Attack:
             if (npc.attackCooldown > 0.0f) return 0.0f;
-            return hasTarget * (close01 * 0.8f + mid01 * 0.4f + far01 * 0.15f);
+            return hasTarget * (close01 * 0.8f + mid01 * 0.4f + far01 * 0.15f)
+                 * (0.5f + 0.5f * rangeMatch);
 
         case NpcState::Recover:
             return 0.0f;
 
-        // --- New states ---
         case NpcState::Advance:
-            // Advance when at medium-long range with aggression
-            return hasTarget * (longRange01 * 0.6f * agg + far01 * 0.3f);
+            return hasTarget * (longRange01 * 0.6f * agg + far01 * 0.3f)
+                 * (0.6f + 0.4f * (1.0f - rangeMatch));
 
         case NpcState::HoldPosition:
-            // Hold at medium range, especially after advancing
-            return hasTarget * (mid01 * 0.3f + (1.0f - agg) * 0.15f);
+            return hasTarget * (mid01 * 0.3f + (1.0f - agg) * 0.15f)
+                 * (0.6f + 0.4f * rangeMatch);
 
         case NpcState::Peek:
-            // Peek at medium-close range with cover awareness
-            return hasTarget * (mid01 * 0.25f + close01 * 0.15f);
+            return hasTarget * (mid01 * 0.25f + close01 * 0.15f)
+                 * (0.7f + 0.3f * rangeMatch);
 
         case NpcState::Aim:
-            // Aim state: stand and shoot at various ranges
             if (npc.attackCooldown > 0.0f) return 0.0f;
-            return hasTarget * (mid01 * 0.3f + far01 * 0.2f + close01 * 0.1f);
+            return hasTarget * (mid01 * 0.3f + far01 * 0.2f + close01 * 0.1f)
+                 * (0.5f + 0.5f * rangeMatch);
 
         case NpcState::ZigZag:
-            // Zig-zag approach when at medium range
-            return hasTarget * (mid01 * 0.35f * agg + far01 * 0.2f);
+            return hasTarget * (mid01 * 0.35f * agg + far01 * 0.2f)
+                 * (0.7f + 0.3f * (1.0f - rangeMatch));
     }
     return 0.0f;
 }

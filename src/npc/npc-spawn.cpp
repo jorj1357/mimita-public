@@ -11,6 +11,7 @@
 #include "audio/audio.h"
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
+#include "combat/weapon-registry.h"
 #include "perf/perf.h"
 
 float clamp01(float v)
@@ -152,4 +153,15 @@ void NpcSystem::setGlobalDifficulty(float d)
     }
     Debug::log(Debug::Category::General, "[NPC] global difficulty set to %.1f for %zu NPCs\n",
                globalDifficulty_, npcs.size());
+}
+
+float weaponEffectiveRange(const Npc& npc)
+{
+    const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+    if (!def) return 150.0f;
+    auto it = def->customParams.find("effectiveRange");
+    if (it != def->customParams.end()) return it->second;
+    if (def->projectileSpeed > 0.0f)
+        return def->projectileSpeed * std::max(def->projectileLifetime, 2.0f);
+    return 150.0f;
 }
