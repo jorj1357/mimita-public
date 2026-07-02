@@ -182,7 +182,11 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         // always rendered on top of world geometry (depth-test disabled).
         glm::vec3 crossPos = hitPoint + hitNormal * 0.003f;
 
-        float distScale = glm::clamp(20.0f / std::max(nearest, 1.0f), 0.5f, 2.0f);
+        float distScale = 1.0f;
+        if (DebugConfig::WORLD_XH_DYNAMIC) {
+            float raw = 20.0f / std::max(nearest, 1.0f);
+            distScale = glm::clamp(raw, DebugConfig::WORLD_XH_MINSIZE, DebugConfig::WORLD_XH_MAXSIZE);
+        }
 
         const float baseSize = 0.15f;
         const float baseGap = 0.025f;

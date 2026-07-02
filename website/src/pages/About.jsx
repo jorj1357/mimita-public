@@ -3,7 +3,7 @@ import "../App.css"
 import Layout from "../components/Layout"
 import FeedbackBox from "../components/FeedbackBox"
 import GrossHeading from "../components/GrossHeading"
-import Sticker from "../components/Sticker"
+import StickerLayer from "../components/StickerLayer"
 import PixelBox from "../components/PixelBox"
 import ProceduralOffset from "../components/ProceduralOffset"
 import RandomRotation from "../components/RandomRotation"
@@ -12,13 +12,7 @@ export default function About() {
   return (
     <Layout>
       <div className="aboutPage">
-        <div className="stickerLayer">
-          <Sticker index={0} />
-          <Sticker index={2} />
-          <Sticker index={4} />
-          <Sticker index={6} />
-          <Sticker index={8} />
-        </div>
+        <StickerLayer count={7} />
 
         <div className="aboutPageHeader">
           <video autoPlay loop muted playsInline preload="auto" className="aboutVideo">

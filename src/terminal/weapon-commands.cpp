@@ -361,6 +361,59 @@ static void registerWorldXhCommands()
         },
         "2026-07-02", CommandCategory::Weapon
     });
+
+    term.registerCommand({
+        "world_xh_dynamic",
+        "Enable/disable distance-based crosshair scaling. 0=fixed size, 1=dynamic.",
+        "world_xh_dynamic <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] dynamic=" + std::to_string((int)DebugConfig::WORLD_XH_DYNAMIC));
+                return;
+            }
+            DebugConfig::WORLD_XH_DYNAMIC = args[0] != "0";
+            Terminal::instance().addLog(
+                DebugConfig::WORLD_XH_DYNAMIC
+                ? "[OK] world_xh_dynamic enabled (distance-based scaling)"
+                : "[OK] world_xh_dynamic disabled (fixed size)");
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_maxsize",
+        "Set maximum crosshair scale multiplier. Default 2.0. Clamped >= 0.",
+        "world_xh_maxsize <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] maxsize=" + std::to_string(DebugConfig::WORLD_XH_MAXSIZE));
+                return;
+            }
+            DebugConfig::WORLD_XH_MAXSIZE = std::max(0.0f, std::stof(args[0]));
+            Terminal::instance().addLog(
+                "[OK] world_xh_maxsize=" + std::to_string(DebugConfig::WORLD_XH_MAXSIZE));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
+
+    term.registerCommand({
+        "world_xh_minsize",
+        "Set minimum crosshair scale multiplier. Default 0.5. Clamped >= 0.",
+        "world_xh_minsize <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[WORLD_XH] minsize=" + std::to_string(DebugConfig::WORLD_XH_MINSIZE));
+                return;
+            }
+            DebugConfig::WORLD_XH_MINSIZE = std::max(0.0f, std::stof(args[0]));
+            Terminal::instance().addLog(
+                "[OK] world_xh_minsize=" + std::to_string(DebugConfig::WORLD_XH_MINSIZE));
+        },
+        "2026-07-02", CommandCategory::Weapon
+    });
 }
 
 void registerWeaponDebugCommand()
