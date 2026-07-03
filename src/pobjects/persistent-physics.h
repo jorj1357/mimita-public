@@ -46,6 +46,11 @@ struct PersistentPhysicsConfig {
     float explosionDamage = 150.0f;
     float explosionKnockback = 160.0f;
     float explosionSelfKnockbackMul = 0.0f;
+    float splashExponent = 2.0f;
+    float armingDistance = 0.0f;
+    float armingTime = 0.0f;
+    float minBounceSpeed = 0.1f;
+    int maxBounceCount = 0;
     std::string explosionSound = "weapon/bomb/explosion2";
     std::string spawnSound;
 };
@@ -67,6 +72,9 @@ struct PersistentPhysicsObject {
     bool sleeping = false;
     float sleepTimer = 0.0f;
     bool alive = false;
+    bool worldTouched = false;
+    bool ownerIgnored = false;
+    float distFromOwner = 0.0f;
 
     std::string weaponId;
 };
@@ -81,7 +89,8 @@ public:
                     const glm::vec3& angularVelocity,
                     uint32_t ownerId,
                     const std::string& ownerName,
-                    const std::string& weaponId);
+                    const std::string& weaponId,
+                    const glm::vec3& ownerPos = glm::vec3(0.0f));
 
     void update(float dt, const World& world, Player& player, NpcSystem& npcs, class Camera* camera = nullptr);
     void render(const Camera& camera) const;

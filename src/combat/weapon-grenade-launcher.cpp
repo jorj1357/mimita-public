@@ -15,6 +15,11 @@
 
 namespace WeaponGrenadeLauncher {
 
+static float cp(const WeaponDefinition& def, const char* key, float fallback)
+{
+    return def.customParams.count(key) ? def.customParams.at(key) : fallback;
+}
+
 void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
            Player& owner, const glm::vec3& muzzlePos, const glm::vec3& aimDir)
 {
@@ -23,36 +28,39 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     cfg.shape = PersistentShape::Cylinder;
     cfg.radius = def.projectileRadius > 0.0f ? def.projectileRadius : 0.4f;
     cfg.height = cfg.radius * 1.6f;
-    cfg.mass = 1.5f;
-    cfg.gravity = 20.0f;
-    cfg.drag = 0.15f;
-    cfg.angularDrag = 0.3f;
-    cfg.restitution = 0.35f;
-    cfg.friction = 0.5f;
+    cfg.mass = cp(def, "mass", 1.5f);
+    cfg.gravity = cp(def, "gravity", 20.0f);
+    cfg.drag = cp(def, "drag", 0.15f);
+    cfg.angularDrag = cp(def, "angularDrag", 0.3f);
+    cfg.restitution = cp(def, "bounceRestitution", 0.35f);
+    cfg.friction = cp(def, "bounceFriction", 0.5f);
+    cfg.minBounceSpeed = cp(def, "minBounceSpeed", 0.1f);
+    cfg.maxBounceCount = (int)cp(def, "maxBounceCount", 10.0f);
     cfg.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 3.0f;
-
-    auto cp = [&](const char* key, float fallback) {
-        return def.customParams.count(key) ? def.customParams.at(key) : fallback;
-    };
-    cfg.explosionRadius = cp("splashRadius", 8.0f);
-    cfg.explosionDamage = cp("rocketDirectDamage", 150.0f);
-    cfg.explosionKnockback = cp("knockbackStrength", 160.0f);
-    cfg.explosionSelfKnockbackMul = cp("selfKnockbackMultiplier", 0.8f);
+    cfg.explosionRadius = cp(def, "splashRadius", 8.0f);
+    cfg.explosionDamage = cp(def, "rocketDirectDamage", 150.0f);
+    cfg.explosionKnockback = cp(def, "knockbackStrength", 160.0f);
+    cfg.explosionSelfKnockbackMul = cp(def, "selfKnockbackMultiplier", 0.8f);
+    cfg.splashExponent = cp(def, "splashExponent", 2.0f);
+    cfg.armingDistance = cp(def, "armingDistance", 2.0f);
+    cfg.armingTime = cp(def, "armingTime", 0.0f);
     cfg.explosionSound = "weapon/bomb/explosion2";
     cfg.spawnSound = def.soundShoot;
 
-    float forwardSpeed = cp("forwardSpeed", 18.0f);
-    float upBias = cp("upBias", 4.0f);
-    float angSpeed = cp("angSpeed", 6.0f);
+    float forwardSpeed = def.projectileSpeed > 0.0f ? def.projectileSpeed : cp(def, "forwardSpeed", 18.0f);
+    float upBias = cp(def, "upBias", 4.0f);
+    float angSpeed = cp(def, "angSpeed", 6.0f);
 
     glm::vec3 vel = aimDir * forwardSpeed + glm::vec3(0.0f, 0.0f, upBias);
     glm::vec3 angVel(0.0f, 0.0f, angSpeed);
 
     PersistentPhysicsSystem::instance().spawn(cfg, muzzlePos, vel, angVel,
-                                              0, owner.username, def.id);
+                                              0, owner.username, def.id, owner.pos);
 
-    Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
-               muzzlePos.x, muzzlePos.y, muzzlePos.z, vel.x, vel.y, vel.z);
+    Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) "
+               "projectileSpeed=%.1f radius=%.2f armingDist=%.1f bounceRest=%.2f bounceFric=%.2f\n",
+               muzzlePos.x, muzzlePos.y, muzzlePos.z, vel.x, vel.y, vel.z,
+               forwardSpeed, cfg.radius, cfg.armingDistance, cfg.restitution, cfg.friction);
 }
 
 void update(const WeaponDefinition& def, WeaponRuntime& runtime,
