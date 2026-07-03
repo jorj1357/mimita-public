@@ -1,7 +1,8 @@
-import { Link, useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
 import Avatar from "./Avatar"
 import { logAuthEvent, logRequestError } from "../lib/api-log"
+import { apiRequest } from "../lib/api"
 
 const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8QHbfG9D"
 
@@ -34,7 +35,6 @@ const HAMBURGER_ITEMS = [
 ]
 
 export default function Header() {
-    const navigate = useNavigate()
     const [open, setOpen] = useState(false)
     const [profileOpen, setProfileOpen] = useState(false)
     const [user, setUser] = useState(null)
@@ -92,19 +92,15 @@ export default function Header() {
     async function handleSignOut() {
         logAuthEvent("logout", { username: user?.username })
         try {
-            const res = await fetch("/api/auth/signout", { method: "POST", credentials: "include" })
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}))
-                logRequestError("POST", "/api/auth/signout", res.status, 0, err)
-            }
+            const data = await apiRequest("/api/auth/signout", { method: "POST" })
+            logAuthEvent("logout", `success user_id=${user?.id}`)
         } catch (e) {
-            logAuthEvent("logout error", { error: e.message })
+            logAuthEvent("logout error", { error: e.message, status: e.status })
         }
-        setUser(null)
-        setIsAdmin(false)
-        setProfileOpen(false)
-        setOpen(false)
-        navigate("/")
+        // Force full page reload to clear all state regardless of API result.
+        // This ensures cookies are cleared, React state is gone, and the browser
+        // re-evaluates auth from scratch on the next navigation.
+        window.location.replace("/")
     }
 
     const filteredItems = HAMBURGER_ITEMS.filter(item => {
