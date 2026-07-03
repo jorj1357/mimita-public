@@ -124,6 +124,13 @@ void Perf::addTime(const char* name, double ms)
     else if (std::strcmp(name, "StringFormat") == 0)            t.stringFormat += ms;
     else if (std::strcmp(name, "FileIO") == 0)                  t.fileIO += ms;
     else if (std::strcmp(name, "DebugLogging") == 0)            t.debugLogging += ms;
+    else if (std::strcmp(name, "FrameOverhead") == 0)           t.frameOverhead += ms;
+    else if (std::strcmp(name, "Sleep") == 0)                   t.sleepTime += ms;
+    else if (std::strcmp(name, "Swap") == 0)                    t.swapTime += ms;
+    else if (std::strcmp(name, "Terminal") == 0)                t.terminalTime += ms;
+    else if (std::strcmp(name, "Menus") == 0)                   t.menusTime += ms;
+    else if (std::strcmp(name, "DevOverlay") == 0)              t.devOverlay += ms;
+    else if (std::strcmp(name, "Diag") == 0)                    t.diagTime += ms;
     t.total += ms;
 }
 
@@ -202,6 +209,13 @@ void Perf::addChildTime(const char* name, double ms)
     else if (std::strcmp(name, "StringFormat") == 0)            c.stringFormat += ms;
     else if (std::strcmp(name, "FileIO") == 0)                  c.fileIO += ms;
     else if (std::strcmp(name, "DebugLogging") == 0)            c.debugLogging += ms;
+    else if (std::strcmp(name, "FrameOverhead") == 0)           c.frameOverhead += ms;
+    else if (std::strcmp(name, "Sleep") == 0)                   c.sleepTime += ms;
+    else if (std::strcmp(name, "Swap") == 0)                    c.swapTime += ms;
+    else if (std::strcmp(name, "Terminal") == 0)                c.terminalTime += ms;
+    else if (std::strcmp(name, "Menus") == 0)                   c.menusTime += ms;
+    else if (std::strcmp(name, "DevOverlay") == 0)              c.devOverlay += ms;
+    else if (std::strcmp(name, "Diag") == 0)                    c.diagTime += ms;
 }
 
 // ── ScopedTimer with nesting support ──────────────────────────
@@ -271,6 +285,13 @@ double Perf::exclusive(const PerfTimes& t, const PerfTimes& c, const char* name)
     if (std::strcmp(name, "EffectRender") == 0)      return t.effectRender - c.effectRender;
     if (std::strcmp(name, "ShadowRender") == 0)      return t.shadowRender - c.shadowRender;
     if (std::strcmp(name, "PostFX") == 0)            return t.postFX - c.postFX;
+    if (std::strcmp(name, "FrameOverhead") == 0)     return t.frameOverhead - c.frameOverhead;
+    if (std::strcmp(name, "Sleep") == 0)             return t.sleepTime - c.sleepTime;
+    if (std::strcmp(name, "Swap") == 0)              return t.swapTime - c.swapTime;
+    if (std::strcmp(name, "Terminal") == 0)          return t.terminalTime - c.terminalTime;
+    if (std::strcmp(name, "Menus") == 0)             return t.menusTime - c.menusTime;
+    if (std::strcmp(name, "DevOverlay") == 0)        return t.devOverlay - c.devOverlay;
+    if (std::strcmp(name, "Diag") == 0)              return t.diagTime - c.diagTime;
     return t.total - 0.0;
 }
 
@@ -286,10 +307,14 @@ void Perf::recordCollisionQuery(const char* caller, const char* reason,
         auto& q = s.queryRecords[s.queryRecordCount++];
         q.queryId = ++s.queryIdCounter;
         q.frame = s.frameNumber;
-        q.caller = caller;
-        q.reason = reason;
-        q.entity = entity;
-        q.object = object;
+        std::strncpy(q.caller, caller ? caller : "Unknown", sizeof(q.caller) - 1);
+        q.caller[sizeof(q.caller) - 1] = '\0';
+        std::strncpy(q.reason, reason ? reason : "Unknown", sizeof(q.reason) - 1);
+        q.reason[sizeof(q.reason) - 1] = '\0';
+        std::strncpy(q.entity, entity ? entity : "Unknown", sizeof(q.entity) - 1);
+        q.entity[sizeof(q.entity) - 1] = '\0';
+        std::strncpy(q.object, object ? object : "Unknown", sizeof(q.object) - 1);
+        q.object[sizeof(q.object) - 1] = '\0';
         q.aabbMin[0] = aabbMin ? aabbMin[0] : 0;
         q.aabbMin[1] = aabbMin ? aabbMin[1] : 0;
         q.aabbMin[2] = aabbMin ? aabbMin[2] : 0;
@@ -408,16 +433,23 @@ void Perf::writeSpikeReport(const FrameSpikeReport& report)
     }
 
     // Largest query
-    if (report.largestQuery.caller) {
-        f << "\nLargest Collision Query:\n";
-        f << "  caller=" << report.largestQuery.caller
-          << " entity=" << report.largestQuery.entity
-          << " object=" << report.largestQuery.object
-          << " reason=" << report.largestQuery.reason << "\n";
-        f << "  aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f)"
-          << " cells=" << report.largestQuery.chunkCells
-          << " tris=" << report.largestQuery.uniqueTriangles
-          << " ms=" << report.largestQuery.elapsedMs << "\n";
+    if (report.largestQuery.caller && report.largestQuery.chunkCells > 0) {
+        char buf[512];
+        std::snprintf(buf, sizeof(buf),
+            "\nLargest Collision Query:\n"
+            "  caller=%s entity=%s object=%s reason=%s\n"
+            "  aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f)"
+            " cells=%d tris=%d ms=%.2f\n",
+            report.largestQuery.caller,
+            report.largestQuery.entity,
+            report.largestQuery.object,
+            report.largestQuery.reason,
+            report.largestQuery.aabbMin[0], report.largestQuery.aabbMin[1], report.largestQuery.aabbMin[2],
+            report.largestQuery.aabbMax[0], report.largestQuery.aabbMax[1], report.largestQuery.aabbMax[2],
+            report.largestQuery.chunkCells,
+            report.largestQuery.uniqueTriangles,
+            report.largestQuery.elapsedMs);
+        f << buf;
     }
 
     f.close();
@@ -492,6 +524,13 @@ void Perf::writeProfileToFile()
         {"PlayerRender",   t.playerRender - c.playerRender, t.playerRender},
         {"WeaponRender",   t.weaponRender - c.weaponRender, t.weaponRender},
         {"EffectRender",   t.effectRender - c.effectRender, t.effectRender},
+        {"FrameOverhead",  t.frameOverhead - c.frameOverhead, t.frameOverhead},
+        {"Sleep",          t.sleepTime - c.sleepTime, t.sleepTime},
+        {"Swap",           t.swapTime - c.swapTime, t.swapTime},
+        {"Terminal",       t.terminalTime - c.terminalTime, t.terminalTime},
+        {"Menus",          t.menusTime - c.menusTime, t.menusTime},
+        {"DevOverlay",     t.devOverlay - c.devOverlay, t.devOverlay},
+        {"Diag",           t.diagTime - c.diagTime, t.diagTime},
     };
     int entryCount = sizeof(entries) / sizeof(entries[0]);
 
@@ -520,7 +559,17 @@ void Perf::writeProfileToFile()
     f << "  Sum of Exclusive: " << sumExcl << "ms\n";
     f << "  Difference: " << diff << "ms";
     if (diff > 0.1) {
-        f << "  *** UNACCOUNTED ***";
+        f << "  *** UNACCOUNTED ***\n";
+        f << "  Possible causes:\n";
+        f << "    - FramePacer sleep (captured by Sleep timer if frame completed early)\n";
+        f << "    - OpenGL driver overhead / GPU sync / glFlush/glFinish\n";
+        f << "    - Thread synchronization waits (mutex, condition variable)\n";
+        f << "    - OS scheduler preemption / context switches\n";
+        f << "    - Memory allocation (malloc/free internals)\n";
+        f << "    - Disk I/O (logging, file writes, map loading)\n";
+        f << "    - std::vector reallocation / string copy overhead\n";
+        f << "    - Profiler overhead (nowUs() calls, strcmp, file writes)\n";
+        f << "    - Timer stack underflow (ScopedTimers out of order)\n";
     }
     f << "\n\n";
 
@@ -545,11 +594,16 @@ void Perf::writeProfileToFile()
     // Large AABB alert
     if (s.largeAabbAlert.caller) {
         const auto& a = s.largeAabbAlert;
-        f << "\nLarge AABB Alert:\n";
-        f << "  caller=" << a.caller << " entity=" << a.entity
-          << " object=" << a.object << " reason=" << a.reason << "\n";
-        f << "  cells=" << a.chunkCells << " tris=" << a.uniqueTriangles
-          << " size=(%.1f %.1f %.1f) cause=" << a.suspectedCause << "\n";
+        char buf[512];
+        std::snprintf(buf, sizeof(buf),
+            "\nLarge AABB Alert:\n"
+            "  caller=%s entity=%s object=%s reason=%s\n"
+            "  cells=%d tris=%d size=(%.1f %.1f %.1f) cause=%s\n",
+            a.caller, a.entity, a.object, a.reason,
+            a.chunkCells, a.uniqueTriangles,
+            a.aabbSize[0], a.aabbSize[1], a.aabbSize[2],
+            a.suspectedCause ? a.suspectedCause : "?");
+        f << buf;
     }
 
     // Per-NPC profile
@@ -637,6 +691,13 @@ void Perf::endFrame()
             {"PlayerRender", t.playerRender, t.playerRender - c.playerRender},
             {"WeaponRender", t.weaponRender, t.weaponRender - c.weaponRender},
             {"EffectRender", t.effectRender, t.effectRender - c.effectRender},
+            {"Sleep", t.sleepTime, t.sleepTime - c.sleepTime},
+            {"Swap", t.swapTime, t.swapTime - c.swapTime},
+            {"Terminal", t.terminalTime, t.terminalTime - c.terminalTime},
+            {"Menus", t.menusTime, t.menusTime - c.menusTime},
+            {"DevOverlay", t.devOverlay, t.devOverlay - c.devOverlay},
+            {"Diag", t.diagTime, t.diagTime - c.diagTime},
+            {"FrameOverhead", t.frameOverhead, t.frameOverhead - c.frameOverhead},
         };
         int allCount = sizeof(all) / sizeof(all[0]);
 

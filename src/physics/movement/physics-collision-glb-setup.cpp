@@ -187,7 +187,7 @@ static void extractEntityInfo(const char* caller, char* entity, int entitySize,
     char* object, int objectSize, char* reason, int reasonSize, int* outEntityId)
 {
     if (outEntityId) *outEntityId = -1;
-    if (!caller) {
+    if (!caller || caller[0] == '\0') {
         std::snprintf(entity, entitySize, "Unknown");
         std::snprintf(object, objectSize, "Unknown");
         std::snprintf(reason, reasonSize, "Unknown");
@@ -201,6 +201,8 @@ static void extractEntityInfo(const char* caller, char* entity, int entitySize,
         if (entityLen > entitySize - 1) entityLen = entitySize - 1;
         std::strncpy(entity, caller, entityLen);
         entity[entityLen] = '\0';
+        // Ensure entity is never empty
+        if (entity[0] == '\0') std::strncpy(entity, "Entity", entitySize - 1);
 
         const char* secondUnderscore = std::strchr(firstUnderscore + 1, '_');
         if (secondUnderscore) {
@@ -208,16 +210,19 @@ static void extractEntityInfo(const char* caller, char* entity, int entitySize,
             if (objLen > objectSize - 1) objLen = objectSize - 1;
             std::strncpy(object, firstUnderscore + 1, objLen);
             object[objLen] = '\0';
+            if (object[0] == '\0') std::strncpy(object, "Object", objectSize - 1);
             std::strncpy(reason, secondUnderscore + 1, reasonSize - 1);
             reason[reasonSize - 1] = '\0';
+            if (reason[0] == '\0') std::strncpy(reason, "Reason", reasonSize - 1);
         } else {
             std::strncpy(object, firstUnderscore + 1, objectSize - 1);
             object[objectSize - 1] = '\0';
+            if (object[0] == '\0') std::strncpy(object, "Object", objectSize - 1);
             std::snprintf(reason, reasonSize, "%s", caller);
         }
     } else {
         std::snprintf(entity, entitySize, "%s", caller);
-        std::snprintf(object, objectSize, "?");
+        std::snprintf(object, objectSize, "General");
         std::snprintf(reason, reasonSize, "%s", caller);
     }
 

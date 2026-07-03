@@ -55,6 +55,7 @@ extern bool gReplayExportRenderMode;
 
 void engineTick(Engine& engine)
 {
+    Perf::ScopedTimer _frame("FrameOverhead");
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
 
@@ -87,15 +88,19 @@ void engineTick(Engine& engine)
         { Perf::ScopedTimer _t("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
         { Perf::ScopedTimer _t("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
 
+        { Perf::ScopedTimer _t("DevOverlay");
         if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
             DevOverlay::instance().render();
+        }
     }
 
+    { Perf::ScopedTimer _t("Menus");
     uiUpdateMedia(dt);
 
     if (GAME_STATE == GAME_MENU && !isReplayExportActive())
     {
         guiMain(engine.window(), GAME_STATE);
+    }
     }
 
     static bool escapePrev = false;
@@ -169,15 +174,15 @@ void engineTick(Engine& engine)
     }
 
     HEARTBEAT("before terminal");
-    Terminal::instance().render();
-    diagRenderStage(8);
+    { Perf::ScopedTimer _t("Terminal"); Terminal::instance().render(); }
+    { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     HEARTBEAT("end frame");
-    engine.endFrame();
-    diagRenderStage(9);
-    diagRenderFrameEnd();
+    { Perf::ScopedTimer _t("Swap"); engine.endFrame(); }
+    { Perf::ScopedTimer _t("Diag"); diagRenderStage(9); }
+    { Perf::ScopedTimer _t("Diag"); diagRenderFrameEnd(); }
     Perf::endFrame();
-    gFramePacer.endFrame();
+    { Perf::ScopedTimer _t("Sleep"); gFramePacer.endFrame(); }
 
     // ── Frame timing breakdown ───────────────────────
     {
