@@ -25,6 +25,7 @@
 #include "terminal/terminal-state.h"
 #include "render/post-fx.h"
 #include "audio/audio-codec.h"
+#include "replay/replay-export.h"
 
 void encodeReplayToMp4();
 
@@ -185,6 +186,8 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         gJob.errorMsg = "Replay has no frames.";
         return false;
     }
+
+    replayExportDebugOpen();
 
     printf("[RPLX] loading replay JSON...\n");
     ReplayClip loadCheck;

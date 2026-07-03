@@ -284,6 +284,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // ── Self-healthbar (world-space, from JSON config) ─────────────
     {
+        if (!dead)
+        {
         float nameX = 0.0f, nameY = 0.0f;
         if (DebugVis::projectToScreen(camera, player.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.7f),
                                       nameX, nameY)) {
@@ -304,6 +306,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             uiDrawRect({nameX - barW * 0.5f, nameY - 8, barW * ratio, barH}, hpFg, "self-hp-current");
             uiDrawText(player.username.c_str(), nameX - 35, nameY - 32, 0.32f, {1,1,1,1});
             uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
+        }
         }
     }
     for (const Npc& npc : npcSystem.all()) {

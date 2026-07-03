@@ -39,6 +39,34 @@ extern ReplayExportAudioConfig gAudioConfig;
 #define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
 #define EXPORTTRACE_CRASH(fmt, ...) do { printf("[EXPORT] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while(0)
 
+FILE* gReplayExportDebugFile = nullptr;
+
+void replayExportDebugOpen()
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories("logs", ec);
+    gReplayExportDebugFile = fopen("logs/replay_export_debug.txt", "w");
+    if (gReplayExportDebugFile)
+    {
+        fprintf(gReplayExportDebugFile, "====================\n");
+        fprintf(gReplayExportDebugFile, "REPLAY EXPORT DEBUG\n");
+        fprintf(gReplayExportDebugFile, "====================\n\n");
+    }
+}
+
+void replayExportDebugClose()
+{
+    if (gReplayExportDebugFile)
+    {
+        fprintf(gReplayExportDebugFile, "\n====================\n");
+        fprintf(gReplayExportDebugFile, "END DEBUG LOG\n");
+        fprintf(gReplayExportDebugFile, "====================\n");
+        fclose(gReplayExportDebugFile);
+        gReplayExportDebugFile = nullptr;
+    }
+}
+
 static bool writeWavFile(const std::string& path, const std::vector<int16_t>& samples,
                          uint32_t sampleRate, uint16_t channels = 2)
 {
@@ -77,10 +105,20 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     printf("[RPLX AUDIO] Audio system initialized\n");
     printf("[RPLX AUDIO] Total sound events in replay: %zu\n", events.size());
 
+    RPLXDEBUG("====================\n");
+    RPLXDEBUG("REPLAY EXPORT\n");
+    RPLXDEBUG("====================\n\n");
+    RPLXDEBUG("Replay length: %.2f sec\n", (double)totalTicks / 60.0);
+    RPLXDEBUG("Frame count: %u\n", totalTicks);
+    RPLXDEBUG("Tick count: %u\n", totalTicks);
+    RPLXDEBUG("Total sound events: %zu\n\n", events.size());
+
     if (events.empty())
     {
         printf("[RPLX AUDIO] No sound events found, creating silent track\n");
         std::vector<int16_t> silent(48000 * 2, 0);
+        RPLXDEBUG("No sound events found\n");
+        replayExportDebugClose();
         return writeWavFile(wavPath, silent, 48000);
     }
 
@@ -99,11 +137,51 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 
     std::vector<float> mix(totalSamples, 0.0f);
 
+    {
+        int validCount = 0, worldCount = 0;
+        for (const auto& e : events) { if (e.world) worldCount++; if (e.listenerValid) validCount++; }
+        Debug::warn(Debug::Category::Replay, "[RPLX AUDIO] export totalEvents=%zu world=%d listenerValid=%d\n",
+                    events.size(), worldCount, validCount);
+        RPLXDEBUG("Events summary: total=%zu world=%d listenerValid=%d\n\n", events.size(), worldCount, validCount);
+    }
+
+    // Collect unique listener states every ~30 ticks
+    RPLXDEBUG("====================\n");
+    RPLXDEBUG("LISTENER\n");
+    RPLXDEBUG("====================\n\n");
+    {
+        int lastListenerLogTick = -1;
+        for (const auto& e : events)
+        {
+            int tick30 = (e.tick / 30) * 30;
+            if (tick30 != lastListenerLogTick && e.listenerValid)
+            {
+                lastListenerLogTick = tick30;
+                RPLXDEBUG("tick=%d listener pos=(%.2f %.2f %.2f) forward=(%.2f %.2f %.2f)\n",
+                         tick30,
+                         e.listenerPosition.x, e.listenerPosition.y, e.listenerPosition.z,
+                         e.listenerForward.x, e.listenerForward.y, e.listenerForward.z);
+            }
+        }
+    }
+    RPLXDEBUG("\n");
+
     uint32_t decodedCount = 0;
+    uint32_t duplicateCount = 0;
+    uint32_t skippedCount = 0;
+    std::string lastSoundPath;
+    int lastSoundTick = -1;
+
+    RPLXDEBUG("====================\n");
+    RPLXDEBUG("AUDIO EVENTS\n");
+    RPLXDEBUG("====================\n\n");
     for (const auto& event : events)
     {
         if (event.tick < 0 || (uint32_t)event.tick >= totalTicks)
+        {
+            skippedCount++;
             continue;
+        }
 
         if (event.soundPath == "hitmarker1")
         {
@@ -126,6 +204,7 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                           REPLAY_PLAYER.killerId().c_str(),
                           viewedEntity.c_str(),
                           REPLAY_PLAYER.cameraController().modeName());
+                skippedCount++;
                 continue;
             }
             EXPORTLOG("[REPLAY HITMARKER] include export attacker=%s viewedEntity=%s camera=%s",
@@ -133,6 +212,12 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                       viewedEntity.c_str(),
                       REPLAY_PLAYER.cameraController().modeName());
         }
+
+        // Detect duplicate sound events (same sound, same tick)
+        if (event.soundPath == lastSoundPath && event.tick == lastSoundTick)
+            duplicateCount++;
+        lastSoundPath = event.soundPath;
+        lastSoundTick = event.tick;
 
         // Compute spatialization for world sounds with valid listener data
         float spatialAtten = 1.0f;
@@ -157,19 +242,42 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 
             // Stereo pan: project direction-to-sound onto listener's right vector
             glm::vec3 dir = dist > 0.001f ? glm::normalize(toSound) : glm::vec3(0.0f);
-            glm::vec3 right = glm::normalize(glm::cross(event.listenerForward, glm::vec3(0.0f, 0.0f, 1.0f)));
+            glm::vec3 fwd = glm::normalize(event.listenerForward);
+            glm::vec3 up(0.0f, 0.0f, 1.0f);
+            // If forward is nearly parallel to up, use world forward as fallback
+            glm::vec3 right;
+            if (std::fabs(glm::dot(fwd, up)) > 0.999f)
+                right = glm::vec3(1.0f, 0.0f, 0.0f);
+            else
+                right = glm::normalize(glm::cross(fwd, up));
             float pan = glm::clamp(glm::dot(dir, right), -1.0f, 1.0f);
 
             // Constant-power panning
             panLeft = std::cos((pan + 1.0f) * 3.14159265f / 4.0f);
             panRight = std::sin((pan + 1.0f) * 3.14159265f / 4.0f);
 
-            printf("[RPLX AUDIO SPATIAL] event=%s pos=(%.1f %.1f %.1f) listener=(%.1f %.1f %.1f) dist=%.1f atten=%.2f pan=%.2f left=%.2f right=%.2f\n",
-                   event.soundPath.c_str(),
-                   event.position.x, event.position.y, event.position.z,
-                   event.listenerPosition.x, event.listenerPosition.y, event.listenerPosition.z,
-                   dist, spatialAtten, pan, panLeft, panRight);
+            Debug::warn(Debug::Category::Replay, "[RPLX AUDIO SPATIAL] SPATIALIZED event=%s pos=(%.2f %.2f %.2f) listener=(%.2f %.2f %.2f) dist=%.2f atten=%.4f pan=%.4f left=%.4f right=%.4f\n",
+                        event.soundPath.c_str(),
+                        event.position.x, event.position.y, event.position.z,
+                        event.listenerPosition.x, event.listenerPosition.y, event.listenerPosition.z,
+                        dist, spatialAtten, pan, panLeft, panRight);
         }
+        else
+        {
+            Debug::warn(Debug::Category::Replay, "[RPLX AUDIO SPATIAL] FLAT event=%s world=%d listenerValid=%d listenerPos=(%.2f %.2f %.2f) pos=(%.2f %.2f %.2f)\n",
+                        event.soundPath.c_str(),
+                        (int)event.world, (int)event.listenerValid,
+                        event.listenerPosition.x, event.listenerPosition.y, event.listenerPosition.z,
+                        event.position.x, event.position.y, event.position.z);
+        }
+
+        RPLXDEBUG("tick=%d name=%s world=%d pos=(%.2f %.2f %.2f) listener=(%.2f %.2f %.2f) dist=%.2f atten=%.4f panL=%.4f panR=%.4f vol=%.2f maxDist=%.2f spatial=%d listenerValid=%d\n",
+                 event.tick, event.soundPath.c_str(), (int)event.world,
+                 event.position.x, event.position.y, event.position.z,
+                 event.listenerPosition.x, event.listenerPosition.y, event.listenerPosition.z,
+                 spatialize ? glm::length(event.position - event.listenerPosition) : 0.0f,
+                 spatialAtten, panLeft, panRight,
+                 event.volume, event.maxDistance, (int)spatialize, (int)event.listenerValid);
 
         std::string filePath = resolveSoundPath(event.soundPath);
         if (filePath.empty() || !std::filesystem::exists(filePath))
@@ -194,36 +302,91 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 
         if (rate == sampleRate && ch == numChannels)
         {
-            for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
+            if (spatialize)
             {
-                float s = (float)pcm[(i * 2)] / 32768.0f * baseVolume;
-                mix[(dstFrame + i) * 2 + 0] += s * panLeft;
-                mix[(dstFrame + i) * 2 + 1] += s * panRight;
+                // 3D spatialized: downmix to mono then apply stereo pan
+                for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
+                {
+                    float sM = ((float)pcm[(i * 2 + 0)] + (float)pcm[(i * 2 + 1)]) / 65536.0f * baseVolume;
+                    mix[(dstFrame + i) * 2 + 0] += sM * panLeft;
+                    mix[(dstFrame + i) * 2 + 1] += sM * panRight;
+                }
+            }
+            else
+            {
+                // 2D non-spatialized: pass through stereo unchanged
+                for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
+                {
+                    float sL = (float)pcm[(i * 2 + 0)] / 32768.0f * baseVolume;
+                    float sR = (float)pcm[(i * 2 + 1)] / 32768.0f * baseVolume;
+                    mix[(dstFrame + i) * 2 + 0] += sL;
+                    mix[(dstFrame + i) * 2 + 1] += sR;
+                }
             }
         }
         else
         {
-            for (size_t i = 0; i < srcFrames; i++)
+            if (spatialize)
             {
-                double srcTime = (double)i / rate;
-                double dstPos = dstFrame + srcTime * sampleRate;
-                if (dstPos >= (double)totalFrames - 1.0) break;
+                // 3D spatialized: downmix to mono then apply stereo pan
+                for (size_t i = 0; i < srcFrames; i++)
+                {
+                    double srcTime = (double)i / rate;
+                    double dstPos = dstFrame + srcTime * sampleRate;
+                    if (dstPos >= (double)totalFrames - 1.0) break;
 
-                size_t dstI = (size_t)dstPos;
-                double frac = dstPos - (double)dstI;
-                size_t dstNext = dstI + 1;
+                    size_t dstI = (size_t)dstPos;
+                    double frac = dstPos - (double)dstI;
+                    size_t dstNext = dstI + 1;
 
-                float s = (float)pcm[i * ch] / 32768.0f;
-                float sNext = (float)pcm[std::min(i + 1, srcFrames - 1) * ch] / 32768.0f;
-                float interp = s + (sNext - s) * (float)frac;
-                interp *= baseVolume;
+                    float s = 0.0f;
+                    for (uint32_t c = 0; c < ch; c++)
+                        s += (float)pcm[i * ch + c] / 32768.0f;
+                    s /= (float)ch;
+                    float sNext = 0.0f;
+                    size_t nextIdx = std::min(i + 1, srcFrames - 1);
+                    for (uint32_t c = 0; c < ch; c++)
+                        sNext += (float)pcm[nextIdx * ch + c] / 32768.0f;
+                    sNext /= (float)ch;
+                    float interp = s + (sNext - s) * (float)frac;
+                    interp *= baseVolume;
 
-                mix[dstI * 2 + 0] += interp * panLeft;
-                if (dstNext < totalFrames)
-                    mix[dstNext * 2 + 0] += interp * panLeft * (1.0f - (float)frac);
-                mix[dstI * 2 + 1] += interp * panRight;
-                if (dstNext < totalFrames)
-                    mix[dstNext * 2 + 1] += interp * panRight * (1.0f - (float)frac);
+                    mix[dstI * 2 + 0] += interp * panLeft;
+                    if (dstNext < totalFrames)
+                        mix[dstNext * 2 + 0] += interp * panLeft * (1.0f - (float)frac);
+                    mix[dstI * 2 + 1] += interp * panRight;
+                    if (dstNext < totalFrames)
+                        mix[dstNext * 2 + 1] += interp * panRight * (1.0f - (float)frac);
+                }
+            }
+            else
+            {
+                // 2D non-spatialized: pass through stereo unchanged with linear interpolation
+                for (size_t i = 0; i < srcFrames; i++)
+                {
+                    double srcTime = (double)i / rate;
+                    double dstPos = dstFrame + srcTime * sampleRate;
+                    if (dstPos >= (double)totalFrames - 1.0) break;
+
+                    size_t dstI = (size_t)dstPos;
+                    double frac = dstPos - (double)dstI;
+                    size_t dstNext = dstI + 1;
+
+                    float sL = (float)pcm[i * ch + 0] / 32768.0f * baseVolume;
+                    float sR = ch > 1 ? (float)pcm[i * ch + 1] / 32768.0f * baseVolume : sL;
+                    size_t nextIdx = std::min(i + 1, srcFrames - 1);
+                    float sLNext = (float)pcm[nextIdx * ch + 0] / 32768.0f * baseVolume;
+                    float sRNext = ch > 1 ? (float)pcm[nextIdx * ch + 1] / 32768.0f * baseVolume : sLNext;
+                    float interpL = sL + (sLNext - sL) * (float)frac;
+                    float interpR = sR + (sRNext - sR) * (float)frac;
+
+                    mix[dstI * 2 + 0] += interpL;
+                    if (dstNext < totalFrames)
+                        mix[dstNext * 2 + 0] += interpL * (1.0f - (float)frac);
+                    mix[dstI * 2 + 1] += interpR;
+                    if (dstNext < totalFrames)
+                        mix[dstNext * 2 + 1] += interpR * (1.0f - (float)frac);
+                }
             }
         }
     }
@@ -256,6 +419,18 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         output[i] = (int16_t)(s * 32767.0f);
     }
 
+    RPLXDEBUG("\n====================\n");
+    RPLXDEBUG("SUMMARY\n");
+    RPLXDEBUG("====================\n\n");
+    RPLXDEBUG("Replay exported successfully\n");
+    RPLXDEBUG("Audio events played: %u\n", decodedCount);
+    RPLXDEBUG("Duplicate audio events: %u\n", duplicateCount);
+    RPLXDEBUG("Skipped audio events: %u\n", skippedCount);
+    RPLXDEBUG("Peak level: %.2f\n", peak);
+    RPLXDEBUG("Clipped samples: %llu\n", (unsigned long long)clippedSamples);
+    RPLXDEBUG("Audio duration: %.1f sec\n", totalDurationSec);
+    RPLXDEBUG("Warnings found: 0\n");
+
     bool ok = writeWavFile(wavPath, output, sampleRate);
     if (ok)
     {
@@ -271,6 +446,7 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     } else {
         printf("[RPLX AUDIO] FAILED to write WAV file: %s\n", wavPath.c_str());
     }
+    replayExportDebugClose();
     return ok;
 }
 

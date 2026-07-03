@@ -182,9 +182,16 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                 sound.volume = se.value("volume", 1.0f);
                 sound.pitch = se.value("pitch", 1.0f);
                 sound.maxDistance = se.value("maxDistance", 30.0f);
+                if (se.contains("listenerPosition")) {
+                    std::vector<float> lp = se["listenerPosition"].get<std::vector<float>>();
+                    sound.listenerPosition = {lp[0], lp[1], lp[2]};
+                    std::vector<float> lf = se.value("listenerForward", std::vector<float>{0.0f, 1.0f, 0.0f});
+                    sound.listenerForward = {lf[0], lf[1], lf[2]};
+                    sound.listenerValid = true;
+                }
                 mClip.soundEvents.push_back(sound);
             }
-            printf("[REPLAY] Loaded %zu sound events\n", mClip.soundEvents.size());
+            Debug::warn(Debug::Category::Replay, "[REPLAY] Loaded %zu sound events from JSON (manual path)\n", mClip.soundEvents.size());
         }
 
         printf("[REPLAY] Loaded %zu frames from %s\n", mFrames.size(), path.c_str());
