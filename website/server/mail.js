@@ -25,13 +25,13 @@ function mailEnabled() {
     return Boolean(process.env.SMTP_HOST)
 }
 
-async function sendMail(message) {
+export async function sendMail(message) {
     if (!mailEnabled()) {
         console.log("[AUTH] mail=skipped smtp_not_configured")
         return
     }
 
-    await transporter.sendMail({
+    return await transporter.sendMail({
         from: fromAddress,
         ...message
     })

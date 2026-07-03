@@ -34,6 +34,7 @@ import gameAnalyticsRouter from "./gameAnalytics.js"
 import tokenExchangeRouter from "./token-exchange.js"
 import clientLoginRouter from "./client-login.js"
 import gameApiRouter from "./game-api.js"
+import emailCampaignsRouter from "./email-campaigns.js"
 import { trackEvent } from "./analytics.js"
 import { createRateLimit } from "./rateLimit.js"
 import {
@@ -1020,6 +1021,7 @@ app.delete("/api/account", authenticate, async (req, res, next) => {
 })
 
 app.use("/api/admin", adminRateLimit, adminRouter)
+app.use("/api/admin/email-campaigns", adminRateLimit, emailCampaignsRouter)
 app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 app.use("/api", gameApiRouter)
