@@ -26,6 +26,7 @@
 #include "render/post-fx.h"
 #include "audio/audio-codec.h"
 #include "replay/replay-export.h"
+#include "gui/hud/player-nameplates.h"
 
 void encodeReplayToMp4();
 
@@ -188,6 +189,11 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     }
 
     replayExportDebugOpen();
+    resetHealthbarCounters();
+    gRplxImpactWorldCount = 0;
+    gRplxHitBurstCount = 0;
+    gRplxDebrisBlockCount = 0;
+    gRplxEffectDuplicateCount = 0;
 
     printf("[RPLX] loading replay JSON...\n");
     ReplayClip loadCheck;

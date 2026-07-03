@@ -55,6 +55,7 @@ struct ReplayClip {
     std::vector<ReplayFrame> frames;
     std::vector<ReplaySceneFrame> sceneFrames;
     std::vector<ReplaySoundEvent> soundEvents;
+    std::vector<ReplayKillfeedEvent> killfeedEvents;
     bool save(const std::string& path) const;
     bool load(const std::string& path);
 };
@@ -78,6 +79,7 @@ public:
     void setLighting(const ReplayLightingState& lighting);
     void recordEffectEvent(const ReplayEffectEvent& event);
     void recordSoundEvent(const ReplaySoundEvent& event);
+    void recordKillfeedEvent(const ReplayKillfeedEvent& event);
     void setMaxTicks(uint32_t maxTicks) { mMaxTicks = maxTicks; }
     ReplayClip makeClip(uint32_t startTick, uint32_t endTick, uint32_t killTick,
                         const std::string& killerId, const std::string& victimId) const;
@@ -112,6 +114,10 @@ public:
         return mSoundEvents;
     }
 
+    const std::vector<ReplayKillfeedEvent>& killfeedEvents() const {
+        return mKillfeedEvents;
+    }
+
 private:
     bool mRecording = false;
     uint32_t mTick = 0;
@@ -123,6 +129,7 @@ private:
     ReplayWorldMetadata mWorld;
     ReplayLightingState mLighting;
     std::vector<ReplaySoundEvent> mSoundEvents;
+    std::vector<ReplayKillfeedEvent> mKillfeedEvents;
     std::vector<ReplayEffectEvent> mPendingEffects;
     uint32_t mMaxTicks = 0;
 };
@@ -179,6 +186,7 @@ public:
     const ReplaySceneFrame* currentSceneFrame() const;
     std::vector<ReplayEffectEvent> takeTriggeredEffects();
     std::vector<ReplaySoundEvent> takeTriggeredSounds();
+    std::vector<ReplayKillfeedEvent> takeTriggeredKillfeedEvents();
     const std::string& killerId() const { return mClip.killerId; }
     const std::string& victimId() const { return mClip.victimId; }
     bool isPaused() const { return mPaused; }
@@ -211,6 +219,7 @@ private:
     int mLastEventTick = -1;
     std::vector<ReplayEffectEvent> mTriggeredEffects;
     std::vector<ReplaySoundEvent> mTriggeredSounds;
+    std::vector<ReplayKillfeedEvent> mTriggeredKillfeedEvents;
     ReplayCameraController mCameraController;
     std::string mOutfitPath;
     std::vector<ReplayAsset> mAssets;
@@ -266,6 +275,7 @@ extern ReplayClipSaver* gActiveReplayClipSaver;
 
 void captureReplayEffect(const ReplayEffectEvent& event);
 void captureReplaySound(const ReplaySoundEvent& event);
+void captureReplayKillfeed(const ReplayKillfeedEvent& event);
 
 bool ReplayShouldPlayHitmarkerAudio(
     const std::string& attackerId,

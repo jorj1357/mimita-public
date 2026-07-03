@@ -43,6 +43,7 @@
 #include "config/player-settings.h"
 #include "npc/npc-combat.h"
 #include "network/server.h"
+#include "killfeed/killfeed.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -54,4 +55,19 @@ void engineTickUIHUD(Engine& engine, float dt)
 {
     engineTickUIReplayHUD(engine, dt);
     engineTickUIGameHUD(engine, dt);
+
+    KillfeedManager& kf = KillfeedManager::instance();
+
+    if (gpReplayPlayer && gpReplayPlayer->isPlaying()) {
+        for (const ReplayKillfeedEvent& ev :
+             gpReplayPlayer->takeTriggeredKillfeedEvents()) {
+            kf.onKill(ev.killerName.empty() ? ev.killerId : ev.killerName,
+                      ev.victimName.empty() ? ev.victimId : ev.victimName,
+                      ev.weaponName.empty() ? "unknown" : ev.weaponName,
+                      true);
+        }
+    }
+
+    kf.update(dt);
+    kf.render();
 }

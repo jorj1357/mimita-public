@@ -1,5 +1,6 @@
 #include "npc.h"
 #include "npc/npc-internal.h"
+#include "combat/weapon-runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -79,23 +80,10 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     // Force equipping ONLY Revolver — no other weapon considered
     body.equippedWeaponId = "revolver";
     body.equippedSlot = 1;
-    const WeaponDefinition* def = WeaponRegistry::instance().get("revolver");
-    if (def)
-    {
-        auto& rt = body.weaponRuntimes["revolver"];
-        rt.currentAmmo = def->magazineSize;
-        rt.reserveAmmo = 999;
-        rt.isReloading = false;
-        rt.reloadTimer = 0.0f;
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC WEAPON] npc=%u immediate equip weapon=revolver magazine=%d slot=%d",
-            id, def->magazineSize, body.equippedSlot);
-    }
-    else
-    {
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC WEAPON] npc=%u FAILED: revolver not found in registry", id);
-    }
+    resetAllWeaponRuntimesForSpawn(body, "Npc constructor");
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC WEAPON] npc=%u immediate equip weapon=revolver slot=%d",
+        id, body.equippedSlot);
     Debug::log(Debug::Category::NpcCombat,
         "[NPC WEAPON] npc=%u equippedWeaponId=%s weaponRuntimes.size=%zu",
         id, body.equippedWeaponId.c_str(), body.weaponRuntimes.size());

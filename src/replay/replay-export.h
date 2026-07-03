@@ -57,6 +57,12 @@ float getReplayExportAudioVolume();
 void updateReplayBatchExport();
 bool isReplayBatchExportActive();
 
+// Export debug counter accessors (defined in engine-tick-camera.cpp)
+extern int gRplxImpactWorldCount;
+extern int gRplxHitBurstCount;
+extern int gRplxDebrisBlockCount;
+extern int gRplxEffectDuplicateCount;
+
 // Debug log for replay export diagnostics
 void replayExportDebugOpen();
 void replayExportDebugClose();

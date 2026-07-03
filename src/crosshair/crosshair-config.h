@@ -33,7 +33,7 @@ public:
     void reset();
 
     const CrosshairSettings& data() const { return mData; }
-    CrosshairSettings& edit() { return mData; }
+    CrosshairSettings& edit();
 
 private:
     CrosshairConfig() = default;

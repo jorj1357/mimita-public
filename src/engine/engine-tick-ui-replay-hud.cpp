@@ -175,7 +175,7 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
                 auto mit = replayActorModels.find(actorState.id);
                 if (mit == replayActorModels.end() || !mit->second)
                     continue;
-                drawPlayerHealthbar(*mit->second, camera, "replay-hp");
+                drawPlayerHealthbar(*mit->second, camera, "replay-hp", "replay_frame");
             }
         }
 

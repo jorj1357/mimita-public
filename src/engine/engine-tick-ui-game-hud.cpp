@@ -284,7 +284,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // ── Self-healthbar (world-space, from JSON config) ─────────────
     {
-        if (!dead)
+        if (!gReplayExportRenderMode && !dead)
         {
         float nameX = 0.0f, nameY = 0.0f;
         if (DebugVis::projectToScreen(camera, player.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.7f),
@@ -309,11 +309,12 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
         }
     }
+    if (!gReplayExportRenderMode)
     for (const Npc& npc : npcSystem.all()) {
         if (npc.body.dead) {
             continue;
         }
-        drawPlayerHealthbar(npc.body, camera, "npc-hp");
+        drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world");
     }
 
     renderChatBubbles(player.chatState, player, camera);
@@ -332,7 +333,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
     }
 
-    if (mpContext.active)
+    if (!gReplayExportRenderMode && mpContext.active)
     {
         static uint64_t lastHealthbarLogMs = 0;
         const uint64_t healthbarNowMs = MimitaNet::nowMs();
@@ -344,7 +345,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         {
             const HealthbarRenderResult result =
                 drawPlayerHealthbar(
-                    kv.second, camera, "network-player-hp");
+                    kv.second, camera, "network-player-hp", "live_world");
             if (logHealthbars)
             {
                 printf(

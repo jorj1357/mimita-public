@@ -89,6 +89,7 @@ public:
     EffectPart* spawnFreeze(glm::vec3 position, float freezeDuration);
     EffectPart* spawnImpact(glm::vec3 position, glm::vec3 color, const char* label);
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
+    EffectPart* spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim);
     void spawnBloodEffect(glm::vec3 hitPoint, glm::vec3 sprayDirection, float damage,
                           const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,

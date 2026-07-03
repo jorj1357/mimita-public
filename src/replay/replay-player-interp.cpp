@@ -98,6 +98,10 @@ void ReplayPlayer::update(float dt)
         if (sound.tick > mLastEventTick && sound.tick <= currentEventTick)
             mTriggeredSounds.push_back(sound);
     }
+    for (const ReplayKillfeedEvent& kf : mClip.killfeedEvents) {
+        if (kf.tick > mLastEventTick && kf.tick <= currentEventTick)
+            mTriggeredKillfeedEvents.push_back(kf);
+    }
     if (currentEventTick >= previousTick)
         mLastEventTick = currentEventTick;
 
@@ -154,6 +158,13 @@ std::vector<ReplaySoundEvent> ReplayPlayer::takeTriggeredSounds()
 {
     std::vector<ReplaySoundEvent> result;
     result.swap(mTriggeredSounds);
+    return result;
+}
+
+std::vector<ReplayKillfeedEvent> ReplayPlayer::takeTriggeredKillfeedEvents()
+{
+    std::vector<ReplayKillfeedEvent> result;
+    result.swap(mTriggeredKillfeedEvents);
     return result;
 }
 

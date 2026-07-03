@@ -14,6 +14,7 @@
 #include "effects/hit-effects.h"
 #include "replay/replay.h"
 #include "replay/replay-camera.h"
+#include "replay/replay-export.h"
 #include "gui/hud/chat-bubble.h"
 #include "ui/hitmarker.h"
 #include "config/player-settings.h"
@@ -24,6 +25,13 @@
 #include "physics/config.h"
 
 extern DuelManager gDuelManager;
+
+// Export debug effect counters (declared extern in replay-export.h)
+int gRplxImpactWorldCount = 0;
+int gRplxHitBurstCount = 0;
+int gRplxDebrisBlockCount = 0;
+int gRplxEffectDuplicateCount = 0;
+static std::string gRplxLastEffectKey;
 
 static void syncPlayerYawFromCamera(Player& player, const Camera& camera)
 {
@@ -144,6 +152,21 @@ void engineTickCamera(Engine& engine, float dt)
                    effect.type.c_str(),
                    effect.position.x, effect.position.y, effect.position.z,
                    effect.label.c_str());
+            // Track effect duplicates for world hit effects
+            std::string effectKey = effect.type + ":" + std::to_string((int)effect.position.x) + "," + std::to_string((int)effect.position.y) + "," + std::to_string((int)effect.position.z);
+            if (effectKey == gRplxLastEffectKey)
+                gRplxEffectDuplicateCount++;
+            gRplxLastEffectKey = effectKey;
+            if (effect.type == "impact_world" || effect.type == "hit_burst" || effect.type == "debris_block")
+            {
+                RPLXDEBUG("[EFFECT] frame=? tick=? type=%s source=recorded_replay pos=(%.2f %.2f %.2f) spawned=YES reason=playback duplicate=%d\n",
+                          effect.type.c_str(),
+                          effect.position.x, effect.position.y, effect.position.z,
+                          gRplxEffectDuplicateCount);
+            }
+            if (effect.type == "impact_world") gRplxImpactWorldCount++;
+            else if (effect.type == "hit_burst") gRplxHitBurstCount++;
+            else if (effect.type == "debris_block") gRplxDebrisBlockCount++;
             if (effect.type == "chat") {
                 ActorChatState& chatState = gReplayChatStates[effect.sourceActorId];
                 addChatMessage(chatState, effect.assetId, effect.sourceActorId);
@@ -170,8 +193,9 @@ void engineTickCamera(Engine& engine, float dt)
                 EffectPartSystem::instance().spawnWorldDebris(
                     effect.position, effect.normal, 1.0f);
             } else if (effect.type == "debris_block") {
-                EffectPartSystem::instance().spawnWorldDebris(
-                    effect.position, effect.normal, 1.5f);
+                // No-op: impact_world already spawns the full debris burst.
+                // Per-particle debris_block events recorded during gameplay
+                // must not spawn another full burst here.
             } else if (effect.type == "hit_burst") {
                 // Already handled as separate effect events; no action needed.
             } else if (effect.type == "impact_entity") {
@@ -198,6 +222,12 @@ void engineTickCamera(Engine& engine, float dt)
                     EffectPartSystem::instance().spawnDamage(
                         effect.position, effect.targetActorId, damage);
                 }
+            } else if (effect.type == "damage_impact_sphere") {
+                glm::vec3 dir = glm::length(effect.to - effect.from) > 0.001f
+                    ? glm::normalize(effect.to - effect.from)
+                    : glm::vec3(1.0f, 0.0f, 0.0f);
+                EffectPartSystem::instance().spawnDamageImpactSphere(
+                    effect.position, dir, effect.targetActorId);
             } else if (!effect.type.empty() &&
                        effect.type != "corpse_spawn") {
                 EffectPart spawnParams;

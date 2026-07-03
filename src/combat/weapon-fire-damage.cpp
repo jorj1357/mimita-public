@@ -171,6 +171,8 @@ void processPlayerHit(
     glm::vec3 knockback = shotDirection * kn;
 
     const_cast<Player*>(targetPlayer)->takeDamage(totalDamage, knockback, 8.0f);
+    const_cast<Player*>(targetPlayer)->killedByWeapon = def.displayName;
+    const_cast<Player*>(targetPlayer)->lastDamagedBy = shooter.username;
 
     result.hitEntity = true;
     result.bodyPart = hitPart;

@@ -194,8 +194,6 @@ void gameInitSubsystems(Engine& engine)
     ShadowConfig::instance().load("config/shadows.json");
     GameplayConfig::instance().load("config/gameplay.json");
     CrosshairConfig::instance().load();
-    // World-space crosshair replaces HUD crosshair — hide the HUD one by default.
-    CrosshairConfig::instance().edit().alpha = 0;
     registerCrosshairCommands();
 
     EffectPartSystem::instance().init();

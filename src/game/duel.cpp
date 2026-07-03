@@ -1,4 +1,5 @@
 #include "game/duel.h"
+#include "combat/weapon-runtime.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -412,6 +413,7 @@ void DuelManager::restartDuel(Player& player, NpcSystem& npcs, World& world)
                    i, id, spawnPos.x, spawnPos.y, spawnPos.z);
     }
 
+    resetAllWeaponRuntimesForSpawn(player, "DuelManager::restartDuel");
     player.dead = false;
     player.currentHp = 100.0f;
     player.vel = glm::vec3(0.0f);

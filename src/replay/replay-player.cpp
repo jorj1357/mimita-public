@@ -164,6 +164,7 @@ void ReplayPlayer::beginPlayback() {
     mLastEventTick = -1;
     mTriggeredEffects.clear();
     mTriggeredSounds.clear();
+    mTriggeredKillfeedEvents.clear();
     printf("[REPLAY] Playback started ticks=%u currentTick=%u isPlaying=%d\n",
            mHeader.tickCount, mCurrentTick, (int)mPlaying);
 }

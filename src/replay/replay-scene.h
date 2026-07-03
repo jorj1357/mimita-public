@@ -139,6 +139,15 @@ struct ReplayEffectEvent {
     std::string materialName;
 };
 
+struct ReplayKillfeedEvent {
+    int tick = 0;
+    std::string killerId;
+    std::string killerName;
+    std::string victimId;
+    std::string victimName;
+    std::string weaponName;
+};
+
 struct ReplayCameraState {
     glm::vec3 position {};
     glm::vec3 rotation {};

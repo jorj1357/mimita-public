@@ -83,7 +83,7 @@ void EffectPartSystem::render(const Camera& camera) const {
         else if (effect.flatDecal) {
             DebugVis::drawFilledDecal(camera, effect.position, effect.normal, drawScale, drawColor);
         }
-        else if (effect.replayType == "death_ellipsoid") {
+        else if (effect.replayType == "death_ellipsoid" || effect.replayType == "damage_impact_sphere") {
             glm::vec3 dir = glm::length(effect.endPosition - effect.position) > 0.001f
                 ? glm::normalize(effect.endPosition - effect.position)
                 : glm::vec3(1.0f, 0.0f, 0.0f);

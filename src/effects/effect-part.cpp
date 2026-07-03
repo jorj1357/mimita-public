@@ -198,6 +198,28 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
     return spawn(e);
 }
 
+EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)
+{
+    glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 0.0f, 1.0f);
+    float length = 2.67f;
+    float radius = 0.5f;
+    EffectPart e;
+    e.position = position;
+    e.endPosition = position + dir * length;
+    e.replayType = "damage_impact_sphere";
+    e.color = {1.0f, 0.3f, 0.3f};
+    e.alpha = 0.5f;
+    e.maxLifetime = 0.5f;
+    e.scale = radius;
+    e.endScale = radius;
+    e.sticky = true;
+    e.billboardText = false;
+    e.targetActorId = victim;
+    Debug::log(Debug::Category::NpcCombat, "[DAMAGE IMPACT] victim=%s pos=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) length=%.2f radius=%.2f lifetime=%.2f alpha=%.2f",
+               victim.c_str(), position.x, position.y, position.z, dir.x, dir.y, dir.z, length, radius, e.maxLifetime, e.alpha);
+    return spawn(e);
+}
+
 void EffectPartSystem::destroyOwner(unsigned int ownerId) {
     for (auto& fx : mPool) {
         if (!fx.alive) continue;
