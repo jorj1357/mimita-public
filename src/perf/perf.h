@@ -3,29 +3,119 @@
 #include <cstdint>
 #include <cstdio>
 #include <chrono>
+#include <cstring>
 
 struct PerfTimes {
+    // Frame-level
     double input = 0.0;
+    double setup = 0.0;
+    double audio = 0.0;
+    double state = 0.0;
+    double camera = 0.0;
+    double combat = 0.0;
+    double ui = 0.0;
+
+    // Physics
     double physics = 0.0;
     double collision = 0.0;
     double movement = 0.0;
-    double npcAi = 0.0;
+    double sweepSlide = 0.0;
+    double depenetration = 0.0;
+    double groundDetection = 0.0;
+    double chunkQuery = 0.0;
+    double broadphase = 0.0;
+    double narrowphase = 0.0;
+    double triangleTests = 0.0;
+    double charVsWorld = 0.0;
+    double charVsChar = 0.0;
+    double weaponCollisions = 0.0;
+
+    // NPC
     double npcUpdate = 0.0;
-    double npcSpawn = 0.0;
-    double npcCombat = 0.0;
+    double npcThink = 0.0;
     double npcPathfinding = 0.0;
+    double npcTargetAcq = 0.0;
+    double npcVision = 0.0;
+    double npcMovement = 0.0;
+    double npcWeapon = 0.0;
+    double npcCombat = 0.0;
     double npcCollision = 0.0;
+    double npcAnimation = 0.0;
     double npcRender = 0.0;
+    double npcSpawn = 0.0;
+    double npcAi = 0.0;
+
+    // Weapons
     double weapons = 0.0;
-    double combat = 0.0;
+    double projectiles = 0.0;
+
+    // Effects
     double particles = 0.0;
+    double damageNumbers = 0.0;
     double blood = 0.0;
-    double audio = 0.0;
+
+    // Replay
     double replay = 0.0;
+
+    // Networking
     double networking = 0.0;
-    double ui = 0.0;
+
+    // Render
     double rendering = 0.0;
+    double shadowRender = 0.0;
+    double postFX = 0.0;
+    double gpuSubmit = 0.0;
+    double bufferUploads = 0.0;
+    double textureUploads = 0.0;
+    double vboUpdates = 0.0;
+    double drawCalls = 0.0;
+    double worldRender = 0.0;
+    double playerRender = 0.0;
+    double weaponRender = 0.0;
+    double effectRender = 0.0;
+    double healthbars = 0.0;
+    double crosshair = 0.0;
+    double killfeed = 0.0;
+
+    // Map
+    double mapTraversal = 0.0;
+    double worldCulling = 0.0;
+
+    // Other
+    double memoryAlloc = 0.0;
+    double stringFormat = 0.0;
+    double fileIO = 0.0;
+    double debugLogging = 0.0;
+
+    // Total (accumulated by addTime)
     double total = 0.0;
+
+    // Collision detail
+    int chunkCellsVisited = 0;
+    int uniqueTriangles = 0;
+    int broadphaseQueries = 0;
+    int repeatedQueries = 0;
+    int triangleTestsCount = 0;
+    int collisionPairs = 0;
+
+    // NPC detail
+    int npcCount = 0;
+    int npcThinkCount = 0;
+
+    // Effects detail
+    int effectsAlive = 0;
+    int damageNumbersAlive = 0;
+    int particleCount = 0;
+
+    // Render detail
+    int visibleMeshes = 0;
+    int visibleTriangles = 0;
+    int hiddenMeshes = 0;
+    int totalDrawCalls = 0;
+    int frustumCulled = 0;
+    int occlusionCulled = 0;
+    int shaderSwitches = 0;
+    int textureBinds = 0;
 };
 
 struct SpikeInfo {
@@ -37,6 +127,26 @@ struct SpikeInfo {
     double replayMemoryMb = 0.0;
 };
 
+struct FrameSpikeReport {
+    int frameNumber = 0;
+    double totalFrameMs = 0.0;
+    double avgFrameMs = 0.0;
+    int npcCount = 0;
+    int playerCount = 0;
+    int effectsAlive = 0;
+    int damageNumbersAlive = 0;
+    int particleCount = 0;
+    int drawCalls = 0;
+    int visibleMeshes = 0;
+    int visibleTriangles = 0;
+    int chunkCellsVisited = 0;
+    int uniqueTriangles = 0;
+
+    static constexpr int MAX_CONTRIBUTORS = 16;
+    int contributorCount = 0;
+    struct { const char* name; double ms; } contributors[MAX_CONTRIBUTORS];
+};
+
 struct PerfState {
     bool showPerfReport = false;
     bool showGraph = false;
@@ -46,37 +156,32 @@ struct PerfState {
     bool renderStats = false;
     bool allocAudit = false;
     bool audioAudit = false;
+    bool perfFileLogging = false;
 
-    int preset = 0; // 0=default, 1=low, 2=medium, 3=high
+    int preset = 0;
 
-    // Subsystem times for current frame
     PerfTimes current;
 
-    // Rolling average frame time for spike detection
     double avgFrameTimeMs = 0.0;
     double avgFrameCount = 0.0;
 
-    // Spike detection
     SpikeInfo lastSpike;
+    FrameSpikeReport lastSpikeReport;
 
-    // Frame history for graph (mirrored from FramePacer)
     float frameHistory[300] = {};
     int frameHistoryCount = 0;
 
-    // Benchmark
     bool benchmarkRunning = false;
     double benchmarkStartWall = 0.0;
     double benchmarkDuration = 60.0;
     double benchmarkFrameTimes[3600] = {};
     int benchmarkFrameCount = 0;
 
-    // Stress test
     bool stressRunning = false;
     bool combatTestRunning = false;
     int stressTotalNpcs = 0;
     double stressTimer = 0.0;
 
-    // External counters (set by main loop)
     int drawCalls = 0;
     int triangles = 0;
     int playerCount = 0;
@@ -85,37 +190,50 @@ struct PerfState {
     int particleCount = 0;
     int projectileCount = 0;
 
-    // Network
     double netBytesIn = 0.0;
     double netBytesOut = 0.0;
     double snapshotBuildMs = 0.0;
     double serializeMs = 0.0;
     double receiveMs = 0.0;
 
-    // Memory
     double replayMemoryMb = 0.0;
 
-    // Allocations
     int allocationsThisFrame = 0;
     int totalAllocations = 0;
 
-    // Audio audit
     bool soundLoadsDetected = false;
     int soundLoadCount = 0;
 
-    // Frame counter
     int frameNumber = 0;
 
-    // Game elapsed time (seconds)
     double gameTime = 0.0;
 
-    // Memory tracking totals
     int totalNpcsSpawned = 0;
     int totalNpcsDestroyed = 0;
     float peakNpcCount = 0.0f;
     int effectCount = 0;
     int audioSourceCount = 0;
     int corpseCount = 0;
+
+    // Per-NPC profiling
+    static constexpr int MAX_NPC_PROFILE = 64;
+    int npcProfileCount = 0;
+    struct NpcProfile {
+        unsigned int id = 0;
+        double thinkMs = 0.0;
+        double pathfindingMs = 0.0;
+        double targetAcqMs = 0.0;
+        double visionMs = 0.0;
+        double movementMs = 0.0;
+        double weaponMs = 0.0;
+        double combatMs = 0.0;
+        double collisionMs = 0.0;
+        double animationMs = 0.0;
+        double renderMs = 0.0;
+        double totalMs = 0.0;
+    };
+    NpcProfile npcProfiles[MAX_NPC_PROFILE];
+
 };
 
 namespace Perf {
@@ -125,10 +243,8 @@ PerfState& state();
 void beginFrame();
 void endFrame();
 
-// Render all active overlays (call inside uiBeginFrame/uiEndFrame)
 void renderOverlay();
 
-// Scoped timer for manual subsystem measurement
 struct ScopedTimer {
     const char* name;
     uint64_t startUs;
@@ -136,13 +252,12 @@ struct ScopedTimer {
     ~ScopedTimer();
 };
 
-// Add a timed subsystem measurement in ms
 void addTime(const char* name, double ms);
 
-// Spike detection
 void detectSpike(double currentFrameMs);
+void writeProfileToFile();
+void writeSpikeReport(const FrameSpikeReport& report);
 
-// --- Commands ---
 void togglePerfReport();
 void toggleGraph();
 void toggleNpcPerf();
@@ -151,6 +266,7 @@ void toggleSpikes();
 void toggleRenderStats();
 void toggleAllocAudit();
 void toggleAudioAudit();
+void togglePerfFileLogging();
 void setPreset(int p);
 void startBenchmark(double seconds);
 void startStress(int npcTarget);
@@ -158,11 +274,12 @@ void startCombatTest();
 void exportReport(const char* path);
 void printSuggestions();
 
-// Preset application
 void applyPreset(int p);
 
-// Suggester
 void generateSuggestions(char* buf, int bufSize);
+
+void collectNpcProfile(unsigned int npcId, const char* category, double ms);
+void flushNpcProfiles();
 
 } // namespace Perf
 

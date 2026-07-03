@@ -66,7 +66,7 @@ void registerNpcCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "npc_aim_acc", "Set NPC aim accuracy (0.0 = worst, 1.0 = perfect, default 0.3)", "npc_aim_acc <0.0-1.0>",
+        "npc_aim_acc", "Set NPC aim accuracy (0 = decent, 50 = very good, 100 = perfect, negative = terrible)", "npc_aim_acc <float>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
                 float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
@@ -74,7 +74,7 @@ void registerNpcCommands()
                     + " (max angular error = " + std::to_string(maxErr) + " deg)");
                 return;
             }
-            gNpcAimAccuracy = std::clamp(std::stof(args[0]), 0.0f, 1.0f);
+            gNpcAimAccuracy = std::stof(args[0]);
             float maxErr = NpcCombat::maxAngularErrorForAccuracy(gNpcAimAccuracy);
             Terminal::instance().addLog("[NPC] npc_aim_acc set to " + std::to_string(gNpcAimAccuracy)
                 + " (max angular error = " + std::to_string(maxErr) + " deg)");

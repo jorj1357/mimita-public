@@ -59,6 +59,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.currentHp = std::min(player.currentHp, ctx.localServerHealth);
     if (serverRespawnedPlayer)
     {
+        resetAllWeaponRuntimesForSpawn(player, "multiplayer-reconcile serverRespawn");
         player.dead = false;
         player.proceduralFrozen = false;
         player.respawnTimer = 0.0f;

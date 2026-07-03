@@ -1,6 +1,7 @@
 #include "weapon-runtime.h"
 #include "weapon-registry.h"
 #include "../debug/debug-log.h"
+#include "../entities/player.h"
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>

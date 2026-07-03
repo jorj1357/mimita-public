@@ -111,19 +111,41 @@ void Perf::renderOverlay()
         };
 
         subLine("Input", t.input);
-        subLine("Physics", t.physics);
-        subLine("Collision", t.collision);
-        subLine("Movement", t.movement);
-        subLine("AI", t.npcAi);
-        subLine("Weapons", t.weapons);
-        subLine("Combat", t.combat);
-        subLine("Particles", t.particles);
-        subLine("Blood", t.blood);
+        subLine("Setup", t.setup);
         subLine("Audio", t.audio);
+        subLine("State", t.state);
         subLine("Replay", t.replay);
         subLine("Networking", t.networking);
+        subLine("Camera", t.camera);
+        subLine("Combat", t.combat);
         subLine("UI", t.ui);
-        subLine("Render", t.rendering);
+        subLine("Physics", t.physics);
+        subLine("SweepSlide", t.sweepSlide);
+        subLine("Depenetration", t.depenetration);
+        subLine("GroundDetection", t.groundDetection);
+        subLine("ChunkQuery", t.chunkQuery);
+        subLine("BodyWeaponColl.", t.weaponCollisions);
+        subLine("Movement", t.movement);
+        subLine("NPC Update", t.npcUpdate);
+        subLine("NPC Think", t.npcThink);
+        subLine("NPC Pathfinding", t.npcPathfinding);
+        subLine("NPC Combat", t.npcCombat);
+        subLine("NPC Collision", t.npcCollision);
+        subLine("NPC Render", t.npcRender);
+        subLine("Weapons", t.weapons);
+        subLine("Projectiles", t.projectiles);
+        subLine("Particles", t.particles);
+        subLine("Blood", t.blood);
+        subLine("Damage Numbers", t.damageNumbers);
+        subLine("Rendering", t.rendering);
+        subLine("ShadowRender", t.shadowRender);
+        subLine("PostFX", t.postFX);
+        subLine("WorldRender", t.worldRender);
+        subLine("PlayerRender", t.playerRender);
+        subLine("WeaponRender", t.weaponRender);
+        subLine("EffectRender", t.effectRender);
+        subLine("WorldCulling", t.worldCulling);
+        subLine("MapTraversal", t.mapTraversal);
 
         if (s.snapshotBuildMs > 0.0 || s.serializeMs > 0.0 || s.receiveMs > 0.0)
         {
@@ -359,12 +381,21 @@ void Perf::detectSpike(double currentFrameMs)
     PerfTimes& t = s.current;
     struct Sub { const char* name; double ms; };
     Sub subs[] = {
-        {"Input", t.input}, {"Physics", t.physics}, {"Collision", t.collision},
-        {"Movement", t.movement}, {"NPC", t.npcAi + t.npcUpdate},
-        {"Weapons", t.weapons}, {"Combat", t.combat},
+        {"Input", t.input}, {"Setup", t.setup}, {"Audio", t.audio}, {"State", t.state},
+        {"Replay", t.replay}, {"Networking", t.networking}, {"Camera", t.camera},
+        {"Combat", t.combat}, {"UI", t.ui},
+        {"Physics", t.physics}, {"SweepSlide", t.sweepSlide},
+        {"Depenetration", t.depenetration}, {"ChunkQuery", t.chunkQuery},
+        {"GroundDetection", t.groundDetection}, {"WeaponCollisions", t.weaponCollisions},
+        {"Movement", t.movement},
+        {"NPC Update", t.npcUpdate}, {"NPC Think", t.npcThink},
+        {"NPC Pathfinding", t.npcPathfinding}, {"NPC Combat", t.npcCombat},
+        {"NPC Collision", t.npcCollision}, {"NPC Render", t.npcRender},
+        {"Weapons", t.weapons}, {"Projectiles", t.projectiles},
         {"Particles", t.particles}, {"Blood", t.blood},
-        {"Audio", t.audio}, {"Replay", t.replay},
-        {"Networking", t.networking}, {"UI", t.ui}, {"Render", t.rendering}
+        {"Rendering", t.rendering}, {"ShadowRender", t.shadowRender},
+        {"PostFX", t.postFX}, {"WorldRender", t.worldRender},
+        {"PlayerRender", t.playerRender}, {"EffectRender", t.effectRender},
     };
     double worst = 0.0;
     const char* worstName = "Unknown";

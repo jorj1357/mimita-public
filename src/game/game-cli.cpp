@@ -1,4 +1,5 @@
 #include "game/game-cli.h"
+#include "combat/weapon-runtime.h"
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
@@ -90,6 +91,7 @@ void forceMainMenu()
     FREECAM_ENABLED = false;
 
     // 7. Reset player state
+    resetAllWeaponRuntimesForSpawn(THE_PLAYER, "forceMainMenu");
     THE_PLAYER.dead = false;
     THE_PLAYER.currentHp = THE_PLAYER.maxHp;
     THE_PLAYER.vel = glm::vec3(0.0f);
