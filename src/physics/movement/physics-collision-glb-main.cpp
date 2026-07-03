@@ -160,7 +160,7 @@ void doGLBTriangleCollisions(
         Capsule cap = p.getCapsule();
         {
             auto tg0 = std::chrono::steady_clock::now();
-            candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f), "depen");
+            candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f), "Player_Capsule_Depen");
             auto tg1 = std::chrono::steady_clock::now();
             diag.depenGatherMs = std::chrono::duration<float, std::milli>(tg1 - tg0).count();
         }
@@ -226,7 +226,7 @@ void doGLBTriangleCollisions(
 
         p.updateModelWorldTransforms();
         Capsule stuckCheckCap = p.getCapsule();
-        std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f), "emergency_check");
+        std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f), "Player_Capsule_EmergencyCheck");
         std::vector<RecoveryContact> stuckContacts = collectCapsuleRecoveryContacts(
             world, stuckCheckCap, stuckCandidates
         );
@@ -265,7 +265,7 @@ void doGLBTriangleCollisions(
                         testP.pos = testPos;
                         Capsule testCap = testP.getCapsule();
                         char searchTag[64];
-                        std::snprintf(searchTag, sizeof(searchTag), "emergency_search_%d", dirsSearched);
+                        std::snprintf(searchTag, sizeof(searchTag), "Player_Capsule_EmergencySearch_%d", dirsSearched);
                         std::vector<int> testCandidates = gatherGLBTriangles(world, testCap, glm::vec3(0.0f), searchTag);
                         std::vector<RecoveryContact> testContacts;
                         {
@@ -329,7 +329,7 @@ void doGLBTriangleCollisions(
             sf++;
             if (sf >= 3 && logTimer >= 0.5f) {
                 Capsule dcap = p.getCapsule();
-                std::vector<int> dc = gatherGLBTriangles(world, dcap, glm::vec3(0.0f), "stuck_tracking");
+                std::vector<int> dc = gatherGLBTriangles(world, dcap, glm::vec3(0.0f), "Player_Capsule_StuckTrack");
                 PHYS_LOG(
                         "[COLLISION STUCK] frames=%d move=%.4f delta=%.4f pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) candidates=%zu gnd=%d\n",
                         sf, moveLen, posDelta,
@@ -363,7 +363,7 @@ void doGLBTriangleCollisions(
         if (DebugConfig::DEBUG_COLLISION_SYSTEM)
         {
             Capsule debugCap = p.getCapsule();
-            std::vector<int> debugCandidates = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "debug_visualization");
+            std::vector<int> debugCandidates = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "Player_Capsule_DebugVis");
             std::vector<glm::vec3> debugSamples = collectPlayerBodyCollisionSamples(p);
             std::vector<RecoveryContact> debugContacts = collectGLBRecoveryContacts(
                 world, debugCap, debugSamples, debugCandidates, BODY_SAMPLE_RADIUS

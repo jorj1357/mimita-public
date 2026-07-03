@@ -11,7 +11,6 @@
 
 #define BROAD_LOG(...) Debug::logThrottled(Debug::Category::Collision, "broadphase", 1.0f, __VA_ARGS__)
 
-// Cache detection: track recent AABB queries to detect repeated work
 static constexpr int QUERY_CACHE_SIZE = 32;
 struct QueryCacheEntry {
     float minX, minY, minZ, maxX, maxY, maxZ;
@@ -55,13 +54,51 @@ static void recordQuery(const AABB& aabb, int currentFrame, const char* caller)
     }
 }
 
+static void extractEntityInfo(const char* caller, char* entity, int entitySize,
+    char* object, int objectSize, char* reason, int reasonSize)
+{
+    if (!caller) {
+        std::snprintf(entity, entitySize, "?");
+        std::snprintf(object, objectSize, "?");
+        std::snprintf(reason, reasonSize, "?");
+        return;
+    }
+
+    // Parse caller string in format: Entity_Object_Reason
+    // or just a simple name
+    const char* firstUnderscore = std::strchr(caller, '_');
+    if (firstUnderscore) {
+        int entityLen = (int)(firstUnderscore - caller);
+        if (entityLen > entitySize - 1) entityLen = entitySize - 1;
+        std::strncpy(entity, caller, entityLen);
+        entity[entityLen] = '\0';
+
+        const char* secondUnderscore = std::strchr(firstUnderscore + 1, '_');
+        if (secondUnderscore) {
+            int objLen = (int)(secondUnderscore - firstUnderscore - 1);
+            if (objLen > objectSize - 1) objLen = objectSize - 1;
+            std::strncpy(object, firstUnderscore + 1, objLen);
+            object[objLen] = '\0';
+            std::strncpy(reason, secondUnderscore + 1, reasonSize - 1);
+            reason[reasonSize - 1] = '\0';
+        } else {
+            std::strncpy(object, firstUnderscore + 1, objectSize - 1);
+            object[objectSize - 1] = '\0';
+            std::snprintf(reason, reasonSize, "%s", caller);
+        }
+    } else {
+        std::snprintf(entity, entitySize, "%s", caller);
+        std::snprintf(object, objectSize, "?");
+        std::snprintf(reason, reasonSize, "%s", caller);
+    }
+}
+
 std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,
     const glm::vec3& move,
     const char* caller
 ) {
-    Perf::ScopedTimer _t("ChunkQuery");
     auto t0 = std::chrono::steady_clock::now();
     std::vector<int> out;
 
@@ -78,13 +115,12 @@ std::vector<int> gatherGLBTriangles(
     sweepBounds.min.z -= EXTRA_Z_DOWN;
     sweepBounds.max.z += EXTRA_Z_UP;
 
-    // Cache detection: check for repeated query with same AABB
+    // Cache detection
     int currentFrame = Perf::state().frameNumber;
     int cachedIdx = findCachedQuery(sweepBounds, currentFrame, caller);
     if (cachedIdx >= 0) {
         Perf::state().current.repeatedQueries++;
-        BROAD_LOG("[CACHE REPEAT] caller=%s repeats previous %s query (same AABB)\n",
-                   caller, sQueryCache[cachedIdx].caller);
+        Perf::trackDuplicateQuery(caller, 0.0);
     }
     recordQuery(sweepBounds, currentFrame, caller);
 
@@ -97,6 +133,20 @@ std::vector<int> gatherGLBTriangles(
     Perf::state().current.chunkCellsVisited += (int)out.size() / 8;
     Perf::state().current.uniqueTriangles += (int)out.size();
 
+    // Record query for analysis
+    float aabbMinF[3] = {sweepBounds.min.x, sweepBounds.min.y, sweepBounds.min.z};
+    float aabbMaxF[3] = {sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z};
+    char entity[64], object[64], reason[64];
+    extractEntityInfo(caller, entity, sizeof(entity), object, sizeof(object), reason, sizeof(reason));
+    Perf::recordCollisionQuery(caller, reason, entity, object,
+        aabbMinF, aabbMaxF, (int)out.size() / 8, (int)out.size(), elapsedMs);
+
+    // Large AABB warning
+    if (out.size() > 500) {
+        Perf::checkLargeAABB(caller, entity, object, reason,
+            (int)out.size() / 8, (int)out.size(), aabbMinF, aabbMaxF);
+    }
+
     if (caller) {
         BROAD_LOG(
             "[GATHER] caller=%s candidates=%zu totalTris=%zu aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) elapsedMs=%.2f\n",
@@ -104,12 +154,6 @@ std::vector<int> gatherGLBTriangles(
             sweepBounds.min.x, sweepBounds.min.y, sweepBounds.min.z,
             sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z,
             elapsedMs);
-    }
-
-    if (out.size() > 500) {
-        Debug::warn(Debug::Category::Collision,
-            "[GATHER WARNING] caller=%s candidates=%zu exceeds threshold 500\n",
-            caller ? caller : "?", out.size());
     }
 
     return out;

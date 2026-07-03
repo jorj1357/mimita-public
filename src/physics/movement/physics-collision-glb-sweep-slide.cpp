@@ -68,7 +68,7 @@ void doGLBSweepSlide(
 
     {
         auto t0 = std::chrono::steady_clock::now();
-        candidates = gatherGLBTriangles(world, cap, totalMove, "sweep_initial");
+        candidates = gatherGLBTriangles(world, cap, totalMove, "Player_Capsule_SweepInitial");
         auto t1 = std::chrono::steady_clock::now();
         diag.broadphaseMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
@@ -125,7 +125,7 @@ void doGLBSweepSlide(
         {
             auto t0 = std::chrono::steady_clock::now();
             char iterTag[64];
-            std::snprintf(iterTag, sizeof(iterTag), "sweep_iter_%d", iter);
+            std::snprintf(iterTag, sizeof(iterTag), "Player_Capsule_SweepIter_%d", iter);
             candidates = gatherGLBTriangles(world, cap, remainingMove, iterTag);
             auto t1 = std::chrono::steady_clock::now();
             diag.sweepMs += std::chrono::duration<float, std::milli>(t1 - t0).count();
@@ -431,7 +431,7 @@ void doGLBSweepSlide(
 
         {
             Capsule slideCap = p.getCapsule();
-            std::vector<int> slideCandidates = gatherGLBTriangles(world, slideCap, glm::vec3(0.0f), "slide_contacts");
+            std::vector<int> slideCandidates = gatherGLBTriangles(world, slideCap, glm::vec3(0.0f), "Player_Capsule_SlideContacts");
             std::vector<RecoveryContact> slideContacts = collectCapsuleRecoveryContacts(
                 world, slideCap, slideCandidates);
             trace.maxSlideContacts = std::max(trace.maxSlideContacts, (int)slideContacts.size());

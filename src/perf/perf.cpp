@@ -30,315 +30,17 @@ void Perf::beginFrame()
 {
     gState.allocationsThisFrame = 0;
     gState.current = PerfTimes{};
+    gState.children = PerfTimes{};
     gState.npcProfileCount = 0;
+    gState.timerStackDepth = 0;
+    gState.queryRecordCount = 0;
+    gState.dupTrackerCount = 0;
+    gState.largeAabbAlert = {};
 }
 
-static void sortContributors(FrameSpikeReport& report)
-{
-    for (int i = 0; i < report.contributorCount - 1; ++i) {
-        for (int j = 0; j < report.contributorCount - 1 - i; ++j) {
-            if (report.contributors[j].ms < report.contributors[j + 1].ms) {
-                auto tmp = report.contributors[j];
-                report.contributors[j] = report.contributors[j + 1];
-                report.contributors[j + 1] = tmp;
-            }
-        }
-    }
-}
+// ── String-based dispatch helpers ─────────────────────────────
 
-void Perf::writeSpikeReport(const FrameSpikeReport& report)
-{
-    std::ofstream f("logs/performance_profile.txt", std::ios::app);
-    if (!f.is_open()) return;
-
-    f << "\n=====================\n";
-    f << "FRAME SPIKE\n";
-    f << "=====================\n";
-    f << "Frame: " << report.frameNumber << "\n";
-    f << "Total: " << report.totalFrameMs << "ms\n";
-    f << "Average: " << report.avgFrameMs << "ms\n";
-    f << "Largest contributors:\n";
-    for (int i = 0; i < report.contributorCount; ++i) {
-        f << "  " << report.contributors[i].name << "  "
-          << report.contributors[i].ms << "ms\n";
-    }
-    f << "NPC count: " << report.npcCount << "\n";
-    f << "Player count: " << report.playerCount << "\n";
-    f << "Effects alive: " << report.effectsAlive << "\n";
-    f << "Damage numbers alive: " << report.damageNumbersAlive << "\n";
-    f << "Particle count: " << report.particleCount << "\n";
-    f << "Draw calls: " << report.drawCalls << "\n";
-    f << "Visible meshes: " << report.visibleMeshes << "\n";
-    f << "Visible triangles: " << report.visibleTriangles << "\n";
-    f << "Chunk cells visited: " << report.chunkCellsVisited << "\n";
-    f << "Unique triangles: " << report.uniqueTriangles << "\n";
-    f.close();
-
-    printf("\n=====================\n");
-    printf("FRAME SPIKE\n");
-    printf("=====================\n");
-    printf("Frame: %d\n", report.frameNumber);
-    printf("Total: %.1fms\n", report.totalFrameMs);
-    printf("Largest contributors:\n");
-    for (int i = 0; i < report.contributorCount && i < 5; ++i) {
-        printf("  %s: %.1fms\n", report.contributors[i].name, report.contributors[i].ms);
-    }
-}
-
-void Perf::writeProfileToFile()
-{
-    PerfState& s = gState;
-    const PerfTimes& t = s.current;
-
-    static uint64_t lastWriteUs = 0;
-    uint64_t now = nowUs();
-    if (now - lastWriteUs < 1000000) return;
-    lastWriteUs = now;
-
-    std::filesystem::create_directories("logs");
-    std::ofstream f("logs/performance_profile.txt", std::ios::trunc);
-    if (!f.is_open()) return;
-
-    float totalMs = gFramePacer.frameTimeMs();
-    f << "Frame: " << s.frameNumber << "\n";
-    f << "Total: " << totalMs << "ms\n\n";
-
-    struct PerfEntry { const char* name; double ms; };
-    PerfEntry entries[] = {
-        {"Input", t.input},
-        {"Setup", t.setup},
-        {"Audio", t.audio},
-        {"State", t.state},
-        {"Replay", t.replay},
-        {"Networking", t.networking},
-        {"Camera", t.camera},
-        {"Combat", t.combat},
-        {"UI", t.ui},
-        {"Physics", t.physics},
-        {"Collision", t.collision},
-        {"Movement", t.movement},
-        {"SweepSlide", t.sweepSlide},
-        {"Depenetration", t.depenetration},
-        {"GroundDetection", t.groundDetection},
-        {"ChunkQuery", t.chunkQuery},
-        {"Broadphase", t.broadphase},
-        {"Narrowphase", t.narrowphase},
-        {"TriangleTests", t.triangleTests},
-        {"CharVsWorld", t.charVsWorld},
-        {"CharVsChar", t.charVsChar},
-        {"WeaponCollisions", t.weaponCollisions},
-        {"NpcUpdate", t.npcUpdate},
-        {"NpcThink", t.npcThink},
-        {"NpcPathfinding", t.npcPathfinding},
-        {"NpcTargetAcq", t.npcTargetAcq},
-        {"NpcVision", t.npcVision},
-        {"NpcMovement", t.npcMovement},
-        {"NpcWeapon", t.npcWeapon},
-        {"NpcCombat", t.npcCombat},
-        {"NpcCollision", t.npcCollision},
-        {"NpcAnimation", t.npcAnimation},
-        {"NpcRender", t.npcRender},
-        {"NpcSpawn", t.npcSpawn},
-        {"NpcAi", t.npcAi},
-        {"Weapons", t.weapons},
-        {"Projectiles", t.projectiles},
-        {"Particles", t.particles},
-        {"DamageNumbers", t.damageNumbers},
-        {"Blood", t.blood},
-        {"Rendering", t.rendering},
-        {"ShadowRender", t.shadowRender},
-        {"PostFX", t.postFX},
-        {"GpuSubmit", t.gpuSubmit},
-        {"BufferUploads", t.bufferUploads},
-        {"TextureUploads", t.textureUploads},
-        {"VboUpdates", t.vboUpdates},
-        {"DrawCalls", t.drawCalls},
-        {"WorldRender", t.worldRender},
-        {"PlayerRender", t.playerRender},
-        {"WeaponRender", t.weaponRender},
-        {"EffectRender", t.effectRender},
-        {"Healthbars", t.healthbars},
-        {"Crosshair", t.crosshair},
-        {"Killfeed", t.killfeed},
-        {"MapTraversal", t.mapTraversal},
-        {"WorldCulling", t.worldCulling},
-        {"MemoryAlloc", t.memoryAlloc},
-        {"StringFormat", t.stringFormat},
-        {"FileIO", t.fileIO},
-        {"DebugLogging", t.debugLogging},
-    };
-    int entryCount = sizeof(entries) / sizeof(entries[0]);
-
-    for (int i = 0; i < entryCount - 1; ++i) {
-        for (int j = 0; j < entryCount - 1 - i; ++j) {
-            if (entries[j].ms < entries[j + 1].ms) {
-                PerfEntry tmp = entries[j];
-                entries[j] = entries[j + 1];
-                entries[j + 1] = tmp;
-            }
-        }
-    }
-
-    f << "Sorted by time:\n";
-    for (int i = 0; i < entryCount; ++i) {
-        if (entries[i].ms > 0.01) {
-            f << "  " << entries[i].name << "  " << entries[i].ms << "ms\n";
-        }
-    }
-
-    f << "\nCounters:\n";
-    f << "  NPC count: " << t.npcCount << "\n";
-    f << "  Effects alive: " << t.effectsAlive << "\n";
-    f << "  Damage numbers alive: " << t.damageNumbersAlive << "\n";
-    f << "  Particle count: " << t.particleCount << "\n";
-    f << "  Draw calls: " << t.totalDrawCalls << "\n";
-    f << "  Visible meshes: " << t.visibleMeshes << "\n";
-    f << "  Visible triangles: " << t.visibleTriangles << "\n";
-    f << "  Hidden meshes: " << t.hiddenMeshes << "\n";
-    f << "  Shader switches: " << t.shaderSwitches << "\n";
-    f << "  Texture binds: " << t.textureBinds << "\n";
-    f << "  Chunk cells visited: " << t.chunkCellsVisited << "\n";
-    f << "  Unique triangles: " << t.uniqueTriangles << "\n";
-    f << "  Broadphase queries: " << t.broadphaseQueries << "\n";
-    f << "  Repeated queries: " << t.repeatedQueries << "\n";
-    f << "  Triangle tests: " << t.triangleTestsCount << "\n";
-    f << "  Collision pairs: " << t.collisionPairs << "\n";
-    f << "  Frustum culled: " << t.frustumCulled << "\n";
-    f << "  Occlusion culled: " << t.occlusionCulled << "\n";
-
-    // Per-NPC profile output
-    if (s.npcProfileCount > 0) {
-        f << "\nTop 20 slowest NPCs:\n";
-        int maxShow = std::min(s.npcProfileCount, 20);
-        for (int i = 0; i < maxShow; ++i) {
-            const auto& np = s.npcProfiles[i];
-            f << "  NPC id=" << np.id << " total=" << np.totalMs << "ms"
-              << " think=" << np.thinkMs
-              << " path=" << np.pathfindingMs
-              << " combat=" << np.combatMs
-              << " coll=" << np.collisionMs
-              << "\n";
-        }
-    }
-
-    f.close();
-}
-
-void Perf::endFrame()
-{
-    PerfState& s = gState;
-
-    s.frameNumber++;
-
-    s.gameTime += gFramePacer.dt();
-
-    float currentMs = gFramePacer.frameTimeMs();
-    s.avgFrameCount += 1.0;
-    s.avgFrameTimeMs += (currentMs - s.avgFrameTimeMs) / std::min(s.avgFrameCount, 100.0);
-
-    if (s.showSpikes && currentMs > s.avgFrameTimeMs * 2.0 && s.avgFrameCount > 10.0)
-        detectSpike(currentMs);
-
-    s.frameHistoryCount = gFramePacer.historyCount();
-    for (int i = 0; i < s.frameHistoryCount && i < 300; ++i)
-        s.frameHistory[i] = gFramePacer.historyMs(i);
-
-    // Auto-spike report when frame exceeds 10ms
-    if ((s.showSpikes || s.perfFileLogging) && currentMs > 10.0f)
-    {
-        FrameSpikeReport& r = s.lastSpikeReport;
-        r.frameNumber = s.frameNumber;
-        r.totalFrameMs = currentMs;
-        r.avgFrameMs = s.avgFrameTimeMs;
-        r.npcCount = (int)s.npcCount;
-        r.playerCount = (int)s.playerCount;
-        r.effectsAlive = s.current.effectsAlive;
-        r.damageNumbersAlive = s.current.damageNumbersAlive;
-        r.particleCount = s.current.particleCount;
-        r.drawCalls = s.current.totalDrawCalls;
-        r.visibleMeshes = s.current.visibleMeshes;
-        r.visibleTriangles = s.current.visibleTriangles;
-        r.chunkCellsVisited = s.current.chunkCellsVisited;
-        r.uniqueTriangles = s.current.uniqueTriangles;
-
-        // Collect top contributors
-        r.contributorCount = 0;
-
-        struct NamedMs { const char* name; double ms; };
-        NamedMs all[] = {
-            {"Input", s.current.input},
-            {"Setup", s.current.setup},
-            {"Audio", s.current.audio},
-            {"State", s.current.state},
-            {"Replay", s.current.replay},
-            {"Networking", s.current.networking},
-            {"Camera", s.current.camera},
-            {"Combat", s.current.combat},
-            {"UI", s.current.ui},
-            {"Physics", s.current.physics},
-            {"Collision", s.current.collision},
-            {"SweepSlide", s.current.sweepSlide},
-            {"Depenetration", s.current.depenetration},
-            {"ChunkQuery", s.current.chunkQuery},
-            {"NpcUpdate", s.current.npcUpdate},
-            {"NpcThink", s.current.npcThink},
-            {"NpcPathfinding", s.current.npcPathfinding},
-            {"NpcCombat", s.current.npcCombat},
-            {"NpcCollision", s.current.npcCollision},
-            {"Weapons", s.current.weapons},
-            {"Projectiles", s.current.projectiles},
-            {"Particles", s.current.particles},
-            {"Blood", s.current.blood},
-            {"Rendering", s.current.rendering},
-            {"ShadowRender", s.current.shadowRender},
-            {"PostFX", s.current.postFX},
-            {"WorldRender", s.current.worldRender},
-            {"PlayerRender", s.current.playerRender},
-            {"EffectRender", s.current.effectRender},
-        };
-        int allCount = sizeof(all) / sizeof(all[0]);
-
-        for (int i = 0; i < allCount - 1; ++i)
-            for (int j = 0; j < allCount - 1 - i; ++j)
-                if (all[j].ms < all[j + 1].ms) {
-                    NamedMs tmp = all[j]; all[j] = all[j + 1]; all[j + 1] = tmp;
-                }
-
-        for (int i = 0; i < allCount && r.contributorCount < FrameSpikeReport::MAX_CONTRIBUTORS; ++i) {
-            if (all[i].ms > 0.5) {
-                r.contributors[r.contributorCount].name = all[i].name;
-                r.contributors[r.contributorCount].ms = all[i].ms;
-                r.contributorCount++;
-            }
-        }
-
-        writeSpikeReport(r);
-    }
-
-    // Write profile file each second if logging enabled
-    if (s.perfFileLogging)
-        writeProfileToFile();
-
-    if (s.benchmarkRunning && s.benchmarkFrameCount < 3600)
-    {
-        s.benchmarkFrameTimes[s.benchmarkFrameCount++] = gFramePacer.frameTimeMs();
-        double elapsed = (double)(nowUs() - (uint64_t)s.benchmarkStartWall) / 1000000.0;
-        if (elapsed >= s.benchmarkDuration)
-        {
-            s.benchmarkRunning = false;
-            char path[256];
-            snprintf(path, sizeof(path), "benchmark_report.txt");
-            exportReport(path);
-            Debug::log(Debug::Category::General, "[PERF] Benchmark completed after %.1f seconds, report: %s",
-                       elapsed, path);
-        }
-    }
-
-    if (s.stressRunning)
-    {
-        s.stressTimer += gFramePacer.dt();
-    }
-}
+static PerfTimes* sActiveTimes = nullptr;
 
 void Perf::addTime(const char* name, double ms)
 {
@@ -348,10 +50,27 @@ void Perf::addTime(const char* name, double ms)
     else if (std::strcmp(name, "Audio") == 0)                   t.audio += ms;
     else if (std::strcmp(name, "State") == 0)                   t.state += ms;
     else if (std::strcmp(name, "Replay") == 0)                  t.replay += ms;
+    else if (std::strcmp(name, "ReplayTick") == 0)              t.replayTick += ms;
+    else if (std::strcmp(name, "ReplaySeek") == 0)              t.replaySeek += ms;
+    else if (std::strcmp(name, "ReplayInterp") == 0)            t.replayInterp += ms;
+    else if (std::strcmp(name, "ReplayAudio") == 0)             t.replayAudio += ms;
+    else if (std::strcmp(name, "ReplayCamera") == 0)            t.replayCamera += ms;
+    else if (std::strcmp(name, "ReplayRender") == 0)            t.replayRender += ms;
+    else if (std::strcmp(name, "ReplayGui") == 0)               t.replayGui += ms;
+    else if (std::strcmp(name, "ReplayCollision") == 0)         t.replayCollision += ms;
+    else if (std::strcmp(name, "ReplayEffects") == 0)           t.replayEffects += ms;
+    else if (std::strcmp(name, "ReplayExport") == 0)            t.replayExport += ms;
     else if (std::strcmp(name, "Networking") == 0)              t.networking += ms;
     else if (std::strcmp(name, "Camera") == 0)                  t.camera += ms;
     else if (std::strcmp(name, "Combat") == 0)                  t.combat += ms;
     else if (std::strcmp(name, "UI") == 0)                      t.ui += ms;
+    else if (std::strcmp(name, "ReplayHud") == 0)               t.replayHud += ms;
+    else if (std::strcmp(name, "Menus") == 0)                   t.menus += ms;
+    else if (std::strcmp(name, "DebugOverlay") == 0)            t.debugOverlay += ms;
+    else if (std::strcmp(name, "Console") == 0)                 t.consoleTime += ms;
+    else if (std::strcmp(name, "FontRender") == 0)              t.fontRender += ms;
+    else if (std::strcmp(name, "TextLayout") == 0)              t.textLayout += ms;
+    else if (std::strcmp(name, "Json") == 0)                    t.jsonTime += ms;
     else if (std::strcmp(name, "Physics") == 0 ||
              std::strcmp(name, "Simulation") == 0)              t.physics += ms;
     else if (std::strcmp(name, "Collision") == 0)               t.collision += ms;
@@ -408,58 +127,590 @@ void Perf::addTime(const char* name, double ms)
     t.total += ms;
 }
 
+void Perf::addChildTime(const char* name, double ms)
+{
+    PerfTimes& c = gState.children;
+    if (std::strcmp(name, "Input") == 0)                        c.input += ms;
+    else if (std::strcmp(name, "Setup") == 0)                   c.setup += ms;
+    else if (std::strcmp(name, "Audio") == 0)                   c.audio += ms;
+    else if (std::strcmp(name, "State") == 0)                   c.state += ms;
+    else if (std::strcmp(name, "Replay") == 0)                  c.replay += ms;
+    else if (std::strcmp(name, "ReplayTick") == 0)              c.replayTick += ms;
+    else if (std::strcmp(name, "ReplaySeek") == 0)              c.replaySeek += ms;
+    else if (std::strcmp(name, "ReplayInterp") == 0)            c.replayInterp += ms;
+    else if (std::strcmp(name, "ReplayAudio") == 0)             c.replayAudio += ms;
+    else if (std::strcmp(name, "ReplayCamera") == 0)            c.replayCamera += ms;
+    else if (std::strcmp(name, "ReplayRender") == 0)            c.replayRender += ms;
+    else if (std::strcmp(name, "ReplayGui") == 0)               c.replayGui += ms;
+    else if (std::strcmp(name, "ReplayCollision") == 0)         c.replayCollision += ms;
+    else if (std::strcmp(name, "ReplayEffects") == 0)           c.replayEffects += ms;
+    else if (std::strcmp(name, "ReplayExport") == 0)            c.replayExport += ms;
+    else if (std::strcmp(name, "Networking") == 0)              c.networking += ms;
+    else if (std::strcmp(name, "Camera") == 0)                  c.camera += ms;
+    else if (std::strcmp(name, "Combat") == 0)                  c.combat += ms;
+    else if (std::strcmp(name, "UI") == 0)                      c.ui += ms;
+    else if (std::strcmp(name, "Physics") == 0 ||
+             std::strcmp(name, "Simulation") == 0)              c.physics += ms;
+    else if (std::strcmp(name, "Collision") == 0)               c.collision += ms;
+    else if (std::strcmp(name, "Movement") == 0)                c.movement += ms;
+    else if (std::strcmp(name, "SweepSlide") == 0)              c.sweepSlide += ms;
+    else if (std::strcmp(name, "Depenetration") == 0)           c.depenetration += ms;
+    else if (std::strcmp(name, "GroundDetection") == 0)         c.groundDetection += ms;
+    else if (std::strcmp(name, "ChunkQuery") == 0)              c.chunkQuery += ms;
+    else if (std::strcmp(name, "Broadphase") == 0)              c.broadphase += ms;
+    else if (std::strcmp(name, "Narrowphase") == 0)             c.narrowphase += ms;
+    else if (std::strcmp(name, "TriangleTests") == 0)           c.triangleTests += ms;
+    else if (std::strcmp(name, "CharVsWorld") == 0)             c.charVsWorld += ms;
+    else if (std::strcmp(name, "CharVsChar") == 0)              c.charVsChar += ms;
+    else if (std::strcmp(name, "WeaponCollisions") == 0)        c.weaponCollisions += ms;
+    else if (std::strcmp(name, "NpcUpdate") == 0)               c.npcUpdate += ms;
+    else if (std::strcmp(name, "NpcThink") == 0)                c.npcThink += ms;
+    else if (std::strcmp(name, "NpcPathfinding") == 0)          c.npcPathfinding += ms;
+    else if (std::strcmp(name, "NpcTargetAcq") == 0)            c.npcTargetAcq += ms;
+    else if (std::strcmp(name, "NpcVision") == 0)               c.npcVision += ms;
+    else if (std::strcmp(name, "NpcMovement") == 0)             c.npcMovement += ms;
+    else if (std::strcmp(name, "NpcWeapon") == 0)               c.npcWeapon += ms;
+    else if (std::strcmp(name, "NpcCombat") == 0)               c.npcCombat += ms;
+    else if (std::strcmp(name, "NpcCollision") == 0)            c.npcCollision += ms;
+    else if (std::strcmp(name, "NpcAnimation") == 0)            c.npcAnimation += ms;
+    else if (std::strcmp(name, "NpcRender") == 0)               c.npcRender += ms;
+    else if (std::strcmp(name, "NpcSpawn") == 0)                c.npcSpawn += ms;
+    else if (std::strcmp(name, "AI") == 0)                      c.npcAi += ms;
+    else if (std::strcmp(name, "Weapons") == 0)                 c.weapons += ms;
+    else if (std::strcmp(name, "Projectiles") == 0)             c.projectiles += ms;
+    else if (std::strcmp(name, "Particles") == 0)               c.particles += ms;
+    else if (std::strcmp(name, "DamageNumbers") == 0)           c.damageNumbers += ms;
+    else if (std::strcmp(name, "Blood") == 0)                   c.blood += ms;
+    else if (std::strcmp(name, "Rendering") == 0)               c.rendering += ms;
+    else if (std::strcmp(name, "ShadowRender") == 0)            c.shadowRender += ms;
+    else if (std::strcmp(name, "PostFX") == 0)                  c.postFX += ms;
+    else if (std::strcmp(name, "GpuSubmit") == 0)               c.gpuSubmit += ms;
+    else if (std::strcmp(name, "BufferUploads") == 0)           c.bufferUploads += ms;
+    else if (std::strcmp(name, "TextureUploads") == 0)          c.textureUploads += ms;
+    else if (std::strcmp(name, "VboUpdates") == 0)              c.vboUpdates += ms;
+    else if (std::strcmp(name, "DrawCalls") == 0)               c.drawCalls += ms;
+    else if (std::strcmp(name, "WorldRender") == 0)             c.worldRender += ms;
+    else if (std::strcmp(name, "PlayerRender") == 0)            c.playerRender += ms;
+    else if (std::strcmp(name, "WeaponRender") == 0)            c.weaponRender += ms;
+    else if (std::strcmp(name, "EffectRender") == 0)            c.effectRender += ms;
+    else if (std::strcmp(name, "Healthbars") == 0)              c.healthbars += ms;
+    else if (std::strcmp(name, "Crosshair") == 0)               c.crosshair += ms;
+    else if (std::strcmp(name, "Killfeed") == 0)                c.killfeed += ms;
+    else if (std::strcmp(name, "MapTraversal") == 0)            c.mapTraversal += ms;
+    else if (std::strcmp(name, "WorldCulling") == 0)            c.worldCulling += ms;
+    else if (std::strcmp(name, "MemoryAlloc") == 0)             c.memoryAlloc += ms;
+    else if (std::strcmp(name, "StringFormat") == 0)            c.stringFormat += ms;
+    else if (std::strcmp(name, "FileIO") == 0)                  c.fileIO += ms;
+    else if (std::strcmp(name, "DebugLogging") == 0)            c.debugLogging += ms;
+}
+
+// ── ScopedTimer with nesting support ──────────────────────────
+
 Perf::ScopedTimer::ScopedTimer(const char* n)
     : name(n), startUs(nowUs())
 {
+    PerfState& s = gState;
+    if (s.timerStackDepth < PerfState::MAX_TIMER_STACK) {
+        s.timerStack[s.timerStackDepth].name = n;
+        s.timerStack[s.timerStackDepth].startUs = startUs;
+        s.timerStackDepth++;
+    }
 }
 
 Perf::ScopedTimer::~ScopedTimer()
 {
-    double ms = (double)(nowUs() - startUs) / 1000.0;
-    addTime(name, ms);
-}
-
-void Perf::collectNpcProfile(unsigned int npcId, const char* category, double ms)
-{
     PerfState& s = gState;
-    int idx = -1;
-    for (int i = 0; i < s.npcProfileCount; ++i) {
-        if (s.npcProfiles[i].id == npcId) { idx = i; break; }
-    }
-    if (idx < 0 && s.npcProfileCount < PerfState::MAX_NPC_PROFILE) {
-        idx = s.npcProfileCount++;
-        s.npcProfiles[idx] = {};
-        s.npcProfiles[idx].id = npcId;
-    }
-    if (idx >= 0) {
-        auto& np = s.npcProfiles[idx];
-        np.totalMs += ms;
-        if (std::strcmp(category, "think") == 0)         np.thinkMs += ms;
-        else if (std::strcmp(category, "path") == 0)     np.pathfindingMs += ms;
-        else if (std::strcmp(category, "target") == 0)   np.targetAcqMs += ms;
-        else if (std::strcmp(category, "vision") == 0)   np.visionMs += ms;
-        else if (std::strcmp(category, "move") == 0)     np.movementMs += ms;
-        else if (std::strcmp(category, "weapon") == 0)   np.weaponMs += ms;
-        else if (std::strcmp(category, "combat") == 0)   np.combatMs += ms;
-        else if (std::strcmp(category, "collision") == 0) np.collisionMs += ms;
-        else if (std::strcmp(category, "anim") == 0)     np.animationMs += ms;
-        else if (std::strcmp(category, "render") == 0)   np.renderMs += ms;
+    uint64_t endUs = nowUs();
+    double elapsedMs = (double)(endUs - startUs) / 1000.0;
+
+    // Add to this category's inclusive time
+    addTime(name, elapsedMs);
+
+    // Pop from timer stack
+    if (s.timerStackDepth > 0) {
+        s.timerStackDepth--;
+        // If there's a parent timer, add this child's time to parent's childTime
+        if (s.timerStackDepth > 0) {
+            addChildTime(s.timerStack[s.timerStackDepth - 1].name, elapsedMs);
+        }
     }
 }
 
-void Perf::flushNpcProfiles()
+double Perf::exclusive(const PerfTimes& t, const PerfTimes& c, const char* name)
+{
+    if (std::strcmp(name, "Input") == 0)             return t.input - c.input;
+    if (std::strcmp(name, "Setup") == 0)             return t.setup - c.setup;
+    if (std::strcmp(name, "Audio") == 0)             return t.audio - c.audio;
+    if (std::strcmp(name, "State") == 0)             return t.state - c.state;
+    if (std::strcmp(name, "Replay") == 0)            return t.replay - c.replay;
+    if (std::strcmp(name, "Networking") == 0)        return t.networking - c.networking;
+    if (std::strcmp(name, "Camera") == 0)            return t.camera - c.camera;
+    if (std::strcmp(name, "Combat") == 0)            return t.combat - c.combat;
+    if (std::strcmp(name, "UI") == 0)                return t.ui - c.ui;
+    if (std::strcmp(name, "Physics") == 0)           return t.physics - c.physics;
+    if (std::strcmp(name, "Collision") == 0)         return t.collision - c.collision;
+    if (std::strcmp(name, "SweepSlide") == 0)        return t.sweepSlide - c.sweepSlide;
+    if (std::strcmp(name, "Depenetration") == 0)     return t.depenetration - c.depenetration;
+    if (std::strcmp(name, "GroundDetection") == 0)   return t.groundDetection - c.groundDetection;
+    if (std::strcmp(name, "ChunkQuery") == 0)        return t.chunkQuery - c.chunkQuery;
+    if (std::strcmp(name, "WeaponCollisions") == 0)  return t.weaponCollisions - c.weaponCollisions;
+    if (std::strcmp(name, "NPC Update") == 0 ||
+        std::strcmp(name, "NpcUpdate") == 0)         return t.npcUpdate - c.npcUpdate;
+    if (std::strcmp(name, "NPC Pathfinding") == 0 ||
+        std::strcmp(name, "NpcPathfinding") == 0)    return t.npcPathfinding - c.npcPathfinding;
+    if (std::strcmp(name, "NPC Combat") == 0 ||
+        std::strcmp(name, "NpcCombat") == 0)         return t.npcCombat - c.npcCombat;
+    if (std::strcmp(name, "NPC Collision") == 0 ||
+        std::strcmp(name, "NpcCollision") == 0)      return t.npcCollision - c.npcCollision;
+    if (std::strcmp(name, "NpcRender") == 0)         return t.npcRender - c.npcRender;
+    if (std::strcmp(name, "Weapons") == 0)           return t.weapons - c.weapons;
+    if (std::strcmp(name, "Particles") == 0)         return t.particles - c.particles;
+    if (std::strcmp(name, "Rendering") == 0)         return t.rendering - c.rendering;
+    if (std::strcmp(name, "WorldRender") == 0)       return t.worldRender - c.worldRender;
+    if (std::strcmp(name, "PlayerRender") == 0)      return t.playerRender - c.playerRender;
+    if (std::strcmp(name, "EffectRender") == 0)      return t.effectRender - c.effectRender;
+    if (std::strcmp(name, "ShadowRender") == 0)      return t.shadowRender - c.shadowRender;
+    if (std::strcmp(name, "PostFX") == 0)            return t.postFX - c.postFX;
+    return t.total - 0.0;
+}
+
+// ── Collision query recording ────────────────────────────────
+
+void Perf::recordCollisionQuery(const char* caller, const char* reason,
+    const char* entity, const char* object,
+    const float* aabbMin, const float* aabbMax,
+    int chunkCells, int triangles, double ms)
 {
     PerfState& s = gState;
-    if (s.npcProfileCount < 2) return;
-    // Sort by total descending
-    for (int i = 0; i < s.npcProfileCount - 1; ++i)
-        for (int j = 0; j < s.npcProfileCount - 1 - i; ++j)
-            if (s.npcProfiles[j].totalMs < s.npcProfiles[j + 1].totalMs) {
-                auto tmp = s.npcProfiles[j];
-                s.npcProfiles[j] = s.npcProfiles[j + 1];
-                s.npcProfiles[j + 1] = tmp;
+    if (s.queryRecordCount < PerfState::MAX_QUERY_RECORDS) {
+        auto& q = s.queryRecords[s.queryRecordCount++];
+        q.queryId = ++s.queryIdCounter;
+        q.frame = s.frameNumber;
+        q.caller = caller;
+        q.reason = reason;
+        q.entity = entity;
+        q.object = object;
+        q.aabbMin[0] = aabbMin ? aabbMin[0] : 0;
+        q.aabbMin[1] = aabbMin ? aabbMin[1] : 0;
+        q.aabbMin[2] = aabbMin ? aabbMin[2] : 0;
+        q.aabbMax[0] = aabbMax ? aabbMax[0] : 0;
+        q.aabbMax[1] = aabbMax ? aabbMax[1] : 0;
+        q.aabbMax[2] = aabbMax ? aabbMax[2] : 0;
+        q.chunkCells = chunkCells;
+        q.uniqueTriangles = triangles;
+        q.elapsedMs = ms;
+    }
+}
+
+void Perf::checkLargeAABB(const char* caller, const char* entity, const char* object,
+    const char* reason, int chunkCells, int triangles,
+    const float* aabbMin, const float* aabbMax)
+{
+    if (chunkCells <= 100 && triangles <= 500) return;
+    PerfState& s = gState;
+    auto& a = s.largeAabbAlert;
+    a.frame = s.frameNumber;
+    a.caller = caller;
+    a.entity = entity;
+    a.object = object;
+    a.reason = reason;
+    a.chunkCells = chunkCells;
+    a.uniqueTriangles = triangles;
+    if (aabbMin && aabbMax) {
+        a.aabbSize[0] = aabbMax[0] - aabbMin[0];
+        a.aabbSize[1] = aabbMax[1] - aabbMin[1];
+        a.aabbSize[2] = aabbMax[2] - aabbMin[2];
+    }
+    if (chunkCells > 100 && triangles > 500)
+        a.suspectedCause = "large AABB combined query";
+    else if (chunkCells > 200)
+        a.suspectedCause = "excessive chunk traversal";
+    else
+        a.suspectedCause = "triangle overload";
+    Debug::warn(Debug::Category::Collision,
+        "[LARGE AABB] frame=%d caller=%s entity=%s object=%s reason=%s "
+        "cells=%d tris=%d aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) cause=%s\n",
+        s.frameNumber, caller ? caller : "?",
+        entity ? entity : "?", object ? object : "?",
+        reason ? reason : "?",
+        chunkCells, triangles,
+        a.aabbSize[0], a.aabbSize[1], a.aabbSize[2],
+        a.suspectedCause ? a.suspectedCause : "?");
+}
+
+void Perf::trackDuplicateQuery(const char* caller, double ms)
+{
+    PerfState& s = gState;
+    for (int i = 0; i < s.dupTrackerCount; ++i) {
+        if (std::strcmp(s.dupTrackers[i].caller, caller) == 0) {
+            s.dupTrackers[i].count++;
+            s.dupTrackers[i].totalMs += ms;
+            return;
+        }
+    }
+    if (s.dupTrackerCount < PerfState::MAX_DUP_TRACKERS) {
+        std::strncpy(s.dupTrackers[s.dupTrackerCount].caller, caller ? caller : "?", 63);
+        s.dupTrackers[s.dupTrackerCount].caller[63] = '\0';
+        s.dupTrackers[s.dupTrackerCount].count = 1;
+        s.dupTrackers[s.dupTrackerCount].totalMs = ms;
+        s.dupTrackerCount++;
+    }
+}
+
+// ── Profiler file output ─────────────────────────────────────
+
+static void sortContributors(FrameSpikeReport& report)
+{
+    for (int i = 0; i < report.contributorCount - 1; ++i)
+        for (int j = 0; j < report.contributorCount - 1 - i; ++j)
+            if (report.contributors[j].exclMs < report.contributors[j + 1].exclMs) {
+                auto tmp = report.contributors[j];
+                report.contributors[j] = report.contributors[j + 1];
+                report.contributors[j + 1] = tmp;
             }
 }
+
+void Perf::writeSpikeReport(const FrameSpikeReport& report)
+{
+    std::ofstream f("logs/performance_profile.txt", std::ios::app);
+    if (!f.is_open()) return;
+
+    f << "\n=====================\n";
+    f << "FRAME SPIKE\n";
+    f << "=====================\n";
+    f << "Frame: " << report.frameNumber << "\n";
+    f << "Total: " << report.totalFrameMs << "ms\n";
+    f << "Average: " << report.avgFrameMs << "ms\n";
+    f << "Top Exclusive Timers:\n";
+    for (int i = 0; i < report.contributorCount; ++i) {
+        f << "  " << report.contributors[i].name << "  excl="
+          << report.contributors[i].exclMs << "ms  incl="
+          << report.contributors[i].inclMs << "ms\n";
+    }
+    f << "NPC count: " << report.npcCount << "\n";
+    f << "Effects: " << report.effectsAlive << "  Damage Numbers: "
+      << report.damageNumbersAlive << "  Particles: " << report.particleCount << "\n";
+    f << "Draw calls: " << report.drawCalls << "  Visible Meshes: "
+      << report.visibleMeshes << "  Visible Tris: " << report.visibleTriangles << "\n";
+    f << "Chunk cells: " << report.chunkCellsVisited
+      << "  Unique tris: " << report.uniqueTriangles << "\n";
+
+    // Duplicate queries
+    if (report.dupCount > 0) {
+        f << "\nDuplicate Collision Queries:\n";
+        for (int i = 0; i < report.dupCount; ++i) {
+            f << "  " << report.dups[i].caller << " x" << report.dups[i].count
+              << " wasted=" << report.dups[i].wastedMs << "ms"
+              << " cache=" << (report.dups[i].couldCache ? "YES" : "NO")
+              << " reason=" << report.dups[i].reason << "\n";
+        }
+        f << "Estimated cache savings: " << report.estimatedCacheSavingsMs << "ms\n";
+    }
+
+    // Largest query
+    if (report.largestQuery.caller) {
+        f << "\nLargest Collision Query:\n";
+        f << "  caller=" << report.largestQuery.caller
+          << " entity=" << report.largestQuery.entity
+          << " object=" << report.largestQuery.object
+          << " reason=" << report.largestQuery.reason << "\n";
+        f << "  aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f)"
+          << " cells=" << report.largestQuery.chunkCells
+          << " tris=" << report.largestQuery.uniqueTriangles
+          << " ms=" << report.largestQuery.elapsedMs << "\n";
+    }
+
+    f.close();
+
+    printf("\n=====================\n");
+    printf("FRAME SPIKE\n");
+    printf("=====================\n");
+    printf("Frame: %d Total: %.1fms\n", report.frameNumber, report.totalFrameMs);
+    for (int i = 0; i < report.contributorCount && i < 5; ++i) {
+        printf("  %s: excl=%.1fms incl=%.1fms\n",
+               report.contributors[i].name,
+               report.contributors[i].exclMs,
+               report.contributors[i].inclMs);
+    }
+    if (report.dupCount > 0)
+        printf("  Duplicate queries: %d (est. cache savings %.1fms)\n",
+               report.dupCount, report.estimatedCacheSavingsMs);
+}
+
+void Perf::writeProfileToFile()
+{
+    PerfState& s = gState;
+    const PerfTimes& t = s.current;
+    const PerfTimes& c = s.children;
+
+    static uint64_t lastWriteUs = 0;
+    uint64_t now = nowUs();
+    if (now - lastWriteUs < 1000000) return;
+    lastWriteUs = now;
+
+    std::filesystem::create_directories("logs");
+    std::ofstream f("logs/performance_profile.txt", std::ios::trunc);
+    if (!f.is_open()) return;
+
+    float totalMs = gFramePacer.frameTimeMs();
+    f << "Frame: " << s.frameNumber << "  Total: " << totalMs << "ms\n\n";
+
+    // Self-validation: sum of exclusive times vs total
+    f << "Exclusive Breakdown:\n";
+
+    struct ExclEntry { const char* name; double excl; double incl; };
+    ExclEntry entries[] = {
+        {"Input",          t.input - c.input, t.input},
+        {"Setup",          t.setup - c.setup, t.setup},
+        {"Audio",          t.audio - c.audio, t.audio},
+        {"State",          t.state - c.state, t.state},
+        {"Replay",         t.replay - c.replay, t.replay},
+        {"Networking",     t.networking - c.networking, t.networking},
+        {"Camera",         t.camera - c.camera, t.camera},
+        {"Combat",         t.combat - c.combat, t.combat},
+        {"UI",             t.ui - c.ui, t.ui},
+        {"Physics",        t.physics - c.physics, t.physics},
+        {"SweepSlide",     t.sweepSlide - c.sweepSlide, t.sweepSlide},
+        {"Depenetration",  t.depenetration - c.depenetration, t.depenetration},
+        {"GroundDetection",t.groundDetection - c.groundDetection, t.groundDetection},
+        {"ChunkQuery",     t.chunkQuery - c.chunkQuery, t.chunkQuery},
+        {"WeaponCollisions",t.weaponCollisions - c.weaponCollisions, t.weaponCollisions},
+        {"Movement",       t.movement - c.movement, t.movement},
+        {"NPC Update",     t.npcUpdate - c.npcUpdate, t.npcUpdate},
+        {"NPC Pathfinding",t.npcPathfinding - c.npcPathfinding, t.npcPathfinding},
+        {"NPC Combat",     t.npcCombat - c.npcCombat, t.npcCombat},
+        {"NPC Collision",  t.npcCollision - c.npcCollision, t.npcCollision},
+        {"NPC Render",     t.npcRender - c.npcRender, t.npcRender},
+        {"Weapons",        t.weapons - c.weapons, t.weapons},
+        {"Projectiles",    t.projectiles - c.projectiles, t.projectiles},
+        {"Particles",      t.particles - c.particles, t.particles},
+        {"Blood",          t.blood - c.blood, t.blood},
+        {"Rendering",      t.rendering - c.rendering, t.rendering},
+        {"ShadowRender",   t.shadowRender - c.shadowRender, t.shadowRender},
+        {"PostFX",         t.postFX - c.postFX, t.postFX},
+        {"WorldRender",    t.worldRender - c.worldRender, t.worldRender},
+        {"PlayerRender",   t.playerRender - c.playerRender, t.playerRender},
+        {"WeaponRender",   t.weaponRender - c.weaponRender, t.weaponRender},
+        {"EffectRender",   t.effectRender - c.effectRender, t.effectRender},
+    };
+    int entryCount = sizeof(entries) / sizeof(entries[0]);
+
+    // Sort by exclusive descending
+    for (int i = 0; i < entryCount - 1; ++i)
+        for (int j = 0; j < entryCount - 1 - i; ++j)
+            if (entries[j].excl < entries[j + 1].excl) {
+                ExclEntry tmp = entries[j];
+                entries[j] = entries[j + 1];
+                entries[j + 1] = tmp;
+            }
+
+    double sumExcl = 0.0;
+    for (int i = 0; i < entryCount; ++i) {
+        if (entries[i].excl > 0.01 || entries[i].incl > 0.01) {
+            f << "  " << entries[i].name
+              << "  excl=" << entries[i].excl << "ms"
+              << "  incl=" << entries[i].incl << "ms\n";
+            sumExcl += entries[i].excl;
+        }
+    }
+
+    double diff = totalMs - sumExcl;
+    f << "\nSelf-Validation:\n";
+    f << "  Frame Total: " << totalMs << "ms\n";
+    f << "  Sum of Exclusive: " << sumExcl << "ms\n";
+    f << "  Difference: " << diff << "ms";
+    if (diff > 0.1) {
+        f << "  *** UNACCOUNTED ***";
+    }
+    f << "\n\n";
+
+    // Counters
+    f << "Counters:\n";
+    f << "  NPCs=" << t.npcCount << " Effects=" << t.effectsAlive
+      << " DamageNums=" << t.damageNumbersAlive << " Particles=" << t.particleCount << "\n";
+    f << "  DrawCalls=" << t.totalDrawCalls << " VisMeshes=" << t.visibleMeshes
+      << " VisTris=" << t.visibleTriangles << "\n";
+    f << "  ChunkCells=" << t.chunkCellsVisited << " UniqueTris=" << t.uniqueTriangles
+      << " RepeatedQueries=" << t.repeatedQueries << "\n";
+
+    // Duplicate query tracking
+    if (s.dupTrackerCount > 0) {
+        f << "\nRepeated Collision Queries:\n";
+        for (int i = 0; i < s.dupTrackerCount; ++i) {
+            const auto& d = s.dupTrackers[i];
+            f << "  " << d.caller << " x" << d.count << " total=" << d.totalMs << "ms\n";
+        }
+    }
+
+    // Large AABB alert
+    if (s.largeAabbAlert.caller) {
+        const auto& a = s.largeAabbAlert;
+        f << "\nLarge AABB Alert:\n";
+        f << "  caller=" << a.caller << " entity=" << a.entity
+          << " object=" << a.object << " reason=" << a.reason << "\n";
+        f << "  cells=" << a.chunkCells << " tris=" << a.uniqueTriangles
+          << " size=(%.1f %.1f %.1f) cause=" << a.suspectedCause << "\n";
+    }
+
+    // Per-NPC profile
+    if (s.npcProfileCount > 0) {
+        f << "\nTop 20 slowest NPCs:\n";
+        int maxShow = std::min(s.npcProfileCount, 20);
+        for (int i = 0; i < maxShow; ++i) {
+            const auto& np = s.npcProfiles[i];
+            f << "  NPC id=" << np.id << " total=" << np.totalMs << "ms"
+              << " think=" << np.thinkMs << " path=" << np.pathfindingMs
+              << " combat=" << np.combatMs << " coll=" << np.collisionMs << "\n";
+        }
+    }
+
+    f.close();
+}
+
+void Perf::endFrame()
+{
+    PerfState& s = gState;
+    s.frameNumber++;
+    s.gameTime += gFramePacer.dt();
+
+    float currentMs = gFramePacer.frameTimeMs();
+    s.avgFrameCount += 1.0;
+    s.avgFrameTimeMs += (currentMs - s.avgFrameTimeMs) / std::min(s.avgFrameCount, 100.0);
+
+    if (s.showSpikes && currentMs > s.avgFrameTimeMs * 2.0 && s.avgFrameCount > 10.0)
+        detectSpike(currentMs);
+
+    s.frameHistoryCount = gFramePacer.historyCount();
+    for (int i = 0; i < s.frameHistoryCount && i < 300; ++i)
+        s.frameHistory[i] = gFramePacer.historyMs(i);
+
+    // Build spike report for frames > 10ms
+    if ((s.showSpikes || s.perfFileLogging) && currentMs > 10.0f)
+    {
+        FrameSpikeReport& r = s.lastSpikeReport;
+        r.frameNumber = s.frameNumber;
+        r.totalFrameMs = currentMs;
+        r.avgFrameMs = s.avgFrameTimeMs;
+        r.npcCount = (int)s.npcCount;
+        r.playerCount = (int)s.playerCount;
+        r.effectsAlive = s.current.effectsAlive;
+        r.damageNumbersAlive = s.current.damageNumbersAlive;
+        r.particleCount = s.current.particleCount;
+        r.drawCalls = s.current.totalDrawCalls;
+        r.visibleMeshes = s.current.visibleMeshes;
+        r.visibleTriangles = s.current.visibleTriangles;
+        r.chunkCellsVisited = s.current.chunkCellsVisited;
+        r.uniqueTriangles = s.current.uniqueTriangles;
+        r.repeatedQueryCount = s.current.repeatedQueries;
+
+        const PerfTimes& t = s.current;
+        const PerfTimes& c = s.children;
+
+        struct NamedMs { const char* name; double incl; double excl; };
+        NamedMs all[] = {
+            {"Input", t.input, t.input - c.input},
+            {"Setup", t.setup, t.setup - c.setup},
+            {"Audio", t.audio, t.audio - c.audio},
+            {"State", t.state, t.state - c.state},
+            {"Replay", t.replay, t.replay - c.replay},
+            {"Networking", t.networking, t.networking - c.networking},
+            {"Camera", t.camera, t.camera - c.camera},
+            {"Combat", t.combat, t.combat - c.combat},
+            {"UI", t.ui, t.ui - c.ui},
+            {"Physics", t.physics, t.physics - c.physics},
+            {"SweepSlide", t.sweepSlide, t.sweepSlide - c.sweepSlide},
+            {"Depenetration", t.depenetration, t.depenetration - c.depenetration},
+            {"ChunkQuery", t.chunkQuery, t.chunkQuery - c.chunkQuery},
+            {"WeaponCollisions", t.weaponCollisions, t.weaponCollisions - c.weaponCollisions},
+            {"NpcUpdate", t.npcUpdate, t.npcUpdate - c.npcUpdate},
+            {"NpcPathfinding", t.npcPathfinding, t.npcPathfinding - c.npcPathfinding},
+            {"NpcCombat", t.npcCombat, t.npcCombat - c.npcCombat},
+            {"NpcCollision", t.npcCollision, t.npcCollision - c.npcCollision},
+            {"Weapons", t.weapons, t.weapons - c.weapons},
+            {"Projectiles", t.projectiles, t.projectiles - c.projectiles},
+            {"Particles", t.particles, t.particles - c.particles},
+            {"Blood", t.blood, t.blood - c.blood},
+            {"Rendering", t.rendering, t.rendering - c.rendering},
+            {"ShadowRender", t.shadowRender, t.shadowRender - c.shadowRender},
+            {"PostFX", t.postFX, t.postFX - c.postFX},
+            {"WorldRender", t.worldRender, t.worldRender - c.worldRender},
+            {"PlayerRender", t.playerRender, t.playerRender - c.playerRender},
+            {"WeaponRender", t.weaponRender, t.weaponRender - c.weaponRender},
+            {"EffectRender", t.effectRender, t.effectRender - c.effectRender},
+        };
+        int allCount = sizeof(all) / sizeof(all[0]);
+
+        for (int i = 0; i < allCount - 1; ++i)
+            for (int j = 0; j < allCount - 1 - i; ++j)
+                if (all[j].excl < all[j + 1].excl) {
+                    NamedMs tmp = all[j]; all[j] = all[j + 1]; all[j + 1] = tmp;
+                }
+
+        r.contributorCount = 0;
+        for (int i = 0; i < allCount && r.contributorCount < FrameSpikeReport::MAX_CONTRIBUTORS; ++i) {
+            if (all[i].excl > 0.3) {
+                r.contributors[r.contributorCount].name = all[i].name;
+                r.contributors[r.contributorCount].exclMs = all[i].excl;
+                r.contributors[r.contributorCount].inclMs = all[i].incl;
+                r.contributorCount++;
+            }
+        }
+
+        // Duplicate queries for spike report
+        r.dupCount = 0;
+        r.estimatedCacheSavingsMs = 0.0;
+        for (int i = 0; i < s.dupTrackerCount && r.dupCount < FrameSpikeReport::MAX_DUPS; ++i) {
+            if (s.dupTrackers[i].count > 1) {
+                auto& d = r.dups[r.dupCount];
+                d.caller = s.dupTrackers[i].caller;
+                d.count = s.dupTrackers[i].count;
+                d.wastedMs = s.dupTrackers[i].totalMs * (1.0 - 1.0 / s.dupTrackers[i].count);
+                d.couldCache = true;
+                d.reason = "identical AABB query repeated within frame";
+                r.estimatedCacheSavingsMs += d.wastedMs;
+                r.dupCount++;
+            }
+        }
+
+        // Largest query
+        if (s.queryRecordCount > 0) {
+            int bestIdx = 0;
+            double bestMs = 0;
+            for (int i = 0; i < s.queryRecordCount; ++i) {
+                if (s.queryRecords[i].elapsedMs > bestMs) {
+                    bestMs = s.queryRecords[i].elapsedMs;
+                    bestIdx = i;
+                }
+            }
+            r.largestQuery = s.queryRecords[bestIdx];
+        }
+
+        writeSpikeReport(r);
+    }
+
+    if (s.perfFileLogging)
+        writeProfileToFile();
+
+    if (s.benchmarkRunning && s.benchmarkFrameCount < 3600)
+    {
+        s.benchmarkFrameTimes[s.benchmarkFrameCount++] = gFramePacer.frameTimeMs();
+        double elapsed = (double)(nowUs() - (uint64_t)s.benchmarkStartWall) / 1000000.0;
+        if (elapsed >= s.benchmarkDuration)
+        {
+            s.benchmarkRunning = false;
+            char path[256];
+            snprintf(path, sizeof(path), "benchmark_report.txt");
+            exportReport(path);
+            Debug::log(Debug::Category::General, "[PERF] Benchmark completed after %.1f seconds, report: %s",
+                       elapsed, path);
+        }
+    }
+
+    if (s.stressRunning)
+        s.stressTimer += gFramePacer.dt();
+}
+
+// ── Toggles, presets, benchmark ──────────────────────────────
 
 void Perf::togglePerfReport()
 {
@@ -468,26 +719,9 @@ void Perf::togglePerfReport()
                gState.showPerfReport ? "ON" : "OFF");
 }
 
-void Perf::toggleGraph()
-{
-    gState.showGraph = !gState.showGraph;
-    Debug::log(Debug::Category::General, "[PERF] perf_graph=%s",
-               gState.showGraph ? "ON" : "OFF");
-}
-
-void Perf::toggleNpcPerf()
-{
-    gState.showNpcPerf = !gState.showNpcPerf;
-    Debug::log(Debug::Category::General, "[PERF] perf_npc=%s",
-               gState.showNpcPerf ? "ON" : "OFF");
-}
-
-void Perf::toggleMemory()
-{
-    gState.showMemory = !gState.showMemory;
-    Debug::log(Debug::Category::General, "[PERF] perf_memory=%s",
-               gState.showMemory ? "ON" : "OFF");
-}
+void Perf::toggleGraph() { gState.showGraph = !gState.showGraph; }
+void Perf::toggleNpcPerf() { gState.showNpcPerf = !gState.showNpcPerf; }
+void Perf::toggleMemory() { gState.showMemory = !gState.showMemory; }
 
 void Perf::toggleSpikes()
 {
@@ -496,27 +730,9 @@ void Perf::toggleSpikes()
                gState.showSpikes ? "ON" : "OFF");
 }
 
-void Perf::toggleRenderStats()
-{
-    gState.renderStats = !gState.renderStats;
-    Debug::log(Debug::Category::General, "[PERF] render_stats=%s",
-               gState.renderStats ? "ON" : "OFF");
-}
-
-void Perf::toggleAllocAudit()
-{
-    gState.allocAudit = !gState.allocAudit;
-    gState.totalAllocations = 0;
-    Debug::log(Debug::Category::General, "[PERF] allocation_audit=%s",
-               gState.allocAudit ? "ON" : "OFF");
-}
-
-void Perf::toggleAudioAudit()
-{
-    gState.audioAudit = !gState.audioAudit;
-    Debug::log(Debug::Category::General, "[PERF] audio_audit=%s",
-               gState.audioAudit ? "ON" : "OFF");
-}
+void Perf::toggleRenderStats() { gState.renderStats = !gState.renderStats; }
+void Perf::toggleAllocAudit() { gState.allocAudit = !gState.allocAudit; gState.totalAllocations = 0; }
+void Perf::toggleAudioAudit() { gState.audioAudit = !gState.audioAudit; }
 
 void Perf::togglePerfFileLogging()
 {
@@ -526,21 +742,7 @@ void Perf::togglePerfFileLogging()
     if (gState.perfFileLogging) {
         std::filesystem::create_directories("logs");
         std::ofstream f("logs/performance_profile.txt", std::ios::trunc);
-        if (f.is_open()) {
-            f << "=== PERFORMANCE PROFILE LOG ===\n";
-            f << "Frame: Total, Input, Setup, Audio, State, Replay, Networking, Camera, Combat, UI, "
-                 "Physics, Collision, Movement, SweepSlide, Depenetration, GroundDetection, ChunkQuery, "
-                 "Broadphase, Narrowphase, TriangleTests, CharVsWorld, CharVsChar, WeaponCollisions, "
-                 "NpcUpdate, NpcThink, NpcPathfinding, NpcTargetAcq, NpcVision, NpcMovement, NpcWeapon, "
-                 "NpcCombat, NpcCollision, NpcAnimation, NpcRender, NpcSpawn, NpcAi, "
-                 "Weapons, Projectiles, Particles, DamageNumbers, Blood, "
-                 "Rendering, ShadowRender, PostFX, GpuSubmit, BufferUploads, TextureUploads, VboUpdates, "
-                 "DrawCalls, WorldRender, PlayerRender, WeaponRender, EffectRender, "
-                 "Healthbars, Crosshair, Killfeed, MapTraversal, WorldCulling, "
-                 "MemoryAlloc, StringFormat, FileIO, DebugLogging, "
-                 "NPCs, Effects, DrawCalls, VisibleMeshes, Triangles, ChunkCells\n";
-            f.close();
-        }
+        if (f.is_open()) f.close();
     }
 }
 
@@ -549,14 +751,9 @@ void Perf::setPreset(int p)
     if (p < 0 || p > 3) p = 0;
     gState.preset = p;
     applyPreset(p);
-    static const char* names[] = {"Default", "Low", "Medium", "High"};
-    Debug::log(Debug::Category::General, "[PERF] preset=%s", names[p]);
 }
 
-void Perf::applyPreset(int p)
-{
-    (void)p;
-}
+void Perf::applyPreset(int p) { (void)p; }
 
 void Perf::startBenchmark(double seconds)
 {
@@ -572,7 +769,6 @@ void Perf::startStress(int npcTarget)
     gState.stressRunning = true;
     gState.stressTotalNpcs = npcTarget;
     gState.stressTimer = 0.0;
-    Debug::log(Debug::Category::General, "[PERF] Stress test started, target NPCs: %d", npcTarget);
 }
 
 void Perf::startCombatTest()
@@ -581,5 +777,44 @@ void Perf::startCombatTest()
     gState.stressRunning = true;
     gState.stressTotalNpcs = 10;
     gState.stressTimer = 0.0;
-    Debug::log(Debug::Category::General, "[PERF] Combat stress test started");
+}
+
+void Perf::collectNpcProfile(unsigned int npcId, const char* category, double ms)
+{
+    PerfState& s = gState;
+    int idx = -1;
+    for (int i = 0; i < s.npcProfileCount; ++i)
+        if (s.npcProfiles[i].id == npcId) { idx = i; break; }
+    if (idx < 0 && s.npcProfileCount < PerfState::MAX_NPC_PROFILE) {
+        idx = s.npcProfileCount++;
+        s.npcProfiles[idx] = {};
+        s.npcProfiles[idx].id = npcId;
+    }
+    if (idx >= 0) {
+        auto& np = s.npcProfiles[idx];
+        np.totalMs += ms;
+        if (std::strcmp(category, "think") == 0)        np.thinkMs += ms;
+        else if (std::strcmp(category, "path") == 0)    np.pathfindingMs += ms;
+        else if (std::strcmp(category, "target") == 0)  np.targetAcqMs += ms;
+        else if (std::strcmp(category, "vision") == 0)  np.visionMs += ms;
+        else if (std::strcmp(category, "move") == 0)    np.movementMs += ms;
+        else if (std::strcmp(category, "weapon") == 0)  np.weaponMs += ms;
+        else if (std::strcmp(category, "combat") == 0)  np.combatMs += ms;
+        else if (std::strcmp(category, "collision") == 0) np.collisionMs += ms;
+        else if (std::strcmp(category, "anim") == 0)    np.animationMs += ms;
+        else if (std::strcmp(category, "render") == 0)  np.renderMs += ms;
+    }
+}
+
+void Perf::flushNpcProfiles()
+{
+    PerfState& s = gState;
+    if (s.npcProfileCount < 2) return;
+    for (int i = 0; i < s.npcProfileCount - 1; ++i)
+        for (int j = 0; j < s.npcProfileCount - 1 - i; ++j)
+            if (s.npcProfiles[j].totalMs < s.npcProfiles[j + 1].totalMs) {
+                auto tmp = s.npcProfiles[j];
+                s.npcProfiles[j] = s.npcProfiles[j + 1];
+                s.npcProfiles[j + 1] = tmp;
+            }
 }
