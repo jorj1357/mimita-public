@@ -345,14 +345,21 @@ int NpcSystem::npcCountNear(glm::vec3 pos, float radius) const
 void NpcSystem::update(const World& world, Player& player, float dt)
 {
     Perf::ScopedTimer _updateTimer("NpcUpdate");
+    Perf::state().current.npcCount = (int)npcs.size();
     currentTime += dt;
     for (Npc& nc : npcs)
     {
         // Register NPC weapon fire for other NPCs' hearing
         if (nc.attackCooldown > 0.0f && nc.sensors.hasTarget)
             notifyCombatSound(nc.body.pos, 0.5f);
+
+        auto tNpcStart = std::chrono::steady_clock::now();
         updateOneNpc(nc, world, player, dt);
+        auto tNpcEnd = std::chrono::steady_clock::now();
+        double npcMs = std::chrono::duration<double, std::milli>(tNpcEnd - tNpcStart).count();
+        Perf::collectNpcProfile(nc.id, "total", npcMs);
     }
+    Perf::flushNpcProfiles();
 }
 
 void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)

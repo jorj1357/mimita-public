@@ -218,6 +218,21 @@ void registerPerfCommands()
         }
     });
 
+    // Part 13: File logging
+    t.registerCommand({
+        "perf_file_logging",
+        "Toggle per-frame performance file logging to logs/performance_profile.txt",
+        "perf_file_logging [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::togglePerfFileLogging();
+            else
+                Perf::state().perfFileLogging = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_file_logging=") +
+                (Perf::state().perfFileLogging ? "ON" : "OFF"));
+        }
+    });
+
     // Part 14: Render stats
     t.registerCommand({
         "perf_render_stats",

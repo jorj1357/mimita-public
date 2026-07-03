@@ -145,6 +145,7 @@ void doGLBTriangleCollisions(
 
     // ── 1. Sweep + slide ─────────────────────────────────
     {
+        Perf::ScopedTimer _st("SweepSlide");
         auto t0 = std::chrono::steady_clock::now();
         doGLBSweepSlide(p, world, groundedThisFrame, dt, totalMove, remainingMove, trace, candidates);
         auto t1 = std::chrono::steady_clock::now();
@@ -153,6 +154,7 @@ void doGLBTriangleCollisions(
 
     // ── 2. Batched depenetration ─────────────────────────
     {
+        Perf::ScopedTimer _dt("Depenetration");
         auto t0 = std::chrono::steady_clock::now();
         p.updateModelWorldTransforms();
         Capsule cap = p.getCapsule();
@@ -199,6 +201,7 @@ void doGLBTriangleCollisions(
 
     // ── 3. Floor recovery ────────────────────────────────
     {
+        Perf::ScopedTimer _fr("GroundDetection");
         auto t0 = std::chrono::steady_clock::now();
         doFloorRecovery(p, world, groundedThisFrame);
         auto t1 = std::chrono::steady_clock::now();
@@ -207,6 +210,7 @@ void doGLBTriangleCollisions(
 
     // ── 4. Body + weapon collision ───────────────────────
     {
+        Perf::ScopedTimer _bw("WeaponCollisions");
         auto t0 = std::chrono::steady_clock::now();
         doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
         auto t1 = std::chrono::steady_clock::now();
@@ -215,6 +219,7 @@ void doGLBTriangleCollisions(
 
     // ── 5. Emergency stuck escape ────────────────────────
     {
+        Perf::ScopedTimer _es("CharVsWorld");
         auto t0 = std::chrono::steady_clock::now();
         constexpr float STUCK_THRESHOLD = 0.05f;
         const float EMERGENCY_SEARCH_RADIUS = PLAYER_HEIGHT + PLAYER_RADIUS * 4.0f;

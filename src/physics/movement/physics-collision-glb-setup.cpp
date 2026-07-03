@@ -2,12 +2,58 @@
 
 #include <chrono>
 #include <vector>
+#include <cstring>
 #include <glm/glm.hpp>
 #include "physics/config.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
+#include "perf/perf.h"
 
 #define BROAD_LOG(...) Debug::logThrottled(Debug::Category::Collision, "broadphase", 1.0f, __VA_ARGS__)
+
+// Cache detection: track recent AABB queries to detect repeated work
+static constexpr int QUERY_CACHE_SIZE = 32;
+struct QueryCacheEntry {
+    float minX, minY, minZ, maxX, maxY, maxZ;
+    int frameNumber;
+    const char* caller;
+};
+static QueryCacheEntry sQueryCache[QUERY_CACHE_SIZE];
+static int sQueryCacheCount = 0;
+static int sLastCacheFrame = -1;
+
+static int findCachedQuery(const AABB& aabb, int currentFrame, const char* caller)
+{
+    for (int i = 0; i < sQueryCacheCount; ++i) {
+        const auto& e = sQueryCache[i];
+        if (e.frameNumber == currentFrame &&
+            std::abs(e.minX - aabb.min.x) < 0.01f &&
+            std::abs(e.minY - aabb.min.y) < 0.01f &&
+            std::abs(e.minZ - aabb.min.z) < 0.01f &&
+            std::abs(e.maxX - aabb.max.x) < 0.01f &&
+            std::abs(e.maxY - aabb.max.y) < 0.01f &&
+            std::abs(e.maxZ - aabb.max.z) < 0.01f)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void recordQuery(const AABB& aabb, int currentFrame, const char* caller)
+{
+    if (currentFrame != sLastCacheFrame) {
+        sQueryCacheCount = 0;
+        sLastCacheFrame = currentFrame;
+    }
+    if (sQueryCacheCount < QUERY_CACHE_SIZE) {
+        auto& e = sQueryCache[sQueryCacheCount++];
+        e.minX = aabb.min.x; e.minY = aabb.min.y; e.minZ = aabb.min.z;
+        e.maxX = aabb.max.x; e.maxY = aabb.max.y; e.maxZ = aabb.max.z;
+        e.frameNumber = currentFrame;
+        e.caller = caller;
+    }
+}
 
 std::vector<int> gatherGLBTriangles(
     const World& world,
@@ -15,6 +61,7 @@ std::vector<int> gatherGLBTriangles(
     const glm::vec3& move,
     const char* caller
 ) {
+    Perf::ScopedTimer _t("ChunkQuery");
     auto t0 = std::chrono::steady_clock::now();
     std::vector<int> out;
 
@@ -31,10 +78,24 @@ std::vector<int> gatherGLBTriangles(
     sweepBounds.min.z -= EXTRA_Z_DOWN;
     sweepBounds.max.z += EXTRA_Z_UP;
 
+    // Cache detection: check for repeated query with same AABB
+    int currentFrame = Perf::state().frameNumber;
+    int cachedIdx = findCachedQuery(sweepBounds, currentFrame, caller);
+    if (cachedIdx >= 0) {
+        Perf::state().current.repeatedQueries++;
+        BROAD_LOG("[CACHE REPEAT] caller=%s repeats previous %s query (same AABB)\n",
+                   caller, sQueryCache[cachedIdx].caller);
+    }
+    recordQuery(sweepBounds, currentFrame, caller);
+
     appendChunkTrianglesForAABB(world, sweepBounds, cap.r + EXTRA_XY, out, "gatherGLBTriangles");
 
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+
+    Perf::state().current.broadphaseQueries++;
+    Perf::state().current.chunkCellsVisited += (int)out.size() / 8;
+    Perf::state().current.uniqueTriangles += (int)out.size();
 
     if (caller) {
         BROAD_LOG(
@@ -53,14 +114,3 @@ std::vector<int> gatherGLBTriangles(
 
     return out;
 }
-
-// std::vector<int> gatherGLBTriangles(
-//     const World& world,
-//     const Capsule& cap,
-//     const glm::vec3& move
-// ) {
-//     std::vector<int> out;
-//     AABB sweepBounds = makeSweptCapsuleAABB(cap, move);
-//     appendChunkTrianglesForAABB(world, sweepBounds, cap.r, out);
-//     return out;
-// }

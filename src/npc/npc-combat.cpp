@@ -19,21 +19,9 @@
 #include "npc/npc-internal.h"
 
 bool gNpcForceHit = false;
-// 0.0 = worst aim, 1.0 = perfect aim. Default 0.3.
 float gNpcAimAccuracy = 0.3f;
 
 namespace {
-
-glm::vec3 rotatePlanar(glm::vec3 v, float radians)
-{
-    float c = std::cos(radians);
-    float s = std::sin(radians);
-    return {
-        v.x * c - v.y * s,
-        v.x * s + v.y * c,
-        0.0f
-    };
-}
 
 bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
 {
@@ -83,20 +71,40 @@ float effectiveRange(const WeaponDefinition& def)
     return 150.0f;
 }
 
+static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
+                         const glm::vec3& idealDir,
+                         const glm::vec3& finalDir,
+                         float maxErrorDeg, float actualErrorDeg)
+{
+    FILE* f = fopen("logs/npc_aim_debug.txt", "a");
+    if (!f) return;
+    float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, finalDir), -1.0f, 1.0f)));
+    fprintf(f, "NPC id=%u weapon=%s aimAcc=%.1f maxError=%.1fdeg actualError=%.1fdeg "
+               "targetDir=(%.3f %.3f %.3f) finalDir=(%.3f %.3f %.3f) angleDiff=%.1fdeg\n",
+            npc.id, def.id.c_str(),
+            gNpcAimAccuracy, maxErrorDeg, actualErrorDeg,
+            idealDir.x, idealDir.y, idealDir.z,
+            finalDir.x, finalDir.y, finalDir.z,
+            angleDiff);
+    fclose(f);
+}
+
 } // anonymous namespace
 
 float NpcCombat::aimErrorDegrees(float)
 {
-    float acc = std::clamp(gNpcAimAccuracy, 0.0f, 1.0f);
-    float t = 1.0f - acc;
-    return t * t * 30.0f;
+    return maxAngularErrorForAccuracy(gNpcAimAccuracy);
 }
 
 float NpcCombat::maxAngularErrorForAccuracy(float acc)
 {
-    acc = std::clamp(acc, 0.0f, 1.0f);
-    float t = 1.0f - acc;
-    return t * t * 30.0f;
+    if (acc > 0.0f) {
+        return 45.0f / (1.0f + acc * 4.0f);
+    }
+    if (acc == 0.0f) return 45.0f;
+    float t = -acc;
+    float clamped = std::min(t / 400.0f, 1.0f);
+    return 45.0f + 315.0f * clamped * clamped;
 }
 
 bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
@@ -178,13 +186,18 @@ glm::vec3 NpcCombat::aimAtTarget(const Npc& npc, glm::vec3 npcPos, glm::vec3 tar
         aimDir /= aimLen;
 
     float errorDeg = aimErrorDegrees(npc.difficulty);
-    float errorRad = glm::radians(errorDeg) * (random01(const_cast<Npc&>(npc).rngState) * 2.0f - 1.0f);
-    {
-        float c = std::cos(errorRad);
-        float s = std::sin(errorRad);
-        float dx = aimDir.x * c - aimDir.y * s;
-        float dy = aimDir.x * s + aimDir.y * c;
-        aimDir.x = dx; aimDir.y = dy;
+    float maxErrorRad = glm::radians(errorDeg);
+    if (maxErrorRad > 0.0001f) {
+        float theta = random01(const_cast<Npc&>(npc).rngState) * glm::two_pi<float>();
+        float radius = random01(const_cast<Npc&>(npc).rngState);
+        radius = std::sqrt(radius) * std::tan(maxErrorRad);
+        glm::vec3 up = std::fabs(aimDir.z) < 0.99f
+            ? glm::vec3(0.0f, 0.0f, 1.0f)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(aimDir, up));
+        glm::vec3 fwd = glm::normalize(glm::cross(right, aimDir));
+        aimDir = glm::normalize(aimDir +
+            (right * std::cos(theta) + fwd * std::sin(theta)) * radius);
     }
 
     return aimDir;
@@ -218,13 +231,18 @@ static glm::vec3 aimAtTargetProjectile(const Npc& npc, glm::vec3 npcPos, glm::ve
         aimDir /= aimLen;
 
     float errorDeg = NpcCombat::aimErrorDegrees(npc.difficulty) * 0.8f;
-    float errorRad = glm::radians(errorDeg) * (random01(const_cast<Npc&>(npc).rngState) * 2.0f - 1.0f);
-    {
-        float c = std::cos(errorRad);
-        float s = std::sin(errorRad);
-        float dx = aimDir.x * c - aimDir.y * s;
-        float dy = aimDir.x * s + aimDir.y * c;
-        aimDir.x = dx; aimDir.y = dy;
+    float maxErrorRad = glm::radians(errorDeg);
+    if (maxErrorRad > 0.0001f) {
+        float theta = random01(const_cast<Npc&>(npc).rngState) * glm::two_pi<float>();
+        float radius = random01(const_cast<Npc&>(npc).rngState);
+        radius = std::sqrt(radius) * std::tan(maxErrorRad);
+        glm::vec3 up = std::fabs(aimDir.z) < 0.99f
+            ? glm::vec3(0.0f, 0.0f, 1.0f)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(aimDir, up));
+        glm::vec3 fwd = glm::normalize(glm::cross(right, aimDir));
+        aimDir = glm::normalize(aimDir +
+            (right * std::cos(theta) + fwd * std::sin(theta)) * radius);
     }
 
     return aimDir;
@@ -331,6 +349,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
     float errorDeg = aimErrorDegrees(npc.difficulty);
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, aimDir), -1.0f, 1.0f)));
+
+    logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff);
 
     printf("[NPC SHOT] id=%u dist=%.1fm aimAcc=%.2f maxError=%.1fdeg "
            "ideal=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f) diff=%.1fdeg "

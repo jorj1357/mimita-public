@@ -103,12 +103,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 
     { Perf::ScopedTimer _ren("Rendering");
     diagRenderFrameBegin(dt);
-    renderShadowMap(world, camera.pos);
+    { Perf::ScopedTimer _shad("ShadowRender"); renderShadowMap(world, camera.pos); }
     glViewport(0, 0, engine.renderer->width, engine.renderer->height);
     PostFX::instance().bindFBO();
     diagRenderStage(1);
-    renderSky(world, camera);
-    renderWorld(world, camera);
+    { Perf::ScopedTimer _sky("WorldRender"); renderSky(world, camera); }
+    { Perf::ScopedTimer _wrld("WorldRender"); renderWorld(world, camera); }
     PostFX::instance().consumeMagentaTest();
     diagRenderStage(2);
     {
@@ -336,8 +336,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
     }
     if (!replayPlaybackActive) {
-        DeathSystem::instance().render(camera);
-        weapons.render(camera, player);
+        { Perf::ScopedTimer _dr("EffectRender"); DeathSystem::instance().render(camera); }
+        { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
     }
     diagRenderStage(4);
 
@@ -400,8 +400,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 kv.second.dead ? glm::vec4(1,0.3f,0,1) : glm::vec4(0.2f,0.8f,1,1));
     }
 
-    EffectPartSystem::instance().render(camera);
-    HitEffects::renderHitBursts(camera);
+    { Perf::ScopedTimer _efx("EffectRender"); EffectPartSystem::instance().render(camera); }
+    { Perf::ScopedTimer _hfx("EffectRender"); HitEffects::renderHitBursts(camera); }
     DebugVis::flushTris(camera);
     diagRenderStage(5);
     } // Perf::ScopedTimer Rendering
@@ -410,7 +410,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     diagRenderStage(6);
     PostFX::instance().advanceTime(dt);
     PostFX::instance().pollReload();
-    PostFX::instance().render();
+    { Perf::ScopedTimer _pfx("PostFX"); PostFX::instance().render(); }
     renderShadowMapOverlay(engine.renderer->width, engine.renderer->height);
     diagRenderStage(7);
 
