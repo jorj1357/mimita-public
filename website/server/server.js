@@ -101,6 +101,8 @@ app.use((req, res, next) => {
     res.set("X-Content-Type-Options", "nosniff")
     res.set("X-Frame-Options", "DENY")
     res.set("Referrer-Policy", "strict-origin-when-cross-origin")
+    res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
+    res.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://mimita.fun; frame-ancestors 'none'")
     if (production) {
         res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     }

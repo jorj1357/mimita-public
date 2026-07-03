@@ -2,35 +2,9 @@ import { Router } from "express"
 import { pool } from "./db.js"
 import { getClientIp } from "./authCore.js"
 import { sendMail } from "./mail.js"
+import { requireAdmin } from "./admin.js"
 
 const router = Router()
-
-function requireAdmin(req, res, next) {
-    const cookies = {}
-    for (const pair of String(req.headers.cookie || "").split(";")) {
-        const sep = pair.indexOf("=")
-        if (sep === -1) continue
-        cookies[pair.slice(0, sep).trim()] = decodeURIComponent(pair.slice(sep + 1).trim())
-    }
-    const token = cookies[process.env.SESSION_COOKIE_NAME || "mimita_session"]
-    if (!token) return res.status(401).json({ success: false, message: "sign in required" })
-    const secret = process.env.SESSION_SECRET || "development-only-change-me"
-    const tokenHash = require("crypto").createHash("sha256").update(String(secret)).update(":").update(String(token)).digest("hex")
-    pool.query(`
-        SELECT u.id, u.username, u.role
-        FROM sessions s JOIN users u ON u.id = s.user_id
-        WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW() AND u.deleted_at IS NULL
-        LIMIT 1
-    `, [tokenHash]).then(result => {
-        if (!result.rowCount) return res.status(401).json({ success: false, message: "session expired" })
-        if (!["admin", "owner"].includes(result.rows[0].role))
-            return res.status(403).json({ success: false, message: "admin access required" })
-        req.user = result.rows[0]
-        req.sessionTokenHash = tokenHash
-        console.log(`[EMAIL CAMPAIGN] Admin ${req.user.username} (${req.user.role})`)
-        next()
-    }).catch(next)
-}
 
 // GET /api/admin/email-campaigns/users — list all users
 router.get("/users", requireAdmin, async (req, res, next) => {

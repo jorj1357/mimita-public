@@ -20,6 +20,7 @@ async function requireAdmin(req, res, next) {
         const token = parseCookies(req)[sessionCookieName]
 
         if (!token) {
+            console.log(`[ADMIN AUTH] 401 no token path=${req.path} ip=${getClientIp(req)}`)
             return res.status(401).json({
                 success: false,
                 message: "sign in required"
@@ -42,6 +43,7 @@ async function requireAdmin(req, res, next) {
         )
 
         if (!result.rowCount) {
+            console.log(`[ADMIN AUTH] 401 session expired path=${req.path}`)
             clearSessionCookie(res)
             return res.status(401).json({
                 success: false,
@@ -52,12 +54,14 @@ async function requireAdmin(req, res, next) {
         const user = result.rows[0]
 
         if (!ADMIN_ROLES.includes(user.role)) {
+            console.log(`[ADMIN AUTH] 403 user=${user.username} role=${user.role} path=${req.path}`)
             return res.status(403).json({
                 success: false,
                 message: "admin access required"
             })
         }
 
+        console.log(`[ADMIN AUTH] 200 user=${user.username} role=${user.role} path=${req.path}`)
         req.user = user
         next()
     }
@@ -255,7 +259,7 @@ router.get("/check", async (req, res) => {
         }
 
         const isAdmin = ADMIN_ROLES.includes(result.rows[0].role)
-        res.json({ success: true, isAdmin, role: result.rows[0].role })
+        res.json({ success: true, isAdmin })
     }
     catch {
         res.json({ success: true, isAdmin: false })

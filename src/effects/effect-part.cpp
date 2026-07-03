@@ -326,6 +326,44 @@ EffectPart* EffectPartSystem::spawnFreeze(glm::vec3 position, float freezeDurati
     return spawn(e);
 }
 
+EffectPart* EffectPartSystem::spawnFreezeTrail(glm::vec3 position) {
+    EffectPart e;
+    e.position = position;
+    e.endPosition = position + glm::vec3(0.0f, 0.0f, 2.0f);
+    e.replayType = "freeze_trail";
+    e.color = {0.1f, 0.1f, 0.4f};
+    e.maxLifetime = 0.05f;
+    e.lifetime = 0.0f;
+    e.scale = 0.4f;
+    e.endScale = 0.4f;
+    e.alpha = 0.4f;
+    e.sticky = true;
+    e.billboardText = false;
+    e.flatDecal = false;
+    Debug::log(Debug::Category::Physics, "[VFX] freeze trail spawned pos=(%.2f %.2f %.2f) alpha=%.2f lifetime=%.2f\n",
+               position.x, position.y, position.z, e.alpha, e.maxLifetime);
+    return spawn(e);
+}
+
+EffectPart* EffectPartSystem::spawnDownDash(glm::vec3 position) {
+    EffectPart e;
+    e.position = position;
+    e.endPosition = position + glm::vec3(0.0f, 0.0f, 3.0f);
+    e.replayType = "down_dash";
+    e.color = {0.1f, 0.8f, 0.8f};
+    e.maxLifetime = 0.2f;
+    e.lifetime = 0.0f;
+    e.scale = 0.5f;
+    e.endScale = 0.5f;
+    e.alpha = 0.35f;
+    e.sticky = true;
+    e.billboardText = false;
+    e.flatDecal = false;
+    Debug::log(Debug::Category::Physics, "[VFX] down dash spawned pos=(%.2f %.2f %.2f) alpha=%.2f lifetime=%.2f\n",
+               position.x, position.y, position.z, e.alpha, e.maxLifetime);
+    return spawn(e);
+}
+
 EffectPart* EffectPartSystem::spawnImpact(glm::vec3 position, glm::vec3 color, const char* label) {
     EffectPart e;
     e.position = position;

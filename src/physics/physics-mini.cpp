@@ -83,6 +83,7 @@ static void physicsMainUpdate_Internal(
     p.jump.didGroundJump = false;
     p.jump.didAirJump    = false;
     p.dash.didDash       = false;
+    p.dash.didDownDash   = false;
     p.ground.didLand       = false;
     p.freeze.didFreeze     = false;
 

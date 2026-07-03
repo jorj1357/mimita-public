@@ -100,6 +100,8 @@ public:
     EffectPart* spawnBulletImpact(glm::vec3 position);
     EffectPart* spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction, float length = 8.0f,
                                     float radius = 1.5f, float lifetime = 3.0f);
+    EffectPart* spawnFreezeTrail(glm::vec3 position);
+    EffectPart* spawnDownDash(glm::vec3 position);
     void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);

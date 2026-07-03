@@ -5,6 +5,16 @@ const router = Router()
 
 const production = process.env.NODE_ENV === "production"
 
+router.use((req, res, next) => {
+    if (production) {
+        return res.status(404).json({
+            success: false,
+            message: "not found"
+        })
+    }
+    next()
+})
+
 router.get("/health", async (req, res) => {
     let dbOk = false
     try {
@@ -14,21 +24,11 @@ router.get("/health", async (req, res) => {
     catch {}
     res.json({
         success: true,
-        environment: production ? "production" : "development",
+        environment: "development",
         uptime: process.uptime(),
         database: dbOk ? "connected" : "disconnected",
         timestamp: new Date().toISOString()
     })
-})
-
-router.use((req, res, next) => {
-    if (production) {
-        return res.status(404).json({
-            success: false,
-            message: "not found"
-        })
-    }
-    next()
 })
 
 const ERROR_CATALOG = {

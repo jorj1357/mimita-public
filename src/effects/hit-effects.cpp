@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include "perf/perf.h"
 
 
 #include <glm/glm.hpp>
@@ -34,6 +35,7 @@ extern Renderer* gRenderer;
 
 void HitEffects::onHit(const HitEvent& event)
 {
+    Perf::ScopedTimer _hitfx("HitFX");
     if (!gConfig.enabled) return;
 
     // 1. Legacy contact sphere

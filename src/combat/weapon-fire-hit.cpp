@@ -18,6 +18,7 @@
 #include "world/world.h"
 #include "npc/npc.h"
 #include "replay/replay.h"
+#include "perf/perf.h"
 
 namespace WeaponFire {
 
@@ -198,6 +199,7 @@ void fireMultiPellet(
     const std::unordered_map<uint32_t, Player>* remotePlayers,
     RevolverShotResult& outResult)
 {
+    Perf::ScopedTimer _shotgun("Shotgun");
     if (!def.soundShoot.empty()) {
         float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
         float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
