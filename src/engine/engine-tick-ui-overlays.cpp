@@ -417,4 +417,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         Perf::renderOverlay();
     if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay)
         uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
+
+    if (isHealthbarDebugEnabled())
+        drawHealthbarDebugOverlay(camera);
 }

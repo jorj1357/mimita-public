@@ -10,6 +10,7 @@
 #include "config/player-settings.h"
 #include "audio/audio.h"
 #include "terminal/terminal-state.h"
+#include "gui/hud/player-nameplates.h"
 
 void registerDebugCommands()
 {
@@ -49,6 +50,7 @@ void registerDebugCommands()
     registerDebugToggle("npc_damage_debug", DebugConfig::DEBUG_NPC_COMBAT);
     registerDebugToggle("npc_movement_debug", DebugConfig::DEBUG_NPC_MOVEMENT);
     registerDebugToggle("ragdoll_debug", DebugConfig::DEBUG_RAGDOLL);
+    registerDebugToggle("persistent_physics_debug", DebugConfig::DEBUG_PERSISTENT_PHYSICS);
     registerDebugToggle("replay_debug", DebugConfig::DEBUG_REPLAY);
     registerDebugToggle("bombtag_debug", DebugConfig::DEBUG_BOMBTAG);
     registerDebugToggle("networking_debug", DebugConfig::DEBUG_NETWORKING);
@@ -146,5 +148,15 @@ void registerDebugCommands()
                 std::string("[DEBUG] forcedash=") + (gpPlayer->forceDashPose ? "1" : "0"));
         },
         "2026-06-28", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "healthbar_debug", "Toggle healthbar aim mode debug overlay", "healthbar_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            bool val = args.empty() ? !isHealthbarDebugEnabled() : args[0] != "0";
+            setHealthbarDebugEnabled(val);
+            Terminal::instance().addLog(std::string("[HEALTHBAR] healthbar_debug=") + (val ? "1" : "0"));
+        },
+        "2026-07-03", CommandCategory::Debug
     });
 }

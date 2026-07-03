@@ -16,7 +16,8 @@ enum class WeaponBehaviorType {
     Godball,
     Melee,
     Swordsword,
-    RocketLauncher
+    RocketLauncher,
+    GrenadeLauncher
 };
 
 enum class WeaponColliderShape {

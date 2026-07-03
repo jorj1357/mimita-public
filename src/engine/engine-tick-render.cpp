@@ -21,6 +21,7 @@
 #include "combat/death-system.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "pobjects/persistent-physics.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
@@ -401,6 +402,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
 
     { Perf::ScopedTimer _efx("EffectRender"); EffectPartSystem::instance().render(camera); }
+    { Perf::ScopedTimer _pfx("PhysicsObjectRender"); PersistentPhysicsSystem::instance().render(camera); }
     { Perf::ScopedTimer _hfx("EffectRender"); HitEffects::renderHitBursts(camera); }
     DebugVis::flushTris(camera);
     diagRenderStage(5);

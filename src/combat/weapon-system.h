@@ -9,6 +9,7 @@
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
 #include "weapon-rocket-launcher.h"
+#include "weapon-grenade-launcher.h"
 
 class Camera;
 class Player;

@@ -39,3 +39,19 @@ void resetHealthbarCounters();
 int getHealthbarTotal();
 int getHealthbarLiveWorld();
 int getHealthbarInvalid();
+
+// Aim-mode healthbar simplification
+struct HealthbarAimState {
+    float transitionAlpha = 0.0f;  // 0 = normal healthbar, 1 = triangle only
+    int inAimCount = 0;
+};
+
+bool isActorInAimCone(const glm::vec3& camPos, const glm::vec3& camFront,
+                      const glm::vec3& targetPos, float coneDegrees);
+HealthbarAimState& getOrCreateAimState(const Player& player);
+glm::vec4 healthColorForHp(int currentHp, int maxHp);
+
+// Debug
+bool isHealthbarDebugEnabled();
+void setHealthbarDebugEnabled(bool enabled);
+void drawHealthbarDebugOverlay(const Camera& camera);

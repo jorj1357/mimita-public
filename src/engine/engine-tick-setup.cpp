@@ -8,6 +8,7 @@
 
 #include "crosshair/crosshair-config.h"
 #include "config/gameplay-config.h"
+#include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
@@ -28,6 +29,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     GameplayConfig::instance().pollReload();
     CrosshairConfig::instance().pollReload();
     pollWorldCrosshairConfig();
+    HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
     AvatarSystem::instance().pollHotReload();
     worldPassRan = false;

@@ -34,6 +34,7 @@ namespace DebugConfig
     inline bool DEBUG_NPC = false;
     inline bool DEBUG_NPC_COMBAT = false;
     inline bool DEBUG_RAGDOLL = false;
+    inline bool DEBUG_PERSISTENT_PHYSICS = false;
     inline bool DEBUG_NPC_DEATH = false;
     inline bool DEBUG_NPC_DEATH_FREEZE = false;
     inline bool DEBUG_BLOOD_RAYS = false;
