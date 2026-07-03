@@ -95,6 +95,14 @@ struct PerfTimes {
     double fileIO = 0.0;
     double debugLogging = 0.0;
 
+    double frameOverhead = 0.0;
+    double sleepTime = 0.0;
+    double swapTime = 0.0;
+    double terminalTime = 0.0;
+    double menusTime = 0.0;
+    double devOverlay = 0.0;
+    double diagTime = 0.0;
+
     double total = 0.0;
 
     int chunkCellsVisited = 0;
@@ -134,10 +142,10 @@ struct CollisionQueryRecord {
     int queryId = 0;
     int frame = 0;
     int tick = 0;
-    const char* caller = "?";
-    const char* reason = "?";
-    const char* entity = "?";
-    const char* object = "?";
+    char caller[64];
+    char reason[64];
+    char entity[64];
+    char object[64];
     double aabbMin[3] = {};
     double aabbMax[3] = {};
     int chunkCells = 0;
