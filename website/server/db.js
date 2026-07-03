@@ -32,6 +32,10 @@ function formatQuery(text) {
     return truncate(text.replace(/\s+/g, " ").trim())
 }
 
+function logMigration(sql) {
+    console.log(`[DB] SQL: ${sql.substring(0, 120)}`)
+}
+
 const MIGRATION_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS newsletter (
         id BIGSERIAL PRIMARY KEY,
@@ -273,6 +277,80 @@ const MIGRATION_STATEMENTS = [
     )`,
     `CREATE INDEX IF NOT EXISTS game_scores_user_game_idx ON game_scores(user_id, game_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS game_scores_leaderboard_idx ON game_scores(game_id, score_value ASC) WHERE deleted_at IS NULL`,
+
+    // ── Email Campaign System ─────────────────────────────────────────
+
+    `CREATE TABLE IF NOT EXISTS user_tags (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `INSERT INTO user_tags (name, description) VALUES
+        ('player', 'Game player'),
+        ('tester', 'Beta tester'),
+        ('admin', 'Administrator'),
+        ('moderator', 'Moderator'),
+        ('newsletter', 'Newsletter subscriber'),
+        ('alpha', 'Alpha tester'),
+        ('beta', 'Beta tester'),
+        ('developer', 'Developer')
+    ON CONFLICT (name) DO NOTHING`,
+
+    `CREATE TABLE IF NOT EXISTS email_templates (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        html_body TEXT NOT NULL,
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS email_campaigns (
+        id BIGSERIAL PRIMARY KEY,
+        subject TEXT NOT NULL DEFAULT '',
+        html_body TEXT NOT NULL DEFAULT '',
+        template_id BIGINT REFERENCES email_templates(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'draft'
+            CHECK (status IN ('draft','sending','sent','failed','partial')),
+        total_recipients INT NOT NULL DEFAULT 0,
+        delivered_count INT NOT NULL DEFAULT 0,
+        failed_count INT NOT NULL DEFAULT 0,
+        skipped_count INT NOT NULL DEFAULT 0,
+        rejected_count INT NOT NULL DEFAULT 0,
+        invalid_email_count INT NOT NULL DEFAULT 0,
+        smtp_error_count INT NOT NULL DEFAULT 0,
+        db_error_count INT NOT NULL DEFAULT 0,
+        sent_at TIMESTAMPTZ,
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS email_campaign_recipients (
+        id BIGSERIAL PRIMARY KEY,
+        campaign_id BIGINT NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+        user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        email TEXT NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','sending','delivered','failed','skipped','rejected','invalid_email','smtp_error','db_error')),
+        error_message TEXT NOT NULL DEFAULT '',
+        sent_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS ecr_campaign_id_idx ON email_campaign_recipients(campaign_id)`,
+    `CREATE INDEX IF NOT EXISTS ecr_status_idx ON email_campaign_recipients(campaign_id, status)`,
+
+    // ── User-Tag junction table for future segmentation ──────────────
+    `CREATE TABLE IF NOT EXISTS user_tag_assignments (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        tag_id BIGINT NOT NULL REFERENCES user_tags(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, tag_id)
+    )`,
 ]
 
 export async function runMigrations() {
@@ -287,6 +365,31 @@ export async function runMigrations() {
         }
     }
     console.log("[DB] Migrations complete.")
+
+    // Print email campaign schema
+    const emailTables = ["user_tags", "email_templates", "email_campaigns", "email_campaign_recipients", "user_tag_assignments"]
+    for (const table of emailTables) {
+        try {
+            const schema = await pool.query(`
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_name = $1
+                ORDER BY ordinal_position
+            `, [table])
+            console.log(`[DB] Schema for ${table}:`)
+            for (const row of schema.rows) {
+                console.log(`[DB]   ${row.column_name} (${row.data_type}) nullable=${row.is_nullable} default=${row.column_default || 'none'}`)
+            }
+            const count = await pool.query(`SELECT COUNT(*)::int AS cnt FROM ${table}`)
+            console.log(`[DB]   ${table} row count: ${count.rows[0].cnt}`)
+            if (count.rows[0].cnt > 0) {
+                const sample = await pool.query(`SELECT * FROM ${table} LIMIT 5`)
+                console.log(`[DB]   ${table} sample rows:`, JSON.stringify(sample.rows, null, 2))
+            }
+        } catch (e) {
+            console.log(`[DB] Could not inspect ${table}: ${e.message}`)
+        }
+    }
 }
 
 
@@ -310,7 +413,11 @@ export function getDbConfig() {
             "analytics_audit_log",
             "analytics_metrics",
             "feedback",
-            "admin_sessions"
-        ]
+    "admin_sessions",
+    "user_tags",
+    "email_templates",
+    "email_campaigns",
+    "email_campaign_recipients"
+]
     }
 }

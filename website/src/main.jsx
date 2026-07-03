@@ -34,6 +34,7 @@ import PasswordPrinciples from "./pages/PasswordPrinciples"
 import AdminLogin from "./pages/AdminLogin"
 import AdminDashboard from "./pages/AdminDashboard"
 import AdminNoPermission from "./pages/AdminNoPermission"
+import EmailCampaigns from "./pages/EmailCampaigns"
 import ProfilePage from "./pages/ProfilePage"
 import Feedback from "./pages/Feedback"
 import Link from "./pages/Link"
@@ -82,6 +83,7 @@ ReactDOM.createRoot(
         <Route path="/admin" element={<AdminLogin />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/admin/email-campaigns" element={<EmailCampaigns />} />
         <Route path="/admin/no-permission" element={<AdminNoPermission />} />
 
         <Route path="/feedback" element={<Feedback />} />
