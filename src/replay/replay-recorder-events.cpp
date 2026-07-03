@@ -37,3 +37,16 @@ void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)
     }
     registerAsset("sound:" + event.soundPath, "sound", event.soundPath, {}, {}, "audio");
 }
+
+void ReplayRecorder::recordKillfeedEvent(const ReplayKillfeedEvent& inputEvent)
+{
+    if (!mRecording) return;
+    ReplayKillfeedEvent event = inputEvent;
+    event.tick = (int)mEventTick;
+    mKillfeedEvents.push_back(event);
+    if (mMaxTicks > 0) {
+        const int oldestTick = (int)mTick - (int)mMaxTicks;
+        while (!mKillfeedEvents.empty() && mKillfeedEvents.front().tick < oldestTick)
+            mKillfeedEvents.erase(mKillfeedEvents.begin());
+    }
+}

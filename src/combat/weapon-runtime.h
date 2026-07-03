@@ -4,6 +4,10 @@
 #include <unordered_map>
 #include <string>
 
+class Player;
+
+void resetAllWeaponRuntimesForSpawn(Player& player, const char* caller = "unknown");
+
 struct WeaponRuntimeHelper {
     static void initRuntime(WeaponRuntime& rt, const WeaponDefinition& def);
     static void updateCooldowns(WeaponRuntime& rt, float dt);

@@ -146,7 +146,10 @@ void engineTickReplay(Engine& engine, float dt)
     }
 
     DebugVis::beginCollisionFrame();
-    gReplayPlayer.update(dt);
+    // During export capture, skip the normal update and let the seek block below
+    // handle frame advancement + effect collection, otherwise effects collect twice.
+    if (getReplayExportJob().state != ReplayExportJob::Capturing)
+        gReplayPlayer.update(dt);
 
     // Replay export mode: seek and rebuild interpolated frame for capture
     {

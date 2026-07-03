@@ -89,6 +89,10 @@ void EffectPartSystem::update(float dt) {
                     Debug::log(Debug::Category::General,
                         "[DAMAGE POPUP] DESTROY label=%s lifetime=%.2f\n",
                         fx.label.c_str(), fx.lifetime);
+                } else if (fx.replayType == "damage_impact_sphere") {
+                    Debug::log(Debug::Category::General,
+                        "[DAMAGE IMPACT DESTROY] pos=(%.2f,%.2f,%.2f) lifetime=%.2f alpha=%.2f\n",
+                        fx.position.x, fx.position.y, fx.position.z, fx.lifetime, fx.alpha);
                 }
                 fx.alive = false;
                 fx.resetStrings();

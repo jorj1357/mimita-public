@@ -79,6 +79,18 @@ bool ReplayClip::save(const std::string& path) const
         root["soundEvents"].push_back(std::move(entry));
     }
 
+    root["killfeedEvents"] = json::array();
+    for (const ReplayKillfeedEvent& kf : killfeedEvents) {
+        root["killfeedEvents"].push_back({
+            {"tick", kf.tick},
+            {"killerId", kf.killerId},
+            {"killerName", kf.killerName},
+            {"victimId", kf.victimId},
+            {"victimName", kf.victimName},
+            {"weaponName", kf.weaponName}
+        });
+    }
+
     std::error_code ec;
     const std::filesystem::path output(path);
     if (output.has_parent_path())
@@ -167,6 +179,19 @@ bool ReplayClip::load(const std::string& path)
             }
             soundEvents.push_back(std::move(sound));
         }
+
+        killfeedEvents.clear();
+        for (const json& value : root.value("killfeedEvents", json::array())) {
+            ReplayKillfeedEvent kf;
+            kf.tick = value.value("tick", 0);
+            kf.killerId = value.value("killerId", "");
+            kf.killerName = value.value("killerName", "");
+            kf.victimId = value.value("victimId", "");
+            kf.victimName = value.value("victimName", "");
+            kf.weaponName = value.value("weaponName", "");
+            killfeedEvents.push_back(std::move(kf));
+        }
+
         header.tickCount = sceneFrames.empty() ? (uint32_t)frames.size()
                                                 : (uint32_t)sceneFrames.size();
         return !sceneFrames.empty();

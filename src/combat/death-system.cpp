@@ -1,4 +1,5 @@
 #include "combat/death-system.h"
+#include "combat/weapon-runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,8 +22,10 @@
 #include "replay/replay.h"
 #include "world/world.h"
 #include "game/duel.h"
+#include "game/spawn-utils.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "killfeed/killfeed.h"
 
 extern DuelManager gDuelManager;
 
@@ -118,27 +121,26 @@ bool DeathSystem::kill(
     body.debugDeathDir = direction;
 
     if (DebugConfig::DEBUG_NPC_DEATH) {
-    // TODO(debug): migrate these to Debug::log(Debug::Category::Ragdoll)
-    printf("\n[RAGDOLL SPAWN]\n");
-    printf("  id=%s\n", body.id.c_str());
-    printf("  deathPos=(%.2f %.2f %.2f)\n", victimPos.x, victimPos.y, victimPos.z);
-    printf("  deathVel=(%.2f %.2f %.2f)\n", linearVel.x, linearVel.y, linearVel.z);
-    printf("  deathSpeed=%.2f\n", glm::length(linearVel));
-    printf("  deathImpulse=(%.2f %.2f %.2f)\n",
-           body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z);
-    printf("  deathDir=(%.2f %.2f %.2f)\n", direction.x, direction.y, direction.z);
-    printf("  lethalForce=%.1f\n", lethalForce);
-    printf("  corpseInitialVel=(%.2f %.2f %.2f)\n",
-           body.velocity.x, body.velocity.y, body.velocity.z);
-    printf("  corpseAngVel=(%.2f %.2f %.2f)\n",
-           body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
-    printf("  velocityInherited=(%.2f %.2f %.2f)\n",
-           linearVel.x, linearVel.y, linearVel.z);
-    printf("  diffBeforeAfter=(%.2f %.2f %.2f)\n",
-           linearVel.x - body.velocity.x,
-           linearVel.y - body.velocity.y,
-           linearVel.z - body.velocity.z);
-    printf("[/RAGDOLL SPAWN]\n\n");
+        Debug::log(Debug::Category::Ragdoll, "[RAGDOLL SPAWN]\n");
+        Debug::log(Debug::Category::Ragdoll, "  id=%s\n", body.id.c_str());
+        Debug::log(Debug::Category::Ragdoll, "  deathPos=(%.2f %.2f %.2f)\n", victimPos.x, victimPos.y, victimPos.z);
+        Debug::log(Debug::Category::Ragdoll, "  deathVel=(%.2f %.2f %.2f)\n", linearVel.x, linearVel.y, linearVel.z);
+        Debug::log(Debug::Category::Ragdoll, "  deathSpeed=%.2f\n", glm::length(linearVel));
+        Debug::log(Debug::Category::Ragdoll, "  deathImpulse=(%.2f %.2f %.2f)\n",
+               body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z);
+        Debug::log(Debug::Category::Ragdoll, "  deathDir=(%.2f %.2f %.2f)\n", direction.x, direction.y, direction.z);
+        Debug::log(Debug::Category::Ragdoll, "  lethalForce=%.1f\n", lethalForce);
+        Debug::log(Debug::Category::Ragdoll, "  corpseInitialVel=(%.2f %.2f %.2f)\n",
+               body.velocity.x, body.velocity.y, body.velocity.z);
+        Debug::log(Debug::Category::Ragdoll, "  corpseAngVel=(%.2f %.2f %.2f)\n",
+               body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+        Debug::log(Debug::Category::Ragdoll, "  velocityInherited=(%.2f %.2f %.2f)\n",
+               linearVel.x, linearVel.y, linearVel.z);
+        Debug::log(Debug::Category::Ragdoll, "  diffBeforeAfter=(%.2f %.2f %.2f)\n",
+               linearVel.x - body.velocity.x,
+               linearVel.y - body.velocity.y,
+               linearVel.z - body.velocity.z);
+        Debug::log(Debug::Category::Ragdoll, "[/RAGDOLL SPAWN]\n\n");
     }
 
     // Single physics body slightly above death position to avoid floor embedding
@@ -201,18 +203,37 @@ bool DeathSystem::kill(
         killer.empty() ? "unknown" : killer,
         actorId,
         roundWinningKill);
+    {
+        std::string effectiveKiller = killer;
+        if (effectiveKiller.empty() || effectiveKiller == "unknown") {
+            if (!victim.lastDamagedBy.empty())
+                effectiveKiller = victim.lastDamagedBy;
+            else
+                effectiveKiller = "unknown";
+        }
+        std::string victimName = victim.username.empty() ? actorId : victim.username;
+        std::string weaponName = victim.killedByWeapon.empty() ? "unknown" : victim.killedByWeapon;
+        KillfeedManager::instance().onKill(effectiveKiller, victimName, weaponName);
+
+        ReplayKillfeedEvent kfEvent;
+        kfEvent.killerId = effectiveKiller;
+        kfEvent.killerName = effectiveKiller;
+        kfEvent.victimId = actorId;
+        kfEvent.victimName = victimName;
+        kfEvent.weaponName = weaponName;
+        captureReplayKillfeed(kfEvent);
+    }
     victim.respawnTimer = (actorType == "npc") ? npcRespawnDelaySeconds : RESPAWN_SECONDS;
     victim.killedBy = killer.empty() ? "unknown" : killer;
 
     if (actorType == "npc")
         Debug::log(Debug::Category::NpcCombat, "[NPC] Respawning in %.2f seconds\n", victim.respawnTimer);
 
-        // TODO(debug): migrate to Debug::log(Debug::Category::Ragdoll)
-        printf("[RAGDOLL] player=%s activated=true parts=%zu\n",
-               victim.username.c_str(), body.frozenParts.size());
-        printf("[RAGDOLL IMPULSE] force=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
-               body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
-               body.velocity.x, body.velocity.y, body.velocity.z);
+    Debug::log(Debug::Category::Ragdoll, "[RAGDOLL] player=%s activated=true parts=%zu\n",
+           victim.username.c_str(), body.frozenParts.size());
+    Debug::log(Debug::Category::Ragdoll, "[RAGDOLL IMPULSE] force=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f)\n",
+           body.deathImpulse.x, body.deathImpulse.y, body.deathImpulse.z,
+           body.velocity.x, body.velocity.y, body.velocity.z);
 
     if (actorType == "npc")
         AudioManager::instance().play(
@@ -242,10 +263,14 @@ bool DeathSystem::kill(
 
 void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
 {
+    int spawnIndex = -1;
     SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
     if (sp) {
         actor.pos = sp->position;
         actor.respawnPosition = sp->position;
+        for (size_t i = 0; i < world.spawnPoints.size(); ++i) {
+            if (&world.spawnPoints[i] == sp) { spawnIndex = (int)i; break; }
+        }
     } else {
         actor.pos = actor.respawnPosition;
     }
@@ -262,9 +287,17 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.ground.onGround = false;
     playWorldSound("entity/player/spawning", actor.pos, 1.0f);
     Debug::log(Debug::Category::Audio, "[SPAWN FX] playing spawning.wav\n");
+    resetAllWeaponRuntimesForSpawn(actor, "DeathSystem::respawn");
     actor.syncLegacyStateToLayers();
     actor.updateModelWorldTransforms();
     emitLifecycleEvent("respawn", actor, actorId, actorId);
+
+    FILE* debugFile = fopen("logs/map_spawn_debug.txt", "a");
+    if (debugFile) {
+        fprintf(debugFile, "Player spawned spawn_index=%d position=(%.3f %.3f %.3f)\n",
+                spawnIndex, actor.pos.x, actor.pos.y, actor.pos.z);
+        fclose(debugFile);
+    }
 }
 
 void DeathSystem::update(
@@ -317,8 +350,7 @@ void DeathSystem::update(
                     body.debugTickTimer = 0.0f;
                     float distFromSpawn = glm::length(body.position - body.spawnPosition);
                     float gravDot = glm::dot(body.velocity, body.debugGravity);
-                    // TODO(debug): migrate to Debug::log(Debug::Category::Ragdoll)
-                    printf("[RAGDOLL TICK] id=%s pos=(%.2f %.2f %.2f) "
+                    Debug::log(Debug::Category::Ragdoll, "[RAGDOLL TICK] id=%s pos=(%.2f %.2f %.2f) "
                            "vel=(%.2f %.2f %.2f) speed=%.2f "
                            "angVel=(%.2f %.2f %.2f) "
                            "distFromDeath=%.2f "
@@ -410,10 +442,8 @@ void DeathSystem::update(
                     npc.body,
                     "npc_" + std::to_string(npc.id),
                     world);
-                npc.body.pos = npcSpawnPoint;
-                npc.body.respawnPosition = npcSpawnPoint;
-                Debug::log(Debug::Category::NpcCombat, "[NPC] Spawned at (%.2f, %.2f, %.2f)\n",
-                           npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z);
+                Debug::log(Debug::Category::NpcCombat, "[NPC] Respawned at (%.2f, %.2f, %.2f)\n",
+                           npc.body.pos.x, npc.body.pos.y, npc.body.pos.z);
             }
         }
     }

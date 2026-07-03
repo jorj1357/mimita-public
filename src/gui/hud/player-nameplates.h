@@ -31,6 +31,11 @@ glm::vec3 playerHealthbarAnchor(
 HealthbarRenderResult drawPlayerHealthbar(
     const Player& player,
     const Camera& camera,
-    const char* debugPrefix);
+    const char* debugPrefix,
+    const char* sourceTag = "live_world");
 
 const char* healthbarCullReasonName(HealthbarCullReason reason);
+void resetHealthbarCounters();
+int getHealthbarTotal();
+int getHealthbarLiveWorld();
+int getHealthbarInvalid();

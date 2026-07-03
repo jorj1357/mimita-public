@@ -12,6 +12,7 @@
 #include "map/map-loader-collision.h"
 #include "debug/debug-log.h"
 #include "utils/path_utils.h"
+#include "game/spawn-utils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -206,4 +207,19 @@ void extractSpawnPointsFromGLB(World& world, const char* path)
     }
 
     printf("[SPAWN GLB] total spawn points extracted: %zu\n", world.spawnPoints.size());
+
+    FILE* debugFile = fopen("logs/map_spawn_debug.txt", "a");
+    if (debugFile) {
+        fprintf(debugFile, "Map name: %s\n", path);
+        fprintf(debugFile, "Spawnpoints found: %zu\n", world.spawnPoints.size());
+        for (size_t i = 0; i < world.spawnPoints.size(); ++i) {
+            const SpawnPoint& sp = world.spawnPoints[i];
+            fprintf(debugFile, "Spawnpoint %zu\n", i);
+            fprintf(debugFile, "  position=(%.3f %.3f %.3f)\n",
+                    sp.position.x, sp.position.y, sp.position.z);
+            fprintf(debugFile, "  tag=%s arena=%d\n",
+                    sp.tag.c_str(), sp.arenaIndex);
+        }
+        fclose(debugFile);
+    }
 }

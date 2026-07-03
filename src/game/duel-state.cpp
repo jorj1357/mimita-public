@@ -1,5 +1,6 @@
 #include "game/duel.h"
 #include "competitive/competitive-match.h"
+#include "combat/weapon-runtime.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -47,6 +48,7 @@ void DuelManager::resetRoundEntities(
     (void)world;
     npcs.destroyAll();
 
+    resetAllWeaponRuntimesForSpawn(player, "DuelManager::resetRoundEntities");
     player.dead = false;
     player.currentHp = 100.0f;
     player.vel = glm::vec3(0.0f);

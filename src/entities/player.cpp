@@ -3,6 +3,7 @@
 // player-animation.cpp, player-render.cpp
 
 #include "player.h"
+#include "combat/weapon-runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -115,6 +116,7 @@ void Player::reset()
         part.rotationSpring = SpringState{};
     }
 
+    resetAllWeaponRuntimesForSpawn(*this, "Player::reset");
     syncLegacyStateToLayers();
     updateModelWorldTransforms();
 }

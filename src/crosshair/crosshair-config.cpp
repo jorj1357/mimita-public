@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 
@@ -18,8 +19,26 @@ static int64_t modifiedTime(const std::string& path)
         time.time_since_epoch()).count();
 }
 
+static int gOldAlpha = -1;
+
+static void logCrosshairAlphaChange(int newAlpha, const char* reason)
+{
+    if (gOldAlpha == newAlpha) return;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories("logs", ec);
+    FILE* f = fopen("logs/crosshair_debug.txt", "a");
+    if (!f) return;
+    if (gOldAlpha == -1)
+        fprintf(f, "=== crosshair_alpha debug log ===\n");
+    fprintf(f, "%d -> %d by: %s\n", gOldAlpha == -1 ? 255 : gOldAlpha, newAlpha, reason);
+    gOldAlpha = newAlpha;
+    fclose(f);
+}
+
 static void clampSettings(CrosshairSettings& d)
 {
+    int oldAlpha = d.alpha;
     d.red = std::clamp(d.red, 0, 255);
     d.green = std::clamp(d.green, 0, 255);
     d.blue = std::clamp(d.blue, 0, 255);
@@ -28,6 +47,8 @@ static void clampSettings(CrosshairSettings& d)
     d.thickness = std::clamp(d.thickness, 1.0f, 16.0f);
     d.gap = std::clamp(d.gap, 0.0f, 64.0f);
     d.outlineThickness = std::clamp(d.outlineThickness, 0.0f, 8.0f);
+    if (d.alpha != oldAlpha)
+        logCrosshairAlphaChange(d.alpha, "clampSettings");
 }
 
 CrosshairConfig& CrosshairConfig::instance()
@@ -68,6 +89,7 @@ bool CrosshairConfig::load(const std::string& path)
         clampSettings(d);
         mData = d;
         mLastModified = modifiedTime(path);
+        logCrosshairAlphaChange(d.alpha, "CrosshairConfig::load()");
         return true;
     } catch (...) {
         return false;
@@ -94,6 +116,7 @@ bool CrosshairConfig::save()
     file << j.dump(2) << '\n';
     file.close();
     mLastModified = modifiedTime(mPath);
+    logCrosshairAlphaChange(d.alpha, "CrosshairConfig::save()");
     return true;
 }
 
@@ -111,5 +134,12 @@ bool CrosshairConfig::pollReload()
 void CrosshairConfig::reset()
 {
     mData = CrosshairSettings{};
+    logCrosshairAlphaChange(mData.alpha, "CrosshairConfig::reset()");
     save();
+}
+
+CrosshairSettings& CrosshairConfig::edit()
+{
+    logCrosshairAlphaChange(mData.alpha, "CrosshairConfig::edit() accessed");
+    return mData;
 }

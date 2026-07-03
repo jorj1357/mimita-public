@@ -10,6 +10,7 @@
 #include "gui/menus/duel-config-menu.h"
 #include "game/duel.h"
 #include "game/bomb-tag.h"
+#include "game/spawn-utils.h"
 #include "network/multiplayer-context.h"
 #include "network/net_mode.h"
 #include "profile/local-profile-system.h"
@@ -106,7 +107,7 @@ void engineTickState(Engine& engine, float dt)
                     else
                     {
                         world.selectedSpawnIndex = -1;
-                        const glm::vec3 fallback{1.0f, 5.0f, 60.0f};
+                        const glm::vec3 fallback = FALLBACK_SPAWN_POS;
                         player.pos = fallback;
                         player.respawnPosition = fallback;
                         printf("[SANDBOX SPAWN WARNING] no GLB spawns; fallback=(%.1f %.1f %.1f)\n",

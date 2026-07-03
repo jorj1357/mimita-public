@@ -8,19 +8,24 @@
 #include "devtools/dev-npc-selection.h"
 #include "physics/config.h"
 #include "network/net_mode.h"
+#include "game/spawn-utils.h"
 
 void registerNpcCommands()
 {
     Terminal::instance().registerCommand({
-        "npc_spawn", "Spawn NPCs at the global spawn point", "npc_spawn <count>",
+        "npc_spawn", "Spawn NPCs at map spawn points", "npc_spawn <count>",
         [](const std::vector<std::string>& args) {
             NpcSystem& npcSystem = THE_NPC_SYSTEM;
+            World& world = THE_WORLD;
             int count = args.empty() ? 1 : std::clamp(std::stoi(args[0]), 1, 100);
             for (int i = 0; i < count; ++i) {
-                npcSystem.spawnNpc(1.0f);
+                uint32_t id = npcSystem.nextNpcId();
+                spawnNpcAtSafePosition(npcSystem, id, 1.0f, world, i);
                 MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
-                if (mpContext.active)
-                    MimitaNet::mpRequestNpcSpawn(mpContext, npcSpawnPoint, 1.0f);
+                if (mpContext.active) {
+                    glm::vec3 spawnPos = getSpawnPosition(world, i);
+                    MimitaNet::mpRequestNpcSpawn(mpContext, spawnPos, 1.0f);
+                }
             }
             Terminal::instance().addLog("[NPC COMMAND] npc_spawn count=" + std::to_string(count));
         }

@@ -29,6 +29,13 @@ void captureReplaySound(const ReplaySoundEvent& event)
         gActiveReplayRecorder->recordSoundEvent(event);
 }
 
+void captureReplayKillfeed(const ReplayKillfeedEvent& event)
+{
+    if (gReplayCaptureEnabled && gActiveReplayRecorder &&
+        gActiveReplayRecorder->isRecording())
+        gActiveReplayRecorder->recordKillfeedEvent(event);
+}
+
 std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
 {
     std::vector<ReplayBodyPartState> states;
@@ -74,6 +81,7 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
     mSceneFrames.clear();
     mAssets.clear();
     mSoundEvents.clear();
+    mKillfeedEvents.clear();
     mPendingEffects.clear();
     mWorld = {};
     mLighting = {};
@@ -224,6 +232,7 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
     j["lighting"]["textureBrightness"] = mLighting.textureBrightness;
 
     j["soundEvents"] = json::array();
+    j["killfeedEvents"] = json::array();
     j["events"] = json::array();
     json eventCounts = json::object();
     for (const ReplaySoundEvent& sound : mSoundEvents) {
@@ -241,6 +250,20 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
         j["soundEvents"].push_back(soundJson);
         j["events"].push_back(soundJson);
         eventCounts["sound"] = eventCounts.value("sound", 0) + 1;
+    }
+    for (const ReplayKillfeedEvent& kf : mKillfeedEvents) {
+        json kfJson = {
+            {"type", "killfeed"},
+            {"tick", kf.tick},
+            {"killerId", kf.killerId},
+            {"killerName", kf.killerName},
+            {"victimId", kf.victimId},
+            {"victimName", kf.victimName},
+            {"weaponName", kf.weaponName}
+        };
+        j["killfeedEvents"].push_back(kfJson);
+        j["events"].push_back(kfJson);
+        eventCounts["killfeed"] = eventCounts.value("killfeed", 0) + 1;
     }
     for (const ReplaySceneFrame& sceneFrame : mSceneFrames) {
         for (const ReplayEffectEvent& effect : sceneFrame.effects) {

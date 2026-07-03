@@ -73,8 +73,8 @@ void registerCrosshairCommands()
                 Terminal::instance().addLog("[ERROR] Usage: crosshair_alpha <0-255>");
                 return;
             }
-            CrosshairConfig::instance().edit().alpha =
-                std::clamp(std::atoi(args[0].c_str()), 0, 255);
+            int newAlpha = std::clamp(std::atoi(args[0].c_str()), 0, 255);
+            CrosshairConfig::instance().edit().alpha = newAlpha;
             saved("alpha");
         }
     }, "2026-06-14", CommandCategory::UI);

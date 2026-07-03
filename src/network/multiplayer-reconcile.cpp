@@ -1,4 +1,5 @@
 #include "network/multiplayer-context.h"
+#include "combat/weapon-runtime.h"
 
 #include <algorithm>
 #include <cmath>

@@ -76,6 +76,21 @@ void HitEffects::onHit(const HitEvent& event)
     if (event.hitEntity)
         EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
 
+    // 6b. Red impact sphere at hit position
+    if (event.hitEntity && glm::length(event.direction) > 0.001f)
+        EffectPartSystem::instance().spawnDamageImpactSphere(event.position, event.direction, event.victim);
+
+    // Debug logging for damage feedback
+    Debug::log(Debug::Category::NpcCombat,
+        "[DAMAGE FEEDBACK] tick=%d frame=%d entity=%s damage=%d damageNumber=%d impactSphere=%d "
+        "hitPos=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) lifetimeTicks=%d alpha=%.2f\n",
+        gGlobalTick, gGlobalTick, event.victim.c_str(), event.damage,
+        (int)(event.hitEntity && gConfig.core.damageNumbers && gConfig.damageNumber.enabled),
+        (int)(event.hitEntity && glm::length(event.direction) > 0.001f),
+        event.position.x, event.position.y, event.position.z,
+        event.direction.x, event.direction.y, event.direction.z,
+        30, 0.5f);
+
     // 7. HitFX timeline (burst)
     spawnHitEffects(event.position, event.direction, event.normal, event.damage,
                     event.attacker, event.victim, false);

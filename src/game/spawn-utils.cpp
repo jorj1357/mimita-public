@@ -7,6 +7,21 @@
 #include <cstdlib>
 #include <cmath>
 
+static FILE* gSpawnDebugFile = nullptr;
+static void spawnDebugOpen()
+{
+    if (!gSpawnDebugFile)
+        gSpawnDebugFile = fopen("logs/map_spawn_debug.txt", "a");
+}
+static void spawnDebugClose()
+{
+    if (gSpawnDebugFile) {
+        fclose(gSpawnDebugFile);
+        gSpawnDebugFile = nullptr;
+    }
+}
+#define SPAWNLOG(...) do { spawnDebugOpen(); if (gSpawnDebugFile) { fprintf(gSpawnDebugFile, __VA_ARGS__); fflush(gSpawnDebugFile); } } while(0)
+
 glm::vec3 getSpawnPosition(const World& world, int entityIndex) {
     if (!world.spawnPoints.empty()) {
         int idx = entityIndex % (int)world.spawnPoints.size();
@@ -21,6 +36,7 @@ glm::vec3 getSpawnPosition(const World& world, int entityIndex) {
 
 glm::vec3 spawnNpcAtSafePosition(NpcSystem& npcs, uint32_t npcId, float difficulty,
                                   const World& world, int entityIndex) {
+    bool explicitSpawn = world.spawnPoints.empty() ? false : true;
     glm::vec3 basePos = getSpawnPosition(world, entityIndex);
 
     // Add slight random offset to prevent overlapping spawns
@@ -37,10 +53,15 @@ glm::vec3 spawnNpcAtSafePosition(NpcSystem& npcs, uint32_t npcId, float difficul
 
     npcs.spawnNpc(npcId, difficulty, spawnPos);
 
+    int spawnIdx = world.spawnPoints.empty() ? -1 : (entityIndex % (int)world.spawnPoints.size());
     printf("[SPAWN NPC] id=%u difficulty=%.1f position=(%.2f, %.2f, %.2f) "
            "spawnpoint=%d totalNpcs=%zu\n",
            npcId, difficulty, spawnPos.x, spawnPos.y, spawnPos.z,
-           entityIndex, npcs.all().size());
+           spawnIdx, npcs.all().size());
+
+    SPAWNLOG("NPC spawned id=%u difficulty=%.1f explicit=%s spawn_index=%d position=(%.2f %.2f %.2f)\n",
+             npcId, difficulty, explicitSpawn ? "yes" : "no", spawnIdx,
+             spawnPos.x, spawnPos.y, spawnPos.z);
 
     return spawnPos;
 }

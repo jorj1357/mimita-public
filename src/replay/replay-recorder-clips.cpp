@@ -71,6 +71,13 @@ ReplayClip ReplayRecorder::makeClip(
         sound.tick -= (int)startTick;
         clip.soundEvents.push_back(std::move(sound));
     }
+    for (const ReplayKillfeedEvent& source : mKillfeedEvents) {
+        if ((uint32_t)source.tick < startTick || (uint32_t)source.tick > endTick)
+            continue;
+        ReplayKillfeedEvent kf = source;
+        kf.tick -= (int)startTick;
+        clip.killfeedEvents.push_back(std::move(kf));
+    }
     clip.header.tickCount = (uint32_t)clip.sceneFrames.size();
     return clip;
 }

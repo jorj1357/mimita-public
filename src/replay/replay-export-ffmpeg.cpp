@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "gui/hud/player-nameplates.h"
+
 #include <glm/glm.hpp>
 #include <glm/geometric.hpp>
 
@@ -430,6 +432,15 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     RPLXDEBUG("Clipped samples: %llu\n", (unsigned long long)clippedSamples);
     RPLXDEBUG("Audio duration: %.1f sec\n", totalDurationSec);
     RPLXDEBUG("Warnings found: 0\n");
+    RPLXDEBUG("\n");
+    RPLXDEBUG("Healthbars rendered total: %d\n", getHealthbarTotal());
+    RPLXDEBUG("Live-world healthbars rendered total: %d\n", getHealthbarLiveWorld());
+    RPLXDEBUG("Invalid healthbars rendered total: %d\n", getHealthbarInvalid());
+    RPLXDEBUG("\n");
+    RPLXDEBUG("impact_world count: %d\n", gRplxImpactWorldCount);
+    RPLXDEBUG("hit_burst count: %d\n", gRplxHitBurstCount);
+    RPLXDEBUG("debris_block count: %d\n", gRplxDebrisBlockCount);
+    RPLXDEBUG("Duplicate effect count: %d\n", gRplxEffectDuplicateCount);
 
     bool ok = writeWavFile(wavPath, output, sampleRate);
     if (ok)
