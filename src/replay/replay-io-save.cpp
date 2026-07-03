@@ -66,12 +66,17 @@ bool ReplayClip::save(const std::string& path) const
     }
     root["soundEvents"] = json::array();
     for (const ReplaySoundEvent& sound : soundEvents) {
-        root["soundEvents"].push_back({
+        json entry = {
             {"tick", sound.tick}, {"soundPath", sound.soundPath},
             {"world", sound.world}, {"position", vec3Json(sound.position)},
             {"volume", sound.volume}, {"pitch", sound.pitch},
             {"maxDistance", sound.maxDistance}
-        });
+        };
+        if (sound.listenerValid) {
+            entry["listenerPosition"] = vec3Json(sound.listenerPosition);
+            entry["listenerForward"] = vec3Json(sound.listenerForward);
+        }
+        root["soundEvents"].push_back(std::move(entry));
     }
 
     std::error_code ec;
@@ -155,6 +160,11 @@ bool ReplayClip::load(const std::string& path)
             sound.volume = value.value("volume", 1.0f);
             sound.pitch = value.value("pitch", 1.0f);
             sound.maxDistance = value.value("maxDistance", 0.0f);
+            if (value.contains("listenerPosition")) {
+                sound.listenerPosition = jsonVec3(value["listenerPosition"]);
+                sound.listenerForward = jsonVec3(value.value("listenerForward", json::array({0.0f, 1.0f, 0.0f})));
+                sound.listenerValid = true;
+            }
             soundEvents.push_back(std::move(sound));
         }
         header.tickCount = sceneFrames.empty() ? (uint32_t)frames.size()

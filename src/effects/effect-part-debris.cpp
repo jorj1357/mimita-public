@@ -40,6 +40,7 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal, fl
 
         EffectPart e;
         e.position = position + n * 0.04f + dir * (0.02f + (rand() % 51) / 1000.0f);
+        e.normal = n;
         e.replayType = "debris_block";
         e.velocity = dir * speed;
         e.angularVelocity = {

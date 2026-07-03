@@ -59,6 +59,9 @@ struct ReplaySoundEvent {
     float volume = 1.0f;
     float pitch = 1.0f;
     float maxDistance = 0.0f;
+    glm::vec3 listenerPosition{};
+    glm::vec3 listenerForward{0.0f, 1.0f, 0.0f};
+    bool listenerValid = false;
 };
 
 struct ReplayBodyPartState {
@@ -83,7 +86,6 @@ struct ReplayActorState {
     glm::vec3 rotation {};
     glm::vec3 velocity {};
 
-    // todo define in a central config 6 7 2026 
     int health = 100;
     int maxHealth = 100;
     int currentAmmo = 0;
