@@ -35,7 +35,7 @@ static int runBodyWeaponPass(
     // a monster AABB like the old combined-sphere approach.
     // The root capsule covers all body parts and most weapon positions.
     char rootTag[64];
-    std::snprintf(rootTag, sizeof(rootTag), "body_root_pass_%d", pass);
+    std::snprintf(rootTag, sizeof(rootTag), "Player_Body_RootPass_%d", pass);
     Capsule rootCap = p.getCapsule();
     std::vector<int> sharedCandidates = gatherGLBTriangles(world, rootCap, glm::vec3(0.0f), rootTag);
     gBW.candidateCount = (int)sharedCandidates.size();

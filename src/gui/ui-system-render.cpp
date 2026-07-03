@@ -199,6 +199,8 @@ void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 c
     if (!gProgram || !gVao || !gVbo || !verts || !tex || vertCount <= 0)
         return;
     MIMITA_GL_CALL(glUseProgram(gProgram));
+    MIMITA_GL_CALL(glEnable(GL_BLEND));
+    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
     MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
     MIMITA_GL_CALL(glUniform4fv(gColorLoc, 1, &color.x));
     MIMITA_GL_CALL(glUniform1i(gUseTexLoc, 1));

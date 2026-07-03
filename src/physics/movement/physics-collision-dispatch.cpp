@@ -107,7 +107,7 @@ void doCollisions(
 
         if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
             Capsule debugCap = p.getCapsule();
-            std::vector<int> debugCands = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "dispatch_debug");
+            std::vector<int> debugCands = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "Player_Debug_Dispatch");
             std::vector<glm::vec3> debugSamps = collectPlayerBodyCollisionSamples(p);
             std::vector<RecoveryContact> reportContacts = collectGLBRecoveryContacts(
                 world, debugCap, debugSamps, debugCands, BODY_SAMPLE_RADIUS);

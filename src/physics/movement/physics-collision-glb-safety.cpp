@@ -24,7 +24,7 @@ static void applyPostSnapCorrection(Player& p, const World& world, bool& grounde
     constexpr float MAX_CORRECTION = 2.0f;
     p.updateModelWorldTransforms();
     Capsule psc = p.getCapsule();
-    auto cands = gatherGLBTriangles(world, psc, glm::vec3(0.0f));
+    auto cands = gatherGLBTriangles(world, psc, glm::vec3(0.0f), "Player_Capsule_GatherCheck");
     auto contacts = collectCapsuleRecoveryContacts(world, psc, cands);
     if (contacts.empty()) return;
     glm::vec3 corr = solveBatchedCorrection(contacts, SURFACE_SLOP, nullptr, nullptr);
@@ -54,7 +54,7 @@ void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
     Capsule checkCap = p.getCapsule();
     float feetZ = checkCap.a.z - checkCap.r;
 
-    std::vector<int> groundCandidates = gatherGLBTriangles(world, checkCap, {0, 0, -GROUND_SNAP_DISTANCE}, "ground_snap");
+    std::vector<int> groundCandidates = gatherGLBTriangles(world, checkCap, {0, 0, -GROUND_SNAP_DISTANCE}, "Player_Capsule_GroundSnap");
 
     float bestGroundZ = -FLT_MAX;
     int bestTri = -1;
@@ -122,7 +122,7 @@ void doFloorRecovery(Player& p, const World& world, bool& groundedThisFrame)
         p.updateModelWorldTransforms();
         Capsule fCap = p.getCapsule();
         float feetZ = fCap.a.z - fCap.r;
-        std::vector<int> fCandidates = gatherGLBTriangles(world, fCap, glm::vec3(0.0f), "floor_recovery");
+        std::vector<int> fCandidates = gatherGLBTriangles(world, fCap, glm::vec3(0.0f), "Player_Capsule_FloorRecovery");
 
         float bestFloorZ = -FLT_MAX;
         int bestFloorTri = -1;
@@ -173,7 +173,7 @@ void doRotationSafetyPass(Player& p, const World& world, bool& groundedThisFrame
     {
         p.updateModelWorldTransforms();
         Capsule safetyCap = p.getCapsule();
-        std::vector<int> safetyCandidates = gatherGLBTriangles(world, safetyCap, glm::vec3(0.0f), "rotation_safety");
+        std::vector<int> safetyCandidates = gatherGLBTriangles(world, safetyCap, glm::vec3(0.0f), "Player_Capsule_RotationSafety");
         std::vector<RecoveryContact> safetyContacts = collectCapsuleRecoveryContacts(
             world, safetyCap, safetyCandidates
         );
@@ -228,7 +228,7 @@ void doFinalSafetyPass(Player& p, const World& world, CollisionTraceSnapshot& tr
     {
         p.updateModelWorldTransforms();
         Capsule finalCap = p.getCapsule();
-        std::vector<int> finalCandidates = gatherGLBTriangles(world, finalCap, glm::vec3(0.0f), "final_safety");
+        std::vector<int> finalCandidates = gatherGLBTriangles(world, finalCap, glm::vec3(0.0f), "Player_Capsule_FinalSafety");
         std::vector<RecoveryContact> finalSafetyContacts = collectCapsuleRecoveryContacts(
             world, finalCap, finalCandidates
         );
