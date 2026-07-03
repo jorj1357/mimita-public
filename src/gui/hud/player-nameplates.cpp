@@ -10,6 +10,7 @@
 #include "gui/ui-system.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
+#include "replay/replay-export.h"
 
 namespace {
 
@@ -57,6 +58,8 @@ HealthbarRenderResult drawPlayerHealthbar(
     if (player.dead || player.currentHp <= 0)
     {
         Debug::log(Debug::Category::General, "[HEALTHBAR] skipped render owner=%s dead=%d hp=%d", player.username.c_str(), (int)player.dead, player.currentHp);
+        RPLXDEBUG("[HEALTHBAR] Entity %d HP: %d Dead: true Rendered: NO Reason: dead actor\n",
+                  (int)(uintptr_t)&player, player.currentHp);
         result.cullReason = HealthbarCullReason::Dead;
         return result;
     }
@@ -111,6 +114,8 @@ HealthbarRenderResult drawPlayerHealthbar(
         0.25f, {1.0f, 1.0f, 1.0f, fade});
 
     result.rendered = true;
+    RPLXDEBUG("[HEALTHBAR] Entity %d HP: %d/%d Dead: false Rendered: YES\n",
+              (int)(uintptr_t)&player, player.currentHp, player.maxHp);
     return result;
 }
 

@@ -56,3 +56,9 @@ float getReplayExportAudioVolume();
 // Batch export
 void updateReplayBatchExport();
 bool isReplayBatchExportActive();
+
+// Debug log for replay export diagnostics
+void replayExportDebugOpen();
+void replayExportDebugClose();
+extern FILE* gReplayExportDebugFile;
+#define RPLXDEBUG(...) do { if (gReplayExportDebugFile) { fprintf(gReplayExportDebugFile, __VA_ARGS__); fflush(gReplayExportDebugFile); } } while(0)

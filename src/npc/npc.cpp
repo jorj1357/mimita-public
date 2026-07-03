@@ -399,18 +399,223 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     senseWorld(npc, player, safeDt);
 
-    // DEBUG MODE: no hearing, no hit reaction override, no state machine (temporary)
-    // Force Attack state whenever target exists
-    npc.stateMachine.currentState = npc.sensors.hasTarget ? NpcState::Attack : NpcState::Idle;
-    npc.hitReactionTimer = 0.0f;
+    // Hearing: if no target, react to nearby combat sounds
+    if (!npc.sensors.hasTarget && npc.stateMachine.lastKnownAge > 2.0f)
+    {
+        glm::vec3 soundSource;
+        float hearRange = 20.0f + npc.tuning.awarenessRange * 0.5f;
+        if (recentCombatSoundNear(npc.body.pos, 3.0f, hearRange, soundSource))
+        {
+            npc.stateMachine.lastKnownTarget = soundSource;
+            npc.stateMachine.lastKnownAge = 0.0f;
+        }
+    }
 
-    // DEBUG MODE: minimal movement, face target and shoot (temporary)
-    glm::vec3 moveDir{0.0f};
-    bool jump = false;
-    bool dash = false;
-    bool attack = npc.sensors.hasTarget;
+    bool wantDownDash = false;
+    if (npc.sensors.hasTarget && !npc.sensors.touchFloor && npc.downDashCooldown <= 0.0f)
+    {
+        float heightAbove = npc.body.pos.z - npc.sensors.targetPos.z;
+        if (heightAbove > 3.0f)
+            wantDownDash = true;
+    }
 
-    InputState input = buildInputState(npc, moveDir, jump, dash, attack, false);
+    if (npc.hitReactionTimer > 0.0f)
+    {
+        npc.stateMachine.currentState = NpcState::Recover;
+        npc.stateMachine.recoverTimer = npc.hitReactionTimer;
+        npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, npc.hitReactionTimer + 0.1f);
+    }
+
+    if (npc.trainingMode != 2) {
+        if (npc.trainingMode == 0) {
+            npc.stateMachine.currentState = NpcState::Idle;
+            npc.stateMachine.nextDecisionTime = 2.0f;
+        } else if (npc.trainingMode == 1) {
+            npc.stateMachine.currentState = NpcState::Retreat;
+            npc.stateMachine.retreatTimer = 0.0f;
+            npc.stateMachine.nextDecisionTime = 0.3f;
+        }
+    } else {
+        if (npc.stateMachine.nextDecisionTime <= 0.0f)
+        {
+            NpcState oldState = npc.stateMachine.currentState;
+            NpcState newState = pickNextState(npc);
+
+            if (newState == NpcState::Retreat && oldState != NpcState::Retreat)
+                npc.stateMachine.retreatTimer = 0.0f;
+
+            if (newState == NpcState::Recover)
+                npc.stateMachine.recoverTimer = 0.2f + random01(npc.rngState) * 0.3f;
+
+            if (newState == NpcState::Circle && oldState != NpcState::Circle)
+            {
+                npc.stateMachine.orbitSwapTimer = 0.1f + random01(npc.rngState) * 1.5f;
+                glm::vec3 otherPos;
+                float nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos);
+                if (nearest < 8.0f)
+                {
+                    glm::vec2 toOther(otherPos.x - npc.body.pos.x, otherPos.y - npc.body.pos.y);
+                    glm::vec2 toTarget(npc.sensors.targetPos.x - npc.body.pos.x, npc.sensors.targetPos.y - npc.body.pos.y);
+                    float cross = toTarget.x * toOther.y - toTarget.y * toOther.x;
+                    npc.stateMachine.orbitDirection = cross > 0.0f ? 1.0f : -1.0f;
+                }
+                else
+                {
+                    npc.stateMachine.orbitDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                }
+                npc.stateMachine.orbitDistance = 1.0f + random01(npc.rngState) * 9.0f;
+            }
+
+            if (newState == NpcState::Strafe && oldState != NpcState::Strafe)
+            {
+                glm::vec3 otherPos;
+                float nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos);
+                if (nearest < 8.0f)
+                {
+                    glm::vec2 toOther(otherPos.x - npc.body.pos.x, otherPos.y - npc.body.pos.y);
+                    glm::vec2 toTarget(npc.sensors.targetPos.x - npc.body.pos.x, npc.sensors.targetPos.y - npc.body.pos.y);
+                    float cross = toTarget.x * toOther.y - toTarget.y * toOther.x;
+                    npc.stateMachine.strafeDirection = cross > 0.0f ? -1.0f : 1.0f;
+                }
+                else
+                {
+                    npc.stateMachine.strafeDirection = random01(npc.rngState) < 0.5f ? 1.0f : -1.0f;
+                }
+                npc.stateMachine.strafeSwapTimer = 0.3f + random01(npc.rngState) * 2.0f;
+            }
+
+            logStateChange(npc, oldState, newState);
+            npc.stateMachine.previousState = oldState;
+            npc.stateMachine.currentState = newState;
+            npc.stateMachine.stateTimer = 0.0f;
+
+            float minT = stateMinTime(newState, difficulty01(npc.difficulty));
+            float maxT = stateMaxTime(newState, difficulty01(npc.difficulty));
+            npc.stateMachine.nextDecisionTime = minT + random01(npc.rngState) * (maxT - minT);
+        }
+    }
+
+    glm::vec3 moveDir;
+    bool jump, dash, attack;
+    computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
+
+    // Situaltional jump if obstacle ahead or stuck
+    if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
+    {
+        jump = NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world)
+            || NpcNavigation::isStuck(npc);
+    }
+
+    // Wall climb
+    if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
+    {
+        glm::vec3 wallNormal;
+        if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal))
+            jump = true;
+    }
+
+    // Situaltional dash
+    if (!dash && npc.sensors.hasTarget)
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        float targetCanSee = targetCanSeeNpc(npc, world);
+        dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, def, targetCanSee > 0.5f);
+    }
+
+    // Cover seeking
+    if (npc.sensors.hasTarget && glm::length(moveDir) > 0.001f)
+    {
+        bool wantsCover = npc.stateMachine.currentState == NpcState::Recover;
+        if (!wantsCover)
+        {
+            float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
+            wantsCover = healthFraction < 0.4f;
+        }
+        if (!wantsCover)
+        {
+            const auto& rt = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+            wantsCover = rt != npc.body.weaponRuntimes.end() && rt->second.isReloading;
+        }
+
+        if (wantsCover)
+        {
+            glm::vec3 coverDir = NpcNavigation::findCoverDirection(npc, npc.sensors.targetPos, world);
+            if (glm::length(coverDir) > 0.001f)
+            {
+                float coverBlend = 0.5f;
+                moveDir = glm::normalize(moveDir + coverDir * coverBlend);
+            }
+        }
+    }
+
+    if (npc.bombTagActive)
+    {
+        if (npc.bombTagHasBomb)
+        {
+            glm::vec3 toTarget = npc.bombTagChaseTarget - npc.body.pos;
+            float dist = glm::length(toTarget);
+            if (dist > 0.5f)
+            {
+                moveDir = toTarget / dist;
+                jump = dist > 2.0f && npc.body.pos.z < npc.bombTagChaseTarget.z - 0.5f;
+                attack = false;
+                dash = dist > 4.0f && npc.dashCooldown <= 0.0f;
+            }
+            npc.sensors.hasTarget = true;
+            npc.sensors.targetPos = npc.bombTagChaseTarget;
+        }
+        else
+        {
+            glm::vec3 fromTarget = npc.body.pos - npc.bombTagFleeFrom;
+            float dist = glm::length(fromTarget);
+            if (dist > 0.1f)
+            {
+                moveDir = fromTarget / dist;
+                if (dist < 3.0f && npc.dashCooldown <= 0.0f)
+                    dash = true;
+            }
+            if (dist < 8.0f)
+                npc.sensors.hasTarget = true;
+        }
+    }
+
+    {
+        Perf::ScopedTimer _pathTimer("NpcPathfinding");
+        if (glm::length(moveDir) > 0.001f)
+            moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world);
+
+        if (NpcNavigation::isStuck(npc))
+        {
+            npc.stateMachine.stuckTimer += safeDt;
+            if (npc.stateMachine.stuckTimer > 0.3f)
+            {
+                moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world);
+                jump = true;
+                dash = npc.dashCooldown <= 0.0f;
+                npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+            }
+        }
+        else
+        {
+            npc.stateMachine.stuckTimer = 0.0f;
+        }
+    }
+
+    // Freeze: occasionally freeze to dodge shots / break prediction
+    bool freeze = false;
+    if (npc.sensors.hasTarget && npc.sensors.touchFloor && npc.dashCooldown <= 0.0f
+        && npc.body.freeze.freezeAvailable && npc.body.freeze.freezeTimer <= 0.0f)
+    {
+        freeze = random01(npc.rngState) < 0.003f;
+    }
+
+    InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash);
+    input.freezeHeld = freeze;
+    input.groundReturnPressed = false;
+    if (input.dashPressed)
+        npc.dashCommandConsumed = true;
+
+    bool downDashAvailableBefore = npc.body.dash.downDashAvailable;
     {
         Perf::ScopedTimer _npcCollision("NpcCollision");
         glm::vec3 velocityBefore = npc.body.vel;
@@ -429,9 +634,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         {
             std::string cmdKey = "npc-cmd-" + std::to_string(npc.id);
             Debug::logThrottled(Debug::Category::General, cmdKey.c_str(), DebugConfig::PRINT_INTERVAL,
-                "[NPC] id=%u state=%s jump=%d dash=%d move=(%.2f %.2f)\n",
+                "[NPC] id=%u state=%s jump=%d dash=%d freeze=%d move=(%.2f %.2f)\n",
                 npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
-                (int)input.jumpHeld, (int)input.dashPressed,
+                (int)input.jumpHeld, (int)input.dashPressed, (int)input.freezeHeld,
                 input.wishMoveXY.x, input.wishMoveXY.y);
 
             std::string physKey = "npc-phys-" + std::to_string(npc.id);
@@ -440,30 +645,32 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.id, (int)npc.sensors.touchFloor,
             npc.body.vel.x, npc.body.vel.y, npc.body.vel.z,
             npc.lastFinalSpeed);
+        }
     }
 
-    if (DebugConfig::DEBUG_NPC_COMBAT && npc.sensors.hasTarget)
+    if (input.dashPressed && npc.body.dash.didDash)
     {
-        float aimErrDeg = NpcCombat::aimErrorDegrees(npc.difficulty);
-        printf("[NPC] id=%u state=%s dist=%.1f aimError=%.2f canSee=%d "
-               "aimTimer=%.2f reactionTimer=%.2f\n",
-               npc.id, npcStateName(npc.stateMachine.currentState).c_str(),
-               npc.sensors.targetDistance, aimErrDeg,
-               (int)(npc.sensors.targetDistance <= npc.tuning.awarenessRange),
-               npc.aimTimer, npc.reactionTimer);
-    }
+        npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
+        EffectPartSystem::instance().spawnDash(npc.body.pos);
+        playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
     }
 
-    // DEBUG MODE: reactionTimer always 0, no dashing (temporary)
+    if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)
+    {
+        npc.downDashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.50f;
+    }
+
+    // No reaction timer — NPC fires immediately when cooldown expires
     npc.reactionTimer = 0.0f;
 
     if (attack && npc.attackCooldown <= 0.0f)
     {
         Perf::ScopedTimer _combatTimer("NpcCombat");
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
-        if (fired)
+        if (fired && npc.sensors.hasTarget)
         {
-            npc.stateMachine.nextDecisionTime = 0.0f;
+            // Do NOT reset nextDecisionTime — let the state machine keep its
+            // current state for its minimum duration to prevent jitter.
         }
     }
 }

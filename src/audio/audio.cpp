@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "config/player-settings.h"
+#include "debug/debug-log.h"
 #include "replay/replay.h"
 
 static ma_engine gEngine;
@@ -124,6 +125,11 @@ static void startSound(const std::string& name, float volume, float pitch,
     ma_sound_start(&active->sound);
     if (gSoundDebug) printf("[SOUND] playing event=%s category=%s path=%s\n",
                             name.c_str(), position ? "3D" : "2D", path.c_str());
+    Debug::warn(Debug::Category::Audio, "[AUDIO] startSound name=%s pos=%s vol=%.2f maxDist=%.2f spatial=%s\n",
+                name.c_str(),
+                position ? "(set)" : "(null)",
+                volume, maxDistance,
+                position ? "ENABLED" : "DISABLED");
     gActiveSounds.push_back(std::move(active));
 }
 
@@ -210,6 +216,15 @@ void AudioManager::play(const AudioEvent& event)
     replayEvent.listenerValid = true;
     captureReplaySound(replayEvent);
 
+    glm::vec3 listenerPos = gLastListenerPosition;
+    glm::vec3 listenerFwd = gLastListenerForward;
+    Debug::warn(Debug::Category::Audio, "[AUDIO] play event=%s world=%d pos=(%.2f %.2f %.2f) vol=%.2f maxDist=%.2f listener=(%.2f %.2f %.2f) listenerFwd=(%.2f %.2f %.2f)\n",
+                event.name.c_str(), (int)event.world,
+                event.position.x, event.position.y, event.position.z,
+                event.volume, event.maxDistance,
+                listenerPos.x, listenerPos.y, listenerPos.z,
+                listenerFwd.x, listenerFwd.y, listenerFwd.z);
+
     if (event.world) {
         startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance);
         if (!gActiveSounds.empty())
@@ -267,6 +282,8 @@ void setAudioListener(glm::vec3 pos, glm::vec3 forward)
     ma_engine_listener_set_position(&gEngine, 0, pos.x, pos.y, pos.z);
     ma_engine_listener_set_direction(&gEngine, 0, forward.x, forward.y, forward.z);
     ma_engine_listener_set_world_up(&gEngine, 0, 0.0f, 0.0f, 1.0f);
+    Debug::warn(Debug::Category::Audio, "[AUDIO] setAudioListener pos=(%.2f %.2f %.2f) forward=(%.2f %.2f %.2f)\n",
+                pos.x, pos.y, pos.z, forward.x, forward.y, forward.z);
 }
 
 void playAirJumpSound()

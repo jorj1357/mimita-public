@@ -10,6 +10,7 @@
 #include <glad/glad.h>
 
 #include "replay/replay.h"
+#include "replay/replay-export.h"
 #include "video/outro.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
@@ -77,6 +78,13 @@ void updateReplayExport()
         printf("[RPLX] tick rate: 60\n");
         printf("[RPLX] total ticks: %u\n", gJob.totalTicks);
         printf("[RPLX] expected frames: %u\n", gJob.totalTicks);
+        RPLXDEBUG("====================\n");
+        RPLXDEBUG("LISTENER / CAMERA\n");
+        RPLXDEBUG("====================\n\n");
+
+        RPLXDEBUG("====================\n");
+        RPLXDEBUG("HEALTHBARS\n");
+        RPLXDEBUG("====================\n\n");
     }
 
     EXPORTTRACE("Frame %u/%u: allocating pixels buffer (%dx%d*3=%d bytes)",
@@ -148,6 +156,16 @@ void updateReplayExport()
             if (sf && !sf->actors.empty()) {
                 auto& p = sf->actors[0].position;
                 EXPORTLOG("[EXPORT DEBUG] actor0=(%.2f,%.2f,%.2f)", (double)p.x, (double)p.y, (double)p.z);
+            }
+        }
+        if (frameNum % 30 == 0)
+        {
+            const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame();
+            if (sf) {
+                RPLXDEBUG("[LISTENER] frame=%u cam pos=(%.2f %.2f %.2f) rot=(%.2f %.2f %.2f)\n",
+                          frameNum,
+                          (double)sf->camera.position.x, (double)sf->camera.position.y, (double)sf->camera.position.z,
+                          (double)sf->camera.rotation.x, (double)sf->camera.rotation.y, (double)sf->camera.rotation.z);
             }
         }
     }

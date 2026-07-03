@@ -238,6 +238,16 @@ void engineTickCamera(Engine& engine, float dt)
                 }
                 if (!play)
                     continue;
+                {
+                    glm::vec3 toSound = sound.position - camera.pos;
+                    float dist = glm::length(toSound);
+                    Debug::warn(Debug::Category::Replay, "[REPLAY AUDIO] triggered tick=%d name=%s world=%d listenerValid=%d pos=(%.2f %.2f %.2f) camera=(%.2f %.2f %.2f) dist=%.2f vol=%.2f maxDist=%.2f\n",
+                                sound.tick,
+                                sound.soundPath.c_str(), (int)sound.world, (int)sound.listenerValid,
+                                sound.position.x, sound.position.y, sound.position.z,
+                                camera.pos.x, camera.pos.y, camera.pos.z,
+                                dist, sound.volume, sound.maxDistance);
+                }
                 playWorldSound(
                     sound.soundPath, sound.position,
                     sound.volume, sound.pitch,
