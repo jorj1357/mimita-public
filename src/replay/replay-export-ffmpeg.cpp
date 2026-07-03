@@ -1,11 +1,15 @@
 #include "replay/replay-export.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
+
+#include <glm/glm.hpp>
+#include <glm/geometric.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -89,7 +93,7 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     uint32_t sampleRate = 48000;
     uint16_t numChannels = 2;
     double tickRate = 60.0;
-    double totalDurationSec = (double)totalTicks / tickRate + 1.0;
+    double totalDurationSec = (double)totalTicks / tickRate;
     size_t totalFrames = (size_t)(totalDurationSec * sampleRate);
     size_t totalSamples = totalFrames * numChannels;
 
@@ -130,6 +134,43 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                       REPLAY_PLAYER.cameraController().modeName());
         }
 
+        // Compute spatialization for world sounds with valid listener data
+        float spatialAtten = 1.0f;
+        float panLeft = 1.0f;
+        float panRight = 1.0f;
+        bool spatialize = event.world && event.listenerValid;
+        if (spatialize)
+        {
+            glm::vec3 toSound = event.position - event.listenerPosition;
+            float dist = glm::length(toSound);
+            float maxDist = std::max(1.0f, event.maxDistance > 0.0f ? event.maxDistance : 30.0f);
+            float minDist = 1.0f;
+
+            // Linear distance attenuation (matches miniaudio)
+            if (dist <= minDist) {
+                spatialAtten = 1.0f;
+            } else if (dist >= maxDist) {
+                spatialAtten = 0.0f;
+            } else {
+                spatialAtten = 1.0f - (dist - minDist) / (maxDist - minDist);
+            }
+
+            // Stereo pan: project direction-to-sound onto listener's right vector
+            glm::vec3 dir = dist > 0.001f ? glm::normalize(toSound) : glm::vec3(0.0f);
+            glm::vec3 right = glm::normalize(glm::cross(event.listenerForward, glm::vec3(0.0f, 0.0f, 1.0f)));
+            float pan = glm::clamp(glm::dot(dir, right), -1.0f, 1.0f);
+
+            // Constant-power panning
+            panLeft = std::cos((pan + 1.0f) * 3.14159265f / 4.0f);
+            panRight = std::sin((pan + 1.0f) * 3.14159265f / 4.0f);
+
+            printf("[RPLX AUDIO SPATIAL] event=%s pos=(%.1f %.1f %.1f) listener=(%.1f %.1f %.1f) dist=%.1f atten=%.2f pan=%.2f left=%.2f right=%.2f\n",
+                   event.soundPath.c_str(),
+                   event.position.x, event.position.y, event.position.z,
+                   event.listenerPosition.x, event.listenerPosition.y, event.listenerPosition.z,
+                   dist, spatialAtten, pan, panLeft, panRight);
+        }
+
         std::string filePath = resolveSoundPath(event.soundPath);
         if (filePath.empty() || !std::filesystem::exists(filePath))
         {
@@ -149,16 +190,15 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         double eventTime = (double)event.tick / tickRate;
         size_t dstFrame = (size_t)(eventTime * sampleRate);
         size_t srcFrames = pcm.size() / ch;
+        float baseVolume = event.volume * spatialAtten;
 
         if (rate == sampleRate && ch == numChannels)
         {
             for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
             {
-                for (uint32_t c = 0; c < numChannels; c++)
-                {
-                    float s = (float)pcm[(i * ch + c)] * event.volume / 32768.0f;
-                    mix[(dstFrame + i) * numChannels + c] += s;
-                }
+                float s = (float)pcm[(i * 2)] / 32768.0f * baseVolume;
+                mix[(dstFrame + i) * 2 + 0] += s * panLeft;
+                mix[(dstFrame + i) * 2 + 1] += s * panRight;
             }
         }
         else
@@ -173,24 +213,27 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                 double frac = dstPos - (double)dstI;
                 size_t dstNext = dstI + 1;
 
-                for (uint32_t c = 0; c < std::min(ch, (uint32_t)numChannels); c++)
-                {
-                    float s0 = (float)pcm[i * ch + std::min(c, ch - 1)] / 32768.0f;
-                    float s1 = (float)pcm[std::min(i + 1, srcFrames - 1) * ch + std::min(c, ch - 1)] / 32768.0f;
-                    float interp = s0 + (s1 - s0) * (float)frac;
-                    interp *= event.volume;
+                float s = (float)pcm[i * ch] / 32768.0f;
+                float sNext = (float)pcm[std::min(i + 1, srcFrames - 1) * ch] / 32768.0f;
+                float interp = s + (sNext - s) * (float)frac;
+                interp *= baseVolume;
 
-                    uint32_t outCh = std::min(c, (uint32_t)(numChannels - 1));
-                    mix[dstI * numChannels + outCh] += interp;
-                    if (dstNext < totalFrames)
-                        mix[dstNext * numChannels + outCh] += interp * (1.0f - (float)frac);
-                }
+                mix[dstI * 2 + 0] += interp * panLeft;
+                if (dstNext < totalFrames)
+                    mix[dstNext * 2 + 0] += interp * panLeft * (1.0f - (float)frac);
+                mix[dstI * 2 + 1] += interp * panRight;
+                if (dstNext < totalFrames)
+                    mix[dstNext * 2 + 1] += interp * panRight * (1.0f - (float)frac);
             }
         }
     }
 
     float volMul = gAudioConfig.audioVolumeMultiplier;
     EXPORTLOG("[REPLAY AUDIO] volumeMultiplier=%.2f", volMul);
+
+    if (decodedCount > 0) {
+        printf("[RPLX AUDIO SPATIAL] Summary: %u events spatialized\n", decodedCount);
+    }
 
     float peak = 0.0f;
     uint64_t clippedSamples = 0;
@@ -285,6 +328,7 @@ static bool encodeVideo(const std::string& nativeOutput, bool withAudio)
         audioCodec = "-c:a aac -b:a 192k";
     }
 
+    std::string framesV = "-frames:v " + std::to_string(gJob.totalTicks) + " ";
     std::string batContent = "@echo off\r\n"
         "\"" + fs::absolute(gJob.ffmpegPath).make_preferred().string() + "\" -y -f rawvideo -pixel_format rgb24 "
         "-video_size " + std::to_string(gJob.capWidth) + "x" + std::to_string(gJob.capHeight) + " "
@@ -293,6 +337,7 @@ static bool encodeVideo(const std::string& nativeOutput, bool withAudio)
         + scaleFilter + " "
         "-c:v libx264 -preset fast -pix_fmt yuv420p "
         "-crf 18 "
+        + framesV
         + audioCodec + " "
         + (withAudio ? "-shortest " : "") +
         "\"" + nativeOutput + "\" "

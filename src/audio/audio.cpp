@@ -35,6 +35,9 @@
 static ma_engine gEngine;
 static bool gAudioInit = false;
 
+static glm::vec3 gLastListenerPosition{0.0f};
+static glm::vec3 gLastListenerForward{0.0f, 1.0f, 0.0f};
+
 // cooldown timer for air jump
 static float airJumpCooldown = 0.0f;
 struct ActiveSound {
@@ -202,6 +205,9 @@ void AudioManager::play(const AudioEvent& event)
     replayEvent.volume = event.volume;
     replayEvent.pitch = event.pitch;
     replayEvent.maxDistance = event.maxDistance;
+    replayEvent.listenerPosition = gLastListenerPosition;
+    replayEvent.listenerForward = gLastListenerForward;
+    replayEvent.listenerValid = true;
     captureReplaySound(replayEvent);
 
     if (event.world) {
@@ -256,6 +262,8 @@ void setAudioListener(glm::vec3 pos, glm::vec3 forward)
 {
     initAudioOnce();
     if (!gAudioInit) return;
+    gLastListenerPosition = pos;
+    gLastListenerForward = forward;
     ma_engine_listener_set_position(&gEngine, 0, pos.x, pos.y, pos.z);
     ma_engine_listener_set_direction(&gEngine, 0, forward.x, forward.y, forward.z);
     ma_engine_listener_set_world_up(&gEngine, 0, 0.0f, 0.0f, 1.0f);
@@ -285,7 +293,6 @@ void playRandomFootstep()
     }
 }
 
-// mar 8 2026 todo maibe put this in like its own file or own folder idk
 void playFreezeBeginSound()
 {
     playSound("entity/player/freezebegin", 1.0f);

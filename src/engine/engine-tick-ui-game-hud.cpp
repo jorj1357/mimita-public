@@ -69,6 +69,10 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
+    // During replay, force spawn flash off so the full HUD is visible.
+    if (replayPlaybackActive)
+        player.spawnFlashTimer = 0.0f;
+
     // During replay playback, read from the viewed replay actor instead of
     // the local player so HUD displays correct values at correct positions.
     const ReplayActorState* replayViewedActor = nullptr;

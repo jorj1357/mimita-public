@@ -92,6 +92,65 @@ void registerReplayCommands()
     });
 
     Terminal::instance().registerCommand({
+        "rplload", "Load replay by index (1=newest) or filename", "rplload <index|filename>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: rplload <index|filename>");
+                return;
+            }
+            std::string path;
+            char* end = nullptr;
+            long idx = std::strtol(args[0].c_str(), &end, 10);
+            if (end != args[0].c_str() && idx > 0 && *end == '\0') {
+                std::vector<std::string> clips = listReplayClips();
+                size_t index = (size_t)(idx - 1);
+                if (index >= clips.size()) {
+                    char buf[128];
+                    snprintf(buf, sizeof(buf),
+                        "[ERROR] Replay #%ld does not exist. Available replay count: %zu",
+                        idx, clips.size());
+                    Terminal::instance().addLog(buf);
+                    return;
+                }
+                path = clips[index];
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Loading replay #%ld\nReplay: %s",
+                    idx, std::filesystem::path(path).filename().string().c_str());
+                Terminal::instance().addLog(buf);
+            } else {
+                path = args[0];
+            }
+            bool ok = REPLAY_PLAYER.loadFromJSON(path);
+            Terminal::instance().addLog(ok ? "[REPLAY] Loaded successfully." : "[ERROR] Failed to load " + path);
+        }
+    }, "2026-07-02", CommandCategory::Replay);
+
+    Terminal::instance().registerCommand({
+        "rpllatest", "Load the newest replay (shortcut for rplload 1)", "rpllatest",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().execute("rplload 1");
+        }
+    }, "2026-07-02", CommandCategory::Replay);
+
+    Terminal::instance().registerCommand({
+        "rpllist", "List replays with indices (1=newest)", "rpllist",
+        [](const std::vector<std::string>&) {
+            std::vector<std::string> clips = listReplayClips();
+            if (clips.empty()) {
+                Terminal::instance().addLog("[REPLAY] no replays found");
+                return;
+            }
+            Terminal::instance().addLog("[REPLAY] available replays:");
+            for (size_t i = 0; i < clips.size(); ++i) {
+                char buf[256];
+                snprintf(buf, sizeof(buf), "  %zu  %s",
+                    i + 1, std::filesystem::path(clips[i]).filename().string().c_str());
+                Terminal::instance().addLog(buf);
+            }
+        }
+    }, "2026-07-02", CommandCategory::Replay);
+
+    Terminal::instance().registerCommand({
         "replay.info", "Show replay info", "replay.info",
         [](const std::vector<std::string>&) {
             char buf[128];
