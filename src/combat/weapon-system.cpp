@@ -369,7 +369,28 @@ RevolverShotResult WeaponSystem::fire(
         return {};
     }
 
+    if (rt->isReloading || rt->fireCooldown > 0.0f) {
+        return {};
+    }
+
+    if (rt->currentAmmo <= 0) {
+        WeaponAudio::playDryFireSound(*def);
+        if (!rt->isReloading && rt->reserveAmmo > 0) {
+            reload(player);
+        }
+        return {};
+    }
+
     if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+        rt->currentAmmo--;
+        rt->fireCooldown = def->fireDelay;
+        rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
+        mShotCooldown = def->fireDelay;
+        WeaponFire::applyRecoil(player, *def,
+            camera.front, mRecoilValue, 1.0f / 60.0f);
+        mDisturbance += 1.2f;
+        AnalyticsManager::instance().trackWeaponUsed(def->id);
+
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
@@ -381,19 +402,11 @@ RevolverShotResult WeaponSystem::fire(
             ? def->customParams.at("firingRecoilStrength") : 20.0f;
         player.externalImpulse -= dir * recoilStrength;
         WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
-        return {};
-    }
 
-    if (rt->isReloading || rt->fireCooldown > 0.0f) {
-        return {};
-    }
-
-    if (rt->currentAmmo <= 0) {
-        WeaponAudio::playDryFireSound(*def);
-        Terminal::instance().addLog("[WEAPON] out of ammo");
-        if (!rt->isReloading && rt->reserveAmmo > 0) {
-            reload(player);
-        }
+        Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired ammo=%d/%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f)\n",
+                   rt->currentAmmo, rt->reserveAmmo,
+                   muzzlePos.x, muzzlePos.y, muzzlePos.z,
+                   dir.x, dir.y, dir.z);
         return {};
     }
 

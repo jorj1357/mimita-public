@@ -2,8 +2,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useState } from "react"
 
 import Layout from "../components/Layout"
-import DesktopDialog from "../components/DesktopDialog"
 import { apiRequest } from "../lib/api"
+import { logAuthEvent } from "../lib/api-log"
 
 export default function Auth({ mode }) {
     const signup = mode === "signup"
@@ -18,7 +18,6 @@ export default function Auth({ mode }) {
     })
     const [message, setMessage] = useState(location.state?.message || "")
     const [loading, setLoading] = useState(false)
-    const [showDesktopDialog, setShowDesktopDialog] = useState(false)
 
     function update(field, value) {
         setForm((current) => ({
@@ -56,7 +55,8 @@ export default function Auth({ mode }) {
                 { method: "POST", body: JSON.stringify(body) }
             )
 
-            setShowDesktopDialog(true)
+            logAuthEvent(signup ? "signup" : "login", "success")
+            navigate("/profile")
         }
         catch (error) {
             setMessage(error.message)
@@ -64,11 +64,6 @@ export default function Auth({ mode }) {
         finally {
             setLoading(false)
         }
-    }
-
-    function handleDesktopDismiss() {
-        setShowDesktopDialog(false)
-        navigate("/profile")
     }
 
     return (
@@ -170,13 +165,6 @@ export default function Auth({ mode }) {
                     </p>
                 </form>
             </section>
-
-            {showDesktopDialog && (
-                <DesktopDialog
-                    onClose={() => navigate("/profile")}
-                    onDismiss={handleDesktopDismiss}
-                />
-            )}
         </Layout>
     )
 }  

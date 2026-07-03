@@ -56,6 +56,9 @@ static void fallbackWeaponShape(
         } else if (def->id == "rocket_launcher") {
             radius = 0.25f;
             length = 0.6f;
+        } else if (def->id == "grenade_launcher") {
+            radius = 0.25f;
+            length = 0.65f;
         }
     }
 
@@ -209,6 +212,9 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 fb.position = glm::vec3(0.0f, 0.0f, -0.2f);
                 fb.size = glm::vec3(0.16f, 0.16f, 1.0f);
             } else if (def->id == "rocket_launcher") {
+                fb.position = glm::vec3(0.0f, 0.0f, -0.3f);
+                fb.size = glm::vec3(0.30f, 0.30f, 1.6f);
+            } else if (def->id == "grenade_launcher") {
                 fb.position = glm::vec3(0.0f, 0.0f, -0.3f);
                 fb.size = glm::vec3(0.30f, 0.30f, 1.6f);
             } else if (def->id == "swordsword") {

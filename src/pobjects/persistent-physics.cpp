@@ -224,29 +224,51 @@ void PersistentPhysicsSystem::checkCollisions(
 
                 float velDot = glm::dot(obj.velocity, normal);
                 if (velDot < 0.0f) {
+                    float speedBefore = glm::length(obj.velocity);
                     glm::vec3 tangent = obj.velocity - normal * velDot;
                     obj.velocity -= normal * velDot * (1.0f + obj.cfg.restitution);
                     obj.velocity += tangent * obj.cfg.friction;
+
+                    float speedAfter = glm::length(obj.velocity);
+                    if (speedAfter > speedBefore * 0.98f)
+                        obj.velocity *= (speedBefore * 0.95f) / speedAfter;
+
+                    obj.angularVelocity = glm::vec3(0.0f);
                     obj.bounceCount++;
+
+                    ReplayEffectEvent impactEvent;
+                    impactEvent.type = "impact_world";
+                    impactEvent.position = obj.position;
+                    impactEvent.normal = normal;
+                    impactEvent.direction = glm::normalize(obj.velocity);
+                    impactEvent.scale = {obj.cfg.radius * 2.0f, 0.0f, 0.0f};
+                    impactEvent.alpha = 0.5f;
+                    impactEvent.lifetime = 0.25f;
+                    captureReplayEffect(impactEvent);
+
+                    EffectPart impact;
+                    impact.position = obj.position;
+                    impact.color = {0.5f, 0.5f, 0.5f};
+                    impact.normal = normal;
+                    impact.velocity = glm::vec3(0.0f);
+                    impact.lifetime = 0.25f;
+                    impact.maxLifetime = 0.25f;
+                    impact.scale = obj.cfg.radius * 2.0f;
+                    impact.endScale = 0.0f;
+                    impact.alpha = 0.5f;
+                    impact.replayType = "impact_indicator";
+                    EffectPartSystem::instance().spawn(impact);
 
                     float energyBefore = 0.5f * glm::dot(obj.velocity + normal * velDot, obj.velocity + normal * velDot);
                     float energyAfter = 0.5f * glm::dot(obj.velocity, obj.velocity);
                     float energyLost = energyBefore - energyAfter;
 
-                    FILE* f = fopen("logs/persistent_physics_debug.txt", "a");
-                    if (f) {
-                        fprintf(f, "COLLISION id=%u pos=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) "
-                                   "velBefore=(%.2f %.2f %.2f) velAfter=(%.2f %.2f %.2f) "
-                                   "energyLost=%.2f bounce=%d sleeping=%d\n",
-                                obj.id, obj.position.x, obj.position.y, obj.position.z,
-                                normal.x, normal.y, normal.z,
-                                obj.velocity.x + normal.x * velDot,
-                                obj.velocity.y + normal.y * velDot,
-                                obj.velocity.z + normal.z * velDot,
-                                obj.velocity.x, obj.velocity.y, obj.velocity.z,
-                                energyLost, obj.bounceCount, (int)obj.sleeping);
-                        fclose(f);
-                    }
+                    Debug::log(Debug::Category::Collision,
+                        "[POBJ] COLLISION id=%u pos=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) "
+                        "speedBefore=%.2f speedAfter=%.2f bounce=%d\n",
+                        obj.id, obj.position.x, obj.position.y, obj.position.z,
+                        normal.x, normal.y, normal.z,
+                        speedBefore, speedAfter, obj.bounceCount);
                 }
                 break;
             }

@@ -5,6 +5,7 @@
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
 #include "weapon-rocket-launcher.h"
+#include "pobjects/persistent-physics.h"
 
 #include <cstdio>
 
@@ -87,4 +88,5 @@ void WeaponSystem::unequip(Player& player) {
     }
     mSwordswordState = SwordswordState{};
     WeaponRocketLauncher::clear(mRocketState);
+    PersistentPhysicsSystem::instance().clear();
 }
