@@ -35,6 +35,10 @@ void doDownDash(
 
     p.vel.z = DOWN_DASH_SPEED;
     p.dash.downDashAvailable = false;
+    p.dash.didDownDash = true;
+
+    Debug::log(Debug::Category::Physics, "[DOWN DASH] activated vel.z=%.0f pos=(%.2f %.2f %.2f)\n",
+               p.vel.z, p.pos.x, p.pos.y, p.pos.z);
 
     DD_LOG(
         "[DOWN_DASH] vel.z %.3f -> %.3f (onGround=%d)\n",

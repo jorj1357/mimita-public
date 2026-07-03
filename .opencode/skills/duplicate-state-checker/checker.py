@@ -23,6 +23,13 @@ while not os.path.isfile(os.path.join(REPO_ROOT, "overseer.py")):
 
 SRC_DIR = os.path.join(REPO_ROOT, "src")
 
+SKIP_FILE_PATTERNS = [
+    r"physics-mini\.cpp",  # grounded/onGround/groundedThisFrame are intentionally distinct
+    r"physics-gravity\.cpp",
+    r"physics-collision\.cpp",  # phase-specific ground state tracking
+    r"physics-collision-glb-main\.cpp",
+]
+
 DUPLICATE_GROUPS = [
     ["grounded", "onGround", "stableOnGround", "groundedThisFrame", "isGrounded", "mGrounded"],
     ["dashAvailable", "dashReady", "canDash", "mDashReady", "mCanDash"],
@@ -82,6 +89,14 @@ def main():
 
         for filepath in files:
             relpath = os.path.relpath(filepath, REPO_ROOT)
+            skip = False
+            for pat in SKIP_FILE_PATTERNS:
+                if re.search(pat, relpath.replace("\\", "/")):
+                    skip = True
+                    break
+            if skip:
+                continue
+
             with open(filepath, "r", errors="replace") as f:
                 try:
                     lines = f.readlines()

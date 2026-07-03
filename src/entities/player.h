@@ -243,6 +243,7 @@ struct DashState {
     int dashMovementTicks = 0;
     int lastDashQuality = 0;
     bool didDash = false;
+    bool didDownDash = false;
 };
 
 struct FreezeState {
