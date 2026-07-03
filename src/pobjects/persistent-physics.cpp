@@ -37,7 +37,8 @@ uint32_t PersistentPhysicsSystem::spawn(
     const glm::vec3& angularVelocity,
     uint32_t ownerId,
     const std::string& ownerName,
-    const std::string& weaponId)
+    const std::string& weaponId,
+    const glm::vec3& ownerPos)
 {
     PersistentPhysicsObject obj;
     obj.id = mNextId++;
@@ -55,9 +56,31 @@ uint32_t PersistentPhysicsSystem::spawn(
     obj.sleepTimer = 0.0f;
     obj.alive = true;
     obj.weaponId = weaponId;
+    obj.worldTouched = false;
+    obj.ownerIgnored = false;
+    obj.distFromOwner = glm::length(position - ownerPos);
 
-    if (!cfg.spawnSound.empty())
+    bool ownerArmed = false;
+    if (cfg.armingDistance > 0.0f && obj.distFromOwner < cfg.armingDistance) {
+        obj.ownerIgnored = true;
+        Debug::log(Debug::Category::Weapons, "[POBJ] id=%u owner=%s ownerIgnored=YES distFromOwner=%.2f armingDistance=%.2f\n",
+                   obj.id, ownerName.c_str(), obj.distFromOwner, cfg.armingDistance);
+    } else {
+        ownerArmed = true;
+    }
+
+    Debug::log(Debug::Category::Weapons, "[POBJ] SPAWN id=%u type=%s owner=%s pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) "
+               "ownerIgnored=%d armingDist=%.1f\n",
+               obj.id, weaponId.c_str(), ownerName.c_str(),
+               position.x, position.y, position.z,
+               velocity.x, velocity.y, velocity.z,
+               (int)obj.ownerIgnored, cfg.armingDistance);
+
+    if (!cfg.spawnSound.empty()) {
+        Debug::log(Debug::Category::Audio, "[POBJ] sound=spawn path=%s pos=(%.2f %.2f %.2f)\n",
+                   cfg.spawnSound.c_str(), position.x, position.y, position.z);
         playWorldSound(cfg.spawnSound, position, 1.0f, 1.0f, 50.0f);
+    }
 
     ReplayEffectEvent spawnEvent;
     spawnEvent.type = "persistent_spawn";
@@ -69,16 +92,6 @@ uint32_t PersistentPhysicsSystem::spawn(
     spawnEvent.scale = {cfg.radius, cfg.height, (float)cfg.shape};
     spawnEvent.lifetime = cfg.lifetime;
     captureReplayEffect(spawnEvent);
-
-    FILE* f = fopen("logs/persistent_physics_debug.txt", "a");
-    if (f) {
-        fprintf(f, "SPAWN id=%u type=%s owner=%s pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) angVel=(%.2f %.2f %.2f)\n",
-                obj.id, weaponId.c_str(), ownerName.c_str(),
-                position.x, position.y, position.z,
-                velocity.x, velocity.y, velocity.z,
-                angularVelocity.x, angularVelocity.y, angularVelocity.z);
-        fclose(f);
-    }
 
     mObjects.push_back(std::move(obj));
     return mObjects.back().id;
@@ -95,7 +108,17 @@ void PersistentPhysicsSystem::update(float dt, const World& world, Player& playe
         }
 
         obj.age += dt;
+        if (obj.cfg.armingTime > 0.0f && obj.age >= obj.cfg.armingTime) {
+            if (obj.ownerIgnored) {
+                obj.ownerIgnored = false;
+                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u armingTime elapsed (%.2fs) — owner collision ENABLED\n",
+                           obj.id, obj.cfg.armingTime);
+            }
+        }
+
         if (obj.cfg.lifetime > 0.0f && obj.age >= obj.cfg.lifetime) {
+            Debug::log(Debug::Category::Weapons, "[POBJ] id=%u lifetime expired (%.2fs) — exploding\n",
+                       obj.id, obj.cfg.lifetime);
             if (obj.cfg.explosionRadius > 0.0f) {
                 doExplosion(obj, world, player, npcs, camera);
             }
@@ -115,15 +138,12 @@ void PersistentPhysicsSystem::physicsStep(PersistentPhysicsObject& obj, float dt
 {
     if (obj.sleeping) return;
 
-    // Apply gravity
     obj.velocity.z -= obj.cfg.gravity * dt;
 
-    // Apply drag
     obj.velocity *= (1.0f - obj.cfg.drag * dt);
     if (glm::length(obj.velocity) < 0.001f) obj.velocity = glm::vec3(0.0f);
     obj.angularVelocity *= (1.0f - obj.cfg.angularDrag * dt);
 
-    // Clamp velocities
     float speed = glm::length(obj.velocity);
     if (speed > obj.cfg.maxLinearVelocity)
         obj.velocity *= obj.cfg.maxLinearVelocity / speed;
@@ -131,16 +151,13 @@ void PersistentPhysicsSystem::physicsStep(PersistentPhysicsObject& obj, float dt
     if (angSpeed > obj.cfg.maxAngularVelocity)
         obj.angularVelocity *= obj.cfg.maxAngularVelocity / angSpeed;
 
-    // Apply rotation
     if (angSpeed > 0.0001f) {
         glm::quat delta = glm::angleAxis(angSpeed * dt, glm::normalize(obj.angularVelocity));
         obj.rotation = glm::normalize(delta * obj.rotation);
     }
 
-    // Integrate position
     obj.position += obj.velocity * dt;
 
-    // Sleep check
     if (speed < obj.cfg.sleepVelocity && angSpeed < obj.cfg.sleepAngular) {
         obj.sleepTimer += dt;
         if (obj.sleepTimer >= obj.cfg.sleepTime)
@@ -204,10 +221,9 @@ void PersistentPhysicsSystem::checkCollisions(
         obj.position += stepVel;
 
         if (!obj.cfg.collideWithWorld) continue;
-        float radius = r;
         AABB queryBounds;
-        queryBounds.min = obj.position - glm::vec3(radius + 0.5f);
-        queryBounds.max = obj.position + glm::vec3(radius + 0.5f);
+        queryBounds.min = obj.position - glm::vec3(r + 0.5f);
+        queryBounds.max = obj.position + glm::vec3(r + 0.5f);
         std::vector<int> candidates;
         appendChunkTrianglesForAABB(const_cast<World&>(world), queryBounds, 0.1f, candidates);
 
@@ -217,31 +233,55 @@ void PersistentPhysicsSystem::checkCollisions(
             glm::vec3 closest = closestPointOnTriangleFn(obj.position, tri.a, tri.b, tri.c);
             glm::vec3 diff = obj.position - closest;
             float dist = glm::length(diff);
-            if (dist < radius && dist > 0.0001f) {
+            if (dist < r && dist > 0.0001f) {
                 glm::vec3 normal = diff / dist;
-                float penetration = radius - dist;
+                float penetration = r - dist;
                 obj.position += normal * penetration;
 
                 float velDot = glm::dot(obj.velocity, normal);
                 if (velDot < 0.0f) {
                     float speedBefore = glm::length(obj.velocity);
+                    float restitution = obj.cfg.restitution;
+                    float friction = obj.cfg.friction;
+
+                    if (obj.cfg.maxBounceCount > 0 && obj.bounceCount >= obj.cfg.maxBounceCount) {
+                        restitution = 0.0f;
+                        friction = 1.0f;
+                    }
+
                     glm::vec3 tangent = obj.velocity - normal * velDot;
-                    obj.velocity -= normal * velDot * (1.0f + obj.cfg.restitution);
-                    obj.velocity += tangent * obj.cfg.friction;
+                    obj.velocity -= normal * velDot * (1.0f + restitution);
+                    obj.velocity += tangent * friction;
 
                     float speedAfter = glm::length(obj.velocity);
                     if (speedAfter > speedBefore * 0.98f)
                         obj.velocity *= (speedBefore * 0.95f) / speedAfter;
 
-                    obj.angularVelocity = glm::vec3(0.0f);
+                    if (obj.cfg.minBounceSpeed > 0.0f && speedAfter < obj.cfg.minBounceSpeed) {
+                        obj.velocity = glm::vec3(0.0f);
+                        obj.angularVelocity = glm::vec3(0.0f);
+                        obj.sleeping = true;
+                    } else {
+                        obj.angularVelocity = glm::vec3(0.0f);
+                    }
                     obj.bounceCount++;
+
+                    obj.worldTouched = true;
+
+                    Debug::log(Debug::Category::Collision,
+                        "[POBJ] WORLD_HIT id=%u pos=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) "
+                        "speedBefore=%.2f speedAfter=%.2f restitution=%.2f friction=%.2f bounce=%d/%d\n",
+                        obj.id, obj.position.x, obj.position.y, obj.position.z,
+                        normal.x, normal.y, normal.z,
+                        speedBefore, speedAfter, restitution, friction,
+                        obj.bounceCount, obj.cfg.maxBounceCount);
 
                     ReplayEffectEvent impactEvent;
                     impactEvent.type = "impact_world";
                     impactEvent.position = obj.position;
                     impactEvent.normal = normal;
                     impactEvent.direction = glm::normalize(obj.velocity);
-                    impactEvent.scale = {obj.cfg.radius * 2.0f, 0.0f, 0.0f};
+                    impactEvent.scale = {obj.cfg.radius * 2.2f, 0.0f, 0.0f};
                     impactEvent.alpha = 0.5f;
                     impactEvent.lifetime = 0.25f;
                     captureReplayEffect(impactEvent);
@@ -250,43 +290,39 @@ void PersistentPhysicsSystem::checkCollisions(
                     impact.position = obj.position;
                     impact.color = {0.5f, 0.5f, 0.5f};
                     impact.normal = normal;
-                    impact.velocity = glm::vec3(0.0f);
+                    impact.velocity = -normal * 0.3f;
                     impact.lifetime = 0.25f;
                     impact.maxLifetime = 0.25f;
-                    impact.scale = obj.cfg.radius * 2.0f;
+                    impact.scale = obj.cfg.radius * 2.2f;
                     impact.endScale = 0.0f;
                     impact.alpha = 0.5f;
                     impact.replayType = "impact_indicator";
+                    impact.sticky = true;
                     EffectPartSystem::instance().spawn(impact);
-
-                    float energyBefore = 0.5f * glm::dot(obj.velocity + normal * velDot, obj.velocity + normal * velDot);
-                    float energyAfter = 0.5f * glm::dot(obj.velocity, obj.velocity);
-                    float energyLost = energyBefore - energyAfter;
-
-                    Debug::log(Debug::Category::Collision,
-                        "[POBJ] COLLISION id=%u pos=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) "
-                        "speedBefore=%.2f speedAfter=%.2f bounce=%d\n",
-                        obj.id, obj.position.x, obj.position.y, obj.position.z,
-                        normal.x, normal.y, normal.z,
-                        speedBefore, speedAfter, obj.bounceCount);
                 }
                 break;
             }
         }
     }
 
-    // Player collision
     if (obj.cfg.collideWithPlayer && !player.dead) {
         glm::vec3 toPlayer = player.pos - obj.position;
         float dist = glm::length(toPlayer);
         float hitDist = r + 0.5f;
         if (dist < hitDist) {
-            doExplosion(obj, world, player, npcs, nullptr);
-            return;
+            if (obj.ownerIgnored) {
+                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u IGNORED player collision (owner grace period)\n", obj.id);
+            } else if (obj.worldTouched) {
+                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u IGNORED player collision (already touched world)\n", obj.id);
+            } else {
+                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u EXPLODE from airborne player hit dist=%.2f\n",
+                           obj.id, dist);
+                doExplosion(obj, world, player, npcs, nullptr);
+                return;
+            }
         }
     }
 
-    // NPC collision
     if (obj.cfg.collideWithNpcs) {
         for (const Npc& npc : npcs.all()) {
             if (npc.body.dead) continue;
@@ -294,8 +330,14 @@ void PersistentPhysicsSystem::checkCollisions(
             float dist = glm::length(toNpc);
             float hitDist = r + 0.5f;
             if (dist < hitDist) {
-                doExplosion(obj, world, player, npcs, nullptr);
-                return;
+                if (obj.worldTouched) {
+                    Debug::log(Debug::Category::Weapons, "[POBJ] id=%u IGNORED NPC collision (already touched world)\n", obj.id);
+                } else {
+                    Debug::log(Debug::Category::Weapons, "[POBJ] id=%u EXPLODE from airborne NPC hit dist=%.2f\n",
+                               obj.id, dist);
+                    doExplosion(obj, world, player, npcs, nullptr);
+                    return;
+                }
             }
         }
     }
@@ -312,9 +354,16 @@ void PersistentPhysicsSystem::doExplosion(
     float radius = obj.cfg.explosionRadius;
     float baseDamage = obj.cfg.explosionDamage;
     float knockbackStrength = obj.cfg.explosionKnockback;
+    float splashExp = obj.cfg.splashExponent;
 
-    if (!obj.cfg.explosionSound.empty())
+    Debug::log(Debug::Category::Weapons, "[POBJ] EXPLOSION id=%u pos=(%.2f %.2f %.2f) radius=%.1f damage=%.0f exponent=%.1f\n",
+               obj.id, pos.x, pos.y, pos.z, radius, baseDamage, splashExp);
+
+    if (!obj.cfg.explosionSound.empty()) {
+        Debug::log(Debug::Category::Audio, "[POBJ] sound=explosion path=%s pos=(%.2f %.2f %.2f)\n",
+                   obj.cfg.explosionSound.c_str(), pos.x, pos.y, pos.z);
         playWorldSound(obj.cfg.explosionSound, pos, 1.0f, 1.0f, 50.0f);
+    }
 
     {
         HitEvent ev;
@@ -344,7 +393,7 @@ void PersistentPhysicsSystem::doExplosion(
         float dist = glm::length(toEntity);
         if (dist >= radius) continue;
         glm::vec3 dir = dist > 0.001f ? toEntity / dist : glm::vec3(0.0f, 1.0f, 0.0f);
-        float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * 2.0f);
+        float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
         int finalDmg = std::max(1, (int)std::round(dmgScaled));
         npc.body.currentHp -= finalDmg;
         if (npc.body.currentHp < 0) npc.body.currentHp = 0;
@@ -361,6 +410,8 @@ void PersistentPhysicsSystem::doExplosion(
         ev.victim = npc.body.username;
         ev.weaponSource = obj.weaponId;
         HitEffects::onHit(ev);
+        Debug::log(Debug::Category::Weapons, "[POBJ] npc=%u damage=%d dist=%.1f\n",
+                   npc.id, finalDmg, dist);
     }
 
     {
@@ -368,12 +419,14 @@ void PersistentPhysicsSystem::doExplosion(
         float dist = glm::length(toPlayer);
         if (dist < radius) {
             glm::vec3 dir = dist > 0.001f ? toPlayer / dist : glm::vec3(0.0f, 1.0f, 0.0f);
-            float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * 2.0f);
+            float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
             int finalDmg = std::max(1, (int)std::round(dmgScaled));
             float t = dist / radius;
             float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
             glm::vec3 knockback = dir * knockbackStrength * knockScale * obj.cfg.explosionSelfKnockbackMul;
             player.takeDamage(finalDmg, knockback, 8.0f);
+            Debug::log(Debug::Category::Weapons, "[POBJ] player damage=%d dist=%.1f knockback=(%.2f %.2f %.2f)\n",
+                       finalDmg, dist, knockback.x, knockback.y, knockback.z);
         }
     }
 
@@ -384,14 +437,6 @@ void PersistentPhysicsSystem::doExplosion(
     explosionEvent.sourceActorId = obj.ownerName;
     explosionEvent.targetActorId = obj.weaponId + "_" + std::to_string(obj.id);
     captureReplayEffect(explosionEvent);
-
-    FILE* f = fopen("logs/persistent_physics_debug.txt", "a");
-    if (f) {
-        fprintf(f, "EXPLOSION id=%u pos=(%.2f %.2f %.2f) radius=%.1f damage=%.0f reason=%s\n",
-                obj.id, pos.x, pos.y, pos.z, radius, baseDamage,
-                "contact_or_timeout");
-        fclose(f);
-    }
 }
 
 void PersistentPhysicsSystem::render(const Camera& camera) const
@@ -423,8 +468,9 @@ void PersistentPhysicsSystem::renderPrimitive(const PersistentPhysicsObject& obj
 
     if (DebugVis::enabled() && DebugConfig::DEBUG_PERSISTENT_PHYSICS) {
         char label[128];
-        snprintf(label, sizeof(label), "%s id=%u sleep=%d life=%.1f",
-                 obj.weaponId.c_str(), obj.id, (int)obj.sleeping, obj.cfg.lifetime - obj.age);
+        snprintf(label, sizeof(label), "%s id=%u bounce=%d sleep=%d life=%.1f",
+                 obj.weaponId.c_str(), obj.id, obj.bounceCount, (int)obj.sleeping,
+                 obj.cfg.lifetime - obj.age);
         DebugVis::drawWorldLabel(pos + glm::vec3(0.0f, 0.0f, h + 0.3f), label,
                                  glm::vec4(1.0f, 0.8f, 0.2f, 1.0f));
         DebugVis::drawLine(camera, pos, pos + obj.velocity * 0.1f, glm::vec4(1.0f, 0.2f, 0.2f, 1.0f));
@@ -436,16 +482,7 @@ void PersistentPhysicsSystem::renderPrimitive(const PersistentPhysicsObject& obj
 
 void PersistentPhysicsSystem::clear()
 {
-    for (const auto& obj : mObjects) {
-        if (obj.alive) {
-            FILE* f = fopen("logs/persistent_physics_debug.txt", "a");
-            if (f) {
-                fprintf(f, "DESTROY id=%u type=%s lifetime=%.2f reason=system_clear\n",
-                        obj.id, obj.weaponId.c_str(), obj.age);
-                fclose(f);
-            }
-        }
-    }
+    Debug::log(Debug::Category::Weapons, "[POBJ] system clear — %zu objects removed\n", mObjects.size());
     mObjects.clear();
 }
 
@@ -453,12 +490,8 @@ void PersistentPhysicsSystem::destroy(uint32_t id)
 {
     for (auto it = mObjects.begin(); it != mObjects.end(); ++it) {
         if (it->id == id) {
-            FILE* f = fopen("logs/persistent_physics_debug.txt", "a");
-            if (f) {
-                fprintf(f, "DESTROY id=%u type=%s lifetime=%.2f reason=explicit\n",
-                        it->id, it->weaponId.c_str(), it->age);
-                fclose(f);
-            }
+            Debug::log(Debug::Category::Weapons, "[POBJ] DESTROY id=%u type=%s lifetime=%.2f reason=explicit\n",
+                       it->id, it->weaponId.c_str(), it->age);
             mObjects.erase(it);
             return;
         }

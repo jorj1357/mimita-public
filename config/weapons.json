@@ -409,7 +409,17 @@
       "firingRecoilStrength": 20.0,
       "reserveAmmo": 1337.0,
       "shootPoseTime": 0.15,
-      "equipPoseTime": 0.24
+      "equipPoseTime": 0.24,
+      "mass": 1.5,
+      "gravity": 20.0,
+      "drag": 0.15,
+      "angularDrag": 0.3,
+      "bounceRestitution": 0.35,
+      "bounceFriction": 0.5,
+      "minBounceSpeed": 0.1,
+      "maxBounceCount": 10.0,
+      "armingDistance": 2.0,
+      "armingTime": 0.0
     },
     "animations": {
       "fire": {
