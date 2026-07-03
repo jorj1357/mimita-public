@@ -17,6 +17,7 @@ export default function AdminDashboard() {
     const [adminsSearch, setAdminsSearch] = useState("")
     const [adminsLoading, setAdminsLoading] = useState(true)
     const [adminsError, setAdminsError] = useState("")
+    const [flagged, setFlagged] = useState([])
     const fetchedRef = useRef(false)
 
     useEffect(() => {
@@ -25,7 +26,15 @@ export default function AdminDashboard() {
         fetchDashboard()
         fetchFeedback()
         fetchAdmins()
+        fetchFlagged()
     }, [])
+
+    async function fetchFlagged() {
+        try {
+            const data = await apiRequest("/api/admin/flagged-accounts")
+            if (data.success) setFlagged(data.flagged)
+        } catch (e) { console.log("[ADMIN] fetch flagged error:", e.message) }
+    }
 
     async function fetchAdmins() {
         setAdminsLoading(true)
@@ -391,6 +400,31 @@ export default function AdminDashboard() {
                                     ))}
                             </div>
                         </>
+                    )}
+                </div>
+
+                {/* Flagged Accounts */}
+                <div className="adminSection">
+                    <h2>flagged accounts</h2>
+                    {flagged.length === 0 ? (
+                        <p className="adminEmpty">no flagged accounts</p>
+                    ) : (
+                        <div className="adminAdminsList">
+                            {flagged.map(f => (
+                                <div key={f.identifier} className="adminAdminsRow" style={{ cursor: "default", padding: "10px" }}>
+                                    <span className="adminAdminsUsername" style={{ flex: 2 }}>{f.identifier}</span>
+                                    <span className="adminAdminsEmail" style={{ flex: 1 }}>{f.attempts} failed attempts</span>
+                                    <span className="adminAdminsRole" style={{ flex: 1, color: "#f87171" }}>
+                                        Locked until: {new Date(
+                                            new Date(f.first_attempt).getTime() + 15 * 60 * 1000
+                                        ).toLocaleTimeString()}
+                                    </span>
+                                    <span className="adminAdminsCreated" style={{ flex: 1 }}>
+                                        Last: {new Date(f.last_attempt).toLocaleString()}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
                     )}
                 </div>
 
