@@ -305,5 +305,16 @@ router.get("/admins", requireAdmin, async (req, res, next) => {
     }
 })
 
+router.get("/flagged-accounts", requireAdmin, async (req, res, next) => {
+    try {
+        const { getFlaggedAccounts } = await import("./authCore.js")
+        const flagged = await getFlaggedAccounts()
+        console.log(`[ADMIN] Flagged accounts: ${flagged.length}`)
+        res.json({ success: true, flagged })
+    } catch (error) {
+        next(error)
+    }
+})
+
 export default router
 export { requireAdmin }

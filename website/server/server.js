@@ -80,6 +80,7 @@ const newsletterRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name:
 const gameAnalyticsRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 120, name: "game_analytics" })
 const avatarRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 3, name: "avatar" })
 const feedbackRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 5, name: "feedback" })
+const passwordChangeRateLimit = createRateLimit({ windowMs: 60 * 60 * 1000, max: 5, name: "password_change" })
 const downloadTrackRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "download_track" })
 
 const app = express()
@@ -267,7 +268,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
     try {
         const identifier = String(req.body.identifier || "").trim()
 
-        const bruteForce = checkBruteForce(identifier)
+        const bruteForce = await checkBruteForce(identifier)
         if (bruteForce.locked) {
             logAuth("signin", "account_locked")
             return res.status(429).json({
@@ -305,7 +306,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
             !(await verifyPassword(req.body.password, user.password_hash))
         ) {
             logAuth("signin", "invalid_credentials")
-            recordFailedAttempt(identifier)
+            await recordFailedAttempt(identifier, getClientIp(req))
             await trackEvent("failed_login", {
                 event_data: {
                     source: "website",
@@ -319,7 +320,7 @@ app.post("/api/auth/signin", authRateLimit, async (req, res, next) => {
             })
         }
 
-        resetFailedAttempts(identifier)
+        await resetFailedAttempts(identifier)
         await createSession(user.id, req, res)
         delete user.password_hash
         logAuth("signin", `success user_id=${user.id}`)
@@ -708,6 +709,7 @@ app.get("/api/users/:username", async (req, res, next) => {
 
 app.post(
     "/api/auth/password-change/request",
+    passwordChangeRateLimit,
     authenticate,
     async (req, res, next) => {
         try {
@@ -1373,6 +1375,32 @@ async function start() {
         console.log("[STARTUP] Migration failed:", error.message)
         console.log("[STARTUP] Server will start anyway. Run migrations separately if needed.")
     }
+
+    // Periodic session cleanup: purge expired sessions every hour
+    setInterval(async () => {
+        try {
+            const result = await pool.query(
+                `DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '1 day'`
+            )
+            if (result.rowCount > 0) {
+                logAuth("cleanup", `purged ${result.rowCount} expired sessions`)
+            }
+        } catch (e) {
+            console.log(`[AUTH] session cleanup error: ${e.message}`)
+        }
+    }, 60 * 60 * 1000)
+
+    // Run once at startup
+    setTimeout(async () => {
+        try {
+            const result = await pool.query(
+                `DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '1 day'`
+            )
+            console.log(`[AUTH] startup cleanup: purged ${result.rowCount} expired sessions`)
+        } catch (e) {
+            console.log(`[AUTH] startup cleanup error: ${e.message}`)
+        }
+    }, 5000)
 
     app.listen(port, () => {
         const elapsed = Date.now() - startTime
