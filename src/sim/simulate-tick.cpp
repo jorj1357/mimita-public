@@ -4,6 +4,7 @@
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/physics-collision-shared.h"
 #include "npc/npc.h"
 #include "entities/player.h"
 #include "world/world.h"
@@ -67,7 +68,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 
     InputState input = inputStateFromFrame(frame);
     if (!sim.player->dead) {
+        setCollisionEntityContext("Player", 0, false);
         physicsMainUpdate(*sim.player, *sim.world, input, TICK_DT);
+        clearCollisionEntityContext();
 
         // Spawn movement burst on input keydown transition (not velocity-based)
         if (frame.movementJustPressed && sim.player->ground.stableOnGround) {

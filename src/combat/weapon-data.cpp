@@ -271,6 +271,51 @@ WeaponDefinition createRocketLauncherDefinition() {
     return def;
 }
 
+WeaponDefinition createGrenadeLauncherDefinition() {
+    WeaponDefinition def;
+    def.id = "grenade_launcher";
+    def.displayName = "Grenade Launcher";
+    def.slot = 8;
+
+    def.modelPath = "assets/objects/weapons/mimita-nadelauncher-v1.glb";
+    def.viewModelOffset = {0.0f, 0.0f, 0.0f};
+    def.viewModelRotation = {0.0f, 0.0f, 0.0f};
+    def.weaponScale = 1.0f;
+
+    def.damage = 0.0f;
+    def.headshotMultiplier = 1.0f;
+    def.fireDelay = 1.0f;
+    def.reloadTime = 1.5f;
+    def.magazineSize = 4;
+    def.pelletCount = 1;
+
+    def.spread = 0.0f;
+    def.recoil = 30.0f;
+    def.projectileSpeed = 0.0f;
+    def.projectileRadius = 0.25f;
+    def.projectileLifetime = 0.0f;
+
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::GrenadeLauncher;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+
+    def.soundShoot = "grenadelauncher/grenadelaunchershoot";
+    def.soundReload = "grenadelauncher/grenadelauncherload";
+    def.soundHit = "";
+    def.soundDryFire = "ui/click";
+    def.soundEquip = "";
+
+    def.customParams["splashRadius"] = 8.0f;
+    def.customParams["splashExponent"] = 2.0f;
+    def.customParams["rocketDirectDamage"] = 150.0f;
+    def.customParams["knockbackStrength"] = 160.0f;
+    def.customParams["firingRecoilStrength"] = 20.0f;
+    def.customParams["reserveAmmo"] = 1337.0f;
+
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -280,7 +325,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createOpRevolverDefinition());
     registerWeaponFromJson(createAa12Definition());
     registerWeaponFromJson(createRocketLauncherDefinition());
-    Debug::log(Debug::Category::Weapons, "[AA12] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher");
+    registerWeaponFromJson(createGrenadeLauncherDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher");
 }
 
 } // namespace WeaponData

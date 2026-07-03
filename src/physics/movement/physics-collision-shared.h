@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include <cstring>
+#include <cstdlib>
 #include <glm/glm.hpp>
 
 #include "physics/physics-types.h"
@@ -10,6 +12,11 @@
 
 class Player;
 class CollisionTriangle;
+
+// Collision entity context: set before calling collision pipeline
+// so gatherGLBTriangles can identify which entity is doing the query.
+void setCollisionEntityContext(const char* entityId, unsigned int entityNumId, bool isNpc);
+void clearCollisionEntityContext();
 
 // =====================================================
 // Shared helper declarations extracted from

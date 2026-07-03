@@ -42,6 +42,7 @@ bool uiOverlapDebugEnabled();
 
 void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName);
 void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName);
+void uiDrawTriangle(float cx, float cy, float size, bool pointDown, glm::vec4 color, const char* debugName);
 void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color,
                 float italicShear = 0.0f);
 void uiDrawImage(const char* path, UIRect r, glm::vec4 color = glm::vec4(1.0f));

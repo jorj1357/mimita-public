@@ -1,6 +1,7 @@
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
 import Avatar from "./Avatar"
+import { logAuthEvent, logRequestError } from "../lib/api-log"
 
 const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8QHbfG9D"
 
@@ -33,12 +34,15 @@ const HAMBURGER_ITEMS = [
 ]
 
 export default function Header() {
+    const navigate = useNavigate()
     const [open, setOpen] = useState(false)
+    const [profileOpen, setProfileOpen] = useState(false)
     const [user, setUser] = useState(null)
     const [isAdmin, setIsAdmin] = useState(false)
     const [checkingAuth, setCheckingAuth] = useState(true)
     const menuRef = useRef()
     const hamburgerRef = useRef()
+    const profileRef = useRef()
 
     useEffect(() => {
         fetch("/api/auth/me", { credentials: "include" })
@@ -46,12 +50,18 @@ export default function Header() {
             .then((data) => {
                 if (data.success) {
                     setUser(data.user)
+                    logAuthEvent("auth state restored", { username: data.user.username, role: data.user.role })
                     const adminRoles = ["admin", "owner"]
                     setIsAdmin(adminRoles.includes(data.user.role))
+                } else {
+                    logAuthEvent("auth state invalid", { reason: "API returned success=false" })
                 }
                 setCheckingAuth(false)
             })
-            .catch(() => setCheckingAuth(false))
+            .catch(() => {
+                logAuthEvent("auth state invalid", { reason: "network error" })
+                setCheckingAuth(false)
+            })
 
         fetch("/api/admin/check", { credentials: "include" })
             .then((r) => r.json())
@@ -61,10 +71,14 @@ export default function Header() {
             .catch(() => {})
     }, [])
 
+    // Close dropdowns on outside click
     useEffect(() => {
         function handleClickOutside(event) {
             if (menuRef.current && !menuRef.current.contains(event.target)) {
                 setOpen(false)
+            }
+            if (profileRef.current && !profileRef.current.contains(event.target)) {
+                setProfileOpen(false)
             }
         }
         document.addEventListener("mousedown", handleClickOutside)
@@ -76,12 +90,21 @@ export default function Header() {
     }
 
     async function handleSignOut() {
+        logAuthEvent("logout", { username: user?.username })
         try {
-            await fetch("/api/auth/signout", { method: "POST", credentials: "include" })
-            window.location.reload()
-        } catch {
-            window.location.reload()
+            const res = await fetch("/api/auth/signout", { method: "POST", credentials: "include" })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                logRequestError("POST", "/api/auth/signout", res.status, 0, err)
+            }
+        } catch (e) {
+            logAuthEvent("logout error", { error: e.message })
         }
+        setUser(null)
+        setIsAdmin(false)
+        setProfileOpen(false)
+        setOpen(false)
+        navigate("/")
     }
 
     const filteredItems = HAMBURGER_ITEMS.filter(item => {
@@ -153,9 +176,43 @@ export default function Header() {
                     {checkingAuth ? (
                         <div className="headerAvatarSkeleton" />
                     ) : user ? (
-                        <Link className="headerProfileLink" to="/profile" aria-label="View profile">
-                            <Avatar user={user} size="sm" />
-                        </Link>
+                        <div ref={profileRef} className="headerProfileWrap">
+                            <button
+                                className="headerProfileBtn"
+                                onClick={() => setProfileOpen(!profileOpen)}
+                                aria-label="Profile menu"
+                                aria-expanded={profileOpen}
+                            >
+                                <Avatar user={user} size="sm" />
+                            </button>
+
+                            {profileOpen && (
+                                <div className="profileDropdown">
+                                    <div className="profileDropdownHeader">
+                                        <Avatar user={user} size="sm" />
+                                        <div className="profileDropdownUser">
+                                            <span className="profileDropdownName">{user.username}</span>
+                                        </div>
+                                    </div>
+                                    <Link to="/profile" onClick={() => setProfileOpen(false)}>
+                                        Profile
+                                    </Link>
+                                    <Link to="/settings" onClick={() => setProfileOpen(false)}>
+                                        Settings
+                                    </Link>
+                                    <Link to="/account" onClick={() => setProfileOpen(false)}>
+                                        Account
+                                    </Link>
+                                    <button
+                                        type="button"
+                                        className="profileDropdownSignOut"
+                                        onClick={() => handleSignOut()}
+                                    >
+                                        Sign Out
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     ) : (
                         <Link className="headerSignInLink" to="/signin">
                             Sign In

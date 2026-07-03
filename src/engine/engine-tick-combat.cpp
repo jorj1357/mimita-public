@@ -26,6 +26,7 @@
 #include "world/world.h"
 #include "render/post-fx.h"
 #include "physics/ray-utils.h"
+#include "pobjects/persistent-physics.h"
 
 extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
@@ -57,6 +58,9 @@ void engineTickCombat(Engine& engine, float dt)
     { Perf::ScopedTimer _wp("Weapons");
     if (!replayPlaybackActive)
         weapons.update(camera, player, npcSystem, world, dt);
+    }
+    if (!replayPlaybackActive) {
+        PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
     }
     if (mpContext.active)
     {

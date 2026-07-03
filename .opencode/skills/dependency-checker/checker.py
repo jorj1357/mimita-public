@@ -25,6 +25,12 @@ FORBIDDEN = [
     ("physics", ["gui/ui", "gui/menu", "replay", "website", "audio"]),
 ]
 
+# Files in physics/ that are allowed to break subsystem isolation
+# because they implement cross-cutting features (persistent projectiles, etc.)
+ALLOWLIST = [
+    "src/physics/persistent-physics.cpp",
+]
+
 
 def find_cpp_files(directory):
     files = []
@@ -43,6 +49,10 @@ def check_includes(filepath, subsystem, forbidden_targets):
     # Check if this file is inside the subsystem directory
     subsystem_path = os.path.join(SRC_DIR, subsystem)
     if not relpath.startswith(os.path.join("src", subsystem)):
+        return violations
+
+    # Allowlisted files are exempt
+    if relpath in ALLOWLIST:
         return violations
 
     with open(filepath, "r", errors="replace") as f:

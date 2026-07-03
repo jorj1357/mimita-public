@@ -12,6 +12,7 @@
 #include "physics/config.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/physics-collision-shared.h"
 #include "render/render-player.h"
 #include "world/world.h"
 #include "audio/audio.h"
@@ -625,10 +626,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     bool downDashAvailableBefore = npc.body.dash.downDashAvailable;
     {
         Perf::ScopedTimer _npcCollision("NpcCollision");
+        char entityLabel[32];
+        std::snprintf(entityLabel, sizeof(entityLabel), "NPC_%u", npc.id);
+        setCollisionEntityContext(entityLabel, npc.id, true);
+
         glm::vec3 velocityBefore = npc.body.vel;
         float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
 
         physicsMainUpdate(npc.body, world, input, safeDt);
+
+        clearCollisionEntityContext();
 
         float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
         npc.lastMoveInput = input.wishMoveXY;

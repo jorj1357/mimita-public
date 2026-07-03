@@ -241,6 +241,20 @@ void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName)
     drawTriVerts(verts, 6, color, GL_TRIANGLES);
 }
 
+void uiDrawTriangle(float cx, float cy, float size, bool pointDown, glm::vec4 color, const char* debugName)
+{
+    (void)debugName;
+    float hs = size * 0.5f;
+    float tipY = pointDown ? cy + hs : cy - hs;
+    float baseY = pointDown ? cy - hs : cy + hs;
+    float verts[] = {
+        cx, tipY, 0, 0,
+        cx - hs, baseY, 0, 0,
+        cx + hs, baseY, 0, 0
+    };
+    drawTriVerts(verts, 3, color, GL_TRIANGLES);
+}
+
 void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName)
 {
     (void)debugName;

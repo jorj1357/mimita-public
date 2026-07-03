@@ -1,8 +1,11 @@
 #include "physics/movement/physics-collision-shared.h"
 
 #include <chrono>
+#include <cstdio>
 #include <vector>
 #include <cstring>
+#include <cmath>
+#include <cstdlib>
 #include <glm/glm.hpp>
 #include "physics/config.h"
 #include "world/world.h"
@@ -11,6 +14,98 @@
 
 #define BROAD_LOG(...) Debug::logThrottled(Debug::Category::Collision, "broadphase", 1.0f, __VA_ARGS__)
 
+// ── Current entity context ───────────────────────────────────
+// Set before calling the collision pipeline, read by gatherGLBTriangles
+// for entity identification in caller strings.
+static const char* gCurrentEntityId = nullptr;
+static unsigned int gCurrentEntityNumId = 0;
+static bool gCurrentIsNpc = false;
+
+void setCollisionEntityContext(const char* entityId, unsigned int entityNumId, bool isNpc)
+{
+    gCurrentEntityId = entityId;
+    gCurrentEntityNumId = entityNumId;
+    gCurrentIsNpc = isNpc;
+}
+
+void clearCollisionEntityContext()
+{
+    gCurrentEntityId = nullptr;
+    gCurrentEntityNumId = 0;
+    gCurrentIsNpc = false;
+}
+
+// ── Per-frame triangle cache ─────────────────────────────────
+// Caches gatherGLBTriangles results keyed by a hash of the AABB.
+// Cleared at the start of each frame.
+struct TriangleCacheEntry {
+    uint64_t hash;
+    std::vector<int> triangles;
+    bool valid;
+    const char* firstCaller;
+};
+static constexpr int TRIANGLE_CACHE_SIZE = 128;
+static TriangleCacheEntry sTriCache[TRIANGLE_CACHE_SIZE];
+static int sLastCacheFrame = -1;
+static int sCacheHits = 0;
+static int sCacheMisses = 0;
+
+static void clearTriangleCache(int currentFrame)
+{
+    if (currentFrame != sLastCacheFrame) {
+        for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i)
+            sTriCache[i].valid = false;
+        sLastCacheFrame = currentFrame;
+        sCacheHits = 0;
+        sCacheMisses = 0;
+    }
+}
+
+static uint64_t hashAABB(const AABB& aabb)
+{
+    // Simple hash of AABB corners
+    uint64_t h = 14695981039346656037ULL;
+    auto mix = [&](float f) {
+        uint32_t bits;
+        std::memcpy(&bits, &f, sizeof(bits));
+        h ^= bits;
+        h *= 1099511628211ULL;
+    };
+    mix(aabb.min.x); mix(aabb.min.y); mix(aabb.min.z);
+    mix(aabb.max.x); mix(aabb.max.y); mix(aabb.max.z);
+    return h;
+}
+
+static bool getCachedTriangles(const AABB& aabb, std::vector<int>& out)
+{
+    uint64_t h = hashAABB(aabb);
+    for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
+        if (sTriCache[i].valid && sTriCache[i].hash == h) {
+            out = sTriCache[i].triangles;
+            sCacheHits++;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void cacheTriangles(const AABB& aabb, const std::vector<int>& triangles, const char* caller)
+{
+    uint64_t h = hashAABB(aabb);
+    // Find eviction candidate (oldest valid or first invalid slot)
+    int evictIdx = 0;
+    for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
+        if (!sTriCache[i].valid) { evictIdx = i; break; }
+        if (sTriCache[i].hash == h) return; // already cached
+    }
+    // Simple eviction: replace entry at evictIdx
+    sTriCache[evictIdx].hash = h;
+    sTriCache[evictIdx].triangles = triangles;
+    sTriCache[evictIdx].valid = true;
+    sTriCache[evictIdx].firstCaller = caller;
+}
+
+// ── Query cache for duplicate detection ──────────────────────
 static constexpr int QUERY_CACHE_SIZE = 32;
 struct QueryCacheEntry {
     float minX, minY, minZ, maxX, maxY, maxZ;
@@ -19,9 +114,9 @@ struct QueryCacheEntry {
 };
 static QueryCacheEntry sQueryCache[QUERY_CACHE_SIZE];
 static int sQueryCacheCount = 0;
-static int sLastCacheFrame = -1;
+static int sLastQueryCacheFrame = -1;
 
-static int findCachedQuery(const AABB& aabb, int currentFrame, const char* caller)
+static int findCachedQuery(const AABB& aabb, int currentFrame)
 {
     for (int i = 0; i < sQueryCacheCount; ++i) {
         const auto& e = sQueryCache[i];
@@ -41,9 +136,9 @@ static int findCachedQuery(const AABB& aabb, int currentFrame, const char* calle
 
 static void recordQuery(const AABB& aabb, int currentFrame, const char* caller)
 {
-    if (currentFrame != sLastCacheFrame) {
+    if (currentFrame != sLastQueryCacheFrame) {
         sQueryCacheCount = 0;
-        sLastCacheFrame = currentFrame;
+        sLastQueryCacheFrame = currentFrame;
     }
     if (sQueryCacheCount < QUERY_CACHE_SIZE) {
         auto& e = sQueryCache[sQueryCacheCount++];
@@ -54,18 +149,52 @@ static void recordQuery(const AABB& aabb, int currentFrame, const char* caller)
     }
 }
 
-static void extractEntityInfo(const char* caller, char* entity, int entitySize,
-    char* object, int objectSize, char* reason, int reasonSize)
+// ── AABB validation ─────────────────────────────────────────
+static bool isFinite(float v) { return std::isfinite(v); }
+static bool isValidAABB(const AABB& aabb)
 {
+    return isFinite(aabb.min.x) && isFinite(aabb.min.y) && isFinite(aabb.min.z) &&
+           isFinite(aabb.max.x) && isFinite(aabb.max.y) && isFinite(aabb.max.z) &&
+           aabb.max.x >= aabb.min.x && aabb.max.y >= aabb.min.y && aabb.max.z >= aabb.min.z &&
+           aabb.max.x - aabb.min.x < 10000.0f &&
+           aabb.max.y - aabb.min.y < 10000.0f &&
+           aabb.max.z - aabb.min.z < 10000.0f;
+}
+
+static AABB clampAABB(const AABB& aabb)
+{
+    AABB result = aabb;
+    auto clampVal = [](float v) -> float {
+        if (!isFinite(v)) return 0.0f;
+        if (v > 5000.0f) return 5000.0f;
+        if (v < -5000.0f) return -5000.0f;
+        return v;
+    };
+    result.min.x = clampVal(result.min.x);
+    result.min.y = clampVal(result.min.y);
+    result.min.z = clampVal(result.min.z);
+    result.max.x = clampVal(result.max.x);
+    result.max.y = clampVal(result.max.y);
+    result.max.z = clampVal(result.max.z);
+    // Ensure min <= max
+    if (result.max.x < result.min.x) std::swap(result.max.x, result.min.x);
+    if (result.max.y < result.min.y) std::swap(result.max.y, result.min.y);
+    if (result.max.z < result.min.z) std::swap(result.max.z, result.min.z);
+    return result;
+}
+
+static void extractEntityInfo(const char* caller, char* entity, int entitySize,
+    char* object, int objectSize, char* reason, int reasonSize, int* outEntityId)
+{
+    if (outEntityId) *outEntityId = -1;
     if (!caller) {
-        std::snprintf(entity, entitySize, "?");
-        std::snprintf(object, objectSize, "?");
-        std::snprintf(reason, reasonSize, "?");
+        std::snprintf(entity, entitySize, "Unknown");
+        std::snprintf(object, objectSize, "Unknown");
+        std::snprintf(reason, reasonSize, "Unknown");
         return;
     }
 
-    // Parse caller string in format: Entity_Object_Reason
-    // or just a simple name
+    // Try Entity_Object_Reason format
     const char* firstUnderscore = std::strchr(caller, '_');
     if (firstUnderscore) {
         int entityLen = (int)(firstUnderscore - caller);
@@ -91,6 +220,14 @@ static void extractEntityInfo(const char* caller, char* entity, int entitySize,
         std::snprintf(object, objectSize, "?");
         std::snprintf(reason, reasonSize, "%s", caller);
     }
+
+    // Try to extract entity ID from the entity field
+    if (outEntityId) {
+        const char* idStart = std::strchr(entity, '#');
+        if (idStart) {
+            *outEntityId = std::atoi(idStart + 1);
+        }
+    }
 }
 
 std::vector<int> gatherGLBTriangles(
@@ -101,6 +238,22 @@ std::vector<int> gatherGLBTriangles(
 ) {
     auto t0 = std::chrono::steady_clock::now();
     std::vector<int> out;
+
+    int currentFrame = Perf::state().frameNumber;
+    clearTriangleCache(currentFrame);
+
+    // Build entity-aware caller tag
+    char augmentedCaller[128];
+    if (gCurrentIsNpc && gCurrentEntityId) {
+        std::snprintf(augmentedCaller, sizeof(augmentedCaller), "%s#%u_%s",
+            gCurrentEntityId, gCurrentEntityNumId, caller ? caller : "gather");
+    } else if (caller) {
+        std::strncpy(augmentedCaller, caller, sizeof(augmentedCaller) - 1);
+        augmentedCaller[sizeof(augmentedCaller) - 1] = '\0';
+    } else {
+        std::strncpy(augmentedCaller, "Unknown_Unknown_Unknown", sizeof(augmentedCaller) - 1);
+    }
+    const char* effectiveCaller = augmentedCaller;
 
     AABB sweepBounds = makeSweptCapsuleAABB(cap, move);
 
@@ -115,14 +268,39 @@ std::vector<int> gatherGLBTriangles(
     sweepBounds.min.z -= EXTRA_Z_DOWN;
     sweepBounds.max.z += EXTRA_Z_UP;
 
-    // Cache detection
-    int currentFrame = Perf::state().frameNumber;
-    int cachedIdx = findCachedQuery(sweepBounds, currentFrame, caller);
+    // Validate AABB - clamp invalid values
+    bool aabbWasInvalid = !isValidAABB(sweepBounds);
+    if (aabbWasInvalid) {
+        glm::vec3 origMin = sweepBounds.min, origMax = sweepBounds.max;
+        sweepBounds = clampAABB(sweepBounds);
+        Debug::warn(Debug::Category::Collision,
+            "[AABB INVALID] caller=%s entity=%s origMin=(%.2f %.2f %.2f) origMax=(%.2f %.2f %.2f) "
+            "clampedMin=(%.2f %.2f %.2f) clampedMax=(%.2f %.2f %.2f)\n",
+            effectiveCaller,
+            gCurrentEntityId ? gCurrentEntityId : "?",
+            origMin.x, origMin.y, origMin.z,
+            origMax.x, origMax.y, origMax.z,
+            sweepBounds.min.x, sweepBounds.min.y, sweepBounds.min.z,
+            sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z);
+    }
+
+    // Check cache first
+    if (getCachedTriangles(sweepBounds, out)) {
+        auto t1 = std::chrono::steady_clock::now();
+        float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        BROAD_LOG("[GATHER CACHE HIT] caller=%s candidates=%zu elapsedMs=%.3f\n",
+                   effectiveCaller, out.size(), elapsedMs);
+        return out;
+    }
+    sCacheMisses++;
+
+    // Cache detection for duplicate queries
+    int cachedIdx = findCachedQuery(sweepBounds, currentFrame);
     if (cachedIdx >= 0) {
         Perf::state().current.repeatedQueries++;
-        Perf::trackDuplicateQuery(caller, 0.0);
+        Perf::trackDuplicateQuery(effectiveCaller, 0.0);
     }
-    recordQuery(sweepBounds, currentFrame, caller);
+    recordQuery(sweepBounds, currentFrame, effectiveCaller);
 
     appendChunkTrianglesForAABB(world, sweepBounds, cap.r + EXTRA_XY, out, "gatherGLBTriangles");
 
@@ -137,24 +315,57 @@ std::vector<int> gatherGLBTriangles(
     float aabbMinF[3] = {sweepBounds.min.x, sweepBounds.min.y, sweepBounds.min.z};
     float aabbMaxF[3] = {sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z};
     char entity[64], object[64], reason[64];
-    extractEntityInfo(caller, entity, sizeof(entity), object, sizeof(object), reason, sizeof(reason));
-    Perf::recordCollisionQuery(caller, reason, entity, object,
+    int parsedEntityId = -1;
+    extractEntityInfo(effectiveCaller, entity, sizeof(entity), object, sizeof(object),
+                      reason, sizeof(reason), &parsedEntityId);
+    Perf::recordCollisionQuery(effectiveCaller, reason, entity, object,
         aabbMinF, aabbMaxF, (int)out.size() / 8, (int)out.size(), elapsedMs);
 
     // Large AABB warning
     if (out.size() > 500) {
-        Perf::checkLargeAABB(caller, entity, object, reason,
+        Perf::checkLargeAABB(effectiveCaller, entity, object, reason,
             (int)out.size() / 8, (int)out.size(), aabbMinF, aabbMaxF);
     }
 
-    if (caller) {
-        BROAD_LOG(
-            "[GATHER] caller=%s candidates=%zu totalTris=%zu aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) elapsedMs=%.2f\n",
-            caller, out.size(), world.collisionMesh.triangles.size(),
+    // Extreme explosion warning
+    if (out.size() > 50000) {
+        glm::vec3 size = sweepBounds.max - sweepBounds.min;
+        Debug::warn(Debug::Category::Collision,
+            "\n[COLLISION EXPLOSION] "
+            "\n  caller=%s  entity=%s  object=%s  reason=%s"
+            "\n  AABB size=(%.1f, %.1f, %.1f)"
+            "\n  candidates=%zu  chunkCells=%d"
+            "\n  elapsedMs=%.2f"
+            "\n  aabbMin=(%.1f, %.1f, %.1f)  aabbMax=(%.1f, %.1f, %.1f)"
+            "\n  wasInvalid=%d"
+            "\n  isNpc=%d  npcId=%u\n",
+            effectiveCaller, entity, object, reason,
+            size.x, size.y, size.z,
+            out.size(), (int)out.size() / 8,
+            elapsedMs,
             sweepBounds.min.x, sweepBounds.min.y, sweepBounds.min.z,
             sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z,
+            (int)aabbWasInvalid,
+            (int)gCurrentIsNpc, gCurrentEntityNumId);
+    }
+
+    // Log every query (sorted later)
+    {
+        glm::vec3 size = sweepBounds.max - sweepBounds.min;
+        BROAD_LOG(
+            "[GATHER] caller=%s candidates=%zu totalTris=%zu "
+            "aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) aabbSize=(%.1f %.1f %.1f) "
+            "move=(%.2f %.2f %.2f) elapsedMs=%.2f\n",
+            effectiveCaller, out.size(), world.collisionMesh.triangles.size(),
+            sweepBounds.min.x, sweepBounds.min.y, sweepBounds.min.z,
+            sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z,
+            size.x, size.y, size.z,
+            move.x, move.y, move.z,
             elapsedMs);
     }
+
+    // Cache result for this frame
+    cacheTriangles(sweepBounds, out, effectiveCaller);
 
     return out;
 }

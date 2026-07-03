@@ -80,6 +80,7 @@
 #include "crosshair/crosshair-commands.h"
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
+#include "gui/hud/healthbar-config.h"
 #include "replay/replay-camera.h"
 #include "config/gameplay-config.h"
 #include "config/player-settings.h"
@@ -195,6 +196,7 @@ void gameInitSubsystems(Engine& engine)
     GameplayConfig::instance().load("config/gameplay.json");
     CrosshairConfig::instance().load();
     registerCrosshairCommands();
+    HealthbarConfig::instance().load();
 
     EffectPartSystem::instance().init();
     HotReloadSystem::instance().loadGameDLL();

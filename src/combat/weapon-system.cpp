@@ -3,6 +3,7 @@
 #include "weapon-audio.h"
 #include "weapon-data.h"
 #include "weapon-fire.h"
+#include "weapon-grenade-launcher.h"
 #include "weapon-registry.h"
 #include "weapon-runtime.h"
 
@@ -126,6 +127,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             WeaponSwordsword::update(mSwordswordState, *def, *rt, player, camera, npcs, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+            WeaponGrenadeLauncher::update(*def, *rt, player, npcs, world, camera, dt);
         } else {
             if (mGodballPhys.active) {
                 WeaponGodball::despawnBall(mGodballPhys);
@@ -363,6 +366,21 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
         fireRocketLauncher(camera, player, npcs, world);
+        return {};
+    }
+
+    if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+        int idx = slotIndex(def->slot);
+        const WeaponViewModel& vm = mViewModels[idx];
+        glm::vec3 muzzlePos = vm.muzzle;
+        glm::vec3 muzzleDir = vm.forward;
+        WeaponFire::AimSolution aim = WeaponFire::computeAim(
+            camera, world, npcs, muzzlePos, nullptr);
+        glm::vec3 dir = aim.direction;
+        float recoilStrength = def->customParams.count("firingRecoilStrength")
+            ? def->customParams.at("firingRecoilStrength") : 20.0f;
+        player.externalImpulse -= dir * recoilStrength;
+        WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
         return {};
     }
 
