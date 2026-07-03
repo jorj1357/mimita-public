@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, Link } from "react-router-dom"
 import { apiRequest, apiRequestRaw } from "../lib/api.js"
 import DebugPanel from "../components/DebugPanel.jsx"
 import ErrorBoundary from "../components/ErrorBoundary.jsx"
@@ -425,6 +425,17 @@ export default function AdminDashboard() {
                             ))}
                         </div>
                     )}
+                </div>
+
+                {/* Email Campaigns */}
+                <div className="adminSection">
+                    <h2>Email Campaigns</h2>
+                    <div className="adminCard">
+                        <p>Create, preview, and send email campaigns to registered users.</p>
+                        <Link to="/admin/email-campaigns" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                            Open Email Campaign Dashboard
+                        </Link>
+                    </div>
                 </div>
 
             </div>
