@@ -37,25 +37,27 @@ void clearCollisionEntityContext()
 
 // ── Per-frame triangle cache ─────────────────────────────────
 // Caches gatherGLBTriangles results keyed by a hash of the AABB.
-// Cleared at the start of each frame.
+// Persists across all calls within the same frame.
 struct TriangleCacheEntry {
     uint64_t hash;
     std::vector<int> triangles;
-    bool valid;
+    int frameNumber;
     const char* firstCaller;
 };
-static constexpr int TRIANGLE_CACHE_SIZE = 128;
+static constexpr int TRIANGLE_CACHE_SIZE = 256;
 static TriangleCacheEntry sTriCache[TRIANGLE_CACHE_SIZE];
-static int sLastCacheFrame = -1;
+static int sLastTriCacheFrame = -1;
 static int sCacheHits = 0;
 static int sCacheMisses = 0;
 
-static void clearTriangleCache(int currentFrame)
+// Called once per frame from Perf::beginFrame or externally
+void clearTriangleCache()
 {
-    if (currentFrame != sLastCacheFrame) {
+    int currentFrame = Perf::state().frameNumber;
+    if (currentFrame != sLastTriCacheFrame) {
         for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i)
-            sTriCache[i].valid = false;
-        sLastCacheFrame = currentFrame;
+            sTriCache[i].frameNumber = -1;
+        sLastTriCacheFrame = currentFrame;
         sCacheHits = 0;
         sCacheMisses = 0;
     }
@@ -63,7 +65,6 @@ static void clearTriangleCache(int currentFrame)
 
 static uint64_t hashAABB(const AABB& aabb)
 {
-    // Simple hash of AABB corners
     uint64_t h = 14695981039346656037ULL;
     auto mix = [&](float f) {
         uint32_t bits;
@@ -76,11 +77,11 @@ static uint64_t hashAABB(const AABB& aabb)
     return h;
 }
 
-static bool getCachedTriangles(const AABB& aabb, std::vector<int>& out)
+static bool getCachedTriangles(const AABB& aabb, int currentFrame, std::vector<int>& out)
 {
     uint64_t h = hashAABB(aabb);
     for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
-        if (sTriCache[i].valid && sTriCache[i].hash == h) {
+        if (sTriCache[i].frameNumber == currentFrame && sTriCache[i].hash == h) {
             out = sTriCache[i].triangles;
             sCacheHits++;
             return true;
@@ -89,20 +90,28 @@ static bool getCachedTriangles(const AABB& aabb, std::vector<int>& out)
     return false;
 }
 
-static void cacheTriangles(const AABB& aabb, const std::vector<int>& triangles, const char* caller)
+static void cacheTriangles(const AABB& aabb, int currentFrame, const std::vector<int>& triangles, const char* caller)
 {
     uint64_t h = hashAABB(aabb);
-    // Find eviction candidate (oldest valid or first invalid slot)
-    int evictIdx = 0;
     for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
-        if (!sTriCache[i].valid) { evictIdx = i; break; }
-        if (sTriCache[i].hash == h) return; // already cached
+        if (sTriCache[i].hash == h && sTriCache[i].frameNumber == currentFrame)
+            return;
     }
-    // Simple eviction: replace entry at evictIdx
+    // Find eviction: replace oldest frame or first empty slot
+    int evictIdx = 0;
+    int oldestFrame = sTriCache[0].frameNumber;
+    for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
+        if (sTriCache[i].frameNumber < 0) { evictIdx = i; break; }
+        if (sTriCache[i].frameNumber < oldestFrame) {
+            oldestFrame = sTriCache[i].frameNumber;
+            evictIdx = i;
+        }
+    }
     sTriCache[evictIdx].hash = h;
     sTriCache[evictIdx].triangles = triangles;
-    sTriCache[evictIdx].valid = true;
+    sTriCache[evictIdx].frameNumber = currentFrame;
     sTriCache[evictIdx].firstCaller = caller;
+    sCacheMisses++;
 }
 
 // ── Query cache for duplicate detection ──────────────────────
@@ -245,7 +254,7 @@ std::vector<int> gatherGLBTriangles(
     std::vector<int> out;
 
     int currentFrame = Perf::state().frameNumber;
-    clearTriangleCache(currentFrame);
+    clearTriangleCache();  // clears once per frame
 
     // Build entity-aware caller tag
     char augmentedCaller[128];
@@ -290,14 +299,13 @@ std::vector<int> gatherGLBTriangles(
     }
 
     // Check cache first
-    if (getCachedTriangles(sweepBounds, out)) {
+    if (getCachedTriangles(sweepBounds, currentFrame, out)) {
         auto t1 = std::chrono::steady_clock::now();
         float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
         BROAD_LOG("[GATHER CACHE HIT] caller=%s candidates=%zu elapsedMs=%.3f\n",
                    effectiveCaller, out.size(), elapsedMs);
         return out;
     }
-    sCacheMisses++;
 
     // Cache detection for duplicate queries
     int cachedIdx = findCachedQuery(sweepBounds, currentFrame);
@@ -370,7 +378,7 @@ std::vector<int> gatherGLBTriangles(
     }
 
     // Cache result for this frame
-    cacheTriangles(sweepBounds, out, effectiveCaller);
+    cacheTriangles(sweepBounds, currentFrame, out, effectiveCaller);
 
     return out;
 }
