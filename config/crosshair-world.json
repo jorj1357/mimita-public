@@ -1,13 +1,13 @@
 {
   "world_xh_alpha": 1,
   "world_xh_color": [0, 1, 1],
-  "world_xh_gap": 4,
-  "world_xh_length": 1,
+  "world_xh_gap": 0,
+  "world_xh_length": 0.3,
   "world_xh_outline": 0,
   "world_xh_outline_alpha": 0.5,
   "world_xh_thickness": 1,
   "world_xh_dynamic": 1,
-  "world_xh_minsize": 25,
-  "world_xh_maxsize": 4,
+  "world_xh_minsize": 0.1,
+  "world_xh_maxsize": 24,
   "world_xh_centerdot": 0
 }

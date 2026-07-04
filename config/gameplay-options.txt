@@ -1,0 +1,10 @@
+{
+    TEH DEFAULT
+    IS
+    "crosshair"
+    AND 
+    WORLD world_hit 
+    this is the 
+    gun shoots right at where u hit 
+    "aim_mode": "world_hit"
+}
