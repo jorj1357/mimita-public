@@ -13,6 +13,32 @@ import subprocess
 import os
 
 
+def release_locks():
+    """Release all held locks via the coordination system."""
+    try:
+        # Import here so the script works even if coordination module has issues
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from devscripts.agent_coordination import AgentCoordinator, _read_status
+
+        data = _read_status()
+        if not data:
+            return
+
+        # Find own agent entry by PID and release all its locks
+        my_pid = os.getpid()
+        for agent_id, info in data.items():
+            if info.get("pid") == my_pid or info.get("agentId", "").endswith(str(my_pid)):
+                locks = info.get("locks", [])
+                if locks:
+                    coord = AgentCoordinator("completion_hook", agent_id=agent_id)
+                    for lock in list(locks):
+                        coord.release_lock(lock)
+                    coord.update_state("DONE", details="Agent task completed")
+                return
+    except Exception as e:
+        print(f"[AGENT WARNING] Lock release failed: {e}")
+
+
 def play_sound():
     sound_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -66,6 +92,7 @@ def main():
     if task_name:
         print(f"Task: {task_name}")
 
+    release_locks()
     play_sound()
     show_notification(task_name)
 

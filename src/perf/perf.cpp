@@ -100,6 +100,17 @@ void Perf::addTime(const char* name, double ms)
     else if (std::strcmp(name, "AI") == 0)                      t.npcAi += ms;
     else if (std::strcmp(name, "Weapons") == 0)                 t.weapons += ms;
     else if (std::strcmp(name, "Projectiles") == 0)             t.projectiles += ms;
+    else if (std::strcmp(name, "ProjectileCollision") == 0)     t.projectileCollision += ms;
+    else if (std::strcmp(name, "ProjectileExplosion") == 0)     t.projectileExplosion += ms;
+    else if (std::strcmp(name, "Shotgun") == 0)                 t.shotgun += ms;
+    else if (std::strcmp(name, "HitFX") == 0)                   t.hitfxTotal += ms;
+    else if (std::strcmp(name, "HitFXSpawn") == 0)              t.hitfxSpawn += ms;
+    else if (std::strcmp(name, "HitFXUpdate") == 0)             t.hitfxUpdate += ms;
+    else if (std::strcmp(name, "ParticleSpawn") == 0)           t.particleSpawn += ms;
+    else if (std::strcmp(name, "Respawn") == 0)                 t.respawn += ms;
+    else if (std::strcmp(name, "NpcSpawnTime") == 0)            t.npcSpawnTime += ms;
+    else if (std::strcmp(name, "NpcDestroyTime") == 0)          t.npcDestroyTime += ms;
+    else if (std::strcmp(name, "AudioTime") == 0)               t.audioTime += ms;
     else if (std::strcmp(name, "Particles") == 0)               t.particles += ms;
     else if (std::strcmp(name, "DamageNumbers") == 0)           t.damageNumbers += ms;
     else if (std::strcmp(name, "Blood") == 0)                   t.blood += ms;
@@ -185,6 +196,17 @@ void Perf::addChildTime(const char* name, double ms)
     else if (std::strcmp(name, "AI") == 0)                      c.npcAi += ms;
     else if (std::strcmp(name, "Weapons") == 0)                 c.weapons += ms;
     else if (std::strcmp(name, "Projectiles") == 0)             c.projectiles += ms;
+    else if (std::strcmp(name, "ProjectileCollision") == 0)     c.projectileCollision += ms;
+    else if (std::strcmp(name, "ProjectileExplosion") == 0)     c.projectileExplosion += ms;
+    else if (std::strcmp(name, "Shotgun") == 0)                 c.shotgun += ms;
+    else if (std::strcmp(name, "HitFX") == 0)                   c.hitfxTotal += ms;
+    else if (std::strcmp(name, "HitFXSpawn") == 0)              c.hitfxSpawn += ms;
+    else if (std::strcmp(name, "HitFXUpdate") == 0)             c.hitfxUpdate += ms;
+    else if (std::strcmp(name, "ParticleSpawn") == 0)           c.particleSpawn += ms;
+    else if (std::strcmp(name, "Respawn") == 0)                 c.respawn += ms;
+    else if (std::strcmp(name, "NpcSpawnTime") == 0)            c.npcSpawnTime += ms;
+    else if (std::strcmp(name, "NpcDestroyTime") == 0)          c.npcDestroyTime += ms;
+    else if (std::strcmp(name, "AudioTime") == 0)               c.audioTime += ms;
     else if (std::strcmp(name, "Particles") == 0)               c.particles += ms;
     else if (std::strcmp(name, "DamageNumbers") == 0)           c.damageNumbers += ms;
     else if (std::strcmp(name, "Blood") == 0)                   c.blood += ms;
@@ -278,6 +300,15 @@ double Perf::exclusive(const PerfTimes& t, const PerfTimes& c, const char* name)
         std::strcmp(name, "NpcCollision") == 0)      return t.npcCollision - c.npcCollision;
     if (std::strcmp(name, "NpcRender") == 0)         return t.npcRender - c.npcRender;
     if (std::strcmp(name, "Weapons") == 0)           return t.weapons - c.weapons;
+    if (std::strcmp(name, "Shotgun") == 0)           return t.shotgun - c.shotgun;
+    if (std::strcmp(name, "HitFX") == 0)             return t.hitfxTotal - c.hitfxTotal;
+    if (std::strcmp(name, "HitFXSpawn") == 0)        return t.hitfxSpawn - c.hitfxSpawn;
+    if (std::strcmp(name, "HitFXUpdate") == 0)       return t.hitfxUpdate - c.hitfxUpdate;
+    if (std::strcmp(name, "ParticleSpawn") == 0)     return t.particleSpawn - c.particleSpawn;
+    if (std::strcmp(name, "Respawn") == 0)           return t.respawn - c.respawn;
+    if (std::strcmp(name, "NpcSpawnTime") == 0)      return t.npcSpawnTime - c.npcSpawnTime;
+    if (std::strcmp(name, "NpcDestroyTime") == 0)    return t.npcDestroyTime - c.npcDestroyTime;
+    if (std::strcmp(name, "AudioTime") == 0)         return t.audioTime - c.audioTime;
     if (std::strcmp(name, "Particles") == 0)         return t.particles - c.particles;
     if (std::strcmp(name, "Rendering") == 0)         return t.rendering - c.rendering;
     if (std::strcmp(name, "WorldRender") == 0)       return t.worldRender - c.worldRender;
@@ -749,6 +780,26 @@ void Perf::endFrame()
         writeSpikeReport(r);
     }
 
+    // Periodic output for enabled commands (every ~60 frames)
+    if (s.frameNumber % 60 == 0) {
+        if (s.showLargeAabb && s.largeAabbAlert.caller[0]) {
+            const auto& a = s.largeAabbAlert;
+            if (a.chunkCells > 100 || a.uniqueTriangles > 500) {
+                Debug::log(Debug::Category::Collision,
+                    "[LARGE AABB] entity=%s reason=%s cells=%d tris=%d "
+                    "size=(%.1f %.1f %.1f) cause=%s\n",
+                    a.entity, a.reason, a.chunkCells, a.uniqueTriangles,
+                    a.aabbSize[0], a.aabbSize[1], a.aabbSize[2], a.suspectedCause);
+            }
+        }
+        if (s.showCollQueries) {
+            printCollQuerySummary();
+        }
+        if (s.showEntityCounts) {
+            printEntityCounts();
+        }
+    }
+
     if (s.perfFileLogging)
         writeProfileToFile();
 
@@ -769,6 +820,126 @@ void Perf::endFrame()
 
     if (s.stressRunning)
         s.stressTimer += gFramePacer.dt();
+}
+
+// ── Top exclusive printing ──────────────────────────────────
+
+void Perf::printTopExclusive(int n)
+{
+    PerfState& s = gState;
+    const PerfTimes& t = s.current;
+    const PerfTimes& c = s.children;
+
+    struct TopEntry { const char* name; double excl; };
+    TopEntry entries[] = {
+        {"NPCThink", t.npcThink - c.npcThink},
+        {"NpcPathfinding", t.npcPathfinding - c.npcPathfinding},
+        {"NpcCombat", t.npcCombat - c.npcCombat},
+        {"NpcCollision", t.npcCollision - c.npcCollision},
+        {"NpcRender", t.npcRender - c.npcRender},
+        {"NpcUpdate", t.npcUpdate - c.npcUpdate},
+        {"Collision", t.collision - c.collision},
+        {"SweepSlide", t.sweepSlide - c.sweepSlide},
+        {"Depenetration", t.depenetration - c.depenetration},
+        {"ChunkQuery", t.chunkQuery - c.chunkQuery},
+        {"WeaponCollisions", t.weaponCollisions - c.weaponCollisions},
+        {"GroundDetection", t.groundDetection - c.groundDetection},
+        {"Movement", t.movement - c.movement},
+        {"Physics", t.physics - c.physics},
+        {"Shotgun", t.shotgun - c.shotgun},
+        {"HitFX", t.hitfxTotal - c.hitfxTotal},
+        {"Respawn", t.respawn - c.respawn},
+        {"Particles", t.particles - c.particles},
+        {"Blood", t.blood - c.blood},
+        {"Rendering", t.rendering - c.rendering},
+        {"ShadowRender", t.shadowRender - c.shadowRender},
+        {"PostFX", t.postFX - c.postFX},
+        {"WorldRender", t.worldRender - c.worldRender},
+        {"PlayerRender", t.playerRender - c.playerRender},
+        {"EffectRender", t.effectRender - c.effectRender},
+        {"Weapons", t.weapons - c.weapons},
+        {"Projectiles", t.projectiles - c.projectiles},
+        {"Replay", t.replay - c.replay},
+        {"Networking", t.networking - c.networking},
+        {"Camera", t.camera - c.camera},
+        {"Combat", t.combat - c.combat},
+        {"UI", t.ui - c.ui},
+        {"Audio", t.audio - c.audio},
+        {"Setup", t.setup - c.setup},
+        {"State", t.state - c.state},
+        {"Sleep", t.sleepTime - c.sleepTime},
+        {"Swap", t.swapTime - c.swapTime},
+        {"Terminal", t.terminalTime - c.terminalTime},
+        {"Menus", t.menusTime - c.menusTime},
+        {"Diag", t.diagTime - c.diagTime},
+    };
+    int entryCount = sizeof(entries) / sizeof(entries[0]);
+
+    for (int i = 0; i < entryCount - 1; ++i)
+        for (int j = 0; j < entryCount - 1 - i; ++j)
+            if (entries[j].excl < entries[j + 1].excl) {
+                TopEntry tmp = entries[j];
+                entries[j] = entries[j + 1];
+                entries[j + 1] = tmp;
+            }
+
+    printf("\n=== Top Exclusive Systems ===\n\n");
+    int count = std::min(n, entryCount);
+    for (int i = 0; i < count; ++i) {
+        if (entries[i].excl > 0.01)
+            printf("%2d. %-20s %.2fms\n", i + 1, entries[i].name, entries[i].excl);
+    }
+    printf("\n");
+}
+
+void Perf::printCollQuerySummary()
+{
+    PerfState& s = gState;
+    if (s.queryRecordCount == 0) {
+        printf("No collision queries this frame.\n");
+        return;
+    }
+
+    int totalTris = 0;
+    int totalQueries = s.queryRecordCount;
+    int worstIdx = 0;
+    double worstMs = 0;
+    double totalMs = 0;
+    for (int i = 0; i < totalQueries; ++i) {
+        const auto& q = s.queryRecords[i];
+        totalTris += q.uniqueTriangles;
+        totalMs += q.elapsedMs;
+        if (q.elapsedMs > worstMs) { worstMs = q.elapsedMs; worstIdx = i; }
+    }
+
+    const auto& w = s.queryRecords[worstIdx];
+    double avgMs = totalMs / std::max(1, totalQueries);
+
+    printf("\n=== Collision Queries ===\n");
+    printf("  Total Queries:  %d\n", totalQueries);
+    printf("  Total Triangles: %d\n", totalTris);
+    printf("  Avg/Query:       %.1f tris, %.3f ms\n",
+           (double)totalTris / std::max(1, totalQueries), avgMs);
+    printf("  Worst Query:     %s (%d tris, %.2f ms)\n",
+           w.caller, w.uniqueTriangles, w.elapsedMs);
+    printf("  95th Percentile: %.2f ms\n", avgMs * 1.5); // rough estimate
+    printf("\n");
+}
+
+void Perf::printEntityCounts()
+{
+    PerfState& s = gState;
+    printf("\n=== Entity Counts ===\n");
+    printf("  Players:    %d\n", s.playerCount);
+    printf("  NPCs:       %d\n", s.npcCount);
+    printf("  Projectiles: %d\n", s.projectileCount);
+    printf("  Particles:  %d\n", s.particleCount);
+    printf("  Blood:      %d\n", s.bloodCount);
+    printf("  Effects:    %d\n", s.effectCount);
+    printf("  Corpses:    %d\n", s.corpseCount);
+    printf("  Audio:      %d\n", s.audioSourceCount);
+    printf("  Replay:     %.1f MB\n", s.replayMemoryMb);
+    printf("\n");
 }
 
 // ── Toggles, presets, benchmark ──────────────────────────────
@@ -794,6 +965,12 @@ void Perf::toggleSpikes()
 void Perf::toggleRenderStats() { gState.renderStats = !gState.renderStats; }
 void Perf::toggleAllocAudit() { gState.allocAudit = !gState.allocAudit; gState.totalAllocations = 0; }
 void Perf::toggleAudioAudit() { gState.audioAudit = !gState.audioAudit; }
+
+void Perf::toggleLargeAabb() { gState.showLargeAabb = !gState.showLargeAabb; }
+
+void Perf::toggleCollQueries() { gState.showCollQueries = !gState.showCollQueries; }
+
+void Perf::toggleEntityCounts() { gState.showEntityCounts = !gState.showEntityCounts; }
 
 void Perf::togglePerfFileLogging()
 {

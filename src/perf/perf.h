@@ -44,6 +44,17 @@ struct PerfTimes {
 
     double weapons = 0.0;
     double projectiles = 0.0;
+    double projectileCollision = 0.0;
+    double projectileExplosion = 0.0;
+    double shotgun = 0.0;
+    double hitfxTotal = 0.0;
+    double hitfxSpawn = 0.0;
+    double hitfxUpdate = 0.0;
+    double particleSpawn = 0.0;
+    double respawn = 0.0;
+    double npcSpawnTime = 0.0;
+    double npcDestroyTime = 0.0;
+    double audioTime = 0.0;
 
     double particles = 0.0;
     double damageNumbers = 0.0;
@@ -215,6 +226,9 @@ struct PerfState {
     bool allocAudit = false;
     bool audioAudit = false;
     bool perfFileLogging = false;
+    bool showLargeAabb = false;
+    bool showCollQueries = false;
+    bool showEntityCounts = false;
 
     int preset = 0;
 
@@ -356,6 +370,12 @@ void toggleRenderStats();
 void toggleAllocAudit();
 void toggleAudioAudit();
 void togglePerfFileLogging();
+void toggleLargeAabb();
+void toggleCollQueries();
+void toggleEntityCounts();
+void printTopExclusive(int n);
+void printCollQuerySummary();
+void printEntityCounts();
 void setPreset(int p);
 void startBenchmark(double seconds);
 void startStress(int npcTarget);

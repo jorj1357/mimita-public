@@ -46,9 +46,9 @@ struct ConsoleCommand {
     std::string description;
     std::string usage;
     std::function<void(const std::vector<std::string>& args)> fn;
-    std::string dateAdded;  // "YYYY-MM-DD" or empty — stored separately
+    std::string dateAdded;
     CommandCategory category = CommandCategory::Uncategorized;
-    std::vector<std::string> aliases;  // alternative names that run the same handler
+    std::vector<std::string> aliases;
 };
 
 class Terminal {
@@ -72,7 +72,6 @@ public:
     void execute(const std::string& input);
     void addLog(const std::string& text);
 
-    // Replay export picker
     struct ReplayPickerEntry {
         std::string path;
         std::string filename;
@@ -99,11 +98,23 @@ private:
 
     void executeCurrent();
     void addHistory(const std::string& input);
+    void replaceSelection(const std::string& replacement);
+    void deleteSelection();
+    int cursorWordLeft(int pos) const;
+    int cursorWordRight(int pos) const;
+    std::string selectedText() const;
+    void clearSelection();
+    bool hasSelection() const { return mSelectionStart >= 0; }
 
     GLFWwindow* mWindow = nullptr;
     bool mOpen = false;
 
     std::string mInputLine;
+    int mCursorPos = 0;
+    int mSelectionStart = -1;
+    std::string mHistorySavedLine;
+    int mTabCycleIndex = -1;
+
     std::vector<std::string> mScrollback;
     std::vector<std::string> mHistory;
     int mHistoryIndex = -1;
@@ -117,7 +128,6 @@ private:
     static constexpr int MAX_SCROLLBACK = 256;
     static constexpr int MAX_HISTORY = 64;
 
-    // --- Command search / autocomplete ---
     struct CachedCommand {
         const ConsoleCommand* cmd;
         std::string lowerName;

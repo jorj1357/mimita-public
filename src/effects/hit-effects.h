@@ -15,7 +15,7 @@ struct DeathEllipsoidConfig {
     float lifetime = 3.0f;
     float length = 8.0f;
     float radius = 1.5f;
-    float baseAlpha = 0.75f;
+    float baseAlpha = 0.35f;
     glm::vec4 color{1.0f, 0.0f, 0.0f, 0.75f};
     bool fade = true;
 };

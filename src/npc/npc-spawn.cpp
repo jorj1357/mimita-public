@@ -80,13 +80,25 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     // Force equipping ONLY Revolver — no other weapon considered
     body.equippedWeaponId = "revolver";
     body.equippedSlot = 1;
+    body.hasValidWeapon = true;
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get("revolver");
+        if (def) {
+            body.weaponRuntimes["revolver"] = WeaponRuntime{};
+            WeaponRuntimeHelper::initRuntime(body.weaponRuntimes["revolver"], *def);
+        }
+    }
     resetAllWeaponRuntimesForSpawn(body, "Npc constructor");
     Debug::log(Debug::Category::NpcCombat,
-        "[NPC WEAPON] npc=%u immediate equip weapon=revolver slot=%d",
+        "[NPC WEAPON] npc=%u immediate equip weapon=revolver slot=%d hasValidWeapon=1",
         id, body.equippedSlot);
     Debug::log(Debug::Category::NpcCombat,
         "[NPC WEAPON] npc=%u equippedWeaponId=%s weaponRuntimes.size=%zu",
         id, body.equippedWeaponId.c_str(), body.weaponRuntimes.size());
+    Debug::log(Debug::Category::Animation,
+        "[NPC ANIM] npc=%u character=%s skeleton=%zu nodes weaponPosesAvailable=%d\n",
+        id, body.mCharacterName.c_str(), body.perfectPoseSkeleton.nodes.size(),
+        gPlayerProcedural.weaponPoses.find("revolver:idle") != gPlayerProcedural.weaponPoses.end() ? 1 : 0);
 
     Debug::log(Debug::Category::General,
                "[NPC] spawned id=%u difficulty=%.1f reaction=%.2f aggression=%.2f awareness=%.1f\n",
