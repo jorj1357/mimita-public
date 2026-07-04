@@ -7,6 +7,7 @@
 #include "combat/weapon-registry.h"
 #include "config.h"
 #include "physics/config.h"
+#include "debug/debug-log.h"
 
 struct AnimOverlayResult {
     glm::vec3 translation{0.0f};
@@ -116,6 +117,21 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (proceduralFrozen) {
         updateModelWorldTransforms();
         return;
+    }
+
+    static bool loggedSkeleton = false;
+    if (!loggedSkeleton) {
+        loggedSkeleton = true;
+        Debug::log(Debug::Category::Animation,
+            "[ANIM PROFILE] entity=%s single global animation profile (gPlayerProcedural) nodes=%zu bodyParts=%zu\n",
+            username.c_str(), perfectPoseSkeleton.nodes.size(), physicalBody.parts.size());
+        for (const PhysicalBodyPart& bp : physicalBody.parts) {
+            Debug::log(Debug::Category::Animation,
+                "[ANIM BONE] %s -> nodeIndex=%d name=%s\n",
+                bp.name.c_str(), bp.nodeIndex,
+                bp.nodeIndex >= 0 && bp.nodeIndex < (int)perfectPoseSkeleton.nodes.size()
+                    ? perfectPoseSkeleton.nodes[bp.nodeIndex].name.c_str() : "INVALID");
+        }
     }
 
     if (glm::length(camForward) > 0.001f) {
@@ -257,9 +273,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         animSpeedScale *= playbackMultiplier;
 
         if (DebugConfig::DEBUG_ANIMATION) {
-            printf("[ANIM] state=%s walkFrequency=%.2f finalSpeed=%.2f\n",
-                   activeAnim.c_str(), gPlayerProcedural.walkFrequency,
-                   animSpeedScale);
+            Debug::log(Debug::Category::Animation,
+                "[ANIM] state=%s walkFrequency=%.2f finalSpeed=%.2f move01=%.2f nowMoving=%d\n",
+                activeAnim.c_str(), gPlayerProcedural.walkFrequency,
+                animSpeedScale, move01, (int)nowMoving);
         }
 
         animOverlay = interpolateAnimClip(animIt->second, animStateTime, animSpeedScale);
@@ -315,6 +332,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         if (wpIt != gPlayerProcedural.weaponPoses.end() && wpIt->second.useWeaponPose) {
             hasWeaponPose = true;
             weaponPoseCfg = &wpIt->second;
+            Debug::log(Debug::Category::Animation,
+                "[ANIM] selected weapon pose poseLookupId=%s weaponId=%s\n",
+                poseLookupId.c_str(), weaponId.c_str());
         }
     }
 
@@ -450,17 +470,56 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             poseDebugTimer2 = 1.0f;
             const PhysicalBodyPart* leftArm = nullptr;
             const PhysicalBodyPart* rightArm = nullptr;
+            const PhysicalBodyPart* head = nullptr;
+            const PhysicalBodyPart* torso = nullptr;
+            const PhysicalBodyPart* leftLeg = nullptr;
+            const PhysicalBodyPart* rightLeg = nullptr;
             for (const PhysicalBodyPart& part : physicalBody.parts) {
                 if (part.name == "leftArm") leftArm = &part;
                 if (part.name == "rightArm") rightArm = &part;
+                if (part.name == "head") head = &part;
+                if (part.name == "torso") torso = &part;
+                if (part.name == "leftLeg") leftLeg = &part;
+                if (part.name == "rightLeg") rightLeg = &part;
             }
-            if (leftArm && rightArm) {
-                printf("[POSE] weapon=%s usePose=%d equipped=%d "
-                       "leftArmFinal=(%.2f %.2f %.2f) rightArmFinal=(%.2f %.2f %.2f)\n",
-                       weaponId.c_str(), (int)hasWeaponPose, (int)weaponEquipped,
-                       leftArm->pose.translation.x, leftArm->pose.translation.y, leftArm->pose.translation.z,
-                       rightArm->pose.translation.x, rightArm->pose.translation.y, rightArm->pose.translation.z);
-            }
+            Debug::log(Debug::Category::Animation,
+                "[ANIM] state=%s weapon=%s usePose=%d equipped=%d skeleton=%zu nodes move01=%.2f\n",
+                activeAnim.c_str(), weaponId.c_str(), (int)hasWeaponPose, (int)weaponEquipped,
+                perfectPoseSkeleton.nodes.size(), move01);
+            if (head)
+                Debug::log(Debug::Category::Animation,
+                    "[ANIM] head perfectPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                    head->perfectPose.translation.x, head->perfectPose.translation.y, head->perfectPose.translation.z,
+                    head->perfectPose.rotationEuler.x, head->perfectPose.rotationEuler.y, head->perfectPose.rotationEuler.z);
+            if (torso)
+                Debug::log(Debug::Category::Animation,
+                    "[ANIM] torso perfectPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                    torso->perfectPose.translation.x, torso->perfectPose.translation.y, torso->perfectPose.translation.z,
+                    torso->perfectPose.rotationEuler.x, torso->perfectPose.rotationEuler.y, torso->perfectPose.rotationEuler.z);
+            if (leftArm)
+                Debug::log(Debug::Category::Animation,
+                    "[ANIM] leftArm perfectPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)  physicalPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                    leftArm->perfectPose.translation.x, leftArm->perfectPose.translation.y, leftArm->perfectPose.translation.z,
+                    leftArm->perfectPose.rotationEuler.x, leftArm->perfectPose.rotationEuler.y, leftArm->perfectPose.rotationEuler.z,
+                    leftArm->pose.translation.x, leftArm->pose.translation.y, leftArm->pose.translation.z,
+                    leftArm->pose.rotationEuler.x, leftArm->pose.rotationEuler.y, leftArm->pose.rotationEuler.z);
+            if (rightArm)
+                Debug::log(Debug::Category::Animation,
+                    "[ANIM] rightArm perfectPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)  physicalPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                    rightArm->perfectPose.translation.x, rightArm->perfectPose.translation.y, rightArm->perfectPose.translation.z,
+                    rightArm->perfectPose.rotationEuler.x, rightArm->perfectPose.rotationEuler.y, rightArm->perfectPose.rotationEuler.z,
+                    rightArm->pose.translation.x, rightArm->pose.translation.y, rightArm->pose.translation.z,
+                    rightArm->pose.rotationEuler.x, rightArm->pose.rotationEuler.y, rightArm->pose.rotationEuler.z);
+            if (leftLeg)
+                Debug::log(Debug::Category::Animation,
+                    "[ANIM] leftLeg perfectPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                    leftLeg->perfectPose.translation.x, leftLeg->perfectPose.translation.y, leftLeg->perfectPose.translation.z,
+                    leftLeg->perfectPose.rotationEuler.x, leftLeg->perfectPose.rotationEuler.y, leftLeg->perfectPose.rotationEuler.z);
+            if (rightLeg)
+                Debug::log(Debug::Category::Animation,
+                    "[ANIM] rightLeg perfectPose trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
+                    rightLeg->perfectPose.translation.x, rightLeg->perfectPose.translation.y, rightLeg->perfectPose.translation.z,
+                    rightLeg->perfectPose.rotationEuler.x, rightLeg->perfectPose.rotationEuler.y, rightLeg->perfectPose.rotationEuler.z);
         }
     }
 

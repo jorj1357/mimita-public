@@ -10,6 +10,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 using json = nlohmann::json;
 
@@ -22,6 +23,13 @@ void ReplayRecorder::recordEffectEvent(const ReplayEffectEvent& inputEvent)
     mPendingEffects.push_back(event);
     if (!event.texturePath.empty())
         registerAsset("texture:" + event.texturePath, "texture", event.texturePath, {}, {}, "effect");
+    Debug::log(Debug::Category::Replay,
+        "[REPLAY EFFECT] recorded type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) color=(%.2f %.2f %.2f %.2f) alpha=%.2f\n",
+        event.type.c_str(), event.spawnTick,
+        event.position.x, event.position.y, event.position.z,
+        event.scale.x, event.scale.y, event.scale.z,
+        event.color.x, event.color.y, event.color.z, event.color.w,
+        event.alpha);
 }
 
 void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)

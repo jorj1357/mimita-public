@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
+#include "debug/debug-log.h"
+
 using json = nlohmann::json;
 
 bool ReplayClip::save(const std::string& path) const
@@ -157,8 +159,16 @@ bool ReplayClip::load(const std::string& path)
             frame.camera.fov = camera.value("fov", 70.0f);
             for (const json& actor : value.value("actors", json::array()))
                 frame.actors.push_back(parseActor(actor));
-            for (const json& effect : value.value("effects", json::array()))
-                frame.effects.push_back(parseEffect(effect));
+            for (const json& effect : value.value("effects", json::array())) {
+                ReplayEffectEvent ev = parseEffect(effect);
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] loaded type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) alpha=%.2f\n",
+                    ev.type.c_str(), ev.spawnTick,
+                    ev.position.x, ev.position.y, ev.position.z,
+                    ev.scale.x, ev.scale.y, ev.scale.z,
+                    ev.alpha);
+                frame.effects.push_back(std::move(ev));
+            }
             sceneFrames.push_back(std::move(frame));
         }
 

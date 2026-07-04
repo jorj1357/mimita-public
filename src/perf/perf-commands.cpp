@@ -248,6 +248,66 @@ void registerPerfCommands()
         }
     });
 
+    // perf_top: Print top N exclusive systems
+    t.registerCommand({
+        "perf_top",
+        "Print the N highest exclusive-time systems, sorted descending",
+        "perf_top [N]",
+        [](const std::vector<std::string>& args) {
+            int n = 10;
+            if (!args.empty()) n = std::atoi(args[0].c_str());
+            if (n < 1) n = 10;
+            if (n > 50) n = 50;
+            Perf::printTopExclusive(n);
+            Terminal::instance().addLog(std::string("[PERF] Top ") + std::to_string(n) + " exclusive systems printed");
+        }
+    });
+
+    // perf_large_aabb: Toggle large AABB alerts
+    t.registerCommand({
+        "perf_large_aabb",
+        "Toggle large AABB detection: logs suspicious broadphase queries",
+        "perf_large_aabb [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::toggleLargeAabb();
+            else
+                Perf::state().showLargeAabb = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_large_aabb=") +
+                (Perf::state().showLargeAabb ? "ON" : "OFF"));
+        }
+    });
+
+    // perf_collision_queries: Toggle collision query summary
+    t.registerCommand({
+        "perf_collision_queries",
+        "Toggle collision query summary every second",
+        "perf_collision_queries [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::toggleCollQueries();
+            else
+                Perf::state().showCollQueries = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_collision_queries=") +
+                (Perf::state().showCollQueries ? "ON" : "OFF"));
+        }
+    });
+
+    // perf_entity_counts: Toggle entity count summary
+    t.registerCommand({
+        "perf_entity_counts",
+        "Toggle entity count summary every second",
+        "perf_entity_counts [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+                Perf::toggleEntityCounts();
+            else
+                Perf::state().showEntityCounts = args[0] == "1";
+            Terminal::instance().addLog(std::string("[PERF] perf_entity_counts=") +
+                (Perf::state().showEntityCounts ? "ON" : "OFF"));
+        }
+    });
+
     // Part 16: Suggestions
     t.registerCommand({
         "perf_suggestions",

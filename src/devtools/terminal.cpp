@@ -159,8 +159,12 @@ void Terminal::toggle() {
     mOpen = !mOpen;
     if (mOpen) {
         mInputLine.clear();
+        mCursorPos = 0;
+        mSelectionStart = -1;
         mHistoryIndex = -1;
+        mHistorySavedLine.clear();
         mScrollOffset = 0;
+        mTabCycleIndex = -1;
         printf("[TERMINAL] opened\n");
     } else {
         printf("[TERMINAL] closed\n");
@@ -262,9 +266,28 @@ void Terminal::executeCurrent() {
     std::string input = mInputLine;
     addLog("] " + input);
     addHistory(input);
-    execute(input);
+
+    // Multi-command: split on ';'
+    size_t start = 0;
+    while (start < input.size()) {
+        while (start < input.size() && input[start] == ' ') start++;
+        size_t end = input.find(';', start);
+        if (end == std::string::npos) end = input.size();
+        std::string cmd = input.substr(start, end - start);
+        // Trim trailing spaces
+        while (!cmd.empty() && cmd.back() == ' ') cmd.pop_back();
+        if (!cmd.empty()) {
+            execute(cmd);
+        }
+        start = end + 1;
+    }
+
     mInputLine.clear();
+    mCursorPos = 0;
+    mSelectionStart = -1;
     mHistoryIndex = -1;
+    mHistorySavedLine.clear();
+    mTabCycleIndex = -1;
 }
 
 void Terminal::execute(const std::string& input) {

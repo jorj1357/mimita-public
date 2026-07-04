@@ -1,4 +1,5 @@
 #include "replay.h"
+#include "replay-io.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -163,6 +164,18 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                             }
                         }
                         frame.actors.push_back(actor);
+                    }
+                }
+                if (sf.contains("effects")) {
+                    for (const auto& e : sf["effects"]) {
+                        ReplayEffectEvent ev = parseEffect(e);
+                        Debug::log(Debug::Category::Replay,
+                            "[REPLAY EFFECT] loaded type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) alpha=%.2f\n",
+                            ev.type.c_str(), ev.spawnTick,
+                            ev.position.x, ev.position.y, ev.position.z,
+                            ev.scale.x, ev.scale.y, ev.scale.z,
+                            ev.alpha);
+                        frame.effects.push_back(std::move(ev));
                     }
                 }
                 mClip.sceneFrames.push_back(frame);

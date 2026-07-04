@@ -363,6 +363,35 @@ void engineTickReplay(Engine& engine, float dt)
                 npcActor.bodyParts = captureReplayBodyParts(npc.body);
                 sceneFrame.actors.push_back(npcActor);
             }
+            // ── Godball ────────────────────────────────────────────────
+            if (weapons.godballPhysics().active) {
+                const auto& gb = weapons.godballPhysics();
+                glm::vec3 handPos = WeaponGodball::getHandPosition(player);
+
+                ReplayEffectEvent gbSphere;
+                gbSphere.type = "godball";
+                gbSphere.position = gb.position;
+                gbSphere.scale = glm::vec3(gb.radius);
+                gbSphere.color = glm::vec4(0.2f, 0.4f, 0.8f, 0.7f);
+                gbSphere.lifetime = 0.1f;
+                captureReplayEffect(gbSphere);
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] recorded type=godball tick=%d pos=(%.2f %.2f %.2f) radius=%.2f color=(%.2f %.2f %.2f %.2f)\n",
+                    replayTick, gb.position.x, gb.position.y, gb.position.z,
+                    gb.radius, 0.2f, 0.4f, 0.8f, 0.7f);
+
+                ReplayEffectEvent gbRope;
+                gbRope.type = "godball_rope";
+                gbRope.from = handPos;
+                gbRope.to = gb.position;
+                gbRope.lifetime = 0.1f;
+                captureReplayEffect(gbRope);
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] recorded type=godball_rope tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f)\n",
+                    replayTick, handPos.x, handPos.y, handPos.z,
+                    gb.position.x, gb.position.y, gb.position.z);
+            }
+
             DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
             gReplayRecorder.recordSceneFrame(sceneFrame);

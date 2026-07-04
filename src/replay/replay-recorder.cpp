@@ -12,6 +12,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "entities/player.h"
+#include "debug/debug-log.h"
 
 using json = nlohmann::json;
 
@@ -271,6 +272,12 @@ bool ReplayRecorder::exportToJSON(const std::string& path) const {
             event["tick"] = effect.spawnTick;
             j["events"].push_back(event);
             eventCounts[effect.type] = eventCounts.value(effect.type, 0) + 1;
+            Debug::log(Debug::Category::Replay,
+                "[REPLAY EFFECT] serialized type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) alpha=%.2f\n",
+                effect.type.c_str(), effect.spawnTick,
+                effect.position.x, effect.position.y, effect.position.z,
+                effect.scale.x, effect.scale.y, effect.scale.z,
+                effect.alpha);
         }
     }
     std::sort(j["events"].begin(), j["events"].end(), [](const json& a, const json& b) {

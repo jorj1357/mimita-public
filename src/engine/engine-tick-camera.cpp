@@ -19,6 +19,7 @@
 #include "ui/hitmarker.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+#include "debug/debug-visuals.h"
 #include "game/duel.h"
 #include "devtools/terminal.h"
 #include "game/game-state.h"
@@ -172,19 +173,34 @@ void engineTickCamera(Engine& engine, float dt)
                 addChatMessage(chatState, effect.assetId, effect.sourceActorId);
                 playChatSound((int)effect.assetId.size());
             } else if (effect.type == "gunshot") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=gunshot tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s\n",
+                    effect.spawnTick, effect.from.x, effect.from.y, effect.from.z,
+                    effect.to.x, effect.to.y, effect.to.z, effect.sourceActorId.c_str());
                 EffectPartSystem::instance().spawnMuzzleFlash(
                     effect.from, effect.sourceActorId);
                 EffectPartSystem::instance().spawnTracer(
                     effect.from, effect.to, effect.sourceActorId);
             } else if (effect.type == "blood_spurt_emitter") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=blood_spurt_emitter tick=%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f) source=%s target=%s\n",
+                    effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
+                    effect.direction.x, effect.direction.y, effect.direction.z,
+                    effect.sourceActorId.c_str(), effect.targetActorId.c_str());
                 EffectPartSystem::instance().spawnBloodEffect(
                     effect.position, effect.direction, 50.0f,
                     effect.sourceActorId, effect.targetActorId);
                 if (effect.sourceActorId == gReplayPlayer.killerId())
                     hitmarker();
             } else if (effect.type == "dash") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=dash tick=%d pos=(%.2f %.2f %.2f)\n",
+                    effect.spawnTick, effect.position.x, effect.position.y, effect.position.z);
                 EffectPartSystem::instance().spawnDash(effect.position);
             } else if (effect.type == "footstep") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=footstep tick=%d pos=(%.2f %.2f %.2f)\n",
+                    effect.spawnTick, effect.position.x, effect.position.y, effect.position.z);
                 EffectPartSystem::instance().spawnFootstep(effect.position);
             } else if (effect.type == "impact_world") {
                 // Visual effects (debris, bullet impact) are separate events.
@@ -201,9 +217,17 @@ void engineTickCamera(Engine& engine, float dt)
             } else if (effect.type == "impact_entity") {
                 // Visual effects are separate events; no action needed.
             } else if (effect.type == "muzzle_flash") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=muzzle_flash tick=%d pos=(%.2f %.2f %.2f) source=%s\n",
+                    effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
+                    effect.sourceActorId.c_str());
                 EffectPartSystem::instance().spawnMuzzleFlash(
                     effect.position, effect.sourceActorId);
             } else if (effect.type == "tracer") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=tracer tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) source=%s\n",
+                    effect.spawnTick, effect.from.x, effect.from.y, effect.from.z,
+                    effect.to.x, effect.to.y, effect.to.z, effect.sourceActorId.c_str());
                 EffectPartSystem::instance().spawnTracer(
                     effect.from, effect.to, effect.sourceActorId);
             } else if (effect.type == "death_ellipsoid") {
@@ -213,12 +237,20 @@ void engineTickCamera(Engine& engine, float dt)
                 float len = glm::length(effect.to - effect.from);
                 const auto& deCfg = HitEffects::config().deathEllipsoid;
                 float rad = effect.scale.x > 0.0f ? effect.scale.x : deCfg.radius;
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=death_ellipsoid tick=%d from=(%.2f %.2f %.2f) to=(%.2f %.2f %.2f) len=%.2f rad=%.2f alpha=%.2f\n",
+                    effect.spawnTick, effect.from.x, effect.from.y, effect.from.z,
+                    effect.to.x, effect.to.y, effect.to.z, len, rad, effect.alpha);
                 EffectPartSystem::instance().spawnDeathEllipsoid(
                     effect.from, dir, len, rad, std::max(effect.lifetime, 0.1f));
             } else if (effect.type == "damage_number") {
                 if (!effect.label.empty()) {
                     int damage = 0;
                     try { damage = std::stoi(effect.label); } catch (...) {}
+                    Debug::log(Debug::Category::Replay,
+                        "[REPLAY EFFECT] spawned type=damage_number tick=%d pos=(%.2f %.2f %.2f) damage=%d target=%s\n",
+                        effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
+                        damage, effect.targetActorId.c_str());
                     EffectPartSystem::instance().spawnDamage(
                         effect.position, effect.targetActorId, damage);
                 }
@@ -228,8 +260,45 @@ void engineTickCamera(Engine& engine, float dt)
                     : glm::vec3(1.0f, 0.0f, 0.0f);
                 EffectPartSystem::instance().spawnDamageImpactSphere(
                     effect.position, dir, effect.targetActorId);
+            } else if (effect.type == "godball") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=godball tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) color=(%.2f %.2f %.2f %.2f) alpha=%.2f\n",
+                    effect.spawnTick, effect.position.x, effect.position.y, effect.position.z,
+                    effect.scale.x, effect.scale.y, effect.scale.z,
+                    effect.color.x, effect.color.y, effect.color.z, effect.color.w,
+                    effect.alpha);
+                DebugVis::drawFilledSphere(camera, effect.position, effect.scale.x, effect.color);
+                DebugVis::drawWireSphere(camera, effect.position, effect.scale.x, {0.4f, 0.6f, 1.0f, 1.0f});
+            } else if (effect.type == "godball_rope") {
+                glm::vec3 dir = effect.to - effect.from;
+                float dist = glm::length(dir);
+                if (dist > 0.01f) {
+                    constexpr int SEGMENTS = 6;
+                    constexpr float ROPE_RADIUS = 0.025f;
+                    glm::vec3 segDir = dir / (float)SEGMENTS;
+                    glm::vec3 current = effect.from;
+                    for (int i = 0; i < SEGMENTS; i++) {
+                        glm::vec3 next = current + segDir;
+                        glm::vec3 mid = (current + next) * 0.5f;
+                        glm::vec3 axis = next - current;
+                        float segLen = glm::length(axis);
+                        if (segLen > 0.001f) {
+                            DebugVis::drawFilledCylinder(camera, mid, glm::normalize(axis),
+                                                          ROPE_RADIUS, segLen, {0.6f, 0.5f, 0.3f, 0.9f});
+                        }
+                        current = next;
+                    }
+                }
             } else if (!effect.type.empty() &&
                        effect.type != "corpse_spawn") {
+                Debug::log(Debug::Category::Replay,
+                    "[REPLAY EFFECT] spawned type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) endScale=(%.2f %.2f %.2f) color=(%.2f %.2f %.2f %.2f) alpha=%.2f lifetime=%.2f\n",
+                    effect.type.c_str(), effect.spawnTick,
+                    effect.position.x, effect.position.y, effect.position.z,
+                    effect.scale.x, effect.scale.y, effect.scale.z,
+                    effect.endScale.x, effect.endScale.y, effect.endScale.z,
+                    effect.color.x, effect.color.y, effect.color.z, effect.color.w,
+                    effect.alpha, effect.lifetime);
                 EffectPart spawnParams;
                 spawnParams.position = effect.position;
                 spawnParams.color = effect.color;
@@ -240,6 +309,11 @@ void engineTickCamera(Engine& engine, float dt)
                 spawnParams.scale = effect.scale.x > 0.0f ? effect.scale.x : 0.2f;
                 spawnParams.endScale = effect.endScale.x > 0.0f ? effect.endScale.x : 0.01f;
                 spawnParams.alpha = effect.alpha;
+                spawnParams.endPosition = effect.to;
+                spawnParams.rotation = effect.rotation;
+                spawnParams.normal = effect.normal;
+                spawnParams.thickness = effect.thickness;
+                spawnParams.endThickness = effect.endThickness;
                 spawnParams.billboardText = false;
                 EffectPartSystem::instance().spawn(spawnParams);
             }

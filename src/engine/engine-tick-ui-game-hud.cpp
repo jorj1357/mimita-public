@@ -282,32 +282,20 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
     }
 
-    // ── Self-healthbar (world-space, from JSON config) ─────────────
-    {
-        if (!gReplayExportRenderMode && !dead)
-        {
-        float nameX = 0.0f, nameY = 0.0f;
-        if (DebugVis::projectToScreen(camera, player.pos + glm::vec3(0,0,PLAYER_HEIGHT * 0.7f),
-                                      nameX, nameY)) {
-            auto readVal = [&](const char* id, float defaultVal) -> float {
-                const GuiElement* el = hudLayout.get(id);
-                return el ? el->x : defaultVal;
-            };
-            auto readCol = [&](const char* id, glm::vec4 defaultVal) -> glm::vec4 {
-                const GuiElement* el = hudLayout.get(id);
-                return el ? el->getBackgroundColorVec() : defaultVal;
-            };
-            float barW = readVal("selfHpBarW", 140.0f);
-            float barH = readVal("selfHpBarH", 12.0f);
-            glm::vec4 hpBg = readCol("selfHpBg", {0.55f,0.05f,0.05f,0.95f});
-            glm::vec4 hpFg = readCol("selfHpFg", {0.05f,0.8f,0.15f,0.95f});
-            float ratio = player.maxHp > 0 ? (float)player.currentHp / player.maxHp : 0.0f;
-            uiDrawRect({nameX - barW * 0.5f, nameY - 8, barW, barH}, hpBg, "self-hp-bg");
-            uiDrawRect({nameX - barW * 0.5f, nameY - 8, barW * ratio, barH}, hpFg, "self-hp-current");
-            uiDrawText(player.username.c_str(), nameX - 35, nameY - 32, 0.32f, {1,1,1,1});
-            uiDrawText(hpText, nameX - 35, nameY + 8, 0.28f, {1,1,1,1});
-        }
-        }
+    // ── Self-healthbar (world-space, reuses NPC healthbar style) ──
+    if (!gReplayExportRenderMode && !dead && !replayPlaybackActive) {
+        constexpr float HP_SMOOTH_SPEED = 8.0f;
+        static std::unordered_map<uintptr_t, float> gHpSmooth;
+        uintptr_t pkey = reinterpret_cast<uintptr_t>(&player);
+        float& smooth = gHpSmooth[pkey];
+        if (smooth < 0.5f) smooth = (float)player.currentHp;
+        float diff = (float)player.currentHp - smooth;
+        if (std::abs(diff) < 0.5f) smooth = (float)player.currentHp;
+        else smooth += glm::sign(diff) * std::min(std::abs(diff), HP_SMOOTH_SPEED * dt);
+        const int savedHp = player.currentHp;
+        player.currentHp = (int)std::round(smooth);
+        drawPlayerHealthbar(player, camera, "self-hp", "live_world");
+        player.currentHp = savedHp;
     }
     if (!gReplayExportRenderMode)
     for (const Npc& npc : npcSystem.all()) {
