@@ -11,6 +11,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/shot-profiler.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -204,25 +205,33 @@ void fireMultiPellet(
 {
     Perf::ScopedTimer _shotgun("Shotgun");
 
-    using clock = std::chrono::steady_clock;
-    auto tStart = clock::now();
-    double msCollision = 0.0, msHitFX = 0.0, msDebris = 0.0, msTracers = 0.0;
-    int pelletCount = std::max(1, def.pelletCount);
-    int tracerCount = 0, hitCount = 0, worldHitCount = 0;
+    ShotProfiler shotProf;
+    shotProf.reset(def.id, gGlobalTick);
+    gShotProfiler = &shotProf;
 
-    if (!def.soundShoot.empty()) {
-        float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
-               def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
-        playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
+    shotProf.totalPellets = std::max(1, def.pelletCount);
+
+    {
+        auto ts = ShotProfiler::Scope(&shotProf.audioMs);
+        if (!def.soundShoot.empty()) {
+            float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+            float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
+            printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
+                   def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
+            playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
+        }
     }
 
     float spreadDeg = std::max(0.1f, def.spread);
 
-    AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
-    logAimDebug("multi_pellet", camera, aim);
-    glm::vec3 baseDir = aim.direction;
+    glm::vec3 baseDir;
+    {
+        auto ts = ShotProfiler::Scope(&shotProf.aimMs);
+        AimSolution aim = computeAim(camera, world, npcs, muzzlePos, remotePlayers);
+        logAimDebug("multi_pellet", camera, aim);
+        baseDir = aim.direction;
+    }
+
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
         baseDir.x, baseDir.y, baseDir.z);
@@ -233,10 +242,27 @@ void fireMultiPellet(
     glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
     glm::vec3 localUp = glm::normalize(glm::cross(right, baseDir));
 
-    float halfAngleRad = glm::radians(spreadDeg * 0.5f);
+    glm::vec3 pelletDirs[16];
+    {
+        auto ts = ShotProfiler::Scope(&shotProf.pelletGenMs);
+        float halfAngleRad = glm::radians(spreadDeg * 0.5f);
+        int pelletCount = shotProf.totalPellets;
+        int cols = std::max(1, (int)std::ceil(std::sqrt((float)pelletCount)));
+        int rows = std::max(1, (int)std::ceil((float)pelletCount / (float)cols));
+        int idx = 0;
+        for (int r = 0; r < rows && idx < pelletCount; ++r)
+            for (int c = 0; c < cols && idx < pelletCount; ++c, ++idx) {
+                float fx = cols > 1 ? (c / ((float)cols - 1.0f)) * 2.0f - 1.0f : 0.0f;
+                float fy = rows > 1 ? (r / ((float)rows - 1.0f)) * 2.0f - 1.0f : 0.0f;
+                float ha = halfAngleRad * fx;
+                float va = halfAngleRad * fy;
+                glm::quat rot = glm::angleAxis(ha, localUp) * glm::angleAxis(va, right);
+                pelletDirs[idx] = glm::normalize(rot * baseDir);
+            }
+    }
 
-    int cols = std::max(1, (int)std::ceil(std::sqrt((float)pelletCount)));
-    int rows = std::max(1, (int)std::ceil((float)pelletCount / (float)cols));
+    int cols = std::max(1, (int)std::ceil(std::sqrt((float)shotProf.totalPellets)));
+    int rows = std::max(1, (int)std::ceil((float)shotProf.totalPellets / (float)cols));
     int totalPellets = 0;
     float accumulatedDamage = 0.0f;
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
@@ -248,33 +274,23 @@ void fireMultiPellet(
     glm::vec3 accumulatedKnockback(0.0f);
     float nearestPelletDist = MAX_SHOT_DISTANCE;
 
-    if (gDebugWeapon) {
-        printf("[SHOTGUN]\nweapon=%s\npellets=%d\nspread=%.1f\ndamage=%.0f\nheadshotMultiplier=%.0f\nrecoil=%.0f\nfireDelay=%.2f\nreloadTime=%.1f\nmagazine=%d\n",
-               def.id.c_str(), pelletCount, spreadDeg, def.damage, def.headshotMultiplier, def.recoil, def.fireDelay, def.reloadTime, def.magazineSize);
-    }
-
     Debug::log(Debug::Category::Weapons,
         "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
         def.id.c_str(), def.beamThickness,
         (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
 
-    int pelletIndex = 0;
-    for (int row = 0; row < rows && pelletIndex < pelletCount; ++row) {
-        for (int col = 0; col < cols && pelletIndex < pelletCount; ++col, ++pelletIndex) {
-            float fracX = cols > 1 ? (col / ((float)cols - 1.0f)) * 2.0f - 1.0f : 0.0f;
-            float fracY = rows > 1 ? (row / ((float)rows - 1.0f)) * 2.0f - 1.0f : 0.0f;
-            float hAngle = halfAngleRad * fracX;
-            float vAngle = halfAngleRad * fracY;
-            glm::quat rot = glm::angleAxis(hAngle, localUp) * glm::angleAxis(vAngle, right);
-            glm::vec3 pelletDir = glm::normalize(rot * baseDir);
+    {
+        auto ts = ShotProfiler::Scope(&shotProf.pelletLoopMs);
+        for (int p = 0; p < shotProf.totalPellets; ++p) {
+            const glm::vec3& pelletDir = pelletDirs[p];
 
             {
-                Perf::ScopedTimer _pelletCollision("ShotgunCollision");
-                auto tc = clock::now();
+                auto tc = ShotProfiler::Scope(&shotProf.worldCollisionMs);
+                shotProf.collisionCalls++;
                 BeamCollisionResult pelletBeam = collideBeam(
                     muzzlePos, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
                     world, &npcs, remotePlayers, nullptr);
-                msCollision += std::chrono::duration<double, std::milli>(clock::now() - tc).count();
+                (void)tc;
 
                 float pelletNearest = pelletBeam.nearest;
                 bool hitW = pelletBeam.hitWorld;
@@ -282,43 +298,34 @@ void fireMultiPellet(
                 Npc* pelletVictim = pelletBeam.victim;
                 std::string pelletPart = pelletBeam.hitPart;
                 glm::vec3 pelletHitNml = pelletBeam.hitNormal;
-                float pelletHeight = pelletBeam.localHeight;
                 uint32_t pelletRemoteTargetId = pelletBeam.remoteTargetId;
                 const Player* pelletRemoteVictim = pelletBeam.remoteVictim;
 
                 glm::vec3 pelletEnd = muzzlePos + pelletDir * pelletNearest;
 
-                if (gDebugWeapon && pelletIndex < 3)
-                    printf("pellet%d direction=(%.4f %.4f %.4f)\n", pelletIndex, pelletDir.x, pelletDir.y, pelletDir.z);
-                if (pelletIndex == 0) {
-                    Debug::warn(Debug::Category::Weapons,
-                        "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n",
-                        pelletDir.x, pelletDir.y, pelletDir.z);
-                }
+                if (gDebugWeapon && p < 3)
+                    printf("pellet%d direction=(%.4f %.4f %.4f)\n", p, pelletDir.x, pelletDir.y, pelletDir.z);
 
                 {
-                    auto tt = clock::now();
+                    auto tt = ShotProfiler::Scope(&shotProf.tracerMs);
                     EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username);
-                    msTracers += std::chrono::duration<double, std::milli>(clock::now() - tt).count();
-                    tracerCount++;
+                    shotProf.tracersSpawned++;
                 }
 
                 if (pelletVictim) {
-                    hitCount++;
-                    auto th = clock::now();
+                    shotProf.npcHits++;
+                    auto td = ShotProfiler::Scope(&shotProf.damageMs);
                     processMultiPelletNpcHit(outResult, def, *pelletVictim, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, npcs, muzzlePos, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal);
-                    msHitFX += std::chrono::duration<double, std::milli>(clock::now() - th).count();
                 } else if (pelletRemoteVictim) {
-                    hitCount++;
-                    auto th = clock::now();
+                    shotProf.npcHits++;
+                    auto td = ShotProfiler::Scope(&shotProf.damageMs);
                     processMultiPelletRemoteHit(outResult, def, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, pelletRemoteTargetId, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal, pelletRemoteVictim->username);
-                    msHitFX += std::chrono::duration<double, std::milli>(clock::now() - th).count();
                 } else if (hitW) {
-                    worldHitCount++;
-                    auto td = clock::now();
+                    shotProf.worldHits++;
+                    auto td = ShotProfiler::Scope(&shotProf.damageMs);
                     processMultiPelletWorldHit(def, pelletEnd, worldNml, pelletDir, pelletNearest, shooter, anyHitWorld, nearestPelletDist, lastPelletEnd, lastHitNormal);
-                    msDebris += std::chrono::duration<double, std::milli>(clock::now() - td).count();
                 } else {
+                    shotProf.misses++;
                     if (pelletNearest < nearestPelletDist) {
                         nearestPelletDist = pelletNearest;
                         lastPelletEnd = pelletEnd;
@@ -338,36 +345,10 @@ void fireMultiPellet(
         outResult.end.x, outResult.end.y, outResult.end.z,
         outResult.hitEntity ? "entity" : (outResult.hitWorld ? "world" : "none"));
 
+    gShotProfiler = nullptr;
+
     if (DebugConfig::WEAPON_PERF_SHOTS) {
-        double totalMs = std::chrono::duration<double, std::milli>(clock::now() - tStart).count();
-        int activeBefore = (int)EffectPartSystem::instance().activeCount();
-        printf("\n========== WEAPON SHOT PERF ==========\n");
-        printf("Weapon: %s\n", def.id.c_str());
-        printf("Frame: %d\n", gGlobalTick);
-        printf("FrameMs: %.1f\n", Perf::state().avgFrameTimeMs);
-        printf("WeaponMs: %.2f\n", totalMs);
-        printf("\n");
-        printf("Pellets: %d\n", pelletCount);
-        printf("WorldHits: %d\n", worldHitCount);
-        printf("NpcHits: %d\n", hitCount);
-        printf("Misses: %d\n", pelletCount - hitCount - worldHitCount);
-        printf("\n");
-        printf("CollisionMs: %.3f\n", msCollision);
-        printf("HitFXMs: %.3f\n", msHitFX);
-        printf("HitFXCalls: %d\n", hitCount);
-        printf("TracerCount: %d\n", tracerCount);
-        printf("AudioMs: 0.1\n");
-        printf("\n");
-        printf("ActiveEffectsBefore: %d\n", activeBefore);
-        printf("ActiveEffectsAfter: %d\n", (int)EffectPartSystem::instance().activeCount());
-        printf("\n");
-        std::string stage = "Collision";
-        double maxMs = msCollision;
-        if (msHitFX > maxMs) { maxMs = msHitFX; stage = "HitFX"; }
-        if (msTracers > maxMs) { maxMs = msTracers; stage = "Tracers"; }
-        printf("LargestStage: %s\n", stage.c_str());
-        printf("LikelyCause: EffectPart burst / replay burst / allocation burst\n");
-        printf("======================================\n");
+        shotProf.print();
     }
 }
 

@@ -221,8 +221,25 @@ void registerReplayEditorCommands() {
             if (!E.isLoaded()) { requireEditor("rplefc"); return; }
             E.freecam = !E.freecam;
             if (E.freecam) {
+                // Store previous camera mode
+                E.mPrevCameraMode = REPLAY_PLAYER.cameraController().modeName();
+                // Store current camera state
                 E.freecamPos = THE_CAMERA.pos;
                 E.freecamRot = eulerToQuat(THE_CAMERA.yaw, THE_CAMERA.pitch);
+                E.freecamFov = THE_CAMERA.fov;
+                // Set camera controller to freecam mode
+                REPLAY_PLAYER.cameraController().setMode("freecam");
+                Debug::log(Debug::Category::Replay,
+                    "[rplefc] Command executed: entering freecam, prev mode=%s\n",
+                    E.mPrevCameraMode.c_str());
+            } else {
+                // Restore previous camera mode
+                std::string restoreMode = E.mPrevCameraMode.empty() ? "tp" : E.mPrevCameraMode;
+                REPLAY_PLAYER.cameraController().setMode(restoreMode);
+                E.mPrevCameraMode.clear();
+                Debug::log(Debug::Category::Replay,
+                    "[rplefc] Command executed: exiting freecam, restoring mode=%s\n",
+                    restoreMode.c_str());
             }
             Terminal::instance().addLog(std::string("[RPLE] Free camera: ") +
                 (E.freecam ? "ON" : "OFF"));

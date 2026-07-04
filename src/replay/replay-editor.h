@@ -91,6 +91,7 @@ public:
 
     // ── Free camera state ────────────────────────────────
     bool freecam = false;
+    std::string mPrevCameraMode;   // camera mode to restore on freecam exit
     glm::vec3 freecamPos{0.0f, 0.0f, 0.0f};
     glm::quat freecamRot{1.0f, 0.0f, 0.0f, 0.0f};
     float freecamRoll = 0.0f;
