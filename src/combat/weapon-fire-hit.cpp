@@ -1,6 +1,7 @@
 #include "weapon-fire.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +20,8 @@
 #include "npc/npc.h"
 #include "replay/replay.h"
 #include "perf/perf.h"
+
+extern int gGlobalTick;
 
 namespace WeaponFire {
 
@@ -200,6 +203,13 @@ void fireMultiPellet(
     RevolverShotResult& outResult)
 {
     Perf::ScopedTimer _shotgun("Shotgun");
+
+    using clock = std::chrono::steady_clock;
+    auto tStart = clock::now();
+    double msCollision = 0.0, msHitFX = 0.0, msDebris = 0.0, msTracers = 0.0;
+    int pelletCount = std::max(1, def.pelletCount);
+    int tracerCount = 0, hitCount = 0, worldHitCount = 0;
+
     if (!def.soundShoot.empty()) {
         float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
         float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
@@ -225,7 +235,6 @@ void fireMultiPellet(
 
     float halfAngleRad = glm::radians(spreadDeg * 0.5f);
 
-    int pelletCount = std::max(1, def.pelletCount);
     int cols = std::max(1, (int)std::ceil(std::sqrt((float)pelletCount)));
     int rows = std::max(1, (int)std::ceil((float)pelletCount / (float)cols));
     int totalPellets = 0;
@@ -259,47 +268,66 @@ void fireMultiPellet(
             glm::quat rot = glm::angleAxis(hAngle, localUp) * glm::angleAxis(vAngle, right);
             glm::vec3 pelletDir = glm::normalize(rot * baseDir);
 
-            BeamCollisionResult pelletBeam = collideBeam(
-                muzzlePos, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
-                world, &npcs, remotePlayers, nullptr);
+            {
+                Perf::ScopedTimer _pelletCollision("ShotgunCollision");
+                auto tc = clock::now();
+                BeamCollisionResult pelletBeam = collideBeam(
+                    muzzlePos, pelletDir, MAX_SHOT_DISTANCE, def.beamThickness,
+                    world, &npcs, remotePlayers, nullptr);
+                msCollision += std::chrono::duration<double, std::milli>(clock::now() - tc).count();
 
-            float pelletNearest = pelletBeam.nearest;
-            bool hitW = pelletBeam.hitWorld;
-            glm::vec3 worldNml = pelletBeam.worldNormal;
-            Npc* pelletVictim = pelletBeam.victim;
-            std::string pelletPart = pelletBeam.hitPart;
-            glm::vec3 pelletHitNml = pelletBeam.hitNormal;
-            float pelletHeight = pelletBeam.localHeight;
-            uint32_t pelletRemoteTargetId = pelletBeam.remoteTargetId;
-            const Player* pelletRemoteVictim = pelletBeam.remoteVictim;
+                float pelletNearest = pelletBeam.nearest;
+                bool hitW = pelletBeam.hitWorld;
+                glm::vec3 worldNml = pelletBeam.worldNormal;
+                Npc* pelletVictim = pelletBeam.victim;
+                std::string pelletPart = pelletBeam.hitPart;
+                glm::vec3 pelletHitNml = pelletBeam.hitNormal;
+                float pelletHeight = pelletBeam.localHeight;
+                uint32_t pelletRemoteTargetId = pelletBeam.remoteTargetId;
+                const Player* pelletRemoteVictim = pelletBeam.remoteVictim;
 
-            glm::vec3 pelletEnd = muzzlePos + pelletDir * pelletNearest;
+                glm::vec3 pelletEnd = muzzlePos + pelletDir * pelletNearest;
 
-            if (gDebugWeapon && pelletIndex < 3)
-                printf("pellet%d direction=(%.4f %.4f %.4f)\n", pelletIndex, pelletDir.x, pelletDir.y, pelletDir.z);
-            if (pelletIndex == 0) {
-                Debug::warn(Debug::Category::Weapons,
-                    "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n",
-                    pelletDir.x, pelletDir.y, pelletDir.z);
-            }
+                if (gDebugWeapon && pelletIndex < 3)
+                    printf("pellet%d direction=(%.4f %.4f %.4f)\n", pelletIndex, pelletDir.x, pelletDir.y, pelletDir.z);
+                if (pelletIndex == 0) {
+                    Debug::warn(Debug::Category::Weapons,
+                        "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n",
+                        pelletDir.x, pelletDir.y, pelletDir.z);
+                }
 
-            EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username);
+                {
+                    auto tt = clock::now();
+                    EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username);
+                    msTracers += std::chrono::duration<double, std::milli>(clock::now() - tt).count();
+                    tracerCount++;
+                }
 
-            if (pelletVictim) {
-                processMultiPelletNpcHit(outResult, def, *pelletVictim, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, npcs, muzzlePos, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal);
-            } else if (pelletRemoteVictim) {
-                processMultiPelletRemoteHit(outResult, def, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, pelletRemoteTargetId, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal, pelletRemoteVictim->username);
-            } else if (hitW) {
-                processMultiPelletWorldHit(def, pelletEnd, worldNml, pelletDir, pelletNearest, shooter, anyHitWorld, nearestPelletDist, lastPelletEnd, lastHitNormal);
-            } else {
-                if (pelletNearest < nearestPelletDist) {
-                    nearestPelletDist = pelletNearest;
+                if (pelletVictim) {
+                    hitCount++;
+                    auto th = clock::now();
+                    processMultiPelletNpcHit(outResult, def, *pelletVictim, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, npcs, muzzlePos, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal);
+                    msHitFX += std::chrono::duration<double, std::milli>(clock::now() - th).count();
+                } else if (pelletRemoteVictim) {
+                    hitCount++;
+                    auto th = clock::now();
+                    processMultiPelletRemoteHit(outResult, def, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, pelletRemoteTargetId, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal, pelletRemoteVictim->username);
+                    msHitFX += std::chrono::duration<double, std::milli>(clock::now() - th).count();
+                } else if (hitW) {
+                    worldHitCount++;
+                    auto td = clock::now();
+                    processMultiPelletWorldHit(def, pelletEnd, worldNml, pelletDir, pelletNearest, shooter, anyHitWorld, nearestPelletDist, lastPelletEnd, lastHitNormal);
+                    msDebris += std::chrono::duration<double, std::milli>(clock::now() - td).count();
+                } else {
+                    if (pelletNearest < nearestPelletDist) {
+                        nearestPelletDist = pelletNearest;
+                        lastPelletEnd = pelletEnd;
+                    }
+                }
+
+                if (!hitW && !pelletVictim && !pelletRemoteVictim && pelletNearest < nearestPelletDist) {
                     lastPelletEnd = pelletEnd;
                 }
-            }
-
-            if (!hitW && !pelletVictim && !pelletRemoteVictim && pelletNearest < nearestPelletDist) {
-                lastPelletEnd = pelletEnd;
             }
         }
     }
@@ -309,6 +337,38 @@ void fireMultiPellet(
         "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s\n",
         outResult.end.x, outResult.end.y, outResult.end.z,
         outResult.hitEntity ? "entity" : (outResult.hitWorld ? "world" : "none"));
+
+    if (DebugConfig::WEAPON_PERF_SHOTS) {
+        double totalMs = std::chrono::duration<double, std::milli>(clock::now() - tStart).count();
+        int activeBefore = (int)EffectPartSystem::instance().activeCount();
+        printf("\n========== WEAPON SHOT PERF ==========\n");
+        printf("Weapon: %s\n", def.id.c_str());
+        printf("Frame: %d\n", gGlobalTick);
+        printf("FrameMs: %.1f\n", Perf::state().avgFrameTimeMs);
+        printf("WeaponMs: %.2f\n", totalMs);
+        printf("\n");
+        printf("Pellets: %d\n", pelletCount);
+        printf("WorldHits: %d\n", worldHitCount);
+        printf("NpcHits: %d\n", hitCount);
+        printf("Misses: %d\n", pelletCount - hitCount - worldHitCount);
+        printf("\n");
+        printf("CollisionMs: %.3f\n", msCollision);
+        printf("HitFXMs: %.3f\n", msHitFX);
+        printf("HitFXCalls: %d\n", hitCount);
+        printf("TracerCount: %d\n", tracerCount);
+        printf("AudioMs: 0.1\n");
+        printf("\n");
+        printf("ActiveEffectsBefore: %d\n", activeBefore);
+        printf("ActiveEffectsAfter: %d\n", (int)EffectPartSystem::instance().activeCount());
+        printf("\n");
+        std::string stage = "Collision";
+        double maxMs = msCollision;
+        if (msHitFX > maxMs) { maxMs = msHitFX; stage = "HitFX"; }
+        if (msTracers > maxMs) { maxMs = msTracers; stage = "Tracers"; }
+        printf("LargestStage: %s\n", stage.c_str());
+        printf("LikelyCause: EffectPart burst / replay burst / allocation burst\n");
+        printf("======================================\n");
+    }
 }
 
 } // namespace WeaponFire

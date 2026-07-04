@@ -75,6 +75,8 @@ namespace DebugConfig
     // Collision diagnostics: always-on pipeline instrumentation.
     // Set false to suppress all collision diagnostics.
     inline bool DEBUG_COLLISION_DIAGNOSTICS = false;
+    // Per-shot weapon timing summary (shotgun/AA12). Set 1 to enable.
+    inline bool WEAPON_PERF_SHOTS = false;
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
     inline bool DEBUG_WPN_SHOT_LINE = true;
 

@@ -106,6 +106,7 @@ void registerCompetitiveCommands();
 #include "terminal/debug-commands.h"
 #include "terminal/player-commands.h"
 #include "terminal/weapon-commands.h"
+#include "terminal/weapon-bench-commands.h"
 #include "terminal/npc-commands.h"
 #include "terminal/duel-commands.h"
 #include "terminal/editor-commands.h"
@@ -326,6 +327,7 @@ void gameInitSubsystems(Engine& engine)
 
     registerPlayerCommands();
     registerWeaponCommands();
+    registerWeaponBenchCommands();
     registerWeaponDebugCommand();
     loadWorldCrosshairConfig();
     applyStartupDefaults();
