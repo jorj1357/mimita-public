@@ -15,6 +15,7 @@
 #include "physics/config.h"
 #include "debug/debug-log.h"
 #include "replay/replay-export.h"
+#include "terminal/terminal-state.h"
 
 namespace {
 
@@ -131,6 +132,13 @@ HealthbarRenderResult drawPlayerHealthbar(
         player, &result.usedHeadTransform);
 
     bool isLiveWorld = (std::strcmp(sourceTag, "live_world") == 0);
+    const bool isLocalPlayer = (&player == &THE_PLAYER);
+
+    Debug::log(Debug::Category::Gui,
+        "[HEALTHBAR] entity=%s hp=%d/%d anchor=(%.2f %.2f %.2f) isLocal=%d\n",
+        player.username.c_str(), player.currentHp, player.maxHp,
+        result.anchor.x, result.anchor.y, result.anchor.z,
+        (int)isLocalPlayer);
 
     if (player.dead || player.currentHp <= 0)
     {
@@ -138,6 +146,9 @@ HealthbarRenderResult drawPlayerHealthbar(
                   (int)(uintptr_t)&player, player.username.c_str(), sourceTag,
                   player.currentHp, player.maxHp,
                   result.anchor.x, result.anchor.y, result.anchor.z);
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=Dead\n",
+            player.username.c_str());
         result.cullReason = HealthbarCullReason::Dead;
         if (isLiveWorld) gTotalLiveWorldHealthbars++;
         gTotalInvalidHealthbars++;
@@ -145,8 +156,15 @@ HealthbarRenderResult drawPlayerHealthbar(
     }
 
     result.distance = glm::length(camera.pos - result.anchor);
+    Debug::log(Debug::Category::Gui,
+        "[HEALTHBAR] entity=%s distance=%.1f maxDistance=%.1f isLocal=%d\n",
+        player.username.c_str(), result.distance, MAX_HEALTHBAR_DISTANCE,
+        (int)isLocalPlayer);
     if (result.distance > MAX_HEALTHBAR_DISTANCE)
     {
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=TooFar distance=%.1f\n",
+            player.username.c_str(), result.distance);
         result.cullReason = HealthbarCullReason::TooFar;
         return result;
     }
@@ -154,6 +172,11 @@ HealthbarRenderResult drawPlayerHealthbar(
     if (!DebugVis::projectToScreen(
             camera, result.anchor, result.screen.x, result.screen.y))
     {
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=Offscreen anchor=(%.2f %.2f %.2f) camPos=(%.2f %.2f %.2f)\n",
+            player.username.c_str(),
+            result.anchor.x, result.anchor.y, result.anchor.z,
+            camera.pos.x, camera.pos.y, camera.pos.z);
         result.cullReason = HealthbarCullReason::Offscreen;
         return result;
     }
@@ -161,7 +184,8 @@ HealthbarRenderResult drawPlayerHealthbar(
     // ── Aim mode detection ──────────────────────────────────────
     const auto& cfg = HealthbarConfig::instance().data();
     HealthbarAimState& aimState = getOrCreateAimState(player);
-    bool inAimCone = cfg.aimModeEnabled &&
+    // Disable aim mode for the local player — camera cannot "aim at" yourself.
+    bool inAimCone = !isLocalPlayer && cfg.aimModeEnabled &&
         isActorInAimCone(camera.pos, camera.front, player.pos, cfg.aimConeDegrees);
 
     // Update transition
@@ -181,6 +205,12 @@ HealthbarRenderResult drawPlayerHealthbar(
     float barAlpha = 1.0f - aimState.transitionAlpha;
     float triAlpha = aimState.transitionAlpha * cfg.triangleAlpha;
 
+    Debug::log(Debug::Category::Gui,
+        "[HEALTHBAR] entity=%s isLocal=%d inAimCone=%d transAlpha=%.3f barAlpha=%.3f triAlpha=%.3f screen=(%.1f %.1f)\n",
+        player.username.c_str(), (int)isLocalPlayer, (int)inAimCone,
+        aimState.transitionAlpha, barAlpha, triAlpha,
+        result.screen.x, result.screen.y);
+
     // ── Draw normal healthbar (possibly faded) ──────────────────
     const float fade = std::clamp(
         1.0f - result.distance / FADE_DISTANCE, 0.25f, 1.0f);
@@ -188,6 +218,9 @@ HealthbarRenderResult drawPlayerHealthbar(
         ? std::clamp(
             (float)player.currentHp / (float)player.maxHp, 0.0f, 1.0f)
         : 0.0f;
+    Debug::log(Debug::Category::Gui,
+        "[HEALTHBAR] entity=%s fillRatio=%.3f fade=%.3f\n",
+        player.username.c_str(), ratio, fade);
     const float x = result.screen.x;
     const float y = result.screen.y;
 
@@ -196,6 +229,10 @@ HealthbarRenderResult drawPlayerHealthbar(
         const glm::vec4 barColor{0.55f, 0.03f, 0.03f, 0.9f * fade * barAlpha};
         const glm::vec4 fillColor{0.05f, 0.8f, 0.15f, 0.9f * fade * barAlpha};
         const glm::vec4 textColor{1.0f, 1.0f, 1.0f, fade * barAlpha};
+
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] entity=%s barRendered=%d barAlpha=%.3f fillAlpha=%.3f\n",
+            player.username.c_str(), (int)(barColor.a > 0.01f), barColor.a, fillColor.a);
 
         if (barColor.a > 0.01f)
         {
@@ -234,6 +271,10 @@ HealthbarRenderResult drawPlayerHealthbar(
         glm::vec4 triColor = healthColorForHp(player.currentHp, player.maxHp);
         triColor.a *= triAlpha;
 
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] TRIANGLE entity=%s hp=%d triAlpha=%.3f\n",
+            player.username.c_str(), player.currentHp, triAlpha);
+
         // Blink if HP <= threshold
         if (player.currentHp <= cfg.blinkHpThreshold)
         {
@@ -248,6 +289,12 @@ HealthbarRenderResult drawPlayerHealthbar(
             triSize *= 1.0f + 0.12f * (1.0f - aimState.transitionAlpha);
         }
         uiDrawTriangle(x, y - cfg.triangleOffset, triSize, true, triColor, "aim-tri");
+    }
+    else
+    {
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] NO TRIANGLE entity=%s inAimMode=%d triAlpha=%.3f\n",
+            player.username.c_str(), (int)inAimMode, triAlpha);
     }
 
     result.rendered = true;

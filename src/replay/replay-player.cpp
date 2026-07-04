@@ -251,12 +251,17 @@ void ReplayCameraController::update(
     Camera& camera, const ReplaySceneFrame& frame,
     const std::string& killerId, const std::string& victimId, float dt)
 {
+    // Debug log camera mode once per second
+    Debug::logThrottled(Debug::Category::Replay, "replay-cam-mode", 1.0f,
+        "[ReplayCamera] Current mode: %s  pos=(%.1f %.1f %.1f)  yaw=%.1f  pitch=%.1f  fov=%.0f  tick=%u\n",
+        modeName(), camera.pos.x, camera.pos.y, camera.pos.z,
+        camera.yaw, camera.pitch, camera.fov, 0U);
+
     camera.fov = mFov > 0.0f ? mFov : frame.camera.fov;
     if (mMode == ReplayCameraMode::Freecam) {
-        static bool logged = false;
-        if (!logged) { logged = true;
-            printf("[REPLAY FREECAM] active - camera fully detached from replay\n");
-        }
+        Debug::logThrottled(Debug::Category::Replay, "replay-freecam", 2.0f,
+            "[ReplayCamera] Freecam active: pos=(%.1f %.1f %.1f) yaw=%.1f pitch=%.1f fov=%.0f\n",
+            camera.pos.x, camera.pos.y, camera.pos.z, camera.yaw, camera.pitch, camera.fov);
         return;
     }
     if (mMode == ReplayCameraMode::FirstPerson) {

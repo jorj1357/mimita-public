@@ -116,19 +116,38 @@ void engineTickCamera(Engine& engine, float dt)
         }
     }
     if (anyFreecam) {
+        // Mouse look: update yaw/pitch from mouse delta
+        static double lastMX = 0, lastMY = 0;
+        double mx, my;
+        glfwGetCursorPos(engine.window(), &mx, &my);
+        double dx = mx - lastMX, dy = my - lastMY;
+        lastMX = mx; lastMY = my;
+        if (glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+            const float sens = 0.15f;
+            camera.yaw += (float)dx * sens;
+            camera.pitch += (float)dy * sens;
+            camera.pitch = std::clamp(camera.pitch, -89.0f, 89.0f);
+            camera.updateVectors();
+        }
+
+        // WASD movement
         glm::vec3 flatForward = camera.front;
         flatForward.z = 0.0f;
         if (glm::length(flatForward) > 0.001f) flatForward = glm::normalize(flatForward);
         glm::vec3 flatRight = glm::normalize(glm::cross(flatForward, glm::vec3(0,0,1)));
         glm::vec3 move(0.0f);
+        float speed = GetPlayerSettings().freecamSpeed;
+        if (glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+            glfwGetKey(engine.window(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) speed *= 3.0f;
         if (glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS) move += flatForward;
         if (glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS) move -= flatForward;
         if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) move += flatRight;
         if (glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS) move -= flatRight;
-        if (glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS) move.z += 1.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
+        if (glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS) move.z += 1.0f;
+        if (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+            glfwGetKey(engine.window(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) move.z -= 1.0f;
         if (glm::length(move) > 0.001f)
-            camera.pos += glm::normalize(move) * GetPlayerSettings().freecamSpeed * dt;
+            camera.pos += glm::normalize(move) * speed * dt;
     } else if (replayPlaybackActive) {
         // ReplayCameraController owns the camera (already applied above).
     } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {

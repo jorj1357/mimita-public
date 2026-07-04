@@ -28,18 +28,18 @@ SKIP_FILE_PATTERNS = [
     r"physics-gravity\.cpp",
     r"physics-collision\.cpp",  # phase-specific ground state tracking
     r"physics-collision-glb-main\.cpp",
-    r"devtools\\terminal\.cpp",  # health used in command descriptions/strings only
-    r"engine\\engine-tick-ui-game-hud\.cpp",  # health is ReplayActorState field read via .health
-    r"gui\\hud\\player-nameplates\.cpp",  # health only in comments
-    r"engine\\engine-tick-ui-replay-hud\.cpp",  # health is ReplayActorState field read via .health
-    r"replay\\replay-scene\.h",  # ReplayActorState has its own health field (different struct from Player)
-    r"replay\\replay-recorder\.cpp",  # replay-only health field
-    r"replay\\replay-player-interp\.cpp",  # replay-only health field
-    r"engine\\engine-tick-replay\.cpp",  # sets actor.health from player.currentHp (intentional mapping)
-    r"engine\\engine-tick-render\.cpp",  # reads actorState.health (replay struct field)
-    r"engine\\engine-tick-net\.cpp",  # interpolation struct field read via .health
-    r"replay\\replay-io\.cpp",  # replay serialization of health field
-    r"replay\\replay-io-save\.cpp",  # replay serialization of health field
+    r"devtools/terminal\.cpp",  # health used in command descriptions/strings only
+    r"engine/engine-tick-ui-game-hud\.cpp",  # health is ReplayActorState field read via .health
+    r"gui/hud/player-nameplates\.cpp",  # health only in comments
+    r"engine/engine-tick-ui-replay-hud\.cpp",  # health is ReplayActorState field read via .health
+    r"replay/replay-scene\.h",  # ReplayActorState has its own health field (different struct from Player)
+    r"replay/replay-recorder\.cpp",  # replay-only health field
+    r"replay/replay-player-interp\.cpp",  # replay-only health field
+    r"engine/engine-tick-replay\.cpp",  # sets actor.health from player.currentHp (intentional mapping)
+    r"engine/engine-tick-render\.cpp",  # reads actorState.health (replay struct field)
+    r"engine/engine-tick-net\.cpp",  # interpolation struct field read via .health
+    r"replay/replay-io\.cpp",  # replay serialization of health field
+    r"replay/replay-io-save\.cpp",  # replay serialization of health field
 ]
 
 DUPLICATE_GROUPS = [

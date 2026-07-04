@@ -284,18 +284,11 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // ── Self-healthbar (world-space, reuses NPC healthbar style) ──
     if (!gReplayExportRenderMode && !dead && !replayPlaybackActive) {
-        constexpr float HP_SMOOTH_SPEED = 8.0f;
-        static std::unordered_map<uintptr_t, float> gHpSmooth;
-        uintptr_t pkey = reinterpret_cast<uintptr_t>(&player);
-        float& smooth = gHpSmooth[pkey];
-        if (smooth < 0.5f) smooth = (float)player.currentHp;
-        float diff = (float)player.currentHp - smooth;
-        if (std::abs(diff) < 0.5f) smooth = (float)player.currentHp;
-        else smooth += glm::sign(diff) * std::min(std::abs(diff), HP_SMOOTH_SPEED * dt);
-        const int savedHp = player.currentHp;
-        player.currentHp = (int)std::round(smooth);
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR SELF] calling drawPlayerHealthbar hp=%d/%d pos=(%.2f %.2f %.2f)\n",
+            player.currentHp, player.maxHp,
+            player.pos.x, player.pos.y, player.pos.z);
         drawPlayerHealthbar(player, camera, "self-hp", "live_world");
-        player.currentHp = savedHp;
     }
     if (!gReplayExportRenderMode)
     for (const Npc& npc : npcSystem.all()) {
