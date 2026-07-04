@@ -95,6 +95,7 @@ void engineTickCamera(Engine& engine, float dt)
     syncPlayerYawFromCamera(player, camera);
     logRotationDebug(player, camera, dt);
 
+    // ── Replay camera control ──────────────────────────────
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool replayFreecam =
         replayPlaybackActive &&
@@ -103,27 +104,134 @@ void engineTickCamera(Engine& engine, float dt)
          gReplayCameraMgr.mode() == "freecam");
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
                             !Terminal::instance().isOpen();
+
+    // Space always toggles play/pause during replay (any camera mode)
+    {
+        static bool spaceWasDown = false;
+        bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+        if (spaceDown && !spaceWasDown && replayPlaybackActive) {
+            if (gReplayPlayer.isPaused())
+                gReplayPlayer.resume();
+            else
+                gReplayPlayer.pause();
+            Debug::log(Debug::Category::Replay,
+                "[ReplayCamera] Space: %s\n",
+                gReplayPlayer.isPaused() ? "PAUSED" : "PLAYING");
+        }
+        spaceWasDown = spaceDown;
+    }
+
     if (replayPlaybackActive) {
-        if (gReplayCameraMgr.mode() == "keyframed") {
-            gReplayCameraMgr.update(gReplayPlayer.currentTick(), camera, dt);
-        } else if (!anyFreecam) {
-            if (const ReplaySceneFrame* replayFrame =
-                    gReplayPlayer.currentSceneFrame()) {
-                gReplayPlayer.cameraController().update(
-                    camera, *replayFrame,
-                    gReplayPlayer.killerId(),
-                    gReplayPlayer.victimId(), dt);
+        // Step 1: Camera controller sets default camera
+        glm::vec3 playerCamPos = camera.pos;
+        glm::quat playerCamRot = glm::quat(1,0,0,0);
+        {
+            // Save player camera orientation before controller overwrites it
+            float playerYaw = camera.yaw, playerPitch = camera.pitch;
+            if (gReplayCameraMgr.mode() == "keyframed") {
+                gReplayCameraMgr.update(gReplayPlayer.currentTick(), camera, dt);
+            } else if (!anyFreecam) {
+                if (const ReplaySceneFrame* replayFrame =
+                        gReplayPlayer.currentSceneFrame()) {
+                    gReplayPlayer.cameraController().update(
+                        camera, *replayFrame,
+                        gReplayPlayer.killerId(),
+                        gReplayPlayer.victimId(), dt);
+                }
             }
+            playerCamPos = camera.pos;
+            playerCamRot = glm::quat(glm::vec3(
+                glm::radians(camera.pitch),
+                glm::radians(camera.yaw),
+                0.0f));
+        }
+
+        // Step 2: Editor keyframe interpolation (overrides camera if active)
+        if (gReplayEditor.isLoaded() && !anyFreecam &&
+            gReplayEditor.cameraKeyframeCount() > 0)
+        {
+            float currentTick = (float)gReplayPlayer.currentTick();
+            int kfCount = gReplayEditor.cameraKeyframeCount();
+
+            // Find bracketing keyframes
+            int prevKf = -1, nextKf = -1;
+            for (int i = 0; i < kfCount; i++) {
+                if (gReplayEditor.cameraKeyframe(i).tick <= currentTick)
+                    prevKf = i;
+                if (gReplayEditor.cameraKeyframe(i).tick > currentTick && nextKf < 0)
+                    nextKf = i;
+            }
+
+            constexpr float BLEND_DURATION = 30.0f; // 0.5s at 60fps
+
+            if (prevKf >= 0 && nextKf >= 0) {
+                // Between two keyframes: interpolate
+                const auto& kfA = gReplayEditor.cameraKeyframe(prevKf);
+                const auto& kfB = gReplayEditor.cameraKeyframe(nextKf);
+                float t = (currentTick - kfA.tick) / (float)(kfB.tick - kfA.tick);
+                t = std::clamp(t, 0.0f, 1.0f);
+                float st = t * t * (3.0f - 2.0f * t); // smoothstep
+
+                camera.pos = glm::mix(kfA.position, kfB.position, st);
+                glm::quat rot = glm::slerp(kfA.rotation, kfB.rotation, st);
+                camera.front = glm::normalize(rot * glm::vec3(1.0f, 0.0f, 0.0f));
+                camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                camera.fov = glm::mix(kfA.fov, kfB.fov, st);
+                camera.updateVectors();
+
+                Debug::logThrottled(Debug::Category::Replay, "kf-interp", 0.5f,
+                    "[ReplayCamera] Interpolating: KF%d(tick=%d) -> KF%d(tick=%d) progress=%.0f%%\n"
+                    "  pos=(%.1f %.1f %.1f)\n",
+                    prevKf, kfA.tick, nextKf, kfB.tick, st * 100.0f,
+                    camera.pos.x, camera.pos.y, camera.pos.z);
+
+            } else if (prevKf >= 0) {
+                // After last keyframe: blend back to player camera
+                const auto& kf = gReplayEditor.cameraKeyframe(prevKf);
+                float blendT = (currentTick - kf.tick) / BLEND_DURATION;
+                if (blendT < 1.0f) {
+                    float st = blendT * blendT * (3.0f - 2.0f * blendT); // smoothstep
+                    camera.pos = glm::mix(kf.position, playerCamPos, st);
+                    glm::quat targetRot = glm::quat(glm::vec3(
+                        glm::radians(camera.pitch),
+                        glm::radians(camera.yaw),
+                        0.0f));
+                    glm::quat rot = glm::slerp(kf.rotation, targetRot, st);
+                    camera.front = glm::normalize(rot * glm::vec3(1.0f, 0.0f, 0.0f));
+                    camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                    camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                    camera.updateVectors();
+
+                    Debug::logThrottled(Debug::Category::Replay, "kf-blend", 0.5f,
+                        "[ReplayCamera] Returning to Player Camera: progress=%.0f%%\n",
+                        st * 100.0f);
+                } else {
+                    // Blended fully — no override, camera controller's position stays
+                    Debug::logThrottled(Debug::Category::Replay, "kf-done", 2.0f,
+                        "[ReplayCamera] Mode: Player Camera (past all keyframes)\n");
+                }
+            } else {
+                // Before first keyframe: player camera (no override)
+                Debug::logThrottled(Debug::Category::Replay, "kf-before", 2.0f,
+                    "[ReplayCamera] Mode: Player Camera (before first keyframe at tick %d)\n",
+                    gReplayEditor.cameraKeyframe(0).tick);
+            }
+        } else {
+            Debug::logThrottled(Debug::Category::Replay, "replay-cam", 2.0f,
+                "[ReplayCamera] Mode: %s%s\n",
+                gReplayPlayer.cameraController().modeName(),
+                anyFreecam ? " + Freecam" : "");
         }
     }
+
     if (anyFreecam) {
         // Mouse look: rely on existing camera.updateMouse() callback which uses
         // CAMERA_SENS from player settings — same as gameplay. Ensure cursor
         // is disabled so the callback processes mouse deltas.
         if (glfwGetInputMode(engine.window(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
-            // First time entering freecam: disable cursor to capture mouse
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            camera.firstMouse = true;  // reset delta on next cursor event
+            camera.firstMouse = true;
         }
 
         // WASD + QE movement
@@ -146,35 +254,24 @@ void engineTickCamera(Engine& engine, float dt)
         if (glm::length(move) > 0.001f)
             camera.pos += glm::normalize(move) * speed * dt;
 
-        // Space = toggle play/pause during replay freecam
-        static bool spaceWasDown = false;
-        bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-        if (spaceDown && !spaceWasDown) {
-            if (gReplayPlayer.isPaused())
-                gReplayPlayer.resume();
-            else
-                gReplayPlayer.pause();
-            Debug::log(Debug::Category::Replay, "[ReplayFreecam] Space: %s\n",
-                       gReplayPlayer.isPaused() ? "PAUSED" : "PLAYING");
+        // K = create camera keyframe during freecam
+        {
+            static bool kWasDown = false;
+            bool kDown = glfwGetKey(engine.window(), GLFW_KEY_K) == GLFW_PRESS;
+            if (kDown && !kWasDown && gReplayEditor.isLoaded()) {
+                int tick = (int)gReplayEditor.movieTick;
+                glm::quat rot = glm::quatLookAt(glm::normalize(camera.front), glm::vec3(0,0,1));
+                gReplayEditor.addCameraKeyframe(tick, camera.pos, rot, 0.0f, camera.fov,
+                                                 gReplayEditor.defaultInterp);
+                Debug::log(Debug::Category::Replay,
+                    "[ReplayFreecam] K: Keyframe added at tick %d pos=(%.1f %.1f %.1f) look=(%.2f %.2f %.2f)\n",
+                    tick, camera.pos.x, camera.pos.y, camera.pos.z,
+                    camera.front.x, camera.front.y, camera.front.z);
+            }
+            kWasDown = kDown;
         }
-        spaceWasDown = spaceDown;
-
-        // K = create camera keyframe
-        static bool kWasDown = false;
-        bool kDown = glfwGetKey(engine.window(), GLFW_KEY_K) == GLFW_PRESS;
-        if (kDown && !kWasDown && gReplayEditor.isLoaded()) {
-            int tick = (int)gReplayEditor.movieTick;
-            glm::quat rot = glm::quatLookAt(glm::normalize(camera.front), glm::vec3(0,0,1));
-            gReplayEditor.addCameraKeyframe(tick, camera.pos, rot, 0.0f, camera.fov,
-                                             gReplayEditor.defaultInterp);
-            Debug::log(Debug::Category::Replay,
-                "[ReplayFreecam] K: Keyframe added at tick %d pos=(%.1f %.1f %.1f) look=(%.2f %.2f %.2f)\n",
-                tick, camera.pos.x, camera.pos.y, camera.pos.z,
-                camera.front.x, camera.front.y, camera.front.z);
-        }
-        kWasDown = kDown;
     } else if (replayPlaybackActive) {
-        // ReplayCameraController owns the camera (already applied above).
+        // Non-freecam replay: camera already handled above (controller + keyframes)
     } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
         camera.follow(gDuelManager.winnerCameraTarget());
         camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt);
