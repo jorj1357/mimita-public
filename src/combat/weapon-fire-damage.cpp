@@ -69,18 +69,6 @@ void processNpcHit(
             "[HITMARKER] attacker=%s victim=npc_%u show=1 reason=local_player_hit_npc",
             shooter.username.c_str(), victim.id);
 
-    {
-        HitEvent ev;
-        ev.position = hitEnd;
-        ev.normal = hitNormal;
-        ev.direction = shotDirection;
-        ev.hitEntity = true;
-        ev.damage = totalDamage;
-        ev.attacker = shooter.username;
-        ev.victim = "npc_" + std::to_string(victim.id);
-        ev.weaponSource = def.id;
-        HitEffects::onHit(ev);
-    }
     printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
            def.id.c_str(), hitPart.c_str(), result.damage);
     playWorldSound(def.soundHit, hitEnd, 0.85f, 1.0f, 35.0f);
@@ -279,19 +267,6 @@ void processMultiPelletNpcHit(
     lastTargetId = victim.id;
     float df = std::clamp(1.0f - pelletNearest / 110.0f, 0.10f, 1.0f);
     accumulatedKnockback += pelletDir * (float)dmg * df * (0.08f + ctx.angleFactor * 0.12f);
-
-    {
-        HitEvent ev;
-        ev.position = hitEnd;
-        ev.normal = hitNormal;
-        ev.direction = pelletDir;
-        ev.hitEntity = true;
-        ev.damage = dmg;
-        ev.attacker = shooter.username;
-        ev.victim = "npc_" + std::to_string(victim.id);
-        ev.weaponSource = def.id;
-        HitEffects::onHit(ev);
-    }
 
     if (pelletNearest < nearestPelletDist) {
         nearestPelletDist = pelletNearest;

@@ -9,6 +9,7 @@
 
 #include "replay/replay-export.h"
 #include "replay/replay-factory.h"
+#include "replay/replay-editor.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -21,6 +22,7 @@ void registerReplayCommands()
 {
     registerReplayPlaybackCommands();
     registerReplayExportCommands();
+    registerReplayEditorCommands();
 
     Terminal::instance().registerCommand({
         "replay.record", "Start replay recording", "replay.record",

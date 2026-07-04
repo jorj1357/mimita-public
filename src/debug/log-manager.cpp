@@ -230,6 +230,17 @@ bool LogManager::init()
     return true;
 }
 
+static void writeLatestLogPath(const std::string& path)
+{
+    std::error_code ec;
+    fs::create_directories("logs", ec);
+    FILE* f = fopen("logs/latest-log-path.txt", "w");
+    if (f) {
+        fprintf(f, "%s\n", path.c_str());
+        fclose(f);
+    }
+}
+
 void LogManager::shutdown()
 {
     mRunning = false;
@@ -258,5 +269,18 @@ void LogManager::shutdown()
     if (mFile) {
         fclose(mFile);
         mFile = nullptr;
+    }
+
+    writeLatestLogPath(mPath);
+
+    // Print log path clearly at exit
+    char absPath[4096];
+    if (_fullpath(absPath, mPath.c_str(), sizeof(absPath))) {
+        printf("\n");
+        printf("==================================================\n");
+        printf("MIMITA RUN LOG SAVED\n");
+        printf("%s\n", absPath);
+        printf("Ctrl+Click the path above to open it.\n");
+        printf("==================================================\n");
     }
 }
