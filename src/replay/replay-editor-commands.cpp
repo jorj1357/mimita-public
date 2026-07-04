@@ -12,6 +12,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+extern float CAMERA_SENS;
+#include "config/player-settings.h"
+
 // ── Helpers ─────────────────────────────────────────────────
 
 static ReplayEditor& E = gReplayEditor;
@@ -232,6 +235,9 @@ void registerReplayEditorCommands() {
                 Debug::log(Debug::Category::Replay,
                     "[rplefc] Command executed: entering freecam, prev mode=%s\n",
                     E.mPrevCameraMode.c_str());
+                Debug::log(Debug::Category::Replay,
+                    "[rplefc] Replay Freecam Enabled: sens=%.3f mouseMode=disabled speed=%.1f\n",
+                    CAMERA_SENS, GetPlayerSettings().freecamSpeed);
             } else {
                 // Restore previous camera mode
                 std::string restoreMode = E.mPrevCameraMode.empty() ? "tp" : E.mPrevCameraMode;
