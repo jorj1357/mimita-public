@@ -67,6 +67,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #else
 
 #include "effect-part.h"
+#include "combat/shot-profiler.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "config.h"
@@ -232,6 +233,11 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
 }
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
+    if (gShotProfiler) {
+        gShotProfiler->effectsSpawned++;
+        gShotProfiler->poolLinearScans++;
+    }
+
     ReplayEffectEvent event;
     event.type = effect.replayType;
     event.label = effect.label;
@@ -257,16 +263,27 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     event.targetActorId = effect.targetActorId;
     event.texturePath = effect.texturePath;
     event.materialName = effect.materialName;
-    captureReplayEffect(event);
+    {
+        auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
+        captureReplayEffect(event);
+        if (gShotProfiler) gShotProfiler->replayEventsCreated++;
+    }
 
+    int scanCount = 0;
     for (auto& slot : mPool) {
+        scanCount++;
         if (!slot.alive) {
             slot = effect;
             slot.alive = true;
             ++mActiveCount;
+            if (gShotProfiler) {
+                gShotProfiler->poolHits++;
+                gShotProfiler->poolLinearScans += scanCount;
+            }
             return &slot;
         }
     }
+    if (gShotProfiler) gShotProfiler->poolLinearScans += 4096;
     return nullptr;
 }
 

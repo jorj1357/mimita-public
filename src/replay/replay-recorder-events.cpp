@@ -9,6 +9,7 @@
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "combat/shot-profiler.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
@@ -17,19 +18,27 @@ using json = nlohmann::json;
 void ReplayRecorder::recordEffectEvent(const ReplayEffectEvent& inputEvent)
 {
     if (!mRecording) return;
-    ReplayEffectEvent event = inputEvent;
-    event.spawnTick = (int)mEventTick;
-    event.spawnTime = (float)mEventTick / (float)std::max(mHeader.tickRate, 1u);
-    mPendingEffects.push_back(event);
-    if (!event.texturePath.empty())
-        registerAsset("texture:" + event.texturePath, "texture", event.texturePath, {}, {}, "effect");
-    Debug::log(Debug::Category::Replay,
-        "[REPLAY EFFECT] recorded type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) color=(%.2f %.2f %.2f %.2f) alpha=%.2f\n",
-        event.type.c_str(), event.spawnTick,
-        event.position.x, event.position.y, event.position.z,
-        event.scale.x, event.scale.y, event.scale.z,
-        event.color.x, event.color.y, event.color.z, event.color.w,
-        event.alpha);
+    if (gShotProfiler) gShotProfiler->replayEventsCreated++;
+    {
+        auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
+        ReplayEffectEvent event = inputEvent;
+        event.spawnTick = (int)mEventTick;
+        event.spawnTime = (float)mEventTick / (float)std::max(mHeader.tickRate, 1u);
+        size_t oldCap = mPendingEffects.capacity();
+        mPendingEffects.push_back(event);
+        if (mPendingEffects.capacity() > oldCap) {
+            if (gShotProfiler) gShotProfiler->replayVectorGrows++;
+        }
+        if (!event.texturePath.empty())
+            registerAsset("texture:" + event.texturePath, "texture", event.texturePath, {}, {}, "effect");
+        Debug::log(Debug::Category::Replay,
+            "[REPLAY EFFECT] recorded type=%s tick=%d pos=(%.2f %.2f %.2f) scale=(%.2f %.2f %.2f) color=(%.2f %.2f %.2f %.2f) alpha=%.2f\n",
+            event.type.c_str(), event.spawnTick,
+            event.position.x, event.position.y, event.position.z,
+            event.scale.x, event.scale.y, event.scale.z,
+            event.color.x, event.color.y, event.color.z, event.color.w,
+            event.alpha);
+    }
 }
 
 void ReplayRecorder::recordSoundEvent(const ReplaySoundEvent& inputEvent)

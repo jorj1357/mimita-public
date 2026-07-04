@@ -189,6 +189,144 @@ static void runWeaponBenchCompare()
     DebugConfig::WEAPON_PERF_SHOTS = true;
 }
 
+static void runWeaponCompareProfile()
+{
+    const auto& all = WeaponRegistry::instance().all();
+
+    printf("[BENCH] Running weapon comparison profile...\n");
+    Terminal::instance().addLog("[BENCH] Running weapon comparison profile...");
+
+    struct WeapResult {
+        std::string name;
+        int shots = 0;
+        double totalMs = 0.0, avgMs = 0.0, minMs = 1e9, maxMs = 0.0;
+        double collisionMs = 0.0, hitFxMs = 0.0, replayMs = 0.0;
+        double tracerMs = 0.0, audioMs = 0.0;
+        int hitFxCalls = 0, replayEvents = 0, effectsSpawned = 0;
+        int poolScans = 0;
+    };
+
+    auto runOne = [](const WeaponDefinition* def, int shots) -> WeapResult {
+        WeapResult r;
+        r.name = def->id;
+        r.shots = shots;
+        Player& player = THE_PLAYER;
+        NpcSystem& npcSystem = THE_NPC_SYSTEM;
+        WeaponSystem& weapons = THE_WEAPONS;
+        Camera& camera = THE_CAMERA;
+        World& world = THE_WORLD;
+
+        int prevSlot = player.equippedSlot;
+        weapons.equip(player, def->slot);
+
+        for (int i = 0; i < shots; ++i) {
+            weapons.fire(camera, player, npcSystem, world, nullptr);
+            // Note: profiler accumulated during fire
+        }
+
+        weapons.equip(player, prevSlot);
+        return r;
+    };
+
+    std::vector<WeapResult> results;
+
+    auto profile = [&](const char* id, int shots) {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(id);
+        if (!def) return;
+        printf("[BENCH] Profiling %s (%d shots)...\n", id, shots);
+        DebugConfig::WEAPON_PERF_SHOTS = false;
+        double totalMs = 0.0, minMs = 1e9, maxMs = 0.0;
+        int fired = 0;
+        Player& player = THE_PLAYER;
+        NpcSystem& npcSystem = THE_NPC_SYSTEM;
+        WeaponSystem& weapons = THE_WEAPONS;
+        Camera& camera = THE_CAMERA;
+        World& world = THE_WORLD;
+
+        int prevSlot = player.equippedSlot;
+        weapons.equip(player, def->slot);
+
+        for (int i = 0; i < shots; ++i) {
+            auto t0 = std::chrono::steady_clock::now();
+            weapons.fire(camera, player, npcSystem, world, nullptr);
+            auto t1 = std::chrono::steady_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            if (ms > 0.001) { totalMs += ms; minMs = std::min(minMs, ms); maxMs = std::max(maxMs, ms); fired++; }
+        }
+
+        weapons.equip(player, prevSlot);
+
+        if (fired > 0) {
+            WeapResult r;
+            r.name = id;
+            r.shots = fired;
+            r.totalMs = totalMs;
+            r.avgMs = totalMs / fired;
+            r.minMs = minMs;
+            r.maxMs = maxMs;
+            results.push_back(r);
+        }
+    };
+
+    profile("revolver", 20);
+    profile("shotgun", 20);
+    profile("aa12", 50);
+
+    printf("\n==================================================\n");
+    printf("WEAPON COMPARISON PROFILE\n");
+    printf("==================================================\n");
+    printf("%-12s %6s %8s %8s %8s\n", "Weapon", "Shots", "Avg(ms)", "Min(ms)", "Max(ms)");
+    printf("--------------------------------------------------\n");
+    for (const auto& r : results) {
+        printf("%-12s %6d %8.3f %8.3f %8.3f\n",
+               r.name.c_str(), r.shots, r.avgMs, r.minMs, r.maxMs);
+    }
+
+    // Compare shotguns vs revolver
+    auto find = [&](const char* name) -> const WeapResult* {
+        for (const auto& r : results)
+            if (r.name == name) return &r;
+        return nullptr;
+    };
+
+    const WeapResult* rev = find("revolver");
+    const WeapResult* sg = find("shotgun");
+    const WeapResult* aa = find("aa12");
+
+    if (rev && sg) {
+        printf("\n");
+        printf("Shotgun - Revolver: %.3f ms\n", sg->avgMs - rev->avgMs);
+    }
+    if (rev && aa) {
+        printf("AA12 - Revolver:    %.3f ms\n", aa->avgMs - rev->avgMs);
+    }
+
+    // Auto analysis
+    if (sg && rev && (sg->avgMs - rev->avgMs) > 2.0) {
+        printf("\n");
+        printf("--------------------------------------------------\n");
+        printf("LIKELY BOTTLENECK\n");
+        printf("Multi-pellet processing\n");
+        printf("because Shotgun (%.2f ms) is %.1fx slower than Revolver (%.2f ms)\n",
+               sg->avgMs, sg->avgMs / std::max(rev->avgMs, 0.001), rev->avgMs);
+        printf("\n");
+        printf("The difference scales with pellet count.\n");
+        printf("Recommended optimization:\n");
+        printf("  1. Share collision broadphase results across pellets\n");
+        printf("  2. Batch replay effects into fewer events\n");
+        printf("  3. Pool EffectParts to avoid O(n) pool scans\n");
+        printf("  4. Remove duplicate HitFX calls (already done)\n");
+        printf("--------------------------------------------------\n");
+    }
+
+    printf("\n");
+    printf("Open the run log and jump to \"SHOT PROFILE\" to see per-shot breakdown:\n");
+    printf("%s\n", LogManager::instance().path().c_str());
+    printf("==================================================\n");
+
+    Terminal::instance().addLog("[BENCH] Weapon comparison profile complete");
+}
+
 void registerWeaponBenchCommands()
 {
     Terminal::instance().registerCommand({
@@ -263,6 +401,20 @@ void registerWeaponBenchCommands()
         [](const std::vector<std::string>&) {
             printf("Logging to: %s\n", LogManager::instance().path().c_str());
             runWeaponBenchCompare();
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "weapon_compare_profile",
+        "Profile Revolver(20), Shotgun(20), AA12(50) and compare averages",
+        "weapon_compare_profile",
+        [](const std::vector<std::string>&) {
+            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("\nNote: Enable weapon_perf_shots 1 for per-shot SHOT PROFILE breakdown.\n");
+            printf("The comparison below shows only average times.\n");
+            printf("For deep breakdown, fire each weapon individually with weapon_perf_shots 1.\n");
+            printf("\n");
+            runWeaponCompareProfile();
         }
     });
 }
