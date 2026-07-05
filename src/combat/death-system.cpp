@@ -277,7 +277,17 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
 
     actor.vel = glm::vec3(0.0f);
     actor.externalImpulse = glm::vec3(0.0f);
-    actor.currentHp = actor.maxHp;
+    // Apply developer HP override if enabled
+    if (DevOverrides::healthOverrideEnabled) {
+        actor.maxHp = DevOverrides::healthOverrideValue;
+        actor.currentHp = DevOverrides::healthOverrideValue;
+        Debug::warn(Debug::Category::General,
+            "\nDeveloper Health Override Applied\n"
+            "HP: %d / %d\n",
+            actor.currentHp, actor.maxHp);
+    } else {
+        actor.currentHp = actor.maxHp;
+    }
     actor.dead = false;
     actor.proceduralFrozen = false;
     actor.respawnTimer = 0.0f;

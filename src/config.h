@@ -145,6 +145,12 @@ namespace DebugConfig
     }
 }
 
+namespace DevOverrides
+{
+    inline bool healthOverrideEnabled = false;
+    inline int healthOverrideValue = 100; // both currentHp and maxHp
+}
+
 namespace CursorConfig
 {
     inline bool CUSTOM_CURSOR_ENABLED = true;

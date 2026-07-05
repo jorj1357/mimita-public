@@ -159,4 +159,62 @@ void registerDebugCommands()
         },
         "2026-07-03", CommandCategory::Debug
     });
+
+    Terminal::instance().registerCommand({
+        "healthme",
+        "Override local player HP for testing. Syntax: healthme <hp> | healthme default|reset",
+        "healthme <value>",
+        [](const std::vector<std::string>& args) {
+            Player& player = THE_PLAYER;
+
+            if (args.empty()) {
+                Terminal::instance().addLog("[HEALTHME] Usage: healthme <hp> or healthme default|reset");
+                return;
+            }
+
+            if (args[0] == "default" || args[0] == "reset") {
+                DevOverrides::healthOverrideEnabled = false;
+                Debug::warn(Debug::Category::General,
+                    "\n==================================\n"
+                    "Developer Health Override Disabled\n"
+                    "Using default player health.\n"
+                    "==================================\n");
+                Terminal::instance().addLog("[HEALTHME] Override disabled. Next respawn will use normal HP.");
+                return;
+            }
+
+            int value;
+            try { value = std::stoi(args[0]); }
+            catch (...) {
+                Terminal::instance().addLog("[HEALTHME] Invalid value. Use a positive integer or 'default'.");
+                return;
+            }
+
+            if (value < 0) {
+                Terminal::instance().addLog("[HEALTHME] Negative values not allowed.");
+                return;
+            }
+
+            DevOverrides::healthOverrideEnabled = true;
+            DevOverrides::healthOverrideValue = value;
+
+            // Apply immediately
+            player.maxHp = value;
+            player.currentHp = value;
+
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "\n==================================\n"
+                "Developer Health Override Enabled\n"
+                "Current HP: %d\n"
+                "Max HP: %d\n"
+                "Persistent: YES\n"
+                "Applies on Respawn: YES\n"
+                "==================================",
+                value, value);
+            Debug::warn(Debug::Category::General, "%s\n", buf);
+            Terminal::instance().addLog(std::string("[HEALTHME] HP set to ") + std::to_string(value));
+        },
+        "2026-07-04", CommandCategory::Debug
+    });
 }
