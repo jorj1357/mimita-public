@@ -318,9 +318,41 @@ void registerReplayEditorCommands() {
         "rplefc_skf",
         [](const std::vector<std::string>&) {
             if (!E.isLoaded()) { requireEditor("rplefc_skf"); return; }
-            int tick = (int)E.movieTick;
+            uint32_t replayTick = REPLAY_PLAYER.currentTick();
+            int tick = (int)replayTick;
             glm::vec3 pos = E.freecam ? E.freecamPos : THE_CAMERA.pos;
             glm::quat rot = E.freecam ? E.freecamRot : eulerToQuat(THE_CAMERA.yaw, THE_CAMERA.pitch);
+
+            Debug::log(Debug::Category::Replay,
+                "\n============================\n"
+                "KEYFRAME CREATE\n"
+                "  Replay Loaded:     %s\n"
+                "  Replay Playing:    %s\n"
+                "  Replay CurrentTick: %u\n"
+                "  Replay TotalTicks: %u\n"
+                "  Editor Tick:       %.1f\n"
+                "  Stored Tick:       %d\n"
+                "  Camera Pos:        (%.1f %.1f %.1f)\n"
+                "  Camera Rot:        (%.2f %.2f %.2f %.2f)\n"
+                "  Camera Forward:    (%.2f %.2f %.2f)\n"
+                "============================\n",
+                E.isLoaded() ? "YES" : "NO",
+                REPLAY_PLAYER.isPlaying() ? "YES" : "NO",
+                replayTick,
+                REPLAY_PLAYER.totalTicks(),
+                E.movieTick,
+                tick,
+                pos.x, pos.y, pos.z,
+                rot.x, rot.y, rot.z, rot.w,
+                THE_CAMERA.front.x, THE_CAMERA.front.y, THE_CAMERA.front.z);
+
+            if (tick != (int)E.movieTick) {
+                Debug::warn(Debug::Category::Replay,
+                    "[RPLE] WARNING: Stored tick %d differs from editor tick %.1f. "
+                    "Using replay player tick as authoritative source.\n",
+                    tick, E.movieTick);
+            }
+
             E.addCameraKeyframe(tick, pos, rot, E.freecamRoll, E.freecamFov, E.defaultInterp);
             char buf[128];
             std::snprintf(buf, sizeof(buf), "[RPLE] Camera keyframe at tick %d (%.1f %.1f %.1f)",

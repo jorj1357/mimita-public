@@ -19,6 +19,7 @@
 #include <GLFW/glfw3.h>
 
 #include "replay/replay.h"
+#include "replay/replay-editor.h"
 #include "video/outro.h"
 #include <nlohmann/json.hpp>
 #include "debug/debug-log.h"
@@ -220,6 +221,19 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     }
     REPLAY_PLAYER.beginPlayback();
     REPLAY_PLAYER.seekToTick(0);
+
+    // Auto-load editor with keyframes if .rpledit exists
+    {
+        bool editorLoaded = gReplayEditor.load(jsonPath);
+        if (editorLoaded) {
+            // Set total ticks from replay header so editor knows the duration
+            printf("[RPLX] Editor loaded: %s\n", gReplayEditor.editPath().c_str());
+            printf("[RPLX] Camera keyframes: %d\n", gReplayEditor.cameraKeyframeCount());
+            Debug::log(Debug::Category::Replay,
+                "[EXPORT] Editor auto-loaded: %d camera keyframes\n",
+                gReplayEditor.cameraKeyframeCount());
+        }
+    }
 
     std::string ffmpeg = defaultFfmpegPath();
     printf("[RPLX] ffmpeg path: %s\n", ffmpeg.c_str());

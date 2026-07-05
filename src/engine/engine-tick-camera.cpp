@@ -259,7 +259,7 @@ void engineTickCamera(Engine& engine, float dt)
             static bool kWasDown = false;
             bool kDown = glfwGetKey(engine.window(), GLFW_KEY_K) == GLFW_PRESS;
             if (kDown && !kWasDown && gReplayEditor.isLoaded()) {
-                int tick = (int)gReplayEditor.movieTick;
+                int tick = (int)gReplayPlayer.currentTick();
                 glm::quat rot = glm::quatLookAt(glm::normalize(camera.front), glm::vec3(0,0,1));
                 gReplayEditor.addCameraKeyframe(tick, camera.pos, rot, 0.0f, camera.fov,
                                                  gReplayEditor.defaultInterp);
