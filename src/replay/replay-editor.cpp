@@ -1,5 +1,7 @@
 #include "replay-editor.h"
 #include "replay-io.h"
+#include "replay.h"
+#include "terminal/terminal-state.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
@@ -46,24 +48,23 @@ bool ReplayEditor::load(const std::string& replayPath) {
         base = base.substr(0, base.size() - 11);
     mEditPath = base + ".rpledit";
 
-    // Load replay header to get tick count
-    std::ifstream f(replayPath);
-    if (!f.is_open()) {
-        Debug::log(Debug::Category::Replay, "[RPLE] Cannot open replay: %s\n", replayPath.c_str());
-        return false;
+    // Load replay header to get tick count from the REPLAY_PLAYER if available
+    if (REPLAY_PLAYER.totalTicks() > 0) {
+        mTotalTicks = (int)REPLAY_PLAYER.totalTicks();
+        mTickRate = 60;
+    } else {
+        // Fallback: quick scan from file
+        mTotalTicks = 0;
+        mTickRate = 60;
     }
-    f.close();
 
-    // Quick scan for tick count from existing ReplayClip
-    // We trust the caller to set totalTicks/tickRate externally
-    mTotalTicks = 0;
-    mTickRate = 60;
     mLoaded = true;
 
     // Try loading existing .rpledit
     loadEdit();
 
-    Debug::log(Debug::Category::Replay, "[RPLE] Loaded replay: %s\n", replayPath.c_str());
+    Debug::log(Debug::Category::Replay, "[RPLE] Loaded replay: %s (ticks=%d)\n",
+               replayPath.c_str(), mTotalTicks);
     return true;
 }
 
