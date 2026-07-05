@@ -454,6 +454,10 @@ RevolverShotResult WeaponSystem::fireHitscan(
            def->slot, def->id.c_str(), rt->currentAmmo);
         if (def->id == "aa12")
             Debug::log(Debug::Category::Weapons, "[AA12] Fired: ammo=%d, cooldown=%.2f", rt->currentAmmo, rt->fireCooldown);
+        if (def->id == "admin_revolver")
+            Debug::log(Debug::Category::Weapons,
+                "[ADMIN REVOLVER] Shots Fired  Current Clip: %d  Fire Interval: %.4f  Spread: %.1f\n",
+                rt->currentAmmo, def->fireDelay, def->spread);
 
     return result;
 }

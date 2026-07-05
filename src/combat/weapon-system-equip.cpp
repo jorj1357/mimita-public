@@ -62,6 +62,19 @@ void WeaponSystem::equip(Player& player, int slot) {
         printf("[WEAPON] equipped '%s' slot %d\n", def->id.c_str(), slot);
         if (def->id == "aa12")
             Debug::log(Debug::Category::Weapons, "[AA12] Equipped: aa12 (slot %d)", slot);
+        if (def->id == "admin_revolver") {
+            auto it = def->customParams.find("reserveAmmo");
+            int reserve = (it != def->customParams.end()) ? (int)it->second : 0;
+            Debug::warn(Debug::Category::Weapons,
+                "\nDeveloper Weapon:\n"
+                "Admin Revolver Equipped\n"
+                "Configuration:\n"
+                "  Fire Interval: %.4f\n"
+                "  Spread: %.1f\n"
+                "  Clip: %d\n"
+                "  Reserve: %d\n",
+                def->fireDelay, def->spread, def->magazineSize, reserve);
+        }
     } else {
         unequip(player);
     }
