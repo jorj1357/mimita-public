@@ -99,8 +99,8 @@
       "linearDamping": 0.0,
       "baseDamagePerTick": 10.0,
       "damageTickInterval": 0.15,
-      "speedDamageFactor": 3.0,
-      "maxDamageCap": 200.0,
+      "speedDamageFactor": 30.0,
+      "maxDamageCap": 999999.0,
       "relativeVelocityFactor": 2.0,
       "swingDirectionFactor": 2.0
     }
@@ -431,6 +431,62 @@
       "reload_pose": {
         "position": [0.15, -0.45, -0.10],
         "rotation": [-40.0, 15.0, 35.0]
+      }
+    }
+  },
+  "admin_revolver": {
+    "id": "admin_revolver",
+    "display_name": "Admin Revolver",
+    "slot": 9,
+    "model": { "path": "assets/objects/weapons/mimita-revolver-v1.glb" },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 50.0,
+    "headshot_multiplier": 2.0,
+    "fire_delay": 0.0001,
+    "reload_time": 1.0,
+    "magazine_size": 9999,
+    "pellet_count": 1,
+    "spread": 3.0,
+    "recoil": 99.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "automatic",
+    "behavior_type": "hitscan",
+    "hitscan": true,
+    "beam_thickness": 1.0,
+    "uses_physics_projectile": false,
+    "pose_id": "revolver",
+    "sound": {
+      "shoot": "revolvershoot",
+      "reload": "revolverreload",
+      "hit": "player_hurt",
+      "dry_fire": "ui/click",
+      "equip": "revolverequip"
+    },
+    "custom_params": {
+      "distanceFalloffStart": 110.0,
+      "minDamageFraction": 0.1,
+      "minAngleFactor": 0.15,
+      "reserveAmmo": 123456.0,
+      "shootPoseTime": 0.08,
+      "equipPoseTime": 0.18
+    },
+    "animations": {
+      "fire": {
+        "duration": 0.12,
+        "position_offset": [-0.06, 0.02, -0.08],
+        "rotation_offset": [-6.0, 1.5, 1.0],
+        "recover": true
+      },
+      "reload_pose": {
+        "position": [0.04, -0.12, -0.04],
+        "rotation": [-18.0, 5.0, 8.0]
       }
     }
   }

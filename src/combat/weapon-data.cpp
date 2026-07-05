@@ -316,6 +316,20 @@ WeaponDefinition createGrenadeLauncherDefinition() {
     return def;
 }
 
+WeaponDefinition createAdminRevolverDefinition() {
+    WeaponDefinition def = createRevolverDefinition();
+    def.id = "admin_revolver";
+    def.displayName = "Admin Revolver";
+    def.slot = 9;
+    def.fireDelay = 0.0001f;
+    def.spread = 3.0f;
+    def.magazineSize = 9999;
+    def.customParams["reserveAmmo"] = 123456.0f;
+    def.fireMode = WeaponFireMode::Automatic;
+    def.poseId = "revolver";
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -326,7 +340,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createAa12Definition());
     registerWeaponFromJson(createRocketLauncherDefinition());
     registerWeaponFromJson(createGrenadeLauncherDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher");
+    registerWeaponFromJson(createAdminRevolverDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver");
 }
 
 } // namespace WeaponData
