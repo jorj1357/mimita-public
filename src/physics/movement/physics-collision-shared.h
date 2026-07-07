@@ -16,6 +16,7 @@ class CollisionTriangle;
 // Collision entity context: set before calling collision pipeline
 // so gatherGLBTriangles can identify which entity is doing the query.
 void setCollisionEntityContext(const char* entityId, unsigned int entityNumId, bool isNpc);
+bool isCurrentEntityNpc();
 void clearCollisionEntityContext();
 
 // =====================================================

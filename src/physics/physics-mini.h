@@ -20,7 +20,8 @@ void physicsMainUpdate(
     Player& player,
     const World& world,
     const InputState& input,
-    float dt
+    float dt,
+    int subSteps = 6
 );
 
 // Movement subsystem functions (called from physics-mini.cpp)

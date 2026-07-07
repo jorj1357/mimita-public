@@ -381,26 +381,26 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.stateMachine.nextDecisionTime -= safeDt;
     npc.stateMachine.retreatTimer += safeDt;
 
+    // Cache weapon definition once per frame (avoids 3+ string-keyed map lookups)
+    const WeaponDefinition* cachedWeaponDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+
     // Process reload in main update (not inside tryFire) so it ticks during movement states
+    if (cachedWeaponDef)
     {
-        const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-        if (def)
+        auto& rt = npc.body.weaponRuntimes[cachedWeaponDef->id];
+        if (rt.isReloading)
         {
-            auto& rt = npc.body.weaponRuntimes[def->id];
-            if (rt.isReloading)
+            rt.reloadTimer -= safeDt;
+            if (rt.reloadTimer <= 0.0f)
             {
-                rt.reloadTimer -= safeDt;
-                if (rt.reloadTimer <= 0.0f)
-                {
-                    int toLoad = def->magazineSize - rt.currentAmmo;
-                    int available = std::min(toLoad, rt.reserveAmmo);
-                    rt.currentAmmo += available;
-                    rt.reserveAmmo -= available;
-                    rt.isReloading = false;
-                    Debug::log(Debug::Category::NpcCombat,
-                        "[NPC RELOAD] npc=%u weapon=%s complete ammo=%d reserve=%d",
-                        npc.id, def->id.c_str(), rt.currentAmmo, rt.reserveAmmo);
-                }
+                int toLoad = cachedWeaponDef->magazineSize - rt.currentAmmo;
+                int available = std::min(toLoad, rt.reserveAmmo);
+                rt.currentAmmo += available;
+                rt.reserveAmmo -= available;
+                rt.isReloading = false;
+                Debug::log(Debug::Category::NpcCombat,
+                    "[NPC RELOAD] npc=%u weapon=%s complete ammo=%d reserve=%d",
+                    npc.id, cachedWeaponDef->id.c_str(), rt.currentAmmo, rt.reserveAmmo);
             }
         }
     }
@@ -528,12 +528,56 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             jump = true;
     }
 
-    // Situaltional dash
-    if (!dash && npc.sensors.hasTarget)
+    // Compute LOS once, cached for dash decision and combat line-of-sight
     {
-        const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-        float targetCanSee = targetCanSeeNpc(npc, world);
-        dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, def, targetCanSee > 0.5f);
+        glm::vec3 fromPos = npc.body.pos;
+        fromPos.z += 0.8f;
+        glm::vec3 toPos = npc.sensors.targetPos;
+        toPos.z += 0.8f;
+        glm::vec3 losDir = toPos - fromPos;
+        float losDist = glm::length(losDir);
+        npc.cachedLoSBlocked = true;
+        if (losDist > 0.5f && npc.sensors.hasTarget)
+        {
+            losDir /= losDist;
+            AABB losBounds;
+            losBounds.min = glm::min(fromPos, toPos) - glm::vec3(0.1f);
+            losBounds.max = glm::max(fromPos, toPos) + glm::vec3(0.1f);
+            std::vector<int> losCandidates;
+            appendChunkTrianglesForAABB(world, losBounds, 0.1f, losCandidates);
+
+            npc.cachedLoSBlocked = false;
+            for (int ti : losCandidates)
+            {
+                if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+                const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+                glm::vec3 e1 = tri.b - tri.a;
+                glm::vec3 e2 = tri.c - tri.a;
+                glm::vec3 pVec = glm::cross(losDir, e2);
+                float det = glm::dot(e1, pVec);
+                if (std::fabs(det) < 0.0001f) continue;
+                float invDet = 1.0f / det;
+                glm::vec3 tVec = fromPos - tri.a;
+                float u = glm::dot(tVec, pVec) * invDet;
+                if (u < 0.0f || u > 1.0f) continue;
+                glm::vec3 qVec = glm::cross(tVec, e1);
+                float v = glm::dot(losDir, qVec) * invDet;
+                if (v < 0.0f || u + v > 1.0f) continue;
+                float t = glm::dot(e2, qVec) * invDet;
+                if (t > 0.1f && t < losDist - 0.5f)
+                {
+                    npc.cachedLoSBlocked = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Situaltional dash (skip LOS gather when dash is on cooldown)
+    if (!dash && npc.sensors.hasTarget && npc.dashCooldown <= 0.0f)
+    {
+        bool targetCanSee = !npc.cachedLoSBlocked;
+        dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, cachedWeaponDef, targetCanSee);
     }
 
     // Cover seeking
@@ -639,7 +683,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         glm::vec3 velocityBefore = npc.body.vel;
         float planarSpeedBefore = glm::length(glm::vec2(velocityBefore.x, velocityBefore.y));
 
-        physicsMainUpdate(npc.body, world, input, safeDt);
+        physicsMainUpdate(npc.body, world, input, safeDt, 2);
 
         clearCollisionEntityContext();
 

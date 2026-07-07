@@ -7,7 +7,6 @@
 #include <cfloat>
 #include <limits>
 #include <string>
-#include <unordered_set>
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
@@ -137,8 +136,18 @@ void appendChunkTrianglesForAABB(
 
     int64_t totalCells = cellsX * cellsY * cellsZ;
     int cellCount = 0;
-    std::unordered_set<int> seen;
     (void)cellCount;
+
+    // Dedup via generation counter — O(1) per triangle, zero heap allocations
+    thread_local std::vector<uint32_t> s_triGen;
+    thread_local uint32_t s_gen = 0;
+    s_gen++;
+    if (s_gen == 0) {
+        s_triGen.assign(world.collisionMesh.triangles.size(), 0);
+        s_gen = 1;
+    }
+    if (s_triGen.size() != world.collisionMesh.triangles.size())
+        s_triGen.assign(world.collisionMesh.triangles.size(), 0);
 
     for (int x = c0.x; x <= c1.x; ++x)
     for (int y = c0.y; y <= c1.y; ++y)
@@ -153,8 +162,9 @@ void appendChunkTrianglesForAABB(
         {
             if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
                 continue;
-            if (!seen.insert(triIndex).second)
+            if (s_triGen[triIndex] == s_gen)
                 continue;
+            s_triGen[triIndex] = s_gen;
 
             AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
             triBounds.min -= glm::vec3(expansion);

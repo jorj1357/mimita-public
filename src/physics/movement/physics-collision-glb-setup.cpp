@@ -35,6 +35,11 @@ void clearCollisionEntityContext()
     gCurrentIsNpc = false;
 }
 
+bool isCurrentEntityNpc()
+{
+    return gCurrentIsNpc;
+}
+
 // ── Per-frame triangle cache ─────────────────────────────────
 // Caches gatherGLBTriangles results keyed by a hash of the AABB.
 // Persists across all calls within the same frame.

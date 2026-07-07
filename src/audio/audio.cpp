@@ -22,12 +22,15 @@
 
 #include "audio.h"
 #include <string>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <vector>
+#include <unordered_map>
+#include <fstream>
 
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
@@ -43,6 +46,7 @@ static glm::vec3 gLastListenerForward{0.0f, 1.0f, 0.0f};
 static float airJumpCooldown = 0.0f;
 struct ActiveSound {
     ma_sound sound{};
+    ma_decoder decoder{};
     bool initialized = false;
     std::string name;
     glm::vec3 position{0.0f};
@@ -56,6 +60,8 @@ static std::vector<std::unique_ptr<ActiveSound>> gActiveSounds;
 static void initAudioOnce();
 static float gAudioTime = 0.0f;
 static bool gSoundDebug = true;
+
+static std::unordered_map<std::string, std::vector<uint8_t>> gSoundFileCache;
 
 static std::string soundPath(const std::string& name)
 {
@@ -87,22 +93,45 @@ static std::string soundPath(const std::string& name)
     return path;
 }
 
+static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
+{
+    auto it = gSoundFileCache.find(name);
+    if (it != gSoundFileCache.end())
+        return it->second;
+    std::string path = soundPath(name);
+    if (!std::filesystem::exists(path)) {
+        static std::vector<uint8_t> empty;
+        return empty;
+    }
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    size_t size = (size_t)file.tellg();
+    file.seekg(0);
+    std::vector<uint8_t> data(size);
+    file.read((char*)data.data(), size);
+    auto result = gSoundFileCache.emplace(name, std::move(data));
+    return result.first->second;
+}
+
 static void startSound(const std::string& name, float volume, float pitch,
                        const glm::vec3* position, float maxDistance)
 {
     initAudioOnce();
     if (!gAudioInit) return;
     auto active = std::make_unique<ActiveSound>();
-    std::string path = soundPath(name);
-    if (!std::filesystem::exists(path)) {
-        if (gSoundDebug) printf("[SOUND] invalid path event=%s path=%s\n", name.c_str(), path.c_str());
+    const std::vector<uint8_t>& cached = getCachedSoundData(name);
+    if (cached.empty()) {
+        if (gSoundDebug) printf("[SOUND] invalid path event=%s\n", name.c_str());
         return;
     }
-    if (ma_sound_init_from_file(&gEngine, path.c_str(), 0, nullptr, nullptr, &active->sound) != MA_SUCCESS) {
-        if (gSoundDebug) printf("[SOUND] failed event=%s path=%s\n", name.c_str(), path.c_str());
+    if (ma_decoder_init_memory(cached.data(), cached.size(), nullptr, &active->decoder) != MA_SUCCESS) {
+        if (gSoundDebug) printf("[SOUND] decoder failed event=%s\n", name.c_str());
         return;
     }
-    if (gSoundDebug) printf("[SOUND] loaded event=%s path=%s\n", name.c_str(), path.c_str());
+    if (ma_sound_init_from_data_source(&gEngine, &active->decoder, 0, nullptr, &active->sound) != MA_SUCCESS) {
+        ma_decoder_uninit(&active->decoder);
+        if (gSoundDebug) printf("[SOUND] sound init failed event=%s\n", name.c_str());
+        return;
+    }
     active->initialized = true;
     active->name = name;
     active->position = position ? *position : glm::vec3(0.0f);
@@ -123,8 +152,8 @@ static void startSound(const std::string& name, float volume, float pitch,
         ma_sound_set_spatialization_enabled(&active->sound, MA_FALSE);
     }
     ma_sound_start(&active->sound);
-    if (gSoundDebug) printf("[SOUND] playing event=%s category=%s path=%s\n",
-                            name.c_str(), position ? "3D" : "2D", path.c_str());
+    if (gSoundDebug) printf("[SOUND] playing event=%s category=%s\n",
+                            name.c_str(), position ? "3D" : "2D");
     Debug::warn(Debug::Category::Audio, "[AUDIO] startSound name=%s pos=%s vol=%.2f maxDist=%.2f spatial=%s\n",
                 name.c_str(),
                 position ? "(set)" : "(null)",
@@ -146,7 +175,7 @@ static void initAudioOnce()
     gAudioInit = true;
     printf("[AUDIO] Engine initialized\n");
 
-    // Preload all combat sounds so first-use playback has no file I/O hitch
+    // Pre-cache all combat sound files into memory
     const char* combatSounds[] = {
         "revolvershoot", "revolverreload", "revolverchamber",
         "shotgunshoot", "shotgunreload",
@@ -158,18 +187,8 @@ static void initAudioOnce()
         "ui/hover"
     };
     for (const char* name : combatSounds)
-    {
-        std::string path = soundPath(name);
-        if (std::filesystem::exists(path))
-        {
-            ma_sound preload;
-            if (ma_sound_init_from_file(&gEngine, path.c_str(), MA_SOUND_FLAG_ASYNC, nullptr, nullptr, &preload) == MA_SUCCESS)
-            {
-                ma_sound_uninit(&preload);
-            }
-        }
-    }
-    printf("[AUDIO] Combat sounds preloaded\n");
+        getCachedSoundData(name);
+    printf("[AUDIO] Combat sounds cached: %zu files\n", gSoundFileCache.size());
 }
 
 void audioUpdate(float dt)
@@ -180,8 +199,10 @@ void audioUpdate(float dt)
     gActiveSounds.erase(
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [](const std::unique_ptr<ActiveSound>& active) {
             if (!active || !active->initialized || ma_sound_at_end(&active->sound)) {
-                if (active && active->initialized)
+                if (active && active->initialized) {
                     ma_sound_uninit(&active->sound);
+                    ma_decoder_uninit(&active->decoder);
+                }
                 if (gSoundDebug && active)
                     printf("[SOUND] stopped event=%s\n", active->name.c_str());
                 return true;
@@ -240,7 +261,10 @@ void AudioManager::stopOwner(unsigned int ownerId)
     gActiveSounds.erase(
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [ownerId](const std::unique_ptr<ActiveSound>& active) {
             if (!active || active->ownerId != ownerId) return false;
-            if (active->initialized) ma_sound_uninit(&active->sound);
+            if (active->initialized) {
+                ma_sound_uninit(&active->sound);
+                ma_decoder_uninit(&active->decoder);
+            }
             if (gSoundDebug) printf("[SOUND] stopped event=%s owner=%u\n", active->name.c_str(), ownerId);
             return true;
         }),
