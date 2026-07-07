@@ -102,6 +102,8 @@ void EffectPartSystem::update(float dt) {
         }
     }
 
+    drainPendingWorldHits(6);
+
     updateBloodParticles(dt);
     updateBloodDecals(dt);
 }

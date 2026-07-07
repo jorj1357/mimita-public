@@ -62,7 +62,7 @@ static bool rayHitsAny(glm::vec3 origin, glm::vec3 dir, float maxDist,
 
 } // anonymous namespace
 
-glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world)
+glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world, const std::vector<int>& candidates)
 {
     if (glm::length(desiredDir) < 0.001f)
         return desiredDir;
@@ -78,12 +78,9 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
     float checkDist = 1.5f;
     float stepAngle = glm::pi<float>() / 6.0f;
 
-    std::vector<int> candidates;
-    gatherNear(world, origin, checkDist + 1.0f, candidates);
-
     if (rayHitsAny(origin, desiredDir, checkDist, candidates, world))
     {
-        for (int side = 0; side < 6; ++side)
+        for (int side = 0; side < 4; ++side)
         {
             float angle = stepAngle * (side + 1);
             for (float sign : {1.0f, -1.0f})
@@ -106,6 +103,13 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
     return desiredDir;
 }
 
+glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world)
+{
+    std::vector<int> candidates;
+    gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), 2.5f, candidates);
+    return wallAvoidDirection(npc, desiredDir, world, candidates);
+}
+
 bool NpcNavigation::isStuck(const Npc& npc)
 {
     bool tryingMove = glm::length(npc.lastMoveInput) > 0.1f;
@@ -115,13 +119,10 @@ bool NpcNavigation::isStuck(const Npc& npc)
     return tryingMove && groundedAndSlow;
 }
 
-glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, const World& world)
+glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, const World& world, const std::vector<int>& candidates)
 {
     glm::vec3 origin = npc.body.pos;
     origin.z += 0.5f;
-
-    std::vector<int> candidates;
-    gatherNear(world, origin, 10.0f, candidates);
 
     struct DirScore {
         glm::vec3 dir;
@@ -152,7 +153,14 @@ glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, con
     return best.dir;
 }
 
-bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const World& world, glm::vec3& outWallNormal)
+glm::vec3 NpcNavigation::unstuckDirection(const Npc& npc, unsigned int& rng, const World& world)
+{
+    std::vector<int> candidates;
+    gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), 10.0f, candidates);
+    return unstuckDirection(npc, rng, world, candidates);
+}
+
+bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const World& world, glm::vec3& outWallNormal, const std::vector<int>& candidates)
 {
     if (glm::length(moveDir) < 0.001f)
         return false;
@@ -165,9 +173,6 @@ bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const Wor
 
     // Raise origin for upper-body check (wall climb needs a wall at chest height)
     origin.z += 0.6f;
-
-    std::vector<int> candidates;
-    gatherNear(world, origin, checkDist + 1.0f, candidates);
 
     float hitDist;
     glm::vec3 hitNormal;
@@ -182,6 +187,15 @@ bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const Wor
     }
 
     return false;
+}
+
+bool NpcNavigation::isClimbableWall(const Npc& npc, glm::vec3 moveDir, const World& world, glm::vec3& outWallNormal)
+{
+    glm::vec3 origin = npc.body.pos;
+    origin.z += 1.1f;
+    std::vector<int> candidates;
+    gatherNear(world, origin, 2.2f, candidates);
+    return isClimbableWall(npc, moveDir, world, outWallNormal, candidates);
 }
 
 glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos, const World& world)
@@ -201,6 +215,22 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
     glm::vec3 origin = npc.body.pos;
     origin.z += 0.8f;
 
+    // Compute a single combined AABB covering all test positions to query chunks once
+    AABB combinedBounds;
+    combinedBounds.min = origin;
+    combinedBounds.max = origin;
+    combinedBounds.min = glm::min(combinedBounds.min, threatPos);
+    combinedBounds.max = glm::max(combinedBounds.max, threatPos);
+    for (const auto& dir : testDirs)
+    {
+        glm::vec3 testPos = npc.body.pos + dir * COVER_CHECK_DIST;
+        testPos.z += 0.8f;
+        combinedBounds.min = glm::min(combinedBounds.min, testPos);
+        combinedBounds.max = glm::max(combinedBounds.max, testPos);
+    }
+    std::vector<int> allCandidates;
+    appendChunkTrianglesForAABB(world, combinedBounds, 0.1f, allCandidates);
+
     for (const auto& dir : testDirs)
     {
         glm::vec3 testPos = npc.body.pos + dir * COVER_CHECK_DIST;
@@ -212,13 +242,7 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
         if (coverToThreat < 1.0f) continue;
         toThreatFromCover /= coverToThreat;
 
-        AABB rayBounds;
-        rayBounds.min = glm::min(testPos, threatPos);
-        rayBounds.max = glm::max(testPos, threatPos);
-        std::vector<int> candidates;
-        appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
-
-        for (int ti : candidates)
+        for (int ti : allCandidates)
         {
             if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
             const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
@@ -239,7 +263,7 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
             if (t > 0.1f && t < coverToThreat - 1.0f)
             {
                 // Verify the direction is walkable (no wall right in front)
-                if (!obstacleInDirection(npc, dir, 1.5f, world))
+                if (!obstacleInDirection(npc, dir, 1.5f, world, allCandidates))
                     return glm::normalize(dir);
             }
         }
@@ -248,7 +272,7 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
     return glm::vec3(0.0f);
 }
 
-bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world)
+bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world, const std::vector<int>& candidates)
 {
     if (glm::length(dir) < 0.001f)
         return false;
@@ -257,8 +281,12 @@ bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float che
     origin.z += 0.5f;
     glm::vec3 checkDir = glm::normalize(glm::vec3(dir.x, dir.y, 0.0f));
 
-    std::vector<int> candidates;
-    gatherNear(world, origin, checkDist + 1.0f, candidates);
-
     return rayHitsAny(origin, checkDir, checkDist, candidates, world);
+}
+
+bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world)
+{
+    std::vector<int> candidates;
+    gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), checkDist + 1.0f, candidates);
+    return obstacleInDirection(npc, dir, checkDist, world, candidates);
 }
