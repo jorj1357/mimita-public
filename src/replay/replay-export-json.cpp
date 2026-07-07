@@ -33,13 +33,9 @@ void encodeReplayToMp4();
 
 extern ReplayExportJob gJob;
 
-// ---- Replay Export Audio Config (hot-reload) ----
-struct ReplayExportAudioConfig {
-    float audioVolumeMultiplier = 0.8f;
-};
-
-ReplayExportAudioConfig gAudioConfig;
-static uint64_t gAudioConfigLastWrite = 0;
+// ---- Replay Export Config (hot-reload) ----
+ReplayExportConfig gExportConfig;
+static uint64_t gExportConfigLastWrite = 0;
 
 static const char* REPLAY_EXPORT_CONFIG_PATH = "config/replay/replay-export.json";
 
@@ -62,16 +58,27 @@ static void reloadReplayExportConfig()
         nlohmann::json j;
         file >> j;
 
-        ReplayExportAudioConfig loaded;
+        ReplayExportConfig loaded;
         if (j.contains("audioVolumeMultiplier"))
             loaded.audioVolumeMultiplier = j["audioVolumeMultiplier"].get<float>();
+        if (j.contains("exportWidth"))
+            loaded.exportWidth = j["exportWidth"].get<int>();
+        if (j.contains("exportHeight"))
+            loaded.exportHeight = j["exportHeight"].get<int>();
+        if (j.contains("exportBitrate"))
+            loaded.exportBitrate = j["exportBitrate"].get<int>();
+        if (j.contains("exportCrf"))
+            loaded.exportCrf = j["exportCrf"].get<int>();
 
-        gAudioConfig = loaded;
-        Debug::log(Debug::Category::Replay, "[REPLAY AUDIO] config reloaded audioVolumeMultiplier=%.2f", gAudioConfig.audioVolumeMultiplier);
+        gExportConfig = loaded;
+        Debug::log(Debug::Category::Replay, "[REPLAY EXPORT] config reloaded: volume=%.2f res=%dx%d crf=%d bitrate=%d",
+                   gExportConfig.audioVolumeMultiplier,
+                   gExportConfig.exportWidth, gExportConfig.exportHeight,
+                   gExportConfig.exportCrf, gExportConfig.exportBitrate);
     }
     catch (const std::exception& e)
     {
-        Debug::log(Debug::Category::Replay, "[REPLAY AUDIO] config reload failed: %s", e.what());
+        Debug::log(Debug::Category::Replay, "[REPLAY EXPORT] config reload failed: %s", e.what());
     }
 }
 
@@ -87,12 +94,15 @@ void pollReplayExportConfig()
     if (wt == 0)
         return;
 
-    if (wt != gAudioConfigLastWrite)
+    if (wt != gExportConfigLastWrite)
     {
-        gAudioConfigLastWrite = wt;
+        gExportConfigLastWrite = wt;
         reloadReplayExportConfig();
     }
 }
+
+// Rename accessors to match new struct
+float getReplayExportAudioVolume() { return gExportConfig.audioVolumeMultiplier; }
 
 std::string makeCmdKArgs(const std::string& cmd)
 {
@@ -259,15 +269,19 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
         }
     }
 
-    // ROOT CAUSE FIX: Query actual framebuffer dimensions for capture.
+    // Use configured export resolution if caller passed 0
+    if (renderWidth <= 0 || renderHeight <= 0) {
+        renderWidth = gExportConfig.exportWidth;
+        renderHeight = gExportConfig.exportHeight;
+    }
     int captureW = renderWidth;
     int captureH = renderHeight;
     {
         GLint vp[4] = {};
         glGetIntegerv(GL_VIEWPORT, vp);
         if (vp[2] > 0 && vp[3] > 0) {
-            captureW = vp[2];
-            captureH = vp[3];
+            captureW = std::min(vp[2], renderWidth);
+            captureH = std::min(vp[3], renderHeight);
         }
     }
 
@@ -288,6 +302,9 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
 
     printf("[RPLX] output path: %s\n", outputPath.c_str());
     printf("[RPLX] capture resolution: %dx%d\n", captureW, captureH);
+    printf("[RPLX] config resolution: %dx%d CRF=%d bitrate=%d\n",
+           gExportConfig.exportWidth, gExportConfig.exportHeight,
+           gExportConfig.exportCrf, gExportConfig.exportBitrate);
     printf("[RPLX] total ticks to render: %u\n", totalTicks);
 
     gJob.state = ReplayExportJob::Capturing;
@@ -308,11 +325,6 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     gJob.rawFileBytes = 0;
     gJob.mp4FileBytes = 0;
     return true;
-}
-
-float getReplayExportAudioVolume()
-{
-    return gAudioConfig.audioVolumeMultiplier;
 }
 
 void cancelReplayExport()

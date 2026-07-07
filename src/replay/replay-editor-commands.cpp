@@ -2,6 +2,7 @@
 #include "replay.h"
 #include "devtools/terminal.h"
 #include "camera.h"
+#include "audio/audio.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
 
@@ -39,7 +40,7 @@ void registerReplayEditorCommands() {
     // ── rple: load newest replay into editor ─────────────
     t.registerCommand({
         "rple",
-        "Load the newest replay into the editor",
+        "Load the newest replay into the editor and start playback",
         "rple",
         [](const std::vector<std::string>&) {
             auto clips = listReplayClips();
@@ -48,21 +49,26 @@ void registerReplayEditorCommands() {
                 return;
             }
             std::string path = clips[0];
-            if (!E.load(path)) {
-                Terminal::instance().addLog("[ERROR] Failed to load: " + path);
+            if (!REPLAY_PLAYER.loadFromJSON(path)) {
+                Terminal::instance().addLog("[ERROR] Failed to load replay: " + path);
                 return;
             }
-            // Set totalTicks from the loaded replay player
-            if (REPLAY_PLAYER.totalTicks() > 0) {
-                // We won't modify totalTicks here; the existing player has it.
-                // Just use the editor as an overlay.
+            REPLAY_PLAYER.preloadAssets();
+            REPLAY_PLAYER.beginPlayback();
+            if (!E.load(path)) {
+                Terminal::instance().addLog("[ERROR] Failed to load editor: " + path);
+                return;
             }
+            E.playing = true;
+            E.movieTick = 0.0f;
             Terminal::instance().addLog("[RPLE] Editor loaded: " + path);
             Terminal::instance().addLog(
                 "Replay Editor Ready.\n"
-                "Type  rplehelp   for a complete walkthrough.\n"
-                "      rplecmds   to list all commands.\n"
-                "      rplestatus to see current state.");
+                "  F           Toggle freecam\n"
+                "  Left/Right  Seek +/-60 ticks\n"
+                "  Space       Play/Pause\n"
+                "  K           Create keyframe\n"
+                "Type rplehelp for complete walkthrough.");
             Debug::log(Debug::Category::Replay, "[RPLE] Editor loaded: %s\n", path.c_str());
         }
     });
@@ -98,31 +104,191 @@ void registerReplayEditorCommands() {
         }
     });
 
-    // ── rpleinfo ─────────────────────────────────────────
-    t.registerCommand({
-        "rpleinfo",
-        "Show editor info: replay, keyframes, bookmarks",
-        "rpleinfo",
+    // ── rpleinfo / rplei ─────────────────────────────────
+    auto infoFn = [](const std::vector<std::string>&) {
+        if (!E.isLoaded()) { requireEditor("rpleinfo"); return; }
+        char buf[512];
+        int camKf = E.cameraKeyframeCount();
+        int camModeKf = E.cameraModeKeyframeCount();
+        int timeKf = E.timeKeyframeCount();
+        int marks = E.bookmarkCount();
+        std::snprintf(buf, sizeof(buf),
+            "[RPLE] Replay: %s\n"
+            "  Ticks: %d  Rate: %d  Duration: %.1fs\n"
+            "  Camera KF: %d  Camera Mode KF: %d  Time KF: %d  Bookmarks: %d\n"
+            "  Freecam: %s  Playing: %s  Tick: %.2f\n"
+            "  Edit file: %s",
+            E.replayPath().c_str(),
+            E.totalTicks(), E.tickRate(), E.durationSec(),
+            camKf, camModeKf, timeKf, marks,
+            E.freecam ? "ON" : "OFF",
+            E.playing ? "YES" : "NO",
+            E.movieTick,
+            E.editPath().c_str());
+        Terminal::instance().addLog(buf);
+    };
+    t.registerCommand({"rpleinfo", "Show editor info", "rpleinfo", infoFn});
+    t.registerCommand({"rplei",
+        "Show editor info: ticks, time, keyframes, events, audio",
+        "rplei",
         [](const std::vector<std::string>&) {
-            if (!E.isLoaded()) { requireEditor("rpleinfo"); return; }
+            if (!E.isLoaded()) { requireEditor("rplei"); return; }
             char buf[512];
             int camKf = E.cameraKeyframeCount();
+            int camModeKf = E.cameraModeKeyframeCount();
             int timeKf = E.timeKeyframeCount();
-            int marks = E.bookmarkCount();
             std::snprintf(buf, sizeof(buf),
-                "[RPLE] Replay: %s\n"
-                "  Ticks: %d  Rate: %d  Duration: %.1fs\n"
-                "  Camera keyframes: %d  Time keyframes: %d  Bookmarks: %d\n"
-                "  Freecam: %s  Playing: %s  Tick: %.2f\n"
-                "  Edit file: %s",
-                E.replayPath().c_str(),
-                E.totalTicks(), E.tickRate(), E.durationSec(),
-                camKf, timeKf, marks,
-                E.freecam ? "ON" : "OFF",
-                E.playing ? "YES" : "NO",
-                E.movieTick,
-                E.editPath().c_str());
+                "Total ticks: %d\n"
+                "Total time: %02d:%02d\n"
+                "Tick rate: %d\n"
+                "Camera keyframes: %d\n"
+                "Camera mode keyframes: %d\n"
+                "Playback speed keyframes: %d\n"
+                "Bookmarks: %d",
+                E.totalTicks(),
+                (int)(E.durationSec()) / 60, (int)(E.durationSec()) % 60,
+                E.tickRate(), camKf, camModeKf, timeKf, E.bookmarkCount());
             Terminal::instance().addLog(buf);
+
+            // Audio tracks
+            if (E.audioTrackCount() > 0) {
+                Terminal::instance().addLog("\nAudio:");
+                for (int i = 0; i < E.audioTrackCount(); ++i) {
+                    const auto& at = E.audioTrack(i);
+                    char ab[256];
+                    std::snprintf(ab, sizeof(ab),
+                        "%d. %s\n"
+                        "   start tick: %d  volume: %.1f  enabled: %s",
+                        i + 1, at.path.c_str(), at.startTick, at.volume,
+                        at.enabled ? "yes" : "no");
+                    Terminal::instance().addLog(ab);
+                }
+            } else {
+                Terminal::instance().addLog("\nAudio: none");
+            }
+
+            // Print killfeed events from loaded replay
+            if (REPLAY_PLAYER.totalTicks() > 0) {
+                Terminal::instance().addLog("\nEvents:");
+                const auto& events = REPLAY_PLAYER.soundEvents();
+                int eventCount = 0;
+                for (const auto& ev : events) {
+                    if (ev.soundPath.find("kill") != std::string::npos ||
+                        ev.soundPath.find("death") != std::string::npos ||
+                        ev.soundPath.find("spawn") != std::string::npos) {
+                        char eb[128];
+                        std::snprintf(eb, sizeof(eb), "  %s at tick %d pos=(%.0f %.0f %.0f)",
+                            ev.soundPath.c_str(), ev.tick,
+                            ev.position.x, ev.position.y, ev.position.z);
+                        Terminal::instance().addLog(eb);
+                        eventCount++;
+                    }
+                }
+                if (eventCount == 0) {
+                    Terminal::instance().addLog("  (no notable events found)");
+                }
+            }
+        }
+    });
+
+    // ── rple_sl: load audio track ────────────────────────
+    t.registerCommand({
+        "rple_sl",
+        "Load a music/audio file for the replay timeline",
+        "rple_sl <path>",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rple_sl"); return; }
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: rple_sl <full path to .wav or .mp3>");
+                Terminal::instance().addLog("Example: rple_sl C:\\path\\to\\song.wav");
+                return;
+            }
+            std::string path = args[0];
+            Debug::log(Debug::Category::Replay, "[RPLE] rple_sl command start\n");
+            Debug::log(Debug::Category::Replay, "[RPLE] rple_sl path received: %s\n", path.c_str());
+
+            // Reconstruct path from all args if there are spaces
+            for (size_t i = 1; i < args.size(); ++i)
+                path += " " + args[i];
+
+            // Strip surrounding quotes if present
+            if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
+                path = path.substr(1, path.size() - 2);
+
+            Debug::log(Debug::Category::Replay, "[RPLE] rple_sl resolved path: %s\n", path.c_str());
+
+            if (!std::filesystem::exists(path)) {
+                Terminal::instance().addLog("[ERROR] File not found: " + path);
+                Debug::log(Debug::Category::Replay, "[RPLE] rple_sl file NOT FOUND: %s\n", path.c_str());
+                return;
+            }
+
+            std::string ext = std::filesystem::path(path).extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext != ".wav" && ext != ".mp3") {
+                Terminal::instance().addLog("[ERROR] Unsupported format: " + ext + " (only .wav and .mp3)");
+                Debug::log(Debug::Category::Replay, "[RPLE] rple_sl unsupported type: %s\n", ext.c_str());
+                return;
+            }
+
+            Debug::log(Debug::Category::Replay, "[RPLE] rple_sl file type OK: %s\n", ext.c_str());
+
+            // Stop any existing preview
+            stopReplayMusicPreview();
+
+            // Set the audio track in editor
+            E.setAudioTrack(path, 1.0f);
+
+            // Start preview playback at current tick
+            int currentTick = (int)E.movieTick;
+            float startSec = (float)currentTick / 60.0f;
+            if (playReplayMusicPreview(path, 1.0f)) {
+                seekReplayMusicPreview(startSec);
+                Terminal::instance().addLog("[RPLE] Audio track loaded and preview started");
+                Debug::log(Debug::Category::Replay, "[RPLE] rple_sl preview start OK, tick=%d sec=%.2f\n",
+                           currentTick, startSec);
+            } else {
+                Terminal::instance().addLog("[RPLE] Audio track path saved (preview unavailable)");
+                Debug::log(Debug::Category::Replay, "[RPLE] rple_sl load OK but preview FAILED: %s\n", path.c_str());
+            }
+
+            // Autosave is called inside setAudioTrack
+        }
+    });
+
+    // ── rple_sl_clear: remove audio track ────────────────
+    t.registerCommand({
+        "rple_sl_clear",
+        "Remove loaded audio track from timeline",
+        "rple_sl_clear",
+        [](const std::vector<std::string>&) {
+            if (!E.isLoaded()) { requireEditor("rple_sl_clear"); return; }
+            stopReplayMusicPreview();
+            E.clearAudioTracks();
+            Terminal::instance().addLog("[RPLE] Audio track cleared");
+        }
+    });
+
+    // ── rple_sl_vol: set audio track volume ──────────────
+    t.registerCommand({
+        "rple_sl_vol",
+        "Set audio track volume (0.0 - 2.0)",
+        "rple_sl_vol <volume>",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rple_sl_vol"); return; }
+            if (args.empty() || E.audioTrackCount() == 0) {
+                Terminal::instance().addLog("[ERROR] No audio track loaded. Use rple_sl first.");
+                return;
+            }
+            float vol = std::clamp(std::stof(args[0]), 0.0f, 2.0f);
+            ReplayEditorAudioTrack* track = E.mutableAudioTrack(0);
+            if (track) {
+                track->volume = vol;
+                E.autosave();
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "[RPLE] Audio track volume set to %.2f", vol);
+                Terminal::instance().addLog(buf);
+            }
         }
     });
 
@@ -179,6 +345,24 @@ void registerReplayEditorCommands() {
                 REPLAY_PLAYER.seekToTick(tick);
             char buf[64];
             std::snprintf(buf, sizeof(buf), "[RPLE] Seeked to tick %d", tick);
+            Terminal::instance().addLog(buf);
+        }
+    });
+
+    // ── rpletj ───────────────────────────────────────────
+    t.registerCommand({
+        "rpletj",
+        "Jump to exact replay tick",
+        "rpletj <tick>",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rpletj"); return; }
+            if (args.empty()) { Terminal::instance().addLog("[ERROR] Usage: rpletj <tick>"); return; }
+            int tick = std::clamp(std::stoi(args[0]), 0, E.totalTicks());
+            E.seekToTick(tick);
+            if (REPLAY_PLAYER.totalTicks() > 0)
+                REPLAY_PLAYER.seekToTick(tick);
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "[RPLE] Jumped to tick %d", tick);
             Terminal::instance().addLog(buf);
         }
     });
@@ -363,6 +547,140 @@ void registerReplayEditorCommands() {
             std::snprintf(buf, sizeof(buf), "[RPLE] Camera keyframe at tick %d (%.1f %.1f %.1f)",
                 tick, pos.x, pos.y, pos.z);
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    // ── rplekf_l: list ALL keyframes ─────────────────────
+    t.registerCommand({
+        "rplekf_l",
+        "List every keyframe (camera, camera-mode, time)",
+        "rplekf_l",
+        [](const std::vector<std::string>&) {
+            if (!E.isLoaded()) { requireEditor("rplekf_l"); return; }
+            int n = E.cameraKeyframeCount();
+            if (n == 0) Terminal::instance().addLog("[RPLE] No camera keyframes");
+            else for (int i = 0; i < n; ++i) {
+                const auto& kf = E.cameraKeyframe(i);
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                    "[RPLE] KF %d: tick=%d type=camera pos=(%.1f %.1f %.1f) roll=%.1f fov=%.0f interp=%s",
+                    i, kf.tick, kf.position.x, kf.position.y, kf.position.z,
+                    kf.roll, kf.fov, interpName(kf.interp));
+                Terminal::instance().addLog(buf);
+            }
+
+            int cmN = E.cameraModeKeyframeCount();
+            if (cmN == 0) Terminal::instance().addLog("[RPLE] No camera mode keyframes");
+            else for (int i = 0; i < cmN; ++i) {
+                const auto& kf = E.cameraModeKeyframe(i);
+                char buf[128];
+                std::snprintf(buf, sizeof(buf),
+                    "[RPLE] KF %d: tick=%d type=camera-mode mode=%s",
+                    i, kf.tick, camModeName(kf.mode));
+                Terminal::instance().addLog(buf);
+            }
+
+            int tN = E.timeKeyframeCount();
+            if (tN == 0) Terminal::instance().addLog("[RPLE] No time keyframes");
+            else for (int i = 0; i < tN; ++i) {
+                const auto& kf = E.timeKeyframe(i);
+                char buf[128];
+                std::snprintf(buf, sizeof(buf),
+                    "[RPLE] KF %d: tick=%d type=time speed=%.2fx interp=%s",
+                    i, kf.tick, kf.speed, interpName(kf.interp));
+                Terminal::instance().addLog(buf);
+            }
+        }
+    });
+
+    // ── rplekf_interp: change interpolation mode ─────────
+    t.registerCommand({
+        "rplekf_interp",
+        "Change interpolation mode of a camera keyframe",
+        "rplekf_interp <index> <linear|easein|easeout|easeinout|smooth|cut>",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rplekf_interp"); return; }
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[ERROR] Usage: rplekf_interp <index> <mode>");
+                return;
+            }
+            int idx = std::stoi(args[0]);
+            if (idx < 0 || idx >= E.cameraKeyframeCount()) {
+                Terminal::instance().addLog("[ERROR] Keyframe index out of range");
+                return;
+            }
+            KeyframeInterp mode = interpFromString(args[1]);
+            E.setCameraKeyframeInterp(idx, mode);
+            char buf[128];
+            std::snprintf(buf, sizeof(buf),
+                "[RPLE] Keyframe %d interp set to %s", idx, interpName(mode));
+            Terminal::instance().addLog(buf);
+            E.autosave();
+        }
+    });
+
+    // ── rplekf_d: delete nearest camera keyframe ─────────
+    t.registerCommand({
+        "rplekf_d",
+        "Delete nearest/current camera keyframe",
+        "rplekf_d",
+        [](const std::vector<std::string>&) {
+            if (!E.isLoaded()) { requireEditor("rplekf_d"); return; }
+            int tick = (int)E.movieTick;
+            int idx = E.findNearestCameraKeyframe(tick);
+            if (idx < 0) {
+                Terminal::instance().addLog("[RPLE] No camera keyframes to delete");
+                return;
+            }
+            const auto& kf = E.cameraKeyframe(idx);
+            if (E.deleteCameraKeyframe(idx)) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf),
+                    "[RPLE] Deleted camera keyframe %d at tick %d (nearest to %d)",
+                    idx, kf.tick, tick);
+                Terminal::instance().addLog(buf);
+            }
+        }
+    });
+
+    // ── rplekf_da: delete ALL keyframes ──────────────────
+    static bool gPendingDeleteAll = false;
+    t.registerCommand({
+        "rplekf_da",
+        "Delete ALL keyframes (call again to confirm)",
+        "rplekf_da [yes|1]",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rplekf_da"); return; }
+            int total = E.cameraKeyframeCount() + E.cameraModeKeyframeCount() + E.timeKeyframeCount();
+            if (total == 0) {
+                Terminal::instance().addLog("[RPLE] No keyframes to delete");
+                gPendingDeleteAll = false;
+                return;
+            }
+            bool confirmed = (!args.empty() && (args[0] == "1" || args[0] == "yes" || args[0] == "y"));
+            if (confirmed || gPendingDeleteAll) {
+                E.clearCameraKeyframes();
+                E.clearCameraModeKeyframes();
+                E.clearTimeKeyframes();
+                Terminal::instance().addLog("[RPLE] Deleted all keyframes");
+                gPendingDeleteAll = false;
+            } else {
+                gPendingDeleteAll = true;
+                char promptBuf[128];
+                std::snprintf(promptBuf, sizeof(promptBuf),
+                    "Delete all keyframes (%d total)?\n"
+                    "Call rplekf_da again, or rplekf_da yes to confirm", total);
+                Terminal::instance().addLog(std::string(promptBuf));
+            }
+        }
+    });
+    t.registerCommand({
+        "rplekf_da_no",
+        "Cancel pending delete-all confirmation",
+        "rplekf_da_no",
+        [](const std::vector<std::string>&) {
+            gPendingDeleteAll = false;
+            Terminal::instance().addLog("[RPLE] Delete canceled");
         }
     });
 
@@ -589,14 +907,30 @@ void registerReplayEditorCommands() {
     // ── rplesave ─────────────────────────────────────────
     t.registerCommand({
         "rplesave",
-        "Save .rpledit edit file",
+        "Save .rple.json edit file",
         "rplesave",
         [](const std::vector<std::string>&) {
             if (!E.isLoaded()) { requireEditor("rplesave"); return; }
-            if (E.saveEdit())
+            if (E.saveEdit()) {
                 Terminal::instance().addLog("[RPLE] Saved: " + E.editPath());
-            else
+                E.autosave();
+            } else {
                 Terminal::instance().addLog("[ERROR] Failed to save edit file");
+            }
+        }
+    });
+
+    // ── rpleundo: Ctrl+Z through autosaves ──────────────
+    t.registerCommand({
+        "rpleundo",
+        "Undo last editor change (restore previous autosave)",
+        "rpleundo",
+        [](const std::vector<std::string>&) {
+            if (!E.isLoaded()) { requireEditor("rpleundo"); return; }
+            if (E.undoLastAutosave())
+                Terminal::instance().addLog("[RPLE] Undo: restored previous state");
+            else
+                Terminal::instance().addLog("[RPLE] Undo: no autosave history available");
         }
     });
 
@@ -625,53 +959,35 @@ void registerReplayEditorCommands() {
                 " MIMITA REPLAY EDITOR\n"
                 "=========================================\n"
                 "\n"
-                "STEP 1: Play a game.\n"
+                "WORKFLOW:\n"
+                "  Play \xE2\x86\x92 F3 (save replay) \xE2\x86\x92 rple \xE2\x86\x92 edit \xE2\x86\x92 rplx (export)\n"
                 "\n"
-                "STEP 2: Save the replay.\n"
-                "  rpls\n"
+                "KEYBOARD CONTROLS (editor open):\n"
+                "  F           Toggle freecam\n"
+                "  WASD+QE     Move freecam\n"
+                "  Mouse       Look\n"
+                "  Shift       Fast (3x)\n"
+                "  Ctrl        Slow (0.3x)\n"
+                "  Space       Play / Pause\n"
+                "  Left Arrow  -60 ticks (1s back)\n"
+                "  Right Arrow +60 ticks (1s forward)\n"
+                "  Shift+Up    Next keyframe\n"
+                "  Shift+Down  Previous keyframe\n"
+                "  K           Create keyframe\n"
+                "  Ctrl+Z      Undo (via autosave)\n"
                 "\n"
-                "STEP 3: Load the newest replay.\n"
-                "  rplload 1\n"
+                "COMMANDS:\n"
+                "  rple          Load newest replay + start editor\n"
+                "  rplei         Print editor info + events\n"
+                "  rpletj <tick> Jump to exact tick\n"
+                "  rplekf_l      List all keyframes\n"
+                "  rplekf_d      Delete nearest camera keyframe\n"
+                "  rplekf_da     Delete ALL keyframes\n"
+                "  rplesave      Save editor project\n"
+                "  rpleundo      Undo last change\n"
+                "  rplx          Export to MP4\n"
                 "\n"
-                "STEP 4: Enter Replay Editor.\n"
-                "  rple\n"
-                "\n"
-                "STEP 5: Enable freecam.\n"
-                "  rplefc\n"
-                "\n"
-                "STEP 6: Move camera.\n"
-                "  WASD       = Move\n"
-                "  Mouse      = Look\n"
-                "  Q          = Move down\n"
-                "  E          = Move up\n"
-                "  Shift      = Fast\n"
-                "  Ctrl       = Slow\n"
-                "\n"
-                "STEP 7: Pause replay.\n"
-                "  Space\n"
-                "\n"
-                "STEP 8: Move to another tick.\n"
-                "  rpleseek <tick>\n"
-                "  rples     (Left/Right arrows seek by 60 ticks)\n"
-                "\n"
-                "STEP 9: Create a camera keyframe.\n"
-                "  K          (or rplefc_skf)\n"
-                "\n"
-                "STEP 10: Resume playback.\n"
-                "  Space\n"
-                "\n"
-                "STEP 11: Repeat keyframes at different ticks.\n"
-                "\n"
-                "STEP 12: Save edit file.\n"
-                "  rplesave\n"
-                "\n"
-                "STEP 13: Export the cinematic replay.\n"
-                "  rplx\n"
-                "\n"
-                "TIP: rplehelp  = this guide\n"
-                "     rplecmds  = list all commands\n"
-                "     rplestatus = current editor state\n"
-                "     <command> ? = help for a specific command\n"
+                "For all commands: rplecmds\n"
                 "=========================================");
         }
     });
@@ -686,11 +1002,12 @@ void registerReplayEditorCommands() {
                 "Replay Editor Commands:\n"
                 "\n"
                 "--- Basics ---\n"
-                "  rple          Load newest replay into editor\n"
+                "  rple          Load newest replay + start editor\n"
                 "  rpleload      Load a specific replay\n"
                 "  rplehelp      Show walkthrough\n"
                 "  rplestatus    Show editor state\n"
                 "  rplecmds      List commands\n"
+                "  rplei         Print editor info + events\n"
                 "\n"
                 "--- Playback ---\n"
                 "  rpleplay      Start playback\n"
@@ -698,10 +1015,10 @@ void registerReplayEditorCommands() {
                 "  rpletoggle    Toggle play/pause\n"
                 "  rpleseek      Seek to tick\n"
                 "  rpleseeksec   Seek to seconds\n"
-                "  rples         Keyboard seek mode\n"
+                "  rpletj        Jump to exact tick\n"
                 "\n"
                 "--- Free Camera ---\n"
-                "  rplefc        Toggle freecam\n"
+                "  rplefc        Toggle freecam (or press F)\n"
                 "  rplefc_pos    Print camera position\n"
                 "  rplefc_rot    Print camera rotation\n"
                 "  rplefc_roll   Set roll\n"
@@ -709,11 +1026,19 @@ void registerReplayEditorCommands() {
                 "\n"
                 "--- Keyframes ---\n"
                 "  rplefc_skf    Create camera keyframe\n"
-                "  rplefc_list   List keyframes\n"
-                "  rplefc_del    Delete keyframe\n"
-                "  rplefc_clear  Clear all keyframes\n"
+                "  rplefc_list   List camera keyframes\n"
+                "  rplefc_del    Delete camera keyframe\n"
+                "  rplefc_clear  Clear camera keyframes\n"
                 "  rplefc_goto   Jump to keyframe\n"
                 "  rplefc_interp Set interpolation mode\n"
+                "  rplekf_l      List ALL keyframes\n"
+                "  rplekf_d      Delete nearest camera keyframe\n"
+                "  rplekf_da     Delete ALL keyframes (call twice)\n"
+                "  rplekf_da_no  Cancel pending delete-all\n"
+                "  rple_sl       Load music for timeline + export\n"
+                "\n"
+                "--- Camera Mode Keyframes ---\n"
+                "  (Create with K \xE2\x86\x92 option 2)\n"
                 "\n"
                 "--- Speed ---\n"
                 "  rpletime_skf  Create speed keyframe\n"
@@ -721,14 +1046,20 @@ void registerReplayEditorCommands() {
                 "  rpletime_del  Delete speed keyframe\n"
                 "  rpletime_clear Clear speed keyframes\n"
                 "\n"
+                "--- Audio Track ---\n"
+                "  rple_sl       Load music/audio file for timeline\n"
+                "  rple_sl_vol   Set audio track volume\n"
+                "  rple_sl_clear Remove audio track\n"
+                "\n"
                 "--- Bookmarks ---\n"
                 "  rplemark      Create bookmark\n"
                 "  rplemarks     List bookmarks\n"
                 "  rplemark_del  Delete bookmark\n"
                 "\n"
                 "--- Save/Load ---\n"
-                "  rplesave      Save .rpledit edit file\n"
-                "  rpleloadedit  Load .rpledit edit file\n"
+                "  rplesave      Save .rple.json edit file\n"
+                "  rpleloadedit  Load .rple.json edit file\n"
+                "  rpleundo      Undo last change (Ctrl+Z)\n"
                 "\n"
                 "--- Aliases ---\n"
                 "  replay_editor       = rple\n"
@@ -757,31 +1088,32 @@ void registerReplayEditorCommands() {
                     cameraMode = REPLAY_PLAYER.cameraController().modeName();
             }
             int kfCount = gReplayEditor.cameraKeyframeCount();
+            int cmKfCount = gReplayEditor.cameraModeKeyframeCount();
+            int timeKfCount = gReplayEditor.timeKeyframeCount();
             int bkCount = gReplayEditor.bookmarkCount();
+            int asCount = gReplayEditor.autosaveCount();
             std::snprintf(buf, sizeof(buf),
                 "\n=== Replay Editor Status ===\n"
                 "  Replay Loaded:     %s\n"
                 "  Editor Active:     %s\n"
                 "  Playing:           %s\n"
-                "  Paused:            %s\n"
                 "  Freecam:           %s\n"
-                "  Tick:              %u / %u\n"
-                "  Camera Keyframes:  %d\n"
-                "  Speed Keyframes:   %d\n"
+                "  MovieTick:         %.0f / %d\n"
+                "  Camera KF:         %d\n"
+                "  Camera Mode KF:    %d\n"
+                "  Speed KF:          %d\n"
                 "  Bookmarks:         %d\n"
                 "  Camera Mode:       %s\n"
+                "  Autosaves:         %d\n"
                 "  Edit File:         %s\n"
                 "=============================",
-                REPLAY_PLAYER.isPlaying() ? "YES" : "NO",
+                REPLAY_PLAYER.totalTicks() > 0 ? "YES" : "NO",
                 gReplayEditor.isLoaded() ? "YES" : "NO",
-                REPLAY_PLAYER.isPlaying() ? "YES" : "NO",
-                REPLAY_PLAYER.isPaused() ? "YES" : "NO",
+                gReplayEditor.playing ? "YES" : "NO",
                 gReplayEditor.freecam ? "ON" : "OFF",
-                REPLAY_PLAYER.currentTick(), REPLAY_PLAYER.totalTicks(),
-                kfCount,
-                gReplayEditor.timeKeyframeCount(),
-                bkCount,
-                cameraMode,
+                gReplayEditor.movieTick, gReplayEditor.totalTicks(),
+                kfCount, cmKfCount, timeKfCount, bkCount,
+                cameraMode, asCount,
                 gReplayEditor.editPath().c_str());
             Terminal::instance().addLog(buf);
         }

@@ -4,6 +4,18 @@
 #include <cstdio>
 #include <string>
 
+// ── Replay export configuration (hot-reloaded from config/replay/replay-export.json)
+
+struct ReplayExportConfig {
+    float audioVolumeMultiplier = 0.8f;
+    int exportWidth = 1920;
+    int exportHeight = 1080;
+    int exportBitrate = 0;
+    int exportCrf = 18;
+};
+
+extern ReplayExportConfig gExportConfig;
+
 struct ReplayExportJob {
     enum State { Idle, Capturing, Encoding, Done, Failed };
     State state = Idle;

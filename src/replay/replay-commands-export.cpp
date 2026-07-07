@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
@@ -16,6 +17,7 @@
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include "devtools/terminal.h"
 #include "config/player-settings.h"
@@ -375,6 +377,62 @@ void registerReplayExportCommands()
                 Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
+            }
+        }
+    });
+
+    // ── Export config commands ──────────────────────────────
+    Terminal::instance().registerCommand({
+        "export_config",
+        "Show or set export config (resolution, CRF, bitrate). Use: export_config <key> <value>",
+        "export_config [width|height|crf|bitrate|volume] <value>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                    "[EXPORT CONFIG] %dx%d CRF=%d bitrate=%dK volume=%.2f",
+                    gExportConfig.exportWidth, gExportConfig.exportHeight,
+                    gExportConfig.exportCrf, gExportConfig.exportBitrate,
+                    gExportConfig.audioVolumeMultiplier);
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[ERROR] Usage: export_config <key> <value>");
+                return;
+            }
+            const std::string& key = args[0];
+            int val = std::stoi(args[1]);
+            if (key == "width") {
+                gExportConfig.exportWidth = std::max(320, std::min(val, 7680));
+                Terminal::instance().addLog("[EXPORT CONFIG] width=" + std::to_string(gExportConfig.exportWidth));
+            } else if (key == "height") {
+                gExportConfig.exportHeight = std::max(240, std::min(val, 4320));
+                Terminal::instance().addLog("[EXPORT CONFIG] height=" + std::to_string(gExportConfig.exportHeight));
+            } else if (key == "crf") {
+                gExportConfig.exportCrf = std::max(0, std::min(val, 51));
+                Terminal::instance().addLog("[EXPORT CONFIG] crf=" + std::to_string(gExportConfig.exportCrf));
+            } else if (key == "bitrate") {
+                gExportConfig.exportBitrate = std::max(0, val);
+                Terminal::instance().addLog("[EXPORT CONFIG] bitrate=" + std::to_string(gExportConfig.exportBitrate) + "K");
+            } else if (key == "volume") {
+                gExportConfig.audioVolumeMultiplier = std::max(0.0f, std::min((float)val / 100.0f, 5.0f));
+                Terminal::instance().addLog("[EXPORT CONFIG] volume=" + std::to_string(gExportConfig.audioVolumeMultiplier));
+            } else {
+                Terminal::instance().addLog("[ERROR] Unknown key: " + key + " (use width, height, crf, bitrate, volume)");
+            }
+            // Write config to disk
+            nlohmann::json j;
+            j["exportWidth"] = gExportConfig.exportWidth;
+            j["exportHeight"] = gExportConfig.exportHeight;
+            j["exportCrf"] = gExportConfig.exportCrf;
+            j["exportBitrate"] = gExportConfig.exportBitrate;
+            j["audioVolumeMultiplier"] = gExportConfig.audioVolumeMultiplier;
+            std::ofstream f("config/replay/replay-export.json");
+            if (f.is_open()) {
+                f << j.dump(2);
+                f.close();
+                Terminal::instance().addLog("[EXPORT CONFIG] saved to config/replay/replay-export.json");
             }
         }
     });

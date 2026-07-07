@@ -12,6 +12,7 @@
 #include "combat/death-system.h"
 #include "effects/effect-part.h"
 #include "replay/replay.h"
+#include "replay/replay-editor.h"
 #include "replay/replay-export.h"
 #include "replay/replay-export-ui.h"
 #include "replay/replay-factory.h"
@@ -162,6 +163,23 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             uiDrawRect({barX, barY, barW, barH}, {0.3f, 0.3f, 0.3f, 0.7f}, "seek-bg");
             float progress = std::clamp((float)gReplayPlayer.currentTick() / (float)std::max(totalTicks, 1u), 0.0f, 1.0f);
             uiDrawRect({barX, barY, barW * progress, barH}, {0.9f, 0.9f, 0.3f, 0.9f}, "seek-fill");
+            // Keyframe markers on timeline when editor is loaded
+            if (gReplayEditor.isLoaded()) {
+                float markerH = barH + 4.0f;
+                float markerY = barY - 2.0f;
+                for (int ki = 0; ki < gReplayEditor.cameraKeyframeCount(); ++ki) {
+                    float kfX = barX + (float)gReplayEditor.cameraKeyframe(ki).tick / (float)totalTicks * barW;
+                    uiDrawRect({kfX - 1.0f, markerY, 3.0f, markerH}, {0.2f, 0.8f, 0.2f, 0.9f}, "kf-marker-cam");
+                }
+                for (int ki = 0; ki < gReplayEditor.cameraModeKeyframeCount(); ++ki) {
+                    float kfX = barX + (float)gReplayEditor.cameraModeKeyframe(ki).tick / (float)totalTicks * barW;
+                    uiDrawRect({kfX - 1.0f, markerY, 3.0f, markerH}, {0.2f, 0.5f, 1.0f, 0.9f}, "kf-marker-mode");
+                }
+                for (int ki = 0; ki < gReplayEditor.timeKeyframeCount(); ++ki) {
+                    float kfX = barX + (float)gReplayEditor.timeKeyframe(ki).tick / (float)totalTicks * barW;
+                    uiDrawRect({kfX - 1.0f, markerY, 3.0f, markerH}, {1.0f, 0.8f, 0.2f, 0.9f}, "kf-marker-time");
+                }
+            }
         }
         }
 
@@ -180,25 +198,47 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         }
 
         if (!gReplayExportRenderMode) {
-        const float helpX = uiScreenW() - 220.0f;
-        const float helpY = uiScreenH() - 140.0f;
-        const float helpW = 200.0f;
-        const float helpH = 110.0f;
+        const bool editorActive = gReplayEditor.isLoaded();
+        const float helpX = uiScreenW() - 230.0f;
+        const float helpW = 210.0f;
+        int lineCount = editorActive ? 9 : 5;
+        const float helpH = (float)(lineCount * 16 + 12);
+        const float helpY = uiScreenH() - helpH - 10.0f;
         uiDrawRect({helpX, helpY, helpW, helpH},
                    {0.0f, 0.0f, 0.0f, 0.65f}, "replay-help-bg");
         float hy = helpY + 6.0f;
-        uiDrawText("REPLAY CONTROLS", helpX + 8.0f, hy, 0.28f,
-                   {0.9f, 0.9f, 0.3f, 1.0f}); hy += 18.0f;
-        uiDrawText("SPACE    Pause/Resume", helpX + 8.0f, hy, 0.24f,
-                   {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
-        uiDrawText("<-       Back 5s", helpX + 8.0f, hy, 0.24f,
-                   {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
-        uiDrawText("->       Forward 5s", helpX + 8.0f, hy, 0.24f,
-                   {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
-        uiDrawText("L        Cinematic", helpX + 8.0f, hy, 0.24f,
-                   {0.8f, 0.8f, 1.0f, 1.0f}); hy += 16.0f;
-        uiDrawText("freecam  Free Camera", helpX + 8.0f, hy, 0.24f,
-                   {0.8f, 0.8f, 1.0f, 1.0f});
+        uiDrawText(editorActive ? "EDITOR CONTROLS" : "REPLAY CONTROLS",
+                   helpX + 8.0f, hy, 0.28f,
+                   {0.9f, 0.9f, 0.3f, 1.0f}); hy += 16.0f;
+        if (editorActive) {
+            uiDrawText("SPACE    Play/Pause", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("F        Toggle Freecam", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("K        Keyframe", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("<-/->    Seek 1s", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("Sh+Up/Dn KF Nav", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("Ctrl+Z   Undo", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("WASD+QE  Fly", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("rplehelp for more", helpX + 8.0f, hy, 0.24f,
+                       {0.5f, 0.5f, 0.7f, 1.0f});
+        } else {
+            uiDrawText("SPACE    Pause/Resume", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("<-       Back 5s", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("->       Forward 5s", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("L        Cinematic", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f}); hy += 15.0f;
+            uiDrawText("F3       Save replay", helpX + 8.0f, hy, 0.24f,
+                       {0.8f, 0.8f, 1.0f, 1.0f});
+        }
         }
     }
 }

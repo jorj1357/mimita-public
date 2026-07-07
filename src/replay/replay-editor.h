@@ -51,6 +51,43 @@ struct ReplayEditorCameraKeyframe {
     KeyframeInterp interp = KeyframeInterp::Linear;
 };
 
+// ── Camera mode keyframe ────────────────────────────────────
+// Controls which camera mode is active at a given tick.
+
+enum class ReplayEditorCamMode {
+    ThirdPerson,
+    Freecam,
+    FirstPerson
+};
+
+inline const char* camModeName(ReplayEditorCamMode m) {
+    switch (m) {
+        case ReplayEditorCamMode::ThirdPerson: return "thirdperson";
+        case ReplayEditorCamMode::Freecam: return "freecam";
+        case ReplayEditorCamMode::FirstPerson: return "firstperson";
+        default: return "thirdperson";
+    }
+}
+
+inline ReplayEditorCamMode camModeFromString(const std::string& s) {
+    if (s == "freecam") return ReplayEditorCamMode::Freecam;
+    if (s == "firstperson" || s == "fp") return ReplayEditorCamMode::FirstPerson;
+    return ReplayEditorCamMode::ThirdPerson;
+}
+
+struct ReplayEditorCamModeKeyframe {
+    int tick = 0;
+    ReplayEditorCamMode mode = ReplayEditorCamMode::ThirdPerson;
+};
+
+// ── Keyframe type for the K prompt ──────────────────────────
+
+enum class KeyframeType {
+    CameraPosition,
+    CameraMode,
+    PlaybackSpeed
+};
+
 // ── Time (playback speed) keyframe ──────────────────────────
 
 struct ReplayEditorTimeKeyframe {
@@ -66,9 +103,26 @@ struct ReplayEditorBookmark {
     std::string label;
 };
 
+// ── Autosave entry for Ctrl+Z undo ──────────────────────────
+
+struct ReplayEditorAutosave {
+    std::string path;
+    double timestamp = 0.0;
+};
+
+// ── Audio track for replay editor timeline ──────────────────
+
+struct ReplayEditorAudioTrack {
+    std::string path;
+    int startTick = 0;
+    float startSeconds = 0.0f;
+    float volume = 1.0f;
+    bool enabled = true;
+};
+
 // ── Replay Editor ───────────────────────────────────────────
-// Owns three timelines: replay (immutable), camera, time.
-// Persists edits to a .rpledit file beside the replay JSON.
+// Owns timelines: replay (immutable), camera, camera-mode, time.
+// Persists to a .rple.json file beside the replay JSON.
 
 class ReplayEditor {
 public:
@@ -85,13 +139,13 @@ public:
     double durationSec() const;
 
     // ── Playback state ───────────────────────────────────
-    float movieTick = 0.0f;        // fractional tick (movie time)
+    float movieTick = 0.0f;
     bool playing = false;
     float playbackSpeed = 1.0f;
 
     // ── Free camera state ────────────────────────────────
     bool freecam = false;
-    std::string mPrevCameraMode;   // camera mode to restore on freecam exit
+    std::string mPrevCameraMode;
     glm::vec3 freecamPos{0.0f, 0.0f, 0.0f};
     glm::quat freecamRot{1.0f, 0.0f, 0.0f, 0.0f};
     float freecamRoll = 0.0f;
@@ -106,6 +160,15 @@ public:
     int cameraKeyframeCount() const { return (int)mCameraKeyframes.size(); }
     const ReplayEditorCameraKeyframe& cameraKeyframe(int index) const;
     void setCameraKeyframeInterp(int index, KeyframeInterp interp);
+    int findNearestCameraKeyframe(int tick) const;
+
+    // ── Camera mode keyframes ────────────────────────────
+    void addCameraModeKeyframe(int tick, ReplayEditorCamMode mode);
+    bool deleteCameraModeKeyframe(int index);
+    void clearCameraModeKeyframes();
+    int cameraModeKeyframeCount() const { return (int)mCameraModeKeyframes.size(); }
+    const ReplayEditorCamModeKeyframe& cameraModeKeyframe(int index) const;
+    ReplayEditorCamMode cameraModeAtTick(int tick) const;
 
     // ── Time keyframes ───────────────────────────────────
     void addTimeKeyframe(int tick, float speed, KeyframeInterp interp);
@@ -122,24 +185,54 @@ public:
     int bookmarkCount() const { return (int)mBookmarks.size(); }
     const ReplayEditorBookmark& bookmark(int index) const;
 
+    // ── Audio tracks ────────────────────────────────────
+    void setAudioTrack(const std::string& path, float volume = 1.0f);
+    void clearAudioTracks();
+    int audioTrackCount() const { return (int)mAudioTracks.size(); }
+    const ReplayEditorAudioTrack& audioTrack(int index) const;
+    ReplayEditorAudioTrack* mutableAudioTrack(int index);
+
     // ── Persistence ─────────────────────────────────────
     bool saveEdit();
     bool loadEdit();
+
+    // ── Autosave / Undo ─────────────────────────────────
+    void autosave();
+    bool undoLastAutosave();
+    void clearAutosaves();
 
     // ── Editor tick (call every frame during editing) ────
     void update(float dt);
     void seekToTick(int tick);
 
+    // ── Keyframe prompt state (K dialog) ─────────────────
+    int keyframePromptStage = 0;     // 0=none, 1=type, 2=camera-mode
+    int keyframePromptTick = 0;      // tick when K was pressed
+
+    // ── Autosave info ──────────────────────────────────
+    int autosaveCount() const { return (int)mAutosaves.size(); }
+
+    // ── Keyframe navigation ─────────────────────────────
+    int nextKeyframeTick(int currentTick) const;
+    int prevKeyframeTick(int currentTick) const;
+
 private:
     bool mLoaded = false;
-    std::string mReplayPath;    // path to the .json replay
-    std::string mEditPath;      // path to the .rpledit file
+    std::string mReplayPath;
+    std::string mEditPath;
     int mTotalTicks = 0;
     int mTickRate = 60;
 
     std::vector<ReplayEditorCameraKeyframe> mCameraKeyframes;
+    std::vector<ReplayEditorCamModeKeyframe> mCameraModeKeyframes;
     std::vector<ReplayEditorTimeKeyframe> mTimeKeyframes;
     std::vector<ReplayEditorBookmark> mBookmarks;
+    std::vector<ReplayEditorAudioTrack> mAudioTracks;
+
+    double mAutosaveTimer = 0.0;
+    static constexpr double AUTOSAVE_INTERVAL = 30.0;
+    static constexpr int MAX_AUTOSAVES = 50;
+    std::vector<ReplayEditorAutosave> mAutosaves;
 
     static float applyEasing(float t, KeyframeInterp interp);
     static float lerpTime(float a, float b, float t, KeyframeInterp interp);

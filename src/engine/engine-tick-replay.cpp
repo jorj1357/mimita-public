@@ -22,6 +22,7 @@
 #include "devtools/dev-overlay.h"
 #include "devtools/npc-spawn-commands.h"
 #include "replay/replay.h"
+#include "replay/replay-editor.h"
 #include "replay/replay-export.h"
 #include "replay/replay-factory.h"
 #include "gui/gui-layout.h"
@@ -148,8 +149,10 @@ void engineTickReplay(Engine& engine, float dt)
     DebugVis::beginCollisionFrame();
     // During export capture, skip the normal update and let the seek block below
     // handle frame advancement + effect collection, otherwise effects collect twice.
-    if (getReplayExportJob().state != ReplayExportJob::Capturing)
+    if (getReplayExportJob().state != ReplayExportJob::Capturing) {
         gReplayPlayer.update(dt);
+        gReplayEditor.update(dt);
+    }
 
     // Replay export mode: seek and rebuild interpolated frame for capture
     {

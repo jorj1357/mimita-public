@@ -1,22 +1,4 @@
 {
-  "binds": {},
-  "competitive": {
-    "achievements": [],
-    "best_streak": 1,
-    "current_streak": 1,
-    "games_played": 0,
-    "global_rank": 0,
-    "highest_mmr": 5000,
-    "losses": 0,
-    "mmr": 5000,
-    "wins": 0
-  },
-  "debug": {
-    "collision": false,
-    "movement": false,
-    "physics": false
-  },
-  "name": "default",
   "settings": {
     "avatar_name": "jorj1357",
     "bloodfx": false,
@@ -27,7 +9,7 @@
     "collision_movement_bias": 0.75,
     "collision_seam_tolerance": 0.03500000014901161,
     "debug_combat": false,
-    "equipped_slot": 2,
+    "equipped_slot": 1,
     "fov": 112.33551788330078,
     "freecam_speed": 18.0,
     "graphics_preset": "Max",

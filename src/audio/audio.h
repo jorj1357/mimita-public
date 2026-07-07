@@ -63,3 +63,12 @@ std::string resolveSoundPath(const std::string& name);
 bool decodeAudioToPCM(const std::string& path, std::vector<int16_t>& outPCM,
                       uint32_t& outSampleRate, uint32_t& outChannels,
                       uint32_t targetSampleRate = 48000, uint32_t targetChannels = 2);
+
+// Preview music track for replay editor (uses miniaudio engine internally)
+bool playReplayMusicPreview(const std::string& path, float volume = 1.0f);
+void stopReplayMusicPreview();
+void pauseReplayMusicPreview();
+void resumeReplayMusicPreview();
+bool seekReplayMusicPreview(float seconds);
+bool isReplayMusicPreviewPlaying();
+float getReplayMusicPreviewDuration();

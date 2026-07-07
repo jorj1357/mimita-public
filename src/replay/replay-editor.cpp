@@ -2,11 +2,13 @@
 #include "replay-io.h"
 #include "replay.h"
 #include "terminal/terminal-state.h"
+#include "audio/audio.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -24,7 +26,7 @@ float ReplayEditor::applyEasing(float t, KeyframeInterp interp) {
         case KeyframeInterp::EaseOut:   return t * (2.0f - t);
         case KeyframeInterp::EaseInOut: return t < 0.5f ? 2.0f * t * t : -1.0f + (4.0f - 2.0f * t) * t;
         case KeyframeInterp::Smooth:    return t * t * (3.0f - 2.0f * t);
-        case KeyframeInterp::Cut:       return 0.0f;  // hold at start until cut
+        case KeyframeInterp::Cut:       return 0.0f;
         default: return t;
     }
 }
@@ -40,28 +42,36 @@ bool ReplayEditor::load(const std::string& replayPath) {
     unload();
     mReplayPath = replayPath;
 
-    // Build .rpledit path: strip .json, add .rpledit
     std::string base = replayPath;
     if (base.size() > 5 && base.rfind(".json") == base.size() - 5)
         base = base.substr(0, base.size() - 5);
     else if (base.size() > 11 && base.rfind(".mclip.json") == base.size() - 11)
         base = base.substr(0, base.size() - 11);
-    mEditPath = base + ".rpledit";
+    mEditPath = base + ".rple.json";
 
-    // Load replay header to get tick count from the REPLAY_PLAYER if available
     if (REPLAY_PLAYER.totalTicks() > 0) {
         mTotalTicks = (int)REPLAY_PLAYER.totalTicks();
         mTickRate = 60;
     } else {
-        // Fallback: quick scan from file
         mTotalTicks = 0;
         mTickRate = 60;
     }
 
     mLoaded = true;
+    mAutosaveTimer = 0.0;
 
-    // Try loading existing .rpledit
     loadEdit();
+
+    // Start music preview if audio track exists
+    if (!mAudioTracks.empty() && mAudioTracks[0].enabled && !mAudioTracks[0].path.empty()) {
+        Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Auto-starting preview: %s\n",
+                   mAudioTracks[0].path.c_str());
+        if (playReplayMusicPreview(mAudioTracks[0].path, mAudioTracks[0].volume)) {
+            seekReplayMusicPreview(0.0f);
+            // Pause preview until user starts playback
+            pauseReplayMusicPreview();
+        }
+    }
 
     Debug::log(Debug::Category::Replay, "[RPLE] Loaded replay: %s (ticks=%d)\n",
                replayPath.c_str(), mTotalTicks);
@@ -69,6 +79,7 @@ bool ReplayEditor::load(const std::string& replayPath) {
 }
 
 void ReplayEditor::unload() {
+    stopReplayMusicPreview();
     mLoaded = false;
     mReplayPath.clear();
     mEditPath.clear();
@@ -78,9 +89,15 @@ void ReplayEditor::unload() {
     playing = false;
     playbackSpeed = 1.0f;
     freecam = false;
+    keyframePromptStage = 0;
+    keyframePromptTick = 0;
     mCameraKeyframes.clear();
+    mCameraModeKeyframes.clear();
     mTimeKeyframes.clear();
     mBookmarks.clear();
+    mAudioTracks.clear();
+    mAutosaves.clear();
+    mAutosaveTimer = 0.0;
 }
 
 double ReplayEditor::durationSec() const {
@@ -91,6 +108,18 @@ double ReplayEditor::durationSec() const {
 
 void ReplayEditor::addCameraKeyframe(int tick, const glm::vec3& pos, const glm::quat& rot,
                                       float roll, float fov, KeyframeInterp interp) {
+    for (auto& kf : mCameraKeyframes) {
+        if (kf.tick == tick) {
+            kf.position = pos;
+            kf.rotation = rot;
+            kf.roll = roll;
+            kf.fov = fov;
+            kf.interp = interp;
+            Debug::log(Debug::Category::Replay, "[RPLE] Replaced camera keyframe at tick %d\n", tick);
+            autosave();
+            return;
+        }
+    }
     ReplayEditorCameraKeyframe kf;
     kf.tick = tick;
     kf.position = pos;
@@ -101,20 +130,23 @@ void ReplayEditor::addCameraKeyframe(int tick, const glm::vec3& pos, const glm::
     mCameraKeyframes.push_back(kf);
     std::sort(mCameraKeyframes.begin(), mCameraKeyframes.end(),
         [](const auto& a, const auto& b) { return a.tick < b.tick; });
-    Debug::log(Debug::Category::Replay, "[RPLE] Camera keyframe %d at tick %d\n",
-               (int)mCameraKeyframes.size(), tick);
+    Debug::log(Debug::Category::Replay, "[RPLE] Camera keyframe at tick %d pos=(%.1f %.1f %.1f) roll=%.1f fov=%.0f\n",
+               tick, pos.x, pos.y, pos.z, roll, fov);
+    autosave();
 }
 
 bool ReplayEditor::deleteCameraKeyframe(int index) {
     if (index < 0 || index >= (int)mCameraKeyframes.size()) return false;
     mCameraKeyframes.erase(mCameraKeyframes.begin() + index);
     Debug::log(Debug::Category::Replay, "[RPLE] Deleted camera keyframe %d\n", index);
+    autosave();
     return true;
 }
 
 void ReplayEditor::clearCameraKeyframes() {
     mCameraKeyframes.clear();
     Debug::log(Debug::Category::Replay, "[RPLE] Cleared all camera keyframes\n");
+    autosave();
 }
 
 const ReplayEditorCameraKeyframe& ReplayEditor::cameraKeyframe(int index) const {
@@ -128,6 +160,72 @@ void ReplayEditor::setCameraKeyframeInterp(int index, KeyframeInterp interp) {
         mCameraKeyframes[index].interp = interp;
 }
 
+int ReplayEditor::findNearestCameraKeyframe(int tick) const {
+    if (mCameraKeyframes.empty()) return -1;
+    int best = 0;
+    int bestDist = std::abs(mCameraKeyframes[0].tick - tick);
+    for (int i = 1; i < (int)mCameraKeyframes.size(); ++i) {
+        int dist = std::abs(mCameraKeyframes[i].tick - tick);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = i;
+        }
+    }
+    return best;
+}
+
+// ── Camera mode keyframes ───────────────────────────────────
+
+void ReplayEditor::addCameraModeKeyframe(int tick, ReplayEditorCamMode mode) {
+    for (auto& kf : mCameraModeKeyframes) {
+        if (kf.tick == tick) {
+            kf.mode = mode;
+            Debug::log(Debug::Category::Replay, "[RPLE] Replaced camera mode keyframe at tick %d\n", tick);
+            autosave();
+            return;
+        }
+    }
+    ReplayEditorCamModeKeyframe kf;
+    kf.tick = tick;
+    kf.mode = mode;
+    mCameraModeKeyframes.push_back(kf);
+    std::sort(mCameraModeKeyframes.begin(), mCameraModeKeyframes.end(),
+        [](const auto& a, const auto& b) { return a.tick < b.tick; });
+    Debug::log(Debug::Category::Replay, "[RPLE] Camera mode keyframe at tick %d mode=%s\n",
+               tick, camModeName(mode));
+    autosave();
+}
+
+bool ReplayEditor::deleteCameraModeKeyframe(int index) {
+    if (index < 0 || index >= (int)mCameraModeKeyframes.size()) return false;
+    mCameraModeKeyframes.erase(mCameraModeKeyframes.begin() + index);
+    Debug::log(Debug::Category::Replay, "[RPLE] Deleted camera mode keyframe %d\n", index);
+    autosave();
+    return true;
+}
+
+void ReplayEditor::clearCameraModeKeyframes() {
+    mCameraModeKeyframes.clear();
+    Debug::log(Debug::Category::Replay, "[RPLE] Cleared all camera mode keyframes\n");
+    autosave();
+}
+
+const ReplayEditorCamModeKeyframe& ReplayEditor::cameraModeKeyframe(int index) const {
+    static ReplayEditorCamModeKeyframe sDummy;
+    if (index < 0 || index >= (int)mCameraModeKeyframes.size()) return sDummy;
+    return mCameraModeKeyframes[index];
+}
+
+ReplayEditorCamMode ReplayEditor::cameraModeAtTick(int tick) const {
+    if (mCameraModeKeyframes.empty()) return ReplayEditorCamMode::ThirdPerson;
+    int idx = -1;
+    for (int i = 0; i < (int)mCameraModeKeyframes.size(); ++i) {
+        if (mCameraModeKeyframes[i].tick <= tick) idx = i;
+    }
+    if (idx < 0) return ReplayEditorCamMode::ThirdPerson;
+    return mCameraModeKeyframes[idx].mode;
+}
+
 // ── Time keyframes ──────────────────────────────────────────
 
 void ReplayEditor::addTimeKeyframe(int tick, float speed, KeyframeInterp interp) {
@@ -139,16 +237,19 @@ void ReplayEditor::addTimeKeyframe(int tick, float speed, KeyframeInterp interp)
     std::sort(mTimeKeyframes.begin(), mTimeKeyframes.end(),
         [](const auto& a, const auto& b) { return a.tick < b.tick; });
     Debug::log(Debug::Category::Replay, "[RPLE] Time keyframe at tick %d = %.2fx\n", tick, speed);
+    autosave();
 }
 
 bool ReplayEditor::deleteTimeKeyframe(int index) {
     if (index < 0 || index >= (int)mTimeKeyframes.size()) return false;
     mTimeKeyframes.erase(mTimeKeyframes.begin() + index);
+    autosave();
     return true;
 }
 
 void ReplayEditor::clearTimeKeyframes() {
     mTimeKeyframes.clear();
+    autosave();
 }
 
 const ReplayEditorTimeKeyframe& ReplayEditor::timeKeyframe(int index) const {
@@ -159,7 +260,6 @@ const ReplayEditorTimeKeyframe& ReplayEditor::timeKeyframe(int index) const {
 
 float ReplayEditor::playbackSpeedAtTick(int tick) const {
     if (mTimeKeyframes.empty()) return 1.0f;
-    // Find bracketing keyframes
     int idx = -1;
     for (int i = 0; i < (int)mTimeKeyframes.size(); ++i) {
         if (mTimeKeyframes[i].tick <= tick) idx = i;
@@ -200,16 +300,74 @@ const ReplayEditorBookmark& ReplayEditor::bookmark(int index) const {
     return mBookmarks[index];
 }
 
+// ── Audio tracks ────────────────────────────────────────────
+
+void ReplayEditor::setAudioTrack(const std::string& path, float volume)
+{
+    mAudioTracks.clear();
+    ReplayEditorAudioTrack track;
+    track.path = path;
+    track.startTick = 0;
+    track.startSeconds = 0.0f;
+    track.volume = volume;
+    track.enabled = true;
+    mAudioTracks.push_back(track);
+    Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Set audio track: %s (vol=%.2f)\n", path.c_str(), volume);
+    autosave();
+}
+
+void ReplayEditor::clearAudioTracks()
+{
+    mAudioTracks.clear();
+    Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Cleared audio tracks\n");
+    autosave();
+}
+
+const ReplayEditorAudioTrack& ReplayEditor::audioTrack(int index) const
+{
+    static ReplayEditorAudioTrack sDummy;
+    if (index < 0 || index >= (int)mAudioTracks.size()) return sDummy;
+    return mAudioTracks[index];
+}
+
+ReplayEditorAudioTrack* ReplayEditor::mutableAudioTrack(int index)
+{
+    if (index < 0 || index >= (int)mAudioTracks.size()) return nullptr;
+    return &mAudioTracks[index];
+}
+
+// ── Keyframe navigation ─────────────────────────────────────
+
+int ReplayEditor::nextKeyframeTick(int currentTick) const {
+    int best = -1;
+    for (const auto& kf : mCameraKeyframes) {
+        if (kf.tick > currentTick) { best = kf.tick; break; }
+    }
+    if (best >= 0) return best;
+    if (!mCameraKeyframes.empty()) return mCameraKeyframes.front().tick;
+    return -1;
+}
+
+int ReplayEditor::prevKeyframeTick(int currentTick) const {
+    int best = -1;
+    for (const auto& kf : mCameraKeyframes) {
+        if (kf.tick < currentTick) best = kf.tick;
+        else break;
+    }
+    if (best >= 0) return best;
+    if (!mCameraKeyframes.empty()) return mCameraKeyframes.back().tick;
+    return -1;
+}
+
 // ── Persistence ─────────────────────────────────────────────
 
 bool ReplayEditor::saveEdit() {
     nlohmann::json j;
-    j["version"] = 1;
+    j["version"] = 2;
     j["replayPath"] = mReplayPath;
     j["totalTicks"] = mTotalTicks;
     j["tickRate"] = mTickRate;
 
-    // Camera keyframes
     auto& camArr = j["cameraKeyframes"] = nlohmann::json::array();
     for (const auto& kf : mCameraKeyframes) {
         nlohmann::json k;
@@ -222,7 +380,14 @@ bool ReplayEditor::saveEdit() {
         camArr.push_back(k);
     }
 
-    // Time keyframes
+    auto& camModeArr = j["cameraModeKeyframes"] = nlohmann::json::array();
+    for (const auto& kf : mCameraModeKeyframes) {
+        nlohmann::json k;
+        k["tick"] = kf.tick;
+        k["mode"] = camModeName(kf.mode);
+        camModeArr.push_back(k);
+    }
+
     auto& timeArr = j["timeKeyframes"] = nlohmann::json::array();
     for (const auto& kf : mTimeKeyframes) {
         nlohmann::json k;
@@ -232,7 +397,6 @@ bool ReplayEditor::saveEdit() {
         timeArr.push_back(k);
     }
 
-    // Bookmarks
     auto& bmArr = j["bookmarks"] = nlohmann::json::array();
     for (const auto& bm : mBookmarks) {
         nlohmann::json b;
@@ -241,7 +405,18 @@ bool ReplayEditor::saveEdit() {
         bmArr.push_back(b);
     }
 
-    // Free camera state
+    // Audio tracks
+    auto& audioArr = j["audio_tracks"] = nlohmann::json::array();
+    for (const auto& at : mAudioTracks) {
+        nlohmann::json a;
+        a["path"] = at.path;
+        a["start_tick"] = at.startTick;
+        a["start_seconds"] = at.startSeconds;
+        a["volume"] = at.volume;
+        a["enabled"] = at.enabled;
+        audioArr.push_back(a);
+    }
+
     j["freecam"] = freecam;
     j["freecamPos"] = vec3Json(freecamPos);
     j["freecamRot"] = {freecamRot.x, freecamRot.y, freecamRot.z, freecamRot.w};
@@ -269,6 +444,7 @@ bool ReplayEditor::loadEdit() {
     f.close();
 
     mCameraKeyframes.clear();
+    mCameraModeKeyframes.clear();
     mTimeKeyframes.clear();
     mBookmarks.clear();
 
@@ -286,6 +462,218 @@ bool ReplayEditor::loadEdit() {
             kf.fov = k.value("fov", 70.0f);
             kf.interp = interpFromString(k.value("interp", "linear"));
             mCameraKeyframes.push_back(kf);
+        }
+    }
+
+    if (j.contains("cameraModeKeyframes")) {
+        for (const auto& k : j["cameraModeKeyframes"]) {
+            ReplayEditorCamModeKeyframe kf;
+            kf.tick = k.value("tick", 0);
+            kf.mode = camModeFromString(k.value("mode", "thirdperson"));
+            mCameraModeKeyframes.push_back(kf);
+        }
+    }
+
+    if (j.contains("timeKeyframes")) {
+        for (const auto& k : j["timeKeyframes"]) {
+            ReplayEditorTimeKeyframe kf;
+            kf.tick = k.value("tick", 0);
+            kf.speed = k.value("speed", 1.0f);
+            kf.interp = interpFromString(k.value("interp", "linear"));
+            mTimeKeyframes.push_back(kf);
+        }
+    }
+
+    if (j.contains("bookmarks")) {
+        for (const auto& b : j["bookmarks"]) {
+            ReplayEditorBookmark bm;
+            bm.tick = b.value("tick", 0);
+            bm.label = b.value("label", "Marker");
+            mBookmarks.push_back(bm);
+        }
+    }
+
+    // Audio tracks
+    mAudioTracks.clear();
+    if (j.contains("audio_tracks")) {
+        for (const auto& a : j["audio_tracks"]) {
+            ReplayEditorAudioTrack at;
+            at.path = a.value("path", "");
+            at.startTick = a.value("start_tick", 0);
+            at.startSeconds = a.value("start_seconds", 0.0f);
+            at.volume = a.value("volume", 1.0f);
+            at.enabled = a.value("enabled", true);
+            mAudioTracks.push_back(at);
+        }
+    }
+
+    freecam = j.value("freecam", false);
+    if (j.contains("freecamPos")) freecamPos = jsonVec3(j["freecamPos"]);
+    if (j.contains("freecamRot") && j["freecamRot"].is_array() && j["freecamRot"].size() == 4)
+        freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+    freecamRoll = j.value("freecamRoll", 0.0f);
+    freecamFov = j.value("freecamFov", 70.0f);
+    defaultInterp = interpFromString(j.value("defaultInterp", "linear"));
+
+    Debug::log(Debug::Category::Replay, "[RPLE] Loaded edit: %d cam kf, %d cam-mode kf, %d time kf, %d marks, %d audio tracks\n",
+               (int)mCameraKeyframes.size(), (int)mCameraModeKeyframes.size(),
+               (int)mTimeKeyframes.size(), (int)mBookmarks.size(), (int)mAudioTracks.size());
+    return true;
+}
+
+// ── Autosave / Undo ─────────────────────────────────────────
+
+void ReplayEditor::autosave() {
+    if (!mLoaded || mEditPath.empty()) return;
+    std::error_code ec;
+    std::filesystem::create_directories("replays/editor-autosaves", ec);
+
+    char timeBuf[32];
+    std::time_t now = std::time(nullptr);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &now);
+#else
+    localtime_r(&now, &local);
+#endif
+    std::strftime(timeBuf, sizeof(timeBuf), "%Y%m%d_%H%M%S", &local);
+
+    std::string base = std::filesystem::path(mEditPath).stem().string();
+    std::string asPath = "replays/editor-autosaves/" + base + "_" + timeBuf + ".autosave.json";
+
+    nlohmann::json j;
+    j["version"] = 2;
+    j["replayPath"] = mReplayPath;
+    j["totalTicks"] = mTotalTicks;
+    j["tickRate"] = mTickRate;
+
+    auto& camArr = j["cameraKeyframes"] = nlohmann::json::array();
+    for (const auto& kf : mCameraKeyframes) {
+        nlohmann::json k;
+        k["tick"] = kf.tick;
+        k["position"] = vec3Json(kf.position);
+        k["rotation"] = {kf.rotation.x, kf.rotation.y, kf.rotation.z, kf.rotation.w};
+        k["roll"] = kf.roll;
+        k["fov"] = kf.fov;
+        k["interp"] = interpName(kf.interp);
+        camArr.push_back(k);
+    }
+
+    auto& camModeArr = j["cameraModeKeyframes"] = nlohmann::json::array();
+    for (const auto& kf : mCameraModeKeyframes) {
+        nlohmann::json k;
+        k["tick"] = kf.tick;
+        k["mode"] = camModeName(kf.mode);
+        camModeArr.push_back(k);
+    }
+
+    auto& timeArr = j["timeKeyframes"] = nlohmann::json::array();
+    for (const auto& kf : mTimeKeyframes) {
+        nlohmann::json k;
+        k["tick"] = kf.tick;
+        k["speed"] = kf.speed;
+        k["interp"] = interpName(kf.interp);
+        timeArr.push_back(k);
+    }
+
+    auto& bmArr = j["bookmarks"] = nlohmann::json::array();
+    for (const auto& bm : mBookmarks) {
+        nlohmann::json b;
+        b["tick"] = bm.tick;
+        b["label"] = bm.label;
+        bmArr.push_back(b);
+    }
+
+    // Audio tracks
+    auto& audioArr = j["audio_tracks"] = nlohmann::json::array();
+    for (const auto& at : mAudioTracks) {
+        nlohmann::json a;
+        a["path"] = at.path;
+        a["start_tick"] = at.startTick;
+        a["start_seconds"] = at.startSeconds;
+        a["volume"] = at.volume;
+        a["enabled"] = at.enabled;
+        audioArr.push_back(a);
+    }
+
+    j["freecam"] = freecam;
+    j["freecamPos"] = vec3Json(freecamPos);
+    j["freecamRot"] = {freecamRot.x, freecamRot.y, freecamRot.z, freecamRot.w};
+    j["freecamRoll"] = freecamRoll;
+    j["freecamFov"] = freecamFov;
+    j["defaultInterp"] = interpName(defaultInterp);
+
+    std::ofstream f(asPath);
+    if (!f.is_open()) {
+        Debug::log(Debug::Category::Replay, "[RPLE] Autosave failed: %s\n", asPath.c_str());
+        return;
+    }
+    f << j.dump(2);
+    f.close();
+
+    ReplayEditorAutosave entry;
+    entry.path = asPath;
+    entry.timestamp = (double)now;
+    mAutosaves.push_back(entry);
+
+    while ((int)mAutosaves.size() > MAX_AUTOSAVES) {
+        std::filesystem::remove(mAutosaves.front().path, ec);
+        mAutosaves.erase(mAutosaves.begin());
+    }
+
+    Debug::log(Debug::Category::Replay, "[RPLE] Autosave: %s (total=%zu)\n",
+               asPath.c_str(), mAutosaves.size());
+}
+
+bool ReplayEditor::undoLastAutosave() {
+    if (mAutosaves.empty()) {
+        Debug::log(Debug::Category::Replay, "[RPLE] Undo: no autosaves available\n");
+        return false;
+    }
+
+    const ReplayEditorAutosave& entry = mAutosaves.back();
+    if (!std::filesystem::exists(entry.path)) {
+        mAutosaves.pop_back();
+        return undoLastAutosave();
+    }
+
+    std::ifstream f(entry.path);
+    if (!f.is_open()) {
+        mAutosaves.pop_back();
+        return undoLastAutosave();
+    }
+    nlohmann::json j;
+    try { f >> j; } catch (...) { f.close(); mAutosaves.pop_back(); return undoLastAutosave(); }
+    f.close();
+
+    mCameraKeyframes.clear();
+    mCameraModeKeyframes.clear();
+    mTimeKeyframes.clear();
+    mBookmarks.clear();
+
+    if (j.contains("totalTicks")) mTotalTicks = j["totalTicks"];
+    if (j.contains("tickRate")) mTickRate = j["tickRate"];
+
+    if (j.contains("cameraKeyframes")) {
+        for (const auto& k : j["cameraKeyframes"]) {
+            ReplayEditorCameraKeyframe kf;
+            kf.tick = k.value("tick", 0);
+            kf.position = jsonVec3(k["position"]);
+            if (k.contains("rotation") && k["rotation"].is_array() && k["rotation"].size() == 4)
+                kf.rotation = {k["rotation"][0], k["rotation"][1], k["rotation"][2], k["rotation"][3]};
+            kf.roll = k.value("roll", 0.0f);
+            kf.fov = k.value("fov", 70.0f);
+            kf.interp = interpFromString(k.value("interp", "linear"));
+            mCameraKeyframes.push_back(kf);
+        }
+    }
+
+    if (j.contains("cameraModeKeyframes")) {
+        for (const auto& k : j["cameraModeKeyframes"]) {
+            ReplayEditorCamModeKeyframe kf;
+            kf.tick = k.value("tick", 0);
+            kf.mode = camModeFromString(k.value("mode", "thirdperson"));
+            mCameraModeKeyframes.push_back(kf);
         }
     }
 
@@ -316,26 +704,63 @@ bool ReplayEditor::loadEdit() {
     freecamFov = j.value("freecamFov", 70.0f);
     defaultInterp = interpFromString(j.value("defaultInterp", "linear"));
 
-    Debug::log(Debug::Category::Replay, "[RPLE] Loaded edit: %d cam kf, %d time kf, %d marks\n",
-               (int)mCameraKeyframes.size(), (int)mTimeKeyframes.size(), (int)mBookmarks.size());
+    std::error_code ec;
+    std::filesystem::remove(entry.path, ec);
+    mAutosaves.pop_back();
+
+    Debug::log(Debug::Category::Replay, "[RPLE] Undo: restored from autosave (%zu remaining)\n",
+               mAutosaves.size());
     return true;
+}
+
+void ReplayEditor::clearAutosaves() {
+    std::error_code ec;
+    for (const auto& as : mAutosaves)
+        std::filesystem::remove(as.path, ec);
+    mAutosaves.clear();
+    Debug::log(Debug::Category::Replay, "[RPLE] Cleared %zu autosaves\n", mAutosaves.size());
 }
 
 // ── Update ──────────────────────────────────────────────────
 
 void ReplayEditor::update(float dt) {
-    if (!mLoaded || !playing) return;
+    if (!mLoaded) return;
 
-    // Compute playback speed from time timeline
-    float speed = playbackSpeedAtTick((int)movieTick);
-    movieTick += dt * (float)mTickRate * speed;
+    if (playing) {
+        float speed = playbackSpeedAtTick((int)movieTick);
+        movieTick += dt * (float)mTickRate * speed;
+        if (movieTick >= mTotalTicks && mTotalTicks > 0) {
+            movieTick = (float)mTotalTicks;
+            playing = false;
+        }
+    }
 
-    if (movieTick >= mTotalTicks && mTotalTicks > 0) {
-        movieTick = (float)mTotalTicks;
-        playing = false;
+    // Sync music preview with play/pause state
+    if (!mAudioTracks.empty() && mAudioTracks[0].enabled) {
+        if (playing) {
+            if (!isReplayMusicPreviewPlaying())
+                resumeReplayMusicPreview();
+        } else {
+            if (isReplayMusicPreviewPlaying())
+                pauseReplayMusicPreview();
+        }
+    }
+
+    mAutosaveTimer += dt;
+    if (mAutosaveTimer >= AUTOSAVE_INTERVAL) {
+        mAutosaveTimer = 0.0;
+        if (mLoaded) autosave();
     }
 }
 
 void ReplayEditor::seekToTick(int tick) {
     movieTick = (float)std::clamp(tick, 0, mTotalTicks);
+    // Sync music preview
+    if (!mAudioTracks.empty() && mAudioTracks[0].enabled) {
+        float sec = (float)tick / (float)mTickRate;
+        seekReplayMusicPreview(sec);
+        if (!playing && isReplayMusicPreviewPlaying())
+            pauseReplayMusicPreview();
+        Debug::log(Debug::Category::Replay, "[RPLE AUDIO] seek sync: tick=%d sec=%.2f\n", tick, sec);
+    }
 }

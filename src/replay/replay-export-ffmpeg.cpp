@@ -22,12 +22,14 @@
 #include <GLFW/glfw3.h>
 
 #include "replay/replay.h"
+#include "replay/replay-editor.h"
 #include "video/outro.h"
 #include <nlohmann/json.hpp>
 #include "debug/debug-log.h"
 #include "audio/audio-codec.h"
 #include "replay/replay.h"
 #include "terminal/terminal-state.h"
+#include "devtools/terminal.h"
 
 extern ReplayExportJob gJob;
 
@@ -35,7 +37,7 @@ struct ReplayExportAudioConfig {
     float audioVolumeMultiplier = 0.8f;
 };
 
-extern ReplayExportAudioConfig gAudioConfig;
+extern ReplayExportConfig gExportConfig;
 
 #define EXPORTTRACE(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORTTRACE] " fmt, ##__VA_ARGS__)
 #define EXPORTLOG(fmt, ...) Debug::log(Debug::Category::Replay, "[EXPORT] " fmt, ##__VA_ARGS__)
@@ -115,7 +117,60 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     RPLXDEBUG("Tick count: %u\n", totalTicks);
     RPLXDEBUG("Total sound events: %zu\n\n", events.size());
 
-    if (events.empty())
+    uint32_t sampleRate = 48000;
+    uint16_t numChannels = 2;
+    double tickRate = 60.0;
+    double totalDurationSec = (double)totalTicks / tickRate;
+    size_t totalFrames = (size_t)(totalDurationSec * sampleRate);
+    size_t totalSamples = totalFrames * numChannels;
+
+    std::vector<float> mix(totalSamples, 0.0f);
+
+    // ── Mix editor music track if loaded ─────────────────
+    bool musicIncluded = false;
+    std::string musicPath;
+    float musicVolume = 1.0f;
+    if (gReplayEditor.isLoaded() && gReplayEditor.audioTrackCount() > 0 &&
+        gReplayEditor.audioTrack(0).enabled) {
+        musicPath = gReplayEditor.audioTrack(0).path;
+        musicVolume = gReplayEditor.audioTrack(0).volume;
+        if (!musicPath.empty() && std::filesystem::exists(musicPath)) {
+            printf("[RPLX AUDIO] Loading editor music track: %s\n", musicPath.c_str());
+            std::vector<int16_t> musicPCM;
+            uint32_t musicRate = 0, musicCh = 0;
+            if (decodeAudioToPCM(musicPath, musicPCM, musicRate, musicCh, sampleRate, numChannels)) {
+                size_t musicFrames = musicPCM.size() / numChannels;
+                size_t mixFrames = std::min(totalFrames, musicFrames);
+                for (size_t i = 0; i < mixFrames; ++i) {
+                    float sL = (float)musicPCM[i * 2 + 0] / 32768.0f * musicVolume;
+                    float sR = (float)musicPCM[i * 2 + 1] / 32768.0f * musicVolume;
+                    mix[i * 2 + 0] += sL;
+                    mix[i * 2 + 1] += sR;
+                }
+                musicIncluded = true;
+                printf("[RPLX AUDIO] Music track mixed: %zu frames at %.1f sec\n",
+                       musicFrames, (double)musicFrames / sampleRate);
+                Debug::log(Debug::Category::Replay,
+                    "[EXPORT] Music track included: %s (frames=%zu rate=%u)\n",
+                    musicPath.c_str(), musicFrames, musicRate);
+            } else {
+                printf("[RPLX AUDIO WARN] Failed to decode music track: %s\n", musicPath.c_str());
+                Debug::log(Debug::Category::Replay,
+                    "[EXPORT] Music track decode FAILED: %s\n", musicPath.c_str());
+            }
+        } else {
+            printf("[RPLX AUDIO WARN] Music track file not found: %s\n", musicPath.c_str());
+            Debug::log(Debug::Category::Replay,
+                "[EXPORT] Music track file MISSING: %s\n", musicPath.c_str());
+        }
+    }
+
+    if (!musicIncluded) {
+        printf("[RPLX AUDIO] No music track to include\n");
+    }
+
+    // If no events and no music, return silent track
+    if (events.empty() && !musicIncluded)
     {
         printf("[RPLX AUDIO] No sound events found, creating silent track\n");
         std::vector<int16_t> silent(48000 * 2, 0);
@@ -129,15 +184,6 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         if (ev.tick % 60 == 0 || ev.tick == 0)
             printf("[RPLX AUDIO] Sound event: %s tick=%d\n", ev.soundPath.c_str(), ev.tick);
     }
-
-    uint32_t sampleRate = 48000;
-    uint16_t numChannels = 2;
-    double tickRate = 60.0;
-    double totalDurationSec = (double)totalTicks / tickRate;
-    size_t totalFrames = (size_t)(totalDurationSec * sampleRate);
-    size_t totalSamples = totalFrames * numChannels;
-
-    std::vector<float> mix(totalSamples, 0.0f);
 
     {
         int validCount = 0, worldCount = 0;
@@ -393,7 +439,7 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         }
     }
 
-    float volMul = gAudioConfig.audioVolumeMultiplier;
+    float volMul = gExportConfig.audioVolumeMultiplier;
     EXPORTLOG("[REPLAY AUDIO] volumeMultiplier=%.2f", volMul);
 
     if (decodedCount > 0) {
@@ -516,6 +562,11 @@ static bool encodeVideo(const std::string& nativeOutput, bool withAudio)
     }
 
     std::string framesV = "-frames:v " + std::to_string(gJob.totalTicks) + " ";
+    std::string crfStr = "-crf " + std::to_string(gExportConfig.exportCrf) + " ";
+    std::string bitrateStr;
+    if (gExportConfig.exportBitrate > 0) {
+        bitrateStr = "-b:v " + std::to_string(gExportConfig.exportBitrate) + "k ";
+    }
     std::string batContent = "@echo off\r\n"
         "\"" + fs::absolute(gJob.ffmpegPath).make_preferred().string() + "\" -y -f rawvideo -pixel_format rgb24 "
         "-video_size " + std::to_string(gJob.capWidth) + "x" + std::to_string(gJob.capHeight) + " "
@@ -523,7 +574,8 @@ static bool encodeVideo(const std::string& nativeOutput, bool withAudio)
         + audioInput + " "
         + scaleFilter + " "
         "-c:v libx264 -preset fast -pix_fmt yuv420p "
-        "-crf 18 "
+        + crfStr
+        + bitrateStr
         + framesV
         + audioCodec + " "
         + (withAudio ? "-shortest " : "") +
@@ -638,4 +690,7 @@ void encodeReplayToMp4()
     printf("[RPLX] export complete\n");
     printf("[RPLX] output exists: yes\n");
     printf("[RPLX] output size: %llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
+    printf("[RPLX] Output file: %s\n", outputPath.c_str());
+    Terminal::instance().addLog(std::string("[RPLX] Export complete: ") + outputPath);
+    Terminal::instance().addLog(std::string("[RPLX] Export progress: 100%"));
 }
