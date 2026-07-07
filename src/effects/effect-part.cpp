@@ -265,7 +265,8 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     event.materialName = effect.materialName;
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
-        captureReplayEffect(event);
+        if (effect.replayType != "debris_block" && effect.replayType != "debris_batch")
+            captureReplayEffect(event);
         if (gShotProfiler) gShotProfiler->replayEventsCreated++;
     }
 

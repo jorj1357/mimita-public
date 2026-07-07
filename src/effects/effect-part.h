@@ -40,12 +40,12 @@ struct EffectPart
     bool box = false;
 
     void resetStrings() {
-        label.clear(); label.shrink_to_fit();
+        label.clear();
         replayType = "effect";
-        texturePath.clear(); texturePath.shrink_to_fit();
-        materialName.clear(); materialName.shrink_to_fit();
-        sourceActorId.clear(); sourceActorId.shrink_to_fit();
-        targetActorId.clear(); targetActorId.shrink_to_fit();
+        texturePath.clear();
+        materialName.clear();
+        sourceActorId.clear();
+        targetActorId.clear();
     }
 };
 

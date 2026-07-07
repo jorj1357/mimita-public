@@ -54,11 +54,67 @@ static void drawDamageNumberText(const char* text, float x, float y, float scale
     uiDrawText(text, x, y, scale, color, italic);
 }
 
+static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, float t, float alpha)
+{
+    unsigned int seed = (unsigned int)(effect.position.x * 73856093)
+        ^ (unsigned int)(effect.position.y * 19349663)
+        ^ (unsigned int)(effect.position.z * 83492791);
+    seed ^= (unsigned int)(effect.normal.x * 52711);
+    float spread = effect.scale;
+    float baseSpeed = effect.endScale;
+    float force = effect.velocity.x;
+    glm::vec3 n = effect.normal;
+    glm::vec3 tangent = glm::normalize(
+        std::abs(n.z) < 0.9f
+            ? glm::cross(n, glm::vec3(0, 0, 1))
+            : glm::cross(n, glm::vec3(0, 1, 0)));
+    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+
+    int count = 8 + (seed & 7);
+    glm::vec4 color{effect.color.x, effect.color.y, effect.color.z, alpha};
+    float gt = t * t * 3.0f;
+
+    for (int i = 0; i < count; ++i) {
+        unsigned int si = seed + (unsigned int)i * 769u;
+        float angle = (float)(si % 6283) / 1000.0f;
+        float radius = ((float)((si * 311u) % 1000) / 1000.0f) * spread;
+        glm::vec3 dir = n
+            + tangent * std::cos(angle) * radius
+            + bitangent * std::sin(angle) * radius;
+        dir = glm::normalize(dir);
+        float speed = baseSpeed + ((si * 503u) % 5001) / 1000.0f;
+        glm::vec3 pos = effect.position + dir * (((si * 211u) % 51) / 1000.0f);
+        pos += dir * speed * t;
+        pos.z -= gt;
+        float sx = 0.04f + force * 0.04f + ((si * 313u) % 501) / 3000.0f;
+        float sy = 0.04f + force * 0.04f + ((si * 317u) % 501) / 3000.0f;
+        float sz = 0.04f + force * 0.04f + ((si * 331u) % 501) / 3000.0f;
+        glm::vec3 rot = {
+            (float)((si * 419u) % 721 - 360),
+            (float)((si * 421u) % 721 - 360),
+            (float)((si * 431u) % 721 - 360)
+        };
+        rot += effect.angularVelocity * t;
+        DebugVis::drawFilledBox(camera, pos, {sx, sy, sz}, color, rot);
+    }
+}
+
 void EffectPartSystem::render(const Camera& camera) const {
     for (const auto& effect : mPool) {
         if (!effect.alive) continue;
         if (effect.lifetime < 0.0f) continue;
         if (effect.debugVisual && !DebugVis::masterEnabled()) continue;
+
+        if (effect.replayType == "debris_batch") {
+            float dist = glm::length(effect.position - camera.pos);
+            if (dist > 40.0f) continue;
+            float distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
+            float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
+            float alpha = effect.alpha * distFade * (1.0f - t);
+            alpha = std::max(0.0f, alpha);
+            drawDebrisBatch(camera, effect, t, alpha);
+            continue;
+        }
 
         float dist = glm::length(effect.position - camera.pos);
         if (dist > 40.0f) continue;

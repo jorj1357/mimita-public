@@ -84,6 +84,9 @@ public:
     // Training mode: 0=idle, 1=flee, 2=attack (normal AI)
     int trainingMode = 2;
 
+    // Cached line-of-sight result updated each frame in updateOneNpc
+    bool cachedLoSBlocked = false;
+
     Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);
 };
 

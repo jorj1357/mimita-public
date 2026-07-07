@@ -73,7 +73,8 @@ static void physicsMainUpdate_Internal(
     bool debugEnabled,
     GLFWwindow* debugWindow,
     const Camera* debugCamera,
-    bool freezeHeld
+    bool freezeHeld,
+    int subSteps
 ){
     Perf::ScopedTimer _t("Physics");
     dt = std::min(dt, 0.033f);
@@ -97,7 +98,7 @@ static void physicsMainUpdate_Internal(
         Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
                    wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
 
-    int steps = 6;
+    int steps = subSteps;
     float subdt = dt / steps;
 
     bool groundedThisFrame = false;
@@ -268,7 +269,8 @@ void physicsMainUpdate(
     Player& p,
     const World& world,
     const InputState& input,
-    float dt
+    float dt,
+    int subSteps
 ){
     // Use buffered actions so quick presses survive frame drops.
     // consumeBuffered* returns true if a press happened within the buffer window,
@@ -293,6 +295,7 @@ void physicsMainUpdate(
         false,
         nullptr,
         nullptr,
-        input.freezeHeld
+        input.freezeHeld,
+        subSteps
     );
 }

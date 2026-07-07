@@ -209,6 +209,8 @@ void doGLBTriangleCollisions(
     }
 
     // ── 4. Body + weapon collision ───────────────────────
+    // NPCs skip body part collision (root capsule only is sufficient for AI)
+    if (!isCurrentEntityNpc())
     {
         Perf::ScopedTimer _bw("WeaponCollisions");
         auto t0 = std::chrono::steady_clock::now();

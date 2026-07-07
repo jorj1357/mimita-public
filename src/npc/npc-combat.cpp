@@ -317,20 +317,18 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         return false;
     }
 
-    // DEBUG MODE: no aim settle timer (temporary)
-    npc.aimTimer = 0.0f;
-
+    glm::vec3 aimDir;
     glm::vec3 npcPos = npc.body.pos;
     npcPos.z += 0.8f;
-    if (!lineOfSight(npcPos, player.pos + glm::vec3(0.0f, 0.0f, 0.8f), world))
+
+    // Use cached LOS from updateOneNpc (avoids redundant gather + triangle loop)
+    if (npc.cachedLoSBlocked)
     {
         Debug::logThrottled(Debug::Category::NpcCombat, "npc-los",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: no line of sight\n",
+            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: no line of sight (cached)\n",
             npc.id);
         return false;
     }
-
-    glm::vec3 aimDir;
     bool isProjectile = (def->behaviorType == WeaponBehaviorType::Projectile ||
                          def->behaviorType == WeaponBehaviorType::RocketLauncher);
 
