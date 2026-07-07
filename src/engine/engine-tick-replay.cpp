@@ -263,6 +263,7 @@ void engineTickReplay(Engine& engine, float dt)
             gReplayRecorder.isRecording() && !replayPlaybackActive;
         uint32_t replayTick = 0;
         if (recordingReplayTick) {
+            Perf::ScopedTimer _t("ReplayRecordFrame");
             replayTick = gReplayRecorder.currentTick();
             gReplayRecorder.recordFrame(tickFrame);
         }
@@ -329,6 +330,8 @@ void engineTickReplay(Engine& engine, float dt)
             sceneFrame.actors.push_back(playerActor);
 
             // NPCs
+            {
+            Perf::ScopedTimer _t("ReplayCaptureNPCs");
             for (const Npc& npc : npcSystem.all()) {
                 ReplayActorState npcActor;
                 npcActor.id = "npc_" + std::to_string(npc.id);
@@ -366,6 +369,7 @@ void engineTickReplay(Engine& engine, float dt)
                 npcActor.bodyParts = captureReplayBodyParts(npc.body);
                 sceneFrame.actors.push_back(npcActor);
             }
+            } // ReplayCaptureNPCs
             // ── Godball ────────────────────────────────────────────────
             if (weapons.godballPhysics().active) {
                 const auto& gb = weapons.godballPhysics();
@@ -397,7 +401,10 @@ void engineTickReplay(Engine& engine, float dt)
 
             DeathSystem::instance().appendReplayActors(sceneFrame.actors);
 
+            {
+            Perf::ScopedTimer _t("ReplayRecordScene");
             gReplayRecorder.recordSceneFrame(sceneFrame);
+            }
             gReplayClipSaver.update();
             gReplayFactory.update();
             GuiLayoutManager::instance().pollReload();

@@ -17,6 +17,7 @@
 #include "config/player-settings.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
+#include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -330,7 +331,16 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             ev.weaponSource = "revolver";
             HitEffects::onHit(ev);
         }
-        playWorldSound("player_hurt", result.end, 0.85f, 1.0f, 35.0f);
+        {
+            float dist = glm::length(result.end - audioListenerPosition());
+            float headMul = (hitPart == "head") ? 2.0f : 1.0f;
+            float severity = std::clamp(angleFactor * ((float)rounded / 100.0f) * headMul, 0.0f, 1.0f);
+            float vol, pit;
+            computeImpactAudio(1.2f, dist, severity, vol, pit);
+            playWorldSound("player_hurt", result.end, vol, pit, 60.0f);
+            Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=player_hurt dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
+                       dist, rounded, severity, pit, vol);
+        }
 
         char debug[320];
         snprintf(debug, sizeof(debug),
@@ -364,7 +374,16 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             HitEffects::onHit(ev);
         }
         EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal);
-        playWorldSound("hitworld", result.end, 0.8f, 1.0f, 35.0f);
+        {
+            float dist = glm::length(result.end - audioListenerPosition());
+            float directness = std::abs(glm::dot(-shotDirection, worldNormal));
+            float severity = std::clamp(directness, 0.0f, 1.0f);
+            float vol, pit;
+            computeImpactAudio(1.2f, dist, severity, vol, pit);
+            playWorldSound("hitworld", result.end, vol, pit, 60.0f);
+            Debug::log(Debug::Category::Audio, "[WORLD IMPACT AUDIO] dist=%.1f severity=%.2f pitch=%.2f volume=%.2f\n",
+                       dist, severity, pit, vol);
+        }
     }
 
     const PlayerSettings& cfg = GetPlayerSettings();

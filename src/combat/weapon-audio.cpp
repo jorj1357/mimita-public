@@ -3,6 +3,7 @@
 #include "audio/audio.h"
 #include <cstdlib>
 #include <cstdio>
+#include "debug/debug-log.h"
 
 namespace WeaponAudio {
 
@@ -36,7 +37,12 @@ void playEquipSound(const WeaponDefinition& def) {
 void playHitSound(const WeaponDefinition& def, const glm::vec3& position) {
     if (def.soundHit.empty()) return;
     printf("[SOUND] weapon=%s event=hit_entity path=%s\n", def.id.c_str(), def.soundHit.c_str());
-    playWorldSound(def.soundHit, position, 0.85f, 1.0f, 35.0f);
+    float dist = glm::length(position - audioListenerPosition());
+    float vol, pit;
+    computeImpactAudio(1.2f, dist, 0.5f, vol, pit);
+    playWorldSound(def.soundHit, position, vol, pit, 60.0f);
+    Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f pitch=%.2f volume=%.2f\n",
+               def.soundHit.c_str(), dist, pit, vol);
 }
 
 void playGodballWhoosh(const glm::vec3& position, float speed01) {

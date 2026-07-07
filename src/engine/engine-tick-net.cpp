@@ -205,10 +205,15 @@ void engineTickNet(Engine& engine, float dt)
                 if (event.effectFlags &
                     MimitaNet::SHOT_EFFECT_HIT_SOUND)
                 {
-                    playWorldSound(
-                        event.impactType == MimitaNet::SHOT_IMPACT_WORLD
-                            ? "hitworld" : "player_hurt",
-                        event.hit, 0.9f, 1.0f, 40.0f);
+                    float dist = glm::length(event.hit - audioListenerPosition());
+                    float vol, pit;
+                    computeImpactAudio(1.2f, dist, 0.5f, vol, pit);
+                    const char* hitEvent = event.impactType == MimitaNet::SHOT_IMPACT_WORLD
+                        ? "hitworld" : "player_hurt";
+                    playWorldSound(hitEvent, event.hit, vol, pit, 60.0f);
+                    Debug::log(Debug::Category::Audio, "[%s AUDIO] dist=%.1f pitch=%.2f volume=%.2f\n",
+                               event.impactType == MimitaNet::SHOT_IMPACT_WORLD ? "WORLD IMPACT" : "HIT",
+                               dist, pit, vol);
                 }
                 printf("[NET SHOT RECONSTRUCT] shooter=%u serial=%u "
                        "localShooter=0 impact=%u origin=(%.2f %.2f %.2f) "

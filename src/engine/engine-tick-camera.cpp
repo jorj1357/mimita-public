@@ -111,8 +111,19 @@ void engineTickCamera(Engine& engine, float dt)
     if (gReplayEditor.isLoaded()) {
         GLFWwindow* win = engine.window();
 
-        // Process keyframe prompt first
+        // Process keyframe prompt
+        // Keyboard 1/2/3 handled here; visual popup drawn in engine-tick-ui-replay-hud.cpp.
+        // Popup handles mouse clicks; Escape cancels.
         if (gReplayEditor.keyframePromptStage > 0) {
+            // Escape cancels prompt
+            static bool escWasDown = false;
+            bool escDown = glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+            if (escDown && !escWasDown) {
+                gReplayEditor.keyframePromptStage = 0;
+                Terminal::instance().addLog("[RPLE] Keyframe creation canceled");
+            }
+            escWasDown = escDown;
+
             static bool promptKeyConsumed = false;
             if (!promptKeyConsumed) {
                 if (gReplayEditor.keyframePromptStage == 1) {
@@ -135,8 +146,6 @@ void engineTickCamera(Engine& engine, float dt)
                         promptKeyConsumed = true;
                     } else if (glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS ||
                                glfwGetKey(win, GLFW_KEY_KP_2) == GLFW_PRESS) {
-                        Terminal::instance().addLog(
-                            "Camera mode:\n1 = Third Person\n2 = Freecam\n3 = First Person");
                         gReplayEditor.keyframePromptStage = 2;
                         promptKeyConsumed = true;
                     } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
@@ -152,16 +161,15 @@ void engineTickCamera(Engine& engine, float dt)
                     }
                 } else if (gReplayEditor.keyframePromptStage == 2) {
                     ReplayEditorCamMode mode = ReplayEditorCamMode::ThirdPerson;
-                    const char* modeName = "thirdperson";
                     if (glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
                         glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
-                        mode = ReplayEditorCamMode::ThirdPerson; modeName = "Third Person";
+                        mode = ReplayEditorCamMode::ThirdPerson;
                     } else if (glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS ||
                                glfwGetKey(win, GLFW_KEY_KP_2) == GLFW_PRESS) {
-                        mode = ReplayEditorCamMode::Freecam; modeName = "Freecam";
+                        mode = ReplayEditorCamMode::Freecam;
                     } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
                                glfwGetKey(win, GLFW_KEY_KP_3) == GLFW_PRESS) {
-                        mode = ReplayEditorCamMode::FirstPerson; modeName = "First Person";
+                        mode = ReplayEditorCamMode::FirstPerson;
                     }
                     if (mode != ReplayEditorCamMode::ThirdPerson ||
                         glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
@@ -170,8 +178,7 @@ void engineTickCamera(Engine& engine, float dt)
                             gReplayEditor.keyframePromptTick, mode);
                         Terminal::instance().addLog(
                             "[RPLE] Camera mode keyframe at tick " +
-                            std::to_string(gReplayEditor.keyframePromptTick) +
-                            " mode=" + modeName);
+                            std::to_string(gReplayEditor.keyframePromptTick));
                         gReplayEditor.keyframePromptStage = 0;
                         promptKeyConsumed = true;
                     }
@@ -290,7 +297,7 @@ void engineTickCamera(Engine& engine, float dt)
             zWasDown = zDown;
         }
 
-        // K: create keyframe with type selection
+        // K: create keyframe with type selection (visual popup drawn in HUD)
         if (gReplayEditor.keyframePromptStage == 0) {
             static bool kWasDown = false;
             bool kDown = glfwGetKey(win, GLFW_KEY_K) == GLFW_PRESS;
@@ -300,11 +307,6 @@ void engineTickCamera(Engine& engine, float dt)
                     tick = (int)REPLAY_PLAYER.currentTick();
                 gReplayEditor.keyframePromptTick = tick;
                 gReplayEditor.keyframePromptStage = 1;
-                Terminal::instance().addLog(
-                    "Keyframe type\n"
-                    "1 / Enter = Camera Position\n"
-                    "2         = Camera Mode\n"
-                    "3         = Playback Speed");
                 Debug::log(Debug::Category::Replay,
                     "[ReplayEditor] K: prompt at tick %d\n", tick);
             }

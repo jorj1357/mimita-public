@@ -22,6 +22,7 @@
 #include "debug/debug-log.h"
 #include "perf/perf.h"
 #include "video/frame-pacer.h"
+#include "replay/replay-editor.h"
 #include "replay/replay-export.h"
 #include "replay/replay-export-ui.h"
 #include "game/duel.h"
@@ -107,7 +108,10 @@ void engineTick(Engine& engine)
     bool escapeDown = glfwGetKey(engine.window(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
     if (escapeDown && !escapePrev)
     {
-        if (Terminal::instance().isOpen()) {
+        // If keyframe prompt is active, let the camera handler cancel it
+        if (gReplayEditor.keyframePromptStage > 0) {
+            // handled in engine-tick-camera.cpp
+        } else if (Terminal::instance().isOpen()) {
             Terminal::instance().toggle();
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
