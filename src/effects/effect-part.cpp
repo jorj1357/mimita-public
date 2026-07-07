@@ -269,21 +269,21 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
         if (gShotProfiler) gShotProfiler->replayEventsCreated++;
     }
 
-    int scanCount = 0;
-    for (auto& slot : mPool) {
-        scanCount++;
-        if (!slot.alive) {
-            slot = effect;
-            slot.alive = true;
+    for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        unsigned int idx = (mSpawnCursor + i) % POOL_SIZE;
+        if (!mPool[idx].alive) {
+            mPool[idx] = effect;
+            mPool[idx].alive = true;
             ++mActiveCount;
+            mSpawnCursor = (idx + 1) % POOL_SIZE;
             if (gShotProfiler) {
                 gShotProfiler->poolHits++;
-                gShotProfiler->poolLinearScans += scanCount;
+                gShotProfiler->poolLinearScans += (i + 1);
             }
-            return &slot;
+            return &mPool[idx];
         }
     }
-    if (gShotProfiler) gShotProfiler->poolLinearScans += 4096;
+    if (gShotProfiler) gShotProfiler->poolLinearScans += POOL_SIZE;
     return nullptr;
 }
 
