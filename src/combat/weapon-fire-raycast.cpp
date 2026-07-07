@@ -10,6 +10,7 @@
 #include "world/world.h"
 #include "npc/npc.h"
 #include "network/multiplayer-context.h"
+#include "physics/movement/physics-collision.h"
 
 namespace WeaponFire {
 
@@ -93,11 +94,20 @@ AimTarget computeAimTarget(
     float cameraNearest = kMaxShotDistance;
     AimHitKind hitKind = AimHitKind::None;
 
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        float d = 0.0f;
-        if (rayTriangle(camera.pos, camera.front, tri, d) && d < cameraNearest) {
-            cameraNearest = d;
-            hitKind = AimHitKind::World;
+    {
+        glm::vec3 aimEnd = camera.pos + camera.front * cameraNearest;
+        AABB aimBounds;
+        aimBounds.min = glm::min(camera.pos, aimEnd) - glm::vec3(0.1f);
+        aimBounds.max = glm::max(camera.pos, aimEnd) + glm::vec3(0.1f);
+        std::vector<int> candidates;
+        appendChunkTrianglesForAABB(world, aimBounds, 0.1f, candidates);
+        for (int triIndex : candidates) {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            float d = 0.0f;
+            if (rayTriangle(camera.pos, camera.front, tri, d) && d < cameraNearest) {
+                cameraNearest = d;
+                hitKind = AimHitKind::World;
+            }
         }
     }
     for (Npc& npc : npcs.all()) {
@@ -353,21 +363,33 @@ BeamCollisionResult collideBeam(
 
     bool useSphereCast = (beamThickness > 0.0f);
 
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        if (useSphereCast) {
-            float d = 0.0f;
-            glm::vec3 n, p;
-            if (sweptSphereTriangle(origin, direction, beamThickness, tri, maxDistance, d, n, p) && d < result.nearest) {
-                result.nearest = d;
-                result.hitWorld = true;
-                result.worldNormal = tri.normal;
-            }
-        } else {
-            float d = 0.0f;
-            if (rayTriangle(origin, direction, tri, d) && d < result.nearest) {
-                result.nearest = d;
-                result.hitWorld = true;
-                result.worldNormal = tri.normal;
+    {
+        glm::vec3 rayEnd = origin + direction * maxDistance;
+        AABB rayBounds;
+        rayBounds.min = glm::min(origin, rayEnd);
+        rayBounds.max = glm::max(origin, rayEnd);
+        float expansion = useSphereCast ? (beamThickness + 0.1f) : 0.1f;
+        rayBounds.min -= glm::vec3(expansion);
+        rayBounds.max += glm::vec3(expansion);
+        std::vector<int> candidates;
+        appendChunkTrianglesForAABB(world, rayBounds, expansion, candidates);
+        for (int triIndex : candidates) {
+            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
+            if (useSphereCast) {
+                float d = 0.0f;
+                glm::vec3 n, p;
+                if (sweptSphereTriangle(origin, direction, beamThickness, tri, maxDistance, d, n, p) && d < result.nearest) {
+                    result.nearest = d;
+                    result.hitWorld = true;
+                    result.worldNormal = tri.normal;
+                }
+            } else {
+                float d = 0.0f;
+                if (rayTriangle(origin, direction, tri, d) && d < result.nearest) {
+                    result.nearest = d;
+                    result.hitWorld = true;
+                    result.worldNormal = tri.normal;
+                }
             }
         }
     }
