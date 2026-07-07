@@ -14,6 +14,7 @@
 #include "video/outro.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
+#include "devtools/terminal.h"
 #include "render/post-fx.h"
 #include "audio/audio-codec.h"
 
@@ -205,6 +206,19 @@ void updateReplayExport()
     {
         float pct = (float)gJob.capturedTicks / (float)gJob.totalTicks * 100.0f;
         EXPORTTRACE("PROGRESS: %u/%u (%.1f%%)", gJob.capturedTicks, gJob.totalTicks, pct);
+    }
+    // Terminal progress every 10%
+    if (gJob.totalTicks > 0) {
+        static int lastTerminalPct = -1;
+        int currentPct = (int)((float)gJob.capturedTicks / (float)gJob.totalTicks * 100.0f);
+        int reportPct = (currentPct / 10) * 10;
+        if (reportPct > lastTerminalPct && reportPct > 0 && reportPct <= 100) {
+            lastTerminalPct = reportPct;
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "[RPLX] Export progress: %d%%", reportPct);
+            Terminal::instance().addLog(std::string(buf));
+        }
+        if (gJob.capturedTicks >= gJob.totalTicks) lastTerminalPct = -1;
     }
 
     if (gJob.capturedTicks >= gJob.totalTicks)

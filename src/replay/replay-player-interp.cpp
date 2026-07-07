@@ -1,4 +1,5 @@
 #include "replay.h"
+#include "replay-editor.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -64,7 +65,11 @@ void ReplayPlayer::update(float dt)
         return;
 
     const int previousTick = (int)std::floor(mPlaybackTick);
-    mPlaybackTick += dt * (float)std::max(mHeader.tickRate, 1u) * mTimescale;
+    float effectiveTimescale = mTimescale;
+    if (gReplayEditor.isLoaded() && gReplayEditor.totalTicks() > 0) {
+        effectiveTimescale = gReplayEditor.playbackSpeedAtTick((int)std::floor(mPlaybackTick));
+    }
+    mPlaybackTick += dt * (float)std::max(mHeader.tickRate, 1u) * effectiveTimescale;
     {   static float logTimer = 0.0f; logTimer -= dt;
         if (logTimer <= 0.0f) { logTimer = 1.0f;
             auto* frame = currentSceneFrame();

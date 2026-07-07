@@ -105,23 +105,337 @@ void engineTickCamera(Engine& engine, float dt)
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
                             !Terminal::instance().isOpen();
 
-    // Space always toggles play/pause during replay (any camera mode)
+    // ── Replay Editor keyboard controls ─────────────────────
+    // These only fire when the editor is loaded (gReplayEditor.isLoaded()).
+    // Freecam must not be blocked by play/pause.
     {
-        static bool spaceWasDown = false;
-        bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-        if (spaceDown && !spaceWasDown && replayPlaybackActive) {
-            if (gReplayPlayer.isPaused())
-                gReplayPlayer.resume();
-            else
-                gReplayPlayer.pause();
-            Debug::log(Debug::Category::Replay,
-                "[ReplayCamera] Space: %s\n",
-                gReplayPlayer.isPaused() ? "PAUSED" : "PLAYING");
+        GLFWwindow* win = engine.window();
+
+        // Editor keyboard handler: process prompt state first
+        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage > 0) {
+            static bool promptKeyConsumed = false;
+            if (!promptKeyConsumed) {
+                if (gReplayEditor.keyframePromptStage == 1) {
+                    // Type selection: 1=camera-pos, 2=camera-mode, 3=speed
+                    if (glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
+                        glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
+                        // Camera Position keyframe
+                        glm::quat rot = gReplayEditor.freecam
+                            ? gReplayEditor.freecamRot
+                            : glm::quatLookAt(glm::normalize(camera.front), glm::vec3(0,0,1));
+                        float roll = gReplayEditor.freecamRoll;
+                        float fov = gReplayEditor.freecamFov;
+                        glm::vec3 pos = gReplayEditor.freecam
+                            ? gReplayEditor.freecamPos : camera.pos;
+                        gReplayEditor.addCameraKeyframe(
+                            gReplayEditor.keyframePromptTick, pos, rot, roll, fov,
+                            gReplayEditor.defaultInterp);
+                        Terminal::instance().addLog(
+                            "[RPLE] Camera position keyframe at tick " +
+                            std::to_string(gReplayEditor.keyframePromptTick));
+                        gReplayEditor.keyframePromptStage = 0;
+                        promptKeyConsumed = true;
+                    } else if (glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS ||
+                               glfwGetKey(win, GLFW_KEY_KP_2) == GLFW_PRESS) {
+                        // Camera Mode keyframe — advance to mode selection
+                        Terminal::instance().addLog(
+                            "Camera mode:\n"
+                            "1 = Third Person\n"
+                            "2 = Freecam\n"
+                            "3 = First Person");
+                        gReplayEditor.keyframePromptStage = 2;
+                        promptKeyConsumed = true;
+                    } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
+                               glfwGetKey(win, GLFW_KEY_KP_3) == GLFW_PRESS) {
+                        // Playback speed keyframe
+                        gReplayEditor.addTimeKeyframe(
+                            gReplayEditor.keyframePromptTick, 1.0f,
+                            gReplayEditor.defaultInterp);
+                        Terminal::instance().addLog(
+                            "[RPLE] Playback speed keyframe at tick " +
+                            std::to_string(gReplayEditor.keyframePromptTick));
+                        gReplayEditor.keyframePromptStage = 0;
+                        promptKeyConsumed = true;
+                    }
+                } else if (gReplayEditor.keyframePromptStage == 2) {
+                    // Camera mode sub-selection
+                    ReplayEditorCamMode mode = ReplayEditorCamMode::ThirdPerson;
+                    const char* modeName = "thirdperson";
+                    if (glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
+                        glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
+                        mode = ReplayEditorCamMode::ThirdPerson;
+                        modeName = "Third Person";
+                    } else if (glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS ||
+                               glfwGetKey(win, GLFW_KEY_KP_2) == GLFW_PRESS) {
+                        mode = ReplayEditorCamMode::Freecam;
+                        modeName = "Freecam";
+                    } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
+                               glfwGetKey(win, GLFW_KEY_KP_3) == GLFW_PRESS) {
+                        mode = ReplayEditorCamMode::FirstPerson;
+                        modeName = "First Person";
+                    }
+                    if (mode != ReplayEditorCamMode::ThirdPerson ||
+                        glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
+                        glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
+                        gReplayEditor.addCameraModeKeyframe(
+                            gReplayEditor.keyframePromptTick, mode);
+                        Terminal::instance().addLog(
+                            std::string("[RPLE] Camera mode keyframe at tick ") +
+                            std::to_string(gReplayEditor.keyframePromptTick) +
+                            " mode=" + modeName);
+                        gReplayEditor.keyframePromptStage = 0;
+                        promptKeyConsumed = true;
+                    }
+                }
+            }
+            // Reset consumed flag when all keys are released
+            if (glfwGetKey(win, GLFW_KEY_1) != GLFW_PRESS &&
+                glfwGetKey(win, GLFW_KEY_2) != GLFW_PRESS &&
+                glfwGetKey(win, GLFW_KEY_3) != GLFW_PRESS &&
+                glfwGetKey(win, GLFW_KEY_KP_1) != GLFW_PRESS &&
+                glfwGetKey(win, GLFW_KEY_KP_2) != GLFW_PRESS &&
+                glfwGetKey(win, GLFW_KEY_KP_3) != GLFW_PRESS) {
+                promptKeyConsumed = false;
+            }
         }
-        spaceWasDown = spaceDown;
+
+        // F key: toggle freecam (only when editor is loaded)
+        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
+            static bool fWasDown = false;
+            bool fDown = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS;
+            if (fDown && !fWasDown) {
+                gReplayEditor.freecam = !gReplayEditor.freecam;
+                if (gReplayEditor.freecam) {
+                    gReplayEditor.mPrevCameraMode = REPLAY_PLAYER.cameraController().modeName();
+                    gReplayEditor.freecamPos = camera.pos;
+                    gReplayEditor.freecamRot = glm::quat(glm::vec3(
+                        glm::radians(camera.pitch), glm::radians(camera.yaw), 0.0f));
+                    gReplayEditor.freecamFov = camera.fov;
+                    REPLAY_PLAYER.cameraController().setMode("freecam");
+                    Debug::log(Debug::Category::Replay,
+                        "[ReplayEditor] F: Entering freecam, prev mode=%s\n",
+                        gReplayEditor.mPrevCameraMode.c_str());
+                } else {
+                    std::string restore = gReplayEditor.mPrevCameraMode.empty()
+                        ? "tp" : gReplayEditor.mPrevCameraMode;
+                    REPLAY_PLAYER.cameraController().setMode(restore);
+                    gReplayEditor.mPrevCameraMode.clear();
+                    Debug::log(Debug::Category::Replay,
+                        "[ReplayEditor] F: Exiting freecam\n");
+                }
+                Terminal::instance().addLog(std::string("[RPLE] Freecam: ") +
+                    (gReplayEditor.freecam ? "ON" : "OFF"));
+            }
+            fWasDown = fDown;
+        }
+
+        // Space: play/pause (works in any camera mode during replay)
+        {
+            static bool spaceWasDown = false;
+            bool spaceDown = glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS;
+            if (spaceDown && !spaceWasDown && replayPlaybackActive &&
+                gReplayEditor.keyframePromptStage == 0) {
+                if (gReplayPlayer.isPaused())
+                    gReplayPlayer.resume();
+                else
+                    gReplayPlayer.pause();
+                gReplayEditor.playing = !gReplayPlayer.isPaused();
+                Debug::log(Debug::Category::Replay,
+                    "[ReplayEditor] Space: %s\n",
+                    gReplayPlayer.isPaused() ? "PAUSED" : "PLAYING");
+            }
+            spaceWasDown = spaceDown;
+        }
+
+        // Arrow keys: seek by 60 ticks (1 second) when editor is loaded
+        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
+            static bool leftWasDown = false, rightWasDown = false;
+            bool leftDown = glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS;
+            bool rightDown = glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS;
+
+            if (leftDown && !leftWasDown) {
+                int tick = (int)gReplayEditor.movieTick;
+                tick = std::max(0, tick - 60);
+                gReplayEditor.seekToTick(tick);
+                if (REPLAY_PLAYER.totalTicks() > 0)
+                    REPLAY_PLAYER.seekToTick(tick);
+                Debug::log(Debug::Category::Replay,
+                    "[ReplayEditor] Left: seeked to tick %d\n", tick);
+            }
+            if (rightDown && !rightWasDown) {
+                int tick = (int)gReplayEditor.movieTick;
+                tick = std::min(gReplayEditor.totalTicks(), tick + 60);
+                gReplayEditor.seekToTick(tick);
+                if (REPLAY_PLAYER.totalTicks() > 0)
+                    REPLAY_PLAYER.seekToTick(tick);
+                Debug::log(Debug::Category::Replay,
+                    "[ReplayEditor] Right: seeked to tick %d\n", tick);
+            }
+            leftWasDown = leftDown;
+            rightWasDown = rightDown;
+        }
+
+        // Shift+Up/Down: keyframe navigation
+        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0 &&
+            (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+             glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)) {
+            static bool upWasDown = false, downWasDown = false;
+            bool upDown = glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS;
+            bool downDown = glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS;
+
+            if (upDown && !upWasDown) {
+                int tick = (int)gReplayEditor.movieTick;
+                int next = gReplayEditor.nextKeyframeTick(tick);
+                if (next >= 0) {
+                    gReplayEditor.seekToTick(next);
+                    if (REPLAY_PLAYER.totalTicks() > 0)
+                        REPLAY_PLAYER.seekToTick(next);
+                    int kfIdx = gReplayEditor.findNearestCameraKeyframe(next);
+                    char buf[128];
+                    std::snprintf(buf, sizeof(buf),
+                        "[RPLE] Next keyframe: tick %d (camera KF %d)", next, kfIdx);
+                    Terminal::instance().addLog(buf);
+                    // Move freecam to keyframe position if freecam is on
+                    if (gReplayEditor.freecam && kfIdx >= 0) {
+                        const auto& kf = gReplayEditor.cameraKeyframe(kfIdx);
+                        gReplayEditor.freecamPos = kf.position;
+                        gReplayEditor.freecamRot = kf.rotation;
+                        camera.pos = kf.position;
+                        camera.front = glm::normalize(kf.rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                        camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                        camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                        camera.fov = kf.fov;
+                        camera.updateVectors();
+                    }
+                }
+            }
+            if (downDown && !downWasDown) {
+                int tick = (int)gReplayEditor.movieTick;
+                int prev = gReplayEditor.prevKeyframeTick(tick);
+                if (prev >= 0) {
+                    gReplayEditor.seekToTick(prev);
+                    if (REPLAY_PLAYER.totalTicks() > 0)
+                        REPLAY_PLAYER.seekToTick(prev);
+                    int kfIdx = gReplayEditor.findNearestCameraKeyframe(prev);
+                    char buf[128];
+                    std::snprintf(buf, sizeof(buf),
+                        "[RPLE] Previous keyframe: tick %d (camera KF %d)", prev, kfIdx);
+                    Terminal::instance().addLog(buf);
+                    if (gReplayEditor.freecam && kfIdx >= 0) {
+                        const auto& kf = gReplayEditor.cameraKeyframe(kfIdx);
+                        gReplayEditor.freecamPos = kf.position;
+                        gReplayEditor.freecamRot = kf.rotation;
+                        camera.pos = kf.position;
+                        camera.front = glm::normalize(kf.rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                        camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                        camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                        camera.fov = kf.fov;
+                        camera.updateVectors();
+                    }
+                }
+            }
+            upWasDown = upDown;
+            downWasDown = downDown;
+        }
+
+        // Ctrl+Z: undo via autosave
+        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
+            static bool zWasDown = false;
+            bool ctrlDown = glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                            glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+            bool zDown = glfwGetKey(win, GLFW_KEY_Z) == GLFW_PRESS;
+            if (ctrlDown && zDown && !zWasDown) {
+                if (gReplayEditor.undoLastAutosave())
+                    Terminal::instance().addLog("[RPLE] Undo: restored previous state");
+                else
+                    Terminal::instance().addLog("[RPLE] Undo: no history available");
+            }
+            zWasDown = zDown;
+        }
+
+        // K: create keyframe with type selection
+        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
+            static bool kWasDown = false;
+            bool kDown = glfwGetKey(win, GLFW_KEY_K) == GLFW_PRESS;
+            if (kDown && !kWasDown) {
+                int tick = (int)std::round(gReplayEditor.movieTick);
+                if (REPLAY_PLAYER.totalTicks() > 0)
+                    tick = (int)REPLAY_PLAYER.currentTick();
+                gReplayEditor.keyframePromptTick = tick;
+                gReplayEditor.keyframePromptStage = 1;
+                Terminal::instance().addLog(
+                    "Keyframe type\n"
+                    "1 / Enter = Camera Position\n"
+                    "2         = Camera Mode\n"
+                    "3         = Playback Speed");
+                Debug::log(Debug::Category::Replay,
+                    "[ReplayEditor] K: prompt at tick %d\n", tick);
+            }
+            kWasDown = kDown;
+        }
     }
 
     if (replayPlaybackActive) {
+        // Step 0: Apply camera mode keyframes from editor
+        if (gReplayEditor.isLoaded() &&
+            gReplayEditor.cameraModeKeyframeCount() > 0) {
+            int currentTick = (int)gReplayPlayer.currentTick();
+            ReplayEditorCamMode cm = gReplayEditor.cameraModeAtTick(currentTick);
+            switch (cm) {
+                case ReplayEditorCamMode::Freecam:
+                    if (!gReplayEditor.freecam) {
+                        gReplayEditor.mPrevCameraMode = REPLAY_PLAYER.cameraController().modeName();
+                        // Restore freecam position from camera position keyframe at same tick if one exists
+                        int posKfIdx = gReplayEditor.findNearestCameraKeyframe(currentTick);
+                        if (posKfIdx >= 0) {
+                            const auto& posKf = gReplayEditor.cameraKeyframe(posKfIdx);
+                            if (std::abs(posKf.tick - currentTick) < 10) {
+                                gReplayEditor.freecamPos = posKf.position;
+                                gReplayEditor.freecamRot = posKf.rotation;
+                                gReplayEditor.freecamRoll = posKf.roll;
+                                gReplayEditor.freecamFov = posKf.fov;
+                                camera.pos = posKf.position;
+                                camera.front = glm::normalize(posKf.rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                                camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                                camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                                camera.fov = posKf.fov;
+                                camera.updateVectors();
+                            } else {
+                                gReplayEditor.freecamPos = camera.pos;
+                                gReplayEditor.freecamRot = glm::quat(glm::vec3(
+                                    glm::radians(camera.pitch), glm::radians(camera.yaw), 0.0f));
+                                gReplayEditor.freecamFov = camera.fov;
+                            }
+                        } else {
+                            gReplayEditor.freecamPos = camera.pos;
+                            gReplayEditor.freecamRot = glm::quat(glm::vec3(
+                                glm::radians(camera.pitch), glm::radians(camera.yaw), 0.0f));
+                            gReplayEditor.freecamFov = camera.fov;
+                        }
+                        gReplayEditor.freecam = true;
+                        REPLAY_PLAYER.cameraController().setMode("freecam");
+                        Debug::log(Debug::Category::Replay,
+                            "[ReplayEditor] Camera mode keyframe: entering freecam at tick %d\n",
+                            currentTick);
+                    }
+                    break;
+                case ReplayEditorCamMode::ThirdPerson:
+                    if (gReplayEditor.freecam) {
+                        gReplayEditor.freecam = false;
+                        gReplayEditor.mPrevCameraMode.clear();
+                    }
+                    REPLAY_PLAYER.cameraController().setMode("tp");
+                    break;
+                case ReplayEditorCamMode::FirstPerson:
+                    if (gReplayEditor.freecam) {
+                        gReplayEditor.freecam = false;
+                        gReplayEditor.mPrevCameraMode.clear();
+                    }
+                    REPLAY_PLAYER.cameraController().setMode("fp");
+                    break;
+            }
+        }
+
         // Step 1: Camera controller sets default camera
         glm::vec3 playerCamPos = camera.pos;
         glm::quat playerCamRot = glm::quat(1,0,0,0);
@@ -226,9 +540,7 @@ void engineTickCamera(Engine& engine, float dt)
     }
 
     if (anyFreecam) {
-        // Mouse look: rely on existing camera.updateMouse() callback which uses
-        // CAMERA_SENS from player settings — same as gameplay. Ensure cursor
-        // is disabled so the callback processes mouse deltas.
+        // Mouse look: rely on existing camera.updateMouse() callback
         if (glfwGetInputMode(engine.window(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             camera.firstMouse = true;
@@ -254,21 +566,10 @@ void engineTickCamera(Engine& engine, float dt)
         if (glm::length(move) > 0.001f)
             camera.pos += glm::normalize(move) * speed * dt;
 
-        // K = create camera keyframe during freecam
-        {
-            static bool kWasDown = false;
-            bool kDown = glfwGetKey(engine.window(), GLFW_KEY_K) == GLFW_PRESS;
-            if (kDown && !kWasDown && gReplayEditor.isLoaded()) {
-                int tick = (int)gReplayPlayer.currentTick();
-                glm::quat rot = glm::quatLookAt(glm::normalize(camera.front), glm::vec3(0,0,1));
-                gReplayEditor.addCameraKeyframe(tick, camera.pos, rot, 0.0f, camera.fov,
-                                                 gReplayEditor.defaultInterp);
-                Debug::log(Debug::Category::Replay,
-                    "[ReplayFreecam] K: Keyframe added at tick %d pos=(%.1f %.1f %.1f) look=(%.2f %.2f %.2f)\n",
-                    tick, camera.pos.x, camera.pos.y, camera.pos.z,
-                    camera.front.x, camera.front.y, camera.front.z);
-            }
-            kWasDown = kDown;
+        // Update editor freecam state from actual camera
+        if (gReplayEditor.isLoaded() && gReplayEditor.freecam) {
+            gReplayEditor.freecamPos = camera.pos;
+            gReplayEditor.freecamRot = glm::quatLookAt(glm::normalize(camera.front), glm::vec3(0,0,1));
         }
     } else if (replayPlaybackActive) {
         // Non-freecam replay: camera already handled above (controller + keyframes)

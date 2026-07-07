@@ -1,3 +1,7 @@
 {
-    "audioVolumeMultiplier": 0.8
+    "audioVolumeMultiplier": 0.8,
+    "exportWidth": 1920,
+    "exportHeight": 1080,
+    "exportCrf": 18,
+    "exportBitrate": 0
 }

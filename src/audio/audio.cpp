@@ -363,3 +363,81 @@ bool decodeAudioToPCM(const std::string& path, std::vector<int16_t>& outPCM,
     ma_decoder_uninit(&decoder);
     return true;
 }
+
+// ── Preview music track for replay editor ───────────────────
+static ma_sound* gReplayMusicSound = nullptr;
+static bool gReplayMusicInit = false;
+
+bool playReplayMusicPreview(const std::string& path, float volume)
+{
+    if (!gAudioInit) { Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Audio not initialized\n"); return false; }
+    stopReplayMusicPreview();
+
+    ma_sound* sound = new ma_sound();
+    ma_result result = ma_sound_init_from_file(&gEngine, path.c_str(), MA_SOUND_FLAG_NO_PITCH | MA_SOUND_FLAG_NO_SPATIALIZATION, nullptr, nullptr, sound);
+    if (result != MA_SUCCESS) {
+        Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Failed to load preview music: %s (err=%d)\n", path.c_str(), (int)result);
+        delete sound;
+        return false;
+    }
+
+    ma_sound_set_volume(sound, volume);
+    // Set to loop if we want infinite preview — for now, no loop (stops at end)
+    ma_sound_start(sound);
+
+    // Seek to start (tick 0)
+    ma_sound_seek_to_pcm_frame(sound, 0);
+
+    gReplayMusicSound = sound;
+    gReplayMusicInit = true;
+    Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Preview music started: %s\n", path.c_str());
+    return true;
+}
+
+void stopReplayMusicPreview()
+{
+    if (gReplayMusicSound) {
+        ma_sound_stop(gReplayMusicSound);
+        ma_sound_uninit(gReplayMusicSound);
+        delete gReplayMusicSound;
+        gReplayMusicSound = nullptr;
+        gReplayMusicInit = false;
+        Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Preview music stopped\n");
+    }
+}
+
+void pauseReplayMusicPreview()
+{
+    if (gReplayMusicSound && gReplayMusicInit)
+        ma_sound_stop(gReplayMusicSound);
+}
+
+void resumeReplayMusicPreview()
+{
+    if (gReplayMusicSound && gReplayMusicInit)
+        ma_sound_start(gReplayMusicSound);
+}
+
+bool seekReplayMusicPreview(float seconds)
+{
+    if (!gReplayMusicSound || !gReplayMusicInit) return false;
+    ma_uint64 frame = (ma_uint64)(seconds * 48000.0);
+    if (ma_sound_seek_to_pcm_frame(gReplayMusicSound, frame) != MA_SUCCESS)
+        return false;
+    return true;
+}
+
+bool isReplayMusicPreviewPlaying()
+{
+    if (!gReplayMusicSound || !gReplayMusicInit) return false;
+    return ma_sound_is_playing(gReplayMusicSound);
+}
+
+float getReplayMusicPreviewDuration()
+{
+    if (!gReplayMusicSound || !gReplayMusicInit) return 0.0f;
+    ma_uint64 totalFrames;
+    if (ma_sound_get_length_in_pcm_frames(gReplayMusicSound, &totalFrames) != MA_SUCCESS)
+        return 0.0f;
+    return (float)totalFrames / 48000.0f;
+}
