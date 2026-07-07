@@ -282,7 +282,7 @@ void setAudioListener(glm::vec3 pos, glm::vec3 forward)
     ma_engine_listener_set_position(&gEngine, 0, pos.x, pos.y, pos.z);
     ma_engine_listener_set_direction(&gEngine, 0, forward.x, forward.y, forward.z);
     ma_engine_listener_set_world_up(&gEngine, 0, 0.0f, 0.0f, 1.0f);
-    Debug::warn(Debug::Category::Audio, "[AUDIO] setAudioListener pos=(%.2f %.2f %.2f) forward=(%.2f %.2f %.2f)\n",
+    Debug::log(Debug::Category::Audio, "[AUDIO] setAudioListener pos=(%.2f %.2f %.2f) forward=(%.2f %.2f %.2f)\n",
                 pos.x, pos.y, pos.z, forward.x, forward.y, forward.z);
 }
 

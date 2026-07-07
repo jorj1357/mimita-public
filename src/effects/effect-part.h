@@ -146,4 +146,5 @@ private:
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};
     unsigned int mActiveCount = 0;
     unsigned int mBloodDebugSegmentCount = 0;
+    unsigned int mSpawnCursor = 0;
 };

@@ -19,6 +19,7 @@ void EffectPartSystem::init() {
     for (auto& slot : mPool)
         slot.alive = false;
     mActiveCount = 0;
+    mSpawnCursor = 0;
     mBloodParticles.clear();
     mBloodParticles.reserve(MAX_BLOOD_PARTICLES);
     mBloodDecals.clear();

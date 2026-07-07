@@ -55,12 +55,16 @@ void registerReplayEditorCommands() {
             }
             REPLAY_PLAYER.preloadAssets();
             REPLAY_PLAYER.beginPlayback();
+            GAME_STATE = GAME_PLAYING;
             if (!E.load(path)) {
                 Terminal::instance().addLog("[ERROR] Failed to load editor: " + path);
                 return;
             }
             E.playing = true;
             E.movieTick = 0.0f;
+            Debug::log(Debug::Category::Replay,
+                "[RPLE] Editor loaded: %s playing=%d totalTicks=%d\n",
+                path.c_str(), (int)REPLAY_PLAYER.isPlaying(), REPLAY_PLAYER.totalTicks());
             Terminal::instance().addLog("[RPLE] Editor loaded: " + path);
             Terminal::instance().addLog(
                 "Replay Editor Ready.\n"
