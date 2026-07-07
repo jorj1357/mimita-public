@@ -17,6 +17,7 @@
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "replay/replay.h"
+#include "replay/replay-editor.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "gui/hud/chat-bubble.h"
@@ -241,8 +242,15 @@ void engineTickCombat(Engine& engine, float dt)
         static bool spacePrev = false;
         bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
         if (spaceDown && !spacePrev) {
-            if (gReplayPlayer.isPaused()) gReplayPlayer.resume();
-            else gReplayPlayer.pause();
+            if (gReplayPlayer.isPaused()) {
+                gReplayPlayer.resume();
+                if (gReplayEditor.isLoaded()) gReplayEditor.playing = true;
+                Debug::log(Debug::Category::Replay, "[ReplayControls] Space: resumed\n");
+            } else {
+                gReplayPlayer.pause();
+                if (gReplayEditor.isLoaded()) gReplayEditor.playing = false;
+                Debug::log(Debug::Category::Replay, "[ReplayControls] Space: paused\n");
+            }
         }
         spacePrev = spaceDown;
 

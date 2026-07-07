@@ -348,18 +348,9 @@ void processMultiPelletWorldHit(
 {
     anyHitWorld = true;
     float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
-    {
-        HitEvent ev;
-        ev.position = hitEnd;
-        ev.normal = worldNml;
-        ev.direction = pelletDir;
-        ev.hitWorld = true;
-        ev.damage = 0;
-        ev.attacker = shooter.username;
-        ev.weaponSource = def.id;
-        HitEffects::onHit(ev);
-    }
-    EffectPartSystem::instance().spawnWorldDebris(hitEnd, worldNml, debrisForce);
+    EffectPartSystem::instance().queueWorldHit(
+        hitEnd, worldNml, pelletDir, debrisForce,
+        shooter.username, def.id);
 
     if (pelletNearest < nearestPelletDist) {
         nearestPelletDist = pelletNearest;
