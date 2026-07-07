@@ -405,6 +405,44 @@ EffectPart* EffectPartSystem::spawnCustom(glm::vec3 position, glm::vec3 color, f
     return spawn(e);
 }
 
+void EffectPartSystem::queueWorldHit(glm::vec3 position, glm::vec3 normal, glm::vec3 direction,
+                                      float debrisForce, const std::string& attacker,
+                                      const std::string& weaponSource)
+{
+    int count = mPendingTail - mPendingHead;
+    if (count >= MAX_PENDING_HITS)
+        return;
+    int idx = mPendingTail % MAX_PENDING_HITS;
+    mPendingHits[idx].position = position;
+    mPendingHits[idx].normal = normal;
+    mPendingHits[idx].direction = direction;
+    mPendingHits[idx].debrisForce = debrisForce;
+    mPendingHits[idx].attacker = attacker;
+    mPendingHits[idx].weaponSource = weaponSource;
+    ++mPendingTail;
+}
+
+void EffectPartSystem::drainPendingWorldHits(int maxCount)
+{
+    int count = mPendingTail - mPendingHead;
+    int toDrain = std::min(count, maxCount);
+    for (int i = 0; i < toDrain; ++i) {
+        int idx = mPendingHead % MAX_PENDING_HITS;
+        const auto& h = mPendingHits[idx];
+        HitEvent ev;
+        ev.position = h.position;
+        ev.normal = h.normal;
+        ev.direction = h.direction;
+        ev.hitWorld = true;
+        ev.damage = 0;
+        ev.attacker = h.attacker;
+        ev.weaponSource = h.weaponSource;
+        HitEffects::onHit(ev);
+        spawnWorldDebris(h.position, h.normal, h.debrisForce);
+        ++mPendingHead;
+    }
+}
+
 void EffectPartSystem::clear() {
     for (auto& slot : mPool) {
         if (slot.alive) {
@@ -416,6 +454,8 @@ void EffectPartSystem::clear() {
     mBloodParticles.clear();
     mBloodDecals.clear();
     mBloodDebugSegmentCount = 0;
+    mPendingHead = 0;
+    mPendingTail = 0;
 }
 
 int EffectPartSystem::collectAlive(PartSnapshot* out, int maxCount, float minAlpha) const

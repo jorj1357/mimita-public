@@ -103,6 +103,10 @@ public:
     EffectPart* spawnFreezeTrail(glm::vec3 position);
     EffectPart* spawnDownDash(glm::vec3 position);
     void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f);
+    void queueWorldHit(glm::vec3 position, glm::vec3 normal, glm::vec3 direction,
+                       float debrisForce, const std::string& attacker,
+                       const std::string& weaponSource);
+    void drainPendingWorldHits(int maxCount);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
     
@@ -138,6 +142,19 @@ private:
         glm::vec3 normal{0.0f};
         bool hit = false;
     };
+
+    struct PendingWorldHit {
+        glm::vec3 position;
+        glm::vec3 normal;
+        glm::vec3 direction;
+        float debrisForce = 1.0f;
+        std::string attacker;
+        std::string weaponSource;
+    };
+    static constexpr int MAX_PENDING_HITS = 16;
+    PendingWorldHit mPendingHits[MAX_PENDING_HITS];
+    int mPendingHead = 0;
+    int mPendingTail = 0;
 
     const class World* mWorld = nullptr;
     std::array<EffectPart, POOL_SIZE> mPool{};

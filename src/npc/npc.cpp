@@ -503,6 +503,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
+    // Pre-gather collision triangles once for local navigation checks (3m covers obstacle, climbable, wall avoid)
+    glm::vec3 gatherCenter = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f);
+    AABB localBounds{gatherCenter - glm::vec3(3.0f), gatherCenter + glm::vec3(3.0f)};
+    std::vector<int> nearCandidates;
+    appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates);
+
     glm::vec3 moveDir;
     bool jump, dash, attack;
     computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
@@ -510,7 +516,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     // Situaltional jump if obstacle ahead or stuck
     if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
     {
-        jump = NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world)
+        jump = NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world, nearCandidates)
             || NpcNavigation::isStuck(npc);
     }
 
@@ -518,7 +524,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
     {
         glm::vec3 wallNormal;
-        if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal))
+        if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal, nearCandidates))
             jump = true;
     }
 
@@ -590,14 +596,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         Perf::ScopedTimer _pathTimer("NpcPathfinding");
         if (glm::length(moveDir) > 0.001f)
-            moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world);
+            moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world, nearCandidates);
 
         if (NpcNavigation::isStuck(npc))
         {
             npc.stateMachine.stuckTimer += safeDt;
             if (npc.stateMachine.stuckTimer > 0.3f)
             {
-                moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world);
+                moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world, nearCandidates);
                 jump = true;
                 dash = npc.dashCooldown <= 0.0f;
                 npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);

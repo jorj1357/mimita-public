@@ -109,16 +109,28 @@ void engineTickCamera(Engine& engine, float dt)
     {
         static bool spaceWasDown = false;
         bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-        if (spaceDown && !spaceWasDown && replayPlaybackActive) {
-            if (gReplayPlayer.isPaused())
-                gReplayPlayer.resume();
+        bool playerIsPlaying = REPLAY_PLAYER.isPlaying();
+        // Log once per second for diagnostics
+        static float spaceDiagTimer = 0.0f;
+        spaceDiagTimer += dt;
+        if (spaceDiagTimer >= 1.0f) {
+            spaceDiagTimer = 0.0f;
+            Debug::log(Debug::Category::Replay,
+                "[SPACE DIAG] isPlaying=%d isPaused=%d spaceDown=%d replayPlaybackActive=%d editorLoaded=%d\n",
+                (int)playerIsPlaying, (int)REPLAY_PLAYER.isPaused(),
+                (int)spaceDown, (int)replayPlaybackActive,
+                (int)gReplayEditor.isLoaded());
+        }
+        if (spaceDown && !spaceWasDown && playerIsPlaying) {
+            if (REPLAY_PLAYER.isPaused())
+                REPLAY_PLAYER.resume();
             else
-                gReplayPlayer.pause();
+                REPLAY_PLAYER.pause();
             if (gReplayEditor.isLoaded())
-                gReplayEditor.playing = !gReplayPlayer.isPaused();
+                gReplayEditor.playing = !REPLAY_PLAYER.isPaused();
             Debug::log(Debug::Category::Replay,
                 "[ReplayCamera] Space: %s\n",
-                gReplayPlayer.isPaused() ? "PAUSED" : "PLAYING");
+                REPLAY_PLAYER.isPaused() ? "PAUSED" : "PLAYING");
         }
         spaceWasDown = spaceDown;
     }
