@@ -446,6 +446,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     } else {
         if (npc.stateMachine.nextDecisionTime <= 0.0f)
         {
+            Perf::ScopedTimer _decTimer("NpcSecondDecision");
             NpcState oldState = npc.stateMachine.currentState;
             NpcState newState = pickNextState(npc);
 
@@ -459,7 +460,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             {
                 npc.stateMachine.orbitSwapTimer = 0.1f + random01(npc.rngState) * 1.5f;
                 glm::vec3 otherPos;
-                float nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos);
+                float nearest;
+                { Perf::ScopedTimer _t("NpcNearestOther"); nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos); }
                 if (nearest < 8.0f)
                 {
                     glm::vec2 toOther(otherPos.x - npc.body.pos.x, otherPos.y - npc.body.pos.y);
@@ -477,7 +479,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             if (newState == NpcState::Strafe && oldState != NpcState::Strafe)
             {
                 glm::vec3 otherPos;
-                float nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos);
+                float nearest;
+                { Perf::ScopedTimer _t("NpcNearestOther"); nearest = nearestOtherNpc(npc.body.pos, npc.id, otherPos); }
                 if (nearest < 8.0f)
                 {
                     glm::vec2 toOther(otherPos.x - npc.body.pos.x, otherPos.y - npc.body.pos.y);

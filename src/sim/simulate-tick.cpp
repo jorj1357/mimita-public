@@ -83,7 +83,10 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             }
         }
     }
+    {
+    Perf::ScopedTimer _npcTick("NpcTick");
     sim.npcSystem->update(*sim.world, *sim.player, TICK_DT);
+    }
 
     // Resolve NPC vs Player collisions
     for (auto& npc : sim.npcSystem->all())

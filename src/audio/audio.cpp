@@ -146,7 +146,7 @@ static void startSound(const std::string& name, float volume, float pitch,
         ma_sound_set_position(&active->sound, position->x, position->y, position->z);
         ma_sound_set_spatialization_enabled(&active->sound, MA_TRUE);
         ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_linear);
-        ma_sound_set_min_distance(&active->sound, 1.0f);
+        ma_sound_set_min_distance(&active->sound, 2.0f);
         ma_sound_set_max_distance(&active->sound, std::max(1.0f, maxDistance));
     } else {
         ma_sound_set_spatialization_enabled(&active->sound, MA_FALSE);
@@ -290,6 +290,23 @@ void playWorldSound(const std::string& name, glm::vec3 pos, float volume, float 
 {
     AudioEvent event{name, AudioCategory::Impacts, true, pos, volume, pitch, maxDistance};
     AudioManager::instance().play(event);
+}
+
+glm::vec3 audioListenerPosition()
+{
+    return gLastListenerPosition;
+}
+
+void computeImpactAudio(float baseVolume, float distance, float severity,
+                        float& outVolume, float& outPitch)
+{
+    severity = std::clamp(severity, 0.0f, 1.0f);
+    float nearFactor = std::clamp(1.0f - distance / 5.0f, 0.0f, 1.0f);
+    float volume = baseVolume * (1.0f + nearFactor);
+    volume *= 0.7f + severity * 0.6f;
+    outVolume = std::max(0.0f, volume);
+    outPitch = 1.15f - severity * 0.3f;
+    outPitch = std::clamp(outPitch, 0.25f, 3.0f);
 }
 
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume)

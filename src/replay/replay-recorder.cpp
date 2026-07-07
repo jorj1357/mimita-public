@@ -1,5 +1,6 @@
 #include "replay.h"
 #include "replay-io.h"
+#include "perf/perf.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -39,6 +40,7 @@ void captureReplayKillfeed(const ReplayKillfeedEvent& event)
 
 std::vector<ReplayBodyPartState> captureReplayBodyParts(const Player& player)
 {
+    Perf::ScopedTimer _t("ReplayCaptureBodyParts");
     std::vector<ReplayBodyPartState> states;
     states.reserve(player.physicalBody.parts.size());
 
@@ -84,6 +86,12 @@ void ReplayRecorder::beginRecording(float randomSeed, const char* mapName) {
     mSoundEvents.clear();
     mKillfeedEvents.clear();
     mPendingEffects.clear();
+    // Pre-allocate to avoid reallocation spikes during recording
+    mFrames.reserve(4096);
+    mSceneFrames.reserve(4096);
+    mSoundEvents.reserve(256);
+    mKillfeedEvents.reserve(256);
+    mPendingEffects.reserve(64);
     mWorld = {};
     mLighting = {};
     mTick = 0;

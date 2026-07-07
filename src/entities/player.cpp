@@ -313,11 +313,12 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     printf("[APPLY DAMAGE] hpAfter=%d actualDamage=%d\n", currentHp, actualDamage);
     
     // Play hurt sound with volume/pitch based on damage
-    float hurt01 = std::clamp(actualDamage / 100.0f, 0.0f, 1.0f);
-    float volume = 0.3f + hurt01 * 0.7f;      // 0.3 - 1.0
-    float pitch = 1.1f - hurt01 * 0.2f;       // 1.1 - 0.9
-    
-    playWorldSound("player_hurt", pos, volume, pitch, 35.0f);
+    float severity = std::clamp((float)actualDamage / 100.0f, 0.0f, 1.0f);
+    float vol, pit;
+    computeImpactAudio(1.2f, 0.0f, severity, vol, pit);
+    playWorldSound("player_hurt", pos, vol, pit, 60.0f);
+    Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=player_hurt damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
+               actualDamage, severity, pit, vol);
     
     // Apply knockback to external velocity (cleared on movement input)
     if (knockbackForce > 0.0f && glm::length(knockbackDir) > 0.001f) {
@@ -340,7 +341,7 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     }
     
     if (DebugConfig::DEBUG_COMMANDS) {
-        Debug::log(Debug::Category::General, "[PLAYER HURT] damage=%d hp=%d/%d vol=%.2f pitch=%.2f\n",
-                   actualDamage, currentHp, maxHp, volume, pitch);
+        Debug::log(Debug::Category::General, "[PLAYER HURT] damage=%d hp=%d/%d severity=%.2f\n",
+                   actualDamage, currentHp, maxHp, severity);
     }
 }

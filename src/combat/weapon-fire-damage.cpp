@@ -71,7 +71,16 @@ void processNpcHit(
 
     printf("[SOUND] weapon=%s event=hit_entity body=%s damage=%.0f\n",
            def.id.c_str(), hitPart.c_str(), result.damage);
-    playWorldSound(def.soundHit, hitEnd, 0.85f, 1.0f, 35.0f);
+    {
+        float dist = glm::length(hitEnd - audioListenerPosition());
+        float headMul = (hitPart == "head") ? 2.0f : 1.0f;
+        float severity = std::clamp(ctx.angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
+        float vol, pit;
+        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
+                   def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
+    }
 }
 
 void processRemotePlayerHit(
@@ -127,7 +136,17 @@ void processRemotePlayerHit(
         ev.weaponSource = def.id;
         HitEffects::onHit(ev);
     }
-    playWorldSound(def.soundHit, hitEnd, 0.85f, 1.0f, 35.0f);
+    {
+        float dist = glm::length(hitEnd - audioListenerPosition());
+        float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, hitNormal)), 0.15f, 1.0f);
+        float headMul = (hitPart == "head") ? 2.0f : 1.0f;
+        float severity = std::clamp(angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
+        float vol, pit;
+        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
+                   def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
+    }
 }
 
 void processPlayerHit(
@@ -181,7 +200,17 @@ void processPlayerHit(
         ev.weaponSource = def.id;
         HitEffects::onHit(ev);
     }
-    playWorldSound(def.soundHit, hitEnd, 0.85f, 1.0f, 35.0f);
+    {
+        float dist = glm::length(hitEnd - audioListenerPosition());
+        float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, hitNormal)), 0.15f, 1.0f);
+        float headMul = (hitPart == "head") ? 2.0f : 1.0f;
+        float severity = std::clamp(angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
+        float vol, pit;
+        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
+                   def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
+    }
 }
 
 void processWorldHit(
@@ -206,7 +235,14 @@ void processWorldHit(
         HitEffects::onHit(ev);
     }
     EffectPartSystem::instance().spawnWorldDebris(hitEnd, worldNormal, debrisForce);
-    playWorldSound("hitworld", hitEnd, 0.8f, 1.0f, 35.0f);
+    float dist = glm::length(hitEnd - audioListenerPosition());
+    float directness = std::abs(glm::dot(-shotDirection, worldNormal));
+    float severity = std::clamp(directness, 0.0f, 1.0f);
+    float vol, pit;
+    computeImpactAudio(1.2f, dist, severity, vol, pit);
+    playWorldSound("hitworld", hitEnd, vol, pit, 60.0f);
+    Debug::log(Debug::Category::Audio, "[WORLD IMPACT AUDIO] dist=%.1f severity=%.2f pitch=%.2f volume=%.2f\n",
+               dist, severity, pit, vol);
 }
 
 float computeFalloffDamage(
@@ -387,14 +423,29 @@ void finalizeMultiPelletResult(
            totalPellets, accumulatedDamage);
 
     if (anyHitEntity) {
-        playWorldSound(def.soundHit, lastPelletEnd, 0.85f, 1.0f, 35.0f);
+        float dist = glm::length(lastPelletEnd - audioListenerPosition());
+        float severity = std::clamp(accumulatedDamage / 100.0f, 0.0f, 1.0f);
+        float vol, pit;
+        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        playWorldSound(def.soundHit, lastPelletEnd, vol, pit, 60.0f);
+        Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%.0f severity=%.2f pitch=%.2f volume=%.2f\n",
+                   def.soundHit.c_str(), dist, accumulatedDamage, severity, pit, vol);
         hitmarker((int)accumulatedDamage);
         if (GetPlayerSettings().debugCombat)
             Debug::log(Debug::Category::Weapons,
                 "[HITMARKER] attacker=%s pellet_hit=1 show=1 reason=shotgun_hit_entity",
                 shooter.username.c_str());
     } else if (anyHitWorld) {
-        playWorldSound("hitworld", lastPelletEnd, 0.8f, 1.0f, 35.0f);
+        float dist = glm::length(lastPelletEnd - audioListenerPosition());
+        glm::vec3 hitDir = glm::length(lastPelletEnd - muzzlePos) > 0.001f
+            ? glm::normalize(lastPelletEnd - muzzlePos) : glm::vec3(0.0f, 0.0f, -1.0f);
+        float directness = std::abs(glm::dot(-hitDir, lastHitNormal));
+        float severity = std::clamp(directness, 0.0f, 1.0f);
+        float vol, pit;
+        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        playWorldSound("hitworld", lastPelletEnd, vol, pit, 60.0f);
+        Debug::log(Debug::Category::Audio, "[WORLD IMPACT AUDIO] dist=%.1f severity=%.2f pitch=%.2f volume=%.2f\n",
+                   dist, severity, pit, vol);
     }
 }
 

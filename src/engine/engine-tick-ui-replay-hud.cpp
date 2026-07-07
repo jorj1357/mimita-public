@@ -40,6 +40,7 @@
 #include "game/game-state.h"
 #include "network/multiplayer-context.h"
 
+#include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "config/player-settings.h"
 #include "npc/npc-combat.h"
@@ -239,6 +240,117 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             uiDrawText("F3       Save replay", helpX + 8.0f, hy, 0.24f,
                        {0.8f, 0.8f, 1.0f, 1.0f});
         }
+        }
+    }
+
+    // ── Replay Editor Keyframe Popup ──────────────────────────
+    if (gReplayEditor.keyframePromptStage > 0) {
+        GLFWwindow* win = engine.window();
+        float fbW = uiScreenW();
+        float fbH = uiScreenH();
+        float pw = 360.0f;
+        float ph = 220.0f;
+
+        // Full-screen dim overlay
+        uiDrawRect({0.0f, 0.0f, fbW, fbH}, {0.0f, 0.0f, 0.0f, 0.55f}, "kf-dim");
+
+        // Centered popup box
+        float px = (fbW - pw) * 0.5f;
+        float py = (fbH - ph) * 0.5f;
+        uiDrawRect({px, py, pw, ph}, {0.12f, 0.12f, 0.15f, 1.0f}, "kf-bg");
+        uiDrawRectOutline({px, py, pw, ph}, {0.3f, 0.3f, 0.4f, 1.0f}, "kf-border");
+
+        float textX = px + 20.0f;
+        float ty = py + 16.0f;
+
+        if (gReplayEditor.keyframePromptStage == 1) {
+            // Title
+            uiDrawText("Create Keyframe", textX, ty, 0.40f, {1.0f, 1.0f, 0.8f, 1.0f});
+            ty += 34.0f;
+
+            float bw = pw - 40.0f;
+            float bh = 32.0f;
+            float by = ty;
+
+            // Button 1: Camera Position
+            UIButtonState b1 = uiButton(win, "1  Camera Position",
+                {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-btn-1");
+            if (b1.clicked) {
+                glm::vec3 pos = gReplayEditor.freecam
+                    ? gReplayEditor.freecamPos : THE_CAMERA.pos;
+                glm::quat rot = gReplayEditor.freecam
+                    ? gReplayEditor.freecamRot
+                    : glm::quatLookAt(glm::normalize(THE_CAMERA.front), glm::vec3(0,0,1));
+                gReplayEditor.addCameraKeyframe(
+                    gReplayEditor.keyframePromptTick, pos, rot,
+                    gReplayEditor.freecamRoll, gReplayEditor.freecamFov,
+                    gReplayEditor.defaultInterp);
+                Terminal::instance().addLog(
+                    "[RPLE] Camera position keyframe at tick " +
+                    std::to_string(gReplayEditor.keyframePromptTick));
+                gReplayEditor.keyframePromptStage = 0;
+            }
+            by += bh + 8.0f;
+
+            // Button 2: Camera Mode
+            UIButtonState b2 = uiButton(win, "2  Camera Mode",
+                {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-btn-2");
+            if (b2.clicked) {
+                gReplayEditor.keyframePromptStage = 2;
+            }
+            by += bh + 8.0f;
+
+            // Button 3: Playback Speed
+            UIButtonState b3 = uiButton(win, "3  Playback Speed",
+                {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-btn-3");
+            if (b3.clicked) {
+                gReplayEditor.addTimeKeyframe(
+                    gReplayEditor.keyframePromptTick, 1.0f,
+                    gReplayEditor.defaultInterp);
+                Terminal::instance().addLog(
+                    "[RPLE] Playback speed keyframe at tick " +
+                    std::to_string(gReplayEditor.keyframePromptTick));
+                gReplayEditor.keyframePromptStage = 0;
+            }
+
+            uiDrawText("ESC to cancel", textX, py + ph - 22.0f, 0.26f, {0.5f, 0.5f, 0.6f, 1.0f});
+
+        } else if (gReplayEditor.keyframePromptStage == 2) {
+            // Camera mode sub-prompt
+            uiDrawText("Camera Mode", textX, ty, 0.40f, {1.0f, 1.0f, 0.8f, 1.0f});
+            ty += 34.0f;
+
+            float bw = pw - 40.0f;
+            float bh = 32.0f;
+            float by = ty;
+
+            UIButtonState b1 = uiButton(win, "1  Third Person",
+                {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-mode-1");
+            if (b1.clicked) {
+                gReplayEditor.addCameraModeKeyframe(
+                    gReplayEditor.keyframePromptTick, ReplayEditorCamMode::ThirdPerson);
+                gReplayEditor.keyframePromptStage = 0;
+            }
+            by += bh + 8.0f;
+
+            UIButtonState b2 = uiButton(win, "2  Freecam",
+                {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-mode-2");
+            if (b2.clicked) {
+                gReplayEditor.addCameraModeKeyframe(
+                    gReplayEditor.keyframePromptTick, ReplayEditorCamMode::Freecam);
+                gReplayEditor.keyframePromptStage = 0;
+            }
+            by += bh + 8.0f;
+
+            UIButtonState b3 = uiButton(win, "3  First Person",
+                {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-mode-3");
+            if (b3.clicked) {
+                gReplayEditor.addCameraModeKeyframe(
+                    gReplayEditor.keyframePromptTick, ReplayEditorCamMode::FirstPerson);
+                gReplayEditor.keyframePromptStage = 0;
+            }
+
+            uiDrawText("ESC to cancel", textX, py + ph - 22.0f, 0.26f, {0.5f, 0.5f, 0.6f, 1.0f});
         }
     }
 }

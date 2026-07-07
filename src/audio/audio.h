@@ -51,6 +51,14 @@ void playAirJumpSound();
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume = 1.0f);
 void playRandomFootstep();
 
+// Get current audio listener world position
+glm::vec3 audioListenerPosition();
+
+// Compute volume/pitch for impact audio based on distance and severity.
+// severity: 0=graze, 1=direct center-mass hit
+void computeImpactAudio(float baseVolume, float distance, float severity,
+                        float& outVolume, float& outPitch);
+
 void playMenuClick();
 void playMenuHover();
 

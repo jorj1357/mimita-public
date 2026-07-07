@@ -172,9 +172,20 @@ void Terminal::toggle() {
 }
 
 void Terminal::addLog(const std::string& text) {
-    mScrollback.push_back(text);
+    // Split multi-line strings into separate entries so each entry is exactly one visual line.
+    // Otherwise uiDrawText's internal newline spacing (fontLineHeight*scale) differs from the
+    // terminal's per-entry y advancement (lineHeight=22), causing overlapping text.
+    size_t pos = 0, next;
+    while ((next = text.find('\n', pos)) != std::string::npos) {
+        std::string line = text.substr(pos, next - pos);
+        if (!line.empty())
+            mScrollback.push_back(line);
+        pos = next + 1;
+    }
+    if (pos < text.size())
+        mScrollback.push_back(text.substr(pos));
     if ((int)mScrollback.size() > MAX_SCROLLBACK)
-        mScrollback.erase(mScrollback.begin());
+        mScrollback.erase(mScrollback.begin(), mScrollback.begin() + ((int)mScrollback.size() - MAX_SCROLLBACK));
     if (mScrollOffset > 0)
         mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
 }
