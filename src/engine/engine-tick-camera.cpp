@@ -105,37 +105,9 @@ void engineTickCamera(Engine& engine, float dt)
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
                             !Terminal::instance().isOpen();
 
-    // Space always toggles play/pause during replay (any camera mode, editor or not)
-    {
-        static bool spaceWasDown = false;
-        bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-        bool playerIsPlaying = REPLAY_PLAYER.isPlaying();
-        // Log once per second for diagnostics
-        static float spaceDiagTimer = 0.0f;
-        spaceDiagTimer += dt;
-        if (spaceDiagTimer >= 1.0f) {
-            spaceDiagTimer = 0.0f;
-            Debug::log(Debug::Category::Replay,
-                "[SPACE DIAG] isPlaying=%d isPaused=%d spaceDown=%d replayPlaybackActive=%d editorLoaded=%d\n",
-                (int)playerIsPlaying, (int)REPLAY_PLAYER.isPaused(),
-                (int)spaceDown, (int)replayPlaybackActive,
-                (int)gReplayEditor.isLoaded());
-        }
-        if (spaceDown && !spaceWasDown && playerIsPlaying) {
-            if (REPLAY_PLAYER.isPaused())
-                REPLAY_PLAYER.resume();
-            else
-                REPLAY_PLAYER.pause();
-            if (gReplayEditor.isLoaded())
-                gReplayEditor.playing = !REPLAY_PLAYER.isPaused();
-            Debug::log(Debug::Category::Replay,
-                "[ReplayCamera] Space: %s\n",
-                REPLAY_PLAYER.isPaused() ? "PAUSED" : "PLAYING");
-        }
-        spaceWasDown = spaceDown;
-    }
-
     // ── Replay Editor keyboard controls ─────────────────────
+    // Space/Arrows handled by engine-tick-combat.cpp; this block handles
+    // editor-only keys (F, K, Shift+Up/Down, Ctrl+Z).
     if (gReplayEditor.isLoaded()) {
         GLFWwindow* win = engine.window();
 
@@ -240,36 +212,8 @@ void engineTickCamera(Engine& engine, float dt)
             fWasDown = fDown;
         }
 
-        // Arrow keys: seek by 60 ticks (1 second) when editor is loaded
-        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
-            static bool leftWasDown = false, rightWasDown = false;
-            bool leftDown = glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS;
-            bool rightDown = glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS;
-
-            if (leftDown && !leftWasDown) {
-                int tick = (int)gReplayEditor.movieTick;
-                tick = std::max(0, tick - 60);
-                gReplayEditor.seekToTick(tick);
-                if (REPLAY_PLAYER.totalTicks() > 0)
-                    REPLAY_PLAYER.seekToTick(tick);
-                Debug::log(Debug::Category::Replay,
-                    "[ReplayEditor] Left: seeked to tick %d\n", tick);
-            }
-            if (rightDown && !rightWasDown) {
-                int tick = (int)gReplayEditor.movieTick;
-                tick = std::min(gReplayEditor.totalTicks(), tick + 60);
-                gReplayEditor.seekToTick(tick);
-                if (REPLAY_PLAYER.totalTicks() > 0)
-                    REPLAY_PLAYER.seekToTick(tick);
-                Debug::log(Debug::Category::Replay,
-                    "[ReplayEditor] Right: seeked to tick %d\n", tick);
-            }
-            leftWasDown = leftDown;
-            rightWasDown = rightDown;
-        }
-
         // Shift+Up/Down: keyframe navigation
-        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0 &&
+        if (gReplayEditor.keyframePromptStage == 0 &&
             (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
              glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)) {
             static bool upWasDown = false, downWasDown = false;
@@ -332,7 +276,7 @@ void engineTickCamera(Engine& engine, float dt)
         }
 
         // Ctrl+Z: undo via autosave
-        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
+        if (gReplayEditor.keyframePromptStage == 0) {
             static bool zWasDown = false;
             bool ctrlDown = glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                             glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
@@ -347,7 +291,7 @@ void engineTickCamera(Engine& engine, float dt)
         }
 
         // K: create keyframe with type selection
-        if (gReplayEditor.isLoaded() && gReplayEditor.keyframePromptStage == 0) {
+        if (gReplayEditor.keyframePromptStage == 0) {
             static bool kWasDown = false;
             bool kDown = glfwGetKey(win, GLFW_KEY_K) == GLFW_PRESS;
             if (kDown && !kWasDown) {

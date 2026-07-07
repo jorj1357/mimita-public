@@ -339,6 +339,8 @@ void fireMultiPellet(
         }
     }
 
+    EffectPartSystem::instance().drainPendingWorldHits(6);
+
     finalizeMultiPelletResult(outResult, muzzlePos, lastPelletEnd, lastHitNormal, accumulatedDamage, anyHitEntity, anyHitWorld, lastTargetId, accumulatedKnockback, totalPellets, def, shooter);
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s\n",
