@@ -142,8 +142,18 @@ void registerWeaponCommands()
                     Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
                 }
             }
-        });
-    }
+    });
+
+    Terminal::instance().registerCommand({
+        "hafsdebug", "Toggle HAFS debug logging", "hafsdebug [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gHafsDebug;
+            bool val = args.empty() ? !gHafsDebug : (args[0] != "0");
+            gHafsDebug = val;
+            Terminal::instance().addLog(std::string("[HAFS] debug = ") + (val ? "1" : "0"));
+        }
+    });
+}
 
     Terminal::instance().registerCommand({
         "weapon_inspect", "Print active weapon module state", "weapon_inspect",

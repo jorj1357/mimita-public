@@ -8,6 +8,7 @@
 #include "weapon-viewmodel.h"
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
+#include "weapon-hafs.h"
 #include "weapon-rocket-launcher.h"
 #include "weapon-grenade-launcher.h"
 
@@ -71,6 +72,7 @@ private:
     WeaponViewModel mViewModels[MAX_SLOTS];
     GodballPhysics mGodballPhys;
     SwordswordState mSwordswordState;
+    HafsState mHafsState;
     RocketLauncherState mRocketState;
     float mShotCooldown = 0.0f;
     float mShootingTimer = 0.0f;

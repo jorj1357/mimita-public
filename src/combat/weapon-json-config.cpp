@@ -93,6 +93,8 @@ void weaponJsonBehaviorType(const json& root, WeaponDefinition& def)
         def.behaviorType = WeaponBehaviorType::Melee;
     else if (type == "swordsword")
         def.behaviorType = WeaponBehaviorType::Swordsword;
+    else if (type == "hafs")
+        def.behaviorType = WeaponBehaviorType::Hafs;
     else if (type == "rocketlauncher" || type == "rocket")
         def.behaviorType = WeaponBehaviorType::RocketLauncher;
     else if (type == "grenadelauncher" || type == "grenade")

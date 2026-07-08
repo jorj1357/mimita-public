@@ -20,6 +20,7 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
+#include "ragdoll/ragdoll.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "pobjects/persistent-physics.h"
@@ -348,6 +349,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
     if (!replayPlaybackActive) {
         { Perf::ScopedTimer _dr("EffectRender"); DeathSystem::instance().render(camera); }
+        { Perf::ScopedTimer _rr("RagdollRender"); RagdollDeathSystem::instance().render(camera); }
         { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
     }
     diagRenderStage(4);

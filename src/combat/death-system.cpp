@@ -17,6 +17,7 @@
 #include "physics/config.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
+#include "ragdoll/ragdoll.h"
 #include "render/render-player.h"
 #include "renderer/renderer.h"
 #include "replay/replay.h"
@@ -251,6 +252,10 @@ bool DeathSystem::kill(
 
     mCorpses.push_back(std::move(body));
 
+    // Spawn multi-part ragdoll (physics-based, replaces frozen skeleton)
+    RagdollDeathSystem::instance().spawnFromPlayer(
+        victim, direction * lethalForce, actorId);
+
     // Spawn death ellipsoid effect at the victim position, elongated along the kill direction
     const auto& deCfg = HitEffects::config().deathEllipsoid;
     if (deCfg.enabled) {
@@ -405,6 +410,9 @@ void DeathSystem::update(
         for (DeadBody& body : mCorpses)
             body.debugFreeze = true;
     }
+
+    // Update physics ragdolls
+    RagdollDeathSystem::instance().update(dt, world, player, npcs);
 
     // Remove expired corpses
     mCorpses.erase(

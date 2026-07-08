@@ -64,6 +64,14 @@ void playGodballImpact(const glm::vec3& position, float damageFraction) {
     playWorldSound("godballhit", position, volume, pitch, 25.0f);
 }
 
+void playAltFireSound(const WeaponDefinition& def, const glm::vec3& position) {
+    // Alt-fire uses soundShoot as well (separate alt_fire sound path TBD in future)
+    if (!def.soundShoot.empty()) {
+        Debug::log(Debug::Category::Audio, "[ALT FIRE] weapon=%s path=%s\n", def.id.c_str(), def.soundShoot.c_str());
+        playWorldSound(def.soundShoot, position, 1.0f, 1.0f, 80.0f);
+    }
+}
+
 void playSwordswordHitSound(const glm::vec3& position, float strength01) {
     float clamped = std::clamp(strength01, 0.0f, 1.0f);
     int r = rand() % 4 + 1;

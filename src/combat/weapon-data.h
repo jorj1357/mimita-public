@@ -13,6 +13,7 @@ WeaponDefinition createAa12Definition();
 WeaponDefinition createRocketLauncherDefinition();
 WeaponDefinition createGrenadeLauncherDefinition();
 WeaponDefinition createAdminRevolverDefinition();
+WeaponDefinition createHafsDefinition();
 
 void registerBuiltinWeapons();
 bool reloadBuiltinWeaponsIfChanged();

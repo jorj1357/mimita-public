@@ -5,6 +5,7 @@
 #include "perf/perf.h"
 #include "analytics/analytics-manager.h"
 #include "avatar/avatar.h"
+#include "ragdoll/ragdoll-config.h"
 
 #include "crosshair/crosshair-config.h"
 #include "config/gameplay-config.h"
@@ -34,6 +35,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     HitEffects::pollReload();
     CamConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
+    RagdollConfig::instance().pollReload();
     worldPassRan = false;
 
     {

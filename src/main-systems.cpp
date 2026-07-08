@@ -77,6 +77,9 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"
+#include "ragdoll/ragdoll.h"
+#include "ragdoll/ragdoll-config.h"
+#include "ragdoll/ragdoll-commands.h"
 #include "void-death/void-death.h"
 #include "crosshair/crosshair-commands.h"
 #include "crosshair/crosshair-config.h"
@@ -367,6 +370,8 @@ void gameInitSubsystems(Engine& engine)
     registerShadowCommands();
     registerDebugCommands();
     registerWorldTextureCommands();
+    RagdollConfig::instance().load("config/ragdolldeath.json");
+    registerRagdollCommands();
     HitEffects::loadConfig("config/hitfx.json");
 
     Terminal::instance().registerCommand({

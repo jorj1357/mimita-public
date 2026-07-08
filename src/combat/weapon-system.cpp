@@ -129,6 +129,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::Swordsword) {
             WeaponSwordsword::update(mSwordswordState, *def, *rt, player, camera, npcs, dt);
+        } else if (def->behaviorType == WeaponBehaviorType::Hafs) {
+            WeaponHafs::update(mHafsState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
             WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
@@ -479,6 +481,11 @@ RevolverShotResult WeaponSystem::fire(
         return {};
     }
 
+    if (def->behaviorType == WeaponBehaviorType::Hafs) {
+        WeaponHafs::startSlash(mHafsState, *def, player);
+        return {};
+    }
+
     if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
         fireRocketLauncher(camera, player, npcs, world);
         return {};
@@ -725,10 +732,17 @@ RevolverShotResult WeaponSystem::fireAlt(
     const WeaponDefinition* def = getCurrentDef(player);
     if (!def) return {};
 
-    if (def->behaviorType != WeaponBehaviorType::Swordsword) return {};
-
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!rt) return {};
+
+    if (def->behaviorType == WeaponBehaviorType::Hafs) {
+        WeaponHafs::startLunge(mHafsState, *def, player);
+        RevolverShotResult res;
+        res.fired = true;
+        return res;
+    }
+
+    if (def->behaviorType != WeaponBehaviorType::Swordsword) return {};
 
     if (rt->isReloading || rt->fireCooldown > 0.0f) return {};
 
