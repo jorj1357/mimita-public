@@ -63,7 +63,7 @@ void registerReplayEditorCommands() {
             E.playing = true;
             E.movieTick = 0.0f;
             Debug::log(Debug::Category::Replay,
-                "[RPLE] Editor loaded: %s playing=%d totalTicks=%d\n",
+                "[RPLE RELOAD] path=%s playing=%d totalTicks=%d\n",
                 path.c_str(), (int)REPLAY_PLAYER.isPlaying(), REPLAY_PLAYER.totalTicks());
             Terminal::instance().addLog("[RPLE] Editor loaded: " + path);
             Terminal::instance().addLog(
@@ -938,6 +938,25 @@ void registerReplayEditorCommands() {
         }
     });
 
+    // ── rple_exit: exit replay editor ────────────────────
+    t.registerCommand({
+        "rple_exit",
+        "Exit the replay editor and stop playback",
+        "rple_exit",
+        [](const std::vector<std::string>&) {
+            stopReplayMusicPreview();
+            if (gReplayEditor.isLoaded())
+                gReplayEditor.unload();
+            if (REPLAY_PLAYER.isPlaying())
+                REPLAY_PLAYER.stopPlayback();
+            REPLAY_ACTOR_MODELS.clear();
+            REPLAY_WEAPON_MODELS.clear();
+            REPLAY_CHAT_STATES.clear();
+            Terminal::instance().addLog("[RPLE] Editor exited");
+            Debug::log(Debug::Category::Replay, "[RPLE EXIT] cleared replay editor state\n");
+        }
+    });
+
     // ── rpleloadedit ─────────────────────────────────────
     t.registerCommand({
         "rpleloadedit",
@@ -989,6 +1008,7 @@ void registerReplayEditorCommands() {
                 "  rplekf_da     Delete ALL keyframes\n"
                 "  rplesave      Save editor project\n"
                 "  rpleundo      Undo last change\n"
+                "  rple_exit     Exit replay editor\n"
                 "  rplx          Export to MP4\n"
                 "\n"
                 "For all commands: rplecmds\n"
@@ -1064,6 +1084,7 @@ void registerReplayEditorCommands() {
                 "  rplesave      Save .rple.json edit file\n"
                 "  rpleloadedit  Load .rple.json edit file\n"
                 "  rpleundo      Undo last change (Ctrl+Z)\n"
+                "  rple_exit     Exit replay editor cleanly\n"
                 "\n"
                 "--- Aliases ---\n"
                 "  replay_editor       = rple\n"

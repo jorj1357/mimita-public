@@ -77,6 +77,11 @@ void Camera::addPunch(float pitchAmount, float yawAmount) {
 }
 
 glm::mat4 Camera::getView() const {
+    if (roll != 0.0f) {
+        glm::vec3 rolledUp = glm::normalize(
+            glm::angleAxis(glm::radians(roll), front) * up);
+        return glm::lookAt(pos, pos + front, rolledUp);
+    }
     return glm::lookAt(pos, pos + front, up);
 }
 

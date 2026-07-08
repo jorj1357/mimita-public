@@ -1,5 +1,6 @@
 #include "replay.h"
 #include "replay-editor.h"
+#include "debug/debug-log.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -87,7 +88,10 @@ void ReplayPlayer::update(float dt)
     if (mPlaybackTick > (float)lastTick) {
         mPlaybackTick = (float)lastTick;
         mCurrentTick = (uint32_t)lastTick;
-        mPlaying = false;
+        // Pause at end instead of stopping — keeps editor active, Space toggles pause,
+        // timeline visible, rple reload works, camera keyframes stay editable.
+        mPaused = true;
+        Debug::log(Debug::Category::Replay, "[RPLE END] tick=%d paused=1 editorStillOpen=1\n", lastTick);
     } else {
         mCurrentTick = (uint32_t)std::max(0, (int)std::floor(mPlaybackTick));
     }
