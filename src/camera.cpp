@@ -153,7 +153,12 @@ void Camera::smoothCollision(
             dir * std::max(hitDist - 0.3f, 0.3f);
     }
 
-    float smoothSpeed = hit ? 12.0f : 7.0f;
-    mPrevCollisionPos = glm::mix(mPrevCollisionPos, targetPos, std::min(1.0f, smoothSpeed * dt));
-    pos = mPrevCollisionPos;
+    if (!stiffnessEnabled) {
+        pos = targetPos;
+        mPrevCollisionPos = targetPos;
+    } else {
+        float smoothSpeed = hit ? 12.0f : 7.0f;
+        mPrevCollisionPos = glm::mix(mPrevCollisionPos, targetPos, std::min(1.0f, smoothSpeed * dt));
+        pos = mPrevCollisionPos;
+    }
 }

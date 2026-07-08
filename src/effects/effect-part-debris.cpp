@@ -15,7 +15,7 @@ void EffectPartSystem::spawnWorldDebris(glm::vec3 position, glm::vec3 normal, fl
     glm::vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : glm::vec3(0, 0, 1);
 
     EffectPart e;
-    e.position = position + n * 0.04f;
+    e.position = position + n * 0.12f;
     e.normal = n;
     e.replayType = "debris_batch";
     e.color = {0.42f, 0.40f, 0.38f};

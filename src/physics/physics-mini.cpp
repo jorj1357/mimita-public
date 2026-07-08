@@ -194,8 +194,7 @@ static void physicsMainUpdate_Internal(
         // The next frame after the dash, any meaningful input restores normal friction.
         bool inputDetected = movementJustPressed || jumpHeld || dashPressed || freezeHeld || downDashPressed;
         bool abilityUsed = p.dash.didDownDash || p.freeze.didFreeze;
-        bool landed = groundedThisFrame;
-        if (inputDetected || abilityUsed || landed) {
+        if (inputDetected || abilityUsed) {
             p.dash.frictionOverride = 1.0f;
             p.dash.tickPerfectDash = false;
             Debug::log(Debug::Category::Physics, "[FRICTION OVERRIDE] disabled inputDetected=%d\n", (int)inputDetected);
