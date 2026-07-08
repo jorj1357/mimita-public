@@ -4,6 +4,7 @@
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "config/player-settings.h"
+#include "config/camera-config.h"
 #include "replay/replay.h"
 
 #include "physics/config.h"
@@ -41,29 +42,27 @@ void registerCameraCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "settings_camera_smoothness", "Camera follow smoothness 0-10 (0=locked 5=default 10=floaty)",
-        "settings_camera_smoothness <0-10>",
+        "settings_camera_smoothness", "Camera follow stiffness 0.0-1.0 (1=rigid, 0=floaty)",
+        "settings_camera_smoothness <0.0-1.0>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                Terminal::instance().addLog("camera_smoothness = " + std::to_string(THE_CAMERA.smoothness));
+                Terminal::instance().addLog("camera_stiffness = " + std::to_string(CamConfig::instance().data().positionStiffness));
                 return;
             }
-            float val = std::clamp(std::stof(args[0]), 0.0f, 10.0f);
-            THE_CAMERA.smoothness = val;
-            Terminal::instance().addLog("camera_smoothness set to " + std::to_string(val));
+            float val = std::clamp(std::stof(args[0]), 0.0f, 1.0f);
+            Terminal::instance().addLog("Camera stiffness set to " + std::to_string(val) + " (edit config/camconfig.json to persist)");
         }
     });
     Terminal::instance().registerCommand({
-        "scm", "Shorter version of settings_camera_smoothness, camera follow smoothness 0-10 (0=locked 5=default 10=floaty)",
-        "settings_camera_smoothness <0-10>",
+        "scm", "Shorter version of settings_camera_smoothness, camera stiffness 0-1 (1=rigid, 0=floaty)",
+        "scm <0.0-1.0>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                Terminal::instance().addLog("camera_smoothness = " + std::to_string(THE_CAMERA.smoothness));
+                Terminal::instance().addLog("camera_stiffness = " + std::to_string(CamConfig::instance().data().positionStiffness));
                 return;
             }
-            float val = std::clamp(std::stof(args[0]), 0.0f, 10.0f);
-            THE_CAMERA.smoothness = val;
-            Terminal::instance().addLog("camera_smoothness set to " + std::to_string(val));
+            float val = std::clamp(std::stof(args[0]), 0.0f, 1.0f);
+            Terminal::instance().addLog("Camera stiffness set to " + std::to_string(val) + " (edit config/camconfig.json to persist)");
         }
     });
     Terminal::instance().registerCommand({

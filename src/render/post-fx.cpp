@@ -9,6 +9,9 @@
 
 #include "renderer/renderer.h"
 #include "utils/path_utils.h"
+#include "debug/debug-log.h"
+#include <cstdlib>
+#include <cstddef>
 
 using json = nlohmann::json;
 
@@ -430,6 +433,150 @@ void PostFX::applyPreset(const std::string& name)
     }
     mData = p;
     printf("[POSTFX] Applied preset '%s'\n", name.c_str());
+}
+
+// ── Property descriptors for random animation ──────────────
+struct PropDesc {
+    float PostFXData::* field;
+    float minVal;
+    float maxVal;
+};
+
+static const char* sPropNames[] = {
+    "brightness", "contrast", "saturation", "gamma", "hueShift",
+    "colorTemperature", "vignette", "filmGrain", "chromaticAberration",
+    "lensDistortion", "scanlines", "pixelation", "posterize",
+    "guiBrightness", "guiContrast", "guiSaturation", "guiHueShift",
+    "dreamStrength", "voidStrength", "psychedelicStrength", "retroStrength",
+    "glitchStrength", "worldWave", "screenWave", "screenShakeFx",
+    "edgeGlow", "outlineBoost", "shadowBoost"
+};
+
+static const PropDesc sPropTable[] = {
+    { &PostFXData::brightness,            0.2f,  2.0f },
+    { &PostFXData::contrast,              0.2f,  2.0f },
+    { &PostFXData::saturation,            0.0f,  2.5f },
+    { &PostFXData::gamma,                 1.0f,  4.0f },
+    { &PostFXData::hueShift,             -1.0f,  1.0f },
+    { &PostFXData::colorTemperature,     -1.0f,  1.0f },
+    { &PostFXData::vignette,              0.0f,  0.8f },
+    { &PostFXData::filmGrain,             0.0f,  1.0f },
+    { &PostFXData::chromaticAberration,   0.0f,  0.8f },
+    { &PostFXData::lensDistortion,       -0.5f,  0.5f },
+    { &PostFXData::scanlines,             0.0f,  1.0f },
+    { &PostFXData::pixelation,            0.0f,  1.0f },
+    { &PostFXData::posterize,             0.0f,  1.0f },
+    { &PostFXData::guiBrightness,         0.2f,  2.0f },
+    { &PostFXData::guiContrast,           0.2f,  2.0f },
+    { &PostFXData::guiSaturation,         0.0f,  2.5f },
+    { &PostFXData::guiHueShift,          -1.0f,  1.0f },
+    { &PostFXData::dreamStrength,         0.0f,  1.0f },
+    { &PostFXData::voidStrength,          0.0f,  1.0f },
+    { &PostFXData::psychedelicStrength,   0.0f,  1.0f },
+    { &PostFXData::retroStrength,         0.0f,  1.0f },
+    { &PostFXData::glitchStrength,        0.0f,  1.0f },
+    { &PostFXData::worldWave,             0.0f,  1.0f },
+    { &PostFXData::screenWave,            0.0f,  1.0f },
+    { &PostFXData::screenShakeFx,         0.0f,  0.5f },
+    { &PostFXData::edgeGlow,             0.0f,  1.0f },
+    { &PostFXData::outlineBoost,          0.0f,  2.0f },
+    { &PostFXData::shadowBoost,           0.0f,  1.0f },
+};
+static constexpr int sPropCount = sizeof(sPropTable) / sizeof(sPropTable[0]);
+
+void PostFX::buildAnimProps()
+{
+    mAnimPropCount = sPropCount;
+    for (int i = 0; i < sPropCount; ++i) {
+        mAnimProps[i].value = &(mData.*sPropTable[i].field);
+        mAnimProps[i].minVal = sPropTable[i].minVal;
+        mAnimProps[i].maxVal = sPropTable[i].maxVal;
+        pickRandomTarget(mAnimProps[i]);
+    }
+}
+
+void PostFX::pickRandomTarget(AnimProp& p)
+{
+    if (!p.value) return;
+    p.startValue = *p.value;
+    float range = p.maxVal - p.minVal;
+    p.target = p.minVal + ((float)(rand() % 10001) / 10000.0f) * range;
+    p.target = std::clamp(p.target, p.minVal, p.maxVal);
+    p.duration = 1.0f + ((float)(rand() % 9001) / 1000.0f); // 1.0 – 10.0s
+    p.elapsed = 0.0f;
+}
+
+const char* PostFX::animPropName(int idx) const
+{
+    if (idx < 0 || idx >= sPropCount) return nullptr;
+    return sPropNames[idx];
+}
+
+bool PostFX::setAnimExcluded(const std::string& name, bool exclude)
+{
+    for (int i = 0; i < sPropCount; ++i) {
+        if (sPropNames[i] == name) {
+            mAnimExcluded[i] = exclude;
+            Debug::log(Debug::Category::General, "[POSTFXRAND] property=%s excluded=%d\n", name.c_str(), (int)exclude);
+            return true;
+        }
+    }
+    return false;
+}
+
+void PostFX::enableRandomMode()
+{
+    if (mRandomMode) return;
+    mOriginalValues = mData;
+    mRestoring = false;
+    mRandomMode = true;
+    for (int i = 0; i < 28; ++i) mAnimExcluded[i] = false;
+    buildAnimProps();
+    Debug::log(Debug::Category::General, "[POSTFXRAND] enabled=1 capturedOriginalValues=%d\n", sPropCount);
+}
+
+void PostFX::disableRandomMode()
+{
+    if (!mRandomMode && !mRestoring) return;
+    if (!mRandomMode) { mRestoring = false; return; }
+    mRandomMode = false;
+    mRestoring = true;
+    mRestoreElapsed = 0.0f;
+    Debug::log(Debug::Category::General, "[POSTFXRAND] disabled restoringOriginalState\n");
+}
+
+void PostFX::updateRandomAnim(float dt)
+{
+    if (mRestoring) {
+        mRestoreElapsed += dt;
+        float t = std::clamp(mRestoreElapsed / RESTORE_DURATION, 0.0f, 1.0f);
+        // Smooth step
+        t = t * t * (3.0f - 2.0f * t);
+        float* src = &mOriginalValues.brightness;
+        float* dst = &mData.brightness;
+        int count = offsetof(PostFXData, shadowBoost) / sizeof(float) + 1;
+        for (int i = 0; i < count; ++i)
+            dst[i] = src[i] + (dst[i] - src[i]) * (1.0f - t);
+        if (mRestoreElapsed >= RESTORE_DURATION) {
+            mData = mOriginalValues;
+            mRestoring = false;
+            Debug::log(Debug::Category::General, "[POSTFXRAND] restoreComplete\n");
+        }
+        return;
+    }
+
+    if (!mRandomMode) return;
+
+    for (int i = 0; i < mAnimPropCount; ++i) {
+        AnimProp& p = mAnimProps[i];
+        if (!p.value || mAnimExcluded[i]) continue;
+        p.elapsed += dt;
+        float t = std::clamp(p.elapsed / p.duration, 0.0f, 1.0f);
+        float st = t * t * (3.0f - 2.0f * t);
+        *p.value = p.startValue + (p.target - p.startValue) * st;
+        if (t >= 1.0f)
+            pickRandomTarget(p);
+    }
 }
 
 void PostFX::applyConfig(const PostFXData& data)

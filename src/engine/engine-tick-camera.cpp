@@ -19,6 +19,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "ui/hitmarker.h"
 #include "config/player-settings.h"
+#include "config/camera-config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "game/duel.h"
@@ -401,11 +402,12 @@ void engineTickCamera(Engine& engine, float dt)
                 0.0f));
         }
 
-        // Step 2: Editor keyframe interpolation (overrides camera if active).
-        // Position keyframes override the camera controller regardless of
-        // camera mode (thirdperson, freecam, firstperson). Only WASD freecam
-        // movement (below) can additionally move the camera.
-        if (gReplayEditor.isLoaded() && gReplayEditor.cameraKeyframeCount() > 0)
+        // Step 2: Editor keyframe interpolation.
+        // Position keyframes only drive the camera when in Freecam mode.
+        // In ThirdPerson / FirstPerson modes, the normal replay camera controller
+        // (Step 1) runs instead — position keyframes are ignored by design.
+        if (gReplayEditor.isLoaded() && gReplayEditor.freecam &&
+            gReplayEditor.cameraKeyframeCount() > 0)
         {
             float currentTick = (float)gReplayPlayer.currentTick();
             int kfCount = gReplayEditor.cameraKeyframeCount();
@@ -466,19 +468,30 @@ void engineTickCamera(Engine& engine, float dt)
                     camera.front.x, camera.front.y, camera.front.z,
                     camera.fov, camera.roll);
             } else {
-                // Before first keyframe: player camera (no override)
-                Debug::logThrottled(Debug::Category::Replay, "kf-before", 2.0f,
-                    "[RPLE KF APPLY] tick=%.0f before first KF (tick=%d) — player camera\n",
-                    currentTick, gReplayEditor.cameraKeyframe(0).tick);
+                // Before first keyframe: in freecam mode, hold the first keyframe
+                const auto& kf = gReplayEditor.cameraKeyframe(0);
+                camera.pos = kf.position;
+                glm::quat rot = kf.rotation;
+                camera.front = glm::normalize(rot * glm::vec3(0.0f, 0.0f, -1.0f));
+                camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                camera.fov = kf.fov;
+                camera.roll = kf.roll;
+                camera.updateVectors();
+
+                Debug::log(Debug::Category::Replay,
+                    "[RPLE KF APPLY] tick=%.0f BEFORE first KF (tick=%d) — holding first KF\n",
+                    currentTick, kf.tick);
             }
         } else if (gReplayEditor.isLoaded()) {
             Debug::log(Debug::Category::Replay,
                 "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
-                " fov=%.0f roll=%.1f source=cameraController\n",
+                " fov=%.0f roll=%.1f source=%s\n",
                 gReplayPlayer.currentTick(),
                 camera.pos.x, camera.pos.y, camera.pos.z,
                 camera.front.x, camera.front.y, camera.front.z,
-                camera.fov, camera.roll);
+                camera.fov, camera.roll,
+                gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
         }
     }
 
@@ -517,8 +530,10 @@ void engineTickCamera(Engine& engine, float dt)
     } else if (replayPlaybackActive) {
         // Non-freecam replay: camera already handled above (controller + keyframes)
     } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
-        camera.follow(gDuelManager.winnerCameraTarget());
-        camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt);
+        auto& camCfg = CamConfig::instance().data();
+        camera.fov = camCfg.fov;
+        camera.follow(gDuelManager.winnerCameraTarget(), camCfg.offset, camCfg.positionStiffness);
+        camera.smoothCollision(gDuelManager.winnerCameraTarget(), world.collisionMesh.triangles, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         float eyeHeight = PLAYER_HEIGHT * 0.52f;
@@ -526,8 +541,10 @@ void engineTickCamera(Engine& engine, float dt)
         // Apply punch for weapon recoil
         camera.pos += camera.front * glm::vec3(0.0f, 0.0f, 0.0f); // no offset
     } else {
-        camera.follow(player.pos);
-        camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt);
+        auto& camCfg = CamConfig::instance().data();
+        camera.fov = camCfg.fov;
+        camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
+        camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
     }
 
     // Debug: final camera state after all evaluation (throttled to 0.5s)

@@ -23,6 +23,7 @@
 #include "world/world.h"
 #include "game/duel.h"
 #include "game/spawn-utils.h"
+#include "game/spawn-override.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "killfeed/killfeed.h"
@@ -264,15 +265,23 @@ bool DeathSystem::kill(
 void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
 {
     int spawnIndex = -1;
-    SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
-    if (sp) {
-        actor.pos = sp->position;
-        actor.respawnPosition = sp->position;
-        for (size_t i = 0; i < world.spawnPoints.size(); ++i) {
-            if (&world.spawnPoints[i] == sp) { spawnIndex = (int)i; break; }
-        }
+    glm::vec3 overridePos;
+    if (tryGetSpawnOverride(overridePos)) {
+        actor.pos = overridePos;
+        actor.respawnPosition = overridePos;
+        Debug::log(Debug::Category::General, "[PLAYER RESPAWN] override active spawning at (%.1f %.1f %.1f)\n",
+                   overridePos.x, overridePos.y, overridePos.z);
     } else {
-        actor.pos = actor.respawnPosition;
+        SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
+        if (sp) {
+            actor.pos = sp->position;
+            actor.respawnPosition = sp->position;
+            for (size_t i = 0; i < world.spawnPoints.size(); ++i) {
+                if (&world.spawnPoints[i] == sp) { spawnIndex = (int)i; break; }
+            }
+        } else {
+            actor.pos = actor.respawnPosition;
+        }
     }
 
     actor.vel = glm::vec3(0.0f);

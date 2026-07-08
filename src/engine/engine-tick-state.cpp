@@ -11,6 +11,7 @@
 #include "game/duel.h"
 #include "game/bomb-tag.h"
 #include "game/spawn-utils.h"
+#include "game/spawn-override.h"
 #include "network/multiplayer-context.h"
 #include "network/net_mode.h"
 #include "profile/local-profile-system.h"
@@ -93,7 +94,13 @@ void engineTickState(Engine& engine, float dt)
                     player.reset();
                     player.username = AuthSystem::instance().displayName();
 
-                    if (!world.spawnPoints.empty())
+                    glm::vec3 overridePos;
+                    if (tryGetSpawnOverride(overridePos)) {
+                        player.pos = overridePos;
+                        player.respawnPosition = overridePos;
+                        Debug::log(Debug::Category::General, "[SANDBOX SPAWN] override active at (%.1f %.1f %.1f)\n",
+                                   overridePos.x, overridePos.y, overridePos.z);
+                    } else if (!world.spawnPoints.empty())
                     {
                         std::uniform_int_distribution<size_t> dist(0, world.spawnPoints.size() - 1);
                         world.selectedSpawnIndex = (int)dist(rng);

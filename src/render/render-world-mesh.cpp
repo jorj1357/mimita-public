@@ -1,6 +1,7 @@
 #include "render-world.h"
 
 #include <cstddef>
+#include <cmath>
 #include <limits>
 
 #include <glad/glad.h>
@@ -8,6 +9,7 @@
 
 #include "camera.h"
 #include "debug/debug-visuals.h"
+#include "debug/debug-log.h"
 #include "debug/gl-debug.h"
 #include "renderer/renderer.h"
 #include "map/map_common.h"
@@ -96,6 +98,31 @@ void uploadMeshIfNeeded(const World& world)
     MIMITA_GL_CHECK("uploadMeshIfNeeded complete");
 }
 
+static bool gTexBreatheEnabled = false;
+static float gTexBreatheOriginalTime = 0.0f;
+static float gTexBreatheElapsed = 0.0f;
+static bool gTexBreatheRestoring = false;
+static float gTexBreatheRestoreElapsed = 0.0f;
+static constexpr float TEXBREATHE_RESTORE_DURATION = 1.0f;
+
+void setTexBreatheEnabled(bool enabled)
+{
+    if (enabled == gTexBreatheEnabled) return;
+    if (enabled && !gTexBreatheEnabled) {
+        gTexBreatheEnabled = true;
+        gTexBreatheElapsed = 0.0f;
+        gTexBreatheRestoring = false;
+        Debug::log(Debug::Category::General, "[TEXBREATHE] enabled=1\n");
+    } else if (!enabled && gTexBreatheEnabled) {
+        gTexBreatheEnabled = false;
+        gTexBreatheRestoring = true;
+        gTexBreatheRestoreElapsed = 0.0f;
+        Debug::log(Debug::Category::General, "[TEXBREATHE] disabled restoringOriginalValues\n");
+    }
+}
+
+bool texBreatheEnabled() { return gTexBreatheEnabled || gTexBreatheRestoring; }
+
 void setUniforms(GLuint shader)
 {
     const auto& cfg = LightingConfig::instance();
@@ -104,6 +131,23 @@ void setUniforms(GLuint shader)
     setInt(shader, "uUseColor", worldSolidRedDebug() ? 1 : 0);
     if (worldSolidRedDebug())
         glUniform4f(uniformLoc(shader, "uColor"), 1.0f, 0.0f, 0.0f, 1.0f);
+    double now = glfwGetTime();
+    if (gTexBreatheRestoring) {
+        gTexBreatheRestoreElapsed += 0.016f; // approximate dt
+        float t = std::clamp(gTexBreatheRestoreElapsed / TEXBREATHE_RESTORE_DURATION, 0.0f, 1.0f);
+        t = t * t * (3.0f - 2.0f * t);
+        setFloat(shader, "uTexBreatheTime", gTexBreatheElapsed * (1.0f - t));
+        if (gTexBreatheRestoreElapsed >= TEXBREATHE_RESTORE_DURATION) {
+            gTexBreatheRestoring = false;
+            Debug::log(Debug::Category::General, "[TEXBREATHE] restoreComplete\n");
+        }
+    }
+    if (gTexBreatheEnabled) {
+        gTexBreatheElapsed += 0.016f;
+        setFloat(shader, "uTexBreatheTime", gTexBreatheElapsed);
+    }
+    setInt(shader, "uTexBreatheEnabled", (gTexBreatheEnabled || gTexBreatheRestoring) ? 1 : 0);
+    setFloat(shader, "uTime", (float)now);
     setInt(shader, "uTex", 0);
     setInt(shader, "uDebugView", DebugVis::shaderDebugView());
 

@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "audio/audio.h"
+#include "combat/weapon-audio.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
@@ -17,11 +18,7 @@ namespace WeaponFire {
 
 static void fireSound(const WeaponDefinition& def, const glm::vec3& muzzlePos)
 {
-    if (!def.soundShoot.empty()) {
-        float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
-    }
+    WeaponAudio::playShootSound(def, muzzlePos);
 }
 
 void processNpcHit(

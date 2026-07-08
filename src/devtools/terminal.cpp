@@ -18,6 +18,9 @@
 #include "input/input-commands.h"
 #include "physics/config.h"
 #include "replay/replay.h"
+#include "entities/player.h"
+#include "terminal/terminal-state.h"
+#include "game/spawn-override.h"
 
 Terminal& Terminal::instance() {
     static Terminal t;
@@ -105,6 +108,52 @@ void Terminal::init(GLFWwindow* window) {
                 std::to_string(npcSpawnPoint.x) + ", " +
                 std::to_string(npcSpawnPoint.y) + ", " +
                 std::to_string(npcSpawnPoint.z) + ")");
+        }
+    });
+
+    registerCommand({
+        "spawnoverride_set",
+        "Set spawn override to current position",
+        "spawnoverride_set [<x> <y> <z>]",
+        [](const std::vector<std::string>& args) {
+            if (args.size() >= 3) {
+                glm::vec3 pos(std::stof(args[0]), std::stof(args[1]), std::stof(args[2]));
+                setSpawnOverridePosition(pos);
+                Terminal::instance().addLog("[SPAWN OVERRIDE] set to (" + args[0] + " " + args[1] + " " + args[2] + ")");
+            } else {
+                glm::vec3 pos = THE_PLAYER.pos;
+                setSpawnOverridePosition(pos);
+                Terminal::instance().addLog("[SPAWN OVERRIDE] set to (" +
+                    std::to_string(pos.x) + " " + std::to_string(pos.y) + " " + std::to_string(pos.z) + ")");
+            }
+        }
+    });
+    registerCommand({
+        "spawnoverride",
+        "Enable or disable spawn override",
+        "spawnoverride <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                auto& o = getSpawnOverride();
+                Terminal::instance().addLog("[SPAWN OVERRIDE] enabled=" + std::to_string((int)o.enabled) +
+                    " position=(" + std::to_string(o.position.x) + " " +
+                    std::to_string(o.position.y) + " " + std::to_string(o.position.z) + ")");
+                return;
+            }
+            bool on = args[0] == "1";
+            setSpawnOverrideEnabled(on);
+            Terminal::instance().addLog(on ? "[SPAWN OVERRIDE] enabled" : "[SPAWN OVERRIDE] disabled");
+        }
+    });
+    registerCommand({
+        "spawnoverride_info",
+        "Show current spawn override state",
+        "spawnoverride_info",
+        [](const std::vector<std::string>&) {
+            auto& o = getSpawnOverride();
+            Terminal::instance().addLog("[SPAWN OVERRIDE] enabled=" + std::to_string((int)o.enabled));
+            Terminal::instance().addLog("[SPAWN OVERRIDE] position=(" +
+                std::to_string(o.position.x) + " " + std::to_string(o.position.y) + " " + std::to_string(o.position.z) + ")");
         }
     });
 

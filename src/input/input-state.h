@@ -23,5 +23,6 @@ struct InputState {
     bool groundReturnPressed = false;
     bool downDashPressed = false;
     bool freezeHeld = false;
+    float movementHeldDuration = 0.0f;
     glm::vec3 camForward{0,0,1};
 };

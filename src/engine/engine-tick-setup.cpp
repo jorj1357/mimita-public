@@ -10,6 +10,7 @@
 #include "config/gameplay-config.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
+#include "config/camera-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
@@ -31,6 +32,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     pollWorldCrosshairConfig();
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
+    CamConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
     worldPassRan = false;
 

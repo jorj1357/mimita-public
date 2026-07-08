@@ -9,6 +9,7 @@
 
 #include "debug/debug-log.h"
 #include "physics/config.h"
+#include "game/spawn-override.h"
 #include "audio/audio.h"
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
@@ -49,10 +50,32 @@ NpcDifficultyTuning tuningForDifficulty(float difficulty)
     tuning.movementPrecision = 0.15f + d * 0.80f;
     tuning.awarenessRange = 20.0f + d * 130.0f;
     tuning.prediction = 0.02f + d * 0.63f;
+    tuning.turnSpeed = 180.0f + d * 900.0f;  // 180 deg/s at diff 0, 1080 deg/s at diff 10
     return tuning;
 }
 
-Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
+static bool equipNpcWeapon(Npc& npc, const std::string& weaponId, int slot = 1)
+{
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    if (!def) {
+        Debug::log(Debug::Category::NpcCombat, "[NPC WEAPON] npc=%u weapon '%s' not found\n",
+                   npc.id, weaponId.c_str());
+        return false;
+    }
+    npc.body.equippedWeaponId = weaponId;
+    npc.body.equippedSlot = slot;
+    npc.body.hasValidWeapon = true;
+    npc.body.weaponRuntimes[weaponId] = WeaponRuntime{};
+    WeaponRuntimeHelper::initRuntime(npc.body.weaponRuntimes[weaponId], *def);
+    resetAllWeaponRuntimesForSpawn(npc.body, "Npc equipWeapon");
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC WEAPON] npc=%u equipped weapon=%s slot=%d type=%d\n",
+        npc.id, weaponId.c_str(), slot, (int)def->behaviorType);
+    return true;
+}
+
+Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
+         const std::string& weaponId)
     : id(npcId), difficulty(std::clamp(npcDifficulty, 0.0f, 10.0f))
 {
     tuning = tuningForDifficulty(difficulty);
@@ -77,28 +100,10 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn)
     moveNoiseTimer = 0.1f + random01(rngState) * 0.3f;
     moveOffset = {0.0f, 0.0f};
 
-    // Force equipping ONLY Revolver — no other weapon considered
-    body.equippedWeaponId = "revolver";
-    body.equippedSlot = 1;
-    body.hasValidWeapon = true;
-    {
-        const WeaponDefinition* def = WeaponRegistry::instance().get("revolver");
-        if (def) {
-            body.weaponRuntimes["revolver"] = WeaponRuntime{};
-            WeaponRuntimeHelper::initRuntime(body.weaponRuntimes["revolver"], *def);
-        }
+    // Equip weapon (default revolver, or specified via parameter)
+    if (!equipNpcWeapon(*this, weaponId.empty() ? "revolver" : weaponId, 1)) {
+        equipNpcWeapon(*this, "revolver", 1);  // fallback to revolver
     }
-    resetAllWeaponRuntimesForSpawn(body, "Npc constructor");
-    Debug::log(Debug::Category::NpcCombat,
-        "[NPC WEAPON] npc=%u immediate equip weapon=revolver slot=%d hasValidWeapon=1",
-        id, body.equippedSlot);
-    Debug::log(Debug::Category::NpcCombat,
-        "[NPC WEAPON] npc=%u equippedWeaponId=%s weaponRuntimes.size=%zu",
-        id, body.equippedWeaponId.c_str(), body.weaponRuntimes.size());
-    Debug::log(Debug::Category::Animation,
-        "[NPC ANIM] npc=%u character=%s skeleton=%zu nodes weaponPosesAvailable=%d\n",
-        id, body.mCharacterName.c_str(), body.perfectPoseSkeleton.nodes.size(),
-        gPlayerProcedural.weaponPoses.find("revolver:idle") != gPlayerProcedural.weaponPoses.end() ? 1 : 0);
 
     Debug::log(Debug::Category::General,
                "[NPC] spawned id=%u difficulty=%.1f reaction=%.2f aggression=%.2f awareness=%.1f\n",
@@ -136,10 +141,17 @@ void NpcSystem::spawnNpc(float difficulty)
     Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     uint32_t id = nextNpcId();
-    npcs.emplace_back(id, d, npcSpawnPoint);
-    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, npcSpawnPoint, 0.8f, 1.0f, 35.0f, id});
+    glm::vec3 spawnPos = npcSpawnPoint;
+    glm::vec3 overridePos;
+    if (tryGetSpawnOverride(overridePos)) {
+        spawnPos = overridePos;
+        Debug::log(Debug::Category::General, "[NPC SPAWN] override active spawning at (%.1f %.1f %.1f)\n",
+                   overridePos.x, overridePos.y, overridePos.z);
+    }
+    npcs.emplace_back(id, d, spawnPos);
+    AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (global diff=%.1f)\n",
-               id, npcSpawnPoint.x, npcSpawnPoint.y, npcSpawnPoint.z, d);
+               id, spawnPos.x, spawnPos.y, spawnPos.z, d);
 }
 
 void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos)

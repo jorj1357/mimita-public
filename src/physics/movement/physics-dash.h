@@ -32,21 +32,20 @@ inline DashQuality dashQualityFromTicks(int ticks) {
     return DashQuality::Poor;
 }
 
-void doDash(
-    Player& p,
-    const glm::vec2& wishMoveXY,
-    bool dashPressed,
-    const glm::vec3& camForward,
-    float dt
-);
+// Returns quality from movement hold duration (seconds).
+// Hold duration < 1 tick = perfect.
+inline DashQuality dashQualityFromHoldDuration(float holdDuration, float tickDt) {
+    return holdDuration < tickDt ? DashQuality::Perfect : DashQuality::Excellent;
+}
 
 void doAirDash(
     Player& p,
     const glm::vec2& wishMoveXY,
-    bool triggerPressed,
+    bool jumpTriggered,
     bool movementPressed,
     bool airborne,
     int movementTicks,
+    float movementHeldDuration,
     float dt,
     const glm::vec3& camForward = glm::vec3(1.0f, 0.0f, 0.0f)
 );

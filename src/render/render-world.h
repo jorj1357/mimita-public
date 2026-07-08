@@ -11,6 +11,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <cstdint>
 
 struct World;
 class Camera;
@@ -30,3 +31,5 @@ void dumpGLBMaterials(Terminal& t);
 void dumpGLBTextures(Terminal& t);
 void dumpGLBLights(Terminal& t);
 void validateGLB(Terminal& t);
+void setTexBreatheEnabled(bool enabled);
+bool texBreatheEnabled();

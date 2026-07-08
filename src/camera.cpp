@@ -17,8 +17,8 @@ void Camera::updateMouse(double xpos, double ypos) {
     lastX = xpos;
     lastY = ypos;
 
-    xoff *= CAMERA_SENS;
-    yoff *= CAMERA_SENS;
+    xoff *= 0.15f;
+    yoff *= 0.15f;
 
     // this makes me look left or right dec192025 ? 
     yaw -= xoff;
@@ -36,12 +36,13 @@ void Camera::updateMouse(double xpos, double ypos) {
     front = glm::normalize(dir);
 }
 
-void Camera::follow(const glm::vec3& target) {
+void Camera::follow(const glm::vec3& target, const glm::vec3& offset, float stiffness) {
+    (void)stiffness;
     glm::vec3 right = glm::normalize(glm::cross(front, up));
     mDesiredPos = target
-        - front * CAMERA_DISTANCE
-        + glm::vec3(0, 0, CAMERA_HEIGHT)
-        + right * CAMERA_SHOULDER_OFFSET;
+        + right * offset.x
+        - front * (-offset.y)
+        + glm::vec3(0, 0, offset.z);
 }
 
 void Camera::updateVectors() {
@@ -92,7 +93,10 @@ glm::mat4 Camera::getProj(float width, float height) const {
 void Camera::smoothCollision(
     const glm::vec3& playerPos,
     const std::vector<CollisionTriangle>& triangles,
-    float dt
+    float dt,
+    float stiffness,
+    bool stiffnessEnabled,
+    bool collisionEnabled
 ) {
     // First frame: snap instantly
     if (mFirstFrame) {
@@ -102,21 +106,20 @@ void Camera::smoothCollision(
         return;
     }
 
-    // FOLLOW POSITION
-    if (smoothness <= 0.0f) {
+    // FOLLOW POSITION — stiffness 1=rigid, 0=barely follows
+    if (!stiffnessEnabled) {
         pos = mDesiredPos;
     } else {
-        float followSpeed = 20.0f - smoothness * 1.8f;
-        followSpeed = std::max(0.5f, followSpeed);
-
-        pos = glm::mix(
-            pos,
-            mDesiredPos,
-            std::min(1.0f, followSpeed * dt)
-        );
+        float followSpeed = 0.5f + stiffness * 19.5f;
+        pos = glm::mix(pos, mDesiredPos, std::min(1.0f, followSpeed * dt));
     }
 
     // CAMERA COLLISION
+    if (!collisionEnabled) {
+        mPrevCollisionPos = pos;
+        return;
+    }
+
     glm::vec3 dir = pos - playerPos;
     float dist = glm::length(dir);
 
@@ -150,24 +153,7 @@ void Camera::smoothCollision(
             dir * std::max(hitDist - 0.3f, 0.3f);
     }
 
-    // IMPORTANT:
-    // smoothness 0 = COMPLETELY LOCKED
-    // no smoothing whatsoever
-    if (smoothness <= 0.0f) {
-        pos = targetPos;
-        mPrevCollisionPos = targetPos;
-    } else {
-        if (glm::length(mPrevCollisionPos) < 0.001f)
-            mPrevCollisionPos = pos;
-
-        float speed = hit ? 12.0f : 7.0f;
-
-        mPrevCollisionPos = glm::mix(
-            mPrevCollisionPos,
-            targetPos,
-            std::min(1.0f, speed * dt)
-        );
-
-        pos = mPrevCollisionPos;
-    }
+    float smoothSpeed = hit ? 12.0f : 7.0f;
+    mPrevCollisionPos = glm::mix(mPrevCollisionPos, targetPos, std::min(1.0f, smoothSpeed * dt));
+    pos = mPrevCollisionPos;
 }

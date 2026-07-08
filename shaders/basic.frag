@@ -63,6 +63,13 @@ uniform float uTextureContrast;
 // Higher = brighter texture before lighting.
 uniform float uTextureBrightness;
 
+// Global time (seconds)
+uniform float uTime;
+
+// Texbreathe — living texture animation
+uniform int uTexBreatheEnabled;
+uniform float uTexBreatheTime;
+
 // Shadow mapping
 uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;
@@ -73,6 +80,51 @@ uniform vec3 uShadowTint;
 uniform bool uShadowsEnabled;
 
 in vec4 vShadowCoord;
+
+float breatheHash(vec2 p)
+{
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+vec3 breatheHueShift(vec3 color, float shift)
+{
+    vec3 p = vec3(0.57735, 0.57735, 0.57735);
+    float angle = shift * 6.2832;
+    float s = sin(angle);
+    float c = cos(angle);
+    vec3 u = cross(p, color);
+    vec3 v = cross(u, color);
+    return color + u * s + v * (1.0 - c);
+}
+
+vec2 applyTexbreatheUV(vec2 uv, vec2 seed, float time)
+{
+    vec2 offset = vec2(
+        sin(time * 0.3 + seed.x * 6.28 + breatheHash(seed + 0.5)) * 0.02,
+        cos(time * 0.4 + seed.y * 6.28 + breatheHash(seed + 1.7)) * 0.02
+    );
+    float scale = 1.0 + sin(time * 0.15 + seed.y * 6.28) * 0.03;
+    float rotAngle = sin(time * 0.2 + seed.x * 3.14) * 0.04;
+    vec2 centered = (uv - 0.5) * scale;
+    float cr = cos(rotAngle);
+    float sr = sin(rotAngle);
+    vec2 rotated = vec2(
+        centered.x * cr - centered.y * sr,
+        centered.x * sr + centered.y * cr
+    );
+    return rotated + 0.5 + offset;
+}
+
+vec3 applyTexbreatheColor(vec3 color, vec2 seed, float time)
+{
+    float hueShift = sin(time * 0.25 + seed.x * 6.28) * 0.03;
+    float satMul = 1.0 + sin(time * 0.2 + seed.y * 3.14) * 0.05;
+    float briMul = 1.0 + sin(time * 0.18 + seed.x * 4.71) * 0.04;
+    color = breatheHueShift(color, hueShift);
+    color = (color - 0.5) * satMul + 0.5;
+    color *= briMul;
+    return clamp(color, 0.0, 1.0);
+}
 
 vec3 applyTextureTuning(vec3 color)
 {
@@ -123,8 +175,14 @@ void main()
     // Texture sampling:
     // UVs address a 2D image. Mipmaps selected by OpenGL reduce shimmer at distance.
     // The C++ texture loader controls filtering/wrapping; this shader just samples.
-    vec4 texel = texture(uTex, vUV);
+    vec2 sampleUV = vUV;
+    vec2 breatheSeed = vWorldPos.xy * 0.1;
+    if (uTexBreatheEnabled != 0)
+        sampleUV = applyTexbreatheUV(vUV, breatheSeed, uTexBreatheTime);
+    vec4 texel = texture(uTex, sampleUV);
     vec3 texColor = applyTextureTuning(texel.rgb) * uTint;
+    if (uTexBreatheEnabled != 0)
+        texColor = applyTexbreatheColor(texColor, breatheSeed, uTexBreatheTime);
 
     // Dot product lighting:
     // dot(N, L)=1 means the surface faces the light.

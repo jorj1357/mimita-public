@@ -7,6 +7,7 @@
 #include "world/world-gltf-loader.h"
 #include "entities/player.h"
 #include "camera.h"
+#include "config/camera-config.h"
 #include "input/input-state.h"
 #include "input/input-poll.h"
 #include "render/render-world.h"
@@ -241,8 +242,10 @@ int runClient(const LaunchOptions& options)
         if (localIt != players.end())
         {
             camera.updateVectors();
-            camera.follow(localIt->second.pos);
-            camera.smoothCollision(localIt->second.pos, world.collisionMesh.triangles, 1.0f / 60.0f);
+            auto& camCfg = CamConfig::instance().data();
+            camera.fov = camCfg.fov;
+            camera.follow(localIt->second.pos, camCfg.offset, camCfg.positionStiffness);
+            camera.smoothCollision(localIt->second.pos, world.collisionMesh.triangles, 1.0f / 60.0f, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
         }
 
         renderWorld(world, camera);

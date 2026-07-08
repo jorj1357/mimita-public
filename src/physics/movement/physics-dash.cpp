@@ -1,28 +1,35 @@
 #include <cstdio>
 #include <cmath>
 #include <glm/glm.hpp>
+#include <GLFW/glfw3.h>
 
 #include "physics/movement/physics-dash.h"
 #include "physics/config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
+#include "effects/effect-part.h"
 
 #define DASH_LOG(...) Debug::logThrottled(Debug::Category::Physics, "dash", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+
+// static constexpr float TICK_DT = 1.0f / 60.0f;
+// 3x more lenient 7 8 2026 
+static constexpr float TICK_DT = 1.0f / 20.0f;
 
 void doAirDash(
     Player& p,
     const glm::vec2& wishMoveXY,
-    bool triggerPressed,
+    bool jumpTriggered,
     bool movementPressed,
     bool airborne,
     int movementTicks,
+    float movementHeldDuration,
     float dt,
     const glm::vec3& camForward
 ) {
     (void)dt;
     (void)movementPressed;
 
-    if (!triggerPressed) return;
+    if (!jumpTriggered) return;
     if (!airborne) return;
     if (!p.dash.dashAvailable) return;
     if (p.freeze.freezeActive) return;
@@ -39,8 +46,34 @@ void doAirDash(
 
     dashDir = glm::normalize(dashDir);
 
-    DashQuality quality = dashQualityFromTicks(movementTicks);
-    float mult = dashQualityMultiplier(quality);
+    // Determine quality: tick-perfect (< 1 tick hold) overrides everything
+    bool tickPerfect = movementHeldDuration < TICK_DT;
+    float mult;
+    if (tickPerfect) {
+        mult = dashQualityMultiplier(DashQuality::Perfect);
+        p.dash.tickPerfectDash = true;
+        p.dash.frictionOverride = 0.0f;
+
+        // Tick perfect popup
+        EffectPart e;
+        e.position = p.pos + glm::vec3(0.0f, 0.0f, 2.0f);
+        e.color = {0.2f, 1.0f, 1.0f};
+        e.velocity = {0.0f, 0.0f, 3.0f};
+        e.maxLifetime = 0.5f;
+        e.label = "TICK PERFECT";
+        e.replayType = "damage_number";
+        e.billboardText = true;
+        e.scale = 0.8f;
+        e.endScale = 0.0f;
+        e.alpha = 1.0f;
+        EffectPartSystem::instance().spawn(e);
+
+    } else {
+        DashQuality quality = dashQualityFromTicks(movementTicks);
+        mult = dashQualityMultiplier(quality);
+        p.dash.lastDashQuality = (int)quality;
+        p.dash.frictionOverride = 1.0f;
+    }
     float impulse = AIR_DASH_IMPULSE * mult;
 
     p.vel.x += dashDir.x * impulse;
@@ -48,13 +81,15 @@ void doAirDash(
 
     p.dash.dashAvailable = false;
     p.dash.didDash = true;
-    p.dash.lastDashQuality = (int)quality;
     p.jump.airJumpsLeft = 0;
 
     DASH_LOG(
-        "[AIR_DASH] dir=(%.2f %.2f) impulse=%.1f mult=%.2f quality=%d ticks=%d\n",
-        dashDir.x, dashDir.y, impulse, mult, (int)quality, movementTicks
+        "[AIR_DASH] dir=(%.2f %.2f) impulse=%.1f mult=%.2f tickPerfect=%d holdDuration=%.4f\n",
+        dashDir.x, dashDir.y, impulse, mult, (int)tickPerfect, movementHeldDuration
     );
+    if (tickPerfect)
+        Debug::log(Debug::Category::Physics, "[TICK PERFECT DASH] tick=%d holdDuration=%.4f frictionOverride=%.2f\n",
+                   (int)(glfwGetTime() * 60.0), movementHeldDuration, p.dash.frictionOverride);
 }
 
 void doDash(

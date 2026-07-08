@@ -1,0 +1,15 @@
+{
+  "thirdPerson": {
+    "offset": {
+      "x": 2.0,
+      "y": -3.5,
+      "z": 1.0
+    },
+    "fov": 100,
+    "positionStiffness": 1.0,
+    "rotationStiffness": 1.0,
+    "stiffnessEnabled": true,
+    "collisionEnabled": true,
+    "lookAheadDistance": 0.0
+  }
+}

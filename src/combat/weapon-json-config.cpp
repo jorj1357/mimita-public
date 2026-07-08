@@ -154,6 +154,8 @@ void applyWeaponSoundJson(WeaponDefinition& def, const json& root)
         weaponJsonString(sound, "hit", def.soundHit);
         weaponJsonString(sound, "dry_fire", def.soundDryFire);
         weaponJsonString(sound, "equip", def.soundEquip);
+        def.soundPitchVariation = sound.value("pitch_variation", def.soundPitchVariation);
+        def.soundVolumeVariation = sound.value("volume_variation", def.soundVolumeVariation);
     }
 }
 
