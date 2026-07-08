@@ -11,10 +11,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <stb_image.h>
+#include "stb_image.h"
 #include <nlohmann/json.hpp>
 
 Skybox gSkybox;
+
+// ── Printf-based debug (always visible in console) ──────────
+#define SKYDBG(...) do { printf("[SKYBOX] " __VA_ARGS__); fflush(stdout); } while(0)
 
 // ── Unit cube vertices (12 triangles, 36 verts) ─────────────
 static const float gCubeVerts[] = {
@@ -355,16 +358,38 @@ void Skybox::setUniforms() const {
 }
 
 void Skybox::render(const Camera& camera) {
-    if (!mEnabled || mCubemapTex == 0 || mShader == 0 || mVAO == 0) return;
+    if (!mInitialized) init();
+    if (!mEnabled || mCubemapTex == 0 || mShader == 0 || mVAO == 0) {
+        if (mInitialized) {
+            Debug::log(Debug::Category::Render, "[SKYBOX] render skipped: enabled=%d tex=%u shader=%u vao=%u\n",
+                       (int)mEnabled, mCubemapTex, mShader, mVAO);
+        }
+        return;
+    }
 
-    glDepthMask(GL_FALSE);
-    glDisable(GL_DEPTH_TEST);
+    Debug::log(Debug::Category::Render, "[SKYBOX] render called tex=%u shader=%u\n", mCubemapTex, mShader);
+
+    // Save render state
+    GLint prevCullFaceMode, prevDepthFunc;
+    GLboolean prevCullEnabled, prevDepthMask;
+    glGetIntegerv(GL_CULL_FACE_MODE, &prevCullFaceMode);
+    glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
+    glGetBooleanv(GL_CULL_FACE, &prevCullEnabled);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &prevDepthMask);
+
+    // Skybox render state:
+    // 1. Cull front faces (we're inside the cube, so front faces are the inner ones)
+    //    (Alternatively just disable culling entirely)
+    glDisable(GL_CULL_FACE);
+    // 2. Use LEQUAL depth so skybox passes at the far plane
+    glDepthFunc(GL_LEQUAL);
+    // 3. Allow depth writes so skybox fills the depth buffer
+    glDepthMask(GL_TRUE);
 
     glUseProgram(mShader);
     glBindVertexArray(mVAO);
     glBindTexture(GL_TEXTURE_CUBE_MAP, mCubemapTex);
 
-    // Set view and projection matrices
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj(
         (float)glm::max(1, 1280), (float)glm::max(1, 720));
@@ -374,10 +399,15 @@ void Skybox::render(const Camera& camera) {
     setUniforms();
 
     glDrawArrays(GL_TRIANGLES, 0, 36);
+    Debug::log(Debug::Category::Render, "[SKYBOX] draw call submitted\n");
 
     glBindVertexArray(0);
     glUseProgram(0);
 
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
+    // Restore render state
+    glDepthFunc(prevDepthFunc);
+    glDepthMask(prevDepthMask);
+    if (prevCullEnabled) glEnable(GL_CULL_FACE);
+    else glDisable(GL_CULL_FACE);
+    glCullFace(prevCullFaceMode);
 }

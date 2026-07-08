@@ -1,3 +1,4 @@
 {
-    "aim_mode": "world_hit"
+    "aim_mode": "crosshair",
+    "dash_mode": "glide"
 }

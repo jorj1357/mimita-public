@@ -191,7 +191,7 @@ static void physicsMainUpdate_Internal(
     // Do NOT reset on the same frame the dash fires — the override was just set by doAirDash.
     if (p.dash.frictionOverride < 1.0f && !p.dash.didDash) {
         // The next frame after the dash, any meaningful input restores normal friction.
-        bool inputDetected = movementJustPressed || jumpHeld || dashPressed || freezeHeld || downDashPressed;
+        bool inputDetected = movementJustPressed || dashPressed || freezeHeld || downDashPressed;
         bool abilityUsed = p.dash.didDownDash || p.freeze.didFreeze;
         if (inputDetected || abilityUsed) {
             float speedBefore = glm::length(glm::vec2(p.vel.x, p.vel.y));

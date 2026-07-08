@@ -106,6 +106,8 @@ namespace DebugConfig
     inline int    WORLD_XH_TRAIL_MAX_POINTS = 128;
     inline int    WORLD_XH_TRAIL_SPAWN_INTERVAL = 1;
     inline bool   WORLD_XH_TRAIL_FADE = true;
+    inline int    WORLD_XH_TRAIL_SHAPE = 0;       // 0=circle, 1=box, 2=sphere, 3=star2d
+    inline int    WORLD_XH_TRAIL_MODE = 0;        // 0=screen, 1=surface
 
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;

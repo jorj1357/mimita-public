@@ -10,8 +10,16 @@ enum class GameplayAimMode {
 
 const char* gameplayAimModeName(GameplayAimMode mode);
 
+enum class DashMode {
+    Glide,
+    TF2
+};
+
+const char* dashModeName(DashMode mode);
+
 struct GameplayConfigData {
     GameplayAimMode aimMode = GameplayAimMode::Crosshair;
+    DashMode dashMode = DashMode::Glide;
 };
 
 class GameplayConfig {
@@ -23,6 +31,8 @@ public:
 
     GameplayAimMode aimMode() const { return mData.aimMode; }
     const char* aimModeName() const { return gameplayAimModeName(mData.aimMode); }
+    DashMode dashMode() const { return mData.dashMode; }
+    const char* dashModeName() const { return ::dashModeName(mData.dashMode); }
 
 private:
     GameplayConfig() = default;
