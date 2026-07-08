@@ -44,7 +44,7 @@ public:
     void update(float dt);
     void render(const Camera& camera);
 
-    bool isEnabled() const { return mEnabled && mCubemapTex != 0; }
+    bool isEnabled();
 
 private:
     void loadCubemap();
