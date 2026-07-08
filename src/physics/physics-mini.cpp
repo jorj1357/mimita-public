@@ -168,25 +168,23 @@ static void physicsMainUpdate_Internal(
 
     // Walk applies movement input — ground and air (sets base horizontal velocity).
     // Skip walk when tick-perfect friction override is active — preserves momentum.
-    if (movementPressed && p.dash.frictionOverride >= 1.0f)
+    if (movementPressed && p.dash.frictionOverride >= 1.0f) {
         doWalk(p, wishMoveXY, groundedThisFrame, dt);
-
-    // Air dash from jump+movement while airborne.
-    // When airborne + movement input + jump pressed → dash instead of air jump.
-    bool airborne = !groundedThisFrame;
-    bool dashFromJump = airborne && movementPressed && (jumpPressed || p.dash.tickPerfectDash);
-    if (dashFromJump) {
-        // dash consumes the jump — doJump will be skipped
-        doAirDash(p, wishMoveXY, true, movementPressed, airborne,
-                  p.dash.dashMovementTicks, inputMovementHeldDuration, dt, camForward);
-    } else {
-        // jump — now reads fresh p.ground.onGround/p.ground.stableOnGround
-        doJump(p, jumpHeld, jumpPressed, dt);
+    } else if (movementPressed && p.dash.frictionOverride < 1.0f) {
+        Debug::logThrottled(Debug::Category::Physics, "walk-skip", 0.5f,
+            "[VEL MODIFY] source=walk_suppressed tickPerfect=1 speed=%.1f\n",
+            glm::length(glm::vec2(p.vel.x, p.vel.y)));
     }
-    // Legacy dash key still triggers if jump+move didn't
-    if (!dashFromJump && dashPressed && airborne && p.dash.dashAvailable)
-        doAirDash(p, wishMoveXY, true, movementPressed, airborne,
-                  p.dash.dashMovementTicks, 99.0f, dt, camForward);
+
+    // Air dash — triggered by Left Shift while airborne.
+    // Tick perfect detection: movementHeldDuration < 1/20s → zero friction after dash.
+    if (!groundedThisFrame && (dashPressed || p.dash.tickPerfectDash)) {
+        doAirDash(p, wishMoveXY, true, movementPressed, !groundedThisFrame,
+                  p.dash.dashMovementTicks, inputMovementHeldDuration, dt, camForward);
+    }
+
+    // Jump — space is always jump, never dash
+    doJump(p, jumpHeld, jumpPressed, dt);
 
     // Friction override management
     // Do NOT reset on the same frame the dash fires — the override was just set by doAirDash.
@@ -195,9 +193,10 @@ static void physicsMainUpdate_Internal(
         bool inputDetected = movementJustPressed || jumpHeld || dashPressed || freezeHeld || downDashPressed;
         bool abilityUsed = p.dash.didDownDash || p.freeze.didFreeze;
         if (inputDetected || abilityUsed) {
+            float speedBefore = glm::length(glm::vec2(p.vel.x, p.vel.y));
             p.dash.frictionOverride = 1.0f;
             p.dash.tickPerfectDash = false;
-            Debug::log(Debug::Category::Physics, "[FRICTION OVERRIDE] disabled inputDetected=%d\n", (int)inputDetected);
+            Debug::log(Debug::Category::Physics, "[FRICTION OVERRIDE] disabled inputDetected=%d speed=%.1f\n", (int)inputDetected, speedBefore);
         }
     }
     if (DebugConfig::DEBUG_INPUT) {

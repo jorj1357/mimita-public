@@ -95,6 +95,18 @@ namespace DebugConfig
     inline float WORLD_XH_MINSIZE = 0.5f;      // min scale multiplier, clamped ≥ 0
     inline bool  WORLD_XH_CENTERDOT = false;   // 0=hidden, 1=visible
 
+    // World-space aim trail settings
+    inline bool   WORLD_XH_TRAIL_ENABLED = false;
+    inline int    WORLD_XH_TRAIL_LIFETIME_TICKS = 90;
+    inline float  WORLD_XH_TRAIL_R = 0.2f;
+    inline float  WORLD_XH_TRAIL_G = 1.0f;
+    inline float  WORLD_XH_TRAIL_B = 1.0f;
+    inline float  WORLD_XH_TRAIL_ALPHA = 0.5f;
+    inline float  WORLD_XH_TRAIL_SIZE = 0.1f;
+    inline int    WORLD_XH_TRAIL_MAX_POINTS = 128;
+    inline int    WORLD_XH_TRAIL_SPAWN_INTERVAL = 1;
+    inline bool   WORLD_XH_TRAIL_FADE = true;
+
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;
 
