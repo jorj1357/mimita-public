@@ -518,6 +518,17 @@ struct WorldXhState {
     bool outline = false;
     bool dynamic = true;
     bool centerDot = false;
+    // Aim trail
+    bool trailEnabled = false;
+    float trailLifetimeTicks = 90.0f;
+    float trailR = 0.2f;
+    float trailG = 1.0f;
+    float trailB = 1.0f;
+    float trailAlpha = 0.5f;
+    float trailSize = 0.1f;
+    float trailMaxPoints = 128.0f;
+    float trailSpawnInterval = 1.0f;
+    bool trailFade = true;
 };
 
 static int64_t worldXhModifiedTime()
@@ -545,6 +556,16 @@ static WorldXhState currentWorldXhState()
     s.outline = DebugConfig::WORLD_XH_OUTLINE;
     s.dynamic = DebugConfig::WORLD_XH_DYNAMIC;
     s.centerDot = DebugConfig::WORLD_XH_CENTERDOT;
+    s.trailEnabled = DebugConfig::WORLD_XH_TRAIL_ENABLED;
+    s.trailLifetimeTicks = (float)DebugConfig::WORLD_XH_TRAIL_LIFETIME_TICKS;
+    s.trailR = DebugConfig::WORLD_XH_TRAIL_R;
+    s.trailG = DebugConfig::WORLD_XH_TRAIL_G;
+    s.trailB = DebugConfig::WORLD_XH_TRAIL_B;
+    s.trailAlpha = DebugConfig::WORLD_XH_TRAIL_ALPHA;
+    s.trailSize = DebugConfig::WORLD_XH_TRAIL_SIZE;
+    s.trailMaxPoints = (float)DebugConfig::WORLD_XH_TRAIL_MAX_POINTS;
+    s.trailSpawnInterval = (float)DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL;
+    s.trailFade = DebugConfig::WORLD_XH_TRAIL_FADE;
     return s;
 }
 
@@ -574,6 +595,16 @@ static void applyWorldXhState(const WorldXhState& s)
     DebugConfig::WORLD_XH_OUTLINE = s.outline;
     DebugConfig::WORLD_XH_DYNAMIC = s.dynamic;
     DebugConfig::WORLD_XH_CENTERDOT = s.centerDot;
+    DebugConfig::WORLD_XH_TRAIL_ENABLED = s.trailEnabled;
+    DebugConfig::WORLD_XH_TRAIL_LIFETIME_TICKS = (int)s.trailLifetimeTicks;
+    DebugConfig::WORLD_XH_TRAIL_R = s.trailR;
+    DebugConfig::WORLD_XH_TRAIL_G = s.trailG;
+    DebugConfig::WORLD_XH_TRAIL_B = s.trailB;
+    DebugConfig::WORLD_XH_TRAIL_ALPHA = s.trailAlpha;
+    DebugConfig::WORLD_XH_TRAIL_SIZE = s.trailSize;
+    DebugConfig::WORLD_XH_TRAIL_MAX_POINTS = (int)s.trailMaxPoints;
+    DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL = (int)s.trailSpawnInterval;
+    DebugConfig::WORLD_XH_TRAIL_FADE = s.trailFade;
 }
 
 static bool loadWorldCrosshairFromJSON()
@@ -640,6 +671,32 @@ static bool loadWorldCrosshairFromJSON()
     if (!readBool("world_xh_outline", next.outline)) return false;
     if (!readBool("world_xh_dynamic", next.dynamic)) return false;
     if (!readBool("world_xh_centerdot", next.centerDot)) return false;
+
+    // Trail fields
+    if (!readBool("world_xh_trail_enabled", next.trailEnabled)) return false;
+    if (!readFloat("world_xh_trail_lifetime_ticks", next.trailLifetimeTicks, nonNegative)) return false;
+    if (!readFloat("world_xh_trail_alpha", next.trailAlpha, clamp01)) return false;
+    if (!readFloat("world_xh_trail_size", next.trailSize, nonNegative)) return false;
+    if (!readFloat("world_xh_trail_max_points", next.trailMaxPoints, nonNegative)) return false;
+    if (!readFloat("world_xh_trail_spawn_interval", next.trailSpawnInterval, nonNegative)) return false;
+    if (!readBool("world_xh_trail_fade", next.trailFade)) return false;
+
+    if (j.contains("world_xh_trail_color")) {
+        const json& arr = j.at("world_xh_trail_color");
+        if (!arr.is_array() || arr.size() < 3) {
+            logWorldXh("[WorldCrosshair] Parse error for world_xh_trail_color: expected [r,g,b]");
+            return false;
+        }
+        try {
+            next.trailR = clamp01(arr.at(0).get<float>());
+            next.trailG = clamp01(arr.at(1).get<float>());
+            next.trailB = clamp01(arr.at(2).get<float>());
+            applied.push_back("world_xh_trail_color");
+        } catch (const std::exception& e) {
+            logWorldXh(std::string("[WorldCrosshair] Parse error for world_xh_trail_color: ") + e.what());
+            return false;
+        }
+    }
 
     if (j.contains("world_xh_color")) {
         const json& arr = j.at("world_xh_color");

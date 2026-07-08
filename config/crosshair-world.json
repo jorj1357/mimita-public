@@ -9,5 +9,13 @@
   "world_xh_dynamic": 1,
   "world_xh_minsize": 0.1,
   "world_xh_maxsize": 24,
-  "world_xh_centerdot": 0
+  "world_xh_centerdot": 0,
+  "world_xh_trail_enabled": 1,
+  "world_xh_trail_lifetime_ticks": 90,
+  "world_xh_trail_color": [0.2, 1.0, 1.0],
+  "world_xh_trail_alpha": 0.5,
+  "world_xh_trail_size": 0.4,
+  "world_xh_trail_max_points": 128,
+  "world_xh_trail_spawn_interval": 1,
+  "world_xh_trail_fade": 1
 }
