@@ -40,6 +40,32 @@ bool parseAimMode(const json& value, GameplayAimMode& out)
     return false;
 }
 
+bool parseDashMode(const json& value, DashMode& out)
+{
+    if (!value.is_string())
+        return false;
+
+    const std::string mode = value.get<std::string>();
+    if (mode == "glide") {
+        out = DashMode::Glide;
+        return true;
+    }
+    if (mode == "tf2") {
+        out = DashMode::TF2;
+        return true;
+    }
+    return false;
+}
+
+const char* dashModeName(DashMode mode)
+{
+    switch (mode) {
+        case DashMode::Glide: return "glide";
+        case DashMode::TF2: return "tf2";
+    }
+    return "glide";
+}
+
 } // namespace
 
 const char* gameplayAimModeName(GameplayAimMode mode)
@@ -93,13 +119,21 @@ bool GameplayConfig::load(const std::string& path)
                 mPath.c_str());
             return false;
         }
+        if (root.contains("dash_mode") && !parseDashMode(root["dash_mode"], next.dashMode)) {
+            mLastWrite = writeTime;
+            Debug::error(Debug::Category::Weapons,
+                "[GAMEPLAY CONFIG] Invalid dash_mode in %s; expected \"glide\" or \"tf2\". Keeping previous valid settings.\n",
+                mPath.c_str());
+            return false;
+        }
 
         mData = next;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::Weapons,
             "[GAMEPLAY CONFIG] Loaded successfully: %s\n", fileName.c_str());
         Debug::warn(Debug::Category::Weapons,
-            "[GAMEPLAY CONFIG] Applied: aim_mode=%s\n", aimModeName());
+            "[GAMEPLAY CONFIG] Applied: aim_mode=%s dash_mode=%s\n",
+            aimModeName(), dashModeName());
         return true;
     } catch (const json::parse_error& e) {
         mLastWrite = writeTime;

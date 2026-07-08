@@ -85,7 +85,7 @@ private:
     void addKillLine(const std::string& line);
 
     // World-space aim trail ring buffer
-    struct TrailPoint { glm::vec3 pos; int spawnTick; };
+    struct TrailPoint { glm::vec3 pos; glm::vec3 normal; int spawnTick; };
     static constexpr int MAX_TRAIL_POINTS = 256;
     TrailPoint mTrailPoints[MAX_TRAIL_POINTS]{};
     int mTrailHead = 0;

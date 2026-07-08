@@ -206,7 +206,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         if (DebugConfig::WORLD_XH_TRAIL_ENABLED && trailInterval > 0 && (mTrailTick % trailInterval) == 0)
         {
             int maxPts = glm::clamp(DebugConfig::WORLD_XH_TRAIL_MAX_POINTS, 1, MAX_TRAIL_POINTS);
-            mTrailPoints[mTrailHead] = {crossPos, mTrailTick};
+            mTrailPoints[mTrailHead] = {crossPos, hitNormal, mTrailTick};
             mTrailHead = (mTrailHead + 1) % maxPts;
             if (mTrailCount < maxPts) mTrailCount++;
         }
@@ -336,9 +336,30 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 DebugConfig::WORLD_XH_TRAIL_B,
                 trailAlpha);
             bool fade = DebugConfig::WORLD_XH_TRAIL_FADE;
+            int shape = DebugConfig::WORLD_XH_TRAIL_SHAPE;
+            int mode = DebugConfig::WORLD_XH_TRAIL_MODE;
 
-            glm::vec3 right = camera.right * trailSize;
-            glm::vec3 up = camera.up * trailSize;
+            auto pushTri = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, const glm::vec4& col) {
+                gOverlayTriVerts.push_back({a, col});
+                gOverlayTriVerts.push_back({b, col});
+                gOverlayTriVerts.push_back({c, col});
+            };
+            auto billboardAxes = [&](const TrailPoint& pt, float& outSx, float& outSy, glm::vec3& outRight, glm::vec3& outUp) {
+                outSx = trailSize;
+                outSy = trailSize;
+                if (mode == 1 && glm::dot(pt.normal, pt.normal) > 0.001f) {
+                    glm::vec3 n = glm::normalize(pt.normal);
+                    glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
+                    if (std::fabs(glm::dot(n, worldUp)) > 0.99f)
+                        worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
+                    outRight = glm::normalize(glm::cross(n, worldUp));
+                    outUp = glm::normalize(glm::cross(outRight, n));
+                } else {
+                    outRight = camera.right;
+                    outUp = camera.up;
+                }
+            };
+            int segCount = (shape == 0) ? 16 : (shape == 3) ? 5 : 4;
 
             for (int i = 0; i < mTrailCount; ++i)
             {
@@ -351,20 +372,44 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 if (fade)
                     alpha *= 1.0f - (float)age / (float)lifetimeTicks;
 
-                glm::vec4 c = trailCol;
-                c.a = alpha;
+                trailCol.a = alpha;
 
-                // Camera-facing billboard quad (2 tris, 6 verts) via overlay buffer
-                glm::vec3 v0 = pt.pos - right - up;
-                glm::vec3 v1 = pt.pos + right - up;
-                glm::vec3 v2 = pt.pos + right + up;
-                glm::vec3 v3 = pt.pos - right + up;
-                gOverlayTriVerts.push_back({v0, c});
-                gOverlayTriVerts.push_back({v1, c});
-                gOverlayTriVerts.push_back({v2, c});
-                gOverlayTriVerts.push_back({v0, c});
-                gOverlayTriVerts.push_back({v2, c});
-                gOverlayTriVerts.push_back({v3, c});
+                glm::vec3 rAxis, uAxis;
+                float sx, sy;
+                billboardAxes(pt, sx, sy, rAxis, uAxis);
+                glm::vec3 r = rAxis * sx;
+                glm::vec3 u = uAxis * sy;
+
+                if (shape == 1) {
+                    // Box: 2-tri quad
+                    glm::vec3 v0 = pt.pos - r - u;
+                    glm::vec3 v1 = pt.pos + r - u;
+                    glm::vec3 v2 = pt.pos + r + u;
+                    glm::vec3 v3 = pt.pos - r + u;
+                    pushTri(v0, v1, v2, trailCol);
+                    pushTri(v0, v2, v3, trailCol);
+                } else if (shape == 3) {
+                    // Star 2D (5-pointed)
+                    float inner = 0.4f;
+                    for (int j = 0; j < segCount; ++j) {
+                        float a1 = (float)j * 1.256637f - 1.570796f;
+                        float a2 = a1 + 1.256637f;
+                        float aMid = a1 + 0.6283185f;
+                        glm::vec3 outer1 = pt.pos + (r * std::cos(a1) + u * std::sin(a1));
+                        glm::vec3 outer2 = pt.pos + (r * std::cos(a2) + u * std::sin(a2));
+                        glm::vec3 innerP = pt.pos + (r * std::cos(aMid) + u * std::sin(aMid)) * inner;
+                        pushTri(outer1, innerP, outer2, trailCol);
+                    }
+                } else {
+                    // Circle (and fallback): fan of triangles
+                    for (int j = 0; j < segCount; ++j) {
+                        float a1 = (float)j * 6.2831855f / (float)segCount;
+                        float a2 = (float)(j + 1) * 6.2831855f / (float)segCount;
+                        glm::vec3 e1 = pt.pos + (r * std::cos(a1) + u * std::sin(a1));
+                        glm::vec3 e2 = pt.pos + (r * std::cos(a2) + u * std::sin(a2));
+                        pushTri(pt.pos, e1, e2, trailCol);
+                    }
+                }
             }
         }
     }

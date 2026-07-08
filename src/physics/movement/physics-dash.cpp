@@ -8,6 +8,7 @@
 #include "entities/player.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
+#include "config/gameplay-config.h"
 
 #define DASH_LOG(...) Debug::logThrottled(Debug::Category::Physics, "dash", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
@@ -46,8 +47,8 @@ void doAirDash(
 
     dashDir = glm::normalize(dashDir);
 
-    // Determine quality: tick-perfect (< 1 tick hold) overrides everything
-    bool tickPerfect = movementHeldDuration < TICK_DT;
+    bool glideMode = GameplayConfig::instance().dashMode() == DashMode::Glide;
+    bool tickPerfect = glideMode && movementHeldDuration < TICK_DT;
     float mult;
     if (tickPerfect) {
         mult = dashQualityMultiplier(DashQuality::Perfect);
@@ -72,7 +73,10 @@ void doAirDash(
         DashQuality quality = dashQualityFromTicks(movementTicks);
         mult = dashQualityMultiplier(quality);
         p.dash.lastDashQuality = (int)quality;
-        p.dash.frictionOverride = 1.0f;
+        if (glideMode)
+            p.dash.frictionOverride = 0.0f;
+        else
+            p.dash.frictionOverride = 1.0f;
     }
     float impulse = AIR_DASH_IMPULSE * mult;
 

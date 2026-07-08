@@ -529,6 +529,8 @@ struct WorldXhState {
     float trailMaxPoints = 128.0f;
     float trailSpawnInterval = 1.0f;
     bool trailFade = true;
+    float trailShape = 0.0f;
+    float trailMode = 0.0f;
 };
 
 static int64_t worldXhModifiedTime()
@@ -566,6 +568,8 @@ static WorldXhState currentWorldXhState()
     s.trailMaxPoints = (float)DebugConfig::WORLD_XH_TRAIL_MAX_POINTS;
     s.trailSpawnInterval = (float)DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL;
     s.trailFade = DebugConfig::WORLD_XH_TRAIL_FADE;
+    s.trailShape = (float)DebugConfig::WORLD_XH_TRAIL_SHAPE;
+    s.trailMode = (float)DebugConfig::WORLD_XH_TRAIL_MODE;
     return s;
 }
 
@@ -605,6 +609,8 @@ static void applyWorldXhState(const WorldXhState& s)
     DebugConfig::WORLD_XH_TRAIL_MAX_POINTS = (int)s.trailMaxPoints;
     DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL = (int)s.trailSpawnInterval;
     DebugConfig::WORLD_XH_TRAIL_FADE = s.trailFade;
+    DebugConfig::WORLD_XH_TRAIL_SHAPE = (int)s.trailShape;
+    DebugConfig::WORLD_XH_TRAIL_MODE = (int)s.trailMode;
 }
 
 static bool loadWorldCrosshairFromJSON()
@@ -680,6 +686,8 @@ static bool loadWorldCrosshairFromJSON()
     if (!readFloat("world_xh_trail_max_points", next.trailMaxPoints, nonNegative)) return false;
     if (!readFloat("world_xh_trail_spawn_interval", next.trailSpawnInterval, nonNegative)) return false;
     if (!readBool("world_xh_trail_fade", next.trailFade)) return false;
+    if (!readFloat("world_xh_trail_shape", next.trailShape, nonNegative)) return false;
+    if (!readFloat("world_xh_trail_mode", next.trailMode, nonNegative)) return false;
 
     if (j.contains("world_xh_trail_color")) {
         const json& arr = j.at("world_xh_trail_color");

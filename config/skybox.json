@@ -1,15 +1,15 @@
 {
     "enabled": true,
     "folder": "space",
-    "rotation_speed": 0.0,
+    "rotation_speed": 1.0,
     "global_hue_speed": 0.0,
-    "global_scale_x": 1.0,
-    "global_scale_y": 1.0,
+    "global_scale_x": 221.0,
+    "global_scale_y": 221.0,
     "faces": {
         "front": {
             "path": "assets/skybox/space/front.png",
             "color": [1, 1, 1],
-            "alpha": 1.0
+            "alpha": 0.5
         },
         "back": {
             "path": "assets/skybox/space/back.png",
@@ -29,7 +29,7 @@
         "top": {
             "path": "assets/skybox/space/top.png",
             "color": [1, 1, 1],
-            "alpha": 1.0,
+            "alpha": 0.0,
             "hue_speed": 0.25
         },
         "bottom": {
