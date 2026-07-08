@@ -78,12 +78,13 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
         unsigned int si = seed + (unsigned int)i * 769u;
         float angle = (float)(si % 6283) / 1000.0f;
         float radius = ((float)((si * 311u) % 1000) / 1000.0f) * spread;
-        glm::vec3 dir = n
+        // Bias direction outward from surface so debris doesn't hide behind geometry
+        glm::vec3 dir = n * 2.0f
             + tangent * std::cos(angle) * radius
             + bitangent * std::sin(angle) * radius;
         dir = glm::normalize(dir);
         float speed = baseSpeed + ((si * 503u) % 5001) / 1000.0f;
-        glm::vec3 pos = effect.position + dir * (((si * 211u) % 51) / 1000.0f);
+        glm::vec3 pos = effect.position + n * 0.03f + dir * (((si * 211u) % 51) / 1000.0f);
         pos += dir * speed * t;
         pos.z -= gt;
         float sx = 0.04f + force * 0.04f + ((si * 313u) % 501) / 3000.0f;

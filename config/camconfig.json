@@ -8,8 +8,8 @@
     "fov": 100,
     "positionStiffness": 1.0,
     "rotationStiffness": 1.0,
-    "stiffnessEnabled": true,
+    "stiffnessEnabled": false,
     "collisionEnabled": true,
-    "lookAheadDistance": 0.0
+    "lookAheadDistance": -10.0
   }
 }
