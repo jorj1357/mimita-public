@@ -330,6 +330,44 @@ WeaponDefinition createAdminRevolverDefinition() {
     return def;
 }
 
+WeaponDefinition createHafsDefinition() {
+    WeaponDefinition def;
+    def.id = "hafs";
+    def.displayName = "HAFS";
+    def.slot = 10;
+    def.modelPath = "assets/objects/weapons/mimita-hafs-v1.glb";
+    def.behaviorType = WeaponBehaviorType::Hafs;
+    def.damage = 80.0f;
+    def.fireDelay = 0.0f;
+    def.magazineSize = 0;
+    def.soundShoot = "weapon/hafs/hafsswing";
+    def.soundEquip = "weapon/hafs/hafsequip";
+    def.poseId = "hafs";
+    def.collision.enabled = true;
+    // Blade collider
+    WeaponColliderConfig blade;
+    blade.name = "hafs_blade";
+    blade.shape = WeaponColliderShape::Box;
+    blade.position = {0.0f, 0.0f, -2.5f};
+    blade.size = {0.3f, 0.08f, 2.5f};
+    blade.pushPlayerRoot = true;
+    blade.supportPlayerWeight = true;
+    blade.blocksWorld = true;
+    def.collision.colliders.push_back(blade);
+    // Crossguard collider
+    WeaponColliderConfig guard;
+    guard.name = "hafs_guard";
+    guard.shape = WeaponColliderShape::Box;
+    guard.position = {0.0f, 0.0f, -0.3f};
+    guard.size = {0.5f, 0.5f, 0.15f};
+    guard.pushPlayerRoot = true;
+    guard.supportPlayerWeight = false;
+    guard.blocksWorld = true;
+    def.collision.colliders.push_back(guard);
+    def.customParams["lungeSpeed"] = 25.0f;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -341,7 +379,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createRocketLauncherDefinition());
     registerWeaponFromJson(createGrenadeLauncherDefinition());
     registerWeaponFromJson(createAdminRevolverDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver");
+    registerWeaponFromJson(createHafsDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs");
 }
 
 } // namespace WeaponData

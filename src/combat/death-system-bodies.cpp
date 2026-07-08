@@ -1,4 +1,5 @@
 #include "combat/death-system.h"
+#include "ragdoll/ragdoll-config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -235,6 +236,10 @@ bool DeathSystem::trySleepBody(DeadBody& body, float dt)
 void DeathSystem::render(const Camera& camera) const
 {
     if (mCorpses.empty() || !gRenderer)
+        return;
+
+    // Suppress legacy skeleton render when physics ragdoll is active
+    if (RagdollConfig::instance().data().enabled)
         return;
 
     glm::mat4 view = camera.getView();

@@ -1,0 +1,69 @@
+{
+    "enabled": true,
+    "hot_reload": true,
+
+    "lifetime_seconds": 3.0,
+
+    "death_impulse_multiplier": 1.0,
+    "spawn_velocity_multiplier": 1.0,
+    "inherit_player_velocity": true,
+    "inherit_player_angular_velocity": true,
+
+    "gravity_scale": 1.0,
+    "linear_damping": 0.1,
+    "angular_damping": 0.2,
+
+    "self_collision": true,
+    "world_collision": true,
+    "player_collision": true,
+    "npc_collision": true,
+
+    "joint_stiffness": 1000.0,
+    "joint_damping": 50.0,
+    "joint_break_force": 1000000.0,
+
+    "parts":
+    {
+        "head":
+        {
+            "offset": [0.0, 0.0, 1.0],
+            "mass": 5.0,
+            "radius": 0.18
+        },
+
+        "torso":
+        {
+            "offset": [0.0, 0.0, 0.55],
+            "mass": 30.0,
+            "radius": 0.35
+        },
+
+        "left_arm":
+        {
+            "offset": [-0.45, 0.0, 0.75],
+            "mass": 4.0,
+            "radius": 0.12
+        },
+
+        "right_arm":
+        {
+            "offset": [0.45, 0.0, 0.75],
+            "mass": 4.0,
+            "radius": 0.12
+        },
+
+        "left_leg":
+        {
+            "offset": [-0.15, 0.0, 0.15],
+            "mass": 8.0,
+            "radius": 0.14
+        },
+
+        "right_leg":
+        {
+            "offset": [0.15, 0.0, 0.15],
+            "mass": 8.0,
+            "radius": 0.14
+        }
+    }
+}

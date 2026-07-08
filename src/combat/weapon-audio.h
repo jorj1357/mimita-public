@@ -16,5 +16,6 @@ void playHitSound(const WeaponDefinition& def, const glm::vec3& position);
 void playGodballWhoosh(const glm::vec3& position, float speed01);
 void playGodballImpact(const glm::vec3& position, float damageFraction);
 void playSwordswordHitSound(const glm::vec3& position, float strength01);
+void playAltFireSound(const WeaponDefinition& def, const glm::vec3& position);
 
 } // namespace WeaponAudio

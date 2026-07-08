@@ -13,6 +13,12 @@
 
 #define BWLOG(...) Debug::logThrottled(Debug::Category::Collision, "bw-investigate", 1.0f, __VA_ARGS__)
 
+// Small skin/margin on weapon and body collision spheres to prevent exact-edge
+// contact on triangle seams and corners. Applied the same way as COLLISION_SKIN
+// for the root capsule: added to sphere radius during contact detection, then
+// subtracted from the resulting penetration depth.
+constexpr float WEAPON_COLLISION_SKIN = 0.04f;
+
 BWInvestigate gBW;
 
 static bool computeBodyPartCenter(
@@ -173,7 +179,7 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
                 float t = (WEAPON_CAPSULE_SAMPLES > 1)
                     ? (float)si / (float)(WEAPON_CAPSULE_SAMPLES - 1) : 0.5f;
                 glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
-                spheres.push_back({spherePos, wc.r, "weapon", glm::vec3(0.0f)});
+                spheres.push_back({spherePos, wc.r, "weapon", p.vel * 0.016f});
             }
         }
         auto tw1 = std::chrono::steady_clock::now();
@@ -224,15 +230,16 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
                 float hitTime = 1.0f;
                 glm::vec3 hitNormal, hitPoint;
                 auto tsw0 = std::chrono::steady_clock::now();
-                bool sweepHit = sweepSphereTriangle(bs.center, bs.sweepDelta, bs.radius, tri,
-                                                    hitTime, hitNormal, hitPoint);
+                bool sweepHit = sweepSphereTriangle(bs.center, bs.sweepDelta, bs.radius + WEAPON_COLLISION_SKIN, tri,
+                                                     hitTime, hitNormal, hitPoint);
                 auto tsw1 = std::chrono::steady_clock::now();
                 gBW.sweepSphereTriangleMs += std::chrono::duration<float, std::milli>(tsw1 - tsw0).count();
                 gBW.sweepTests++;
 
                 if (sweepHit && hitTime < 1.0f)
                 {
-                    float depth = bs.radius - glm::dot(bs.center - hitPoint, hitNormal);
+                    float depth = (bs.radius + WEAPON_COLLISION_SKIN) - glm::dot(bs.center - hitPoint, hitNormal);
+                    depth = std::max(0.0f, depth - WEAPON_COLLISION_SKIN);
                     if (depth > SLIDE_SLOP) {
                         contacts.push_back({hitNormal, hitPoint, depth, triIdx, nullptr, bs.label});
                         ++sweepHits;
@@ -243,14 +250,15 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
 
             auto tst0 = std::chrono::steady_clock::now();
             Contact c;
-            bool staticHit = sphereTriangleContact(bs.center, bs.radius, tri, c);
+            bool staticHit = sphereTriangleContact(bs.center, bs.radius + WEAPON_COLLISION_SKIN, tri, c);
             auto tst1 = std::chrono::steady_clock::now();
             gBW.sphereTriangleContactMs += std::chrono::duration<float, std::milli>(tst1 - tst0).count();
             gBW.staticTests++;
 
-            if (staticHit && c.penetration > SLIDE_SLOP)
+            if (staticHit && c.penetration > (SLIDE_SLOP + WEAPON_COLLISION_SKIN))
             {
-                contacts.push_back({c.normal, c.point, c.penetration, triIdx, nullptr, bs.label});
+                float skinPen = std::max(0.0f, c.penetration - WEAPON_COLLISION_SKIN);
+                contacts.push_back({c.normal, c.point, skinPen, triIdx, nullptr, bs.label});
             }
         }
     }

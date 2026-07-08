@@ -108,13 +108,46 @@ void parseWeaponPoses(const nlohmann::json& root, PlayerProceduralConfig& loaded
             loaded.weaponPoses[weaponId] = parseWeaponPose(weapon);
             continue;
         }
+
+        // First pass: parse all poses to ensure alias targets exist
+        std::unordered_map<std::string, nlohmann::json> poseJsons;
         for (auto poseIt = weapon["poses"].begin(); poseIt != weapon["poses"].end(); ++poseIt) {
-            if (!poseIt.value().is_object())
-                continue;
-            const WeaponPoseConfig poseCfg = parseWeaponPose(poseIt.value());
-            loaded.weaponPoses[weaponId + ":" + poseIt.key()] = poseCfg;
-            if (poseIt.key() == activePose || poseIt.key() == "idle" || poseIt.key() == "equipped")
+            if (poseIt.value().is_object())
+                poseJsons[poseIt.key()] = poseIt.value();
+        }
+
+        // Second pass: resolve aliases and register poses
+        for (auto& [poseName, poseJson] : poseJsons) {
+            WeaponPoseConfig poseCfg;
+            // Resolve alias if present
+            if (poseJson.contains("alias") && poseJson["alias"].is_string()) {
+                std::string aliasTarget = poseJson["alias"].get<std::string>();
+                auto aliasIt = poseJsons.find(aliasTarget);
+                if (aliasIt != poseJsons.end()) {
+                    poseCfg = parseWeaponPose(aliasIt->second);
+                } else {
+                    printf("[ANIM WARNING] weapon=%s pose=%s alias='%s' not found, using defaults\n",
+                           weaponId.c_str(), poseName.c_str(), aliasTarget.c_str());
+                    poseCfg.useWeaponPose = true;
+                }
+            } else {
+                poseCfg = parseWeaponPose(poseJson);
+            }
+            loaded.weaponPoses[weaponId + ":" + poseName] = poseCfg;
+            if (poseName == activePose || poseName == "idle" || poseName == "equipped")
                 loaded.weaponPoses[weaponId] = poseCfg;
+        }
+
+        // Validate that key poses exist for HAFS-type weapons
+        if (weaponId == "hafs") {
+            auto checkPose = [&](const std::string& pn) {
+                if (loaded.weaponPoses.find(weaponId + ":" + pn) == loaded.weaponPoses.end())
+                    printf("[ANIM WARNING] weapon=%s pose='%s' is missing from animations.json\n",
+                           weaponId.c_str(), pn.c_str());
+            };
+            checkPose("idle");
+            checkPose("slash");
+            checkPose("lunge");
         }
     }
 }
