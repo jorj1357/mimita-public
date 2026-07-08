@@ -216,6 +216,9 @@ public:
     int nextKeyframeTick(int currentTick) const;
     int prevKeyframeTick(int currentTick) const;
 
+    // ── Easing (public so engine-tick-camera.cpp can use it) ─
+    static float applyEasing(float t, KeyframeInterp interp);
+
 private:
     bool mLoaded = false;
     std::string mReplayPath;
@@ -234,7 +237,6 @@ private:
     static constexpr int MAX_AUTOSAVES = 50;
     std::vector<ReplayEditorAutosave> mAutosaves;
 
-    static float applyEasing(float t, KeyframeInterp interp);
     static float lerpTime(float a, float b, float t, KeyframeInterp interp);
 };
 

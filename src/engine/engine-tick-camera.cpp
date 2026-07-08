@@ -381,7 +381,9 @@ void engineTickCamera(Engine& engine, float dt)
         {
             // Save player camera orientation before controller overwrites it
             float playerYaw = camera.yaw, playerPitch = camera.pitch;
-            if (gReplayCameraMgr.mode() == "keyframed") {
+            // Only use ReplayCameraMgr (separate config/cameratimeline.json system)
+            // when the editor is NOT loaded. Editor keyframes are the authority.
+            if (gReplayCameraMgr.mode() == "keyframed" && !gReplayEditor.isLoaded()) {
                 gReplayCameraMgr.update(gReplayPlayer.currentTick(), camera, dt);
             } else if (!anyFreecam) {
                 if (const ReplaySceneFrame* replayFrame =
@@ -399,9 +401,11 @@ void engineTickCamera(Engine& engine, float dt)
                 0.0f));
         }
 
-        // Step 2: Editor keyframe interpolation (overrides camera if active)
-        if (gReplayEditor.isLoaded() && !anyFreecam &&
-            gReplayEditor.cameraKeyframeCount() > 0)
+        // Step 2: Editor keyframe interpolation (overrides camera if active).
+        // Position keyframes override the camera controller regardless of
+        // camera mode (thirdperson, freecam, firstperson). Only WASD freecam
+        // movement (below) can additionally move the camera.
+        if (gReplayEditor.isLoaded() && gReplayEditor.cameraKeyframeCount() > 0)
         {
             float currentTick = (float)gReplayPlayer.currentTick();
             int kfCount = gReplayEditor.cameraKeyframeCount();
@@ -415,66 +419,66 @@ void engineTickCamera(Engine& engine, float dt)
                     nextKf = i;
             }
 
-            constexpr float BLEND_DURATION = 30.0f; // 0.5s at 60fps
-
             if (prevKf >= 0 && nextKf >= 0) {
-                // Between two keyframes: interpolate
+                // Between two keyframes: interpolate using per-keyframe easing
                 const auto& kfA = gReplayEditor.cameraKeyframe(prevKf);
                 const auto& kfB = gReplayEditor.cameraKeyframe(nextKf);
                 float t = (currentTick - kfA.tick) / (float)(kfB.tick - kfA.tick);
                 t = std::clamp(t, 0.0f, 1.0f);
-                float st = t * t * (3.0f - 2.0f * t); // smoothstep
+                float st = ReplayEditor::applyEasing(t, kfA.interp);
 
                 camera.pos = glm::mix(kfA.position, kfB.position, st);
                 glm::quat rot = glm::slerp(kfA.rotation, kfB.rotation, st);
-                camera.front = glm::normalize(rot * glm::vec3(1.0f, 0.0f, 0.0f));
+                // Extract -Z axis (GLM quatLookAt convention): quatLookAt maps -Z to target
+                camera.front = glm::normalize(rot * glm::vec3(0.0f, 0.0f, -1.0f));
                 camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
                 camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                 camera.fov = glm::mix(kfA.fov, kfB.fov, st);
+                camera.roll = glm::mix(kfA.roll, kfB.roll, st);
                 camera.updateVectors();
 
-                Debug::logThrottled(Debug::Category::Replay, "kf-interp", 0.5f,
-                    "[ReplayCamera] Interpolating: KF%d(tick=%d) -> KF%d(tick=%d) progress=%.0f%%\n"
-                    "  pos=(%.1f %.1f %.1f)\n",
-                    prevKf, kfA.tick, nextKf, kfB.tick, st * 100.0f,
-                    camera.pos.x, camera.pos.y, camera.pos.z);
+                Debug::log(Debug::Category::Replay,
+                    "[RPLE KF APPLY] tick=%.0f interp=%s KF%d->KF%d alpha=%.3f"
+                    " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
+                    currentTick, interpName(kfA.interp),
+                    prevKf, nextKf, st,
+                    camera.pos.x, camera.pos.y, camera.pos.z,
+                    camera.front.x, camera.front.y, camera.front.z,
+                    camera.fov, camera.roll);
 
             } else if (prevKf >= 0) {
-                // After last keyframe: blend back to player camera
+                // After last keyframe: HOLD the final keyframe
                 const auto& kf = gReplayEditor.cameraKeyframe(prevKf);
-                float blendT = (currentTick - kf.tick) / BLEND_DURATION;
-                if (blendT < 1.0f) {
-                    float st = blendT * blendT * (3.0f - 2.0f * blendT); // smoothstep
-                    camera.pos = glm::mix(kf.position, playerCamPos, st);
-                    glm::quat targetRot = glm::quat(glm::vec3(
-                        glm::radians(camera.pitch),
-                        glm::radians(camera.yaw),
-                        0.0f));
-                    glm::quat rot = glm::slerp(kf.rotation, targetRot, st);
-                    camera.front = glm::normalize(rot * glm::vec3(1.0f, 0.0f, 0.0f));
-                    camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
-                    camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
-                    camera.updateVectors();
+                camera.pos = kf.position;
+                glm::quat rot = kf.rotation;
+                camera.front = glm::normalize(rot * glm::vec3(0.0f, 0.0f, -1.0f));
+                camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
+                camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
+                camera.fov = kf.fov;
+                camera.roll = kf.roll;
+                camera.updateVectors();
 
-                    Debug::logThrottled(Debug::Category::Replay, "kf-blend", 0.5f,
-                        "[ReplayCamera] Returning to Player Camera: progress=%.0f%%\n",
-                        st * 100.0f);
-                } else {
-                    // Blended fully — no override, camera controller's position stays
-                    Debug::logThrottled(Debug::Category::Replay, "kf-done", 2.0f,
-                        "[ReplayCamera] Mode: Player Camera (past all keyframes)\n");
-                }
+                Debug::log(Debug::Category::Replay,
+                    "[RPLE KF APPLY] tick=%.0f HOLD KF%d"
+                    " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
+                    currentTick, prevKf,
+                    camera.pos.x, camera.pos.y, camera.pos.z,
+                    camera.front.x, camera.front.y, camera.front.z,
+                    camera.fov, camera.roll);
             } else {
                 // Before first keyframe: player camera (no override)
                 Debug::logThrottled(Debug::Category::Replay, "kf-before", 2.0f,
-                    "[ReplayCamera] Mode: Player Camera (before first keyframe at tick %d)\n",
-                    gReplayEditor.cameraKeyframe(0).tick);
+                    "[RPLE KF APPLY] tick=%.0f before first KF (tick=%d) — player camera\n",
+                    currentTick, gReplayEditor.cameraKeyframe(0).tick);
             }
-        } else {
-            Debug::logThrottled(Debug::Category::Replay, "replay-cam", 2.0f,
-                "[ReplayCamera] Mode: %s%s\n",
-                gReplayPlayer.cameraController().modeName(),
-                anyFreecam ? " + Freecam" : "");
+        } else if (gReplayEditor.isLoaded()) {
+            Debug::log(Debug::Category::Replay,
+                "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
+                " fov=%.0f roll=%.1f source=cameraController\n",
+                gReplayPlayer.currentTick(),
+                camera.pos.x, camera.pos.y, camera.pos.z,
+                camera.front.x, camera.front.y, camera.front.z,
+                camera.fov, camera.roll);
         }
     }
 
@@ -525,6 +529,18 @@ void engineTickCamera(Engine& engine, float dt)
         camera.follow(player.pos);
         camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt);
     }
+
+    // Debug: final camera state after all evaluation (throttled to 0.5s)
+    if (gReplayEditor.isLoaded() || replayPlaybackActive) {
+        Debug::logThrottled(Debug::Category::Replay, "cam-final", 0.5f,
+            "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
+            " fov=%.0f roll=%.1f\n",
+            gReplayPlayer.currentTick(),
+            camera.pos.x, camera.pos.y, camera.pos.z,
+            camera.front.x, camera.front.y, camera.front.z,
+            camera.fov, camera.roll);
+    }
+
     setAudioListener(camera.pos, camera.front);
     EffectPartSystem::instance().setWorld(world);
     if (replayPlaybackActive) {

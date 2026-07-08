@@ -9,36 +9,6 @@
 
 struct CollisionTriangle;
 
-/**
- * dec 3 2025 todo backup
- * inline float CAMERA_DISTANCE = 4.0f;  // closer
-inline float CAMERA_HEIGHT   = 1.5f;  // lower
-inline float CAMERA_SENS     = 0.1f;
-inline float CAMERA_FOV      = 90.0f; // todo add 0.01 and 359.9 capabilites
-inline float CAMERA_SHOULDER_OFFSET = 1.0f;
-
-*/
-
-// dec 3 2025 values v2
-/**
- * 
- * inline float CAMERA_DISTANCE = 4.0f;  // closer
-inline float CAMERA_HEIGHT   = 2.5f;  // higher
-inline float CAMERA_SENS     = 0.12f; // a little fast
-inline float CAMERA_FOV      = 90.0f; // todo add 0.01 and 359.9 capabilites
-inline float CAMERA_SHOULDER_OFFSET = 1.2f; // a lil further 
-*/
-
-// dec 3 2025 values v3
-// dec 19 2025 move these to config.h todo 
-// inline float CAMERA_DISTANCE = 4.0f;  // closer
-// inline float CAMERA_HEIGHT   = 3.5f;  // higher
-// inline float CAMERA_SENS     = 0.15f; // a little fast
-// inline float CAMERA_FOV      = 90.0f; // todo add 0.01 and 359.9 capabilites
-// inline float CAMERA_SHOULDER_OFFSET = 1.5f; // a lil further 
-
-// jan 30 2026 values v4 
-// for debugging also we're a caspule for now so thats whi 
 inline float CAMERA_DISTANCE = 3.5f;
 inline float CAMERA_HEIGHT   = 1.0f;
 inline float CAMERA_SENS     = 0.15f;
@@ -59,6 +29,7 @@ float pitch = 10.0f;
 float punchPitch = 0.0f;
 float punchYaw = 0.0f;
 float fov = CAMERA_FOV;
+float roll = 0.0f;
 bool firstMouse = true;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;

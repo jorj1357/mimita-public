@@ -731,7 +731,9 @@ void ReplayEditor::update(float dt) {
         movieTick += dt * (float)mTickRate * speed;
         if (movieTick >= mTotalTicks && mTotalTicks > 0) {
             movieTick = (float)mTotalTicks;
-            playing = false;
+            // Don't set playing=false — keep editor active so Space toggle,
+            // timeline, keyframes, and camera remain interactive.
+            // User scrubs backward to resume playback.
         }
     }
 
