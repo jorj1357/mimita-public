@@ -197,6 +197,17 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         glm::vec3 crossPos = aim.usesCameraTarget ? aim.aimPoint : hitPoint;
         float crossDistance = aim.usesCameraTarget ? aim.cameraDistance : nearest;
 
+        // ── World-space aim trail ───────────────────────────────
+        int trailInterval = DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL;
+        if (DebugConfig::WORLD_XH_TRAIL_ENABLED && trailInterval > 0 && (mTrailTick % trailInterval) == 0)
+        {
+            int maxPts = glm::clamp(DebugConfig::WORLD_XH_TRAIL_MAX_POINTS, 1, MAX_TRAIL_POINTS);
+            mTrailPoints[mTrailHead] = {crossPos, mTrailTick};
+            mTrailHead = (mTrailHead + 1) % maxPts;
+            if (mTrailCount < maxPts) mTrailCount++;
+        }
+        mTrailTick++;
+
         // Visibility ray from camera to crossPos: if something is between
         // the camera and the hit point, the crosshair is hidden. Otherwise
         // it renders as an overlay (not occluded by the hit surface itself).
@@ -306,6 +317,51 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             float visThickness = (def && def->beamThickness > 0.0f) ? def->beamThickness : 0.05f;
             DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, visThickness, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
             DebugVis::drawFilledSphere(camera, hitPoint, 0.08f, glm::vec4(1.0f, 0.0f, 0.0f, 0.7f));
+        }
+
+        // ── Render aim trail ─────────────────────────────────────
+        if (DebugConfig::WORLD_XH_TRAIL_ENABLED)
+        {
+            int maxPts = glm::clamp(DebugConfig::WORLD_XH_TRAIL_MAX_POINTS, 1, MAX_TRAIL_POINTS);
+            int lifetimeTicks = std::max(1, DebugConfig::WORLD_XH_TRAIL_LIFETIME_TICKS);
+            float trailAlpha = glm::clamp(DebugConfig::WORLD_XH_TRAIL_ALPHA, 0.0f, 1.0f);
+            float trailSize = std::max(0.01f, DebugConfig::WORLD_XH_TRAIL_SIZE);
+            glm::vec4 trailCol(
+                DebugConfig::WORLD_XH_TRAIL_R,
+                DebugConfig::WORLD_XH_TRAIL_G,
+                DebugConfig::WORLD_XH_TRAIL_B,
+                trailAlpha);
+            bool fade = DebugConfig::WORLD_XH_TRAIL_FADE;
+
+            glm::vec3 right = camera.right * trailSize;
+            glm::vec3 up = camera.up * trailSize;
+
+            for (int i = 0; i < mTrailCount; ++i)
+            {
+                int idx = (mTrailHead - 1 - i + maxPts) % maxPts;
+                const TrailPoint& pt = mTrailPoints[idx];
+                int age = mTrailTick - pt.spawnTick;
+                if (age >= lifetimeTicks) continue;
+
+                float alpha = trailAlpha;
+                if (fade)
+                    alpha *= 1.0f - (float)age / (float)lifetimeTicks;
+
+                glm::vec4 c = trailCol;
+                c.a = alpha;
+
+                // Camera-facing billboard quad (2 tris, 6 verts)
+                glm::vec3 v0 = pt.pos - right - up;
+                glm::vec3 v1 = pt.pos + right - up;
+                glm::vec3 v2 = pt.pos + right + up;
+                glm::vec3 v3 = pt.pos - right + up;
+                DebugVis::gOverlayTriVerts.push_back({v0, c});
+                DebugVis::gOverlayTriVerts.push_back({v1, c});
+                DebugVis::gOverlayTriVerts.push_back({v2, c});
+                DebugVis::gOverlayTriVerts.push_back({v0, c});
+                DebugVis::gOverlayTriVerts.push_back({v2, c});
+                DebugVis::gOverlayTriVerts.push_back({v3, c});
+            }
         }
     }
 

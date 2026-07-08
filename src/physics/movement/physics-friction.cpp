@@ -82,4 +82,11 @@ void doFriction(
         );
     }
 
+    // Tick-perfect velocity trace (rate-limited)
+    if (p.dash.frictionOverride < 1.0f) {
+        Debug::logThrottled(Debug::Category::Physics, "friction-override", 0.5f,
+            "[VEL MODIFY] source=friction tickPerfect=1 frictionMul=%.3f beforeSpeed=%.1f afterSpeed=%.1f delta=%.1f\n",
+            frictionMul, speedBefore, glm::length(glm::vec2(p.vel.x, p.vel.y)),
+            speedBefore - glm::length(glm::vec2(p.vel.x, p.vel.y)));
+    }
 }

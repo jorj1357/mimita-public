@@ -84,6 +84,14 @@ private:
     std::unordered_map<uint32_t, float> mRemoteGodballCooldowns;
     void addKillLine(const std::string& line);
 
+    // World-space aim trail ring buffer
+    struct TrailPoint { glm::vec3 pos; int spawnTick; };
+    static constexpr int MAX_TRAIL_POINTS = 256;
+    TrailPoint mTrailPoints[MAX_TRAIL_POINTS]{};
+    int mTrailHead = 0;
+    int mTrailCount = 0;
+    int mTrailTick = 0;
+
     RevolverShotResult fireHitscan(
         const Camera& camera,
         Player& player,
