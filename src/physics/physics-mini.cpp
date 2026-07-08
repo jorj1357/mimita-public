@@ -176,9 +176,10 @@ static void physicsMainUpdate_Internal(
             glm::length(glm::vec2(p.vel.x, p.vel.y)));
     }
 
-    // Air dash — triggered by Left Shift while airborne.
-    // Tick perfect detection: movementHeldDuration < 1/20s → zero friction after dash.
-    if (!groundedThisFrame && (dashPressed || p.dash.tickPerfectDash)) {
+    // Air dash — single impulse triggered by Left Shift while airborne.
+    // The dash impulse fires ONCE. Low-friction mode (from tick perfect) is handled
+    // independently by doFriction reading p.dash.frictionOverride.
+    if (!groundedThisFrame && dashPressed && p.dash.dashAvailable) {
         doAirDash(p, wishMoveXY, true, movementPressed, !groundedThisFrame,
                   p.dash.dashMovementTicks, inputMovementHeldDuration, dt, camForward);
     }

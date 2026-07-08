@@ -11,6 +11,7 @@
 #include "world/world.h"
 #include "npc/npc.h"
 #include "render/render-world.h"
+#include "render/skybox.h"
 #include "render/post-fx.h"
 #include "render/render-player.h"
 #include "shadow/shadow-render.h"
@@ -102,13 +103,22 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         gActorPrevDead.clear();
     }
 
+    // Update skybox animations and check for hot-reload
+    gSkybox.pollReload();
+    gSkybox.update(dt);
+
     { Perf::ScopedTimer _ren("Rendering");
     diagRenderFrameBegin(dt);
     { Perf::ScopedTimer _shad("ShadowRender"); renderShadowMap(world, camera.pos); }
     glViewport(0, 0, engine.renderer->width, engine.renderer->height);
     PostFX::instance().bindFBO();
     diagRenderStage(1);
-    { Perf::ScopedTimer _sky("WorldRender"); renderSky(world, camera); }
+    // Skybox renders first (if loaded), otherwise fall back to mesh-based sky
+    if (gSkybox.isEnabled()) {
+        { Perf::ScopedTimer _sky("SkyboxRender"); gSkybox.render(camera); }
+    } else {
+        { Perf::ScopedTimer _sky("WorldRender"); renderSky(world, camera); }
+    }
     { Perf::ScopedTimer _wrld("WorldRender"); renderWorld(world, camera); }
     PostFX::instance().consumeMagentaTest();
     diagRenderStage(2);

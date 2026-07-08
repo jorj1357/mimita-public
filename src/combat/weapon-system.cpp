@@ -18,6 +18,10 @@
 #include "config.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+
+// Overlay triangle buffer for always-on-top rendering (shared with debug visuals)
+struct TrailTriVert { glm::vec3 pos; glm::vec4 color; };
+extern std::vector<TrailTriVert> gOverlayTriVerts;
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -350,17 +354,17 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 glm::vec4 c = trailCol;
                 c.a = alpha;
 
-                // Camera-facing billboard quad (2 tris, 6 verts)
+                // Camera-facing billboard quad (2 tris, 6 verts) via overlay buffer
                 glm::vec3 v0 = pt.pos - right - up;
                 glm::vec3 v1 = pt.pos + right - up;
                 glm::vec3 v2 = pt.pos + right + up;
                 glm::vec3 v3 = pt.pos - right + up;
-                DebugVis::gOverlayTriVerts.push_back({v0, c});
-                DebugVis::gOverlayTriVerts.push_back({v1, c});
-                DebugVis::gOverlayTriVerts.push_back({v2, c});
-                DebugVis::gOverlayTriVerts.push_back({v0, c});
-                DebugVis::gOverlayTriVerts.push_back({v2, c});
-                DebugVis::gOverlayTriVerts.push_back({v3, c});
+                gOverlayTriVerts.push_back({v0, c});
+                gOverlayTriVerts.push_back({v1, c});
+                gOverlayTriVerts.push_back({v2, c});
+                gOverlayTriVerts.push_back({v0, c});
+                gOverlayTriVerts.push_back({v2, c});
+                gOverlayTriVerts.push_back({v3, c});
             }
         }
     }
