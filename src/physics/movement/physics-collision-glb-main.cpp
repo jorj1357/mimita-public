@@ -143,7 +143,23 @@ void doGLBTriangleCollisions(
     std::vector<int> candidates;
     candidates.reserve(512);
 
-    // ── 1. Sweep + slide ─────────────────────────────────
+    // ── 1. Body + weapon collision (before root capsule sweep) ──
+    // Run first so weapon contacts push player position before the
+    // root capsule sweep resolves. This prevents the weapon from
+    // entering geometry — the player is pushed away at the weapon's
+    // contact point before the capsule can move further into the wall.
+    if (!isCurrentEntityNpc())
+    {
+        Perf::ScopedTimer _bw("WeaponCollisions");
+        auto t0 = std::chrono::steady_clock::now();
+        doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
+        auto t1 = std::chrono::steady_clock::now();
+        diag.bodyWeaponMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        // Recompute totalMove after body/weapon may have adjusted position
+        totalMove = (p.vel + p.externalImpulse) * dt;
+    }
+
+    // ── 2. Sweep + slide ─────────────────────────────────
     {
         Perf::ScopedTimer _st("SweepSlide");
         auto t0 = std::chrono::steady_clock::now();
@@ -152,7 +168,7 @@ void doGLBTriangleCollisions(
         diag.sweepSlideMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
-    // ── 2. Batched depenetration ─────────────────────────
+    // ── 3. Batched depenetration ─────────────────────────
     {
         Perf::ScopedTimer _dt("Depenetration");
         auto t0 = std::chrono::steady_clock::now();
@@ -199,24 +215,13 @@ void doGLBTriangleCollisions(
         diag.depenSolveMs = std::chrono::duration<float, std::milli>(t1 - t0).count() - diag.depenGatherMs;
     }
 
-    // ── 3. Floor recovery ────────────────────────────────
+    // ── 4. Floor recovery ────────────────────────────────
     {
         Perf::ScopedTimer _fr("GroundDetection");
         auto t0 = std::chrono::steady_clock::now();
         doFloorRecovery(p, world, groundedThisFrame);
         auto t1 = std::chrono::steady_clock::now();
         diag.floorRecoveryMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-    }
-
-    // ── 4. Body + weapon collision ───────────────────────
-    // NPCs skip body part collision (root capsule only is sufficient for AI)
-    if (!isCurrentEntityNpc())
-    {
-        Perf::ScopedTimer _bw("WeaponCollisions");
-        auto t0 = std::chrono::steady_clock::now();
-        doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
-        auto t1 = std::chrono::steady_clock::now();
-        diag.bodyWeaponMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
     // ── 5. Emergency stuck escape ────────────────────────

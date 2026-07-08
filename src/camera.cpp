@@ -87,7 +87,14 @@ glm::mat4 Camera::getView() const {
 }
 
 glm::mat4 Camera::getProj(float width, float height) const {
-    return glm::perspective(glm::radians(fov), width / height, 0.1f, 500.0f);
+    // Log projection params once per second
+    static float logTimer = 0.0f;
+    logTimer += 1.0f / 60.0f;
+    if (logTimer >= 1.0f) {
+        logTimer = 0.0f;
+        printf("[CAMERA] nearPlane=0.01 farPlane=5000.0 fov=%.0f\n", fov);
+    }
+    return glm::perspective(glm::radians(fov), width / height, 0.01f, 5000.0f);
 }
 
 void Camera::smoothCollision(

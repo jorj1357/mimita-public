@@ -261,9 +261,8 @@ void Skybox::loadCubemap() {
     bool anyLoaded = false;
     for (int i = 0; i < 6; i++) {
         const std::string& path = mFaces[i].path;
+        SKYDBG("  face[%d] '%s' exists=%d\n", i, path.c_str(), (int)fileExists(path));
         if (path.empty() || !fileExists(path)) {
-            Debug::log(Debug::Category::Render, "[SKYBOX] Face %s missing: %s\n", SKYBOX_FACE_NAMES[i], path.c_str());
-            // Create a 1x1 magenta pixel as placeholder
             unsigned char magenta[] = {255, 0, 255, 255};
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magenta);
             continue;
@@ -271,11 +270,12 @@ void Skybox::loadCubemap() {
         int w, h, comp;
         unsigned char* data = stbi_load(path.c_str(), &w, &h, &comp, 4);
         if (!data) {
-            Debug::log(Debug::Category::Render, "[SKYBOX] Failed to load %s\n", path.c_str());
+            SKYDBG("  stbi_load FAILED\n");
             unsigned char magenta[] = {255, 0, 255, 255};
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magenta);
             continue;
         }
+        SKYDBG("  LOADED %dx%d\n", w, h);
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         stbi_image_free(data);
         anyLoaded = true;
@@ -284,9 +284,10 @@ void Skybox::loadCubemap() {
     if (!anyLoaded) {
         glDeleteTextures(1, &tex);
         mCubemapTex = 0;
-        Debug::log(Debug::Category::Render, "[SKYBOX] No face images loaded\n");
+        SKYDBG("ALL FACES FAILED\n");
         return;
     }
+    SKYDBG("Cubemap loaded OK (tex=%u)\n", tex);
 
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -400,8 +401,9 @@ void Skybox::render(const Camera& camera) {
     glDisable(GL_CULL_FACE);
     // 2. Use LEQUAL depth so skybox passes at the far plane
     glDepthFunc(GL_LEQUAL);
-    // 3. Allow depth writes so skybox fills the depth buffer
-    glDepthMask(GL_TRUE);
+    // 3. Do NOT write depth — skybox should not pollute the depth buffer.
+    //    World geometry must be able to render on top with GL_LESS.
+    glDepthMask(GL_FALSE);
 
     glUseProgram(mShader);
     glBindVertexArray(mVAO);
