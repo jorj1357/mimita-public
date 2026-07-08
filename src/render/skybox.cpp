@@ -112,11 +112,15 @@ Skybox::Skybox() = default;
 Skybox::~Skybox() { destroyCubemap(); destroyMesh(); }
 
 void Skybox::init() {
-    if (mInitialized) return;
+    if (mInitialized) { SKYDBG("init: already initialized\n"); return; }
     mInitialized = true;
+    SKYDBG("init: starting (cwd check: config/skybox.json exists=%d)\n",
+           (int)std::filesystem::exists("config/skybox.json"));
     compileShader();
     createMesh();
     loadConfig();
+    SKYDBG("init: complete (tex=%u shader=%u vao=%u enabled=%d)\n",
+           mCubemapTex, mShader, mVAO, (int)mEnabled);
 }
 
 void Skybox::destroyCubemap() {
@@ -143,11 +147,14 @@ void Skybox::compileShader() {
     if (mShader) { glDeleteProgram(mShader); mShader = 0; }
     std::string vertSrc = readTextFile(shaderPath("skybox.vert"));
     std::string fragSrc = readTextFile(shaderPath("skybox.frag"));
+    SKYDBG("compileShader: vert=%zu bytes frag=%zu bytes\n", vertSrc.size(), fragSrc.size());
     if (vertSrc.empty() || fragSrc.empty()) {
+        SKYDBG("compileShader: FAILED to read shader files from 'shaders/skybox.vert/frag'\n");
         Debug::log(Debug::Category::Render, "[SKYBOX] Cannot read shader files\n");
         return;
     }
     mShader = createProgram(vertSrc, fragSrc);
+    SKYDBG("compileShader: program=%u\n", mShader);
     if (!mShader) {
         Debug::log(Debug::Category::Render, "[SKYBOX] Shader compilation failed\n");
     }
@@ -155,22 +162,29 @@ void Skybox::compileShader() {
 
 bool Skybox::loadConfig(const std::string& path) {
     mConfigPath = path;
+    SKYDBG("loadConfig: path='%s'\n", path.c_str());
     if (!fileExists(path)) {
+        SKYDBG("loadConfig: FILE NOT FOUND at '%s'\n", path.c_str());
         Debug::log(Debug::Category::Render, "[SKYBOX] No config at %s — disabled\n", path.c_str());
         mEnabled = false;
         return false;
     }
+    SKYDBG("loadConfig: file exists\n");
 
     std::ifstream f(path);
     if (!f.is_open()) {
+        SKYDBG("loadConfig: FAILED to open file\n");
         Debug::log(Debug::Category::Render, "[SKYBOX] Cannot open %s\n", path.c_str());
         return false;
     }
     nlohmann::json j;
-    try { f >> j; } catch (...) {
+    try { f >> j; } catch (const std::exception& e) {
+        SKYDBG("loadConfig: JSON parse failed: %s\n", e.what());
         Debug::log(Debug::Category::Render, "[SKYBOX] JSON parse failed: %s\n", path.c_str());
         return false;
     }
+    SKYDBG("loadConfig: JSON parsed OK, enabled=%d folder='%s'\n",
+           j.value("enabled", false), j.value("folder", "?").c_str());
 
     mEnabled = j.value("enabled", true);
     mFolder = j.value("folder", std::string());
@@ -296,6 +310,11 @@ void Skybox::pollReload() {
     }
 }
 
+bool Skybox::isEnabled() {
+    if (!mInitialized) init();
+    return mEnabled && mCubemapTex != 0;
+}
+
 void Skybox::update(float dt) {
     if (!mEnabled || mCubemapTex == 0) return;
 
@@ -360,14 +379,12 @@ void Skybox::setUniforms() const {
 void Skybox::render(const Camera& camera) {
     if (!mInitialized) init();
     if (!mEnabled || mCubemapTex == 0 || mShader == 0 || mVAO == 0) {
-        if (mInitialized) {
-            Debug::log(Debug::Category::Render, "[SKYBOX] render skipped: enabled=%d tex=%u shader=%u vao=%u\n",
-                       (int)mEnabled, mCubemapTex, mShader, mVAO);
-        }
+        SKYDBG("render: SKIPPED (enabled=%d tex=%u shader=%u vao=%u)\n",
+               (int)mEnabled, mCubemapTex, mShader, mVAO);
         return;
     }
 
-    Debug::log(Debug::Category::Render, "[SKYBOX] render called tex=%u shader=%u\n", mCubemapTex, mShader);
+    SKYDBG("render: CALLED tex=%u shader=%u\n", mCubemapTex, mShader);
 
     // Save render state
     GLint prevCullFaceMode, prevDepthFunc;

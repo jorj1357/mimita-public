@@ -57,6 +57,8 @@ bool parseDashMode(const json& value, DashMode& out)
     return false;
 }
 
+} // namespace
+
 const char* dashModeName(DashMode mode)
 {
     switch (mode) {
@@ -65,8 +67,6 @@ const char* dashModeName(DashMode mode)
     }
     return "glide";
 }
-
-} // namespace
 
 const char* gameplayAimModeName(GameplayAimMode mode)
 {

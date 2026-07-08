@@ -73,10 +73,7 @@ void doAirDash(
         DashQuality quality = dashQualityFromTicks(movementTicks);
         mult = dashQualityMultiplier(quality);
         p.dash.lastDashQuality = (int)quality;
-        if (glideMode)
-            p.dash.frictionOverride = 0.0f;
-        else
-            p.dash.frictionOverride = 1.0f;
+        p.dash.frictionOverride = 1.0f;
     }
     float impulse = AIR_DASH_IMPULSE * mult;
 
