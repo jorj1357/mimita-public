@@ -85,6 +85,17 @@ void renderWorld(const World& world, const Camera& cam)
 void registerWorldTextureCommands()
 {
     Terminal::instance().registerCommand({
+        "world_debug_color", "Force world to solid magenta (diagnose shader/lighting issues)",
+        "world_debug_color [0|1]",
+        [](const std::vector<std::string>& args) {
+            bool val = args.empty() ? !worldSolidRedDebug() : (args[0] != "0");
+            setWorldSolidRedDebug(val);
+            printf("[WORLD DEBUG] color override = %d\n", (int)val);
+            Terminal::instance().addLog(std::string("[WORLD DEBUG] color override = ") + (val ? "1 (magenta)" : "0 (normal)"));
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "world_texture_debug", "Toggle per-batch texture tracing", "world_texture_debug [0|1]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {

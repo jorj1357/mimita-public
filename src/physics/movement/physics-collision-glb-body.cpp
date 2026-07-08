@@ -31,13 +31,13 @@ static int runBodyWeaponPass(
     if (bwSpheres.empty()) return -1;
 
     // ── Single broadphase query using the PLAYER'S root capsule AABB ──
-    // This is tight (player-sized + 1m padding) and cannot explode into
-    // a monster AABB like the old combined-sphere approach.
-    // The root capsule covers all body parts and most weapon positions.
+    // Expanded by the weapon's estimated reach (1.5m) to ensure weapon
+    // tip triangles are included. Without this expansion the weapon can
+    // miss collision detection and enter geometry.
     char rootTag[64];
     std::snprintf(rootTag, sizeof(rootTag), "Player_Body_RootPass_%d", pass);
     Capsule rootCap = p.getCapsule();
-    std::vector<int> sharedCandidates = gatherGLBTriangles(world, rootCap, glm::vec3(0.0f), rootTag);
+    std::vector<int> sharedCandidates = gatherGLBTriangles(world, rootCap, p.aimDirection * 1.5f, rootTag);
     gBW.candidateCount = (int)sharedCandidates.size();
 
     // ── Body/weapon sphere contact testing against shared candidates ──
@@ -53,23 +53,13 @@ static int runBodyWeaponPass(
         return (pass == 0) ? -1 : 0;
 
     // ── Classify contacts ──
+    // All body and weapon contacts push the player root — the weapon is as
+    // authoritative as the player's own body. Only walkable contacts are
+    // handled separately (grounding, not position push).
     std::vector<RecoveryContact> walkableContacts, bodyPushContacts, weaponPushContacts;
     for (const auto& c : bwContacts) {
-        bool isConfigWeapon = c.label && std::strcmp(c.label, "weapon") != 0;
-        const WeaponColliderConfig* cfgPtr = nullptr;
-        if (isConfigWeapon) {
-            auto it = cfgMap.find(c.label);
-            if (it != cfgMap.end()) cfgPtr = it->second;
-        }
         if (c.normal.z > MAX_WALKABLE_SLOPE_DOT) {
             walkableContacts.push_back(c);
-        } else if (isConfigWeapon && cfgPtr) {
-            if (cfgPtr->blocksWorld || cfgPtr->pushPlayerRoot)
-                bodyPushContacts.push_back(c);
-            else
-                weaponPushContacts.push_back(c);
-        } else if (c.label && std::strcmp(c.label, "weapon") == 0) {
-            weaponPushContacts.push_back(c);
         } else {
             bodyPushContacts.push_back(c);
         }

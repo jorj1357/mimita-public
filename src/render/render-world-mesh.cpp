@@ -130,7 +130,7 @@ void setUniforms(GLuint shader)
 
     setInt(shader, "uUseColor", worldSolidRedDebug() ? 1 : 0);
     if (worldSolidRedDebug())
-        glUniform4f(uniformLoc(shader, "uColor"), 1.0f, 0.0f, 0.0f, 1.0f);
+        glUniform4f(uniformLoc(shader, "uColor"), 1.0f, 0.0f, 1.0f, 1.0f);
     double now = glfwGetTime();
     if (gTexBreatheRestoring) {
         gTexBreatheRestoreElapsed += 0.016f; // approximate dt
