@@ -85,6 +85,9 @@ struct WeaponDefinition {
     std::string soundEquip;
     std::string poseId;  // which weapon pose config to use (empty = use own id)
 
+    float soundPitchVariation = 0.05f;   // ±5% pitch randomization per shot
+    float soundVolumeVariation = 0.05f;  // ±5% volume randomization per shot
+
     glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
 
     float beamThickness = 0.0f;  // hitscan collision radius (0 = thin ray)

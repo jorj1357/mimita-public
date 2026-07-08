@@ -381,11 +381,6 @@ bool Player::loadCharacter(const std::string& characterName)
     PLAYER_RADIUS = manifest->capsule.radius;
     PLAYER_HEIGHT = manifest->capsule.height;
 
-    // Update camera offsets from manifest
-    CAMERA_DISTANCE = manifest->camera.distance;
-    CAMERA_HEIGHT = manifest->camera.height;
-    CAMERA_SHOULDER_OFFSET = manifest->camera.shoulderOffset;
-
     printf("[PLAYER] character '%s' loaded: capsule=(%.2f, %.2f) camera=(%.2f, %.2f, %.2f)\n",
            characterName.c_str(),
            manifest->capsule.radius, manifest->capsule.height,

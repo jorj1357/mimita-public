@@ -7,11 +7,13 @@
 #include "camera.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "npc/npc-combat.h"
 #include "world/world.h"
 #include "input/input-commands.h"
 #include "perf/perf.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-types.h"
+#include "combat/weapon-rocket-launcher.h"
 #include "combat/death-system.h"
 #include "network/multiplayer-context.h"
 #include "debug/debug-log.h"
@@ -59,6 +61,9 @@ void engineTickCombat(Engine& engine, float dt)
     { Perf::ScopedTimer _wp("Weapons");
     if (!replayPlaybackActive)
         weapons.update(camera, player, npcSystem, world, dt);
+    }
+    if (!replayPlaybackActive) {
+        NpcCombat::updateNpcProjectiles(world, npcSystem, camera, dt);
     }
     if (!replayPlaybackActive) {
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);

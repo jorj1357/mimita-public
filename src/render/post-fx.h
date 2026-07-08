@@ -72,7 +72,19 @@ public:
 
     // Animated time (for psychedelic, dream modes)
     float time() const { return mTime; }
-    void advanceTime(float dt) { mTime += dt; }
+    void advanceTime(float dt) {
+        mTime += dt;
+        updateRandomAnim(dt);
+    }
+
+    // Random animation mode (postfxrand)
+    void enableRandomMode();
+    void disableRandomMode();
+    bool randomModeEnabled() const { return mRandomMode; }
+    bool setAnimExcluded(const std::string& name, bool exclude);
+    bool animExcluded(int idx) const { return idx >= 0 && idx < mAnimPropCount && mAnimExcluded[idx]; }
+    int animPropCount() const { return mAnimPropCount; }
+    const char* animPropName(int idx) const;
 
     // Diagnostic accessors
     GLuint fboId() const { return mFbo; }
@@ -117,6 +129,29 @@ private:
     char mDebugText[512] = {};
     bool mBypass = false;
     bool mMagentaTestPending = false;
+
+    // Random animation
+    struct AnimProp {
+        float* value = nullptr;
+        float startValue = 0.0f;
+        float target = 0.0f;
+        float duration = 1.0f;
+        float elapsed = 0.0f;
+        float minVal = -1.0f;
+        float maxVal = 1.0f;
+    };
+    AnimProp mAnimProps[28];
+    bool mAnimExcluded[28] = {};
+    int mAnimPropCount = 0;
+    bool mRandomMode = false;
+    PostFXData mOriginalValues;
+    bool mRestoring = false;
+    float mRestoreElapsed = 0.0f;
+    static constexpr float RESTORE_DURATION = 1.0f;
+
+    void buildAnimProps();
+    void pickRandomTarget(AnimProp& p);
+    void updateRandomAnim(float dt);
 
     bool initQuad(GLuint& vao, GLuint& vbo);
     bool loadShaders();

@@ -1,5 +1,6 @@
 #include "game/duel.h"
 #include "combat/weapon-runtime.h"
+#include "game/spawn-override.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -39,6 +40,15 @@ void DuelManager::assignTeamSpawns(const World& world)
     mTeamBSpawnIndex = -1;
     mTeamASpawn = glm::vec3(1.0f, 5.0f, 60.0f);
     mTeamBSpawn = glm::vec3(1.0f, 5.0f, 60.0f);
+
+    glm::vec3 overridePos;
+    if (tryGetSpawnOverride(overridePos)) {
+        mTeamASpawn = overridePos;
+        mTeamBSpawn = overridePos;
+        Debug::log(Debug::Category::Duel, "[DUEL SPAWN] override active both teams at (%.1f %.1f %.1f)\n",
+                   overridePos.x, overridePos.y, overridePos.z);
+        return;
+    }
 
     if (world.spawnPoints.empty()) {
         Debug::log(Debug::Category::Duel, "[DUEL SPAWN] no spawn points in map");
@@ -99,6 +109,10 @@ void DuelManager::assignTeamSpawns(const World& world)
 
 glm::vec3 DuelManager::getTeamSpawn(DuelTeam team, int entityIndex, int totalOnTeam) const
 {
+    glm::vec3 overridePos;
+    if (tryGetSpawnOverride(overridePos)) {
+        return overridePos;
+    }
     glm::vec3 basePos = (team == DuelTeam::Player) ? mTeamASpawn : mTeamBSpawn;
     if (totalOnTeam > 1) {
         unsigned int seed = 99991u + (unsigned int)entityIndex * 7477u;

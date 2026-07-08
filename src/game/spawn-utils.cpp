@@ -2,6 +2,8 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "game/spawn-override.h"
+#include "debug/debug-log.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -23,6 +25,12 @@ static void spawnDebugClose()
 #define SPAWNLOG(...) do { spawnDebugOpen(); if (gSpawnDebugFile) { fprintf(gSpawnDebugFile, __VA_ARGS__); fflush(gSpawnDebugFile); } } while(0)
 
 glm::vec3 getSpawnPosition(const World& world, int entityIndex) {
+    glm::vec3 overridePos;
+    if (tryGetSpawnOverride(overridePos)) {
+        Debug::log(Debug::Category::General, "[SPAWN] override active position=(%.1f %.1f %.1f)\n",
+                   overridePos.x, overridePos.y, overridePos.z);
+        return overridePos;
+    }
     if (!world.spawnPoints.empty()) {
         int idx = entityIndex % (int)world.spawnPoints.size();
         glm::vec3 pos = world.spawnPoints[idx].position;
@@ -39,12 +47,16 @@ glm::vec3 spawnNpcAtSafePosition(NpcSystem& npcs, uint32_t npcId, float difficul
     bool explicitSpawn = world.spawnPoints.empty() ? false : true;
     glm::vec3 basePos = getSpawnPosition(world, entityIndex);
 
-    // Add slight random offset to prevent overlapping spawns
-    glm::vec3 spawnPos = basePos + glm::vec3(
-        (float)(rand() % 40 - 20) * 0.5f,
-        (float)(rand() % 40 - 20) * 0.5f,
-        0.0f
-    );
+    glm::vec3 spawnPos = basePos;
+    // Skip random offset when override is active — spawn exactly at override position
+    glm::vec3 _ignored;
+    if (!tryGetSpawnOverride(_ignored)) {
+        spawnPos += glm::vec3(
+            (float)(rand() % 40 - 20) * 0.5f,
+            (float)(rand() % 40 - 20) * 0.5f,
+            0.0f
+        );
+    }
 
     // Clamp Z to at least 1 unit above the map surface
     // The fallback position at (0,0,100) already ensures this

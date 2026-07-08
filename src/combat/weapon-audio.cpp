@@ -9,10 +9,12 @@ namespace WeaponAudio {
 
 void playShootSound(const WeaponDefinition& def, const glm::vec3& position) {
     if (def.soundShoot.empty()) return;
-    float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-    float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-    printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
-           def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
+    float pitchRange = std::max(0.0f, def.soundPitchVariation);
+    float volRange = std::max(0.0f, def.soundVolumeVariation);
+    float rndPitch = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * pitchRange;
+    float rndVolume = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * volRange;
+    Debug::log(Debug::Category::Audio, "[WEAPON AUDIO] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
+               def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
     playWorldSound(def.soundShoot, position, rndVolume, rndPitch, 80.0f);
 }
 

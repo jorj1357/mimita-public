@@ -32,12 +32,15 @@ void doFriction(
     // IMPORTANT:
     // If grounded and actively moving, do NOT apply friction.
     // Walk owns movement while WASD is held.
+    float frictionMul = std::clamp(p.dash.frictionOverride, 0.0f, 1.0f);
+
     if (!(onGround && hasMoveInput))
     {
         float frictionAmount =
-            onGround
+            (onGround
             ? GROUND_FRICTION_AMOUNT
-            : AIR_FRICTION_AMOUNT;
+            : AIR_FRICTION_AMOUNT)
+            * frictionMul;
 
         float decay = expDecay(frictionAmount, dt);
         velXY *= decay;
@@ -50,8 +53,9 @@ void doFriction(
     }
 
     // External momentum fades slowly and independently of walk friction.
+    // Apply friction override so tick-perfect preserves external impulse too.
     float impulseDecay =
-        expDecay(EXTERNAL_IMPULSE_DECAY, dt);
+        expDecay(EXTERNAL_IMPULSE_DECAY * frictionMul, dt);
 
     p.externalImpulse *= impulseDecay;
 

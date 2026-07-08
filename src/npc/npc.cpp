@@ -239,7 +239,7 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
     );
 }
 
-InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack, bool downDash)
+InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack, bool downDash, float dt)
 {
     InputState input;
     input.wishMoveXY = {moveDir.x, moveDir.y};
@@ -251,25 +251,35 @@ InputState buildInputState(const Npc& npc, glm::vec3 moveDir, bool jump, bool da
     input.downDashPressed = downDash;
     input.freezeHeld = false;
 
+    glm::vec3 desiredFwd;
     if (!npc.sensors.touchFloor && input.movementPressed)
     {
-        // Air strafe: align camera forward with movement direction for air control
         glm::vec3 airMoveDir{moveDir.x, moveDir.y, 0.0f};
         float airLen = glm::length(airMoveDir);
-        if (airLen > 0.001f)
-            input.camForward = airMoveDir / airLen;
-        else
-            input.camForward = {1.0f, 0.0f, 0.0f};
+        desiredFwd = airLen > 0.001f ? (airMoveDir / airLen) : glm::vec3{1.0f, 0.0f, 0.0f};
     }
     else if (npc.sensors.hasTarget)
     {
         glm::vec3 toTarget = npc.sensors.predictedTarget - npc.body.pos;
-        input.camForward = safePlanarNormal(toTarget, {1.0f, 0.0f, 0.0f});
+        desiredFwd = safePlanarNormal(toTarget, {1.0f, 0.0f, 0.0f});
     }
     else
     {
-        input.camForward = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
+        desiredFwd = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
     }
+
+    // Apply turn speed limiting: smoothly rotate currentFacing toward desiredFwd
+    float maxTurnAngle = npc.tuning.turnSpeed * dt;  // degrees this frame
+    float angleDiff = glm::degrees(std::acos(
+        std::clamp(glm::dot(npc.currentFacing, desiredFwd), -1.0f, 1.0f)));
+    if (angleDiff > maxTurnAngle && maxTurnAngle > 0.0f) {
+        float t = maxTurnAngle / angleDiff;
+        npc.currentFacing = glm::normalize(
+            glm::mix(npc.currentFacing, desiredFwd, t));
+    } else {
+        npc.currentFacing = desiredFwd;
+    }
+    input.camForward = npc.currentFacing;
 
     return input;
 }
@@ -380,6 +390,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.stateMachine.stateTimer += safeDt;
     npc.stateMachine.nextDecisionTime -= safeDt;
     npc.stateMachine.retreatTimer += safeDt;
+
+    npc.timeSinceLastShot += safeDt;
+    npc.fireRhythmOffset = std::sin(npc.sensors.time * 0.4f + npc.id * 2.1f);
 
     // Cache weapon definition once per frame (avoids 3+ string-keyed map lookups)
     const WeaponDefinition* cachedWeaponDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
@@ -670,7 +683,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         freeze = random01(npc.rngState) < 0.003f;
     }
 
-    InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash);
+    InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash, safeDt);
     input.freezeHeld = freeze;
     input.groundReturnPressed = false;
     if (input.dashPressed)
@@ -732,10 +745,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
     if (attack && npc.attackCooldown <= 0.0f)
     {
+        Debug::log(Debug::Category::NpcCombat,
+            "[NPC FIRE] npc=%u timeSinceLastShot=%.3f\n",
+            npc.id, npc.timeSinceLastShot);
         Perf::ScopedTimer _combatTimer("NpcCombat");
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
-        if (fired && npc.sensors.hasTarget)
+        if (fired)
         {
+            npc.timeSinceLastShot = 0.0f;
             // Do NOT reset nextDecisionTime — let the state machine keep its
             // current state for its minimum duration to prevent jitter.
         }

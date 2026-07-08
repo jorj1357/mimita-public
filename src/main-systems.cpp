@@ -15,6 +15,7 @@
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
 #include "camera.h"
+#include "config/camera-config.h"
 #include "input/input-state.h"
 #include "input/input-poll.h"
 #include "input/input-frame.h"
@@ -234,7 +235,7 @@ void gameInitSubsystems(Engine& engine)
 
     static Camera camera;
     printf("[MAIN] camera made\n");
-    printf("[CAMERA] Smoothing default: %.1f\n", camera.smoothness);
+    printf("[CAMERA] Config: stiffness=%.2f  fov=%.0f\n", CamConfig::instance().data().positionStiffness, CamConfig::instance().data().fov);
     printf("[CAMERA] Raw 1:1 camera enabled\n");
 
     engine.bindCamera(&camera);

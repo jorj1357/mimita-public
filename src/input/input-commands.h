@@ -55,6 +55,7 @@ public:
 
     // Get combined movement vector from commands
     glm::vec2 getMoveVector() const;
+    float getMovementHoldDuration() const;
     bool isJumpHeld() const;
     bool isDashPressed() const;
     bool isGroundReturnPressed() const;

@@ -244,6 +244,8 @@ struct DashState {
     int lastDashQuality = 0;
     bool didDash = false;
     bool didDownDash = false;
+    float frictionOverride = 1.0f;
+    bool tickPerfectDash = false;
 };
 
 struct FreezeState {

@@ -142,6 +142,16 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         }
     }
 
+    // ── Off-hand reloads — tick every reloading weapon regardless of equip ──
+    std::string equippedId = def ? def->id : "";
+    for (auto& [wepId, wepRt] : player.weaponRuntimes) {
+        if (wepId == equippedId) continue;
+        if (!wepRt.isReloading) continue;
+        const WeaponDefinition* wepDef = WeaponRegistry::instance().get(wepId);
+        if (!wepDef) continue;
+        WeaponRuntimeHelper::tickReload(wepRt, *wepDef, dt);
+    }
+
     // ── World-space aim crosshair (permanent) ──────────────
     if (def && rt) {
         int idx = slotIndex(def->slot);

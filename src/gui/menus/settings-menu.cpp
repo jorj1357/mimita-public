@@ -271,7 +271,7 @@ static void drawGameTab(GLFWwindow* win)
     drawSectionTitle("GAMEPLAY", y); y += 50.0f;
 
     drawSliderWithValue(win, "Field of View", y, &settings.fov, 10.0f, 350.0f, changed);
-    if (changed) { CAMERA_FOV = settings.fov; SavePlayerSettings(); }
+    if (changed) { SavePlayerSettings(); }
     y += 60.0f;
 
     drawSliderWithValue(win, "Sensitivity", y, &settings.sensitivity, 0.1f, 10.0f, changed);

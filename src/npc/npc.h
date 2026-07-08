@@ -22,6 +22,7 @@ struct NpcDifficultyTuning {
     float movementPrecision = 0.45f;
     float awarenessRange = 18.0f;
     float prediction = 0.15f;
+    float turnSpeed = 720.0f;  // degrees per second (0:180, 10:1080)
 };
 
 struct NpcSensorContext {
@@ -81,13 +82,23 @@ public:
     float moveNoiseTimer = 0.0f;
     glm::vec2 moveOffset{0.0f};
 
+    // Firing behavior (human-like variability)
+    float fireRhythmOffset = 0.0f;
+    float fireAggressionBias = 0.0f;
+    float timeSinceLastShot = 0.0f;
+    static constexpr float MAX_FIRE_DELAY = 5.0f;
+
     // Training mode: 0=idle, 1=flee, 2=attack (normal AI)
     int trainingMode = 2;
 
     // Cached line-of-sight result updated each frame in updateOneNpc
     bool cachedLoSBlocked = false;
 
-    Npc(std::uint32_t id, float difficulty, glm::vec3 spawn);
+    // Smoothed facing direction for turn speed limiting
+    glm::vec3 currentFacing{1.0f, 0.0f, 0.0f};
+
+    Npc(std::uint32_t id, float difficulty, glm::vec3 spawn,
+        const std::string& weaponId = "revolver");
 };
 
 struct CombatSoundEvent {

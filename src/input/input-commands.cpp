@@ -205,6 +205,22 @@ glm::vec2 InputCommandSystem::getMoveVector() const {
     return {0.0f, 0.0f};
 }
 
+float InputCommandSystem::getMovementHoldDuration() const
+{
+    int moveKeys[] = {GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D};
+    double earliestPress = 1e30;
+    bool anyHeld = false;
+    for (int key : moveKeys) {
+        if (key < 0 || key >= 512) continue;
+        if (!mPrevKeyStates[key]) continue;
+        anyHeld = true;
+        if (mKeyPressTime[key] < earliestPress)
+            earliestPress = mKeyPressTime[key];
+    }
+    if (!anyHeld) return 0.0f;
+    return (float)(mCurrentTime - earliestPress);
+}
+
 bool InputCommandSystem::isJumpHeld() const {
     return getState("jump").held;
 }

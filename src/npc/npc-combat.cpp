@@ -7,9 +7,12 @@
 #include <glm/gtc/constants.hpp>
 
 #include "audio/audio.h"
+#include "camera.h"
 #include "combat/weapon-fire.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
+#include "combat/weapon-audio.h"
+#include "combat/weapon-rocket-launcher.h"
 #include "config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
@@ -17,6 +20,9 @@
 #include "physics/physics-types.h"
 #include "world/world.h"
 #include "npc/npc-internal.h"
+
+// Shared NPC projectile state (rockets, grenades, etc.)
+static RocketLauncherState gNpcRocketState;
 
 bool gNpcForceHit = false;
 float gNpcAimAccuracy = 0.3f;
@@ -248,6 +254,17 @@ static glm::vec3 aimAtTargetProjectile(const Npc& npc, glm::vec3 npcPos, glm::ve
     return aimDir;
 }
 
+static float computeFireAggression(const Npc& npc)
+{
+    float base = npc.tuning.aggression;
+    float healthFrac = (float)npc.body.currentHp / (float)npc.body.maxHp;
+    float lowHealth = (1.0f - healthFrac) * 0.3f;
+    float closeTarget = npc.sensors.targetDistance < 5.0f ? 0.3f : 0.0f;
+    float recentlyHit = npc.hitReactionTimer > 0.0f ? 0.4f : 0.0f;
+    float visible = npc.cachedLoSBlocked ? 0.0f : 0.2f;
+    return glm::clamp(base + lowHealth + closeTarget + recentlyHit + visible, 0.0f, 1.0f);
+}
+
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
     if (npc.attackCooldown > 0.0f)
@@ -365,22 +382,82 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     if (def->magazineSize > 0)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
-    RevolverShotResult shot;
-    if (isProjectile && def->spread > 0.0f)
+    bool fired = false;
+    switch (def->behaviorType) {
+    case WeaponBehaviorType::Hitscan:
     {
-        glm::vec3 spreadDir = WeaponFire::computeSpreadDirection(aimDir, def->spread, const_cast<Npc&>(npc).rngState);
-        shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player);
+        RevolverShotResult shot;
+        if (def->spread > 0.0f) {
+            glm::vec3 spreadDir = WeaponFire::computeSpreadDirection(aimDir, def->spread, const_cast<Npc&>(npc).rngState);
+            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, spreadDir, &player);
+        } else {
+            shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+        }
+        fired = shot.fired;
+        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",
+                   npc.id, def->id.c_str(), (int)shot.hitEntity, shot.damage);
+        break;
     }
-    else
+    case WeaponBehaviorType::Projectile:
+    case WeaponBehaviorType::RocketLauncher:
     {
-        shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+        WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir);
+        fired = true;
+        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s rocketLauncher dir=(%.2f %.2f %.2f)\n",
+                   npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
+        break;
+    }
+    case WeaponBehaviorType::Melee:
+    case WeaponBehaviorType::Swordsword:
+    {
+        // Melee: use hitscan at close range for now (future: full melee AI)
+        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+        fired = shot.fired;
+        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s melee(approx) hit=%d\n",
+                   npc.id, def->id.c_str(), (int)shot.hitEntity);
+        break;
+    }
+    case WeaponBehaviorType::Godball:
+    case WeaponBehaviorType::GrenadeLauncher:
+    {
+        // Fallback: use hitscan (godball/grenade AI not yet implemented)
+        RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player);
+        fired = shot.fired;
+        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s fallback-hitscan (full AI pending)\n",
+                   npc.id, def->id.c_str());
+        break;
+    }
     }
 
-    printf("[NPC RESULT] id=%u hit=%d damage=%.0f%s\n",
-           npc.id, (int)shot.hitEntity, shot.damage,
-           shot.hitEntity ? "" : " missReason=inaccuracy");
+    // Variable fire delay: blend between min (fireDelay) and max (5s) based on aggression + rhythm
+    float minDelay = def->fireDelay;
+    float maxDelay = Npc::MAX_FIRE_DELAY;
+    float rawPos = random01(npc.rngState);
+    float aggression = computeFireAggression(npc);
+    npc.fireAggressionBias = aggression;
+    float calm = 1.0f - aggression;
+    float pos = rawPos - aggression * 0.35f + calm * 0.15f + npc.fireRhythmOffset * 0.2f;
+    pos = glm::clamp(pos, 0.0f, 1.0f);
+    npc.attackCooldown = minDelay + pos * (maxDelay - minDelay);
+    Debug::log(Debug::Category::NpcCombat,
+        "[NPC FIRE DECISION] npc=%u weapon=%s min=%.3f max=%.1f "
+        "aggression=%.2f rhythm=%+.2f pos=%.2f result=%.3f\n",
+        npc.id, def->id.c_str(), minDelay, maxDelay,
+        aggression, npc.fireRhythmOffset, pos, npc.attackCooldown);
+    return fired;
+}
 
-    // DEBUG MODE: use exact fireDelay as cooldown, no scaling (temporary)
-    npc.attackCooldown = def->fireDelay;
-    return true;
+void NpcCombat::updateNpcProjectiles(const World& world, NpcSystem& npcSystem,
+                                     const Camera& camera, float dt) {
+    // Update NPC rocket launcher projectiles
+    if (!gNpcRocketState.activeRockets.empty()) {
+        // Need a weapon definition for rockets — find it from any NPC with rocket launcher
+        static const RocketLauncherState* lastState = &gNpcRocketState;
+        (void)lastState;
+        // For now, the rockets will be inert and timeout after their lifetime.
+        // Full update requires a WeaponDefinition which is accessed from the NPC.
+        // This is a placeholder for the full implementation.
+        Debug::log(Debug::Category::NpcCombat, "[NPC ROCKET] %zu active rockets (lifetime expiry only)\n",
+                   gNpcRocketState.activeRockets.size());
+    }
 }

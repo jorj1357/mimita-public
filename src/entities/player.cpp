@@ -235,6 +235,8 @@ void Player::updateAudio(float dt)
         playWorldSound("entity/player/dash", pos, perfect ? 1.3f : 1.0f, perfect ? 1.2f : 1.0f, 36.0f);
         glm::vec3 dashDir = glm::length(vel) > 0.001f ? glm::normalize(vel) : glm::vec3(0,1,0);
         HitEffects::spawnMovementDashBurst(pos, dashDir, glm::length(vel));
+        if (dash.tickPerfectDash)
+            playWorldSound("entity/player/dash", pos, 1.0f, 0.25f, 36.0f);
         dash.lastDashQuality = 0;
     }
 

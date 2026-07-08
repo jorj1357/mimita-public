@@ -66,6 +66,7 @@ static void physicsMainUpdate_Internal(
     bool jumpPressed,
     bool dashPressed,
     bool movementPressed,
+    bool movementJustPressed,
     bool groundReturnPressed,
     bool downDashPressed,
     const glm::vec3& camForward,
@@ -74,7 +75,8 @@ static void physicsMainUpdate_Internal(
     GLFWwindow* debugWindow,
     const Camera* debugCamera,
     bool freezeHeld,
-    int subSteps
+    int subSteps,
+    float inputMovementHeldDuration = 0.0f
 ){
     Perf::ScopedTimer _t("Physics");
     dt = std::min(dt, 0.033f);
@@ -165,14 +167,40 @@ static void physicsMainUpdate_Internal(
     }
 
     // Walk applies movement input — ground and air (sets base horizontal velocity).
-    if (movementPressed)
+    // Skip walk when tick-perfect friction override is active — preserves momentum.
+    if (movementPressed && p.dash.frictionOverride >= 1.0f)
         doWalk(p, wishMoveXY, groundedThisFrame, dt);
 
-    // air dash (adds impulse on top of walk velocity)
-    doAirDash(p, wishMoveXY, dashPressed, movementPressed, !groundedThisFrame, p.dash.dashMovementTicks, dt, camForward);
+    // Air dash from jump+movement while airborne.
+    // When airborne + movement input + jump pressed → dash instead of air jump.
+    bool airborne = !groundedThisFrame;
+    bool dashFromJump = airborne && movementPressed && (jumpPressed || p.dash.tickPerfectDash);
+    if (dashFromJump) {
+        // dash consumes the jump — doJump will be skipped
+        doAirDash(p, wishMoveXY, true, movementPressed, airborne,
+                  p.dash.dashMovementTicks, inputMovementHeldDuration, dt, camForward);
+    } else {
+        // jump — now reads fresh p.ground.onGround/p.ground.stableOnGround
+        doJump(p, jumpHeld, jumpPressed, dt);
+    }
+    // Legacy dash key still triggers if jump+move didn't
+    if (!dashFromJump && dashPressed && airborne && p.dash.dashAvailable)
+        doAirDash(p, wishMoveXY, true, movementPressed, airborne,
+                  p.dash.dashMovementTicks, 99.0f, dt, camForward);
 
-    // jump — now reads fresh p.ground.onGround/p.ground.stableOnGround
-    doJump(p, jumpHeld, jumpPressed, dt);
+    // Friction override management
+    // Do NOT reset on the same frame the dash fires — the override was just set by doAirDash.
+    if (p.dash.frictionOverride < 1.0f && !p.dash.didDash) {
+        // The next frame after the dash, any meaningful input restores normal friction.
+        bool inputDetected = movementJustPressed || jumpHeld || dashPressed || freezeHeld || downDashPressed;
+        bool abilityUsed = p.dash.didDownDash || p.freeze.didFreeze;
+        bool landed = groundedThisFrame;
+        if (inputDetected || abilityUsed || landed) {
+            p.dash.frictionOverride = 1.0f;
+            p.dash.tickPerfectDash = false;
+            Debug::log(Debug::Category::Physics, "[FRICTION OVERRIDE] disabled inputDetected=%d\n", (int)inputDetected);
+        }
+    }
     if (DebugConfig::DEBUG_INPUT) {
         if (p.jump.didGroundJump)
             Debug::log(Debug::Category::General, "[JUMP] start ground velocityZ=%.2f\n", p.vel.z);
@@ -288,6 +316,7 @@ void physicsMainUpdate(
         input.jumpPressed || bufferedJump,
         input.dashPressed || bufferedDash,
         input.movementPressed,
+        input.movementJustPressed,
         input.groundReturnPressed,
         input.downDashPressed || bufferedDownDash,
         input.camForward,
@@ -296,6 +325,7 @@ void physicsMainUpdate(
         nullptr,
         nullptr,
         input.freezeHeld,
-        subSteps
+        subSteps,
+        input.movementHeldDuration
     );
 }

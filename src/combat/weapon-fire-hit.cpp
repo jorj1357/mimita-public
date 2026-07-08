@@ -11,6 +11,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/weapon-audio.h"
 #include "combat/shot-profiler.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
@@ -46,14 +47,7 @@ RevolverShotResult tryFireHitscan(
 {
     RevolverShotResult result;
 
-    if (!def.soundShoot.empty()) {
-        float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
-               def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
-        playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
-    }
-
+    WeaponAudio::playShootSound(def, muzzlePos);
     result.fired = true;
     result.start = muzzlePos;
 
@@ -135,12 +129,7 @@ RevolverShotResult tryFireHitscanDir(
 {
     RevolverShotResult result;
 
-    if (!def.soundShoot.empty()) {
-        float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-        playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
-    }
-
+    WeaponAudio::playShootSound(def, muzzlePos);
     result.fired = true;
     result.start = muzzlePos;
 
@@ -213,13 +202,7 @@ void fireMultiPellet(
 
     {
         auto ts = ShotProfiler::Scope(&shotProf.audioMs);
-        if (!def.soundShoot.empty()) {
-            float rndPitch = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-            float rndVolume = 1.0f + ((rand() % 201 - 100) / 10000.0f);
-            printf("[SOUND] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
-                   def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
-            playWorldSound(def.soundShoot, muzzlePos, rndVolume, rndPitch, 80.0f);
-        }
+        WeaponAudio::playShootSound(def, muzzlePos);
     }
 
     float spreadDeg = std::max(0.1f, def.spread);
