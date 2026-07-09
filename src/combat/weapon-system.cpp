@@ -90,15 +90,10 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
 
     if (def && rt) {
         if (rt->isReloading) {
-            rt->reloadTimer = std::max(0.0f, rt->reloadTimer - dt);
-            if (rt->reloadTimer <= 0.0f && rt->pendingReloadRounds > 0) {
-                rt->currentAmmo += rt->pendingReloadRounds;
-                rt->reserveAmmo -= rt->pendingReloadRounds;
-                rt->pendingReloadRounds = 0;
-                rt->isReloading = false;
-                if (def && !def->soundReload.empty())
-                    playWorldSound(def->soundReload, player.pos, 0.9f, 1.0f, 10.0f);
-            }
+            bool wasReloading = rt->isReloading;
+            WeaponRuntimeHelper::tickReload(*rt, *def, dt);
+            if (wasReloading && !rt->isReloading && !def->soundReload.empty())
+                playWorldSound(def->soundReload, player.pos, 0.9f, 1.0f, 10.0f);
         }
 
         if (rt->reloadBufferTimer > 0.0f) {

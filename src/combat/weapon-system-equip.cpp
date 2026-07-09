@@ -2,6 +2,7 @@
 #include "weapon-audio.h"
 #include "weapon-data.h"
 #include "weapon-registry.h"
+#include "weapon-runtime.h"
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
 #include "weapon-rocket-launcher.h"
@@ -11,7 +12,27 @@
 
 #include "debug/debug-log.h"
 #include "config.h"
+#include "audio/audio.h"
 #include "entities/player.h"
+
+static void tryAutoReloadOffhand(Player& player, const std::string& weaponId)
+{
+    if (weaponId.empty()) return;
+    auto it = player.weaponRuntimes.find(weaponId);
+    if (it == player.weaponRuntimes.end()) return;
+    WeaponRuntime& rt = it->second;
+    if (rt.isReloading) return;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    if (!def) return;
+    WeaponRuntimeHelper::startReload(rt, *def);
+    if (rt.isReloading) {
+        if (!def->soundReload.empty())
+            playWorldSound(def->soundReload, player.pos, 0.7f, 1.0f, 20.0f);
+        if (DebugConfig::DEBUG_RELOAD)
+            Debug::log(Debug::Category::General, "[RELOAD] auto-reload started for holstered '%s'\n",
+                       weaponId.c_str());
+    }
+}
 
 bool WeaponSystem::reload(Player& player) {
     const WeaponDefinition* def = getCurrentDef(player);
@@ -46,8 +67,11 @@ bool WeaponSystem::reload(Player& player) {
 }
 
 void WeaponSystem::equip(Player& player, int slot) {
+    std::string oldWeaponId = player.equippedWeaponId;
     const WeaponDefinition* def = getDefForSlot(slot);
     if (def) {
+        if (def->id != oldWeaponId)
+            tryAutoReloadOffhand(player, oldWeaponId);
         player.equippedSlot = slot;
         player.hasValidWeapon = true;
         player.equippedWeaponId = def->id;
@@ -81,6 +105,8 @@ void WeaponSystem::equip(Player& player, int slot) {
 }
 
 void WeaponSystem::unequip(Player& player) {
+    std::string oldWeaponId = player.equippedWeaponId;
+    tryAutoReloadOffhand(player, oldWeaponId);
     player.equippedSlot = 0;
     player.hasValidWeapon = false;
     player.equippedWeaponId.clear();

@@ -10,7 +10,7 @@
   "world_xh_minsize": 0.1,
   "world_xh_maxsize": 24,
   "world_xh_centerdot": 0,
-  "world_xh_trail_enabled": 0,
+  "world_xh_trail_enabled": 1,
   "world_xh_trail_lifetime_ticks": 90,
   "world_xh_trail_color": [0.2, 1.0, 1.0],
   "world_xh_trail_alpha": 0.1,
