@@ -17,6 +17,7 @@
 #include "camera.h"
 #include "config.h"
 #include "config/player-settings.h"
+#include "config/gameplay-config.h"
 #include "debug/debug-log.h"
 
 // Overlay triangle buffer for always-on-top rendering (shared with debug visuals)
@@ -323,6 +324,21 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             float visThickness = (def && def->beamThickness > 0.0f) ? def->beamThickness : 0.05f;
             DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, visThickness, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
             DebugVis::drawFilledSphere(camera, hitPoint, 0.08f, glm::vec4(1.0f, 0.0f, 0.0f, 0.7f));
+
+            // Farpoint debug: draw camera forward ray + farpoint target + weapon direction
+            if (GameplayConfig::instance().aimMode() == GameplayAimMode::Farpoint) {
+                float farDist = GameplayConfig::instance().farpointDistance();
+                glm::vec3 farTarget = camera.pos + camera.front * farDist;
+                // BLUE: camera forward ray (shortened to 100m for visibility)
+                glm::vec3 camRayEnd = camera.pos + camera.front * 100.0f;
+                DebugVis::drawFilledBeam(camera, camera.pos, camRayEnd, 0.03f, glm::vec4(0.2f, 0.4f, 1.0f, 0.6f));
+                // GREEN: farpoint target sphere
+                DebugVis::drawFilledSphere(camera, farTarget, 0.15f, glm::vec4(0.2f, 1.0f, 0.2f, 0.8f));
+                // RED: weapon direction ray (from muzzle toward farpoint)
+                glm::vec3 wpnDir = glm::normalize(farTarget - muzzlePos);
+                glm::vec3 wpnRayEnd = muzzlePos + wpnDir * 100.0f;
+                DebugVis::drawFilledBeam(camera, muzzlePos, wpnRayEnd, 0.03f, glm::vec4(1.0f, 0.2f, 0.2f, 0.6f));
+            }
         }
 
         // ── Render aim trail ─────────────────────────────────────

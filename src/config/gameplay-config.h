@@ -5,7 +5,8 @@
 
 enum class GameplayAimMode {
     Crosshair,
-    WorldHit
+    WorldHit,
+    Farpoint
 };
 
 const char* gameplayAimModeName(GameplayAimMode mode);
@@ -20,6 +21,7 @@ const char* dashModeName(DashMode mode);
 struct GameplayConfigData {
     GameplayAimMode aimMode = GameplayAimMode::Crosshair;
     DashMode dashMode = DashMode::Glide;
+    float farpointDistance = 1000000.0f;
 };
 
 class GameplayConfig {
@@ -33,6 +35,7 @@ public:
     const char* aimModeName() const { return gameplayAimModeName(mData.aimMode); }
     DashMode dashMode() const { return mData.dashMode; }
     const char* dashModeName() const { return ::dashModeName(mData.dashMode); }
+    float farpointDistance() const { return mData.farpointDistance; }
 
 private:
     GameplayConfig() = default;

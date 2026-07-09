@@ -46,6 +46,8 @@ struct RagdollInstance {
     float fade = 0.0f;
 
     std::vector<Mesh> partMeshes;
+
+    float prevKineticEnergy = 0.0f;
 };
 
 class RagdollDeathSystem {

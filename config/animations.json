@@ -283,30 +283,50 @@
           "leftArm": { "translation": [0.15, -0.05, 0.12], "rotation": [-5.0, -40.0, 35.0] },
           "rightArm": { "translation": [0.10, -0.10, -0.10], "rotation": [5.0, -10.0, 42.0] }
         },
+        "slash_windup": {
+          "useWeaponPose": true,
+          "leftArm": { "translation": [0.20, -0.08, 0.15], "rotation": [30.0, -35.0, -50.0] },
+          "rightArm": { "translation": [0.05, -0.12, -0.14], "rotation": [35.0, 5.0, 55.0] }
+        },
         "slash": {
           "useWeaponPose": true,
           "leftArm": { "translation": [0.28, -0.05, 0.18], "rotation": [80.0, -30.0, -95.0] },
           "rightArm": { "translation": [-0.08, -0.08, -0.18], "rotation": [82.0, 25.0, 105.0] }
+        },
+        "slash_recovery": {
+          "useWeaponPose": true,
+          "leftArm": { "translation": [0.10, -0.10, 0.10], "rotation": [20.0, -25.0, -30.0] },
+          "rightArm": { "translation": [0.05, -0.10, -0.10], "rotation": [25.0, 0.0, 35.0] }
+        },
+        "lunge_windup": {
+          "useWeaponPose": true,
+          "leftArm": { "translation": [0.30, -0.05, 0.08], "rotation": [15.0, -15.0, -25.0] },
+          "rightArm": { "translation": [0.20, -0.08, -0.10], "rotation": [18.0, 5.0, 30.0] }
         },
         "lunge": {
           "useWeaponPose": true,
           "leftArm": { "translation": [0.65, -0.02, 0.10], "rotation": [35.0, -8.0, -20.0] },
           "rightArm": { "translation": [0.48, -0.04, -0.12], "rotation": [38.0, 12.0, 25.0] }
         },
+        "lunge_recovery": {
+          "useWeaponPose": true,
+          "leftArm": { "translation": [0.25, -0.08, 0.08], "rotation": [10.0, -20.0, -15.0] },
+          "rightArm": { "translation": [0.18, -0.10, -0.10], "rotation": [12.0, -5.0, 20.0] }
+        },
         "shooting": {
           "useWeaponPose": true,
-          "leftArm": { "translation": [0.28, -0.05, 0.18], "rotation": [80.0, -30.0, -95.0] },
-          "rightArm": { "translation": [-0.08, -0.08, -0.18], "rotation": [82.0, 25.0, 105.0] }
+          "leftArm": { "translation": [0.35, -0.02, 0.20], "rotation": [60.0, -25.0, -75.0] },
+          "rightArm": { "translation": [-0.12, -0.06, -0.20], "rotation": [65.0, 18.0, 85.0] }
         },
         "just_shot": {
           "useWeaponPose": true,
-          "leftArm": { "translation": [0.28, -0.05, 0.18], "rotation": [80.0, -30.0, -95.0] },
-          "rightArm": { "translation": [-0.08, -0.08, -0.18], "rotation": [82.0, 25.0, 105.0] }
+          "leftArm": { "translation": [0.05, -0.15, 0.08], "rotation": [15.0, -30.0, -20.0] },
+          "rightArm": { "translation": [0.02, -0.14, -0.08], "rotation": [18.0, -5.0, 25.0] }
         },
         "reloading": {
           "useWeaponPose": true,
-          "leftArm": { "translation": [0.15, -0.05, 0.12], "rotation": [45.0, -10.0, -35.0] },
-          "rightArm": { "translation": [0.10, -0.10, -0.10], "rotation": [55.0, 10.0, 42.0] }
+          "leftArm": { "translation": [-0.10, -0.18, 0.05], "rotation": [-10.0, -15.0, 10.0] },
+          "rightArm": { "translation": [-0.15, -0.18, -0.05], "rotation": [-8.0, -5.0, 15.0] }
         },
         "equipping": {
           "useWeaponPose": true,
