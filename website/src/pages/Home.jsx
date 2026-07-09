@@ -1,6 +1,7 @@
 import "../App.css"
 
 import Layout from "../components/Layout"
+import NewsletterBox from "../components/NewsletterBox"
 import FeedbackBox from "../components/FeedbackBox"
 import RainbowText from "../components/RainbowText"
 import StickerLayer from "../components/StickerLayer"
@@ -144,6 +145,8 @@ export default function Home() {
 
       </main>
 
+      <div style={{ borderTop: "2px solid rgba(255,255,255,0.1)", margin: "0 auto", maxWidth: "500px", paddingTop: "2rem" }} />
+      <NewsletterBox />
       <FeedbackBox pageName="home" />
 
     </Layout>

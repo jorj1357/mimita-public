@@ -19,6 +19,7 @@ const HAMBURGER_ITEMS = [
     { label: "Leaderboards", path: "/leaderboard" },
     { label: "Link Account", path: "/link" },
     { label: "MiMITA News!!!", path: "/news", rainbow: true },
+    { label: "Profile", path: "/profile", auth: true },
     { label: "Support", path: "/support" },
     { label: "Terms", path: "/terms" },
     { label: "Users", path: "/users" },
@@ -127,7 +128,11 @@ export default function Header() {
                                             to={item.path}
                                             onClick={closeMenu}
                                         >
-                                            {item.label}
+                                            {item.rainbow ? (
+                                                <RainbowText>{item.label}</RainbowText>
+                                            ) : (
+                                                item.label
+                                            )}
                                         </Link>
                                     ))}
                                     {user ? (
@@ -188,11 +193,8 @@ export default function Header() {
                                     <Link to="/profile" onClick={() => setProfileOpen(false)}>
                                         Profile
                                     </Link>
-                                    <Link to="/settings" onClick={() => setProfileOpen(false)}>
-                                        Settings
-                                    </Link>
                                     <Link to="/account" onClick={() => setProfileOpen(false)}>
-                                        Account
+                                        Edit Account
                                     </Link>
                                     <button
                                         type="button"
