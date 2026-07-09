@@ -21,28 +21,6 @@ enum class WeaponBehaviorType {
     Hafs
 };
 
-enum class WeaponColliderShape {
-    Box,
-    Capsule
-};
-
-struct WeaponColliderConfig {
-    std::string name = "weapon_collider";
-    WeaponColliderShape shape = WeaponColliderShape::Box;
-    glm::vec3 position{0.0f};
-    glm::vec3 rotationDegrees{0.0f};
-    glm::vec3 size{0.18f, 0.18f, 1.0f};
-    bool pushPlayerRoot = true;
-    bool supportPlayerWeight = true;
-    bool blocksWorld = true;
-};
-
-struct WeaponCollisionConfig {
-    bool enabled = true;
-    bool authoritative = true;
-    std::vector<WeaponColliderConfig> colliders;
-};
-
 enum class WeaponFireMode {
     SemiAuto,
     Automatic,
@@ -92,8 +70,7 @@ struct WeaponDefinition {
     glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
 
     float beamThickness = 0.0f;  // hitscan collision radius (0 = thin ray)
-
-    WeaponCollisionConfig collision;
+    bool weaponCollisionEnabled = true;
 
     std::unordered_map<std::string, float> customParams;
 

@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react"
 
-const R = 18
+const R = 55
 const GRAVITY = 0.35
-const FRICTION = 0.992
-const RESTITUTION = 0.88
+const FRICTION = 0.9995
+const RESTITUTION = 0.97
 const FRAME_HISTORY = 5
 
 function debugLog(...args) {
@@ -82,6 +82,9 @@ export default function BounceBall() {
     }
 
     function tick() {
+      boundsW = docW() - R * 2
+      boundsH = docH() - R * 2
+
       if (!drag) {
         vel.y += GRAVITY
         vel.x *= FRICTION
@@ -104,7 +107,7 @@ export default function BounceBall() {
         } else if (pos.y > boundsH) {
           pos.y = boundsH
           vel.y = -Math.abs(vel.y) * RESTITUTION
-          if (Math.abs(vel.x) < 0.3 && Math.abs(vel.y) < 0.3) {
+          if (Math.abs(vel.x) < 0.02 && Math.abs(vel.y) < 0.02) {
             vel.x = 0
             vel.y = 0
           }

@@ -75,7 +75,7 @@ export default function ArticlesIndex() {
         <h1 className="articlesTitle">articles</h1>
 
         <p className="aboutSmall" style={{ marginBottom: "32px" }}>
-          guides, updates, and misc ramblings about mimita.
+          Have You  ever played R  MiMITA
         </p>
 
         <div className="articlesList">
