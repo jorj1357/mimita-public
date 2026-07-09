@@ -9,6 +9,8 @@ import RandomRotation from "../components/RandomRotation"
 import ProceduralOffset from "../components/ProceduralOffset"
 import NoiseBackground from "../components/NoiseBackground"
 import ChaosBox from "../components/ChaosBox"
+import ChaosSway from "../components/ChaosSway"
+import RainbowTrail from "../components/RainbowTrail"
 import BounceBall from "../components/BounceBall"
 
 export default function Home() {
@@ -41,13 +43,15 @@ export default function Home() {
 
         <div className="heroContent">
 
-          <ChaosBox seed="HomeHeroTitle">
-            <div className="heroLogoWrap">
-              <RainbowText as="h1" className="mainLogo">
-                MiMITA
-              </RainbowText>
-            </div>
-          </ChaosBox>
+          <RainbowTrail count={30}>
+            <ChaosSway as="div">
+              <div className="heroLogoWrap">
+                <RainbowText as="h1" className="mainLogo">
+                  MiMITA
+                </RainbowText>
+              </div>
+            </ChaosSway>
+          </RainbowTrail>
 
           <ChaosBox seed="HomeTagline">
             <RandomRotation maxDeg={1}>

@@ -63,78 +63,8 @@ void recomputeWeaponCapsule(Player& p)
 
 // Generate sphere samples for configurable weapon colliders from JSON collision config.
 // Uses fixed 5 samples per collider along the dominant axis.
-void collectWeaponConfigSpheres(
-    Player& p,
-    std::vector<BodyWeaponSphere>& spheres
-) {
-    auto t0 = std::chrono::steady_clock::now();
-    auto& cfg = p.weaponCollisionConfig;
-    gBW.configColliderCount = (int)cfg.colliders.size();
-    if (!cfg.enabled || cfg.colliders.empty())
-        return;
-
-    glm::mat4 weaponWorld = p.weaponCollisionWorld;
-
-    for (const auto& wc : cfg.colliders)
-    {
-        // Build collider local transform
-        glm::mat4 local(1.0f);
-        local = glm::translate(local, wc.position);
-        local = glm::rotate(local, glm::radians(wc.rotationDegrees.x), glm::vec3(1,0,0));
-        local = glm::rotate(local, glm::radians(wc.rotationDegrees.y), glm::vec3(0,1,0));
-        local = glm::rotate(local, glm::radians(wc.rotationDegrees.z), glm::vec3(0,0,1));
-
-        glm::mat4 worldXform = weaponWorld * local;
-        glm::vec3 halfSize = wc.size * 0.5f;
-
-        // Find dominant axis
-        float ex = std::fabs(halfSize.x);
-        float ey = std::fabs(halfSize.y);
-        float ez = std::fabs(halfSize.z);
-        int domAxis = 0;
-        float domLen = ex;
-        if (ey > domLen) { domAxis = 1; domLen = ey; }
-        if (ez > domLen) { domAxis = 2; domLen = ez; }
-        if (domLen < 0.001f) domLen = 0.001f;
-
-        // Local axis direction in world space
-        glm::vec3 axisDir(0.0f);
-        axisDir[domAxis] = 1.0f;
-        glm::vec3 worldAxis = glm::normalize(glm::vec3(worldXform * glm::vec4(axisDir, 0.0f)));
-
-        // Center point in world space
-        glm::vec3 center = glm::vec3(worldXform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-
-        // Sphere radius = half of the smaller-face diagonal, clamped
-        float r = 0.15f;
-        {
-            float s1 = (domAxis == 0) ? ey : ex;
-            float s2 = (domAxis == 2) ? ey : ez;
-            r = std::sqrt(s1 * s1 + s2 * s2);
-            r = std::max(r, 0.10f);
-            r = std::min(r, 0.40f);
-        }
-
-        // Fixed 5 samples along the dominant axis (matching pre-regression behavior).
-        constexpr int CONFIG_COLLIDER_SPHERES = 5;
-        gBW.configSpheresGenerated += CONFIG_COLLIDER_SPHERES;
-
-        for (int si = 0; si < CONFIG_COLLIDER_SPHERES; ++si)
-        {
-            float t = (CONFIG_COLLIDER_SPHERES > 1)
-                ? (float)si / (float)(CONFIG_COLLIDER_SPHERES - 1) * 2.0f - 1.0f
-                : 0.0f;
-            glm::vec3 pos = center + worldAxis * domLen * t;
-            spheres.push_back({pos, r, wc.name.c_str(), glm::vec3(0.0f)});
-        }
-    }
-
-    auto t1 = std::chrono::steady_clock::now();
-    gBW.configSpheresMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-}
-
 // Collect sphere samples from all body parts + weapon for contact testing.
-// Returns spheres with their movement delta (root movement + animation delta).
+// Simple capsule-only: 5 samples along weapon grip→tip axis + body part spheres.
 std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
 {
     auto t0 = std::chrono::steady_clock::now();
@@ -184,27 +114,6 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
         }
         auto tw1 = std::chrono::steady_clock::now();
         gBW.weaponCapsuleSpheresMs = std::chrono::duration<float, std::milli>(tw1 - tw0).count();
-    }
-
-    // 3. Configurable weapon collider spheres (from weapon JSON collision config)
-    collectWeaponConfigSpheres(p, spheres);
-    gBW.configSphereCount = gBW.configSpheresGenerated;
-
-    // 4. Mesh vertex spheres (from weapon GLB collision mesh)
-    {
-        auto& cm = p.weaponCollisionMesh;
-        if (cm.valid && !cm.worldPositions.empty()) {
-            int meshCount = 0;
-            for (size_t i = 0; i < cm.worldPositions.size(); i++) {
-                glm::vec3 sweepDelta{0.0f};
-                if (i < cm.prevPositions.size())
-                    sweepDelta = cm.worldPositions[i] - cm.prevPositions[i];
-                spheres.push_back({cm.worldPositions[i], cm.vertexRadius, "weapon_mesh", sweepDelta});
-                meshCount++;
-            }
-            gBW.configSpheresGenerated = meshCount;
-            gBW.configSphereCount = meshCount;
-        }
     }
 
     gBW.sphereCount = (int)spheres.size();

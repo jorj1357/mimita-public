@@ -213,23 +213,17 @@ struct BWInvestigate {
     int sphereCount = 0;
     int bodyPartSphereCount = 0;
     int weaponCapsuleSphereCount = 0;
-    int configSphereCount = 0;
-    int configColliderCount = 0;
     int candidateCount = 0;
     int triangleTests = 0;
     int sweepTests = 0;
     int staticTests = 0;
     int contactsProduced = 0;
     double collectSpheresMs = 0.0;
-    double computeBoundsMs = 0.0;
-    double broadphaseMs = 0.0;
     double collectContactsMs = 0.0;
     double sweepSphereTriangleMs = 0.0;
     double sphereTriangleContactMs = 0.0;
     double bodyPartSpheresMs = 0.0;
     double weaponCapsuleSpheresMs = 0.0;
-    double configSpheresMs = 0.0;
-    int configSpheresGenerated = 0;
 };
 extern BWInvestigate gBW;
 
@@ -245,7 +239,6 @@ struct BodyWeaponSphere {
 };
 
 void recomputeWeaponCapsule(Player& p);
-void collectWeaponConfigSpheres(Player& p, std::vector<BodyWeaponSphere>& spheres);
 std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p);
 std::vector<RecoveryContact> collectBodyWeaponContacts(
     const Player& p,

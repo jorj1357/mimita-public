@@ -1,34 +1,24 @@
 import { Link } from "react-router-dom"
 import { useState, useEffect, useRef } from "react"
 import Avatar from "./Avatar"
+import RainbowText from "./RainbowText"
 import { logAuthEvent, logRequestError } from "../lib/api-log"
 import { apiRequest } from "../lib/api"
 
 const DISCORD_URL = import.meta.env.VITE_DISCORD_URL || "https://discord.gg/sY8QHbfG9D"
 
 const HAMBURGER_ITEMS = [
-    { label: "Games", path: "/games" },
-    { label: "3cage", path: "/3cage" },
-    { label: "Account", path: "/account", auth: true },
+    { label: "Edit Account", path: "/account", auth: true },
     { label: "Admin", path: "/admin/dashboard" },
     { label: "Articles", path: "/articles" },
-    { label: "Change Password", path: "/change-password", auth: true },
     { label: "Contact", path: "/contact" },
-    { label: "Download", path: "/download" },
+    { label: "Download MiMITA", path: "/download" },
     { label: "FAQ", path: "/faq" },
     { label: "Feedback", path: "/feedback" },
-    { label: "Jorj", path: "/jorj" },
-    { label: "Leaderboard", path: "/leaderboard" },
+    { label: "Games", path: "/games" },
+    { label: "Leaderboards", path: "/leaderboard" },
     { label: "Link Account", path: "/link" },
-    { label: "News", path: "/news" },
-    { label: "Newsletter", path: "/newsletter" },
-    { label: "Patch Notes", path: "/patch-notes" },
-    { label: "Password Principles", path: "/password-principles" },
-    { label: "Privacy", path: "/privacy" },
-    { label: "Profile", path: "/profile", auth: true },
-    { label: "Roadmap", path: "/roadmap" },
-    { label: "Settings", path: "/settings", auth: true },
-    { label: "Socials", path: "/socials" },
+    { label: "MiMITA News!!!", path: "/news", rainbow: true },
     { label: "Support", path: "/support" },
     { label: "Terms", path: "/terms" },
     { label: "Users", path: "/users" },
@@ -103,10 +93,15 @@ export default function Header() {
         window.location.replace("/")
     }
 
+    const profileLabel = user ? `${user.username}'s Profile` : "Profile"
+
     const filteredItems = HAMBURGER_ITEMS.filter(item => {
         if (item.admin && !isAdmin) return false
         if (item.auth && !user) return false
         return true
+    }).map(item => {
+        if (item.path === "/profile") return { ...item, label: profileLabel }
+        return item
     })
 
     return (

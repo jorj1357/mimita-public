@@ -383,20 +383,9 @@ public:
     void renderDepth(unsigned int shadowShader,
                      const glm::mat4& lightViewProj) const;
 
-    // Current weapon collision config (set from WeaponDefinition during viewmodel update)
-    WeaponCollisionConfig weaponCollisionConfig;
+
 
     // Full weapon local-to-arm transform including viewmodel config and animations.
-    // Weapon collision mesh (vertex positions from loaded GLB model)
-    struct WeaponCollisionMesh {
-        std::vector<glm::vec3> localPositions;   // local-space vertex positions
-        std::vector<glm::vec3> prevPositions;    // previous frame world-space positions
-        std::vector<glm::vec3> worldPositions;   // current frame world-space positions
-        bool valid = false;
-        float vertexRadius = 0.04f;
-    };
-    WeaponCollisionMesh weaponCollisionMesh;
-
     // Set during viewmodel update, used by physics to recompute colliders at the
     // correct position matching the rendered weapon.
     glm::mat4 weaponLocalToArm{1.0f};
@@ -413,6 +402,7 @@ public:
     // Previous frame body sample positions for limb sweep collisions
     std::vector<glm::vec3> previousBodySamplePositions;
     Capsule weaponCollisionCapsule{};
+    Capsule prevWeaponCollisionCapsule{}; // previous frame for sweep delta computation
     std::string weaponCollisionName;
 
     // -------- Combat --------

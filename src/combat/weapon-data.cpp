@@ -343,27 +343,6 @@ WeaponDefinition createHafsDefinition() {
     def.soundShoot = "weapon/hafs/hafsswing";
     def.soundEquip = "weapon/hafs/hafsequip";
     def.poseId = "hafs";
-    def.collision.enabled = true;
-    // Blade collider
-    WeaponColliderConfig blade;
-    blade.name = "hafs_blade";
-    blade.shape = WeaponColliderShape::Box;
-    blade.position = {0.0f, 0.0f, -2.5f};
-    blade.size = {0.3f, 0.08f, 2.5f};
-    blade.pushPlayerRoot = true;
-    blade.supportPlayerWeight = true;
-    blade.blocksWorld = true;
-    def.collision.colliders.push_back(blade);
-    // Crossguard collider
-    WeaponColliderConfig guard;
-    guard.name = "hafs_guard";
-    guard.shape = WeaponColliderShape::Box;
-    guard.position = {0.0f, 0.0f, -0.3f};
-    guard.size = {0.5f, 0.5f, 0.15f};
-    guard.pushPlayerRoot = true;
-    guard.supportPlayerWeight = false;
-    guard.blocksWorld = true;
-    def.collision.colliders.push_back(guard);
     def.customParams["lungeSpeed"] = 25.0f;
     return def;
 }
