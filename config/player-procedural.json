@@ -61,8 +61,8 @@
     "leftLegTranslation": [0.2, -0.3, -0.1],
     "rightLegRotation": [-12, 0, -30],
     "rightLegTranslation": [0.1, -0.3, 0.1],
-    "blendInTime": 0.03,
-    "blendOutTime": 0.05,
+    "blendInTime": 0.0,
+    "blendOutTime": 0.0,
     "snapIn": true
   },
 

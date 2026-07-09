@@ -142,6 +142,8 @@ export default function About() {
                 </div>
               </PixelBox>
             </div>
+              <p>also heres the mimita plan doc 7 9 2026 this is working but i do change docs alot hehe https://docs.google.com/document/d/1uTxOkciwKHtSzBm4rKxxMqMshNGttK9TOk8ju3uBu-E/edit?usp=sharing </p>
+
           </ChaosBox>
         </div>
       </div>
