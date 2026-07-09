@@ -7,18 +7,27 @@ import Avatar from "../components/Avatar"
 import { apiRequest } from "../lib/api"
 
 export default function UserProfile() {
-    const { username } = useParams()
+    const { username, id } = useParams()
     const [user, setUser] = useState(null)
     const [message, setMessage] = useState("loading profile...")
 
     useEffect(() => {
-        apiRequest(`/api/users/${encodeURIComponent(username)}`)
-            .then((data) => {
-                setUser(data.user)
-                setMessage("")
-            })
-            .catch((error) => setMessage(error.message))
-    }, [username])
+        if (id) {
+            apiRequest(`/api/users/id/${encodeURIComponent(id)}`)
+                .then((data) => {
+                    setUser(data.user)
+                    setMessage("")
+                })
+                .catch((error) => setMessage(error.message))
+        } else if (username) {
+            apiRequest(`/api/users/${encodeURIComponent(username)}`)
+                .then((data) => {
+                    setUser(data.user)
+                    setMessage("")
+                })
+                .catch((error) => setMessage(error.message))
+        }
+    }, [username, id])
 
     function formatDate(dateStr) {
         if (!dateStr) return "Unknown"

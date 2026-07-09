@@ -71,6 +71,7 @@ ReactDOM.createRoot(
         <Route path="/account" element={<Account />} />
 
         <Route path="/users" element={<Users />} />
+        <Route path="/users/id/:id" element={<UserProfile />} />
         <Route path="/users/:username" element={<UserProfile />} />
         <Route path="/u/:username" element={<UserProfile />} />
         <Route path="/profile" element={<ProfilePage />} />

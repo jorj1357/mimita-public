@@ -671,6 +671,46 @@ app.get("/api/users", async (req, res, next) => {
     }
 })
 
+app.get("/api/users/id/:id", async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id, 10)
+        if (isNaN(id) || id < 1) {
+            return res.status(400).json({ success: false, message: "invalid user id" })
+        }
+        const result = await pool.query(
+            `
+            SELECT username, bio, avatar_url, avatar_updated_at, supporter_tier, created_at
+            FROM users
+            WHERE id = $1
+              AND deleted_at IS NULL
+            LIMIT 1
+            `,
+            [id]
+        )
+
+        if (!result.rowCount) {
+            return res.status(404).json({
+                success: false,
+                message: "user not found"
+            })
+        }
+
+        const u = result.rows[0]
+        if (!u.avatar_url) {
+            const encoded = encodeURIComponent(u.username || "?")
+            u.avatar_url = `/api/avatar/initials?name=${encoded}&size=128`
+        }
+
+        res.json({
+            success: true,
+            user: u
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 app.get("/api/users/:username", async (req, res, next) => {
     try {
         const result = await pool.query(
