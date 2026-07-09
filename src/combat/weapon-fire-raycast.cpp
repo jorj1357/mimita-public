@@ -381,25 +381,40 @@ BeamCollisionResult collideBeam(
         rayBounds.max += glm::vec3(expansion);
         std::vector<int> candidates;
         appendChunkTrianglesForAABB(world, rayBounds, expansion, candidates);
+        int rejectedCount = 0;
+        float firstHitDist = maxDistance;
         for (int triIndex : candidates) {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             if (useSphereCast) {
                 float d = 0.0f;
                 glm::vec3 n, p;
                 if (sweptSphereTriangle(origin, direction, beamThickness, tri, maxDistance, d, n, p) && d < result.nearest) {
+                    if (d < firstHitDist) firstHitDist = d;
                     result.nearest = d;
                     result.hitWorld = true;
                     result.worldNormal = tri.normal;
+                } else {
+                    rejectedCount++;
                 }
             } else {
                 float d = 0.0f;
                 if (rayTriangle(origin, direction, tri, d) && d < result.nearest) {
+                    if (d < firstHitDist) firstHitDist = d;
                     result.nearest = d;
                     result.hitWorld = true;
                     result.worldNormal = tri.normal;
+                } else {
+                    rejectedCount++;
                 }
             }
         }
+        Debug::log(Debug::Category::Weapons,
+            "[RAY] origin=(%.2f %.2f %.2f) end=(%.2f %.2f %.2f)"
+            " candidates=%zu firstHit=%.4f selected=%.4f rejected=%d hitWorld=%d\n",
+            origin.x, origin.y, origin.z,
+            rayEnd.x, rayEnd.y, rayEnd.z,
+            candidates.size(), firstHitDist, result.nearest,
+            rejectedCount, (int)result.hitWorld);
     }
 
     if (npcs) {

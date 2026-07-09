@@ -63,13 +63,16 @@ RevolverShotResult tryFireHitscan(
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
 
+    // Push ray origin forward to prevent starting inside geometry
+    glm::vec3 rayOrigin = muzzlePos + shotDirection * 0.01f;
+
     Debug::log(Debug::Category::Weapons,
         "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
         def.id.c_str(), def.beamThickness,
         (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
 
     BeamCollisionResult beam = collideBeam(
-        muzzlePos, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
+        rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
         world, &npcs, remotePlayers, nullptr);
 
     float nearest = beam.nearest;
@@ -139,13 +142,16 @@ RevolverShotResult tryFireHitscanDir(
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
 
+    // Push ray origin forward to prevent starting inside geometry
+    glm::vec3 rayOrigin = muzzlePos + shotDirection * 0.01f;
+
     Debug::log(Debug::Category::Weapons,
         "[BEAM] weapon=%s hitscan=true beamThickness=%.2f collisionType=%s\n",
         def.id.c_str(), def.beamThickness,
         (def.beamThickness > 0.0f) ? "SphereCast" : "Raycast");
 
     BeamCollisionResult beam = collideBeam(
-        muzzlePos, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
+        rayOrigin, shotDirection, MAX_SHOT_DISTANCE, def.beamThickness,
         world, nullptr, nullptr, targetPlayer);
 
     float nearest = beam.nearest;
