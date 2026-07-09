@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 
 import Layout from "../components/Layout"
@@ -16,6 +16,7 @@ export default function Account() {
     const [uploading, setUploading] = useState(false)
     const [cropFile, setCropFile] = useState(null)
     const [dangerOpen, setDangerOpen] = useState(false)
+    const [changePw, setChangePw] = useState({ current: "", newPass: "", confirm: "" })
 
     useEffect(() => {
         apiRequest("/api/auth/me")
@@ -138,6 +139,24 @@ export default function Account() {
             navigate("/signin", { state: { message: data.message } })
         }
         catch (error) {
+            setMessage(error.message)
+        }
+    }
+
+    async function changePassword(event) {
+        event.preventDefault()
+        if (changePw.newPass !== changePw.confirm) {
+            setMessage("new passwords do not match")
+            return
+        }
+        try {
+            await apiRequest("/api/account/change-password", {
+                method: "POST",
+                body: JSON.stringify({ currentPassword: changePw.current, newPassword: changePw.newPass })
+            })
+            setMessage("password changed successfully")
+            setChangePw({ current: "", newPass: "", confirm: "" })
+        } catch (error) {
             setMessage(error.message)
         }
     }
@@ -272,9 +291,19 @@ export default function Account() {
 
                         {dangerOpen && (
                             <div className="dangerContent">
-                                <Link className="dangerLink" to="/change-password">
-                                    change password
-                                </Link>
+                                <h3 style={{ color: "#a020ff", marginBottom: "0.75rem", marginTop: "0.5rem" }}>CHANGE PASSWORD</h3>
+                                <form className="dangerZone" onSubmit={changePassword} style={{ marginBottom: "1.5rem" }}>
+                                    <label htmlFor="currentPw">current password</label>
+                                    <input id="currentPw" type="password" value={changePw.current}
+                                        onChange={e => setChangePw(p => ({ ...p, current: e.target.value }))} required />
+                                    <label htmlFor="newPw">new password</label>
+                                    <input id="newPw" type="password" value={changePw.newPass}
+                                        onChange={e => setChangePw(p => ({ ...p, newPass: e.target.value }))} required />
+                                    <label htmlFor="confirmPw">confirm new password</label>
+                                    <input id="confirmPw" type="password" value={changePw.confirm}
+                                        onChange={e => setChangePw(p => ({ ...p, confirm: e.target.value }))} required />
+                                    <button type="submit">CHANGE PASSWORD</button>
+                                </form>
 
                                 <form className="dangerZone" onSubmit={deleteAccount}>
                                     <h2>DELETE ACCOUNT</h2>

@@ -1,5 +1,5 @@
 function seededRandom(seed) {
-  let s = seed
+  let s = Math.abs(seed)
   return function () {
     s = (s * 16807) % 2147483647
     return (s - 1) / 2147483646
@@ -8,14 +8,14 @@ function seededRandom(seed) {
 
 const _cache = {}
 let _counter = 0
-const _rand = seededRandom(Date.now())
+const _pageSeed = Math.random() * 100000
 
 function hashStr(str) {
   let h = 0
   for (let i = 0; i < str.length; i++) {
     h = ((h << 5) - h + str.charCodeAt(i)) | 0
   }
-  return h
+  return h >>> 0
 }
 
 export function getControlledChaos(label) {
@@ -24,12 +24,12 @@ export function getControlledChaos(label) {
 
   let r
   if (label != null) {
-    const h = hashStr(key)
-    const localRand = seededRandom(h * 9301 + 49297)
+    const h = hashStr(key + _pageSeed)
+    const localRand = seededRandom(h)
     r = localRand()
-    localRand() // discard second
+    localRand()
   } else {
-    r = _rand()
+    r = Math.random()
   }
 
   const result = {

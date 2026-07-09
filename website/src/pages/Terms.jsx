@@ -14,6 +14,8 @@ export default function Terms() {
 
         <div className="termsContent">
 
+          <h2 style={{ color: "#a020ff", marginTop: "1.5rem" }}>TERMS OF USE</h2>
+
           <p>
             MiMITA is experimental software.
           </p>
@@ -31,20 +33,15 @@ export default function Terms() {
           </p>
 
           <ul className="termsList">
-
             <li>harm other people</li>
-
             <li>upload illegal content</li>
-
             <li>abuse infrastructure or services</li>
-
             <li>intentionally disrupt the platform</li>
-
           </ul>
 
           <p>
             MiMITA is heavily inspired by:
-            <br></br>
+            <br />
             modding culture,
             experimentation,
             remixing,
@@ -58,6 +55,8 @@ export default function Terms() {
             experimentation,
             and things made just for fun.
           </p>
+
+          <h2 style={{ color: "#a020ff", marginTop: "2rem" }}>PRIVACY POLICY</h2>
 
           <p>
             Mimita may collect anonymous gameplay analytics
@@ -80,7 +79,6 @@ export default function Terms() {
             auth tokens,
             or sensitive free-form information
             through gameplay analytics.
-            Cuz that stuff is stupid and unnecessary.
           </p>
 
           <p>
@@ -92,7 +90,7 @@ export default function Terms() {
           </p>
 
           <p>
-            The website may also use infrastructure services
+            The website may use infrastructure services
             such as hosting,
             email,
             newsletters,

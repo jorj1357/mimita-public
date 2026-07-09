@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom"
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 
@@ -46,6 +47,9 @@ export default function Link() {
                 <div className="authCard">
                     <h1>LINK ACCOUNT</h1>
                     <p>Enter the code shown in the game to link your account.</p>
+                    <p style={{ marginTop: "0.5rem" }}>
+                        <Link to="/faq" style={{ color: "#a020ff" }}>How do I link?</Link>
+                    </p>
 
                     {!success && (
                         <form onSubmit={submit}>

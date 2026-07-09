@@ -41,6 +41,9 @@ void recomputeWeaponCapsule(Player& p)
     if (!p.collision.hasWeaponCollisionCapsule)
         return;
 
+    // Save previous frame capsule for rotational sweep delta
+    p.prevWeaponCollisionCapsule = p.weaponCollisionCapsule;
+
     for (const PhysicalBodyPart& part : p.physicalBody.parts)
     {
         if (part.name != "rightArm")
@@ -96,20 +99,28 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
         gBW.bodyPartSpheresMs = std::chrono::duration<float, std::milli>(tb1 - tb0).count();
     }
 
-    // 2. Weapon capsule spheres (fixed 5 samples along axis)
+    // 2. Weapon capsule spheres (fixed 5 samples along axis, per-sample sweep delta)
     {
         auto tw0 = std::chrono::steady_clock::now();
         if (p.collision.hasWeaponCollisionCapsule)
         {
-            constexpr int WEAPON_CAPSULE_SAMPLES = 5;
+            constexpr int WEAPON_CAPSULE_SAMPLES = 8;
             const Capsule& wc = p.weaponCollisionCapsule;
+            const Capsule& prev = p.prevWeaponCollisionCapsule;
+            bool hasPrev = (glm::length(prev.a) > 0.001f || glm::length(prev.b) > 0.001f);
             gBW.weaponCapsuleSphereCount = WEAPON_CAPSULE_SAMPLES;
             for (int si = 0; si < WEAPON_CAPSULE_SAMPLES; ++si)
             {
                 float t = (WEAPON_CAPSULE_SAMPLES > 1)
                     ? (float)si / (float)(WEAPON_CAPSULE_SAMPLES - 1) : 0.5f;
                 glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
-                spheres.push_back({spherePos, wc.r, "weapon", p.vel * 0.016f});
+                // Compute sweep delta from capsule movement (captures both translation AND rotation)
+                glm::vec3 sweepDelta = p.vel * 0.016f;
+                if (hasPrev) {
+                    glm::vec3 prevPos = prev.a + (prev.b - prev.a) * t;
+                    sweepDelta = spherePos - prevPos;
+                }
+                spheres.push_back({spherePos, wc.r, "weapon", sweepDelta});
             }
         }
         auto tw1 = std::chrono::steady_clock::now();
