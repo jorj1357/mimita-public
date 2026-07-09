@@ -109,6 +109,16 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
     }
     printf("[Weapon] Loaded successfully: %s (verts=%zu)\n", modelPath.c_str(), heldMesh.verts.size());
 
+    // Build collision mesh from vertex positions (stored on the viewmodel for future use,
+    // copied to player each frame during update)
+    collisionLocalPositions = heldMesh.verts.empty() ? std::vector<glm::vec3>()
+        : std::vector<glm::vec3>(heldMesh.verts.size());
+    if (!heldMesh.verts.empty()) {
+        for (size_t i = 0; i < heldMesh.verts.size(); i++)
+            collisionLocalPositions[i] = heldMesh.verts[i].pos;
+        printf("[Weapon] Collision mesh built: %zu vertices\n", heldMesh.verts.size());
+    }
+
     glm::vec3 boundsMin = heldMesh.verts.front().pos;
     glm::vec3 boundsMax = boundsMin;
     for (const Vertex& vertex : heldMesh.verts) {
@@ -419,6 +429,24 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             player.weaponGripLocal = collisionGrip;
             player.weaponMuzzleLocal = collisionMuzzle;
             player.weaponRadiusLocal = collisionRadius;
+
+            // Update collision mesh world positions on player
+            auto& pcm = player.weaponCollisionMesh;
+            if (!collisionLocalPositions.empty()) {
+                // Store previous frame positions
+                if (!pcm.worldPositions.empty())
+                    pcm.prevPositions = pcm.worldPositions;
+
+                // Compute new world positions
+                glm::mat4 weaponWorld = part.worldTransform * armToWeapon * extraTransform;
+                pcm.worldPositions.resize(collisionLocalPositions.size());
+                for (size_t i = 0; i < collisionLocalPositions.size(); i++)
+                    pcm.worldPositions[i] = glm::vec3(weaponWorld * glm::vec4(collisionLocalPositions[i], 1.0f));
+                pcm.valid = true;
+                pcm.vertexRadius = 0.04f;
+            } else {
+                pcm.valid = false;
+            }
         }
         break;
     }
