@@ -17,6 +17,32 @@
 
 struct ReplayBodyPartState;
 
+struct WeaponColliderDebugSphere {
+    std::string name;
+    glm::vec3 currentCenter;
+    glm::vec3 previousCenter;
+    glm::vec3 sweepDelta;  // currentCenter - previousCenter, for collision solver
+    float radius = 0.0f;
+    bool collidesWithWorld = true;
+};
+
+struct WeaponColliderDebugCapsule {
+    glm::vec3 currentStart;
+    glm::vec3 currentEnd;
+    glm::vec3 previousStart;
+    glm::vec3 previousEnd;
+    float radius = 0.0f;
+    bool enabled = false;
+};
+
+struct WeaponCollisionRuntimeDebug {
+    std::vector<WeaponColliderDebugSphere> spheres;
+    WeaponColliderDebugCapsule capsule;
+    std::string weaponId;
+    bool valid = false;
+    bool fromJsonConfig = false; // true when JSON config drives this data
+};
+
 // ---------------- Player ----------------
 //
 // Player is pure data + presentation.
@@ -404,6 +430,9 @@ public:
     Capsule weaponCollisionCapsule{};
     Capsule prevWeaponCollisionCapsule{}; // previous frame for sweep delta computation
     std::string weaponCollisionName;
+
+    // Runtime debug data populated by collision solver, consumed by debug visuals
+    WeaponCollisionRuntimeDebug weaponCollisionDebug;
 
     // -------- Combat --------
     void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);

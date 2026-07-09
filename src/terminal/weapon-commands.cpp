@@ -799,4 +799,17 @@ void registerWorldXhReloadCommand()
             }
         }
     });
+
+    Terminal::instance().registerCommand({
+        "weapon_collision_visuals", "Show weapon collision capsule spheres and sweep paths",
+        "weapon_collision_visuals [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gWeaponCollisionVisuals;
+            bool val = args.empty() ? !gWeaponCollisionVisuals : (args[0] != "0");
+            gWeaponCollisionVisuals = val;
+            char buf[64];
+            snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] enabled=%d", (int)val);
+            Terminal::instance().addLog(std::string(buf));
+        }
+    });
 }

@@ -9,6 +9,7 @@
 #include "world/world.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "combat/weapon-collision-config.h"
 #include "debug/debug-log.h"
 
 #define BWLOG(...) Debug::logThrottled(Debug::Category::Collision, "bw-investigate", 1.0f, __VA_ARGS__)
@@ -38,8 +39,13 @@ static bool computeBodyPartCenter(
 
 void recomputeWeaponCapsule(Player& p)
 {
-    if (!p.collision.hasWeaponCollisionCapsule)
+    if (!p.collision.hasWeaponCollisionCapsule) {
+        p.weaponCollisionDebug.valid = false;
+        p.weaponCollisionDebug.spheres.clear();
+        p.weaponCollisionDebug.capsule.enabled = false;
+        p.weaponCollisionWorld = glm::mat4(1.0f);
         return;
+    }
 
     // Save previous frame capsule for rotational sweep delta
     p.prevWeaponCollisionCapsule = p.weaponCollisionCapsule;
@@ -55,13 +61,59 @@ void recomputeWeaponCapsule(Player& p)
         p.weaponCollisionCapsule.r = p.weaponRadiusLocal;
 
         // Compute world transform for configurable weapon colliders
-        glm::mat4 wcWorld = weaponXform;
-        p.weaponCollisionWorld = wcWorld;
+        p.weaponCollisionWorld = weaponXform;
+
+        // Apply JSON config override for collision shapes (handles prev saving,
+        // populates debug spheres and capsule data from JSON, sets fromJsonConfig).
+        WeaponCollisionJsonConfig::instance().applyCollisionConfig(p);
+
+        // If JSON config is not active, populate fallback C++ debug data
+        if (!p.weaponCollisionDebug.fromJsonConfig) {
+            p.weaponCollisionDebug.valid = true;
+            p.weaponCollisionDebug.weaponId = p.equippedWeaponId;
+            p.weaponCollisionDebug.capsule.enabled = true;
+            p.weaponCollisionDebug.capsule.radius = p.weaponRadiusLocal;
+            p.weaponCollisionDebug.capsule.previousStart = p.weaponCollisionDebug.capsule.currentStart;
+            p.weaponCollisionDebug.capsule.previousEnd   = p.weaponCollisionDebug.capsule.currentEnd;
+            p.weaponCollisionDebug.capsule.currentStart = p.weaponCollisionCapsule.a;
+            p.weaponCollisionDebug.capsule.currentEnd   = p.weaponCollisionCapsule.b;
+
+            // Save previous sphere centers
+            for (auto& ds : p.weaponCollisionDebug.spheres)
+                ds.previousCenter = ds.currentCenter;
+
+            // Sample 8 spheres along capsule
+            constexpr int WEAPON_CAPSULE_SAMPLES = 8;
+            p.weaponCollisionDebug.spheres.clear();
+            p.weaponCollisionDebug.spheres.reserve(WEAPON_CAPSULE_SAMPLES);
+            const Capsule& wc = p.weaponCollisionCapsule;
+            const Capsule& prev = p.prevWeaponCollisionCapsule;
+            bool hasPrev = (glm::length(prev.a) > 0.001f || glm::length(prev.b) > 0.001f);
+            for (int si = 0; si < WEAPON_CAPSULE_SAMPLES; ++si) {
+                float t = (WEAPON_CAPSULE_SAMPLES > 1)
+                    ? (float)si / (float)(WEAPON_CAPSULE_SAMPLES - 1) : 0.5f;
+                glm::vec3 curPos = wc.a + (wc.b - wc.a) * t;
+                glm::vec3 prevPos = curPos;
+                if (hasPrev) prevPos = prev.a + (prev.b - prev.a) * t;
+                WeaponColliderDebugSphere ds;
+                ds.name = "weapon_capsule_sample";
+                ds.currentCenter = curPos;
+                ds.previousCenter = prevPos;
+                ds.radius = wc.r;
+                ds.collidesWithWorld = true;
+                ds.sweepDelta = curPos - prevPos;
+                p.weaponCollisionDebug.spheres.push_back(std::move(ds));
+            }
+        }
+
         return;
     }
 
     p.collision.hasWeaponCollisionCapsule = false;
     p.weaponCollisionWorld = glm::mat4(1.0f);
+    p.weaponCollisionDebug.valid = false;
+    p.weaponCollisionDebug.spheres.clear();
+    p.weaponCollisionDebug.capsule.enabled = false;
 }
 
 // Generate sphere samples for configurable weapon colliders from JSON collision config.
@@ -99,28 +151,42 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
         gBW.bodyPartSpheresMs = std::chrono::duration<float, std::milli>(tb1 - tb0).count();
     }
 
-    // 2. Weapon capsule spheres (fixed 5 samples along axis, per-sample sweep delta)
+    // 2. Weapon collision spheres
     {
         auto tw0 = std::chrono::steady_clock::now();
-        if (p.collision.hasWeaponCollisionCapsule)
+        if (p.collision.hasWeaponCollisionCapsule || p.weaponCollisionDebug.fromJsonConfig)
         {
-            constexpr int WEAPON_CAPSULE_SAMPLES = 8;
-            const Capsule& wc = p.weaponCollisionCapsule;
-            const Capsule& prev = p.prevWeaponCollisionCapsule;
-            bool hasPrev = (glm::length(prev.a) > 0.001f || glm::length(prev.b) > 0.001f);
-            gBW.weaponCapsuleSphereCount = WEAPON_CAPSULE_SAMPLES;
-            for (int si = 0; si < WEAPON_CAPSULE_SAMPLES; ++si)
+            // When JSON config drives collision, use its pre-computed spheres
+            if (p.weaponCollisionDebug.fromJsonConfig && p.weaponCollisionDebug.valid)
             {
-                float t = (WEAPON_CAPSULE_SAMPLES > 1)
-                    ? (float)si / (float)(WEAPON_CAPSULE_SAMPLES - 1) : 0.5f;
-                glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
-                // Compute sweep delta from capsule movement (captures both translation AND rotation)
-                glm::vec3 sweepDelta = p.vel * 0.016f;
-                if (hasPrev) {
-                    glm::vec3 prevPos = prev.a + (prev.b - prev.a) * t;
-                    sweepDelta = spherePos - prevPos;
+                const auto& wcd = p.weaponCollisionDebug;
+                gBW.weaponCapsuleSphereCount = (int)wcd.spheres.size();
+                for (const auto& ds : wcd.spheres)
+                {
+                    if (!ds.collidesWithWorld) continue;
+                    spheres.push_back({ds.currentCenter, ds.radius, ds.name.c_str(), ds.sweepDelta});
                 }
-                spheres.push_back({spherePos, wc.r, "weapon", sweepDelta});
+            }
+            else
+            {
+                // Fallback: sample from C++ capsule (hardcoded 8 points along grip->tip)
+                constexpr int WEAPON_CAPSULE_SAMPLES = 8;
+                const Capsule& wc = p.weaponCollisionCapsule;
+                const Capsule& prev = p.prevWeaponCollisionCapsule;
+                bool hasPrev = (glm::length(prev.a) > 0.001f || glm::length(prev.b) > 0.001f);
+                gBW.weaponCapsuleSphereCount = WEAPON_CAPSULE_SAMPLES;
+                for (int si = 0; si < WEAPON_CAPSULE_SAMPLES; ++si)
+                {
+                    float t = (WEAPON_CAPSULE_SAMPLES > 1)
+                        ? (float)si / (float)(WEAPON_CAPSULE_SAMPLES - 1) : 0.5f;
+                    glm::vec3 spherePos = wc.a + (wc.b - wc.a) * t;
+                    glm::vec3 sweepDelta = p.vel * 0.016f;
+                    if (hasPrev) {
+                        glm::vec3 prevPos = prev.a + (prev.b - prev.a) * t;
+                        sweepDelta = spherePos - prevPos;
+                    }
+                    spheres.push_back({spherePos, wc.r, "weapon", sweepDelta});
+                }
             }
         }
         auto tw1 = std::chrono::steady_clock::now();

@@ -136,6 +136,13 @@ namespace DebugVis {
     void drawFilledBeam(const Camera& camera, glm::vec3 start, glm::vec3 end, float thickness, glm::vec4 color);
     void drawFilledBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm::vec4 color, glm::vec3 rotationEuler = glm::vec3(0.0f));
     
+    // Weapon collision visuals: draw calls that bypass DEBUG_VISUALS_MASTER gate
+    // so weapon_collision_visuals works independently of other debug flags.
+    void drawWeaponWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
+    void drawWeaponLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color);
+    void drawWeaponCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color);
+    void flushWeaponLines(const Camera& camera);
+
     // Flush production VFX triangles (beams, blood, impacts, debris)
     // NOT gated behind debug flags — always renders
     void flushTris(const Camera& camera);

@@ -36,6 +36,11 @@ extern std::vector<DebugTriVertex> gTriVerts;
 extern std::vector<DebugVis::CollisionEvent> gCollisionEvents;
 extern GLFWwindow* gWindow;
 
+// Separate line buffer for weapon collision visuals (flushed unconditionally,
+// not gated behind DEBUG_VISUALS_MASTER so weapon_collision_visuals works
+// independently of other debug flags).
+static std::vector<DebugLineVertex> gWeaponLineVerts;
+
 // Forward declaration: defined in debug-visuals-labels.cpp
 void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
 bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
@@ -434,6 +439,133 @@ void drawWireBox(const Camera& camera, glm::vec3 center, glm::vec3 halfSize, glm
 void drawPointCross(const Camera& camera, glm::vec3 p, float size, glm::vec4 color) {
     if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
     ::drawPointCross(camera, p, size, color);
+}
+
+// =====================================================
+// Weapon collision visuals (ungated — works without DEBUG_VISUALS_MASTER)
+// =====================================================
+
+static void addWeaponLine(glm::vec3 a, glm::vec3 b, glm::vec4 color)
+{
+    gWeaponLineVerts.push_back({a, color});
+    gWeaponLineVerts.push_back({b, color});
+}
+
+void drawWeaponWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color)
+{
+    (void)camera;
+    constexpr int segments = 18;
+    constexpr float pi = 3.1415926535f;
+    for (int i = 0; i < segments; ++i)
+    {
+        float a0 = (float)i / (float)segments * pi * 2.0f;
+        float a1 = (float)(i + 1) / (float)segments * pi * 2.0f;
+        addWeaponLine(center + glm::vec3(std::cos(a0), std::sin(a0), 0.0f) * radius,
+                      center + glm::vec3(std::cos(a1), std::sin(a1), 0.0f) * radius, color);
+        addWeaponLine(center + glm::vec3(std::cos(a0), 0.0f, std::sin(a0)) * radius,
+                      center + glm::vec3(std::cos(a1), 0.0f, std::sin(a1)) * radius, color);
+        addWeaponLine(center + glm::vec3(0.0f, std::cos(a0), std::sin(a0)) * radius,
+                      center + glm::vec3(0.0f, std::cos(a1), std::sin(a1)) * radius, color);
+    }
+}
+
+void drawWeaponLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color)
+{
+    (void)camera;
+    addWeaponLine(a, b, color);
+}
+
+void drawWeaponCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color)
+{
+    (void)camera;
+    constexpr int segments = 20;
+    constexpr float pi = 3.1415926535f;
+    addWeaponLine(c.a, c.b, color);
+    for (int i = 0; i < segments; ++i)
+    {
+        float a0 = (float)i / (float)segments * pi * 2.0f;
+        float a1 = (float)(i + 1) / (float)segments * pi * 2.0f;
+        glm::vec3 r0(std::cos(a0) * c.r, std::sin(a0) * c.r, 0.0f);
+        glm::vec3 r1(std::cos(a1) * c.r, std::sin(a1) * c.r, 0.0f);
+        addWeaponLine(c.a + r0, c.a + r1, color);
+        addWeaponLine(c.b + r0, c.b + r1, color);
+        if (i % 5 == 0)
+            addWeaponLine(c.a + r0, c.b + r0, color);
+    }
+}
+
+// Reuse the same line VAO/VBO for the weapon line buffer.
+static GLuint gWeaponLineVao = 0;
+static GLuint gWeaponLineVbo = 0;
+
+void flushWeaponLines(const Camera& camera)
+{
+    if (gWeaponLineVerts.empty())
+        return;
+    if (!gRenderer || !gRenderer->shaderProgram) {
+        gWeaponLineVerts.clear();
+        return;
+    }
+
+    if (!gWeaponLineVao)
+    {
+        MIMITA_GL_CLEAR_STAGE("flushWeaponLines init");
+        MIMITA_GL_CALL(glGenVertexArrays(1, &gWeaponLineVao));
+        MIMITA_GL_CALL(glGenBuffers(1, &gWeaponLineVbo));
+    }
+
+    MIMITA_GL_CLEAR_STAGE("flushWeaponLines");
+    MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+
+    MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+
+    glm::mat4 model(1.0f);
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj(
+        (float)gRenderer->width,
+        (float)gRenderer->height
+    );
+
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "model"),
+        1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "view"),
+        1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(
+        glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+        1, GL_FALSE, &proj[0][0]);
+    glUniform1i(
+        glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"),
+        2);
+
+    MIMITA_GL_CALL(glBindVertexArray(gWeaponLineVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gWeaponLineVbo));
+
+    MIMITA_GL_CALL(glBufferData(
+        GL_ARRAY_BUFFER,
+        gWeaponLineVerts.size() * sizeof(DebugLineVertex),
+        gWeaponLineVerts.data(),
+        GL_DYNAMIC_DRAW));
+
+    MIMITA_GL_CALL(glVertexAttribPointer(
+        0, 3, GL_FLOAT, GL_FALSE, sizeof(DebugLineVertex),
+        (void*)offsetof(DebugLineVertex, pos)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+
+    MIMITA_GL_CALL(glVertexAttribPointer(
+        3, 4, GL_FLOAT, GL_FALSE, sizeof(DebugLineVertex),
+        (void*)offsetof(DebugLineVertex, color)));
+    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
+
+    MIMITA_GL_CALL(glDisableVertexAttribArray(1));
+    MIMITA_GL_CALL(glDisableVertexAttribArray(2));
+
+    MIMITA_GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)gWeaponLineVerts.size()));
+
+    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+
+    gWeaponLineVerts.clear();
 }
 
 } // namespace DebugVis
