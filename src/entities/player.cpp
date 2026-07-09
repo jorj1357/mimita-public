@@ -100,6 +100,7 @@ void Player::reset()
     collision.hasWeaponCollisionCapsule = false;
     weaponCollisionCapsule = Capsule{};
     weaponCollisionName.clear();
+    weaponCollisionDebug = WeaponCollisionRuntimeDebug{};
 
     for (BodyPart& part : bodyParts)
     {

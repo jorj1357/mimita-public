@@ -417,6 +417,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     { Perf::ScopedTimer _pfx("PhysicsObjectRender"); PersistentPhysicsSystem::instance().render(camera); }
     { Perf::ScopedTimer _hfx("EffectRender"); HitEffects::renderHitBursts(camera); }
     DebugVis::flushTris(camera);
+    DebugVis::flushWeaponLines(camera);
     diagRenderStage(5);
     } // Perf::ScopedTimer Rendering
 

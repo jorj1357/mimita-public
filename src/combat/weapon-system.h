@@ -4,6 +4,8 @@
 #include <vector>
 #include <unordered_map>
 
+extern bool gWeaponCollisionVisuals;
+
 #include "weapon-types.h"
 #include "weapon-viewmodel.h"
 #include "weapon-godball.h"

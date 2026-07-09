@@ -6,6 +6,7 @@
 #include "weapon-grenade-launcher.h"
 #include "weapon-registry.h"
 #include "weapon-runtime.h"
+#include "weapon-collision-config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +24,8 @@
 // Overlay triangle buffer for always-on-top rendering (shared with debug visuals)
 struct TrailTriVert { glm::vec3 pos; glm::vec4 color; };
 extern std::vector<TrailTriVert> gOverlayTriVerts;
+
+bool gWeaponCollisionVisuals = false;
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -73,6 +76,9 @@ WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
 void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
     if (WeaponData::reloadBuiltinWeaponsIfChanged())
         Terminal::instance().addLog("[WEAPON] Reloaded config/weapons.json");
+
+    // Hot reload weapon collision config
+    WeaponCollisionJsonConfig::instance().pollHotReload();
 
     mShotCooldown = std::max(0.0f, mShotCooldown - dt);
     mShootingTimer = std::max(0.0f, mShootingTimer - dt);
@@ -463,6 +469,63 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         WeaponSwordsword::render(camera, mSwordswordState, mSwordswordState.handPos);
         if (DebugConfig::DEBUG_SWORDSWORD) {
             WeaponSwordsword::renderDebug(camera, mSwordswordState, mSwordswordState.handPos);
+        }
+    }
+
+    // Weapon collision debug visuals (draws actual runtime collision data)
+    if (gWeaponCollisionVisuals && player.weaponCollisionDebug.valid) {
+        const auto& wcd = player.weaponCollisionDebug;
+
+        // Throttled per-frame log (once per second)
+        {
+            static float logTimer = 0.0f;
+            logTimer -= 0.016f;
+            if (logTimer <= 0.0f) {
+                logTimer = 1.0f;
+                int sphereCount = 0;
+                for (const auto& s : wcd.spheres)
+                    if (s.collidesWithWorld) ++sphereCount;
+                Debug::log(Debug::Category::Weapons,
+                    "[WEAPON COLLISION VISUALS] draw weapon=%s spheres=%d capsule=%d",
+                    wcd.weaponId.c_str(), sphereCount, (int)wcd.capsule.enabled);
+            }
+        }
+
+        // Current capsule wire (darker blue)
+        if (wcd.capsule.enabled) {
+            Capsule curCap;
+            curCap.a = wcd.capsule.currentStart;
+            curCap.b = wcd.capsule.currentEnd;
+            curCap.r = wcd.capsule.radius;
+            DebugVis::drawWeaponCapsuleWire(camera, curCap, {0.0f, 0.5f, 1.0f, 0.5f});
+        }
+
+        // Previous capsule wire (darker red)
+        if (wcd.capsule.enabled) {
+            float prevLen = glm::length(wcd.capsule.previousEnd - wcd.capsule.previousStart);
+            if (prevLen > 0.001f) {
+                Capsule prevCap;
+                prevCap.a = wcd.capsule.previousStart;
+                prevCap.b = wcd.capsule.previousEnd;
+                prevCap.r = wcd.capsule.radius;
+                DebugVis::drawWeaponCapsuleWire(camera, prevCap, {0.5f, 0.0f, 0.0f, 0.4f});
+            }
+        }
+
+        for (const auto& ds : wcd.spheres) {
+            if (!ds.collidesWithWorld)
+                continue;
+
+            // Current sphere: turquoise, 50% transparent
+            DebugVis::drawWeaponWireSphere(camera, ds.currentCenter, ds.radius, {0.0f, 1.0f, 1.0f, 0.5f});
+
+            float prevDist = glm::length(ds.previousCenter - ds.currentCenter);
+            if (prevDist > 0.001f) {
+                // Previous sphere: red, 50% transparent
+                DebugVis::drawWeaponWireSphere(camera, ds.previousCenter, ds.radius, {1.0f, 0.0f, 0.0f, 0.5f});
+                // Sweep line: yellow
+                DebugVis::drawWeaponLine(camera, ds.previousCenter, ds.currentCenter, {1.0f, 1.0f, 0.0f, 0.9f});
+            }
         }
     }
 }
