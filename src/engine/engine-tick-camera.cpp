@@ -407,7 +407,7 @@ void engineTickCamera(Engine& engine, float dt)
         // In ThirdPerson / FirstPerson modes, the normal replay camera controller
         // (Step 1) runs instead — position keyframes are ignored by design.
         if (gReplayEditor.isLoaded() && gReplayEditor.freecam &&
-            gReplayEditor.cameraKeyframeCount() > 0)
+            gReplayEditor.cameraKeyframeCount() > 0 && gReplayPlayer.isPlaying())
         {
             float currentTick = (float)gReplayPlayer.currentTick();
             int kfCount = gReplayEditor.cameraKeyframeCount();
