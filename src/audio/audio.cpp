@@ -33,6 +33,7 @@
 #include <fstream>
 
 #include "config/player-settings.h"
+#include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "replay/replay.h"
 
@@ -300,13 +301,26 @@ glm::vec3 audioListenerPosition()
 void computeImpactAudio(float baseVolume, float distance, float severity,
                         float& outVolume, float& outPitch)
 {
+    const auto& snd = WeaponHitFxConfig::instance().defaultSound();
     severity = std::clamp(severity, 0.0f, 1.0f);
-    float nearFactor = std::clamp(1.0f - distance / 5.0f, 0.0f, 1.0f);
-    float volume = baseVolume * (1.0f + nearFactor);
-    volume *= 0.7f + severity * 0.6f;
+    float nearFactor = std::clamp(1.0f - distance / snd.nearDistance, 0.0f, 1.0f);
+    float volume = baseVolume * (1.0f + nearFactor * snd.volumeNearFactor);
+    volume *= (1.0f - snd.volumeSeverityScale) + severity * snd.volumeSeverityScale;
     outVolume = std::max(0.0f, volume);
-    outPitch = 1.15f - severity * 0.3f;
-    outPitch = std::clamp(outPitch, 0.25f, 3.0f);
+    outPitch = snd.pitchBase + severity * snd.pitchSeverityScale;
+    outPitch = std::clamp(outPitch, snd.pitchMin, snd.pitchMax);
+}
+
+void computeImpactAudioConfig(const WeaponHitFxSoundConfig& snd, float distance, float severity,
+                               float& outVolume, float& outPitch)
+{
+    severity = std::clamp(severity, 0.0f, 1.0f);
+    float nearFactor = std::clamp(1.0f - distance / snd.nearDistance, 0.0f, 1.0f);
+    float volume = snd.baseVolume * (1.0f + nearFactor * snd.volumeNearFactor);
+    volume *= (1.0f - snd.volumeSeverityScale) + severity * snd.volumeSeverityScale;
+    outVolume = std::max(0.0f, volume);
+    outPitch = snd.pitchBase + severity * snd.pitchSeverityScale;
+    outPitch = std::clamp(outPitch, snd.pitchMin, snd.pitchMax);
 }
 
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume)

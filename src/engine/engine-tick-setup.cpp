@@ -12,6 +12,7 @@
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
 #include "config/camera-config.h"
+#include "config/weapon-hitfx-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
@@ -36,6 +37,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     CamConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
     RagdollConfig::instance().pollReload();
+    WeaponHitFxConfig::instance().pollReload();
     worldPassRan = false;
 
     {

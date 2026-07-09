@@ -23,7 +23,7 @@
 
 namespace WeaponRocketLauncher {
 
-static constexpr float IGNORE_OWNER_DIST = 1.5f;
+static constexpr float IGNORE_OWNER_DIST = 0.3f;
 static bool gDebugRockets = false;
 
 void toggleDebug() { gDebugRockets = !gDebugRockets; }
