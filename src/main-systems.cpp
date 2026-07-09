@@ -119,6 +119,7 @@ void registerCompetitiveCommands();
 #include "replay/replay-export.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
+#include "config/weapon-hitfx-config.h"
 #include "game/bomb-tag.h"
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
@@ -373,6 +374,7 @@ void gameInitSubsystems(Engine& engine)
     RagdollConfig::instance().load("config/ragdolldeath.json");
     registerRagdollCommands();
     HitEffects::loadConfig("config/hitfx.json");
+    WeaponHitFxConfig::instance().load("config/weapon_hitfx.json");
 
     Terminal::instance().registerCommand({
         "net_debug_entities", "Toggle entity replication debug overlay", "net_debug_entities [0|1]",

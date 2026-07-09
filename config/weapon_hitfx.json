@@ -1,0 +1,82 @@
+{
+  "defaults": {
+    "hitForce": {
+      "enabled": true,
+      "minForce": 0.1,
+      "maxForce": 5.0,
+      "weaponMultiplier": 1.0,
+      "angleEnabled": true,
+      "momentumEnabled": true
+    },
+    "debris": {
+      "enabled": true,
+      "count": 12,
+      "countForceScale": 4.0,
+      "speed": 3.0,
+      "speedForceScale": 15.0,
+      "lifetime": 0.5,
+      "lifetimeForceScale": 0.15,
+      "size": 0.8,
+      "sizeForceScale": 1.0,
+      "endSize": 4.0,
+      "endSizeForceScale": 12.0,
+      "gravity": 15.0,
+      "color": [0.42, 0.40, 0.38]
+    },
+    "blood": {
+      "enabled": true,
+      "particleCount": 12,
+      "particleCountForceScale": 100.0,
+      "bloodConeDegrees": 15.0,
+      "bloodConeForceScale": 5.0,
+      "debrisCount": 8,
+      "debrisCountForceScale": 50.0,
+      "debrisConeDegrees": 35.0,
+      "debrisConeForceScale": 25.0,
+      "baseSpeed": 6.0,
+      "speedForceScale": 10.0,
+      "baseLifetime": 2.5,
+      "lifetimeForceScale": 1.0,
+      "decalCount": 8,
+      "decalCountForceScale": 0.3,
+      "decalRadius": 0.25,
+      "decalRadiusForceScale": 0.022,
+      "decalMaxRadius": 4.5,
+      "decalLifetime": 60.0,
+      "maxBloodParticles": 512,
+      "maxBloodDecals": 256
+    },
+    "sound": {
+      "enabled": true,
+      "baseVolume": 1.2,
+      "volumeSeverityScale": 0.6,
+      "volumeNearFactor": 1.0,
+      "pitchBase": 1.15,
+      "pitchSeverityScale": -0.3,
+      "pitchMin": 0.25,
+      "pitchMax": 3.0,
+      "nearDistance": 5.0
+    }
+  },
+  "perWeapon": {
+    "rocket_launcher": {
+      "hitForce": { "weaponMultiplier": 3.0, "maxForce": 10.0 },
+      "debris": { "count": 24, "speed": 8.0, "speedForceScale": 5.0 },
+      "sound": { "baseVolume": 2.0 }
+    },
+    "shotgun": {
+      "hitForce": { "weaponMultiplier": 0.8 },
+      "debris": { "count": 6 }
+    },
+    "swordsword": {
+      "hitForce": { "weaponMultiplier": 1.5, "angleEnabled": false }
+    },
+    "grenade_launcher": {
+      "hitForce": { "weaponMultiplier": 2.5, "maxForce": 8.0 },
+      "debris": { "count": 18, "speed": 6.0 }
+    },
+    "godball": {
+      "hitForce": { "weaponMultiplier": 2.0, "maxForce": 8.0 }
+    }
+  }
+}

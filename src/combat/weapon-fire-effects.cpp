@@ -4,6 +4,7 @@
 #include <cmath>
 #include <glm/glm.hpp>
 #include "config/player-settings.h"
+#include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "combat/death-system.h"
@@ -66,7 +67,23 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
     float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, ctx.hitNormal)), minAngleFrac, 1.0f);
     float damage = std::min(base, std::max(base * distanceFactor * angleFactor, ctx.distance >= 100.0f ? 10.0f : 1.0f));
     int rounded = std::max(1, (int)std::round(damage));
-    float knockback = damage * distanceFactor * (0.08f + angleFactor * 0.12f);
+
+    // Unified hitForce: drives debris, blood, sound, knockback
+    float hitForce = (float)rounded / 100.0f;
+    if (def.projectileSpeed > 0.0f)
+        hitForce *= def.projectileSpeed / 100.0f;
+    const auto& forceCfg = WeaponHitFxConfig::instance().forceFor(def.id);
+    if (forceCfg.angleEnabled)
+        hitForce *= angleFactor;
+    hitForce *= forceCfg.weaponMultiplier;
+    hitForce = std::clamp(hitForce, forceCfg.minForce, forceCfg.maxForce);
+
+    float knockback = hitForce * 2.0f;
+
+    Debug::log(Debug::Category::NpcCombat,
+        "[HITFX] weapon=%s hitForce=%.3f angleFactor=%.2f damage=%d debris=%.0f\n",
+        def.id.c_str(), hitForce, angleFactor, rounded,
+        hitForce * 4.0f + 12.0f);
 
     victim.body.currentHp = std::max(0, victim.body.currentHp - rounded);
     victim.body.externalImpulse += shotDirection * knockback + glm::vec3(0, 0, knockback * 0.12f);

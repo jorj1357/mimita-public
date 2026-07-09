@@ -7,6 +7,7 @@
 #include "audio/audio.h"
 #include "combat/weapon-audio.h"
 #include "config/player-settings.h"
+#include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -139,7 +140,8 @@ void processRemotePlayerHit(
         float headMul = (hitPart == "head") ? 2.0f : 1.0f;
         float severity = std::clamp(angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
         float vol, pit;
-        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
+        computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
         playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
@@ -203,7 +205,8 @@ void processPlayerHit(
         float headMul = (hitPart == "head") ? 2.0f : 1.0f;
         float severity = std::clamp(angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
         float vol, pit;
-        computeImpactAudio(1.2f, dist, severity, vol, pit);
+        const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
+        computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
         playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
@@ -219,24 +222,31 @@ void processWorldHit(
     const std::string& shooterName)
 {
     result.hitWorld = true;
-    float debrisForce = std::clamp(def.damage / 100.0f, 0.1f, 5.0f);
     {
+        float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, worldNormal)), 0.15f, 1.0f);
+        float baseForce = def.damage / 100.0f;
+        if (def.projectileSpeed > 0.0f) baseForce *= def.projectileSpeed / 100.0f;
+        const auto& forceCfg = WeaponHitFxConfig::instance().forceFor(def.id);
+        float hitForce = baseForce * angleFactor * forceCfg.weaponMultiplier;
+        hitForce = std::clamp(hitForce, forceCfg.minForce, forceCfg.maxForce);
+
         HitEvent ev;
         ev.position = hitEnd;
         ev.normal = worldNormal;
         ev.direction = shotDirection;
         ev.hitWorld = true;
-        ev.damage = 0;
+        ev.damage = (int)(hitForce * 20.0f);
         ev.attacker = shooterName;
         ev.weaponSource = def.id;
         HitEffects::onHit(ev);
     }
-    EffectPartSystem::instance().spawnWorldDebris(hitEnd, worldNormal, debrisForce);
+    EffectPartSystem::instance().spawnWorldDebris(hitEnd, worldNormal, std::clamp(def.damage / 100.0f, 0.1f, 5.0f));
     float dist = glm::length(hitEnd - audioListenerPosition());
     float directness = std::abs(glm::dot(-shotDirection, worldNormal));
     float severity = std::clamp(directness, 0.0f, 1.0f);
     float vol, pit;
-    computeImpactAudio(1.2f, dist, severity, vol, pit);
+    const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
+    computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
     playWorldSound("hitworld", hitEnd, vol, pit, 60.0f);
     Debug::log(Debug::Category::Audio, "[WORLD IMPACT AUDIO] dist=%.1f severity=%.2f pitch=%.2f volume=%.2f\n",
                dist, severity, pit, vol);

@@ -1,0 +1,108 @@
+#pragma once
+
+#include <filesystem>
+#include <string>
+#include <unordered_map>
+#include <glm/glm.hpp>
+
+struct WeaponHitFxDebrisConfig {
+    bool enabled = true;
+    int count = 12;
+    float countForceScale = 4.0f;
+    float speed = 3.0f;
+    float speedForceScale = 15.0f;
+    float lifetime = 0.5f;
+    float lifetimeForceScale = 0.15f;
+    float size = 0.8f;
+    float sizeForceScale = 1.0f;
+    float endSize = 4.0f;
+    float endSizeForceScale = 12.0f;
+    float gravity = 15.0f;
+    glm::vec3 color{0.42f, 0.40f, 0.38f};
+};
+
+struct WeaponHitFxBloodConfig {
+    bool enabled = true;
+    int particleCount = 12;
+    float particleCountForceScale = 100.0f;
+    float bloodConeDegrees = 15.0f;
+    float bloodConeForceScale = 5.0f;
+    int debrisCount = 8;
+    float debrisCountForceScale = 50.0f;
+    float debrisConeDegrees = 35.0f;
+    float debrisConeForceScale = 25.0f;
+    float baseSpeed = 6.0f;
+    float speedForceScale = 10.0f;
+    float baseLifetime = 2.5f;
+    float lifetimeForceScale = 1.0f;
+    int decalCount = 8;
+    float decalCountForceScale = 0.3f;
+    float decalRadius = 0.25f;
+    float decalRadiusForceScale = 0.022f;
+    float decalMaxRadius = 4.5f;
+    float decalLifetime = 60.0f;
+    int maxBloodParticles = 512;
+    int maxBloodDecals = 256;
+};
+
+struct WeaponHitFxSoundConfig {
+    bool enabled = true;
+    float baseVolume = 1.2f;
+    float volumeSeverityScale = 0.6f;
+    float volumeNearFactor = 1.0f;
+    float pitchBase = 1.15f;
+    float pitchSeverityScale = -0.3f;
+    float pitchMin = 0.25f;
+    float pitchMax = 3.0f;
+    float nearDistance = 5.0f;
+};
+
+struct WeaponHitFxForceConfig {
+    bool enabled = true;
+    float minForce = 0.1f;
+    float maxForce = 5.0f;
+    float weaponMultiplier = 1.0f;
+    bool angleEnabled = true;
+    bool momentumEnabled = true;
+};
+
+struct WeaponHitFxPerWeapon {
+    WeaponHitFxForceConfig hitForce;
+    WeaponHitFxDebrisConfig debris;
+    WeaponHitFxBloodConfig blood;
+    WeaponHitFxSoundConfig sound;
+};
+
+class WeaponHitFxConfig {
+public:
+    static WeaponHitFxConfig& instance();
+
+    bool load(const std::string& path = "config/weapon_hitfx.json");
+    bool pollReload();
+
+    const WeaponHitFxForceConfig& defaultForce() const { return mDefaults.hitForce; }
+    const WeaponHitFxDebrisConfig& defaultDebris() const { return mDefaults.debris; }
+    const WeaponHitFxBloodConfig& defaultBlood() const { return mDefaults.blood; }
+    const WeaponHitFxSoundConfig& defaultSound() const { return mDefaults.sound; }
+
+    const WeaponHitFxForceConfig& forceFor(const std::string& weaponId) const;
+    const WeaponHitFxDebrisConfig& debrisFor(const std::string& weaponId) const;
+    const WeaponHitFxBloodConfig& bloodFor(const std::string& weaponId) const;
+    const WeaponHitFxSoundConfig& soundFor(const std::string& weaponId) const;
+
+private:
+    WeaponHitFxConfig() = default;
+
+    struct Config {
+        WeaponHitFxForceConfig hitForce;
+        WeaponHitFxDebrisConfig debris;
+        WeaponHitFxBloodConfig blood;
+        WeaponHitFxSoundConfig sound;
+    };
+
+    Config mDefaults;
+    std::unordered_map<std::string, WeaponHitFxPerWeapon> mPerWeapon;
+    std::string mPath = "config/weapon_hitfx.json";
+    std::filesystem::file_time_type mLastWrite{};
+    bool mWatchLogged = false;
+};

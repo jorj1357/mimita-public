@@ -362,7 +362,9 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
         }
     }
 
+    int ncaps = entry->capsule.enabled ? 1 : 0;
+    for (const auto& cc : entry->capsules) if (cc.enabled) ++ncaps;
     Debug::log(Debug::Category::Weapons,
-        "[WEAPON COLLISION] %s using JSON collider spheres=%d",
-        weaponId.c_str(), (int)dbg.spheres.size());
+        "[WEAPON COLLISION] weapon=%s json_spheres=%d json_capsules=%d source=%s",
+        weaponId.c_str(), (int)dbg.spheres.size(), ncaps, entry->source.c_str());
 }
