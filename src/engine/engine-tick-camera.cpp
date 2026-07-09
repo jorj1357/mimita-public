@@ -374,6 +374,12 @@ void engineTickCamera(Engine& engine, float dt)
                     REPLAY_PLAYER.cameraController().setMode("fp");
                     break;
             }
+            Debug::log(Debug::Category::Replay,
+                "[RPLE MODE] tick=%d cameraMode=%s paused=%d manualInputAllowed=%d\n",
+                gReplayPlayer.currentTick(),
+                gReplayEditor.freecam ? "FREECAM" : (camera.thirdPerson ? "THIRDPERSON" : "FIRSTPERSON"),
+                (int)gReplayPlayer.isPaused(),
+                (int)(gReplayEditor.freecam && gReplayPlayer.isPaused()));
         }
 
         // Step 1: Camera controller sets default camera
@@ -402,12 +408,19 @@ void engineTickCamera(Engine& engine, float dt)
                 0.0f));
         }
 
+        Debug::log(Debug::Category::Replay,
+            "[RPLE CAM BEFORE] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",
+            gReplayPlayer.currentTick(),
+            camera.pos.x, camera.pos.y, camera.pos.z,
+            camera.front.x, camera.front.y, camera.front.z);
+
         // Step 2: Editor keyframe interpolation.
         // Position keyframes only drive the camera when in Freecam mode.
         // In ThirdPerson / FirstPerson modes, the normal replay camera controller
         // (Step 1) runs instead — position keyframes are ignored by design.
         if (gReplayEditor.isLoaded() && gReplayEditor.freecam &&
-            gReplayEditor.cameraKeyframeCount() > 0 && gReplayPlayer.isPlaying())
+            gReplayEditor.cameraKeyframeCount() > 0 && gReplayPlayer.isPlaying()
+            && !gReplayPlayer.isPaused())
         {
             float currentTick = (float)gReplayPlayer.currentTick();
             int kfCount = gReplayEditor.cameraKeyframeCount();
@@ -493,6 +506,11 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.fov, camera.roll,
                 gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
         }
+        Debug::log(Debug::Category::Replay,
+            "[RPLE CAM AFTER KF] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",
+            gReplayPlayer.currentTick(),
+            camera.pos.x, camera.pos.y, camera.pos.z,
+            camera.front.x, camera.front.y, camera.front.z);
     }
 
     if (anyFreecam) {
@@ -519,6 +537,20 @@ void engineTickCamera(Engine& engine, float dt)
         if (glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS) move -= flatRight;
         if (glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS) move.z += 1.0f;
         if (glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
+
+        Debug::log(Debug::Category::Replay,
+            "[RPLE INPUT] tick=%d paused=%d freecamEnabled=%d"
+            " w=%d a=%d s=%d d=%d q=%d e=%d moveDelta=(%.2f %.2f %.2f)\n",
+            gReplayPlayer.currentTick(),
+            (int)gReplayPlayer.isPaused(), (int)(gReplayEditor.isLoaded() && gReplayEditor.freecam),
+            (int)(glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS),
+            (int)(glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS),
+            (int)(glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS),
+            (int)(glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS),
+            (int)(glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS),
+            (int)(glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS),
+            move.x, move.y, move.z);
+
         if (glm::length(move) > 0.001f)
             camera.pos += glm::normalize(move) * speed * dt;
 
@@ -547,10 +579,10 @@ void engineTickCamera(Engine& engine, float dt)
         camera.smoothCollision(player.pos, world.collisionMesh.triangles, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled);
     }
 
-    // Debug: final camera state after all evaluation (throttled to 0.5s)
+    // Debug: final camera state after all evaluation
     if (gReplayEditor.isLoaded() || replayPlaybackActive) {
-        Debug::logThrottled(Debug::Category::Replay, "cam-final", 0.5f,
-            "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
+        Debug::log(Debug::Category::Replay,
+            "[RPLE CAM FINAL] tick=%u pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)"
             " fov=%.0f roll=%.1f\n",
             gReplayPlayer.currentTick(),
             camera.pos.x, camera.pos.y, camera.pos.z,

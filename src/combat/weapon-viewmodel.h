@@ -13,6 +13,7 @@ struct WeaponViewModelConfig;
 
 struct WeaponViewModel {
     Mesh heldMesh;
+    std::vector<glm::vec3> collisionLocalPositions; // cached local-space vertex positions from GLB
     glm::mat4 weaponTransform{1.0f};
     glm::vec3 modelGrip{0.0f};
     glm::vec3 modelMuzzle{0.0f, 0.0f, 0.7f};

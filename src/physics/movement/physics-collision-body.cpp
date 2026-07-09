@@ -190,6 +190,23 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
     collectWeaponConfigSpheres(p, spheres);
     gBW.configSphereCount = gBW.configSpheresGenerated;
 
+    // 4. Mesh vertex spheres (from weapon GLB collision mesh)
+    {
+        auto& cm = p.weaponCollisionMesh;
+        if (cm.valid && !cm.worldPositions.empty()) {
+            int meshCount = 0;
+            for (size_t i = 0; i < cm.worldPositions.size(); i++) {
+                glm::vec3 sweepDelta{0.0f};
+                if (i < cm.prevPositions.size())
+                    sweepDelta = cm.worldPositions[i] - cm.prevPositions[i];
+                spheres.push_back({cm.worldPositions[i], cm.vertexRadius, "weapon_mesh", sweepDelta});
+                meshCount++;
+            }
+            gBW.configSpheresGenerated = meshCount;
+            gBW.configSphereCount = meshCount;
+        }
+    }
+
     gBW.sphereCount = (int)spheres.size();
     auto t1 = std::chrono::steady_clock::now();
     gBW.collectSpheresMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
