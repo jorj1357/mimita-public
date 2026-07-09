@@ -1,4 +1,5 @@
 {
     "aim_mode": "crosshair",
-    "dash_mode": "tf2"
+    "dash_mode": "tf2",
+    "farpoint_distance": 100.0
 }

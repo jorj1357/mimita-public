@@ -40,7 +40,8 @@ AimSolution computeAim(
     result.origin = muzzlePos;
     result.cameraDistance = kMaxShotDistance;
 
-    const GameplayAimMode mode = GameplayConfig::instance().aimMode();
+    const GameplayConfig& cfg = GameplayConfig::instance();
+    const GameplayAimMode mode = cfg.aimMode();
     if (mode == GameplayAimMode::Crosshair) {
         AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers);
         result.aimPoint = target.worldPoint;
@@ -48,6 +49,13 @@ AimSolution computeAim(
         result.modeName = "crosshair";
         result.cameraHitKind = target.hitKind;
         result.usesCameraTarget = true;
+    } else if (mode == GameplayAimMode::Farpoint) {
+        float farDist = cfg.farpointDistance();
+        result.aimPoint = camera.pos + camera.front * farDist;
+        result.cameraDistance = farDist;
+        result.modeName = "farpoint";
+        result.cameraHitKind = AimHitKind::None;
+        result.usesCameraTarget = false;
     } else {
         result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
         result.modeName = "world_hit";

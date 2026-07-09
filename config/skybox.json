@@ -3,32 +3,32 @@
     "folder": "space",
     "rotation_speed": 1.0,
     "global_hue_speed": 0.1,
-    "global_scale_x": 1.0,
+    "global_scale_x": 2.0,
     "global_scale_y": 1.0,
     "faces": {
         "front": {
-            "color": [12, 12, 12],
+            "color": [1, 1, 1],
             "alpha": 1.0
         },
         "back": {
-            "color": [12, 12, 12],
+            "color": [1, 1, 1],
             "alpha": 1.0
         },
         "left": {
-            "color": [12, 12, 12],
+            "color": [1, 1, 1],
             "alpha": 1.0
         },
         "right": {
-            "color": [12, 12, 12],
+            "color": [1, 1, 1],
             "alpha": 1.0
         },
         "top": {
-            "color": [12, 12, 12],
+            "color": [1, 1, 1],
             "alpha": 1.0,
             "hue_speed": 0.25
         },
         "bottom": {
-            "color": [12, 12, 12],
+            "color": [1, 1, 1],
             "alpha": 1.0
         }
     }

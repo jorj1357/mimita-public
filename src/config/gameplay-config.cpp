@@ -37,6 +37,10 @@ bool parseAimMode(const json& value, GameplayAimMode& out)
         out = GameplayAimMode::WorldHit;
         return true;
     }
+    if (mode == "farpoint") {
+        out = GameplayAimMode::Farpoint;
+        return true;
+    }
     return false;
 }
 
@@ -72,6 +76,7 @@ const char* gameplayAimModeName(GameplayAimMode mode)
 {
     switch (mode) {
         case GameplayAimMode::WorldHit: return "world_hit";
+        case GameplayAimMode::Farpoint: return "farpoint";
         case GameplayAimMode::Crosshair:
         default: return "crosshair";
     }
@@ -115,7 +120,7 @@ bool GameplayConfig::load(const std::string& path)
         if (root.contains("aim_mode") && !parseAimMode(root["aim_mode"], next.aimMode)) {
             mLastWrite = writeTime;
             Debug::error(Debug::Category::Weapons,
-                "[GAMEPLAY CONFIG] Invalid aim_mode in %s; expected \"crosshair\" or \"world_hit\". Keeping previous valid settings.\n",
+                "[GAMEPLAY CONFIG] Invalid aim_mode in %s; expected \"crosshair\", \"world_hit\", or \"farpoint\". Keeping previous valid settings.\n",
                 mPath.c_str());
             return false;
         }
@@ -127,13 +132,16 @@ bool GameplayConfig::load(const std::string& path)
             return false;
         }
 
+        if (root.contains("farpoint_distance"))
+            next.farpointDistance = std::max(1.0f, root["farpoint_distance"].get<float>());
+
         mData = next;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::Weapons,
             "[GAMEPLAY CONFIG] Loaded successfully: %s\n", fileName.c_str());
         Debug::warn(Debug::Category::Weapons,
-            "[GAMEPLAY CONFIG] Applied: aim_mode=%s dash_mode=%s\n",
-            aimModeName(), dashModeName());
+            "[GAMEPLAY CONFIG] Applied: aim_mode=%s dash_mode=%s farpoint_distance=%.0f\n",
+            aimModeName(), dashModeName(), mData.farpointDistance);
         return true;
     } catch (const json::parse_error& e) {
         mLastWrite = writeTime;

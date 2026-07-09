@@ -1,16 +1,22 @@
 {
-    TEH DEFAULT
-    IS
-    "crosshair"
-    AND 
-    WORLD world_hit 
-    this is the 
-    gun shoots right at where u hit 
-    "aim_mode": "world_hit"
+    DEFAULT AIM MODE IS:
+    "crosshair" — weapon aims at camera ray hit point on world/NPC geometry
 
-    also
+    OTHER AIM MODES:
+    "world_hit" — weapon aims along muzzle ray, hitscan style
+    "farpoint"  — weapon always aims at a distant point along camera forward
+
+    FARPOINT MODE:
+    Ignores world geometry for aiming direction.
+    Weapon always points at camera_forward * farpoint_distance.
+    Hitscan/projectile collision still works normally.
+    Useful for: stable aiming, horizon aiming, avoiding weapon wobble on walls.
+
+    farpoint_distance: 1000000.0 (configurable, hot-reloaded from gameplay.json)
+
+    DASH MODES:
+    "glide" = slide mode
+    "tf2" = oldskool harder
+
     7 8 2026
-
-    glide = slide mode for gameplay.json movement mode
-    tf2 = oldskool  more harder 
 }
