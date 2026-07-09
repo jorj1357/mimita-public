@@ -95,13 +95,14 @@ export default function Header() {
     }
 
     const profileLabel = user ? `${user.username}'s Profile` : "Profile"
+    const profilePath = user ? `/users/${encodeURIComponent(user.username)}` : "/profile"
 
     const filteredItems = HAMBURGER_ITEMS.filter(item => {
         if (item.admin && !isAdmin) return false
         if (item.auth && !user) return false
         return true
     }).map(item => {
-        if (item.path === "/profile") return { ...item, label: profileLabel }
+        if (item.path === "/profile") return { ...item, label: profileLabel, path: profilePath }
         return item
     })
 
@@ -190,7 +191,7 @@ export default function Header() {
                                             <span className="profileDropdownName">{user.username}</span>
                                         </div>
                                     </div>
-                                    <Link to="/profile" onClick={() => setProfileOpen(false)}>
+                                    <Link to={profilePath} onClick={() => setProfileOpen(false)}>
                                         Profile
                                     </Link>
                                     <Link to="/account" onClick={() => setProfileOpen(false)}>
