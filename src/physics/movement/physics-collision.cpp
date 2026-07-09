@@ -96,7 +96,7 @@ void appendChunkTrianglesForAABB(
     glm::ivec3 c1 = collisionChunkCoord(clamped.max, world.collisionChunkSize);
 
     // ── Cell count guard ───────────────────────────────
-    constexpr int MAX_CELLS_PER_AXIS = 15;
+    constexpr int MAX_CELLS_PER_AXIS = 100;
     int64_t cellsX = (int64_t)c1.x - (int64_t)c0.x + 1;
     int64_t cellsY = (int64_t)c1.y - (int64_t)c0.y + 1;
     int64_t cellsZ = (int64_t)c1.z - (int64_t)c0.z + 1;

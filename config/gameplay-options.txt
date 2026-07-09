@@ -3,7 +3,13 @@
     "crosshair" — weapon aims at camera ray hit point on world/NPC geometry
 
     OTHER AIM MODES:
-    "world_hit" — weapon aims along muzzle ray, hitscan style
+    "world_hit" — weapon aims along muzzle ray, hitscan style,
+    cam oriign = the oriigin
+    then go until u hit the world somewhere, 
+    then that spot is where ur gun will shoot
+    but like constantly
+
+    idk how to explain but tis kinda cool 
     "farpoint"  — weapon always aims at a distant point along camera forward
 
     FARPOINT MODE:
