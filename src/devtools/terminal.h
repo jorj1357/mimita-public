@@ -56,6 +56,7 @@ public:
     static Terminal& instance();
 
     void init(GLFWwindow* window);
+    GLFWwindow* window() const { return mWindow; }
     void toggle();
     bool isOpen() const { return mOpen; }
 
