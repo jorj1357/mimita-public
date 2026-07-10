@@ -436,7 +436,7 @@ bool playReplayMusicPreview(const std::string& path, float volume)
     stopReplayMusicPreview();
 
     ma_sound* sound = new ma_sound();
-    ma_result result = ma_sound_init_from_file(&gEngine, path.c_str(), MA_SOUND_FLAG_NO_PITCH | MA_SOUND_FLAG_NO_SPATIALIZATION, nullptr, nullptr, sound);
+    ma_result result = ma_sound_init_from_file(&gEngine, path.c_str(), MA_SOUND_FLAG_NO_SPATIALIZATION, nullptr, nullptr, sound);
     if (result != MA_SUCCESS) {
         Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Failed to load preview music: %s (err=%d)\n", path.c_str(), (int)result);
         delete sound;
@@ -501,5 +501,31 @@ float getReplayMusicPreviewDuration()
     ma_uint64 totalFrames;
     if (ma_sound_get_length_in_pcm_frames(gReplayMusicSound, &totalFrames) != MA_SUCCESS)
         return 0.0f;
+    return (float)totalFrames / 48000.0f;
+}
+
+void setReplayMusicPreviewSpeed(float speed)
+{
+    if (!gReplayMusicSound || !gReplayMusicInit) return;
+    float clamped = std::clamp(speed, 0.01f, 100.0f);
+    ma_sound_set_pitch(gReplayMusicSound, clamped);
+}
+
+void setReplayMusicPreviewVolume(float volume)
+{
+    if (!gReplayMusicSound || !gReplayMusicInit) return;
+    float clamped = std::clamp(volume, 0.0f, 10.0f);
+    ma_sound_set_volume(gReplayMusicSound, clamped);
+}
+
+float getAudioFileDuration(const std::string& path)
+{
+    ma_decoder decoder;
+    ma_decoder_config config = ma_decoder_config_init(ma_format_s16, 2, 48000);
+    if (ma_decoder_init_file(path.c_str(), &config, &decoder) != MA_SUCCESS)
+        return 0.0f;
+    ma_uint64 totalFrames = 0;
+    ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames);
+    ma_decoder_uninit(&decoder);
     return (float)totalFrames / 48000.0f;
 }

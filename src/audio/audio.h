@@ -80,3 +80,6 @@ void resumeReplayMusicPreview();
 bool seekReplayMusicPreview(float seconds);
 bool isReplayMusicPreviewPlaying();
 float getReplayMusicPreviewDuration();
+void setReplayMusicPreviewSpeed(float speed);
+void setReplayMusicPreviewVolume(float volume);
+float getAudioFileDuration(const std::string& path);

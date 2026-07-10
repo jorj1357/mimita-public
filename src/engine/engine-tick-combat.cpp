@@ -262,40 +262,124 @@ void engineTickCombat(Engine& engine, float dt)
         bool ctrlHeld = glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                         glfwGetKey(engine.window(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 
-        static bool leftPrev = false;
-        bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
-        if (leftDown && !leftPrev) {
-            uint32_t t = gReplayPlayer.currentTick();
-            uint32_t seekTo;
-            if (ctrlHeld) {
-                seekTo = t > 1 ? t - 1 : 0;
-                Debug::log(Debug::Category::Replay, "[ReplayControls] Ctrl+Left: -1 tick (tick %u)\n", seekTo);
+        // ── Ctrl+Left/Right: tick-by-tick with hold-to-repeat ──────
+        // Initial delay 250ms, then repeat every 100ms.
+        // Never auto-starts playback — preserves pause state.
+        {
+            static float leftHoldTimer = 0.0f;
+            static bool leftRepeating = false;
+            bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
+            if (ctrlHeld && leftDown) {
+                bool doSeek = false;
+                if (leftHoldTimer == 0.0f) {
+                    // First press edge — seek immediately
+                    doSeek = true;
+                    leftHoldTimer = 0.001f;  // non-zero signals "held"
+                } else {
+                    leftHoldTimer += dt;
+                    if (!leftRepeating && leftHoldTimer >= 0.25f) {
+                        leftRepeating = true;
+                        leftHoldTimer = 0.0f;
+                        doSeek = true;
+                    } else if (leftRepeating && leftHoldTimer >= 0.1f) {
+                        leftHoldTimer -= 0.1f;
+                        doSeek = true;
+                    }
+                }
+                if (doSeek) {
+                    bool wasPaused = gReplayPlayer.isPaused();
+                    uint32_t t = gReplayPlayer.currentTick();
+                    uint32_t seekTo = t > 1 ? t - 1 : 0;
+                    gReplayPlayer.seekToTick(seekTo);
+                    if (gReplayEditor.isLoaded())
+                        gReplayEditor.seekToTick((int)seekTo);
+                    if (wasPaused) {
+                        gReplayPlayer.update(0.0f);
+                        gReplayPlayer.pause();
+                    }
+                    Debug::log(Debug::Category::Replay, "[ReplayControls] Ctrl+Left: tick %u (wasPaused=%d)\n", seekTo, (int)wasPaused);
+                }
             } else {
-                seekTo = t > 300 ? t - 300 : 0;
+                leftHoldTimer = 0.0f;
+                leftRepeating = false;
             }
-            gReplayPlayer.seekToTick(seekTo);
-            if (gReplayEditor.isLoaded())
-                gReplayEditor.seekToTick((int)seekTo);
-        }
-        leftPrev = leftDown;
 
-        static bool rightPrev = false;
-        bool rightDown = glfwGetKey(engine.window(), GLFW_KEY_RIGHT) == GLFW_PRESS;
-        if (rightDown && !rightPrev) {
-            uint32_t t = gReplayPlayer.currentTick();
-            uint32_t total = gReplayPlayer.totalTicks();
-            uint32_t seekTo;
-            if (ctrlHeld) {
-                seekTo = std::min(t + 1, total);
-                Debug::log(Debug::Category::Replay, "[ReplayControls] Ctrl+Right: +1 tick (tick %u)\n", seekTo);
+            static float rightHoldTimer = 0.0f;
+            static bool rightRepeating = false;
+            bool rightDown = glfwGetKey(engine.window(), GLFW_KEY_RIGHT) == GLFW_PRESS;
+            if (ctrlHeld && rightDown) {
+                bool doSeek = false;
+                if (rightHoldTimer == 0.0f) {
+                    doSeek = true;
+                    rightHoldTimer = 0.001f;
+                } else {
+                    rightHoldTimer += dt;
+                    if (!rightRepeating && rightHoldTimer >= 0.25f) {
+                        rightRepeating = true;
+                        rightHoldTimer = 0.0f;
+                        doSeek = true;
+                    } else if (rightRepeating && rightHoldTimer >= 0.1f) {
+                        rightHoldTimer -= 0.1f;
+                        doSeek = true;
+                    }
+                }
+                if (doSeek) {
+                    bool wasPaused = gReplayPlayer.isPaused();
+                    uint32_t t = gReplayPlayer.currentTick();
+                    uint32_t total = gReplayPlayer.totalTicks();
+                    uint32_t seekTo = std::min(t + 1, total);
+                    gReplayPlayer.seekToTick(seekTo);
+                    if (gReplayEditor.isLoaded())
+                        gReplayEditor.seekToTick((int)seekTo);
+                    if (wasPaused) {
+                        gReplayPlayer.update(0.0f);
+                        gReplayPlayer.pause();
+                    }
+                    Debug::log(Debug::Category::Replay, "[ReplayControls] Ctrl+Right: tick %u (wasPaused=%d)\n", seekTo, (int)wasPaused);
+                }
             } else {
-                seekTo = std::min(t + 300, total);
+                rightHoldTimer = 0.0f;
+                rightRepeating = false;
             }
-            gReplayPlayer.seekToTick(seekTo);
-            if (gReplayEditor.isLoaded())
-                gReplayEditor.seekToTick((int)seekTo);
         }
-        rightPrev = rightDown;
+
+        // ── Left/Right (no Ctrl): seek 5 seconds ───────────────────
+        {
+            static bool leftPrev = false;
+            bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
+            if (leftDown && !leftPrev && !ctrlHeld) {
+                bool wasPaused = gReplayPlayer.isPaused();
+                uint32_t t = gReplayPlayer.currentTick();
+                uint32_t seekTo = t > 300 ? t - 300 : 0;
+                gReplayPlayer.seekToTick(seekTo);
+                if (gReplayEditor.isLoaded())
+                    gReplayEditor.seekToTick((int)seekTo);
+                if (wasPaused) {
+                    gReplayPlayer.update(0.0f);
+                    gReplayPlayer.pause();
+                }
+            }
+            leftPrev = leftDown;
+        }
+
+        {
+            static bool rightPrev = false;
+            bool rightDown = glfwGetKey(engine.window(), GLFW_KEY_RIGHT) == GLFW_PRESS;
+            if (rightDown && !rightPrev && !ctrlHeld) {
+                bool wasPaused = gReplayPlayer.isPaused();
+                uint32_t t = gReplayPlayer.currentTick();
+                uint32_t total = gReplayPlayer.totalTicks();
+                uint32_t seekTo = std::min(t + 300, total);
+                gReplayPlayer.seekToTick(seekTo);
+                if (gReplayEditor.isLoaded())
+                    gReplayEditor.seekToTick((int)seekTo);
+                if (wasPaused) {
+                    gReplayPlayer.update(0.0f);
+                    gReplayPlayer.pause();
+                }
+            }
+            rightPrev = rightDown;
+        }
 
         static bool lPrev = false;
         bool lDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;

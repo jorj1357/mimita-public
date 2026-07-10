@@ -877,7 +877,7 @@ void registerReplayEditorCommands() {
         "rpletime_skf <speed>",
         [](const std::vector<std::string>& args) {
             if (!E.isLoaded()) { requireEditor("rpletime_skf"); return; }
-            float speed = args.empty() ? 1.0f : std::max(0.01f, std::stof(args[0]));
+            float speed = args.empty() ? 1.0f : std::clamp(std::stof(args[0]), 0.01f, 100.0f);
             int tick = (int)E.movieTick;
             E.addTimeKeyframe(tick, speed, E.defaultInterp);
             char buf[64];
@@ -1404,6 +1404,296 @@ void registerReplayEditorCommands() {
                 gReplayEditor.movieTick,
                 gReplayEditor.editPath().c_str());
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    // ── rple_mi: import music ────────────────────────────
+    t.registerCommand({
+        "rple_mi",
+        "Import music for replay editor timeline",
+        "rple_mi <path>",
+        [](const std::vector<std::string>& args) {
+            if (!gReplayEditor.isLoaded()) { requireEditor("rple_mi"); return; }
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: rple_mi <path to audio file>");
+                return;
+            }
+            std::string path = args[0];
+            for (size_t i = 1; i < args.size(); ++i)
+                path += " " + args[i];
+            if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
+                path = path.substr(1, path.size() - 2);
+            if (!std::filesystem::exists(path)) {
+                Terminal::instance().addLog("[ERROR] File not found: " + path);
+                return;
+            }
+            std::string ext = std::filesystem::path(path).extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext != ".wav" && ext != ".mp3" && ext != ".ogg" && ext != ".flac" &&
+                ext != ".m4a" && ext != ".aac") {
+                Terminal::instance().addLog("[ERROR] Unsupported format: " + ext);
+                return;
+            }
+
+            // Get audio file duration and info
+            float duration = getAudioFileDuration(path);
+            std::vector<int16_t> pcm;
+            uint32_t sampleRate = 0, channels = 0;
+            decodeAudioToPCM(path, pcm, sampleRate, channels, 48000, 2);
+
+            int totalSec = (int)duration;
+            int h = totalSec / 3600;
+            int m = (totalSec % 3600) / 60;
+            double sec = totalSec % 60 + (double)((int)(duration * 1000.0) % 1000) / 1000.0;
+
+            char buf[256];
+            std::snprintf(buf, sizeof(buf),
+                "[ReplayMusic] loaded:\n"
+                "  path=%s\n"
+                "  length=%02d:%02d:%06.3f\n"
+                "  sample_rate=%u\n"
+                "  channels=%u",
+                path.c_str(), h, m, sec, sampleRate, channels);
+            Terminal::instance().addLog(buf);
+
+            // Set music metadata with defaults
+            ReplayEditorMusic* music = gReplayEditor.mutableMusic();
+            music->path = path;
+            music->offsetSeconds = 0.0;
+            music->cropStartSeconds = 0.0;
+            music->cropEndSeconds = (double)duration;
+            music->speedMultiplier = 1.0;
+            music->volume = 1.0;
+
+            // Backward compat: also set legacy audio track
+            gReplayEditor.setAudioTrack(path, 1.0f);
+
+            // Start preview at default position, then pause
+            stopReplayMusicPreview();
+            if (playReplayMusicPreview(path, 1.0f)) {
+                seekReplayMusicPreview(0.0f);
+                setReplayMusicPreviewSpeed(1.0f);
+                setReplayMusicPreviewVolume(1.0f);
+                pauseReplayMusicPreview();
+            }
+
+            gReplayEditor.autosave();
+            Debug::log(Debug::Category::Replay, "[ReplayMusic] imported: path=%s length=%.2f\n",
+                       path.c_str(), duration);
+        }
+    });
+
+    // ── rple_mo: music offset ────────────────────────────
+    t.registerCommand({
+        "rple_mo",
+        "Set music playback offset — song start position at replay tick 0",
+        "rple_mo <hh:mm:ss>",
+        [](const std::vector<std::string>& args) {
+            if (!gReplayEditor.isLoaded()) { requireEditor("rple_mo"); return; }
+            ReplayEditorMusic* music = gReplayEditor.mutableMusic();
+            if (music->path.empty()) {
+                Terminal::instance().addLog("[ERROR] No music imported. Use rple_mi first.");
+                return;
+            }
+
+            if (args.empty()) {
+                float dur = getReplayMusicPreviewDuration();
+                if (dur <= 0.0f) dur = (float)music->cropEndSeconds;
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                    "[ReplayMusic] Current offset: %.3f sec\n"
+                    "  Song length: %.3f sec\n"
+                    "  Usage: rple_mo hh:mm:ss",
+                    music->offsetSeconds, dur);
+                Terminal::instance().addLog(buf);
+                return;
+            }
+
+            std::string timeStr = args[0];
+            int hh = 0, mm = 0;
+            double ss = 0.0;
+            int parsed = std::sscanf(timeStr.c_str(), "%d:%d:%lf", &hh, &mm, &ss);
+            if (parsed < 2) {
+                Terminal::instance().addLog("[ERROR] Invalid format. Use hh:mm:ss");
+                return;
+            }
+            if (parsed == 2) {
+                ss = (double)mm;
+                mm = hh;
+                hh = 0;
+            }
+            double offsetSec = (double)hh * 3600.0 + (double)mm * 60.0 + ss;
+            if (offsetSec < 0.0) {
+                Terminal::instance().addLog("[ERROR] Offset cannot be negative");
+                return;
+            }
+
+            float dur = getReplayMusicPreviewDuration();
+            if (dur > 0.0f && offsetSec > (double)dur) {
+                Terminal::instance().addLog("[ERROR] Offset exceeds song length");
+                return;
+            }
+
+            // Immediately apply offset and start playback from that position
+            music->offsetSeconds = offsetSec;
+
+            double songPos = music->offsetSeconds + music->cropStartSeconds;
+            seekReplayMusicPreview((float)songPos);
+            setReplayMusicPreviewSpeed((float)music->speedMultiplier);
+            setReplayMusicPreviewVolume((float)music->volume);
+            resumeReplayMusicPreview();
+            gReplayEditor.playing = true;
+
+            int h = (int)offsetSec / 3600;
+            int m2 = ((int)offsetSec % 3600) / 60;
+            double s = offsetSec - (double)((int)offsetSec) + (double)((int)offsetSec % 60);
+            char buf[256];
+            std::snprintf(buf, sizeof(buf),
+                "[ReplayMusic] offset set to %02d:%02d:%06.3f — playing from song time %.2f",
+                h, m2, s, songPos);
+            Terminal::instance().addLog(buf);
+            Debug::log(Debug::Category::Replay, "[ReplayMusic] offset=%.2f\n", music->offsetSeconds);
+
+            gReplayEditor.autosave();
+        }
+    });
+
+    // ── rple_mv: music volume ────────────────────────────
+    t.registerCommand({
+        "rple_mv",
+        "Set music volume (0=mute, 0.01-10, default 1.0)",
+        "rple_mv <volume>",
+        [](const std::vector<std::string>& args) {
+            if (!gReplayEditor.isLoaded()) { requireEditor("rple_mv"); return; }
+            ReplayEditorMusic* music = gReplayEditor.mutableMusic();
+            if (music->path.empty()) {
+                Terminal::instance().addLog("[ERROR] No music imported. Use rple_mi first.");
+                return;
+            }
+            if (args.empty()) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "[ReplayMusic] Current volume: %.2f", music->volume);
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            char* end = nullptr;
+            double val = std::strtod(args[0].c_str(), &end);
+            if (end == args[0].c_str() || !std::isfinite(val)) {
+                Terminal::instance().addLog("[ERROR] Invalid volume. Use a number (0-10).");
+                return;
+            }
+            val = std::clamp(val, 0.0, 10.0);
+            music->volume = val;
+            setReplayMusicPreviewVolume((float)val);
+            gReplayEditor.autosave();
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "[ReplayMusic] volume=%.2f", val);
+            Terminal::instance().addLog(buf);
+            Debug::log(Debug::Category::Replay, "[ReplayMusic] volume=%.2f\n", val);
+        }
+    });
+
+    // ── rple_mpbs: music playback speed multiplier ───────
+    t.registerCommand({
+        "rple_mpbs",
+        "Set music playback speed multiplier (0.01-100, default 1.0)",
+        "rple_mpbs <speed>",
+        [](const std::vector<std::string>& args) {
+            if (!gReplayEditor.isLoaded()) { requireEditor("rple_mpbs"); return; }
+            if (args.empty()) {
+                ReplayEditorMusic* music = gReplayEditor.mutableMusic();
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "[ReplayMusic] Current speed multiplier: %.2f", music->speedMultiplier);
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            char* end = nullptr;
+            double val = std::strtod(args[0].c_str(), &end);
+            if (end == args[0].c_str() || !std::isfinite(val) || val <= 0.0) {
+                Terminal::instance().addLog("[ERROR] Invalid speed. Use a positive number (0.01-100).");
+                return;
+            }
+            val = std::clamp(val, 0.01, 100.0);
+            ReplayEditorMusic* music = gReplayEditor.mutableMusic();
+            music->speedMultiplier = val;
+            gReplayEditor.autosave();
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "[ReplayMusic] speed_multiplier=%.2f", val);
+            Terminal::instance().addLog(buf);
+            Debug::log(Debug::Category::Replay, "[ReplayMusic] speed_multiplier=%.2f\n", val);
+        }
+    });
+
+    // ── rple_mc: music crop ──────────────────────────────
+    t.registerCommand({
+        "rple_mc",
+        "Set music crop range (hh:mm:ss-hh:mm:ss)",
+        "rple_mc <start-end>",
+        [](const std::vector<std::string>& args) {
+            if (!gReplayEditor.isLoaded()) { requireEditor("rple_mc"); return; }
+            ReplayEditorMusic* music = gReplayEditor.mutableMusic();
+            if (music->path.empty()) {
+                Terminal::instance().addLog("[ERROR] No music imported. Use rple_mi first.");
+                return;
+            }
+            if (args.empty()) {
+                float dur = getReplayMusicPreviewDuration();
+                if (dur <= 0.0f) dur = (float)music->cropEndSeconds;
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                    "[ReplayMusic] Song length: %.3f sec\n"
+                    "  Current crop: %.3f - %.3f sec\n"
+                    "  Usage: rple_mc hh:mm:ss-hh:mm:ss",
+                    dur, music->cropStartSeconds, music->cropEndSeconds);
+                Terminal::instance().addLog(buf);
+                return;
+            }
+
+            std::string range = args[0];
+            auto dashPos = range.find('-');
+            if (dashPos == std::string::npos) {
+                Terminal::instance().addLog("[ERROR] Invalid format. Use hh:mm:ss-hh:mm:ss");
+                return;
+            }
+            std::string startStr = range.substr(0, dashPos);
+            std::string endStr = range.substr(dashPos + 1);
+
+            auto parseTime = [](const std::string& s) -> double {
+                int hh = 0, mm = 0;
+                double ss = 0.0;
+                int n = std::sscanf(s.c_str(), "%d:%d:%lf", &hh, &mm, &ss);
+                if (n == 2) { ss = (double)mm; mm = hh; hh = 0; n = std::sscanf(s.c_str(), "%d:%lf", &mm, &ss); }
+                if (n < 1) return -1.0;
+                return (double)hh * 3600.0 + (double)mm * 60.0 + ss;
+            };
+
+            double startSec = parseTime(startStr);
+            double endSec = parseTime(endStr);
+            if (startSec < 0.0 || endSec < 0.0) {
+                Terminal::instance().addLog("[ERROR] Invalid time format. Use hh:mm:ss-hh:mm:ss");
+                return;
+            }
+
+            float dur = getReplayMusicPreviewDuration();
+            if (dur <= 0.0f) dur = (float)music->cropEndSeconds;
+            if (startSec >= endSec) {
+                Terminal::instance().addLog("[ERROR] crop_start must be before crop_end");
+                return;
+            }
+            if (endSec > (double)dur) {
+                Terminal::instance().addLog("[ERROR] crop_end exceeds song length");
+                return;
+            }
+
+            music->cropStartSeconds = startSec;
+            music->cropEndSeconds = endSec;
+            gReplayEditor.autosave();
+
+            char buf[256];
+            std::snprintf(buf, sizeof(buf),
+                "[ReplayMusic] crop=%.2f -> %.2f", startSec, endSec);
+            Terminal::instance().addLog(buf);
+            Debug::log(Debug::Category::Replay, "[ReplayMusic] crop=%.2f -> %.2f\n", startSec, endSec);
         }
     });
 

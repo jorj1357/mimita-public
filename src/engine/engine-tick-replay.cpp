@@ -158,7 +158,7 @@ void engineTickReplay(Engine& engine, float dt)
     {
         const ReplayExportJob& job = getReplayExportJob();
         if (job.state == ReplayExportJob::Capturing) {
-            uint32_t seekTick = job.capturedTicks;
+            uint32_t seekTick = (uint32_t)job.exportTick;
             uint32_t beforeTick = gReplayPlayer.currentTick();
             if (seekTick < gReplayPlayer.totalTicks()) {
                 Debug::log(Debug::Category::Replay, "[EXPORTTRACE] seek tick %u / total %u", seekTick, gReplayPlayer.totalTicks());

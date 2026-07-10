@@ -324,6 +324,7 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     gJob.jsonPath = jsonPath;
     gJob.totalTicks = totalTicks;
     gJob.capturedTicks = 0;
+    gJob.exportTick = 0.0f;
     gJob.capWidth = captureW;
     gJob.capHeight = captureH;
     gJob.outputWidth = renderWidth;

@@ -8,6 +8,14 @@ import subprocess
 import sys
 import os
 import datetime
+import time
+
+# Auto-kill running mimita.exe so linker can overwrite it
+kill_result = subprocess.run(
+    ["taskkill", "/f", "/im", "mimita.exe"],
+    capture_output=True, text=True
+)
+time.sleep(0.5)
 
 if __name__ == "__main__":
     start = datetime.datetime.now()
