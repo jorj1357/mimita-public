@@ -232,16 +232,29 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     REPLAY_PLAYER.beginPlayback();
     REPLAY_PLAYER.seekToTick(0);
 
-    // Auto-load editor with keyframes if .rpledit exists
+    // Auto-load editor with keyframes if .rple.json exists
     {
         bool editorLoaded = gReplayEditor.load(jsonPath);
+        printf("[RPLX] currentReplayPath=%s\n", jsonPath.c_str());
         if (editorLoaded) {
-            // Set total ticks from replay header so editor knows the duration
-            printf("[RPLX] Editor loaded: %s\n", gReplayEditor.editPath().c_str());
-            printf("[RPLX] Camera keyframes: %d\n", gReplayEditor.cameraKeyframeCount());
-            Debug::log(Debug::Category::Replay,
-                "[EXPORT] Editor auto-loaded: %d camera keyframes\n",
-                gReplayEditor.cameraKeyframeCount());
+            auto& ed = gReplayEditor;
+            printf("[RPLX] editorProjectPath=%s\n", ed.editPath().c_str());
+            printf("[RPLX] hasActiveReplayEditor=1\n");
+            printf("[RPLX] loadedKeyframes campos=%d cammode=%d pbspeed=%d\n",
+                   ed.cameraKeyframeCount(), ed.cameraModeKeyframeCount(),
+                   ed.timeKeyframeCount());
+
+            // Force freecam mode if camera keyframes exist so export uses editor camera path
+            if (ed.cameraKeyframeCount() > 0) {
+                ed.freecam = true;
+                REPLAY_PLAYER.cameraController().setMode("freecam");
+                printf("[RPLX] exportUsesReplayEditorCamera=1\n");
+            } else {
+                printf("[RPLX] exportUsesReplayEditorCamera=0 reason=no_camera_keyframes\n");
+            }
+        } else {
+            printf("[RPLX] hasActiveReplayEditor=0\n");
+            printf("[RPLX] exportUsesReplayEditorCamera=0 reason=no_editor_project\n");
         }
     }
 

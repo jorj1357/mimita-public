@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
@@ -37,11 +39,92 @@ static glm::quat eulerToQuat(float yawDeg, float pitchDeg) {
 void registerReplayEditorCommands() {
     auto& t = Terminal::instance();
 
-    // ── rple: load newest replay into editor ─────────────
+    // ── rple: load newest replay or resume session ───────
     t.registerCommand({
         "rple",
-        "Load the newest replay into the editor and start playback",
+        "Load the newest replay into the editor (or resume session if one exists)",
         "rple",
+        [](const std::vector<std::string>&) {
+            auto clips = listReplayClips();
+
+            if (ReplayEditor::hasSession() && !clips.empty()) {
+                Terminal::instance().addLog("Replay editor session found.");
+                Terminal::instance().addLog("  rpleresume   Resume previous session");
+                Terminal::instance().addLog("  rplelatest   Load newest replay");
+                Terminal::instance().addLog("  rpleclose    Clear session");
+                return;
+            }
+
+            if (clips.empty()) {
+                Terminal::instance().addLog("[ERROR] No replays found");
+                return;
+            }
+            Terminal::instance().execute("rplelatest");
+        }
+    });
+
+    // ── rpleresume: resume previous session ──────────────
+    t.registerCommand({
+        "rpleresume",
+        "Resume the last replay editor session",
+        "rpleresume",
+        [](const std::vector<std::string>&) {
+            if (!ReplayEditor::hasSession()) {
+                Terminal::instance().addLog("[ERROR] No editor session found");
+                return;
+            }
+            std::string path;
+            {
+                std::ifstream f(ReplayEditor::sessionPath());
+                if (!f.is_open()) {
+                    Terminal::instance().addLog("[ERROR] Cannot read session file");
+                    return;
+                }
+                nlohmann::json j;
+                try { f >> j; } catch (...) { Terminal::instance().addLog("[ERROR] Corrupt session file"); return; }
+                path = j.value("lastReplay", "");
+                if (path.empty()) {
+                    Terminal::instance().addLog("[ERROR] Session has no replay path");
+                    return;
+                }
+            }
+
+            if (!std::filesystem::exists(path)) {
+                Terminal::instance().addLog("[ERROR] Replay file no longer exists: " + path);
+                return;
+            }
+
+            if (!REPLAY_PLAYER.loadFromJSON(path)) {
+                Terminal::instance().addLog("[ERROR] Failed to load replay: " + path);
+                return;
+            }
+            REPLAY_PLAYER.preloadAssets();
+            REPLAY_PLAYER.beginPlayback();
+            GAME_STATE = GAME_PLAYING;
+
+            if (!E.load(path)) {
+                Terminal::instance().addLog("[ERROR] Failed to load editor: " + path);
+                return;
+            }
+
+            // Override editor state from session
+            E.loadSession();
+            REPLAY_PLAYER.seekToTick((int)E.movieTick);
+
+            if (E.freecam)
+                REPLAY_PLAYER.cameraController().setMode("freecam");
+
+            Terminal::instance().addLog("[RPLE] Resumed session: " + path);
+            Terminal::instance().addLog(std::string("  Tick: ") + std::to_string((int)E.movieTick));
+            Terminal::instance().addLog(std::string("  Paused: ") + (E.playing ? "no" : "yes"));
+        }
+    });
+
+    // ── rplelatest: load newest replay ───────────────────
+    t.registerCommand({
+        "rplelatest",
+        "Load the newest replay into the editor",
+        "rplelatest",
         [](const std::vector<std::string>&) {
             auto clips = listReplayClips();
             if (clips.empty()) {
@@ -74,6 +157,18 @@ void registerReplayEditorCommands() {
                 "  K           Create keyframe\n"
                 "Type rplehelp for complete walkthrough.");
             Debug::log(Debug::Category::Replay, "[RPLE] Editor loaded: %s\n", path.c_str());
+        }
+    });
+
+    // ── rpleclose: clear session state ───────────────────
+    t.registerCommand({
+        "rpleclose",
+        "Clear the replay editor session file",
+        "rpleclose",
+        [](const std::vector<std::string>&) {
+            std::error_code ec;
+            std::filesystem::remove(ReplayEditor::sessionPath(), ec);
+            Terminal::instance().addLog("[RPLE] Session cleared");
         }
     });
 
@@ -1141,6 +1236,79 @@ void registerReplayEditorCommands() {
                 cameraMode, asCount,
                 gReplayEditor.editPath().c_str());
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    // ── rplekf_sa: select all keyframes by type ──────────
+    t.registerCommand({
+        "rplekf_sa",
+        "Select all keyframes: 1=cammode 2=campos 3=pbspeed 4=all",
+        "rplekf_sa <1|2|3|4>",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rplekf_sa"); return; }
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: rplekf_sa <1|2|3|4>");
+                Terminal::instance().addLog("  1 = select all cammode");
+                Terminal::instance().addLog("  2 = select all campos");
+                Terminal::instance().addLog("  3 = select all pbspeed");
+                Terminal::instance().addLog("  4 = select all keyframes");
+                return;
+            }
+            int type = std::stoi(args[0]);
+            KeyframeFilter filter;
+            const char* label;
+            switch (type) {
+                case 1: filter = KeyframeFilter::Cammode; label = "camera mode"; break;
+                case 2: filter = KeyframeFilter::Campos;  label = "camera position"; break;
+                case 3: filter = KeyframeFilter::Pbspeed; label = "playback speed"; break;
+                case 4: filter = KeyframeFilter::All;     label = "all"; break;
+                default:
+                    Terminal::instance().addLog("[ERROR] Invalid type. Use 1-4.");
+                    return;
+            }
+            E.selectAll(filter);
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "[RPLE] Selected %d %s keyframes", E.selectedCount(), label);
+            Terminal::instance().addLog(buf);
+        }
+    });
+
+    // ── rplekf_sd: deselect all keyframes ────────────────
+    t.registerCommand({
+        "rplekf_sd",
+        "Deselect all keyframes",
+        "rplekf_sd",
+        [](const std::vector<std::string>&) {
+            if (!E.isLoaded()) { requireEditor("rplekf_sd"); return; }
+            E.clearSelection();
+            Terminal::instance().addLog("[RPLE] Selection cleared");
+        }
+    });
+
+    // ── rplekf_si: set interpolation on selected keyframes
+    t.registerCommand({
+        "rplekf_si",
+        "Set interpolation mode on selected keyframes. Shows prompt if no arg.",
+        "rplekf_si [linear|easein|easeout|easeinout|smooth|cut|bezier|exponential]",
+        [](const std::vector<std::string>& args) {
+            if (!E.isLoaded()) { requireEditor("rplekf_si"); return; }
+            if (!E.hasSelection()) {
+                Terminal::instance().addLog("[ERROR] No keyframes selected. Use rplekf_sa first.");
+                return;
+            }
+            if (args.empty()) {
+                char buf[256];
+                std::snprintf(buf, sizeof(buf), "[RPLE] %d keyframes selected. Set interpolation with: rplekf_si <linear|easein|easeout|easeinout|smooth|cut|bezier|exponential>", E.selectedCount());
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            KeyframeInterp mode = interpFromString(args[0]);
+            if (E.setInterpOnSelected(mode)) {
+                E.autosave();
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "[RPLE] Set %d selected keyframes to %s", E.selectedCount(), interpName(mode));
+                Terminal::instance().addLog(buf);
+            }
         }
     });
 

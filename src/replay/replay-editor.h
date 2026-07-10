@@ -15,17 +15,21 @@ enum class KeyframeInterp {
     EaseOut,
     EaseInOut,
     Smooth,
-    Cut
+    Cut,
+    Bezier,
+    Exponential
 };
 
 inline const char* interpName(KeyframeInterp m) {
     switch (m) {
-        case KeyframeInterp::Linear: return "linear";
-        case KeyframeInterp::EaseIn: return "easein";
-        case KeyframeInterp::EaseOut: return "easeout";
-        case KeyframeInterp::EaseInOut: return "easeinout";
-        case KeyframeInterp::Smooth: return "smooth";
-        case KeyframeInterp::Cut: return "cut";
+        case KeyframeInterp::Linear:      return "linear";
+        case KeyframeInterp::EaseIn:      return "easein";
+        case KeyframeInterp::EaseOut:     return "easeout";
+        case KeyframeInterp::EaseInOut:   return "easeinout";
+        case KeyframeInterp::Smooth:      return "smooth";
+        case KeyframeInterp::Cut:         return "cut";
+        case KeyframeInterp::Bezier:      return "bezier";
+        case KeyframeInterp::Exponential: return "exponential";
         default: return "linear";
     }
 }
@@ -36,6 +40,8 @@ inline KeyframeInterp interpFromString(const std::string& s) {
     if (s == "easeinout") return KeyframeInterp::EaseInOut;
     if (s == "smooth") return KeyframeInterp::Smooth;
     if (s == "cut") return KeyframeInterp::Cut;
+    if (s == "bezier") return KeyframeInterp::Bezier;
+    if (s == "exponential") return KeyframeInterp::Exponential;
     return KeyframeInterp::Linear;
 }
 
@@ -86,6 +92,15 @@ enum class KeyframeType {
     CameraPosition,
     CameraMode,
     PlaybackSpeed
+};
+
+// ── Keyframe filter for selection commands ─────────────────
+
+enum class KeyframeFilter {
+    Campos,
+    Cammode,
+    Pbspeed,
+    All
 };
 
 // ── Time (playback speed) keyframe ──────────────────────────
@@ -196,6 +211,12 @@ public:
     bool saveEdit();
     bool loadEdit();
 
+    // ── Session persistence ─────────────────────────────
+    static std::string sessionPath();
+    static bool hasSession();
+    bool saveSession();
+    bool loadSession();
+
     // ── Autosave / Undo ─────────────────────────────────
     void autosave();
     bool undoLastAutosave();
@@ -216,6 +237,16 @@ public:
     int nextKeyframeTick(int currentTick) const;
     int prevKeyframeTick(int currentTick) const;
 
+    // ── Keyframe selection ──────────────────────────────
+    void selectAll(KeyframeFilter filter);
+    void clearSelection();
+    bool hasSelection() const { return !mSelectedCamPos.empty() || !mSelectedCamMode.empty() || !mSelectedTime.empty(); }
+    int selectedCount() const { return (int)(mSelectedCamPos.size() + mSelectedCamMode.size() + mSelectedTime.size()); }
+    const std::vector<int>& selectedCamPos() const { return mSelectedCamPos; }
+    const std::vector<int>& selectedCamMode() const { return mSelectedCamMode; }
+    const std::vector<int>& selectedTime() const { return mSelectedTime; }
+    bool setInterpOnSelected(KeyframeInterp interp);
+
     // ── Easing (public so engine-tick-camera.cpp can use it) ─
     static float applyEasing(float t, KeyframeInterp interp);
 
@@ -231,6 +262,10 @@ private:
     std::vector<ReplayEditorTimeKeyframe> mTimeKeyframes;
     std::vector<ReplayEditorBookmark> mBookmarks;
     std::vector<ReplayEditorAudioTrack> mAudioTracks;
+
+    std::vector<int> mSelectedCamPos;
+    std::vector<int> mSelectedCamMode;
+    std::vector<int> mSelectedTime;
 
     double mAutosaveTimer = 0.0;
     static constexpr double AUTOSAVE_INTERVAL = 30.0;

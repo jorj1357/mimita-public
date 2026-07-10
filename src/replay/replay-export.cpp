@@ -10,6 +10,7 @@
 #include <glad/glad.h>
 
 #include "replay/replay.h"
+#include "replay/replay-editor.h"
 #include "replay/replay-export.h"
 #include "video/outro.h"
 #include "debug/debug-log.h"
@@ -79,6 +80,21 @@ void updateReplayExport()
         printf("[RPLX] tick rate: 60\n");
         printf("[RPLX] total ticks: %u\n", gJob.totalTicks);
         printf("[RPLX] expected frames: %u\n", gJob.totalTicks);
+
+        if (gReplayEditor.isLoaded()) {
+            auto& ed = gReplayEditor;
+            printf("[RPLX] hasActiveReplayEditor=1\n");
+            printf("[RPLX] hasUnsavedEditorChanges=0\n");
+            printf("[RPLX] loadedKeyframes campos=%d cammode=%d pbspeed=%d\n",
+                   ed.cameraKeyframeCount(), ed.cameraModeKeyframeCount(),
+                   ed.timeKeyframeCount());
+            printf("[RPLX] exportUsesReplayEditorCamera=%d\n",
+                   ed.cameraKeyframeCount() > 0 ? 1 : 0);
+        } else {
+            printf("[RPLX] hasActiveReplayEditor=0\n");
+            printf("[RPLX] exportUsesReplayEditorCamera=0\n");
+        }
+
         RPLXDEBUG("====================\n");
         RPLXDEBUG("LISTENER / CAMERA\n");
         RPLXDEBUG("====================\n\n");
