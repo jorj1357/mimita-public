@@ -221,6 +221,7 @@ void engineTickCamera(Engine& engine, float dt)
         }
 
         // Shift+Up/Down: keyframe navigation
+        // IMPORTANT: must never change playback state.
         if (gReplayEditor.keyframePromptStage == 0 &&
             (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
              glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)) {
@@ -229,12 +230,14 @@ void engineTickCamera(Engine& engine, float dt)
             bool downDown = glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS;
 
             if (upDown && !upWasDown) {
+                bool wasPlaying = gReplayEditor.playing;
                 int tick = (int)gReplayEditor.movieTick;
                 int next = gReplayEditor.nextKeyframeTick(tick);
                 if (next >= 0) {
                     gReplayEditor.seekToTick(next);
                     if (REPLAY_PLAYER.totalTicks() > 0)
                         REPLAY_PLAYER.seekToTick(next);
+                    gReplayEditor.playing = wasPlaying;
                     int kfIdx = gReplayEditor.findNearestCameraKeyframe(next);
                     char buf[128];
                     std::snprintf(buf, sizeof(buf),
@@ -255,12 +258,14 @@ void engineTickCamera(Engine& engine, float dt)
                 }
             }
             if (downDown && !downWasDown) {
+                bool wasPlaying = gReplayEditor.playing;
                 int tick = (int)gReplayEditor.movieTick;
                 int prev = gReplayEditor.prevKeyframeTick(tick);
                 if (prev >= 0) {
                     gReplayEditor.seekToTick(prev);
                     if (REPLAY_PLAYER.totalTicks() > 0)
                         REPLAY_PLAYER.seekToTick(prev);
+                    gReplayEditor.playing = wasPlaying;
                     int kfIdx = gReplayEditor.findNearestCameraKeyframe(prev);
                     char buf[128];
                     std::snprintf(buf, sizeof(buf),
@@ -452,6 +457,15 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.roll = glm::mix(kfA.roll, kfB.roll, st);
                 camera.updateVectors();
 
+                if (isReplayExportActive()) {
+                    printf("[RPLX CAM] tick=%.0f mode=FREECAM segment=KF%d->KF%d alpha=%.3f"
+                           " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
+                           currentTick, prevKf, nextKf, st,
+                           camera.pos.x, camera.pos.y, camera.pos.z,
+                           camera.front.x, camera.front.y, camera.front.z,
+                           camera.fov, camera.roll);
+                }
+
                 Debug::log(Debug::Category::Replay,
                     "[RPLE KF APPLY] tick=%.0f interp=%s KF%d->KF%d alpha=%.3f"
                     " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
@@ -473,6 +487,15 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.roll = kf.roll;
                 camera.updateVectors();
 
+                if (isReplayExportActive()) {
+                    printf("[RPLX CAM] tick=%.0f mode=FREECAM after-last-KF"
+                           " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
+                           currentTick,
+                           camera.pos.x, camera.pos.y, camera.pos.z,
+                           camera.front.x, camera.front.y, camera.front.z,
+                           camera.fov, camera.roll);
+                }
+
                 Debug::log(Debug::Category::Replay,
                     "[RPLE KF APPLY] tick=%.0f HOLD KF%d"
                     " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
@@ -492,11 +515,29 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.roll = kf.roll;
                 camera.updateVectors();
 
+                if (isReplayExportActive()) {
+                    printf("[RPLX CAM] tick=%.0f mode=FREECAM before-first-KF"
+                           " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f roll=%.1f\n",
+                           currentTick,
+                           camera.pos.x, camera.pos.y, camera.pos.z,
+                           camera.front.x, camera.front.y, camera.front.z,
+                           camera.fov, camera.roll);
+                }
+
                 Debug::log(Debug::Category::Replay,
                     "[RPLE KF APPLY] tick=%.0f BEFORE first KF (tick=%d) — holding first KF\n",
                     currentTick, kf.tick);
             }
         } else if (gReplayEditor.isLoaded()) {
+            if (isReplayExportActive()) {
+                printf("[RPLX CAM] tick=%u usingDefaultThirdPersonCamera=1"
+                       " reason=no_editor_keyframes"
+                       " pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f) fov=%.0f\n",
+                       gReplayPlayer.currentTick(),
+                       camera.pos.x, camera.pos.y, camera.pos.z,
+                       camera.front.x, camera.front.y, camera.front.z,
+                       camera.fov);
+            }
             Debug::log(Debug::Category::Replay,
                 "[RPLE CAM FINAL] tick=%u pos=(%.1f %.1f %.1f) look=(%.3f %.3f %.3f)"
                 " fov=%.0f roll=%.1f source=%s\n",

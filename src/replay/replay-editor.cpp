@@ -21,12 +21,14 @@ ReplayEditor gReplayEditor;
 
 float ReplayEditor::applyEasing(float t, KeyframeInterp interp) {
     switch (interp) {
-        case KeyframeInterp::Linear:    return t;
-        case KeyframeInterp::EaseIn:    return t * t;
-        case KeyframeInterp::EaseOut:   return t * (2.0f - t);
-        case KeyframeInterp::EaseInOut: return t < 0.5f ? 2.0f * t * t : -1.0f + (4.0f - 2.0f * t) * t;
-        case KeyframeInterp::Smooth:    return t * t * (3.0f - 2.0f * t);
-        case KeyframeInterp::Cut:       return 0.0f;
+        case KeyframeInterp::Linear:      return t;
+        case KeyframeInterp::EaseIn:      return t * t;
+        case KeyframeInterp::EaseOut:     return t * (2.0f - t);
+        case KeyframeInterp::EaseInOut:   return t < 0.5f ? 2.0f * t * t : -1.0f + (4.0f - 2.0f * t) * t;
+        case KeyframeInterp::Smooth:      return t * t * (3.0f - 2.0f * t);
+        case KeyframeInterp::Cut:         return 0.0f;
+        case KeyframeInterp::Bezier:      return t * t * (3.0f - 2.0f * t);
+        case KeyframeInterp::Exponential: return t * t * t * t;
         default: return t;
     }
 }
@@ -75,11 +77,13 @@ bool ReplayEditor::load(const std::string& replayPath) {
 
     Debug::log(Debug::Category::Replay, "[RPLE] Loaded replay: %s (ticks=%d)\n",
                replayPath.c_str(), mTotalTicks);
+    saveSession();
     return true;
 }
 
 void ReplayEditor::unload() {
     stopReplayMusicPreview();
+    saveSession();
     mLoaded = false;
     mReplayPath.clear();
     mEditPath.clear();
@@ -98,6 +102,9 @@ void ReplayEditor::unload() {
     mAudioTracks.clear();
     mAutosaves.clear();
     mAutosaveTimer = 0.0;
+    mSelectedCamPos.clear();
+    mSelectedCamMode.clear();
+    mSelectedTime.clear();
 }
 
 double ReplayEditor::durationSec() const {
@@ -521,6 +528,63 @@ bool ReplayEditor::loadEdit() {
     return true;
 }
 
+// ── Session persistence ─────────────────────────────────────
+
+std::string ReplayEditor::sessionPath() {
+    return "replays/replay_editor_session.json";
+}
+
+bool ReplayEditor::hasSession() {
+    return std::filesystem::exists(sessionPath());
+}
+
+bool ReplayEditor::saveSession() {
+    nlohmann::json j;
+    j["lastReplay"] = mReplayPath;
+    j["lastProject"] = mEditPath;
+    j["tick"] = (int)movieTick;
+    j["paused"] = !playing;
+    j["freecam"] = freecam;
+    if (freecam) {
+        j["freecamPos"] = vec3Json(freecamPos);
+        j["freecamRot"] = {freecamRot.x, freecamRot.y, freecamRot.z, freecamRot.w};
+        j["freecamRoll"] = freecamRoll;
+        j["freecamFov"] = freecamFov;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories("replays", ec);
+    std::ofstream f(sessionPath());
+    if (!f.is_open()) return false;
+    f << j.dump(2);
+    f.close();
+    return true;
+}
+
+bool ReplayEditor::loadSession() {
+    std::ifstream f(sessionPath());
+    if (!f.is_open()) return false;
+    nlohmann::json j;
+    try { f >> j; } catch (...) { f.close(); return false; }
+    f.close();
+
+    if (j.contains("lastReplay"))
+        mReplayPath = j["lastReplay"].get<std::string>();
+    if (j.contains("lastProject"))
+        mEditPath = j["lastProject"].get<std::string>();
+    movieTick = (float)j.value("tick", 0);
+    playing = !j.value("paused", true);
+    freecam = j.value("freecam", false);
+    if (freecam) {
+        if (j.contains("freecamPos")) freecamPos = jsonVec3(j["freecamPos"]);
+        if (j.contains("freecamRot") && j["freecamRot"].is_array() && j["freecamRot"].size() == 4)
+            freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+        freecamRoll = j.value("freecamRoll", 0.0f);
+        freecamFov = j.value("freecamFov", 70.0f);
+    }
+    return true;
+}
+
 // ── Autosave / Undo ─────────────────────────────────────────
 
 void ReplayEditor::autosave() {
@@ -623,6 +687,7 @@ void ReplayEditor::autosave() {
 
     Debug::log(Debug::Category::Replay, "[RPLE] Autosave: %s (total=%zu)\n",
                asPath.c_str(), mAutosaves.size());
+    saveSession();
 }
 
 bool ReplayEditor::undoLastAutosave() {
@@ -721,6 +786,62 @@ void ReplayEditor::clearAutosaves() {
     Debug::log(Debug::Category::Replay, "[RPLE] Cleared %zu autosaves\n", mAutosaves.size());
 }
 
+// ── Keyframe selection ──────────────────────────────────────
+
+void ReplayEditor::selectAll(KeyframeFilter filter) {
+    mSelectedCamPos.clear();
+    mSelectedCamMode.clear();
+    mSelectedTime.clear();
+    switch (filter) {
+        case KeyframeFilter::Campos:
+            for (int i = 0; i < (int)mCameraKeyframes.size(); ++i)
+                mSelectedCamPos.push_back(i);
+            break;
+        case KeyframeFilter::Cammode:
+            for (int i = 0; i < (int)mCameraModeKeyframes.size(); ++i)
+                mSelectedCamMode.push_back(i);
+            break;
+        case KeyframeFilter::Pbspeed:
+            for (int i = 0; i < (int)mTimeKeyframes.size(); ++i)
+                mSelectedTime.push_back(i);
+            break;
+        case KeyframeFilter::All:
+            for (int i = 0; i < (int)mCameraKeyframes.size(); ++i)
+                mSelectedCamPos.push_back(i);
+            for (int i = 0; i < (int)mCameraModeKeyframes.size(); ++i)
+                mSelectedCamMode.push_back(i);
+            for (int i = 0; i < (int)mTimeKeyframes.size(); ++i)
+                mSelectedTime.push_back(i);
+            break;
+    }
+}
+
+void ReplayEditor::clearSelection() {
+    mSelectedCamPos.clear();
+    mSelectedCamMode.clear();
+    mSelectedTime.clear();
+}
+
+bool ReplayEditor::setInterpOnSelected(KeyframeInterp interp) {
+    int count = 0;
+    for (int idx : mSelectedCamPos) {
+        if (idx >= 0 && idx < (int)mCameraKeyframes.size()) {
+            mCameraKeyframes[idx].interp = interp;
+            count++;
+        }
+    }
+    for (int idx : mSelectedCamMode) {
+        (void)idx;
+    }
+    for (int idx : mSelectedTime) {
+        if (idx >= 0 && idx < (int)mTimeKeyframes.size()) {
+            mTimeKeyframes[idx].interp = interp;
+            count++;
+        }
+    }
+    return count > 0;
+}
+
 // ── Update ──────────────────────────────────────────────────
 
 void ReplayEditor::update(float dt) {
@@ -765,4 +886,5 @@ void ReplayEditor::seekToTick(int tick) {
             pauseReplayMusicPreview();
         Debug::log(Debug::Category::Replay, "[RPLE AUDIO] seek sync: tick=%d sec=%.2f\n", tick, sec);
     }
+    saveSession();
 }
