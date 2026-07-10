@@ -125,6 +125,17 @@ struct ReplayEditorAutosave {
     double timestamp = 0.0;
 };
 
+// ── Music track for replay editor timeline ──────────────────
+
+struct ReplayEditorMusic {
+    std::string path;
+    double offsetSeconds = 0.0;
+    double cropStartSeconds = 0.0;
+    double cropEndSeconds = 0.0;
+    double speedMultiplier = 1.0;
+    double volume = 1.0;
+};
+
 // ── Audio track for replay editor timeline ──────────────────
 
 struct ReplayEditorAudioTrack {
@@ -200,6 +211,11 @@ public:
     int bookmarkCount() const { return (int)mBookmarks.size(); }
     const ReplayEditorBookmark& bookmark(int index) const;
 
+    // ── Music track ─────────────────────────────────────
+    const ReplayEditorMusic& music() const { return mMusic; }
+    ReplayEditorMusic* mutableMusic() { return &mMusic; }
+    void setMusic(const ReplayEditorMusic& music) { mMusic = music; }
+
     // ── Audio tracks ────────────────────────────────────
     void setAudioTrack(const std::string& path, float volume = 1.0f);
     void clearAudioTracks();
@@ -227,8 +243,14 @@ public:
     void seekToTick(int tick);
 
     // ── Keyframe prompt state (K dialog) ─────────────────
-    int keyframePromptStage = 0;     // 0=none, 1=type, 2=camera-mode
+    int keyframePromptStage = 0;     // 0=none, 1=type, 2=camera-mode, 3=pbspeed-value
     int keyframePromptTick = 0;      // tick when K was pressed
+    char pbspeedInputBuf[16] = {};   // user-entered speed string
+    int pbspeedInputLen = 0;         // current length of input
+
+    // ── Music offset interactive state ──────────────────
+    int musicOffsetStage = 0;        // 0=none, 1=previewing, 2=awaiting_keep
+    double musicOffsetPreview = 0.0; // offset being previewed
 
     // ── Autosave info ──────────────────────────────────
     int autosaveCount() const { return (int)mAutosaves.size(); }
@@ -262,6 +284,7 @@ private:
     std::vector<ReplayEditorTimeKeyframe> mTimeKeyframes;
     std::vector<ReplayEditorBookmark> mBookmarks;
     std::vector<ReplayEditorAudioTrack> mAudioTracks;
+    ReplayEditorMusic mMusic;
 
     std::vector<int> mSelectedCamPos;
     std::vector<int> mSelectedCamMode;

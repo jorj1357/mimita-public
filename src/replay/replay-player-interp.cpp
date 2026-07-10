@@ -71,9 +71,19 @@ void ReplayPlayer::update(float dt)
     if (gReplayEditor.isLoaded() && gReplayEditor.totalTicks() > 0) {
         effectiveTimescale = gReplayEditor.playbackSpeedAtTick((int)std::floor(mPlaybackTick));
     }
-    mPlaybackTick += dt * (float)std::max(mHeader.tickRate, 1u) * effectiveTimescale;
+    float tickAdvance = dt * (float)std::max(mHeader.tickRate, 1u) * effectiveTimescale;
+    mPlaybackTick += tickAdvance;
+
     {   static float logTimer = 0.0f; logTimer -= dt;
         if (logTimer <= 0.0f) { logTimer = 1.0f;
+            Debug::log(Debug::Category::Replay,
+                "[ReplayPB] Replay delta: real_dt=%.4f speed=%.2f tick_advance=%.2f\n",
+                dt, effectiveTimescale, tickAdvance);
+        }
+    }
+
+    {   static float logTimer2 = 0.0f; logTimer2 -= dt;
+        if (logTimer2 <= 0.0f) { logTimer2 = 1.0f;
             auto* frame = currentSceneFrame();
             printf("[REPLAY] time=%.2f tick=%.1f frame=%d cameraPos=(%.1f %.1f %.1f) actorCount=%zu sceneFrames=%zu\n",
                    mPlaybackTick / (float)std::max(mHeader.tickRate, 1u),

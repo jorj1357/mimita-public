@@ -130,29 +130,48 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
     bool musicIncluded = false;
     std::string musicPath;
     float musicVolume = 1.0f;
-    if (gReplayEditor.isLoaded() && gReplayEditor.audioTrackCount() > 0 &&
-        gReplayEditor.audioTrack(0).enabled) {
-        musicPath = gReplayEditor.audioTrack(0).path;
-        musicVolume = gReplayEditor.audioTrack(0).volume;
+    double musicOffset = 0.0, musicCropStart = 0.0, musicCropEnd = 0.0;
+    double musicSpeedMul = 1.0;
+    if (gReplayEditor.isLoaded()) {
+        const auto& music = gReplayEditor.music();
+        musicPath = music.path;
+        musicOffset = music.offsetSeconds;
+        musicCropStart = music.cropStartSeconds;
+        musicCropEnd = music.cropEndSeconds;
+        musicSpeedMul = music.speedMultiplier;
+        // Fall back to legacy audio track if new music path is empty
+        if (musicPath.empty() && gReplayEditor.audioTrackCount() > 0 &&
+            gReplayEditor.audioTrack(0).enabled) {
+            musicPath = gReplayEditor.audioTrack(0).path;
+            musicVolume = gReplayEditor.audioTrack(0).volume;
+        }
         if (!musicPath.empty() && std::filesystem::exists(musicPath)) {
             printf("[RPLX AUDIO] Loading editor music track: %s\n", musicPath.c_str());
             std::vector<int16_t> musicPCM;
             uint32_t musicRate = 0, musicCh = 0;
             if (decodeAudioToPCM(musicPath, musicPCM, musicRate, musicCh, sampleRate, numChannels)) {
                 size_t musicFrames = musicPCM.size() / numChannels;
-                size_t mixFrames = std::min(totalFrames, musicFrames);
-                for (size_t i = 0; i < mixFrames; ++i) {
-                    float sL = (float)musicPCM[i * 2 + 0] / 32768.0f * musicVolume;
-                    float sR = (float)musicPCM[i * 2 + 1] / 32768.0f * musicVolume;
-                    mix[i * 2 + 0] += sL;
-                    mix[i * 2 + 1] += sR;
+                size_t cropEndFrame = musicCropEnd > 0.0
+                    ? (size_t)(musicCropEnd * (double)sampleRate)
+                    : musicFrames;
+                // Sample-accurate mixing with offset + crop + speed
+                for (size_t tick = 0; tick < totalTicks; ++tick) {
+                    double songTime = musicOffset + musicCropStart
+                                    + ((double)tick / tickRate) * musicSpeedMul;
+                    size_t frame = (size_t)(songTime * (double)sampleRate);
+                    if (frame >= cropEndFrame || frame >= musicFrames) break;
+                    float sL = (float)musicPCM[frame * 2 + 0] / 32768.0f * musicVolume;
+                    float sR = (float)musicPCM[frame * 2 + 1] / 32768.0f * musicVolume;
+                    mix[tick * 2 + 0] += sL;
+                    mix[tick * 2 + 1] += sR;
                 }
                 musicIncluded = true;
-                printf("[RPLX AUDIO] Music track mixed: %zu frames at %.1f sec\n",
-                       musicFrames, (double)musicFrames / sampleRate);
+                printf("[RPLX AUDIO] Music track mixed: %zu frames at %.1f sec (offset=%.1f crop=%.1f-%.1f speed=%.2f)\n",
+                       musicFrames, (double)musicFrames / sampleRate,
+                       musicOffset, musicCropStart, musicCropEnd, musicSpeedMul);
                 Debug::log(Debug::Category::Replay,
-                    "[EXPORT] Music track included: %s (frames=%zu rate=%u)\n",
-                    musicPath.c_str(), musicFrames, musicRate);
+                    "[ReplayExportMusic] source=%s offset=%.1f crop=%.1f-%.1f speed=%.2f\n",
+                    musicPath.c_str(), musicOffset, musicCropStart, musicCropEnd, musicSpeedMul);
             } else {
                 printf("[RPLX AUDIO WARN] Failed to decode music track: %s\n", musicPath.c_str());
                 Debug::log(Debug::Category::Replay,

@@ -64,13 +64,27 @@ bool ReplayEditor::load(const std::string& replayPath) {
 
     loadEdit();
 
-    // Start music preview if audio track exists
-    if (!mAudioTracks.empty() && mAudioTracks[0].enabled && !mAudioTracks[0].path.empty()) {
-        Debug::log(Debug::Category::Replay, "[RPLE AUDIO] Auto-starting preview: %s\n",
-                   mAudioTracks[0].path.c_str());
-        if (playReplayMusicPreview(mAudioTracks[0].path, mAudioTracks[0].volume)) {
-            seekReplayMusicPreview(0.0f);
-            // Pause preview until user starts playback
+    // Ensure default tick 0 pbspeed keyframe (same philosophy as default cammode)
+    if (mTimeKeyframes.empty() || mTimeKeyframes.front().tick > 0) {
+        ReplayEditorTimeKeyframe def;
+        def.tick = 0;
+        def.speed = 1.0f;
+        def.interp = KeyframeInterp::Linear;
+        mTimeKeyframes.push_back(def);
+        std::sort(mTimeKeyframes.begin(), mTimeKeyframes.end(),
+            [](const auto& a, const auto& b) { return a.tick < b.tick; });
+        Debug::log(Debug::Category::Replay, "[ReplayPB] Default keyframe at tick 0 speed=1.0\n");
+    }
+
+    // Start music preview if music path is set
+    if (!mMusic.path.empty()) {
+        Debug::log(Debug::Category::Replay, "[ReplayMusic] Auto-starting preview: %s\n",
+                   mMusic.path.c_str());
+        if (playReplayMusicPreview(mMusic.path, 1.0f)) {
+            double musicTime = mMusic.offsetSeconds + mMusic.cropStartSeconds;
+            seekReplayMusicPreview((float)musicTime);
+            setReplayMusicPreviewSpeed((float)mMusic.speedMultiplier);
+            setReplayMusicPreviewVolume((float)mMusic.volume);
             pauseReplayMusicPreview();
         }
     }
@@ -95,11 +109,16 @@ void ReplayEditor::unload() {
     freecam = false;
     keyframePromptStage = 0;
     keyframePromptTick = 0;
+    pbspeedInputBuf[0] = '\0';
+    pbspeedInputLen = 0;
     mCameraKeyframes.clear();
     mCameraModeKeyframes.clear();
     mTimeKeyframes.clear();
     mBookmarks.clear();
     mAudioTracks.clear();
+    mMusic = ReplayEditorMusic();
+    musicOffsetStage = 0;
+    musicOffsetPreview = 0.0;
     mAutosaves.clear();
     mAutosaveTimer = 0.0;
     mSelectedCamPos.clear();
@@ -238,12 +257,12 @@ ReplayEditorCamMode ReplayEditor::cameraModeAtTick(int tick) const {
 void ReplayEditor::addTimeKeyframe(int tick, float speed, KeyframeInterp interp) {
     ReplayEditorTimeKeyframe kf;
     kf.tick = tick;
-    kf.speed = std::max(0.01f, speed);
+    kf.speed = std::clamp(speed, 0.01f, 100.0f);
     kf.interp = interp;
     mTimeKeyframes.push_back(kf);
     std::sort(mTimeKeyframes.begin(), mTimeKeyframes.end(),
         [](const auto& a, const auto& b) { return a.tick < b.tick; });
-    Debug::log(Debug::Category::Replay, "[RPLE] Time keyframe at tick %d = %.2fx\n", tick, speed);
+    Debug::log(Debug::Category::Replay, "[ReplayPB] Added keyframe tick=%d speed=%.2f\n", tick, speed);
     autosave();
 }
 
@@ -266,19 +285,18 @@ const ReplayEditorTimeKeyframe& ReplayEditor::timeKeyframe(int index) const {
 }
 
 float ReplayEditor::playbackSpeedAtTick(int tick) const {
+    // Hold behavior: most recent keyframe at or before tick wins.
+    // Same as cameraModeAtTick(). No interpolation.
     if (mTimeKeyframes.empty()) return 1.0f;
     int idx = -1;
     for (int i = 0; i < (int)mTimeKeyframes.size(); ++i) {
         if (mTimeKeyframes[i].tick <= tick) idx = i;
     }
     if (idx < 0) return 1.0f;
-    if (idx == (int)mTimeKeyframes.size() - 1) return mTimeKeyframes[idx].speed;
-    const auto& a = mTimeKeyframes[idx];
-    const auto& b = mTimeKeyframes[idx + 1];
-    if (b.tick <= a.tick) return a.speed;
-    float t = (float)(tick - a.tick) / (float)(b.tick - a.tick);
-    return lerpTime(a.speed, b.speed, t, a.interp);
+    return mTimeKeyframes[idx].speed;
 }
+
+
 
 // ── Bookmarks ───────────────────────────────────────────────
 
@@ -424,6 +442,16 @@ bool ReplayEditor::saveEdit() {
         audioArr.push_back(a);
     }
 
+    // Music metadata
+    nlohmann::json music;
+    music["path"] = mMusic.path;
+    music["offset_seconds"] = mMusic.offsetSeconds;
+    music["crop_start_seconds"] = mMusic.cropStartSeconds;
+    music["crop_end_seconds"] = mMusic.cropEndSeconds;
+    music["speed_multiplier"] = mMusic.speedMultiplier;
+    music["volume"] = mMusic.volume;
+    j["music"] = music;
+
     j["freecam"] = freecam;
     j["freecamPos"] = vec3Json(freecamPos);
     j["freecamRot"] = {freecamRot.x, freecamRot.y, freecamRot.z, freecamRot.w};
@@ -512,6 +540,29 @@ bool ReplayEditor::loadEdit() {
             at.enabled = a.value("enabled", true);
             mAudioTracks.push_back(at);
         }
+    }
+
+    // Music metadata (new format, supersedes audio_tracks for music)
+    mMusic = ReplayEditorMusic();
+    if (j.contains("music")) {
+        auto& m = j["music"];
+        mMusic.path = m.value("path", "");
+        mMusic.offsetSeconds = m.value("offset_seconds", 0.0);
+        mMusic.cropStartSeconds = m.value("crop_start_seconds", 0.0);
+        mMusic.cropEndSeconds = m.value("crop_end_seconds", 0.0);
+        mMusic.speedMultiplier = m.value("speed_multiplier", 1.0);
+        mMusic.volume = m.value("volume", 1.0);
+    } else if (!mAudioTracks.empty() && !mAudioTracks[0].path.empty()) {
+        // Backward compat: copy path from legacy audio_tracks, keep defaults
+        mMusic.path = mAudioTracks[0].path;
+        double musicLen = 0.0;
+        if (!mMusic.path.empty()) {
+            std::vector<int16_t> pcm;
+            uint32_t rate = 0, ch = 0;
+            if (decodeAudioToPCM(mMusic.path, pcm, rate, ch, 48000, 2))
+                musicLen = (double)(pcm.size() / ch) / (double)rate;
+        }
+        mMusic.cropEndSeconds = musicLen;
     }
 
     freecam = j.value("freecam", false);
@@ -660,6 +711,16 @@ void ReplayEditor::autosave() {
         audioArr.push_back(a);
     }
 
+    // Music metadata
+    nlohmann::json music;
+    music["path"] = mMusic.path;
+    music["offset_seconds"] = mMusic.offsetSeconds;
+    music["crop_start_seconds"] = mMusic.cropStartSeconds;
+    music["crop_end_seconds"] = mMusic.cropEndSeconds;
+    music["speed_multiplier"] = mMusic.speedMultiplier;
+    music["volume"] = mMusic.volume;
+    j["music"] = music;
+
     j["freecam"] = freecam;
     j["freecamPos"] = vec3Json(freecamPos);
     j["freecamRot"] = {freecamRot.x, freecamRot.y, freecamRot.z, freecamRot.w};
@@ -687,6 +748,7 @@ void ReplayEditor::autosave() {
 
     Debug::log(Debug::Category::Replay, "[RPLE] Autosave: %s (total=%zu)\n",
                asPath.c_str(), mAutosaves.size());
+    saveEdit();
     saveSession();
 }
 
@@ -759,6 +821,18 @@ bool ReplayEditor::undoLastAutosave() {
             bm.label = b.value("label", "Marker");
             mBookmarks.push_back(bm);
         }
+    }
+
+    // Music metadata
+    mMusic = ReplayEditorMusic();
+    if (j.contains("music")) {
+        auto& m = j["music"];
+        mMusic.path = m.value("path", "");
+        mMusic.offsetSeconds = m.value("offset_seconds", 0.0);
+        mMusic.cropStartSeconds = m.value("crop_start_seconds", 0.0);
+        mMusic.cropEndSeconds = m.value("crop_end_seconds", 0.0);
+        mMusic.speedMultiplier = m.value("speed_multiplier", 1.0);
+        mMusic.volume = m.value("volume", 1.0);
     }
 
     freecam = j.value("freecam", false);
@@ -850,6 +924,27 @@ void ReplayEditor::update(float dt) {
     if (playing) {
         float speed = playbackSpeedAtTick((int)movieTick);
         movieTick += dt * (float)mTickRate * speed;
+
+        static int lastLogTick = -1;
+        static float lastLogSpeed = -1.0f;
+        int curTick = (int)movieTick;
+        if (curTick != lastLogTick || std::abs(speed - lastLogSpeed) > 0.001f) {
+            Debug::log(Debug::Category::Replay,
+                "[ReplayPB] Active speed changed: tick=%d old=%.2f new=%.2f\n",
+                curTick, lastLogSpeed, speed);
+            lastLogTick = curTick;
+            lastLogSpeed = speed;
+        }
+
+        static float logTimer = 0.0f;
+        logTimer -= dt;
+        if (logTimer <= 0.0f) {
+            logTimer = 1.0f;
+            Debug::log(Debug::Category::Replay,
+                "[ReplayPB] Replay delta: real_dt=%.4f speed=%.2f tick_advance=%.2f\n",
+                dt, speed, dt * (float)mTickRate * speed);
+        }
+
         if (movieTick >= mTotalTicks && mTotalTicks > 0) {
             movieTick = (float)mTotalTicks;
             // Don't set playing=false — keep editor active so Space toggle,
@@ -858,11 +953,14 @@ void ReplayEditor::update(float dt) {
         }
     }
 
-    // Sync music preview with play/pause state
-    if (!mAudioTracks.empty() && mAudioTracks[0].enabled) {
+    // Sync music preview with play/pause state + speed + volume
+    if (!mMusic.path.empty()) {
+        float finalSpeed = playbackSpeedAtTick((int)movieTick) * (float)mMusic.speedMultiplier;
         if (playing) {
             if (!isReplayMusicPreviewPlaying())
                 resumeReplayMusicPreview();
+            setReplayMusicPreviewSpeed(finalSpeed);
+            setReplayMusicPreviewVolume((float)mMusic.volume);
         } else {
             if (isReplayMusicPreviewPlaying())
                 pauseReplayMusicPreview();
@@ -878,13 +976,15 @@ void ReplayEditor::update(float dt) {
 
 void ReplayEditor::seekToTick(int tick) {
     movieTick = (float)std::clamp(tick, 0, mTotalTicks);
-    // Sync music preview
-    if (!mAudioTracks.empty() && mAudioTracks[0].enabled) {
-        float sec = (float)tick / (float)mTickRate;
-        seekReplayMusicPreview(sec);
+    // Sync music preview with offset + crop + speed
+    if (!mMusic.path.empty()) {
+        float finalSpeed = playbackSpeedAtTick(tick) * (float)mMusic.speedMultiplier;
+        double musicTime = mMusic.offsetSeconds + mMusic.cropStartSeconds
+                         + ((double)tick / (double)mTickRate) * finalSpeed;
+        seekReplayMusicPreview((float)musicTime);
         if (!playing && isReplayMusicPreviewPlaying())
             pauseReplayMusicPreview();
-        Debug::log(Debug::Category::Replay, "[RPLE AUDIO] seek sync: tick=%d sec=%.2f\n", tick, sec);
+        Debug::log(Debug::Category::Replay, "[ReplayMusic] seek: tick=%d music_time=%.2f\n", tick, musicTime);
     }
     saveSession();
 }

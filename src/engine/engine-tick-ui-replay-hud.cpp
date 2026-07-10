@@ -248,8 +248,8 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         GLFWwindow* win = engine.window();
         float fbW = uiScreenW();
         float fbH = uiScreenH();
-        float pw = 360.0f;
-        float ph = 220.0f;
+        float pw = 400.0f;
+        float ph = 280.0f;
 
         // Full-screen dim overlay
         uiDrawRect({0.0f, 0.0f, fbW, fbH}, {0.0f, 0.0f, 0.0f, 0.55f}, "kf-dim");
@@ -304,13 +304,9 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             UIButtonState b3 = uiButton(win, "3  Playback Speed",
                 {textX, by, bw, bh}, {0.2f, 0.25f, 0.35f, 1.0f}, "kf-btn-3");
             if (b3.clicked) {
-                gReplayEditor.addTimeKeyframe(
-                    gReplayEditor.keyframePromptTick, 1.0f,
-                    gReplayEditor.defaultInterp);
-                Terminal::instance().addLog(
-                    "[RPLE] Playback speed keyframe at tick " +
-                    std::to_string(gReplayEditor.keyframePromptTick));
-                gReplayEditor.keyframePromptStage = 0;
+                gReplayEditor.keyframePromptStage = 3;
+                gReplayEditor.pbspeedInputBuf[0] = '\0';
+                gReplayEditor.pbspeedInputLen = 0;
             }
 
             uiDrawText("ESC to cancel", textX, py + ph - 22.0f, 0.26f, {0.5f, 0.5f, 0.6f, 1.0f});
@@ -351,6 +347,48 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             }
 
             uiDrawText("ESC to cancel", textX, py + ph - 22.0f, 0.26f, {0.5f, 0.5f, 0.6f, 1.0f});
+
+        } else if (gReplayEditor.keyframePromptStage == 3) {
+            // Playback speed value input
+            uiDrawText("Playback Speed Keyframe", textX, ty, 0.40f, {1.0f, 1.0f, 0.8f, 1.0f});
+            ty += 34.0f;
+
+            uiDrawText("Enter playback speed multiplier (0.01-100):",
+                textX, ty, 0.28f, {0.8f, 0.8f, 1.0f, 1.0f});
+            ty += 26.0f;
+
+            const char* examples = "Examples:  0.1  0.25  0.5  1  2  5  10";
+            uiDrawText(examples, textX, ty, 0.24f, {0.6f, 0.6f, 0.8f, 1.0f});
+            ty += 26.0f;
+
+            // Input box
+            float inputW = pw - 40.0f;
+            float inputH = 32.0f;
+            float inputX = textX;
+            float inputY = ty;
+            uiDrawRect({inputX, inputY, inputW, inputH}, {0.08f, 0.08f, 0.1f, 1.0f}, "kf-speed-input-bg");
+            uiDrawRectOutline({inputX, inputY, inputW, inputH}, {0.4f, 0.4f, 0.6f, 1.0f}, "kf-speed-input-border");
+
+            std::string displayText = gReplayEditor.pbspeedInputLen > 0
+                ? std::string(gReplayEditor.pbspeedInputBuf) + "x"
+                : "_";
+            uiDrawText(displayText.c_str(), inputX + 10.0f, inputY + 4.0f, 0.32f, {1.0f, 1.0f, 1.0f, 1.0f});
+            ty += inputH + 12.0f;
+
+            uiDrawText("Enter to confirm, ESC to cancel",
+                textX, ty, 0.26f, {0.5f, 0.5f, 0.6f, 1.0f});
+            ty += 20.0f;
+
+            // Current value preview
+            if (gReplayEditor.pbspeedInputLen > 0) {
+                float previewSpeed = 1.0f;
+                try {
+                    previewSpeed = std::clamp(std::stof(gReplayEditor.pbspeedInputBuf), 0.01f, 100.0f);
+                } catch (...) {}
+                char preview[64];
+                std::snprintf(preview, sizeof(preview), "Preview: %.2fx playback speed", previewSpeed);
+                uiDrawText(preview, textX, ty, 0.28f, {0.6f, 1.0f, 0.6f, 1.0f});
+            }
         }
     }
 }

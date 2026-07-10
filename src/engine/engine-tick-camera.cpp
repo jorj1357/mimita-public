@@ -151,13 +151,9 @@ void engineTickCamera(Engine& engine, float dt)
                         promptKeyConsumed = true;
                     } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
                                glfwGetKey(win, GLFW_KEY_KP_3) == GLFW_PRESS) {
-                        gReplayEditor.addTimeKeyframe(
-                            gReplayEditor.keyframePromptTick, 1.0f,
-                            gReplayEditor.defaultInterp);
-                        Terminal::instance().addLog(
-                            "[RPLE] Playback speed keyframe at tick " +
-                            std::to_string(gReplayEditor.keyframePromptTick));
-                        gReplayEditor.keyframePromptStage = 0;
+                        gReplayEditor.keyframePromptStage = 3;
+                        gReplayEditor.pbspeedInputBuf[0] = '\0';
+                        gReplayEditor.pbspeedInputLen = 0;
                         promptKeyConsumed = true;
                     }
                 } else if (gReplayEditor.keyframePromptStage == 2) {
@@ -182,6 +178,90 @@ void engineTickCamera(Engine& engine, float dt)
                             std::to_string(gReplayEditor.keyframePromptTick));
                         gReplayEditor.keyframePromptStage = 0;
                         promptKeyConsumed = true;
+                    }
+                } else if (gReplayEditor.keyframePromptStage == 3) {
+                    auto& ed = gReplayEditor;
+
+                    // Edge-trackers — reset when stage 3 is first entered
+                    static bool enterWasDown = false;
+                    static bool backspaceWasDown = false;
+                    static bool periodWasDown = false;
+                    static int lastDigitKey = -1;
+                    static int prevStage3 = 0;
+                    if (prevStage3 != 3) {
+                        enterWasDown = false;
+                        backspaceWasDown = false;
+                        periodWasDown = false;
+                        lastDigitKey = -1;
+                        prevStage3 = 3;
+                    }
+
+                    // Enter
+                    bool enterDown = glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS ||
+                                     glfwGetKey(win, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                    if (enterDown && !enterWasDown) {
+                        if (ed.pbspeedInputLen > 0) {
+                            float speed = 1.0f;
+                            try {
+                                speed = std::clamp(std::stof(ed.pbspeedInputBuf), 0.01f, 100.0f);
+                            } catch (...) { speed = 1.0f; }
+                            ed.addTimeKeyframe(ed.keyframePromptTick, speed, ed.defaultInterp);
+                            char buf[96];
+                            std::snprintf(buf, sizeof(buf),
+                                "[RPLE] Playback speed keyframe at tick %d: %.2fx",
+                                ed.keyframePromptTick, speed);
+                            Terminal::instance().addLog(buf);
+                        }
+                        ed.keyframePromptStage = 0;
+                        promptKeyConsumed = true;
+                    }
+                    enterWasDown = enterDown;
+
+                    // Backspace
+                    bool backspaceDown = glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
+                    if (backspaceDown && !backspaceWasDown) {
+                        if (ed.pbspeedInputLen > 0) {
+                            ed.pbspeedInputBuf[--ed.pbspeedInputLen] = '\0';
+                        }
+                        promptKeyConsumed = true;
+                    }
+                    backspaceWasDown = backspaceDown;
+
+                    // Period (keyboard and numpad)
+                    bool periodDown = glfwGetKey(win, GLFW_KEY_PERIOD) == GLFW_PRESS ||
+                                      glfwGetKey(win, GLFW_KEY_KP_DECIMAL) == GLFW_PRESS;
+                    if (periodDown && !periodWasDown) {
+                        if (ed.pbspeedInputLen < 15) {
+                            bool hasDot = false;
+                            for (int i = 0; i < ed.pbspeedInputLen; i++)
+                                if (ed.pbspeedInputBuf[i] == '.') { hasDot = true; break; }
+                            if (!hasDot) {
+                                ed.pbspeedInputBuf[ed.pbspeedInputLen++] = '.';
+                                ed.pbspeedInputBuf[ed.pbspeedInputLen] = '\0';
+                            }
+                        }
+                        promptKeyConsumed = true;
+                    }
+                    periodWasDown = periodDown;
+
+                    // Digits 0-9 (keyboard and numpad)
+                    {
+                        int digitKey = -1;
+                        for (int d = 0; d <= 9; d++) {
+                            if (glfwGetKey(win, GLFW_KEY_0 + d) == GLFW_PRESS ||
+                                glfwGetKey(win, GLFW_KEY_KP_0 + d) == GLFW_PRESS) {
+                                digitKey = d;
+                                break;
+                            }
+                        }
+                        if (digitKey >= 0 && digitKey != lastDigitKey) {
+                            if (ed.pbspeedInputLen < 15) {
+                                ed.pbspeedInputBuf[ed.pbspeedInputLen++] = (char)('0' + digitKey);
+                                ed.pbspeedInputBuf[ed.pbspeedInputLen] = '\0';
+                            }
+                            promptKeyConsumed = true;
+                        }
+                        lastDigitKey = digitKey;
                     }
                 }
             }

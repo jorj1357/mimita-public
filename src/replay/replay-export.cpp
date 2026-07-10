@@ -47,7 +47,7 @@ float ReplayExportJob::progress() const
     switch (state) {
     case Idle:    return 0.0f;
     case Capturing:
-        return totalTicks > 0 ? (float)capturedTicks / (float)totalTicks : 0.0f;
+        return totalTicks > 0 ? std::min(exportTick / (float)totalTicks, 1.0f) : 0.0f;
     case Encoding: return 0.95f;
     case Done:    return 1.0f;
     case Failed:  return 0.0f;
@@ -79,7 +79,7 @@ void updateReplayExport()
         printf("[RPLX] fps: 60\n");
         printf("[RPLX] tick rate: 60\n");
         printf("[RPLX] total ticks: %u\n", gJob.totalTicks);
-        printf("[RPLX] expected frames: %u\n", gJob.totalTicks);
+        printf("[RPLX] export uses speed keyframes\n");
 
         if (gReplayEditor.isLoaded()) {
             auto& ed = gReplayEditor;
@@ -218,15 +218,27 @@ void updateReplayExport()
     gJob.capturedTicks++;
     gJob.frameWriteCount = gJob.capturedTicks;
 
-    if (gJob.capturedTicks % 30 == 0 || gJob.capturedTicks == gJob.totalTicks)
+    // Advance export tick by current playback speed (speed-aware export)
+    float captureSpeed = 1.0f;
+    if (gReplayEditor.isLoaded()) {
+        captureSpeed = gReplayEditor.playbackSpeedAtTick((int)gJob.exportTick);
+    }
+    Debug::log(Debug::Category::Replay, "[ReplayExport] tick=%d speed=%.2f\n",
+        (int)gJob.exportTick, captureSpeed);
+    gJob.exportTick += captureSpeed;
+
+    uint32_t doneTick = (uint32_t)gJob.exportTick;
+    if (doneTick > gJob.totalTicks) doneTick = gJob.totalTicks;
+
+    if (gJob.capturedTicks % 30 == 0 || doneTick >= gJob.totalTicks)
     {
-        float pct = (float)gJob.capturedTicks / (float)gJob.totalTicks * 100.0f;
+        float pct = (float)doneTick / (float)gJob.totalTicks * 100.0f;
         EXPORTTRACE("PROGRESS: %u/%u (%.1f%%)", gJob.capturedTicks, gJob.totalTicks, pct);
     }
     // Terminal progress every 10%
     if (gJob.totalTicks > 0) {
         static int lastTerminalPct = -1;
-        int currentPct = (int)((float)gJob.capturedTicks / (float)gJob.totalTicks * 100.0f);
+        int currentPct = (int)((float)doneTick / (float)gJob.totalTicks * 100.0f);
         int reportPct = (currentPct / 10) * 10;
         if (reportPct > lastTerminalPct && reportPct > 0 && reportPct <= 100) {
             lastTerminalPct = reportPct;
@@ -234,12 +246,12 @@ void updateReplayExport()
             std::snprintf(buf, sizeof(buf), "[RPLX] Export progress: %d%%", reportPct);
             Terminal::instance().addLog(std::string(buf));
         }
-        if (gJob.capturedTicks >= gJob.totalTicks) lastTerminalPct = -1;
+        if (doneTick >= gJob.totalTicks) lastTerminalPct = -1;
     }
 
-    if (gJob.capturedTicks >= gJob.totalTicks)
+    if (doneTick >= gJob.totalTicks)
     {
-        printf("[RPLX] rendered frame %u/%u\n", gJob.capturedTicks, gJob.totalTicks);
+        printf("[RPLX] rendered frame %u (exportTick=%.1f/%u)\n", gJob.capturedTicks, gJob.exportTick, gJob.totalTicks);
         printf("[RPLX] render complete\n");
         printf("[RPLX] actual frames rendered: %u\n", gJob.capturedTicks);
         EXPORTTRACE("=== ALL FRAMES WRITTEN (%u) ===", gJob.capturedTicks);
@@ -247,11 +259,11 @@ void updateReplayExport()
         // [G] Verify raw file size on disk before closing
         {
             std::error_code ec;
-            uint64_t expectedRawSize = (uint64_t)gJob.totalTicks * (uint64_t)gJob.capWidth * (uint64_t)gJob.capHeight * 3ULL;
+            uint64_t expectedRawSize = (uint64_t)gJob.capturedTicks * (uint64_t)gJob.capWidth * (uint64_t)gJob.capHeight * 3ULL;
             gJob.rawFileBytes = std::filesystem::file_size(gJob.rawTempPath, ec);
-            EXPORTLOG("[EXPORT DEBUG] raw file: path=%s bytes=%llu expected=%llu",
+            EXPORTLOG("[EXPORT DEBUG] raw file: path=%s bytes=%llu expected=%llu (frames=%u)",
                       gJob.rawTempPath.c_str(), (unsigned long long)gJob.rawFileBytes,
-                      (unsigned long long)expectedRawSize);
+                      (unsigned long long)expectedRawSize, gJob.capturedTicks);
         }
 
         // Flush and close raw file
@@ -297,8 +309,8 @@ std::string getReplayExportStatusText()
     {
         float pct = gJob.progress() * 100.0f;
         char buf[128];
-        std::snprintf(buf, sizeof(buf), "Exporting Replay...\nFrames: %u / %u (%.0f%%)",
-                      gJob.capturedTicks, gJob.totalTicks, pct);
+        std::snprintf(buf, sizeof(buf), "Exporting Replay...\nFrames: %u  Ticks: %u/%u (%.0f%%)",
+                      gJob.capturedTicks, (uint32_t)gJob.exportTick, gJob.totalTicks, pct);
         return buf;
     }
     case ReplayExportJob::Encoding: return "Encoding MP4...";

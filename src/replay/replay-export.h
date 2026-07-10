@@ -24,6 +24,7 @@ struct ReplayExportJob {
     std::string jsonPath;
     uint32_t totalTicks = 0;
     uint32_t capturedTicks = 0;
+    float exportTick = 0.0f;       // fractional tick position (speed-aware)
     int capWidth = 0;
     int capHeight = 0;
 
