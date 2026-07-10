@@ -95,6 +95,20 @@ unsigned int readIndex(const tinygltf::Model& model, const tinygltf::Accessor& a
 
 } // anonymous namespace
 
+static GLuint getOpaqueWhiteTexture() {
+    static GLuint tex = 0;
+    if (tex) return tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    unsigned char white[] = {255, 255, 255, 255};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    return tex;
+}
+
 bool isPlayerBodyPart(const std::string& name)
 {
     return name == "head" || name == "torso" ||
@@ -209,7 +223,7 @@ void appendNodeRenderMesh(
         Mesh::Batch batch;
         batch.materialIndex = primitive.material;
         batch.materialName = "player_body";
-        batch.texture = gTextures.get("default");
+        batch.texture = getOpaqueWhiteTexture();
         batch.first = out.verts.size();
         // Read doubleSided from GLTF material if available
         if (primitive.material >= 0 && primitive.material < (int)model.materials.size())

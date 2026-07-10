@@ -272,6 +272,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
         ds.currentCenter = worldCenter;
         ds.radius = collisionRadius(sc.radius, sc.scale);
         ds.collidesWithWorld = entry->collidesWithWorld;
+        ds.sourceType = WeaponColliderDebugSphere::SourceType::JsonSphere;
 
         // Preserve prev center if we had a sphere at the same index
         if (sphereIdx < oldCount)
@@ -316,6 +317,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
             ds.currentCenter = curPos;
             ds.radius = capRadius;
             ds.collidesWithWorld = entry->collidesWithWorld;
+            ds.sourceType = WeaponColliderDebugSphere::SourceType::CapsuleSample;
 
             if (sphereIdx < oldCount)
                 ds.previousCenter = oldPrevCenter[sphereIdx];
@@ -350,6 +352,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
             ds.currentCenter = worldCenter;
             ds.radius = entry->generatedSpheres.radius;
             ds.collidesWithWorld = entry->collidesWithWorld;
+            ds.sourceType = WeaponColliderDebugSphere::SourceType::GeneratedProbe;
 
             if (sphereIdx < oldCount)
                 ds.previousCenter = oldPrevCenter[sphereIdx];
@@ -364,7 +367,18 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
 
     int ncaps = entry->capsule.enabled ? 1 : 0;
     for (const auto& cc : entry->capsules) if (cc.enabled) ++ncaps;
+
+    // Log per-type counts
+    int jsonCount = 0, capsuleCount = 0, generatedCount = 0;
+    for (const auto& s : dbg.spheres) {
+        if (!s.collidesWithWorld) continue;
+        switch (s.sourceType) {
+            case WeaponColliderDebugSphere::SourceType::JsonSphere: ++jsonCount; break;
+            case WeaponColliderDebugSphere::SourceType::CapsuleSample: ++capsuleCount; break;
+            case WeaponColliderDebugSphere::SourceType::GeneratedProbe: ++generatedCount; break;
+        }
+    }
     Debug::log(Debug::Category::Weapons,
-        "[WEAPON COLLISION] weapon=%s json_spheres=%d json_capsules=%d source=%s",
-        weaponId.c_str(), (int)dbg.spheres.size(), ncaps, entry->source.c_str());
+        "[WEAPON COLLISION] weapon=%s json=%d capsules=%d generated=%d caps=%d source=%s",
+        weaponId.c_str(), jsonCount, capsuleCount, generatedCount, ncaps, entry->source.c_str());
 }

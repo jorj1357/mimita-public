@@ -4,7 +4,8 @@
 #include <vector>
 #include <unordered_map>
 
-extern bool gWeaponCollisionVisuals;
+extern bool gWeaponCollisionVisualsJson;
+extern bool gWeaponCollisionVisualsProbes;
 
 #include "weapon-types.h"
 #include "weapon-viewmodel.h"

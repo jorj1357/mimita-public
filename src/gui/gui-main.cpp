@@ -551,6 +551,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
             }
 
+            AvatarSystem::instance().autosaveUpdate(1.0f / 60.0f);  // ~60fps dt approximation
             AvatarMenuResult r = drawAvatarMenu(win);
             if (r.goBack) {
                 gGuiMenuState = GUI_MENU_MAIN;

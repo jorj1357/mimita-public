@@ -1,5 +1,6 @@
 #include "avatar-menu.h"
 #include "avatar.h"
+#include "avatar-autosave.h"
 #include "avatar-editor-scroll.h"
 #include "avatar-editor-dropdown.h"
 #include "avatar-drop-target.h"
@@ -340,6 +341,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                          {0.5f, 0.15f, 0.15f, 1.0f}).clicked) {
                 clearTexturePreview();
                 uncheckAllFaces();
+                av.triggerSave();
             }
             cy += previewSize + 10.0f;
 
@@ -353,6 +355,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                         av.setPartFace(partKey, kFaceKeys[fi], gSelectedTexture);
                     checkAllFaces();
                     liveApply();
+                    av.triggerSave();
                 }
             };
             qBtn("Head", px + 4.0f, "head", "facesTabHeadBtn");
@@ -366,6 +369,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                         av.setPartFace(kPartKeys[pi], kFaceKeys[fi], gSelectedTexture);
                 checkAllFaces();
                 liveApply();
+                av.triggerSave();
             }
             cy += qaH + 8.0f;
 
@@ -471,6 +475,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                 }
                 Terminal::instance().addLog("[AVATAR] Applied to " + std::to_string(gCheckedFaces.size()) + " faces");
                 liveApply();
+                av.triggerSave();
             }
         }
 
@@ -509,6 +514,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
             if (newR != color.r || newG != color.g || newB != color.b) {
                 av.setPartColor(kPartKeys[pi], glm::vec3(newR, newG, newB));
                 liveApply();
+                av.triggerSave();
             }
             cy += partSpacing;
         }
@@ -564,6 +570,7 @@ static void drawEditorPanel(GLFWwindow* win, float px, float py, float pw, float
                 if (!found)
                     cosmetics.push_back({kCosmeticSlots[si], cosmeticItems[sel]});
                 liveApply();
+                av.triggerSave();
             }
             cy += slotSpacing;
         }
@@ -651,6 +658,7 @@ void avatarMenuHandleDrop(int count, const char** paths)
     }
     if (imported > 0) {
         Terminal::instance().addLog("[AVATAR] Imported " + std::to_string(imported) + " PNG(s)");
+        av.triggerSave();
     }
 }
 
@@ -985,6 +993,44 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
                 gDeleteConfirmOpen = false;
             }
         }
+    }
+
+    // ── Save Status Bar ─────────────────────────────────────────────
+    {
+        const auto& as = av.autosave();
+        std::string statusText;
+        float sw = uiScreenW();
+        float sh = uiScreenH();
+        switch (as.status()) {
+            case AvatarAutosave::Status::Saving:
+                statusText = "Saving...";
+                break;
+            case AvatarAutosave::Status::Ok: {
+                double secs = as.secondsSinceLastSave();
+                if (secs < 0) statusText = "Not saved yet";
+                else if (secs < 5) statusText = "Autosaved just now";
+                else if (secs < 60) statusText = "Autosaved " + std::to_string((int)secs) + "s ago";
+                else statusText = "Autosaved";
+                break;
+            }
+            case AvatarAutosave::Status::Failed:
+                statusText = "Could not save - retrying";
+                break;
+            case AvatarAutosave::Status::Recovered:
+                statusText = as.statusMessage();
+                break;
+            default:
+                break;
+        }
+        if (!statusText.empty()) {
+            glm::vec4 col = (as.status() == AvatarAutosave::Status::Failed)
+                ? glm::vec4{1.0f, 0.3f, 0.2f, 1.0f}
+                : glm::vec4{0.4f, 0.8f, 0.5f, 1.0f};
+            uiDrawText(statusText.c_str(), sw * 0.5f - 160.0f, sh - 30.0f, 0.28f, col);
+        }
+        // Local path
+        std::string pathStr = "Saved locally to: " + as.projectFilePath();
+        uiDrawText(pathStr.c_str(), 10.0f, sh - 30.0f, 0.22f, {0.35f, 0.35f, 0.45f, 1.0f});
     }
 
     // ── Drag & Drop Hover Indicator ─────────────────────────────────

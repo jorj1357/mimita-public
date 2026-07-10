@@ -1,10 +1,13 @@
 #include "avatar.h"
+#include "avatar-autosave.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <numeric>
+#include <random>
 
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
@@ -73,6 +76,10 @@ FaceSettings AvatarDefinition::resolve(const std::string& part, const std::strin
 }
 
 void AvatarDefinition::clear() {
+    format_version = 2;
+    avatar_id.clear();
+    created_at.clear();
+    updated_at.clear();
     name.clear();
     basePath.clear();
     simple = {};
@@ -230,6 +237,52 @@ static void parsePartFacesFromAdvanced(const json& adv, const std::string& prefi
     }
 }
 
+// ── V2 avatar serialization ─────────────────────────────────────────
+static void serializePartFacesToAdvanced(json& adv, const std::string& part, const FaceVector& fv) {
+    const char* faceNames[] = {"front", "back", "left", "right", "top", "bottom"};
+    for (const char* fn : faceNames) {
+        const FaceSettings& fs = fv.byName(fn);
+        adv[part + "_" + fn] = serializeFaceSlot(fs);
+    }
+}
+
+void avatarToJson(const AvatarDefinition& avatar, json& j) {
+    j = json::object();
+    j["format_version"] = avatar.format_version;
+    if (!avatar.avatar_id.empty()) j["avatar_id"] = avatar.avatar_id;
+    if (!avatar.created_at.empty()) j["created_at"] = avatar.created_at;
+    j["updated_at"] = avatar.updated_at.empty() ? std::string("now") : avatar.updated_at;
+    j["name"] = avatar.name;
+
+    j["simple"]["face"] = avatar.simple.face;
+    j["simple"]["shirt"] = avatar.simple.shirt;
+    j["simple"]["pants"] = avatar.simple.pants;
+    j["simple"]["skin"] = avatar.simple.skin;
+    j["advanced_mode"] = avatar.advancedMode;
+
+    json adv = json::object();
+    serializePartFacesToAdvanced(adv, "head", avatar.head);
+    serializePartFacesToAdvanced(adv, "torso", avatar.torso);
+    serializePartFacesToAdvanced(adv, "leftArm", avatar.leftArm);
+    serializePartFacesToAdvanced(adv, "rightArm", avatar.rightArm);
+    serializePartFacesToAdvanced(adv, "leftLeg", avatar.leftLeg);
+    serializePartFacesToAdvanced(adv, "rightLeg", avatar.rightLeg);
+    j["advanced"] = adv;
+
+    j["colors"] = serializePartColors(avatar.colors);
+    j["cosmetics"] = serializeCosmetics(avatar.cosmetics);
+    if (!avatar.activePreset.empty()) j["active_preset"] = avatar.activePreset;
+    if (!avatar.playerModel.empty()) j["player_model"] = avatar.playerModel;
+
+    if (avatar.textureMode == "uv_atlas") {
+        j["texture_mode"] = "uv_atlas";
+        if (!avatar.atlasPath.empty()) j["atlas"] = avatar.atlasPath;
+        j["alpha_mode"] = avatar.alphaMode;
+        j["alpha_cutoff"] = avatar.alphaCutoff;
+        j["unlit"] = avatar.unlit;
+    }
+}
+
 // ── Load / Save ─────────────────────────────────────────────────────
 bool AvatarSystem::loadAvatar(const std::string& avatarName) {
     mAvatarName = avatarName;
@@ -238,13 +291,31 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
     mAvatar.name = avatarName;
     mAvatar.basePath = mBasePath;
 
+    // Set up autosave
+    mAutosave.setBasePath(mBasePath);
+
     const std::string jsonPath = mBasePath + "/avatar.json";
     printf("[AVATAR] Loading avatar: %s\n", avatarName.c_str());
     printf("[AVATAR] Path: %s\n", jsonPath.c_str());
 
+    // Try recovery if primary file is missing or corrupt
+    std::string recoveryMsg;
+    if (!std::filesystem::exists(jsonPath)) {
+        // No primary file — try to recover
+        if (mAutosave.recover(mAvatar, recoveryMsg)) {
+            Terminal::instance().addLog("[AVATAR] " + recoveryMsg + ": " + jsonPath);
+            printf("[AVATAR] Recovery: %s\n", recoveryMsg.c_str());
+        } else {
+            Terminal::instance().addLog("[AVATAR] No avatar.json found at " + jsonPath + "; using defaults");
+            mAutosave.setBasePath(mBasePath);
+            mHasAvatar = true;
+            return true;
+        }
+    }
+
     std::ifstream file(jsonPath);
     if (!file.is_open()) {
-        Terminal::instance().addLog("[AVATAR] No avatar.json found at " + jsonPath + "; using defaults");
+        Terminal::instance().addLog("[AVATAR] Cannot open " + jsonPath);
         mHasAvatar = true;
         return true;
     }
@@ -320,6 +391,22 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
             Terminal::instance().addLog("[AVATAR] Unrecognized format in " + jsonPath);
             mHasAvatar = true;
             return false;
+        }
+
+        // ── V2 fields ──────────────────────────────────────────────────
+        mAvatar.format_version = root.value("format_version", 1);
+        mAvatar.avatar_id = root.value("avatar_id", "");
+        mAvatar.created_at = root.value("created_at", "");
+        mAvatar.updated_at = root.value("updated_at", "");
+
+        // Generate avatar_id if missing (v1 → v2 migration)
+        if (mAvatar.avatar_id.empty()) {
+            std::random_device rd;
+            std::mt19937_64 rng(rd());
+            char buf[24];
+            std::snprintf(buf, sizeof(buf), "local_%016llx", (unsigned long long)rng());
+            mAvatar.avatar_id = buf;
+            printf("[AVATAR] Generated avatar_id: %s (v1 migration)\n", mAvatar.avatar_id.c_str());
         }
 
         // ── Shared fields ─────────────────────────────────────────────
@@ -710,13 +797,9 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         mAtlasWidth = w;
         mAtlasHeight = h;
 
-        // Assign atlas texture to every body part batch (preserving GLB UVs)
-        for (size_t partIndex = 0; partIndex < player.physicalBody.partMeshes.size(); ++partIndex) {
-            auto& mesh = player.physicalBody.partMeshes[partIndex];
-            for (auto& batch : mesh.batches)
-                batch.texture = mUvAtlasTexture;
-        }
-        player.bodyPartMeshes = player.physicalBody.partMeshes;
+        // Use procedural atlas UV mapping (GLB has no atlas UVs — identical cube unwrap on all parts)
+        mAtlasTexture = mUvAtlasTexture;
+        applyAtlasToPlayer(player);
 
         // Track write time for hot reload
         if (std::filesystem::exists(mAvatar.atlasPath))
@@ -753,6 +836,46 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         return false;
     printf("[AVATAR] Applying avatar texture atlas after model load\n");
     return applyAtlasToPlayer(player);
+}
+
+void AvatarSystem::autosaveUpdate(float dt) {
+    if (!mHasAvatar || mAvatarName.empty()) return;
+
+    // If a save was requested, save immediately (debounce skipped)
+    if (mSaveRequested) {
+        mSaveRequested = false;
+        saveProject();
+        mAutosave.snapshot();
+        return;
+    }
+
+    // Periodic autosave
+    mAutosave.update(dt, [this]() -> bool {
+        return saveProject();
+    });
+}
+
+bool AvatarSystem::saveProject() {
+    if (!mHasAvatar || mBasePath.empty()) return false;
+    // Update timestamp
+    std::time_t now = std::time(nullptr);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &now);
+#else
+    localtime_r(&now, &local);
+#endif
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &local);
+    mAvatar.updated_at = ts;
+    if (mAvatar.created_at.empty())
+        mAvatar.created_at = ts;
+
+    return mAutosave.saveNow(mAvatar);
+}
+
+void AvatarSystem::triggerSave() {
+    mSaveRequested = true;
 }
 
 void AvatarSystem::pollHotReload() {

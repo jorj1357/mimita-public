@@ -23,7 +23,8 @@ namespace Debug
         Audio,
         World,
         Duel,
-        Auth
+        Auth,
+        Avatar
     };
 
     bool enabled(Category category);
