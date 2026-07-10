@@ -96,7 +96,25 @@ bool GuiLayout::load(const std::string& filePath)
         std::unordered_map<std::string, GuiElement> loadedElements;
 
         // Helper lambda to parse a single element from JSON
-        auto parseElement = [](const json& elem) -> GuiElement {
+        // Helper to parse a single UiEffect from JSON
+        auto parseEffect = [](const json& ef) -> UiEffect {
+            UiEffect fx;
+            fx.type = ef.value("type", "");
+            fx.enabled = ef.value("enabled", true);
+            fx.amplitudeX = ef.value("amplitudeX", 4.0f);
+            fx.amplitudeY = ef.value("amplitudeY", 2.0f);
+            fx.speed = ef.value("speed", 0.8f);
+            fx.phase = ef.value("phase", 0.0f);
+            fx.scale = ef.value("scale", 1.05f);
+            fx.radius = ef.value("radius", 120.0f);
+            fx.strength = ef.value("strength", 40.0f);
+            fx.returnSpeed = ef.value("returnSpeed", 8.0f);
+            fx.maxOffset = ef.value("maxOffset", 100.0f);
+            return fx;
+        };
+
+        // Use std::function for recursive lambda (children can contain elements)
+        std::function<GuiElement(const json&)> parseElement = [&](const json& elem) -> GuiElement {
             GuiElement e;
             e.id = elem.value("id", "");
             e.type = elem.value("type", "button");
@@ -113,16 +131,35 @@ bool GuiLayout::load(const std::string& filePath)
             e.anchorX = elem.value("anchorX", "left");
             e.anchorY = elem.value("anchorY", "top");
             e.layer = elem.value("layer", 0);
+            e.layoutDirection = elem.value("layoutDirection", "");
+            e.layoutSpacing = elem.value("layoutSpacing", 0.0f);
+            e.layoutAlign = elem.value("layoutAlign", "");
 
             e.visible = elem.value("visible", true);
             e.enabled = elem.value("enabled", true);
             e.opacity = elem.value("opacity", 1.0f);
             e.hoverScale = elem.value("hoverScale", 1.0f);
+            e.shape = elem.value("shape", "");
+            e.cornerRadius = elem.value("cornerRadius", 0.0f);
+            e.borderThickness = elem.value("borderThickness", 0.0f);
 
             e.text = elem.value("text", "");
             e.font = elem.value("font", "");
             e.fontSize = elem.value("fontSize", 0.0f);
             e.textAlign = elem.value("textAlign", "left");
+            if (elem.contains("textRuns") && elem["textRuns"].is_array()) {
+                for (const auto& run : elem["textRuns"]) {
+                    UiTextRun tr;
+                    tr.start = run.value("start", 0);
+                    tr.length = run.value("length", 0);
+                    if (run.contains("color") && run["color"].is_array())
+                        tr.color = run["color"].get<std::vector<float>>();
+                    tr.scale = run.value("scale", 1.0f);
+                    tr.bold = run.value("bold", false);
+                    tr.italic = run.value("italic", false);
+                    e.textRuns.push_back(tr);
+                }
+            }
 
             if (elem.contains("textColor") && elem["textColor"].is_array())
                 e.textColor = elem["textColor"].get<std::vector<float>>();
@@ -134,12 +171,55 @@ bool GuiLayout::load(const std::string& filePath)
                 e.pressedColor = elem["pressedColor"].get<std::vector<float>>();
             if (elem.contains("outlineColor") && elem["outlineColor"].is_array())
                 e.outlineColor = elem["outlineColor"].get<std::vector<float>>();
+            if (elem.contains("disabledColor") && elem["disabledColor"].is_array())
+                e.disabledColor = elem["disabledColor"].get<std::vector<float>>();
+            if (elem.contains("selectedColor") && elem["selectedColor"].is_array())
+                e.selectedColor = elem["selectedColor"].get<std::vector<float>>();
 
             e.backgroundImage = elem.value("backgroundImage", "");
             e.backgroundVideo = elem.value("backgroundVideo", "");
+            e.imageOffsetX = elem.value("imageOffsetX", 0.0f);
+            e.imageOffsetY = elem.value("imageOffsetY", 0.0f);
+            e.imageScaleX = elem.value("imageScaleX", 1.0f);
+            e.imageScaleY = elem.value("imageScaleY", 1.0f);
+            e.imageRotation = elem.value("imageRotation", 0.0f);
+            if (elem.contains("imageColor") && elem["imageColor"].is_array())
+                e.imageColor = elem["imageColor"].get<std::vector<float>>();
+            e.imageFitMode = elem.value("imageFitMode", "");
+
+            // Action
+            if (elem.contains("action") && elem["action"].is_object()) {
+                e.action.type = elem["action"].value("type", "");
+                if (elem["action"].contains("params"))
+                    e.action.paramsJson = elem["action"]["params"].dump();
+            }
+
+            // Data binding
+            e.binding = elem.value("binding", "");
+            e.bindingFallback = elem.value("bindingFallback", "");
+            e.visibleWhenBinding = elem.value("visibleWhenBinding", "");
+            e.visibleWhenOp = elem.value("visibleWhenOp", "");
+            e.visibleWhenValue = elem.value("visibleWhenValue", "");
 
             e.hoverSound = elem.value("hoverSound", "");
             e.clickSound = elem.value("clickSound", "");
+
+            // Effects
+            if (elem.contains("effects") && elem["effects"].is_array()) {
+                for (const auto& ef : elem["effects"])
+                    e.effects.push_back(parseEffect(ef));
+            }
+
+            // Children
+            if (elem.contains("children") && elem["children"].is_array()) {
+                for (const auto& child : elem["children"])
+                    e.children.push_back(parseElement(child));
+            }
+
+            // State styles (stored as raw JSON)
+            if (elem.contains("states") && elem["states"].is_object())
+                e.statesJson = elem["states"].dump();
+
             return e;
         };
 

@@ -9,12 +9,46 @@
 
 struct UIRect;
 
+// ── UiAction ─────────────────────────────────────────────────────────
+struct UiAction {
+    std::string type;       // e.g. "avatar_editor.select_tab"
+    std::string paramsJson; // JSON string of params
+};
+
+// ── UiEffect ─────────────────────────────────────────────────────────
+struct UiEffect {
+    std::string type;          // "sway", "hover_grow", "rainbow", etc.
+    bool enabled = true;
+    float amplitudeX = 4.0f;
+    float amplitudeY = 2.0f;
+    float speed = 0.8f;
+    float phase = 0.0f;
+    float scale = 1.05f;
+    float radius = 120.0f;
+    float strength = 40.0f;
+    float returnSpeed = 8.0f;
+    float maxOffset = 100.0f;
+};
+
+// ── UiTextRun ────────────────────────────────────────────────────────
+struct UiTextRun {
+    int start = 0;
+    int length = 0;
+    std::vector<float> color;    // RGBA
+    float scale = 1.0f;
+    bool bold = false;
+    bool italic = false;
+};
+
 // A single editable element in a GUI layout
 struct GuiElement {
     // Identity
     std::string id;
     std::string type = "button";   // "button", "text", "image", "panel",
-                                   // "checkbox", "slider", "dropdown"
+                                   // "checkbox", "slider", "dropdown",
+                                   // "tab_button", "modal", "scroll_panel",
+                                   // "number_input", "text_input", "divider",
+                                   // "spacer", "preview_3d", "container"
 
     // Layout
     float x = 0.0f;
@@ -29,18 +63,25 @@ struct GuiElement {
     std::string anchorX = "left";
     std::string anchorY = "top";
     int layer = 0;
+    std::string layoutDirection;   // "vertical","horizontal","grid"
+    float layoutSpacing = 0.0f;
+    std::string layoutAlign;       // "start","center","end"
 
     // Appearance
     bool visible = true;
     bool enabled = true;
     float opacity = 1.0f;
     float hoverScale = 1.0f;
+    std::string shape;             // "rectangle","rounded_rectangle","circle","ellipse"
+    float cornerRadius = 0.0f;
+    float borderThickness = 0.0f;
 
     // Text
     std::string text;
     std::string font;
     float fontSize = 0.0f;
     std::string textAlign = "left"; // "left", "center", "right"
+    std::vector<UiTextRun> textRuns;
 
     // Colors: [r, g, b, a] each in 0-1 range (empty vector = not set for overrides)
     std::vector<float> textColor = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -48,14 +89,44 @@ struct GuiElement {
     std::vector<float> hoverColor;
     std::vector<float> pressedColor;
     std::vector<float> outlineColor;
+    std::vector<float> disabledColor;
+    std::vector<float> selectedColor;
 
     // Image / media
     std::string backgroundImage;
     std::string backgroundVideo;
+    float imageOffsetX = 0.0f;
+    float imageOffsetY = 0.0f;
+    float imageScaleX = 1.0f;
+    float imageScaleY = 1.0f;
+    float imageRotation = 0.0f;
+    std::vector<float> imageColor; // RGBA multiplier (default white)
+    std::string imageFitMode;       // "fit","fill","stretch","center","tile"
+
+    // Action
+    UiAction action;
+
+    // Data binding
+    std::string binding;             // data binding ID
+    std::string bindingFallback;     // fallback text
+    std::string visibleWhenBinding;
+    std::string visibleWhenOp;       // "equals","not_equals","exists"
+    std::string visibleWhenValue;
 
     // Sound
     std::string hoverSound;
     std::string clickSound;
+
+    // Effects
+    std::vector<UiEffect> effects;
+
+    // Children (for containers)
+    std::vector<GuiElement> children;
+
+    // State-based styles
+    // State overrides use the same field names as the base element
+    // Stored as JSON object under "states" key
+    std::string statesJson;
 
     // Helpers for converting color vectors to glm::vec4
     glm::vec4 getTextColorVec() const;

@@ -37,11 +37,7 @@
     "torso_right": "",
     "torso_top": ""
   },
-  "advanced_mode": true,
-  "alpha_cutoff": 0.5,
-  "alpha_mode": "blend",
-  "atlas": "assets/outfitsv2/mimita character atlas v1.kra.png",
-  "avatar_id": "local_d0a83b4366cf5211",
+  "advanced_mode": false,
   "colors": {
     "head": [
       1.0,
@@ -75,16 +71,12 @@
     ]
   },
   "cosmetics": [],
-  "created_at": "2026-07-10T18:44:28Z",
-  "format_version": 1,
-  "name": "jorj1357atlas",
+  "name": "New Outfit 1",
   "simple": {
     "face": "",
     "pants": "",
     "shirt": "",
     "skin": ""
   },
-  "texture_mode": "uv_atlas",
-  "unlit": false,
-  "updated_at": "2026-07-10T19:00:51Z"
+  "version": 1
 }

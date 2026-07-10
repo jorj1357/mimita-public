@@ -1,16 +1,20 @@
 #include "avatar-menu.h"
 #include "avatar.h"
 #include "avatar-autosave.h"
+#include "avatar-ui-action.h"
+#include "avatar-ui-context.h"
 #include "avatar-editor-scroll.h"
 #include "avatar-editor-dropdown.h"
 #include "avatar-drop-target.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <unordered_set>
 #include <unordered_map>
+#include <chrono>
 
 #include "../gui/ui-system.h"
 #include "../gui/gui-layout.h"
@@ -19,15 +23,243 @@
 #include "../gui/gui-media.h"
 #include "../devtools/terminal.h"
 #include "../config/player-settings.h"
+#include "../debug/debug-log.h"
+#include "../debug/debug-visuals.h"
 
 class Player;
 extern Player* gpPlayer;
+extern bool gSavePopupOpen;
+extern char gSaveNameBuf[64];
 
 static void liveApply()
 {
     if (gpPlayer && AvatarSystem::instance().hasAvatar())
         AvatarSystem::instance().applyToPlayer(*gpPlayer);
 }
+
+// ── JSON-driven UI system ────────────────────────────────────────────
+
+static bool gUseJsonUi = true;  // toggle to fall back to old hardcoded UI
+
+// Per-frame state for effects (time-based)
+static float gUiTime = 0.0f;
+
+// UI debug overlay state
+static bool gUiShowBounds = false;
+static bool gUiShowIds = false;
+static bool gUiDebugMode = false;
+
+// Animation state for effects
+struct EffectAnimState {
+    float phase = 0.0f;
+};
+static std::unordered_map<std::string, EffectAnimState> gEffectStates;
+
+static void updateUiTime(float dt) {
+    gUiTime += dt;
+}
+
+// Apply data binding to an element (mutates element in place)
+static void resolveBindings(GuiElement& elem, const AvatarUiDataContext& ctx) {
+    if (!elem.binding.empty()) {
+        std::string val = ctx.getString(elem.binding, elem.bindingFallback);
+        if (!val.empty() || elem.text.empty())
+            elem.text = val;
+    }
+    if (!elem.visibleWhenBinding.empty()) {
+        if (elem.visibleWhenOp == "equals")
+            elem.visible = ctx.getString(elem.visibleWhenBinding) == elem.visibleWhenValue;
+        else if (elem.visibleWhenOp == "not_equals")
+            elem.visible = ctx.getString(elem.visibleWhenBinding) != elem.visibleWhenValue;
+    }
+    for (auto& child : elem.children)
+        resolveBindings(child, ctx);
+}
+
+// Evaluate effects and compute visual offsets for an element
+struct EffectResult {
+    glm::vec2 offset{0, 0};
+    float scale = 1.0f;
+    float rotation = 0.0f;
+    glm::vec4 colorOffset{0, 0, 0, 0};
+};
+static EffectResult evaluateEffects(const GuiElement& elem, const glm::vec2& mousePos, const UIRect& designRect) {
+    EffectResult r;
+    for (const auto& fx : elem.effects) {
+        if (!fx.enabled) continue;
+        if (fx.type == "sway") {
+            float s = std::sin(gUiTime * fx.speed + fx.phase);
+            r.offset.x += s * fx.amplitudeX;
+            r.offset.y += std::cos(gUiTime * fx.speed * 0.7f + fx.phase) * fx.amplitudeY;
+        }
+        if (fx.type == "hover_grow") {
+            // Hover detection: screen-space hit test
+            float sx = designRect.x * (1920.0f / 1920.0f); // simplified
+            float sy = designRect.y * (1080.0f / 1080.0f);
+            float sw = designRect.w;
+            float sh = designRect.h;
+            if (mousePos.x >= sx && mousePos.x <= sx + sw &&
+                mousePos.y >= sy && mousePos.y <= sy + sh) {
+                r.scale = fx.scale;
+            }
+        }
+        if (fx.type == "rainbow") {
+            float hue = std::fmod(gUiTime * fx.speed, 1.0f);
+            // Convert HSV to RGB approximation for color shift
+            float h = hue * 6.0f;
+            int hi = (int)h;
+            float f = h - hi;
+            float q = 1.0f - f;
+            glm::vec3 rgb;
+            switch (hi % 6) {
+                case 0: rgb = {1, f, 0}; break;
+                case 1: rgb = {q, 1, 0}; break;
+                case 2: rgb = {0, 1, f}; break;
+                case 3: rgb = {0, q, 1}; break;
+                case 4: rgb = {f, 0, 1}; break;
+                case 5: rgb = {1, 0, q}; break;
+                default: rgb = {1,1,1};
+            }
+            r.colorOffset = glm::vec4(rgb * 0.3f, 0.0f);  // subtle shift
+        }
+    }
+    return r;
+}
+
+// Draw a single UI element from JSON recursively
+static UIButtonState drawUiElement(GLFWwindow* win, const GuiElement& elem, int depth = 0) {
+    if (!elem.visible) return {};
+    if (depth > 20) return {};  // safety limit
+
+    auto& ctx = AvatarUiDataContext::instance();
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+
+    // Resolve design rect
+    UIRect dRect = {elem.x, elem.y, elem.w, elem.h};
+    UIRect sRect = cs.designToScreen(dRect);
+
+    // Debug overlay
+    if (gUiShowBounds) {
+        uiDrawRectOutline(sRect, {1, 0, 0, 0.5f}, "ui-bounds");
+    }
+    if (gUiShowIds && !elem.id.empty()) {
+        uiDrawText(elem.id.c_str(), sRect.x, sRect.y - 14.0f, 0.2f, {1, 1, 0, 1});
+    }
+
+    // Resolve state-based colors
+    glm::vec4 bgCol = elem.getBackgroundColorVec();
+    glm::vec4 textCol = elem.getTextColorVec();
+    (void)textCol; // used later for text rendering
+
+    // Determine if clicked/hovered
+    bool hovered = false;
+    bool clicked = false;
+    if (elem.enabled && (elem.type == "text_button" || elem.type == "image_button" || elem.type == "tab_button")) {
+        // Use uiButton for standard interaction
+        glm::vec4 btnColor = bgCol;
+        UIButtonState bs = uiButton(win, elem.text.c_str(), dRect, btnColor, elem.id.c_str());
+        hovered = bs.hovered;
+        clicked = bs.clicked;
+
+        // If clicked, execute action
+        if (clicked && !elem.action.type.empty()) {
+            AvatarUiActionRegistry::instance().executeJson(elem.action.type, elem.action.paramsJson);
+        }
+    } else if (elem.type == "text_label" || elem.type == "panel" || elem.type == "container") {
+        // Non-interactive: draw panel background
+        if (elem.type != "container" || !elem.backgroundColor.empty()) {
+            uiDrawRect(sRect, bgCol, elem.id.c_str());
+            if (elem.hasOutlineColor()) {
+                uiDrawRectOutline(sRect, elem.getOutlineColorVec(), (elem.id + "_outline").c_str());
+            }
+        }
+    }
+
+    // Children — positioned absolutely in the 1920x1080 design space
+    if (!elem.children.empty()) {
+        for (const auto& child : elem.children) {
+            GuiElement childCopy = child;
+            resolveBindings(childCopy, ctx);
+            drawUiElement(win, childCopy, depth + 1);
+        }
+    }
+
+    // Scroll panel
+    if (elem.type == "scroll_panel") {
+        // Draw scroll area using existing system
+        // For now, draw a placeholder
+        uiDrawRect(sRect, {0.06f, 0.07f, 0.11f, 0.5f}, (elem.id + "_scroll").c_str());
+    }
+
+    return {};
+}
+
+// Register all avatar editor actions
+static void registerAvatarEditorActions() {
+    auto& reg = AvatarUiActionRegistry::instance();
+
+    reg.registerAction("avatar_editor.select_tab", [](const nlohmann::json& params) {
+        int tab = params.value("tab", 0);
+        AvatarUiDataContext::instance().setSelectedTab(tab);
+        Debug::log(Debug::Category::Avatar, "[AvatarUI] select_tab=%d\n", tab);
+    });
+
+    reg.registerAction("avatar_editor.close", [](const nlohmann::json&) {
+        extern AvatarMenuResult gDeferredResult;
+        gDeferredResult.goBack = true;
+    });
+
+    reg.registerAction("avatar_editor.save_now", [](const nlohmann::json&) {
+        AvatarSystem::instance().triggerSave();
+        AvatarSystem::instance().saveProject();
+    });
+
+    reg.registerAction("avatar_editor.publish", [](const nlohmann::json&) {
+        Terminal::instance().addLog("[AVATAR] Publish (not yet implemented)");
+    });
+
+    reg.registerAction("avatar_editor.new_outfit", [](const nlohmann::json&) {
+        auto& av = AvatarSystem::instance();
+        std::string base = "New Outfit";
+        std::string testName = base;
+        int counter = 1;
+        auto existing = av.listAvatars();
+        while (std::find(existing.begin(), existing.end(), testName) != existing.end())
+            testName = base + " " + std::to_string(counter++);
+        av.createOutfit(testName);
+        GetPlayerSettings().avatarName = testName;
+        SavePlayerSettings();
+    });
+
+    reg.registerAction("avatar_editor.undo", [](const nlohmann::json&) {
+        Terminal::instance().addLog("[AVATAR] Undo (not yet implemented)");
+    });
+
+    reg.registerAction("avatar_editor.redo", [](const nlohmann::json&) {
+        Terminal::instance().addLog("[AVATAR] Redo (not yet implemented)");
+    });
+
+    reg.registerAction("avatar_editor.confirm_modal", [](const nlohmann::json& params) {
+        std::string modal = params.value("modal", "");
+        if (modal == "save") {
+            auto& av = AvatarSystem::instance();
+            std::string name(gSaveNameBuf);
+            name.erase(0, name.find_first_not_of(" \t\r\n"));
+            name.erase(name.find_last_not_of(" \t\r\n") + 1);
+            if (!name.empty()) {
+                av.saveCurrentOutfit(name);
+                gSavePopupOpen = false;
+            }
+        }
+    });
+
+    reg.registerAction("avatar_editor.cancel_modal", [](const nlohmann::json&) {
+        gSavePopupOpen = false;
+    });
+}
+
+// Global state for action results
+AvatarMenuResult gDeferredResult;
 
 namespace {
 
@@ -704,6 +936,7 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
     float editW = lw("panelEditor", 560.0f);
     float editH = lh("panelEditor", 950.0f);
 
+    if (!gUseJsonUi) {
     // ── Draw panels and static text from JSON ──────────────────────
     for (const std::string& id : layout.elementIds())
     {
@@ -767,7 +1000,9 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
             }
         }
     }
+    } // !gUseJsonUi
 
+    if (!gUseJsonUi) {
     // ── Save Outfit Popup (from JSON) ────────────────────────────────
     if (gSavePopupOpen) {
         drawIf("savePopupBg");
@@ -808,7 +1043,9 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
             }
         }
     }
+    } // !gUseJsonUi — end of save popup
 
+    if (!gUseJsonUi) {
     // ── Outfit Browser (right panel) ────────────────────────────────
     {
         float outfitX = lx("panelOutfits", 1100.0f);
@@ -914,7 +1151,9 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
             oy += oH + gap;
         }
     }
+    } // !gUseJsonUi
 
+    if (!gUseJsonUi) {
     // ── Rename Popup (from JSON) ───────────────────────────────────
     if (gRenamePopupOpen) {
         drawIf("renamePopupBg");
@@ -994,44 +1233,59 @@ AvatarMenuResult drawAvatarMenu(GLFWwindow* win)
             }
         }
     }
+    } // !gUseJsonUi — end of rename+delete popups
 
-    // ── Save Status Bar ─────────────────────────────────────────────
-    {
-        const auto& as = av.autosave();
-        std::string statusText;
-        float sw = uiScreenW();
-        float sh = uiScreenH();
-        switch (as.status()) {
-            case AvatarAutosave::Status::Saving:
-                statusText = "Saving...";
-                break;
-            case AvatarAutosave::Status::Ok: {
-                double secs = as.secondsSinceLastSave();
-                if (secs < 0) statusText = "Not saved yet";
-                else if (secs < 5) statusText = "Autosaved just now";
-                else if (secs < 60) statusText = "Autosaved " + std::to_string((int)secs) + "s ago";
-                else statusText = "Autosaved";
-                break;
+    // ── JSON-driven UI bottom bar (replaces hardcoded version) ──────
+    if (gUseJsonUi) {
+        static bool actionsRegistered = false;
+        if (!actionsRegistered) {
+            registerAvatarEditorActions();
+            actionsRegistered = true;
+        }
+
+        // Update data context
+        auto& ctx = AvatarUiDataContext::instance();
+        ctx.setSelectedTab(gEditorTab);
+        ctx.setSelectedTexture(gSelectedTexture);
+
+        // Update PNG list
+        std::vector<AvatarUiDataContext::PngEntry> pngEntries;
+        if (av.hasAvatar()) {
+            auto pngs = av.listPngs(av.currentName());
+            for (const auto& p : pngs) {
+                AvatarUiDataContext::PngEntry e;
+                e.filename = p;
+                e.fullPath = av.avatarPath(av.currentName()) + "/" + p;
+                e.selected = (p == gSelectedTexture);
+                pngEntries.push_back(e);
             }
-            case AvatarAutosave::Status::Failed:
-                statusText = "Could not save - retrying";
-                break;
-            case AvatarAutosave::Status::Recovered:
-                statusText = as.statusMessage();
-                break;
-            default:
-                break;
         }
-        if (!statusText.empty()) {
-            glm::vec4 col = (as.status() == AvatarAutosave::Status::Failed)
-                ? glm::vec4{1.0f, 0.3f, 0.2f, 1.0f}
-                : glm::vec4{0.4f, 0.8f, 0.5f, 1.0f};
-            uiDrawText(statusText.c_str(), sw * 0.5f - 160.0f, sh - 30.0f, 0.28f, col);
+        ctx.setPngList(pngEntries);
+
+        // Update UI time
+        updateUiTime(1.0f / 60.0f);
+
+        // Load and render JSON UI
+        static GuiLayout* uiLayout = nullptr;
+        if (!uiLayout) {
+            auto& lm = GuiLayoutManager::instance();
+            uiLayout = &lm.getLayout("config/avatar-editor-ui.json");
         }
-        // Local path
-        std::string pathStr = "Saved locally to: " + as.projectFilePath();
-        uiDrawText(pathStr.c_str(), 10.0f, sh - 30.0f, 0.22f, {0.35f, 0.35f, 0.45f, 1.0f});
+
+        if (uiLayout) {
+            // Render the full JSON UI tree
+            const GuiElement* root = uiLayout->get("root_overlay");
+            if (root) {
+                GuiElement r = *root;
+                resolveBindings(r, ctx);
+                drawUiElement(win, r);
+            }
+        }
     }
+
+    // ── Merge deferred action results ──────────────────────────
+    if (gDeferredResult.goBack) r.goBack = true;
+    gDeferredResult = {};
 
     // ── Drag & Drop Hover Indicator ─────────────────────────────────
     if (isDropHoverActive()) {

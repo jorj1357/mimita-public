@@ -37,7 +37,7 @@
     "torso_right": "",
     "torso_top": ""
   },
-  "advanced_mode": false,
+  "advanced_mode": true,
   "alpha_cutoff": 0.5,
   "alpha_mode": "blend",
   "atlas": "assets/outfitsv2/mimita character atlas v1.kra.png",
@@ -86,5 +86,5 @@
   },
   "texture_mode": "uv_atlas",
   "unlit": false,
-  "updated_at": "2026-07-10T18:44:28Z"
+  "updated_at": "2026-07-10T19:00:59Z"
 }
