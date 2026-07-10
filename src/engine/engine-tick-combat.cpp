@@ -259,12 +259,23 @@ void engineTickCombat(Engine& engine, float dt)
         }
         spacePrev = spaceDown;
 
+        bool ctrlHeld = glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                        glfwGetKey(engine.window(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+
         static bool leftPrev = false;
         bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
         if (leftDown && !leftPrev) {
             uint32_t t = gReplayPlayer.currentTick();
-            uint32_t seekTo = t > 300 ? t - 300 : 0;
+            uint32_t seekTo;
+            if (ctrlHeld) {
+                seekTo = t > 1 ? t - 1 : 0;
+                Debug::log(Debug::Category::Replay, "[ReplayControls] Ctrl+Left: -1 tick (tick %u)\n", seekTo);
+            } else {
+                seekTo = t > 300 ? t - 300 : 0;
+            }
             gReplayPlayer.seekToTick(seekTo);
+            if (gReplayEditor.isLoaded())
+                gReplayEditor.seekToTick((int)seekTo);
         }
         leftPrev = leftDown;
 
@@ -273,7 +284,16 @@ void engineTickCombat(Engine& engine, float dt)
         if (rightDown && !rightPrev) {
             uint32_t t = gReplayPlayer.currentTick();
             uint32_t total = gReplayPlayer.totalTicks();
-            gReplayPlayer.seekToTick(std::min(t + 300, total));
+            uint32_t seekTo;
+            if (ctrlHeld) {
+                seekTo = std::min(t + 1, total);
+                Debug::log(Debug::Category::Replay, "[ReplayControls] Ctrl+Right: +1 tick (tick %u)\n", seekTo);
+            } else {
+                seekTo = std::min(t + 300, total);
+            }
+            gReplayPlayer.seekToTick(seekTo);
+            if (gReplayEditor.isLoaded())
+                gReplayEditor.seekToTick((int)seekTo);
         }
         rightPrev = rightDown;
 
