@@ -137,6 +137,7 @@ void handleInputPacket(const char* buffer, int bytes,
     p.equippedSlot = in->equippedSlot;
     p.weaponState = in->weaponState;
     p.pingMs = std::clamp(in->clientPingMs, 0, 9999);
+    p.sizeScale = std::max(in->sizeScale, 0.001f);
 
     const glm::vec3 reportedPosition{
         in->clientPx, in->clientPy, in->clientPz};

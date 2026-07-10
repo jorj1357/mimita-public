@@ -792,7 +792,7 @@ void WeaponSystem::fireSwordsword(Camera& camera, Player& player, NpcSystem& npc
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 
     if (!def->soundShoot.empty()) {
-        WeaponAudio::playShootSound(*def, player.pos);
+        WeaponAudio::playShootSound(*def, player.pos, player.sizeScale);
     }
 }
 
@@ -830,7 +830,7 @@ RevolverShotResult WeaponSystem::fireAlt(
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 
     if (!def->soundShoot.empty()) {
-        WeaponAudio::playShootSound(*def, player.pos);
+        WeaponAudio::playShootSound(*def, player.pos, player.sizeScale);
     }
 
     RevolverShotResult res;

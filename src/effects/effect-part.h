@@ -83,9 +83,9 @@ public:
     void render(const class Camera& camera) const;
     
     EffectPart* spawn(const EffectPart& effect);
-    EffectPart* spawnFootstep(glm::vec3 position);
-    EffectPart* spawnDash(glm::vec3 position);
-    EffectPart* spawnPerfectDash(glm::vec3 position);
+    EffectPart* spawnFootstep(glm::vec3 position, float sizeScale = 1.0f);
+    EffectPart* spawnDash(glm::vec3 position, float sizeScale = 1.0f);
+    EffectPart* spawnPerfectDash(glm::vec3 position, float sizeScale = 1.0f);
     EffectPart* spawnFreeze(glm::vec3 position, float freezeDuration);
     EffectPart* spawnImpact(glm::vec3 position, glm::vec3 color, const char* label);
     EffectPart* spawnDamage(glm::vec3 position, const std::string& victim, int damage);
@@ -93,16 +93,17 @@ public:
     void spawnBloodEffect(glm::vec3 hitPoint, glm::vec3 sprayDirection, float damage,
                           const std::string& sourceActorId, const std::string& targetActorId);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
-                                  const std::string& sourceActorId, const std::string& targetActorId);
-    EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal);
-    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {});
-    EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {});
-    EffectPart* spawnBulletImpact(glm::vec3 position);
+                                  const std::string& sourceActorId, const std::string& targetActorId,
+                                  float sizeScale = 1.0f);
+    EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
+    EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f);
+    EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f);
+    EffectPart* spawnBulletImpact(glm::vec3 position, float sizeScale = 1.0f);
     EffectPart* spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction, float length = 8.0f,
-                                    float radius = 1.5f, float lifetime = 3.0f);
+                                    float radius = 1.5f, float lifetime = 3.0f, float sizeScale = 1.0f);
     EffectPart* spawnFreezeTrail(glm::vec3 position);
     EffectPart* spawnDownDash(glm::vec3 position);
-    void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f);
+    void spawnWorldDebris(glm::vec3 position, glm::vec3 normal, float force = 1.0f, float sizeScale = 1.0f);
     void queueWorldHit(glm::vec3 position, glm::vec3 normal, glm::vec3 direction,
                        float debrisForce, const std::string& attacker,
                        const std::string& weaponSource);

@@ -116,7 +116,7 @@ void updateRenderedReplica(
     {
         player.dash.didDash = true;
         player.networkLastDashSerial = interpolation.target.lastDashSerial;
-        EffectPartSystem::instance().spawnDash(player.pos);
+        EffectPartSystem::instance().spawnDash(player.pos, player.sizeScale);
         printf("[NET DASH] remote dash serial=%u\n",
                (unsigned)interpolation.target.lastDashSerial);
     }

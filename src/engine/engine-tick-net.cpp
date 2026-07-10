@@ -55,6 +55,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.freezeHeld = InputCommandSystem::instance().isFreezeHeld();
         mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
+        mpInput.sizeScale = player.sizeScale;
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);
         if (!mpContext.approvedLocalName.empty())
             player.username = mpContext.approvedLocalName;

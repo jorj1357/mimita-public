@@ -271,7 +271,7 @@ void registerHitFxCommands()
             glm::vec3 dir = cam ? cam->front : glm::vec3(1.0f, 0.0f, 0.0f);
             EffectPartSystem::instance().spawnDeathEllipsoid(
                 gpPlayer->pos, dir,
-                deCfg.length, deCfg.radius, deCfg.lifetime);
+                deCfg.length, deCfg.radius, deCfg.lifetime, gpPlayer->sizeScale);
             Terminal::instance().addLog("[DEATHFX] test ellipsoid spawned");
         }
     });

@@ -281,7 +281,7 @@ void Player::updateAudio(float dt)
             Capsule cap = getCapsule();
             glm::vec3 footPos = cap.a;
             footPos.z -= cap.r;
-            EffectPartSystem::instance().spawnFootstep(footPos);
+            EffectPartSystem::instance().spawnFootstep(footPos, sizeScale);
             // Walk burst: opposite direction of travel
             glm::vec3 walkDir = glm::length(inputWishMove) > 0.001f
                 ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))

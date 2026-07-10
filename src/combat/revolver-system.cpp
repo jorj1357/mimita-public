@@ -302,8 +302,8 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
     gunshotEvent.sourceActorId = shooter.username;
     captureReplayEffect(gunshotEvent);
 
-    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle, shooter.username);
-    EffectPartSystem::instance().spawnTracer(mMuzzle, result.end, shooter.username);
+    EffectPartSystem::instance().spawnMuzzleFlash(mMuzzle, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnTracer(mMuzzle, result.end, shooter.username, shooter.sizeScale);
     if (victim) {
         float base = pointBlankDamage(hitPart, localHeight);
         float distanceFactor = std::clamp(1.0f - nearest / 110.0f, 0.10f, 1.0f);
@@ -373,7 +373,7 @@ RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, N
             ev.weaponSource = "revolver";
             HitEffects::onHit(ev);
         }
-        EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal);
+        EffectPartSystem::instance().spawnWorldDebris(result.end, worldNormal, 1.0f, shooter.sizeScale);
         {
             float dist = glm::length(result.end - audioListenerPosition());
             float directness = std::abs(glm::dot(-shotDirection, worldNormal));

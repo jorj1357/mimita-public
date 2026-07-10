@@ -149,6 +149,7 @@ struct MpInput
     bool freezeHeld = false;
     int equippedSlot = 0;
     uint8_t weaponState = 0;
+    float sizeScale = 1.0f;
 };
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);

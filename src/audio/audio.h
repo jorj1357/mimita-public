@@ -49,7 +49,7 @@ void playWorldSound(const std::string& name, glm::vec3 pos, float volume = 1.0f,
 void setAudioListener(glm::vec3 pos, glm::vec3 forward);
 void playAirJumpSound();
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume = 1.0f);
-void playRandomFootstep();
+void playRandomFootstep(float sizeScale = 1.0f);
 
 // Get current audio listener world position
 glm::vec3 audioListenerPosition();

@@ -1,21 +1,26 @@
 #include "weapon-audio.h"
 #include "weapon-types.h"
 #include "audio/audio.h"
+#include "config/size-scaling-config.h"
 #include <cstdlib>
 #include <cstdio>
 #include "debug/debug-log.h"
 
 namespace WeaponAudio {
 
-void playShootSound(const WeaponDefinition& def, const glm::vec3& position) {
+void playShootSound(const WeaponDefinition& def, const glm::vec3& position, float sizeScale) {
     if (def.soundShoot.empty()) return;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sVol = sc.scale(1.0f, sc.soundVolumeExponent, ss);
+    float sPitch = sc.scale(1.0f, sc.soundPitchExponent, ss);
     float pitchRange = std::max(0.0f, def.soundPitchVariation);
     float volRange = std::max(0.0f, def.soundVolumeVariation);
     float rndPitch = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * pitchRange;
     float rndVolume = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * volRange;
     Debug::log(Debug::Category::Audio, "[WEAPON AUDIO] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
-               def.id.c_str(), def.soundShoot.c_str(), rndPitch, rndVolume);
-    playWorldSound(def.soundShoot, position, rndVolume, rndPitch, 80.0f);
+               def.id.c_str(), def.soundShoot.c_str(), rndPitch * sPitch, rndVolume * sVol);
+    playWorldSound(def.soundShoot, position, rndVolume * sVol, rndPitch * sPitch, 80.0f);
 }
 
 void playReloadSound(const WeaponDefinition& def) {

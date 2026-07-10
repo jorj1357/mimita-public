@@ -13,25 +13,32 @@ import ChaosBox from "../components/ChaosBox"
 import ChaosSway from "../components/ChaosSway"
 import RainbowTrail from "../components/RainbowTrail"
 import BounceBall from "../components/BounceBall"
+import DelayedRender from "../components/DelayedRender"
 
 export default function Home() {
   return (
     <Layout>
 
-      <BounceBall />
+      <DelayedRender delayMs={500}>
+        <BounceBall />
+      </DelayedRender>
 
       <main className="hero heroNoise">
 
-        <NoiseBackground opacity={0.02} style={{ position: "absolute", inset: 0 }} />
+        <DelayedRender delayMs={300}>
+          <NoiseBackground opacity={0.02} style={{ position: "absolute", inset: 0 }} />
+        </DelayedRender>
 
-        <StickerLayer count={8} />
+        <DelayedRender delayMs={600}>
+          <StickerLayer count={8} />
+        </DelayedRender>
 
         <video
           autoPlay
           loop
           muted
           playsInline
-          preload="auto"
+          preload="none"
           className="bgVideo"
         >
           <source
@@ -44,51 +51,59 @@ export default function Home() {
 
         <div className="heroContent">
 
-          <RainbowTrail count={30}>
-            <ChaosSway as="div">
-              <div className="heroLogoWrap">
-                <RainbowText as="h1" className="mainLogo">
-                  MiMITA
-                </RainbowText>
-              </div>
-            </ChaosSway>
-          </RainbowTrail>
+          <DelayedRender delayMs={400}>
+            <RainbowTrail count={30}>
+              <ChaosSway as="div">
+                <div className="heroLogoWrap">
+                  <RainbowText as="h1" className="mainLogo">
+                    MiMITA
+                  </RainbowText>
+                </div>
+              </ChaosSway>
+            </RainbowTrail>
+          </DelayedRender>
 
-          <ChaosBox seed="HomeTagline">
-            <RandomRotation maxDeg={1}>
-              <p className="tagline">
-                &ldquo;Movement is More Important Than Aim&rdquo;
-              </p>
-            </RandomRotation>
-          </ChaosBox>
+          <DelayedRender delayMs={500}>
+            <ChaosBox seed="HomeTagline">
+              <RandomRotation maxDeg={1}>
+                <p className="tagline">
+                  &ldquo;Movement is More Important Than Aim&rdquo;
+                </p>
+              </RandomRotation>
+            </ChaosBox>
+          </DelayedRender>
 
-          <ChaosBox seed="HomePreview">
-            <PixelBox style={{ width: "100%", maxWidth: "720px", margin: "0 auto 28px auto", border: "none" }}>
-              <div className="previewArea">
-                <video
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  preload="auto"
-                  className="previewVideo"
-                >
-                  <source
-                    src="/mimita-preview-small.mp4"
-                    type="video/mp4"
-                  />
-                </video>
-              </div>
-            </PixelBox>
-          </ChaosBox>
+          <DelayedRender delayMs={700}>
+            <ChaosBox seed="HomePreview">
+              <PixelBox style={{ width: "100%", maxWidth: "720px", margin: "0 auto 28px auto", border: "none" }}>
+                <div className="previewArea">
+                  <video
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="none"
+                    className="previewVideo"
+                  >
+                    <source
+                      src="/mimita-preview-small.mp4"
+                      type="video/mp4"
+                    />
+                  </video>
+                </div>
+              </PixelBox>
+            </ChaosBox>
+          </DelayedRender>
 
-          <ChaosBox seed="HomeDescription">
-            <ProceduralOffset max={2}>
-              <p className="description">
-                Mimita is a movement-based PvP game where movement matters more than aim.
-              </p>
-            </ProceduralOffset>
-          </ChaosBox>
+          <DelayedRender delayMs={600}>
+            <ChaosBox seed="HomeDescription">
+              <ProceduralOffset max={2}>
+                <p className="description">
+                  Mimita is a movement-based PvP game where movement matters more than aim.
+                </p>
+              </ProceduralOffset>
+            </ChaosBox>
+          </DelayedRender>
 
           <div className="ctaButtons">
             <a

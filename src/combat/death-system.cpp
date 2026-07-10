@@ -261,7 +261,7 @@ bool DeathSystem::kill(
     if (deCfg.enabled) {
         EffectPartSystem::instance().spawnDeathEllipsoid(
             victimPos, direction,
-            deCfg.length, deCfg.radius, deCfg.lifetime);
+            deCfg.length, deCfg.radius, deCfg.lifetime, victim.sizeScale);
     }
 
     return true;
