@@ -154,10 +154,13 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                 size_t cropEndFrame = musicCropEnd > 0.0
                     ? (size_t)(musicCropEnd * (double)sampleRate)
                     : musicFrames;
-                // Sample-accurate mixing with offset + crop + speed
+                // Sample-accurate mixing with offset + crop + speed + pbspeed
                 for (size_t tick = 0; tick < totalTicks; ++tick) {
+                    double pbspeed = 1.0;
+                    if (gReplayEditor.isLoaded())
+                        pbspeed = gReplayEditor.playbackSpeedAtTick((int)tick);
                     double songTime = musicOffset + musicCropStart
-                                    + ((double)tick / tickRate) * musicSpeedMul;
+                                    + ((double)tick / tickRate) * musicSpeedMul * pbspeed;
                     size_t frame = (size_t)(songTime * (double)sampleRate);
                     if (frame >= cropEndFrame || frame >= musicFrames) break;
                     float sL = (float)musicPCM[frame * 2 + 0] / 32768.0f * musicVolume;

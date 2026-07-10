@@ -6,11 +6,13 @@
 
 #include "config.h"
 #include "debug/debug-diag.h"
+#include "debug/debug-visuals.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
 #include "replay/replay-scene.h"
 #include "world/texture-store.h"
+#include "avatar/avatar.h"
 
 extern TextureStore gTextures;
 
@@ -92,12 +94,15 @@ void Player::renderCurrentPose(unsigned int shader,
     {
         static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
         static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1;
+        static GLint uAlphaCutoffLoc = -1, uDebugViewLoc = -1;
         if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
         if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
         if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
         if (uUseColorLoc < 0) uUseColorLoc = glGetUniformLocation(shader, "uUseColor");
         if (uColorLoc < 0) uColorLoc = glGetUniformLocation(shader, "uColor");
         if (uTexLoc < 0) uTexLoc = glGetUniformLocation(shader, "uTex");
+        if (uAlphaCutoffLoc < 0) uAlphaCutoffLoc = glGetUniformLocation(shader, "uAlphaCutoff");
+        if (uDebugViewLoc < 0) uDebugViewLoc = glGetUniformLocation(shader, "uDebugView");
 
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
         MIMITA_GL_CALL(glUseProgram(shader));
@@ -105,6 +110,38 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
         glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
         glUniform1i(uTexLoc, 0);
+
+        // Set debug view (UV checker etc.) for player too
+        glUniform1i(uDebugViewLoc, DebugVis::shaderDebugView());
+
+        // Set alpha cutoff from current avatar mode
+        float alphaCutoff = 0.0f;
+        int alphaBlendMode = 2; // 0=opaque, 1=cutout, 2=blend
+        if (AvatarSystem::instance().hasAvatar()) {
+            const auto& av = AvatarSystem::instance().current();
+            if (av.textureMode == "uv_atlas") {
+                if (av.alphaMode == "cutout") {
+                    alphaCutoff = av.alphaCutoff;
+                    alphaBlendMode = 1;
+                } else if (av.alphaMode == "opaque") {
+                    alphaBlendMode = 0;
+                } else {
+                    alphaBlendMode = 2; // blend
+                }
+            }
+        }
+        glUniform1f(uAlphaCutoffLoc, alphaCutoff);
+
+        // Set GL blend state based on alpha mode
+        GLboolean blendWas = glIsEnabled(GL_BLEND);
+        if (alphaBlendMode == 0) {
+            glDisable(GL_BLEND);
+        } else if (alphaBlendMode == 1) {
+            glDisable(GL_BLEND);
+        } else {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
 
         glActiveTexture(GL_TEXTURE0);
         for (size_t i = 0; i < physicalBody.parts.size(); ++i)
@@ -134,6 +171,12 @@ void Player::renderCurrentPose(unsigned int shader,
                 diagRenderCountPlayerDraw();
             }
         }
+
+        // Restore blend state
+        if (blendWas)
+            glEnable(GL_BLEND);
+        else
+            glDisable(GL_BLEND);
 
         return;
     }

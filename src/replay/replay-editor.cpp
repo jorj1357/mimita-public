@@ -976,11 +976,14 @@ void ReplayEditor::update(float dt) {
 
 void ReplayEditor::seekToTick(int tick) {
     movieTick = (float)std::clamp(tick, 0, mTotalTicks);
-    // Sync music preview with offset + crop + speed
+    // Sync music preview with offset + crop
+    // Music position is the narrative time in the song, which advances
+    // at (tick/tickRate) * musicSpeedMul regardless of pbspeed.
+    // The pbspeed only affects the playback rate (ma_sound_set_pitch in update()),
+    // so we don't include it in the seek position formula.
     if (!mMusic.path.empty()) {
-        float finalSpeed = playbackSpeedAtTick(tick) * (float)mMusic.speedMultiplier;
         double musicTime = mMusic.offsetSeconds + mMusic.cropStartSeconds
-                         + ((double)tick / (double)mTickRate) * finalSpeed;
+                         + ((double)tick / (double)mTickRate) * (float)mMusic.speedMultiplier;
         seekReplayMusicPreview((float)musicTime);
         if (!playing && isReplayMusicPreviewPlaying())
             pauseReplayMusicPreview();

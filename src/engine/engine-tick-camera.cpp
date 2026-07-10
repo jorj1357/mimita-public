@@ -919,9 +919,12 @@ void engineTickCamera(Engine& engine, float dt)
                                 camera.pos.x, camera.pos.y, camera.pos.z,
                                 dist, sound.volume, sound.maxDistance);
                 }
+                float pbspeedMul = 1.0f;
+                if (gReplayEditor.isLoaded())
+                    pbspeedMul = gReplayEditor.playbackSpeedAtTick((int)gReplayPlayer.currentTick());
                 playWorldSound(
                     sound.soundPath, sound.position,
-                    sound.volume, sound.pitch,
+                    sound.volume, sound.pitch * pbspeedMul,
                     sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
             }
         }

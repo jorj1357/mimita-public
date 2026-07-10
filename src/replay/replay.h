@@ -143,6 +143,7 @@ public:
 };
 
 enum class ReplayCameraMode {
+    Recorded,
     FirstPerson,
     Victim,
     Orbit,
