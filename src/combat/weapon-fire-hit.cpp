@@ -107,9 +107,8 @@ RevolverShotResult tryFireHitscan(
     gunshotEvent.sourceActorId = shooter.username;
     captureReplayEffect(gunshotEvent);
 
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username);
-    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username);
-
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username, shooter.sizeScale);
     if (victim) {
         processNpcHit(result, def, *victim, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, npcs, muzzlePos, shotDirection);
     } else if (remoteVictim) {
@@ -174,8 +173,8 @@ RevolverShotResult tryFireHitscanDir(
     gunshotEvent.sourceActorId = shooter.username;
     captureReplayEffect(gunshotEvent);
 
-    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username);
-    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username);
+    EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, shooter.username, shooter.sizeScale);
+    EffectPartSystem::instance().spawnTracer(muzzlePos, result.end, shooter.username, shooter.sizeScale);
 
     if (hitPlayer && targetPlayer) {
         processPlayerHit(result, def, hitPart, hitNormal, result.end, shotDirection, nearest, shooter, const_cast<Player*>(targetPlayer));
@@ -297,7 +296,7 @@ void fireMultiPellet(
 
                 {
                     auto tt = ShotProfiler::Scope(&shotProf.tracerMs);
-                    EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username);
+                    EffectPartSystem::instance().spawnTracer(muzzlePos, pelletEnd, shooter.username, shooter.sizeScale);
                     shotProf.tracersSpawned++;
                 }
 

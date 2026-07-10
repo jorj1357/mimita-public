@@ -68,6 +68,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 
 #include "effect-part.h"
 #include "combat/shot-profiler.h"
+#include "config/size-scaling-config.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
 #include "config.h"
@@ -83,21 +84,25 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     glm::vec3 position,
     glm::vec3 normal,
     const std::string& sourceActorId,
-    const std::string& targetActorId)
+    const std::string& targetActorId,
+    float sizeScale)
 {
     if (!HitEffects::config().core.entityImpact) return nullptr;
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_entity pos=(%.1f,%.1f,%.1f)\n",
                    position.x, position.y, position.z);
     }
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart effect;
     effect.position = position;
     effect.normal = normal;
     effect.replayType = "impact_entity";
     effect.color = {0.9f, 0.02f, 0.02f};
     effect.maxLifetime = 0.18f;
-    effect.scale = 0.12f;
-    effect.endScale = 0.4f;
+    effect.scale = 0.12f * sfx;
+    effect.endScale = 0.4f * sfx;
     effect.billboardText = false;
     effect.sticky = true;
     effect.sourceActorId = sourceActorId;
@@ -105,20 +110,23 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     return spawn(effect);
 }
 
-EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal) {
+EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale) {
     if (!HitEffects::config().core.worldImpact) return nullptr;
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_world pos=(%.1f,%.1f,%.1f)\n",
                    position.x, position.y, position.z);
     }
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.normal = normal;
     e.replayType = "impact_world";
     e.color = {0.55f, 0.55f, 0.55f};
     e.maxLifetime = 0.5f;
-    e.scale = 0.1f;
-    e.endScale = 5.0f;
+    e.scale = 0.1f * sfx;
+    e.endScale = 5.0f * sfx;
     e.alpha = 0.5f;
     e.billboardText = false;
     e.sticky = true;
@@ -126,30 +134,36 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     return spawned;
 }
 
-EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId) {
+EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale) {
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "muzzle_flash";
     e.color = {1.0f, 1.0f, 1.0f};
     e.maxLifetime = 0.1f;
-    e.scale = 0.5f;
-    e.endScale = 0.35f;
+    e.scale = 0.5f * sfx;
+    e.endScale = 0.35f * sfx;
     e.billboardText = false;
     e.sticky = true;
     e.sourceActorId = sourceActorId;
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId) {
+EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId, float sizeScale) {
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = start;
     e.replayType = "tracer";
     e.endPosition = end;
     e.color = {1.0f, 0.82f, 0.05f};
     e.maxLifetime = 0.5f;
-    e.scale = 0.2f;
+    e.scale = 0.2f * sfx;
     e.endScale = 0.0f;
-    e.thickness = 0.2f;
+    e.thickness = 0.2f * sfx;
     e.endThickness = 0.0f;
     e.billboardText = false;
     e.sticky = true;
@@ -159,20 +173,23 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const 
 }
 
 EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position, glm::vec3 direction,
-                                                   float length, float radius, float lifetime)
+                                                   float length, float radius, float lifetime, float sizeScale)
 {
     const auto& deCfg = HitEffects::config().deathEllipsoid;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     // Store direction indicator in endPosition so the renderer can compute elongation
     glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(1.0f, 0.0f, 0.0f);
-    e.endPosition = position + dir * length;
+    e.endPosition = position + dir * length * sfx;
     e.replayType = "death_ellipsoid";
     e.color = glm::vec3(deCfg.color);
     e.alpha = deCfg.baseAlpha;
     e.maxLifetime = lifetime;
-    e.scale = radius;
-    e.endScale = radius;
+    e.scale = radius * sfx;
+    e.endScale = radius * sfx;
     e.sticky = true;
     e.billboardText = false;
     e.affectedByGravity = false;
@@ -181,19 +198,22 @@ EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position, glm::vec3 
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position) {
+EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, float sizeScale) {
     if (!HitEffects::config().core.bulletImpact) return nullptr;
     if (gHitFxTraceEnabled) {
         Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] Source=effect-part.cpp Type=impact_sphere pos=(%.1f,%.1f,%.1f)\n",
                    position.x, position.y, position.z);
     }
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "impact_sphere";
     e.color = {0.55f, 0.55f, 0.58f};
     e.maxLifetime = 0.25f;
-    e.scale = 0.1f;
-    e.endScale = 1.0f;
+    e.scale = 0.1f * sfx;
+    e.endScale = 1.0f * sfx;
     e.billboardText = false;
     e.sticky = true;
     return spawn(e);
@@ -288,42 +308,51 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     return nullptr;
 }
 
-EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position) {
+EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position, float sizeScale) {
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "footstep";
     e.color = {1.0f, 1.0f, 1.0f};
     e.maxLifetime = 0.5f;
-    e.scale = 0.18f;
-    e.endScale = 0.06f;
+    e.scale = 0.18f * sfx;
+    e.endScale = 0.06f * sfx;
     e.billboardText = false;
     e.flatDecal = false;
     e.sticky = true;
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnDash(glm::vec3 position) {
+EffectPart* EffectPartSystem::spawnDash(glm::vec3 position, float sizeScale) {
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "dash";
     e.color = {0.2f, 0.6f, 1.0f};
     e.maxLifetime = 0.8f;
-    e.scale = 0.35f;
-    e.endScale = 0.1f;
+    e.scale = 0.35f * sfx;
+    e.endScale = 0.1f * sfx;
     e.billboardText = false;
     e.flatDecal = false;
     e.sticky = true;
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnPerfectDash(glm::vec3 position) {
+EffectPart* EffectPartSystem::spawnPerfectDash(glm::vec3 position, float sizeScale) {
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float sfx = sc.scale(1.0f, sc.hitfxRadiusExponent, ss);
     EffectPart e;
     e.position = position;
     e.replayType = "dash";
     e.color = {1.0f, 0.8f, 0.1f};
     e.maxLifetime = 1.2f;
-    e.scale = 0.7f;
-    e.endScale = 0.05f;
+    e.scale = 0.7f * sfx;
+    e.endScale = 0.05f * sfx;
     e.billboardText = false;
     e.flatDecal = false;
     e.sticky = true;

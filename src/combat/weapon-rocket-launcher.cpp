@@ -68,13 +68,15 @@ static void doExplosion(
         HitEffects::onHit(ev);
     }
 
-    EffectPartSystem::instance().spawnMuzzleFlash(position, "rocket_explosion");
-    EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
+    EffectPartSystem::instance().spawnMuzzleFlash(position, "rocket_explosion", owner.sizeScale);
+    EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, owner.sizeScale);
 
     {
         float distToCam = glm::length(position - camera.pos);
         float shakeStrength = std::clamp(1.0f - distToCam / splashRadius, 0.0f, 1.0f);
-        camera.addPunch(shakeStrength * 4.0f, shakeStrength * 2.0f);
+        const auto& ssc = SizeScalingConfig::instance().data();
+        float shakeMul = ssc.scale(1.0f, ssc.cameraShakeExponent, std::max(owner.sizeScale, 0.001f));
+        camera.addPunch(shakeStrength * 4.0f * shakeMul, shakeStrength * 2.0f * shakeMul);
     }
 
     for (Npc& npc : npcs.all()) {

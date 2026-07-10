@@ -376,6 +376,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.dashPressed = input->dashPressed ? 1 : 0;
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.freezeHeld = input->freezeHeld ? 1 : 0;
+        in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
     }
 

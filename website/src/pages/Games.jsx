@@ -83,6 +83,12 @@ const GAMES = [
         subtitle: "How good is your aim...../?????? MOBILE AND PC WORKS",
         path: "/games/aim-test-v1",
     },
+    {
+        id: "dream-toy",
+        title: "Dream Toy",
+        subtitle: "A colorful dream playground. Draw, explode, throw, orbit, and explore.",
+        path: "/games/dream-toy",
+    },
 ]
 
 export default function Games() {
@@ -108,7 +114,7 @@ export default function Games() {
                                 <GameCardDecorator gameId={game.id}>
                                     <div className="gameCardThumb">
                                         <div className="gameCardThumbPlaceholder">
-                                            <span className="gameCardThumbIcon">🎯</span>
+                                            <span className="gameCardThumbIcon">{game.id === "dream-toy" ? "✦" : "🎯"}</span>
                                         </div>
                                     </div>
                                     <div className="gameCardBody">

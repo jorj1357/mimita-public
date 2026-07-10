@@ -121,7 +121,7 @@ struct InputPacket
     uint8_t attackPressed = 0;
     uint8_t freezeHeld = 0;
     uint8_t spawnNpcPressed = 0;
-    uint8_t reserved0 = 0;
+    float sizeScale = 1.0f;
     uint8_t reserved1 = 0;
     uint8_t reserved2 = 0;
 };

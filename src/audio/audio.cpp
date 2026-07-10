@@ -33,6 +33,7 @@
 #include <fstream>
 
 #include "config/player-settings.h"
+#include "config/size-scaling-config.h"
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "replay/replay.h"
@@ -352,17 +353,23 @@ void playAirJumpSound()
     airJumpCooldown = 0.5f;
 }
 
-void playRandomFootstep()
+void playRandomFootstep(float sizeScale)
 {
     int r = rand() % 4;
-
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(sizeScale, 0.001f);
+    float vol = sc.scale(1.0f, sc.footstepVolumeExponent, ss);
+    float pitch = sc.scale(1.0f, sc.footstepPitchExponent, ss);
+    const char* sound;
     switch (r)
     {
-        case 0: playSound("entity/player/walk1",1.0f); break;
-        case 1: playSound("entity/player/walk2",1.0f); break;
-        case 2: playSound("entity/player/walk3",1.0f); break;
-        case 3: playSound("entity/player/walk4",1.0f); break;
+        case 0: sound = "entity/player/walk1"; break;
+        case 1: sound = "entity/player/walk2"; break;
+        case 2: sound = "entity/player/walk3"; break;
+        case 3: sound = "entity/player/walk4"; break;
+        default: return;
     }
+    playSoundPitched(sound, vol, pitch);
 }
 
 void playFreezeBeginSound()
