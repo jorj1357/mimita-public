@@ -62,6 +62,8 @@ namespace DebugConfig
     inline bool DEBUG_BOMBTAG = false;
     inline bool DEBUG_NPC_MOVEMENT = false;
     inline bool DEBUG_PERF_MODEL = false;
+    inline bool DEBUG_HEAD = false;
+    inline bool DEBUG_CULL = false;
     inline bool DEBUG_REPLAY = true;
     inline bool DEBUG_NETWORKING = false;
     inline bool DEBUG_DUEL = false;

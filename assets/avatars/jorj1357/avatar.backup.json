@@ -1,0 +1,617 @@
+{
+  "name": "jorj1357",
+  "version": 1,
+  "advanced_mode": true,
+  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "simple": {
+    "face": "girlface4",
+    "shirt": "croptopfront",
+    "pants": "fishnetfrontleg",
+    "skin": "hairsides"
+  },
+  "advanced": {
+    "head_front": {
+      "texture": "girlface4",
+      "scale_x": 1.0,
+      "scale_y": 1.8,
+      "offset_x": 0,
+      "offset_y": 100,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 180,
+      "stretch_mode": "stretch"
+    },
+    "head_back": {
+      "texture": "hairsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 200,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_left": {
+      "texture": "hairsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_right": {
+      "texture": "hairsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_top": {
+      "texture": "fishnettopface",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "head_bottom": {
+      "texture": "hairsides",
+      "scale_x": 1.0,
+      "scale_y": 0.01,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_front": {
+      "texture": "croptopfront",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_back": {
+      "texture": "croptopback",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_left": {
+      "texture": "croptoptorsoleft",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_right": {
+      "texture": "croptoptorsoright",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_top": {
+      "texture": "croptoptorsotop",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "torso_bottom": {
+      "texture": "croptopback",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_front": {
+      "texture": "croptopleftarmfront",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_back": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_left": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_right": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_top": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftArm_bottom": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_front": {
+      "texture": "croptoprightarmfront",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_back": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_left": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_right": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_top": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightArm_bottom": {
+      "texture": "croptoparmsides",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_front": {
+      "texture": "fishnetfrontleg",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 180,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_back": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 180,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_left": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 180,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_right": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_top": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "leftLeg_bottom": {
+      "texture": "fishnetbottomfoot",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_front": {
+      "texture": "fishnetfrontleg",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 180,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_back": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 180,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_left": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 2,
+      "scale_y": 2,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 90,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_right": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 8,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 90,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_top": {
+      "texture": "fishnetsidelegs",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    },
+    "rightLeg_bottom": {
+      "texture": "fishnetbottomfoot",
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "offset_x": 0,
+      "offset_y": 0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "transparency": 0.0,
+      "rotation": 0,
+      "stretch_mode": "stretch"
+    }
+  },
+  "textures": {
+    "clown": "clown.jpg",
+    "clown1": "clown1.png",
+    "croptoparmsides": "croptoparmsides.png",
+    "croptopback": "croptopback.png",
+    "croptopfront": "croptopfront.png",
+    "croptopleftarmfront": "croptopleftarmfront.png",
+    "croptoprightarmfront": "croptoprightarmfront.png",
+    "croptoptorsoleft": "croptoptorsoleft.png",
+    "croptoptorsoright": "croptoptorsoright.png",
+    "croptoptorsotop": "croptoptorsotop.png",
+    "evil": "evil1.png",
+    "fishnetbottomfoot": "fishnetbottomfoot.png",
+    "fishnetfrontleg": "fishnetfrontleg.png",
+    "fishnetsidelegs": "fishnetsidelegs.png",
+    "fishnettopface": "fishnettopface.png",
+    "girlface": "girlface.png",
+    "girlface2": "girlface2.png",
+    "girlface3": "girlface3.png",
+    "girlface4": "girlface4.png",
+    "hairsides": "hairsides.png",
+    "hi": "hey.png",
+    "jeansbackleft": "jeansbackleft.png",
+    "jeansbackright": "jeansbackright.png",
+    "jeansfrontleft": "jeansfrontleft.png",
+    "jeansfrontright": "jeansfrontright.png",
+    "jeansmisc": "jeansmisc.png",
+    "suitarm": "suitarm.png",
+    "suitfront": "suitfront.png"
+  },
+  "colors": {
+    "head": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "torso": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      0.3,
+      0.3,
+      0.3
+    ],
+    "rightLeg": [
+      0.3,
+      0.3,
+      0.3
+    ]
+  },
+  "cosmetics": []
+}

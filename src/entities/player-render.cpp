@@ -173,11 +173,60 @@ void Player::renderCurrentPose(unsigned int shader,
             {
                 MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
 
-                // Character meshes are thin-shell — always render both sides
-                glDisable(GL_CULL_FACE);
-
-                MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                // Cull debug mode: enable culling + solid color to expose winding issues
+                if (DebugConfig::DEBUG_CULL) {
+                    if (batch.doubleSided)
+                        glDisable(GL_CULL_FACE);
+                    else {
+                        glEnable(GL_CULL_FACE);
+                        glCullFace(GL_BACK);
+                    }
+                    glUniform1i(uUseColorLoc, 1);
+                    glUniform4f(uColorLoc, 1.0f, 0.5f, 0.0f, 1.0f);
+                    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                    glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
+                } else {
+                    // Character meshes are thin-shell — always render both sides
+                    glDisable(GL_CULL_FACE);
+                    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                }
                 diagRenderCountPlayerDraw();
+
+                // Head debug: log once for the head batch
+                if (part.name == "head" && DebugConfig::DEBUG_HEAD) {
+                    static bool headLogged = false;
+                    if (!headLogged) {
+                        headLogged = true;
+                        glm::mat4 modelMtx = part.worldTransform;
+                        float det = glm::determinant(glm::mat3(modelMtx));
+                        printf("\n[HEAD DEBUG]\n");
+                        printf("  node=%s\n", part.name.c_str());
+                        printf("  nodeIndex=%d\n", part.nodeIndex);
+                        printf("  batches=%zu\n", mesh.batches.size());
+                        printf("  batch=%zu first=%zu count=%zu\n", (size_t)(&batch - &mesh.batches[0]), batch.first, batch.count);
+                        printf("  vertices=%zu\n", mesh.verts.size());
+                        printf("  texture=%u\n", batch.texture);
+                        printf("  double_sided=%d\n", (int)batch.doubleSided);
+                        printf("  model_determinant=%.4f\n", det);
+                        printf("  culling=%s\n", "disabled (engine override)");
+                        printf("  blend=%s\n", glIsEnabled(GL_BLEND) ? "enabled" : "disabled");
+                        GLboolean depthWrite = GL_FALSE;
+                        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWrite);
+                        printf("  depth_write=%s\n", depthWrite ? "true" : "false");
+                        printf("  front_face=CCW (default)\n");
+                        if (!mesh.verts.empty()) {
+                            float minU=1e10f, maxU=-1e10f, minV=1e10f, maxV=-1e10f;
+                            for (const auto& v : mesh.verts) {
+                                minU = std::min(minU, v.uv.x); maxU = std::max(maxU, v.uv.x);
+                                minV = std::min(minV, v.uv.y); maxV = std::max(maxV, v.uv.y);
+                            }
+                            printf("  uv_range=(%.4f,%.4f)..(%.4f,%.4f)\n", minU, minV, maxU, maxV);
+                            printf("  first_uv=(%.4f,%.4f)\n", mesh.verts[0].uv.x, mesh.verts[0].uv.y);
+                            printf("  first_pos=(%.2f,%.2f,%.2f)\n", mesh.verts[0].pos.x, mesh.verts[0].pos.y, mesh.verts[0].pos.z);
+                        }
+                        printf("\n");
+                    }
+                }
             }
         }
 

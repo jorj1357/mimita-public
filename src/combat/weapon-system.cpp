@@ -25,7 +25,8 @@
 struct TrailTriVert { glm::vec3 pos; glm::vec4 color; };
 extern std::vector<TrailTriVert> gOverlayTriVerts;
 
-bool gWeaponCollisionVisuals = false;
+bool gWeaponCollisionVisualsJson = true;
+bool gWeaponCollisionVisualsProbes = false;
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
 #include "effects/effect-part.h"
@@ -468,35 +469,40 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
     }
 
     // Weapon collision debug visuals (draws actual runtime collision data)
-    if (gWeaponCollisionVisuals && player.weaponCollisionDebug.valid) {
+    bool anyVis = gWeaponCollisionVisualsJson || gWeaponCollisionVisualsProbes;
+    if (anyVis && player.weaponCollisionDebug.valid) {
         const auto& wcd = player.weaponCollisionDebug;
 
-        // Throttled per-frame log (once per second)
+        // Count spheres by type for logging
         {
             static float logTimer = 0.0f;
             logTimer -= 0.016f;
             if (logTimer <= 0.0f) {
                 logTimer = 1.0f;
-                int sphereCount = 0;
-                for (const auto& s : wcd.spheres)
-                    if (s.collidesWithWorld) ++sphereCount;
+                int jsonCount = 0, probeCount = 0;
+                for (const auto& s : wcd.spheres) {
+                    if (!s.collidesWithWorld) continue;
+                    if (s.sourceType == WeaponColliderDebugSphere::SourceType::JsonSphere)
+                        ++jsonCount;
+                    else
+                        ++probeCount;
+                }
                 Debug::log(Debug::Category::Weapons,
-                    "[WEAPON COLLISION VISUALS] draw weapon=%s spheres=%d capsule=%d",
-                    wcd.weaponId.c_str(), sphereCount, (int)wcd.capsule.enabled);
+                    "[WEAPON COLLISION VISUALS] weapon=%s json=%d probes=%d capsule=%d",
+                    wcd.weaponId.c_str(), jsonCount, probeCount, (int)wcd.capsule.enabled);
             }
         }
 
-        // Current capsule wire (darker blue)
-        if (wcd.capsule.enabled) {
+        // Capsule wireframes (only shown with probes)
+        if (gWeaponCollisionVisualsProbes && wcd.capsule.enabled) {
+            // Current capsule wire (darker blue)
             Capsule curCap;
             curCap.a = wcd.capsule.currentStart;
             curCap.b = wcd.capsule.currentEnd;
             curCap.r = wcd.capsule.radius;
             DebugVis::drawWeaponCapsuleWire(camera, curCap, {0.0f, 0.5f, 1.0f, 0.5f});
-        }
 
-        // Previous capsule wire (darker red)
-        if (wcd.capsule.enabled) {
+            // Previous capsule wire (darker red)
             float prevLen = glm::length(wcd.capsule.previousEnd - wcd.capsule.previousStart);
             if (prevLen > 0.001f) {
                 Capsule prevCap;
@@ -510,6 +516,11 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         for (const auto& ds : wcd.spheres) {
             if (!ds.collidesWithWorld)
                 continue;
+
+            // Filter by source type: JSON spheres vs probe spheres
+            bool isJson = (ds.sourceType == WeaponColliderDebugSphere::SourceType::JsonSphere);
+            if (isJson && !gWeaponCollisionVisualsJson) continue;
+            if (!isJson && !gWeaponCollisionVisualsProbes) continue;
 
             // Current sphere: turquoise, 50% transparent
             DebugVis::drawWeaponWireSphere(camera, ds.currentCenter, ds.radius, {0.0f, 1.0f, 1.0f, 0.5f});

@@ -801,14 +801,41 @@ void registerWorldXhReloadCommand()
     });
 
     Terminal::instance().registerCommand({
-        "weapon_collision_visuals", "Show weapon collision capsule spheres and sweep paths",
+        "weapon_collision_visuals_json", "Show JSON-defined weapon collision hitbox spheres",
+        "weapon_collision_visuals_json [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gWeaponCollisionVisualsJson;
+            bool val = args.empty() ? !gWeaponCollisionVisualsJson : (args[0] != "0");
+            gWeaponCollisionVisualsJson = val;
+            char buf[80];
+            snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] json_hitboxes=%d", (int)val);
+            Terminal::instance().addLog(std::string(buf));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "weapon_collision_visuals_probes", "Show runtime weapon collision probe spheres",
+        "weapon_collision_visuals_probes [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gWeaponCollisionVisualsProbes;
+            bool val = args.empty() ? !gWeaponCollisionVisualsProbes : (args[0] != "0");
+            gWeaponCollisionVisualsProbes = val;
+            char buf[80];
+            snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] probes=%d", (int)val);
+            Terminal::instance().addLog(std::string(buf));
+        }
+    });
+
+    // Backward-compat alias: toggles JSON hitboxes only
+    Terminal::instance().registerCommand({
+        "weapon_collision_visuals", "Alias for weapon_collision_visuals_json",
         "weapon_collision_visuals [0|1]",
         [](const std::vector<std::string>& args) {
-            extern bool gWeaponCollisionVisuals;
-            bool val = args.empty() ? !gWeaponCollisionVisuals : (args[0] != "0");
-            gWeaponCollisionVisuals = val;
-            char buf[64];
-            snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] enabled=%d", (int)val);
+            extern bool gWeaponCollisionVisualsJson;
+            bool val = args.empty() ? !gWeaponCollisionVisualsJson : (args[0] != "0");
+            gWeaponCollisionVisualsJson = val;
+            char buf[80];
+            snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] json_hitboxes=%d", (int)val);
             Terminal::instance().addLog(std::string(buf));
         }
     });

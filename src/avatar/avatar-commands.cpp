@@ -5,6 +5,7 @@
 #include "devtools/terminal.h"
 #include "entities/player.h"
 #include "config/player-settings.h"
+#include "config.h"
 #include "tinygltf/tiny_gltf.h"
 
 void registerAvatarCommands(Player& player) {
@@ -398,6 +399,26 @@ void registerAvatarCommands(Player& player) {
             }
 
             Terminal::instance().addLog("[AVATAR RENDER INFO] Report printed to console");
+        },
+        std::string(),
+        CommandCategory::Debug
+    });
+
+    // ── avatar_cull_debug: toggle head culling diagnostic ────────────
+    t.registerCommand({
+        "avatar_cull_debug",
+        "Toggle head culling diagnostic (1=color front green/back red + enable culling)",
+        "avatar_cull_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                printf("[CULL DEBUG] DEBUG_CULL = %d\n", (int)DebugConfig::DEBUG_CULL);
+                return;
+            }
+            DebugConfig::DEBUG_CULL = args[0] != "0";
+            DebugConfig::DEBUG_HEAD = DebugConfig::DEBUG_CULL;
+            printf("[CULL DEBUG] set to %d (1=colored culling test, run avatar_render_info for full report)\n",
+                   (int)DebugConfig::DEBUG_CULL);
+            Terminal::instance().addLog(std::string("[CULL DEBUG] ") + (DebugConfig::DEBUG_CULL ? "ON" : "OFF"));
         },
         std::string(),
         CommandCategory::Debug

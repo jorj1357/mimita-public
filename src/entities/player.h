@@ -18,12 +18,19 @@
 struct ReplayBodyPartState;
 
 struct WeaponColliderDebugSphere {
+    enum class SourceType {
+        JsonSphere,
+        CapsuleSample,
+        GeneratedProbe
+    };
+
     std::string name;
     glm::vec3 currentCenter;
     glm::vec3 previousCenter;
     glm::vec3 sweepDelta;  // currentCenter - previousCenter, for collision solver
     float radius = 0.0f;
     bool collidesWithWorld = true;
+    SourceType sourceType = SourceType::JsonSphere;
 };
 
 struct WeaponColliderDebugCapsule {

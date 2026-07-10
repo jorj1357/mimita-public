@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
+#include <nlohmann/json.hpp>
+#include "avatar-autosave.h"
 
 class Player;
 
@@ -69,6 +71,12 @@ struct AvatarPreset {
 };
 
 struct AvatarDefinition {
+    // ── V2 fields ───────────────────────────────────────────────
+    int format_version = 2;
+    std::string avatar_id;           // unique local ID
+    std::string created_at;          // ISO 8601 timestamp
+    std::string updated_at;          // ISO 8601 timestamp
+
     std::string name;
     std::string basePath;
     SimpleAvatar simple;
@@ -101,6 +109,9 @@ struct AvatarDefinition {
     // Get the effective player model path (empty = use default)
     const std::string& getPlayerModel() const { return playerModel; }
 };
+
+// Serialize AvatarDefinition to JSON (used by AvatarAutosave)
+void avatarToJson(const AvatarDefinition& avatar, nlohmann::json& j);
 
 class AvatarSystem {
 public:
@@ -143,6 +154,12 @@ public:
     bool deleteOutfit(const std::string& name);
     bool saveCurrentOutfit(const std::string& outfitName);
 
+    // ── Autosave / recovery ──────────────────────────────────
+    void autosaveUpdate(float dt);          // call every frame
+    bool saveProject();                      // save current project
+    void triggerSave();                       // request immediate save on next update
+    const AvatarAutosave& autosave() const { return mAutosave; }
+
     // ── UV atlas texture access (for glbuvinfo etc.) ─────────
     GLuint uvAtlasTexture() const { return mUvAtlasTexture; }
 
@@ -168,6 +185,10 @@ private:
     std::filesystem::file_time_type mLastWriteTime;
     std::chrono::steady_clock::time_point mLastCheckTime;
     float mPollInterval = 0.25f;
+
+    // ── Autosave ───────────────────────────────────────────
+    AvatarAutosave mAutosave;
+    bool mSaveRequested = false;
 
     // ── UV atlas runtime state ──────────────────────────────
     GLuint mUvAtlasTexture = 0;

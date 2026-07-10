@@ -1,0 +1,9 @@
+{
+  "name": "jorj1357atlas",
+  "simple": { "face": "", "shirt": "", "pants": "", "skin": "" },
+  "texture_mode": "uv_atlas",
+  "atlas": "assets/outfitsv2/mimita character atlas v1.kra.png",
+  "alpha_mode": "blend",
+  "alpha_cutoff": 0.5,
+  "unlit": false
+}
