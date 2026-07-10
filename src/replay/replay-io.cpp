@@ -314,6 +314,14 @@ std::vector<std::string> listReplayClips()
         const std::string name = entry.path().filename().string();
         if (name.find("-validation") != std::string::npos)
             continue;
+        if (name == "replay_editor_session.json")
+            continue;
+        if (name.rfind(".rple.json") != std::string::npos)
+            continue;
+        if (name.find(".autosave.json") != std::string::npos)
+            continue;
+        if (name == "replay-export.json")
+            continue;
         if ((name.size() > 5 && name.rfind(".json") == name.size() - 5) ||
             (name.size() > 11 && name.rfind(".mclip.json") == name.size() - 11)) {
             found.push_back({entry.last_write_time(ec), entry.path().string()});

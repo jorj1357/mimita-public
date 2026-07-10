@@ -13,6 +13,7 @@
 #endif
 
 #include "replay/replay-export.h"
+#include "replay/replay-editor.h"
 #include "replay/replay-factory.h"
 
 #include <GLFW/glfw3.h>
@@ -316,21 +317,55 @@ void registerReplayExportCommands()
         "replay_export_latest", "Export the newest replay to MP4", "replay_export_latest",
         [](const std::vector<std::string>&) {
             CMDTRACE("replay_export_latest ENTERED");
-            std::vector<std::string> clips = listReplayClips();
-            CMDTRACE("listReplayClips returned %zu clips", clips.size());
-            if (clips.empty()) {
-                Terminal::instance().addLog("[ERROR] No replays found");
-                return;
+            printf("[RPLX] command received\n");
+
+            std::string path;
+
+            // Priority 1: Active replay editor session
+            if (gReplayEditor.isLoaded() && !gReplayEditor.replayPath().empty()) {
+                path = gReplayEditor.replayPath();
+                printf("[RPLX] using active replay editor replay: %s\n", path.c_str());
+                printf("[RPLX] activeEditorProjectPath=%s\n", gReplayEditor.editPath().c_str());
+                gReplayEditor.autosave();
+                printf("[RPLX] autosaved editor project\n");
             }
-            std::string path = clips.front();
-            CMDTRACE("selected newest replay: %s", path.c_str());
-            CMDTRACE("calling startReplayExport(\"%s\", 1280, 720)", path.c_str());
+
+            // Priority 2: Replay editor session file
+            if (path.empty() && ReplayEditor::hasSession()) {
+                std::ifstream f(ReplayEditor::sessionPath());
+                nlohmann::json j;
+                if (f.is_open()) {
+                    try { f >> j; } catch (...) {}
+                }
+                std::string sessionPath = j.value("lastReplay", "");
+                if (!sessionPath.empty() && std::filesystem::exists(sessionPath)) {
+                    path = sessionPath;
+                    printf("[RPLX] using session replay: %s\n", path.c_str());
+                }
+            }
+
+            // Priority 3: Newest valid replay clip
+            if (path.empty()) {
+                std::vector<std::string> clips = listReplayClips();
+                CMDTRACE("listReplayClips returned %zu clips", clips.size());
+                if (clips.empty()) {
+                    Terminal::instance().addLog("[ERROR] No replays found");
+                    printf("[RPLX] FAILED: no replay clips available\n");
+                    return;
+                }
+                path = clips.front();
+                printf("[RPLX] using newest replay clip: %s\n", path.c_str());
+            }
+
+            printf("[RPLX] calling startReplayExport(\"%s\", 1280, 720)\n", path.c_str());
             bool result = startReplayExport(path, 1280, 720);
             CMDTRACE("startReplayExport returned %d", (int)result);
+            printf("[RPLX] startReplayExport returned %d\n", (int)result);
             if (result) {
                 Terminal::instance().addLog("[REPLAY EXPORT] started: " + path);
             } else {
                 Terminal::instance().addLog("[ERROR] Failed to start export");
+                printf("[RPLX] FAILED: startReplayExport returned false\n");
             }
         },
         std::string(), CommandCategory::Uncategorized, {"rplx"}

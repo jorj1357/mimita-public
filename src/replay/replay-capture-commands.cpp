@@ -6,9 +6,13 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 
 #include "replay/replay-export.h"
+#include "replay/replay-editor.h"
 #include "replay/replay-factory.h"
+
+#include <nlohmann/json.hpp>
 
 #include <GLFW/glfw3.h>
 
@@ -41,6 +45,44 @@ static void doSaveInstantReplay()
 // ============================================================
 // rplx list - List 30 most recent replay files
 // ============================================================
+static std::string chooseReplayForExport()
+{
+    printf("[RPLX] choosing replay for export...\n");
+
+    // Priority 1: Active replay editor session
+    if (gReplayEditor.isLoaded() && !gReplayEditor.replayPath().empty()) {
+        std::string path = gReplayEditor.replayPath();
+        printf("[RPLX] priority=activeEditor path=%s\n", path.c_str());
+        gReplayEditor.autosave();
+        printf("[RPLX] autosaved editor project\n");
+        return path;
+    }
+
+    // Priority 2: Replay editor session file
+    if (ReplayEditor::hasSession()) {
+        std::ifstream f(ReplayEditor::sessionPath());
+        nlohmann::json j;
+        if (f.is_open()) {
+            try { f >> j; } catch (...) {}
+        }
+        std::string sessionPath = j.value("lastReplay", "");
+        if (!sessionPath.empty() && std::filesystem::exists(sessionPath)) {
+            printf("[RPLX] priority=sessionFile path=%s\n", sessionPath.c_str());
+            return sessionPath;
+        }
+    }
+
+    // Priority 3: Newest valid replay clip
+    std::vector<std::string> clips = listReplayClips();
+    if (clips.empty()) {
+        printf("[RPLX] priority=none reason=no_clips\n");
+        return "";
+    }
+    std::string path = clips.front();
+    printf("[RPLX] priority=newestClip path=%s\n", path.c_str());
+    return path;
+}
+
 static void doReplayList()
 {
     std::vector<std::string> clips = listReplayClips();
@@ -100,6 +142,26 @@ static void doBatchExport(int count)
 {
     if (isReplayExportActive()) {
         Terminal::instance().addLog("[ERROR] Export already in progress");
+        return;
+    }
+
+    printf("[RPLX] doBatchExport count=%d\n", count);
+
+    // If editor is active, export just that one replay
+    if (gReplayEditor.isLoaded() && !gReplayEditor.replayPath().empty()) {
+        std::string path = gReplayEditor.replayPath();
+        printf("[RPLX] using active editor replay: %s\n", path.c_str());
+        gReplayEditor.autosave();
+        printf("[RPLX] autosaved editor project\n");
+        gBatchExportQueue.clear();
+        gBatchExportQueue.push_back(path);
+        gBatchExportTotal = 1;
+        gBatchExportCurrent = 0;
+        gBatchExportActive = true;
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "[REPLAY] Batch export: 1 replay(s) queued (active editor)");
+        Terminal::instance().addLog(buf);
+        startNextBatchExport();
         return;
     }
 
@@ -209,6 +271,14 @@ void registerReplayCaptureCommands()
     Terminal::instance().registerCommand({
         "rplx", "Replay export: list, <count>, or all", "rplx [list|<count>|all]",
         [](const std::vector<std::string>& args) {
+            printf("[RPLX] command received\n");
+            printf("[RPLX] hasActiveReplayEditor=%d\n", (int)gReplayEditor.isLoaded());
+            if (gReplayEditor.isLoaded()) {
+                printf("[RPLX] activeEditorReplayPath=%s\n", gReplayEditor.replayPath().c_str());
+                printf("[RPLX] activeEditorProjectPath=%s\n", gReplayEditor.editPath().c_str());
+            }
+            printf("[RPLX] hasSession=%d\n", (int)ReplayEditor::hasSession());
+
             if (args.empty()) {
                 Terminal::instance().addLog("[USAGE] rplx list  - show replay files");
                 Terminal::instance().addLog("[USAGE] rplx <N>   - export newest N replays");
@@ -219,12 +289,7 @@ void registerReplayCaptureCommands()
             if (args[0] == "list") {
                 doReplayList();
             } else if (args[0] == "all") {
-                std::vector<std::string> clips = listReplayClips();
-                if (clips.empty()) {
-                    Terminal::instance().addLog("[ERROR] No replay files to export");
-                    return;
-                }
-                doBatchExport((int)clips.size());
+                doBatchExport(999999);
             } else {
                 char* end = nullptr;
                 long n = std::strtol(args[0].c_str(), &end, 10);
