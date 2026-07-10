@@ -197,6 +197,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 actor->currentHp = actorState.health;
                 actor->maxHp = actorState.maxHealth;
                 actor->dead = actorState.dead;
+                actor->sizeScale = actorState.sizeScale;
                 actor->vel = actorState.velocity;
                 actor->ground.onGround = actorState.grounded;
                 actor->equippedWeaponId = actorState.weaponName;

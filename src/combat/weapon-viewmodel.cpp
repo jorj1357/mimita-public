@@ -13,6 +13,7 @@
 
 #include "camera.h"
 #include "config.h"
+#include "config/size-scaling-config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "entities/player.h"
@@ -252,7 +253,9 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.x), glm::vec3(1,0,0));
             confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.y), glm::vec3(0,1,0));
             confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.z), glm::vec3(0,0,1));
-            confTransform = glm::scale(confTransform, vmcfg->scale);
+            float s = std::max(player.sizeScale, 0.001f);
+            const auto& sc = SizeScalingConfig::instance().data();
+            confTransform = glm::scale(confTransform, vmcfg->scale * sc.scale(1.0f, sc.weaponSizeExponent, s));
             weaponTransform = weaponTransform * confTransform;
 
             // ── Per-weapon animation blending ──────────────────────────
@@ -341,7 +344,9 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.x), glm::vec3(1,0,0));
                 confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.y), glm::vec3(0,1,0));
                 confTransform = glm::rotate(confTransform, glm::radians(vmcfg->rotationDegrees.z), glm::vec3(0,0,1));
-                confTransform = glm::scale(confTransform, vmcfg->scale);
+                float s2 = std::max(player.sizeScale, 0.001f);
+                const auto& sc2 = SizeScalingConfig::instance().data();
+                confTransform = glm::scale(confTransform, vmcfg->scale * sc2.scale(1.0f, sc2.weaponSizeExponent, s2));
                 extraTransform = confTransform;
 
                 if (mFireTimer > 0.0f && vmcfg->hasFireAnim) {

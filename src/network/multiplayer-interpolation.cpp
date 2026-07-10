@@ -27,6 +27,7 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.pingMs = entity.pingMs;
     transform.receivedMs = nowMs();
     transform.lastDashSerial = entity.lastDashSerial;
+    transform.sizeScale = entity.sizeScale;
     return transform;
 }
 
@@ -107,6 +108,7 @@ void updateRenderedReplica(
         ? glm::normalize(glm::mix(interpolation.previous.aimDirection, interpolation.target.aimDirection, t))
         : interpolation.target.aimDirection;
     player.hasAimData = glm::length(player.aimDirection) > 0.001f;
+    player.sizeScale = interpolation.target.sizeScale;
     player.username = interpolation.displayName;
 
     // Detect dash serial change → trigger dash effect locally

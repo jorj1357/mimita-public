@@ -91,6 +91,7 @@ ReplayActorState parseActor(const json& value)
     actor.collidable = value.value("collidable", true);
     actor.fade = value.value("fade", 0.0f);
     actor.blackness = value.value("blackness", 0.0f);
+    actor.sizeScale = value.value("sizeScale", 1.0f);
     actor.weaponName = value.value("weaponName", "");
     actor.animationState = value.value("animationState", "");
     if (value.contains("bodyParts") && value["bodyParts"].is_object()) {
@@ -123,7 +124,7 @@ json actorJson(const ReplayActorState& actor)
         {"shooting", actor.shooting},
         {"reloading", actor.reloading}, {"grounded", actor.grounded},
         {"collidable", actor.collidable}, {"fade", actor.fade},
-        {"blackness", actor.blackness}, {"weaponName", actor.weaponName},
+        {"blackness", actor.blackness}, {"sizeScale", actor.sizeScale}, {"weaponName", actor.weaponName},
         {"animationState", actor.animationState}
     };
     value["bodyParts"] = json::object();

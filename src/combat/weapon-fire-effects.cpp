@@ -4,6 +4,7 @@
 #include <cmath>
 #include <glm/glm.hpp>
 #include "config/player-settings.h"
+#include "config/size-scaling-config.h"
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "effects/hit-effects.h"
@@ -25,7 +26,9 @@ static float partBaseDamage(const std::string& part, float baseDmg, float headsh
 void applyRecoil(Player& shooter, const WeaponDefinition& def,
                  const glm::vec3& shotDirection, float& inOutRecoil, float dt) {
     const PlayerSettings& cfg = GetPlayerSettings();
-    float recoilStrength = cfg.weaponRecoilStrength;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(shooter.sizeScale, 0.001f);
+    float recoilStrength = cfg.weaponRecoilStrength * sc.scale(1.0f, sc.recoilExponent, ss);
     glm::vec3 recoilDir(
         -shotDirection.x,
         -shotDirection.y,
@@ -35,7 +38,7 @@ void applyRecoil(Player& shooter, const WeaponDefinition& def,
         recoilDir = glm::normalize(recoilDir);
     shooter.externalImpulse += recoilDir * recoilStrength;
     shooter.externalImpulse.z += recoilStrength * cfg.weaponRecoilUpKick * 0.01f;
-    inOutRecoil = std::min(inOutRecoil + def.recoil * 0.25f, 8.0f);
+    inOutRecoil = std::min(inOutRecoil + def.recoil * 0.25f * sc.scale(1.0f, sc.recoilExponent, ss), 8.0f * sc.scale(1.0f, sc.recoilExponent, ss));
 
     if (DebugConfig::DEBUG_RECOIL)
         Debug::log(Debug::Category::General,
@@ -65,7 +68,10 @@ int applyDamageToEntity(const DamageContext& ctx, Npc& victim,
 
     float distanceFactor = std::clamp(1.0f - ctx.distance / distanceFalloffStart, minDamageFrac, 1.0f);
     float angleFactor = std::clamp(std::fabs(glm::dot(-shotDirection, ctx.hitNormal)), minAngleFrac, 1.0f);
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(shooter.sizeScale, 0.001f);
     float damage = std::min(base, std::max(base * distanceFactor * angleFactor, ctx.distance >= 100.0f ? 10.0f : 1.0f));
+    damage *= sc.scale(1.0f, sc.damageExponent, ss);
     int rounded = std::max(1, (int)std::round(damage));
 
     // Unified hitForce: drives debris, blood, sound, knockback

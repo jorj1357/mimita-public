@@ -154,6 +154,7 @@ struct SnapshotEntity
     float aimY = 0.0f;
     float aimZ = 0.0f;
     int32_t pingMs = 0;
+    float sizeScale = 1.0f;
     char displayName[MAX_NAME_BYTES];
 };
 

@@ -46,6 +46,7 @@ ReplayActorState mixActor(
     result.currentAmmo = t < 0.5f ? a.currentAmmo : b.currentAmmo;
     result.reserveAmmo = t < 0.5f ? a.reserveAmmo : b.reserveAmmo;
     result.dead = t < 0.5f ? a.dead : b.dead;
+    result.sizeScale = a.sizeScale;
     for (ReplayBodyPartState& part : result.bodyParts) {
         auto it = std::find_if(
             b.bodyParts.begin(), b.bodyParts.end(),

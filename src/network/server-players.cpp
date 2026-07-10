@@ -275,6 +275,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.aimY = player.input.camForward.y;
     out.aimZ = player.input.camForward.z;
     out.pingMs = player.pingMs;
+    out.sizeScale = player.sizeScale;
     copyName(out.displayName, player.name);
     return out;
 }

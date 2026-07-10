@@ -40,6 +40,7 @@ import Link from "./pages/Link"
 import ClientSignIn from "./pages/ClientSignIn"
 import Games from "./pages/Games"
 import AimTestV1 from "./pages/AimTestV1"
+import AdminArticleEditor from "./pages/AdminArticleEditor"
 
 /* =========================
    APP
@@ -83,6 +84,7 @@ ReactDOM.createRoot(
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="/admin/email-campaigns" element={<EmailCampaigns />} />
+        <Route path="/admin/articles" element={<AdminArticleEditor />} />
         <Route path="/admin/no-permission" element={<AdminNoPermission />} />
 
         <Route path="/feedback" element={<Feedback />} />

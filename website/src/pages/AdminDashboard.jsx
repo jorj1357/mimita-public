@@ -461,6 +461,17 @@ export default function AdminDashboard() {
                     )}
                 </div>
 
+                {/* Article Editor */}
+                <div className="adminSection">
+                    <h2>Articles</h2>
+                    <div className="adminCard">
+                        <p>Write and publish articles in markdown. Supports [rainbow]text[/rainbow] effects.</p>
+                        <Link to="/admin/articles" className="adminButton" style={{ display: "inline-block", marginTop: "8px", textDecoration: "none" }}>
+                            Open Article Editor
+                        </Link>
+                    </div>
+                </div>
+
                 {/* Email Campaigns */}
                 <div className="adminSection">
                     <h2>Email Campaigns</h2>

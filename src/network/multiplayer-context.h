@@ -32,6 +32,7 @@ struct SnapshotTransform
     uint32_t serverTick = 0;
     uint64_t receivedMs = 0;
     uint16_t lastDashSerial = 0;
+    float sizeScale = 1.0f;
 };
 
 struct QueuedPacket

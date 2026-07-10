@@ -233,3 +233,19 @@
   border-top: 1px solid #222;
   margin: 2em 0;
 }
+
+/* ── Rainbow text effect ── */
+.rainbow-text {
+  animation: rainbowCycle 3s linear infinite;
+  font-weight: bold;
+}
+
+@keyframes rainbowCycle {
+  0%   { color: hsl(0, 100%, 60%); }
+  17%  { color: hsl(60, 100%, 60%); }
+  33%  { color: hsl(120, 100%, 60%); }
+  50%  { color: hsl(180, 100%, 60%); }
+  67%  { color: hsl(240, 100%, 60%); }
+  83%  { color: hsl(300, 100%, 60%); }
+  100% { color: hsl(360, 100%, 60%); }
+}
