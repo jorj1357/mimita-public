@@ -175,9 +175,10 @@ void Player::updateModelWorldTransforms()
 Capsule Player::getCapsule() const
 {
     Capsule c;
-    c.r = movementCapsule.radius > 0.0f ? movementCapsule.radius : PLAYER_RADIUS;
+    float s = std::max(sizeScale, 0.001f);
+    c.r = (movementCapsule.radius > 0.0f ? movementCapsule.radius : PLAYER_RADIUS) * s;
 
-    float height = movementCapsule.height > 0.0f ? movementCapsule.height : PLAYER_HEIGHT;
+    float height = (movementCapsule.height > 0.0f ? movementCapsule.height : PLAYER_HEIGHT) * s;
     float half = height * 0.5f;
     glm::vec3 center = movementCapsule.position;
     if (glm::length(center - pos) > 0.0001f)
@@ -191,8 +192,9 @@ Capsule Player::getCapsule() const
 OBB Player::getOBB() const
 {
     OBB b;
+    float s = std::max(sizeScale, 0.001f);
     b.center = pos;
-    b.halfSize = glm::vec3(PLAYER_WIDTH,PLAYER_DEPTH,PLAYER_HEIGHT) * 0.5f;
+    b.halfSize = glm::vec3(PLAYER_WIDTH,PLAYER_DEPTH,PLAYER_HEIGHT) * 0.5f * s;
     b.orientation = glm::rotate(glm::mat4(1.0f),
                                 glm::radians(-yaw),
                                 glm::vec3(0,0,1));

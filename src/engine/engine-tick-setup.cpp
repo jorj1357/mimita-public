@@ -9,6 +9,7 @@
 
 #include "crosshair/crosshair-config.h"
 #include "config/gameplay-config.h"
+#include "config/size-scaling-config.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
 #include "config/camera-config.h"
@@ -35,6 +36,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
     CamConfig::instance().pollReload();
+    SizeScalingConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
     RagdollConfig::instance().pollReload();
     WeaponHitFxConfig::instance().pollReload();

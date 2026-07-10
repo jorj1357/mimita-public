@@ -99,7 +99,12 @@ int runServer(const LaunchOptions& options)
         {
             int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromLen);
             if (bytes <= 0)
+            {
+                int wsaErr = WSAGetLastError();
+                if (wsaErr != WSAEWOULDBLOCK)
+                    printf("%s [NET RX ERROR] recvfrom failed error=%d\n", serverTimestamp(), wsaErr);
                 break;
+            }
             ++totalPacketsIn;
 
             PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);

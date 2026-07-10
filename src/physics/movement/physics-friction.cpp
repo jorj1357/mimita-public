@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "physics/config.h"
+#include "config/size-scaling-config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
@@ -36,11 +37,13 @@ void doFriction(
 
     if (!(onGround && hasMoveInput))
     {
+        const auto& sc = SizeScalingConfig::instance().data();
+        float s = std::max(p.sizeScale, 0.001f);
         float frictionAmount =
             (onGround
             ? GROUND_FRICTION_AMOUNT
             : AIR_FRICTION_AMOUNT)
-            * frictionMul;
+            * frictionMul * sc.scale(1.0f, -0.5f, s); // larger = less friction
 
         float decay = expDecay(frictionAmount, dt);
         velXY *= decay;

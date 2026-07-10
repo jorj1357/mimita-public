@@ -21,8 +21,12 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 
     if (delayMs <= 0)
     {
-        sendto(ctx.sock, (const char*)data, bytes, 0,
-               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        int sentBytes = sendto(ctx.sock, (const char*)data, bytes, 0,
+                               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        if (sentBytes == SOCKET_ERROR)
+            printf("[NET TX ERROR] sendto failed error=%d\n", WSAGetLastError());
+        else
+            printf("[NET TX] type=%d bytes=%d\n", ((PacketHeader*)data)->type, bytes);
         ++ctx.packetsSent;
         return;
     }

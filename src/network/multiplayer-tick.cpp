@@ -44,7 +44,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     uint64_t currentMs = nowMs();
 
-    constexpr uint64_t CLIENT_TIMEOUT_MS = 10000;
+    const uint64_t CLIENT_TIMEOUT_MS = MimitaNet::CLIENT_TIMEOUT_MS;
     if (ctx.connected && ctx.lastHeardServerMs > 0 &&
         currentMs - ctx.lastHeardServerMs > CLIENT_TIMEOUT_MS)
     {
@@ -55,6 +55,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                    (unsigned long long)(currentMs - ctx.lastHeardServerMs));
             ctx.lastDisconnectLogMs = currentMs;
         }
+        // ACTUALLY disconnect instead of just logging forever
+        printf("[NET DISCONNECT] player=%u reason=heartbeat_timeout duration=%llums\n",
+               ctx.localPlayerId,
+               (unsigned long long)(currentMs - ctx.lastHeardServerMs));
+        ctx.connected = false;
+        ctx.active = false;
+        closesocket(ctx.sock);
+        ctx.sock = INVALID_SOCKET;
+        return;
     }
     if (ctx.fakeLagMode == 1 &&
         (ctx.fakeLagNextRandomizeMs == 0 ||
@@ -97,7 +106,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
                              (sockaddr*)&from, &fromLen);
         if (bytes <= 0)
+        {
+            int wsaErr = WSAGetLastError();
+            if (wsaErr != WSAEWOULDBLOCK)
+                printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
             break;
+        }
         ++ctx.packetsReceived;
         if (!isSameAddress(from, ctx.serverAddr))
         {
@@ -107,12 +121,27 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
 
         PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
-        if (bytes < (int)sizeof(PacketHeader) ||
-            header->magic != PROTOCOL_MAGIC ||
-            header->version != PROTOCOL_VERSION)
+        if (bytes < (int)sizeof(PacketHeader))
+        {
+            printf("[NET RX] rejected=packet-too-small bytes=%d\n", bytes);
             continue;
+        }
+        if (header->magic != PROTOCOL_MAGIC)
+        {
+            printf("[NET RX] rejected=bad-magic magic=0x%llx\n", (unsigned long long)header->magic);
+            continue;
+        }
+        if (header->version != PROTOCOL_VERSION)
+        {
+            printf("[NET RX] rejected=bad-version version=%d expected=%d\n",
+                   header->version, PROTOCOL_VERSION);
+            continue;
+        }
 
         ctx.lastHeardServerMs = nowMs();
+
+        printf("[NET RX] type=%d seq=%u bytes=%d\n",
+               header->type, header->tick, bytes);
 
         if (header->type == PACKET_WELCOME && bytes >= (int)sizeof(WelcomePacket))
         {
@@ -127,7 +156,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.localPlayerId,
                 0
             };
-            printf("[NET SPAWN] assigned player id=%u serverTick=%u tickRate=%.0f\n",
+            printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate);
         }
         else if (header->type == PACKET_SNAPSHOT && bytes >= (int)sizeof(SnapshotPacket))

@@ -88,6 +88,7 @@
 #include "replay/replay-camera.h"
 #include "config/gameplay-config.h"
 #include "config/player-settings.h"
+#include "config/size-scaling-config.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 void registerCompetitiveCommands();
@@ -371,6 +372,7 @@ void gameInitSubsystems(Engine& engine)
     registerShadowCommands();
     registerDebugCommands();
     registerWorldTextureCommands();
+    SizeScalingConfig::instance().load("config/size_scaling.json");
     RagdollConfig::instance().load("config/ragdolldeath.json");
     registerRagdollCommands();
     HitEffects::loadConfig("config/hitfx.json");

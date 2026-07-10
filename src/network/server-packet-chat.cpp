@@ -137,7 +137,7 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players)
         const uint64_t silentMs = nowMs() - it->second.lastHeardMs;
         if (silentMs > CLIENT_TIMEOUT_MS)
         {
-            printf("%s [SERVER DISCONNECT] reason=timeout id=%u name=\"%s\" lastHeard=%llums ago ping=%dms\n",
+            printf("%s [NET DISCONNECT] reason=heartbeat_timeout id=%u name=\"%s\" lastHeard=%llums ago ping=%dms\n",
                    serverTimestamp(), it->second.id, it->second.name.c_str(),
                    (unsigned long long)silentMs, it->second.pingMs);
             it = players.erase(it);
