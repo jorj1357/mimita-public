@@ -444,10 +444,8 @@ bool playReplayMusicPreview(const std::string& path, float volume)
     }
 
     ma_sound_set_volume(sound, volume);
-    // Set to loop if we want infinite preview — for now, no loop (stops at end)
-    ma_sound_start(sound);
 
-    // Seek to start (tick 0)
+    // Seek to start (tick 0) — sound is NOT started; caller must resumeReplayMusicPreview()
     ma_sound_seek_to_pcm_frame(sound, 0);
 
     gReplayMusicSound = sound;

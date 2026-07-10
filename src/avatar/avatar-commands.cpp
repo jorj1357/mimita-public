@@ -5,6 +5,7 @@
 #include "devtools/terminal.h"
 #include "entities/player.h"
 #include "config/player-settings.h"
+#include "tinygltf/tiny_gltf.h"
 
 void registerAvatarCommands(Player& player) {
     Terminal& t = Terminal::instance();
