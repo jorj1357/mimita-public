@@ -87,6 +87,13 @@ struct AvatarDefinition {
     // Optional custom player model GLB path
     std::string playerModel;
 
+    // ── UV atlas mode fields ────────────────────────────────────
+    std::string textureMode = "legacy_faces";  // "legacy_faces" or "uv_atlas"
+    std::string atlasPath;                     // external PNG atlas path
+    std::string alphaMode = "blend";           // "opaque", "cutout", "blend"
+    float alphaCutoff = 0.5f;                  // for cutout mode
+    bool unlit = false;                        // skip lighting when true
+
     FaceSettings resolve(const std::string& part, const std::string& face) const;
     void expandSimple();
     void clear();
@@ -136,6 +143,9 @@ public:
     bool deleteOutfit(const std::string& name);
     bool saveCurrentOutfit(const std::string& outfitName);
 
+    // ── UV atlas texture access (for glbuvinfo etc.) ─────────
+    GLuint uvAtlasTexture() const { return mUvAtlasTexture; }
+
     // Clipboard for copy/paste within the editor session
     FaceSettings clipboardFace;
     FaceVector clipboardPart;
@@ -158,4 +168,10 @@ private:
     std::filesystem::file_time_type mLastWriteTime;
     std::chrono::steady_clock::time_point mLastCheckTime;
     float mPollInterval = 0.25f;
+
+    // ── UV atlas runtime state ──────────────────────────────
+    GLuint mUvAtlasTexture = 0;
+    std::filesystem::file_time_type mAtlasLastWriteTime;
+    int mAtlasWidth = 0;
+    int mAtlasHeight = 0;
 };
