@@ -209,7 +209,9 @@ void ReplayPlayer::seekToTick(uint32_t tick) {
 
 bool ReplayCameraController::setMode(const std::string& name)
 {
-    if (name == "fp" || name == "firstperson")
+    if (name == "recorded" || name == "rec")
+        mMode = ReplayCameraMode::Recorded;
+    else if (name == "fp" || name == "firstperson")
         mMode = ReplayCameraMode::FirstPerson;
     else if (name == "victim")
         mMode = ReplayCameraMode::Victim;
@@ -236,6 +238,7 @@ void ReplayCameraController::setFov(float value)
 const char* ReplayCameraController::modeName() const
 {
     switch (mMode) {
+        case ReplayCameraMode::Recorded: return "recorded";
         case ReplayCameraMode::FirstPerson: return "fp";
         case ReplayCameraMode::Victim: return "victim";
         case ReplayCameraMode::Orbit: return "orbit";
@@ -244,7 +247,7 @@ const char* ReplayCameraController::modeName() const
         case ReplayCameraMode::Spectator: return "spectator";
         case ReplayCameraMode::TopDown: return "topdown";
     }
-    return "fp";
+    return "recorded";
 }
 
 void ReplayCameraController::update(
@@ -264,10 +267,20 @@ void ReplayCameraController::update(
             camera.pos.x, camera.pos.y, camera.pos.z, camera.yaw, camera.pitch, camera.fov);
         return;
     }
+    if (mMode == ReplayCameraMode::Recorded) {
+        camera.pos = frame.camera.position;
+        camera.pitch = frame.camera.rotation.x;
+        camera.yaw = frame.camera.rotation.z;
+        camera.updateVectors();
+        Debug::logThrottled(Debug::Category::Replay, "replay-recorded", 1.0f,
+            "[ReplayCam] tick=%d mode=recorded pos=(%.1f %.1f %.1f) pitch=%.1f yaw=%.1f fov=%.0f\n",
+            (int)0, camera.pos.x, camera.pos.y, camera.pos.z, camera.pitch, camera.yaw, camera.fov);
+        return;
+    }
     if (mMode == ReplayCameraMode::FirstPerson) {
         const ReplayActorState* killer = findActor(frame, killerId);
         camera.pos = killer
-            ? killer->position + glm::vec3(0.0f, 0.0f, 1.55f)
+            ? killer->position + glm::vec3(0.0f, 0.0f, 1.872f)
             : frame.camera.position;
         camera.pitch = frame.camera.rotation.x;
         camera.yaw = frame.camera.rotation.z;

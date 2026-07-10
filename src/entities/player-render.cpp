@@ -132,6 +132,11 @@ void Player::renderCurrentPose(unsigned int shader,
         }
         glUniform1f(uAlphaCutoffLoc, alphaCutoff);
 
+        // Save and explicitly set culling state for player rendering
+        GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+        GLint cullModeWas = GL_BACK;
+        if (cullWas) glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
+
         // Set GL blend state based on alpha mode
         GLboolean blendWas = glIsEnabled(GL_BLEND);
         if (alphaBlendMode == 0) {
@@ -167,9 +172,21 @@ void Player::renderCurrentPose(unsigned int shader,
             for (const Mesh::Batch& batch : mesh.batches)
             {
                 MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
+
+                // Character meshes are thin-shell — always render both sides
+                glDisable(GL_CULL_FACE);
+
                 MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
                 diagRenderCountPlayerDraw();
             }
+        }
+
+        // Restore culling state
+        if (cullWas) {
+            glEnable(GL_CULL_FACE);
+            glCullFace(cullModeWas);
+        } else {
+            glDisable(GL_CULL_FACE);
         }
 
         // Restore blend state

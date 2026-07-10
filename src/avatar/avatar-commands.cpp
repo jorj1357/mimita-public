@@ -329,4 +329,77 @@ void registerAvatarCommands(Player& player) {
         std::string(),
         CommandCategory::Debug
     });
+
+    // ── avatar_render_info: report player render batch details ──────
+    t.registerCommand({
+        "avatar_render_info",
+        "Report player render batch details",
+        "avatar_render_info",
+        [&player](const std::vector<std::string>&) {
+            printf("\n[AVATAR RENDER INFO]\n");
+            printf("  modelLoaded=%d\n", (int)player.modelLoaded);
+            printf("  bodyParts=%zu\n", player.physicalBody.parts.size());
+            printf("  partMeshes=%zu\n", player.physicalBody.partMeshes.size());
+
+            for (size_t pi = 0; pi < player.physicalBody.parts.size() && pi < player.physicalBody.partMeshes.size(); ++pi) {
+                const auto& part = player.physicalBody.parts[pi];
+                const auto& mesh = player.physicalBody.partMeshes[pi];
+                printf("  part[%zu]: name=%s nodeIndex=%d verts=%zu batches=%zu\n",
+                       pi, part.name.c_str(), part.nodeIndex,
+                       mesh.verts.size(), mesh.batches.size());
+                for (size_t bi = 0; bi < mesh.batches.size(); ++bi) {
+                    const auto& batch = mesh.batches[bi];
+                    printf("    batch[%zu]: first=%zu count=%zu matIdx=%d doubleSided=%d texture=%u\n",
+                           bi, batch.first, batch.count,
+                           batch.materialIndex, (int)batch.doubleSided, batch.texture);
+
+                    // Compute UV range for this batch
+                    if (!mesh.verts.empty()) {
+                        float minU = 1e10f, maxU = -1e10f, minV = 1e10f, maxV = -1e10f;
+                        size_t end = std::min(batch.first + batch.count, mesh.verts.size());
+                        for (size_t vi = batch.first; vi < end; ++vi) {
+                            minU = std::min(minU, mesh.verts[vi].uv.x);
+                            maxU = std::max(maxU, mesh.verts[vi].uv.x);
+                            minV = std::min(minV, mesh.verts[vi].uv.y);
+                            maxV = std::max(maxV, mesh.verts[vi].uv.y);
+                        }
+                        printf("    uv_range=(%.4f,%.4f)..(%.4f,%.4f)\n",
+                               minU, minV, maxU, maxV);
+                    }
+                }
+            }
+
+            // Current OpenGL state snapshot
+            printf("  GL state:\n");
+            GLboolean cullEnabled = glIsEnabled(GL_CULL_FACE);
+            GLint cullMode = GL_BACK, frontFace = GL_CCW;
+            glGetIntegerv(GL_CULL_FACE_MODE, &cullMode);
+            glGetIntegerv(GL_FRONT_FACE, &frontFace);
+            printf("    cull_face=%s mode=%s front_face=%s\n",
+                   cullEnabled ? "enabled" : "disabled",
+                   cullMode == GL_BACK ? "back" : "front",
+                   frontFace == GL_CCW ? "CCW" : "CW");
+            GLboolean blendEnabled = glIsEnabled(GL_BLEND);
+            GLint blendSrc = 0, blendDst = 0;
+            glGetIntegerv(GL_BLEND_SRC, &blendSrc);
+            glGetIntegerv(GL_BLEND_DST, &blendDst);
+            printf("    blend=%s src=0x%x dst=0x%x\n",
+                   blendEnabled ? "enabled" : "disabled", blendSrc, blendDst);
+
+            // Current avatar info
+            if (AvatarSystem::instance().hasAvatar()) {
+                const auto& av = AvatarSystem::instance().current();
+                printf("  avatar=%s texture_mode=%s\n", av.name.c_str(), av.textureMode.c_str());
+                if (av.textureMode == "uv_atlas") {
+                    printf("    atlas=%s alpha=%s cutoff=%.2f unlit=%d doubleSided=%d\n",
+                           av.atlasPath.c_str(), av.alphaMode.c_str(),
+                           av.alphaCutoff, (int)av.unlit, 0);
+                }
+            }
+
+            Terminal::instance().addLog("[AVATAR RENDER INFO] Report printed to console");
+        },
+        std::string(),
+        CommandCategory::Debug
+    });
 }

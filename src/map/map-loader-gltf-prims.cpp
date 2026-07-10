@@ -124,6 +124,9 @@ void appendPrimitive(
     batch.materialName = primitive.material >= 0 && primitive.material < (int)model.materials.size()
         ? model.materials[primitive.material].name
         : "default";
+    batch.doubleSided = primitive.material >= 0 && primitive.material < (int)model.materials.size()
+        ? model.materials[primitive.material].doubleSided
+        : false;
     static GLuint defaultTexture = 0;
     if (!defaultTexture)
         defaultTexture = gTextures.get("default");

@@ -211,6 +211,9 @@ void appendNodeRenderMesh(
         batch.materialName = "player_body";
         batch.texture = gTextures.get("default");
         batch.first = out.verts.size();
+        // Read doubleSided from GLTF material if available
+        if (primitive.material >= 0 && primitive.material < (int)model.materials.size())
+            batch.doubleSided = model.materials[primitive.material].doubleSided;
 
         auto pushVertex = [&](size_t vertexIndex) {
             Vertex v{};

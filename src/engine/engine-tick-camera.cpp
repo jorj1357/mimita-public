@@ -892,6 +892,7 @@ void engineTickCamera(Engine& engine, float dt)
             switch (camMode) {
                 case ReplayCameraMode::Freecam:
                     break;
+                case ReplayCameraMode::Recorded:
                 case ReplayCameraMode::FirstPerson:
                 case ReplayCameraMode::Orbit:
                     viewedEntity = gReplayPlayer.killerId();
