@@ -36,6 +36,7 @@
 #include <algorithm>
 
 #include "physics/config.h"
+#include "config/size-scaling-config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
@@ -98,7 +99,8 @@ void doJump(
         float beforeVel = p.vel.z;
 
         p.dash.dashAvailable = true;
-        p.vel.z = PHYS.jumpStrength;
+        const auto& sc = SizeScalingConfig::instance().data();
+        p.vel.z = PHYS.jumpStrength * sc.scale(1.0f, sc.jumpHeightExponent, std::max(p.sizeScale, 0.001f));
         p.ground.onGround = false;
         p.jump.coyoteTimer = 0.0f;
         p.jump.jumpIntentTimer = 0.0f;
@@ -125,7 +127,8 @@ void doJump(
     {
         float beforeVel = p.vel.z;
 
-        p.vel.z = PHYS.jumpStrength;
+        const auto& sc = SizeScalingConfig::instance().data();
+        p.vel.z = PHYS.jumpStrength * sc.scale(1.0f, sc.jumpHeightExponent, std::max(p.sizeScale, 0.001f));
         p.jump.airJumpsLeft--;
         p.jump.airJumpArmed = false;
         p.jump.airJumpLocked = true;

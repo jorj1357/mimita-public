@@ -95,10 +95,11 @@ inline AABB makeTriangleAABB(const CollisionTriangle& tri)
 
 inline AABB makePlayerAABB(const Player& p)
 {
+    float s = std::max(p.sizeScale, 0.001f);
     glm::vec3 half(
-        PLAYER_WIDTH  * 0.5f,
-        PLAYER_DEPTH  * 0.5f,
-        PLAYER_HEIGHT * 0.5f
+        PLAYER_WIDTH  * 0.5f * s,
+        PLAYER_DEPTH  * 0.5f * s,
+        PLAYER_HEIGHT * 0.5f * s
     );
     return { p.pos - half, p.pos + half };
 }

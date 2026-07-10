@@ -8,6 +8,7 @@
 #include "combat/death-system.h"
 #include "input/input-poll.h"
 #include "config/player-settings.h"
+#include "config/size-scaling-config.h"
 #include "network/packets.h"
 #include "avatar/avatar.h"
 
@@ -227,6 +228,65 @@ void registerPlayerCommands()
         }
     });
 
+    Terminal::instance().registerCommand({
+        "sizeme", "Set player size scale", "sizeme <value>",
+        [](const std::vector<std::string>& args) {
+            if (!gpPlayer) { Terminal::instance().addLog("[ERROR] No player"); return; }
+            if (args.empty()) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "[SIZE] current=%.4f", gpPlayer->sizeScale);
+                Terminal::instance().addLog(buf);
+                return;
+            }
+            float val = std::stof(args[0]);
+            if (val < 0.001f) val = 0.001f;
+            gpPlayer->sizeScale = val;
+            const auto& sc = SizeScalingConfig::instance().data();
+            int effectiveHp = (int)(100.0f * sc.scale(1.0f, sc.healthExponent, val));
+            gpPlayer->maxHp = effectiveHp;
+            gpPlayer->currentHp = effectiveHp;
+            char buf[256];
+            std::snprintf(buf, sizeof(buf), "[SIZE] set to %.4f (maxHp=%d)", val, effectiveHp);
+            Terminal::instance().addLog(buf);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "size_reset", "Reset player size to 1.0", "size_reset",
+        [](const std::vector<std::string>&) {
+            if (!gpPlayer) { Terminal::instance().addLog("[ERROR] No player"); return; }
+            gpPlayer->sizeScale = 1.0f;
+            gpPlayer->maxHp = 100;
+            gpPlayer->currentHp = 100;
+            Terminal::instance().addLog("[SIZE] Reset to 1.0 (maxHp=100)");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "size_debug", "Show effective scaling values", "size_debug [1|0]",
+        [](const std::vector<std::string>& args) {
+            if (!gpPlayer) { Terminal::instance().addLog("[ERROR] No player"); return; }
+            float s = std::max(gpPlayer->sizeScale, 0.001f);
+            const auto& sc = SizeScalingConfig::instance().data();
+            char buf[512];
+            std::snprintf(buf, sizeof(buf),
+                "[SIZE] scale=%.4f\n"
+                "  effectiveHealth=%d\n"
+                "  effectiveSpeed=%.2f (exp=%.2f)\n"
+                "  effectiveJump=%.2f (exp=%.2f)\n"
+                "  effectiveDash=%.2f (exp=%.2f)\n"
+                "  effectiveDamage=%.2f (exp=%.2f)\n"
+                "  effectiveSoundVol=%.2f (exp=%.2f)\n"
+                "  effectiveSoundPitch=%.2f (exp=%.2f)",
+                s,
+                (int)(100.0f * sc.scale(1.0f, sc.healthExponent, s)),
+                sc.scale(1.0f, sc.movementSpeedExponent, s), sc.movementSpeedExponent,
+                sc.scale(1.0f, sc.jumpHeightExponent, s), sc.jumpHeightExponent,
+                sc.scale(1.0f, sc.dashImpulseExponent, s), sc.dashImpulseExponent,
+                sc.scale(1.0f, sc.damageExponent, s), sc.damageExponent,
+                sc.scale(1.0f, sc.soundVolumeExponent, s), sc.soundVolumeExponent,
+                sc.scale(1.0f, sc.soundPitchExponent, s), sc.soundPitchExponent);
+            Terminal::instance().addLog(buf);
+        }
+    });
     Terminal::instance().registerCommand({
         "pos", "Print local player position", "pos",
         [](const std::vector<std::string>&) {

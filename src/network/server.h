@@ -31,7 +31,6 @@ namespace MimitaNet {
 
 constexpr float SERVER_TICK_RATE = 60.0f;
 constexpr float SERVER_DT = 1.0f / SERVER_TICK_RATE;
-constexpr uint64_t CLIENT_TIMEOUT_MS = 5000;
 constexpr float PLAYER_RADIUS = 0.65f;
 constexpr float PLAYER_HEIGHT = 3.5f;
 

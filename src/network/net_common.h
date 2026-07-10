@@ -12,6 +12,8 @@
 namespace MimitaNet {
 
 constexpr uint16_t DEFAULT_PORT = 1357;
+constexpr uint64_t CLIENT_TIMEOUT_MS = 10000;
+constexpr uint64_t SERVER_TIMEOUT_MS = 10000;
 
 bool netStartup();
 void netShutdown();

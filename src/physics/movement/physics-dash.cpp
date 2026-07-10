@@ -5,6 +5,7 @@
 
 #include "physics/movement/physics-dash.h"
 #include "physics/config.h"
+#include "config/size-scaling-config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
@@ -75,7 +76,9 @@ void doAirDash(
         p.dash.lastDashQuality = (int)quality;
         p.dash.frictionOverride = 1.0f;
     }
-    float impulse = AIR_DASH_IMPULSE * mult;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float s = std::max(p.sizeScale, 0.001f);
+    float impulse = AIR_DASH_IMPULSE * mult * sc.scale(1.0f, sc.dashImpulseExponent, s);
 
     p.vel.x += dashDir.x * impulse;
     p.vel.y += dashDir.y * impulse;
@@ -119,7 +122,9 @@ void doDash(
     else
         dashDir = glm::normalize(dashDir);
 
-    glm::vec2 impulse = dashDir * DASH_IMPULSE;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float s = std::max(p.sizeScale, 0.001f);
+    glm::vec2 impulse = dashDir * DASH_IMPULSE * sc.scale(1.0f, sc.dashImpulseExponent, s);
 
     p.externalImpulse.x += impulse.x;
     p.externalImpulse.y += impulse.y;

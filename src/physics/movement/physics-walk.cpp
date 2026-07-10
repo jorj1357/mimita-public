@@ -22,6 +22,7 @@
 #include <cmath>
 
 #include "physics/config.h"
+#include "config/size-scaling-config.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
 
@@ -59,7 +60,9 @@ void doWalk(
 
     // Set horizontal velocity to max speed along wish direction.
     // Instant direction change. No additive accumulation.
-    float maxSpeed = onGround ? PHYS.moveSpeed : AIR_SPEED;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float s = std::max(p.sizeScale, 0.001f);
+    float maxSpeed = (onGround ? PHYS.moveSpeed : AIR_SPEED) * sc.scale(1.0f, sc.movementSpeedExponent, s);
     p.vel.x = wishDir.x * maxSpeed;
     p.vel.y = wishDir.y * maxSpeed;
 
