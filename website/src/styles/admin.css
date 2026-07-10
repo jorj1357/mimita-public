@@ -558,3 +558,287 @@
 .debugLogWarn .debugLogText {
   color: #fde68a;
 }
+
+/* ── Article Editor ── */
+.adminEditorPage {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  min-height: 80vh;
+}
+
+.adminEditorTitle {
+  font-size: 1.4rem;
+  color: #e8e0d0;
+  margin-bottom: 24px;
+  font-weight: normal;
+}
+
+.adminEditorError {
+  color: #ff6666;
+  margin-bottom: 16px;
+}
+
+.adminEditorMessage {
+  color: #66ff88;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+}
+
+.adminEditorSplit {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.adminEditorSidebar {
+  flex: 0 0 260px;
+  background: #0d0d0d;
+  border: 1px solid #222;
+  padding: 16px;
+  position: sticky;
+  top: 80px;
+}
+
+.adminEditorSectionTitle {
+  font-size: 0.85rem;
+  color: #888;
+  font-weight: normal;
+  margin-bottom: 12px;
+}
+
+.adminEditorNewBtn {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  background: #1a1a2e;
+  border: 1px solid #334;
+  color: #aabbdd;
+  cursor: pointer;
+  margin-bottom: 12px;
+  font-size: 0.82rem;
+  text-align: center;
+}
+.adminEditorNewBtn:hover {
+  background: #222244;
+  border-color: #556;
+}
+
+.adminEditorArticleList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.adminEditorListItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-size: 0.78rem;
+}
+.adminEditorListItem:hover {
+  background: #181818;
+  border-color: #333;
+}
+.adminEditorListItem.active {
+  background: #1a1a2e;
+  border-color: #446;
+}
+
+.adminEditorListItemTitle {
+  flex: 1;
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminEditorListItemDate {
+  color: #666;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.adminEditorDeleteBtn {
+  background: none;
+  border: none;
+  color: #663333;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+.adminEditorDeleteBtn:hover {
+  color: #ff4444;
+}
+
+.adminEditorMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.adminEditorForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adminEditorField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.adminEditorField label {
+  font-size: 0.78rem;
+  color: #888;
+}
+
+.adminEditorField input[type="text"],
+.adminEditorField input[type="date"] {
+  background: #111;
+  border: 1px solid #333;
+  color: #ccc;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.adminEditorField input[type="text"]:focus,
+.adminEditorField input[type="date"]:focus {
+  border-color: #557;
+  outline: none;
+}
+
+.adminEditorField input[type="checkbox"] {
+  accent-color: #6688bb;
+}
+
+.adminEditorRow {
+  display: flex;
+  gap: 16px;
+}
+.adminEditorRow .adminEditorField {
+  flex: 1;
+}
+
+.adminEditorHint {
+  color: #666;
+  font-size: 0.78rem;
+}
+
+.adminEditorToolbar {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.adminEditorToolBtn {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #aaa;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+.adminEditorToolBtn:hover {
+  background: #222;
+  border-color: #555;
+  color: #ddd;
+}
+.adminEditorToolBtn.active {
+  background: #1a1a2e;
+  border-color: #557;
+  color: #aabbdd;
+}
+.rainbowToolBtn {
+  font-size: 0.9rem;
+}
+
+.adminEditorTextarea {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  color: #ccc;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+.adminEditorTextarea:focus {
+  border-color: #557;
+  outline: none;
+}
+
+.adminEditorPreview {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  padding: 16px 24px;
+  min-height: 200px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #ccc;
+}
+.adminEditorPreview h1, .adminEditorPreview h2, .adminEditorPreview h3 {
+  color: #e8e0d0;
+  font-weight: normal;
+}
+.adminEditorPreview a { color: #7799cc; }
+.adminEditorPreview code {
+  background: #1a1a1a;
+  color: #ccaa88;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+.adminEditorPreview pre {
+  background: #0d0d0d;
+  border: 1px solid #222;
+  padding: 16px;
+  overflow-x: auto;
+}
+.adminEditorPreview .rainbow-text {
+  animation: rainbowCycle 3s linear infinite;
+  font-weight: bold;
+}
+
+.adminEditorSaveBtn {
+  align-self: flex-start;
+  padding: 10px 28px;
+  background: #1a2e1a;
+  border: 1px solid #2a4a2a;
+  color: #88cc88;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.adminEditorSaveBtn:hover {
+  background: #223322;
+  border-color: #3a5a3a;
+}
+.adminEditorSaveBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 768px) {
+  .adminEditorSplit {
+    flex-direction: column;
+  }
+  .adminEditorSidebar {
+    flex: none;
+    width: 100%;
+    position: static;
+  }
+  .adminEditorRow {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

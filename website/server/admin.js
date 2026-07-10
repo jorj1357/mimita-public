@@ -316,5 +316,148 @@ router.get("/flagged-accounts", requireAdmin, async (req, res, next) => {
     }
 })
 
+// ── Article management ──────────────────────────────────
+import fs from "fs"
+import path from "path"
+import matter from "gray-matter"
+import { fileURLToPath } from "url"
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ARTICLES_DIR = path.resolve(__dirname, "..", "..", "content", "articles")
+const JSON_OUTPUT = path.resolve(__dirname, "..", "public", "articles.generated.json")
+const DIST_JSON_OUTPUT = path.resolve(__dirname, "..", "dist", "articles.generated.json")
+
+function getAllArticles() {
+    if (!fs.existsSync(ARTICLES_DIR)) return []
+    const files = fs.readdirSync(ARTICLES_DIR)
+    const articles = []
+    for (const file of files) {
+        if (!file.endsWith(".md")) continue
+        const filePath = path.join(ARTICLES_DIR, file)
+        const slug = file.slice(0, -3)
+        const raw = fs.readFileSync(filePath, "utf-8")
+        const { data, content } = matter(raw)
+        articles.push({
+            slug,
+            title: data.title || slug,
+            description: data.description || "",
+            date: data.date || "",
+            author: data.author || "",
+            tags: data.tags || [],
+            published: data.published !== false,
+            content
+        })
+    }
+    return articles
+}
+
+function regenerateJson() {
+    const articles = getAllArticles()
+        .filter(a => a.published)
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(({ published, ...rest }) => rest)
+    const json = JSON.stringify(articles, null, 2)
+
+    const dir = path.dirname(JSON_OUTPUT)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(JSON_OUTPUT, json)
+
+    // Also write to dist/ if it exists (production build)
+    const distDir = path.dirname(DIST_JSON_OUTPUT)
+    if (fs.existsSync(distDir)) {
+        fs.writeFileSync(DIST_JSON_OUTPUT, json)
+    }
+}
+
+router.get("/articles", requireAdmin, (req, res) => {
+    try {
+        const all = getAllArticles()
+        res.json({ success: true, articles: all })
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message })
+    }
+})
+
+router.get("/articles/:slug", requireAdmin, (req, res) => {
+    try {
+        const slug = req.params.slug
+        const filePath = path.join(ARTICLES_DIR, slug + ".md")
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ success: false, message: "article not found" })
+        }
+        const raw = fs.readFileSync(filePath, "utf-8")
+        const { data, content } = matter(raw)
+        res.json({
+            success: true,
+            article: {
+                slug,
+                title: data.title || slug,
+                description: data.description || "",
+                date: data.date || "",
+                author: data.author || "",
+                tags: data.tags || [],
+                published: data.published !== false,
+                content
+            }
+        })
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message })
+    }
+})
+
+router.post("/articles", requireAdmin, async (req, res) => {
+    try {
+        const { slug, title, description, date, author, tags, content, published } = req.body
+        if (!slug || !title) {
+            return res.status(400).json({ success: false, message: "slug and title required" })
+        }
+
+        if (!fs.existsSync(ARTICLES_DIR)) {
+            fs.mkdirSync(ARTICLES_DIR, { recursive: true })
+        }
+
+        const dateStr = date || new Date().toISOString().split("T")[0]
+        const authorStr = author || req.user.username
+        const tagsArr = tags || []
+        const publishedFlag = published !== false
+
+        let frontmatter = "---\n"
+        frontmatter += `title: "${title.replace(/"/g, '\\"')}"\n`
+        frontmatter += `description: "${(description || "").replace(/"/g, '\\"')}"\n`
+        frontmatter += `date: "${dateStr}"\n`
+        frontmatter += `author: "${authorStr.replace(/"/g, '\\"')}"\n`
+        frontmatter += `tags: [${tagsArr.map(t => `"${t.replace(/"/g, '\\"')}"`).join(", ")}]\n`
+        frontmatter += `published: ${publishedFlag}\n`
+        frontmatter += "---\n"
+
+        const markdown = frontmatter + (content || "")
+        const filePath = path.join(ARTICLES_DIR, slug + ".md")
+        fs.writeFileSync(filePath, markdown, "utf-8")
+
+        regenerateJson()
+
+        console.log(`[ARTICLES] ${req.user.username} saved article: ${slug}`)
+        res.json({ success: true, message: "article saved", slug })
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message })
+    }
+})
+
+router.delete("/articles/:slug", requireAdmin, (req, res) => {
+    try {
+        const slug = req.params.slug
+        const filePath = path.join(ARTICLES_DIR, slug + ".md")
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ success: false, message: "article not found" })
+        }
+        fs.unlinkSync(filePath)
+        regenerateJson()
+        console.log(`[ARTICLES] ${req.user.username} deleted article: ${slug}`)
+        res.json({ success: true, message: "article deleted" })
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message })
+    }
+})
+
 export default router
 export { requireAdmin }

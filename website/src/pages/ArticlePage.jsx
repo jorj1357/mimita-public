@@ -2,8 +2,15 @@ import { useState, useEffect } from "react"
 import { useParams, Link } from "react-router-dom"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import rehypeRaw from "rehype-raw"
 
 import Layout from "../components/Layout"
+
+function renderContent(md) {
+  if (!md) return ""
+  return md.replace(/\[rainbow\](.*?)\[\/rainbow\]/gs,
+    '<span class="rainbow-text">$1</span>')
+}
 
 export default function ArticlePage() {
 
@@ -135,8 +142,8 @@ export default function ArticlePage() {
         </header>
 
         <div className="articleContent">
-          <Markdown remarkPlugins={[remarkGfm]}>
-            {article.content}
+          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+            {renderContent(article.content)}
           </Markdown>
         </div>
 

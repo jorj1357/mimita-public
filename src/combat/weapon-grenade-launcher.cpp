@@ -5,6 +5,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "config/size-scaling-config.h"
 #include "debug/debug-log.h"
 #include "entities/player.h"
 #include "effects/effect-part.h"
@@ -26,7 +27,9 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     (void)runtime;
     PersistentPhysicsConfig cfg;
     cfg.shape = PersistentShape::Cylinder;
-    cfg.radius = def.projectileRadius > 0.0f ? def.projectileRadius : 0.4f;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float s = std::max(owner.sizeScale, 0.001f);
+    cfg.radius = (def.projectileRadius > 0.0f ? def.projectileRadius : 0.4f) * sc.scale(1.0f, sc.projectileSizeExponent, s);
     cfg.height = cfg.radius * 1.6f;
     cfg.mass = cp(def, "mass", 1.5f);
     cfg.gravity = cp(def, "gravity", 20.0f);
@@ -37,9 +40,9 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     cfg.minBounceSpeed = cp(def, "minBounceSpeed", 0.1f);
     cfg.maxBounceCount = (int)cp(def, "maxBounceCount", 10.0f);
     cfg.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 3.0f;
-    cfg.explosionRadius = cp(def, "splashRadius", 8.0f);
-    cfg.explosionDamage = cp(def, "rocketDirectDamage", 150.0f);
-    cfg.explosionKnockback = cp(def, "knockbackStrength", 160.0f);
+    cfg.explosionRadius = cp(def, "splashRadius", 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, s);
+    cfg.explosionDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, s);
+    cfg.explosionKnockback = cp(def, "knockbackStrength", 160.0f) * sc.scale(1.0f, sc.knockbackExponent, s);
     cfg.explosionSelfKnockbackMul = cp(def, "selfKnockbackMultiplier", 0.8f);
     cfg.splashExponent = cp(def, "splashExponent", 2.0f);
     cfg.armingDistance = cp(def, "armingDistance", 2.0f);

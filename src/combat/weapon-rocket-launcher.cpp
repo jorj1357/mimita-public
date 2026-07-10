@@ -11,6 +11,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "config/size-scaling-config.h"
 #include "entities/player.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -39,14 +40,16 @@ static void doExplosion(
     uint32_t directHitEntityId,
     bool directHitIsNpc)
 {
-    const float splashRadius = def.customParams.count("splashRadius")
-        ? def.customParams.at("splashRadius") : 8.0f;
+    const auto& sc = SizeScalingConfig::instance().data();
+    float ss = std::max(owner.sizeScale, 0.001f);
+    const float splashRadius = (def.customParams.count("splashRadius")
+        ? def.customParams.at("splashRadius") : 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, ss);
     const float splashExponent = def.customParams.count("splashExponent")
         ? def.customParams.at("splashExponent") : 2.0f;
-    const float baseDamage = def.customParams.count("rocketDirectDamage")
-        ? def.customParams.at("rocketDirectDamage") : 150.0f;
-    const float knockbackStrength = def.customParams.count("knockbackStrength")
-        ? def.customParams.at("knockbackStrength") : 40.0f;
+    const float baseDamage = (def.customParams.count("rocketDirectDamage")
+        ? def.customParams.at("rocketDirectDamage") : 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, ss);
+    const float knockbackStrength = (def.customParams.count("knockbackStrength")
+        ? def.customParams.at("knockbackStrength") : 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
     const float selfKnockbackMul = def.customParams.count("selfKnockbackMultiplier")
         ? def.customParams.at("selfKnockbackMultiplier") : 0.8f;
 

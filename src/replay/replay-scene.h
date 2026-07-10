@@ -99,6 +99,7 @@ struct ReplayActorState {
 
     float fade = 0.0f;
     float blackness = 0.0f;
+    float sizeScale = 1.0f;
 
     std::string weaponName;
     std::string animationState;

@@ -312,9 +312,12 @@ void buildAndSendSnapshot(SOCKET sock,
 
     for (const auto& kv : players)
     {
-        const int bytesSent = sendto(
+        int bytesSent = sendto(
             sock, (const char*)&snapshot, sizeof(snapshot), 0,
             (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        if (bytesSent == SOCKET_ERROR)
+            printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
+                   serverTimestamp(), kv.first, WSAGetLastError());
         ++totalPacketsOut;
         if (tick % 60 == 0)
             printf("%s [SERVER SNAPSHOT SEND] toClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",

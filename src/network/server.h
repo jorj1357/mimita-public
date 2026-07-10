@@ -81,6 +81,7 @@ struct ServerPlayer
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
     uint16_t lastDashSerial = 0;
+    float sizeScale = 1.0f;
     ServerInput input;
     std::deque<PositionHistoryEntry> posHistory;
 };

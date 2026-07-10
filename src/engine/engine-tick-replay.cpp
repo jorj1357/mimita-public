@@ -303,6 +303,7 @@ void engineTickReplay(Engine& engine, float dt)
             playerActor.grounded = player.ground.onGround;
             playerActor.collidable = !player.dead;
             playerActor.fade = 0.0f;
+            playerActor.sizeScale = player.sizeScale;
             playerActor.outfitPath = GetPlayerSettings().outfitPath;
             playerActor.characterName = GetPlayerSettings().characterName;
             playerActor.avatarName = GetPlayerSettings().avatarName;
@@ -347,6 +348,7 @@ void engineTickReplay(Engine& engine, float dt)
                 npcActor.grounded = npc.body.ground.onGround;
                 npcActor.collidable = !npc.body.dead;
                 npcActor.fade = 0.0f;
+                npcActor.sizeScale = npc.body.sizeScale;
                 npcActor.outfitPath = "";
                 {
                     const WeaponDefinition* wdef = weapons.getDefForSlot(npc.body.equippedSlot);

@@ -143,6 +143,7 @@ bool ReplayPlayer::loadFromJSON(const std::string& path) {
                         actor.shooting = a.value("shooting", false);
                         actor.reloading = a.value("reloading", false);
                         actor.grounded = a.value("grounded", true);
+                        actor.sizeScale = a.value("sizeScale", 1.0f);
                         if (a.contains("bodyParts")) {
                             for (auto& bp : a["bodyParts"].items()) {
                                 ReplayBodyPartState part;
