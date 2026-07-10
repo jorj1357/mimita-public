@@ -13,6 +13,7 @@
 #include "world/texture-store.h"
 #include "devtools/terminal.h"
 #include "config/player-settings.h"
+#include "stb_image.h"
 
 using json = nlohmann::json;
 
@@ -86,6 +87,11 @@ void AvatarDefinition::clear() {
     cosmetics.clear();
     activePreset.clear();
     playerModel.clear();
+    textureMode = "legacy_faces";
+    atlasPath.clear();
+    alphaMode = "blend";
+    alphaCutoff = 0.5f;
+    unlit = false;
 }
 
 // AvatarSystem
@@ -342,6 +348,23 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
             }
         } else {
             printf("[AVATAR] No player_model field; using default player model\n");
+        }
+
+        // ── UV atlas mode ──────────────────────────────────────────
+        mAvatar.textureMode = root.value("texture_mode", "legacy_faces");
+        if (mAvatar.textureMode == "uv_atlas") {
+            if (root.contains("atlas") && root["atlas"].is_string()) {
+                std::string atPath = root["atlas"].get<std::string>();
+                mAvatar.atlasPath = resolvePath(atPath);
+                printf("[AVATAR] uv_atlas mode: atlas=%s\n", mAvatar.atlasPath.c_str());
+                if (!std::filesystem::exists(mAvatar.atlasPath))
+                    Terminal::instance().addLog("[AVATAR] Atlas file not found: " + mAvatar.atlasPath);
+            }
+            mAvatar.alphaMode = root.value("alpha_mode", "blend");
+            mAvatar.alphaCutoff = (float)root.value("alpha_cutoff", 0.5);
+            mAvatar.unlit = root.value("unlit", false);
+            printf("[AVATAR]   alpha_mode=%s alpha_cutoff=%.2f unlit=%d\n",
+                   mAvatar.alphaMode.c_str(), mAvatar.alphaCutoff, (int)mAvatar.unlit);
         }
 
         mHasAvatar = true;
@@ -646,6 +669,86 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         }
     }
 
+    // ── UV atlas mode: load external PNG, assign to all batches, preserve GLB UVs ──
+    if (mAvatar.textureMode == "uv_atlas") {
+        if (mAvatar.atlasPath.empty()) {
+            printf("[AVATAR ERROR] uv_atlas mode but no atlas path set\n");
+            return false;
+        }
+        if (!std::filesystem::exists(mAvatar.atlasPath)) {
+            printf("[AVATAR ERROR] atlas not found: %s\n", mAvatar.atlasPath.c_str());
+            Terminal::instance().addLog("[AVATAR] Atlas not found: " + mAvatar.atlasPath);
+            return false;
+        }
+
+        // Load PNG
+        int w = 0, h = 0, n = 0;
+        unsigned char* data = stbi_load(mAvatar.atlasPath.c_str(), &w, &h, &n, 4);
+        if (!data) {
+            printf("[AVATAR ERROR] stbi_load failed for: %s\n", mAvatar.atlasPath.c_str());
+            return false;
+        }
+
+        // Create or update OpenGL texture
+        if (mUvAtlasTexture != 0 && reloadTextures) {
+            glBindTexture(GL_TEXTURE_2D, mUvAtlasTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        } else {
+            if (mUvAtlasTexture != 0) {
+                glDeleteTextures(1, &mUvAtlasTexture);
+                mUvAtlasTexture = 0;
+            }
+            glGenTextures(1, &mUvAtlasTexture);
+            glBindTexture(GL_TEXTURE_2D, mUvAtlasTexture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        }
+        stbi_image_free(data);
+        mAtlasWidth = w;
+        mAtlasHeight = h;
+
+        // Assign atlas texture to every body part batch (preserving GLB UVs)
+        for (size_t partIndex = 0; partIndex < player.physicalBody.partMeshes.size(); ++partIndex) {
+            auto& mesh = player.physicalBody.partMeshes[partIndex];
+            for (auto& batch : mesh.batches)
+                batch.texture = mUvAtlasTexture;
+        }
+        player.bodyPartMeshes = player.physicalBody.partMeshes;
+
+        // Track write time for hot reload
+        if (std::filesystem::exists(mAvatar.atlasPath))
+            mAtlasLastWriteTime = std::filesystem::last_write_time(mAvatar.atlasPath);
+
+        printf("\n[UV ATLAS]\n");
+        printf("  model=%s\n", mAvatar.playerModel.empty() ? "(default)" : mAvatar.playerModel.c_str());
+        printf("  avatar=%s\n", mAvatarName.c_str());
+        printf("  texture_mode=%s\n", mAvatar.textureMode.c_str());
+        printf("  atlas=%s\n", mAvatar.atlasPath.c_str());
+        printf("  meshes=%zu\n", player.physicalBody.partMeshes.size());
+        int totalVerts = 0, missingUV = 0;
+        for (size_t pi = 0; pi < player.physicalBody.partMeshes.size(); ++pi) {
+            const auto& m = player.physicalBody.partMeshes[pi];
+            totalVerts += (int)m.verts.size();
+            if (!m.verts.empty() && m.verts[0].uv == glm::vec2(0.0f))
+                missingUV++;
+        }
+        printf("  position_vertices=%d\n", totalVerts);
+        printf("  uv_vertices=%d\n", totalVerts);
+        printf("  missing_uv_primitives=%d\n", missingUV);
+        printf("  atlas_size=%dx%d\n", w, h);
+        printf("  filter=nearest\n");
+        printf("  mipmaps=false\n");
+        printf("  wrap=clamp\n");
+        printf("  alpha=%s\n", mAvatar.alphaMode.c_str());
+        printf("  hot_reload=enabled\n");
+        printf("\n");
+        return true;
+    }
+
+    // ── Legacy faces mode (existing behavior) ────────────────
     if (!buildAtlas(player, reloadTextures))
         return false;
     printf("[AVATAR] Applying avatar texture atlas after model load\n");
@@ -693,6 +796,31 @@ void AvatarSystem::pollHotReload() {
         printf("[AVATAR HR] applyToPlayer done\n");
     } else {
         printf("[AVATAR HR] gpPlayer is null\n");
+    }
+
+    // ── UV atlas PNG hot reload ──────────────────────────────────────
+    if (mAvatar.textureMode == "uv_atlas" && !mAvatar.atlasPath.empty()) {
+        if (!std::filesystem::exists(mAvatar.atlasPath)) return;
+        auto atlasTime = std::filesystem::last_write_time(mAvatar.atlasPath);
+        if (atlasTime != mAtlasLastWriteTime) {
+            mAtlasLastWriteTime = atlasTime;
+            printf("[AVATAR HR] Atlas PNG changed! Reloading texture...\n");
+            Terminal::instance().addLog("[AVATAR] Atlas PNG hot reload: " + mAvatar.atlasPath);
+
+            int w = 0, h = 0, n = 0;
+            unsigned char* data = stbi_load(mAvatar.atlasPath.c_str(), &w, &h, &n, 4);
+            if (data && mUvAtlasTexture != 0) {
+                glBindTexture(GL_TEXTURE_2D, mUvAtlasTexture);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+                mAtlasWidth = w;
+                mAtlasHeight = h;
+                stbi_image_free(data);
+                printf("[AVATAR HR] Atlas texture updated (%dx%d)\n", w, h);
+            } else {
+                if (data) stbi_image_free(data);
+                printf("[AVATAR HR ERROR] Failed to reload atlas PNG\n");
+            }
+        }
     }
 }
 

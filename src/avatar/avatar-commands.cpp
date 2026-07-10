@@ -201,4 +201,131 @@ void registerAvatarCommands(Player& player) {
         std::string(),
         CommandCategory::Player
     });
+
+    // ── glbuvinfo: report UV data from a GLB model ────────────────────
+    t.registerCommand({
+        "glbuvinfo",
+        "Report UV layout from a GLB model",
+        "glbuvinfo [path]",
+        [&player](const std::vector<std::string>& args) {
+            std::string path;
+            if (!args.empty()) {
+                path = args[0];
+            } else if (AvatarSystem::instance().hasAvatar()) {
+                path = AvatarSystem::instance().current().getPlayerModel();
+                if (path.empty()) {
+                    // Check if a character model was loaded via CharacterRegistry
+                    path = GetPlayerSettings().characterName.empty()
+                        ? "assets/entity/player/default/mimita-char-no-animations-v4.glb"
+                        : ("Characters/" + GetPlayerSettings().characterName + "/character.glb");
+                }
+            } else {
+                path = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+            }
+
+            if (!std::filesystem::exists(path)) {
+                Terminal::instance().addLog("[GLBUV] File not found: " + path);
+                return;
+            }
+
+            tinygltf::TinyGLTF loader;
+            tinygltf::Model model;
+            std::string err, warn;
+            bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, path);
+            if (!ok) {
+                Terminal::instance().addLog("[GLBUV] Failed to load: " + path);
+                if (!err.empty()) Terminal::instance().addLog("  " + err);
+                return;
+            }
+            if (!warn.empty()) Terminal::instance().addLog("[GLBUV] Warning: " + warn);
+
+            printf("\n[GLBUV] path=%s\n", path.c_str());
+            printf("[GLBUV] nodes=%zu meshes=%zu materials=%zu\n",
+                   model.nodes.size(), model.meshes.size(), model.materials.size());
+
+            int totalPrimitives = 0;
+            int totalPosVerts = 0;
+            int totalUvVerts = 0;
+            int missingUvCount = 0;
+
+            for (size_t mi = 0; mi < model.meshes.size(); ++mi) {
+                const auto& mesh = model.meshes[mi];
+                for (size_t pi = 0; pi < mesh.primitives.size(); ++pi) {
+                    const auto& prim = mesh.primitives[pi];
+                    totalPrimitives++;
+
+                    auto posIt = prim.attributes.find("POSITION");
+                    auto uvIt  = prim.attributes.find("TEXCOORD_0");
+
+                    int posCount = 0, uvCount = 0;
+                    if (posIt != prim.attributes.end()) {
+                        const auto& acc = model.accessors[posIt->second];
+                        posCount = (int)acc.count;
+                        totalPosVerts += posCount;
+                    }
+                    if (uvIt != prim.attributes.end()) {
+                        const auto& acc = model.accessors[uvIt->second];
+                        uvCount = (int)acc.count;
+                        totalUvVerts += uvCount;
+                    } else {
+                        missingUvCount++;
+                    }
+
+                    printf("[GLBUV]   mesh=%zu prim=%zu POS=%d TEXCOORD_0=%d%s\n",
+                           mi, pi, posCount, uvCount,
+                           uvIt == prim.attributes.end() ? " MISSING_UV" : "");
+
+                    // Report first few UV values
+                    if (uvIt != prim.attributes.end()) {
+                        const auto& acc = model.accessors[uvIt->second];
+                        const auto& bv = model.bufferViews[acc.bufferView];
+                        const auto& buf = model.buffers[bv.buffer];
+                        const unsigned char* base = buf.data.data() + bv.byteOffset + acc.byteOffset;
+                        int stride = acc.ByteStride(bv);
+                        float minU = 1e10f, maxU = -1e10f, minV = 1e10f, maxV = -1e10f;
+                        int outsideCount = 0;
+                        int printCount = std::min(10, (int)acc.count);
+                        printf("[GLBUV]     first %d UVs:\n", printCount);
+                        for (int vi = 0; vi < (int)acc.count; ++vi) {
+                            const float* f = (const float*)(base + vi * stride);
+                            float u = f[0], v = f[1];
+                            if (vi < printCount)
+                                printf("[GLBUV]       [%d] u=%.4f v=%.4f\n", vi, u, v);
+                            minU = std::min(minU, u); maxU = std::max(maxU, u);
+                            minV = std::min(minV, v); maxV = std::max(maxV, v);
+                            if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f)
+                                outsideCount++;
+                        }
+                        printf("[GLBUV]     uv_range=(%.4f,%.4f)..(%.4f,%.4f)\n",
+                               minU, minV, maxU, maxV);
+                        printf("[GLBUV]     outside_0..1=%d\n", outsideCount);
+                    }
+                }
+            }
+
+            printf("[GLBUV] total primitives=%d pos_vertices=%d uv_vertices=%d missing_uv=%d\n",
+                   totalPrimitives, totalPosVerts, totalUvVerts, missingUvCount);
+
+            // Current avatar info
+            if (AvatarSystem::instance().hasAvatar()) {
+                const auto& av = AvatarSystem::instance().current();
+                printf("[GLBUV] current_avatar=%s texture_mode=%s\n",
+                       av.name.c_str(), av.textureMode.c_str());
+                if (av.textureMode == "uv_atlas") {
+                    printf("[GLBUV]   atlas=%s alpha=%s cutoff=%.2f unlit=%d\n",
+                           av.atlasPath.c_str(), av.alphaMode.c_str(),
+                           av.alphaCutoff, (int)av.unlit);
+                    int texW = 0, texH = 0;
+                    glBindTexture(GL_TEXTURE_2D, AvatarSystem::instance().uvAtlasTexture());
+                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
+                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+                    printf("[GLBUV]   atlas_gl_size=%dx%d\n", texW, texH);
+                }
+            }
+
+            Terminal::instance().addLog("[GLBUV] Report printed to console");
+        },
+        std::string(),
+        CommandCategory::Debug
+    });
 }

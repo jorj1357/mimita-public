@@ -27,6 +27,9 @@ uniform vec4 uColor;
 // Set to (1,1,1) by default; weapons and future items override for color tinting.
 uniform vec3 uTint;
 
+// Alpha cutoff: fragments with alpha below this are discarded
+uniform float uAlphaCutoff;
+
 // Debug mode:
 // 0 normal stylized render
 // 1 UV checkerboard
@@ -217,6 +220,10 @@ void main()
         float shadowFactor = 1.0 - shadow * uShadowDarkness;
         lit = lit * shadowFactor + uShadowTint * shadow * uShadowDarkness;
     }
+
+    // Alpha cutoff: discard transparent fragments when enabled
+    if (uAlphaCutoff > 0.0f && texel.a < uAlphaCutoff)
+        discard;
 
     if (uDebugView == 1) {
         float c = checker(vUV);
