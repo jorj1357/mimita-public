@@ -165,7 +165,7 @@ public:
                 const std::string& victimId, float dt);
 
 private:
-    ReplayCameraMode mMode = ReplayCameraMode::FirstPerson;
+    ReplayCameraMode mMode = ReplayCameraMode::Recorded;
     float mFov = 0.0f;
     float mOrbitAngle = 0.0f;
 };

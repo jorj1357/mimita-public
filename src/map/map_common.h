@@ -28,6 +28,7 @@ struct Mesh {
         GLuint texture = 0;
         size_t first = 0;
         size_t count = 0;
+        bool doubleSided = false;   // GLTF material doubleSided flag
     };
 
     std::vector<Batch> batches;
