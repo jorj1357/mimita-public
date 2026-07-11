@@ -39,7 +39,7 @@ float targetCanSeeNpc(const Npc& npc, const World& world)
     rayBounds.min = glm::min(fromTarget, npc.body.pos);
     rayBounds.max = glm::max(fromTarget, npc.body.pos);
     std::vector<int> candidates;
-    appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+        appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates, "targetCanSeeNpc");
 
     for (int ti : candidates)
     {
@@ -523,7 +523,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     glm::vec3 gatherCenter = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f);
     AABB localBounds{gatherCenter - glm::vec3(3.0f), gatherCenter + glm::vec3(3.0f)};
     std::vector<int> nearCandidates;
-    appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates);
+        appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates, "npcNearCandidates");
 
     glm::vec3 moveDir;
     bool jump, dash, attack;
@@ -560,7 +560,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             losBounds.min = glm::min(fromPos, toPos) - glm::vec3(0.1f);
             losBounds.max = glm::max(fromPos, toPos) + glm::vec3(0.1f);
             std::vector<int> losCandidates;
-            appendChunkTrianglesForAABB(world, losBounds, 0.1f, losCandidates);
+            appendChunkTrianglesForAABB(world, losBounds, 0.1f, losCandidates, "npcLosCandidates");
 
             npc.cachedLoSBlocked = false;
             for (int ti : losCandidates)

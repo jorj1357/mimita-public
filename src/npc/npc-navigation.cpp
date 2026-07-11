@@ -34,7 +34,7 @@ static void gatherNear(const World& world, glm::vec3 pos, float radius, std::vec
     AABB b;
     b.min = pos - glm::vec3(radius);
     b.max = pos + glm::vec3(radius);
-    appendChunkTrianglesForAABB(world, b, 0.0f, out);
+    appendChunkTrianglesForAABB(world, b, 0.0f, out, "npcGatherNear");
 }
 
 static bool rayHitsAny(glm::vec3 origin, glm::vec3 dir, float maxDist,
@@ -229,7 +229,7 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
         combinedBounds.max = glm::max(combinedBounds.max, testPos);
     }
     std::vector<int> allCandidates;
-    appendChunkTrianglesForAABB(world, combinedBounds, 0.1f, allCandidates);
+    appendChunkTrianglesForAABB(world, combinedBounds, 0.1f, allCandidates, "npcFindCover");
 
     for (const auto& dir : testDirs)
     {
