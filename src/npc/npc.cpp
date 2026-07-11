@@ -544,49 +544,129 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             jump = true;
     }
 
-    // Compute LOS once, cached for dash decision and combat line-of-sight
+    // Compute LOS once, cached for dash decision and combat line-of-sight.
+    // Rate-limited: only check every 5 ticks to reduce chunk query cost.
+    // Uses ray-based chunk-cell traversal instead of full AABB query.
     {
+        static const int LOS_INTERVAL = 5;
+        if (++npc.losTickCounter >= LOS_INTERVAL)
+            npc.losTickCounter = 0;
+
         glm::vec3 fromPos = npc.body.pos;
         fromPos.z += 0.8f;
         glm::vec3 toPos = npc.sensors.targetPos;
         toPos.z += 0.8f;
         glm::vec3 losDir = toPos - fromPos;
         float losDist = glm::length(losDir);
-        npc.cachedLoSBlocked = true;
-        if (losDist > 0.5f && npc.sensors.hasTarget)
+
+        if (losDist > 0.5f && npc.sensors.hasTarget && npc.losTickCounter == 0)
         {
             losDir /= losDist;
-            AABB losBounds;
-            losBounds.min = glm::min(fromPos, toPos) - glm::vec3(0.1f);
-            losBounds.max = glm::max(fromPos, toPos) + glm::vec3(0.1f);
-            std::vector<int> losCandidates;
-            appendChunkTrianglesForAABB(world, losBounds, 0.1f, losCandidates, "npcLosCandidates");
 
+            // Ray-based chunk traversal: walk through chunk cells the ray passes
+            // instead of querying all cells in the bounding box.
             npc.cachedLoSBlocked = false;
-            for (int ti : losCandidates)
+            float chunkSize = world.collisionChunkSize;
+            if (chunkSize > 0.001f && !world.collisionChunks.empty())
             {
-                if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
-                const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
-                glm::vec3 e1 = tri.b - tri.a;
-                glm::vec3 e2 = tri.c - tri.a;
-                glm::vec3 pVec = glm::cross(losDir, e2);
-                float det = glm::dot(e1, pVec);
-                if (std::fabs(det) < 0.0001f) continue;
-                float invDet = 1.0f / det;
-                glm::vec3 tVec = fromPos - tri.a;
-                float u = glm::dot(tVec, pVec) * invDet;
-                if (u < 0.0f || u > 1.0f) continue;
-                glm::vec3 qVec = glm::cross(tVec, e1);
-                float v = glm::dot(losDir, qVec) * invDet;
-                if (v < 0.0f || u + v > 1.0f) continue;
-                float t = glm::dot(e2, qVec) * invDet;
-                if (t > 0.1f && t < losDist - 0.5f)
+                glm::vec3 pos = fromPos;
+                glm::vec3 step;
+                step.x = losDir.x > 0.0f ? chunkSize : -chunkSize;
+                step.y = losDir.y > 0.0f ? chunkSize : -chunkSize;
+                step.z = losDir.z > 0.0f ? chunkSize : -chunkSize;
+
+                glm::ivec3 cell(
+                    (int)std::floor(pos.x / chunkSize),
+                    (int)std::floor(pos.y / chunkSize),
+                    (int)std::floor(pos.z / chunkSize));
+
+                glm::vec3 tMax(
+                    ((cell.x + (losDir.x > 0.0f ? 1 : 0)) * chunkSize - pos.x) / losDir.x,
+                    ((cell.y + (losDir.y > 0.0f ? 1 : 0)) * chunkSize - pos.y) / losDir.y,
+                    ((cell.z + (losDir.z > 0.0f ? 1 : 0)) * chunkSize - pos.z) / losDir.z);
+                glm::vec3 tDelta(chunkSize / std::fabs(losDir.x + 0.0001f),
+                                 chunkSize / std::fabs(losDir.y + 0.0001f),
+                                 chunkSize / std::fabs(losDir.z + 0.0001f));
+                glm::ivec3 stepDir(losDir.x > 0 ? 1 : -1,
+                                   losDir.y > 0 ? 1 : -1,
+                                   losDir.z > 0 ? 1 : -1);
+
+                float remaining = losDist;
+                int maxSteps = 200;
+                while (remaining > 0.5f && maxSteps-- > 0)
                 {
-                    npc.cachedLoSBlocked = true;
-                    break;
+                    auto it = world.collisionChunks.find(cell);
+                    if (it != world.collisionChunks.end())
+                    {
+                        for (int triIdx : it->second)
+                        {
+                            if (triIdx < 0 || triIdx >= (int)world.collisionMesh.triangles.size())
+                                continue;
+                            const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
+                            glm::vec3 e1 = tri.b - tri.a;
+                            glm::vec3 e2 = tri.c - tri.a;
+                            glm::vec3 pVec = glm::cross(losDir, e2);
+                            float det = glm::dot(e1, pVec);
+                            if (std::fabs(det) < 0.0001f) continue;
+                            float invDet = 1.0f / det;
+                            glm::vec3 tVec = fromPos - tri.a;
+                            float u = glm::dot(tVec, pVec) * invDet;
+                            if (u < 0.0f || u > 1.0f) continue;
+                            glm::vec3 qVec = glm::cross(tVec, e1);
+                            float v = glm::dot(losDir, qVec) * invDet;
+                            if (v < 0.0f || u + v > 1.0f) continue;
+                            float t = glm::dot(e2, qVec) * invDet;
+                            if (t > 0.1f && t < losDist - 0.5f)
+                            {
+                                npc.cachedLoSBlocked = true;
+                                break;
+                            }
+                        }
+                        if (npc.cachedLoSBlocked) break;
+                    }
+
+                    // Advance DDA to next cell
+                    if (tMax.x < tMax.y)
+                    {
+                        if (tMax.x < tMax.z) { remaining -= tMax.x - (tMax.x - tDelta.x); tMax.x += tDelta.x; cell.x += stepDir.x; }
+                        else { remaining -= tMax.z - (tMax.z - tDelta.z); tMax.z += tDelta.z; cell.z += stepDir.z; }
+                    }
+                    else
+                    {
+                        if (tMax.y < tMax.z) { remaining -= tMax.y - (tMax.y - tDelta.y); tMax.y += tDelta.y; cell.y += stepDir.y; }
+                        else { remaining -= tMax.z - (tMax.z - tDelta.z); tMax.z += tDelta.z; cell.z += stepDir.z; }
+                    }
+                }
+            }
+            else
+            {
+                // Fallback: iterate all triangles
+                for (const auto& tri : world.collisionMesh.triangles)
+                {
+                    glm::vec3 e1 = tri.b - tri.a;
+                    glm::vec3 e2 = tri.c - tri.a;
+                    glm::vec3 pVec = glm::cross(losDir, e2);
+                    float det = glm::dot(e1, pVec);
+                    if (std::fabs(det) < 0.0001f) continue;
+                    float invDet = 1.0f / det;
+                    glm::vec3 tVec = fromPos - tri.a;
+                    float u = glm::dot(tVec, pVec) * invDet;
+                    if (u < 0.0f || u > 1.0f) continue;
+                    glm::vec3 qVec = glm::cross(tVec, e1);
+                    float v = glm::dot(losDir, qVec) * invDet;
+                    if (v < 0.0f || u + v > 1.0f) continue;
+                    float t = glm::dot(e2, qVec) * invDet;
+                    if (t > 0.1f && t < losDist - 0.5f)
+                    {
+                        npc.cachedLoSBlocked = true;
+                        break;
+                    }
                 }
             }
         }
+        // If LOS was not checked this tick, cachedLoSBlocked retains its previous value.
+        // This means stale LOS results persist for up to LOS_INTERVAL ticks, which is fine
+        // for dash decisions and AI targeting.
     }
 
     // Situaltional dash (skip LOS gather when dash is on cooldown)

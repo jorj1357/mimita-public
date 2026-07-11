@@ -447,7 +447,7 @@ void DeathSystem::update(
 
     // Remove expired corpses
     {
-        MIMITA_PERF_SCOPE("DeathSystem::CorpseCleanup");
+        MIMITA_PERF_SCOPE("CorpseCleanup");
         size_t before = mCorpses.size();
         auto tCleanup = std::chrono::steady_clock::now();
         mCorpses.erase(

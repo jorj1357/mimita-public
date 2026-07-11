@@ -72,8 +72,8 @@ PerfScopeGuard::PerfScopeGuard(
     }
 
     // Capture pre-scope counters
-    mAllocBefore = (uint32_t)gPerfAllocCount;
-    mBytesBefore = (uint32_t)gPerfAllocBytes;
+    mAllocBefore = gPerfAllocCount;
+    mBytesBefore = gPerfAllocBytes;
     mAssetLoadBefore = 0;
     mBloodBefore = 0;
     mDebrisBefore = 0;
@@ -92,12 +92,20 @@ PerfScopeGuard::~PerfScopeGuard()
     uint64_t elapsed = endCycles - mStartCycles;
 
     // Frame-boundary detection: if this scope started before the current frame,
-    // it spans across frames. Cap the measurement to avoid impossible times.
-    if (gPerfFrameStartCycles > 0 && mStartCycles < gPerfFrameStartCycles) {
-        // Started in a previous frame. Use only the within-frame portion.
+    // it spans across frames. Warn and cap to avoid impossible parent/child ratios.
+    bool crossedBoundary = (gPerfFrameStartCycles > 0 && mStartCycles < gPerfFrameStartCycles);
+    if (crossedBoundary) {
+        // Use only the portion within the current frame
         elapsed = endCycles - gPerfFrameStartCycles;
-        // If still impossibly large, clamp to 16ms (one budget frame)
-        if (elapsed > 16000000ULL) elapsed = 16000000ULL;
+        if (DebugConfig::DEBUG_DEATH_PERF) {
+            PerfScopeCapture& cap = gPerfScopes[mScopeIndex];
+            Debug::log(Debug::Category::General,
+                "[PERF CROSS-FRAME] scope=%s crossed frame boundary (startBefore=%.3fms endAfter=%.3fms capped=%.3fms)\n",
+                cap.label ? cap.label : "?",
+                (double)(gPerfFrameStartCycles - mStartCycles) / 1000000.0,
+                (double)(endCycles - gPerfFrameStartCycles) / 1000000.0,
+                (double)elapsed / 1000000.0);
+        }
     }
 
     PerfScopeCapture& cap = gPerfScopes[mScopeIndex];
@@ -106,9 +114,11 @@ PerfScopeGuard::~PerfScopeGuard()
     if (elapsed > cap.maxCycles) cap.maxCycles = elapsed;
     cap.callCount++;
 
-    // Record counters
-    cap.allocCount += (uint32_t)(gPerfAllocCount - mAllocBefore);
-    cap.allocBytes += (uint32_t)(gPerfAllocBytes - mBytesBefore);
+    // Record counters (use size_t throughout to avoid truncation)
+    int allocDelta = gPerfAllocCount - mAllocBefore;
+    size_t bytesDelta = gPerfAllocBytes - mBytesBefore;
+    cap.allocCount += (uint32_t)(allocDelta > 0 ? allocDelta : 0);
+    cap.allocBytes += bytesDelta;
 
     // Pop from stack
     if (gPerfScopeStackDepth > 0) {
@@ -211,13 +221,27 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
     double overBy = totalFrameMs - budgetMs;
     double slowdown = budgetMs > 0.0 ? totalFrameMs / budgetMs : 0.0;
 
-    // Compute measured top-level work (root scopes only, no parent)
+    // Compute measured top-level work: find the root scope (parentIndex < 0)
+    // and use its inclusive time as the total measured work.
     double measuredTopLevel = 0.0;
+    int rootCount = 0;
     for (const auto& e : entries) {
         const PerfScopeCapture& cap = gPerfScopes[e.index];
         if (cap.parentIndex < 0) {
-            measuredTopLevel += e.selfMs;
+            measuredTopLevel += e.inclMs;
+            rootCount++;
         }
+    }
+    // If there are multiple roots with no parent, we take the largest.
+    // Single root (EngineTick) is the normal case.
+    if (rootCount > 1) {
+        double maxRoot = 0.0;
+        for (const auto& e : entries) {
+            const PerfScopeCapture& cap = gPerfScopes[e.index];
+            if (cap.parentIndex < 0 && e.inclMs > maxRoot)
+                maxRoot = e.inclMs;
+        }
+        measuredTopLevel = maxRoot;
     }
     double unaccounted = totalFrameMs - measuredTopLevel;
     double accountedPct = totalFrameMs > 0.0 ? (measuredTopLevel / totalFrameMs) * 100.0 : 0.0;
@@ -246,10 +270,33 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
     pos += std::snprintf(msg + pos, sizeof(msg) - pos,
         "Accounted: %.1f%%\n\n", accountedPct);
 
-    // Top functions with full detail
+    // Top functions with full detail. Always include the root scope first.
     int topN = std::min(gPerfBudget.topFunctionsPerFrame, (int)entries.size());
-    for (int i = 0; i < topN; ++i) {
-        const ScopeEntry& e = entries[i];
+
+    // Build ordered list: root first (highest inclusive, zero parent), then top by self time
+    struct OrderedEntry { int srcIdx; double selfMs; };
+    std::vector<OrderedEntry> ordered;
+    ordered.reserve(topN + 1);
+
+    // Find root
+    int rootIdx = -1;
+    for (int ei = 0; ei < (int)entries.size(); ++ei) {
+        if (gPerfScopes[entries[ei].index].parentIndex < 0) {
+            if (rootIdx < 0 || entries[ei].inclMs > entries[rootIdx].inclMs)
+                rootIdx = ei;
+        }
+    }
+    if (rootIdx >= 0)
+        ordered.push_back({rootIdx, entries[rootIdx].selfMs});
+
+    // Add remaining top scopes by self time, excluding root
+    for (int i = 0; i < topN && (int)ordered.size() < topN; ++i) {
+        if (i != rootIdx)
+            ordered.push_back({i, entries[i].selfMs});
+    }
+
+    for (int oi = 0; oi < (int)ordered.size(); ++oi) {
+        const ScopeEntry& e = entries[ordered[oi].srcIdx];
         const PerfScopeCapture& cap = gPerfScopes[e.index];
         double inclPct = totalFrameMs > 0.0 ? (e.inclMs / totalFrameMs) * 100.0 : 0.0;
         double selfPct = totalFrameMs > 0.0 ? (e.selfMs / totalFrameMs) * 100.0 : 0.0;
@@ -297,7 +344,7 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
         // Measured work
         pos += std::snprintf(msg + pos, sizeof(msg) - pos, "  Measured work:\n");
         pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-            "    Allocations: %u (%u bytes)\n", cap.allocCount, cap.allocBytes);
+            "    Allocations: %u (%zu bytes)\n", cap.allocCount, cap.allocBytes);
         if (cap.assetLoadCount > 0)
             pos += std::snprintf(msg + pos, sizeof(msg) - pos,
                 "    Asset loads: %u\n", cap.assetLoadCount);

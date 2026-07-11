@@ -436,6 +436,9 @@ static void sortContributors(FrameSpikeReport& report)
 
 void Perf::writeSpikeReport(const FrameSpikeReport& report)
 {
+    // DEPRECATED: Replaced by perfWriteSpikeReport in perf-spike.cpp
+    // which routes through StructuredLogger. Keep function for ABI.
+    return;
     std::ofstream f("logs/performance_profile.txt", std::ios::app);
     if (!f.is_open()) return;
 
@@ -510,6 +513,9 @@ void Perf::writeSpikeReport(const FrameSpikeReport& report)
 
 void Perf::writeProfileToFile()
 {
+    // DEPRECATED: Replaced by StructuredLogger-based output.
+    // Keep function for ABI compatibility.
+    return;
     PerfState& s = gState;
     const PerfTimes& t = s.current;
     const PerfTimes& c = s.children;
@@ -1138,11 +1144,7 @@ void Perf::togglePerfFileLogging()
     gState.perfFileLogging = !gState.perfFileLogging;
     Debug::log(Debug::Category::General, "[PERF] perf_file_logging=%s",
                gState.perfFileLogging ? "ON" : "OFF");
-    if (gState.perfFileLogging) {
-        std::filesystem::create_directories("logs");
-        std::ofstream f("logs/performance_profile.txt", std::ios::trunc);
-        if (f.is_open()) f.close();
-    }
+    // DEPRECATED: file writer replaced by StructuredLogger
 }
 
 void Perf::setPreset(int p)

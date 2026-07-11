@@ -23,7 +23,7 @@ struct PerfScopeCapture {
 
     // Counters
     uint32_t allocCount = 0;
-    uint32_t allocBytes = 0;
+    size_t allocBytes = 0;
     uint32_t assetLoadCount = 0;
     uint32_t collisionQueryCount = 0;
 
@@ -93,8 +93,8 @@ public:
 private:
     int mScopeIndex = -1;
     uint64_t mStartCycles = 0;
-    uint32_t mAllocBefore = 0;
-    uint32_t mBytesBefore = 0;
+    int mAllocBefore = 0;
+    size_t mBytesBefore = 0;
     uint32_t mAssetLoadBefore = 0;
     uint32_t mBloodBefore = 0;
     uint32_t mDebrisBefore = 0;
