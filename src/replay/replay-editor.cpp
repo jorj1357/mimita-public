@@ -492,7 +492,16 @@ bool ReplayEditor::loadEdit() {
             kf.tick = k.value("tick", 0);
             kf.position = jsonVec3(k["position"]);
             if (k.contains("rotation") && k["rotation"].is_array() && k["rotation"].size() == 4)
-                kf.rotation = {k["rotation"][0], k["rotation"][1], k["rotation"][2], k["rotation"][3]};
+                // kf.rotation = {k["rotation"][0], k["rotation"][1], k["rotation"][2], k["rotation"][3]};
+            // 7 11 2026 testing this 
+            // someting something axises are wrong idk repla export has been broken for like 5 hours 
+                kf.rotation = glm::normalize(glm::quat(
+                k["rotation"][3].get<float>(), // w
+                k["rotation"][0].get<float>(), // x
+                k["rotation"][1].get<float>(), // y
+                k["rotation"][2].get<float>()  // z
+            ));
+            kf.rotation = glm::normalize(kf.rotation);
             kf.roll = k.value("roll", 0.0f);
             kf.fov = k.value("fov", 70.0f);
             kf.interp = interpFromString(k.value("interp", "linear"));
@@ -568,7 +577,14 @@ bool ReplayEditor::loadEdit() {
     freecam = j.value("freecam", false);
     if (j.contains("freecamPos")) freecamPos = jsonVec3(j["freecamPos"]);
     if (j.contains("freecamRot") && j["freecamRot"].is_array() && j["freecamRot"].size() == 4)
-        freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+        // freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+    // 7 11 2026 testing repla export fixes 
+    freecamRot = glm::normalize(glm::quat(
+        j["freecamRot"][3].get<float>(), // w
+        j["freecamRot"][0].get<float>(), // x
+        j["freecamRot"][1].get<float>(), // y
+        j["freecamRot"][2].get<float>()  // z
+    ));
     freecamRoll = j.value("freecamRoll", 0.0f);
     freecamFov = j.value("freecamFov", 70.0f);
     defaultInterp = interpFromString(j.value("defaultInterp", "linear"));
@@ -629,7 +645,14 @@ bool ReplayEditor::loadSession() {
     if (freecam) {
         if (j.contains("freecamPos")) freecamPos = jsonVec3(j["freecamPos"]);
         if (j.contains("freecamRot") && j["freecamRot"].is_array() && j["freecamRot"].size() == 4)
-            freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+            // freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+        // 7 11 2026 testing  fixes for repla export not wokring 
+        freecamRot = glm::normalize(glm::quat(
+            j["freecamRot"][3].get<float>(), // w
+            j["freecamRot"][0].get<float>(), // x
+            j["freecamRot"][1].get<float>(), // y
+            j["freecamRot"][2].get<float>()  // z
+        ));
         freecamRoll = j.value("freecamRoll", 0.0f);
         freecamFov = j.value("freecamFov", 70.0f);
     }
@@ -787,7 +810,15 @@ bool ReplayEditor::undoLastAutosave() {
             kf.tick = k.value("tick", 0);
             kf.position = jsonVec3(k["position"]);
             if (k.contains("rotation") && k["rotation"].is_array() && k["rotation"].size() == 4)
-                kf.rotation = {k["rotation"][0], k["rotation"][1], k["rotation"][2], k["rotation"][3]};
+                // kf.rotation = {k["rotation"][0], k["rotation"][1], k["rotation"][2], k["rotation"][3]};
+            // 7 11 2026 testing  fix 
+            kf.rotation = glm::normalize(glm::quat(
+                k["rotation"][3].get<float>(), // w
+                k["rotation"][0].get<float>(), // x
+                k["rotation"][1].get<float>(), // y
+                k["rotation"][2].get<float>()  // z
+            ));
+            kf.rotation = glm::normalize(kf.rotation);
             kf.roll = k.value("roll", 0.0f);
             kf.fov = k.value("fov", 70.0f);
             kf.interp = interpFromString(k.value("interp", "linear"));
@@ -838,7 +869,14 @@ bool ReplayEditor::undoLastAutosave() {
     freecam = j.value("freecam", false);
     if (j.contains("freecamPos")) freecamPos = jsonVec3(j["freecamPos"]);
     if (j.contains("freecamRot") && j["freecamRot"].is_array() && j["freecamRot"].size() == 4)
-        freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+        // freecamRot = {j["freecamRot"][0], j["freecamRot"][1], j["freecamRot"][2], j["freecamRot"][3]};
+    // testing new repla stuff 7 11 2026 
+    freecamRot = glm::normalize(glm::quat(
+        j["freecamRot"][3].get<float>(), // w
+        j["freecamRot"][0].get<float>(), // x
+        j["freecamRot"][1].get<float>(), // y
+        j["freecamRot"][2].get<float>()  // z
+    ));
     freecamRoll = j.value("freecamRoll", 0.0f);
     freecamFov = j.value("freecamFov", 70.0f);
     defaultInterp = interpFromString(j.value("defaultInterp", "linear"));

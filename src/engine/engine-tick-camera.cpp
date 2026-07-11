@@ -74,6 +74,74 @@ static void logRotationDebug(const Player& player, const Camera& camera, float d
 }
 
 // Helper: log camera state to structured logger during export
+static void logModeState(const char* eventId, const char* stage)
+{
+    if (!isReplayExportActive()) return;
+    if (!StructuredLogger::instance().shouldLog(
+            StructuredCategory::Camera, StructuredLevel::Trace)) return;
+    StructuredLogger::Entry e;
+    e.category = StructuredCategory::Camera;
+    e.level = StructuredLevel::Trace;
+    e.eventId = eventId;
+    e.correlationId = "REPLAY";
+    e.reason = stage;
+    e.sourceFile = __FILE__;
+    e.sourceLine = __LINE__;
+    e.functionName = __FUNCTION__;
+    e.numericKeys = {"freecam", "cameraMode"};
+    e.numericExpected = {
+        gReplayEditor.freecam ? 1.0 : 0.0,
+        (double)(int)REPLAY_PLAYER.cameraController().mode()
+    };
+    e.numericActual = e.numericExpected;
+    StructuredLogger::instance().write(e);
+}
+
+// Coupling diagnostic: measures how much orientation changes per unit of
+// position movement. In a correct system, this should be near-zero unless
+// an orientation keyframe intentionally changes the rotation.
+static void logCouplingDiagnostic(const Camera& cam, uint32_t tick)
+{
+    if (!isReplayExportActive()) return;
+    if (!StructuredLogger::instance().shouldLog(
+            StructuredCategory::Camera, StructuredLevel::Trace)) return;
+    static glm::vec3 prevPos(0,0,0);
+    static glm::vec3 prevFront(0,0,0);
+    static bool firstFrame = true;
+    if (firstFrame) {
+        prevPos = cam.pos;
+        prevFront = cam.front;
+        firstFrame = false;
+        return;
+    }
+    glm::vec3 dPos = cam.pos - prevPos;
+    float distMoved = glm::length(dPos);
+    if (distMoved < 0.001f) { prevPos = cam.pos; prevFront = cam.front; return; }
+    float dotFwd = glm::clamp(glm::dot(cam.front, prevFront), -1.0f, 1.0f);
+    float angleDelta = glm::degrees(std::acos(dotFwd));
+    float coupling = angleDelta / distMoved;
+    if (coupling > 0.01f) {
+        StructuredLogger::Entry e;
+        e.category = StructuredCategory::Camera;
+        e.level = StructuredLevel::Important;
+        e.eventId = "CAM_COUPLING";
+        e.correlationId = "REPLAY_FRAME_" + std::to_string(tick);
+        e.reason = "Position/rotation coupling detected";
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        e.tick = tick;
+        e.numericKeys = {"angleDelta","distMoved","coupling"};
+        e.numericExpected = {0.0, 0.0, 0.0}; // Expected: no coupling
+        e.numericActual = {angleDelta, distMoved, coupling};
+        e.tolerance = 0.01;
+        StructuredLogger::instance().write(e);
+    }
+    prevPos = cam.pos;
+    prevFront = cam.front;
+}
+
+// Helper: log camera state to structured logger during export
 static void logCameraState(const Camera& cam, uint32_t tick,
     const char* eventId, const char* reason)
 {
@@ -143,6 +211,9 @@ void engineTickCamera(Engine& engine, float dt)
         camera.punchYaw = 0.0f;
     }
     camera.updateVectors();
+
+    // Log camera mode state at start of engineTickCamera
+    logModeState("CAM_MODE_START", "Mode state at engineTickCamera start");
 
     // ── Replay camera control ──────────────────────────────
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
@@ -462,6 +533,12 @@ void engineTickCamera(Engine& engine, float dt)
         // Step 0: Apply camera mode keyframes from editor
         if (gReplayEditor.isLoaded() &&
             gReplayEditor.cameraModeKeyframeCount() > 0) {
+            // During export with camera keyframes, freecam was forced by
+            // startReplayExport. Do not allow mode keyframes to override it.
+            bool skipModeOverride = isReplayExportActive() &&
+                gReplayEditor.freecam &&
+                gReplayEditor.cameraKeyframeCount() > 0;
+            if (!skipModeOverride) {
             int currentTick = (int)gReplayPlayer.currentTick();
             ReplayEditorCamMode cm = gReplayEditor.cameraModeAtTick(currentTick);
             switch (cm) {
@@ -483,6 +560,7 @@ void engineTickCamera(Engine& engine, float dt)
                                 camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                                 camera.fov = posKf.fov;
                                 camera.roll = posKf.roll;
+                                // 7 11 2026 commenting these all out test
                                 camera.updateVectors();
                             } else {
                                 gReplayEditor.freecamPos = camera.pos;
@@ -524,7 +602,10 @@ void engineTickCamera(Engine& engine, float dt)
                 gReplayEditor.freecam ? "FREECAM" : (camera.thirdPerson ? "THIRDPERSON" : "FIRSTPERSON"),
                 (int)gReplayPlayer.isPaused(),
                 (int)(gReplayEditor.freecam && gReplayPlayer.isPaused()));
+            }
         }
+        // Log camera mode state after mode keyframe block
+        logModeState("CAM_MODE_AFTER_KF", "Mode state after camera mode keyframe block");
 
         // Step 1: Camera controller sets default camera
         glm::vec3 playerCamPos = camera.pos;
@@ -591,13 +672,21 @@ void engineTickCamera(Engine& engine, float dt)
                 float st = ReplayEditor::applyEasing(t, kfA.interp);
 
                 camera.pos = glm::mix(kfA.position, kfB.position, st);
-                glm::quat rot = glm::slerp(kfA.rotation, kfB.rotation, st);
+                glm::quat rot = glm::normalize(glm::slerp(kfA.rotation, kfB.rotation, st));
+                // Assert quaternion magnitude
+                float qmag = glm::length(rot);
+                if (std::fabs(qmag - 1.0f) > 0.001f) {
+                    Debug::warn(Debug::Category::Replay,
+                        "[QUAT] slerp magnitude=%.6f tick=%.0f\n", qmag, currentTick);
+                    rot = glm::normalize(rot);
+                }
                 // Extract -Z axis (GLM quatLookAt convention): quatLookAt maps -Z to target
                 camera.front = glm::normalize(rot * glm::vec3(0.0f, 0.0f, -1.0f));
                 camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
                 camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                 camera.fov = glm::mix(kfA.fov, kfB.fov, st);
                 camera.roll = glm::mix(kfA.roll, kfB.roll, st);
+                // 7 11 2026 testing stopping this
                 camera.updateVectors();
 
                 if (isReplayExportActive()) {
@@ -628,6 +717,7 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                 camera.fov = kf.fov;
                 camera.roll = kf.roll;
+                // 7 11 2026 test comment 
                 camera.updateVectors();
 
                 if (isReplayExportActive()) {
@@ -656,6 +746,8 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                 camera.fov = kf.fov;
                 camera.roll = kf.roll;
+                // 7 11 2026 teting this stopping 
+                // 7 11 2026 155311 uncommenting all of them
                 camera.updateVectors();
 
                 if (isReplayExportActive()) {
@@ -1020,5 +1112,36 @@ void engineTickCamera(Engine& engine, float dt)
                     sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
             }
         }
+    }
+    // Coupling diagnostic: orientation change per unit of position movement
+    if (replayPlaybackActive)
+        logCouplingDiagnostic(camera, gReplayPlayer.currentTick());
+
+    // Log view matrix for debug verification during export
+    if (isReplayExportActive() && StructuredLogger::instance().shouldLog(
+            StructuredCategory::Camera, StructuredLevel::Trace)) {
+        glm::mat4 view = camera.getView();
+        StructuredLogger::Entry ve;
+        ve.category = StructuredCategory::Camera;
+        ve.level = StructuredLevel::Trace;
+        ve.eventId = "CAM_VIEW_MATRIX";
+        ve.correlationId = "REPLAY_FRAME_" + std::to_string(gReplayPlayer.currentTick());
+        ve.reason = "View matrix after all camera processing";
+        ve.sourceFile = __FILE__;
+        ve.sourceLine = __LINE__;
+        ve.functionName = __FUNCTION__;
+        ve.tick = gReplayPlayer.currentTick();
+        ve.numericKeys = {
+            "m00","m01","m02","m03",
+            "m10","m11","m12","m13",
+            "m20","m21","m22","m23",
+            "m30","m31","m32","m33"};
+        ve.numericExpected = {
+            view[0][0],view[0][1],view[0][2],view[0][3],
+            view[1][0],view[1][1],view[1][2],view[1][3],
+            view[2][0],view[2][1],view[2][2],view[2][3],
+            view[3][0],view[3][1],view[3][2],view[3][3]};
+        ve.numericActual = ve.numericExpected;
+        StructuredLogger::instance().write(ve);
     }
 }
