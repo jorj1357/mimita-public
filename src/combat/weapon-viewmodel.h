@@ -28,6 +28,7 @@ struct WeaponViewModel {
     float disturbance = 0.0f;
 
     glm::vec3 mTint{1.0f};  // current tint for rendering
+    float mEmptyFlashTimer = 0.0f;  // accumulator for empty-magazine flash
 
     // Per-weapon animation state
     float mFireTimer = 0.0f;
