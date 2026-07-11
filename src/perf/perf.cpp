@@ -1,6 +1,7 @@
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-frame.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -39,6 +40,9 @@ void Perf::beginFrame()
     gState.queryRecordCount = 0;
     gState.dupTrackerCount = 0;
     gState.largeAabbAlert = {};
+    // Reset scope array and mark frame boundary timestamp
+    gPerfFrameStartCycles = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
     perfResetScopes();
 }
 
@@ -829,21 +833,54 @@ void Perf::endFrame()
     double targetMs = gPerfBudget.targetFps > 0 ? 1000.0 / gPerfBudget.targetFps : 16.667;
     perfCaptureFrame((double)currentMs, targetMs, s.frameNumber);
 
-    // Aggregate scopes and write spike reports
-    perfAggregateScopes((double)currentMs, targetMs);
+    // Aggregate scopes and write spike reports through StructuredLogger
+    perfAggregateScopes((double)currentMs, targetMs, s.frameNumber);
 
-    // Write periodic frame breakdown to file
+    // Periodic frame summary via StructuredLogger (every 60 frames)
     static int sBreakdownCount = 0;
     sBreakdownCount++;
-    if (s.perfFileLogging || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) {
-        static FILE* sBreakdownFile = nullptr;
-        if (!sBreakdownFile)
-            sBreakdownFile = fopen("logs/FrameBreakdown_log.txt", "a");
-        if (sBreakdownFile && gFrameHistoryCount > 0) {
-            int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
-            if (gFrameHistory[lastIdx].frameNumber == s.frameNumber) {
-                perfWriteFrameBreakdown(sBreakdownFile, gFrameHistory[lastIdx], false);
+    if ((s.perfFileLogging || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) &&
+        gFrameHistoryCount > 0 &&
+        StructuredLogger::instance().shouldLog(StructuredCategory::Performance, StructuredLevel::Verbose))
+    {
+        int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
+        if (gFrameHistory[lastIdx].frameNumber == s.frameNumber) {
+            const PerfFrame& frame = gFrameHistory[lastIdx];
+
+            // Build a compact breakdown message
+            char msg[4096];
+            int pos = 0;
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "FRAME_%06d  total=%.2fms  budget=%.2fms  npcs=%d  effects=%d  audio=%d  allocs=%d\n",
+                frame.frameNumber, frame.totalMs, frame.budgetMs,
+                frame.npcCount, frame.effectCount, frame.audioCount, frame.allocCount);
+
+            // Top 5 scopes by self time
+            struct SortInfo { int idx; double selfMs; };
+            SortInfo sorted[128];
+            int sc = 0;
+            for (int i = 0; i < frame.entryCount && sc < 128; ++i)
+                sorted[sc++] = {i, frame.entries[i].selfMs};
+            std::sort(sorted, sorted + sc,
+                [](const SortInfo& a, const SortInfo& b) { return a.selfMs > b.selfMs; });
+
+            for (int i = 0; i < std::min(5, sc); ++i) {
+                const auto& e = frame.entries[sorted[i].idx];
+                pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                    "  %s: %.2fms (%u calls)\n", e.label, e.selfMs, e.callCount);
             }
+
+            StructuredLogger::Entry se;
+            se.category = StructuredCategory::Performance;
+            se.level = StructuredLevel::Verbose;
+            se.eventId = "PERFORMANCE_FRAME";
+            se.reason = "Frame breakdown";
+            se.sourceFile = __FILE__;
+            se.sourceLine = __LINE__;
+            se.functionName = "Perf::endFrame";
+            se.frame = (uint32_t)s.frameNumber;
+            se.message = msg;
+            StructuredLogger::instance().write(se);
         }
     }
 }

@@ -3,6 +3,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "config.h"
+#include <algorithm>
 
 #include <algorithm>
 #include <cstdio>
@@ -26,6 +27,8 @@ const char* gPerfLargestAllocSite = nullptr;
 
 char gPerfCorrelationStack[8][32] = {};
 int gPerfCorrelationDepth = 0;
+
+uint64_t gPerfFrameStartCycles = 0;
 
 // ── Cycle counter ──────────────────────────────────────────
 
@@ -88,6 +91,15 @@ PerfScopeGuard::~PerfScopeGuard()
     uint64_t endCycles = readCycles();
     uint64_t elapsed = endCycles - mStartCycles;
 
+    // Frame-boundary detection: if this scope started before the current frame,
+    // it spans across frames. Cap the measurement to avoid impossible times.
+    if (gPerfFrameStartCycles > 0 && mStartCycles < gPerfFrameStartCycles) {
+        // Started in a previous frame. Use only the within-frame portion.
+        elapsed = endCycles - gPerfFrameStartCycles;
+        // If still impossibly large, clamp to 16ms (one budget frame)
+        if (elapsed > 16000000ULL) elapsed = 16000000ULL;
+    }
+
     PerfScopeCapture& cap = gPerfScopes[mScopeIndex];
     cap.cyclesInclusive += elapsed;
     if (elapsed < cap.minCycles) cap.minCycles = elapsed;
@@ -123,7 +135,7 @@ void perfClearCorrelation()
 
 // ── Frame aggregation ───────────────────────────────────────
 
-void perfAggregateScopes(double totalFrameMs, double budgetMs)
+void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber)
 {
     if (gPerfScopeCount == 0)
         return;
@@ -159,39 +171,24 @@ void perfAggregateScopes(double totalFrameMs, double budgetMs)
 
     // Write spike report for frames exceeding threshold
     if (isSpike) {
-        perfWriteSpikeReport(totalFrameMs, budgetMs);
+        perfWriteSpikeReport(totalFrameMs, budgetMs, frameNumber);
     }
 
     // Always write frame breakdown to rolling log (throttled)
     static int sFrameLogCounter = 0;
     sFrameLogCounter++;
     if (sFrameLogCounter % 60 == 0 || isSpike || DebugConfig::DEBUG_DEATH_PERF) {
-        // Capture frame into ring buffer
-        // Frame number is pulled from the spike report context
-        // perfCaptureFrame is called from Perf::endFrame which has the frame number
+        // perfCaptureFrame is called from Perf::endFrame which handles the ring buffer
     }
 }
 
-// ── Spike report ────────────────────────────────────────────
+// ── Spike report (routed through StructuredLogger) ─────────
 
-void perfWriteSpikeReport(double totalFrameMs, double budgetMs)
+void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
 {
-    std::error_code ec;
-    std::filesystem::create_directories("logs", ec);
-
-    static FILE* sSpikeFile = nullptr;
-    if (!sSpikeFile) {
-        sSpikeFile = fopen("logs/FrameSpikes_log.txt", "a");
-        if (sSpikeFile) {
-            fprintf(sSpikeFile, "=== Frame Spike Log ===\n");
-            fprintf(sSpikeFile, "Format: frame | total_ms | budget_ms | over_by | slowdown_x | label | self_ms | incl_ms | file:line\n");
-            fprintf(sSpikeFile, "---\n");
-        }
-    }
-
     // Build entries
-    struct Entry { int index; double inclMs; double selfMs; };
-    std::vector<Entry> entries;
+    struct ScopeEntry { int index; double inclMs; double selfMs; };
+    std::vector<ScopeEntry> entries;
     entries.reserve(gPerfScopeCount);
 
     std::vector<double> childSums(gPerfScopeCount, 0.0);
@@ -209,123 +206,149 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs)
     }
 
     std::sort(entries.begin(), entries.end(),
-        [](const Entry& a, const Entry& b) { return a.selfMs > b.selfMs; });
+        [](const ScopeEntry& a, const ScopeEntry& b) { return a.selfMs > b.selfMs; });
 
     double overBy = totalFrameMs - budgetMs;
     double slowdown = budgetMs > 0.0 ? totalFrameMs / budgetMs : 0.0;
 
-    if (sSpikeFile) {
-        fprintf(sSpikeFile, "\n=== Frame Spike ===\n");
-        fprintf(sSpikeFile, "Frame: unknown\n");
-        fprintf(sSpikeFile, "Total frame time: %.3f ms\n", totalFrameMs);
-        fprintf(sSpikeFile, "Target frame time: %.3f ms\n", budgetMs);
-        fprintf(sSpikeFile, "Over budget: %.3f ms\n", overBy);
-        fprintf(sSpikeFile, "Slowdown: %.2fx\n", slowdown);
-        fprintf(sSpikeFile, "FPS equivalent: %.1f\n", totalFrameMs > 0.0 ? 1000.0 / totalFrameMs : 0.0);
-        fprintf(sSpikeFile, "\n");
+    // Compute measured top-level work (root scopes only, no parent)
+    double measuredTopLevel = 0.0;
+    for (const auto& e : entries) {
+        const PerfScopeCapture& cap = gPerfScopes[e.index];
+        if (cap.parentIndex < 0) {
+            measuredTopLevel += e.selfMs;
+        }
+    }
+    double unaccounted = totalFrameMs - measuredTopLevel;
+    double accountedPct = totalFrameMs > 0.0 ? (measuredTopLevel / totalFrameMs) * 100.0 : 0.0;
 
-        // Top functions with full detail
-        int topN = std::min(gPerfBudget.topFunctionsPerFrame, (int)entries.size());
-        for (int i = 0; i < topN; ++i) {
-            const Entry& e = entries[i];
-            const PerfScopeCapture& cap = gPerfScopes[e.index];
-            double inclPct = totalFrameMs > 0.0 ? (e.inclMs / totalFrameMs) * 100.0 : 0.0;
-            double selfPct = totalFrameMs > 0.0 ? (e.selfMs / totalFrameMs) * 100.0 : 0.0;
+    // Build a plain-text report string to send to StructuredLogger
+    char msg[8192];
+    int pos = 0;
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "SPIKE DETECTED\n");
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Frame: %d\n", frameNumber);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Frame total: %.3f ms\n", totalFrameMs);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Budget: %.3f ms\n", budgetMs);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Over budget: %.3f ms\n", overBy);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Slowdown: %.2fx\n", slowdown);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "FPS equivalent: %.1f\n", totalFrameMs > 0.0 ? 1000.0 / totalFrameMs : 0.0);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Measured top-level work: %.3f ms\n", measuredTopLevel);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Unaccounted: %.3f ms\n", unaccounted);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Accounted: %.1f%%\n\n", accountedPct);
 
-            fprintf(sSpikeFile, "Function:\n");
-            fprintf(sSpikeFile, "  %s\n", cap.file ? cap.file : "?");
-            fprintf(sSpikeFile, "  %s\n", cap.func ? cap.func : "?");
-            fprintf(sSpikeFile, "  Label: %s\n", cap.label ? cap.label : "?");
-            fprintf(sSpikeFile, "  Line: %d\n", cap.line);
-            if (cap.correlationId[0])
-                fprintf(sSpikeFile, "  Correlation: %s\n", cap.correlationId);
-            fprintf(sSpikeFile, "\n");
+    // Top functions with full detail
+    int topN = std::min(gPerfBudget.topFunctionsPerFrame, (int)entries.size());
+    for (int i = 0; i < topN; ++i) {
+        const ScopeEntry& e = entries[i];
+        const PerfScopeCapture& cap = gPerfScopes[e.index];
+        double inclPct = totalFrameMs > 0.0 ? (e.inclMs / totalFrameMs) * 100.0 : 0.0;
+        double selfPct = totalFrameMs > 0.0 ? (e.selfMs / totalFrameMs) * 100.0 : 0.0;
 
-            fprintf(sSpikeFile, "  Inclusive time:\n");
-            fprintf(sSpikeFile, "    %.3f ms\n", e.inclMs);
-            fprintf(sSpikeFile, "    %.1f%% of total frame\n", inclPct);
-            fprintf(sSpikeFile, "\n");
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "Function: %s\n", cap.label ? cap.label : "?");
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "  File: %s\n", cap.file ? cap.file : "?");
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "  Line: %d\n", cap.line);
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "  Function: %s\n", cap.func ? cap.func : "?");
+        if (cap.correlationId[0])
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "  Correlation: %s\n", cap.correlationId);
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "  Inclusive: %.3f ms (%.1f%%)\n", e.inclMs, inclPct);
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "  Self: %.3f ms (%.1f%%)\n", e.selfMs, selfPct);
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "  Calls: %u\n", cap.callCount);
 
-            fprintf(sSpikeFile, "  Self time:\n");
-            fprintf(sSpikeFile, "    %.3f ms\n", e.selfMs);
-            fprintf(sSpikeFile, "    %.1f%% of total frame\n", selfPct);
-            fprintf(sSpikeFile, "\n");
-
-            fprintf(sSpikeFile, "  Call count this frame:\n");
-            fprintf(sSpikeFile, "    %u\n", cap.callCount);
-            fprintf(sSpikeFile, "\n");
-
-            // Children
-            fprintf(sSpikeFile, "  Children:\n");
-            int childCount = 0;
-            double otherChildMs = 0.0;
-            for (int j = 0; j < gPerfScopeCount; ++j) {
-                if (gPerfScopes[j].parentIndex == e.index && gPerfScopes[j].active) {
-                    double cInclMs = (double)gPerfScopes[j].cyclesInclusive / 1000000.0;
-                    if (cInclMs > 0.01 && childCount < 20) {
-                        fprintf(sSpikeFile, "    %s: %.3f ms",
-                            gPerfScopes[j].label ? gPerfScopes[j].label : "?",
-                            cInclMs);
-                        if (gPerfScopes[j].correlationId[0])
-                            fprintf(sSpikeFile, " [%s]", gPerfScopes[j].correlationId);
-                        fprintf(sSpikeFile, "\n");
-                        childCount++;
-                    } else if (cInclMs > 0.01) {
-                        otherChildMs += cInclMs;
-                    }
+        // Children
+        bool hasChildren = false;
+        for (int j = 0; j < gPerfScopeCount; ++j) {
+            if (gPerfScopes[j].parentIndex == e.index && gPerfScopes[j].active) {
+                if (!hasChildren) {
+                    pos += std::snprintf(msg + pos, sizeof(msg) - pos, "  Children:\n");
+                    hasChildren = true;
+                }
+                double cInclMs = (double)gPerfScopes[j].cyclesInclusive / 1000000.0;
+                if (cInclMs > 0.01) {
+                    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                        "    %s: %.3f ms",
+                        gPerfScopes[j].label ? gPerfScopes[j].label : "?",
+                        cInclMs);
+                    if (gPerfScopes[j].correlationId[0])
+                        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                            " [%s]", gPerfScopes[j].correlationId);
+                    pos += std::snprintf(msg + pos, sizeof(msg) - pos, "\n");
                 }
             }
-            if (otherChildMs > 0.0)
-                fprintf(sSpikeFile, "    Other children: %.3f ms\n", otherChildMs);
-            fprintf(sSpikeFile, "\n");
-
-            // Measured work
-            fprintf(sSpikeFile, "  Measured work:\n");
-            fprintf(sSpikeFile, "    Heap allocations: %u\n", cap.allocCount);
-            fprintf(sSpikeFile, "    Alloc bytes: %u\n", cap.allocBytes);
-            if (cap.assetLoadCount > 0)
-                fprintf(sSpikeFile, "    Asset files loaded from disk: %u\n", cap.assetLoadCount);
-            if (cap.collisionQueryCount > 0)
-                fprintf(sSpikeFile, "    Collision queries: %u\n", cap.collisionQueryCount);
-            if (cap.bloodParticlesSpawned > 0)
-                fprintf(sSpikeFile, "    Blood particles: %u\n", cap.bloodParticlesSpawned);
-            if (cap.debrisChunksSpawned > 0)
-                fprintf(sSpikeFile, "    Debris chunks: %u\n", cap.debrisChunksSpawned);
-            if (cap.bloodDecalsSpawned > 0)
-                fprintf(sSpikeFile, "    Blood decals: %u\n", cap.bloodDecalsSpawned);
-            if (cap.replayEventsCreated > 0)
-                fprintf(sSpikeFile, "    Replay events created: %u\n", cap.replayEventsCreated);
-            if (cap.replayJsonBytes > 0)
-                fprintf(sSpikeFile, "    Replay JSON bytes: %u\n", cap.replayJsonBytes);
-            fprintf(sSpikeFile, "\n");
         }
 
-        // Summary
-        fprintf(sSpikeFile, "--- SUMMARY ---\n");
-        fprintf(sSpikeFile, "Frame=unknown total=%.3f budget=%.3f over=%.3f slowdown=%.2fx top=",
-                totalFrameMs, budgetMs, overBy, slowdown);
-        for (int i = 0; i < std::min(5, (int)entries.size()); ++i) {
-            const PerfScopeCapture& cap = gPerfScopes[entries[i].index];
-            fprintf(sSpikeFile, "%s=%.1fms ",
-                    cap.label ? cap.label : "?", entries[i].selfMs);
-        }
-        fprintf(sSpikeFile, "\n");
-        fflush(sSpikeFile);
+        // Measured work
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos, "  Measured work:\n");
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "    Allocations: %u (%u bytes)\n", cap.allocCount, cap.allocBytes);
+        if (cap.assetLoadCount > 0)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "    Asset loads: %u\n", cap.assetLoadCount);
+        if (cap.collisionQueryCount > 0)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "    Collision queries: %u\n", cap.collisionQueryCount);
+        if (cap.bloodParticlesSpawned > 0)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "    Blood particles: %u\n", cap.bloodParticlesSpawned);
+        if (cap.debrisChunksSpawned > 0)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "    Debris chunks: %u\n", cap.debrisChunksSpawned);
+        if (cap.bloodDecalsSpawned > 0)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "    Blood decals: %u\n", cap.bloodDecalsSpawned);
+        if (cap.replayEventsCreated > 0)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "    Replay events: %u\n", cap.replayEventsCreated);
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos, "\n");
     }
 
-    // Log to console
+    // Compute allocation status
+    bool allocInstrumented = (gPerfAllocCount > 0);
+
+    // Send to StructuredLogger
+    StructuredLogger::Entry e;
+    e.category = StructuredCategory::Performance;
+    e.level = StructuredLevel::Errors;
+    e.eventId = "PERFORMANCE_SPIKE";
+    e.correlationId = "";
+    if (gPerfCorrelationDepth > 0)
+        e.correlationId = gPerfCorrelationStack[gPerfCorrelationDepth - 1];
+    e.reason = "Frame exceeded budget";
+    e.sourceFile = __FILE__;
+    e.sourceLine = __LINE__;
+    e.functionName = "perfWriteSpikeReport";
+    e.frame = (uint32_t)(frameNumber > 0 ? frameNumber : 0);
+    e.message = std::string(msg) + std::string("Allocation instrumentation: ") +
+        (allocInstrumented ? "MEASURED" : "NOT INSTRUMENTED") + "\n" +
+        "Measurement source: MIMITA_PERF_SCOPE + operator new override\n" +
+        "Status: " + (accountedPct >= 95.0 ? "PASS\n" : "PROFILER COVERAGE FAILURE\n");
+
+    StructuredLogger::instance().write(e);
+
+    // Also log to console
     if (DebugConfig::DEBUG_DEATH_PERF) {
-        for (int i = 0; i < std::min(10, (int)entries.size()); ++i) {
-            const Entry& e = entries[i];
-            const PerfScopeCapture& cap = gPerfScopes[e.index];
-            Debug::log(Debug::Category::General,
-                "[PERF SPIKE] total=%.1fms scope=%s self=%.1fms incl=%.1fms calls=%u allocs=%u bytes=%u file=%s:%d\n",
-                totalFrameMs,
-                cap.label ? cap.label : "?",
-                e.selfMs, e.inclMs, cap.callCount,
-                cap.allocCount, cap.allocBytes,
-                cap.file ? cap.file : "?", cap.line);
-        }
+        Debug::log(Debug::Category::General,
+            "[PERF SPIKE] frame=%d total=%.1fms accounted=%.1f%% top=%s=%.1fms\n",
+            frameNumber, totalFrameMs, accountedPct,
+            entries.empty() ? "?" : (gPerfScopes[entries[0].index].label ? gPerfScopes[entries[0].index].label : "?"),
+            entries.empty() ? 0.0 : entries[0].selfMs);
     }
 }
 
@@ -333,5 +356,5 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs)
 
 void perfFlushAllSpikeContexts()
 {
-    // Placeholder — spike contexts are written inline during capture
+    // All spike contexts are written inline during capture - no deferred flush needed
 }
