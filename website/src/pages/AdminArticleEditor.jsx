@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom"
 import { apiRequest } from "../lib/api.js"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import rehypeRaw from "rehype-raw"
 import Layout from "../components/Layout"
 
 export default function AdminArticleEditor() {
@@ -102,12 +103,14 @@ export default function AdminArticleEditor() {
         }
         setSaving(true)
         setMessage("")
+        const safeSlug = slugify(slug)
+        setSlug(safeSlug)
         try {
             const tagList = tags.split(",").map(t => t.trim()).filter(Boolean)
             const data = await apiRequest("/api/admin/articles", {
                 method: "POST",
                 body: JSON.stringify({
-                    slug,
+                    slug: safeSlug,
                     title,
                     description,
                     date,
@@ -197,7 +200,8 @@ export default function AdminArticleEditor() {
                             <div className="adminEditorField">
                                 <label>slug</label>
                                 <input type="text" value={slug}
-                                    onChange={e => setSlug(slugify(e.target.value))}
+                                    onChange={e => setSlug(e.target.value)}
+                                    onBlur={e => setSlug(slugify(e.target.value))}
                                     placeholder="my-article-slug" required />
                             </div>
 
@@ -284,7 +288,7 @@ export default function AdminArticleEditor() {
                                 </div>
                                 {showPreview ? (
                                     <div className="adminEditorPreview">
-                                        <Markdown remarkPlugins={[remarkGfm]}>
+                                        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                             {renderContent(content)}
                                         </Markdown>
                                     </div>
