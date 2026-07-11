@@ -9,6 +9,8 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:3002',
       '/avatars': 'http://localhost:3002',
+      '/articles.generated.json': 'http://localhost:3002',
+      '/news.generated.json': 'http://localhost:3002',
     },
   },
 })

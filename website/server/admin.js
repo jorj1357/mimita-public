@@ -484,4 +484,4 @@ router.delete("/articles/:slug", requireAdmin, (req, res) => {
 })
 
 export default router
-export { requireAdmin }
+export { requireAdmin, regenerateJson }

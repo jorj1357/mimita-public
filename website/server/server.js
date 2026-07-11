@@ -28,7 +28,7 @@ import {
     sendPasswordChangedEmail,
     sendPasswordChangeCodeEmail
 } from "./mail.js"
-import adminRouter from "./admin.js"
+import adminRouter, { regenerateJson } from "./admin.js"
 import debugRouter from "./debug.js"
 import gameAnalyticsRouter from "./gameAnalytics.js"
 import tokenExchangeRouter from "./token-exchange.js"
@@ -1070,6 +1070,37 @@ app.use("/api/debug", debugRouter)
 app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 app.use("/api", gameApiRouter)
 
+// Serve generated article/news JSON — the admin editor is the source of truth
+import path from "path"
+import fs from "fs"
+import { fileURLToPath } from "url"
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PUBLIC_DIR = path.resolve(__dirname, "public")
+
+app.get("/articles.generated.json", (req, res) => {
+  const filePath = path.join(PUBLIC_DIR, "articles.generated.json")
+  if (fs.existsSync(filePath)) {
+    res.setHeader("Content-Type", "application/json")
+    res.sendFile(filePath)
+  } else {
+    regenerateJson()
+    res.setHeader("Content-Type", "application/json")
+    res.sendFile(filePath)
+  }
+})
+
+app.get("/news.generated.json", (req, res) => {
+  const filePath = path.join(PUBLIC_DIR, "news.generated.json")
+  if (fs.existsSync(filePath)) {
+    res.setHeader("Content-Type", "application/json")
+    res.sendFile(filePath)
+  } else {
+    regenerateJson()
+    res.setHeader("Content-Type", "application/json")
+    res.sendFile(filePath)
+  }
+})
+
 app.post("/api/admin/feedback", feedbackRateLimit, async (req, res, next) => {
     try {
         const { submitFeedback } = await import("./feedback.js")
@@ -1414,6 +1445,14 @@ async function start() {
     catch (error) {
         console.log("[STARTUP] Migration failed:", error.message)
         console.log("[STARTUP] Server will start anyway. Run migrations separately if needed.")
+    }
+
+    // Generate articles/news JSON from markdown files (admin editor is source of truth)
+    try {
+        regenerateJson()
+        console.log("[STARTUP] Articles JSON regenerated")
+    } catch (error) {
+        console.log("[STARTUP] Articles JSON generation failed:", error.message)
     }
 
     // Periodic session cleanup: purge expired sessions every hour

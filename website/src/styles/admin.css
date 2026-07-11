@@ -658,6 +658,13 @@
   white-space: nowrap;
 }
 
+.adminEditorPublishStatus {
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
 .adminEditorListItemDate {
   color: #666;
   font-size: 0.72rem;
