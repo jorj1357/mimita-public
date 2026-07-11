@@ -14,6 +14,10 @@ struct PerfScopeCapture {
     const char* label = nullptr;
     char correlationId[32] = {};
 
+    // Frame and tick at scope begin
+    uint32_t beginFrameId = 0;
+    uint64_t beginTickId = 0;
+
     // Accumulated nanoseconds for this scope across all calls this frame
     uint64_t cyclesInclusive = 0;
     uint64_t cyclesSelf = 0;
@@ -38,6 +42,7 @@ struct PerfScopeCapture {
 
     int parentIndex = -1;
     bool active = false;
+    bool crossedBoundary = false;
 };
 
 // ── Budget config (loaded from debuglogger.json) ─────────────
@@ -125,3 +130,6 @@ void perfFlushAllSpikeContexts();
 
 // Frame boundary timestamp (set by Perf::beginFrame) for scope cross-frame detection
 extern uint64_t gPerfFrameStartCycles;
+
+// Current frame ID (set by Perf::beginFrame from PerfState)
+extern uint32_t gPerfCurrentFrameId;
