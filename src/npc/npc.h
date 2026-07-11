@@ -86,7 +86,7 @@ public:
     float fireRhythmOffset = 0.0f;
     float fireAggressionBias = 0.0f;
     float timeSinceLastShot = 0.0f;
-    static constexpr float MAX_FIRE_DELAY = 5.0f;
+    static constexpr float MAX_FIRE_DELAY = 0.5f;
 
     // Training mode: 0=idle, 1=flee, 2=attack (normal AI)
     int trainingMode = 2;

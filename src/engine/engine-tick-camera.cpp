@@ -92,10 +92,6 @@ void engineTickCamera(Engine& engine, float dt)
     camera.decayPunch(dt);
     camera.updateVectors();
 
-    // Camera is the source of truth: player root yaw = camera yaw, no smoothing.
-    syncPlayerYawFromCamera(player, camera);
-    logRotationDebug(player, camera, dt);
-
     // ── Replay camera control ──────────────────────────────
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool replayFreecam =
@@ -105,6 +101,13 @@ void engineTickCamera(Engine& engine, float dt)
          gReplayCameraMgr.mode() == "freecam");
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
                             !Terminal::instance().isOpen();
+
+    // Camera is the source of truth: player root yaw = camera yaw, no smoothing.
+    // Skip during freecam to preserve the player's original facing direction.
+    if (!anyFreecam) {
+        syncPlayerYawFromCamera(player, camera);
+        logRotationDebug(player, camera, dt);
+    }
 
     // ── Replay Editor keyboard controls ─────────────────────
     // Space/Arrows handled by engine-tick-combat.cpp; this block handles

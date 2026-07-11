@@ -16,6 +16,7 @@
 #include "config/size-scaling-config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
+#include "debug/debug-log.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
@@ -132,6 +133,17 @@ void WeaponViewModel::loadModel(const std::string& modelPath) {
     float smallerAxis = std::min(size[crossA], size[crossB]);
     modelCollisionRadius = std::clamp(smallerAxis * 0.5f, 0.12f, 0.18f);
     hasModelBounds = true;
+
+    Debug::log(Debug::Category::Weapons,
+        "[VIEWMODEL] model=%s bounds=[%.3f,%.3f,%.3f]→[%.3f,%.3f,%.3f] size=[%.3f,%.3f,%.3f] axis=%d grip=[%.3f,%.3f,%.3f] muzzle=[%.3f,%.3f,%.3f] radius=%.3f",
+        loadedModelPath.c_str(),
+        boundsMin.x, boundsMin.y, boundsMin.z,
+        boundsMax.x, boundsMax.y, boundsMax.z,
+        size.x, size.y, size.z,
+        axis,
+        modelGrip.x, modelGrip.y, modelGrip.z,
+        modelMuzzle.x, modelMuzzle.y, modelMuzzle.z,
+        modelCollisionRadius);
 
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);

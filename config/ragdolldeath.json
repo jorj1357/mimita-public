@@ -2,7 +2,7 @@
     "enabled": true,
     "hot_reload": true,
 
-    "lifetime_seconds": 13.0,
+    "lifetime_seconds": 0.01,
 
     "death_impulse_multiplier": 0.1,
     "spawn_velocity_multiplier": 0.1,
