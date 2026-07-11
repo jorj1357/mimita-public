@@ -310,6 +310,7 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["smokeEndColorG"] = 0.2f;
     def.customParams["smokeEndColorB"] = 0.2f;
     def.customParams["smokeEndColorA"] = 0.0f;
+    def.customParams["flightSoundVolumeDb"] = 15.0f;
 
     return def;
 }

@@ -577,7 +577,16 @@ RevolverShotResult WeaponSystem::fire(
         return {};
     }
 
-    if (rt->isReloading || rt->fireCooldown > 0.0f) {
+    bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
+
+    if (!canInterruptReload && (rt->isReloading || rt->fireCooldown > 0.0f)) {
+        return {};
+    }
+
+    // Allow firing during reload if clip has ammo (interrupts reload for rocket/grenade)
+    if (canInterruptReload && rt->isReloading && rt->currentAmmo > 0) {
+        // Fire loaded projectile, interrupt reload, discard partial progress
+    } else if (rt->fireCooldown > 0.0f) {
         return {};
     }
 
@@ -592,6 +601,13 @@ RevolverShotResult WeaponSystem::fire(
     if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
         rt->currentAmmo--;
         rt->fireCooldown = def->fireDelay;
+        // Interrupt reload on successful fire
+        if (rt->isReloading) {
+            rt->isReloading = false;
+            rt->reloadTimer = 0.0f;
+            if (DebugConfig::DEBUG_RELOAD)
+                Debug::log(Debug::Category::General, "[RELOAD] interrupted by fire; partial progress discarded\n");
+        }
         rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
         mShotCooldown = def->fireDelay;
         WeaponFire::applyRecoil(player, *def,
@@ -745,18 +761,29 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return;
 
-    if (rt->isReloading || rt->fireCooldown > 0.0f) {
-        // Dry-fire on cooldown (heavy click, lower pitch)
+    if (rt->fireCooldown > 0.0f && !rt->isReloading) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         return;
     }
 
-    if (rt->currentAmmo <= 0) {
-        // Heavy dry-fire for out of ammo (lower pitch)
+    // Allow firing during reload if clip has ammo
+    if (rt->currentAmmo > 0 && rt->isReloading) {
+        // Fire loaded projectile, interrupt reload, discard partial progress
+    } else if (rt->currentAmmo <= 0) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         if (!rt->isReloading && rt->reserveAmmo > 0)
             reload(player);
         return;
+    } else if (rt->fireCooldown > 0.0f) {
+        return;
+    }
+
+    // Interrupt reload on successful fire (WeaponRocketLauncher::fire handles ammo consumption)
+    if (rt->isReloading) {
+        rt->isReloading = false;
+        rt->reloadTimer = 0.0f;
+        if (DebugConfig::DEBUG_RELOAD)
+            Debug::log(Debug::Category::General, "[RELOAD] interrupted by fire; partial progress discarded\n");
     }
 
     int idx = slotIndex(def->slot);

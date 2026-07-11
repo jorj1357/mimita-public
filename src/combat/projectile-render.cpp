@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <glad/glad.h>
@@ -197,8 +198,13 @@ void renderProjectile(
     if (mesh.vertexCount <= 0)
         return;
 
-    // Cache texture
+    // Cache texture (warn once per path if texture fails)
     GLuint tex = gTextures.get(texturePath);
+    if (tex == 0) {
+        static std::unordered_set<std::string> sTexWarned;
+        if (sTexWarned.insert(texturePath).second)
+            printf("[PROJECTILE] WARNING: Failed to load texture: %s\n", texturePath.c_str());
+    }
     mesh.loadedTexturePath = texturePath;
 
     // Build model matrix: position, rotation (orientation + offset), scale
