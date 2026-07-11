@@ -10,6 +10,7 @@
 
 #include "config.h"
 #include "debug/debug-log.h"
+#include "perf/perf-spike.h"
 #include "debug/debug-visuals.h"
 #include "debug/gl-debug.h"
 #include "camera.h"
@@ -117,6 +118,7 @@ void RagdollDeathSystem::spawnFromPlayer(
     const glm::vec3& deathImpulse,
     const std::string& actorId)
 {
+    MIMITA_PERF_SCOPE("Ragdoll::SpawnFromPlayer");
     const auto& cfg = RagdollConfig::instance().data();
     if (!cfg.enabled || victim.physicalBody.parts.empty())
         return;
@@ -263,6 +265,7 @@ void RagdollDeathSystem::spawnFromPlayer(
 void RagdollDeathSystem::update(
     float dt, const World& world, Player& player, NpcSystem& npcs)
 {
+    MIMITA_PERF_SCOPE("Ragdoll::Update");
     (void)player;
     (void)npcs;
     const auto& cfg = RagdollConfig::instance().data();

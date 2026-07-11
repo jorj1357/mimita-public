@@ -37,6 +37,7 @@
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
 #include "replay/replay.h"
+#include "perf/perf-spike.h"
 
 static ma_engine gEngine;
 static bool gAudioInit = false;
@@ -117,6 +118,7 @@ static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
 static void startSound(const std::string& name, float volume, float pitch,
                        const glm::vec3* position, float maxDistance)
 {
+    MIMITA_PERF_SCOPE("Audio::StartSound");
     initAudioOnce();
     if (!gAudioInit) return;
     auto active = std::make_unique<ActiveSound>();
@@ -195,6 +197,7 @@ static void initAudioOnce()
 
 void audioUpdate(float dt)
 {
+    MIMITA_PERF_SCOPE("Audio::AudioUpdate");
     gAudioTime += dt;
     if (airJumpCooldown > 0.0f)
         airJumpCooldown -= dt;

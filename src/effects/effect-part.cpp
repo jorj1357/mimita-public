@@ -74,6 +74,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include "config.h"
 #include "replay/replay.h"
 #include "hot-reload/hot-reload-system.h"
+#include "perf/perf-spike.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -255,6 +256,7 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
 }
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
+    MIMITA_PERF_SCOPE("EffectPart::Spawn");
     if (gShotProfiler) {
         gShotProfiler->effectsSpawned++;
         gShotProfiler->poolLinearScans++;

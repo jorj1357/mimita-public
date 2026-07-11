@@ -112,6 +112,7 @@
 #include "terminal/network-commands.h"
 #include "perf/perf.h"
 #include "replay/replay-export.h"
+#include "debug/structured-log.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
 #include "game/bomb-tag.h"
@@ -184,6 +185,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     }
 
     LogManager::instance().init();
+    StructuredLogger::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
 
     printf("[LOG] Console output enabled\n");

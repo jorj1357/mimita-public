@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 #include "config.h"
 #include "debug/debug-log.h"
+#include "perf/perf-spike.h"
 #include "debug/debug-visuals.h"
 #include "debug/transform-debug.h"
 #include "debug/gl-debug.h"
@@ -74,6 +75,7 @@ bool DeathSystem::kill(
     const glm::vec3& shotDirection,
     float lethalForce)
 {
+    MIMITA_PERF_SCOPE("DeathSystem::Kill");
     using clock = std::chrono::steady_clock;
     auto tStart = clock::now();
 
@@ -285,6 +287,7 @@ bool DeathSystem::kill(
 
 void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
 {
+    MIMITA_PERF_SCOPE("DeathSystem::Respawn");
     using clock = std::chrono::steady_clock;
     auto tStart = clock::now();
 
@@ -439,6 +442,7 @@ void DeathSystem::update(
 
     // Remove expired corpses
     {
+        MIMITA_PERF_SCOPE("DeathSystem::CorpseCleanup");
         size_t before = mCorpses.size();
         auto tCleanup = std::chrono::steady_clock::now();
         mCorpses.erase(

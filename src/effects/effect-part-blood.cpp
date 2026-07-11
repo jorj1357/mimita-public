@@ -6,6 +6,7 @@
 #include "config.h"
 #include "replay/replay.h"
 #include "physics/movement/physics-collision.h"
+#include "perf/perf-spike.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -192,6 +193,7 @@ void EffectPartSystem::spawnBloodEffect(
     const std::string& sourceActorId,
     const std::string& targetActorId)
 {
+    MIMITA_PERF_SCOPE("EffectPart::SpawnBloodEffect");
     if (!isBloodFXEnabled()) return;
     damage = std::max(0.0f, damage);
     const glm::vec3 forward = glm::length(sprayDirection) > 0.001f

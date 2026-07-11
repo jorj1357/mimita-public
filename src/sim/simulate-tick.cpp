@@ -1,6 +1,7 @@
 #include "sim/sim-context.h"
 #include "input/input-frame.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
@@ -47,6 +48,7 @@ static constexpr float TICK_DT = 1.0f / 60.0f;
 
 void simulateTick(SimContext& sim, const InputFrame& frame)
 {
+    MIMITA_PERF_SCOPE("Simulation::SimulateTick");
     if (!sim.player || !sim.world || !sim.npcSystem) return;
 
     Perf::ScopedTimer _t("Simulation");

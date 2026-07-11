@@ -79,6 +79,7 @@
 #include "game/game-cli.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/transform-debug.h"
 #include "debug/transform-debug-commands.h"
 #include "debug/debug-diag.h"
@@ -238,6 +239,7 @@ int main(int argc, char** argv)
         engineTick(engine);
     }
     AnalyticsManager::instance().shutdown();
+    StructuredLogger::instance().shutdown();
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
     LogManager::instance().shutdown();

@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "enabled": true,
+  "hot_reload": true,
+  "console_output": true,
+  "summary_file": true,
+
+  "default_level": "off",
+
+  "categories": {
+    "replay": {
+      "level": "trace",
+      "file_output": true
+    },
+    "camera": {
+      "level": "trace",
+      "file_output": true
+    },
+    "audio": {
+      "level": "trace",
+      "file_output": true
+    },
+    "performance": {
+      "level": "trace",
+      "file_output": true
+    },
+    "collision": {
+      "level": "verbose",
+      "file_output": true
+    },
+    "gui": {
+      "level": "off",
+      "file_output": true
+    },
+    "avatar": {
+      "level": "off",
+      "file_output": true
+    },
+    "network": {
+      "level": "off",
+      "file_output": true
+    },
+    "rendering": {
+      "level": "verbose",
+      "file_output": true
+    },
+    "glb_models": {
+      "level": "off",
+      "file_output": true
+    },
+    "executable": {
+      "level": "errors",
+      "file_output": true
+    },
+    "npc": {
+      "level": "trace",
+      "file_output": true
+    },
+    "spawn": {
+      "level": "trace",
+      "file_output": true
+    },
+    "effects": {
+      "level": "trace",
+      "file_output": true
+    }
+  },
+
+  "sampling": {
+    "default_every_n_frames": 60,
+    "log_on_change": true,
+    "minimum_numeric_change": 0.001
+  },
+
+  "throttling": {
+    "enabled": true,
+    "default_max_messages_per_second": 20,
+    "duplicate_message_window_ms": 1000
+  },
+
+  "replay_validation": {
+    "camera_position_tolerance": 0.05,
+    "camera_rotation_degrees_tolerance": 0.25,
+    "fov_degrees_tolerance": 0.1,
+    "quaternion_magnitude_tolerance": 0.0001,
+    "audio_video_sync_tolerance_ms": 50.0
+  },
+
+  "performance": {
+    "target_fps": 60,
+    "spike_threshold_ms": 20.0,
+    "severe_spike_threshold_ms": 100.0,
+    "catastrophic_spike_threshold_ms": 1000.0,
+    "capture_call_tree_on_spike": true,
+    "top_functions_per_frame": 30,
+    "history_frames_before_spike": 120,
+    "history_frames_after_spike": 180,
+    "aggregate_window_frames": 600,
+    "log_allocations": true,
+    "log_asset_io": true,
+    "log_collision_queries": true,
+    "log_entity_counts": true,
+    "log_effect_counts": true,
+    "log_render_counts": true
+  }
+}

@@ -244,6 +244,22 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
                    ed.cameraKeyframeCount(), ed.cameraModeKeyframeCount(),
                    ed.timeKeyframeCount());
 
+            // Save full editor state before forcing freecam for export
+            gJob.editorWasFreecam = ed.freecam;
+            gJob.savedFreecamPos[0] = ed.freecamPos.x;
+            gJob.savedFreecamPos[1] = ed.freecamPos.y;
+            gJob.savedFreecamPos[2] = ed.freecamPos.z;
+            gJob.savedFreecamRot[0] = ed.freecamRot.x;
+            gJob.savedFreecamRot[1] = ed.freecamRot.y;
+            gJob.savedFreecamRot[2] = ed.freecamRot.z;
+            gJob.savedFreecamRot[3] = ed.freecamRot.w;
+            gJob.savedFreecamRoll = ed.freecamRoll;
+            gJob.savedFreecamFov = ed.freecamFov;
+            std::strncpy(gJob.savedCameraMode,
+                REPLAY_PLAYER.cameraController().modeName(),
+                sizeof(gJob.savedCameraMode) - 1);
+            gJob.savedCameraMode[sizeof(gJob.savedCameraMode) - 1] = '\0';
+
             // Force freecam mode if camera keyframes exist so export uses editor camera path
             if (ed.cameraKeyframeCount() > 0) {
                 ed.freecam = true;
@@ -341,6 +357,37 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     return true;
 }
 
+void restoreReplayExportEditorState()
+{
+    if (!gReplayEditor.isLoaded())
+        return;
+
+    // Restore position/rotation regardless of whether freecam was on before
+    gReplayEditor.freecamPos = glm::vec3(
+        gJob.savedFreecamPos[0],
+        gJob.savedFreecamPos[1],
+        gJob.savedFreecamPos[2]);
+    gReplayEditor.freecamRot = glm::quat(
+        gJob.savedFreecamRot[3],  // w
+        gJob.savedFreecamRot[0],  // x
+        gJob.savedFreecamRot[1],  // y
+        gJob.savedFreecamRot[2]); // z
+    gReplayEditor.freecamRoll = gJob.savedFreecamRoll;
+    gReplayEditor.freecamFov = gJob.savedFreecamFov;
+
+    if (!gJob.editorWasFreecam) {
+        gReplayEditor.freecam = false;
+        gReplayEditor.mPrevCameraMode.clear();
+        std::string savedMode(gJob.savedCameraMode);
+        if (!savedMode.empty())
+            REPLAY_PLAYER.cameraController().setMode(savedMode);
+    }
+
+    // Overwrite any autosaved state that may have been written during export
+    gReplayEditor.saveEdit();
+    gReplayEditor.saveSession();
+}
+
 void cancelReplayExport()
 {
     if (gJob.state == ReplayExportJob::Capturing && gJob.rawFile)
@@ -352,6 +399,7 @@ void cancelReplayExport()
         std::error_code ec;
         std::filesystem::remove(gJob.rawTempPath, ec);
     }
+    restoreReplayExportEditorState();
     gJob = ReplayExportJob{};
 }
 

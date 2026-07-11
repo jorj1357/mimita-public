@@ -37,6 +37,14 @@ struct ReplayExportJob {
     std::string rawTempPath;
     FILE* rawFile = nullptr;
 
+    // Editor state before export (restored after to prevent corruption)
+    bool editorWasFreecam = false;
+    float savedFreecamPos[3];
+    float savedFreecamRot[4];
+    float savedFreecamRoll = 0.0f;
+    float savedFreecamFov = 70.0f;
+    char savedCameraMode[64];
+
     // Output
     std::string outputPath;
 
@@ -57,6 +65,7 @@ float getReplayExportProgress();
 std::string getReplayExportResultPath();
 std::string getReplayExportStatusText();
 void cancelReplayExport();
+void restoreReplayExportEditorState();
 void openReplayFolder();
 const ReplayExportJob& getReplayExportJob();
 void setFfmpegDebugMode(bool enabled);

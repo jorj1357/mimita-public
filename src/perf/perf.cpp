@@ -1,4 +1,5 @@
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 
 #include <algorithm>
 #include <cmath>
@@ -29,6 +30,7 @@ PerfState& Perf::state() { return gState; }
 void Perf::beginFrame()
 {
     gState.allocationsThisFrame = 0;
+    gState.assetLoadsThisFrame = 0;
     gState.current = PerfTimes{};
     gState.children = PerfTimes{};
     gState.npcProfileCount = 0;
@@ -36,6 +38,7 @@ void Perf::beginFrame()
     gState.queryRecordCount = 0;
     gState.dupTrackerCount = 0;
     gState.largeAabbAlert = {};
+    perfResetScopes();
 }
 
 // ── String-based dispatch helpers ─────────────────────────────
@@ -820,6 +823,108 @@ void Perf::endFrame()
 
     if (s.stressRunning)
         s.stressTimer += gFramePacer.dt();
+
+    // Aggregates scopes from MIMITA_PERF_SCOPE macros and writes spike reports
+    double targetMs = gPerfBudget.targetFps > 0 ? 1000.0 / gPerfBudget.targetFps : 16.667;
+    perfAggregateScopes((double)currentMs, targetMs);
+}
+
+// ── perfResetScopes ─────────────────────────────────────────
+
+void perfResetScopes()
+{
+    gPerfScopeCount = 0;
+    gPerfScopeStackDepth = 0;
+    for (int i = 0; i < MAX_SCOPES_PER_FRAME; ++i) {
+        gPerfScopes[i].active = false;
+        gPerfScopes[i].cyclesInclusive = 0;
+        gPerfScopes[i].cyclesSelf = 0;
+        gPerfScopes[i].callCount = 0;
+        gPerfScopes[i].minCycles = UINT64_MAX;
+        gPerfScopes[i].maxCycles = 0;
+        gPerfScopes[i].allocCount = 0;
+        gPerfScopes[i].assetLoadCount = 0;
+        gPerfScopes[i].collisionQueryCount = 0;
+        gPerfScopes[i].parentIndex = -1;
+    }
+}
+
+// ── perfLoadBudgetConfig ────────────────────────────────────
+
+void perfLoadBudgetConfig()
+{
+    gPerfBudget.targetFps = 60;
+    gPerfBudget.spikeThresholdMs = 20.0;
+    gPerfBudget.severeThresholdMs = 100.0;
+    gPerfBudget.catastrophicThresholdMs = 1000.0;
+    gPerfBudget.captureCallTreeOnSpike = true;
+    gPerfBudget.topFunctionsPerFrame = 30;
+    gPerfBudget.historyFramesBeforeSpike = 120;
+    gPerfBudget.historyFramesAfterSpike = 180;
+    gPerfBudget.aggregateWindowFrames = 600;
+    gPerfBudget.logAllocations = true;
+    gPerfBudget.logAssetIO = true;
+    gPerfBudget.logCollisionQueries = true;
+    gPerfBudget.logEntityCounts = true;
+    gPerfBudget.logEffectCounts = true;
+    gPerfBudget.logRenderCounts = true;
+    gPerfBudget.enabled = true;
+
+    std::ifstream f("config/debuglogger.json");
+    if (!f.is_open()) return;
+
+    try {
+        std::string contents((std::istreambuf_iterator<char>(f)),
+                              std::istreambuf_iterator<char>());
+
+        auto perfPos = contents.find("\"performance\"");
+        if (perfPos == std::string::npos) return;
+
+        auto braceOpen = contents.find('{', perfPos);
+        if (braceOpen == std::string::npos) return;
+
+        int depth = 1;
+        auto braceClose = braceOpen + 1;
+        while (depth > 0 && braceClose < contents.size()) {
+            if (contents[braceClose] == '{') depth++;
+            else if (contents[braceClose] == '}') depth--;
+            braceClose++;
+        }
+        std::string perfSection = contents.substr(braceOpen, braceClose - braceOpen);
+
+        auto getVal = [&](const std::string& key) -> std::string {
+            auto pos = perfSection.find("\"" + key + "\"");
+            if (pos == std::string::npos) return "";
+            auto colon = perfSection.find(':', pos);
+            if (colon == std::string::npos) return "";
+            auto start = perfSection.find_first_not_of(" \t\r\n", colon + 1);
+            if (start == std::string::npos) return "";
+            auto end = perfSection.find_first_of(",\n\r}", start);
+            if (end == std::string::npos) end = perfSection.size();
+            std::string val = perfSection.substr(start, end - start);
+            if (val.size() >= 2 && val.front() == '"' && val.back() == '"')
+                val = val.substr(1, val.size() - 2);
+            return val;
+        };
+
+        std::string fps = getVal("target_fps");
+        if (!fps.empty()) gPerfBudget.targetFps = std::stoi(fps);
+
+        std::string spike = getVal("spike_threshold_ms");
+        if (!spike.empty()) gPerfBudget.spikeThresholdMs = std::stod(spike);
+
+        std::string severe = getVal("severe_spike_threshold_ms");
+        if (!severe.empty()) gPerfBudget.severeThresholdMs = std::stod(severe);
+
+        std::string capture = getVal("capture_call_tree_on_spike");
+        if (!capture.empty()) gPerfBudget.captureCallTreeOnSpike = (capture == "true");
+
+        std::string topN = getVal("top_functions_per_frame");
+        if (!topN.empty()) gPerfBudget.topFunctionsPerFrame = std::stoi(topN);
+    } catch (...) {}
+
+    Debug::log(Debug::Category::General, "[PERF] Budget config: target=%dfps spike=%.1fms\n",
+               gPerfBudget.targetFps, gPerfBudget.spikeThresholdMs);
 }
 
 // ── Top exclusive printing ──────────────────────────────────
