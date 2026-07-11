@@ -42,63 +42,55 @@
         "name": "rear",
         "enabled": true,
         "offset": [0.0, 0.0, -2.4],
-        "radius": 0.5,
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       },
       {
-        "name": "rear2",
+        "name": "rear_mid",
         "enabled": true,
-        "offset": [0.0, 0.0, -1.8],
-        "radius": 0.5,
+        "offset": [0.0, 0.0, -1.6],
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       },
       {
         "name": "middle",
         "enabled": true,
-        "offset": [0.0, 0.0, -1.1],
-        "radius": 0.5,
+        "offset": [0.0, 0.0, -0.8],
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       },
        {
-        "name": "middle2",
+        "name": "fore_mid",
         "enabled": true,
-        "offset": [0.0, 0.0, -0.3],
-        "radius": 0.5,
+        "offset": [0.0, 0.0, 0.0],
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       },
       {
         "name": "front",
         "enabled": true,
-        "offset": [0.0, 0.0, 0.5],
-        "radius": 0.5,
+        "offset": [0.0, 0.0, 0.8],
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       },
        {
         "name": "front2",
         "enabled": true,
-        "offset": [0.0, 0.0, 1.2],
-        "radius": 0.5,
-        "scale": [1.0, 1.0, 1.0],
-        "rotation_degrees": [0.0, 0.0, 0.0]
-      },
-       {
-        "name": "front3",
-        "enabled": true,
-        "offset": [0.0, 0.0, 1.9],
-        "radius": 0.5,
+        "offset": [0.0, 0.0, 1.6],
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       },
       {
-        "name": "front4",
+        "name": "muzzle",
         "enabled": true,
         "offset": [0.0, 0.0, 2.4],
-        "radius": 0.5,
+        "radius": 0.2,
         "scale": [1.0, 1.0, 1.0],
         "rotation_degrees": [0.0, 0.0, 0.0]
       }

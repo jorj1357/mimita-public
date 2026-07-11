@@ -74,11 +74,16 @@ static int runBodyWeaponPass(
     solverContacts.insert(solverContacts.end(), bodyPushContacts.begin(), bodyPushContacts.end());
 
     if (!solverContacts.empty()) {
-        glm::vec3 correction = solveBatchedCorrection(solverContacts, 0.01f);
+        glm::vec3 correction = solveBatchedCorrection(solverContacts, 0.01f, nullptr, nullptr, p.vel);
+        // NaN/infinity guard
+        if (!std::isfinite(correction.x) || !std::isfinite(correction.y) || !std::isfinite(correction.z)) {
+            BODY_LOG("[BODY WEAPON SAFETY] NaN correction in pass %d — zeroing", pass);
+            correction = glm::vec3(0.0f);
+        }
         float corrLen = glm::length(correction);
         if (corrLen > 0.001f) {
-            constexpr float MAX_CORR = 0.5f;
-            if (corrLen > MAX_CORR) correction *= MAX_CORR / corrLen;
+            constexpr float MAX_CORR_PER_PASS = 0.5f;
+            if (corrLen > MAX_CORR_PER_PASS) correction *= MAX_CORR_PER_PASS / corrLen;
             p.pos += correction;
         }
     }
@@ -102,16 +107,31 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
 {
     auto t0 = std::chrono::steady_clock::now();
     constexpr int MAX_PASSES = 3;
+    constexpr float MAX_TOTAL_CORRECTION = 1.5f;
     int passesUsed = 0;
     bool groundedByWeapon = false;
+    glm::vec3 totalCorrection(0.0f);
 
     for (int pass = 0; pass < MAX_PASSES; ++pass) {
+        glm::vec3 beforePos = p.pos;
         int result = runBodyWeaponPass(p, world, groundedThisFrame, groundedByWeapon, pass, MAX_PASSES);
         if (result < 0) { passesUsed = pass + 1; break; }
         passesUsed = pass + 1;
+        totalCorrection += p.pos - beforePos;
+    }
+
+    // Clamp total correction for the entire phase
+    float totalCorrLen = glm::length(totalCorrection);
+    if (totalCorrLen > MAX_TOTAL_CORRECTION) {
+        BODY_LOG("[BODY WEAPON SAFETY] total correction %.3f exceeds max %.3f — clamping",
+            totalCorrLen, MAX_TOTAL_CORRECTION);
+        // Undo excess: scale back the final position
+        glm::vec3 excess = totalCorrection * (1.0f - MAX_TOTAL_CORRECTION / totalCorrLen);
+        p.pos -= excess;
     }
 
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
-    BODY_LOG("[BODY PHASE] passes=%d totalMs=%.2f\n", passesUsed, elapsedMs);
+    BODY_LOG("[BODY PHASE] passes=%d totalMs=%.2f totalCorr=%.3f\n",
+        passesUsed, elapsedMs, totalCorrLen);
 }

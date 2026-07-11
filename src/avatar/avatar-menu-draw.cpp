@@ -39,7 +39,7 @@ static void liveApply()
 
 // ── JSON-driven UI system ────────────────────────────────────────────
 
-static bool gUseJsonUi = true;  // toggle to fall back to old hardcoded UI
+static bool gUseJsonUi = false;  // toggle to fall back to old hardcoded UI
 
 // Per-frame state for effects (time-based)
 static float gUiTime = 0.0f;

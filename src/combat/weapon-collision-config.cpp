@@ -227,6 +227,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     dbg.fromJsonConfig = true;
     dbg.valid = true;
     dbg.weaponId = weaponId;
+    dbg.collisionSkin = entry->collisionSkin;
 
     // Save previous sphere data before overwriting
     glm::vec3 oldPrevCenter[256];
