@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom"
 import { apiRequest } from "../lib/api.js"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import remarkBreaks from "remark-breaks"
+
 import rehypeRaw from "rehype-raw"
 import Layout from "../components/Layout"
 
@@ -189,8 +189,16 @@ export default function AdminArticleEditor() {
     // Pre-process content: convert [rainbow] tags to HTML spans
     function renderContent(md) {
         if (!md) return ""
-        return md.replace(/\[rainbow\](.*?)\[\/rainbow\]/gs,
+        let result = md.replace(/\[rainbow\](.*?)\[\/rainbow\]/gs,
             '<span class="rainbow-text">$1</span>')
+        const codeBlocks = []
+        result = result.replace(/```[\s\S]*?```/g, m => {
+            codeBlocks.push(m)
+            return `\x00CB${codeBlocks.length - 1}\x00`
+        })
+        result = result.replace(/\n/g, '<br>\n')
+        result = result.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)])
+        return result
     }
 
     function wrapSelection(before, after) {
@@ -388,7 +396,7 @@ export default function AdminArticleEditor() {
                                 </div>
                                 {showPreview ? (
                                     <div className="adminEditorPreview">
-                                        <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw]}>
+                                        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                                             {renderContent(content)}
                                         </Markdown>
                                     </div>
