@@ -1,6 +1,8 @@
 #include "perf/perf-frame.h"
 #include "perf/perf-spike.h"
+#include "perf/perf.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "config.h"
 
 #include <algorithm>
@@ -54,19 +56,20 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
         e.depth = depth;
     }
 
-    // Fill entity snapshot
-    frame.npcCount = 0;
-    frame.playerCount = 1;
-    frame.particleCount = 0;
-    frame.effectCount = 0;
-    frame.audioCount = 0;
-    frame.corpseCount = 0;
+    // Fill entity snapshot from PerfState (already populated by engine systems)
+    const PerfState& ps = Perf::state();
+    frame.npcCount = ps.npcCount;
+    frame.playerCount = ps.playerCount > 0 ? ps.playerCount : 1;
+    frame.particleCount = ps.current.particleCount;
+    frame.effectCount = ps.current.effectsAlive;
+    frame.audioCount = ps.audioSourceCount;
+    frame.corpseCount = ps.corpseCount;
     frame.ragdollCount = 0;
-    frame.bloodDecalCount = 0;
-    frame.projectileCount = 0;
-    frame.allocCount = 0;
-    frame.allocBytes = 0;
-    frame.collisionQueryCount = 0;
+    frame.bloodDecalCount = ps.current.damageNumbersAlive;
+    frame.projectileCount = ps.projectileCount;
+    frame.allocCount = ps.allocationsThisFrame;
+    frame.allocBytes = (size_t)gPerfAllocBytes;
+    frame.collisionQueryCount = ps.queryRecordCount;
 
     gFrameHistoryIndex++;
     if (gFrameHistoryCount < FRAME_HISTORY_CAPACITY)
@@ -145,48 +148,43 @@ void perfWriteFrameSummary(FILE* f, const PerfFrame& frame)
             frame.totalMs <= budgetMs ? "PASS\n" : "FAIL\n");
 }
 
-// ── Dump spike context ──────────────────────────────────────
+// ── Spike context (routed through StructuredLogger) ────────
 
 void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter)
 {
     if (gFrameHistoryCount == 0) return;
 
-    std::error_code ec;
-    std::filesystem::create_directories("logs", ec);
-
-    char path[256];
-    std::snprintf(path, sizeof(path), "logs/SpikeContext_%06d.txt", spikeFrameIndex);
-    FILE* f = fopen(path, "w");
-    if (!f) {
-        Debug::log(Debug::Category::General, "[PERF] Failed to create spike context file: %s\n", path);
-        return;
-    }
-
-    // Find the spike frame in the history
-    int spikeIdx = -1;
     int historyLen = std::min(gFrameHistoryCount, FRAME_HISTORY_CAPACITY);
+
+    int spikeIdx = -1;
     for (int i = 0; i < historyLen; ++i) {
         int idx = (gFrameHistoryIndex - historyLen + i) % FRAME_HISTORY_CAPACITY;
         if (gFrameHistory[idx].frameNumber == spikeFrameIndex) {
             spikeIdx = idx;
             break;
         }
-        // Also check by index proximity
-        if (spikeIdx < 0) spikeIdx = (gFrameHistoryIndex - 1) % FRAME_HISTORY_CAPACITY;
+        if (spikeIdx < 0)
+            spikeIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
     }
-    if (spikeIdx < 0) spikeIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
+    if (spikeIdx < 0)
+        spikeIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
 
     int spikePos = -1;
     for (int i = 0; i < historyLen; ++i) {
         int idx = (gFrameHistoryIndex - historyLen + i) % FRAME_HISTORY_CAPACITY;
         if (idx == spikeIdx) { spikePos = i; break; }
     }
+    if (spikePos < 0) spikePos = historyLen - 1;
 
-    fprintf(f, "=== SPIKE CONTEXT ===\n");
-    fprintf(f, "Spike frame: %d\n", spikeFrameIndex);
-    fprintf(f, "Frames before: %d  Frames after: %d\n\n", framesBefore, framesAfter);
+    char msg[16384];
+    int pos = 0;
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "=== SPIKE CONTEXT BEGIN ===\n");
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Spike frame: %d\n", spikeFrameIndex);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Frames before: %d  Frames after: %d\n\n", framesBefore, framesAfter);
 
-    // Dump frames before spike
     int startPos = std::max(0, spikePos - framesBefore);
     int endPos = std::min(historyLen - 1, spikePos + framesAfter);
 
@@ -194,26 +192,32 @@ void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter
         int idx = (gFrameHistoryIndex - historyLen + i) % FRAME_HISTORY_CAPACITY;
         const PerfFrame& frame = gFrameHistory[idx];
 
-        fprintf(f, "---\n");
-        if (i == spikePos) {
-            fprintf(f, "<<< SPIKE >>>\n");
-        }
-        perfWriteFrameBreakdown(f, frame, (i == spikePos));
+        if (i == spikePos)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos, "<<< SPIKE >>> ");
+        else
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos, "           ");
+
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "FRAME_%06d total=%.2fms budget=%.2fms npcs=%d effects=%d allocs=%d\n",
+            frame.frameNumber, frame.totalMs, frame.budgetMs,
+            frame.npcCount, frame.effectCount, frame.allocCount);
     }
 
-    // Entity delta: compare frame before spike with spike frame
+    // Entity delta
     if (spikePos > startPos) {
         int beforeIdx = (gFrameHistoryIndex - historyLen + spikePos - 1) % FRAME_HISTORY_CAPACITY;
         const PerfFrame& before = gFrameHistory[beforeIdx];
         const PerfFrame& spike = gFrameHistory[spikeIdx];
 
-        fprintf(f, "\n=== ENTITY DELTA (frame %d → %d) ===\n",
-                before.frameNumber, spike.frameNumber);
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "\n=== ENTITY DELTA (frame %d → %d) ===\n",
+            before.frameNumber, spike.frameNumber);
 
-        auto delta = [&](const char* name, int beforeVal, int afterVal) {
-            int diff = afterVal - beforeVal;
+        auto delta = [&](const char* name, int b, int a) {
+            int diff = a - b;
             if (diff != 0)
-                fprintf(f, "  %s: %d → %d (%+d)\n", name, beforeVal, afterVal, diff);
+                pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                    "  %s: %d → %d (%+d)\n", name, b, a, diff);
         };
 
         delta("npcs",       before.npcCount, spike.npcCount);
@@ -227,7 +231,22 @@ void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter
         delta("allocs",     before.allocCount, spike.allocCount);
     }
 
-    fclose(f);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "\n=== SPIKE CONTEXT END ===\n");
 
-    Debug::log(Debug::Category::General, "[PERF] Spike context written: %s\n", path);
+    // Route through StructuredLogger
+    StructuredLogger::Entry e;
+    e.category = StructuredCategory::Performance;
+    e.level = StructuredLevel::Important;
+    e.eventId = "PERFORMANCE_CONTEXT";
+    e.reason = "Spike context for frame " + std::to_string(spikeFrameIndex);
+    e.sourceFile = __FILE__;
+    e.sourceLine = __LINE__;
+    e.functionName = "perfDumpSpikeContext";
+    e.frame = (uint32_t)spikeFrameIndex;
+    e.message = msg;
+    StructuredLogger::instance().write(e);
+
+    Debug::log(Debug::Category::General,
+        "[PERF] Spike context written for frame %d\n", spikeFrameIndex);
 }

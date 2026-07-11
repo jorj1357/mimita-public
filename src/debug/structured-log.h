@@ -134,6 +134,10 @@ public:
     // Get the config (for validation tolerances etc.)
     const StructuredLogConfig& config() const { return mConfig; }
 
+    // Public accessors for performance profiler routing
+    const std::string& logDir() const { return mLogDir; }
+    const std::string& runId() const { return mRunId; }
+
 private:
     StructuredLogger() = default;
     ~StructuredLogger();

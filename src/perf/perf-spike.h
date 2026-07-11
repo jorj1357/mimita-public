@@ -113,12 +113,15 @@ private:
 
 // ── API ─────────────────────────────────────────────────────
 
-void perfAggregateScopes(double totalFrameMs, double budgetMs);
-void perfWriteSpikeReport(double totalFrameMs, double budgetMs);
+void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber);
+void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber);
 
 // Correlation ID management
 void perfSetCorrelation(const char* id);
 void perfClearCorrelation();
 
-// Write all-spike-context summary at end of run
+// Flush any pending spike contexts
 void perfFlushAllSpikeContexts();
+
+// Frame boundary timestamp (set by Perf::beginFrame) for scope cross-frame detection
+extern uint64_t gPerfFrameStartCycles;
