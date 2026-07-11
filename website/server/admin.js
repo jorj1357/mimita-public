@@ -326,6 +326,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ARTICLES_DIR = path.resolve(__dirname, "..", "..", "content", "articles")
 const JSON_OUTPUT = path.resolve(__dirname, "..", "public", "articles.generated.json")
 const DIST_JSON_OUTPUT = path.resolve(__dirname, "..", "dist", "articles.generated.json")
+const NEWS_JSON_OUTPUT = path.resolve(__dirname, "..", "public", "news.generated.json")
+const DIST_NEWS_JSON_OUTPUT = path.resolve(__dirname, "..", "dist", "news.generated.json")
 
 function getAllArticles() {
     if (!fs.existsSync(ARTICLES_DIR)) return []
@@ -366,6 +368,28 @@ function regenerateJson() {
     const distDir = path.dirname(DIST_JSON_OUTPUT)
     if (fs.existsSync(distDir)) {
         fs.writeFileSync(DIST_JSON_OUTPUT, json)
+    }
+
+    regenerateNews(articles)
+}
+
+function regenerateNews(articles) {
+    const news = articles.map(a => ({
+        type: "article",
+        title: `New article: ${a.title}`,
+        date: a.date,
+        description: a.description,
+        url: `/articles/${a.slug}`
+    }))
+    const json = JSON.stringify(news, null, 2)
+
+    const dir = path.dirname(NEWS_JSON_OUTPUT)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(NEWS_JSON_OUTPUT, json)
+
+    const distDir = path.dirname(DIST_NEWS_JSON_OUTPUT)
+    if (fs.existsSync(distDir)) {
+        fs.writeFileSync(DIST_NEWS_JSON_OUTPUT, json)
     }
 }
 

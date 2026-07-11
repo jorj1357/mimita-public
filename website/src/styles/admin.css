@@ -766,6 +766,20 @@
   font-size: 0.9rem;
 }
 
+.headingToolBtn {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.colorToolBtn {
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 8px;
+}
+.colorToolBtn:hover {
+  filter: brightness(1.5);
+}
+
 .adminEditorTextarea {
   background: #0a0a0a;
   border: 1px solid #333;

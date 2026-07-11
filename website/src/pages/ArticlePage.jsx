@@ -11,6 +11,8 @@ function renderContent(md) {
   if (!md) return ""
   let result = md.replace(/\[rainbow\](.*?)\[\/rainbow\]/gs,
     '<span class="rainbow-text">$1</span>')
+  result = result.replace(/\[color=(\w+)\](.*?)\[\/color\]/gs,
+    '<span style="color:$1">$2</span>')
   const codeBlocks = []
   result = result.replace(/```[\s\S]*?```/g, m => {
     codeBlocks.push(m)

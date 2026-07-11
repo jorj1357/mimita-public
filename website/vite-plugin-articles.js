@@ -59,6 +59,16 @@ export default function vitePluginArticles() {
     const dir = path.dirname(jsonPath)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(jsonPath, JSON.stringify(articles, null, 2))
+
+    const news = articles.map(a => ({
+      type: "article",
+      title: `New article: ${a.title}`,
+      date: a.date,
+      description: a.description,
+      url: `/articles/${a.slug}`
+    }))
+    const newsPath = path.resolve("public/news.generated.json")
+    fs.writeFileSync(newsPath, JSON.stringify(news, null, 2))
   }
 
   return {
@@ -99,6 +109,23 @@ export default function vitePluginArticles() {
             .sort((a, b) => b.date.localeCompare(a.date))
             .map(({ published, ...rest }) => rest)
           res.end(JSON.stringify(published, null, 2))
+          return
+        }
+
+        if (req.url === "/news.generated.json") {
+          res.setHeader("Content-Type", "application/json")
+          const published = Array.from(articlesMap.values())
+            .filter(a => a.published)
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .map(({ published, ...rest }) => rest)
+          const news = published.map(a => ({
+            type: "article",
+            title: `New article: ${a.title}`,
+            date: a.date,
+            description: a.description,
+            url: `/articles/${a.slug}`
+          }))
+          res.end(JSON.stringify(news, null, 2))
           return
         }
 
