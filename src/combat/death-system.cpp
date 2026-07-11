@@ -9,6 +9,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "perf/perf-spike.h"
+#include "perf/perf-frame.h"
 #include "debug/debug-visuals.h"
 #include "debug/transform-debug.h"
 #include "debug/gl-debug.h"
@@ -78,9 +79,12 @@ bool DeathSystem::kill(
     MIMITA_PERF_SCOPE("DeathSystem::Kill");
     using clock = std::chrono::steady_clock;
     auto tStart = clock::now();
+    perfSetCorrelation(actorId.c_str());
 
-    if (victim.dead)
+    if (victim.dead) {
+        perfClearCorrelation();
         return false;
+    }
 
     glm::vec3 direction = glm::length(shotDirection) > 0.001f
         ? glm::normalize(shotDirection)
@@ -282,6 +286,7 @@ bool DeathSystem::kill(
         Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms kill() complete\n",
             std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count());
 
+    perfClearCorrelation();
     return true;
 }
 

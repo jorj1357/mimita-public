@@ -12,22 +12,32 @@ struct PerfScopeCapture {
     int line = 0;
     const char* func = nullptr;
     const char* label = nullptr;
+    char correlationId[32] = {};
 
-    // Accumulated cycles for this scope across all calls this frame
+    // Accumulated nanoseconds for this scope across all calls this frame
     uint64_t cyclesInclusive = 0;
     uint64_t cyclesSelf = 0;
-    // Min/max over individual calls this frame
     uint64_t minCycles = UINT64_MAX;
     uint64_t maxCycles = 0;
     uint32_t callCount = 0;
 
-    // Counters collected during scope
+    // Counters
     uint32_t allocCount = 0;
+    uint32_t allocBytes = 0;
     uint32_t assetLoadCount = 0;
     uint32_t collisionQueryCount = 0;
 
-    int parentIndex = -1;   // index of parent scope, -1 for root
-    bool active = false;    // slot in use
+    // Per-death counters
+    uint32_t bloodParticlesSpawned = 0;
+    uint32_t debrisChunksSpawned = 0;
+    uint32_t bloodDecalsSpawned = 0;
+
+    // Per-replay counters
+    uint32_t replayEventsCreated = 0;
+    uint32_t replayJsonBytes = 0;
+
+    int parentIndex = -1;
+    bool active = false;
 };
 
 // ── Budget config (loaded from debuglogger.json) ─────────────
@@ -61,23 +71,36 @@ extern PerfBudgetConfig gPerfBudget;
 extern int gPerfScopeStack[MAX_SCOPES_PER_FRAME];
 extern int gPerfScopeStackDepth;
 
+// Allocation tracking globals
+extern int gPerfAllocCount;
+extern size_t gPerfAllocBytes;
+extern size_t gPerfLargestAlloc;
+extern const char* gPerfLargestAllocSite;
+
+// Correlation ID stack
+extern char gPerfCorrelationStack[8][32];
+extern int gPerfCorrelationDepth;
+
 // ── RAII scope guard ────────────────────────────────────────
 
 class PerfScopeGuard {
 public:
     PerfScopeGuard(const char* file, int line, const char* func, const char* label);
     ~PerfScopeGuard();
-
-    // Not copyable, not movable
     PerfScopeGuard(const PerfScopeGuard&) = delete;
     PerfScopeGuard& operator=(const PerfScopeGuard&) = delete;
 
 private:
     int mScopeIndex = -1;
-    int mPrevParentIndex = -1;
     uint64_t mStartCycles = 0;
     uint32_t mAllocBefore = 0;
+    uint32_t mBytesBefore = 0;
     uint32_t mAssetLoadBefore = 0;
+    uint32_t mBloodBefore = 0;
+    uint32_t mDebrisBefore = 0;
+    uint32_t mDecalBefore = 0;
+    uint32_t mReplayEventsBefore = 0;
+    uint32_t mReplayBytesBefore = 0;
 
     static uint64_t readCycles();
 };
@@ -90,8 +113,12 @@ private:
 
 // ── API ─────────────────────────────────────────────────────
 
-// Call from Perf::endFrame() to aggregate scopes and generate spike report
 void perfAggregateScopes(double totalFrameMs, double budgetMs);
-
-// Write enhanced spike report to file
 void perfWriteSpikeReport(double totalFrameMs, double budgetMs);
+
+// Correlation ID management
+void perfSetCorrelation(const char* id);
+void perfClearCorrelation();
+
+// Write all-spike-context summary at end of run
+void perfFlushAllSpikeContexts();

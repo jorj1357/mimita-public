@@ -20,7 +20,10 @@
 #include "devtools/terminal.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
+#include "perf/perf-frame.h"
 #include "video/frame-pacer.h"
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
@@ -56,6 +59,7 @@ extern bool gReplayExportRenderMode;
 
 void engineTick(Engine& engine)
 {
+    MIMITA_PERF_SCOPE("EngineTick");
     Perf::ScopedTimer _frame("FrameOverhead");
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
@@ -186,7 +190,28 @@ void engineTick(Engine& engine)
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(9); }
     { Perf::ScopedTimer _t("Diag"); diagRenderFrameEnd(); }
     Perf::endFrame();
+
+    // On spike, dump spike context to dedicated file
+    {
+        static float sLastSpikeMs = 0.0f;
+        static auto sLastSpikeTime = std::chrono::steady_clock::now();
+        float frameMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - tFrameStart).count();
+        if (frameMs > gPerfBudget.spikeThresholdMs &&
+            frameMs > sLastSpikeMs * 0.5f) {
+            sLastSpikeMs = frameMs;
+            sLastSpikeTime = std::chrono::steady_clock::now();
+            int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
+            if (gFrameHistoryCount > 0)
+                perfDumpSpikeContext(gFrameHistory[lastIdx].frameNumber,
+                    gPerfBudget.historyFramesBeforeSpike,
+                    gPerfBudget.historyFramesAfterSpike);
+        }
+    }
     { Perf::ScopedTimer _t("Sleep"); gFramePacer.endFrame(); }
+
+    // ── Structured logger config hot-reload ──────────
+    StructuredLogger::instance().pollConfig();
 
     // ── Frame timing breakdown ───────────────────────
     {
@@ -199,9 +224,18 @@ void engineTick(Engine& engine)
         if (sinceReport >= 1.0f) {
             sLastReport = tNow;
 
-            Debug::logThrottled(Debug::Category::General, "frame-timing", 1.0f,
-                "[FRAME TIMING] %.1fms  fps=%.0f  dt=%.3f\n",
-                frameMs, 1000.0f / (frameMs > 0.1f ? frameMs : 1.0f), dt);
+            // Enriched frame timing with entity counts
+            int lastIdx = gFrameHistoryCount > 0
+                ? (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY
+                : -1;
+            int npcs = (lastIdx >= 0) ? gFrameHistory[lastIdx].npcCount : 0;
+            int efx  = (lastIdx >= 0) ? gFrameHistory[lastIdx].effectCount : 0;
+            int aud  = (lastIdx >= 0) ? gFrameHistory[lastIdx].audioCount : 0;
+
+            Debug::log(Debug::Category::General,
+                "[FRAME TIMING] %.1fms  fps=%.0f  dt=%.3f  npcs=%d  effects=%d  audio=%d\n",
+                frameMs, 1000.0f / (frameMs > 0.1f ? frameMs : 1.0f), dt,
+                npcs, efx, aud);
         }
     }
 }
