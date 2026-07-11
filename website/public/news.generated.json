@@ -1,0 +1,23 @@
+[
+  {
+    "type": "article",
+    "title": "New article: Welcome to MiMITA News!",
+    "date": "2026-07-08",
+    "description": "MiMITA is in active development. Check back here for patch notes, game updates, and announcements.",
+    "url": "/articles/welcome-to-mimita-news"
+  },
+  {
+    "type": "article",
+    "title": "New article: How to Reset Your Mimita Password",
+    "date": "2026-06-12",
+    "description": "A step-by-step guide to resetting your Mimita account password through the website.",
+    "url": "/articles/how-to-reset-mimita-password"
+  },
+  {
+    "type": "article",
+    "title": "New article: Mimita V1 Beginner Guide",
+    "date": "2026-06-12",
+    "description": "Everything you need to know to start playing Mimita — movement, weapons, duels, replay clips, and beginner tips.",
+    "url": "/articles/mimita-v1-beginner-guide"
+  }
+]

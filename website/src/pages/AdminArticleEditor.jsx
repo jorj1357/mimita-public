@@ -186,11 +186,13 @@ export default function AdminArticleEditor() {
         }
     }
 
-    // Pre-process content: convert [rainbow] tags to HTML spans
+    // Pre-process content: convert [rainbow] and [color=X] tags to HTML spans
     function renderContent(md) {
         if (!md) return ""
         let result = md.replace(/\[rainbow\](.*?)\[\/rainbow\]/gs,
             '<span class="rainbow-text">$1</span>')
+        result = result.replace(/\[color=(\w+)\](.*?)\[\/color\]/gs,
+            '<span style="color:$1">$2</span>')
         const codeBlocks = []
         result = result.replace(/```[\s\S]*?```/g, m => {
             codeBlocks.push(m)
@@ -355,7 +357,7 @@ export default function AdminArticleEditor() {
                                 <label>
                                     content (markdown)
                                     <span className="adminEditorHint">
-                                        {" "}use [rainbow]text[/rainbow] for rainbow effect
+                                        {" "}use [rainbow]text[/rainbow] for rainbow, [color=X]text[/color] for colors
                                     </span>
                                 </label>
                                 <div className="adminEditorToolbar">
@@ -365,12 +367,23 @@ export default function AdminArticleEditor() {
                                         className="adminEditorToolBtn">I</button>
                                     <button type="button" onClick={() => wrapSelection("[rainbow]", "[/rainbow]")}
                                         className="adminEditorToolBtn rainbowToolBtn">🌈</button>
+                                    <span className="adminEditorToolbarSep"></span>
+                                    <button type="button"
+                                        onClick={() => prefixLines("# ")}
+                                        className="adminEditorToolBtn headingToolBtn" title="Title">T</button>
+                                    <button type="button"
+                                        onClick={() => prefixLines("## ")}
+                                        className="adminEditorToolBtn headingToolBtn" title="Header 1">H1</button>
+                                    <button type="button"
+                                        onClick={() => prefixLines("### ")}
+                                        className="adminEditorToolBtn headingToolBtn" title="Header 2">H2</button>
+                                    <button type="button"
+                                        onClick={() => prefixLines("#### ")}
+                                        className="adminEditorToolBtn headingToolBtn" title="Header 3">H3</button>
+                                    <span className="adminEditorToolbarSep"></span>
                                     <button type="button"
                                         onClick={() => prefixLines("- ")}
                                         className="adminEditorToolBtn">• list</button>
-                                    <button type="button"
-                                        onClick={() => prefixLines("## ")}
-                                        className="adminEditorToolBtn">H</button>
                                     <button type="button"
                                         onClick={() => insertAtCursor("\n---\n")}
                                         className="adminEditorToolBtn">—</button>
@@ -383,6 +396,21 @@ export default function AdminArticleEditor() {
                                     <button type="button"
                                         onClick={() => wrapSelection("[", "](url)")}
                                         className="adminEditorToolBtn">🔗</button>
+                                    <span className="adminEditorToolbarSep"></span>
+                                    <button type="button" onClick={() => wrapSelection("[color=red]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="red" style={{ color: "#ff4444" }}>●</button>
+                                    <button type="button" onClick={() => wrapSelection("[color=orange]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="orange" style={{ color: "#ff8800" }}>●</button>
+                                    <button type="button" onClick={() => wrapSelection("[color=yellow]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="yellow" style={{ color: "#ffcc00" }}>●</button>
+                                    <button type="button" onClick={() => wrapSelection("[color=green]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="green" style={{ color: "#44cc44" }}>●</button>
+                                    <button type="button" onClick={() => wrapSelection("[color=blue]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="blue" style={{ color: "#4488ff" }}>●</button>
+                                    <button type="button" onClick={() => wrapSelection("[color=purple]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="purple" style={{ color: "#aa66ff" }}>●</button>
+                                    <button type="button" onClick={() => wrapSelection("[color=black]", "[/color]")}
+                                        className="adminEditorToolBtn colorToolBtn" title="black" style={{ color: "#666666" }}>●</button>
                                     <span className="adminEditorToolbarSep"></span>
                                     <button type="button" onClick={undo}
                                         className="adminEditorToolBtn" title="Undo (Ctrl+Z)">↩</button>
