@@ -449,6 +449,11 @@ void PersistentPhysicsSystem::render(const Camera& camera) const
 
 void PersistentPhysicsSystem::renderPrimitive(const PersistentPhysicsObject& obj, const Camera& camera) const
 {
+    // Grenade launcher projectiles are rendered by WeaponGrenadeLauncher::update
+    // with textured meshes from projectile-render.cpp. Skip the old flat cylinder.
+    if (obj.weaponId == "grenade_launcher")
+        return;
+
     float r = obj.cfg.radius;
     float h = obj.cfg.height;
     glm::vec3 pos = obj.position;

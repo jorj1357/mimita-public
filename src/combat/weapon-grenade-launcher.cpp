@@ -56,7 +56,10 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     float angSpeed = cp(def, "angSpeed", 6.0f);
 
     glm::vec3 vel = aimDir * forwardSpeed + glm::vec3(0.0f, 0.0f, upBias);
-    glm::vec3 angVel(0.0f, 0.0f, angSpeed);
+    glm::vec3 angVel(
+        ((float)(rand() % 2001) / 1000.0f - 1.0f) * angSpeed,
+        ((float)(rand() % 2001) / 1000.0f - 1.0f) * angSpeed,
+        ((float)(rand() % 2001) / 1000.0f - 1.0f) * angSpeed);
 
     PersistentPhysicsSystem::instance().spawn(cfg, muzzlePos, vel, angVel,
                                               0, owner.username, def.id, owner.pos);

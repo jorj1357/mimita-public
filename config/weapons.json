@@ -389,7 +389,8 @@
       "smokeEndColorR": 0.2,
       "smokeEndColorG": 0.2,
       "smokeEndColorB": 0.2,
-      "smokeEndColorA": 0.0
+      "smokeEndColorA": 0.0,
+      "flightSoundVolumeDb": 15.0
     },
     "animations": {
       "fire": {
