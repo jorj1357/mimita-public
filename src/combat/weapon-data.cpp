@@ -270,6 +270,47 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["firingRecoilStrength"] = 30.0f;
     def.customParams["reserveAmmo"] = 1337.0f;
 
+    // Projectile visual defaults
+    def.customParams["projectileVisualTexture"] = 1.0f; // flag: use default path
+    def.customParams["projectileVisualLength"] = 1.5f;
+    def.customParams["projectileVisualRadius"] = 0.18f;
+    def.customParams["projectileVisualScaleX"] = 1.0f;
+    def.customParams["projectileVisualScaleY"] = 1.0f;
+    def.customParams["projectileVisualScaleZ"] = 1.0f;
+    def.customParams["projectileVisualRotationOffsetX"] = 0.0f;
+    def.customParams["projectileVisualRotationOffsetY"] = 0.0f;
+    def.customParams["projectileVisualRotationOffsetZ"] = 0.0f;
+    def.customParams["projectileVisualTextureTilingU"] = 1.0f;
+    def.customParams["projectileVisualTextureTilingV"] = 1.0f;
+
+    // Smoke effect defaults
+    def.customParams["smokeEnabled"] = 1.0f;
+    def.customParams["smokeEmissionRate"] = 50.0f;
+    def.customParams["smokeParticlesPerEmission"] = 2.0f;
+    def.customParams["smokeSpawnOffsetX"] = 0.0f;
+    def.customParams["smokeSpawnOffsetY"] = 0.0f;
+    def.customParams["smokeSpawnOffsetZ"] = -0.5f;
+    def.customParams["smokeSpawnRadius"] = 0.08f;
+    def.customParams["smokeInheritVelocity"] = -0.1f;
+    def.customParams["smokeSpeed"] = 1.0f;
+    def.customParams["smokeSpeedRandom"] = 0.5f;
+    def.customParams["smokeSpreadDegrees"] = 25.0f;
+    def.customParams["smokeLifetime"] = 1.2f;
+    def.customParams["smokeLifetimeRandom"] = 0.25f;
+    def.customParams["smokeSize"] = 0.25f;
+    def.customParams["smokeEndSize"] = 0.8f;
+    def.customParams["smokeSizeRandom"] = 0.1f;
+    def.customParams["smokeGravity"] = 0.0f;
+    def.customParams["smokeDrag"] = 1.5f;
+    def.customParams["smokeColorR"] = 0.7f;
+    def.customParams["smokeColorG"] = 0.7f;
+    def.customParams["smokeColorB"] = 0.7f;
+    def.customParams["smokeColorA"] = 0.8f;
+    def.customParams["smokeEndColorR"] = 0.2f;
+    def.customParams["smokeEndColorG"] = 0.2f;
+    def.customParams["smokeEndColorB"] = 0.2f;
+    def.customParams["smokeEndColorA"] = 0.0f;
+
     return def;
 }
 
@@ -314,6 +355,47 @@ WeaponDefinition createGrenadeLauncherDefinition() {
     def.customParams["knockbackStrength"] = 160.0f;
     def.customParams["firingRecoilStrength"] = 20.0f;
     def.customParams["reserveAmmo"] = 1337.0f;
+
+    // Projectile visual defaults
+    def.customParams["projectileVisualTexture"] = 1.0f;
+    def.customParams["projectileVisualLength"] = 1.8f;
+    def.customParams["projectileVisualRadius"] = 0.28f;
+    def.customParams["projectileVisualScaleX"] = 1.0f;
+    def.customParams["projectileVisualScaleY"] = 1.0f;
+    def.customParams["projectileVisualScaleZ"] = 1.0f;
+    def.customParams["projectileVisualRotationOffsetX"] = 0.0f;
+    def.customParams["projectileVisualRotationOffsetY"] = 0.0f;
+    def.customParams["projectileVisualRotationOffsetZ"] = 0.0f;
+    def.customParams["projectileVisualTextureTilingU"] = 1.0f;
+    def.customParams["projectileVisualTextureTilingV"] = 1.0f;
+
+    // Spark effect defaults
+    def.customParams["sparkEnabled"] = 1.0f;
+    def.customParams["sparkEmissionRate"] = 45.0f;
+    def.customParams["sparkParticlesPerEmission"] = 2.0f;
+    def.customParams["sparkSpawnOffsetX"] = 0.0f;
+    def.customParams["sparkSpawnOffsetY"] = 0.0f;
+    def.customParams["sparkSpawnOffsetZ"] = -0.7f;
+    def.customParams["sparkSpawnRadius"] = 0.04f;
+    def.customParams["sparkInheritVelocity"] = 0.15f;
+    def.customParams["sparkSpeed"] = 5.0f;
+    def.customParams["sparkSpeedRandom"] = 2.0f;
+    def.customParams["sparkSpreadDegrees"] = 35.0f;
+    def.customParams["sparkLifetime"] = 0.35f;
+    def.customParams["sparkLifetimeRandom"] = 0.15f;
+    def.customParams["sparkSize"] = 0.05f;
+    def.customParams["sparkEndSize"] = 0.01f;
+    def.customParams["sparkSizeRandom"] = 0.005f;
+    def.customParams["sparkGravity"] = 8.0f;
+    def.customParams["sparkDrag"] = 0.2f;
+    def.customParams["sparkColorR"] = 1.0f;
+    def.customParams["sparkColorG"] = 0.75f;
+    def.customParams["sparkColorB"] = 0.2f;
+    def.customParams["sparkColorA"] = 1.0f;
+    def.customParams["sparkEndColorR"] = 1.0f;
+    def.customParams["sparkEndColorG"] = 0.1f;
+    def.customParams["sparkEndColorB"] = 0.0f;
+    def.customParams["sparkEndColorA"] = 0.0f;
 
     return def;
 }

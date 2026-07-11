@@ -5,6 +5,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/projectile-render.h"
 #include "config/size-scaling-config.h"
 #include "debug/debug-log.h"
 #include "entities/player.h"
@@ -73,28 +74,134 @@ void update(const WeaponDefinition& def, WeaponRuntime& runtime,
     (void)runtime;
     (void)npcs;
     (void)world;
-    (void)camera;
+
+    // Read config values for visuals and sparks (hot-reloadable)
+    std::string projTexture = cp(def, "projectileVisualTexture", 0.0f)
+        ? "assets/textureshq/meat1.png" : "assets/textureshq/meat1.png";
+    float projLength = cp(def, "projectileVisualLength", 1.8f);
+    float projRadius = cp(def, "projectileVisualRadius", 0.28f);
+    glm::vec3 projScale(
+        cp(def, "projectileVisualScaleX", 1.0f),
+        cp(def, "projectileVisualScaleY", 1.0f),
+        cp(def, "projectileVisualScaleZ", 1.0f));
+    glm::vec3 projRotOffset(
+        cp(def, "projectileVisualRotationOffsetX", 0.0f),
+        cp(def, "projectileVisualRotationOffsetY", 0.0f),
+        cp(def, "projectileVisualRotationOffsetZ", 0.0f));
+    glm::vec2 projTexTiling(
+        cp(def, "projectileVisualTextureTilingU", 1.0f),
+        cp(def, "projectileVisualTextureTilingV", 1.0f));
+
+    bool sparkEnabled = cp(def, "sparkEnabled", 1.0f) > 0.0f;
+    float sparkEmissionRate = cp(def, "sparkEmissionRate", 45.0f);
+    int sparkParticlesPerEm = (int)cp(def, "sparkParticlesPerEmission", 2.0f);
+    glm::vec3 sparkSpawnOffset(
+        cp(def, "sparkSpawnOffsetX", 0.0f),
+        cp(def, "sparkSpawnOffsetY", 0.0f),
+        cp(def, "sparkSpawnOffsetZ", -0.7f));
+    float sparkSpawnRadius = cp(def, "sparkSpawnRadius", 0.04f);
+    float sparkInheritVel = cp(def, "sparkInheritVelocity", 0.15f);
+    float sparkSpeed = cp(def, "sparkSpeed", 5.0f);
+    float sparkSpeedRand = cp(def, "sparkSpeedRandom", 2.0f);
+    float sparkSpreadDeg = cp(def, "sparkSpreadDegrees", 35.0f);
+    float sparkLifetime = cp(def, "sparkLifetime", 0.35f);
+    float sparkLifetimeRand = cp(def, "sparkLifetimeRandom", 0.15f);
+    float sparkSize = cp(def, "sparkSize", 0.05f);
+    float sparkEndSize = cp(def, "sparkEndSize", 0.01f);
+    float sparkSizeRand = cp(def, "sparkSizeRandom", 0.005f);
+    float sparkGravity = cp(def, "sparkGravity", 8.0f);
+    float sparkDrag = cp(def, "sparkDrag", 0.2f);
+    glm::vec3 sparkColor(
+        cp(def, "sparkColorR", 1.0f),
+        cp(def, "sparkColorG", 0.75f),
+        cp(def, "sparkColorB", 0.2f));
+    float sparkAlpha = cp(def, "sparkColorA", 1.0f);
+    glm::vec3 sparkEndColor(
+        cp(def, "sparkEndColorR", 1.0f),
+        cp(def, "sparkEndColorG", 0.1f),
+        cp(def, "sparkEndColorB", 0.0f));
+    float sparkEndAlpha = cp(def, "sparkEndColorA", 0.0f);
+
+    static std::unordered_map<uint32_t, float> grenadeSparkAccumulators;
+
     for (const PersistentPhysicsObject& obj : PersistentPhysicsSystem::instance().objects()) {
         if (obj.ownerName != owner.username || obj.weaponId != def.id)
             continue;
         if (obj.exploded || obj.sleeping)
             continue;
 
-        float normalizedAge = obj.age / obj.cfg.lifetime;
+        // ── Textured rendering with physics body orientation ──
+        {
+            renderProjectile(camera, obj.position, obj.rotation,
+                projLength, projRadius, projScale, projRotOffset, projTexTiling,
+                projTexture);
+        }
 
-        EffectPart trail;
-        trail.position = obj.position;
-        trail.color = {0.8f, 0.8f, 0.8f};
-        trail.velocity = -obj.velocity * 0.5f;
-        trail.lifetime = 0.5f * (1.0f - normalizedAge * 0.5f);
-        trail.maxLifetime = trail.lifetime;
-        trail.scale = 0.08f * (1.0f - normalizedAge * 0.3f);
-        trail.endScale = 0.0f;
-        trail.alpha = 0.3f * (1.0f - normalizedAge * 0.5f);
-        trail.gravity = -5.0f;
-        trail.affectedByGravity = true;
-        trail.replayType = "smoke";
-        EffectPartSystem::instance().spawn(trail);
+        // ── Config-controlled spark trail ──
+        if (sparkEnabled) {
+            float& acc = grenadeSparkAccumulators[obj.id];
+            acc += sparkEmissionRate * dt;
+            while (acc >= 1.0f) {
+                acc -= 1.0f;
+                for (int pi = 0; pi < sparkParticlesPerEm; ++pi) {
+                    EffectPart p;
+                    glm::vec3 velDir = glm::length(obj.velocity) > 0.001f
+                        ? glm::normalize(obj.velocity) : glm::vec3(0.0f, 0.0f, 1.0f);
+                    glm::vec3 trailPos = obj.position +
+                        velDir * sparkSpawnOffset.z +
+                        glm::vec3(
+                            ((float)rand() / RAND_MAX - 0.5f) * sparkSpawnRadius * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * sparkSpawnRadius * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * sparkSpawnRadius * 2.0f);
+
+                    p.position = trailPos;
+                    float a = (float)rand() / RAND_MAX;
+                    float spreadRad = sparkSpreadDeg * 3.14159265f / 180.0f;
+                    glm::vec3 spread(
+                        (a - 0.5f) * spreadRad * 2.0f,
+                        (a - 0.5f) * spreadRad * 2.0f,
+                        (a - 0.5f) * spreadRad * 2.0f);
+                    p.velocity = obj.velocity * sparkInheritVel + spread * sparkSpeed +
+                        glm::vec3(
+                            ((float)rand() / RAND_MAX - 0.5f) * sparkSpeedRand * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * sparkSpeedRand * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * sparkSpeedRand * 2.0f);
+                    float lf = sparkLifetime + ((float)rand() / RAND_MAX - 0.5f) * sparkLifetimeRand * 2.0f;
+                    p.lifetime = 0.0f;
+                    p.maxLifetime = std::max(0.05f, lf);
+                    float sz = sparkSize + ((float)rand() / RAND_MAX - 0.5f) * sparkSizeRand * 2.0f;
+                    p.scale = std::max(0.005f, sz);
+                    p.endScale = std::max(0.001f, sparkEndSize);
+                    p.color = sparkColor;
+                    p.alpha = sparkAlpha;
+                    p.gravity = sparkGravity;
+                    p.affectedByGravity = std::fabs(sparkGravity) > 0.001f;
+                    p.replayType = "grenade_spark";
+                    EffectPartSystem::instance().spawn(p);
+                }
+            }
+        }
+
+        // ── Debug ──
+        if (DebugConfig::DEBUG_WEAPON_COLLISION) {
+            Debug::log(Debug::Category::Weapons,
+                "[GRENADE] id=%u pos=(%.1f %.1f %.1f) age=%.1f lifetime=%.1f sleep=%d bounce=%d sparkAcc=%.1f\n",
+                obj.id, obj.position.x, obj.position.y, obj.position.z,
+                obj.age, obj.cfg.lifetime, (int)obj.sleeping, obj.bounceCount,
+                grenadeSparkAccumulators[obj.id]);
+        }
+    }
+
+    // Clean up accumulators for exploded/removed grenades
+    for (auto it = grenadeSparkAccumulators.begin(); it != grenadeSparkAccumulators.end(); ) {
+        bool found = false;
+        for (const PersistentPhysicsObject& obj : PersistentPhysicsSystem::instance().objects()) {
+            if (obj.id == it->first) { found = true; break; }
+        }
+        if (!found)
+            it = grenadeSparkAccumulators.erase(it);
+        else
+            ++it;
     }
 }
 

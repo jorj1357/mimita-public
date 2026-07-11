@@ -11,6 +11,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/projectile-render.h"
 #include "config/size-scaling-config.h"
 #include "entities/player.h"
 #include "effects/effect-part.h"
@@ -27,6 +28,11 @@ namespace WeaponRocketLauncher {
 static constexpr float IGNORE_OWNER_DIST = 0.3f;
 static bool gDebugRockets = false;
 
+static float cp(const WeaponDefinition& def, const char* key, float fallback)
+{
+    return def.customParams.count(key) ? def.customParams.at(key) : fallback;
+}
+
 void toggleDebug() { gDebugRockets = !gDebugRockets; }
 
 static void doExplosion(
@@ -42,20 +48,13 @@ static void doExplosion(
 {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(owner.sizeScale, 0.001f);
-    const float splashRadius = (def.customParams.count("splashRadius")
-        ? def.customParams.at("splashRadius") : 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, ss);
-    const float splashExponent = def.customParams.count("splashExponent")
-        ? def.customParams.at("splashExponent") : 2.0f;
-    const float baseDamage = (def.customParams.count("rocketDirectDamage")
-        ? def.customParams.at("rocketDirectDamage") : 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, ss);
-    const float knockbackStrength = (def.customParams.count("knockbackStrength")
-        ? def.customParams.at("knockbackStrength") : 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
-    const float selfKnockbackMul = def.customParams.count("selfKnockbackMultiplier")
-        ? def.customParams.at("selfKnockbackMultiplier") : 0.8f;
-    const float knockbackHorizontalMul = def.customParams.count("knockbackHorizontalMultiplier")
-        ? def.customParams.at("knockbackHorizontalMultiplier") : 1.0f;
-    const float knockbackVerticalMul = def.customParams.count("knockbackVerticalMultiplier")
-        ? def.customParams.at("knockbackVerticalMultiplier") : 1.0f;
+    const float splashRadius = cp(def, "splashRadius", 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, ss);
+    const float splashExponent = cp(def, "splashExponent", 2.0f);
+    const float baseDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, ss);
+    const float knockbackStrength = cp(def, "knockbackStrength", 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
+    const float selfKnockbackMul = cp(def, "selfKnockbackMultiplier", 0.8f);
+    const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
+    const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
     playWorldSound("rocketlauncher/rocketlauncherexplode", position, 1.0f, 1.0f, 50.0f);
 
@@ -168,7 +167,6 @@ void fire(
         "[AIM] Final Direction Used By Projectile: (%.4f, %.4f, %.4f)\n",
         dir.x, dir.y, dir.z);
 
-    // Spawn well in front of the muzzle (outside player capsule)
     float spawnAhead = 1.2f;
     glm::vec3 spawnPos = muzzlePos + dir * spawnAhead;
     Debug::warn(Debug::Category::Weapons,
@@ -180,15 +178,16 @@ void fire(
     rocket.position = spawnPos;
     rocket.prevPosition = muzzlePos;
     rocket.velocity = dir * rocketSpeed;
+    rocket.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     rocket.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
     rocket.distanceTraveled = 0.0f;
     rocket.exploded = false;
     rocket.ownerId = (uint32_t)(uintptr_t)(&owner);
     rocket.spawnTime = state.gameTime;
+    rocket.smokeAccumulator = 0.0f;
 
     state.activeRockets.push_back(rocket);
 
-    // Record projectile spawn for replay
     {
         ReplayEffectEvent projEvent;
         projEvent.type = "projectile_spawn";
@@ -198,7 +197,6 @@ void fire(
         projEvent.sourceActorId = std::to_string(rocket.ownerId);
         captureReplayEffect(projEvent);
     }
-    // Record gunshot (muzzle flash + tracer) for replay
     {
         ReplayEffectEvent gunshotEvent;
         gunshotEvent.type = "gunshot";
@@ -228,6 +226,53 @@ void update(
     if (dt <= 0.0f) return;
     state.gameTime += dt;
 
+    // Read config values for visuals and smoke (hot-reloadable)
+    std::string projTexture = cp(def, "projectileVisualTexture", 0.0f)
+        ? "assets/textureshq/colorful2.png" : "assets/textureshq/colorful2.png";
+    float projLength = cp(def, "projectileVisualLength", 1.5f);
+    float projRadius = cp(def, "projectileVisualRadius", 0.18f);
+    glm::vec3 projScale(
+        cp(def, "projectileVisualScaleX", 1.0f),
+        cp(def, "projectileVisualScaleY", 1.0f),
+        cp(def, "projectileVisualScaleZ", 1.0f));
+    glm::vec3 projRotOffset(
+        cp(def, "projectileVisualRotationOffsetX", 0.0f),
+        cp(def, "projectileVisualRotationOffsetY", 0.0f),
+        cp(def, "projectileVisualRotationOffsetZ", 0.0f));
+    glm::vec2 projTexTiling(
+        cp(def, "projectileVisualTextureTilingU", 1.0f),
+        cp(def, "projectileVisualTextureTilingV", 1.0f));
+
+    bool smokeEnabled = cp(def, "smokeEnabled", 1.0f) > 0.0f;
+    float smokeEmissionRate = cp(def, "smokeEmissionRate", 50.0f);
+    int smokeParticlesPerEm = (int)cp(def, "smokeParticlesPerEmission", 2.0f);
+    glm::vec3 smokeSpawnOffset(
+        cp(def, "smokeSpawnOffsetX", 0.0f),
+        cp(def, "smokeSpawnOffsetY", 0.0f),
+        cp(def, "smokeSpawnOffsetZ", -0.5f));
+    float smokeSpawnRadius = cp(def, "smokeSpawnRadius", 0.08f);
+    float smokeInheritVel = cp(def, "smokeInheritVelocity", -0.1f);
+    float smokeSpeed = cp(def, "smokeSpeed", 1.0f);
+    float smokeSpeedRand = cp(def, "smokeSpeedRandom", 0.5f);
+    float smokeSpreadDeg = cp(def, "smokeSpreadDegrees", 25.0f);
+    float smokeLifetime = cp(def, "smokeLifetime", 1.2f);
+    float smokeLifetimeRand = cp(def, "smokeLifetimeRandom", 0.25f);
+    float smokeSize = cp(def, "smokeSize", 0.25f);
+    float smokeEndSize = cp(def, "smokeEndSize", 0.8f);
+    float smokeSizeRand = cp(def, "smokeSizeRandom", 0.1f);
+    float smokeGravity = cp(def, "smokeGravity", 0.0f);
+    float smokeDrag = cp(def, "smokeDrag", 1.5f);
+    glm::vec3 smokeColor(
+        cp(def, "smokeColorR", 0.7f),
+        cp(def, "smokeColorG", 0.7f),
+        cp(def, "smokeColorB", 0.7f));
+    float smokeAlpha = cp(def, "smokeColorA", 0.8f);
+    glm::vec3 smokeEndColor(
+        cp(def, "smokeEndColorR", 0.2f),
+        cp(def, "smokeEndColorG", 0.2f),
+        cp(def, "smokeEndColorB", 0.2f));
+    float smokeEndAlpha = cp(def, "smokeEndColorA", 0.0f);
+
     for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); )
     {
         RocketLauncherState::Rocket& rocket = *it;
@@ -251,35 +296,37 @@ void update(
         rocket.distanceTraveled += stepDist;
 
         // ── World collision ──
-        bool hitWorld = false;
-        glm::vec3 worldHitPos = newPos;
-        glm::vec3 worldNormal{0.0f, 0.0f, 1.0f};
-        glm::vec3 rayDir = glm::normalize(rocket.velocity);
-        float maxDist = stepDist;
+        {
+            bool hitWorld = false;
+            glm::vec3 worldHitPos = newPos;
+            glm::vec3 worldNormal{0.0f, 0.0f, 1.0f};
+            glm::vec3 rayDir = glm::normalize(rocket.velocity);
+            float maxDist = stepDist;
 
-        if (maxDist > 0.001f) {
-            float nearest = maxDist;
-            for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-                float t;
-                if (WeaponFire::rayTriangle(rocket.position, rayDir, tri, t) && t < nearest) {
-                    nearest = t;
-                    hitWorld = true;
-                    worldHitPos = rocket.position + rayDir * t;
-                    worldNormal = tri.normal;
+            if (maxDist > 0.001f) {
+                float nearest = maxDist;
+                for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+                    float t;
+                    if (WeaponFire::rayTriangle(rocket.position, rayDir, tri, t) && t < nearest) {
+                        nearest = t;
+                        hitWorld = true;
+                        worldHitPos = rocket.position + rayDir * t;
+                        worldNormal = tri.normal;
+                    }
                 }
-            }
-            if (hitWorld) {
-                doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false);
-                rocket.exploded = true;
-                it = state.activeRockets.erase(it);
-                continue;
+                if (hitWorld) {
+                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false);
+                    rocket.exploded = true;
+                    it = state.activeRockets.erase(it);
+                    continue;
+                }
             }
         }
 
-        // ── Player collision (skip owner if too close to spawn) ──
-        bool hitPlayer = false;
-        glm::vec3 checkPos = newPos;
+        // ── Player collision ──
         {
+            bool hitPlayer = false;
+            glm::vec3 checkPos = newPos;
             Capsule ownerCapsule = owner.getCapsule();
             glm::vec3 mn(owner.pos.x - ownerCapsule.r,
                          owner.pos.y - ownerCapsule.r,
@@ -291,52 +338,65 @@ void update(
             float dist = glm::length(checkPos - closest);
             if (dist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
                 hitPlayer = true;
-            } else if (dist < 0.5f && rocket.distanceTraveled < IGNORE_OWNER_DIST) {
-                // Too close to owner — skip owner collision but still check NPCs
-                printf("[ROCKET] Skipping owner collision: distTraveled=%.2f < IGNORE(%.1f)\n",
-                       rocket.distanceTraveled, IGNORE_OWNER_DIST);
             }
-        }
-
-        // ── NPC collision ──
-        bool hitNpc = false;
-        uint32_t hitNpcId = 0;
-        for (Npc& npc : npcs.all()) {
-            if (npc.body.currentHp <= 0) continue;
-            npc.body.updateModelWorldTransforms();
-            for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
-                glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-                glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-                glm::vec3 half = (part.collider.localMax - part.collider.localMin) * 0.5f;
-                half = glm::max(half, glm::vec3(0.2f));
-                glm::vec3 closest = glm::clamp(checkPos, center - half, center + half);
-                float dist = glm::length(checkPos - closest);
-                if (dist < 0.5f) {
-                    hitNpc = true;
-                    hitNpcId = npc.id;
-                    break;
+            if (!hitPlayer) {
+                // ── NPC collision ──
+                bool hitNpc = false;
+                uint32_t hitNpcId = 0;
+                for (Npc& npc : npcs.all()) {
+                    if (npc.body.currentHp <= 0) continue;
+                    npc.body.updateModelWorldTransforms();
+                    for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
+                        glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                        glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                        glm::vec3 half = (part.collider.localMax - part.collider.localMin) * 0.5f;
+                        half = glm::max(half, glm::vec3(0.2f));
+                        glm::vec3 closest2 = glm::clamp(checkPos, center - half, center + half);
+                        float dist2 = glm::length(checkPos - closest2);
+                        if (dist2 < 0.5f) {
+                            hitNpc = true;
+                            hitNpcId = npc.id;
+                            break;
+                        }
+                    }
+                    if (hitNpc) break;
+                }
+                if (hitNpc) {
+                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true);
+                    rocket.exploded = true;
+                    it = state.activeRockets.erase(it);
+                    continue;
+                }
+                if (hitPlayer) {
+                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false);
+                    rocket.exploded = true;
+                    it = state.activeRockets.erase(it);
+                    continue;
                 }
             }
-            if (hitNpc) break;
-        }
-
-        if (hitNpc) {
-            doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true);
-            rocket.exploded = true;
-            it = state.activeRockets.erase(it);
-            continue;
-        }
-
-        if (hitPlayer) {
-            doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false);
-            rocket.exploded = true;
-            it = state.activeRockets.erase(it);
-            continue;
         }
 
         rocket.position = newPos;
 
-        // ── In-air looping sound (short sound, repeats while rocket flies) ──
+        // Update orientation from velocity direction
+        float velLen = glm::length(rocket.velocity);
+        if (velLen > 0.001f) {
+            glm::vec3 velDir = rocket.velocity / velLen;
+            glm::quat targetOrient = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            // Align local +Z to velocity direction
+            if (std::fabs(velDir.z) < 0.9999f) {
+                glm::vec3 up(0.0f, 0.0f, 1.0f);
+                glm::vec3 axis = glm::cross(up, velDir);
+                float angle = std::acos(glm::clamp(glm::dot(up, velDir), -1.0f, 1.0f));
+                if (glm::length(axis) > 0.0001f)
+                    targetOrient = glm::angleAxis(angle, glm::normalize(axis));
+                else if (velDir.z < 0.0f)
+                    targetOrient = glm::angleAxis(3.14159265f, glm::vec3(1.0f, 0.0f, 0.0f));
+            }
+            rocket.orientation = glm::mix(rocket.orientation, targetOrient, std::min(1.0f, dt * 10.0f));
+        }
+
+        // ── In-air looping sound ──
         {
             float inAirInterval = 0.15f;
             if (state.gameTime - rocket.lastInAirSoundTime >= inAirInterval) {
@@ -346,44 +406,55 @@ void update(
             }
         }
 
-        // ── Render rocket as bright yellow cylinder facing movement direction ──
+        // ── Textured rendering ──
         {
-            glm::vec3 velDir = glm::normalize(rocket.velocity);
-            // Main body: bright yellow cylinder
-            float cylRadius = 0.18f;
-            float cylHeight = 0.6f;
-            DebugVis::drawFilledCylinder(camera, rocket.position, velDir, cylRadius, cylHeight,
-                {1.0f, 1.0f, 0.0f, 1.0f});
-
-            // Nose cone: bright sphere at the front tip
-            glm::vec3 tipPos = rocket.position + velDir * (cylHeight * 0.5f + 0.1f);
-            DebugVis::drawFilledSphere(camera, tipPos, cylRadius * 1.3f,
-                {1.0f, 0.95f, 0.1f, 1.0f});
-
-            // Outer glow: large semi-transparent sphere for visibility
-            DebugVis::drawFilledSphere(camera, rocket.position, 0.5f,
-                {1.0f, 0.8f, 0.0f, 0.3f});
+            renderProjectile(camera, rocket.position, rocket.orientation,
+                projLength, projRadius, projScale, projRotOffset, projTexTiling,
+                projTexture);
         }
 
-        // ── Smoke trail ──
-        {
-            glm::vec3 velDir = glm::normalize(rocket.velocity);
-            glm::vec3 trailPos = rocket.position - velDir * 0.3f;
-            for (int ti = 0; ti < 3; ++ti) {
-                EffectPart p;
-                p.position = trailPos;
-                p.velocity = glm::vec3(
-                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
-                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
-                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f);
-                float t = (float)rand() / RAND_MAX;
-                p.color = {1.0f, 0.6f + t * 0.3f, 0.1f};
-                p.maxLifetime = 0.4f + t * 0.2f;
-                p.scale = 0.08f + t * 0.06f;
-                p.endScale = 0.2f + t * 0.12f;
-                p.alpha = 0.85f;
-                p.replayType = "rocket_trail";
-                EffectPartSystem::instance().spawn(p);
+        // ── Config-controlled smoke trail ──
+        if (smokeEnabled) {
+            rocket.smokeAccumulator += smokeEmissionRate * dt;
+            while (rocket.smokeAccumulator >= 1.0f) {
+                rocket.smokeAccumulator -= 1.0f;
+                for (int pi = 0; pi < smokeParticlesPerEm; ++pi) {
+                    EffectPart p;
+                    // Spawn behind the rocket based on direction
+                    glm::vec3 velDir = glm::length(rocket.velocity) > 0.001f
+                        ? glm::normalize(rocket.velocity) : glm::vec3(0.0f, 0.0f, 1.0f);
+                    glm::vec3 trailPos = rocket.position +
+                        velDir * smokeSpawnOffset.z +
+                        glm::vec3(
+                            ((float)rand() / RAND_MAX - 0.5f) * smokeSpawnRadius * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * smokeSpawnRadius * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * smokeSpawnRadius * 2.0f);
+
+                    p.position = trailPos;
+                    float a = (float)rand() / RAND_MAX;
+                    float spreadRad = smokeSpreadDeg * 3.14159265f / 180.0f;
+                    glm::vec3 spread(
+                        (a - 0.5f) * spreadRad,
+                        (a - 0.5f) * spreadRad,
+                        (a - 0.5f) * spreadRad);
+                    p.velocity = rocket.velocity * smokeInheritVel + spread * smokeSpeed +
+                        glm::vec3(
+                            ((float)rand() / RAND_MAX - 0.5f) * smokeSpeedRand * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * smokeSpeedRand * 2.0f,
+                            ((float)rand() / RAND_MAX - 0.5f) * smokeSpeedRand * 2.0f);
+                    float lf = smokeLifetime + ((float)rand() / RAND_MAX - 0.5f) * smokeLifetimeRand * 2.0f;
+                    p.lifetime = 0.0f;
+                    p.maxLifetime = std::max(0.5f, lf);
+                    float sz = smokeSize + ((float)rand() / RAND_MAX - 0.5f) * smokeSizeRand * 2.0f;
+                    p.scale = std::max(0.01f, sz);
+                    p.endScale = std::max(0.01f, smokeEndSize);
+                    p.color = smokeColor;
+                    p.alpha = smokeAlpha;
+                    p.gravity = smokeGravity;
+                    p.affectedByGravity = std::fabs(smokeGravity) > 0.001f;
+                    p.replayType = "rocket_trail";
+                    EffectPartSystem::instance().spawn(p);
+                }
             }
         }
 
@@ -393,16 +464,12 @@ void update(
                 {0.0f, 1.0f, 1.0f, 1.0f});
             DebugVis::drawLine(camera, rocket.prevPosition, rocket.position,
                 {1.0f, 1.0f, 0.0f, 1.0f});
-
             glm::vec3 velEnd = rocket.position + glm::normalize(rocket.velocity) * 2.0f;
             DebugVis::drawLine(camera, rocket.position, velEnd,
                 {0.0f, 1.0f, 0.0f, 1.0f});
-
-            float splashR = def.customParams.count("splashRadius")
-                ? def.customParams.at("splashRadius") : 8.0f;
+            float splashR = cp(def, "splashRadius", 8.0f);
             DebugVis::drawWireSphere(camera, rocket.position, splashR,
                 {1.0f, 0.0f, 0.0f, 0.3f});
-
             printf("[ROCKET DEBUG] distTraveled=%.2f/%.1f pos=(%.1f,%.1f,%.1f)\n",
                    rocket.distanceTraveled, IGNORE_OWNER_DIST,
                    rocket.position.x, rocket.position.y, rocket.position.z);
