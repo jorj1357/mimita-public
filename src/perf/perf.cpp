@@ -1,5 +1,6 @@
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
+#include "perf/perf-frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -824,9 +825,27 @@ void Perf::endFrame()
     if (s.stressRunning)
         s.stressTimer += gFramePacer.dt();
 
-    // Aggregates scopes from MIMITA_PERF_SCOPE macros and writes spike reports
+    // Capture current frame into ring buffer
     double targetMs = gPerfBudget.targetFps > 0 ? 1000.0 / gPerfBudget.targetFps : 16.667;
+    perfCaptureFrame((double)currentMs, targetMs, s.frameNumber);
+
+    // Aggregate scopes and write spike reports
     perfAggregateScopes((double)currentMs, targetMs);
+
+    // Write periodic frame breakdown to file
+    static int sBreakdownCount = 0;
+    sBreakdownCount++;
+    if (s.perfFileLogging || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) {
+        static FILE* sBreakdownFile = nullptr;
+        if (!sBreakdownFile)
+            sBreakdownFile = fopen("logs/FrameBreakdown_log.txt", "a");
+        if (sBreakdownFile && gFrameHistoryCount > 0) {
+            int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
+            if (gFrameHistory[lastIdx].frameNumber == s.frameNumber) {
+                perfWriteFrameBreakdown(sBreakdownFile, gFrameHistory[lastIdx], false);
+            }
+        }
+    }
 }
 
 // ── perfResetScopes ─────────────────────────────────────────

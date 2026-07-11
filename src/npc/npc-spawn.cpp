@@ -9,6 +9,7 @@
 
 #include "debug/debug-log.h"
 #include "perf/perf-spike.h"
+#include "perf/perf-frame.h"
 #include "physics/config.h"
 #include "game/spawn-override.h"
 #include "audio/audio.h"
@@ -143,6 +144,9 @@ void NpcSystem::spawnNpc(float difficulty)
     Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     uint32_t id = nextNpcId();
+    char corrId[32];
+    std::snprintf(corrId, sizeof(corrId), "NPC_%05u", id);
+    perfSetCorrelation(corrId);
     glm::vec3 spawnPos = npcSpawnPoint;
     glm::vec3 overridePos;
     if (tryGetSpawnOverride(overridePos)) {

@@ -5,9 +5,10 @@
 #include <chrono>
 #include <cstring>
 
-// Forward declarations for spike profiler integration
+// Forward declarations
 struct PerfBudgetConfig;
 extern PerfBudgetConfig gPerfBudget;
+struct PerfFrame;
 
 struct PerfTimes {
     double input = 0.0;
@@ -402,3 +403,7 @@ double exclusive(const PerfTimes& t, const PerfTimes& children, const char* name
 void registerPerfCommands();
 void perfLoadBudgetConfig();
 void perfResetScopes();
+void perfWriteFrameBreakdown(FILE* f, const PerfFrame& frame, bool showChildren);
+void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber);
+void perfSetCorrelation(const char* id);
+void perfClearCorrelation();
