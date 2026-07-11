@@ -1,5 +1,5 @@
 {
-    "aim_mode": "farpoint",
+    "aim_mode": "crosshair",
     "dash_mode": "tf2",
-    "farpoint_distance": 100.0
+    "farpoint_distance": 999999.0
 }

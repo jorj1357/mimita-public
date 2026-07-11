@@ -93,14 +93,35 @@ void WeaponRuntimeHelper::tickReload(WeaponRuntime& rt, const WeaponDefinition& 
     if (rt.reloadTimer > 0.0f) {
         rt.reloadTimer -= dt;
         if (rt.reloadTimer <= 0.0f) {
-            int needed = def.magazineSize - rt.currentAmmo;
-            int loaded = std::min(needed, rt.reserveAmmo);
-            rt.currentAmmo += loaded;
-            rt.reserveAmmo -= loaded;
-            rt.isReloading = false;
-            rt.reloadTimer = 0.0f;
-            printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
-                   rt.currentAmmo, rt.reserveAmmo);
+            bool oneAtATime = false;
+            auto it = def.customParams.find("reloadOneAtATime");
+            if (it != def.customParams.end()) oneAtATime = (it->second != 0.0f);
+
+            if (oneAtATime) {
+                // Load +1 grenade (TF2-style), restart if more needed
+                int loaded = std::min(1, rt.reserveAmmo);
+                rt.currentAmmo += loaded;
+                rt.reserveAmmo -= loaded;
+                printf("[WEAPON] Reload +1: ammo=%d reserve=%d\n",
+                       rt.currentAmmo, rt.reserveAmmo);
+                if (rt.currentAmmo < def.magazineSize && rt.reserveAmmo > 0) {
+                    rt.reloadTimer = def.reloadTime; // restart for next round
+                } else {
+                    rt.isReloading = false;
+                    rt.reloadTimer = 0.0f;
+                    printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
+                           rt.currentAmmo, rt.reserveAmmo);
+                }
+            } else {
+                int needed = def.magazineSize - rt.currentAmmo;
+                int loaded = std::min(needed, rt.reserveAmmo);
+                rt.currentAmmo += loaded;
+                rt.reserveAmmo -= loaded;
+                rt.isReloading = false;
+                rt.reloadTimer = 0.0f;
+                printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
+                       rt.currentAmmo, rt.reserveAmmo);
+            }
         }
     }
 }

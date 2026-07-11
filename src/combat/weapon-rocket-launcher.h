@@ -20,6 +20,7 @@ struct RocketLauncherState {
         bool exploded = false;
         uint32_t ownerId = 0;
         float spawnTime = 0.0f;
+        float lastInAirSoundTime = 0.0f;
     };
     std::vector<Rocket> activeRockets;
     float gameTime = 0.0f;

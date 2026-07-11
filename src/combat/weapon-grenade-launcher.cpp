@@ -47,7 +47,7 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     cfg.splashExponent = cp(def, "splashExponent", 2.0f);
     cfg.armingDistance = cp(def, "armingDistance", 2.0f);
     cfg.armingTime = cp(def, "armingTime", 0.0f);
-    cfg.explosionSound = "weapon/bomb/explosion2";
+    cfg.explosionSound = "grenadelauncher/grenadelauncherexplode";
     cfg.spawnSound = def.soundShoot;
 
     float forwardSpeed = def.projectileSpeed > 0.0f ? def.projectileSpeed : cp(def, "forwardSpeed", 18.0f);
