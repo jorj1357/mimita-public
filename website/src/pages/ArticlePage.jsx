@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useParams, Link } from "react-router-dom"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import remarkBreaks from "remark-breaks"
 import rehypeRaw from "rehype-raw"
 
 import Layout from "../components/Layout"
@@ -142,7 +143,7 @@ export default function ArticlePage() {
         </header>
 
         <div className="articleContent">
-          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+          <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw]}>
             {renderContent(article.content)}
           </Markdown>
         </div>

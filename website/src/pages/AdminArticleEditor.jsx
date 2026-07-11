@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { apiRequest } from "../lib/api.js"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import remarkBreaks from "remark-breaks"
 import rehypeRaw from "rehype-raw"
 import Layout from "../components/Layout"
 
@@ -23,6 +24,7 @@ export default function AdminArticleEditor() {
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState("")
     const [showPreview, setShowPreview] = useState(false)
+    const textareaRef = useRef(null)
     const fetchedRef = useRef(false)
 
     useEffect(() => {
@@ -155,6 +157,54 @@ export default function AdminArticleEditor() {
             '<span class="rainbow-text">$1</span>')
     }
 
+    function wrapSelection(before, after) {
+        const ta = textareaRef.current
+        if (!ta) return
+        const start = ta.selectionStart
+        const end = ta.selectionEnd
+        const selected = content.substring(start, end)
+        if (selected) {
+            setContent(content.slice(0, start) + before + selected + after + content.slice(end))
+            requestAnimationFrame(() => {
+                ta.focus()
+                ta.selectionStart = start + before.length
+                ta.selectionEnd = start + before.length + selected.length
+            })
+        } else {
+            setContent(c => c + before + after)
+        }
+    }
+
+    function prefixLines(prefix) {
+        const ta = textareaRef.current
+        if (!ta) return
+        const start = ta.selectionStart
+        const end = ta.selectionEnd
+        const selected = content.substring(start, end)
+        if (selected) {
+            const prefixed = selected.split("\n").map(l => prefix + l).join("\n")
+            setContent(content.slice(0, start) + prefixed + content.slice(end))
+            requestAnimationFrame(() => {
+                ta.focus()
+                ta.selectionStart = start
+                ta.selectionEnd = start + prefixed.length
+            })
+        } else {
+            setContent(c => c + "\n" + prefix)
+        }
+    }
+
+    function insertAtCursor(text) {
+        const ta = textareaRef.current
+        if (!ta) return
+        const start = ta.selectionStart
+        setContent(content.slice(0, start) + text + content.slice(ta.selectionEnd))
+        requestAnimationFrame(() => {
+            ta.focus()
+            ta.selectionStart = ta.selectionEnd = start + text.length
+        })
+    }
+
     if (loading) {
         return (
             <Layout>
@@ -256,29 +306,29 @@ export default function AdminArticleEditor() {
                                     </span>
                                 </label>
                                 <div className="adminEditorToolbar">
-                                    <button type="button" onClick={() => setContent(c => c + "**bold**")}
+                                    <button type="button" onClick={() => wrapSelection("**", "**")}
                                         className="adminEditorToolBtn">B</button>
-                                    <button type="button" onClick={() => setContent(c => c + "*italic*")}
+                                    <button type="button" onClick={() => wrapSelection("*", "*")}
                                         className="adminEditorToolBtn">I</button>
-                                    <button type="button" onClick={() => setContent(c => c + "[rainbow]text[/rainbow]")}
+                                    <button type="button" onClick={() => wrapSelection("[rainbow]", "[/rainbow]")}
                                         className="adminEditorToolBtn rainbowToolBtn">🌈</button>
                                     <button type="button"
-                                        onClick={() => setContent(c => c + "\n- item")}
+                                        onClick={() => prefixLines("- ")}
                                         className="adminEditorToolBtn">• list</button>
                                     <button type="button"
-                                        onClick={() => setContent(c => c + "\n## heading")}
+                                        onClick={() => prefixLines("## ")}
                                         className="adminEditorToolBtn">H</button>
                                     <button type="button"
-                                        onClick={() => setContent(c => c + "\n---")}
+                                        onClick={() => insertAtCursor("\n---\n")}
                                         className="adminEditorToolBtn">—</button>
                                     <button type="button"
-                                        onClick={() => setContent(c => c + "\n```\ncode\n```")}
+                                        onClick={() => wrapSelection("\n```\n", "\n```\n")}
                                         className="adminEditorToolBtn">&lt;/&gt;</button>
                                     <button type="button"
-                                        onClick={() => setContent(c => c + "\n> quote")}
+                                        onClick={() => prefixLines("> ")}
                                         className="adminEditorToolBtn">&ldquo;</button>
                                     <button type="button"
-                                        onClick={() => setContent(c => c + "[link](url)")}
+                                        onClick={() => wrapSelection("[", "](url)")}
                                         className="adminEditorToolBtn">🔗</button>
                                     <button type="button"
                                         onClick={() => setShowPreview(p => !p)}
@@ -288,12 +338,12 @@ export default function AdminArticleEditor() {
                                 </div>
                                 {showPreview ? (
                                     <div className="adminEditorPreview">
-                                        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                                        <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw]}>
                                             {renderContent(content)}
                                         </Markdown>
                                     </div>
                                 ) : (
-                                    <textarea className="adminEditorTextarea"
+                                    <textarea ref={textareaRef} className="adminEditorTextarea"
                                         value={content}
                                         onChange={e => setContent(e.target.value)}
                                         placeholder="Write your article in markdown..."
