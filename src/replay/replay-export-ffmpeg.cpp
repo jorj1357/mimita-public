@@ -191,6 +191,15 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                 size_t cropEndFrame = musicCropEnd > 0.0
                     ? (size_t)(musicCropEnd * (double)sampleRate)
                     : musicFrames;
+                // Log decoded music analysis
+                {
+                    auto analysis = analyzeAudioBuffer(musicPCM,
+                        (uint32_t)musicFrames, numChannels, musicRate);
+                    logAudioAnalysis(StructuredCategory::Audio,
+                        StructuredLevel::Important,
+                        "MUSIC_DECODE", "REPLAY_EXPORT",
+                        "Decoded music track", analysis);
+                }
                 // Sample-accurate mixing with offset + crop + speed + pbspeed.
                 // Match the video capture loop: iterate over export-frame positions
                 // (speed-aware) so music stays synchronized with video.
@@ -227,6 +236,15 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                 Debug::log(Debug::Category::Replay,
                     "[ReplayExportMusic] source=%s offset=%.1f crop=%.1f-%.1f speed=%.2f\n",
                     musicPath.c_str(), musicOffset, musicCropStart, musicCropEnd, musicSpeedMul);
+                // Log mix buffer analysis after music contribution
+                {
+                    auto analysis = analyzeAudioBuffer(mix,
+                        (uint32_t)totalFrames, numChannels, sampleRate);
+                    logAudioAnalysis(StructuredCategory::Audio,
+                        StructuredLevel::Important,
+                        "MUSIC_MIX", "REPLAY_EXPORT",
+                        "Mix buffer after music track", analysis);
+                }
             } else {
                 printf("[RPLX AUDIO WARN] Failed to decode music track: %s\n", musicPath.c_str());
                 Debug::log(Debug::Category::Replay,
@@ -417,101 +435,53 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         }
         decodedCount++;
 
+        // Resample-mode mixing: iterate OUTPUT frames, advance SOURCE by pbspeed
+        // per output frame. This gives the same pitch-follows-speed behavior as
+        // FL Studio "resample mode" / vinyl slowdown (no pitch correction).
+        double eventPbspeed = gReplayEditor.isLoaded()
+            ? gReplayEditor.playbackSpeedAtTick((uint32_t)event.tick)
+            : 1.0;
+        eventPbspeed = std::max(eventPbspeed, 0.01);
         uint32_t eventExportFrame = originalTickToExportFrame(
             (uint32_t)event.tick, totalTicks);
         double eventTime = (double)eventExportFrame / tickRate;
-        size_t dstFrame = (size_t)(eventTime * sampleRate);
+        size_t dstStart = (size_t)(eventTime * sampleRate);
         size_t srcFrames = pcm.size() / ch;
         float baseVolume = event.volume * spatialAtten;
 
-        if (rate == sampleRate && ch == numChannels)
-        {
-            if (spatialize)
-            {
+        double srcPos = 0.0;
+        for (size_t dstOff = 0; dstStart + dstOff < totalFrames; dstOff++) {
+            size_t srcIdx = (size_t)srcPos;
+            if (srcIdx >= srcFrames) break;
+            double frac = srcPos - (double)srcIdx;
+            size_t srcNext = std::min(srcIdx + 1, srcFrames - 1);
+
+            if (spatialize) {
                 // 3D spatialized: downmix to mono then apply stereo pan
-                for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
-                {
-                    float sM = ((float)pcm[(i * 2 + 0)] + (float)pcm[(i * 2 + 1)]) / 65536.0f * baseVolume;
-                    mix[(dstFrame + i) * 2 + 0] += sM * panLeft;
-                    mix[(dstFrame + i) * 2 + 1] += sM * panRight;
-                }
+                float s = 0.0f;
+                for (uint32_t c = 0; c < ch; c++)
+                    s += (float)pcm[srcIdx * ch + c] / 32768.0f;
+                s /= (float)ch;
+                float sNext = 0.0f;
+                for (uint32_t c = 0; c < ch; c++)
+                    sNext += (float)pcm[srcNext * ch + c] / 32768.0f;
+                sNext /= (float)ch;
+                float interp = s + (sNext - s) * (float)frac;
+                interp *= baseVolume;
+                mix[(dstStart + dstOff) * 2 + 0] += interp * panLeft;
+                mix[(dstStart + dstOff) * 2 + 1] += interp * panRight;
+            } else {
+                // 2D non-spatialized: pass through stereo with linear interpolation
+                float sL = (float)pcm[srcIdx * ch + 0] / 32768.0f * baseVolume;
+                float sR = ch > 1 ? (float)pcm[srcIdx * ch + 1] / 32768.0f * baseVolume : sL;
+                float sLNext = (float)pcm[srcNext * ch + 0] / 32768.0f * baseVolume;
+                float sRNext = ch > 1 ? (float)pcm[srcNext * ch + 1] / 32768.0f * baseVolume : sLNext;
+                float interpL = sL + (sLNext - sL) * (float)frac;
+                float interpR = sR + (sRNext - sR) * (float)frac;
+                mix[(dstStart + dstOff) * 2 + 0] += interpL;
+                mix[(dstStart + dstOff) * 2 + 1] += interpR;
             }
-            else
-            {
-                // 2D non-spatialized: pass through stereo unchanged
-                for (size_t i = 0; i < srcFrames && (dstFrame + i) < totalFrames; i++)
-                {
-                    float sL = (float)pcm[(i * 2 + 0)] / 32768.0f * baseVolume;
-                    float sR = (float)pcm[(i * 2 + 1)] / 32768.0f * baseVolume;
-                    mix[(dstFrame + i) * 2 + 0] += sL;
-                    mix[(dstFrame + i) * 2 + 1] += sR;
-                }
-            }
-        }
-        else
-        {
-            if (spatialize)
-            {
-                // 3D spatialized: downmix to mono then apply stereo pan
-                for (size_t i = 0; i < srcFrames; i++)
-                {
-                    double srcTime = (double)i / rate;
-                    double dstPos = dstFrame + srcTime * sampleRate;
-                    if (dstPos >= (double)totalFrames - 1.0) break;
-
-                    size_t dstI = (size_t)dstPos;
-                    double frac = dstPos - (double)dstI;
-                    size_t dstNext = dstI + 1;
-
-                    float s = 0.0f;
-                    for (uint32_t c = 0; c < ch; c++)
-                        s += (float)pcm[i * ch + c] / 32768.0f;
-                    s /= (float)ch;
-                    float sNext = 0.0f;
-                    size_t nextIdx = std::min(i + 1, srcFrames - 1);
-                    for (uint32_t c = 0; c < ch; c++)
-                        sNext += (float)pcm[nextIdx * ch + c] / 32768.0f;
-                    sNext /= (float)ch;
-                    float interp = s + (sNext - s) * (float)frac;
-                    interp *= baseVolume;
-
-                    mix[dstI * 2 + 0] += interp * panLeft;
-                    if (dstNext < totalFrames)
-                        mix[dstNext * 2 + 0] += interp * panLeft * (1.0f - (float)frac);
-                    mix[dstI * 2 + 1] += interp * panRight;
-                    if (dstNext < totalFrames)
-                        mix[dstNext * 2 + 1] += interp * panRight * (1.0f - (float)frac);
-                }
-            }
-            else
-            {
-                // 2D non-spatialized: pass through stereo unchanged with linear interpolation
-                for (size_t i = 0; i < srcFrames; i++)
-                {
-                    double srcTime = (double)i / rate;
-                    double dstPos = dstFrame + srcTime * sampleRate;
-                    if (dstPos >= (double)totalFrames - 1.0) break;
-
-                    size_t dstI = (size_t)dstPos;
-                    double frac = dstPos - (double)dstI;
-                    size_t dstNext = dstI + 1;
-
-                    float sL = (float)pcm[i * ch + 0] / 32768.0f * baseVolume;
-                    float sR = ch > 1 ? (float)pcm[i * ch + 1] / 32768.0f * baseVolume : sL;
-                    size_t nextIdx = std::min(i + 1, srcFrames - 1);
-                    float sLNext = (float)pcm[nextIdx * ch + 0] / 32768.0f * baseVolume;
-                    float sRNext = ch > 1 ? (float)pcm[nextIdx * ch + 1] / 32768.0f * baseVolume : sLNext;
-                    float interpL = sL + (sLNext - sL) * (float)frac;
-                    float interpR = sR + (sRNext - sR) * (float)frac;
-
-                    mix[dstI * 2 + 0] += interpL;
-                    if (dstNext < totalFrames)
-                        mix[dstNext * 2 + 0] += interpL * (1.0f - (float)frac);
-                    mix[dstI * 2 + 1] += interpR;
-                    if (dstNext < totalFrames)
-                        mix[dstNext * 2 + 1] += interpR * (1.0f - (float)frac);
-                }
-            }
+            srcPos += eventPbspeed;
         }
     }
 
@@ -696,6 +666,18 @@ void encodeReplayToMp4()
     namespace fs = std::filesystem;
     std::error_code ec;
     EXPORTLOG("=== ENCODE START ===");
+    {
+        StructuredLogger::Entry e;
+        e.category = StructuredCategory::Replay;
+        e.level = StructuredLevel::Important;
+        e.eventId = "REPLAY_ENCODE_STARTED";
+        e.correlationId = "REPLAY_EXPORT";
+        e.reason = "Replay encode started: building audio + muxing video";
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        StructuredLogger::instance().write(e);
+    }
 
     std::string outputPath = fs::absolute(gJob.outputPath).make_preferred().string();
     std::string nativeRaw = fs::absolute(gJob.rawTempPath).make_preferred().string();
@@ -747,6 +729,21 @@ void encodeReplayToMp4()
     if (!encodeOk) {
         EXPORTLOG("FAIL: output file missing after encoding (exit code %d)", gJob.ffmpegExitCode);
         printf("[RPLX] FAIL: output missing after encode\n");
+        {
+            StructuredLogger::Entry e;
+            e.category = StructuredCategory::Replay;
+            e.level = StructuredLevel::Errors;
+            e.eventId = "REPLAY_EXPORT_FAILED";
+            e.correlationId = "REPLAY_EXPORT";
+            e.reason = "FFmpeg encoding failed";
+            e.sourceFile = __FILE__;
+            e.sourceLine = __LINE__;
+            e.functionName = __FUNCTION__;
+            e.numericKeys = {"ffmpegExitCode"};
+            e.numericExpected = {(double)gJob.ffmpegExitCode};
+            e.numericActual = e.numericExpected;
+            StructuredLogger::instance().write(e);
+        }
         restoreReplayExportEditorState();
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "FFmpeg encoding failed, output missing. Exit code=" + std::to_string(gJob.ffmpegExitCode);
@@ -774,4 +771,20 @@ void encodeReplayToMp4()
     printf("[RPLX] Output file: %s\n", outputPath.c_str());
     Terminal::instance().addLog(std::string("[RPLX] Export complete: ") + outputPath);
     Terminal::instance().addLog(std::string("[RPLX] Export progress: 100%"));
+
+    {
+        StructuredLogger::Entry e;
+        e.category = StructuredCategory::Replay;
+        e.level = StructuredLevel::Important;
+        e.eventId = "REPLAY_EXPORT_SUCCEEDED";
+        e.correlationId = "REPLAY_EXPORT";
+        e.reason = "Replay export completed successfully";
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        e.numericKeys = {"outputSizeBytes", "capturedFrames"};
+        e.numericExpected = {(double)gJob.mp4FileBytes, (double)gJob.capturedTicks};
+        e.numericActual = e.numericExpected;
+        StructuredLogger::instance().write(e);
+    }
 }

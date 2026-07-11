@@ -591,6 +591,135 @@ void StructuredLogger::write(const Entry& e) {
     }
 }
 
+// ── Audio buffer analysis ───────────────────────────────────
+
+#include <cmath>
+#include <limits>
+#include <cfloat>
+
+template<typename T>
+static AudioBufferAnalysis analyzeAudioBufferImpl(
+    const std::vector<T>& buffer, uint32_t frameCount,
+    uint16_t channels, uint32_t sampleRate,
+    double threshold)
+{
+    AudioBufferAnalysis a;
+    a.sampleRate = sampleRate;
+    a.channels = channels;
+    a.frameCount = frameCount;
+    a.sampleCount = buffer.size();
+    a.durationSec = frameCount > 0 ? (double)frameCount / (double)sampleRate : 0.0;
+
+    uint64_t totalSamples = buffer.size();
+    if (totalSamples == 0 || frameCount == 0 || channels == 0) return a;
+
+    a.minSample = std::numeric_limits<double>::max();
+    a.maxSample = -std::numeric_limits<double>::max();
+    double sum = 0.0;
+    double sumSq = 0.0;
+
+    // Analyze samples per channel
+    std::vector<double> prevSample(channels, 0.0);
+    std::vector<bool> firstSamplePerCh(channels, true);
+
+    for (uint64_t i = 0; i < totalSamples; i++) {
+        double s = (double)buffer[i];
+        int ch = (int)(i % channels);
+
+        // Convert int16 if needed (normalize to [-1, 1])
+        if (std::numeric_limits<T>::is_integer) {
+            double maxVal = (double)std::numeric_limits<T>::max();
+            s = s / maxVal;
+        }
+
+        if (std::isnan(s)) { a.nanCount++; continue; }
+        if (std::isinf(s)) { a.infCount++; continue; }
+
+        if (s < a.minSample) a.minSample = s;
+        if (s > a.maxSample) a.maxSample = s;
+        sum += s;
+        sumSq += s * s;
+
+        if (std::fabs(s) <= 0.0001) a.zeroCount++;
+        if (std::fabs(s) >= 1.0) a.clipCount++;
+
+        // Discontinuity detection (per-channel, independent)
+        if (!firstSamplePerCh[ch]) {
+            double delta = std::fabs(s - prevSample[ch]);
+            if (delta > threshold) {
+                a.discontinuityCount++;
+                if (delta > a.largestDiscontinuity)
+                    a.largestDiscontinuity = delta;
+            }
+        }
+        prevSample[ch] = s;
+        firstSamplePerCh[ch] = false;
+
+        // Record first/last 16 samples
+        if (i < 16) a.firstSamples.push_back(s);
+        if (i >= totalSamples - 16) a.lastSamples.push_back(s);
+    }
+
+    uint64_t validSamples = totalSamples - a.nanCount - a.infCount;
+    if (validSamples > 0) {
+        a.mean = sum / (double)validSamples;
+        a.rms = std::sqrt(sumSq / (double)validSamples);
+    }
+    a.peak = std::max(std::fabs(a.minSample), std::fabs(a.maxSample));
+
+    return a;
+}
+
+AudioBufferAnalysis analyzeAudioBuffer(
+    const std::vector<float>& buffer, uint32_t frameCount,
+    uint16_t channels, uint32_t sampleRate,
+    uint32_t discontinuityThreshold)
+{
+    return analyzeAudioBufferImpl<float>(buffer, frameCount, channels, sampleRate, (double)discontinuityThreshold);
+}
+
+AudioBufferAnalysis analyzeAudioBuffer(
+    const std::vector<int16_t>& buffer, uint32_t frameCount,
+    uint16_t channels, uint32_t sampleRate,
+    uint32_t discontinuityThreshold)
+{
+    return analyzeAudioBufferImpl<int16_t>(buffer, frameCount, channels, sampleRate, (double)discontinuityThreshold);
+}
+
+void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
+    const std::string& eventId, const std::string& correlationId,
+    const std::string& stage, const AudioBufferAnalysis& a)
+{
+    if (!StructuredLogger::instance().shouldLog(cat, level)) return;
+
+    StructuredLogger::Entry e;
+    e.category = cat;
+    e.level = level;
+    e.eventId = eventId;
+    e.correlationId = correlationId;
+    e.reason = "Audio buffer analysis: " + stage;
+    e.sourceFile = __FILE__;
+    e.sourceLine = __LINE__;
+    e.functionName = __FUNCTION__;
+
+    e.numericKeys = {
+        "sampleRate", "channels", "frameCount", "durationSec",
+        "minSample", "maxSample", "mean", "rms", "peak",
+        "zeroCount", "nanCount", "infCount", "clipCount",
+        "discontinuityCount", "largestDiscontinuity"
+    };
+    e.numericExpected = {
+        (double)a.sampleRate, (double)a.channels, (double)a.frameCount, a.durationSec,
+        a.minSample, a.maxSample, a.mean, a.rms, a.peak,
+        (double)a.zeroCount, (double)a.nanCount, (double)a.infCount, (double)a.clipCount,
+        (double)a.discontinuityCount, a.largestDiscontinuity
+    };
+    e.numericActual = e.numericExpected;
+    e.tolerance = 0.0;
+
+    StructuredLogger::instance().write(e);
+}
+
 // ── Numeric assertion ───────────────────────────────────────
 
 void StructuredLogger::assertNear(
