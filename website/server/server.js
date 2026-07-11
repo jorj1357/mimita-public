@@ -1071,14 +1071,8 @@ app.use("/api/game/analytics", gameAnalyticsRateLimit, gameAnalyticsRouter)
 app.use("/api", gameApiRouter)
 
 // Serve generated article/news JSON — the admin editor is the source of truth
-import path from "path"
-import fs from "fs"
-import { fileURLToPath } from "url"
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PUBLIC_DIR = path.resolve(__dirname, "public")
-
 app.get("/articles.generated.json", (req, res) => {
-  const filePath = path.join(PUBLIC_DIR, "articles.generated.json")
+  const filePath = path.resolve("public", "articles.generated.json")
   if (fs.existsSync(filePath)) {
     res.setHeader("Content-Type", "application/json")
     res.sendFile(filePath)
@@ -1090,7 +1084,7 @@ app.get("/articles.generated.json", (req, res) => {
 })
 
 app.get("/news.generated.json", (req, res) => {
-  const filePath = path.join(PUBLIC_DIR, "news.generated.json")
+  const filePath = path.resolve("public", "news.generated.json")
   if (fs.existsSync(filePath)) {
     res.setHeader("Content-Type", "application/json")
     res.sendFile(filePath)
