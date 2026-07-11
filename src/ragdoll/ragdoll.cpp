@@ -437,8 +437,7 @@ void RagdollDeathSystem::update(
                 queryBounds.min = part.position - glm::vec3(r + 2.0f);
                 queryBounds.max = part.position + glm::vec3(r + 2.0f);
                 std::vector<int> candidates;
-                appendChunkTrianglesForAABB(
-                    const_cast<World&>(world), queryBounds, 0.1f, candidates);
+                appendChunkTrianglesForAABB(const_cast<World&>(world), queryBounds, 0.1f, candidates, "ragdollWorldCollision");
 
                 for (int ti : candidates) {
                     if (ti < 0 ||

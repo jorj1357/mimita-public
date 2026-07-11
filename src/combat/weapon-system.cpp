@@ -232,7 +232,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 rayBounds.min = glm::min(camera.pos, crossPos);
                 rayBounds.max = glm::max(camera.pos, crossPos);
                 std::vector<int> candidates;
-                appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+                appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates, "weaponCrosshairOcclusion");
                 for (int ti : candidates)
                 {
                     if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;

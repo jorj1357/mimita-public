@@ -40,7 +40,7 @@ bool lineOfSight(glm::vec3 from, glm::vec3 to, const World& world)
     rayBounds.min = glm::min(from, to);
     rayBounds.max = glm::max(from, to);
     std::vector<int> candidates;
-    appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates);
+    appendChunkTrianglesForAABB(world, rayBounds, 0.1f, candidates, "npcLineOfSight");
 
     for (int ti : candidates)
     {

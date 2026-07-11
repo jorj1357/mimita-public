@@ -108,7 +108,7 @@ AimTarget computeAimTarget(
         aimBounds.min = glm::min(camera.pos, aimEnd) - glm::vec3(0.1f);
         aimBounds.max = glm::max(camera.pos, aimEnd) + glm::vec3(0.1f);
         std::vector<int> candidates;
-        appendChunkTrianglesForAABB(world, aimBounds, 0.1f, candidates);
+        appendChunkTrianglesForAABB(world, aimBounds, 0.1f, candidates, "computeAimTarget");
         for (int triIndex : candidates) {
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
             float d = 0.0f;
@@ -380,7 +380,7 @@ BeamCollisionResult collideBeam(
         rayBounds.min -= glm::vec3(expansion);
         rayBounds.max += glm::vec3(expansion);
         std::vector<int> candidates;
-        appendChunkTrianglesForAABB(world, rayBounds, expansion, candidates);
+        appendChunkTrianglesForAABB(world, rayBounds, expansion, candidates, "collideBeam");
         int rejectedCount = 0;
         float firstHitDist = maxDistance;
         for (int triIndex : candidates) {

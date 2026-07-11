@@ -60,24 +60,14 @@ extern bool gReplayExportRenderMode;
 void engineTick(Engine& engine)
 {
     MIMITA_PERF_SCOPE("EngineTick");
-    Perf::ScopedTimer _frame("FrameOverhead");
     auto tFrameStart = std::chrono::steady_clock::now();
     HEARTBEAT("FRAME START");
 
     float dt;
     bool worldPassRan;
-    {
-        Perf::ScopedTimer _t("Setup");
-        engineTickSetup(engine, dt, worldPassRan);
-    }
-    {
-        Perf::ScopedTimer _t("Audio");
-        engineTickAudio(dt);
-    }
-    {
-        Perf::ScopedTimer _t("State");
-        engineTickState(engine, dt);
-    }
+    { MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
+    { MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
+    { MIMITA_PERF_SCOPE("State"); engineTickState(engine, dt); }
     HEARTBEAT("after state");
 
     const bool replayExportForceRender =
@@ -86,20 +76,20 @@ void engineTick(Engine& engine)
 
     if (GAME_STATE == GAME_PLAYING || replayExportForceRender)
     {
-        { Perf::ScopedTimer _t("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
-        { Perf::ScopedTimer _t("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
-        { Perf::ScopedTimer _t("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
-        { Perf::ScopedTimer _t("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
-        { Perf::ScopedTimer _t("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
-        { Perf::ScopedTimer _t("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
+        { MIMITA_PERF_SCOPE("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
+        { MIMITA_PERF_SCOPE("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
+        { MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
+        { MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
+        { MIMITA_PERF_SCOPE("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
+        { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
 
-        { Perf::ScopedTimer _t("DevOverlay");
+        { MIMITA_PERF_SCOPE("DevOverlay");
         if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay)
             DevOverlay::instance().render();
         }
     }
 
-    { Perf::ScopedTimer _t("Menus");
+    { MIMITA_PERF_SCOPE("Menus");
     uiUpdateMedia(dt);
 
     if (GAME_STATE == GAME_MENU && !isReplayExportActive())
@@ -182,33 +172,16 @@ void engineTick(Engine& engine)
     }
 
     HEARTBEAT("before terminal");
-    { Perf::ScopedTimer _t("Terminal"); Terminal::instance().render(); }
+    { MIMITA_PERF_SCOPE("Terminal"); Terminal::instance().render(); }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     HEARTBEAT("end frame");
-    { Perf::ScopedTimer _t("Swap"); engine.endFrame(); }
+    { MIMITA_PERF_SCOPE("Swap"); engine.endFrame(); }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(9); }
     { Perf::ScopedTimer _t("Diag"); diagRenderFrameEnd(); }
     Perf::endFrame();
 
-    // On spike, dump spike context to dedicated file
-    {
-        static float sLastSpikeMs = 0.0f;
-        static auto sLastSpikeTime = std::chrono::steady_clock::now();
-        float frameMs = std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - tFrameStart).count();
-        if (frameMs > gPerfBudget.spikeThresholdMs &&
-            frameMs > sLastSpikeMs * 0.5f) {
-            sLastSpikeMs = frameMs;
-            sLastSpikeTime = std::chrono::steady_clock::now();
-            int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
-            if (gFrameHistoryCount > 0)
-                perfDumpSpikeContext(gFrameHistory[lastIdx].frameNumber,
-                    gPerfBudget.historyFramesBeforeSpike,
-                    gPerfBudget.historyFramesAfterSpike);
-        }
-    }
-    { Perf::ScopedTimer _t("Sleep"); gFramePacer.endFrame(); }
+    { MIMITA_PERF_SCOPE("Sleep"); gFramePacer.endFrame(); }
 
     // ── Structured logger config hot-reload ──────────
     StructuredLogger::instance().pollConfig();

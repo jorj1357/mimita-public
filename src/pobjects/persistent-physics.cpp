@@ -225,7 +225,7 @@ void PersistentPhysicsSystem::checkCollisions(
         queryBounds.min = obj.position - glm::vec3(r + 0.5f);
         queryBounds.max = obj.position + glm::vec3(r + 0.5f);
         std::vector<int> candidates;
-        appendChunkTrianglesForAABB(const_cast<World&>(world), queryBounds, 0.1f, candidates);
+        appendChunkTrianglesForAABB(const_cast<World&>(world), queryBounds, 0.1f, candidates, "persistentPhysicsCollide");
 
         for (int ti : candidates) {
             if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
