@@ -207,6 +207,39 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     if (hasConfig && vmcfg)
         mTint = vmcfg->color;
 
+    // State-based tint override for rocket launcher and grenade launcher:
+    //   - Reloading → grey (0.2, 0.2, 0.2)
+    //   - Empty magazine → flash purple/yellow every ~60 ticks
+    //   - Fire delay active → full red
+    if (def && (def->id == "rocket_launcher" || def->id == "grenade_launcher") &&
+        player.weaponRuntimes.count(def->id))
+    {
+        const WeaponRuntime& rt = player.weaponRuntimes.at(def->id);
+
+        // Reloading overrides everything — weapon is fully disabled
+        if (rt.isReloading) {
+            mTint = glm::vec3(0.2f, 0.2f, 0.2f);
+        }
+        // Empty magazine — flash between purple and yellow
+        else if (rt.currentAmmo <= 0) {
+            mEmptyFlashTimer += dt;
+            // Alternate every ~60 ticks (1 second at 60 FPS)
+            int phase = (int)(mEmptyFlashTimer * 60.0f) % 120;
+            mTint = (phase < 60) ? glm::vec3(0.8f, 0.2f, 0.8f)   // purple
+                                 : glm::vec3(1.0f, 1.0f, 0.2f);   // yellow
+        }
+        // Fire delay active — weapon is on cooldown
+        else if (rt.fireCooldown > 0.0f) {
+            mTint = glm::vec3(1.0f, 0.0f, 0.0f);  // full red
+        }
+        else {
+            mEmptyFlashTimer = 0.0f;
+        }
+    }
+    else {
+        mEmptyFlashTimer = 0.0f;
+    }
+
     // Weapon collision capsule (grip→tip→radius). Computed from model bounds below.
 
     if (world)
