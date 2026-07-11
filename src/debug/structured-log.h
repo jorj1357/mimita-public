@@ -166,6 +166,46 @@ private:
     int mConfigReloadErrors = 0;
 };
 
+// ── Audio buffer analysis ───────────────────────────────────
+struct AudioBufferAnalysis {
+    uint32_t sampleRate = 0;
+    uint16_t channels = 0;
+    uint64_t frameCount = 0;
+    uint64_t sampleCount = 0;
+    double durationSec = 0.0;
+    double minSample = 0.0;
+    double maxSample = 0.0;
+    double mean = 0.0;
+    double rms = 0.0;
+    double peak = 0.0;
+    uint64_t zeroCount = 0;
+    uint64_t nanCount = 0;
+    uint64_t infCount = 0;
+    uint64_t clipCount = 0;
+    uint64_t discontinuityCount = 0;
+    double largestDiscontinuity = 0.0;
+    std::vector<double> firstSamples;
+    std::vector<double> lastSamples;
+};
+
+// Analyze a float audio buffer and return metrics.
+// channels must be 1 or 2. For stereo, left/right are analyzed separately.
+AudioBufferAnalysis analyzeAudioBuffer(
+    const std::vector<float>& buffer, uint32_t frameCount,
+    uint16_t channels, uint32_t sampleRate,
+    uint32_t discontinuityThreshold = 0.8f);
+
+// Analyze an int16 audio buffer (same interface).
+AudioBufferAnalysis analyzeAudioBuffer(
+    const std::vector<int16_t>& buffer, uint32_t frameCount,
+    uint16_t channels, uint32_t sampleRate,
+    uint32_t discontinuityThreshold = 0x7FFF);
+
+// Convenient: log an audio buffer analysis to a category
+void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
+    const std::string& eventId, const std::string& correlationId,
+    const std::string& stage, const AudioBufferAnalysis& analysis);
+
 // ── Convenience macros ──────────────────────────────────────
 // These capture __FILE__, __LINE__, __FUNCTION__ automatically.
 

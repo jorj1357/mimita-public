@@ -636,13 +636,21 @@ void engineTickCamera(Engine& engine, float dt)
                 gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
 
             // Structured log: camera state after keyframe interpolation
+            // Compares actual front/right/up to expected values from spherical formula.
             if (isReplayExportActive() && StructuredLogger::instance().shouldLog(
                     StructuredCategory::Camera, StructuredLevel::Trace)) {
                 uint32_t ct = gReplayPlayer.currentTick();
+                // Compute expected forward from camera's yaw/pitch
+                float ey = glm::radians(camera.yaw);
+                float ep = glm::radians(camera.pitch);
+                glm::vec3 expFront = glm::normalize(glm::vec3(
+                    std::cos(ey) * std::cos(ep),
+                    std::sin(ey) * std::cos(ep),
+                    std::sin(ep)));
                 StructuredLogger::Entry ce;
                 ce.category = StructuredCategory::Camera;
                 ce.level = StructuredLevel::Trace;
-                ce.eventId = "CAMERA_STATE";
+                ce.eventId = "CAM_KF_STATE";
                 ce.correlationId = "REPLAY_FRAME_" + std::to_string(ct);
                 ce.reason = "Camera state after keyframe interpolation";
                 ce.sourceFile = __FILE__;
@@ -650,21 +658,26 @@ void engineTickCamera(Engine& engine, float dt)
                 ce.functionName = __FUNCTION__;
                 ce.tick = ct;
                 ce.frame = ct;
-                ce.numericKeys.push_back("pos_x");
-                ce.numericExpected.push_back(camera.pos.x);
-                ce.numericKeys.push_back("pos_y");
-                ce.numericExpected.push_back(camera.pos.y);
-                ce.numericKeys.push_back("pos_z");
-                ce.numericExpected.push_back(camera.pos.z);
-                ce.numericKeys.push_back("yaw");
-                ce.numericExpected.push_back(camera.yaw);
-                ce.numericKeys.push_back("pitch");
-                ce.numericExpected.push_back(camera.pitch);
-                ce.numericKeys.push_back("roll");
-                ce.numericExpected.push_back(camera.roll);
-                ce.numericKeys.push_back("fov");
-                ce.numericExpected.push_back(camera.fov);
-                ce.numericActual = ce.numericExpected;
+                // Position
+                ce.numericKeys = {"pos_x","pos_y","pos_z",
+                    "front_x","front_y","front_z",
+                    "right_x","right_y","right_z",
+                    "up_x","up_y","up_z",
+                    "exp_front_x","exp_front_y","exp_front_z",
+                    "yaw","pitch","roll","fov"};
+                ce.numericExpected = {camera.pos.x,camera.pos.y,camera.pos.z,
+                    expFront.x,expFront.y,expFront.z,
+                    camera.right.x,camera.right.y,camera.right.z,
+                    camera.up.x,camera.up.y,camera.up.z,
+                    expFront.x,expFront.y,expFront.z,
+                    camera.yaw,camera.pitch,camera.roll,camera.fov};
+                ce.numericActual = {camera.pos.x,camera.pos.y,camera.pos.z,
+                    camera.front.x,camera.front.y,camera.front.z,
+                    camera.right.x,camera.right.y,camera.right.z,
+                    camera.up.x,camera.up.y,camera.up.z,
+                    camera.front.x,camera.front.y,camera.front.z,
+                    camera.yaw,camera.pitch,camera.roll,camera.fov};
+                ce.tolerance = 0.001;
                 StructuredLogger::instance().write(ce);
             }
         }

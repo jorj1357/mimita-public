@@ -165,4 +165,8 @@ void drawDebugStuff(const Player& player,
                     const Camera& camera,
                     const World& world);
 
+// Camera axis debug visualization (red=right, green=up, blue=forward)
+// Toggle with: cam_axis_debug 1|0
+extern bool gCamAxisDebug;
+
 

@@ -38,6 +38,17 @@ void registerDebugCommands()
     registerDebugToggle("collision_trace", DebugConfig::DEBUG_COLLISION_TRACE);
     registerDebugToggle("collision_debug_player", DebugConfig::DEBUG_COLLISION_PLAYER);
     registerDebugToggle("collision_debug_limb", DebugConfig::DEBUG_COLLISION_LIMB);
+
+    // Camera axis debug (not in DebugConfig, standalone global)
+    Terminal::instance().registerCommand({
+        "cam_axis_debug", "Toggle camera axis debug visualization (RGB arrows at camera)",
+        "cam_axis_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gCamAxisDebug;
+            gCamAxisDebug = args.empty() ? !gCamAxisDebug : args[0] != "0";
+            Terminal::instance().addLog(std::string("[DEBUG] cam_axis_debug=") + (gCamAxisDebug ? "1" : "0"));
+        }
+    });
     registerDebugToggle("show_body_colliders", DebugConfig::DEBUG_COLLISION_LIMB);
     registerDebugToggle("body_collision_push", DebugConfig::DEBUG_COLLISION_BODY_PUSH);
     registerDebugToggle("show_body_contacts", DebugConfig::DEBUG_COLLISION_SYSTEM);

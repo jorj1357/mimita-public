@@ -34,6 +34,11 @@ extern void drawCollisionEvents(const Camera& camera);
 extern void drawCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color);
 extern void drawTransformAxes(const Camera& camera, const glm::mat4& transform, float scale);
 
+// Camera axis debug: draws RGB axes at camera origin
+// Red = right, Green = up, Blue = forward
+// Toggle with: cam_axis_debug 1|0
+bool gCamAxisDebug = false;
+
 void drawDebugStuff(const Player& player, const Camera& camera, const World& world)
 {
     if (!DebugVis::enabled()) return;
@@ -273,6 +278,25 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
     flushDebugTris(camera);
     flushDebugLines(camera);
     drawDebugLabels(camera);
+
+    // ── Camera axis debug ─────────────────────────────────
+    // Draws RGB arrows at the camera origin.
+    // Red = right, Green = up, Blue = forward.
+    if (gCamAxisDebug) {
+        const float axisLen = 1.5f;
+        glm::vec3 origin = camera.pos;
+        // Right (+X) in world space
+        ::drawLine(camera, origin, origin + camera.right * axisLen,
+                   {1.0f, 0.0f, 0.0f, 1.0f});  // red
+        // Up (+Z in Z-up system)
+        ::drawLine(camera, origin, origin + camera.up * axisLen,
+                   {0.0f, 1.0f, 0.0f, 1.0f});  // green
+        // Forward
+        ::drawLine(camera, origin, origin + camera.front * axisLen,
+                   {0.0f, 0.0f, 1.0f, 1.0f});  // blue
+        // Also draw a small cross at origin
+        ::drawPointCross(camera, origin, 0.1f, {1.0f, 1.0f, 1.0f, 1.0f});
+    }
 }
 
 namespace DebugVis {

@@ -27,6 +27,7 @@
 #include "render/post-fx.h"
 #include "audio/audio-codec.h"
 #include "replay/replay-export.h"
+#include "debug/structured-log.h"
 #include "gui/hud/player-nameplates.h"
 
 void encodeReplayToMp4();
@@ -354,6 +355,23 @@ bool startReplayExport(const std::string& jsonPath, int renderWidth, int renderH
     gJob.frameWriteCount = 0;
     gJob.rawFileBytes = 0;
     gJob.mp4FileBytes = 0;
+
+    {
+        StructuredLogger::Entry e;
+        e.category = StructuredCategory::Replay;
+        e.level = StructuredLevel::Important;
+        e.eventId = "REPLAY_EXPORT_STARTED";
+        e.correlationId = "REPLAY_EXPORT";
+        e.reason = "Replay export started";
+        e.sourceFile = __FILE__;
+        e.sourceLine = __LINE__;
+        e.functionName = __FUNCTION__;
+        e.numericKeys = {"totalTicks", "videoWidth", "videoHeight"};
+        e.numericExpected = {(double)totalTicks, (double)captureW, (double)captureH};
+        e.numericActual = e.numericExpected;
+        StructuredLogger::instance().write(e);
+    }
+
     return true;
 }
 
