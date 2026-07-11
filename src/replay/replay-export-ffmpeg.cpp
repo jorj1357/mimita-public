@@ -26,6 +26,7 @@
 #include "video/outro.h"
 #include <nlohmann/json.hpp>
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "audio/audio-codec.h"
 #include "replay/replay.h"
 #include "terminal/terminal-state.h"
@@ -103,24 +104,60 @@ static bool writeWavFile(const std::string& path, const std::vector<int16_t>& sa
     return true;
 }
 
+// Simulate the export capture loop to compute how many video frames
+// will be rendered under the current speed keyframes.
+static uint32_t computeSpeedAwareFrameCount(uint32_t totalTicks)
+{
+    if (!gReplayEditor.isLoaded() || gReplayEditor.timeKeyframeCount() == 0)
+        return totalTicks;
+    double exportTick = 0.0;
+    uint32_t frames = 0;
+    while (exportTick < (double)totalTicks) {
+        double speed = gReplayEditor.playbackSpeedAtTick((int)exportTick);
+        exportTick += speed;
+        frames++;
+    }
+    return frames;
+}
+
+// Map an original replay tick to its export-frame index (position in the
+// speed-affected output). Simulates the same capture loop used by
+// updateReplayExport() so audio events stay synchronized with video.
+static uint32_t originalTickToExportFrame(uint32_t origTick, uint32_t totalTicks)
+{
+    if (!gReplayEditor.isLoaded() || gReplayEditor.timeKeyframeCount() == 0)
+        return origTick;
+    double exportTick = 0.0;
+    uint32_t frame = 0;
+    while (exportTick < (double)origTick && (double)origTick > 0.0) {
+        double speed = gReplayEditor.playbackSpeedAtTick((int)exportTick);
+        exportTick += speed;
+        frame++;
+        if (frame > totalTicks * 4) break; // safety
+    }
+    return frame;
+}
+
 static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
 {
     const auto& events = REPLAY_PLAYER.soundEvents();
     printf("[RPLX AUDIO] Audio system initialized\n");
     printf("[RPLX AUDIO] Total sound events in replay: %zu\n", events.size());
 
+    uint32_t videoFrames = computeSpeedAwareFrameCount(totalTicks);
+
     RPLXDEBUG("====================\n");
     RPLXDEBUG("REPLAY EXPORT\n");
     RPLXDEBUG("====================\n\n");
     RPLXDEBUG("Replay length: %.2f sec\n", (double)totalTicks / 60.0);
-    RPLXDEBUG("Frame count: %u\n", totalTicks);
-    RPLXDEBUG("Tick count: %u\n", totalTicks);
+    RPLXDEBUG("Source tick count: %u\n", totalTicks);
+    RPLXDEBUG("Speed-aware video frames: %u\n", videoFrames);
     RPLXDEBUG("Total sound events: %zu\n\n", events.size());
 
     uint32_t sampleRate = 48000;
     uint16_t numChannels = 2;
     double tickRate = 60.0;
-    double totalDurationSec = (double)totalTicks / tickRate;
+    double totalDurationSec = (double)videoFrames / tickRate;
     size_t totalFrames = (size_t)(totalDurationSec * sampleRate);
     size_t totalSamples = totalFrames * numChannels;
 
@@ -154,19 +191,34 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
                 size_t cropEndFrame = musicCropEnd > 0.0
                     ? (size_t)(musicCropEnd * (double)sampleRate)
                     : musicFrames;
-                // Sample-accurate mixing with offset + crop + speed + pbspeed
-                for (size_t tick = 0; tick < totalTicks; ++tick) {
-                    double pbspeed = 1.0;
-                    if (gReplayEditor.isLoaded())
-                        pbspeed = gReplayEditor.playbackSpeedAtTick((int)tick);
-                    double songTime = musicOffset + musicCropStart
-                                    + ((double)tick / tickRate) * musicSpeedMul * pbspeed;
-                    size_t frame = (size_t)(songTime * (double)sampleRate);
-                    if (frame >= cropEndFrame || frame >= musicFrames) break;
-                    float sL = (float)musicPCM[frame * 2 + 0] / 32768.0f * musicVolume;
-                    float sR = (float)musicPCM[frame * 2 + 1] / 32768.0f * musicVolume;
-                    mix[tick * 2 + 0] += sL;
-                    mix[tick * 2 + 1] += sR;
+                // Sample-accurate mixing with offset + crop + speed + pbspeed.
+                // Match the video capture loop: iterate over export-frame positions
+                // (speed-aware) so music stays synchronized with video.
+                // Fill a CONTIGUOUS block of audio samples per video frame.
+                // Each video frame (1/60s) corresponds to 800 audio samples at 48kHz.
+                // Writing only one sample per frame produces a 60 Hz click train.
+                double songTime = musicOffset + musicCropStart;
+                double exportTick = 0.0;
+                size_t samplesPerFrame = (size_t)(sampleRate / tickRate); // 800
+                for (uint32_t frameIdx = 0; frameIdx < videoFrames; ++frameIdx) {
+                    double pbspeed = gReplayEditor.isLoaded()
+                        ? gReplayEditor.playbackSpeedAtTick((int)exportTick)
+                        : 1.0;
+                    size_t srcPos = (size_t)(songTime * (double)sampleRate);
+                    size_t dstPos = (size_t)((double)frameIdx * sampleRate / tickRate);
+                    if (dstPos >= totalFrames) break;
+                    size_t samplesToWrite = std::min({samplesPerFrame,
+                        musicFrames > srcPos ? musicFrames - srcPos : 0,
+                        totalFrames - dstPos});
+                    if (srcPos >= cropEndFrame || srcPos >= musicFrames) break;
+                    for (size_t s = 0; s < samplesToWrite; s++) {
+                        float sL = (float)musicPCM[(srcPos + s) * 2 + 0] / 32768.0f * musicVolume;
+                        float sR = (float)musicPCM[(srcPos + s) * 2 + 1] / 32768.0f * musicVolume;
+                        mix[(dstPos + s) * 2 + 0] += sL;
+                        mix[(dstPos + s) * 2 + 1] += sR;
+                    }
+                    songTime += (1.0 / tickRate) * musicSpeedMul * pbspeed;
+                    exportTick += pbspeed;
                 }
                 musicIncluded = true;
                 printf("[RPLX AUDIO] Music track mixed: %zu frames at %.1f sec (offset=%.1f crop=%.1f-%.1f speed=%.2f)\n",
@@ -365,7 +417,9 @@ static bool buildExportAudio(const std::string& wavPath, uint32_t totalTicks)
         }
         decodedCount++;
 
-        double eventTime = (double)event.tick / tickRate;
+        uint32_t eventExportFrame = originalTickToExportFrame(
+            (uint32_t)event.tick, totalTicks);
+        double eventTime = (double)eventExportFrame / tickRate;
         size_t dstFrame = (size_t)(eventTime * sampleRate);
         size_t srcFrames = pcm.size() / ch;
         float baseVolume = event.volume * spatialAtten;
@@ -583,7 +637,8 @@ static bool encodeVideo(const std::string& nativeOutput, bool withAudio)
         audioCodec = "-c:a aac -b:a 192k";
     }
 
-    std::string framesV = "-frames:v " + std::to_string(gJob.totalTicks) + " ";
+    uint32_t actualFrames = gJob.capturedTicks > 0 ? gJob.capturedTicks : gJob.totalTicks;
+    std::string framesV = "-frames:v " + std::to_string(actualFrames) + " ";
     std::string crfStr = "-crf " + std::to_string(gExportConfig.exportCrf) + " ";
     std::string bitrateStr;
     if (gExportConfig.exportBitrate > 0) {
@@ -692,6 +747,7 @@ void encodeReplayToMp4()
     if (!encodeOk) {
         EXPORTLOG("FAIL: output file missing after encoding (exit code %d)", gJob.ffmpegExitCode);
         printf("[RPLX] FAIL: output missing after encode\n");
+        restoreReplayExportEditorState();
         gJob.state = ReplayExportJob::Failed;
         gJob.errorMsg = "FFmpeg encoding failed, output missing. Exit code=" + std::to_string(gJob.ffmpegExitCode);
         return;
@@ -703,6 +759,9 @@ void encodeReplayToMp4()
               (unsigned long long)gJob.mp4FileBytes, (double)gJob.mp4FileBytes / 1024.0);
     printf("[RPLX] PASS: output exists, size=%llu bytes\n", (unsigned long long)gJob.mp4FileBytes);
     printf("[RPLX AUDIO] Mux successful: yes\n");
+
+    // Restore editor freecam state after export to prevent session corruption
+    restoreReplayExportEditorState();
 
     EXPORTLOG("[AUTO OUTRO] starting");
     appendOutroToFinishedMp4(outputPath.c_str());

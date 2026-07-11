@@ -4,6 +4,7 @@
 #include "config.h"
 #include "replay/replay.h"
 #include "hot-reload/hot-reload-system.h"
+#include "perf/perf-spike.h"
 
 #include <cstdio>
 #include <cstring>
@@ -32,6 +33,7 @@ void EffectPartSystem::init() {
 }
 
 void EffectPartSystem::update(float dt) {
+    MIMITA_PERF_SCOPE("EffectPartSystem::Update");
     const GameAPI* gameAPI = HotReloadSystem::instance().gameAPI();
     bool updatedByGameDLL = false;
     if (gameAPI && gameAPI->updateEffects) {

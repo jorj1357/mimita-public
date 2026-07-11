@@ -5,6 +5,10 @@
 #include <chrono>
 #include <cstring>
 
+// Forward declarations for spike profiler integration
+struct PerfBudgetConfig;
+extern PerfBudgetConfig gPerfBudget;
+
 struct PerfTimes {
     double input = 0.0;
     double setup = 0.0;
@@ -273,6 +277,7 @@ struct PerfState {
 
     int allocationsThisFrame = 0;
     int totalAllocations = 0;
+    int assetLoadsThisFrame = 0;
 
     bool soundLoadsDetected = false;
     int soundLoadCount = 0;
@@ -395,3 +400,5 @@ double exclusive(const PerfTimes& t, const PerfTimes& children, const char* name
 } // namespace Perf
 
 void registerPerfCommands();
+void perfLoadBudgetConfig();
+void perfResetScopes();

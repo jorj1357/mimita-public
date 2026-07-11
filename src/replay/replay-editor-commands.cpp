@@ -29,9 +29,14 @@ static void requireEditor(const char* cmd) {
 }
 
 static glm::quat eulerToQuat(float yawDeg, float pitchDeg) {
-    glm::quat qYaw = glm::angleAxis(glm::radians(yawDeg), glm::vec3(0.0f, 0.0f, 1.0f));
-    glm::quat qPitch = glm::angleAxis(glm::radians(pitchDeg), glm::vec3(0.0f, 1.0f, 0.0f));
-    return qYaw * qPitch;
+    // Build front from yaw/pitch using gameplay camera formula,
+    // then use quatLookAt — consistent with K-key keyframes and
+    // the interpolation extraction rot * (0,0,-1).
+    glm::vec3 front;
+    front.x = std::cos(glm::radians(yawDeg)) * std::cos(glm::radians(pitchDeg));
+    front.y = std::sin(glm::radians(yawDeg)) * std::cos(glm::radians(pitchDeg));
+    front.z = std::sin(glm::radians(pitchDeg));
+    return glm::quatLookAt(glm::normalize(front), glm::vec3(0,0,1));
 }
 
 // ── Command implementations ─────────────────────────────────

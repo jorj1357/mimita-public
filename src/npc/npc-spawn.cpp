@@ -8,6 +8,7 @@
 #include <glm/gtc/constants.hpp>
 
 #include "debug/debug-log.h"
+#include "perf/perf-spike.h"
 #include "physics/config.h"
 #include "game/spawn-override.h"
 #include "audio/audio.h"
@@ -138,6 +139,7 @@ void NpcSystem::clear()
 
 void NpcSystem::spawnNpc(float difficulty)
 {
+    MIMITA_PERF_SCOPE("NpcSystem::SpawnNpc");
     Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
     uint32_t id = nextNpcId();

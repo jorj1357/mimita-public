@@ -21,6 +21,7 @@
 #include "config/player-settings.h"
 #include "config/camera-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/debug-visuals.h"
 #include "game/duel.h"
 #include "devtools/terminal.h"
@@ -287,8 +288,9 @@ void engineTickCamera(Engine& engine, float dt)
                 if (gReplayEditor.freecam) {
                     gReplayEditor.mPrevCameraMode = REPLAY_PLAYER.cameraController().modeName();
                     gReplayEditor.freecamPos = camera.pos;
-                    gReplayEditor.freecamRot = glm::quat(glm::vec3(
-                        glm::radians(camera.pitch), glm::radians(camera.yaw), 0.0f));
+                    gReplayEditor.freecamRot = glm::quatLookAt(
+                        glm::normalize(camera.front), glm::vec3(0,0,1));
+                    gReplayEditor.freecamRoll = camera.roll;
                     gReplayEditor.freecamFov = camera.fov;
                     REPLAY_PLAYER.cameraController().setMode("freecam");
                 } else {
@@ -332,10 +334,11 @@ void engineTickCamera(Engine& engine, float dt)
                         gReplayEditor.freecamPos = kf.position;
                         gReplayEditor.freecamRot = kf.rotation;
                         camera.pos = kf.position;
-                        camera.front = glm::normalize(kf.rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                        camera.front = glm::normalize(kf.rotation * glm::vec3(0.0f, 0.0f, -1.0f));
                         camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
                         camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                         camera.fov = kf.fov;
+                        camera.roll = kf.roll;
                         camera.updateVectors();
                     }
                 }
@@ -359,10 +362,11 @@ void engineTickCamera(Engine& engine, float dt)
                         gReplayEditor.freecamPos = kf.position;
                         gReplayEditor.freecamRot = kf.rotation;
                         camera.pos = kf.position;
-                        camera.front = glm::normalize(kf.rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                        camera.front = glm::normalize(kf.rotation * glm::vec3(0.0f, 0.0f, -1.0f));
                         camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
                         camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                         camera.fov = kf.fov;
+                        camera.roll = kf.roll;
                         camera.updateVectors();
                     }
                 }
@@ -423,21 +427,22 @@ void engineTickCamera(Engine& engine, float dt)
                                 gReplayEditor.freecamRoll = posKf.roll;
                                 gReplayEditor.freecamFov = posKf.fov;
                                 camera.pos = posKf.position;
-                                camera.front = glm::normalize(posKf.rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                                camera.front = glm::normalize(posKf.rotation * glm::vec3(0.0f, 0.0f, -1.0f));
                                 camera.yaw = glm::degrees(std::atan2(camera.front.y, camera.front.x));
                                 camera.pitch = glm::degrees(std::asin(std::clamp(camera.front.z, -1.0f, 1.0f)));
                                 camera.fov = posKf.fov;
+                                camera.roll = posKf.roll;
                                 camera.updateVectors();
                             } else {
                                 gReplayEditor.freecamPos = camera.pos;
-                                gReplayEditor.freecamRot = glm::quat(glm::vec3(
-                                    glm::radians(camera.pitch), glm::radians(camera.yaw), 0.0f));
+                                gReplayEditor.freecamRot = glm::quatLookAt(
+                                    glm::normalize(camera.front), glm::vec3(0,0,1));
                                 gReplayEditor.freecamFov = camera.fov;
                             }
                         } else {
                             gReplayEditor.freecamPos = camera.pos;
-                            gReplayEditor.freecamRot = glm::quat(glm::vec3(
-                                glm::radians(camera.pitch), glm::radians(camera.yaw), 0.0f));
+                            gReplayEditor.freecamRot = glm::quatLookAt(
+                                glm::normalize(camera.front), glm::vec3(0,0,1));
                             gReplayEditor.freecamFov = camera.fov;
                         }
                         gReplayEditor.freecam = true;
@@ -629,6 +634,39 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.front.x, camera.front.y, camera.front.z,
                 camera.fov, camera.roll,
                 gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
+
+            // Structured log: camera state after keyframe interpolation
+            if (isReplayExportActive() && StructuredLogger::instance().shouldLog(
+                    StructuredCategory::Camera, StructuredLevel::Trace)) {
+                uint32_t ct = gReplayPlayer.currentTick();
+                StructuredLogger::Entry ce;
+                ce.category = StructuredCategory::Camera;
+                ce.level = StructuredLevel::Trace;
+                ce.eventId = "CAMERA_STATE";
+                ce.correlationId = "REPLAY_FRAME_" + std::to_string(ct);
+                ce.reason = "Camera state after keyframe interpolation";
+                ce.sourceFile = __FILE__;
+                ce.sourceLine = __LINE__;
+                ce.functionName = __FUNCTION__;
+                ce.tick = ct;
+                ce.frame = ct;
+                ce.numericKeys.push_back("pos_x");
+                ce.numericExpected.push_back(camera.pos.x);
+                ce.numericKeys.push_back("pos_y");
+                ce.numericExpected.push_back(camera.pos.y);
+                ce.numericKeys.push_back("pos_z");
+                ce.numericExpected.push_back(camera.pos.z);
+                ce.numericKeys.push_back("yaw");
+                ce.numericExpected.push_back(camera.yaw);
+                ce.numericKeys.push_back("pitch");
+                ce.numericExpected.push_back(camera.pitch);
+                ce.numericKeys.push_back("roll");
+                ce.numericExpected.push_back(camera.roll);
+                ce.numericKeys.push_back("fov");
+                ce.numericExpected.push_back(camera.fov);
+                ce.numericActual = ce.numericExpected;
+                StructuredLogger::instance().write(ce);
+            }
         }
         Debug::log(Debug::Category::Replay,
             "[RPLE CAM AFTER KF] tick=%d pos=(%.2f %.2f %.2f) look=(%.4f %.4f %.4f)\n",

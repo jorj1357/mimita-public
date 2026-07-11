@@ -3,6 +3,7 @@
 #include "config.h"
 #include "../debug/debug-log.h"
 #include "../entities/player.h"
+#include "perf/perf-spike.h"
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -123,6 +124,7 @@ static void closeSpawnDebugLog()
 
 void resetAllWeaponRuntimesForSpawn(Player& player, const char* caller)
 {
+    MIMITA_PERF_SCOPE("WeaponRuntime::ResetAllForSpawn");
     if (DebugConfig::DEBUG_WEAPON_SPAWN_LOG) {
         openSpawnDebugLog();
         const WeaponRegistry& reg = WeaponRegistry::instance();
