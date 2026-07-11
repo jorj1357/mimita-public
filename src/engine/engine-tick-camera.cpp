@@ -73,6 +73,50 @@ static void logRotationDebug(const Player& player, const Camera& camera, float d
         cameraYaw, rootYaw, capsuleYaw, aimYaw, cameraYaw - rootYaw, rootYaw - capsuleYaw);
 }
 
+// Helper: log camera state to structured logger during export
+static void logCameraState(const Camera& cam, uint32_t tick,
+    const char* eventId, const char* reason)
+{
+    if (!isReplayExportActive()) return;
+    float ey = glm::radians(cam.yaw);
+    float ep = glm::radians(cam.pitch);
+    glm::vec3 expFront = glm::normalize(glm::vec3(
+        std::cos(ey) * std::cos(ep),
+        std::sin(ey) * std::cos(ep),
+        std::sin(ep)));
+    StructuredLogger::Entry e;
+    e.category = StructuredCategory::Camera;
+    e.level = StructuredLevel::Trace;
+    e.eventId = eventId;
+    e.correlationId = "REPLAY_FRAME_" + std::to_string(tick);
+    e.reason = reason;
+    e.sourceFile = __FILE__;
+    e.sourceLine = __LINE__;
+    e.functionName = __FUNCTION__;
+    e.tick = tick;
+    e.frame = tick;
+    e.numericKeys = {"pos_x","pos_y","pos_z",
+        "front_x","front_y","front_z",
+        "right_x","right_y","right_z",
+        "up_x","up_y","up_z",
+        "exp_front_x","exp_front_y","exp_front_z",
+        "yaw","pitch","roll","fov"};
+    e.numericExpected = {(double)cam.pos.x,(double)cam.pos.y,(double)cam.pos.z,
+        (double)expFront.x,(double)expFront.y,(double)expFront.z,
+        (double)cam.right.x,(double)cam.right.y,(double)cam.right.z,
+        (double)cam.up.x,(double)cam.up.y,(double)cam.up.z,
+        (double)expFront.x,(double)expFront.y,(double)expFront.z,
+        (double)cam.yaw,(double)cam.pitch,(double)cam.roll,(double)cam.fov};
+    e.numericActual = {(double)cam.pos.x,(double)cam.pos.y,(double)cam.pos.z,
+        (double)cam.front.x,(double)cam.front.y,(double)cam.front.z,
+        (double)cam.right.x,(double)cam.right.y,(double)cam.right.z,
+        (double)cam.up.x,(double)cam.up.y,(double)cam.up.z,
+        (double)cam.front.x,(double)cam.front.y,(double)cam.front.z,
+        (double)cam.yaw,(double)cam.pitch,(double)cam.roll,(double)cam.fov};
+    e.tolerance = 0.001;
+    StructuredLogger::instance().write(e);
+}
+
 void engineTickCamera(Engine& engine, float dt)
 {
     Player& player = THE_PLAYER;
@@ -91,6 +135,13 @@ void engineTickCamera(Engine& engine, float dt)
         applyDebugMovement(player, engine.window(), camera, dt);
 
     camera.decayPunch(dt);
+    // Zero weapon recoil punch during replay — it would otherwise add a
+    // phantom rotation from decaying gameplay residuals into every frame's
+    // effective yaw/pitch via updateVectors()'s internal punch inclusion.
+    if (REPLAY_PLAYER.isPlaying()) {
+        camera.punchPitch = 0.0f;
+        camera.punchYaw = 0.0f;
+    }
     camera.updateVectors();
 
     // ── Replay camera control ──────────────────────────────
@@ -494,6 +545,10 @@ void engineTickCamera(Engine& engine, float dt)
                         gReplayPlayer.victimId(), dt);
                 }
             }
+            // Structured log: camera state after Step 1 (camera controller)
+            logCameraState(camera, gReplayPlayer.currentTick(),
+                "CAM_CTRL_STATE", "Camera state after Step 1 (camera controller)");
+
             playerCamPos = camera.pos;
             playerCamRot = glm::quat(glm::vec3(
                 glm::radians(camera.pitch),
@@ -636,49 +691,10 @@ void engineTickCamera(Engine& engine, float dt)
                 gReplayEditor.freecam ? "freecam(no-kf)" : "cameraController");
 
             // Structured log: camera state after keyframe interpolation
-            // Compares actual front/right/up to expected values from spherical formula.
             if (isReplayExportActive() && StructuredLogger::instance().shouldLog(
                     StructuredCategory::Camera, StructuredLevel::Trace)) {
-                uint32_t ct = gReplayPlayer.currentTick();
-                // Compute expected forward from camera's yaw/pitch
-                float ey = glm::radians(camera.yaw);
-                float ep = glm::radians(camera.pitch);
-                glm::vec3 expFront = glm::normalize(glm::vec3(
-                    std::cos(ey) * std::cos(ep),
-                    std::sin(ey) * std::cos(ep),
-                    std::sin(ep)));
-                StructuredLogger::Entry ce;
-                ce.category = StructuredCategory::Camera;
-                ce.level = StructuredLevel::Trace;
-                ce.eventId = "CAM_KF_STATE";
-                ce.correlationId = "REPLAY_FRAME_" + std::to_string(ct);
-                ce.reason = "Camera state after keyframe interpolation";
-                ce.sourceFile = __FILE__;
-                ce.sourceLine = __LINE__;
-                ce.functionName = __FUNCTION__;
-                ce.tick = ct;
-                ce.frame = ct;
-                // Position
-                ce.numericKeys = {"pos_x","pos_y","pos_z",
-                    "front_x","front_y","front_z",
-                    "right_x","right_y","right_z",
-                    "up_x","up_y","up_z",
-                    "exp_front_x","exp_front_y","exp_front_z",
-                    "yaw","pitch","roll","fov"};
-                ce.numericExpected = {camera.pos.x,camera.pos.y,camera.pos.z,
-                    expFront.x,expFront.y,expFront.z,
-                    camera.right.x,camera.right.y,camera.right.z,
-                    camera.up.x,camera.up.y,camera.up.z,
-                    expFront.x,expFront.y,expFront.z,
-                    camera.yaw,camera.pitch,camera.roll,camera.fov};
-                ce.numericActual = {camera.pos.x,camera.pos.y,camera.pos.z,
-                    camera.front.x,camera.front.y,camera.front.z,
-                    camera.right.x,camera.right.y,camera.right.z,
-                    camera.up.x,camera.up.y,camera.up.z,
-                    camera.front.x,camera.front.y,camera.front.z,
-                    camera.yaw,camera.pitch,camera.roll,camera.fov};
-                ce.tolerance = 0.001;
-                StructuredLogger::instance().write(ce);
+                logCameraState(camera, gReplayPlayer.currentTick(), "CAM_KF_STATE",
+                    "Camera state after keyframe interpolation");
             }
         }
         Debug::log(Debug::Category::Replay,
@@ -686,6 +702,9 @@ void engineTickCamera(Engine& engine, float dt)
             gReplayPlayer.currentTick(),
             camera.pos.x, camera.pos.y, camera.pos.z,
             camera.front.x, camera.front.y, camera.front.z);
+        // Structured log: final camera state after ALL processing
+        logCameraState(camera, gReplayPlayer.currentTick(),
+            "CAM_FINAL_STATE", "Final camera state after keyframe evaluation");
     }
 
     if (anyFreecam) {
@@ -973,6 +992,24 @@ void engineTickCamera(Engine& engine, float dt)
                                 sound.position.x, sound.position.y, sound.position.z,
                                 camera.pos.x, camera.pos.y, camera.pos.z,
                                 dist, sound.volume, sound.maxDistance);
+                    // Structured log: replay sound trigger
+                    if (StructuredLogger::instance().shouldLog(
+                            StructuredCategory::Audio, StructuredLevel::Important)) {
+                        StructuredLogger::Entry se;
+                        se.category = StructuredCategory::Audio;
+                        se.level = StructuredLevel::Important;
+                        se.eventId = "REPLAY_SOUND_TRIGGER";
+                        se.correlationId = "REPLAY_FRAME_" + std::to_string(gReplayPlayer.currentTick());
+                        se.reason = "Replay sound triggered during playback";
+                        se.sourceFile = __FILE__;
+                        se.sourceLine = __LINE__;
+                        se.functionName = __FUNCTION__;
+                        se.tick = gReplayPlayer.currentTick();
+                        se.numericKeys = {"triggerTick","dist","volume","recordedPitch"};
+                        se.numericExpected = {(double)sound.tick,(double)dist,(double)sound.volume,(double)sound.pitch};
+                        se.numericActual = se.numericExpected;
+                        StructuredLogger::instance().write(se);
+                    }
                 }
                 float pbspeedMul = 1.0f;
                 if (gReplayEditor.isLoaded())
