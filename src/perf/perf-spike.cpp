@@ -29,6 +29,7 @@ char gPerfCorrelationStack[8][32] = {};
 int gPerfCorrelationDepth = 0;
 
 uint64_t gPerfFrameStartCycles = 0;
+uint32_t gPerfCurrentFrameId = 0;
 
 // ── Cycle counter ──────────────────────────────────────────
 
@@ -58,6 +59,10 @@ PerfScopeGuard::PerfScopeGuard(
     if (gPerfCorrelationDepth > 0) {
         std::strncpy(cap.correlationId, gPerfCorrelationStack[gPerfCorrelationDepth - 1], sizeof(cap.correlationId) - 1);
     }
+
+    // Record frame/tick at scope creation
+    cap.beginFrameId = gPerfCurrentFrameId;
+    cap.beginTickId = 0;
 
     // Determine parent from stack
     if (gPerfScopeStackDepth > 0) {
@@ -91,24 +96,18 @@ PerfScopeGuard::~PerfScopeGuard()
     uint64_t endCycles = readCycles();
     uint64_t elapsed = endCycles - mStartCycles;
 
-    // Frame-boundary detection: if this scope started before the current frame,
-    // it spans across frames. Warn and cap to avoid impossible parent/child ratios.
-    bool crossedBoundary = (gPerfFrameStartCycles > 0 && mStartCycles < gPerfFrameStartCycles);
-    if (crossedBoundary) {
-        // Use only the portion within the current frame
-        elapsed = endCycles - gPerfFrameStartCycles;
-        if (DebugConfig::DEBUG_DEATH_PERF) {
-            PerfScopeCapture& cap = gPerfScopes[mScopeIndex];
-            Debug::log(Debug::Category::General,
-                "[PERF CROSS-FRAME] scope=%s crossed frame boundary (startBefore=%.3fms endAfter=%.3fms capped=%.3fms)\n",
-                cap.label ? cap.label : "?",
-                (double)(gPerfFrameStartCycles - mStartCycles) / 1000000.0,
-                (double)(endCycles - gPerfFrameStartCycles) / 1000000.0,
-                (double)elapsed / 1000000.0);
-        }
-    }
-
     PerfScopeCapture& cap = gPerfScopes[mScopeIndex];
+
+    // Frame-boundary detection: if this scope started in a different frame,
+    // mark it as cross-frame and exclude from synchronous frame accounting.
+    cap.crossedBoundary = (gPerfCurrentFrameId > 0 && cap.beginFrameId > 0 &&
+                           cap.beginFrameId != gPerfCurrentFrameId);
+    if (cap.crossedBoundary && DebugConfig::DEBUG_DEATH_PERF) {
+        Debug::log(Debug::Category::General,
+            "[PERF CROSS-FRAME] scope=%s frame=%d→%d\n",
+            cap.label ? cap.label : "?",
+            cap.beginFrameId, gPerfCurrentFrameId);
+    }
     cap.cyclesInclusive += elapsed;
     if (elapsed < cap.minCycles) cap.minCycles = elapsed;
     if (elapsed > cap.maxCycles) cap.maxCycles = elapsed;
@@ -222,27 +221,37 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
     double slowdown = budgetMs > 0.0 ? totalFrameMs / budgetMs : 0.0;
 
     // Compute measured top-level work: find the root scope (parentIndex < 0)
-    // and use its inclusive time as the total measured work.
+    // that is NOT cross-frame, and use its inclusive time.
     double measuredTopLevel = 0.0;
-    int rootCount = 0;
+    double measuredTopLevelCrossed = 0.0;
     for (const auto& e : entries) {
         const PerfScopeCapture& cap = gPerfScopes[e.index];
         if (cap.parentIndex < 0) {
-            measuredTopLevel += e.inclMs;
-            rootCount++;
+            if (cap.crossedBoundary) {
+                measuredTopLevelCrossed += e.inclMs;
+            } else {
+                measuredTopLevel += e.inclMs;
+            }
         }
     }
-    // If there are multiple roots with no parent, we take the largest.
+    // If there are multiple non-crossed roots, take the largest.
     // Single root (EngineTick) is the normal case.
-    if (rootCount > 1) {
-        double maxRoot = 0.0;
-        for (const auto& e : entries) {
-            const PerfScopeCapture& cap = gPerfScopes[e.index];
-            if (cap.parentIndex < 0 && e.inclMs > maxRoot)
-                maxRoot = e.inclMs;
+    int rootCount = 0;
+    int crossedRootCount = 0;
+    double maxRoot = 0.0;
+    for (const auto& e : entries) {
+        const PerfScopeCapture& cap = gPerfScopes[e.index];
+        if (cap.parentIndex < 0 && !cap.crossedBoundary) {
+            rootCount++;
+            if (e.inclMs > maxRoot) maxRoot = e.inclMs;
         }
-        measuredTopLevel = maxRoot;
+        if (cap.parentIndex < 0 && cap.crossedBoundary)
+            crossedRootCount++;
     }
+    if (rootCount > 1)
+        measuredTopLevel = maxRoot;
+    else if (rootCount == 0)
+        measuredTopLevel = 0.0;
     double unaccounted = totalFrameMs - measuredTopLevel;
     double accountedPct = totalFrameMs > 0.0 ? (measuredTopLevel / totalFrameMs) * 100.0 : 0.0;
 
@@ -268,7 +277,83 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
     pos += std::snprintf(msg + pos, sizeof(msg) - pos,
         "Unaccounted: %.3f ms\n", unaccounted);
     pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-        "Accounted: %.1f%%\n\n", accountedPct);
+        "Accounted: %.1f%%\n", accountedPct);
+    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+        "Cross-frame roots: %.3f ms\n\n", measuredTopLevelCrossed);
+
+    // Chronological timeline: scopes in order of start time (by entry index order,
+    // which follows creation order within the frame)
+    {
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+            "--- TIMELINE ---\n");
+        double currentTime = 0.0;
+        for (int ti = 0; ti < (int)entries.size() && ti < 30; ++ti) {
+            const PerfScopeCapture& cap = gPerfScopes[entries[ti].index];
+            if (cap.parentIndex >= 0) continue; // skip children (shown under parent)
+            double inclMs = entries[ti].inclMs;
+            if (inclMs < 0.01) continue;
+            double startTime = currentTime;
+            double endTime = startTime + inclMs;
+            currentTime = endTime;
+            const char* flag = cap.crossedBoundary ? " [CROSS-FRAME]" : "";
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "  %.2f–%.2fms: %s (%.2fms)%s\n",
+                startTime, endTime, cap.label ? cap.label : "?", inclMs, flag);
+        }
+        // Unaccounted gap
+        double timelineTotal = currentTime;
+        double gap = totalFrameMs - timelineTotal;
+        if (gap > 0.25) {
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "  %.2f–%.2fms: UNACCOUNTED (%.2fms)\n",
+                timelineTotal, totalFrameMs, gap);
+        }
+        pos += std::snprintf(msg + pos, sizeof(msg) - pos, "\n");
+    }
+
+    // Cross-frame scope summary
+    {
+        bool hasCrossed = false;
+        for (const auto& e : entries) {
+            if (gPerfScopes[e.index].crossedBoundary) {
+                if (!hasCrossed) {
+                    pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                        "--- CROSS-FRAME SCOPES ---\n");
+                    hasCrossed = true;
+                }
+                const PerfScopeCapture& cap = gPerfScopes[e.index];
+                pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                    "  %s: start=frame %d %.2fms\n",
+                    cap.label ? cap.label : "?",
+                    cap.beginFrameId, e.inclMs);
+            }
+        }
+        if (hasCrossed)
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos, "\n");
+    }
+
+    // Allocation consistency check
+    {
+        bool allocInconsistent = false;
+        for (const auto& e : entries) {
+            const PerfScopeCapture& cap = gPerfScopes[e.index];
+            if (cap.allocCount == 0 && cap.allocBytes > 0) {
+                allocInconsistent = true;
+                break;
+            }
+        }
+        if (allocInconsistent) {
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "--- ALLOCATION WARNING ---\n");
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "Scope(s) with allocCount=0 but allocBytes>0 detected.\n");
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "Allocation deltas may be invalid (counters not monotonic).\n\n");
+        } else {
+            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
+                "Allocation counters: CONSISTENT\n\n");
+        }
+    }
 
     // Top functions with full detail. Always include the root scope first.
     int topN = std::min(gPerfBudget.topFunctionsPerFrame, (int)entries.size());

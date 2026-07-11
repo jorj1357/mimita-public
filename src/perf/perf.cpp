@@ -31,19 +31,30 @@ PerfState& Perf::state() { return gState; }
 
 void Perf::beginFrame()
 {
-    gState.allocationsThisFrame = 0;
-    gState.assetLoadsThisFrame = 0;
-    gState.current = PerfTimes{};
-    gState.children = PerfTimes{};
-    gState.npcProfileCount = 0;
-    gState.timerStackDepth = 0;
-    gState.queryRecordCount = 0;
-    gState.dupTrackerCount = 0;
-    gState.largeAabbAlert = {};
+    PerfState& s = gState;
+    s.allocationsThisFrame = 0;
+    s.assetLoadsThisFrame = 0;
+    s.current = PerfTimes{};
+    s.children = PerfTimes{};
+    s.npcProfileCount = 0;
+    s.timerStackDepth = 0;
+    s.queryRecordCount = 0;
+    s.dupTrackerCount = 0;
+    s.largeAabbAlert = {};
+    // Update frame ID for scope cross-frame detection
+    gPerfCurrentFrameId = (uint32_t)(s.frameNumber + 1); // next frame
     // Reset scope array and mark frame boundary timestamp
     gPerfFrameStartCycles = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     perfResetScopes();
+
+    // Assert: scope stack should be empty at frame start
+    if (gPerfScopeStackDepth != 0) {
+        Debug::warn(Debug::Category::General,
+            "[PERF ASSERT] Scope stack not empty at beginFrame: depth=%d\n",
+            gPerfScopeStackDepth);
+        gPerfScopeStackDepth = 0;
+    }
 }
 
 // ── String-based dispatch helpers ─────────────────────────────
@@ -837,10 +848,11 @@ void Perf::endFrame()
 
     // Capture current frame into ring buffer
     double targetMs = gPerfBudget.targetFps > 0 ? 1000.0 / gPerfBudget.targetFps : 16.667;
-    perfCaptureFrame((double)currentMs, targetMs, s.frameNumber);
-
-    // Aggregate scopes and write spike reports through StructuredLogger
-    perfAggregateScopes((double)currentMs, targetMs, s.frameNumber);
+    {
+        MIMITA_PERF_SCOPE("ProfilerOverhead");
+        perfCaptureFrame((double)currentMs, targetMs, s.frameNumber);
+        perfAggregateScopes((double)currentMs, targetMs, s.frameNumber);
+    }
 
     // Periodic frame summary via StructuredLogger (every 60 frames)
     static int sBreakdownCount = 0;
@@ -849,6 +861,7 @@ void Perf::endFrame()
         gFrameHistoryCount > 0 &&
         StructuredLogger::instance().shouldLog(StructuredCategory::Performance, StructuredLevel::Verbose))
     {
+        MIMITA_PERF_SCOPE("LoggerOverhead");
         int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
         if (gFrameHistory[lastIdx].frameNumber == s.frameNumber) {
             const PerfFrame& frame = gFrameHistory[lastIdx];
