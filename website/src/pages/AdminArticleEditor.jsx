@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { apiRequest } from "../lib/api.js"
 import Markdown from "react-markdown"
@@ -25,6 +25,8 @@ export default function AdminArticleEditor() {
     const [message, setMessage] = useState("")
     const [showPreview, setShowPreview] = useState(false)
     const textareaRef = useRef(null)
+    const contentRef = useRef("")
+    const historyRef = useRef({ undoStack: [], redoStack: [] })
     const fetchedRef = useRef(false)
 
     useEffect(() => {
@@ -61,6 +63,8 @@ export default function AdminArticleEditor() {
                 setSlug(a.slug)
                 setTitle(a.title || "")
                 setContent(a.content || "")
+                contentRef.current = a.content || ""
+                historyRef.current = { undoStack: [], redoStack: [] }
                 setDescription(a.description || "")
                 setTags((a.tags || []).join(", "))
                 setDate(a.date || "")
@@ -78,12 +82,44 @@ export default function AdminArticleEditor() {
         setSlug("")
         setTitle("")
         setContent("")
+        contentRef.current = ""
+        historyRef.current = { undoStack: [], redoStack: [] }
         setDescription("")
         setTags("")
         setDate(new Date().toISOString().split("T")[0])
         setAuthor("")
         setPublished(true)
         setMessage("")
+    }
+
+    function pushHistory() {
+        const stack = historyRef.current
+        stack.undoStack.push(contentRef.current)
+        if (stack.undoStack.length > 200) stack.undoStack.shift()
+        stack.redoStack = []
+    }
+
+    function undo() {
+        const stack = historyRef.current
+        if (stack.undoStack.length === 0) return
+        stack.redoStack.push(contentRef.current)
+        const prev = stack.undoStack.pop()
+        contentRef.current = prev
+        setContent(prev)
+    }
+
+    function redo() {
+        const stack = historyRef.current
+        if (stack.redoStack.length === 0) return
+        stack.undoStack.push(contentRef.current)
+        const next = stack.redoStack.pop()
+        contentRef.current = next
+        setContent(next)
+    }
+
+    function setContentAndRef(newContent) {
+        setContent(newContent)
+        contentRef.current = newContent
     }
 
     function slugify(str) {
@@ -160,45 +196,54 @@ export default function AdminArticleEditor() {
     function wrapSelection(before, after) {
         const ta = textareaRef.current
         if (!ta) return
+        pushHistory()
         const start = ta.selectionStart
         const end = ta.selectionEnd
-        const selected = content.substring(start, end)
+        const cur = contentRef.current
+        const selected = cur.substring(start, end)
         if (selected) {
-            setContent(content.slice(0, start) + before + selected + after + content.slice(end))
+            const newContent = cur.slice(0, start) + before + selected + after + cur.slice(end)
+            setContentAndRef(newContent)
             requestAnimationFrame(() => {
                 ta.focus()
                 ta.selectionStart = start + before.length
                 ta.selectionEnd = start + before.length + selected.length
             })
         } else {
-            setContent(c => c + before + after)
+            setContentAndRef(cur + before + after)
         }
     }
 
     function prefixLines(prefix) {
         const ta = textareaRef.current
         if (!ta) return
+        pushHistory()
         const start = ta.selectionStart
         const end = ta.selectionEnd
-        const selected = content.substring(start, end)
+        const cur = contentRef.current
+        const selected = cur.substring(start, end)
         if (selected) {
             const prefixed = selected.split("\n").map(l => prefix + l).join("\n")
-            setContent(content.slice(0, start) + prefixed + content.slice(end))
+            const newContent = cur.slice(0, start) + prefixed + cur.slice(end)
+            setContentAndRef(newContent)
             requestAnimationFrame(() => {
                 ta.focus()
                 ta.selectionStart = start
                 ta.selectionEnd = start + prefixed.length
             })
         } else {
-            setContent(c => c + "\n" + prefix)
+            setContentAndRef(cur + "\n" + prefix)
         }
     }
 
     function insertAtCursor(text) {
         const ta = textareaRef.current
         if (!ta) return
+        pushHistory()
         const start = ta.selectionStart
-        setContent(content.slice(0, start) + text + content.slice(ta.selectionEnd))
+        const cur = contentRef.current
+        const newContent = cur.slice(0, start) + text + cur.slice(ta.selectionEnd)
+        setContentAndRef(newContent)
         requestAnimationFrame(() => {
             ta.focus()
             ta.selectionStart = ta.selectionEnd = start + text.length
@@ -330,6 +375,11 @@ export default function AdminArticleEditor() {
                                     <button type="button"
                                         onClick={() => wrapSelection("[", "](url)")}
                                         className="adminEditorToolBtn">🔗</button>
+                                    <span className="adminEditorToolbarSep"></span>
+                                    <button type="button" onClick={undo}
+                                        className="adminEditorToolBtn" title="Undo (Ctrl+Z)">↩</button>
+                                    <button type="button" onClick={redo}
+                                        className="adminEditorToolBtn" title="Redo (Ctrl+Shift+Z)">↪</button>
                                     <button type="button"
                                         onClick={() => setShowPreview(p => !p)}
                                         className={"adminEditorToolBtn" + (showPreview ? " active" : "")}>
@@ -345,7 +395,24 @@ export default function AdminArticleEditor() {
                                 ) : (
                                     <textarea ref={textareaRef} className="adminEditorTextarea"
                                         value={content}
-                                        onChange={e => setContent(e.target.value)}
+                                        onChange={e => {
+                                            const newVal = e.target.value
+                                            if (contentRef.current !== newVal) {
+                                                pushHistory()
+                                                setContentAndRef(newVal)
+                                            }
+                                        }}
+                                        onKeyDown={e => {
+                                            if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+                                                e.preventDefault()
+                                                if (e.shiftKey) redo()
+                                                else undo()
+                                            }
+                                            if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+                                                e.preventDefault()
+                                                redo()
+                                            }
+                                        }}
                                         placeholder="Write your article in markdown..."
                                         rows={20} />
                                 )}
