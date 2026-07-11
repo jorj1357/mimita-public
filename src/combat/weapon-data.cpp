@@ -265,6 +265,8 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["rocketDirectDamage"] = 150.0f;
     def.customParams["knockbackStrength"] = 160.0f;
     def.customParams["selfKnockbackMultiplier"] = 1.0f;
+    def.customParams["knockbackHorizontalMultiplier"] = 1.0f;
+    def.customParams["knockbackVerticalMultiplier"] = 1.0f;
     def.customParams["firingRecoilStrength"] = 30.0f;
     def.customParams["reserveAmmo"] = 1337.0f;
 

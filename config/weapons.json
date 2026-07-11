@@ -345,6 +345,8 @@
       "rocketDirectDamage": 150.0,
       "knockbackStrength": 160.0,
       "selfKnockbackMultiplier": 1.0,
+      "knockbackHorizontalMultiplier": 1.0,
+      "knockbackVerticalMultiplier": 1.0,
       "firingRecoilStrength": 30.0,
       "reserveAmmo": 1337.0,
       "shootPoseTime": 0.12,

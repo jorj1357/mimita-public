@@ -52,6 +52,10 @@ static void doExplosion(
         ? def.customParams.at("knockbackStrength") : 40.0f) * sc.scale(1.0f, sc.knockbackExponent, ss);
     const float selfKnockbackMul = def.customParams.count("selfKnockbackMultiplier")
         ? def.customParams.at("selfKnockbackMultiplier") : 0.8f;
+    const float knockbackHorizontalMul = def.customParams.count("knockbackHorizontalMultiplier")
+        ? def.customParams.at("knockbackHorizontalMultiplier") : 1.0f;
+    const float knockbackVerticalMul = def.customParams.count("knockbackVerticalMultiplier")
+        ? def.customParams.at("knockbackVerticalMultiplier") : 1.0f;
 
     playWorldSound("weapon/bomb/explosion2", position, 1.0f, 1.0f, 50.0f);
 
@@ -99,7 +103,13 @@ static void doExplosion(
         float t = dist / splashRadius;
         float knockScale = 1.0f - t * t;
         knockScale = knockScale * 0.85f + 0.15f;
-        npc.body.externalImpulse += dir * knockbackStrength * knockScale;
+        {
+            float kb = knockbackStrength * knockScale;
+            glm::vec3 kbVec(dir.x * kb * knockbackHorizontalMul,
+                            dir.y * kb * knockbackHorizontalMul,
+                            dir.z * kb * knockbackVerticalMul);
+            npc.body.externalImpulse += kbVec;
+        }
 
         HitEvent ev;
         ev.position = npc.body.pos;
@@ -127,7 +137,16 @@ static void doExplosion(
             float t = dist / splashRadius;
             float knockScale = 1.0f - t * t;
             knockScale = knockScale * 0.85f + 0.15f;
-            owner.takeDamage(finalDmg, dir, knockbackStrength * selfKnockbackMul * knockScale);
+            {
+                float kb = knockbackStrength * selfKnockbackMul * knockScale;
+                glm::vec3 kbDir(dir.x * knockbackHorizontalMul,
+                                dir.y * knockbackHorizontalMul,
+                                dir.z * knockbackVerticalMul);
+                float kbLen = glm::length(kbDir);
+                if (kbLen < 0.0001f) kbDir = glm::vec3(0.0f, 1.0f, 0.0f);
+                else kbDir /= kbLen;
+                owner.takeDamage(finalDmg, kbDir, kb);
+            }
         }
     }
 }
