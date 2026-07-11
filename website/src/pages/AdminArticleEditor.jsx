@@ -288,6 +288,7 @@ export default function AdminArticleEditor() {
                                 <div key={a.slug}
                                     className={"adminEditorListItem" + (editing === a.slug ? " active" : "")}
                                     onClick={() => loadArticle(a.slug)}>
+                                    <span className="adminEditorPublishStatus">{a.published ? "✓" : "✗"}</span>
                                     <span className="adminEditorListItemTitle">{a.title}</span>
                                     <span className="adminEditorListItemDate">{a.date}</span>
                                     <button className="adminEditorDeleteBtn"
