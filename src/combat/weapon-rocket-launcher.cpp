@@ -57,7 +57,7 @@ static void doExplosion(
     const float knockbackVerticalMul = def.customParams.count("knockbackVerticalMultiplier")
         ? def.customParams.at("knockbackVerticalMultiplier") : 1.0f;
 
-    playWorldSound("weapon/bomb/explosion2", position, 1.0f, 1.0f, 50.0f);
+    playWorldSound("rocketlauncher/rocketlauncherexplode", position, 1.0f, 1.0f, 50.0f);
 
     {
         HitEvent ev;
@@ -335,6 +335,16 @@ void update(
         }
 
         rocket.position = newPos;
+
+        // ── In-air looping sound (short sound, repeats while rocket flies) ──
+        {
+            float inAirInterval = 0.15f;
+            if (state.gameTime - rocket.lastInAirSoundTime >= inAirInterval) {
+                playWorldSound("rocketlauncher/rocketlauncherinair", rocket.position,
+                    0.5f, 1.0f, 40.0f);
+                rocket.lastInAirSoundTime = state.gameTime;
+            }
+        }
 
         // ── Render rocket as bright yellow cylinder facing movement direction ──
         {
