@@ -93,6 +93,7 @@ public:
 
     // Cached line-of-sight result updated each frame in updateOneNpc
     bool cachedLoSBlocked = false;
+    int losTickCounter = 0;
 
     // Smoothed facing direction for turn speed limiting
     glm::vec3 currentFacing{1.0f, 0.0f, 0.0f};
