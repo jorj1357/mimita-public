@@ -756,6 +756,12 @@
   border-color: #557;
   color: #aabbdd;
 }
+.adminEditorToolbarSep {
+  width: 1px;
+  background: #333;
+  margin: 0 4px;
+  align-self: stretch;
+}
 .rainbowToolBtn {
   font-size: 0.9rem;
 }
