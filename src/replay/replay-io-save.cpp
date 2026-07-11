@@ -9,11 +9,13 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "perf/perf-spike.h"
 
 using json = nlohmann::json;
 
 bool ReplayClip::save(const std::string& path) const
 {
+    MIMITA_PERF_SCOPE("ReplayClipSave");
     json root;
     root["metadata"] = {
         {"format", "mimita-in-engine-clip"},

@@ -5,10 +5,13 @@
 #include <cstring>
 #include <glm/glm.hpp>
 
+#include "perf/perf-spike.h"
+
 ReplayClip ReplayRecorder::makeClip(
     uint32_t startTick, uint32_t endTick, uint32_t killTick,
     const std::string& killerId, const std::string& victimId) const
 {
+    MIMITA_PERF_SCOPE("Replay::MakeClip");
     ReplayClip clip;
     clip.header = mHeader;
     clip.header.tickCount = 0;

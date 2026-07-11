@@ -10,6 +10,7 @@
 
 #include "entities/player.h"
 #include "debug/debug-log.h"
+#include "perf/perf-spike.h"
 
 using json = nlohmann::json;
 
