@@ -415,10 +415,12 @@ router.post("/games/:gameId/scores", authenticateToken, async (req, res, next) =
 })
 
 // Public leaderboard for mini games
+const HIGH_SCORE_GAMES = new Set(["rhythm-test-v1"])
 router.get("/games/:gameId/leaderboard", async (req, res, next) => {
     try {
         const { gameId } = req.params
         const limit = Math.min(Number(req.query.limit) || 10, 100)
+        const desc = HIGH_SCORE_GAMES.has(gameId)
 
         debugAim("[Leaderboard] request received", JSON.stringify({
             method: req.method,
@@ -426,17 +428,18 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
             origin: req.get("origin") || "none",
             limit,
             gameId,
+            ordering: desc ? "DESC" : "ASC",
         }))
 
         const result = await pool.query(
             `SELECT
-                ROW_NUMBER() OVER (ORDER BY gs.score_value ASC) AS rank,
+                ROW_NUMBER() OVER (ORDER BY gs.score_value ${desc ? "DESC" : "ASC"}) AS rank,
                 u.id, u.username, u.avatar_url, u.supporter_tier,
                 gs.score_value, gs.created_at
              FROM game_scores gs
              JOIN users u ON u.id = gs.user_id
              WHERE gs.game_id = $1 AND gs.deleted_at IS NULL AND u.deleted_at IS NULL
-             ORDER BY gs.score_value ASC
+             ORDER BY gs.score_value ${desc ? "DESC" : "ASC"}
              LIMIT $2`,
             [gameId, limit]
         )
@@ -444,6 +447,7 @@ router.get("/games/:gameId/leaderboard", async (req, res, next) => {
         const rows = result.rows
         debugAim("[Leaderboard] response", JSON.stringify({
             entries: rows.length,
+            ordering: desc ? "DESC" : "ASC",
             firstEntry: rows.length > 0 ? { rank: rows[0].rank, username: rows[0].username, score: rows[0].score_value } : null,
             lastEntry: rows.length > 0 ? { rank: rows[rows.length - 1].rank, username: rows[rows.length - 1].username, score: rows[rows.length - 1].score_value } : null,
         }))

@@ -140,7 +140,7 @@ export default function Auth({ mode }) {
                             />
                             <p className="authHint">
                                 8+ characters, 1 uppercase, 1 symbol.{" "}
-                                <Link to="/password-principles">
+                                <Link to="/faq">
                                     Password principles
                                 </Link>
                             </p>

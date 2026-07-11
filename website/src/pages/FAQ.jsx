@@ -17,7 +17,7 @@ const faqs = [
   },
   {
     q: "What is the main vision?",
-    a: "MiMITA aims to be the best-feeling movement shooter with no shortcuts. Full-body collision, physics-driven gameplay, no capsules — real body parts collide. The engine is built from scratch for performance, targeting low-end hardware while delivering high-skill gameplay. The philosophy: performance first, simplicity, readability, debuggability, extensibility."
+    a: "MiMITA aims to be the best-feeling movement shooter with no shortcuts. Full-body collision, physics-driven gameplay, no capsules — real body parts collide. The engine is built from scratch for performance, targeting low-end hardware while delivering high-skill gameplay. The philosophy: performance first, simplicity, readability, debuggability, extensibility. Also 7 11 2026 i want to make creation of ANYTHING simple as think it = its made. And u can post it here or make ur own site etc. more power to common people is the goal basically, but it starts with making MiMTIA PvP game super duper awesome"
   },
   {
     q: "How do I link my account?",

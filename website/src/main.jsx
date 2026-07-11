@@ -40,6 +40,7 @@ import Link from "./pages/Link"
 import ClientSignIn from "./pages/ClientSignIn"
 import Games from "./pages/Games"
 import AimTestV1 from "./pages/AimTestV1"
+import RhythmTestV1 from "./pages/RhythmTestV1"
 import DreamToy from "./pages/DreamToy"
 import AdminArticleEditor from "./pages/AdminArticleEditor"
 
@@ -94,6 +95,7 @@ ReactDOM.createRoot(
 
         <Route path="/games" element={<Games />} />
         <Route path="/games/aim-test-v1" element={<AimTestV1 />} />
+        <Route path="/games/rhythm-test-v1" element={<RhythmTestV1 />} />
         <Route path="/games/dream-toy" element={<DreamToy />} />
 
         <Route path="*" element={<NotFound />} />
