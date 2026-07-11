@@ -20,6 +20,10 @@ void EffectPartSystem::init() {
         slot.alive = false;
     mActiveCount = 0;
     mSpawnCursor = 0;
+    mFreeSlots.clear();
+    mFreeSlots.reserve(POOL_SIZE);
+    for (unsigned int i = 0; i < POOL_SIZE; ++i)
+        mFreeSlots.push_back(i);
     mBloodParticles.clear();
     mBloodParticles.reserve(MAX_BLOOD_PARTICLES);
     mBloodDecals.clear();
@@ -64,6 +68,7 @@ void EffectPartSystem::update(float dt) {
                 effect.alive = false;
                 effect.resetStrings();
                 --mActiveCount;
+                mFreeSlots.push_back(i);
             }
             if (glm::length(effect.angularVelocity) > 0.0f)
                 effect.rotation += effect.angularVelocity * dt;
@@ -72,7 +77,8 @@ void EffectPartSystem::update(float dt) {
     }
 
     if (!updatedByGameDLL) {
-        for (auto& fx : mPool) {
+        for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+            EffectPart& fx = mPool[i];
             if (!fx.alive)
                 continue;
             fx.lifetime += dt;
@@ -98,6 +104,7 @@ void EffectPartSystem::update(float dt) {
                 fx.alive = false;
                 fx.resetStrings();
                 --mActiveCount;
+                mFreeSlots.push_back(i);
             }
         }
     }

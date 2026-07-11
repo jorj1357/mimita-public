@@ -2,6 +2,7 @@
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include <glad/glad.h>
@@ -73,6 +74,9 @@ bool DeathSystem::kill(
     const glm::vec3& shotDirection,
     float lethalForce)
 {
+    using clock = std::chrono::steady_clock;
+    auto tStart = clock::now();
+
     if (victim.dead)
         return false;
 
@@ -86,7 +90,7 @@ bool DeathSystem::kill(
     glm::vec3 victimPos = victim.pos;
     glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
 
-    // Step 2: freeze the victim — stop all animation/control
+    // Step 2: freeze the victim
     victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);
     victim.inputWishMove = glm::vec2(0.0f);
@@ -95,7 +99,7 @@ bool DeathSystem::kill(
     victim.proceduralFrozen = true;
     victim.syncLegacyStateToLayers();
 
-    // Step 3: disable weapon/aim/procedural pose before capturing final state.
+    // Step 3: disable weapon/aim/procedural pose
     for (PhysicalBodyPart& part : victim.physicalBody.parts) {
         if (part.name == "leftArm" || part.name == "rightArm") {
             part.pose = ProceduralPose{};
@@ -106,8 +110,11 @@ bool DeathSystem::kill(
     }
     victim.syncLegacyStateToLayers();
 
-    // Capture final body state (neutral pose, no weapon offsets)
     victim.updateModelWorldTransforms();
+
+    if (DebugConfig::DEBUG_DEATH_TIMELINE)
+        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms freeze+pose complete\n",
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count());
 
     printf("[DEATH] victim=%s hitDir=(%.2f %.2f %.2f) damage=%.0f\n",
            victim.username.c_str(), direction.x, direction.y, direction.z, lethalForce);
@@ -185,6 +192,11 @@ bool DeathSystem::kill(
         fp.worldTransform = victim.physicalBody.parts[i].worldTransform;
         body.frozenParts.push_back(std::move(fp));
     }
+
+    if (DebugConfig::DEBUG_DEATH_TIMELINE)
+        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms corpse created (parts=%zu)\n",
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count(),
+            body.frozenParts.size());
 
     emitLifecycleEvent("death", victim, actorId, killer);
 
@@ -264,11 +276,18 @@ bool DeathSystem::kill(
             deCfg.length, deCfg.radius, deCfg.lifetime, victim.sizeScale);
     }
 
+    if (DebugConfig::DEBUG_DEATH_TIMELINE)
+        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms kill() complete\n",
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count());
+
     return true;
 }
 
 void DeathSystem::respawn(Player& actor, const std::string& actorId, const World& world)
 {
+    using clock = std::chrono::steady_clock;
+    auto tStart = clock::now();
+
     int spawnIndex = -1;
     glm::vec3 overridePos;
     if (tryGetSpawnOverride(overridePos)) {
@@ -322,6 +341,10 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
                 spawnIndex, actor.pos.x, actor.pos.y, actor.pos.z);
         fclose(debugFile);
     }
+
+    if (DebugConfig::DEBUG_DEATH_TIMELINE)
+        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] respawn complete t=%lldms\n",
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count());
 }
 
 void DeathSystem::update(
@@ -415,11 +438,21 @@ void DeathSystem::update(
     RagdollDeathSystem::instance().update(dt, world, player, npcs);
 
     // Remove expired corpses
-    mCorpses.erase(
-        std::remove_if(mCorpses.begin(), mCorpses.end(), [](const DeadBody& body) {
-            return body.age >= CORPSE_TOTAL_SECONDS;
-        }),
-        mCorpses.end());
+    {
+        size_t before = mCorpses.size();
+        auto tCleanup = std::chrono::steady_clock::now();
+        mCorpses.erase(
+            std::remove_if(mCorpses.begin(), mCorpses.end(), [](const DeadBody& body) {
+                return body.age >= CORPSE_TOTAL_SECONDS;
+            }),
+            mCorpses.end());
+        size_t removed = before - mCorpses.size();
+        if (DebugConfig::DEBUG_DEATH_PERF && removed > 0)
+            Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] corpse cleanup removed=%zu elapsed=%.3fms\n",
+                removed,
+                std::chrono::duration<float, std::chrono::milliseconds::period>(
+                    std::chrono::steady_clock::now() - tCleanup).count());
+    }
 
     // Respawn logic
     if (player.dead)

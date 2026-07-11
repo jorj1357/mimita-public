@@ -1,5 +1,6 @@
 #include "weapon-runtime.h"
 #include "weapon-registry.h"
+#include "config.h"
 #include "../debug/debug-log.h"
 #include "../entities/player.h"
 #include <algorithm>
@@ -122,31 +123,43 @@ static void closeSpawnDebugLog()
 
 void resetAllWeaponRuntimesForSpawn(Player& player, const char* caller)
 {
-    openSpawnDebugLog();
-    const WeaponRegistry& reg = WeaponRegistry::instance();
-    for (auto& kv : player.weaponRuntimes)
-    {
-        const std::string& weaponId = kv.first;
-        WeaponRuntime& rt = kv.second;
-        const WeaponDefinition* def = reg.get(weaponId);
-        if (!def) continue;
-
-        int oldAmmo = rt.currentAmmo;
-        int oldReserve = rt.reserveAmmo;
-        bool oldReloading = rt.isReloading;
-        float oldReloadTimer = rt.reloadTimer;
-        float oldCooldown = rt.fireCooldown;
-
-        rt.reset(*def);
-
-        if (gSpawnDebugFile)
+    if (DebugConfig::DEBUG_WEAPON_SPAWN_LOG) {
+        openSpawnDebugLog();
+        const WeaponRegistry& reg = WeaponRegistry::instance();
+        for (auto& kv : player.weaponRuntimes)
         {
-            fprintf(gSpawnDebugFile, "Player/NPC weapon=%s caller=%s\n", weaponId.c_str(), caller);
-            fprintf(gSpawnDebugFile, "  Before: ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
-                    oldAmmo, oldReserve, (int)oldReloading, oldReloadTimer, oldCooldown);
-            fprintf(gSpawnDebugFile, "  After:  ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
-                    rt.currentAmmo, rt.reserveAmmo, (int)rt.isReloading, rt.reloadTimer, rt.fireCooldown);
+            const std::string& weaponId = kv.first;
+            WeaponRuntime& rt = kv.second;
+            const WeaponDefinition* def = reg.get(weaponId);
+            if (!def) continue;
+
+            int oldAmmo = rt.currentAmmo;
+            int oldReserve = rt.reserveAmmo;
+            bool oldReloading = rt.isReloading;
+            float oldReloadTimer = rt.reloadTimer;
+            float oldCooldown = rt.fireCooldown;
+
+            rt.reset(*def);
+
+            if (gSpawnDebugFile)
+            {
+                fprintf(gSpawnDebugFile, "Player/NPC weapon=%s caller=%s\n", weaponId.c_str(), caller);
+                fprintf(gSpawnDebugFile, "  Before: ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
+                        oldAmmo, oldReserve, (int)oldReloading, oldReloadTimer, oldCooldown);
+                fprintf(gSpawnDebugFile, "  After:  ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
+                        rt.currentAmmo, rt.reserveAmmo, (int)rt.isReloading, rt.reloadTimer, rt.fireCooldown);
+            }
+        }
+        closeSpawnDebugLog();
+    } else {
+        const WeaponRegistry& reg = WeaponRegistry::instance();
+        for (auto& kv : player.weaponRuntimes)
+        {
+            const std::string& weaponId = kv.first;
+            WeaponRuntime& rt = kv.second;
+            const WeaponDefinition* def = reg.get(weaponId);
+            if (!def) continue;
+            rt.reset(*def);
         }
     }
-    closeSpawnDebugLog();
 }

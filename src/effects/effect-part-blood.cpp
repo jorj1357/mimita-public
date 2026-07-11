@@ -5,6 +5,7 @@
 #include "debug/debug-log.h"
 #include "config.h"
 #include "replay/replay.h"
+#include "physics/movement/physics-collision.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -127,7 +128,15 @@ bool traceBloodSegment(
     float nearest = segmentLength;
     bool found = false;
 
-    for (const CollisionTriangle& triangle : world.collisionMesh.triangles) {
+    AABB segBounds;
+    segBounds.min = glm::min(from, to);
+    segBounds.max = glm::max(from, to);
+    static std::vector<int> sCandidates;
+    sCandidates.clear();
+    appendChunkTrianglesForAABB(world, segBounds, 0.1f, sCandidates, "bloodTrace");
+
+    for (int triIdx : sCandidates) {
+        const CollisionTriangle& triangle = world.collisionMesh.triangles[triIdx];
         float distance = 0.0f;
         if (!rayTriangleSegment(from, direction, nearest, triangle, distance))
             continue;

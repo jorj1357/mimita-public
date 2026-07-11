@@ -242,12 +242,14 @@ EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::v
 }
 
 void EffectPartSystem::destroyOwner(unsigned int ownerId) {
-    for (auto& fx : mPool) {
+    for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        EffectPart& fx = mPool[i];
         if (!fx.alive) continue;
         if (fx.ownerId == ownerId) {
             fx.alive = false;
             fx.resetStrings();
             --mActiveCount;
+            mFreeSlots.push_back(i);
         }
     }
 }
@@ -285,9 +287,23 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     event.materialName = effect.materialName;
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->replayRecordMs : nullptr);
-        if (effect.replayType != "debris_block" && effect.replayType != "debris_batch")
+        if (effect.replayType != "debris" && effect.replayType != "debris_block" && effect.replayType != "debris_batch")
             captureReplayEffect(event);
         if (gShotProfiler) gShotProfiler->replayEventsCreated++;
+    }
+
+    if (!mFreeSlots.empty()) {
+        unsigned int idx = mFreeSlots.back();
+        mFreeSlots.pop_back();
+        mPool[idx] = effect;
+        mPool[idx].alive = true;
+        ++mActiveCount;
+        mSpawnCursor = (idx + 1) % POOL_SIZE;
+        if (gShotProfiler) {
+            gShotProfiler->poolHits++;
+            gShotProfiler->poolLinearScans++;
+        }
+        return &mPool[idx];
     }
 
     for (unsigned int i = 0; i < POOL_SIZE; ++i) {
@@ -474,13 +490,18 @@ void EffectPartSystem::drainPendingWorldHits(int maxCount)
 }
 
 void EffectPartSystem::clear() {
-    for (auto& slot : mPool) {
+    for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        EffectPart& slot = mPool[i];
         if (slot.alive) {
             slot.alive = false;
             slot.resetStrings();
         }
     }
     mActiveCount = 0;
+    mFreeSlots.clear();
+    mFreeSlots.reserve(POOL_SIZE);
+    for (unsigned int i = 0; i < POOL_SIZE; ++i)
+        mFreeSlots.push_back(i);
     mBloodParticles.clear();
     mBloodDecals.clear();
     mBloodDebugSegmentCount = 0;
