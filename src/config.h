@@ -113,6 +113,9 @@ namespace DebugConfig
 
     inline bool DEBUG_ROTATION = false;
     inline bool DEBUG_AUTH = false;
+    inline bool DEBUG_DEATH_TIMELINE = false;
+    inline bool DEBUG_DEATH_PERF = false;
+    inline bool DEBUG_WEAPON_SPAWN_LOG = false;
 
     inline void ResetAll()
     {

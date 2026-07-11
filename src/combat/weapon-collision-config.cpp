@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "config.h"
 #include "debug/debug-log.h"
 #include "entities/player.h"
 
@@ -379,7 +380,8 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
             case WeaponColliderDebugSphere::SourceType::GeneratedProbe: ++generatedCount; break;
         }
     }
-    Debug::log(Debug::Category::Weapons,
-        "[WEAPON COLLISION] weapon=%s json=%d capsules=%d generated=%d caps=%d source=%s",
-        weaponId.c_str(), jsonCount, capsuleCount, generatedCount, ncaps, entry->source.c_str());
+    if (DebugConfig::DEBUG_WEAPON_COLLISION)
+        Debug::log(Debug::Category::Weapons,
+            "[WEAPON COLLISION] weapon=%s json=%d capsules=%d generated=%d caps=%d source=%s",
+            weaponId.c_str(), jsonCount, capsuleCount, generatedCount, ncaps, entry->source.c_str());
 }

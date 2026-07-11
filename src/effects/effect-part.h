@@ -159,6 +159,7 @@ private:
 
     const class World* mWorld = nullptr;
     std::array<EffectPart, POOL_SIZE> mPool{};
+    std::vector<int> mFreeSlots;
     std::vector<BloodParticle> mBloodParticles;
     std::vector<BloodDecal> mBloodDecals;
     std::array<BloodDebugSegment, MAX_BLOOD_DEBUG_SEGMENTS> mBloodDebugSegments{};

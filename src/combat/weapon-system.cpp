@@ -25,7 +25,7 @@
 struct TrailTriVert { glm::vec3 pos; glm::vec4 color; };
 extern std::vector<TrailTriVert> gOverlayTriVerts;
 
-bool gWeaponCollisionVisualsJson = true;
+bool gWeaponCollisionVisualsJson = false;
 bool gWeaponCollisionVisualsProbes = false;
 #include "debug/debug-visuals.h"
 #include "devtools/terminal.h"
@@ -474,6 +474,7 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         const auto& wcd = player.weaponCollisionDebug;
 
         // Count spheres by type for logging
+        if (DebugConfig::DEBUG_WEAPON_COLLISION)
         {
             static float logTimer = 0.0f;
             logTimer -= 0.016f;
