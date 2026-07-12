@@ -25,7 +25,7 @@
     "glitchStrength": 0,
 
     "worldWave": 0.0,
-    "screenWave": 0.03,
+    "screenWave": 0.0,
     "screenShakeFx": 0,
     "edgeGlow": 0.0,
     "outlineBoost": 0.0,
