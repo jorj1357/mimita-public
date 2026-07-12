@@ -7,6 +7,8 @@
 #include "weapon-registry.h"
 #include "weapon-runtime.h"
 #include "weapon-collision-config.h"
+#include "combat/projectile-render.h"
+#include "pobjects/persistent-physics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -465,6 +467,47 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         WeaponSwordsword::render(camera, mSwordswordState, mSwordswordState.handPos);
         if (DebugConfig::DEBUG_SWORDSWORD) {
             WeaponSwordsword::renderDebug(camera, mSwordswordState, mSwordswordState.handPos);
+        }
+    }
+
+    // ── Projectile rendering for rocket launcher ──
+    if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+        // Read config (duplicated from update for now — refactor later)
+        const auto& rocketDef = *def;
+        auto cp2 = [&](const char* key, float fallback) {
+            return rocketDef.customParams.count(key) ? rocketDef.customParams.at(key) : fallback;
+        };
+        std::string projTexture = "assets/textureshq/colorful2.png";
+        float projLength = cp2("projectileVisualLength", 1.5f);
+        float projRadius = cp2("projectileVisualRadius", 0.18f);
+        glm::vec3 projScale(cp2("projectileVisualScaleX", 1.0f), cp2("projectileVisualScaleY", 1.0f), cp2("projectileVisualScaleZ", 1.0f));
+        glm::vec3 projRotOffset(cp2("projectileVisualRotationOffsetX", 0.0f), cp2("projectileVisualRotationOffsetY", 0.0f), cp2("projectileVisualRotationOffsetZ", 0.0f));
+        glm::vec2 projTexTiling(cp2("projectileVisualTextureTilingU", 1.0f), cp2("projectileVisualTextureTilingV", 1.0f));
+        for (const auto& rocket : mRocketState.activeRockets) {
+            if (rocket.exploded) continue;
+            renderProjectile(camera, rocket.position, rocket.orientation,
+                projLength, projRadius, projScale, projRotOffset, projTexTiling,
+                projTexture);
+        }
+    }
+
+    // ── Projectile rendering for grenade launcher ──
+    if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+        const auto& grenadeDef = *def;
+        auto cp3 = [&](const char* key, float fallback) {
+            return grenadeDef.customParams.count(key) ? grenadeDef.customParams.at(key) : fallback;
+        };
+        std::string projTexture = "assets/textureshq/meat1.png";
+        float projLength = cp3("projectileVisualLength", 1.8f);
+        float projRadius = cp3("projectileVisualRadius", 0.28f);
+        glm::vec3 projScale(cp3("projectileVisualScaleX", 1.0f), cp3("projectileVisualScaleY", 1.0f), cp3("projectileVisualScaleZ", 1.0f));
+        glm::vec3 projRotOffset(cp3("projectileVisualRotationOffsetX", 0.0f), cp3("projectileVisualRotationOffsetY", 0.0f), cp3("projectileVisualRotationOffsetZ", 0.0f));
+        glm::vec2 projTexTiling(cp3("projectileVisualTextureTilingU", 1.0f), cp3("projectileVisualTextureTilingV", 1.0f));
+        for (const PersistentPhysicsObject& obj : PersistentPhysicsSystem::instance().objects()) {
+            if (obj.exploded || obj.weaponId != "grenade_launcher") continue;
+            renderProjectile(camera, obj.position, obj.rotation,
+                projLength, projRadius, projScale, projRotOffset, projTexTiling,
+                projTexture);
         }
     }
 

@@ -226,23 +226,8 @@ void update(
     if (dt <= 0.0f) return;
     state.gameTime += dt;
 
-    // Read config values for visuals and smoke (hot-reloadable)
-    std::string projTexture = cp(def, "projectileVisualTexture", 0.0f)
-        ? "assets/textureshq/colorful2.png" : "assets/textureshq/colorful2.png";
-    float projLength = cp(def, "projectileVisualLength", 1.5f);
-    float projRadius = cp(def, "projectileVisualRadius", 0.18f);
-    glm::vec3 projScale(
-        cp(def, "projectileVisualScaleX", 1.0f),
-        cp(def, "projectileVisualScaleY", 1.0f),
-        cp(def, "projectileVisualScaleZ", 1.0f));
-    glm::vec3 projRotOffset(
-        cp(def, "projectileVisualRotationOffsetX", 0.0f),
-        cp(def, "projectileVisualRotationOffsetY", 0.0f),
-        cp(def, "projectileVisualRotationOffsetZ", 0.0f));
-    glm::vec2 projTexTiling(
-        cp(def, "projectileVisualTextureTilingU", 1.0f),
-        cp(def, "projectileVisualTextureTilingV", 1.0f));
-
+    // Read config values for smoke (hot-reloadable). Projectile visuals are
+    // read in WeaponSystem::render during the render pass.
     bool smokeEnabled = cp(def, "smokeEnabled", 1.0f) > 0.0f;
     float smokeEmissionRate = cp(def, "smokeEmissionRate", 50.0f);
     int smokeParticlesPerEm = (int)cp(def, "smokeParticlesPerEmission", 2.0f);
@@ -408,12 +393,7 @@ void update(
             }
         }
 
-        // ── Textured rendering ──
-        {
-            renderProjectile(camera, rocket.position, rocket.orientation,
-                projLength, projRadius, projScale, projRotOffset, projTexTiling,
-                projTexture);
-        }
+        // ── Textured rendering (handled in WeaponSystem::render during render pass) ──
 
         // ── Config-controlled smoke trail ──
         if (smokeEnabled) {
