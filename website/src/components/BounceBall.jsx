@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 
-const R = 55
+const DEFAULT_R = 60
 const GRAVITY = 0.35
 const FRICTION = 0.9995
 const RESTITUTION = 0.97
@@ -29,7 +29,7 @@ function docH() {
   )
 }
 
-export default function BounceBall() {
+export default function BounceBall({ radius: R = DEFAULT_R }) {
   const cleanup = useRef(null)
 
   useEffect(() => {
@@ -44,6 +44,7 @@ export default function BounceBall() {
     let rafId = null
     let boundsW = maxX
     let boundsH = maxY
+    let rotation = 0
 
     debugLog("Ball Position", { x: pos.x, y: pos.y })
     debugLog("Document Bounds", { width: docW(), height: docH() })
@@ -73,8 +74,23 @@ export default function BounceBall() {
       "pointer-events:auto;" +
       "z-index:99999;" +
       "box-shadow:0 0 12px rgba(255,68,136,0.5);" +
-      "user-select:none;"
+      "user-select:none;" +
+      "display:flex;align-items:center;justify-content:center;"
     container.appendChild(ball)
+
+    const label = document.createElement("span")
+    const fontSize = Math.max(10, R * 0.35)
+    label.textContent = "Luis"
+    label.style.cssText =
+      "color:#000;" +
+      "font-family:'MingLiU','MingLiU-ExtB','PMingLiU',serif;" +
+      `font-size:${fontSize}px;` +
+      "font-weight:bold;" +
+      "pointer-events:none;" +
+      "text-shadow:0 1px 2px rgba(255,255,255,0.3);" +
+      "white-space:nowrap;" +
+      "line-height:1;"
+    ball.appendChild(label)
 
     function measureBounds() {
       boundsW = docW() - R * 2
@@ -112,10 +128,16 @@ export default function BounceBall() {
             vel.y = 0
           }
         }
+
+        // Compute rotation from velocity direction
+        if (Math.abs(vel.x) > 0.01 || Math.abs(vel.y) > 0.01) {
+          rotation = Math.atan2(vel.y, vel.x) * (180 / Math.PI)
+        }
       }
 
       ball.style.left = pos.x + "px"
       ball.style.top = pos.y + "px"
+      label.style.transform = `rotate(${rotation}deg)`
 
       rafId = requestAnimationFrame(tick)
     }
