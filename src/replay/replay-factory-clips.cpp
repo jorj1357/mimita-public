@@ -7,6 +7,7 @@
 #include <fstream>
 #include <ctime>
 #include <vector>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -14,20 +15,20 @@
 
 using json = nlohmann::json;
 
-// Keep the replays/clips folder under 100 MB by deleting oldest clips.
+// ── Prune helper — runs on worker thread ──────────────────────────
 static void enforceClipStorageLimit()
 {
     namespace fs = std::filesystem;
-    constexpr uint64_t MAX_BYTES = 100ULL * 1024 * 1024; // 100 MB
+    constexpr uint64_t MAX_BYTES = 100ULL * 1024 * 1024;
     fs::path clipsDir = fs::path("replays") / "clips";
     std::error_code ec;
 
     if (!fs::exists(clipsDir, ec)) return;
 
-    // Collect all .mclip.json files with their last-write time
     struct ClipEntry {
         fs::path path;
         fs::file_time_type time;
+        uint64_t size;
     };
     std::vector<ClipEntry> clips;
     uint64_t totalBytes = 0;
@@ -36,31 +37,51 @@ static void enforceClipStorageLimit()
         if (!entry.is_regular_file(ec)) continue;
         auto ext = entry.path().extension().string();
         if (ext != ".json") continue;
-        uint64_t size = entry.file_size(ec);
-        totalBytes += size;
-        clips.push_back({entry.path(), entry.last_write_time(ec)});
+        uint64_t sz = entry.file_size(ec);
+        totalBytes += sz;
+        clips.push_back({entry.path(), entry.last_write_time(ec), sz});
     }
 
     if (totalBytes <= MAX_BYTES) return;
 
-    // Sort oldest first
     std::sort(clips.begin(), clips.end(),
         [](const ClipEntry& a, const ClipEntry& b) { return a.time < b.time; });
 
-    // Delete oldest until under limit
     printf("[REPLAY CLIP] clips directory = %llu bytes (limit %llu), pruning %zu files\n",
            (unsigned long long)totalBytes, (unsigned long long)MAX_BYTES, clips.size());
     for (const auto& clip : clips) {
         if (totalBytes <= MAX_BYTES) break;
-        uint64_t size = fs::file_size(clip.path, ec);
         fs::remove(clip.path, ec);
-        totalBytes -= size;
+        totalBytes -= clip.size;
         printf("[REPLAY CLIP] deleted: %s\n", clip.path.filename().string().c_str());
     }
     printf("[REPLAY CLIP] pruning done, clips directory = %llu bytes\n",
            (unsigned long long)totalBytes);
 }
 
+// ── Worker job: serialize + write + prune ─────────────────────────
+static void saveClipJob(ReplayClip clip, std::string path)
+{
+    printf("[REPLAY WORKER] executing save job thread=%zx\n",
+           std::hash<std::thread::id>{}(std::this_thread::get_id()));
+
+    // Create directories
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path("replays") / "clips", ec);
+
+    // Serialize and write
+    if (!clip.save(path)) {
+        printf("[REPLAY FACTORY] failed to save clip: %s\n", path.c_str());
+        return;
+    }
+
+    printf("[REPLAY FACTORY] saved clip: %s\n", path.c_str());
+
+    // Prune
+    enforceClipStorageLimit();
+}
+
+// ── Highlight classification ──────────────────────────────────────
 HighlightType classifyHighlight(const KillContext& ctx)
 {
     if (ctx.roundWinning)
@@ -125,20 +146,19 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
     ctx.roundWinning = pending.roundWinning;
     HighlightType type = classifyHighlight(ctx);
 
-    // Build info
-    ReplayClipInfo info;
-    info.mapName = std::string(clip.header.mapName);
-    info.killerName = pending.killerId;
-    info.victimName = pending.victimId;
-    info.weaponName = pending.weaponId;
-    info.highlightType = type;
-    info.durationTicks = clip.header.tickCount;
-    info.tickRate = clip.header.tickRate;
-    info.killTick = killTick;
-    info.distance = pending.distance;
-    info.roundWinning = pending.roundWinning;
+    // Build info (for caller reference — not used by worker)
+    pending.info.mapName = std::string(clip.header.mapName);
+    pending.info.killerName = pending.killerId;
+    pending.info.victimName = pending.victimId;
+    pending.info.weaponName = pending.weaponId;
+    pending.info.highlightType = type;
+    pending.info.durationTicks = clip.header.tickCount;
+    pending.info.tickRate = clip.header.tickRate;
+    pending.info.killTick = killTick;
+    pending.info.distance = pending.distance;
+    pending.info.roundWinning = pending.roundWinning;
 
-    // Generate filename with highlight type
+    // Generate filename with timestamp and killTick to avoid collisions
     std::time_t now = std::time(nullptr);
     std::tm localTime{};
 #ifdef _WIN32
@@ -150,33 +170,27 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
     std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S", &localTime);
 
     std::string typeStr = highlightTypeName(type);
-    std::string clipName = std::string(fileName) + "_" + typeStr + ".mclip.json";
+    std::string clipName = std::string(fileName) + "_" + std::to_string(killTick) + "_" + typeStr + ".mclip.json";
     std::string path = (std::filesystem::path("replays") / "clips" / clipName).string();
 
-    // Save
-    std::error_code ec;
-    std::filesystem::create_directories(std::filesystem::path("replays") / "clips", ec);
-    if (!clip.save(path)) {
-        printf("[REPLAY FACTORY] failed to save clip: %s\n", path.c_str());
-        return;
-    }
+    pending.info.path = path;
+    pending.info.filename = clipName;
+    pending.info.timestamp = fileName;
 
-    info.path = path;
-    info.filename = clipName;
-    info.timestamp = fileName;
-
-    pending.info = info;
-    printf("[REPLAY FACTORY] saved clip: %s  type=%s killer=%s victim=%s weapon=%s dist=%.1f\n",
+    printf("[REPLAY FACTORY] enqueuing clip save: %s  type=%s killer=%s victim=%s weapon=%s dist=%.1f\n",
            path.c_str(), typeStr.c_str(),
            pending.killerId.c_str(), pending.victimId.c_str(),
            pending.weaponId.c_str(), pending.distance);
 
-    // Enforce storage limit after saving a new clip — on background thread
-    if (mWorker) {
-        mWorker->enqueue([]() {
-            enforceClipStorageLimit();
-        });
-    } else {
-        enforceClipStorageLimit();
+    // ── Offload everything to background worker ──────────────────
+    if (!mWorker) {
+        printf("[REPLAY FACTORY] ERROR: worker missing, refusing synchronous replay save\n");
+        return;
     }
+
+    mWorker->enqueue(
+        [clip = std::move(clip), path = std::move(path)]() mutable
+        {
+            saveClipJob(std::move(clip), std::move(path));
+        });
 }

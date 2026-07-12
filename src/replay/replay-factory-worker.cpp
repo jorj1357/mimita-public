@@ -1,5 +1,9 @@
 #include "replay-factory-worker.h"
 
+#include <cstdio>
+#include <functional>
+#include <thread>
+
 ReplaySaveWorker::ReplaySaveWorker()
 {
     mThread = std::thread(&ReplaySaveWorker::threadLoop, this);
@@ -34,6 +38,11 @@ void ReplaySaveWorker::drain()
 
 void ReplaySaveWorker::threadLoop()
 {
+    {
+        printf("[REPLAY WORKER] thread=%zx started\n",
+               std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    }
+
     while (true) {
         std::function<void()> job;
         {
