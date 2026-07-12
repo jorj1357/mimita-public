@@ -33,9 +33,9 @@ constexpr float DEAD_SLEEP_ANGULAR = 0.03f;
 constexpr float DEAD_SLEEP_TIME = 0.8f;
 constexpr float DEAD_WORLD_FLOOR = -500.0f;
 constexpr float DEAD_COLLISION_SKIN = 0.02f;
-constexpr float CORPSE_STAGE1_SECONDS = 5.0f;
+constexpr float CORPSE_STAGE1_SECONDS = 2.0f;
 constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
-constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
+constexpr float CORPSE_TOTAL_SECONDS = 3.0f;
 
 #define DEAD_LOG(fmt, ...) \
     do { if (DebugConfig::DEBUG_RAGDOLL) \
@@ -238,9 +238,7 @@ void DeathSystem::render(const Camera& camera) const
     if (mCorpses.empty() || !gRenderer)
         return;
 
-    // Suppress legacy skeleton render when physics ragdoll is active
-    if (RagdollConfig::instance().data().enabled)
-        return;
+    // [RAGDOLL SUPPRESSION REMOVED] — always render DeadBody skeleton
 
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);

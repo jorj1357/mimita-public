@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <chrono>
+#include <random>
 #include <thread>
 
 namespace MimitaNet {
@@ -179,6 +180,218 @@ int runServer(const LaunchOptions& options)
         if (elapsed < targetMs)
             std::this_thread::sleep_for(std::chrono::milliseconds(targetMs - elapsed));
     }
+}
+
+// ─── Listen Server ─────────────────────────────────────────────────────────
+
+bool startListenServer(ListenServerState& state, uint16_t port)
+{
+    if (state.active)
+        return false;
+
+    if (!netStartup())
+    {
+        printf("[LISTEN SERVER] FATAL: WSAStartup failed\n");
+        return false;
+    }
+
+    state.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (state.sock == INVALID_SOCKET)
+    {
+        printf("[LISTEN SERVER] FATAL: socket() failed error=%d\n", WSAGetLastError());
+        netShutdown();
+        return false;
+    }
+
+    int reuseAddr = 1;
+    setsockopt(state.sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr));
+    setNonBlocking(state.sock);
+
+    sockaddr_in bindAddr{};
+    bindAddr.sin_family = AF_INET;
+    bindAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bindAddr.sin_port = htons(port);
+
+    if (bind(state.sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
+    {
+        int err = WSAGetLastError();
+        printf("[LISTEN SERVER] FATAL: bind() port=%u failed error=%d\n", port, err);
+        if (err == WSAEADDRINUSE)
+            printf("[LISTEN SERVER] HINT: Port %u already in use\n", port);
+        closesocket(state.sock);
+        netShutdown();
+        return false;
+    }
+
+    printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
+
+    if (!loadHeadlessWorld("assets/maps/mimita-aabb-only-interior-small-v4.glb", state.world))
+        printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
+
+    state.serverCode = generateServerCode();
+    state.active = true;
+    state.port = port;
+    state.players.clear();
+    state.npcs.clear();
+    state.nextPlayerId = 1;
+    state.nextEntityId = 1000;
+    state.tick = 0;
+    state.lastLog = 0;
+    state.totalPacketsIn = 0;
+    state.totalPacketsOut = 0;
+    state.startTimeMs = nowMs();
+    state.accumulator = 0.0f;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        ServerNpc npc;
+        npc.entityId = state.nextEntityId++;
+        npc.name = "NPC " + std::to_string(i + 1);
+        npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+        npc.phase = i * 2.0f;
+        state.npcs[npc.entityId] = npc;
+    }
+
+    printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
+    return true;
+}
+
+void stopListenServer(ListenServerState& state)
+{
+    if (!state.active)
+        return;
+
+    printf("[LISTEN SERVER] stopping code=%s players=%zu uptime=%llus\n",
+           state.serverCode.c_str(), state.players.size(),
+           (unsigned long long)((nowMs() - state.startTimeMs) / 1000));
+
+    closesocket(state.sock);
+    state.sock = INVALID_SOCKET;
+    state.active = false;
+    state.accumulator = 0.0f;
+    netShutdown();
+}
+
+void tickListenServer(ListenServerState& state, float dt)
+{
+    if (!state.active || state.sock == INVALID_SOCKET)
+        return;
+
+    uint64_t frameStart = nowMs();
+
+    state.accumulator += dt;
+    if (state.accumulator > 0.05f)
+        state.accumulator = 0.05f;
+
+    while (state.accumulator >= SERVER_DT)
+    {
+        char buffer[2048];
+        sockaddr_in from{};
+        int fromLen = sizeof(from);
+
+        for (;;)
+        {
+            int bytes = recvfrom(state.sock, buffer, sizeof(buffer), 0,
+                                 (sockaddr*)&from, &fromLen);
+            if (bytes <= 0)
+            {
+                int wsaErr = WSAGetLastError();
+                if (wsaErr != WSAEWOULDBLOCK)
+                    printf("[LISTEN SERVER RX ERROR] recvfrom failed error=%d\n", wsaErr);
+                break;
+            }
+            ++state.totalPacketsIn;
+
+            PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+            if (bytes < (int)sizeof(PacketHeader) ||
+                header->magic != PROTOCOL_MAGIC ||
+                header->version != PROTOCOL_VERSION)
+            {
+                printf("[LISTEN SERVER] rejected invalid header magic=0x%08x ver=%u\n",
+                       header->magic, header->version);
+                continue;
+            }
+
+            if (header->type != PACKET_HELLO)
+            {
+                auto it = state.players.find(header->playerId);
+                if (it != state.players.end())
+                    it->second.lastHeardMs = nowMs();
+            }
+
+            if (header->type == PACKET_HELLO)
+                handleHello(state.sock, from, buffer, bytes, state.players,
+                            state.nextPlayerId, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_INPUT)
+                handleInputPacket(buffer, bytes, state.players, state.world,
+                                  state.nextEntityId, state.npcs);
+            else if (header->type == PACKET_DISCONNECT)
+                handleDisconnect(state.players, buffer);
+            else if (header->type == PACKET_SPAWN_NPC_REQUEST)
+                handleSpawnNpcRequest(buffer, bytes, state.players,
+                                      state.nextEntityId, state.npcs);
+            else if (header->type == PACKET_TELEPORT_REQUEST)
+                handleTeleportRequest(buffer, bytes, state.players, state.world);
+            else if (header->type == PACKET_EXPLODE_REQUEST)
+                handleExplodeRequest(buffer, bytes, state.players);
+            else if (header->type == PACKET_SHOT_REQUEST)
+                handleShotRequest(state.sock, from, buffer, bytes, state.players,
+                                  state.world, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_CHAT_MESSAGE)
+                handleChatMessage(state.sock, buffer, bytes, state.players,
+                                  state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_PING)
+                handlePing(state.sock, from, buffer, bytes, state.tick);
+            else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
+                handleNpcDamageRequest(state.sock, buffer, bytes, from,
+                                       state.players, state.npcs, state.tick,
+                                       state.totalPacketsOut);
+            else if (header->type == PACKET_SERVER_COMMAND)
+                handleServerCommand(buffer, bytes, state.players, state.npcs);
+        }
+
+        handleClientTimeout(state.players);
+        for (auto& kv : state.players)
+            pushPositionHistory(kv.second, state.tick);
+        for (auto& kv : state.players)
+            simulatePlayer(kv.second, state.world);
+        resolvePlayerCollision(state.players);
+        checkVoidDeath(state.players, state.npcs);
+        for (auto& kv : state.npcs)
+            simulateNpc(kv.second, state.players);
+
+        buildAndSendSnapshot(state.sock, state.players, state.npcs,
+                             state.tick, state.totalPacketsOut);
+
+        uint64_t now = nowMs();
+        if (now - state.lastLog >= 1000)
+        {
+            printf("[LISTEN SERVER] tick=%u players=%zu packetsIn=%llu packetsOut=%llu code=%s\n",
+                   state.tick, state.players.size(),
+                   (unsigned long long)state.totalPacketsIn,
+                   (unsigned long long)state.totalPacketsOut,
+                   state.serverCode.c_str());
+            for (const auto& kv : state.players)
+                printf("[LISTEN SERVER] player id=%u name=\"%s\" pos=(%.1f,%.1f,%.1f)\n",
+                       kv.second.id, kv.second.name.c_str(),
+                       kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+            state.lastLog = now;
+        }
+
+        ++state.tick;
+        state.accumulator -= SERVER_DT;
+    }
+}
+
+std::string generateServerCode()
+{
+    static const char chars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    static std::mt19937 rng((unsigned int)std::chrono::steady_clock::now().time_since_epoch().count());
+    std::uniform_int_distribution<int> dist(0, 29);
+    std::string code;
+    for (int i = 0; i < 7; ++i)
+        code += chars[dist(rng)];
+    return code;
 }
 
 } // namespace MimitaNet

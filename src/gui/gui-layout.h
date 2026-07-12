@@ -109,6 +109,7 @@ struct GuiElement {
     // Data binding
     std::string binding;             // data binding ID
     std::string bindingFallback;     // fallback text
+    std::string bindingItems;        // binding key for dropdown items (comma-separated)
     std::string visibleWhenBinding;
     std::string visibleWhenOp;       // "equals","not_equals","exists"
     std::string visibleWhenValue;

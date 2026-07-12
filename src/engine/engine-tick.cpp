@@ -34,6 +34,8 @@
 #include "game/game-state.h"
 #include "replay/replay.h"
 #include "network/multiplayer-context.h"
+#include "network/server.h"
+#include "gui/gui-main.h"
 #include "terminal/terminal-state.h"
 
 extern DuelManager gDuelManager;
@@ -67,6 +69,12 @@ void engineTick(Engine& engine)
     bool worldPassRan;
     { MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
     { MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
+    // Always tick listen server if hosting (receives packets, sends snapshots)
+    {
+        MimitaNet::ListenServerState* ls = getListenServerState();
+        if (ls && ls->active)
+            MimitaNet::tickListenServer(*ls, dt);
+    }
     { MIMITA_PERF_SCOPE("State"); engineTickState(engine, dt); }
     HEARTBEAT("after state");
 

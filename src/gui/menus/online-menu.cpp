@@ -1,183 +1,124 @@
 #include "online-menu.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
+#include "../gui-bindings.h"
 #include "../gui-coord.h"
 #include "../ui-system.h"
+#include "../../map/map-catalog.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#endif
-
 namespace {
 
-enum class InputField
-{
-    None,
-    ServerName,
-    HostIp,
-    HostPort,
-    JoinIp,
-    JoinPort
-};
-
 bool menuActive = false;
-InputField focusedField = InputField::None;
-std::string serverName = "Mimita Server";
-std::string hostIp = "127.0.0.1";
-std::string hostPort = "1357";
-std::string joinIp = "127.0.0.1";
-std::string joinPort = "1357";
-std::string processStatus = "Stopped";
+bool serverRunning = false;
+std::string serverCodeDisplay;
+bool mapListScanned = false;
+std::string mapItemsCache;
 
-#ifdef _WIN32
-HANDLE serverProcess = nullptr;
-DWORD serverProcessId = 0;
-#endif
-
-std::string* focusedValue()
+void ensureMapListScanned()
 {
-    switch (focusedField)
-    {
-        case InputField::ServerName: return &serverName;
-        case InputField::HostIp: return &hostIp;
-        case InputField::HostPort: return &hostPort;
-        case InputField::JoinIp: return &joinIp;
-        case InputField::JoinPort: return &joinPort;
-        default: return nullptr;
-    }
-}
-
-bool validCharacter(InputField field, unsigned int codepoint)
-{
-    if (field == InputField::ServerName)
-        return codepoint >= 32 && codepoint <= 126 && codepoint != '"';
-    if (field == InputField::HostPort || field == InputField::JoinPort)
-        return codepoint >= '0' && codepoint <= '9';
-    return (codepoint >= '0' && codepoint <= '9') || codepoint == '.';
-}
-
-void appendCharacter(std::string& target, unsigned int codepoint)
-{
-    if (target.size() < 31)
-        target.push_back((char)codepoint);
-}
-
-}
-
-void onlineMenuSetActive(bool active) { menuActive = active; processStatus = "Stopped"; }
-void onlineMenuHandleChar(unsigned int codepoint)
-{
-    if (!menuActive) return;
-    std::string* val = focusedValue();
-    if (val && validCharacter(focusedField, codepoint))
-        appendCharacter(*val, codepoint);
-}
-void onlineMenuHandleKey(int key, int action)
-{
-    if (!menuActive || (action != GLFW_PRESS && action != GLFW_REPEAT)) return;
-    if (key == GLFW_KEY_TAB) {
-        int f = (int)focusedField;
-        f = (f + 1) % 6;
-        focusedField = (InputField)f;
+    if (mapListScanned)
         return;
+    mapListScanned = true;
+    MapCatalogResult catalog = scanMapCatalog();
+    mapItemsCache.clear();
+    for (size_t i = 0; i < catalog.maps.size(); ++i)
+    {
+        if (i > 0) mapItemsCache += ",";
+        mapItemsCache += catalog.maps[i].displayName;
     }
-    if (key == GLFW_KEY_BACKSPACE) {
-        std::string* val = focusedValue();
-        if (val && !val->empty()) val->pop_back();
+    if (mapItemsCache.empty())
+        mapItemsCache = "funworldv3";
+}
+
+} // anonymous namespace
+
+void onlineMenuSetActive(bool active) {
+    menuActive = active;
+    if (!active) {
+        GuiBindings::instance().clearFocus();
     }
+}
+
+void onlineMenuSetServerRunning(bool running) {
+    serverRunning = running;
+}
+
+void onlineMenuSetServerCode(const std::string& code) {
+    serverCodeDisplay = code;
+}
+
+void onlineMenuHandleChar(unsigned int codepoint) {
+    (void)codepoint;
+}
+
+void onlineMenuHandleKey(int key, int action) {
+    (void)key;
+    (void)action;
 }
 
 OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 {
     OnlineMenuResult r{};
+
+    // Sync bindings with actual state
+    GuiBindings& b = GuiBindings::instance();
+
+    // Scan map list once
+    ensureMapListScanned();
+
+    // Server state bindings
+    b.set("server.code", serverCodeDisplay);
+    b.set("server.status", serverRunning ? "Running" : "Stopped");
+    b.set("server.running", serverRunning ? "true" : "false");
+    b.set("server.not_running", serverRunning ? "false" : "true");
+    b.set("server.name_placeholder", "MiMITA Server");
+    b.set("server.map_placeholder", "funworldv3");
+    b.set("server.player_limit_placeholder", "999");
+    b.set("server.map_items", mapItemsCache);
+    b.set("join.code_placeholder", "______");
+    b.set("join.code", "");
+
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
 
-    // Draw all static elements from layout (background, labels, separator, buttons)
     for (const std::string& id : layout.elementIds())
     {
         const GuiElement* elem = layout.get(id);
         if (!elem || !elem->visible) continue;
 
-        if (elem->type == "panel" || elem->type == "text" || elem->type == "label")
-        {
-            drawGuiElement(win, *elem);
-            continue;
-        }
-
         UIButtonState s = drawGuiElement(win, *elem);
-        if (!s.clicked) continue;
 
-        if (id == "startServerButton")
+        if (id == "startServerButton" && s.clicked)
         {
-            #ifdef _WIN32
-            if (!serverProcess) {
-                STARTUPINFOA si{};
-                si.cb = sizeof(si);
-                PROCESS_INFORMATION pi{};
-                std::string cmd = "mimita.exe --server --port " + hostPort;
-                if (CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, FALSE,
-                                   CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi))
-                {
-                    serverProcess = pi.hProcess;
-                    serverProcessId = pi.dwProcessId;
-                    CloseHandle(pi.hThread);
-                    processStatus = "Running";
-                    printf("[ONLINE MENU] Server started PID=%lu port=%s\n",
-                           pi.dwProcessId, hostPort.c_str());
-                }
-            }
-            #endif
+            if (!serverRunning)
+                r.startServer = true;
         }
-        else if (id == "stopServerButton")
+        else if (id == "stopServerButton" && s.clicked)
         {
-            #ifdef _WIN32
-            if (serverProcess) {
-                TerminateProcess(serverProcess, 0);
-                CloseHandle(serverProcess);
-                serverProcess = nullptr;
-                serverProcessId = 0;
-                processStatus = "Stopped";
-            }
-            #endif
+            if (serverRunning)
+                r.stopServer = true;
         }
-        else if (id == "joinServerButton")
+        else if (id == "connectToThisServerButton" && s.clicked)
         {
+            // Connect host to local listen server
             r.connectToServer = true;
-            r.connectAddress = joinIp + ":" + joinPort;
+            r.connectAddress = "127.0.0.1:1357";
         }
-        else if (id == "backButton")
+        else if (id == "joinServerButton" && s.clicked)
+        {
+            // Read join code from binding and resolve to IP
+            std::string code = b.get("join.code");
+            // For now, always connect to localhost
+            r.connectToServer = true;
+            r.connectAddress = "127.0.0.1:1357";
+        }
+        else if (id == "backButton" && s.clicked)
+        {
             r.goBack = true;
-    }
-
-    // Dynamic input fields (Host side)
-    {
-        GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
-        // Host Port input
-        uiDrawRect(cs.designToScreen({700, 200, 200, 36}), {0.12f,0.14f,0.18f,1}, "host-port-input");
-        uiDrawText(hostPort.c_str(), cs.designToScreenX(708), cs.designToScreenY(208), 0.32f, {1,1,1,1});
-        if (uiButton(win, "", {700,200,200,36}, {0,0,0,0}).clicked) focusedField = InputField::HostPort;
-
-        // Status
-        char status[64];
-        snprintf(status, sizeof(status), "Status: %s", processStatus.c_str());
-        uiDrawText(status, cs.designToScreenX(510), cs.designToScreenY(230), 0.30f, {0.75f, 0.8f, 0.9f, 1.0f});
-    }
-
-    // Dynamic input fields (Join side)
-    {
-        GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
-        // Join Address input
-        uiDrawRect(cs.designToScreen({990, 200, 360, 36}), {0.12f,0.14f,0.18f,1}, "join-addr-input");
-        std::string joinAddr = joinIp + ":" + joinPort;
-        uiDrawText(joinAddr.c_str(), cs.designToScreenX(998), cs.designToScreenY(208), 0.32f, {1,1,1,1});
-        if (uiButton(win, "", {990,200,360,36}, {0,0,0,0}).clicked) focusedField = InputField::JoinIp;
+        }
     }
 
     return r;

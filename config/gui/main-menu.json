@@ -5,19 +5,20 @@
     "coverImage": {
       "type": "image",
       "x": 0, "y": 0, "width": 1920, "height": 680,
-      "backgroundImage": "assets/uitextures/mimita cover in game v1.png"
+      "visible": true,
+      "backgroundImage": "assets/uitextures/mimita-cover-v1.png"
     },
     "playButton": {
       "type": "button",
-      "x": 480, "y": 524, "width": 304, "height": 93,
-      "text": "PLAY",
+      "x": 480, "y": 524, "width": 354, "height": 93,
+      "text": "PLAY!!!!!",
       "fontSize": 0.44,
       "textColor": [1, 1, 1, 1],
-      "backgroundColor": [0.24, 0.82, 0.48, 1.0]
+      "backgroundColor": [0.14, 0.62, 0.28, 1.0]
     },
     "settingsButton": {
       "type": "button",
-      "x": 144, "y": 427, "width": 160, "height": 44,
+      "x": 480, "y": 627, "width": 354, "height": 60,
       "text": "SETTINGS",
       "fontSize": 0.44,
       "textColor": [1, 1, 1, 1],
@@ -25,7 +26,7 @@
     },
     "replaysButton": {
       "type": "button",
-      "x": 144, "y": 484, "width": 160, "height": 44,
+      "x": 480, "y": 697, "width": 354, "height": 60,
       "text": "REPLAYS",
       "fontSize": 0.44,
       "textColor": [1, 1, 1, 1],
@@ -33,7 +34,7 @@
     },
     "avatarButton": {
       "type": "button",
-      "x": 725, "y": 881, "width": 348, "height": 91,
+      "x": 480, "y": 767, "width": 354, "height": 60,
       "text": "AVATAR",
       "fontSize": 0.44,
       "textColor": [1, 1, 1, 1],
@@ -41,7 +42,7 @@
     },
     "enterSignInCodeButton": {
       "type": "button",
-      "x": 270, "y": 780, "width": 300, "height": 50,
+      "x": 480, "y": 837, "width": 354, "height": 60,
       "text": "ENTER SIGN-IN CODE",
       "fontSize": 0.30,
       "textColor": [1, 1, 1, 1],
@@ -49,7 +50,7 @@
     },
     "exitButton": {
       "type": "button",
-      "x": 653, "y": 1000, "width": 384, "height": 119,
+      "x": 480, "y": 907, "width": 354, "height": 60,
       "text": "EXIT",
       "fontSize": 0.44,
       "textColor": [1, 1, 1, 1],

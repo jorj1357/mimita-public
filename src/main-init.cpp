@@ -1,6 +1,7 @@
 #include "main-init.h"
 #include "main-systems.h"
 #include "gui/ui-system-internal.h"
+#include "gui/gui-bindings.h"
 #include "auth/auth-popup.h"
 #include <cstdio>
 #include <cstdlib>
@@ -205,6 +206,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         avatarMenuHandleChar(codepoint);
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
+        guiBindingsHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
         GuiEditor::instance().handleChar(codepoint);
     });
@@ -216,6 +218,7 @@ void gameInit(int argc, char** argv, Engine& engine)
             avatarMenuHandleKey(key, action);
             serverInfoMenuHandleKey(key, action);
             onlineMenuHandleKey(key, action);
+            guiBindingsHandleKey(key, action);
             Terminal::instance().handleKey(key, mods);
         }
     });

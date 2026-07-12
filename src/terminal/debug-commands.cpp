@@ -11,6 +11,7 @@
 #include "audio/audio.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/player-nameplates.h"
+#include "gui/gui-bindings.h"
 
 void registerDebugCommands()
 {
@@ -227,5 +228,33 @@ void registerDebugCommands()
             Terminal::instance().addLog(std::string("[HEALTHME] HP set to ") + std::to_string(value));
         },
         "2026-07-04", CommandCategory::Debug
+    });
+
+    // GUI binding debug commands
+    Terminal::instance().registerCommand({
+        "gui_dump_bindings", "Dump all active GUI data bindings",
+        "gui_dump_bindings",
+        [](const std::vector<std::string>&) {
+            const auto& all = GuiBindings::instance().all();
+            Terminal::instance().addLog("=== GUI BINDINGS ===");
+            for (const auto& kv : all) {
+                Terminal::instance().addLog("  " + kv.first + " = " + kv.second);
+            }
+            Terminal::instance().addLog("Focused input: " +
+                (GuiBindings::instance().focusedId().empty()
+                    ? "(none)" : GuiBindings::instance().focusedId()));
+            Terminal::instance().addLog("=== END ===");
+        },
+        "2026-07-12", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "gui_highlight_dynamic", "Toggle highlighting of dynamic GUI elements (not implemented yet)",
+        "gui_highlight_dynamic [0|1]",
+        [](const std::vector<std::string>& args) {
+            static bool highlight = false;
+            highlight = args.empty() ? !highlight : args[0] != "0";
+            Terminal::instance().addLog(std::string("[GUI] highlight_dynamic=") + (highlight ? "1" : "0"));
+        },
+        "2026-07-12", CommandCategory::Debug
     });
 }

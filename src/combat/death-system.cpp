@@ -38,9 +38,9 @@ extern Renderer* gRenderer;
 
 namespace {
 constexpr float RESPAWN_SECONDS = 3.0f;
-constexpr float CORPSE_STAGE1_SECONDS = 5.0f;
+constexpr float CORPSE_STAGE1_SECONDS = 2.0f;
 constexpr float CORPSE_STAGE2_SECONDS = 1.0f;
-constexpr float CORPSE_TOTAL_SECONDS = 6.0f;
+constexpr float CORPSE_TOTAL_SECONDS = 3.0f;
 constexpr float DEAD_WORLD_FLOOR = -500.0f;
 
 #define DEAD_LOG(fmt, ...) \
@@ -270,9 +270,7 @@ bool DeathSystem::kill(
 
     mCorpses.push_back(std::move(body));
 
-    // Spawn multi-part ragdoll (physics-based, replaces frozen skeleton)
-    RagdollDeathSystem::instance().spawnFromPlayer(
-        victim, direction * lethalForce, actorId);
+    // [RAGDOLL REMOVED] — using simple DeadBody physics instead
 
     // Spawn death ellipsoid effect at the victim position, elongated along the kill direction
     const auto& deCfg = HitEffects::config().deathEllipsoid;
@@ -282,9 +280,10 @@ bool DeathSystem::kill(
             deCfg.length, deCfg.radius, deCfg.lifetime, victim.sizeScale);
     }
 
-    if (DebugConfig::DEBUG_DEATH_TIMELINE)
-        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] t=%lldms kill() complete\n",
-            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count());
+    if (DebugConfig::DEBUG_DEATH_TIMELINE || DebugConfig::DEBUG_DEATH_PERF)
+        Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] kill() total=%.3fms actor=%s\n",
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count(),
+            actorId.c_str());
 
     perfClearCorrelation();
     return true;
@@ -350,9 +349,10 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
         fclose(debugFile);
     }
 
-    if (DebugConfig::DEBUG_DEATH_TIMELINE)
-        Debug::log(Debug::Category::Ragdoll, "[DEATH TIMELINE] respawn complete t=%lldms\n",
-            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count());
+    if (DebugConfig::DEBUG_DEATH_TIMELINE || DebugConfig::DEBUG_DEATH_PERF)
+        Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] respawn() total=%.3fms actor=%s\n",
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - tStart).count(),
+            actorId.c_str());
 }
 
 void DeathSystem::update(
@@ -442,8 +442,7 @@ void DeathSystem::update(
             body.debugFreeze = true;
     }
 
-    // Update physics ragdolls
-    RagdollDeathSystem::instance().update(dt, world, player, npcs);
+    // [RAGDOLL UPDATE REMOVED] — simple DeadBody physics handles corpses
 
     // Remove expired corpses
     {

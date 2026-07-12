@@ -1,0 +1,264 @@
+dont put the community bg  because it covers everthin else we dont have z ordering yet
+7 12 2026 
+
+// {
+//   "format": "mimita-gui-layout",
+//   "version": 3,
+//   "elements": {
+//     "communityBg": {
+//       "type": "panel",
+//       "x": 0, "y": 0, "width": 1920, "height": 1080,
+//       "backgroundColor": [0.035, 0.04, 0.052, 0.0]
+//     },
+//     "separatorV": {
+//       "type": "panel",
+//       "x": 960, "y": 60, "width": 2, "height": 980,
+//       "backgroundColor": [0.15, 0.2, 0.3, 0.0]
+//     },
+//     "separatorH": {
+//       "type": "panel",
+//       "x": 40, "y": 660, "width": 1840, "height": 2,
+//       "backgroundColor": [0.15, 0.2, 0.3, 0.0]
+//     },
+
+//     "createTitle": {
+//       "type": "text", "x": 60, "y": 70, "width": 400, "height": 40,
+//       "text": "CREATE SERVER", "fontSize": 0.50,
+//       "textColor": [0.85, 0.9, 0.95, 1.0]
+//     },
+
+//     "serverNameLabel": {
+//       "type": "text", "x": 60, "y": 125, "width": 200, "height": 26,
+//       "text": "Server Name:", "fontSize": 0.30,
+//       "textColor": [0.75, 0.8, 0.9, 1.0]
+//     },
+//     "serverNameInput": {
+//       "type": "text_input",
+//       "x": 60, "y": 153, "width": 400, "height": 36,
+//       "binding": "server.name",
+//       "fontSize": 0.34,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+//       "outlineColor": [0.3, 0.5, 0.8, 0.5],
+//       "bindingFallback": "MiMITA Server",
+//       "textAlign": "left"
+//     },
+
+//     "mapLabel": {
+//       "type": "text", "x": 60, "y": 200, "width": 200, "height": 26,
+//       "text": "Map:", "fontSize": 0.30,
+//       "textColor": [0.75, 0.8, 0.9, 1.0]
+//     },
+//     "mapDropdown": {
+//       "type": "dropdown",
+//       "x": 60, "y": 228, "width": 400, "height": 36,
+//       "binding": "server.map",
+//       "bindingItems": "server.map_items",
+//       "fontSize": 0.34,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+//       "outlineColor": [0.3, 0.5, 0.8, 0.5],
+//       "hoverColor": [0.18, 0.2, 0.28, 1.0],
+//       "textAlign": "left"
+//     },
+
+//     "playerLimitLabel": {
+//       "type": "text", "x": 60, "y": 278, "width": 200, "height": 26,
+//       "text": "Player Limit:", "fontSize": 0.30,
+//       "textColor": [0.75, 0.8, 0.9, 1.0]
+//     },
+//     "playerLimitInput": {
+//       "type": "number_input",
+//       "x": 60, "y": 306, "width": 120, "height": 36,
+//       "binding": "server.player_limit",
+//       "fontSize": 0.34,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+//       "outlineColor": [0.3, 0.5, 0.8, 0.5],
+//       "bindingFallback": "999",
+//       "textAlign": "center"
+//     },
+//     "playerLimitSubtext": {
+//       "type": "text", "x": 190, "y": 312, "width": 200, "height": 22,
+//       "text": "Max 999", "fontSize": 0.24,
+//       "textColor": [0.55, 0.6, 0.7, 1.0]
+//     },
+
+//     "privacyLabel": {
+//       "type": "text", "x": 60, "y": 353, "width": 200, "height": 26,
+//       "text": "Privacy:", "fontSize": 0.30,
+//       "textColor": [0.75, 0.8, 0.9, 1.0]
+//     },
+//     "privacyDropdown": {
+//       "type": "dropdown",
+//       "x": 60, "y": 381, "width": 400, "height": 36,
+//       "binding": "server.privacy",
+//       "fontSize": 0.34,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+//       "outlineColor": [0.3, 0.5, 0.8, 0.5],
+//       "hoverColor": [0.18, 0.2, 0.28, 1.0],
+//       "textAlign": "left",
+//       "backgroundImage": "Public, no password,Private, with password"
+//     },
+//     "passwordInput": {
+//       "type": "text_input",
+//       "x": 60, "y": 425, "width": 400, "height": 36,
+//       "visibleWhenBinding": "server.privacy",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "Private, with password",
+//       "binding": "server.password",
+//       "fontSize": 0.34,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+//       "outlineColor": [0.8, 0.5, 0.2, 0.5],
+//       "bindingFallback": "",
+//       "textAlign": "left"
+//     },
+
+//     "startServerButton": {
+//       "type": "button",
+//       "x": 60, "y": 480, "width": 400, "height": 48,
+//       "visibleWhenBinding": "server.not_running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "text": "START SERVER",
+//       "fontSize": 0.36,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.15, 0.5, 0.2, 1.0],
+//       "hoverColor": [0.2, 0.6, 0.3, 1.0]
+//     },
+
+//     "serverCodeLabel": {
+//       "type": "text", "x": 60, "y": 480, "width": 400, "height": 28,
+//       "visibleWhenBinding": "server.running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "text": "Server Code:", "fontSize": 0.30,
+//       "textColor": [0.7, 0.7, 1.0, 1.0]
+//     },
+//     "serverCodeDisplay": {
+//       "type": "dynamic_text",
+//       "x": 60, "y": 506, "width": 400, "height": 50,
+//       "visibleWhenBinding": "server.running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "binding": "server.code",
+//       "bindingFallback": "ZMRJKLW",
+//       "fontSize": 0.55,
+//       "textColor": [0.6, 0.8, 1.0, 1.0],
+//       "textAlign": "center"
+//     },
+//     "serverCodeHint": {
+//       "type": "dynamic_text",
+//       "x": 60, "y": 554, "width": 400, "height": 22,
+//       "visibleWhenBinding": "server.running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "binding": "server.code",
+//       "bindingFallback": "Give this code to friends to join",
+//       "fontSize": 0.22,
+//       "textColor": [0.35, 0.4, 0.55, 1.0],
+//       "textAlign": "center"
+//     },
+//     "serverStatusLabel": {
+//       "type": "dynamic_text",
+//       "x": 60, "y": 578, "width": 400, "height": 24,
+//       "visibleWhenBinding": "server.running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "binding": "server.status",
+//       "fontSize": 0.26,
+//       "textColor": [0.3, 1.0, 0.4, 1.0],
+//       "textAlign": "left"
+//     },
+//     "connectToThisServerButton": {
+//       "type": "button",
+//       "x": 60, "y": 610, "width": 270, "height": 40,
+//       "visibleWhenBinding": "server.running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "text": "CONNECT TO THIS SERVER",
+//       "fontSize": 0.26,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.2, 0.5, 0.6, 1.0],
+//       "hoverColor": [0.3, 0.6, 0.7, 1.0]
+//     },
+//     "stopServerButton": {
+//       "type": "button",
+//       "x": 340, "y": 610, "width": 120, "height": 40,
+//       "visibleWhenBinding": "server.running",
+//       "visibleWhenOp": "equals",
+//       "visibleWhenValue": "true",
+//       "text": "STOP",
+//       "fontSize": 0.26,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.5, 0.15, 0.15, 1.0],
+//       "hoverColor": [0.6, 0.2, 0.2, 1.0]
+//     },
+
+//     "joinTitle": {
+//       "type": "text", "x": 1000, "y": 70, "width": 400, "height": 40,
+//       "text": "JOIN SERVER", "fontSize": 0.50,
+//       "textColor": [0.85, 0.9, 0.95, 1.0]
+//     },
+
+//     "joinCodeLabel": {
+//       "type": "text", "x": 1000, "y": 125, "width": 400, "height": 26,
+//       "text": "Server Code:", "fontSize": 0.30,
+//       "textColor": [0.75, 0.8, 0.9, 1.0]
+//     },
+//     "joinCodeInput": {
+//       "type": "text_input",
+//       "x": 1000, "y": 153, "width": 400, "height": 48,
+//       "binding": "join.code",
+//       "bindingFallback": "",
+//       "fontSize": 0.45,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+//       "outlineColor": [0.3, 0.5, 0.8, 0.5],
+//       "textAlign": "center"
+//     },
+//     "joinCodeHint": {
+//       "type": "text", "x": 1000, "y": 203, "width": 400, "height": 22,
+//       "text": "e.g. ZMRJKLW", "fontSize": 0.22,
+//       "textColor": [0.35, 0.4, 0.55, 1.0],
+//       "textAlign": "center"
+//     },
+//     "joinServerButton": {
+//       "type": "button",
+//       "x": 1000, "y": 230, "width": 400, "height": 48,
+//       "text": "JOIN SERVER",
+//       "fontSize": 0.36,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.2, 0.5, 0.6, 1.0],
+//       "hoverColor": [0.3, 0.6, 0.7, 1.0]
+//     },
+
+//     "publicServersTitle": {
+//       "type": "text", "x": 40, "y": 680, "width": 400, "height": 34,
+//       "text": "PUBLIC SERVERS", "fontSize": 0.42,
+//       "textColor": [0.85, 0.9, 0.95, 1.0]
+//     },
+//     "publicServersList": {
+//       "type": "server_list",
+//       "x": 40, "y": 720, "width": 1840, "height": 310,
+//       "binding": "server.list",
+//       "bindingFallback": "No public servers found. Start one above!",
+//       "fontSize": 0.28,
+//       "textColor": [0.6, 0.65, 0.75, 1.0],
+//       "backgroundColor": [0.045, 0.05, 0.07, 1.0],
+//       "outlineColor": [0.12, 0.15, 0.2, 0.5]
+//     },
+
+//     "backButton": {
+//       "type": "button",
+//       "x": 40, "y": 40, "width": 140, "height": 48,
+//       "text": "BACK",
+//       "fontSize": 0.36,
+//       "textColor": [1, 1, 1, 1],
+//       "backgroundColor": [0.7, 0.2, 0.2, 1.0],
+//       "hoverColor": [0.85, 0.3, 0.3, 1.0]
+//     }
+//   }
+// }
