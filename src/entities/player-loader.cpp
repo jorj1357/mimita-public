@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -11,8 +12,14 @@
 #include "map/map_loader.h"
 #include "physics/config.h"
 #include "tinygltf/tiny_gltf.h"
+#include <nlohmann/json.hpp>
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
+
+// Global avatar bodypart overrides, set by AvatarSystem before loadModel.
+// Used by applyBodypartConfigOverrides to layer per-avatar overrides on
+// top of the global config/bodyparts.json defaults.
+nlohmann::json gAvatarBodypartOverrides;
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
 {
@@ -113,7 +120,117 @@ bool isPlayerBodyPart(const std::string& name)
 {
     return name == "head" || name == "torso" ||
            name == "leftArm" || name == "rightArm" ||
-           name == "leftLeg" || name == "rightLeg";
+            name == "leftLeg" || name == "rightLeg";
+}
+
+// ── Body part config override ───────────────────────────────
+// Loads config/bodyparts.json and overrides the GLB's rest-pose
+// transforms for each matching body part node.
+static void applyBodypartConfigOverrides(
+    std::vector<glm::mat4>& restLocalTransforms,
+    const std::vector<TransformNode>& nodes)
+{
+    std::ifstream file("config/bodyparts.json");
+    if (!file.is_open()) {
+        Debug::log(Debug::Category::General,
+            "[BODYPART] config/bodyparts.json not found, using GLB defaults\n");
+        return;
+    }
+    nlohmann::json j;
+    try { file >> j; } catch (...) {
+        Debug::warn(Debug::Category::General,
+            "[BODYPART] Failed to parse config/bodyparts.json\n");
+        return;
+    }
+
+    int overrides = 0;
+    for (int i = 0; i < (int)nodes.size(); ++i) {
+        const std::string& name = nodes[i].name;
+        if (!j.contains(name)) continue;
+        if (!isPlayerBodyPart(name)) continue;
+
+        auto& part = j[name];
+        float tX = 0, tY = 0, tZ = 0;
+        float rX = 0, rY = 0, rZ = 0;
+        float sX = 1, sY = 1, sZ = 1;
+
+        if (part.contains("offset") && part["offset"].is_array() && part["offset"].size() >= 3) {
+            tX = part["offset"][0].get<float>();
+            tY = part["offset"][1].get<float>();
+            tZ = part["offset"][2].get<float>();
+        }
+        if (part.contains("rotation") && part["rotation"].is_array() && part["rotation"].size() >= 3) {
+            rX = part["rotation"][0].get<float>();
+            rY = part["rotation"][1].get<float>();
+            rZ = part["rotation"][2].get<float>();
+        }
+        if (part.contains("scale") && part["scale"].is_array() && part["scale"].size() >= 3) {
+            sX = part["scale"][0].get<float>();
+            sY = part["scale"][1].get<float>();
+            sZ = part["scale"][2].get<float>();
+        }
+
+        // Build transform: T * Rz * Ry * Rx * S
+        glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(tX, tY, tZ));
+        if (rZ != 0) m = glm::rotate(m, glm::radians(rZ), glm::vec3(0, 0, 1));
+        if (rY != 0) m = glm::rotate(m, glm::radians(rY), glm::vec3(0, 1, 0));
+        if (rX != 0) m = glm::rotate(m, glm::radians(rX), glm::vec3(1, 0, 0));
+        m = glm::scale(m, glm::vec3(sX, sY, sZ));
+
+        restLocalTransforms[i] = m;
+        overrides++;
+        Debug::log(Debug::Category::General,
+            "[BODYPART] Override '%s': offset=(%.2f,%.2f,%.2f) rot=(%.1f,%.1f,%.1f) scale=(%.2f,%.2f,%.2f)\n",
+            name.c_str(), tX, tY, tZ, rX, rY, rZ, sX, sY, sZ);
+    }
+    printf("[BODYPART] Applied %d body part overrides from config/bodyparts.json\n", overrides);
+
+    // Apply per-avatar overrides (set via gAvatarBodypartOverrides)
+    if (!gAvatarBodypartOverrides.is_null() && gAvatarBodypartOverrides.is_object()) {
+        int avOverrides = 0;
+        for (int i = 0; i < (int)nodes.size(); ++i) {
+            const std::string& name = nodes[i].name;
+            if (!gAvatarBodypartOverrides.contains(name)) continue;
+            if (!isPlayerBodyPart(name)) continue;
+
+            auto& part = gAvatarBodypartOverrides[name];
+            float tX = 0, tY = 0, tZ = 0;
+            float rX = 0, rY = 0, rZ = 0;
+            float sX = 1, sY = 1, sZ = 1;
+
+            if (part.contains("offset") && part["offset"].is_array() && part["offset"].size() >= 3) {
+                tX = part["offset"][0].get<float>();
+                tY = part["offset"][1].get<float>();
+                tZ = part["offset"][2].get<float>();
+            }
+            if (part.contains("rotation") && part["rotation"].is_array() && part["rotation"].size() >= 3) {
+                rX = part["rotation"][0].get<float>();
+                rY = part["rotation"][1].get<float>();
+                rZ = part["rotation"][2].get<float>();
+            }
+            if (part.contains("scale") && part["scale"].is_array() && part["scale"].size() >= 3) {
+                sX = part["scale"][0].get<float>();
+                sY = part["scale"][1].get<float>();
+                sZ = part["scale"][2].get<float>();
+            }
+
+            glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(tX, tY, tZ));
+            if (rZ != 0) m = glm::rotate(m, glm::radians(rZ), glm::vec3(0, 0, 1));
+            if (rY != 0) m = glm::rotate(m, glm::radians(rY), glm::vec3(0, 1, 0));
+            if (rX != 0) m = glm::rotate(m, glm::radians(rX), glm::vec3(1, 0, 0));
+            m = glm::scale(m, glm::vec3(sX, sY, sZ));
+
+            restLocalTransforms[i] = m;
+            avOverrides++;
+            Debug::log(Debug::Category::General,
+                "[BODYPART] Avatar override '%s': offset=(%.2f,%.2f,%.2f) rot=(%.1f,%.1f,%.1f) scale=(%.2f,%.2f,%.2f)\n",
+                name.c_str(), tX, tY, tZ, rX, rY, rZ, sX, sY, sZ);
+        }
+        if (avOverrides > 0)
+            printf("[BODYPART] Applied %d avatar body part overrides\n", avOverrides);
+    }
+    // Clear the global overrides after consuming them
+    gAvatarBodypartOverrides = nullptr;
 }
 
 void appendNodeCollider(
@@ -316,6 +433,15 @@ bool Player::loadModel(const char* path)
                 nodes[child].parent = i;
                 perfectPoseSkeleton.nodes[child].parent = i;
             }
+    }
+
+    // Apply body part config overrides from config/bodyparts.json + avatar overrides
+    applyBodypartConfigOverrides(restLocalTransforms, nodes);
+    // Sync perfectPoseSkeleton and node localTransforms
+    for (int i = 0; i < (int)restLocalTransforms.size(); ++i) {
+        perfectPoseSkeleton.restLocalTransforms[i] = restLocalTransforms[i];
+        nodes[i].localTransform = restLocalTransforms[i];
+        perfectPoseSkeleton.nodes[i].localTransform = restLocalTransforms[i];
     }
 
     for (int i = 0; i < (int)model.nodes.size(); ++i)

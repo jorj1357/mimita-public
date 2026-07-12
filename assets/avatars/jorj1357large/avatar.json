@@ -2,7 +2,15 @@
   "name": "jorj1357large",
   "format_version": 1,
   "advanced_mode": true,
-  "player_model": "assets/entity/player/girllarge/girl-large-mimita-v1.glb",
+  "player_model": "assets/entity/player/girllarge/girl-large-mimita-v7.glb",
+  "bodyparts": {
+    "head": { "offset": [0, 0, 0], "rotation": [90, 0, 0], "scale": [2, 2, 2] },
+    "torso": { "offset": [0, 0, 0.6], "rotation": [90, 0, 0], "scale": [1.5, 1.5, 1.5] },
+    "leftArm": { "offset": [0, 0, 0], "rotation": [80, 0, 0], "scale": [1.9, 1.9, 1.9] },
+    "rightArm": { "offset": [0, 0, 0], "rotation": [100, 0, 0], "scale": [1.9, 1.9, 1.9] },
+    "leftLeg": { "offset": [0, 0, 0.1], "rotation": [85, 0, 0], "scale": [1.5, 2, 1.4] },
+    "rightLeg": { "offset": [0, 0, 0.1], "rotation": [95, 0, 0], "scale": [1.5, 2, 1.4] }
+  },
   "simple": {
     "face": "",
     "shirt": "",

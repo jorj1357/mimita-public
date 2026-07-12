@@ -18,6 +18,11 @@
 #include "config/player-settings.h"
 #include "stb_image.h"
 
+// Set by applyToPlayer before loadModel for per-avatar body part overrides
+extern nlohmann::json gAvatarBodypartOverrides;
+
+
+
 using json = nlohmann::json;
 
 extern TextureStore gTextures;
@@ -273,6 +278,8 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
     j["cosmetics"] = serializeCosmetics(avatar.cosmetics);
     if (!avatar.activePreset.empty()) j["active_preset"] = avatar.activePreset;
     if (!avatar.playerModel.empty()) j["player_model"] = avatar.playerModel;
+    if (!avatar.bodypartOverrides.is_null())
+        j["bodyparts"] = avatar.bodypartOverrides;
 
     if (avatar.textureMode == "uv_atlas") {
         j["texture_mode"] = "uv_atlas";
@@ -435,6 +442,15 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
             }
         } else {
             printf("[AVATAR] No player_model field; using default player model\n");
+        }
+
+        // ── Per-avatar body part overrides (offset/rotation/scale) ──
+        if (root.contains("bodyparts") && root["bodyparts"].is_object()) {
+            mAvatar.bodypartOverrides = root["bodyparts"];
+            printf("[AVATAR] loaded bodypart overrides for: ");
+            for (auto it = mAvatar.bodypartOverrides.begin(); it != mAvatar.bodypartOverrides.end(); ++it)
+                printf("%s ", it.key().c_str());
+            printf("\n");
         }
 
         // ── UV atlas mode ──────────────────────────────────────────
@@ -747,6 +763,9 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     // If avatar specifies a custom player model, load it first
     if (!mAvatar.playerModel.empty()) {
         printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
+        // Pass per-avatar bodypart overrides to the model loader
+        if (!mAvatar.bodypartOverrides.is_null())
+            gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
         bool modelOk = player.loadModel(mAvatar.playerModel.c_str());
         if (modelOk) {
             validatePlayerBodyParts(player);
