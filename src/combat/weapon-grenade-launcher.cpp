@@ -78,23 +78,8 @@ void update(const WeaponDefinition& def, WeaponRuntime& runtime,
     (void)npcs;
     (void)world;
 
-    // Read config values for visuals and sparks (hot-reloadable)
-    std::string projTexture = cp(def, "projectileVisualTexture", 0.0f)
-        ? "assets/textureshq/meat1.png" : "assets/textureshq/meat1.png";
-    float projLength = cp(def, "projectileVisualLength", 1.8f);
-    float projRadius = cp(def, "projectileVisualRadius", 0.28f);
-    glm::vec3 projScale(
-        cp(def, "projectileVisualScaleX", 1.0f),
-        cp(def, "projectileVisualScaleY", 1.0f),
-        cp(def, "projectileVisualScaleZ", 1.0f));
-    glm::vec3 projRotOffset(
-        cp(def, "projectileVisualRotationOffsetX", 0.0f),
-        cp(def, "projectileVisualRotationOffsetY", 0.0f),
-        cp(def, "projectileVisualRotationOffsetZ", 0.0f));
-    glm::vec2 projTexTiling(
-        cp(def, "projectileVisualTextureTilingU", 1.0f),
-        cp(def, "projectileVisualTextureTilingV", 1.0f));
-
+    // Read config values for sparks (hot-reloadable). Projectile visuals are
+    // read in WeaponSystem::render during the render pass.
     bool sparkEnabled = cp(def, "sparkEnabled", 1.0f) > 0.0f;
     float sparkEmissionRate = cp(def, "sparkEmissionRate", 45.0f);
     int sparkParticlesPerEm = (int)cp(def, "sparkParticlesPerEmission", 2.0f);
@@ -133,12 +118,7 @@ void update(const WeaponDefinition& def, WeaponRuntime& runtime,
         if (obj.exploded || obj.sleeping)
             continue;
 
-        // ── Textured rendering with physics body orientation ──
-        {
-            renderProjectile(camera, obj.position, obj.rotation,
-                projLength, projRadius, projScale, projRotOffset, projTexTiling,
-                projTexture);
-        }
+        // ── Textured rendering (handled in WeaponSystem::render during render pass) ──
 
         // ── Config-controlled spark trail ──
         if (sparkEnabled) {
