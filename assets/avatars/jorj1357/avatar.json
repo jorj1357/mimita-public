@@ -4,12 +4,12 @@
   "advanced_mode": true,
   "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
   "bodyparts": {
-    "head": { "offset": [0.15, 1.25, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
-    "torso": { "offset": [0, 0.5, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
-    "leftArm": { "offset": [0.1, 1.1, -0.4], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
-    "rightArm": { "offset": [0.1, 1.1, 0.4], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
-    "leftLeg": { "offset": [0, 0, 0.25], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
-    "rightLeg": { "offset": [0, 0, -0.25], "rotation": [0, 180, 0], "scale": [-1, 1, 1] }
+    "head": { "offset": [0, 1.15, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+    "torso": { "offset": [0, 0.4, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+    "leftArm": { "offset": [0, 1.0, -0.4], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+    "rightArm": { "offset": [0, 1.0, 0.4], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+    "leftLeg": { "offset": [0, -0.1, 0.25], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+    "rightLeg": { "offset": [0, -0.1, -0.25], "rotation": [0, 180, 0], "scale": [-1, 1, 1] }
   },
 
   "simple": {
@@ -34,92 +34,114 @@
     },
     "head_left": {
       "texture": "hair2.png",
-      "color": [0.1, 0.1, 0.1]
+      "color": [0.1, 0.1, 0.1],
+      "rotation": 0.0
     },
     "head_right": {
       "texture": "hair2.png",
-      "color": [0.1, 0.1, 0.1]
+      "color": [0.1, 0.1, 0.1],
+      "rotation": 0.0
     },
     "head_top": {
       "texture": "hair2.png",
-      "color": [0.1, 0.1, 0.1]
+      "color": [0.1, 0.1, 0.1],
+      "rotation": 0.0
     },
     "head_bottom": {
       "texture": "hair2.png",
       "color": [0.1, 0.1, 0.1],
-      "scale_y": 1
+      "scale_y": 1,
+      "rotation": 0.0
     },
     "torso_front": {
       "texture": "croptopfront.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "torso_back": {
       "texture": "croptopback.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "torso_left": {
       "texture": "croptoptorsoleft.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "torso_right": {
       "texture": "croptoptorsoright.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "torso_top": {
       "texture": "croptoptorsotop.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "torso_bottom": {
       "texture": "croptopback.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftArm_front": {
       "texture": "croptopleftarmfront.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftArm_back": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftArm_left": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftArm_right": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftArm_top": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftArm_bottom": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightArm_front": {
       "texture": "croptoprightarmfront.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightArm_back": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightArm_left": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightArm_right": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightArm_top": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightArm_bottom": {
       "texture": "croptoparmsides.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "leftLeg_front": {
       "texture": "fishnetfrontleg.png",
@@ -138,16 +160,19 @@
     },
     "leftLeg_right": {
       "texture": "fishnetsidelegs.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 180.0
     },
     "leftLeg_top": {
       "texture": "fishnetsidelegs.png",
       "color": [1.0, 1.0, 1.0],
-      "scale_y": 12.0
+      "scale_y": 12.0,
+      "rotation": 0.0
     },
     "leftLeg_bottom": {
       "texture": "fishnetbottomfoot.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     },
     "rightLeg_front": {
       "texture": "fishnetfrontleg.png",
@@ -162,9 +187,9 @@
     "rightLeg_left": {
       "texture": "fishnetsidelegs.png",
       "color": [1.0, 1.0, 1.0],
-      "rotation": 90.0,
-      "scale_x": 2.0,
-      "scale_y": 2.0
+      "rotation": 180.0,
+      "scale_x": 1.0,
+      "scale_y": 1.0
     },
     "rightLeg_right": {
       "texture": "fishnetsidelegs.png",
@@ -175,11 +200,13 @@
     "rightLeg_top": {
       "texture": "fishnetsidelegs.png",
       "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0,
       "scale_y": 12.0
     },
     "rightLeg_bottom": {
       "texture": "fishnetbottomfoot.png",
-      "color": [1.0, 1.0, 1.0]
+      "color": [1.0, 1.0, 1.0],
+      "rotation": 0.0
     }
   },
   "colors": {
