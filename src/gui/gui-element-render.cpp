@@ -106,10 +106,46 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
     if (type == "checkbox")
     {
         if (!elem.enabled) return {};
+        // Read checkbox state from binding ("true"/"false"), default false
+        bool checked = false;
+        if (!elem.binding.empty()) {
+            checked = GuiBindings::instance().get(elem.binding) == "true";
+        }
+
         UIRect designRect = {rx, ry, rw, rh};
+        UIRect screenRect = cs.designToScreen(designRect);
+        float boxSize = std::min(rh, rw * 0.3f);
+        UIRect boxRect = {rx, ry, boxSize, boxSize};
+        UIRect boxScreen = cs.designToScreen(boxRect);
+
+        // Draw label text to the right of the box
+        const std::string& label = hasBindingText && !resolvedText.empty() ? resolvedText : elem.text;
+        float textX = cs.designToScreenX(rx + boxSize + 6.0f);
+        float textY = cs.designToScreenY(ry + 2.0f);
+        float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.28f;
+        glm::vec4 tc = elem.getTextColorVec();
+        uiDrawText(label.c_str(), textX, textY, scale, tc);
+
+        // Draw checkbox box
         glm::vec4 bg = elem.getBackgroundColorVec();
-        const char* label = elem.text.empty() ? "checkbox" : elem.text.c_str();
-        return uiButton(win, label, designRect, bg, elem.id.c_str());
+        bg.a *= elem.opacity;
+        uiDrawRect(boxScreen, bg, elem.id.c_str());
+        uiDrawRectOutline(boxScreen, {0.5f, 0.6f, 0.8f, 0.6f}, (elem.id + "_outline").c_str());
+
+        // Draw checkmark when checked
+        if (checked) {
+            float cx = boxScreen.x + boxScreen.w * 0.5f;
+            float cy = boxScreen.y + boxScreen.h * 0.5f;
+            uiDrawText("X", cx - 4.0f, cy - 6.0f, scale * 1.2f, {0.3f, 1.0f, 0.4f, 1.0f});
+        }
+
+        // Handle click
+        UIButtonState s = uiButton(win, "", boxRect, {0,0,0,0}, elem.id.c_str());
+        if (s.clicked && !elem.binding.empty()) {
+            GuiBindings::instance().set(elem.binding, checked ? "false" : "true");
+        }
+
+        return s;
     }
 
     if (type == "text" || type == "label" || type == "dynamic_text")
@@ -211,25 +247,15 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         // Draw header only (items drawn in post-pass overlay for z-order)
         drawDropdown(win, state, rx, ry, rw, rh, nullptr, items);
 
-        // Override header text with binding value when available
-        if (hasBindingText && !resolvedText.empty()) {
-            GuiCoordinateSystem& csLoc = GuiCoordinateSystem::instance();
-            float tx = csLoc.designToScreenX(rx + 6.0f);
-            float ty = csLoc.designToScreenY(ry + 6.0f);
-            float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.34f;
-            glm::vec4 tc = elem.getTextColorVec();
-            uiDrawText(resolvedText.c_str(), tx, ty, scale, tc);
-        }
-
         UIButtonState s;
         return s;
     }
 
-    if (type == "text_input" || type == "number_input")
+    if (type == "text_input" || type == "number_input" || type == "password_input")
     {
         if (!elem.enabled) return {};
 
-        const std::string& displayText = hasBindingText ? resolvedText : (elem.text.empty() && hasBindingText ? "" : elem.text);
+        const std::string& rawText = hasBindingText ? resolvedText : (elem.text.empty() && hasBindingText ? "" : elem.text);
         UIRect designRect = {rx, ry, rw, rh};
         UIRect screenRect = cs.designToScreen(designRect);
 
@@ -253,19 +279,28 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.34f;
         glm::vec4 tc = elem.getTextColorVec();
 
-        std::string display = displayText;
+        // For password_input, mask text with asterisks unless visible binding is true
+        std::string displayText = rawText;
+        if (type == "password_input")
+        {
+            std::string visBinding = bindings.get("server.password_visible");
+            if (visBinding != "true") {
+                displayText = std::string(rawText.size(), '*');
+            }
+        }
+
         if (displayText.empty())
         {
             if (isFocused)
-                display = "|";
+                displayText = "|";
         }
         else
         {
             if (isFocused)
-                display = displayText + "|";
+                displayText = displayText + "|";
         }
 
-        uiDrawText(display.c_str(), tx, ty, scale, tc);
+        uiDrawText(displayText.c_str(), tx, ty, scale, tc);
 
         // Store binding key for input routing
         if (!elem.binding.empty())

@@ -215,21 +215,10 @@ glm::vec3 NpcNavigation::findCoverDirection(const Npc& npc, glm::vec3 threatPos,
     glm::vec3 origin = npc.body.pos;
     origin.z += 0.8f;
 
-    // Compute a single combined AABB covering all test positions to query chunks once
-    AABB combinedBounds;
-    combinedBounds.min = origin;
-    combinedBounds.max = origin;
-    combinedBounds.min = glm::min(combinedBounds.min, threatPos);
-    combinedBounds.max = glm::max(combinedBounds.max, threatPos);
-    for (const auto& dir : testDirs)
-    {
-        glm::vec3 testPos = npc.body.pos + dir * COVER_CHECK_DIST;
-        testPos.z += 0.8f;
-        combinedBounds.min = glm::min(combinedBounds.min, testPos);
-        combinedBounds.max = glm::max(combinedBounds.max, testPos);
-    }
+    // Gather nearby triangles only — cover test positions are within 4m of NPC.
+    // There is no need to include the distant threat position in the query.
     std::vector<int> allCandidates;
-    appendChunkTrianglesForAABB(world, combinedBounds, 0.1f, allCandidates, "npcFindCover");
+    gatherNear(world, origin, COVER_CHECK_DIST + 4.0f, allCandidates);
 
     for (const auto& dir : testDirs)
     {

@@ -19,6 +19,7 @@
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/ray-utils.h"
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define CHUNK_LOG(...) Debug::logThrottled(Debug::Category::Collision, "chunk-query", 1.0f, __VA_ARGS__)
@@ -196,4 +197,181 @@ void appendChunkTrianglesForAABB(
                    clamped.max.x, clamped.max.y, clamped.max.z,
                    cellCount, out.size(), ms);
     }
+}
+
+bool rayTraverseGridCells(
+    const World& world,
+    const glm::vec3& rayOrigin,
+    const glm::vec3& rayDir,
+    float maxDist,
+    float& hitDist)
+{
+    auto t0 = std::chrono::steady_clock::now();
+
+    // Degenerate ray guard
+    if (glm::dot(rayDir, rayDir) < 0.000001f) {
+        hitDist = maxDist;
+        return false;
+    }
+
+    if (world.collisionChunks.empty() || world.collisionChunkSize <= 0.001f ||
+        world.collisionMesh.triangles.empty())
+    {
+        // No spatial grid — fall back to brute force over all triangles
+        float nearest = maxDist;
+        bool hit = false;
+        for (size_t i = 0; i < world.collisionMesh.triangles.size(); ++i) {
+            float d = 0.0f;
+            if (rayTriangle(rayOrigin, rayDir, world.collisionMesh.triangles[i], d) && d < nearest) {
+                nearest = d;
+                hit = true;
+            }
+        }
+        hitDist = nearest;
+        return hit;
+    }
+
+    const float cs = world.collisionChunkSize;
+    const glm::vec3 invDir(1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z);
+
+    // Determine the range of cells the ray passes through
+    glm::vec3 startPos = rayOrigin;
+    glm::vec3 endPos = rayOrigin + rayDir * maxDist;
+
+    glm::ivec3 cStart = collisionChunkCoord(startPos, cs);
+    glm::ivec3 cEnd = collisionChunkCoord(endPos, cs);
+
+    // Clamp end cell to ensure we don't iterate billions of cells
+    auto clampCoord = [](int v) -> int {
+        constexpr int MAX_COORD = 10000;
+        return glm::clamp(v, -MAX_COORD, MAX_COORD);
+    };
+    cStart = glm::ivec3(clampCoord(cStart.x), clampCoord(cStart.y), clampCoord(cStart.z));
+    cEnd = glm::ivec3(clampCoord(cEnd.x), clampCoord(cEnd.y), clampCoord(cEnd.z));
+
+    // Amanatides & Woo 3D DDA: step across grid cells
+    glm::ivec3 step(
+        rayDir.x > 0 ? 1 : (rayDir.x < 0 ? -1 : 0),
+        rayDir.y > 0 ? 1 : (rayDir.y < 0 ? -1 : 0),
+        rayDir.z > 0 ? 1 : (rayDir.z < 0 ? -1 : 0)
+    );
+
+    // Distance along ray to the next grid boundary on each axis
+    glm::vec3 tDelta(
+        (rayDir.x != 0.0f) ? (cs / rayDir.x) : 1e30f,
+        (rayDir.y != 0.0f) ? (cs / rayDir.y) : 1e30f,
+        (rayDir.z != 0.0f) ? (cs / rayDir.z) : 1e30f
+    );
+    // Use fabs for tDelta to handle negative direction properly
+    tDelta.x = std::fabs(tDelta.x);
+    tDelta.y = std::fabs(tDelta.y);
+    tDelta.z = std::fabs(tDelta.z);
+
+    // Find the cell containing the ray origin
+    glm::ivec3 cell = cStart;
+
+    // Distance from ray origin to the first cell boundary on each axis
+    auto cellBoundary = [&](int axis, float coord) -> float {
+        float boundary = (float)cell[axis] * cs;
+        if (step[axis] > 0) boundary += cs;
+        return (boundary - rayOrigin[axis]) / rayDir[axis];
+    };
+
+    glm::vec3 tMax(
+        (step.x != 0) ? cellBoundary(0, rayOrigin.x) : 1e30f,
+        (step.y != 0) ? cellBoundary(1, rayOrigin.y) : 1e30f,
+        (step.z != 0) ? cellBoundary(2, rayOrigin.z) : 1e30f
+    );
+
+    // Track which triangles we've already tested (generation counter method)
+    thread_local std::vector<uint32_t> s_triGen;
+    thread_local uint32_t s_gen = 0;
+    s_gen++;
+    if (s_gen == 0) {
+        s_triGen.assign(world.collisionMesh.triangles.size(), 0);
+        s_gen = 1;
+    }
+    if (s_triGen.size() != world.collisionMesh.triangles.size())
+        s_triGen.assign(world.collisionMesh.triangles.size(), 0);
+
+    float nearest = maxDist;
+    bool hit = false;
+    int cellCount = 0;
+
+    // Step through cells until we exit the grid or pass the nearest hit
+    while (true) {
+        // Check if current cell is within range
+        if (cell.x >= std::min(cStart.x, cEnd.x) - 1 && cell.x <= std::max(cStart.x, cEnd.x) + 1 &&
+            cell.y >= std::min(cStart.y, cEnd.y) - 1 && cell.y <= std::max(cStart.y, cEnd.y) + 1 &&
+            cell.z >= std::min(cStart.z, cEnd.z) - 1 && cell.z <= std::max(cStart.z, cEnd.z) + 1)
+        {
+            ++cellCount;
+            auto it = world.collisionChunks.find(cell);
+            if (it != world.collisionChunks.end()) {
+                for (int triIndex : it->second) {
+                    if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                        continue;
+                    if (s_triGen[triIndex] == s_gen)
+                        continue;
+                    s_triGen[triIndex] = s_gen;
+
+                    float d = 0.0f;
+                    if (rayTriangle(rayOrigin, rayDir, world.collisionMesh.triangles[triIndex], d) && d < nearest) {
+                        nearest = d;
+                        hit = true;
+                        // We found a hit — we could stop now if we wanted. But
+                        // we continue to make sure no closer hit exists in nearer cells
+                        // we haven't yet visited. However, since we visit cells in
+                        // near-to-far order, any hit found is the closest possible
+                        // (all nearer cells already visited). So we can stop.
+                        goto done;
+                    }
+                }
+            }
+        }
+
+        // Step to next cell along the ray
+        if (tMax.x < tMax.y) {
+            if (tMax.x < tMax.z) {
+                if (tMax.x > nearest) break;
+                cell.x += step.x;
+                tMax.x += tDelta.x;
+            } else {
+                if (tMax.z > nearest) break;
+                cell.z += step.z;
+                tMax.z += tDelta.z;
+            }
+        } else {
+            if (tMax.y < tMax.z) {
+                if (tMax.y > nearest) break;
+                cell.y += step.y;
+                tMax.y += tDelta.y;
+            } else {
+                if (tMax.z > nearest) break;
+                cell.z += step.z;
+                tMax.z += tDelta.z;
+            }
+        }
+
+        // Check if we've exited the grid bounds
+        if (std::abs(cell.x) > 10000 || std::abs(cell.y) > 10000 || std::abs(cell.z) > 10000)
+            break;
+    }
+
+done:
+    auto t1 = std::chrono::steady_clock::now();
+    float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    if (cellCount > 200) {
+        CHUNK_WARN("[RAY QUERY] caller=computeAimTarget ray=%.1f %.1f %.1f dir=%.2f %.2f %.2f "
+                    "cells=%d hit=%d elapsedMs=%.3f\n",
+                    rayOrigin.x, rayOrigin.y, rayOrigin.z,
+                    rayDir.x, rayDir.y, rayDir.z,
+                    cellCount, hit, ms);
+    } else {
+        CHUNK_LOG("[RAY QUERY] caller=computeAimTarget cells=%d hit=%d elapsedMs=%.3f\n",
+                   cellCount, hit, ms);
+    }
+
+    hitDist = nearest;
+    return hit;
 }

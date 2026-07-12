@@ -64,6 +64,7 @@
 #include "replay/replay.h"
 #include "replay/replay-export-ui.h"
 #include "replay/replay-factory.h"
+#include "replay/replay-factory-worker.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
 #include "shadow/shadow-commands.h"
@@ -252,7 +253,9 @@ void gameInitSubsystems(Engine& engine)
     static ReplayPlayer gReplayPlayer;
     static ReplayClipSaver gReplayClipSaver(gReplayRecorder);
     setActiveReplayClipSaver(&gReplayClipSaver);
+    static ReplaySaveWorker gReplayWorker;
     static ReplayFactory gReplayFactory(gReplayRecorder);
+    gReplayFactory.setWorker(&gReplayWorker);
     static ReplayBrowser gReplayBrowser;
     static ReplayTimeline gReplayTimeline;
     static ReplayCameraMgr gReplayCameraMgr;

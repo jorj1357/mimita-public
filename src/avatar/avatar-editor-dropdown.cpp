@@ -31,7 +31,7 @@ int drawDropdown(GLFWwindow* win, DropdownState& state,
         bool wasOpen = state.open;
         state.open = !state.open;
         if (state.open && !wasOpen) {
-            // Just opened — skip items this frame so same click doesn't select an item
+            state.openThisFrame = true;
             return -1;
         }
         if (!state.open) {
@@ -57,6 +57,11 @@ int drawDropdownOverlay(GLFWwindow* win, DropdownState& state,
 {
     if (!state.open || items.empty())
         return -1;
+
+    if (state.openThisFrame) {
+        state.openThisFrame = false;
+        return -1;
+    }
 
     int result = -1;
 

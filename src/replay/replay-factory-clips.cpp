@@ -1,4 +1,5 @@
 #include "replay-factory.h"
+#include "replay-factory-worker.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -170,6 +171,12 @@ void ReplayFactory::finalizeAndSave(PendingClip& pending)
            pending.killerId.c_str(), pending.victimId.c_str(),
            pending.weaponId.c_str(), pending.distance);
 
-    // Enforce storage limit after saving a new clip
-    enforceClipStorageLimit();
+    // Enforce storage limit after saving a new clip — on background thread
+    if (mWorker) {
+        mWorker->enqueue([]() {
+            enforceClipStorageLimit();
+        });
+    } else {
+        enforceClipStorageLimit();
+    }
 }
