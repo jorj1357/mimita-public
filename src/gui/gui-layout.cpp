@@ -197,6 +197,7 @@ bool GuiLayout::load(const std::string& filePath)
             // Data binding
             e.binding = elem.value("binding", "");
             e.bindingFallback = elem.value("bindingFallback", "");
+            e.bindingItems = elem.value("bindingItems", "");
             e.visibleWhenBinding = elem.value("visibleWhenBinding", "");
             e.visibleWhenOp = elem.value("visibleWhenOp", "");
             e.visibleWhenValue = elem.value("visibleWhenValue", "");

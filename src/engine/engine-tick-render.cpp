@@ -350,7 +350,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
     if (!replayPlaybackActive) {
         { Perf::ScopedTimer _dr("EffectRender"); DeathSystem::instance().render(camera); }
-        { Perf::ScopedTimer _rr("RagdollRender"); RagdollDeathSystem::instance().render(camera); }
+        // [RAGDOLL RENDER REMOVED] — DeadBody render handles corpses
         { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
     }
     diagRenderStage(4);

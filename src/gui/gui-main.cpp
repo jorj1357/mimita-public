@@ -33,6 +33,7 @@
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
 #include "renderer/renderer.h"
+#include "network/server.h"
 #include <cstdio>
 #include <glad/glad.h>
 #include <shellapi.h>
@@ -93,6 +94,7 @@ BombTagConfigResult gPendingBombTagConfig{};
 BombTagConfigResult getPendingBombTagConfig() { return gPendingBombTagConfig; }
 void clearPendingBombTagConfig() { gPendingBombTagConfig = BombTagConfigResult{}; }
 static bool gServerRunning = false;
+static MimitaNet::ListenServerState gListenServer;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
 static SandboxMapSelection gPendingSandboxMap{};
@@ -107,6 +109,11 @@ void clearPendingSandboxMapSelection() { gPendingSandboxMap = {}; }
 void reportSandboxMapLoadResult(const std::string& message, bool success)
 {
     sandboxMapMenuSetLoadResult(message, success);
+}
+
+MimitaNet::ListenServerState* getListenServerState()
+{
+    return &gListenServer;
 }
 
 void guiMain(GLFWwindow* win, GameState& state)
@@ -389,8 +396,38 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_SERVERS:
         {
+            // Sync display with actual listen server state
+            onlineMenuSetServerRunning(gListenServer.active);
+            if (gListenServer.active)
+                onlineMenuSetServerCode(gListenServer.serverCode);
+
             OnlineMenuResult r = drawOnlineMenu(win);
-            if (r.connectToServer)
+            if (r.startServer)
+            {
+                onlineMenuSetServerCode("");
+                if (!gListenServer.active)
+                {
+                    if (MimitaNet::startListenServer(gListenServer, MimitaNet::DEFAULT_PORT))
+                    {
+                        onlineMenuSetServerRunning(true);
+                        onlineMenuSetServerCode(gListenServer.serverCode);
+                        printf("[ONLINE MENU] Listen server started code=%s\n",
+                               gListenServer.serverCode.c_str());
+                    }
+                }
+            }
+            else if (r.stopServer)
+            {
+                if (gListenServer.active)
+                {
+                    if (MP_CONTEXT.active)
+                        MimitaNet::mpShutdown(MP_CONTEXT);
+                    MimitaNet::stopListenServer(gListenServer);
+                    onlineMenuSetServerRunning(false);
+                    onlineMenuSetServerCode("");
+                }
+            }
+            else if (r.connectToServer)
             {
                 gPendingConnect.shouldConnect = true;
                 gPendingConnect.address = r.connectAddress;
@@ -437,7 +474,13 @@ void guiMain(GLFWwindow* win, GameState& state)
         {
             ServerInfoResult r = drawServerInfoMenu(win, gServerAddress, gServerRunning);
             if (r.startServer)
-                gServerRunning = true;
+            {
+                if (!gListenServer.active)
+                {
+                    MimitaNet::startListenServer(gListenServer, MimitaNet::DEFAULT_PORT);
+                    gServerRunning = gListenServer.active;
+                }
+            }
             if (r.connect)
             {
                 serverInfoMenuSetActive(false);

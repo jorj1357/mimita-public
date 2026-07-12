@@ -16,3 +16,9 @@ struct GLFWwindow;
 UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
                              bool* checkboxValue = nullptr,
                              const UIRect* overrideDesignRect = nullptr);
+
+// Access dropdown states for post-pass overlay rendering
+#include <unordered_map>
+#include <string>
+struct DropdownState;
+std::unordered_map<std::string, DropdownState>& getDropdownStates();

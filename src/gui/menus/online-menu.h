@@ -17,5 +17,7 @@ struct OnlineMenuResult
 
 OnlineMenuResult drawOnlineMenu(GLFWwindow* win);
 void onlineMenuSetActive(bool active);
+void onlineMenuSetServerRunning(bool running);
+void onlineMenuSetServerCode(const std::string& code);
 void onlineMenuHandleChar(unsigned int codepoint);
 void onlineMenuHandleKey(int key, int action);

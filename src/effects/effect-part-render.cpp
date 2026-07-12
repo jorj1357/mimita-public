@@ -222,20 +222,7 @@ void EffectPartSystem::render(const Camera& camera) const {
             {0.92f, 0.015f, 0.025f, particle.alpha * distFade});
     }
 
-    for (const BloodDecal& decal : mBloodDecals) {
-        const float dist = glm::length(decal.position - camera.pos);
-        if (dist > 60.0f)
-            continue;
-        const float distFade = dist > 40.0f ? (60.0f - dist) / 20.0f : 1.0f;
-        DebugVis::drawBloodDecal(
-            camera,
-            decal.position,
-            decal.normal,
-            decal.radius,
-            decal.rotation,
-            decal.stretch,
-            {0.78f, 0.01f, 0.02f, decal.alpha * distFade});
-    }
+    // [BLOOD DECALS REMOVED] — rendering also removed
 
     // Particle debug logging
     if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {

@@ -201,4 +201,31 @@ void buildAndSendSnapshot(SOCKET sock,
 
 void logSnapshotEntity(const SnapshotEntity& entity);
 
+// ─── Listen Server (host runs server in same process) ──────────────────────
+
+struct ListenServerState
+{
+    bool active = false;
+    SOCKET sock = INVALID_SOCKET;
+    std::unordered_map<uint32_t, ServerPlayer> players;
+    std::unordered_map<uint32_t, ServerNpc> npcs;
+    HeadlessWorld world;
+    uint32_t nextPlayerId = 1;
+    uint32_t nextEntityId = 1000;
+    uint32_t tick = 0;
+    uint64_t lastLog = 0;
+    uint64_t totalPacketsIn = 0;
+    uint64_t totalPacketsOut = 0;
+    uint64_t startTimeMs = 0;
+    uint16_t port = DEFAULT_PORT;
+    std::string serverCode;
+    std::string serverName = "MiMITA Server";
+    float accumulator = 0.0f;
+};
+
+bool startListenServer(ListenServerState& state, uint16_t port);
+void stopListenServer(ListenServerState& state);
+void tickListenServer(ListenServerState& state, float dt);
+std::string generateServerCode();
+
 } // namespace MimitaNet

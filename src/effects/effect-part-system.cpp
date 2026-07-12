@@ -114,5 +114,5 @@ void EffectPartSystem::update(float dt) {
     drainPendingWorldHits(6);
 
     updateBloodParticles(dt);
-    updateBloodDecals(dt);
+    // updateBloodDecals(dt); — removed, blood decal spawning removed
 }

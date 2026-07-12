@@ -7,50 +7,79 @@
 #include "../gui/ui-system.h"
 #include "../gui/gui-coord.h"
 
+static void drawListBackground(float x, float y, float w, float h)
+{
+    UIRect screenRect = {uiScaleX(x), uiScaleY(y), uiScaleX(w), uiScaleY(h)};
+    uiDrawRect(screenRect, {0.06f, 0.07f, 0.1f, 1.0f}, "dropdown-list-bg");
+    uiDrawRectOutline(screenRect, {0.3f, 0.4f, 0.6f, 0.6f}, "dropdown-list-border");
+}
+
 int drawDropdown(GLFWwindow* win, DropdownState& state,
                  float x, float y, float w, float itemH,
                  const char* label, const std::vector<std::string>& items)
 {
-    int result = -1;
-
-    // Label
-    if (label)
-        uiDrawText(label, uiScaleX(x), uiScaleY(y - itemH - 4.0f), 0.32f, {0.7f, 0.8f, 0.9f, 1.0f});
-
-    // Selected item display
+    // Display selected text
     std::string displayText = state.selectedIndex >= 0 && state.selectedIndex < (int)items.size()
         ? items[state.selectedIndex]
-        : "None";
-    glm::vec4 bg = state.open ? glm::vec4{0.15f, 0.2f, 0.3f, 1.0f} : glm::vec4{0.1f, 0.12f, 0.18f, 1.0f};
+        : (items.empty() ? "" : items[0]);
+
+    glm::vec4 bg{0.1f, 0.12f, 0.18f, 1.0f};
     UIRect headerRect = {x, y, w, itemH};
     UIButtonState btn = uiButton(win, displayText.c_str(), headerRect, bg, "dropdown-header");
-    if (btn.clicked)
-        state.open = !state.open;
 
-    if (!state.open)
+    if (btn.clicked) {
+        bool wasOpen = state.open;
+        state.open = !state.open;
+        if (state.open && !wasOpen) {
+            // Just opened — skip items this frame so same click doesn't select an item
+            return -1;
+        }
+        if (!state.open) {
+            // Just closed via header click — no selection
+            return -1;
+        }
+    }
+
+    // Draw triangle indicator
+    {
+        GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+        float triX = cs.designToScreenX(x + w - 18.0f);
+        float triY = cs.designToScreenY(y + itemH * 0.5f);
+        uiDrawTriangle(triX, triY, 5.0f, state.open, {0.6f, 0.7f, 0.9f, 0.8f}, "dropdown-arrow");
+    }
+
+    return -1;
+}
+
+int drawDropdownOverlay(GLFWwindow* win, DropdownState& state,
+                         float x, float y, float w, float itemH,
+                         const std::vector<std::string>& items)
+{
+    if (!state.open || items.empty())
         return -1;
 
-    // Open dropdown list
+    int result = -1;
+
     float listH = std::min((float)items.size() * itemH, 200.0f);
-    UIRect listArea = {x, y + itemH + 2.0f, w, listH};
-    UIRect listAreaScreen = {uiScaleX(listArea.x), uiScaleY(listArea.y),
-                              uiScaleX(listArea.w), uiScaleY(listArea.h)};
-    uiDrawRect(listAreaScreen, {0.06f, 0.07f, 0.1f, 1.0f}, "dropdown-list-bg");
+    float lx = x;
+    float ly = y + itemH + 2.0f;
+
+    drawListBackground(lx, ly, w, listH);
 
     float contentH = (float)items.size() * itemH;
     ScrollState scrollState;
     scrollState.offset = state.scrollOffset;
 
-    beginScroll(win, listArea, contentH, scrollState);
+    beginScroll(win, {lx, ly, w, listH}, contentH, scrollState);
     state.scrollOffset = scrollState.offset;
 
-    float iy = listArea.y;
+    float iy = ly;
     for (int i = 0; i < (int)items.size(); ++i)
     {
         glm::vec4 col = (i == state.selectedIndex)
             ? glm::vec4{0.15f, 0.35f, 0.25f, 1.0f}
             : glm::vec4{0.08f, 0.09f, 0.13f, 1.0f};
-        UIRect itemRect = {listArea.x, iy, w, itemH};
+        UIRect itemRect = {lx, iy, w, itemH};
         if (uiButton(win, items[i].c_str(), itemRect, col, "dropdown-item").clicked)
         {
             state.selectedIndex = i;
@@ -60,7 +89,7 @@ int drawDropdown(GLFWwindow* win, DropdownState& state,
         iy += itemH;
     }
 
-    endScroll(listArea, contentH, scrollState);
+    endScroll({lx, ly, w, listH}, contentH, scrollState);
 
     return result;
 }

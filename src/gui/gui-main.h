@@ -67,3 +67,8 @@ struct MultiplayerConnectInfo
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();
 void clearPendingMultiplayerConnect();
+
+namespace MimitaNet {
+struct ListenServerState;
+}
+MimitaNet::ListenServerState* getListenServerState();
