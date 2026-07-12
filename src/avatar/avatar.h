@@ -94,6 +94,9 @@ struct AvatarDefinition {
 
     // Optional custom player model GLB path
     std::string playerModel;
+    // Optional per-avatar body part transform overrides (offset/rotation/scale)
+    // This is loaded from avatar.json's "bodyparts" key.
+    nlohmann::json bodypartOverrides;
 
     // ── UV atlas mode fields ────────────────────────────────────
     std::string textureMode = "legacy_faces";  // "legacy_faces" or "uv_atlas"

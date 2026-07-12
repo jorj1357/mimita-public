@@ -1,0 +1,33 @@
+{
+  "comment": "Body part transforms relative to plrOrigin. All values override the GLB model's rest pose. Rotation is in degrees, applied as Euler ZYX (yaw around Z, pitch around Y, roll around X).",
+  "head": {
+    "offset": [0, 0, 1.15],
+    "rotation": [90, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "torso": {
+    "offset": [0, 0, 0.6],
+    "rotation": [90, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "leftArm": {
+    "offset": [0, 0.55, 1.0],
+    "rotation": [90, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "rightArm": {
+    "offset": [0, -0.55, 1.0],
+    "rotation": [90, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "leftLeg": {
+    "offset": [0, 0.3, -0.1],
+    "rotation": [90, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "rightLeg": {
+    "offset": [0, -0.3, -0.1],
+    "rotation": [90, 0, 0],
+    "scale": [1, 1, 1]
+  }
+}
