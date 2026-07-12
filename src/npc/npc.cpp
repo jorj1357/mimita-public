@@ -394,6 +394,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     npc.timeSinceLastShot += safeDt;
     npc.fireRhythmOffset = std::sin(npc.sensors.time * 0.4f + npc.id * 2.1f);
 
+    // Update model-world transforms once per simulation tick
+    // (collision code reads these without recomputing them)
+    npc.body.updateModelWorldTransforms();
+
     // Cache weapon definition once per frame (avoids 3+ string-keyed map lookups)
     const WeaponDefinition* cachedWeaponDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
 

@@ -72,17 +72,46 @@ void appendChunkTrianglesForAABB(
     const char* caller = nullptr
 );
 
-// Traverse grid cells intersected by a ray, in near-to-far order.
-// Tests triangles in each cell and returns the closest hit distance.
-// Returns true if a hit was found, with hitDist set to the closest intersection.
-// This is more efficient than querying the entire ray AABB because it only
-// visits cells actually touched by the ray and stops at the first hit.
+// Thin-ray DDA: traverse grid cells along the ray in near-to-far order.
+// Tests ALL triangles in each cell, tracks the closest hit.
+// Stops when the next cell boundary is farther than the closest known hit.
+// More efficient than querying the entire ray AABB — visits only cells
+// actually touched by the ray.
 bool rayTraverseGridCells(
     const World& world,
     const glm::vec3& rayOrigin,
     const glm::vec3& rayDir,
     float maxDist,
-    float& hitDist
+    float& hitDist,
+    glm::vec3* outNormal = nullptr
+);
+
+// Thick-ray (swept-sphere) DDA: traverse grid cells along the centerline
+// in near-to-far order, also visiting neighboring cells within the beam radius.
+// Tests all unique triangles using sweptSphereTriangle.
+// Stops when the next cell boundary is farther than the closest known hit.
+// Preserves exact beam-thickness collision behavior.
+bool sweptSphereTraverseGridCells(
+    const World& world,
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float maxDistance,
+    float radius,
+    float& hitDistance,
+    glm::vec3& hitNormal
+);
+
+// Swept-sphere vs triangle test (needed by collision traversal and weapon code).
+// Returns false if no intersection within maxDist.
+bool sweptSphereTriangle(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float radius,
+    const CollisionTriangle& tri,
+    float maxDist,
+    float& hitDist,
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
 );
 
 // Batched multi-contact depenetration solver.

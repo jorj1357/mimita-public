@@ -35,7 +35,7 @@
       "reload": "revolverreload",
       "hit": "player_hurt",
       "dry_fire": "ui/click",
-      "equip": "revolverequip"
+      "equip": "weapon/revolver/revolverequip"
     },
     "custom_params": {
       "distanceFalloffStart": 110.0,
@@ -141,7 +141,7 @@
       "reload": "shotgunreload",
       "hit": "player_hurt",
       "dry_fire": "ui/click",
-      "equip": "shotgunequip"
+      "equip": "weapon/shotgun/shotgunequip"
     },
     "custom_params": {
       "distanceFalloffStart": 60.0,
@@ -247,7 +247,7 @@
       "reload": "revolverreload",
       "hit": "player_hurt",
       "dry_fire": "ui/click",
-      "equip": "revolverequip"
+      "equip": "weapon/revolver/revolverequip"
     },
     "custom_params": {
       "distanceFalloffStart": 110.0,
@@ -291,7 +291,7 @@
       "reload": "shotgunreload",
       "hit": "player_hurt",
       "dry_fire": "ui/click",
-      "equip": "shotgunequip"
+      "equip": "weapon/shotgun/shotgunequip"
     },
     "custom_params": {
       "distanceFalloffStart": 60.0,
@@ -574,7 +574,7 @@
       "reload": "revolverreload",
       "hit": "player_hurt",
       "dry_fire": "ui/click",
-      "equip": "revolverequip"
+      "equip": "weapon/revolver/revolverequip"
     },
     "custom_params": {
       "distanceFalloffStart": 110.0,
