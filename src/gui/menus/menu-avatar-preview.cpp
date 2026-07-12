@@ -277,7 +277,11 @@ void MenuAvatarPreview::draw(int fbW, int fbH)
 
     GLint prevVp[4]; glGetIntegerv(GL_VIEWPORT, prevVp);
     GLboolean depthEn = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean scissorEn = glIsEnabled(GL_SCISSOR_TEST);
+    GLint prevScissor[4]; glGetIntegerv(GL_SCISSOR_BOX, prevScissor);
     glViewport(vpX, vpY, vpW, vpH);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(vpX, vpY, vpW, vpH);
     glEnable(GL_DEPTH_TEST);
 
     int prevRW = gRenderer->width, prevRH = gRenderer->height;
@@ -293,6 +297,7 @@ void MenuAvatarPreview::draw(int fbW, int fbH)
 
     gRenderer->width = prevRW; gRenderer->height = prevRH;
     if (!depthEn) glDisable(GL_DEPTH_TEST);
+    if (!scissorEn) glDisable(GL_SCISSOR_TEST); else glScissor(prevScissor[0], prevScissor[1], prevScissor[2], prevScissor[3]);
     glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
 
     if (p->dead || p->currentHp <= 0) return;

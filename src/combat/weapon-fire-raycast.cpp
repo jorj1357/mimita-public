@@ -103,19 +103,10 @@ AimTarget computeAimTarget(
     AimHitKind hitKind = AimHitKind::None;
 
     {
-        glm::vec3 aimEnd = camera.pos + camera.front * cameraNearest;
-        AABB aimBounds;
-        aimBounds.min = glm::min(camera.pos, aimEnd) - glm::vec3(0.1f);
-        aimBounds.max = glm::max(camera.pos, aimEnd) + glm::vec3(0.1f);
-        std::vector<int> candidates;
-        appendChunkTrianglesForAABB(world, aimBounds, 0.1f, candidates, "computeAimTarget");
-        for (int triIndex : candidates) {
-            const CollisionTriangle& tri = world.collisionMesh.triangles[triIndex];
-            float d = 0.0f;
-            if (rayTriangle(camera.pos, camera.front, tri, d) && d < cameraNearest) {
-                cameraNearest = d;
-                hitKind = AimHitKind::World;
-            }
+        float hitDist = 0.0f;
+        if (rayTraverseGridCells(world, camera.pos, camera.front, cameraNearest, hitDist) && hitDist < cameraNearest) {
+            cameraNearest = hitDist;
+            hitKind = AimHitKind::World;
         }
     }
     for (Npc& npc : npcs.all()) {

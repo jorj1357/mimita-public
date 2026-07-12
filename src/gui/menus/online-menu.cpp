@@ -5,10 +5,12 @@
 #include "../gui-coord.h"
 #include "../ui-system.h"
 #include "../../map/map-catalog.h"
+#include "../../avatar/avatar-editor-dropdown.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 namespace {
 
@@ -32,6 +34,34 @@ void ensureMapListScanned()
     }
     if (mapItemsCache.empty())
         mapItemsCache = "funworldv3";
+}
+
+// Build items list for a dropdown element (same logic as in drawGuiElement)
+static std::vector<std::string> buildDropdownItems(const GuiElement* elem)
+{
+    std::vector<std::string> items;
+    if (!elem->bindingItems.empty()) {
+        std::string itemsStr = GuiBindings::instance().get(elem->bindingItems);
+        if (!itemsStr.empty()) {
+            size_t pos = 0;
+            while ((pos = itemsStr.find(',')) != std::string::npos) {
+                items.push_back(itemsStr.substr(0, pos));
+                itemsStr.erase(0, pos + 1);
+            }
+            if (!itemsStr.empty()) items.push_back(itemsStr);
+        }
+    }
+    if (items.empty() && !elem->backgroundImage.empty()) {
+        std::string itemsStr = elem->backgroundImage;
+        size_t pos = 0;
+        while ((pos = itemsStr.find(',')) != std::string::npos) {
+            items.push_back(itemsStr.substr(0, pos));
+            itemsStr.erase(0, pos + 1);
+        }
+        if (!itemsStr.empty()) items.push_back(itemsStr);
+    }
+    if (items.empty()) items.push_back("None");
+    return items;
 }
 
 } // anonymous namespace
@@ -67,10 +97,8 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     // Sync bindings with actual state
     GuiBindings& b = GuiBindings::instance();
 
-    // Scan map list once
     ensureMapListScanned();
 
-    // Server state bindings
     b.set("server.code", serverCodeDisplay);
     b.set("server.status", serverRunning ? "Running" : "Stopped");
     b.set("server.running", serverRunning ? "true" : "false");
@@ -84,8 +112,20 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
 
-    for (const std::string& id : layout.elementIds())
+    // Phase 1: draw all elements sorted by layer
+    std::vector<std::pair<int, std::string>> sorted;
+    for (const std::string& id : layout.elementIds()) {
+        const GuiElement* e = layout.get(id);
+        if (e) sorted.push_back({e->layer, id});
+    }
+    std::sort(sorted.begin(), sorted.end(),
+        [](const std::pair<int, std::string>& a, const std::pair<int, std::string>& b) {
+            return a.first < b.first;
+        });
+
+    for (const auto& pair : sorted)
     {
+        const std::string& id = pair.second;
         const GuiElement* elem = layout.get(id);
         if (!elem || !elem->visible) continue;
 
@@ -103,21 +143,37 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         }
         else if (id == "connectToThisServerButton" && s.clicked)
         {
-            // Connect host to local listen server
             r.connectToServer = true;
             r.connectAddress = "127.0.0.1:1357";
         }
         else if (id == "joinServerButton" && s.clicked)
         {
-            // Read join code from binding and resolve to IP
             std::string code = b.get("join.code");
-            // For now, always connect to localhost
             r.connectToServer = true;
             r.connectAddress = "127.0.0.1:1357";
         }
         else if (id == "backButton" && s.clicked)
         {
             r.goBack = true;
+        }
+    }
+
+    // Phase 2: draw open dropdown overlays on top of everything
+    auto& allDropdowns = getDropdownStates();
+    for (auto& kv : allDropdowns)
+    {
+        DropdownState& ds = kv.second;
+        if (!ds.open) continue;
+
+        const GuiElement* elem = layout.get(kv.first);
+        if (!elem || elem->type != "dropdown") continue;
+
+        std::vector<std::string> items = buildDropdownItems(elem);
+        if (items.empty()) continue;
+
+        int sel = drawDropdownOverlay(win, ds, elem->x, elem->y, elem->w, elem->h, items);
+        if (sel >= 0 && !elem->binding.empty() && sel < (int)items.size()) {
+            b.set(elem->binding, items[sel]);
         }
     }
 

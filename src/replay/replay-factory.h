@@ -10,6 +10,8 @@
 
 #include "replay.h"
 
+class ReplaySaveWorker;
+
 // ----------------------------------------------------------------
 // Highlight classification
 // ----------------------------------------------------------------
@@ -199,6 +201,7 @@ private:
     };
 
     ReplayRingBuffer& mRing;
+    ReplaySaveWorker* mWorker = nullptr;
     std::optional<PendingClip> mLastClip;
     uint32_t mLastKillTick = 0;
     int mKillsLast5Sec = 0;
@@ -207,4 +210,7 @@ private:
 
     void finalizeAndSave(PendingClip& pending);
     std::string generateClipFilename();
+
+public:
+    void setWorker(ReplaySaveWorker* worker) { mWorker = worker; }
 };

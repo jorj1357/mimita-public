@@ -72,6 +72,19 @@ void appendChunkTrianglesForAABB(
     const char* caller = nullptr
 );
 
+// Traverse grid cells intersected by a ray, in near-to-far order.
+// Tests triangles in each cell and returns the closest hit distance.
+// Returns true if a hit was found, with hitDist set to the closest intersection.
+// This is more efficient than querying the entire ray AABB because it only
+// visits cells actually touched by the ray and stops at the first hit.
+bool rayTraverseGridCells(
+    const World& world,
+    const glm::vec3& rayOrigin,
+    const glm::vec3& rayDir,
+    float maxDist,
+    float& hitDist
+);
+
 // Batched multi-contact depenetration solver.
 // Collects all penetrating contacts and solves them simultaneously using
 // Gauss-Seidel iteration. Returns a single correction vector that satisfies
