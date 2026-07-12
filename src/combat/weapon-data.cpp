@@ -282,6 +282,19 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["projectileVisualRotationOffsetZ"] = 0.0f;
     def.customParams["projectileVisualTextureTilingU"] = 1.0f;
     def.customParams["projectileVisualTextureTilingV"] = 1.0f;
+    def.customParams["projectileFillAlpha"] = 1.0f;
+    def.customParams["projectileOutlineEnabled"] = 1.0f;
+    def.customParams["projectileOutlineColorR"] = 1.0f;
+    def.customParams["projectileOutlineColorG"] = 0.8f;
+    def.customParams["projectileOutlineColorB"] = 0.2f;
+    def.customParams["projectileOutlineAlpha"] = 0.4f;
+    def.customParams["projectileOutlineScale"] = 1.15f;
+    def.customParams["projectileGlowEnabled"] = 1.0f;
+    def.customParams["projectileGlowColorR"] = 1.0f;
+    def.customParams["projectileGlowColorG"] = 0.6f;
+    def.customParams["projectileGlowColorB"] = 0.0f;
+    def.customParams["projectileGlowAlpha"] = 0.15f;
+    def.customParams["projectileGlowRadiusMultiplier"] = 3.0f;
 
     // Smoke effect defaults
     def.customParams["smokeEnabled"] = 1.0f;
@@ -369,6 +382,19 @@ WeaponDefinition createGrenadeLauncherDefinition() {
     def.customParams["projectileVisualRotationOffsetZ"] = 0.0f;
     def.customParams["projectileVisualTextureTilingU"] = 1.0f;
     def.customParams["projectileVisualTextureTilingV"] = 1.0f;
+    def.customParams["projectileFillAlpha"] = 1.0f;
+    def.customParams["projectileOutlineEnabled"] = 1.0f;
+    def.customParams["projectileOutlineColorR"] = 1.0f;
+    def.customParams["projectileOutlineColorG"] = 0.8f;
+    def.customParams["projectileOutlineColorB"] = 0.2f;
+    def.customParams["projectileOutlineAlpha"] = 0.4f;
+    def.customParams["projectileOutlineScale"] = 1.15f;
+    def.customParams["projectileGlowEnabled"] = 1.0f;
+    def.customParams["projectileGlowColorR"] = 1.0f;
+    def.customParams["projectileGlowColorG"] = 0.6f;
+    def.customParams["projectileGlowColorB"] = 0.0f;
+    def.customParams["projectileGlowAlpha"] = 0.15f;
+    def.customParams["projectileGlowRadiusMultiplier"] = 3.0f;
 
     // Spark effect defaults
     def.customParams["sparkEnabled"] = 1.0f;
