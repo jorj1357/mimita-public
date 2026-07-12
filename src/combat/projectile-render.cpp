@@ -198,12 +198,14 @@ void renderProjectile(
     if (mesh.vertexCount <= 0)
         return;
 
-    // Cache texture (warn once per path if texture fails)
-    GLuint tex = gTextures.get(texturePath);
+    // Cache texture using absolute path.
+    // NOTE: gTextures.get() mangles paths by stripping "assets/textures/" prefix
+    // and re-adding it, which breaks "assets/textureshq/" paths. Use getPath instead.
+    GLuint tex = gTextures.getPath(texturePath);
     if (tex == 0) {
         static std::unordered_set<std::string> sTexWarned;
         if (sTexWarned.insert(texturePath).second)
-            printf("[PROJECTILE] WARNING: Failed to load texture: %s\n", texturePath.c_str());
+            printf("[PROJECTILE] WARNING: Failed to load texture: %s — projectile will be invisible\n", texturePath.c_str());
     }
     mesh.loadedTexturePath = texturePath;
 
