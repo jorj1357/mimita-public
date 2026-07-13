@@ -150,6 +150,10 @@ bool GuiLayout::load(const std::string& filePath)
             e.verticalAlign = elem.value("verticalAlign", "top");
             e.paddingX = elem.value("paddingX", 8.0f);
             e.paddingY = elem.value("paddingY", 4.0f);
+            e.maxLength = elem.value("maxLength", 200);
+            e.selectAllOnFocus = elem.value("selectAllOnFocus", false);
+            e.submitOnEnter = elem.value("submitOnEnter", false);
+            e.characterFilter = elem.value("characterFilter", "");
             if (elem.contains("textRuns") && elem["textRuns"].is_array()) {
                 for (const auto& run : elem["textRuns"]) {
                     UiTextRun tr;

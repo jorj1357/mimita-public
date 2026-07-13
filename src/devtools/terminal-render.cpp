@@ -1,11 +1,12 @@
 #include "devtools/terminal.h"
 #include "gui/ui-system.h"
+#include "gui/ui-text-input.h"
 #include <algorithm>
 #include <cstdio>
 #include <cmath>
 
 void Terminal::drawAutocompleteMenu(float inputLineY, float lineHeight) {
-    if (mSearchResults.empty() || mInputLine.empty())
+    if (mSearchResults.empty() || !mTextState || mTextState->value.empty())
         return;
 
     float fbW = uiScreenW();
@@ -132,52 +133,55 @@ void Terminal::render() {
     uiDrawText("] ", promptX, inputLineY, textScale, {0.85f, 0.85f, 0.85f, 1.0f});
     float promptW = uiMeasureText("] ", textScale);
 
-    // Draw selection highlight background
-    if (hasSelection()) {
-        int selA = std::min(mSelectionStart, mCursorPos);
-        int selB = std::max(mSelectionStart, mCursorPos);
-        std::string beforeSel = mInputLine.substr(0, selA);
-        std::string selText = mInputLine.substr(selA, selB - selA);
+    // Draw selection highlight background (use UITextInput)
+    if (mTextState && uiTextInputHasSelection(*mTextState)) {
+        int selA = std::min(mTextState->selectionStart, mTextState->cursorPos);
+        int selB = std::max(mTextState->selectionStart, mTextState->cursorPos);
+        std::string beforeSel = mTextState->value.substr(0, selA);
+        std::string selText = mTextState->value.substr(selA, selB - selA);
         float selX = promptX + promptW + uiMeasureText(beforeSel.c_str(), textScale);
         float selW = uiMeasureText(selText.c_str(), textScale);
         uiDrawRect({selX, inputLineY - 1.0f, selW, 22.0f}, {0.25f, 0.35f, 0.55f, 0.7f}, "terminal-sel");
     }
 
     // Draw input text with selection-colored portions
-    if (hasSelection()) {
-        int selA = std::min(mSelectionStart, mCursorPos);
-        int selB = std::max(mSelectionStart, mCursorPos);
-        if (selA > 0) {
-            std::string before = mInputLine.substr(0, selA);
-            uiDrawText(before.c_str(), promptX + promptW, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
+    if (mTextState) {
+        const std::string& val = mTextState->value;
+        int selA = std::min(mTextState->selectionStart, mTextState->cursorPos);
+        int selB = std::max(mTextState->selectionStart, mTextState->cursorPos);
+        if (uiTextInputHasSelection(*mTextState)) {
+            if (selA > 0) {
+                std::string before = val.substr(0, selA);
+                uiDrawText(before.c_str(), promptX + promptW, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
+            }
+            if (selB > selA) {
+                std::string selPart = val.substr(selA, selB - selA);
+                float selPartX = promptX + promptW + uiMeasureText(val.substr(0, selA).c_str(), textScale);
+                uiDrawText(selPart.c_str(), selPartX, inputLineY, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
+            }
+            if (selB < (int)val.size()) {
+                std::string after = val.substr(selB);
+                float afterX = promptX + promptW + uiMeasureText(val.substr(0, selB).c_str(), textScale);
+                uiDrawText(after.c_str(), afterX, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
+            }
+        } else {
+            uiDrawText(val.c_str(), promptX + promptW, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
         }
-        if (selB > selA) {
-            std::string selPart = mInputLine.substr(selA, selB - selA);
-            float selPartX = promptX + promptW + uiMeasureText(mInputLine.substr(0, selA).c_str(), textScale);
-            uiDrawText(selPart.c_str(), selPartX, inputLineY, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
-        }
-        if (selB < (int)mInputLine.size()) {
-            std::string after = mInputLine.substr(selB);
-            float afterX = promptX + promptW + uiMeasureText(mInputLine.substr(0, selB).c_str(), textScale);
-            uiDrawText(after.c_str(), afterX, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
-        }
-    } else {
-        uiDrawText(mInputLine.c_str(), promptX + promptW, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
-    }
 
-    // Ghost suffix
-    if (!mGhostSuffix.empty()) {
-        float inputEndX = promptX + promptW + uiMeasureText(mInputLine.c_str(), textScale);
-        uiDrawText(mGhostSuffix.c_str(), inputEndX, inputLineY, textScale, {0.4f, 0.4f, 0.45f, 0.7f});
-    }
+        // Ghost suffix
+        if (!mGhostSuffix.empty()) {
+            float inputEndX = promptX + promptW + uiMeasureText(val.c_str(), textScale);
+            uiDrawText(mGhostSuffix.c_str(), inputEndX, inputLineY, textScale, {0.4f, 0.4f, 0.45f, 0.7f});
+        }
 
-    // Cursor
-    mCursorBlink += 0.05f;
-    bool cursorVisible = fmodf(mCursorBlink, 1.0f) < 0.6f;
-    if (cursorVisible) {
-        std::string beforeCursor = mInputLine.substr(0, mCursorPos);
-        float cursorX = promptX + promptW + uiMeasureText(beforeCursor.c_str(), textScale);
-        uiDrawText("_", cursorX, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
+        // Cursor
+        mCursorBlink += 0.05f;
+        bool cursorVisible = fmodf(mCursorBlink, 1.0f) < 0.6f;
+        if (cursorVisible) {
+            std::string beforeCursor = val.substr(0, mTextState->cursorPos);
+            float cursorX = promptX + promptW + uiMeasureText(beforeCursor.c_str(), textScale);
+            uiDrawText("_", cursorX, inputLineY, textScale, {0.95f, 0.95f, 0.95f, 1.0f});
+        }
     }
 
     uiEndFrame();

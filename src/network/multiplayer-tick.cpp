@@ -318,6 +318,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                             ctx.pendingTeleportPosition) <= 1.0f)
                     {
                         ctx.awaitingTeleportAck = false;
+                        ctx.teleportResync = true;
+                        printf("[NET TELEPORT ACK] position=%.1f,%.1f,%.1f\n",
+                               ctx.localServerPosition.x,
+                               ctx.localServerPosition.y,
+                               ctx.localServerPosition.z);
                     }
                     if (ctx.awaitingExplodeDeath && entity.health <= 0)
                         ctx.awaitingExplodeDeath = false;

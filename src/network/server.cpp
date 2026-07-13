@@ -6,14 +6,15 @@
 
 #include <cstdio>
 #include <chrono>
+#include <filesystem>
 #include <random>
+#include <system_error>
 #include <thread>
 
 namespace MimitaNet {
 
 int runServer(const LaunchOptions& options)
 {
-    (void)options;
     setvbuf(stdout, nullptr, _IONBF, 0);
 
     printf("%s [SERVER] ========================================\n", serverTimestamp());
@@ -25,11 +26,25 @@ int runServer(const LaunchOptions& options)
     printf("%s [SERVER] coordinator=%s\n", serverTimestamp(), getCoordinatorUrl().c_str());
     printf("%s [SERVER] ========================================\n", serverTimestamp());
 
+    printf("%s [SERVER START SETTINGS] map=%s npcCount=%u serverName=%s roomCode=%s\n",
+           serverTimestamp(),
+           options.mapName.c_str(), options.npcCount,
+           options.name.c_str(), "pending");
+
     // Determine map path from options
     std::string mapName = options.mapName.empty() ? "funworldv3" : options.mapName;
     std::string mapPath = "assets/maps/" + mapName + ".glb";
     setServerMapId(mapName);
     printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
+
+    {
+        std::error_code ec;
+        bool exists = std::filesystem::exists(mapPath, ec);
+        bool isDir = std::filesystem::is_directory(mapPath, ec);
+        auto fsize = exists && !isDir ? std::filesystem::file_size(mapPath, ec) : 0;
+        printf("%s [SERVER WORLD PATH] original=%s exists=%d isFile=%d isDirectory=%d size=%lld\n",
+               serverTimestamp(), mapPath.c_str(), (int)exists, (int)(exists && !isDir), (int)isDir, (long long)fsize);
+    }
 
     HeadlessWorld world;
     if (!loadHeadlessWorld(mapPath.c_str(), world))
@@ -102,19 +117,22 @@ int runServer(const LaunchOptions& options)
                serverTimestamp(), (int)options.npcsEnabled, npcCount, npcs.size());
     }
 
-    // Register dedicated server with coordinator
+    // Register dedicated server with coordinator (use actual options)
     std::string serverCode = generateServerCode();
     std::string serverJoinToken;
     {
+        std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+        std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
         CoordinatorRoomInfo room = coordinatorRegister(
-            options.name, "", DEFAULT_PORT, "MiMITA Dedicated",
-            "funworldv3", "sandbox", MAX_PLAYERS);
+            regServerName, "", DEFAULT_PORT, regServerName,
+            regMapName, "sandbox", MAX_PLAYERS);
         if (!room.code.empty())
         {
             serverCode = room.code;
             serverJoinToken = room.joinToken;
             setServerCoordinatorState(room.code, room.joinToken);
-            printf("%s [SERVER] coordinator registered code=%s\n", serverTimestamp(), serverCode.c_str());
+            printf("%s [SERVER] coordinator registered code=%s map=%s name=%s\n",
+                   serverTimestamp(), serverCode.c_str(), regMapName.c_str(), regServerName.c_str());
         }
     }
 

@@ -15,6 +15,7 @@
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/account-config.h"
+#include "gui/ui-text-input.h"
 #include "input/input-commands.h"
 #include "physics/config.h"
 #include "replay/replay.h"
@@ -29,6 +30,7 @@ Terminal& Terminal::instance() {
 
 void Terminal::init(GLFWwindow* window) {
     mWindow = window;
+    mTextState = new UITextInputState();
     addLog("[TERMINAL] initialized. type 'help' for commands.");
 
     registerTerminalBuiltins();
@@ -207,9 +209,11 @@ void Terminal::init(GLFWwindow* window) {
 void Terminal::toggle() {
     mOpen = !mOpen;
     if (mOpen) {
-        mInputLine.clear();
-        mCursorPos = 0;
-        mSelectionStart = -1;
+        if (mTextState) {
+            mTextState->value.clear();
+            mTextState->cursorPos = 0;
+            mTextState->selectionStart = -1;
+        }
         mHistoryIndex = -1;
         mHistorySavedLine.clear();
         mScrollOffset = 0;
@@ -323,7 +327,7 @@ void Terminal::closeExportPicker() {
 }
 
 void Terminal::executeCurrent() {
-    std::string input = mInputLine;
+    std::string input = mTextState ? mTextState->value : "";
     addLog("] " + input);
     addHistory(input);
 
@@ -342,9 +346,11 @@ void Terminal::executeCurrent() {
         start = end + 1;
     }
 
-    mInputLine.clear();
-    mCursorPos = 0;
-    mSelectionStart = -1;
+    if (mTextState) {
+        mTextState->value.clear();
+        mTextState->cursorPos = 0;
+        mTextState->selectionStart = -1;
+    }
     mHistoryIndex = -1;
     mHistorySavedLine.clear();
     mTabCycleIndex = -1;
@@ -437,6 +443,9 @@ void Terminal::registerCommand(const ConsoleCommand& cmd, CommandCategory catego
         mRegistrationOrder.push_back(alias);
     }
 }
+
+UITextInputState* Terminal::textState() { return mTextState; }
+const UITextInputState* Terminal::textState() const { return mTextState; }
 
 void Terminal::registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category) {
     if (mCommands.find(cmd.name) != mCommands.end()) {

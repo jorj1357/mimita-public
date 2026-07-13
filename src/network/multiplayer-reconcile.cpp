@@ -38,6 +38,8 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         currentMs - ctx.pendingTeleportSentMs > TELEPORT_ACK_TIMEOUT_MS)
     {
         ctx.awaitingTeleportAck = false;
+        // Teleport ack timed out; force resync on next frame
+        ctx.teleportResync = true;
     }
     const bool initialSpawn = !ctx.localPlayerReconciled;
     const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
@@ -47,8 +49,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         error > CATASTROPHIC_DIVERGENCE &&
         !ctx.awaitingTeleportAck &&
         !player.dead;
+    const bool teleportCompletionResync =
+        ctx.teleportResync && !ctx.awaitingTeleportAck;
     const bool applyPosition =
-        initialSpawn || serverRespawnedPlayer || catastrophicDivergence;
+        initialSpawn || serverRespawnedPlayer || catastrophicDivergence || teleportCompletionResync;
+
+    if (applyPosition)
+        ctx.teleportResync = false;
 
     if (applyPosition)
     {

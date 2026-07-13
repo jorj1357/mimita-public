@@ -61,7 +61,30 @@ CoordinatorJoinResult coordinatorJoin(const std::string& code, const std::string
 // Server: validate a join token
 bool coordinatorValidateJoin(const std::string& code, const std::string& joinToken);
 
-// Async check to populate room code (non-blocking string response)
 bool coordinatorHttpGet(const std::string& url, std::string& response, int timeoutMs = 5000);
+
+// ── Async coordinator lookup (non-blocking, uses background thread) ──
+struct AsyncLookupResult {
+    bool pending = false;
+    bool done = false;
+    bool failed = false;
+    std::string code;
+    CoordinatorLookupResult result;
+};
+
+// Start an async lookup. Returns immediately. Check done/failed on subsequent frames.
+void coordinatorLookupAsync(AsyncLookupResult& state, const std::string& code);
+
+// ── Async coordinator join (non-blocking) ────────────────────────────
+struct AsyncJoinResult {
+    bool pending = false;
+    bool done = false;
+    bool failed = false;
+    std::string code;
+    std::string playerName;
+    CoordinatorJoinResult result;
+};
+
+void coordinatorJoinAsync(AsyncJoinResult& state, const std::string& code, const std::string& playerName);
 
 } // namespace MimitaNet

@@ -2,6 +2,7 @@
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
+#include "gui/gui-bindings.h"
 #include "devtools/terminal.h"
 #include "gui/menus/sign-in-menu.h"
 #include "auth/auth-popup.h"
@@ -54,9 +55,22 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
     }
 
     // Forward to terminal and menu handlers (these were previously called from
-    // the main.cpp key callback before it was overwritten)
+    // the main.cpp key callback before it was overwritten).
+    // Priority: Terminal → GUI text input → auth → sign-in → server-info → online menu
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-        Terminal::instance().handleKey(key, mods);
+        // If terminal is open, it owns keyboard input exclusively
+        if (Terminal::instance().isOpen()) {
+            Terminal::instance().handleKey(key, mods);
+            return;
+        }
+
+        // If a GUI text input field is focused, route to the binding system
+        if (!GuiBindings::instance().focusedId().empty()) {
+            guiBindingsHandleKey(key, action, mods);
+            return;
+        }
+
+        // No text input active: forward to menu/keyboard handlers
         authPopupHandleKey(key, action);
         signInMenuHandleKey(key, action);
         serverInfoMenuHandleKey(key, action, mods);
