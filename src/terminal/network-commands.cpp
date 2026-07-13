@@ -1,31 +1,151 @@
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <shellapi.h>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "network/net_mode.h"
+#include "network/server.h"
+#include "network/multiplayer-context.h"
+#include "network/disagreement-visuals.h"
+#include "gui/gui-main.h"
+#include "auth/auth-system.h"
 
 extern bool gNetPresentationDebug;
 
 void registerNetworkCommands()
 {
     Terminal::instance().registerCommand({
-        "serverconnect", "Print a server connection request", "serverconnect <ip> [args...]",
+        "startserver", "Start the local game server",
+        "startserver",
+        [](const std::vector<std::string>&) {
+            MimitaNet::ListenServerState* ls = getListenServerState();
+            if (ls && ls->active) {
+                Terminal::instance().addLog("[SERVER] already running");
+                return;
+            }
+            if (MimitaNet::startListenServer(*ls, MimitaNet::DEFAULT_PORT))
+                Terminal::instance().addLog("[SERVER] started on port " +
+                    std::to_string(MimitaNet::DEFAULT_PORT) + " code=" + ls->serverCode);
+            else
+                Terminal::instance().addLog("[SERVER] failed to start");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "stopserver", "Stop the local game server",
+        "stopserver",
+        [](const std::vector<std::string>&) {
+            MimitaNet::ListenServerState* ls = getListenServerState();
+            if (!ls || !ls->active) {
+                Terminal::instance().addLog("[SERVER] not running");
+                return;
+            }
+            if (MP_CONTEXT.active)
+                MimitaNet::mpShutdown(MP_CONTEXT);
+            MimitaNet::stopListenServer(*ls);
+            Terminal::instance().addLog("[SERVER] stopped");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "server_help", "List server commands",
+        "server_help",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().addLog("=== SERVER COMMANDS ===");
+            Terminal::instance().addLog("startserver              - Start local server");
+            Terminal::instance().addLog("stopserver               - Stop local server");
+            Terminal::instance().addLog("server_info              - Show server status");
+            Terminal::instance().addLog("server_leave             - Host client disconnects, server continues");
+            Terminal::instance().addLog("server_help              - This help");
+            Terminal::instance().addLog("serverconnect <ip>       - Connect to server (legacy)");
+            Terminal::instance().addLog("disconnectserver         - Disconnect from server");
+            Terminal::instance().addLog("fakelag_mode <0|1|2>    - Set fake lag mode");
+            Terminal::instance().addLog("fakelag_amount_static <ms> - Static fake lag");
+            Terminal::instance().addLog("fakelag_amount_min <ms>  - Min random fake lag");
+            Terminal::instance().addLog("fakelag_amount_max <ms>  - Max random fake lag");
+            Terminal::instance().addLog("net_debug_presentation [0|1] - Debug overlay");
+            Terminal::instance().addLog("net_damage_debug [0|1]   - Damage pipeline debug");
+            Terminal::instance().addLog("net_hit_debug [0|1]      - Hit raycast debug");
+            Terminal::instance().addLog("net_compare              - Client/server state compare");
+            Terminal::instance().addLog("net_entity_dump          - Full entity state dump");
+            Terminal::instance().addLog("net_disagreement_debug [0|1] - Disagreement visuals debug");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "server_info", "Show server status, players, uptime",
+        "server_info",
+        [](const std::vector<std::string>&) {
+            MimitaNet::ListenServerState* ls = getListenServerState();
+            if (!ls || !ls->active) {
+                Terminal::instance().addLog("[SERVER] not running");
+                return;
+            }
+            char buf[256];
+            snprintf(buf, sizeof(buf), "[SERVER] code=%s port=%u players=%zu/%d tick=%u",
+                     ls->serverCode.c_str(), ls->port, ls->players.size(),
+                     MimitaNet::MAX_PLAYERS, ls->tick);
+            Terminal::instance().addLog(buf);
+            for (const auto& kv : ls->players) {
+                snprintf(buf, sizeof(buf), "  player id=%u name=\"%s\" hp=%d dead=%d",
+                         kv.second.id, kv.second.name.c_str(), kv.second.health, (int)kv.second.dead);
+                Terminal::instance().addLog(buf);
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "server_leave", "Host client disconnects but server continues running",
+        "server_leave",
+        [](const std::vector<std::string>&) {
+            if (MP_CONTEXT.active && MP_CONTEXT.localPlayerId) {
+                MimitaNet::mpShutdown(MP_CONTEXT);
+                Terminal::instance().addLog("[SERVER] host client disconnected, server continues");
+            } else {
+                Terminal::instance().addLog("[SERVER] not connected to any server");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "serverconnect", "Connect to a server IP", "serverconnect <ip> [args...]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
                 Terminal::instance().addLog("[ERROR] Usage: serverconnect <ip> [args...]");
                 return;
             }
-            std::string text = "[SERVER] would connect to " + args[0];
-            for (size_t i = 1; i < args.size(); ++i) text += " " + args[i];
-            Terminal::instance().addLog(text);
+            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+            std::string address = args[0];
+            if (MimitaNet::mpInit(mpContext, address, AuthSystem::instance().displayName())) {
+                Terminal::instance().addLog("[SERVER] connecting to " + address);
+            } else {
+                Terminal::instance().addLog("[ERROR] failed to connect to " + address);
+            }
         }
     });
     Terminal::instance().registerCommand({
-        "disconnectserver", "Print a server disconnect request", "disconnectserver",
+        "disconnectserver", "Disconnect from server",
+        "disconnectserver",
         [](const std::vector<std::string>&) {
-            Terminal::instance().addLog("[SERVER] would disconnect");
+            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+            if (mpContext.active) {
+                MimitaNet::mpShutdown(mpContext);
+                Terminal::instance().addLog("[SERVER] disconnected");
+            } else {
+                Terminal::instance().addLog("[SERVER] not connected");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "net_disagreement_debug", "Toggle server disagreement debug logging",
+        "net_disagreement_debug [0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                MimitaNet::gDisagreementDebug = !MimitaNet::gDisagreementDebug;
+            } else {
+                MimitaNet::gDisagreementDebug = args[0] == "1";
+            }
+            Terminal::instance().addLog(MimitaNet::gDisagreementDebug
+                ? "[NET] Disagreement debug ON"
+                : "[NET] Disagreement debug OFF");
         }
     });
 

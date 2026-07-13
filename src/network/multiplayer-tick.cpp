@@ -26,6 +26,22 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
     std::strncpy(dst, name.c_str(), sizeof(dst) - 1);
 }
 
+void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
+{
+    JoinRequestPacket join{};
+    join.header.type = PACKET_JOIN_REQUEST;
+    join.header.tick = ctx.tick;
+    std::memset(join.joinToken, 0, sizeof(join.joinToken));
+    std::strncpy(join.joinToken, ctx.joinToken.c_str(), sizeof(join.joinToken) - 1);
+    std::memset(join.name, 0, sizeof(join.name));
+    std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
+    sendto(ctx.sock, (const char*)&join, sizeof(join), 0,
+           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    ++ctx.packetsSent;
+    printf("[NET CONNECT] join request sent to %s token=%s\n",
+           ctx.serverAddress.c_str(), ctx.joinToken.c_str());
+}
+
 } // namespace
 
 static const char* disconnectReasonStr(MultiplayerContext& ctx)
@@ -55,16 +71,39 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                    (unsigned long long)(currentMs - ctx.lastHeardServerMs));
             ctx.lastDisconnectLogMs = currentMs;
         }
-        // ACTUALLY disconnect instead of just logging forever
         printf("[NET DISCONNECT] player=%u reason=heartbeat_timeout duration=%llums\n",
                ctx.localPlayerId,
                (unsigned long long)(currentMs - ctx.lastHeardServerMs));
+
+        // Try reconnect if we have a reconnect token
+        if (!ctx.reconnectToken.empty())
+        {
+            ctx.connected = false;
+            ctx.connectionState = ConnectionState::Reconnecting;
+            mpStartReconnect(ctx);
+            return;
+        }
+
         ctx.connected = false;
         ctx.active = false;
+        ctx.connectionState = ConnectionState::Disconnected;
         closesocket(ctx.sock);
         ctx.sock = INVALID_SOCKET;
         return;
     }
+
+    // Decay old disagreement events
+    {
+        constexpr uint64_t DISAGREEMENT_LIFETIME_MS = 3000;
+        for (size_t i = 0; i < ctx.disagreementEvents.size(); )
+        {
+            if (currentMs - ctx.disagreementEvents[i].timeMs > DISAGREEMENT_LIFETIME_MS)
+                ctx.disagreementEvents.erase(ctx.disagreementEvents.begin() + i);
+            else
+                ++i;
+        }
+    }
+
     if (ctx.fakeLagMode == 1 &&
         (ctx.fakeLagNextRandomizeMs == 0 ||
          currentMs >= ctx.fakeLagNextRandomizeMs))
@@ -84,18 +123,32 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         printf("[NET CONNECT] timeout server=%s\n", ctx.serverAddress.c_str());
     }
 
-    if (ctx.localPlayerId == 0 && !ctx.connectFailed)
+    // ── Connection state machine ───────────────────────────────────────
+    if (ctx.connectionState == ConnectionState::Connecting ||
+        ctx.connectionState == ConnectionState::WaitJoinAccept)
     {
         if (currentMs - ctx.lastHelloMs > 500)
         {
-            HelloPacket hello{};
-            hello.header.type = PACKET_HELLO;
-            hello.header.tick = ctx.tick;
-            copyName(hello.name, playerName);
-            mpSendPacket(ctx, &hello, sizeof(hello));
+            if (!ctx.joinToken.empty())
+            {
+                sendJoinRequest(ctx, playerName);
+                ctx.connectionState = ConnectionState::WaitJoinAccept;
+            }
+            else
+            {
+                HelloPacket hello{};
+                hello.header.type = PACKET_HELLO;
+                hello.header.tick = ctx.tick;
+                copyName(hello.name, playerName);
+                mpSendPacket(ctx, &hello, sizeof(hello));
+            }
             ctx.lastHelloMs = currentMs;
-            printf("[NET CONNECT] hello sent to %s\n", ctx.serverAddress.c_str());
         }
+    }
+
+    if (ctx.connectionState == ConnectionState::Reconnecting)
+    {
+        mpTickReconnect(ctx);
     }
 
     char buffer[16384];
@@ -149,15 +202,65 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.localPlayerId = welcome->assignedPlayerId;
             ctx.connected = true;
             ctx.connectFailed = false;
+            ctx.connectionState = ConnectionState::Connected;
             ctx.connectionStatus = "Connected";
             ctx.approvedLocalName = welcome->approvedName;
+            ctx.reconnectToken = welcome->reconnectToken;
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
                 0
             };
-            printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f\n",
-                   ctx.localPlayerId, welcome->header.tick, welcome->tickRate);
+            printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f reconnectToken=%s\n",
+                   ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
+                   welcome->reconnectToken);
+        }
+        else if (header->type == PACKET_JOIN_ACCEPT && bytes >= (int)sizeof(JoinAcceptPacket))
+        {
+            const JoinAcceptPacket* accept = reinterpret_cast<const JoinAcceptPacket*>(buffer);
+            ctx.localPlayerId = accept->assignedPlayerId;
+            ctx.connected = true;
+            ctx.connectFailed = false;
+            ctx.connectionState = ConnectionState::Connected;
+            ctx.connectionStatus = "Connected";
+            ctx.approvedLocalName = accept->approvedName;
+            ctx.reconnectToken = accept->reconnectToken;
+            ctx.playerRegistry[ctx.localPlayerId] = {
+                ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
+                ctx.localPlayerId,
+                0
+            };
+            printf("[NET CONNECT] join accepted player=%u tickRate=%.0f reconnectToken=%s\n",
+                   ctx.localPlayerId, accept->tickRate, accept->reconnectToken);
+        }
+        else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
+        {
+            const JoinRejectPacket* reject = reinterpret_cast<const JoinRejectPacket*>(buffer);
+            ctx.connectFailed = true;
+            ctx.connectionState = ConnectionState::Disconnected;
+            ctx.connectionStatus = "Join rejected";
+            printf("[NET CONNECT] join rejected reason=%u\n", reject->reason);
+        }
+        else if (header->type == PACKET_RECONNECT_ACCEPT && bytes >= (int)sizeof(ReconnectAcceptPacket))
+        {
+            const ReconnectAcceptPacket* accept = reinterpret_cast<const ReconnectAcceptPacket*>(buffer);
+            ctx.localPlayerId = accept->assignedPlayerId;
+            ctx.connected = true;
+            ctx.connectFailed = false;
+            ctx.connectionState = ConnectionState::Connected;
+            ctx.connectionStatus = "Reconnected";
+            ctx.approvedLocalName = accept->approvedName;
+            ctx.reconnectToken = accept->reconnectToken;
+            ctx.localServerPosition = {accept->restorePx, accept->restorePy, accept->restorePz};
+            ctx.localServerHealth = accept->restoredHealth;
+            ctx.hasLocalServerPosition = true;
+            printf("[NET RECONNECT] accepted player=%u health=%d kills=%d deaths=%d\n",
+                   ctx.localPlayerId, accept->restoredHealth,
+                   accept->restoredKills, accept->restoredDeaths);
+        }
+        else if (header->type == PACKET_DISAGREEMENT && bytes >= (int)sizeof(DisagreementPacket))
+        {
+            mpProcessDisagreementPacket(ctx, reinterpret_cast<const DisagreementPacket*>(buffer));
         }
         else if (header->type == PACKET_SNAPSHOT && bytes >= (int)sizeof(SnapshotPacket))
         {
@@ -168,6 +271,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.snapshotsMissed +=
                     snapshot->header.tick - ctx.lastSnapshotTick - 1;
             }
+            if (ctx.connectionState == ConnectionState::WaitJoinAccept ||
+                ctx.connectionState == ConnectionState::Connecting)
+                ctx.connectionState = ConnectionState::Connected;
             ++ctx.snapshotsReceived;
             ctx.lastSnapshotTick = snapshot->header.tick;
             ctx.latestServerTick = snapshot->header.tick;

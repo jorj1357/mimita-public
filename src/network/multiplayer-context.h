@@ -11,6 +11,33 @@
 
 namespace MimitaNet {
 
+// ── Connection state machine ──────────────────────────────────────────
+enum class ConnectionState : uint8_t
+{
+    Disconnected,
+    ResolvingCode,
+    RequestingJoin,
+    WaitJoinAccept,
+    NatNegotiating,
+    Connecting,
+    Connected,
+    Reconnecting,
+    DisconnectPending
+};
+
+const char* connectionStateName(ConnectionState state);
+
+// ── Server disagreement event (for client-side visual effects) ────────
+struct DisagreementEvent
+{
+    uint64_t timeMs = 0;
+    DisagreementReason reason = DISAGREEMENT_NONE;
+    glm::vec3 position{0.0f};
+    glm::vec3 correction{0.0f};
+    std::string description;
+    float lifetime = 3.0f;
+};
+
 struct PlayerInfo
 {
     std::string name;
@@ -133,6 +160,23 @@ struct MultiplayerContext
     int localPingMs = 0;
     uint64_t lastHeardServerMs = 0;
     uint64_t lastDisconnectLogMs = 0;
+
+    // ── Migration: connection state machine ───────────────────────────
+    ConnectionState connectionState = ConnectionState::Disconnected;
+    std::string roomCode;
+    std::string joinToken;
+    std::string reconnectToken;
+    int reconnectAttempts = 0;
+    uint64_t lastReconnectAttemptMs = 0;
+    uint64_t reconnectBackoffMs = 1000;
+
+    // ── Migration: disagreement events from server ────────────────────
+    std::vector<DisagreementEvent> disagreementEvents;
+
+    // ── Migration: server process tracking ────────────────────────────
+    bool serverProcessLaunched = false;
+    uint64_t serverProcessLaunchMs = 0;
+    uint16_t serverPort = 1357;
 };
 
 struct MpInput
@@ -156,6 +200,17 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input = nullptr);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
+
+// ── Migration: connection with room code + join token ─────────────────
+bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
+    uint16_t port, const std::string& joinToken, const std::string& playerName);
+
+// ── Migration: disagreement packet processing ─────────────────────────
+void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPacket* packet);
+
+// ── Migration: reconnect helpers ──────────────────────────────────────
+void mpStartReconnect(MultiplayerContext& ctx);
+void mpTickReconnect(MultiplayerContext& ctx);
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty = 1.0f);
 void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
 void mpRequestExplode(MultiplayerContext& ctx);

@@ -34,9 +34,11 @@
 #include "devtools/terminal.h"
 #include "renderer/renderer.h"
 #include "network/server.h"
+#include "network/coordinator-client.h"
 #include <cstdio>
 #include <glad/glad.h>
 #include <shellapi.h>
+#include <windows.h>
 
 GuiMenuState gGuiMenuState = GUI_MENU_AUTH;
 
@@ -98,6 +100,51 @@ static MimitaNet::ListenServerState gListenServer;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
 static SandboxMapSelection gPendingSandboxMap{};
+static PROCESS_INFORMATION gServerProcessInfo{};
+static bool gServerProcessLaunched = false;
+static uint64_t gServerProcessLaunchMs = 0;
+
+static bool launchServerProcess(uint16_t port)
+{
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+
+    std::string args = std::string(exePath) + " --server --connect 127.0.0.1:" + std::to_string(port);
+
+    STARTUPINFOA si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &gServerProcessInfo))
+    {
+        printf("[SERVER LAUNCH] CreateProcess failed error=%d\n", (int)GetLastError());
+        return false;
+    }
+
+    printf("[SERVER LAUNCH] launched server process pid=%lu\n",
+           (unsigned long)gServerProcessInfo.dwProcessId);
+    gServerProcessLaunched = true;
+    gServerProcessLaunchMs = MimitaNet::nowMs();
+
+    // Give server a moment to start
+    Sleep(250);
+    return true;
+}
+
+static void stopServerProcess()
+{
+    if (gServerProcessLaunched &&
+        gServerProcessInfo.hProcess != nullptr)
+    {
+        TerminateProcess(gServerProcessInfo.hProcess, 0);
+        CloseHandle(gServerProcessInfo.hProcess);
+        CloseHandle(gServerProcessInfo.hThread);
+        gServerProcessInfo = {};
+        gServerProcessLaunched = false;
+        printf("[SERVER LAUNCH] server process terminated\n");
+    }
+}
 
 DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
 void clearPendingDuelConfig() { gPendingDuelConfig = DuelConfigResult{}; }
@@ -405,23 +452,42 @@ void guiMain(GLFWwindow* win, GameState& state)
             if (r.startServer)
             {
                 onlineMenuSetServerCode("");
-                if (!gListenServer.active)
+                if (!gListenServer.active && !gServerProcessLaunched)
                 {
-                    if (MimitaNet::startListenServer(gListenServer, MimitaNet::DEFAULT_PORT))
+                    // Launch server as separate process
+                    const uint16_t port = MimitaNet::DEFAULT_PORT;
+                    if (launchServerProcess(port))
                     {
-                        onlineMenuSetServerRunning(true);
-                        onlineMenuSetServerCode(gListenServer.serverCode);
-                        printf("[ONLINE MENU] Listen server started code=%s\n",
-                               gListenServer.serverCode.c_str());
+                        // Also start listen server for host client
+                        if (MimitaNet::startListenServer(gListenServer, port))
+                        {
+                            onlineMenuSetServerRunning(true);
+                            onlineMenuSetServerCode(gListenServer.serverCode);
+                            printf("[ONLINE MENU] Server started (process+listen) port=%u code=%s\n",
+                                   port, gListenServer.serverCode.c_str());
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: listen server only
+                        if (MimitaNet::startListenServer(gListenServer, MimitaNet::DEFAULT_PORT))
+                        {
+                            onlineMenuSetServerRunning(true);
+                            onlineMenuSetServerCode(gListenServer.serverCode);
+                            printf("[ONLINE MENU] Listen server started (fallback) code=%s\n",
+                                   gListenServer.serverCode.c_str());
+                        }
                     }
                 }
             }
             else if (r.stopServer)
             {
-                if (gListenServer.active)
+                if (gListenServer.active || gServerProcessLaunched)
                 {
                     if (MP_CONTEXT.active)
                         MimitaNet::mpShutdown(MP_CONTEXT);
+
+                    stopServerProcess();
                     MimitaNet::stopListenServer(gListenServer);
                     onlineMenuSetServerRunning(false);
                     onlineMenuSetServerCode("");
@@ -429,8 +495,47 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.connectToServer)
             {
-                gPendingConnect.shouldConnect = true;
-                gPendingConnect.address = r.connectAddress;
+                // If we have a join token, use coordinator join flow
+                if (!r.joinToken.empty())
+                {
+                    gPendingConnect.shouldConnect = true;
+                    gPendingConnect.address = r.connectAddress;
+                    gPendingConnect.port = r.connectPort;
+                    gPendingConnect.joinToken = r.joinToken;
+                }
+                else
+                {
+                    // Legacy flow: try coordinator join for the host's own server
+                    std::string code = gListenServer.active
+                        ? gListenServer.serverCode
+                        : r.joinToken;
+                    if (!code.empty())
+                    {
+                        // Do a coordinator lookup to get the join token
+                        MimitaNet::CoordinatorJoinResult joinResult =
+                            MimitaNet::coordinatorJoin(code, AuthSystem::instance().displayName());
+                        if (joinResult.ok)
+                        {
+                            gPendingConnect.shouldConnect = true;
+                            gPendingConnect.address = joinResult.serverIp;
+                            gPendingConnect.port = joinResult.serverPort;
+                            gPendingConnect.joinToken = joinResult.joinToken;
+                        }
+                        else
+                        {
+                            // Fallback to localhost
+                            gPendingConnect.shouldConnect = true;
+                            gPendingConnect.address = "127.0.0.1";
+                            gPendingConnect.port = MimitaNet::DEFAULT_PORT;
+                        }
+                    }
+                    else
+                    {
+                        gPendingConnect.shouldConnect = true;
+                        gPendingConnect.address = "127.0.0.1";
+                        gPendingConnect.port = MimitaNet::DEFAULT_PORT;
+                    }
+                }
                 onlineMenuSetActive(false);
                 state = GAME_PLAYING;
             }

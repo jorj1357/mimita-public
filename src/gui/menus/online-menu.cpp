@@ -6,6 +6,10 @@
 #include "../ui-system.h"
 #include "../../map/map-catalog.h"
 #include "../../avatar/avatar-editor-dropdown.h"
+#include "../../network/multiplayer-context.h"
+#include "../../network/coordinator-client.h"
+#include "../../network/server.h"
+#include "../../auth/auth-system.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -144,13 +148,59 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         else if (id == "connectToThisServerButton" && s.clicked)
         {
             r.connectToServer = true;
-            r.connectAddress = "127.0.0.1:1357";
+            r.connectAddress = "127.0.0.1";
+            r.connectPort = MimitaNet::DEFAULT_PORT;
+            // Use server code as local join verification
+            if (!serverCodeDisplay.empty())
+                r.joinToken = serverCodeDisplay;
         }
         else if (id == "joinServerButton" && s.clicked)
         {
             std::string code = b.get("join.code");
-            r.connectToServer = true;
-            r.connectAddress = "127.0.0.1:1357";
+            // Remove placeholder text
+            if (code.find("______") != std::string::npos)
+                code.clear();
+
+            if (!code.empty())
+            {
+                // First do a coordinator lookup to verify the code exists
+                MimitaNet::CoordinatorLookupResult lookup =
+                    MimitaNet::coordinatorLookup(code);
+                if (lookup.exists && lookup.status == "online")
+                {
+                    // Then request a join token
+                    MimitaNet::CoordinatorJoinResult joinResult =
+                        MimitaNet::coordinatorJoin(code,
+                            AuthSystem::instance().displayName());
+                    if (joinResult.ok)
+                    {
+                        r.connectToServer = true;
+                        r.connectAddress = joinResult.serverIp;
+                        r.connectPort = joinResult.serverPort;
+                        r.joinToken = joinResult.joinToken;
+                        printf("[ONLINE MENU] join code=%s server=%s:%u token=%s\n",
+                               code.c_str(), joinResult.serverIp.c_str(),
+                               joinResult.serverPort,
+                               joinResult.joinToken.substr(0, 12).c_str());
+                    }
+                    else
+                    {
+                        b.set("join.code", "Join failed (coordinator error)");
+                        printf("[ONLINE MENU] join FAILED for code=%s\n", code.c_str());
+                    }
+                }
+                else if (lookup.exists)
+                {
+                    b.set("join.code", "Server offline");
+                    printf("[ONLINE MENU] server offline code=%s status=%s\n",
+                           code.c_str(), lookup.status.c_str());
+                }
+                else
+                {
+                    b.set("join.code", "Room not found");
+                    printf("[ONLINE MENU] code not found: %s\n", code.c_str());
+                }
+            }
         }
         else if (id == "backButton" && s.clicked)
         {
