@@ -91,6 +91,7 @@ struct ServerPlayer
     bool spawned = false;
     int kills = 0;
     int deaths = 0;
+    uint16_t transformEpoch = 0;
 };
 
 enum class ServerNpcState {
@@ -242,7 +243,7 @@ void sendDisagreementToAll(SOCKET sock,
 struct ServerLaunchSettings
 {
     std::string serverName = "MiMITA Server";
-    std::string mapName = "funworldv3";
+    std::string mapName = "funworld3";
     std::string gameMode = "sandbox";
     uint32_t maxPlayers = 999;
     bool passwordProtected = false;
@@ -250,6 +251,8 @@ struct ServerLaunchSettings
     bool startupNpcsEnabled = true;
     uint32_t startupNpcCount = 3;
     uint16_t port = DEFAULT_PORT;
+    std::string serverCode;
+    bool externalProcessLaunched = false;
 
     // Resolved state (set during startup, not from UI)
     std::string resolvedMapPath;

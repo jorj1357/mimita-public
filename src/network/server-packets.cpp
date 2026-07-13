@@ -18,7 +18,7 @@ static std::string gServerCoordinatorCode;
 static std::string gServerCoordinatorJoinToken;
 
 // ── Global server map ID ─────────────────────────────────────────────
-static std::string gServerMapId = "funworldv3";
+static std::string gServerMapId = "funworld3";
 
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken)
 {
@@ -291,8 +291,9 @@ void handleTeleportRequest(const char* buffer, int bytes,
         world.boundsMax + glm::vec3(2.0f));
     p.vel = glm::vec3(0.0f);
     p.onGround = false;
-    printf("%s [SERVER TELEPORT] playerId=%u position=(%.2f,%.2f,%.2f)\n",
-           serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z);
+    ++p.transformEpoch;
+    printf("%s [SERVER TELEPORT] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u\n",
+           serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch);
 }
 
 void handleExplodeRequest(const char* buffer, int bytes,

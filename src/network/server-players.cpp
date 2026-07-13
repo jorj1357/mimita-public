@@ -160,8 +160,9 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             p.dead = false;
             p.health = 100;
             p.pos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
-            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f)\n",
-                   serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z);
+            ++p.transformEpoch;
+            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u\n",
+                   serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch);
         }
         return;
     }

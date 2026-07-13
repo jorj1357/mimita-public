@@ -159,6 +159,7 @@ struct SnapshotEntity
     uint8_t entityType = ENTITY_NONE;
     uint8_t active = 0;
     uint16_t lastDashSerial = 0;
+    uint16_t transformEpoch = 0;
     uint32_t ownerClientId = 0;
     float px = 0.0f;
     float py = 0.0f;
