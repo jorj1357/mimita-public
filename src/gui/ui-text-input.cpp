@@ -11,11 +11,21 @@
 #include <GLFW/glfw3.h>
 #include <glad/glad.h>
 
+// ── Internal: clamp cursor and selection after every mutation ─────────
+
+static void clampCursor(UITextInputState& state)
+{
+    int len = (int)state.value.size();
+    state.cursorPos = std::clamp(state.cursorPos, 0, len);
+    if (state.selectionStart >= 0)
+        state.selectionStart = std::clamp(state.selectionStart, 0, len);
+}
+
 // ── Selection helpers ────────────────────────────────────────────────
 
 bool uiTextInputHasSelection(const UITextInputState& state)
 {
-    return state.selectionStart >= 0;
+    return state.selectionStart >= 0 && state.selectionStart != state.cursorPos;
 }
 
 void uiTextInputClearSelection(UITextInputState& state)
@@ -25,19 +35,17 @@ void uiTextInputClearSelection(UITextInputState& state)
 
 std::string uiTextInputSelectedText(const UITextInputState& state)
 {
-    if (state.selectionStart < 0) return {};
+    if (!uiTextInputHasSelection(state)) return {};
     int a = std::min(state.selectionStart, state.cursorPos);
     int b = std::max(state.selectionStart, state.cursorPos);
-    if (a >= b) return {};
     return state.value.substr(a, b - a);
 }
 
 void uiTextInputDeleteSelection(UITextInputState& state)
 {
-    if (state.selectionStart < 0) return;
+    if (!uiTextInputHasSelection(state)) return;
     int a = std::min(state.selectionStart, state.cursorPos);
     int b = std::max(state.selectionStart, state.cursorPos);
-    if (a >= b) { uiTextInputClearSelection(state); return; }
     state.value.erase(a, b - a);
     state.cursorPos = a;
     uiTextInputClearSelection(state);
@@ -45,11 +53,12 @@ void uiTextInputDeleteSelection(UITextInputState& state)
 
 void uiTextInputReplaceSelection(UITextInputState& state, const std::string& replacement)
 {
-    if (state.selectionStart >= 0)
+    if (uiTextInputHasSelection(state))
         uiTextInputDeleteSelection(state);
     state.value.insert(state.cursorPos, replacement);
     state.cursorPos += (int)replacement.size();
     uiTextInputClearSelection(state);
+    clampCursor(state);
 }
 
 int uiTextInputCursorWordLeft(const UITextInputState& state, int pos)
@@ -71,6 +80,28 @@ int uiTextInputCursorWordRight(const UITextInputState& state, int pos)
     return i;
 }
 
+// ── Mouse: calculate character index from screen X ────────────────────
+
+int uiTextInputCharacterIndexFromX(const std::string& displayText,
+                                   float localMouseX, float textScale)
+{
+    if (displayText.empty() || localMouseX <= 0.0f) return 0;
+    if (localMouseX >= uiMeasureText(displayText.c_str(), textScale))
+        return (int)displayText.size();
+
+    for (int i = 0; i < (int)displayText.size(); ++i)
+    {
+        std::string prefix = displayText.substr(0, i + 1);
+        float charEndX = uiMeasureText(prefix.c_str(), textScale);
+        std::string beforeChar = displayText.substr(0, i);
+        float charStartX = uiMeasureText(beforeChar.c_str(), textScale);
+        float midX = (charStartX + charEndX) * 0.5f;
+        if (localMouseX < midX)
+            return i;
+    }
+    return (int)displayText.size();
+}
+
 // ── Char dispatch ────────────────────────────────────────────────────
 
 bool uiTextInputHandleChar(UITextInputState& state, unsigned int codepoint,
@@ -80,9 +111,15 @@ bool uiTextInputHandleChar(UITextInputState& state, unsigned int codepoint,
     if (codepoint >= 32 && codepoint <= 126)
     {
         if (opts.characterFilter && !opts.characterFilter(codepoint))
-            return true; // consumed but rejected
-        if (state.value.size() >= opts.maxLength)
             return true;
+
+        // Calculate available space accounting for selected text replacement
+        size_t selectedLen = uiTextInputHasSelection(state)
+            ? (size_t)std::abs(state.selectionStart - state.cursorPos)
+            : 0;
+        if (state.value.size() - selectedLen >= opts.maxLength)
+            return true;
+
         std::string ch(1, (char)codepoint);
         uiTextInputReplaceSelection(state, ch);
         state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
@@ -114,15 +151,18 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
             if (clip)
             {
                 std::string text = clip;
-                // Strip newlines
                 for (auto& ch : text)
                     if (ch == '\n' || ch == '\r') ch = ' ';
-                // Filter and limit
+
+                size_t selectedLen = uiTextInputHasSelection(state)
+                    ? (size_t)std::abs(state.selectionStart - state.cursorPos)
+                    : 0;
+                size_t available = opts.maxLength - (state.value.size() - selectedLen);
+
                 std::string filtered;
                 for (unsigned char c : text)
                 {
-                    if (state.value.size() + filtered.size() >= opts.maxLength)
-                        break;
+                    if (filtered.size() >= available) break;
                     if (c >= 32 && c <= 126)
                     {
                         if (opts.characterFilter && !opts.characterFilter(c))
@@ -251,7 +291,7 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
         return true;
     }
 
-    // ── Tab: blur (focus manager can handle next-field) ────
+    // ── Tab: blur ──────────────────────────────────────────
     if (key == GLFW_KEY_TAB)
     {
         state.focused = false;
@@ -274,9 +314,10 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
 bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
                        UITextInputState& state, const UITextInputOptions& opts)
 {
-    (void)window;
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     UIRect screenRect = cs.designToScreen(designRect);
+
+    clampCursor(state);
 
     // Background
     glm::vec4 bgColor(0.12f, 0.14f, 0.18f, 1.0f);
@@ -291,7 +332,7 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     // Padding inside the box
     const float padX = 10.0f;
     const float padY = 6.0f;
-    const float textScale = 0.34f; // default for input fields
+    const float textScale = 0.34f;
     const float textH = (float)fontLineHeight * textScale;
 
     // Clipping for text area
@@ -305,23 +346,23 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     if (opts.password)
         displayText = std::string(state.value.size(), '*');
 
-    // Text position
+    // Text position (vertical center)
     float textY = screenRect.y + (screenRect.h - textH) * 0.5f;
 
     // Measure text before cursor for horizontal scroll
     std::string beforeCursor = displayText.substr(0, state.cursorPos);
     float beforeW = uiMeasureText(beforeCursor.c_str(), textScale);
-    float totalW = uiMeasureText(displayText.c_str(), textScale);
 
     // Auto-scroll: keep caret visible
-    float caretX = screenRect.x + cs.designToScreenX(padX) - state.horizontalScrollPx + beforeW;
+    float textOriginX = screenRect.x + cs.designToScreenX(padX);
     float rightEdge = screenRect.x + screenRect.w - cs.designToScreenX(padX);
+    float caretX = textOriginX - state.horizontalScrollPx + beforeW;
     if (caretX > rightEdge)
         state.horizontalScrollPx += caretX - rightEdge + 20.0f;
-    if (caretX < screenRect.x + cs.designToScreenX(padX))
-        state.horizontalScrollPx = std::max(0.0f, state.horizontalScrollPx - (screenRect.x + cs.designToScreenX(padX) - caretX + 20.0f));
+    if (caretX < textOriginX)
+        state.horizontalScrollPx = std::max(0.0f, state.horizontalScrollPx - (textOriginX - caretX + 20.0f));
 
-    float textX = screenRect.x + cs.designToScreenX(padX) - state.horizontalScrollPx;
+    float textX = textOriginX - state.horizontalScrollPx;
 
     // Draw text with scissor
     GLboolean scissorWas = glIsEnabled(GL_SCISSOR_TEST);
@@ -345,7 +386,7 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
             std::string selText = displayText.substr(selA, selB - selA);
             float beforeSelW = uiMeasureText(beforeSel.c_str(), textScale);
             float selW = uiMeasureText(selText.c_str(), textScale);
-            glm::vec4 selColor(0.3f, 0.5f, 0.8f, 0.35f);
+            glm::vec4 selColor(0.3f, 0.55f, 0.9f, 0.4f);
             UIRect selRect = {textX + beforeSelW, textY, selW, textH};
             uiDrawRect(selRect, selColor, "text-selection");
         }
@@ -383,25 +424,63 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     else
         glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
 
-    // Focus on click (using the uiButton hit-test internals)
+    // ── Mouse handling ───────────────────────────────────────
     double mx, my;
     glfwGetCursorPos(window, &mx, &my);
     double fbx = mx, fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
     const bool rawHovered = pointIn(fbx, fby, screenRect);
-    if (rawHovered && UISys::gMouseClickEdge)
+
+    // Mouse button state tracking
+    static bool prevMouseDown = false;
+    bool mouseDown = UISys::gMouseDown;
+    bool clickEdge = UISys::gMouseClickEdge;
+
+    if (rawHovered && clickEdge)
     {
-        state.focused = true;
-        if (opts.selectAllOnFocus)
+        // Click inside field → focus and place caret
+        float localX = (float)(fbx - textOriginX + state.horizontalScrollPx);
+        int clickedIndex = uiTextInputCharacterIndexFromX(displayText, localX, textScale);
+
+        // If we were not focused, apply selectAllOnFocus logic
+        if (!state.focused && opts.selectAllOnFocus)
         {
+            state.focused = true;
             state.selectionStart = 0;
             state.cursorPos = (int)state.value.size();
         }
+        else
+        {
+            state.focused = true;
+            state.cursorPos = clickedIndex;
+            state.selectionStart = -1;
+        }
+        state.mouseSelecting = true;
+        state.mouseSelectionAnchor = state.cursorPos;
         state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
     }
-    else if (UISys::gMouseClickEdge && !rawHovered)
+    else if (rawHovered && mouseDown && state.mouseSelecting && state.focused)
+    {
+        // Mouse drag while holding → extend selection
+        float localX = (float)(fbx - textOriginX + state.horizontalScrollPx);
+        int dragIndex = uiTextInputCharacterIndexFromX(displayText, localX, textScale);
+        state.cursorPos = dragIndex;
+        state.selectionStart = state.mouseSelectionAnchor;
+        state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
+    }
+
+    // Mouse release → stop drag
+    if (!mouseDown && prevMouseDown)
+    {
+        state.mouseSelecting = false;
+    }
+    prevMouseDown = mouseDown;
+
+    // Click outside → blur
+    if (clickEdge && !rawHovered)
     {
         state.focused = false;
+        state.mouseSelecting = false;
     }
 
     return state.focused;

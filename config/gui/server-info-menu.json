@@ -25,9 +25,21 @@
       "fontSize": 0.34,
       "textColor": [0.75, 0.8, 0.9, 1.0]
     },
+    "serverAddressInput": {
+      "type": "text_input",
+      "x": 860, "y": 216, "width": 300, "height": 38,
+      "binding": "server.address",
+      "maxLength": 63,
+      "selectAllOnFocus": false,
+      "characterFilter": "server_address",
+      "fontSize": 0.34,
+      "textColor": [0.95, 0.98, 1.0, 1.0],
+      "backgroundColor": [0.12, 0.14, 0.18, 1.0],
+      "outlineColor": [0.3, 0.5, 0.8, 0.5]
+    },
     "startServerButton": {
       "type": "button",
-      "x": 760, "y": 240, "width": 220, "height": 48,
+      "x": 760, "y": 280, "width": 220, "height": 48,
       "text": "Start Server",
       "fontSize": 0.36,
       "textColor": [1, 1, 1, 1],

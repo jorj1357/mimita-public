@@ -130,6 +130,7 @@ struct MultiplayerContext
     uint64_t pendingTeleportSentMs = 0;
     bool awaitingTeleportAck = false;
     bool awaitingExplodeDeath = false;
+    bool teleportResync = false;
     int localServerHealth = 100;
     std::string approvedLocalName;
     std::string serverAddress = "127.0.0.1:1357";

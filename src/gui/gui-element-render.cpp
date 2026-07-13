@@ -313,7 +313,7 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
 
         // Build options from element properties
         UITextInputOptions tiOpts;
-        tiOpts.maxLength = type == "number_input" ? 10 : 200;
+        tiOpts.maxLength = (size_t)elem.maxLength;
         tiOpts.password = (type == "password_input");
         // For password, check visibility binding
         if (type == "password_input")
@@ -322,10 +322,21 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
             if (visBinding == "true")
                 tiOpts.password = false;
         }
-        tiOpts.selectAllOnFocus = true;
+        tiOpts.selectAllOnFocus = elem.selectAllOnFocus;
 
-        // Use element fontSize if provided
-        tiOpts.characterFilter = nullptr; // no filter by default; use element binding constraints
+        // Character filter based on element property
+        tiOpts.characterFilter = nullptr;
+        if (!elem.characterFilter.empty())
+        {
+            if (elem.characterFilter == "server_address")
+            {
+                tiOpts.characterFilter = [](unsigned int c) -> bool {
+                    return (c >= '0' && c <= '9') || c == '.' || c == ':' ||
+                           c == '-' || c == '_' ||
+                           (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+                };
+            }
+        }
 
         // Render the reusable text input
         bool stillFocused = uiTextInputRender(win, elem.id.c_str(), designRect, tiState, tiOpts);

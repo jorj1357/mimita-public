@@ -3,6 +3,7 @@
 
 #include "devtools/terminal.h"
 #include "devtools/command-search.h"
+#include "gui/ui-text-input.h"
 #include "replay/replay-export.h"
 
 #include <algorithm>
@@ -27,22 +28,23 @@ void Terminal::rebuildCache() {
 }
 
 void Terminal::updateSearch() {
-    if (mInputLine == mLastSearchInput && !mCacheDirty) return;
-    mLastSearchInput = mInputLine;
+    if (!mTextState) return;
+    if (mTextState->value == mLastSearchInput && !mCacheDirty) return;
+    mLastSearchInput = mTextState->value;
     rebuildCache();
 
     mSearchResults.clear();
     mGhostSuffix.clear();
     mSelectedResult = -1;
 
-    if (mInputLine.empty()) return;
+    if (mTextState->value.empty()) return;
 
-    if (mInputLine.find(' ') != std::string::npos) {
+    if (mTextState->value.find(' ') != std::string::npos) {
         mSelectedResult = -1;
         return;
     }
 
-    std::string inputLower = mInputLine;
+    std::string inputLower = mTextState->value;
     std::transform(inputLower.begin(), inputLower.end(), inputLower.begin(), ::tolower);
 
     MatchResult mr;
@@ -94,76 +96,24 @@ std::string Terminal::computeGhostSuffix(const std::string& inputLower) const {
     return bestName.substr(inputLower.size());
 }
 
-// ── Selection helpers ───────────────────────────────────────
-
-void Terminal::clearSelection() { mSelectionStart = -1; }
-
-bool hasSelectionRange(int selStart, int cursor, int len) {
-    if (selStart < 0) return false;
-    int a = std::min(selStart, cursor);
-    int b = std::max(selStart, cursor);
-    return a >= 0 && b <= len && a != b;
-}
-
-std::string Terminal::selectedText() const {
-    if (mSelectionStart < 0) return {};
-    int a = std::min(mSelectionStart, mCursorPos);
-    int b = std::max(mSelectionStart, mCursorPos);
-    if (a >= b) return {};
-    return mInputLine.substr(a, b - a);
-}
-
-void Terminal::deleteSelection() {
-    if (mSelectionStart < 0) return;
-    int a = std::min(mSelectionStart, mCursorPos);
-    int b = std::max(mSelectionStart, mCursorPos);
-    if (a >= b) { clearSelection(); return; }
-    mInputLine.erase(a, b - a);
-    mCursorPos = a;
-    clearSelection();
-}
-
-void Terminal::replaceSelection(const std::string& replacement) {
-    if (mSelectionStart >= 0)
-        deleteSelection();
-    mInputLine.insert(mCursorPos, replacement);
-    mCursorPos += (int)replacement.size();
-    clearSelection();
-}
-
-int Terminal::cursorWordLeft(int pos) const {
-    if (pos <= 0) return 0;
-    int i = pos - 1;
-    while (i > 0 && mInputLine[i - 1] == ' ') i--;
-    while (i > 0 && mInputLine[i - 1] != ' ') i--;
-    return i;
-}
-
-int Terminal::cursorWordRight(int pos) const {
-    int len = (int)mInputLine.size();
-    if (pos >= len) return len;
-    int i = pos;
-    while (i < len && mInputLine[i] == ' ') i++;
-    while (i < len && mInputLine[i] != ' ') i++;
-    return i;
-}
-
 // ── Character input ─────────────────────────────────────────
+// Delegates to the reusable UITextInput system.
 
 void Terminal::handleChar(unsigned int codepoint) {
-    if (!mOpen) return;
-    if (codepoint >= 32 && codepoint <= 126) {
-        std::string ch(1, (char)codepoint);
-        replaceSelection(ch);
+    if (!mOpen || !mTextState) return;
+    mTextState->focused = true;
+    if (uiTextInputHandleChar(*mTextState, codepoint, {.maxLength = 256}))
+    {
         mSelectedResult = -1;
         mTabCycleIndex = -1;
     }
 }
 
 // ── Key input ───────────────────────────────────────────────
+// Terminal-specific logic first, then falls back to UITextInput for generic editing.
 
 void Terminal::handleKey(int key, int mods) {
-    if (!mOpen) return;
+    if (!mOpen || !mTextState) return;
 
     // Export picker: route all keys to picker navigation
     if (mExportPickerActive) {
@@ -214,89 +164,17 @@ void Terminal::handleKey(int key, int mods) {
         return;
     }
 
-    // ── Ctrl+ shortcuts ───────────────────────────────────
-    if (mods & GLFW_MOD_CONTROL) {
-        switch (key) {
-        case GLFW_KEY_V: {
-            const char* clip = glfwGetClipboardString(mWindow);
-            if (clip) {
-                std::string text = clip;
-                // Replace newlines with spaces for command safety
-                for (auto& ch : text) if (ch == '\n' || ch == '\r') ch = ' ';
-                replaceSelection(text);
-                mTabCycleIndex = -1;
-            }
-            return;
-        }
-        case GLFW_KEY_C: {
-            if (hasSelection()) {
-                glfwSetClipboardString(mWindow, selectedText().c_str());
-            }
-            // If no selection, do nothing (don't interrupt the game)
-            return;
-        }
-        case GLFW_KEY_X: {
-            if (hasSelection()) {
-                glfwSetClipboardString(mWindow, selectedText().c_str());
-                deleteSelection();
-                mTabCycleIndex = -1;
-            }
-            return;
-        }
-        case GLFW_KEY_A: {
-            if (!mInputLine.empty()) {
-                mSelectionStart = 0;
-                mCursorPos = (int)mInputLine.size();
-            }
-            return;
-        }
-        case GLFW_KEY_L: {
-            mScrollback.clear();
-            mScrollOffset = 0;
-            return;
-        }
-        case GLFW_KEY_LEFT: {
-            clearSelection();
-            mCursorPos = cursorWordLeft(mCursorPos);
-            mTabCycleIndex = -1;
-            return;
-        }
-        case GLFW_KEY_RIGHT: {
-            clearSelection();
-            mCursorPos = cursorWordRight(mCursorPos);
-            mTabCycleIndex = -1;
-            return;
-        }
-        case GLFW_KEY_BACKSPACE: {
-            if (hasSelection()) {
-                deleteSelection();
-            } else if (mCursorPos > 0) {
-                int wordStart = cursorWordLeft(mCursorPos);
-                mInputLine.erase(wordStart, mCursorPos - wordStart);
-                mCursorPos = wordStart;
-            }
-            mSelectedResult = -1;
-            mTabCycleIndex = -1;
-            return;
-        }
-        case GLFW_KEY_DELETE: {
-            if (hasSelection()) {
-                deleteSelection();
-            } else if (mCursorPos < (int)mInputLine.size()) {
-                int wordEnd = cursorWordRight(mCursorPos);
-                mInputLine.erase(mCursorPos, wordEnd - mCursorPos);
-            }
-            mSelectedResult = -1;
-            mTabCycleIndex = -1;
-            return;
-        }
-        }
+    const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
+    const bool shift = (mods & GLFW_MOD_SHIFT) != 0;
+
+    // ── Ctrl+L: clear scrollback ──────────────────────────────
+    if (ctrl && key == GLFW_KEY_L) {
+        mScrollback.clear();
+        mScrollOffset = 0;
+        return;
     }
 
-    // ── Navigation (no modifiers, or Shift) ───────────────
-    bool shift = (mods & GLFW_MOD_SHIFT) != 0;
-
-    // Shift+Up/Down: scroll
+    // ── Shift+Up/Down: scroll ─────────────────────────────────
     if (shift && key == GLFW_KEY_UP) {
         mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
         return;
@@ -328,141 +206,105 @@ void Terminal::handleKey(int key, int mods) {
 
     updateSearch();
 
-    // ── Enter ─────────────────────────────────────────────
+    // ── Enter: execute command ────────────────────────────────
     if (key == GLFW_KEY_ENTER) {
-        if (!mSearchResults.empty() && mInputLine.find(' ') == std::string::npos) {
+        if (!mSearchResults.empty() && mTextState->value.find(' ') == std::string::npos) {
             int idx = mSelectedResult >= 0 ? mSelectedResult : 0;
-            mInputLine = mSearchResults[idx].cmd->name;
-            mCursorPos = (int)mInputLine.size();
+            mTextState->value = mSearchResults[idx].cmd->name;
+            mTextState->cursorPos = (int)mTextState->value.size();
         }
         executeCurrent();
         mTabCycleIndex = -1;
         return;
     }
 
-    // ── Escape ────────────────────────────────────────────
+    // ── Escape: clear selection, then line, then close ────────
     if (key == GLFW_KEY_ESCAPE) {
-        if (hasSelection()) {
-            clearSelection();
-        } else {
-            mInputLine.clear();
-            mCursorPos = 0;
+        if (uiTextInputHasSelection(*mTextState)) {
+            uiTextInputClearSelection(*mTextState);
+        } else if (!mTextState->value.empty()) {
+            mTextState->value.clear();
+            mTextState->cursorPos = 0;
             mHistoryIndex = -1;
             mTabCycleIndex = -1;
+        } else {
+            toggle();
         }
         return;
     }
 
-    // ── Tab ───────────────────────────────────────────────
+    // ── Tab: autocomplete ─────────────────────────────────────
     if (key == GLFW_KEY_TAB) {
-        if (!mSearchResults.empty() && !mInputLine.empty()) {
+        if (!mSearchResults.empty() && !mTextState->value.empty()) {
             if (mTabCycleIndex < 0) mTabCycleIndex = 0;
             else mTabCycleIndex = (mTabCycleIndex + 1) % (int)mSearchResults.size();
             mSelectedResult = mTabCycleIndex;
-            mInputLine = mSearchResults[mTabCycleIndex].cmd->name;
-            mCursorPos = (int)mInputLine.size();
-            mLastSearchInput = mInputLine;
+            mTextState->value = mSearchResults[mTabCycleIndex].cmd->name;
+            mTextState->cursorPos = (int)mTextState->value.size();
+            mLastSearchInput = mTextState->value;
         }
         return;
     }
 
-    // ── Cursor movement ───────────────────────────────────
-    bool extendSelection = shift;
-
-    auto moveCursor = [&](int newPos) {
-        if (extendSelection && !hasSelection()) {
-            mSelectionStart = mCursorPos;
-        }
-        mCursorPos = std::clamp(newPos, 0, (int)mInputLine.size());
-        if (!extendSelection && !hasSelection()) {
-            // no-op: cursor moved without selection
-        }
-        if (!extendSelection) {
-            clearSelection();
-        }
-        mTabCycleIndex = -1;
-    };
-
-    if (key == GLFW_KEY_LEFT) {
-        moveCursor(mCursorPos - 1);
+    // ── History navigation ────────────────────────────────────
+    if (key == GLFW_KEY_UP && !mSearchResults.empty()) {
+        if (mSelectedResult < 0) mSelectedResult = 0;
+        else if (mSelectedResult < (int)mSearchResults.size() - 1) mSelectedResult++;
         return;
     }
-    if (key == GLFW_KEY_RIGHT) {
-        moveCursor(mCursorPos + 1);
-        return;
-    }
-    if (key == GLFW_KEY_HOME) {
-        moveCursor(0);
-        return;
-    }
-    if (key == GLFW_KEY_END) {
-        moveCursor((int)mInputLine.size());
+    if (key == GLFW_KEY_DOWN && !mSearchResults.empty()) {
+        if (mSelectedResult < 0) mSelectedResult = 0;
+        else mSelectedResult = std::max(0, mSelectedResult - 1);
+        if ((int)mSearchResults.size() > 1 && mSelectedResult > (int)mSearchResults.size() - 1)
+            mSelectedResult = 0;
         return;
     }
 
-    // ── Backspace ─────────────────────────────────────────
-    if (key == GLFW_KEY_BACKSPACE) {
-        if (hasSelection()) {
-            deleteSelection();
-        } else if (mCursorPos > 0) {
-            mInputLine.erase(mCursorPos - 1, 1);
-            mCursorPos--;
-        }
-        mSelectedResult = -1;
-        mTabCycleIndex = -1;
-        return;
-    }
-
-    // ── Delete ────────────────────────────────────────────
-    if (key == GLFW_KEY_DELETE) {
-        if (hasSelection()) {
-            deleteSelection();
-        } else if (mCursorPos < (int)mInputLine.size()) {
-            mInputLine.erase(mCursorPos, 1);
-        }
-        mSelectedResult = -1;
-        mTabCycleIndex = -1;
-        return;
-    }
-
-    // ── History navigation (only when search results empty) ──
-    if (key == GLFW_KEY_UP) {
-        if (!mSearchResults.empty()) {
-            if (mSelectedResult < 0) mSelectedResult = 0;
-            else if (mSelectedResult < (int)mSearchResults.size() - 1) mSelectedResult++;
-        } else if (!mHistory.empty()) {
+    if (key == GLFW_KEY_UP && mSearchResults.empty()) {
+        if (!mHistory.empty()) {
             if (mHistoryIndex == -1) {
-                mHistorySavedLine = mInputLine;
+                mHistorySavedLine = mTextState->value;
                 mHistoryIndex = (int)mHistory.size() - 1;
             } else if (mHistoryIndex > 0) {
                 mHistoryIndex--;
             }
-            mInputLine = mHistory[mHistoryIndex];
-            mCursorPos = (int)mInputLine.size();
-            clearSelection();
+            mTextState->value = mHistory[mHistoryIndex];
+            mTextState->cursorPos = (int)mTextState->value.size();
+            uiTextInputClearSelection(*mTextState);
         }
         return;
     }
 
-    if (key == GLFW_KEY_DOWN) {
-        if (!mSearchResults.empty()) {
-            if (mSelectedResult < 0) mSelectedResult = 0;
-            else mSelectedResult = std::max(0, mSelectedResult - 1);
-            if ((int)mSearchResults.size() > 1 && mSelectedResult > (int)mSearchResults.size() - 1)
-                mSelectedResult = 0;
-        } else if (mHistoryIndex >= 0) {
+    if (key == GLFW_KEY_DOWN && mSearchResults.empty()) {
+        if (mHistoryIndex >= 0) {
             mHistoryIndex++;
             if (mHistoryIndex >= (int)mHistory.size()) {
                 mHistoryIndex = -1;
-                mInputLine = mHistorySavedLine;
+                mTextState->value = mHistorySavedLine;
                 mHistorySavedLine.clear();
             } else {
-                mInputLine = mHistory[mHistoryIndex];
+                mTextState->value = mHistory[mHistoryIndex];
             }
-            mCursorPos = (int)mInputLine.size();
-            clearSelection();
+            mTextState->cursorPos = (int)mTextState->value.size();
+            uiTextInputClearSelection(*mTextState);
         }
         return;
+    }
+
+    // ── Generic text editing: delegate to UITextInput ─────────
+    mTextState->focused = true;
+    UITextInputOptions opts;
+    opts.maxLength = 256;
+    opts.characterFilter = nullptr;
+    uiTextInputHandleKey(mWindow, *mTextState, key, GLFW_PRESS, mods, opts);
+
+    // After editing, reset terminal-specific state
+    if (key == GLFW_KEY_BACKSPACE || key == GLFW_KEY_DELETE ||
+        key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT ||
+        key == GLFW_KEY_HOME || key == GLFW_KEY_END)
+    {
+        mSelectedResult = -1;
+        mTabCycleIndex = -1;
     }
 }
 

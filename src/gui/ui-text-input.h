@@ -19,6 +19,9 @@ struct UITextInputState
     bool selectAllOnFocus = false;
     float horizontalScrollPx = 0.0f;
     uint64_t lastActivityMs = 0;
+    // Mouse drag selection state
+    bool mouseSelecting = false;
+    int mouseSelectionAnchor = -1;
 };
 
 // ── Text input options ───────────────────────────────────────────────
@@ -59,5 +62,8 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
 
 // Returns true if the field is still focused after this frame
 // (false means the user clicked outside / submitted).
+int uiTextInputCharacterIndexFromX(const std::string& displayText,
+                                   float localMouseX, float textScale);
+
 bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
                        UITextInputState& state, const UITextInputOptions& opts);

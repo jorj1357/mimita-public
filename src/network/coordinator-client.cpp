@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 #include <winhttp.h>
 
@@ -187,7 +188,9 @@ CoordinatorRoomInfo coordinatorRegister(
     }
     else
     {
-        printf("[COORDINATOR] register FAILED (offline?)\n");
+        printf("[COORDINATOR REGISTER FAIL] url=%s http=0 body=(empty)\n", url.c_str());
+        if (!response.empty())
+            printf("[COORDINATOR REGISTER FAIL] responseBody=%s\n", response.c_str());
     }
 
     return info;
@@ -200,7 +203,11 @@ bool coordinatorHeartbeat(const std::string& code, int playerCount)
     std::string url = gCoordinatorUrl + "/api/coordinator/heartbeat";
     bool ok = httpPostJson(url, body, response, 3000);
     if (!ok)
-        printf("[COORDINATOR] heartbeat FAILED for code=%s\n", code.c_str());
+    {
+        printf("[COORDINATOR HEARTBEAT FAIL] code=%s url=%s\n", code.c_str(), url.c_str());
+        if (!response.empty())
+            printf("[COORDINATOR HEARTBEAT FAIL] body=%s\n", response.c_str());
+    }
     return ok;
 }
 
@@ -267,10 +274,16 @@ CoordinatorJoinResult coordinatorJoin(const std::string& code, const std::string
                    code.c_str(), result.serverIp.c_str(),
                    result.serverPort, result.joinToken.substr(0, 12).c_str());
         }
+        else
+        {
+            printf("[COORDINATOR JOIN FAIL] url=%s response=%s\n", url.c_str(), response.c_str());
+        }
     }
     else
     {
-        printf("[COORDINATOR] join FAILED for code=%s\n", code.c_str());
+        printf("[COORDINATOR JOIN FAIL] url=%s http=0 (timeout/connection error)\n", url.c_str());
+        if (!response.empty())
+            printf("[COORDINATOR JOIN FAIL] body=%s\n", response.c_str());
     }
 
     return result;
@@ -335,6 +348,45 @@ bool coordinatorHttpGet(const std::string& url, std::string& response, int timeo
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
     return ok;
+}
+
+// ── Async lookup ─────────────────────────────────────────────────────
+
+void coordinatorLookupAsync(AsyncLookupResult& state, const std::string& code)
+{
+    if (state.pending) return;
+    state.pending = true;
+    state.done = false;
+    state.failed = false;
+    state.code = code;
+    state.result = {};
+
+    std::thread([&state, code]() {
+        state.result = coordinatorLookup(code);
+        state.done = true;
+        state.failed = !state.result.exists;
+        state.pending = false;
+    }).detach();
+}
+
+// ── Async join ───────────────────────────────────────────────────────
+
+void coordinatorJoinAsync(AsyncJoinResult& state, const std::string& code, const std::string& playerName)
+{
+    if (state.pending) return;
+    state.pending = true;
+    state.done = false;
+    state.failed = false;
+    state.code = code;
+    state.playerName = playerName;
+    state.result = {};
+
+    std::thread([&state, code, playerName]() {
+        state.result = coordinatorJoin(code, playerName);
+        state.done = true;
+        state.failed = !state.result.ok;
+        state.pending = false;
+    }).detach();
 }
 
 } // namespace MimitaNet

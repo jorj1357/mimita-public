@@ -137,6 +137,7 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     std::string args = "\"" + std::string(exePath) + "\""
         + " --server"
         + " --connect 127.0.0.1:" + std::to_string(settings.port)
+        + " --name \"" + settings.serverName + "\""
         + " --map \"" + settings.mapName + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)

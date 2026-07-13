@@ -1,9 +1,9 @@
 #include "server-info-menu.h"
 #include "../gui-layout.h"
 #include "../gui-element-render.h"
+#include "../gui-bindings.h"
 #include "../gui-coord.h"
 #include "../ui-system.h"
-#include "../ui-text-input.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -41,45 +41,30 @@ static bool launchServerProcess() { return false; }
 #endif
 
 namespace {
-
-// ── Address text input state (persistent while menu is open) ─────────
-UITextInputState gAddressState;
-
-// ── IP:port character filter ─────────────────────────────────────────
-bool addressCharFilter(unsigned int c)
-{
-    return (c >= '0' && c <= '9') || c == '.' || c == ':';
+static bool sMenuActive = false;
 }
-
-} // anonymous namespace
 
 void serverInfoMenuSetActive(bool active)
 {
+    sMenuActive = active;
     if (!active)
     {
-        gAddressState.focused = false;
+        GuiBindings::instance().clearFocus();
     }
 }
 
+// Legacy forwarding functions kept for callers in input-commands.cpp.
+// They are no longer necessary for the UI — input goes through guiBindingsHandleKey.
 void serverInfoMenuHandleChar(unsigned int codepoint)
 {
-    UITextInputOptions opts;
-    opts.maxLength = 63;
-    opts.characterFilter = addressCharFilter;
-    uiTextInputHandleChar(gAddressState, codepoint, opts);
+    (void)codepoint;
 }
 
 void serverInfoMenuHandleKey(int key, int action, int mods)
 {
+    (void)key;
     (void)action;
     (void)mods;
-    // Note: serverInfoMenuHandleKey is called from the GLFW key callback.
-    // We use glfwGetCurrentContext() to get the window for clipboard ops.
-    GLFWwindow* win = glfwGetCurrentContext();
-    UITextInputOptions opts;
-    opts.maxLength = 63;
-    opts.characterFilter = addressCharFilter;
-    uiTextInputHandleKey(win, gAddressState, key, action, mods, opts);
 }
 
 ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
@@ -90,8 +75,19 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
 
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/server-info-menu.json");
+    GuiBindings& b = GuiBindings::instance();
 
-    // Draw all static elements from layout
+    // Sync external buffer → binding on menu open (only when no field is focused)
+    if (!b.hasFocus("serverAddressInput"))
+    {
+        std::string currentBinding = b.get("server.address");
+        if (currentBinding != serverAddress)
+        {
+            b.set("server.address", serverAddress);
+        }
+    }
+
+    // Draw all static elements from layout — text_input now handled by drawGuiElement
     for (const std::string& id : layout.elementIds())
     {
         const GuiElement* elem = layout.get(id);
@@ -119,47 +115,26 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
             r.goBack = true;
     }
 
-    // ── Sync external buffer → text state on first activation ──────────
-    if (!gAddressState.focused && gAddressState.value.empty() && serverAddress && serverAddress[0])
-    {
-        gAddressState.value = serverAddress;
-        gAddressState.cursorPos = (int)gAddressState.value.size();
-    }
-
-    // ── Render reusable text input ─────────────────────────────────────
-    UITextInputOptions opts;
-    opts.maxLength = 63;
-    opts.characterFilter = addressCharFilter;
-    opts.selectAllOnFocus = true;
-    uiTextInputRender(win, "serverAddress", {860.0f, 220.0f, 300.0f, 48.0f},
-                      gAddressState, opts);
-
-    // ── Sync text state → external buffer ─────────────────────────────
-    if (!gAddressState.value.empty())
-    {
-        std::strncpy(serverAddress, gAddressState.value.c_str(), 63);
-        serverAddress[63] = '\0';
-    }
-    else
-    {
-        serverAddress[0] = '\0';
-    }
+    // ── Sync binding → external buffer ───────────────────────────────
+    std::string address = b.get("server.address");
+    std::strncpy(serverAddress, address.c_str(), 63);
+    serverAddress[63] = '\0';
 
     // Dynamic status text
     if (serverRunning)
     {
-        uiDrawText("Status: Running", cs.designToScreenX(760), cs.designToScreenY(330),
+        uiDrawText("Status: Running", cs.designToScreenX(760), cs.designToScreenY(350),
                    0.42f, {0.3f, 1.0f, 0.4f, 1.0f});
         uiDrawText("Server terminal is open in background",
-                   cs.designToScreenX(760), cs.designToScreenY(365),
+                   cs.designToScreenX(760), cs.designToScreenY(385),
                    0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
     }
     else
     {
-        uiDrawText("Status: Not Running", cs.designToScreenX(760), cs.designToScreenY(330),
+        uiDrawText("Status: Not Running", cs.designToScreenX(760), cs.designToScreenY(350),
                    0.42f, {1.0f, 0.3f, 0.3f, 1.0f});
         uiDrawText("Click to start a dedicated server",
-                   cs.designToScreenX(760), cs.designToScreenY(365),
+                   cs.designToScreenX(760), cs.designToScreenY(385),
                    0.30f, {0.6f, 0.65f, 0.75f, 1.0f});
     }
 

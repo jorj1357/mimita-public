@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 struct GLFWwindow;
+struct UITextInputState;
 
 void registerTerminalBuiltins();
 
@@ -99,20 +100,15 @@ private:
 
     void executeCurrent();
     void addHistory(const std::string& input);
-    void replaceSelection(const std::string& replacement);
-    void deleteSelection();
-    int cursorWordLeft(int pos) const;
-    int cursorWordRight(int pos) const;
-    std::string selectedText() const;
-    void clearSelection();
-    bool hasSelection() const { return mSelectionStart >= 0; }
+
+    // Text editing delegated to UITextInputState
+    UITextInputState* textState();
+    const UITextInputState* textState() const;
 
     GLFWwindow* mWindow = nullptr;
     bool mOpen = false;
 
-    std::string mInputLine;
-    int mCursorPos = 0;
-    int mSelectionStart = -1;
+    UITextInputState* mTextState = nullptr;
     std::string mHistorySavedLine;
     int mTabCycleIndex = -1;
 

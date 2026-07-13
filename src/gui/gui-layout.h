@@ -86,6 +86,12 @@ struct GuiElement {
     float paddingY = 4.0f;
     std::vector<UiTextRun> textRuns;
 
+    // Text input options
+    int maxLength = 200;
+    bool selectAllOnFocus = false;
+    bool submitOnEnter = false;
+    std::string characterFilter; // "server_address", "numeric", etc.
+
     // Colors: [r, g, b, a] each in 0-1 range (empty vector = not set for overrides)
     std::vector<float> textColor = {1.0f, 1.0f, 1.0f, 1.0f};
     std::vector<float> backgroundColor = {0.2f, 0.2f, 0.3f, 1.0f};

@@ -120,10 +120,15 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             printf("[COMMUNITY MAP SELECT] mapId=%s\n", currentMap.c_str());
         }
     }
-    b.set("server.startup_npcs", "true");
-    b.set("server.startup_npc_count", "3");
-    b.set("join.code_placeholder", "______");
-    b.set("join.code", "");
+    // Initialize one-time defaults (only set if not already present)
+    static bool defaultsInitialized = false;
+    if (!defaultsInitialized) {
+        b.set("server.startup_npcs", "true");
+        b.set("server.startup_npc_count", "3");
+        b.set("join.code_placeholder", "______");
+        defaultsInitialized = true;
+        printf("[ONLINE MENU] defaults initialized\n");
+    }
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
 
