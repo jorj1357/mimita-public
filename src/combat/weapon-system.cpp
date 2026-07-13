@@ -47,6 +47,7 @@ static float weaponParamOr(const WeaponDefinition& def, const char* key, float f
 WeaponSystem::WeaponSystem() {
     WeaponData::registerBuiltinWeapons();
     Debug::log(Debug::Category::Weapons, "[WEAPON SYSTEM] initialized");
+    printf("[WORLD XH] enabled=%d\n", (int)DebugConfig::WORLD_XH_ENABLED);
 }
 
 const WeaponDefinition* WeaponSystem::getDefForSlot(int slot) const {
@@ -133,7 +134,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             // Continuous overlap damage every frame, not just on fire input
             WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
         } else if (def->behaviorType == WeaponBehaviorType::Swordsword) {
-            WeaponSwordsword::update(mSwordswordState, *def, *rt, player, camera, npcs, dt);
+            WeaponSwordsword::update(mSwordswordState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::Hafs) {
             WeaponHafs::update(mHafsState, *def, *rt, player, npcs, camera, world, dt);
         } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
@@ -164,7 +165,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
     }
 
     // ── World-space aim crosshair (permanent) ──────────────
-    if (def && rt) {
+    if (DebugConfig::WORLD_XH_ENABLED && def && rt) {
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
@@ -464,10 +465,8 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         }
     }
     if (def->behaviorType == WeaponBehaviorType::Swordsword) {
-        WeaponSwordsword::render(camera, mSwordswordState, mSwordswordState.handPos);
-        if (DebugConfig::DEBUG_SWORDSWORD) {
-            WeaponSwordsword::renderDebug(camera, mSwordswordState, mSwordswordState.handPos);
-        }
+        glm::vec3 dummyPos(0.0f);
+        WeaponSwordsword::render(camera, mSwordswordState, *def, dummyPos);
     }
 
     // ── Helper to build ProjectileVisualConfig from weapon definition ──
@@ -865,18 +864,15 @@ void WeaponSystem::fireSwordsword(Camera& camera, Player& player, NpcSystem& npc
 
     if (rt->isReloading || rt->fireCooldown > 0.0f) return;
 
-    if (mSwordswordState.currentAttack != SwordswordState::AttackType::None) return;
+    if (mSwordswordState.state != SwordswordState::AttackState::Idle &&
+        mSwordswordState.state != SwordswordState::AttackState::SlashRecover) return;
 
-    rt->fireCooldown = def->fireDelay;
-    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
-    mShotCooldown = def->fireDelay;
+    float slashCooldown = weaponParamOr(*def, "slashCooldown", 0.25f);
+    rt->fireCooldown = slashCooldown;
+    mShotCooldown = slashCooldown;
 
-    WeaponSwordsword::startSlash(mSwordswordState, *def, player, camera);
+    WeaponSwordsword::startSlash(mSwordswordState, *def, player);
     AnalyticsManager::instance().trackWeaponUsed(def->id);
-
-    if (!def->soundShoot.empty()) {
-        WeaponAudio::playShootSound(*def, player.pos, player.sizeScale);
-    }
 }
 
 RevolverShotResult WeaponSystem::fireAlt(
@@ -903,18 +899,15 @@ RevolverShotResult WeaponSystem::fireAlt(
 
     if (rt->isReloading || rt->fireCooldown > 0.0f) return {};
 
-    if (mSwordswordState.currentAttack != SwordswordState::AttackType::None) return {};
+    if (mSwordswordState.state != SwordswordState::AttackState::Idle &&
+        mSwordswordState.state != SwordswordState::AttackState::LungeRecover) return {};
 
-    rt->fireCooldown = def->customParams.count("lungeCooldown")
-        ? def->customParams.at("lungeCooldown") : 0.5f;
-    mShotCooldown = rt->fireCooldown;
+    float lungeCooldown = weaponParamOr(*def, "lungeCooldown", 0.5f);
+    rt->fireCooldown = lungeCooldown;
+    mShotCooldown = lungeCooldown;
 
-    WeaponSwordsword::startLunge(mSwordswordState, *def, player, camera);
+    WeaponSwordsword::startLunge(mSwordswordState, *def, player);
     AnalyticsManager::instance().trackWeaponUsed(def->id);
-
-    if (!def->soundShoot.empty()) {
-        WeaponAudio::playShootSound(*def, player.pos, player.sizeScale);
-    }
 
     RevolverShotResult res;
     res.fired = true;

@@ -161,5 +161,62 @@
         "rotation_degrees": [0.0, 0.0, 0.0]
       }
     ]
+  },
+
+  "swordsword": {
+    "enabled": true,
+    "collision_skin": 0.05,
+    "source": "json",
+
+    "spheres": [
+      {
+        "name": "tip",
+        "enabled": true,
+        "offset": [-10.0, 0.0, 0.0],
+        "radius": 2.0,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "name": "blade_high",
+        "enabled": true,
+        "offset": [-8.0, 0.0, 0.0],
+        "radius": 2.0,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "name": "blade_mid",
+        "enabled": true,
+        "offset": [-6.0, 0.0, 0.0],
+        "radius": 2.0,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "name": "blade_low",
+        "enabled": true,
+        "offset": [-4.0, 0.0, 0.0],
+        "radius": 2.0,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "name": "hilt",
+        "enabled": true,
+        "offset": [-2.0, 0.0, 0.0],
+        "radius": 2.0,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      },
+      {
+        "name": "base",
+        "enabled": true,
+        "offset": [0.0, 0.0, 0.0],
+        "radius": 2.0,
+        "scale": [1.0, 1.0, 1.0],
+        "rotation_degrees": [0.0, 0.0, 0.0]
+      }
+    ]
   }
 }

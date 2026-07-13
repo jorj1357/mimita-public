@@ -167,12 +167,12 @@
     "id": "swordsword",
     "display_name": "Swordsword",
     "slot": 4,
-    "model": { "path": "" },
+    "model": { "path": "assets/objects/weapons/mimita-hafs-v1.glb" },
     "viewmodel": {
       "enabled": true,
-      "position": [0.5, 0.8, 0.3],
-      "rotation_degrees": [0.0, 0.0, 0.0],
-      "scale": [1.0, 1.0, 1.0]
+      "position": [-9.0, 0.2, 0],
+      "rotation_degrees": [100.0, 0.0, 0.0],
+      "scale": [0.6, 0.3, 0.3]
     },
     "damage": 35.0,
     "headshot_multiplier": 1.5,
@@ -186,18 +186,19 @@
     "projectile_radius": 0.0,
     "projectile_lifetime": 0.0,
     "fire_mode": "semi_auto",
-    "behavior_type": "swordsword",
-    "hitscan": false,
-    "uses_physics_projectile": false,
-    "sound": {
-      "shoot": "",
+  "behavior_type": "swordsword",
+  "hitscan": false,
+  "uses_physics_projectile": false,
+  "pose_id": "hafs",
+  "sound": {
+    "shoot": "",
       "reload": "",
       "hit": "",
       "dry_fire": "",
       "equip": ""
     },
     "custom_params": {
-      "range": 4.0,
+      "range": 16.0,
       "arcDegrees": 120.0,
       "slashDamage": 35.0,
       "slashKnockback": 25.0,
@@ -209,7 +210,7 @@
       "lungeDuration": 0.3,
       "lungeRange": 6.0,
       "lungeCooldown": 0.5,
-      "bladeLength": 1.5,
+      "bladeLength": 4.5,
       "shootPoseTime": 0.18,
       "equipPoseTime": 0.2
     }

@@ -315,8 +315,18 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             if (!tryWeaponPoseState("reloading"))
                 tryWeaponPoseState("reload");
         } else if (currentWeaponRuntime->shootEffectTimer > 0.0f) {
-            if (!tryWeaponPoseState("shooting"))
+            // Allow weapon to override pose via custom float (used by Swordsword)
+            auto poseIt = currentWeaponRuntime->customFloats.find("swordPoseState");
+            if (poseIt != currentWeaponRuntime->customFloats.end()) {
+                if (poseIt->second == 1.0f)
+                    tryWeaponPoseState("slash");
+                else if (poseIt->second == 2.0f)
+                    tryWeaponPoseState("lunge");
+                else
+                    tryWeaponPoseState("shooting");
+            } else if (!tryWeaponPoseState("shooting")) {
                 tryWeaponPoseState("fire");
+            }
         } else if (currentWeaponRuntime->fireCooldown > 0.0f) {
             if (!tryWeaponPoseState("cooldown"))
                 tryWeaponPoseState("just_shot");

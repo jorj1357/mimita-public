@@ -122,6 +122,7 @@ void registerWeaponCommands()
         }
     });
 
+    // Register equipslot0-9 (maps to slots 10, 1-9)
     for (int keySlot = 0; keySlot <= 9; ++keySlot) {
         int slot = keySlot == 0 ? 10 : keySlot;
         std::string name = "equipslot" + std::to_string(keySlot);
@@ -143,6 +144,51 @@ void registerWeaponCommands()
                 }
             }
     });
+
+    // Register equip command with arbitrary slot number
+    Terminal::instance().registerCommand({
+        "equip", "Equip weapon at slot number", "equip <slot>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[INVENTORY] usage: equip <slot>");
+                return;
+            }
+            int slot = std::atoi(args[1].c_str());
+            if (slot <= 0) {
+                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                return;
+            }
+            Player& player = THE_PLAYER;
+            WeaponSystem& weapons = THE_WEAPONS;
+            weapons.equip(player, slot);
+            GetPlayerSettings().equippedSlot = slot;
+            SavePlayerSettings();
+            Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
+        }
+    });
+
+    // Register equipslot10 through equipslot31 for higher slots
+    for (int keySlot = 10; keySlot <= 31; ++keySlot) {
+        std::string name = "equipslot" + std::to_string(keySlot);
+        Terminal::instance().registerCommand({
+            name, "Equip inventory slot " + std::to_string(keySlot), name,
+            [keySlot](const std::vector<std::string>&) {
+                Player& player = THE_PLAYER;
+                WeaponSystem& weapons = THE_WEAPONS;
+                if (player.equippedSlot == keySlot && player.hasValidWeapon) {
+                    weapons.unequip(player);
+                    GetPlayerSettings().equippedSlot = 0;
+                    SavePlayerSettings();
+                    Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(keySlot));
+                } else {
+                    weapons.equip(player, keySlot);
+                    GetPlayerSettings().equippedSlot = keySlot;
+                    SavePlayerSettings();
+                    Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(keySlot));
+                }
+            }
+        });
+    }
 
     Terminal::instance().registerCommand({
         "hafsdebug", "Toggle HAFS debug logging", "hafsdebug [0|1]",
