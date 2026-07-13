@@ -57,7 +57,8 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
                         const glm::vec4* hoverColorOverride = nullptr,
                         const glm::vec4* pressedColorOverride = nullptr,
                         const char* hoverSound = nullptr,
-                        const char* clickSound = nullptr);
+                        const char* clickSound = nullptr,
+                        float fontSize = 0.0f);
 bool uiCheckbox(GLFWwindow* win, const char* label, UIRect r, bool* value);
 bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float minValue, float maxValue);
 void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r);

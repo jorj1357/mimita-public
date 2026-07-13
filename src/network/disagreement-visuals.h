@@ -14,6 +14,10 @@ void spawnDisagreementEffect(const DisagreementEvent& event);
 // Log a disagreement to the structured log and console.
 void logDisagreement(const DisagreementEvent& event);
 
+// Spawn a local-only correction indicator (arrow + text) for the corrected player.
+// Does not replicate to other players.
+void spawnLocalDisagreementIndicator(const DisagreementEvent& event);
+
 // Debug flag
 extern bool gDisagreementDebug;
 

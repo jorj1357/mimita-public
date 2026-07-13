@@ -147,6 +147,9 @@ bool GuiLayout::load(const std::string& filePath)
             e.font = elem.value("font", "");
             e.fontSize = elem.value("fontSize", 0.0f);
             e.textAlign = elem.value("textAlign", "left");
+            e.verticalAlign = elem.value("verticalAlign", "top");
+            e.paddingX = elem.value("paddingX", 8.0f);
+            e.paddingY = elem.value("paddingY", 4.0f);
             if (elem.contains("textRuns") && elem["textRuns"].is_array()) {
                 for (const auto& run : elem["textRuns"]) {
                     UiTextRun tr;
@@ -234,6 +237,12 @@ bool GuiLayout::load(const std::string& filePath)
                 }
             } else if (j["elements"].is_object()) {
                 for (auto it = j["elements"].begin(); it != j["elements"].end(); ++it) {
+                    // Skip non-object entries (e.g. comments, strings)
+                    if (!it->is_object()) {
+                        printf("[GUI LAYOUT WARNING] element \"%s\" is type=%s expected=object — skipping\n",
+                               it.key().c_str(), it->type_name());
+                        continue;
+                    }
                     const std::string& id = it.key();
                     json elem = it.value();
                     // If the element already has an "id" field, use it; otherwise use the key
@@ -244,6 +253,7 @@ bool GuiLayout::load(const std::string& filePath)
             }
         }
 
+        // Preserve previous layout on failure (only replace on success)
         mElements = std::move(loadedElements);
         mLastModified = getFileModifiedTime(filePath);
         mDirty = false;
@@ -252,7 +262,15 @@ bool GuiLayout::load(const std::string& filePath)
         return true;
 
     } catch (const std::exception& e) {
-        printf("[GUI LAYOUT] Error loading %s: %s\n", filePath.c_str(), e.what());
+        printf("[GUI LAYOUT ERROR] file=%s message=%s\n",
+               filePath.c_str(), e.what());
+        // On failure: keep last-known-good layout, do not clear
+        // Only log once per unique error
+        static std::string lastError;
+        if (lastError != e.what()) {
+            lastError = e.what();
+            printf("[GUI LAYOUT ERROR] Keeping previous valid layout for %s\n", filePath.c_str());
+        }
         return false;
     }
 }
@@ -451,8 +469,20 @@ void GuiLayoutManager::pollReload()
 
     for (auto& pair : mLayouts) {
         if (pair.second.checkFileChanged()) {
-            printf("[GUI LAYOUT] Hot reload: %s\n", pair.first.c_str());
-            pair.second.load(pair.first);
+            bool ok = pair.second.load(pair.first);
+            if (!ok)
+            {
+                // On failure: track the failed content hash so we don't retry
+                // until the actual file content changes again
+                static std::unordered_map<std::string, int64_t> failedModTimes;
+                int64_t mod = getFileModifiedTime(pair.first);
+                auto fit = failedModTimes.find(pair.first);
+                if (fit == failedModTimes.end() || fit->second != mod) {
+                    failedModTimes[pair.first] = mod;
+                    printf("[GUI LAYOUT ERROR] file=%s load=FAILED keeping previous layout\n",
+                           pair.first.c_str());
+                }
+            }
         }
     }
 }

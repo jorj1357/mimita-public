@@ -3,6 +3,7 @@
 #include "../gui-element-render.h"
 #include "../gui-coord.h"
 #include "../ui-system.h"
+#include "../ui-text-input.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -41,44 +42,44 @@ static bool launchServerProcess() { return false; }
 
 namespace {
 
-bool addressInputActive = false;
-char* activeAddress = nullptr;
+// ── Address text input state (persistent while menu is open) ─────────
+UITextInputState gAddressState;
 
+// ── IP:port character filter ─────────────────────────────────────────
+bool addressCharFilter(unsigned int c)
+{
+    return (c >= '0' && c <= '9') || c == '.' || c == ':';
 }
+
+} // anonymous namespace
 
 void serverInfoMenuSetActive(bool active)
 {
-    addressInputActive = active;
     if (!active)
-        activeAddress = nullptr;
+    {
+        gAddressState.focused = false;
+    }
 }
 
 void serverInfoMenuHandleChar(unsigned int codepoint)
 {
-    if (!addressInputActive || !activeAddress)
-        return;
-    const bool allowed =
-        (codepoint >= '0' && codepoint <= '9') ||
-        codepoint == '.' || codepoint == ':';
-    const size_t length = std::strlen(activeAddress);
-    if (allowed && length < 63)
-    {
-        activeAddress[length] = (char)codepoint;
-        activeAddress[length + 1] = '\0';
-    }
+    UITextInputOptions opts;
+    opts.maxLength = 63;
+    opts.characterFilter = addressCharFilter;
+    uiTextInputHandleChar(gAddressState, codepoint, opts);
 }
 
-void serverInfoMenuHandleKey(int key, int action)
+void serverInfoMenuHandleKey(int key, int action, int mods)
 {
-    if (!addressInputActive || !activeAddress ||
-        (action != GLFW_PRESS && action != GLFW_REPEAT))
-        return;
-    if (key == GLFW_KEY_BACKSPACE)
-    {
-        const size_t length = std::strlen(activeAddress);
-        if (length)
-            activeAddress[length - 1] = '\0';
-    }
+    (void)action;
+    (void)mods;
+    // Note: serverInfoMenuHandleKey is called from the GLFW key callback.
+    // We use glfwGetCurrentContext() to get the window for clipboard ops.
+    GLFWwindow* win = glfwGetCurrentContext();
+    UITextInputOptions opts;
+    opts.maxLength = 63;
+    opts.characterFilter = addressCharFilter;
+    uiTextInputHandleKey(win, gAddressState, key, action, mods, opts);
 }
 
 ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
@@ -86,7 +87,7 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
                                     bool serverRunning)
 {
     ServerInfoResult r{};
-    activeAddress = serverAddress;
+
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/server-info-menu.json");
 
@@ -118,12 +119,30 @@ ServerInfoResult drawServerInfoMenu(GLFWwindow* win,
             r.goBack = true;
     }
 
-    // Dynamic address input
+    // ── Sync external buffer → text state on first activation ──────────
+    if (!gAddressState.focused && gAddressState.value.empty() && serverAddress && serverAddress[0])
     {
-        uiDrawRect(cs.designToScreen({860, 220, 300, 48}),
-                   {0.12f,0.14f,0.18f,1}, "server-addr-input");
-        uiDrawText(serverAddress, cs.designToScreenX(872), cs.designToScreenY(240),
-                   0.42f, {0.95f, 0.98f, 1.0f, 1.0f});
+        gAddressState.value = serverAddress;
+        gAddressState.cursorPos = (int)gAddressState.value.size();
+    }
+
+    // ── Render reusable text input ─────────────────────────────────────
+    UITextInputOptions opts;
+    opts.maxLength = 63;
+    opts.characterFilter = addressCharFilter;
+    opts.selectAllOnFocus = true;
+    uiTextInputRender(win, "serverAddress", {860.0f, 220.0f, 300.0f, 48.0f},
+                      gAddressState, opts);
+
+    // ── Sync text state → external buffer ─────────────────────────────
+    if (!gAddressState.value.empty())
+    {
+        std::strncpy(serverAddress, gAddressState.value.c_str(), 63);
+        serverAddress[63] = '\0';
+    }
+    else
+    {
+        serverAddress[0] = '\0';
     }
 
     // Dynamic status text

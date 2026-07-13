@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -135,6 +136,23 @@ void registerNetworkCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "server_showghost", "Show/hide ghost of authoritative server position",
+        "server_showghost [0|1]",
+        [](const std::vector<std::string>& args) {
+            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[SERVER GHOST] " + std::string(mpContext.showServerGhost ? "enabled" : "disabled"));
+                Terminal::instance().addLog("Usage: server_showghost [0|1]");
+                return;
+            }
+            mpContext.showServerGhost = args[0] == "1";
+            Terminal::instance().addLog(mpContext.showServerGhost
+                ? "[SERVER GHOST] Server position ghost enabled"
+                : "[SERVER GHOST] Server position ghost disabled");
+        }
+    });
+    Terminal::instance().registerCommand({
         "net_disagreement_debug", "Toggle server disagreement debug logging",
         "net_disagreement_debug [0|1]",
         [](const std::vector<std::string>& args) {
@@ -146,6 +164,70 @@ void registerNetworkCommands()
             Terminal::instance().addLog(MimitaNet::gDisagreementDebug
                 ? "[NET] Disagreement debug ON"
                 : "[NET] Disagreement debug OFF");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "server_disagreement_test", "Spawn a test server disagreement event at look position",
+        "server_disagreement_test [hit|damage|movement|teleport|state]",
+        [](const std::vector<std::string>& args) {
+            Player& player = THE_PLAYER;
+
+            using namespace MimitaNet;
+
+            DisagreementReason reason = DISAGREEMENT_POSITION_CORRECTION;
+            const char* desc = "test correction";
+            glm::vec3 correction(0.5f, 0.3f, 0.2f);
+
+            if (!args.empty())
+            {
+                if (args[0] == "hit") {
+                    reason = DISAGREEMENT_OCCLUDED_SHOT;
+                    desc = "test occluded shot";
+                    correction = glm::vec3(0.0f);
+                } else if (args[0] == "damage") {
+                    reason = DISAGREEMENT_INVALID_DAMAGE;
+                    desc = "test invalid damage";
+                    correction = glm::vec3(0.0f);
+                } else if (args[0] == "movement") {
+                    reason = DISAGREEMENT_INVALID_MOVEMENT;
+                    desc = "test invalid movement";
+                    correction = glm::vec3(1.2f, 0.5f, 0.0f);
+                } else if (args[0] == "teleport") {
+                    reason = DISAGREEMENT_POSITION_CORRECTION;
+                    desc = "test teleport correction";
+                    correction = glm::vec3(5.0f, 0.0f, 2.0f);
+                } else if (args[0] == "state") {
+                    reason = DISAGREEMENT_INVALID_STATE;
+                    desc = "test invalid state";
+                    correction = glm::vec3(0.0f);
+                }
+            }
+
+            glm::vec3 front(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
+
+            DisagreementEvent event;
+            event.timeMs = nowMs();
+            event.reason = reason;
+            event.position = player.pos + front * 3.0f;
+            event.correction = correction;
+            event.description = desc;
+            event.lifetime = 3.0f;
+
+            spawnDisagreementEffect(event);
+            logDisagreement(event);
+
+            Terminal::instance().addLog(
+                "[NET] server_disagreement_test: reason=" + std::string(reason == DISAGREEMENT_OCCLUDED_SHOT ? "hit" :
+                    reason == DISAGREEMENT_INVALID_DAMAGE ? "damage" :
+                    reason == DISAGREEMENT_INVALID_MOVEMENT ? "movement" :
+                    reason == DISAGREEMENT_POSITION_CORRECTION ? "teleport" : "state") +
+                " pos=(" + std::to_string((int)event.position.x) + "," +
+                           std::to_string((int)event.position.y) + "," +
+                           std::to_string((int)event.position.z) + ")" +
+                " correction=(" + std::to_string(event.correction.x) + "," +
+                                  std::to_string(event.correction.y) + "," +
+                                  std::to_string(event.correction.z) + ")");
         }
     });
 

@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
+#include <glad/glad.h>
 
 extern Renderer* gRenderer;
 
@@ -74,6 +75,18 @@ void renderPlayerInternal(
         lastLogMs[networkEntityId] = nowMs;
     }
 
+    // Apply ghost rendering for server_showghost
+    if (player.renderGhost)
+    {
+        GLuint prog = gRenderer->shaderProgram;
+        GLint colorLoc = glGetUniformLocation(prog, "uColor");
+        if (colorLoc >= 0)
+        {
+            // Semi-transparent dark teal tint for ghost
+            glUniform4f(colorLoc, 0.0f, 0.5f, 0.5f, 0.4f);
+        }
+    }
+
     bool hideHead = isLocal && !cam.thirdPerson;
     player.render(
         gRenderer->shaderProgram,
@@ -81,6 +94,15 @@ void renderPlayerInternal(
         proj,
         hideHead
     );
+
+    // Reset ghost color
+    if (player.renderGhost)
+    {
+        GLuint prog = gRenderer->shaderProgram;
+        GLint colorLoc = glGetUniformLocation(prog, "uColor");
+        if (colorLoc >= 0)
+            glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+    }
 }
 
 } // namespace

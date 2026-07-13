@@ -166,6 +166,7 @@ struct MultiplayerContext
     std::string roomCode;
     std::string joinToken;
     std::string reconnectToken;
+    std::string requiredMapId;
     int reconnectAttempts = 0;
     uint64_t lastReconnectAttemptMs = 0;
     uint64_t reconnectBackoffMs = 1000;
@@ -177,6 +178,10 @@ struct MultiplayerContext
     bool serverProcessLaunched = false;
     uint64_t serverProcessLaunchMs = 0;
     uint16_t serverPort = 1357;
+
+    // ── Ghost: show authoritative server position ─────────────────────
+    bool showServerGhost = false;
+    bool waitingForMapLoad = false;
 };
 
 struct MpInput

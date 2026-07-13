@@ -274,8 +274,11 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
 
     if (fontReady())
     {
+        // Convert from top-left coordinates to baseline coordinates.
+        // All GUI callers pass y as the TOP of the text box.
+        // The glyph renderer needs y as the BASELINE.
         float cursorX = x;
-        float cursorY = y;
+        float cursorY = y + (float)fontBase * scale;
         unsigned int prev = 0;
 
         for (const char* p = text; *p; ++p)
@@ -329,7 +332,7 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
             if (gDebug)
             {
                 uiDrawRectOutline({x0, y0, x1 - x0, y1 - y0}, {0.2f, 1.0f, 0.2f, 0.55f}, "glyph-bounds");
-                uiDrawRect({cursorX, cursorY + (float)fontBase * scale, 18.0f * scale, 1.0f}, {1.0f, 0.2f, 0.2f, 0.7f}, "text-baseline");
+                uiDrawRect({cursorX, cursorY, 18.0f * scale, 1.0f}, {1.0f, 0.2f, 0.2f, 0.7f}, "text-baseline");
             }
 
             cursorX += (float)g.xadvance * scale;

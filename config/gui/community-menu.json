@@ -83,6 +83,31 @@
       "textColor": [0.55, 0.6, 0.7, 1.0]
     },
 
+    "startupNpcsLabel": {
+      "type": "text", "layer": 1, "x": 510, "y": 438, "width": 300, "height": 26,
+      "text": "Startup NPCs (practice bots):", "fontSize": 0.28,
+      "textColor": [0.75, 0.8, 0.9, 1.0]
+    },
+    "comment3": "keep these values the same, for npc stuff, 7 13 2026, it aligns better", 
+
+    "startupNpcsCheckbox": {
+      "type": "checkbox", "layer": 2,
+      "x": 510, "y": 526, "width": 24, "height": 24,
+      "binding": "server.startup_npcs",
+      "fontSize": 0.28,
+      "textColor": [0.75, 0.8, 0.9, 1.0],
+      "backgroundColor": [0.12, 0.14, 0.18, 1.0]
+    },
+    "startupNpcsEnabledLabel": {
+      "type": "dynamic_text", "layer": 1,
+      "x": 510, "y": 468, "width": 330, "height": 24,
+      "binding": "server.startup_npcs",
+      "bindingFallback": "Enabled - 3 NPCs at start",
+      "fontSize": 0.26,
+      "textColor": [0.55, 0.8, 0.55, 1.0],
+      "textAlign": "left"
+    },
+
     "privacyLabel": {
       "type": "text", "layer": 1, "x": 60, "y": 353, "width": 200, "height": 26,
       "text": "Privacy:", "fontSize": 0.30,

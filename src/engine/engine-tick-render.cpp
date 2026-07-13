@@ -29,6 +29,7 @@
 #include "debug/debug-log.h"
 #include "debug/transform-debug.h"
 #include "network/multiplayer-context.h"
+#include "engine/engine-tick-net.h"
 #include "perf/perf.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
@@ -308,6 +309,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             for (auto& kv : mpContext.remoteNpcs) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
             }
+            // Render server position ghost if enabled
+            engineRenderGhost(player, camera);
         }
         npcSystem.render(camera);
     }

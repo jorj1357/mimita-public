@@ -115,6 +115,7 @@ struct WelcomePacket
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
+    char mapId[MAX_NAME_BYTES];
 };
 
 struct InputPacket
@@ -376,6 +377,7 @@ struct JoinAcceptPacket
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
+    char mapId[MAX_NAME_BYTES];
 };
 
 struct JoinRejectPacket

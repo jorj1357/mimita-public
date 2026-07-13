@@ -180,17 +180,26 @@ void engineTickState(Engine& engine, float dt)
             {
                 MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
                 if (mci.shouldConnect) {
-                    if (activeMapPath != defaultMapPath &&
-                        loadWorldFromGLB(world, defaultMapPath.c_str()))
+                    // Don't force-load default map. If a sandbox map was loaded, keep it.
+                    // The server's map identity will arrive via Welcome/JoinAccept.
+                    // If no world at all, load a minimal default so the client can start.
+                    if (!worldLoaded)
                     {
-                        activeMapPath = defaultMapPath;
-                        worldLoaded = true;
-                        printf("[MAIN NET] restored server-compatible map=%s\n",
+                        if (loadWorldFromGLB(world, defaultMapPath.c_str()))
+                        {
+                            activeMapPath = defaultMapPath;
+                            worldLoaded = true;
+                            printf("[MAIN NET] loaded default map for connecting\n");
+                        }
+                    }
+                    else
+                    {
+                        printf("[MAIN NET] keeping current world=%s for connecting\n",
                                activeMapPath.c_str());
                     }
+
                     player.username = AuthSystem::instance().displayName();
                     player.reset();
-                    // Use join token flow if available, else legacy address flow
                     bool connected = false;
                     if (!mci.joinToken.empty())
                     {
