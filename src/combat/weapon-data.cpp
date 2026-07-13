@@ -146,22 +146,22 @@ WeaponDefinition createSwordswordDefinition() {
     WeaponDefinition def;
     def.id = "swordsword";
     def.displayName = "Swordsword";
-    def.slot = 4;
+    def.slot = 11;
 
-    def.modelPath = "";
-    def.viewModelOffset = {0.5f, 0.8f, 0.3f};
+    def.modelPath = "assets/objects/weapons/mimita-hafs-v1.glb";
+    def.viewModelOffset = {0.0f, 0.5f, 1.5f};
     def.viewModelRotation = {0.0f, 0.0f, 0.0f};
     def.weaponScale = 1.0f;
 
-    def.damage = 35.0f;
-    def.headshotMultiplier = 1.5f;
-    def.fireDelay = 0.3f;
+    def.damage = 10.0f;
+    def.headshotMultiplier = 1.0f;
+    def.fireDelay = 0.25f;
     def.reloadTime = 0.0f;
     def.magazineSize = 0;
     def.pelletCount = 1;
 
     def.spread = 0.0f;
-    def.recoil = 10.0f;
+    def.recoil = 0.0f;
     def.projectileSpeed = 0.0f;
     def.projectileRadius = 0.0f;
     def.projectileLifetime = 0.0f;
@@ -171,25 +171,87 @@ WeaponDefinition createSwordswordDefinition() {
     def.hitscan = false;
     def.usesPhysicsProjectile = false;
 
-    def.soundShoot = "";
+    def.soundShoot = "weapon/hafs/hafsswing";
     def.soundReload = "";
-    def.soundHit = "";
+    def.soundHit = "weapon/hafs/hafsknockback";
     def.soundDryFire = "";
-    def.soundEquip = "";
+    def.soundEquip = "weapon/hafs/hafsequip";
+    def.poseId = "hafs";
 
-    def.customParams["range"] = 4.0f;
-    def.customParams["arcDegrees"] = 120.0f;
-    def.customParams["slashDamage"] = 35.0f;
-    def.customParams["slashKnockback"] = 25.0f;
-    def.customParams["slashSpeed"] = 22.0f;
-    def.customParams["slashDuration"] = 0.25f;
-    def.customParams["lungeDamage"] = 55.0f;
-    def.customParams["lungeKnockback"] = 40.0f;
-    def.customParams["lungeSpeed"] = 35.0f;
-    def.customParams["lungeDuration"] = 0.3f;
-    def.customParams["lungeRange"] = 6.0f;
+    // Global multipliers
+    def.customParams["globalDamageMultiplier"] = 10.0f;
+    def.customParams["globalKnockbackMultiplier"] = 10.0f;
+    def.customParams["knockbackHorizontalMultiplier"] = 1.0f;
+    def.customParams["knockbackVerticalMultiplier"] = 0.1f;
+    def.customParams["selfKnockbackMultiplier"] = 0.8f;
+
+    // Dimensions
+    def.customParams["bladeLength"] = 4.0f;
+    def.customParams["bladeRadius"] = 0.9f;
+
+    // Idle pose
+    def.customParams["idleOffsetX"] = 0.0f;
+    def.customParams["idleOffsetY"] = 0.5f;
+    def.customParams["idleOffsetZ"] = 1.5f;
+    def.customParams["idleRotationPitch"] = 0.0f;
+    def.customParams["idleRotationYaw"] = 0.0f;
+    def.customParams["idleRotationRoll"] = 0.0f;
+
+    // Attack rotation
+    def.customParams["attackRotationPitch"] = 30.0f;
+    def.customParams["attackRotationYaw"] = -20.0f;
+    def.customParams["attackRotationRoll"] = 0.0f;
+
+    // Lunge rotation
+    def.customParams["lungeRotationPitch"] = 10.0f;
+    def.customParams["lungeRotationYaw"] = 0.0f;
+    def.customParams["lungeRotationRoll"] = 0.0f;
+
+    // Render
+    def.customParams["renderColorR"] = 0.5f;
+    def.customParams["renderColorG"] = 0.5f;
+    def.customParams["renderColorB"] = 0.55f;
+
+    // Force multipliers
+    def.customParams["slashForceMultiplier"] = 0.5f;
+    def.customParams["dashForceMultiplier"] = 1.0f;
+    def.customParams["lungeForceMultiplier"] = 1.1f;
+
+    // Slash timing (3x faster)
+    def.customParams["slashWindupTime"] = 0.027f;
+    def.customParams["slashActiveTime"] = 0.05f;
+    def.customParams["slashRecoverTime"] = 0.033f;
+    def.customParams["slashBaseDamage"] = 5.0f;
+    def.customParams["slashSpeedDamageFactor"] = 18.0f;
+    def.customParams["slashAngleDamageFactor"] = 12.0f;
+    def.customParams["slashMaxDamage"] = 999.0f;
+    def.customParams["slashBaseKnockback"] = 25.0f;
+    def.customParams["slashSpeedKnockbackFactor"] = 3.0f;
+    def.customParams["slashMaxKnockback"] = 600.0f;
+    def.customParams["slashCooldown"] = 0.25f;
+
+    // Lunge timing
+    def.customParams["lungeWindupTime"] = 0.10f;
+    def.customParams["lungeActiveTime"] = 0.20f;
+    def.customParams["lungeRecoverTime"] = 0.12f;
+    def.customParams["lungeForceSpikeMultiplier"] = 5.0f;
+    def.customParams["lungeForceSpikeCenter"] = 0.5f;
+    def.customParams["lungeForceSpikeWidth"] = 0.15f;
+    def.customParams["lungeBaseDamage"] = 5.0f;
+    def.customParams["lungeSpeedDamageFactor"] = 28.0f;
+    def.customParams["lungeAngleDamageFactor"] = 12.0f;
+    def.customParams["lungeMaxDamage"] = 999.0f;
+    def.customParams["lungeBaseKnockback"] = 50.0f;
+    def.customParams["lungeSpeedKnockbackFactor"] = 6.0f;
+    def.customParams["lungeMaxKnockback"] = 600.0f;
     def.customParams["lungeCooldown"] = 0.5f;
-    def.customParams["bladeLength"] = 1.5f;
+    def.customParams["lungeDrag"] = 3.0f;
+
+    // Shared
+    def.customParams["damageTickInterval"] = 0.05f;
+    def.customParams["worldHitSoundMinSpeed"] = 5.0f;
+    def.customParams["worldHitSoundCooldown"] = 0.3f;
+    def.customParams["knockbackSoundMinForce"] = 40.0f;
 
     return def;
 }

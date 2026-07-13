@@ -71,7 +71,7 @@ public:
     const WeaponDefinition* getDefForSlot(int slot) const;
 
 private:
-    static constexpr int MAX_SLOTS = 11;
+    static constexpr int MAX_SLOTS = 64;
     WeaponViewModel mViewModels[MAX_SLOTS];
     GodballPhysics mGodballPhys;
     SwordswordState mSwordswordState;

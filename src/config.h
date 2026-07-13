@@ -82,6 +82,9 @@ namespace DebugConfig
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
     inline bool DEBUG_WPN_SHOT_LINE = true;
 
+    // World-space crosshair master switch (0=disabled, 1=enabled)
+    inline bool  WORLD_XH_ENABLED = false;
+
     // World-space crosshair settings (live-updated via console commands)
     inline float WORLD_XH_ALPHA = 0.0f;       // 0=opaque, 1=invisible
     inline float WORLD_XH_LENGTH = 1.0f;       // arm length multiplier

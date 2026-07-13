@@ -191,6 +191,8 @@ static void initAudioOnce()
         "shotgunshoot", "shotgunreload",
         "godballhit",
         "swordswordhit1", "swordswordhit2", "swordswordhit3", "swordswordhit4",
+        "weapon/hafs/hafsequip", "weapon/hafs/hafsswing", "weapon/hafs/hafslunge",
+        "weapon/hafs/hafsknockback", "weapon/hafs/hafsWorldHit",
         "gethurt", "player_hurt", "hitworld",
         "npc_spawn", "npc_death", "world_impact",
         "dash", "jump", "land",
