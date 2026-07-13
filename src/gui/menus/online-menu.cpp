@@ -37,7 +37,7 @@ void ensureMapListScanned()
         mapItemsCache += catalog.maps[i].displayName;
     }
     if (mapItemsCache.empty())
-        mapItemsCache = "funworldv3";
+        mapItemsCache = "funworld3";
 }
 
 // Build items list for a dropdown element (same logic as in drawGuiElement)
@@ -108,7 +108,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     b.set("server.running", serverRunning ? "true" : "false");
     b.set("server.not_running", serverRunning ? "false" : "true");
     b.set("server.name_placeholder", "MiMITA Server");
-    b.set("server.map_placeholder", "funworldv3");
+    b.set("server.map_placeholder", "funworld3");
     b.set("server.player_limit_placeholder", "999");
     b.set("server.map_items", mapItemsCache);
     // Log current map selection

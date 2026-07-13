@@ -32,7 +32,7 @@ int runServer(const LaunchOptions& options)
            options.name.c_str(), "pending");
 
     // Determine map path from options
-    std::string mapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+    std::string mapName = options.mapName.empty() ? "funworld3" : options.mapName;
     std::string mapPath = "assets/maps/" + mapName + ".glb";
     setServerMapId(mapName);
     printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
@@ -118,10 +118,10 @@ int runServer(const LaunchOptions& options)
     }
 
     // Register dedicated server with coordinator (use actual options)
-    std::string serverCode = generateServerCode();
+    std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
     std::string serverJoinToken;
     {
-        std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+        std::string regMapName = options.mapName.empty() ? "funworld3" : options.mapName;
         std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
         CoordinatorRoomInfo room = coordinatorRegister(
             regServerName, "", DEFAULT_PORT, regServerName,
@@ -133,6 +133,12 @@ int runServer(const LaunchOptions& options)
             setServerCoordinatorState(room.code, room.joinToken);
             printf("%s [SERVER] coordinator registered code=%s map=%s name=%s\n",
                    serverTimestamp(), serverCode.c_str(), regMapName.c_str(), regServerName.c_str());
+        }
+        else if (!options.serverCode.empty())
+        {
+            // Pre-generated code but coordinator unreachable — still set it for display
+            printf("%s [SERVER] coordinator unreachable; using pre-assigned code=%s (LAN-only)\n",
+                   serverTimestamp(), serverCode.c_str());
         }
     }
 
@@ -292,7 +298,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
     // Determine map path from settings
-    std::string mapName = settings ? settings->mapName : "funworldv3";
+    std::string mapName = settings ? settings->mapName : "funworld3";
     std::string mapPath = settings ? settings->resolvedMapPath : "";
     if (mapPath.empty())
         mapPath = "assets/maps/" + mapName + ".glb";
@@ -301,7 +307,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
 
-    state.serverCode = generateServerCode();
+    state.serverCode = settings && !settings->serverCode.empty() ? settings->serverCode : generateServerCode();
     state.publicIp = publicIp;
     state.hostSessionId = hostSessionId;
     state.active = true;
@@ -336,24 +342,32 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
            (int)npcsEnabled, npcCount, state.npcs.size());
 
-    // Register with coordinator
-    CoordinatorRoomInfo room = coordinatorRegister(
-        hostSessionId, publicIp, port, state.serverName,
-        "funworldv3", "sandbox", 32);
-
-    if (!room.code.empty())
+    // Register with coordinator (skip if external server process handles it)
+    if (!settings || !settings->externalProcessLaunched)
     {
-        state.serverCode = room.code;
-        state.joinToken = room.joinToken;
-        setServerCoordinatorState(room.code, room.joinToken);
-        printf("[LISTEN SERVER] coordinator registered code=%s joinToken=%s\n",
-               room.code.c_str(), room.joinToken.substr(0, 12).c_str());
+        CoordinatorRoomInfo room = coordinatorRegister(
+            hostSessionId, publicIp, port, state.serverName,
+            "funworld3", "sandbox", 32);
+
+        if (!room.code.empty())
+        {
+            state.serverCode = room.code;
+            state.joinToken = room.joinToken;
+            setServerCoordinatorState(room.code, room.joinToken);
+            printf("[LISTEN SERVER] coordinator registered code=%s joinToken=%s\n",
+                   room.code.c_str(), room.joinToken.substr(0, 12).c_str());
+        }
+        else
+        {
+            setServerCoordinatorState("", "");
+            printf("[LISTEN SERVER] coordinator unreachable — running in LAN-only mode code=%s\n",
+                   state.serverCode.c_str());
+        }
     }
     else
     {
-        setServerCoordinatorState("", "");
-        printf("[LISTEN SERVER] coordinator unreachable — running in LAN-only mode code=%s\n",
-               state.serverCode.c_str());
+        // External server process handles coordinator registration
+        printf("[LISTEN SERVER] external server process running; skipping coordinator registration\n");
     }
 
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());

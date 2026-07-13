@@ -23,6 +23,8 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.sessionToken = argv[++i];
         else if (std::strcmp(argv[i], "--map") == 0 && i + 1 < argc)
             options.mapName = argv[++i];
+        else if (std::strcmp(argv[i], "--code") == 0 && i + 1 < argc)
+            options.serverCode = argv[++i];
         else if (std::strcmp(argv[i], "--npcs") == 0 && i + 1 < argc)
             options.npcCount = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--no-npcs") == 0)

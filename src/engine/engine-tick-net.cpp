@@ -47,7 +47,7 @@ void engineTickNet(Engine& engine, float dt)
         // ── Map synchronization ──────────────────────────────────────────
         // If server requires a different map, load it before processing gameplay
         if (!mpContext.requiredMapId.empty() && worldLoaded &&
-            mpContext.requiredMapId != "funworldv3" &&
+            mpContext.requiredMapId != "funworld3" &&
             ACTIVE_MAP_PATH.find(mpContext.requiredMapId) == std::string::npos)
         {
             std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";

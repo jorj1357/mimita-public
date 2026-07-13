@@ -12,6 +12,7 @@ struct LaunchOptions
     std::string name;
     std::string sessionToken;
     std::string mapName;
+    std::string serverCode;
     bool npcsEnabled = true;
     uint32_t npcCount = 3;
 };

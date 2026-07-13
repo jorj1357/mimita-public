@@ -111,7 +111,7 @@ static void readServerSettingsFromBindings()
 {
     GuiBindings& b = GuiBindings::instance();
     std::string name = b.get("server.name", "MiMITA Server");
-    std::string mapName = b.get("server.map", "funworldv3");
+    std::string mapName = b.get("server.map", "funworld3");
     std::string playerLimitStr = b.get("server.player_limit", "999");
     std::string npcsStr = b.get("server.startup_npcs", "true");
     std::string npcCountStr = b.get("server.startup_npc_count", "3");
@@ -139,6 +139,7 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --connect 127.0.0.1:" + std::to_string(settings.port)
         + " --name \"" + settings.serverName + "\""
         + " --map \"" + settings.mapName + "\""
+        + " --code \"" + settings.serverCode + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
             : " --no-npcs");
@@ -489,11 +490,16 @@ void guiMain(GLFWwindow* win, GameState& state)
                     // Read settings from UI bindings before starting
                     readServerSettingsFromBindings();
 
+                    // Generate ONE room code — single source of truth
+                    gServerLaunchSettings.serverCode = MimitaNet::generateServerCode();
+
                     // Launch server as separate process with a visible CMD window
                     const bool processLaunched = launchServerProcess(gServerLaunchSettings);
 
                     if (processLaunched)
                     {
+                        gServerLaunchSettings.externalProcessLaunched = true;
+
                         // Also start listen server for host client (in-process)
                         if (MimitaNet::startListenServer(gListenServer, gServerLaunchSettings.port,
                             "", "", &gServerLaunchSettings))

@@ -88,22 +88,70 @@ bool parseCoordinatorUrl(const std::string& url, UrlParts& out)
     return true;
 }
 
+static std::string winHttpErrorString(DWORD err)
+{
+    switch (err)
+    {
+        case ERROR_WINHTTP_OUT_OF_HANDLES: return "OUT_OF_HANDLES";
+        case ERROR_WINHTTP_TIMEOUT: return "TIMEOUT";
+        case ERROR_WINHTTP_INTERNAL_ERROR: return "INTERNAL_ERROR";
+        case ERROR_WINHTTP_INVALID_URL: return "INVALID_URL";
+        case ERROR_WINHTTP_UNRECOGNIZED_SCHEME: return "UNRECOGNIZED_SCHEME";
+        case ERROR_WINHTTP_NAME_NOT_RESOLVED: return "DNS_FAILURE";
+        case ERROR_WINHTTP_INVALID_OPTION: return "INVALID_OPTION";
+        case ERROR_WINHTTP_OPTION_NOT_SETTABLE: return "OPTION_NOT_SETTABLE";
+        case ERROR_WINHTTP_SHUTDOWN: return "SHUTDOWN";
+        case ERROR_WINHTTP_LOGIN_FAILURE: return "LOGIN_FAILURE";
+        case ERROR_WINHTTP_OPERATION_CANCELLED: return "CANCELLED";
+        case ERROR_WINHTTP_INCORRECT_HANDLE_TYPE: return "INCORRECT_HANDLE_TYPE";
+        case ERROR_WINHTTP_INCORRECT_HANDLE_STATE: return "INCORRECT_HANDLE_STATE";
+        case ERROR_WINHTTP_CANNOT_CONNECT: return "CONNECTION_FAILED";
+        case ERROR_WINHTTP_CONNECTION_ERROR: return "CONNECTION_ERROR";
+        case ERROR_WINHTTP_RESEND_REQUEST: return "RESEND_REQUEST";
+        case ERROR_WINHTTP_CLIENT_AUTH_CERT_NEEDED: return "CLIENT_AUTH_CERT_NEEDED";
+        default: return "UNKNOWN";
+    }
+}
+
 bool httpPostJson(const std::string& url, const std::string& body, std::string& response, int timeoutMs)
 {
     UrlParts u;
-    if (!parseCoordinatorUrl(url, u)) return false;
+    if (!parseCoordinatorUrl(url, u))
+    {
+        printf("[COORDINATOR HTTP] parseCoordinatorUrl failed for %s\n", url.c_str());
+        return false;
+    }
 
     HINTERNET hSession = WinHttpOpen(L"MimitaCoordinator/1.0",
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, nullptr, nullptr, 0);
-    if (!hSession) return false;
+    if (!hSession)
+    {
+        printf("[COORDINATOR HTTP] WinHttpOpen failed error=%lu\n", GetLastError());
+        return false;
+    }
 
     HINTERNET hConnect = WinHttpConnect(hSession, u.host.c_str(), (INTERNET_PORT)u.port, 0);
-    if (!hConnect) { WinHttpCloseHandle(hSession); return false; }
+    if (!hConnect)
+    {
+        DWORD err = GetLastError();
+        printf("[COORDINATOR HTTP] WinHttpConnect failed error=%lu (%s) for host=%S port=%d\n",
+               err, winHttpErrorString(err).c_str(), u.host.c_str(), (int)u.port);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
 
     DWORD flags = u.secure ? WINHTTP_FLAG_SECURE : 0;
     HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", u.path.c_str(), nullptr,
         nullptr, nullptr, flags);
-    if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
+    if (!hRequest)
+    {
+        DWORD err = GetLastError();
+        printf("[COORDINATOR HTTP] WinHttpOpenRequest failed error=%lu (%s)\n",
+               err, winHttpErrorString(err).c_str());
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
 
     // Set timeout
     WinHttpSetTimeouts(hRequest, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
@@ -125,6 +173,11 @@ bool httpPostJson(const std::string& url, const std::string& body, std::string& 
     response.clear();
     if (ok)
     {
+        DWORD httpCode = 0;
+        DWORD httpCodeSize = sizeof(httpCode);
+        WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            nullptr, &httpCode, &httpCodeSize, nullptr);
+
         std::vector<char> buf;
         DWORD bytesRead = 0;
         do {
@@ -133,6 +186,12 @@ bool httpPostJson(const std::string& url, const std::string& body, std::string& 
             buf.insert(buf.end(), tmp, tmp + bytesRead);
         } while (bytesRead > 0);
         response.assign(buf.data(), buf.size());
+    }
+    else
+    {
+        DWORD err = GetLastError();
+        printf("[COORDINATOR HTTP] WinHttpSendRequest/ReceiveResponse failed error=%lu (%s)\n",
+               err, winHttpErrorString(err).c_str());
     }
 
     WinHttpCloseHandle(hRequest);
