@@ -32,7 +32,7 @@ int runServer(const LaunchOptions& options)
            options.name.c_str(), "pending");
 
     // Determine map path from options
-    std::string mapName = options.mapName.empty() ? "funworld3" : options.mapName;
+    std::string mapName = options.mapName.empty() ? "funworldv3" : options.mapName;
     std::string mapPath = "assets/maps/" + mapName + ".glb";
     setServerMapId(mapName);
     printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
@@ -109,7 +109,20 @@ int runServer(const LaunchOptions& options)
             ServerNpc npc;
             npc.entityId = nextEntityId++;
             npc.name = "NPC " + std::to_string(i + 1);
-            npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+            if (!world.spawnPoints.empty())
+            {
+                size_t idx = i % world.spawnPoints.size();
+                npc.pos = world.spawnPoints[idx].position;
+                npc.yaw = world.spawnPoints[idx].yaw;
+                printf("%s [SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
+                       "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
+                       serverTimestamp(), npc.entityId, i, idx,
+                       npc.pos.x, npc.pos.y, npc.pos.z);
+            }
+            else
+            {
+                npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+            }
             npc.phase = i * 2.0f;
             npcs[npc.entityId] = npc;
         }
@@ -121,7 +134,7 @@ int runServer(const LaunchOptions& options)
     std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
     std::string serverJoinToken;
     {
-        std::string regMapName = options.mapName.empty() ? "funworld3" : options.mapName;
+        std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
         std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
         CoordinatorRoomInfo room = coordinatorRegister(
             regServerName, "", DEFAULT_PORT, regServerName,
@@ -181,9 +194,9 @@ int runServer(const LaunchOptions& options)
             }
 
             if (header->type == PACKET_HELLO)
-                handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut);
+                handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut, &world);
             else if (header->type == PACKET_JOIN_REQUEST)
-                handleJoinRequest(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut);
+                handleJoinRequest(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut, &world);
             else if (header->type == PACKET_RECONNECT_REQUEST)
                 handleReconnectRequest(sock, from, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_INPUT)
@@ -298,7 +311,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
     // Determine map path from settings
-    std::string mapName = settings ? settings->mapName : "funworld3";
+    std::string mapName = settings ? settings->mapName : "funworldv3";
     std::string mapPath = settings ? settings->resolvedMapPath : "";
     if (mapPath.empty())
         mapPath = "assets/maps/" + mapName + ".glb";
@@ -335,7 +348,20 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         ServerNpc npc;
         npc.entityId = state.nextEntityId++;
         npc.name = "NPC " + std::to_string(i + 1);
-        npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+        if (!state.world.spawnPoints.empty())
+        {
+            size_t idx = i % state.world.spawnPoints.size();
+            npc.pos = state.world.spawnPoints[idx].position;
+            npc.yaw = state.world.spawnPoints[idx].yaw;
+            printf("[LISTEN SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
+                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
+                   npc.entityId, i, idx,
+                   npc.pos.x, npc.pos.y, npc.pos.z);
+        }
+        else
+        {
+            npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+        }
         npc.phase = i * 2.0f;
         state.npcs[npc.entityId] = npc;
     }
@@ -345,9 +371,10 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     // Register with coordinator (skip if external server process handles it)
     if (!settings || !settings->externalProcessLaunched)
     {
+        std::string regMap = settings ? settings->mapName : "funworldv3";
         CoordinatorRoomInfo room = coordinatorRegister(
             hostSessionId, publicIp, port, state.serverName,
-            "funworld3", "sandbox", 32);
+            regMap, "sandbox", 32);
 
         if (!room.code.empty())
         {
@@ -443,10 +470,10 @@ void tickListenServer(ListenServerState& state, float dt)
 
             if (header->type == PACKET_HELLO)
                 handleHello(state.sock, from, buffer, bytes, state.players,
-                            state.nextPlayerId, state.tick, state.totalPacketsOut);
+                            state.nextPlayerId, state.tick, state.totalPacketsOut, &state.world);
             else if (header->type == PACKET_JOIN_REQUEST)
                 handleJoinRequest(state.sock, from, buffer, bytes, state.players,
-                                  state.nextPlayerId, state.tick, state.totalPacketsOut);
+                                  state.nextPlayerId, state.tick, state.totalPacketsOut, &state.world);
             else if (header->type == PACKET_RECONNECT_REQUEST)
                 handleReconnectRequest(state.sock, from, buffer, bytes, state.players,
                                        state.tick, state.totalPacketsOut);

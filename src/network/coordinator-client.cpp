@@ -289,6 +289,7 @@ CoordinatorLookupResult coordinatorLookup(const std::string& code)
 
     if (httpPostJson(url, body, response, 5000))
     {
+        result.reachable = true;
         result.exists = extractJsonStr(response, "status") != "null_r" &&
                         extractJsonStr(response, "status") != "";
         if (result.exists)
@@ -446,6 +447,114 @@ void coordinatorJoinAsync(AsyncJoinResult& state, const std::string& code, const
         state.failed = !state.result.ok;
         state.pending = false;
     }).detach();
+}
+
+// ── ICE signaling ─────────────────────────────────────────────────────
+
+static std::string jsonEscape(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s)
+    {
+        switch (c)
+        {
+        case '"': out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\b': out += "\\b"; break;
+        case '\f': out += "\\f"; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += c;
+        }
+    }
+    return out;
+}
+
+static std::string jsonUnescape(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        if (s[i] == '\\' && i + 1 < s.size())
+        {
+            switch (s[i + 1])
+            {
+            case '"':  out += '"'; ++i; break;
+            case '\\': out += '\\'; ++i; break;
+            case '/':  out += '/'; ++i; break;
+            case 'b':  out += '\b'; ++i; break;
+            case 'f':  out += '\f'; ++i; break;
+            case 'n':  out += '\n'; ++i; break;
+            case 'r':  out += '\r'; ++i; break;
+            case 't':  out += '\t'; ++i; break;
+            case 'u':
+                // Simple uXXXX unicode - skip for now, just pass through
+                out += '\\';
+                break;
+            default: out += s[i]; break;
+            }
+        }
+        else
+        {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
+IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription)
+{
+    IceHostResult result;
+    std::string escaped = jsonEscape(iceDescription);
+    std::string body = "{\"host_session_id\":\"" + jsonEscape(hostSessionId)
+        + "\",\"ice_description\":\"" + escaped + "\"}";
+    std::string response;
+    if (!httpPostJson(gCoordinatorUrl + "/api/coordinator/ice/host", body, response, 5000))
+        return result;
+    result.ok = extractJsonBool(response, "ok");
+    result.roomCode = extractJsonStr(response, "room_code");
+    result.hostSessionId = extractJsonStr(response, "host_session_id");
+    return result;
+}
+
+IceJoinResult coordinatorIceJoin(const std::string& roomCode, const std::string& clientSessionId, const std::string& iceDescription)
+{
+    IceJoinResult result;
+    std::string body = "{\"room_code\":\"" + jsonEscape(roomCode)
+        + "\",\"client_session_id\":\"" + jsonEscape(clientSessionId)
+        + "\",\"ice_description\":\"" + jsonEscape(iceDescription) + "\"}";
+    std::string response;
+    if (!httpPostJson(gCoordinatorUrl + "/api/coordinator/ice/join", body, response, 5000))
+        return result;
+    result.ok = extractJsonBool(response, "ok");
+    result.hostIceDescription = jsonUnescape(extractJsonStr(response, "host_ice_description"));
+    result.clientSessionId = extractJsonStr(response, "client_session_id");
+    return result;
+}
+
+IcePollResult coordinatorIcePoll(const std::string& roomCode, const std::string& hostSessionId)
+{
+    IcePollResult result;
+    std::string body = "{\"room_code\":\"" + jsonEscape(roomCode)
+        + "\",\"host_session_id\":\"" + jsonEscape(hostSessionId) + "\"}";
+    std::string response;
+    if (!httpPostJson(gCoordinatorUrl + "/api/coordinator/ice/poll", body, response, 5000))
+        return result;
+    result.ok = extractJsonBool(response, "ok");
+    result.status = extractJsonStr(response, "status");
+    result.clientIceDescription = jsonUnescape(extractJsonStr(response, "client_ice_description"));
+    result.clientSessionId = extractJsonStr(response, "client_session_id");
+    return result;
+}
+
+void coordinatorIceDone(const std::string& roomCode)
+{
+    std::string body = "{\"room_code\":\"" + jsonEscape(roomCode) + "\"}";
+    std::string response;
+    httpPostJson(gCoordinatorUrl + "/api/coordinator/ice/done", body, response, 3000);
 }
 
 } // namespace MimitaNet

@@ -9,7 +9,9 @@
 #include "menus/duel-config-menu.h"
 #include "menus/server-info-menu.h"
 #include "menus/sign-in-menu.h"
+#include "menus/login-menu.h"
 #include "auth/auth-system.h"
+#include "auth/auth-controller.h"
 #include "auth/auth-popup.h"
 #include "menus/sandbox-map-menu.h"
 #include "menus/help-menu.h"
@@ -89,6 +91,7 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_COMPETITIVE:      return "config/gui/competitive-menu.json";
         case GUI_MENU_COMPETITIVE_RESULT: return "config/gui/competitive-result.json";
         case GUI_MENU_AUTH:            return "config/gui/main-menu.json";
+        case GUI_MENU_LOGIN:           return "config/gui/login-menu.json";
     }
     return "config/gui/main-menu.json";
 }
@@ -199,16 +202,37 @@ MimitaNet::ListenServerState* getListenServerState()
 void guiMain(GLFWwindow* win, GameState& state)
 {
     AuthSystem& auth = AuthSystem::instance();
+    AuthController& authCtrl = AuthController::instance();
 
     if (auth.state() == AuthState::Checking)
         auth.tickValidate();
 
     if (gGuiMenuState == GUI_MENU_AUTH)
     {
-        if (auth.state() == AuthState::Authenticated ||
-            auth.state() == AuthState::NeedsLogin ||
-            auth.state() == AuthState::Offline)
+        bool sessionFound = (auth.state() == AuthState::Authenticated);
+        bool sessionOffline = (auth.state() == AuthState::Offline);
+
+        if (sessionFound || sessionOffline)
+        {
             gGuiMenuState = GUI_MENU_MAIN;
+        }
+        else
+        {
+            if (authCtrl.runtime().state == AuthState::SignedOut ||
+                authCtrl.runtime().state == AuthState::CheckingStoredSession)
+            {
+                authCtrl.checkStoredSession();
+            }
+            if (authCtrl.runtime().state == AuthState::SignedIn)
+            {
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            else
+            {
+                gGuiMenuState = GUI_MENU_LOGIN;
+                loginMenuSetActive(true);
+            }
+        }
     }
 
     GuiLayoutManager::instance().pollReload();
@@ -315,6 +339,12 @@ void guiMain(GLFWwindow* win, GameState& state)
             {
                 printf("[MAIN MENU] Enter Sign-In Code clicked\n");
                 authPopupStartCodeInput();
+            }
+            else if (r.goLogin)
+            {
+                printf("[MAIN MENU] switching to login screen\n");
+                loginMenuSetActive(true);
+                gGuiMenuState = GUI_MENU_LOGIN;
             }
 
             break;
@@ -476,10 +506,13 @@ void guiMain(GLFWwindow* win, GameState& state)
 
         case GUI_MENU_SERVERS:
         {
-            // Sync display with actual listen server state
-            onlineMenuSetServerRunning(gListenServer.active);
+            // Sync display with server state (external process or listen server)
+            bool serverActive = gListenServer.active || gServerProcessLaunched;
+            onlineMenuSetServerRunning(serverActive);
             if (gListenServer.active)
                 onlineMenuSetServerCode(gListenServer.serverCode);
+            else if (gServerProcessLaunched)
+                onlineMenuSetServerCode(gServerLaunchSettings.serverCode);
 
             OnlineMenuResult r = drawOnlineMenu(win);
             if (r.startServer)
@@ -499,17 +532,11 @@ void guiMain(GLFWwindow* win, GameState& state)
                     if (processLaunched)
                     {
                         gServerLaunchSettings.externalProcessLaunched = true;
-
-                        // Also start listen server for host client (in-process)
-                        if (MimitaNet::startListenServer(gListenServer, gServerLaunchSettings.port,
-                            "", "", &gServerLaunchSettings))
-                        {
-                            onlineMenuSetServerRunning(true);
-                            onlineMenuSetServerCode(gListenServer.serverCode);
-                            printf("[ONLINE MENU] Server started (process+listen) port=%u code=%s map=%s\n",
-                                   gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
-                                   gServerLaunchSettings.mapName.c_str());
-                        }
+                        printf("[ONLINE MENU] External server process launched port=%u code=%s map=%s\n",
+                               gServerLaunchSettings.port, gServerLaunchSettings.serverCode.c_str(),
+                               gServerLaunchSettings.mapName.c_str());
+                        printf("[ONLINE MENU] Use 'Connect Localhost' or run: --client --connect 127.0.0.1:%u --name <name>\n",
+                               gServerLaunchSettings.port);
                     }
                     else
                     {
@@ -517,8 +544,6 @@ void guiMain(GLFWwindow* win, GameState& state)
                         if (MimitaNet::startListenServer(gListenServer, gServerLaunchSettings.port,
                             "", "", &gServerLaunchSettings))
                         {
-                            onlineMenuSetServerRunning(true);
-                            onlineMenuSetServerCode(gListenServer.serverCode);
                             printf("[ONLINE MENU] Listen server started (fallback) port=%u code=%s map=%s\n",
                                    gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
                                    gServerLaunchSettings.mapName.c_str());
@@ -534,10 +559,21 @@ void guiMain(GLFWwindow* win, GameState& state)
                         MimitaNet::mpShutdown(MP_CONTEXT);
 
                     stopServerProcess();
-                    MimitaNet::stopListenServer(gListenServer);
+                    if (gListenServer.active)
+                        MimitaNet::stopListenServer(gListenServer);
                     onlineMenuSetServerRunning(false);
                     onlineMenuSetServerCode("");
                 }
+            }
+            else if (r.connectLocalhost)
+            {
+                // Direct localhost connection — no coordinator, no room code, no join token
+                gPendingConnect.shouldConnect = true;
+                gPendingConnect.address = "127.0.0.1";
+                gPendingConnect.port = MimitaNet::DEFAULT_PORT;
+                printf("[COMMUNITY CONNECT] localhost direct 127.0.0.1:%u\n", MimitaNet::DEFAULT_PORT);
+                onlineMenuSetActive(false);
+                state = GAME_PLAYING;
             }
             else if (r.connectToServer)
             {
@@ -551,38 +587,14 @@ void guiMain(GLFWwindow* win, GameState& state)
                 }
                 else
                 {
-                    // Legacy flow: try coordinator join for the host's own server
-                    std::string code = gListenServer.active
-                        ? gListenServer.serverCode
-                        : r.joinToken;
-                    if (!code.empty())
-                    {
-                        // Do a coordinator lookup to get the join token
-                        MimitaNet::CoordinatorJoinResult joinResult =
-                            MimitaNet::coordinatorJoin(code, AuthSystem::instance().displayName());
-                        if (joinResult.ok)
-                        {
-                            gPendingConnect.shouldConnect = true;
-                            gPendingConnect.address = joinResult.serverIp;
-                            gPendingConnect.port = joinResult.serverPort;
-                            gPendingConnect.joinToken = joinResult.joinToken;
-                        }
-                        else
-                        {
-                            // Fallback to localhost
-                            gPendingConnect.shouldConnect = true;
-                            gPendingConnect.address = "127.0.0.1";
-                            gPendingConnect.port = MimitaNet::DEFAULT_PORT;
-                        }
-                    }
-                    else
-                    {
-                        gPendingConnect.shouldConnect = true;
-                        gPendingConnect.address = "127.0.0.1";
-                        gPendingConnect.port = MimitaNet::DEFAULT_PORT;
-                    }
+                    // Direct connection without coordinator (localhost or known IP)
+                    gPendingConnect.shouldConnect = true;
+                    gPendingConnect.address = r.connectAddress;
+                    gPendingConnect.port = r.connectPort;
                 }
-                printf("[COMMUNITY CONNECT] mapId=%s\n", gServerLaunchSettings.mapName.c_str());
+                printf("[COMMUNITY CONNECT] address=%s port=%u mapId=%s\n",
+                       gPendingConnect.address.c_str(), gPendingConnect.port,
+                       gServerLaunchSettings.mapName.c_str());
                 onlineMenuSetActive(false);
                 state = GAME_PLAYING;
             }
@@ -651,6 +663,22 @@ void guiMain(GLFWwindow* win, GameState& state)
             if (r.signedIn || r.goBack)
             {
                 signInMenuSetActive(false);
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            break;
+        }
+
+        case GUI_MENU_LOGIN:
+        {
+            LoginMenuResult r = drawLoginMenu(win);
+            if (r.signedIn)
+            {
+                loginMenuSetActive(false);
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            else if (r.goBack)
+            {
+                loginMenuSetActive(false);
                 gGuiMenuState = GUI_MENU_MAIN;
             }
             break;

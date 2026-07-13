@@ -351,6 +351,15 @@ const MIGRATION_STATEMENTS = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, tag_id)
     )`,
+
+    // ── Game Auth Session Columns ─────────────────────────────────
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_token_hash TEXT`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS device_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS device_name TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS client_build TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`,
+    `CREATE INDEX IF NOT EXISTS sessions_refresh_token_idx ON sessions(refresh_token_hash) WHERE refresh_token_hash IS NOT NULL`,
 ]
 
 export async function runMigrations() {

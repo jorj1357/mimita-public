@@ -14,6 +14,7 @@ struct CoordinatorRoomInfo
 struct CoordinatorLookupResult
 {
     bool exists = false;
+    bool reachable = false;
     std::string serverName;
     std::string map;
     std::string gamemode;
@@ -31,6 +32,32 @@ struct CoordinatorJoinResult
     uint16_t serverPort = 0;
     std::string serverName;
 };
+
+// ── ICE test signaling ─────────────────────────────────────────────
+
+struct IceHostResult {
+    bool ok = false;
+    std::string roomCode;
+    std::string hostSessionId;
+};
+
+struct IceJoinResult {
+    bool ok = false;
+    std::string hostIceDescription;
+    std::string clientSessionId;
+};
+
+struct IcePollResult {
+    bool ok = false;
+    std::string status; // "waiting_client" or "client_ready"
+    std::string clientIceDescription;
+    std::string clientSessionId;
+};
+
+IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription);
+IceJoinResult coordinatorIceJoin(const std::string& roomCode, const std::string& clientSessionId, const std::string& iceDescription);
+IcePollResult coordinatorIcePoll(const std::string& roomCode, const std::string& hostSessionId);
+void coordinatorIceDone(const std::string& roomCode);
 
 // Set coordinator base URL (default: http://107.191.48.226:3001)
 void setCoordinatorUrl(const std::string& url);

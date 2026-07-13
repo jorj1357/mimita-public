@@ -1,0 +1,102 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 3,
+  "elements": {
+    "loginBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "loginTitle": {
+      "type": "text",
+      "x": 810, "y": 100, "width": 300, "height": 50,
+      "text": "Sign In",
+      "fontSize": 0.65,
+      "textColor": [0.95, 0.98, 1.0, 1.0]
+    },
+    "identifierLabel": {
+      "type": "text",
+      "x": 720, "y": 220, "width": 480, "height": 28,
+      "text": "Username or Email",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.86, 0.95, 1.0]
+    },
+    "identifierInput": {
+      "type": "text_input",
+      "x": 720, "y": 250, "width": 480, "height": 44,
+      "binding": "auth.form.identifier",
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.18, 0.24, 1.0],
+      "focusedBackgroundColor": [0.2, 0.25, 0.32, 1.0],
+      "placeholder": "username or email@example.com",
+      "placeholderColor": [0.4, 0.45, 0.55, 0.7]
+    },
+    "passwordLabel": {
+      "type": "text",
+      "x": 720, "y": 320, "width": 480, "height": 28,
+      "text": "Password",
+      "fontSize": 0.32,
+      "textColor": [0.8, 0.86, 0.95, 1.0]
+    },
+    "passwordInput": {
+      "type": "text_input",
+      "x": 720, "y": 350, "width": 480, "height": 44,
+      "binding": "auth.form.password",
+      "password": true,
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.18, 0.24, 1.0],
+      "focusedBackgroundColor": [0.2, 0.25, 0.32, 1.0],
+      "placeholder": "Enter your password",
+      "placeholderColor": [0.4, 0.45, 0.55, 0.7]
+    },
+    "rememberMeCheckbox": {
+      "type": "checkbox",
+      "x": 720, "y": 415, "width": 20, "height": 20,
+      "binding": "auth.form.remember_me",
+      "text": "Remember Me",
+      "fontSize": 0.28,
+      "textColor": [0.75, 0.8, 0.9, 1.0],
+      "checkboxColor": [0.2, 0.5, 0.85, 1.0]
+    },
+    "signInButton": {
+      "type": "button",
+      "x": 810, "y": 470, "width": 300, "height": 54,
+      "text": "Sign In",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.55, 0.9, 1.0],
+      "hoverBackgroundColor": [0.25, 0.6, 0.95, 1.0]
+    },
+    "cancelButton": {
+      "type": "button",
+      "x": 40, "y": 40, "width": 120, "height": 50,
+      "text": "Back",
+      "fontSize": 0.38,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.55, 0.2, 0.2, 1.0]
+    },
+    "statusText": {
+      "type": "text",
+      "x": 720, "y": 550, "width": 480, "height": 30,
+      "binding": "auth.runtime.status_text",
+      "fontSize": 0.32,
+      "textColor": [0.5, 0.85, 0.5, 1.0]
+    },
+    "errorText": {
+      "type": "text",
+      "x": 720, "y": 550, "width": 480, "height": 30,
+      "binding": "auth.runtime.error_message",
+      "fontSize": 0.32,
+      "textColor": [1.0, 0.3, 0.3, 1.0]
+    },
+    "createAccountNote": {
+      "type": "text",
+      "x": 760, "y": 620, "width": 400, "height": 24,
+      "text": "Don't have an account? Create one at mimita.fun",
+      "fontSize": 0.26,
+      "textColor": [0.55, 0.6, 0.7, 1.0]
+    }
+  }
+}

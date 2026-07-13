@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <ctime>
 #include <chrono>
+#include <thread>
+#include <windows.h>
 #include <GLFW/glfw3.h>
 #include "engine/engine.h"
 #include "world/world.h"
@@ -22,6 +24,9 @@
 #include "game/game-state.h"
 #include "physics/movement/physics-collision.h"
 #include "debug/debug-log.h"
+#include "network/ice/ice-agent.h"
+#include "network/ice/ice-config.h"
+#include "network/coordinator-client.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -131,6 +136,321 @@ bool handleGameCLI(int argc, char** argv)
     if (std::string(argv[1]) == "--collision-stress") {
         const std::string caseName = argc > 2 ? argv[2] : "wedge5";
         printf("%s\n", collisionStressRun(caseName).c_str());
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--ice-test") {
+        printf("[ICE TEST] starting ICE candidate gathering test\n");
+
+        IceConfiguration iceConfig = loadIceConfig();
+
+        if (iceConfig.turn.password.empty())
+        {
+            printf("[ICE TEST] TURN password not set. Set MIMITA_TURN_PASSWORD env var.\n");
+            printf("[ICE TEST] FAIL\n");
+            return true;
+        }
+
+        IceAgent agent;
+        if (!agent.initialize(iceConfig))
+        {
+            printf("[ICE TEST] agent initialization failed\n");
+            printf("[ICE TEST] FAIL\n");
+            return true;
+        }
+
+        printf("[ICE TEST] agent initialized, starting gather...\n");
+
+        if (!agent.gatherCandidates())
+        {
+            printf("[ICE TEST] gather failed\n");
+            printf("[ICE TEST] FAIL\n");
+            return true;
+        }
+
+        // Wait for gathering to complete (or timeout)
+        const int maxWaitMs = 10000;
+        int waited = 0;
+        while (waited < maxWaitMs)
+        {
+            if (agent.state() == IceAgentState::GatheringComplete ||
+                agent.state() == IceAgentState::Failed)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waited += 100;
+        }
+
+        auto candidates = agent.candidates();
+
+        int hostCount = 0, srflxCount = 0, relayCount = 0;
+        for (const auto& c : candidates)
+        {
+            switch (c.type)
+            {
+            case IceCandidateType::Host:            hostCount++; break;
+            case IceCandidateType::ServerReflexive:  srflxCount++; break;
+            case IceCandidateType::Relay:           relayCount++; break;
+            default: break;
+            }
+        }
+
+        printf("\n[ICE TEST] === CANDIDATE SUMMARY ===\n");
+        printf("[ICE TEST] Host candidates:  %d\n", hostCount);
+        printf("[ICE TEST] SRFLX candidates: %d\n", srflxCount);
+        printf("[ICE TEST] Relay candidates: %d\n", relayCount);
+        printf("[ICE TEST] Total candidates: %zu\n", candidates.size());
+        printf("[ICE TEST] State: %d\n", static_cast<int>(agent.state()));
+
+        bool ok = (hostCount >= 1 && srflxCount >= 1 && relayCount >= 1);
+        printf("[ICE TEST] %s\n", ok ? "PASS" : "FAIL");
+
+        if (!ok)
+        {
+            printf("[ICE TEST] Missing candidate types - check STUN/TURN configuration.\n");
+            if (srflxCount == 0)
+                printf("[ICE TEST]   No server-reflexive candidates - is STUN reachable?\n");
+            if (relayCount == 0)
+                printf("[ICE TEST]   No relay candidates - is TURN configured correctly?\n");
+        }
+
+        agent.shutdown();
+        return true;
+    }
+
+    // ── ICE Host Test ────────────────────────────────────────
+    if (std::string(argv[1]) == "--ice-host-test") {
+        printf("[ICE TEST HOST START] processId=%lu\n", (unsigned long)GetCurrentProcessId());
+        fflush(stdout);
+
+        IceConfiguration iceConfig = loadIceConfig();
+        if (iceConfig.turn.password.empty()) {
+            printf("[ICE TEST] TURN password not set. Set MIMITA_TURN_PASSWORD env var.\nFAIL\n");
+            return true;
+        }
+
+        IceAgent agent;
+        if (!agent.initialize(iceConfig)) { printf("[ICE TEST] agent init failed\nFAIL\n"); return true; }
+        if (!agent.gatherCandidates()) { printf("[ICE TEST] gather failed\nFAIL\n"); return true; }
+
+        // Wait for gathering to finish
+        int waited = 0;
+        while (waited < 15000) {
+            if (agent.state() == IceAgentState::GatheringComplete ||
+                agent.state() == IceAgentState::Failed) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waited += 100;
+        }
+        if (agent.state() != IceAgentState::GatheringComplete) {
+            printf("[ICE TEST] gather timeout\nFAIL\n"); return true;
+        }
+
+        // Register with coordinator and upload description
+        std::string sessionId = "host_" + std::to_string(GetCurrentProcessId());
+        std::string sdp = agent.localSdp();
+
+        printf("[ICE DEBUG] Host SDP first 100 chars: %.*s\n", 100, sdp.c_str());
+        fflush(stdout);
+
+        auto hostResult = MimitaNet::coordinatorIceHost(sessionId, sdp);
+        if (!hostResult.ok) { printf("[ICE TEST] coordinator register failed\nFAIL\n"); return true; }
+
+        printf("[ICE TEST ROOM] code=%s\n", hostResult.roomCode.c_str());
+        fflush(stdout);
+        printf("[ICE SIGNAL UPLOAD] role=host code=%s descBytes=%zu\n", hostResult.roomCode.c_str(), sdp.size());
+        fflush(stdout);
+
+        // Poll for client
+        printf("[ICE TEST] waiting for joiner...\n");
+        fflush(stdout);
+        std::string clientDesc;
+        bool gotClient = false;
+        waited = 0;
+        while (waited < 60000) {
+            auto pollResult = MimitaNet::coordinatorIcePoll(hostResult.roomCode, sessionId);
+            if (pollResult.ok && pollResult.status == "client_ready" && !pollResult.clientIceDescription.empty()) {
+                clientDesc = pollResult.clientIceDescription;
+                gotClient = true;
+                printf("[ICE SIGNAL RECEIVE] role=host code=%s descBytes=%zu\n", hostResult.roomCode.c_str(), clientDesc.size());
+                printf("[ICE DEBUG] Client SDP first 100: %.*s\n", 100, clientDesc.c_str());
+                fflush(stdout);
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            waited += 500;
+        }
+        if (!gotClient) { printf("[ICE TEST] client poll timeout\nFAIL\n"); return true; }
+
+        // Set remote description
+        if (!agent.setRemoteDescription(clientDesc)) {
+            printf("[ICE TEST] setRemoteDescription failed\nFAIL\n"); return true;
+        }
+
+        // Wait for connected state
+        printf("[ICE TEST] waiting for ICE connection...\n");
+        waited = 0;
+        bool connected = false;
+        while (waited < 15000) {
+            std::vector<IceEvent> events;
+            agent.pollEvents(events);
+            for (auto& ev : events) {
+                if (ev.type == IceEventType::StateChanged) {
+                    printf("[ICE STATE] role=host old=%d new=%d\n",
+                           static_cast<int>(agent.state()), static_cast<int>(ev.newState));
+                    if (ev.newState == IceAgentState::Connected || ev.newState == IceAgentState::Completed)
+                        connected = true;
+                }
+            }
+            if (connected || agent.state() == IceAgentState::Failed) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waited += 100;
+        }
+        if (!connected) { printf("[ICE TEST] connection timeout\nFAIL\n"); return true; }
+        printf("[ICE CONNECTED] role=host durationMs=%d\n", waited);
+
+        // Small stabilization delay
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        printf("[ICE TEST] waiting for data from joiner...\n");
+        waited = 0;
+        std::string recvd;
+        while (waited < 10000) {
+            std::vector<IceEvent> events;
+            agent.pollEvents(events);
+            for (auto& ev : events) {
+                if (ev.type == IceEventType::Recv) {
+                    recvd.assign(ev.data.data(), ev.data.size());
+                }
+            }
+            if (!recvd.empty()) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            waited += 50;
+        }
+        if (recvd.empty()) { printf("[ICE TEST] no data received\nFAIL\n"); return true; }
+        printf("[ICE TEST RECEIVE] role=host bytes=%zu payload=%.*s\n", recvd.size(), (int)recvd.size(), recvd.c_str());
+
+        // Reply
+        const char* reply = "hello from host";
+        if (!agent.send(reply, strlen(reply) + 1)) {
+            printf("[ICE TEST] host send failed\nFAIL\n"); return true;
+        }
+        printf("[ICE TEST SEND] role=host bytes=%zu\n", strlen(reply) + 1);
+
+        MimitaNet::coordinatorIceDone(hostResult.roomCode);
+        printf("[ICE TEST RESULT] role=host pass=1\nPASS\n");
+        agent.shutdown();
+        return true;
+    }
+
+    // ── ICE Join Test ────────────────────────────────────────
+    if (std::string(argv[1]) == "--ice-join-test") {
+        if (argc < 3) {
+            printf("[ICE JOIN] usage: mimita.exe --ice-join-test <room-code>\nFAIL\n");
+            return true;
+        }
+
+        std::string roomCode = argv[2];
+        printf("[ICE TEST JOIN START] roomCode=%s processId=%lu\n",
+               roomCode.c_str(), (unsigned long)GetCurrentProcessId());
+
+        IceConfiguration iceConfig = loadIceConfig();
+        if (iceConfig.turn.password.empty()) {
+            printf("[ICE TEST] TURN password not set. Set MIMITA_TURN_PASSWORD env var.\nFAIL\n");
+            return true;
+        }
+
+        IceAgent agent;
+        if (!agent.initialize(iceConfig)) { printf("[ICE TEST] agent init failed\nFAIL\n"); return true; }
+        if (!agent.gatherCandidates()) { printf("[ICE TEST] gather failed\nFAIL\n"); return true; }
+
+        int waited = 0;
+        while (waited < 15000) {
+            if (agent.state() == IceAgentState::GatheringComplete ||
+                agent.state() == IceAgentState::Failed) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waited += 100;
+        }
+        if (agent.state() != IceAgentState::GatheringComplete) {
+            printf("[ICE TEST] gather timeout\nFAIL\n"); return true;
+        }
+
+        // Join via coordinator, get host SDP
+        std::string clientSessionId = "client_" + std::to_string(GetCurrentProcessId());
+        std::string sdp = agent.localSdp();
+
+        printf("[ICE DEBUG] Join SDP first 100 chars: %.*s\n", 100, sdp.c_str());
+        fflush(stdout);
+
+        auto joinResult = MimitaNet::coordinatorIceJoin(roomCode, clientSessionId, sdp);
+        if (!joinResult.ok || joinResult.hostIceDescription.empty()) {
+            printf("[ICE TEST] coordinator join failed (room not found or expired)\nFAIL\n");
+            return true;
+        }
+
+        printf("[ICE SIGNAL RECEIVE] role=join code=%s descBytes=%zu\n",
+               roomCode.c_str(), joinResult.hostIceDescription.size());
+
+        printf("[ICE DEBUG] Host SDP first 100 chars: %.*s\n", 100, joinResult.hostIceDescription.c_str());
+        fflush(stdout);
+
+        // Set remote (host) SDP
+        if (!agent.setRemoteDescription(joinResult.hostIceDescription)) {
+            printf("[ICE TEST] setRemoteDescription failed\nFAIL\n"); return true;
+        }
+
+        // Wait for connected
+        printf("[ICE TEST] waiting for ICE connection...\n");
+        waited = 0;
+        bool connected = false;
+        while (waited < 15000) {
+            std::vector<IceEvent> events;
+            agent.pollEvents(events);
+            for (auto& ev : events) {
+                if (ev.type == IceEventType::StateChanged) {
+                    printf("[ICE STATE] role=join old=%d new=%d\n",
+                           static_cast<int>(agent.state()), static_cast<int>(ev.newState));
+                    if (ev.newState == IceAgentState::Connected || ev.newState == IceAgentState::Completed)
+                        connected = true;
+                }
+            }
+            if (connected || agent.state() == IceAgentState::Failed) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waited += 100;
+        }
+        if (!connected) { printf("[ICE TEST] connection timeout\nFAIL\n"); return true; }
+        printf("[ICE CONNECTED] role=join durationMs=%d\n", waited);
+
+        // Small stabilization delay
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        // Send test payload
+        const char* msg = "hello from client";
+        bool sendOk = agent.send(msg, strlen(msg) + 1);
+        printf("[ICE TEST SEND] role=join bytes=%zu result=%d\n", strlen(msg) + 1, sendOk);
+        fflush(stdout);
+        if (!sendOk) {
+            printf("[ICE TEST] join send failed\nFAIL\n"); return true;
+        }
+
+        // Wait for reply
+        printf("[ICE TEST] waiting for reply...\n");
+        waited = 0;
+        std::string reply;
+        while (waited < 10000) {
+            std::vector<IceEvent> events;
+            agent.pollEvents(events);
+            for (auto& ev : events) {
+                if (ev.type == IceEventType::Recv) {
+                    reply.assign(ev.data.data(), ev.data.size());
+                }
+            }
+            if (!reply.empty()) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            waited += 50;
+        }
+        if (reply.empty()) { printf("[ICE TEST] no reply received\nFAIL\n"); return true; }
+        printf("[ICE TEST RECEIVE] role=join bytes=%zu payload=%.*s\n", reply.size(), (int)reply.size(), reply.c_str());
+
+        printf("[ICE TEST RESULT] role=join pass=1\nPASS\n");
+        agent.shutdown();
         return true;
     }
 

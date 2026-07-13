@@ -1,0 +1,12 @@
+{
+  "stun": {
+    "host": "107.191.48.226",
+    "port": 3478
+  },
+  "turn": {
+    "host": "107.191.48.226",
+    "port": 3478,
+    "username": "mimita-dev",
+    "password_env": "MIMITA_TURN_PASSWORD"
+  }
+}

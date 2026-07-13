@@ -34,11 +34,18 @@ constexpr float SERVER_DT = 1.0f / SERVER_TICK_RATE;
 constexpr float PLAYER_RADIUS = 0.65f;
 constexpr float PLAYER_HEIGHT = 3.5f;
 
+struct ServerSpawnPoint
+{
+    glm::vec3 position{0.0f};
+    float yaw = 0.0f;
+};
+
 struct HeadlessWorld
 {
     std::vector<CollisionTriangle> triangles;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
+    std::vector<ServerSpawnPoint> spawnPoints;
 };
 
 struct ServerInput
@@ -163,7 +170,8 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
 // Packet handlers
 void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                  std::unordered_map<uint32_t, ServerPlayer>& players,
-                 uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut);
+                 uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
+                 const HeadlessWorld* world = nullptr);
 void handleInputPacket(const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
@@ -201,7 +209,8 @@ void handleServerCommand(const char* buffer, int bytes,
 // ── Migration: join/reconnect packet handlers ────────────────────────
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
-                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut);
+                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
+                       const HeadlessWorld* world = nullptr);
 void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             uint32_t tick, uint64_t& totalPacketsOut);
@@ -243,7 +252,7 @@ void sendDisagreementToAll(SOCKET sock,
 struct ServerLaunchSettings
 {
     std::string serverName = "MiMITA Server";
-    std::string mapName = "funworld3";
+    std::string mapName = "funworldv3";
     std::string gameMode = "sandbox";
     uint32_t maxPlayers = 999;
     bool passwordProtected = false;

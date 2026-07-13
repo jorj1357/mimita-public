@@ -450,6 +450,133 @@ bool updateSettings(const std::string& sessionToken, const json& settings)
     return false;
 }
 
+// ── Game Auth (direct username/email + password login) ───────────────────────
+
+GameLoginResult gameLogin(const std::string& identifier, const std::string& password,
+                          bool rememberMe, const std::string& deviceId,
+                          const std::string& deviceName, const std::string& platform,
+                          const std::string& clientBuild)
+{
+    GameLoginResult result;
+    json req;
+    req["identifier"] = identifier;
+    req["password"] = password;
+    req["remember_me"] = rememberMe;
+    json device;
+    device["device_id"] = deviceId;
+    device["device_name"] = deviceName;
+    device["platform"] = platform;
+    device["client_build"] = clientBuild;
+    req["device"] = device;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool transportOk = httpRequest("POST", "https://mimita.fun/api/game/auth/login",
+                                    req.dump(), "", respBody, httpCode);
+
+    if (!transportOk)
+    {
+        result.errorCode = "NETWORK_UNAVAILABLE";
+        result.errorMessage = "Could not reach the account server.";
+        return result;
+    }
+
+    if (httpCode < 200 || httpCode > 299)
+    {
+        try {
+            json j = json::parse(respBody);
+            result.errorCode = j["error"].value("code", "AUTH_SERVER_UNAVAILABLE");
+            result.errorMessage = j["error"].value("message", "Authentication server error.");
+        } catch (...) {
+            result.errorCode = "AUTH_SERVER_UNAVAILABLE";
+            result.errorMessage = "Unexpected response from server.";
+        }
+        return result;
+    }
+
+    try {
+        json j = json::parse(respBody);
+        if (!j.value("ok", false)) return result;
+        auto acct = j["account"];
+        auto ses = j["session"];
+        result.ok = true;
+        result.accountId = acct.value("id", 0);
+        result.username = acct.value("username", "");
+        result.supporterTier = acct.value("supporter_tier", "free");
+        for (const auto& p : acct["permissions"])
+            result.permissions.push_back(p.get<std::string>());
+        result.accessToken = ses.value("access_token", "");
+        result.accessExpiresAt = ses.value("access_expires_at", "");
+        result.refreshToken = ses.value("refresh_token", "");
+        result.refreshExpiresAt = ses.value("refresh_expires_at", "");
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.errorCode = "AUTH_INVALID_RESPONSE";
+        result.errorMessage = "Failed to parse server response.";
+    }
+    return result;
+}
+
+GameRefreshResult gameRefresh(const std::string& refreshToken, const std::string& deviceId)
+{
+    GameRefreshResult result;
+    json req;
+    req["refresh_token"] = refreshToken;
+    if (!deviceId.empty()) req["device_id"] = deviceId;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool transportOk = httpRequest("POST", "https://mimita.fun/api/game/auth/refresh",
+                                    req.dump(), "", respBody, httpCode);
+
+    if (!transportOk)
+    {
+        result.errorCode = "NETWORK_UNAVAILABLE";
+        return result;
+    }
+
+    if (httpCode < 200 || httpCode > 299)
+    {
+        try {
+            json j = json::parse(respBody);
+            result.errorCode = j["error"].value("code", "SESSION_EXPIRED");
+            result.errorMessage = j["error"].value("message", "Session refresh failed.");
+        } catch (...) {
+            result.errorCode = "SESSION_EXPIRED";
+        }
+        return result;
+    }
+
+    try {
+        json j = json::parse(respBody);
+        if (!j.value("ok", false)) return result;
+        result.ok = true;
+        result.accessToken = j.value("access_token", "");
+        result.accessExpiresAt = j.value("access_expires_at", "");
+        result.refreshToken = j.value("refresh_token", refreshToken);
+        result.refreshExpiresAt = j.value("refresh_expires_at", "");
+    } catch (...) {
+        result.errorCode = "AUTH_INVALID_RESPONSE";
+    }
+    return result;
+}
+
+GameLogoutResult gameLogout(const std::string& refreshToken, const std::string& deviceId)
+{
+    GameLogoutResult result;
+    json req;
+    req["refresh_token"] = refreshToken;
+    if (!deviceId.empty()) req["device_id"] = deviceId;
+
+    std::string respBody;
+    int httpCode = 0;
+    httpRequest("POST", "https://mimita.fun/api/game/auth/logout",
+                req.dump(), "", respBody, httpCode);
+
+    result.ok = (httpCode >= 200 && httpCode < 300);
+    return result;
+}
+
 // ── Client Login (4-letter code flow) ────────────────────────────────────────
 
 ClientCodePreview previewClientCode(const std::string& code)

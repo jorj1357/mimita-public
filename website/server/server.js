@@ -33,6 +33,7 @@ import debugRouter from "./debug.js"
 import gameAnalyticsRouter from "./gameAnalytics.js"
 import tokenExchangeRouter from "./token-exchange.js"
 import clientLoginRouter from "./client-login.js"
+import gameAuthRouter from "./game-auth.js"
 import gameApiRouter from "./game-api.js"
 import emailCampaignsRouter from "./email-campaigns.js"
 import { trackEvent } from "./analytics.js"
@@ -1262,6 +1263,7 @@ app.post("/api/auth/link-finalize", linkRateLimit, async (req, res, next) => {
 
 app.use("/api/auth", tokenExchangeRouter)
 app.use("/api/client-login", clientLoginRouter)
+app.use("/api/game/auth", gameAuthRouter)
 
 app.post("/api/track/download", downloadTrackRateLimit, async (req, res, next) => {
     try {
