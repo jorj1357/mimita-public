@@ -25,9 +25,15 @@ int runServer(const LaunchOptions& options)
     printf("%s [SERVER] coordinator=%s\n", serverTimestamp(), getCoordinatorUrl().c_str());
     printf("%s [SERVER] ========================================\n", serverTimestamp());
 
+    // Determine map path from options
+    std::string mapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+    std::string mapPath = "assets/maps/" + mapName + ".glb";
+    setServerMapId(mapName);
+    printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
+
     HeadlessWorld world;
-    if (!loadHeadlessWorld("assets/maps/mimita-aabb-only-interior-small-v4.glb", world))
-        printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback only\n", serverTimestamp());
+    if (!loadHeadlessWorld(mapPath.c_str(), world))
+        printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback\n", serverTimestamp());
 
     if (!netStartup())
     {
@@ -80,14 +86,20 @@ int runServer(const LaunchOptions& options)
     uint64_t totalPacketsIn = 0;
     uint64_t totalPacketsOut = 0;
 
-    for (int i = 0; i < 3; ++i)
+    // Startup NPCs (controlled by --npcs and --no-npcs flags)
     {
-        ServerNpc npc;
-        npc.entityId = nextEntityId++;
-        npc.name = "NPC " + std::to_string(i + 1);
-        npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
-        npc.phase = i * 2.0f;
-        npcs[npc.entityId] = npc;
+        uint32_t npcCount = options.npcsEnabled ? options.npcCount : 0;
+        for (uint32_t i = 0; i < npcCount; ++i)
+        {
+            ServerNpc npc;
+            npc.entityId = nextEntityId++;
+            npc.name = "NPC " + std::to_string(i + 1);
+            npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
+            npc.phase = i * 2.0f;
+            npcs[npc.entityId] = npc;
+        }
+        printf("%s [SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
+               serverTimestamp(), (int)options.npcsEnabled, npcCount, npcs.size());
     }
 
     // Register dedicated server with coordinator
@@ -219,7 +231,8 @@ int runServer(const LaunchOptions& options)
 // ─── Listen Server ─────────────────────────────────────────────────────────
 
 bool startListenServer(ListenServerState& state, uint16_t port,
-    const std::string& publicIp, const std::string& hostSessionId)
+    const std::string& publicIp, const std::string& hostSessionId,
+    const ServerLaunchSettings* settings)
 {
     if (state.active)
         return false;
@@ -260,7 +273,14 @@ bool startListenServer(ListenServerState& state, uint16_t port,
 
     printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
-    if (!loadHeadlessWorld("assets/maps/mimita-aabb-only-interior-small-v4.glb", state.world))
+    // Determine map path from settings
+    std::string mapName = settings ? settings->mapName : "funworldv3";
+    std::string mapPath = settings ? settings->resolvedMapPath : "";
+    if (mapPath.empty())
+        mapPath = "assets/maps/" + mapName + ".glb";
+    setServerMapId(mapName);
+    printf("[LISTEN SERVER MAP] mapId=%s path=%s\n", mapName.c_str(), mapPath.c_str());
+    if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
 
     state.serverCode = generateServerCode();
@@ -280,7 +300,13 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.accumulator = 0.0f;
     state.lastHeartbeatMs = 0;
 
-    for (int i = 0; i < 3; ++i)
+    if (settings)
+        state.serverName = settings->serverName;
+
+    // Startup NPCs
+    bool npcsEnabled = !settings || settings->startupNpcsEnabled;
+    uint32_t npcCount = npcsEnabled ? (settings ? settings->startupNpcCount : 3) : 0;
+    for (uint32_t i = 0; i < npcCount; ++i)
     {
         ServerNpc npc;
         npc.entityId = state.nextEntityId++;
@@ -289,6 +315,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         npc.phase = i * 2.0f;
         state.npcs[npc.entityId] = npc;
     }
+    printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
+           (int)npcsEnabled, npcCount, state.npcs.size());
 
     // Register with coordinator
     CoordinatorRoomInfo room = coordinatorRegister(
@@ -468,6 +496,43 @@ std::string generateServerCode()
     for (int i = 0; i < 7; ++i)
         code += chars[dist(rng)];
     return code;
+}
+
+// ─── Run server with explicit settings (from GUI process launch) ──────────
+
+int runServerWithSettings(const ServerLaunchSettings& settings)
+{
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
+    printf("============================================================\n");
+    printf("                    MiMITA SERVER\n");
+    printf("          This window is the server you started.\n");
+    printf("       Keep it open while people are playing.\n");
+    printf("     Closing this window will stop your server.\n");
+    printf("============================================================\n");
+    printf("Version: %u\n", PROTOCOL_VERSION);
+    printf("PID: %lu\n", (unsigned long)GetCurrentProcessId());
+    printf("Mode: Headless authoritative server\n");
+    printf("Map: %s\n", settings.mapName.c_str());
+    printf("Players: 0 / %u\n", settings.maxPlayers);
+    printf("Started by: mimita.exe Start Server button\n");
+    printf("Executable path: ...\n");
+    printf("Working directory: ...\n");
+    printf("============================================================\n");
+    printf("[SERVER CONFIG] map=%s gamemode=%s maxPlayers=%u npcs=%d count=%u\n",
+           settings.mapName.c_str(), settings.gameMode.c_str(),
+           settings.maxPlayers, (int)settings.startupNpcsEnabled, settings.startupNpcCount);
+
+    // Use server launch settings by creating a LaunchOptions equivalent
+    LaunchOptions opts;
+    opts.server = true;
+    opts.mapName = settings.mapName;
+    opts.npcsEnabled = settings.startupNpcsEnabled;
+    opts.npcCount = settings.startupNpcCount;
+    opts.connect = "127.0.0.1:" + std::to_string(settings.port);
+
+    // Delegate to existing runServer
+    return runServer(opts);
 }
 
 } // namespace MimitaNet

@@ -26,5 +26,6 @@ private:
 };
 
 // Global handlers dispatched from main loop
+void guiBindingsSetWindow(GLFWwindow* win);
 void guiBindingsHandleChar(unsigned int codepoint);
-void guiBindingsHandleKey(int key, int action);
+void guiBindingsHandleKey(int key, int action, int mods);

@@ -111,6 +111,17 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     b.set("server.map_placeholder", "funworldv3");
     b.set("server.player_limit_placeholder", "999");
     b.set("server.map_items", mapItemsCache);
+    // Log current map selection
+    {
+        static std::string lastMapSelection;
+        std::string currentMap = b.get("server.map");
+        if (currentMap != lastMapSelection && !currentMap.empty()) {
+            lastMapSelection = currentMap;
+            printf("[COMMUNITY MAP SELECT] mapId=%s\n", currentMap.c_str());
+        }
+    }
+    b.set("server.startup_npcs", "true");
+    b.set("server.startup_npc_count", "3");
     b.set("join.code_placeholder", "______");
     b.set("join.code", "");
 

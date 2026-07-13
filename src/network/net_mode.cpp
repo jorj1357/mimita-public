@@ -1,6 +1,7 @@
 #include "network/net_mode.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace MimitaNet {
@@ -20,6 +21,12 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.name = argv[++i];
         else if (std::strcmp(argv[i], "--session") == 0 && i + 1 < argc)
             options.sessionToken = argv[++i];
+        else if (std::strcmp(argv[i], "--map") == 0 && i + 1 < argc)
+            options.mapName = argv[++i];
+        else if (std::strcmp(argv[i], "--npcs") == 0 && i + 1 < argc)
+            options.npcCount = (uint32_t)std::max(0, std::atoi(argv[++i]));
+        else if (std::strcmp(argv[i], "--no-npcs") == 0)
+            options.npcsEnabled = false;
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
             printLaunchUsage();
     }

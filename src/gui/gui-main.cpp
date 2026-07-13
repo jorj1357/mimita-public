@@ -35,7 +35,9 @@
 #include "renderer/renderer.h"
 #include "network/server.h"
 #include "network/coordinator-client.h"
+#include "gui-bindings.h"
 #include <cstdio>
+#include <cstdlib>
 #include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
@@ -97,6 +99,7 @@ BombTagConfigResult getPendingBombTagConfig() { return gPendingBombTagConfig; }
 void clearPendingBombTagConfig() { gPendingBombTagConfig = BombTagConfigResult{}; }
 static bool gServerRunning = false;
 static MimitaNet::ListenServerState gListenServer;
+static MimitaNet::ServerLaunchSettings gServerLaunchSettings;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
 static SandboxMapSelection gPendingSandboxMap{};
@@ -104,19 +107,47 @@ static PROCESS_INFORMATION gServerProcessInfo{};
 static bool gServerProcessLaunched = false;
 static uint64_t gServerProcessLaunchMs = 0;
 
-static bool launchServerProcess(uint16_t port)
+static void readServerSettingsFromBindings()
+{
+    GuiBindings& b = GuiBindings::instance();
+    std::string name = b.get("server.name", "MiMITA Server");
+    std::string mapName = b.get("server.map", "funworldv3");
+    std::string playerLimitStr = b.get("server.player_limit", "999");
+    std::string npcsStr = b.get("server.startup_npcs", "true");
+    std::string npcCountStr = b.get("server.startup_npc_count", "3");
+
+    gServerLaunchSettings.serverName = name;
+    gServerLaunchSettings.mapName = mapName;
+    gServerLaunchSettings.maxPlayers = (uint32_t)std::max(1, std::atoi(playerLimitStr.c_str()));
+    gServerLaunchSettings.startupNpcsEnabled = npcsStr == "true";
+    gServerLaunchSettings.startupNpcCount = (uint32_t)std::max(0, std::atoi(npcCountStr.c_str()));
+    gServerLaunchSettings.port = MimitaNet::DEFAULT_PORT;
+    gServerLaunchSettings.resolvedMapPath = "assets/maps/" + mapName + ".glb";
+
+    printf("[COMMUNITY SERVER START] requestedMap=%s serverName=%s maxPlayers=%u npcs=%d count=%u\n",
+           mapName.c_str(), name.c_str(), gServerLaunchSettings.maxPlayers,
+           (int)gServerLaunchSettings.startupNpcsEnabled, gServerLaunchSettings.startupNpcCount);
+}
+
+static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
 {
     char exePath[MAX_PATH];
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
 
-    std::string args = std::string(exePath) + " --server --connect 127.0.0.1:" + std::to_string(port);
+    std::string args = "\"" + std::string(exePath) + "\""
+        + " --server"
+        + " --connect 127.0.0.1:" + std::to_string(settings.port)
+        + " --map \"" + settings.mapName + "\""
+        + (settings.startupNpcsEnabled
+            ? " --npcs " + std::to_string(settings.startupNpcCount)
+            : " --no-npcs");
 
     STARTUPINFOA si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
+    si.wShowWindow = SW_SHOW; // Show the console window
 
     if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &gServerProcessInfo))
+                        CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &gServerProcessInfo))
     {
         printf("[SERVER LAUNCH] CreateProcess failed error=%d\n", (int)GetLastError());
         return false;
@@ -128,7 +159,7 @@ static bool launchServerProcess(uint16_t port)
     gServerProcessLaunchMs = MimitaNet::nowMs();
 
     // Give server a moment to start
-    Sleep(250);
+    Sleep(500);
     return true;
 }
 
@@ -454,28 +485,36 @@ void guiMain(GLFWwindow* win, GameState& state)
                 onlineMenuSetServerCode("");
                 if (!gListenServer.active && !gServerProcessLaunched)
                 {
-                    // Launch server as separate process
-                    const uint16_t port = MimitaNet::DEFAULT_PORT;
-                    if (launchServerProcess(port))
+                    // Read settings from UI bindings before starting
+                    readServerSettingsFromBindings();
+
+                    // Launch server as separate process with a visible CMD window
+                    const bool processLaunched = launchServerProcess(gServerLaunchSettings);
+
+                    if (processLaunched)
                     {
-                        // Also start listen server for host client
-                        if (MimitaNet::startListenServer(gListenServer, port))
+                        // Also start listen server for host client (in-process)
+                        if (MimitaNet::startListenServer(gListenServer, gServerLaunchSettings.port,
+                            "", "", &gServerLaunchSettings))
                         {
                             onlineMenuSetServerRunning(true);
                             onlineMenuSetServerCode(gListenServer.serverCode);
-                            printf("[ONLINE MENU] Server started (process+listen) port=%u code=%s\n",
-                                   port, gListenServer.serverCode.c_str());
+                            printf("[ONLINE MENU] Server started (process+listen) port=%u code=%s map=%s\n",
+                                   gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
+                                   gServerLaunchSettings.mapName.c_str());
                         }
                     }
                     else
                     {
-                        // Fallback: listen server only
-                        if (MimitaNet::startListenServer(gListenServer, MimitaNet::DEFAULT_PORT))
+                        // Fallback: listen server only (in-process)
+                        if (MimitaNet::startListenServer(gListenServer, gServerLaunchSettings.port,
+                            "", "", &gServerLaunchSettings))
                         {
                             onlineMenuSetServerRunning(true);
                             onlineMenuSetServerCode(gListenServer.serverCode);
-                            printf("[ONLINE MENU] Listen server started (fallback) code=%s\n",
-                                   gListenServer.serverCode.c_str());
+                            printf("[ONLINE MENU] Listen server started (fallback) port=%u code=%s map=%s\n",
+                                   gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
+                                   gServerLaunchSettings.mapName.c_str());
                         }
                     }
                 }
@@ -536,6 +575,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                         gPendingConnect.port = MimitaNet::DEFAULT_PORT;
                     }
                 }
+                printf("[COMMUNITY CONNECT] mapId=%s\n", gServerLaunchSettings.mapName.c_str());
                 onlineMenuSetActive(false);
                 state = GAME_PLAYING;
             }

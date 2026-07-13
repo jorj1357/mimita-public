@@ -2,6 +2,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
+#include <string>
 #include <unordered_set>
 #include <GLFW/glfw3.h>
 #include "camera.h"
@@ -18,9 +19,12 @@
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
 #include "network/disagreement-visuals.h"
+#include "render/render-player.h"
 #include "perf/perf.h"
 #include "debug/debug-log.h"
 #include "game/game-state.h"
+#include "world/world-gltf-loader.h"
+#include "terminal/terminal-state.h"
 
 extern DuelManager gDuelManager;
 
@@ -40,6 +44,30 @@ void engineTickNet(Engine& engine, float dt)
 
     { Perf::ScopedTimer _net("Networking");
     if (mpContext.active) {
+        // ── Map synchronization ──────────────────────────────────────────
+        // If server requires a different map, load it before processing gameplay
+        if (!mpContext.requiredMapId.empty() && worldLoaded &&
+            mpContext.requiredMapId != "funworldv3" &&
+            ACTIVE_MAP_PATH.find(mpContext.requiredMapId) == std::string::npos)
+        {
+            std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
+            printf("[NET MAP REQUIRED] mapId=%s path=%s\n",
+                   mpContext.requiredMapId.c_str(), requiredPath.c_str());
+
+            if (loadWorldFromGLB(world, requiredPath.c_str()))
+            {
+                ACTIVE_MAP_PATH = requiredPath;
+                WORLD_LOADED = true;
+                printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
+                       ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
+                player.reset();
+            }
+            else
+            {
+                printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
+            }
+        }
+
         MimitaNet::MpInput mpInput;
         mpInput.position = player.pos;
         mpInput.velocity = player.vel;
@@ -334,11 +362,50 @@ void engineTickNet(Engine& engine, float dt)
         f3Prev = f3Down;
 
         // Process server disagreement events (spawn visual effects)
-        for (const MimitaNet::DisagreementEvent& event : mpContext.disagreementEvents)
+        // Events are consumed once and cleared to prevent re-spawning every frame.
+        if (!mpContext.disagreementEvents.empty())
         {
-            MimitaNet::spawnDisagreementEffect(event);
-            MimitaNet::logDisagreement(event);
+            for (const auto& event : mpContext.disagreementEvents)
+            {
+                MimitaNet::spawnDisagreementEffect(event);
+                MimitaNet::logDisagreement(event);
+            }
+            mpContext.disagreementEvents.clear();
         }
+
     }
     } // Perf::ScopedTimer Networking
+}
+
+// ── Ghost rendering (called from render stage, outside networking scope) ───
+// The ghost state is stored in mpContext and rendered here.
+void engineRenderGhost(const Player& localPlayer, const Camera& camera)
+{
+    auto& mpContext = MP_CONTEXT;
+    if (!mpContext.active || !mpContext.showServerGhost || !mpContext.hasLocalServerPosition)
+        return;
+
+    static Player serverGhost;
+    static bool ghostInitialized = false;
+
+    if (!ghostInitialized)
+    {
+        serverGhost = localPlayer;
+        serverGhost.username = "SERVER POSITION";
+        ghostInitialized = true;
+        printf("[SERVER GHOST] enabled=1\n");
+    }
+
+    serverGhost.pos = mpContext.localServerPosition;
+    serverGhost.vel = mpContext.localServerVelocity;
+    serverGhost.yaw = mpContext.localServerYaw;
+    serverGhost.renderGhost = true;
+    serverGhost.dead = false;
+
+    // Render the ghost — this is a separate render pass
+    renderPlayer(serverGhost, camera);
+
+    printf("[SERVER GHOST RENDER] pos=(%.1f,%.1f,%.1f) tick=%u\n",
+           serverGhost.pos.x, serverGhost.pos.y, serverGhost.pos.z,
+           mpContext.latestServerTick);
 }

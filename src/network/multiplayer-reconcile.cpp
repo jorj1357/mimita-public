@@ -17,8 +17,18 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     if (!ctx.connected || !ctx.hasLocalServerPosition)
         return;
 
+    // Skip reconciliation if server position is uninitialized (0,0,0)
+    const glm::vec3 serverPos = ctx.localServerPosition;
+    const float serverPosLen = glm::length(serverPos);
+    if (serverPosLen < 0.001f && !ctx.localPlayerReconciled)
+    {
+        printf("[NET RECONCILE SKIP] reason=server-spawn-not-valid pos=(%.2f,%.2f,%.2f)\n",
+               serverPos.x, serverPos.y, serverPos.z);
+        return;
+    }
+
     const glm::vec3 clientPosition = player.pos;
-    const glm::vec3 correction = ctx.localServerPosition - player.pos;
+    const glm::vec3 correction = serverPos - player.pos;
     const float error = glm::length(correction);
     constexpr float CATASTROPHIC_DIVERGENCE = 100.0f;
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;

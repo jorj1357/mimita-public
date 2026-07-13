@@ -88,6 +88,7 @@ struct ServerPlayer
     std::string joinToken;
     std::string reconnectToken;
     bool joinTokenValidated = false;
+    bool spawned = false;
     int kills = 0;
     int deaths = 0;
 };
@@ -211,6 +212,10 @@ std::string generateReconnectToken();
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken);
 const std::string& getServerCoordinatorCode();
 
+// Server map identity
+void setServerMapId(const std::string& mapId);
+const std::string& getServerMapId();
+
 // Post-tick helpers
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players);
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -221,6 +226,34 @@ void buildAndSendSnapshot(SOCKET sock,
                           uint32_t tick, uint64_t& totalPacketsOut);
 
 void logSnapshotEntity(const SnapshotEntity& entity);
+
+// Send a disagreement event to all connected players.
+void sendDisagreementToAll(SOCKET sock,
+                           const std::unordered_map<uint32_t, ServerPlayer>& players,
+                           DisagreementReason reason,
+                           glm::vec3 position,
+                           glm::vec3 correction,
+                           const char* description,
+                           uint32_t tick,
+                           uint64_t& totalPacketsOut);
+
+// ─── Server Launch Settings (shared by UI, process launch, headless) ──────
+
+struct ServerLaunchSettings
+{
+    std::string serverName = "MiMITA Server";
+    std::string mapName = "funworldv3";
+    std::string gameMode = "sandbox";
+    uint32_t maxPlayers = 999;
+    bool passwordProtected = false;
+    std::string password;
+    bool startupNpcsEnabled = true;
+    uint32_t startupNpcCount = 3;
+    uint16_t port = DEFAULT_PORT;
+
+    // Resolved state (set during startup, not from UI)
+    std::string resolvedMapPath;
+};
 
 // ─── Listen Server (host runs server in same process) ──────────────────────
 
@@ -249,7 +282,8 @@ struct ListenServerState
 };
 
 bool startListenServer(ListenServerState& state, uint16_t port,
-    const std::string& publicIp = "", const std::string& hostSessionId = "");
+    const std::string& publicIp = "", const std::string& hostSessionId = "",
+    const ServerLaunchSettings* settings = nullptr);
 void stopListenServer(ListenServerState& state);
 void tickListenServer(ListenServerState& state, float dt);
 std::string generateServerCode();

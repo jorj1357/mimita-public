@@ -59,7 +59,7 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
         Terminal::instance().handleKey(key, mods);
         authPopupHandleKey(key, action);
         signInMenuHandleKey(key, action);
-        serverInfoMenuHandleKey(key, action);
+        serverInfoMenuHandleKey(key, action, mods);
         onlineMenuHandleKey(key, action);
     }
 }

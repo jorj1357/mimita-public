@@ -17,6 +17,9 @@ namespace MimitaNet {
 static std::string gServerCoordinatorCode;
 static std::string gServerCoordinatorJoinToken;
 
+// ── Global server map ID ─────────────────────────────────────────────
+static std::string gServerMapId = "funworldv3";
+
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken)
 {
     gServerCoordinatorCode = code;
@@ -24,6 +27,9 @@ void setServerCoordinatorState(const std::string& code, const std::string& joinT
 }
 
 const std::string& getServerCoordinatorCode() { return gServerCoordinatorCode; }
+
+void setServerMapId(const std::string& mapId) { gServerMapId = mapId; }
+const std::string& getServerMapId() { return gServerMapId; }
 
 bool sameAddress(const sockaddr_in& a, const sockaddr_in& b)
 {
@@ -105,8 +111,10 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     if (!existingId)
     {
         p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
-        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s\n",
-               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
+        p.spawned = true;
+        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f)\n",
+               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
+               p.pos.x, p.pos.y, p.pos.z);
     }
 
     p.reconnectToken = generateReconnectToken();
@@ -120,6 +128,8 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     copyName(welcome.approvedName, p.name);
     std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
     std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
+    std::memset(welcome.mapId, 0, sizeof(welcome.mapId));
+    std::strncpy(welcome.mapId, gServerMapId.c_str(), sizeof(welcome.mapId) - 1);
     sendto(sock, (const char*)&welcome, sizeof(welcome), 0, (sockaddr*)&from, sizeof(from));
     ++totalPacketsOut;
 }
@@ -193,9 +203,14 @@ void handleInputPacket(const char* buffer, int bytes,
         if (rejectNowMs - lastRejectedStateLogMs >= 500)
         {
             printf("%s [SERVER MOVEMENT REJECT] playerId=%u "
-                   "distance=%.2f speed=%.2f finite=%d\n",
-                   serverTimestamp(), p.id, stateDelta,
-                   reportedSpeed, (int)finiteState);
+                   "reason=position_delta serverPos=(%.2f,%.2f,%.2f) "
+                   "clientPos=(%.2f,%.2f,%.2f) delta=%.2f speed=%.2f "
+                   "serverMap=%s finite=%d\n",
+                   serverTimestamp(), p.id,
+                   p.pos.x, p.pos.y, p.pos.z,
+                   reportedPosition.x, reportedPosition.y, reportedPosition.z,
+                   stateDelta, reportedSpeed,
+                   gServerMapId.c_str(), (int)finiteState);
             lastRejectedStateLogMs = rejectNowMs;
         }
     }
@@ -381,9 +396,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     if (!existingId)
     {
         p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
-        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s token=%s\n",
+        p.spawned = true;
+        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) token=%s\n",
                serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-               p.reconnectToken.c_str());
+               p.pos.x, p.pos.y, p.pos.z, p.reconnectToken.c_str());
     }
     else
     {
@@ -400,6 +416,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     copyName(accept.approvedName, p.name);
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
+    std::memset(accept.mapId, 0, sizeof(accept.mapId));
+    std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
     sendto(sock, (const char*)&accept, sizeof(accept), 0, (sockaddr*)&from, sizeof(from));
     ++totalPacketsOut;
 }
@@ -481,6 +499,12 @@ void buildAndSendSnapshot(SOCKET sock,
     {
         if (index >= MAX_SNAPSHOT_ENTITIES)
             break;
+        if (!kv.second.spawned)
+        {
+            printf("%s [SERVER SNAPSHOT SKIP] playerId=%u reason=not-spawned\n",
+                   serverTimestamp(), kv.first);
+            continue;
+        }
         snapshot.entities[index++] = makePlayerEntity(kv.second);
         ++snapshot.playerCount;
     }
@@ -514,6 +538,50 @@ void buildAndSendSnapshot(SOCKET sock,
             printf("%s [SERVER SNAPSHOT SEND] toClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",
                    serverTimestamp(), kv.first, bytesSent, snapshot.entityCount,
                    snapshot.playerCount, snapshot.npcCount);
+    }
+}
+
+// ── Send disagreement event to all connected players ─────────────────
+void sendDisagreementToAll(SOCKET sock,
+                           const std::unordered_map<uint32_t, ServerPlayer>& players,
+                           DisagreementReason reason,
+                           glm::vec3 position,
+                           glm::vec3 correction,
+                           const char* description,
+                           uint32_t tick,
+                           uint64_t& totalPacketsOut)
+{
+    DisagreementPacket packet{};
+    packet.header.type = PACKET_DISAGREEMENT;
+    packet.header.tick = tick;
+    packet.reason = (uint8_t)reason;
+    packet.posX = position.x;
+    packet.posY = position.y;
+    packet.posZ = position.z;
+    packet.correctionX = correction.x;
+    packet.correctionY = correction.y;
+    packet.correctionZ = correction.z;
+    std::memset(packet.description, 0, sizeof(packet.description));
+    if (description)
+        std::strncpy(packet.description, description, sizeof(packet.description) - 1);
+
+    printf("%s [SERVER DISAGREEMENT SEND] reason=%u pos=(%.1f,%.1f,%.1f) "
+           "correction=(%.1f,%.1f,%.1f) desc=\"%s\" players=%zu\n",
+           serverTimestamp(), (unsigned)reason,
+           position.x, position.y, position.z,
+           correction.x, correction.y, correction.z,
+           description ? description : "",
+           players.size());
+
+    for (const auto& kv : players)
+    {
+        int bytesSent = sendto(
+            sock, (const char*)&packet, sizeof(packet), 0,
+            (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        if (bytesSent == SOCKET_ERROR)
+            printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
+                   serverTimestamp(), kv.first, WSAGetLastError());
+        ++totalPacketsOut;
     }
 }
 

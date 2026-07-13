@@ -210,15 +210,16 @@ void gameInit(int argc, char** argv, Engine& engine)
         Terminal::instance().handleChar(codepoint);
         GuiEditor::instance().handleChar(codepoint);
     });
+    guiBindingsSetWindow(engine.window());
     glfwSetKeyCallback(engine.window(), [](GLFWwindow*, int key, int scancode, int action, int mods) {
         (void)scancode;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
             avatarMenuHandleKey(key, action);
-            serverInfoMenuHandleKey(key, action);
+            serverInfoMenuHandleKey(key, action, mods);
             onlineMenuHandleKey(key, action);
-            guiBindingsHandleKey(key, action);
+            guiBindingsHandleKey(key, action, mods);
             Terminal::instance().handleKey(key, mods);
         }
     });

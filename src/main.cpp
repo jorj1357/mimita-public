@@ -227,9 +227,17 @@ int main(int argc, char** argv)
         return 1;
     }
     if (launchOptions.server)
+    {
+        printf("[BOOT MODE] mode=headless-server graphicsInitialized=0 uiInitialized=0\n");
         return MimitaNet::runServer(launchOptions);
+    }
     if (launchOptions.client)
+    {
+        printf("[BOOT MODE] mode=standalone-client graphicsInitialized=0 uiInitialized=0\n");
         return MimitaNet::runClient(launchOptions);
+    }
+
+    printf("[BOOT MODE] mode=full-client graphicsInitialized=1 uiInitialized=1\n");
 
     Engine engine;
     gameInit(argc, argv, engine);

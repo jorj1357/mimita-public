@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "gui/gui-coord.h"
+#include "gui/font-stuff/font-loader.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
 
@@ -20,7 +21,8 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
                         const glm::vec4* hoverColorOverride,
                         const glm::vec4* pressedColorOverride,
                         const char* hoverSound,
-                        const char* clickSound)
+                        const char* clickSound,
+                        float fontSize)
 {
     ++gWidgets;
 
@@ -58,9 +60,13 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     uiDrawRect(fbR, c, text);
     uiDrawRectOutline(fbR, {1.0f, 1.0f, 1.0f, 0.85f}, "button-border");
 
-    float textScale = std::clamp(fbR.h / 110.0f, 0.38f, 1.2f);
+    // Use provided fontSize or auto-calculate from button height
+    float textScale = fontSize > 0.0f ? fontSize : std::clamp(fbR.h / 110.0f, 0.38f, 1.2f);
     float textW = uiMeasureText(text, textScale);
-    uiDrawText(text, fbR.x + (fbR.w - textW) * 0.5f, fbR.y + fbR.h * 0.34f, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
+    float textH = (float)fontLineHeight * textScale;
+    float textX = fbR.x + (fbR.w - textW) * 0.5f;
+    float textY = fbR.y + (fbR.h - textH) * 0.5f;
+    uiDrawText(text, textX, textY, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
     debugWidget("BUTTON", text, fbR, s.hovered, s.pressed);
     gTrackedWidgets.push_back({key, r, s.hovered, s.pressed});
 

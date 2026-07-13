@@ -81,6 +81,9 @@ struct GuiElement {
     std::string font;
     float fontSize = 0.0f;
     std::string textAlign = "left"; // "left", "center", "right"
+    std::string verticalAlign = "top"; // "top", "middle", "bottom"
+    float paddingX = 8.0f;
+    float paddingY = 4.0f;
     std::vector<UiTextRun> textRuns;
 
     // Colors: [r, g, b, a] each in 0-1 range (empty vector = not set for overrides)

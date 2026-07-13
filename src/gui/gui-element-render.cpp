@@ -1,15 +1,51 @@
 #include "gui-element-render.h"
 #include "gui-coord.h"
 #include "gui-bindings.h"
+#include "ui-text-input.h"
 #include "debug/debug-log.h"
 #include "../avatar/avatar-editor-dropdown.h"
+#include "gui/font-stuff/font-loader.h"
+#include "network/net_common.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
 #include <unordered_map>
 
 // Persistent state for slider/dropdown elements keyed by (window, elementId)
+// ── Reusable text-input states per element ───────────────────────────
+// Used by drawGuiElement text_input rendering and guiBindings input dispatch.
+// Not in anonymous namespace so gui-bindings.cpp can reference it.
+std::unordered_map<std::string, UITextInputState> gTextInputStates;
+
 namespace {
+
+UITextInputState& getOrCreateTextState(const std::string& id)
+{
+    return gTextInputStates[id];
+}
+
+// ── Text positioning helper ──────────────────────────────────────────
+// Returns the screen Y position for text given a design-space rect and alignment.
+static float computeTextY(const GuiCoordinateSystem& cs, const UIRect& designRect,
+                          float fontSize, const std::string& verticalAlign, float paddingY)
+{
+    float designCenterY = designRect.y + designRect.h * 0.5f;
+    float textHeight = (float)fontLineHeight * fontSize;
+    if (verticalAlign == "middle")
+    {
+        float screenCenterY = cs.designToScreenY(designCenterY);
+        return screenCenterY - textHeight * 0.5f;
+    }
+    else if (verticalAlign == "bottom")
+    {
+        float screenBottom = cs.designToScreenY(designRect.y + designRect.h - paddingY);
+        return screenBottom - textHeight;
+    }
+    // default: top
+    return cs.designToScreenY(designRect.y + paddingY);
+}
+
 struct SliderState {
     float value = 0.5f;
     float minVal = 0.0f;
@@ -90,17 +126,14 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
         bool hasHover = elem.hasHoverColor();
         bool hasPressed = elem.hasPressedColor();
 
-        // Apply hoverScale by expanding the rect
-        if (elem.hoverScale != 1.0f) {
-            // hoverScale is applied dynamically in uiButton via hover detection
-            // For now, pass it through the id string encoded
-        }
+        float buttonFontSize = elem.fontSize > 0.0f ? elem.fontSize : 0.0f;
 
         return uiButton(win, elem.text.c_str(), designRect, bg, elem.id.c_str(),
                         hasHover ? &hc : nullptr,
                         hasPressed ? &pc : nullptr,
                         elem.hoverSound.c_str(),
-                        elem.clickSound.c_str());
+                        elem.clickSound.c_str(),
+                        buttonFontSize);
     }
 
     if (type == "checkbox")
@@ -114,33 +147,41 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
 
         UIRect designRect = {rx, ry, rw, rh};
         UIRect screenRect = cs.designToScreen(designRect);
-        float boxSize = std::min(rh, rw * 0.3f);
+        // Use full height as box size, capped at reasonable value
+        float boxSize = std::max(16.0f, std::min(rh, 32.0f));
         UIRect boxRect = {rx, ry, boxSize, boxSize};
         UIRect boxScreen = cs.designToScreen(boxRect);
 
         // Draw label text to the right of the box
         const std::string& label = hasBindingText && !resolvedText.empty() ? resolvedText : elem.text;
         float textX = cs.designToScreenX(rx + boxSize + 6.0f);
-        float textY = cs.designToScreenY(ry + 2.0f);
+        float textY = computeTextY(cs, {rx + boxSize + 6.0f, ry, rw - boxSize - 6.0f, boxSize},
+                                     elem.fontSize > 0.0f ? elem.fontSize : 0.28f,
+                                     "middle", 2.0f);
         float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.28f;
         glm::vec4 tc = elem.getTextColorVec();
         uiDrawText(label.c_str(), textX, textY, scale, tc);
 
-        // Draw checkbox box
+        // Draw checkbox box (filled when checked, outline when unchecked)
         glm::vec4 bg = elem.getBackgroundColorVec();
         bg.a *= elem.opacity;
-        uiDrawRect(boxScreen, bg, elem.id.c_str());
-        uiDrawRectOutline(boxScreen, {0.5f, 0.6f, 0.8f, 0.6f}, (elem.id + "_outline").c_str());
-
-        // Draw checkmark when checked
         if (checked) {
+            // Filled box with green tint when checked
+            glm::vec4 checkBg = bg;
+            checkBg.r *= 0.5f; checkBg.g *= 2.0f; checkBg.b *= 0.5f;
+            uiDrawRect(boxScreen, checkBg, elem.id.c_str());
+            uiDrawRectOutline(boxScreen, {0.3f, 1.0f, 0.4f, 0.8f}, (elem.id + "_outline").c_str());
+            // Draw checkmark
             float cx = boxScreen.x + boxScreen.w * 0.5f;
             float cy = boxScreen.y + boxScreen.h * 0.5f;
             uiDrawText("X", cx - 4.0f, cy - 6.0f, scale * 1.2f, {0.3f, 1.0f, 0.4f, 1.0f});
+        } else {
+            uiDrawRect(boxScreen, bg, elem.id.c_str());
+            uiDrawRectOutline(boxScreen, {0.5f, 0.6f, 0.8f, 0.6f}, (elem.id + "_outline").c_str());
         }
 
-        // Handle click
-        UIButtonState s = uiButton(win, "", boxRect, {0,0,0,0}, elem.id.c_str());
+        // Handle click on the full design rect (so label and box both toggle)
+        UIButtonState s = uiButton(win, "", designRect, {0,0,0,0}, elem.id.c_str());
         if (s.clicked && !elem.binding.empty()) {
             GuiBindings::instance().set(elem.binding, checked ? "false" : "true");
         }
@@ -152,10 +193,9 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
     {
         const std::string& displayText = hasBindingText ? resolvedText : elem.text;
 
-        float padX = elem.padding;
-        float padY = elem.padding * 0.5f;
+        float padX = elem.paddingX;
+        float padY = elem.paddingY;
         float sx = cs.designToScreenX(rx + padX);
-        float sy = cs.designToScreenY(ry + padY);
         float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.32f;
         glm::vec4 color = elem.getTextColorVec();
         color.a *= elem.opacity;
@@ -173,6 +213,8 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
             float sw = cs.designToScreenX(rw - padX * 2.0f);
             textX = sx + sw - tw;
         }
+
+        float sy = computeTextY(cs, {rx, ry, rw, rh}, scale, elem.verticalAlign, padY);
 
         if (!displayText.empty())
             uiDrawText(displayText.c_str(), textX, sy, scale, color);
@@ -257,61 +299,55 @@ UIButtonState drawGuiElement(GLFWwindow* win, const GuiElement& elem,
 
         const std::string& rawText = hasBindingText ? resolvedText : (elem.text.empty() && hasBindingText ? "" : elem.text);
         UIRect designRect = {rx, ry, rw, rh};
-        UIRect screenRect = cs.designToScreen(designRect);
 
-        // Draw background
-        glm::vec4 bg = elem.getBackgroundColorVec();
-        bg.a *= elem.opacity;
-        uiDrawRect(screenRect, bg, elem.id.c_str());
+        // Get or create reusable text input state
+        UITextInputState& tiState = getOrCreateTextState(elem.id);
 
-        // Draw outline when focused
-        bool isFocused = bindings.hasFocus(elem.id);
-        if (isFocused && elem.hasOutlineColor())
-            uiDrawRectOutline(screenRect, elem.getOutlineColorVec(), elem.id.c_str());
-        else if (elem.hasOutlineColor())
-            uiDrawRectOutline(screenRect, elem.getOutlineColorVec(), elem.id.c_str());
+        // Sync binding value → text state when not focused (external changes)
+        if (!tiState.focused && tiState.value != rawText)
+        {
+            tiState.value = rawText;
+            tiState.cursorPos = (int)tiState.value.size();
+            tiState.selectionStart = -1;
+        }
 
-        // Draw text with padding
-        float padX = 6.0f;
-        float padY = 4.0f;
-        float tx = cs.designToScreenX(rx + padX);
-        float ty = cs.designToScreenY(ry + padY);
-        float scale = elem.fontSize > 0.0f ? elem.fontSize : 0.34f;
-        glm::vec4 tc = elem.getTextColorVec();
-
-        // For password_input, mask text with asterisks unless visible binding is true
-        std::string displayText = rawText;
+        // Build options from element properties
+        UITextInputOptions tiOpts;
+        tiOpts.maxLength = type == "number_input" ? 10 : 200;
+        tiOpts.password = (type == "password_input");
+        // For password, check visibility binding
         if (type == "password_input")
         {
             std::string visBinding = bindings.get("server.password_visible");
-            if (visBinding != "true") {
-                displayText = std::string(rawText.size(), '*');
-            }
+            if (visBinding == "true")
+                tiOpts.password = false;
         }
+        tiOpts.selectAllOnFocus = true;
 
-        if (displayText.empty())
+        // Use element fontSize if provided
+        tiOpts.characterFilter = nullptr; // no filter by default; use element binding constraints
+
+        // Render the reusable text input
+        bool stillFocused = uiTextInputRender(win, elem.id.c_str(), designRect, tiState, tiOpts);
+        (void)stillFocused;
+
+        // Sync text state → binding (always, so external code sees changes)
+        if (!elem.binding.empty() && tiState.value != rawText)
         {
-            if (isFocused)
-                displayText = "|";
-        }
-        else
-        {
-            if (isFocused)
-                displayText = displayText + "|";
+            bindings.set(elem.binding, tiState.value);
         }
 
-        uiDrawText(displayText.c_str(), tx, ty, scale, tc);
-
-        // Store binding key for input routing
+        // Store binding key for backward-compat input routing
         if (!elem.binding.empty())
             bindings.set(elem.id + ".binding", elem.binding);
-
-        // Handle click for focus
-        UIButtonState s = uiButton(win, "", designRect, {0,0,0,0}, elem.id.c_str());
-        if (s.clicked) {
+        if (tiState.focused)
             bindings.setFocusedId(elem.id);
-        }
+        else if (bindings.focusedId() == elem.id)
+            bindings.clearFocus();
 
+        // Return click state for external use
+        UIButtonState s{};
+        s.clicked = tiState.focused;
         return s;
     }
 

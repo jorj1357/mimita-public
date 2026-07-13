@@ -363,6 +363,7 @@ public:
     float weaponSwayTime = 0.0f;
 
     // -------- Rendering --------
+    bool renderGhost = false; // rendered as transparent ghost (server_showghost)
     glm::vec3 meshScale  {1,1,1};
     glm::vec3 meshOffset {0,0,0};
     Mesh renderMesh;

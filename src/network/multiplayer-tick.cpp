@@ -206,14 +206,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.connectionStatus = "Connected";
             ctx.approvedLocalName = welcome->approvedName;
             ctx.reconnectToken = welcome->reconnectToken;
+            ctx.requiredMapId = welcome->mapId;
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
                 0
             };
-            printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f reconnectToken=%s\n",
+            printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
-                   welcome->reconnectToken);
+                   welcome->mapId);
         }
         else if (header->type == PACKET_JOIN_ACCEPT && bytes >= (int)sizeof(JoinAcceptPacket))
         {
@@ -225,13 +226,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.connectionStatus = "Connected";
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
+            ctx.requiredMapId = accept->mapId;
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
                 0
             };
-            printf("[NET CONNECT] join accepted player=%u tickRate=%.0f reconnectToken=%s\n",
-                   ctx.localPlayerId, accept->tickRate, accept->reconnectToken);
+            printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s\n",
+                   ctx.localPlayerId, accept->tickRate, accept->mapId);
         }
         else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
         {
