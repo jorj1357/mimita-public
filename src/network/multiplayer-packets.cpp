@@ -201,9 +201,13 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.connected = false;
     ctx.connectFailed = false;
     ctx.connectionStatus.clear();
+    ctx.connectionState = ConnectionState::Disconnected;
     ctx.outgoingQueue.clear();
     ctx.shotEvents.clear();
     ctx.lastReceivedShotSerial.clear();
+    ctx.disagreementEvents.clear();
+    ctx.reconnectAttempts = 0;
+    ctx.reconnectBackoffMs = 1000;
     netShutdown();
     printf("[NET DISCONNECT] shutdown complete\n");
 }
@@ -268,6 +272,168 @@ void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
     std::strncpy(packet.commandText, command.c_str(), sizeof(packet.commandText) - 1);
     mpSendPacket(ctx, &packet, sizeof(packet));
     printf("[NET SERVER COMMAND SEND] cmd=\"%s\"\n", command.c_str());
+}
+
+// ── Migration: connection state name ──────────────────────────────────
+
+const char* connectionStateName(ConnectionState state)
+{
+    switch (state)
+    {
+        case ConnectionState::Disconnected:     return "Disconnected";
+        case ConnectionState::ResolvingCode:    return "ResolvingCode";
+        case ConnectionState::RequestingJoin:   return "RequestingJoin";
+        case ConnectionState::WaitJoinAccept:   return "WaitJoinAccept";
+        case ConnectionState::NatNegotiating:   return "NatNegotiating";
+        case ConnectionState::Connecting:       return "Connecting";
+        case ConnectionState::Connected:        return "Connected";
+        case ConnectionState::Reconnecting:     return "Reconnecting";
+        case ConnectionState::DisconnectPending: return "DisconnectPending";
+    }
+    return "Unknown";
+}
+
+// ── Migration: connect with join token ────────────────────────────────
+
+bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
+    uint16_t port, const std::string& joinToken, const std::string& playerName)
+{
+    if (ctx.active)
+        mpShutdown(ctx);
+
+    if (!netStartup())
+    {
+        printf("[NET CONNECT] FATAL: WSAStartup failed\n");
+        return false;
+    }
+
+    ctx.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (ctx.sock == INVALID_SOCKET)
+    {
+        printf("[NET CONNECT] FATAL: socket() failed error=%d\n", WSAGetLastError());
+        netShutdown();
+        return false;
+    }
+    setNonBlocking(ctx.sock);
+
+    ctx.serverAddr = {};
+    ctx.serverAddr.sin_family = AF_INET;
+    ctx.serverAddr.sin_port = htons(port);
+    if (inet_pton(AF_INET, address.c_str(), &ctx.serverAddr.sin_addr) != 1)
+    {
+        printf("[NET CONNECT] FATAL: invalid address: %s\n", address.c_str());
+        closesocket(ctx.sock);
+        netShutdown();
+        return false;
+    }
+
+    ctx.active = true;
+    ctx.localPlayerId = 0;
+    ctx.tick = 0;
+    ctx.lastHelloMs = 0;
+    ctx.lastSnapshotReceivedMs = 0;
+    ctx.connectStartMs = nowMs();
+    ctx.packetsSent = 0;
+    ctx.packetsReceived = 0;
+    ctx.snapshotsReceived = 0;
+    ctx.snapshotsMissed = 0;
+    ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
+    ctx.remotePlayerInterpolation.clear();
+    ctx.remoteNpcInterpolation.clear();
+    ctx.playerRegistry.clear();
+    ctx.approvedLocalName.clear();
+    ctx.hasLocalServerPosition = false;
+    ctx.localPlayerReconciled = false;
+    ctx.connectionState = ConnectionState::Connecting;
+    ctx.joinToken = joinToken;
+    ctx.serverAddress = address + ":" + std::to_string(port);
+    ctx.connected = false;
+    ctx.connectFailed = false;
+    ctx.connectionStatus = "Connecting...";
+    ctx.outgoingQueue.clear();
+    ctx.shotEvents.clear();
+    ctx.lastReceivedShotSerial.clear();
+    ctx.nextLocalShotSerial = 1;
+    ctx.lastPingSentMs = 0;
+    ctx.localPingMs = 0;
+    ctx.lastHeardServerMs = 0;
+    ctx.lastDisconnectLogMs = 0;
+    ctx.disagreementEvents.clear();
+    ctx.serverPort = port;
+
+    printf("[NET CONNECT] connecting to %s:%u with join token as \"%s\"\n",
+           address.c_str(), port, playerName.c_str());
+    return true;
+}
+
+// ── Migration: disagreement processing ────────────────────────────────
+
+void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPacket* packet)
+{
+    DisagreementEvent event;
+    event.timeMs = nowMs();
+    event.reason = (DisagreementReason)packet->reason;
+    event.position = {packet->posX, packet->posY, packet->posZ};
+    event.correction = {packet->correctionX, packet->correctionY, packet->correctionZ};
+    event.description = packet->description;
+    ctx.disagreementEvents.push_back(event);
+
+    printf("[NET DISAGREEMENT RECV] reason=%u pos=(%.2f,%.2f,%.2f) desc=\"%s\"\n",
+           packet->reason, packet->posX, packet->posY, packet->posZ, packet->description);
+}
+
+// ── Migration: reconnect ──────────────────────────────────────────────
+
+void mpStartReconnect(MultiplayerContext& ctx)
+{
+    if (!ctx.active || ctx.reconnectToken.empty())
+    {
+        printf("[NET RECONNECT] cannot reconnect: no reconnect token\n");
+        return;
+    }
+
+    ctx.connectionState = ConnectionState::Reconnecting;
+    ctx.reconnectAttempts = 0;
+    ctx.reconnectBackoffMs = 1000;
+    ctx.lastReconnectAttemptMs = nowMs();
+    printf("[NET RECONNECT] starting reconnect for player=%u with token=%s\n",
+           ctx.localPlayerId, ctx.reconnectToken.c_str());
+}
+
+void mpTickReconnect(MultiplayerContext& ctx)
+{
+    if (ctx.connectionState != ConnectionState::Reconnecting)
+        return;
+    if (ctx.reconnectAttempts >= 10)
+    {
+        printf("[NET RECONNECT] max attempts reached, giving up\n");
+        ctx.connectionState = ConnectionState::Disconnected;
+        ctx.connectionStatus = "Reconnect failed";
+        return;
+    }
+
+    const uint64_t now = nowMs();
+    if (now - ctx.lastReconnectAttemptMs < ctx.reconnectBackoffMs)
+        return;
+
+    ctx.lastReconnectAttemptMs = now;
+    ++ctx.reconnectAttempts;
+
+    ReconnectRequestPacket packet{};
+    packet.header.type = PACKET_RECONNECT_REQUEST;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    std::memset(packet.reconnectToken, 0, sizeof(packet.reconnectToken));
+    std::strncpy(packet.reconnectToken, ctx.reconnectToken.c_str(), sizeof(packet.reconnectToken) - 1);
+    sendto(ctx.sock, (const char*)&packet, sizeof(packet), 0,
+           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+    ++ctx.packetsSent;
+
+    printf("[NET RECONNECT] attempt=%d/10 backoff=%llums\n",
+           ctx.reconnectAttempts, (unsigned long long)ctx.reconnectBackoffMs);
+
+    ctx.reconnectBackoffMs = std::min<uint64_t>(ctx.reconnectBackoffMs * 2, 15000);
 }
 
 } // namespace MimitaNet

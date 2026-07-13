@@ -189,7 +189,19 @@ void engineTickState(Engine& engine, float dt)
                                activeMapPath.c_str());
                     }
                     player.username = AuthSystem::instance().displayName();
-                    if (MimitaNet::mpInit(mpContext, mci.address, player.username)) {
+                    player.reset();
+                    // Use join token flow if available, else legacy address flow
+                    bool connected = false;
+                    if (!mci.joinToken.empty())
+                    {
+                        connected = MimitaNet::mpConnectWithToken(
+                            mpContext, mci.address, mci.port, mci.joinToken, player.username);
+                    }
+                    else
+                    {
+                        connected = MimitaNet::mpInit(mpContext, mci.address, player.username);
+                    }
+                    if (connected) {
                         printf("[MAIN] multiplayer connected to %s\n", mci.address.c_str());
                         glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     }

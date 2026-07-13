@@ -17,6 +17,7 @@
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
+#include "network/disagreement-visuals.h"
 #include "perf/perf.h"
 #include "debug/debug-log.h"
 #include "game/game-state.h"
@@ -331,6 +332,13 @@ void engineTickNet(Engine& engine, float dt)
         if (f3Down && !f3Prev)
             mpContext.showDebugOverlay = !mpContext.showDebugOverlay;
         f3Prev = f3Down;
+
+        // Process server disagreement events (spawn visual effects)
+        for (const MimitaNet::DisagreementEvent& event : mpContext.disagreementEvents)
+        {
+            MimitaNet::spawnDisagreementEffect(event);
+            MimitaNet::logDisagreement(event);
+        }
     }
     } // Perf::ScopedTimer Networking
 }

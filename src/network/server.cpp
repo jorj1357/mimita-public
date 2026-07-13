@@ -1,6 +1,7 @@
 #include "network/server.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
+#include "network/coordinator-client.h"
 #include "void-death/void-death.h"
 
 #include <cstdio>
@@ -21,6 +22,7 @@ int runServer(const LaunchOptions& options)
     printf("%s [SERVER] tick rate=%.0f Hz\n", serverTimestamp(), SERVER_TICK_RATE);
     printf("%s [SERVER] max players=%d\n", serverTimestamp(), MAX_PLAYERS);
     printf("%s [SERVER] timeout=%llums\n", serverTimestamp(), (unsigned long long)CLIENT_TIMEOUT_MS);
+    printf("%s [SERVER] coordinator=%s\n", serverTimestamp(), getCoordinatorUrl().c_str());
     printf("%s [SERVER] ========================================\n", serverTimestamp());
 
     HeadlessWorld world;
@@ -88,6 +90,24 @@ int runServer(const LaunchOptions& options)
         npcs[npc.entityId] = npc;
     }
 
+    // Register dedicated server with coordinator
+    std::string serverCode = generateServerCode();
+    std::string serverJoinToken;
+    {
+        CoordinatorRoomInfo room = coordinatorRegister(
+            options.name, "", DEFAULT_PORT, "MiMITA Dedicated",
+            "funworldv3", "sandbox", MAX_PLAYERS);
+        if (!room.code.empty())
+        {
+            serverCode = room.code;
+            serverJoinToken = room.joinToken;
+            setServerCoordinatorState(room.code, room.joinToken);
+            printf("%s [SERVER] coordinator registered code=%s\n", serverTimestamp(), serverCode.c_str());
+        }
+    }
+
+    uint64_t lastCoordinatorHb = 0;
+
     while (true)
     {
         uint64_t frameStart = nowMs();
@@ -126,6 +146,10 @@ int runServer(const LaunchOptions& options)
 
             if (header->type == PACKET_HELLO)
                 handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut);
+            else if (header->type == PACKET_JOIN_REQUEST)
+                handleJoinRequest(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut);
+            else if (header->type == PACKET_RECONNECT_REQUEST)
+                handleReconnectRequest(sock, from, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_INPUT)
                 handleInputPacket(buffer, bytes, players, world, nextEntityId, npcs);
             else if (header->type == PACKET_DISCONNECT)
@@ -161,6 +185,16 @@ int runServer(const LaunchOptions& options)
 
         buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
 
+        // Heartbeat to coordinator every ~15 seconds
+        {
+            const uint64_t now = nowMs();
+            if (!serverCode.empty() && now - lastCoordinatorHb >= 15000)
+            {
+                coordinatorHeartbeat(serverCode, (int)players.size());
+                lastCoordinatorHb = now;
+            }
+        }
+
         // Status log every second
         if (nowMs() - lastLog >= 1000)
         {
@@ -184,7 +218,8 @@ int runServer(const LaunchOptions& options)
 
 // ─── Listen Server ─────────────────────────────────────────────────────────
 
-bool startListenServer(ListenServerState& state, uint16_t port)
+bool startListenServer(ListenServerState& state, uint16_t port,
+    const std::string& publicIp, const std::string& hostSessionId)
 {
     if (state.active)
         return false;
@@ -229,6 +264,8 @@ bool startListenServer(ListenServerState& state, uint16_t port)
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
 
     state.serverCode = generateServerCode();
+    state.publicIp = publicIp;
+    state.hostSessionId = hostSessionId;
     state.active = true;
     state.port = port;
     state.players.clear();
@@ -241,6 +278,7 @@ bool startListenServer(ListenServerState& state, uint16_t port)
     state.totalPacketsOut = 0;
     state.startTimeMs = nowMs();
     state.accumulator = 0.0f;
+    state.lastHeartbeatMs = 0;
 
     for (int i = 0; i < 3; ++i)
     {
@@ -250,6 +288,26 @@ bool startListenServer(ListenServerState& state, uint16_t port)
         npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
         npc.phase = i * 2.0f;
         state.npcs[npc.entityId] = npc;
+    }
+
+    // Register with coordinator
+    CoordinatorRoomInfo room = coordinatorRegister(
+        hostSessionId, publicIp, port, state.serverName,
+        "funworldv3", "sandbox", 32);
+
+    if (!room.code.empty())
+    {
+        state.serverCode = room.code;
+        state.joinToken = room.joinToken;
+        setServerCoordinatorState(room.code, room.joinToken);
+        printf("[LISTEN SERVER] coordinator registered code=%s joinToken=%s\n",
+               room.code.c_str(), room.joinToken.substr(0, 12).c_str());
+    }
+    else
+    {
+        setServerCoordinatorState("", "");
+        printf("[LISTEN SERVER] coordinator unreachable — running in LAN-only mode code=%s\n",
+               state.serverCode.c_str());
     }
 
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
@@ -264,6 +322,10 @@ void stopListenServer(ListenServerState& state)
     printf("[LISTEN SERVER] stopping code=%s players=%zu uptime=%llus\n",
            state.serverCode.c_str(), state.players.size(),
            (unsigned long long)((nowMs() - state.startTimeMs) / 1000));
+
+    // Deregister with coordinator
+    if (!state.serverCode.empty())
+        coordinatorLeave(state.serverCode);
 
     closesocket(state.sock);
     state.sock = INVALID_SOCKET;
@@ -322,6 +384,12 @@ void tickListenServer(ListenServerState& state, float dt)
             if (header->type == PACKET_HELLO)
                 handleHello(state.sock, from, buffer, bytes, state.players,
                             state.nextPlayerId, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_JOIN_REQUEST)
+                handleJoinRequest(state.sock, from, buffer, bytes, state.players,
+                                  state.nextPlayerId, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_RECONNECT_REQUEST)
+                handleReconnectRequest(state.sock, from, buffer, bytes, state.players,
+                                       state.tick, state.totalPacketsOut);
             else if (header->type == PACKET_INPUT)
                 handleInputPacket(buffer, bytes, state.players, state.world,
                                   state.nextEntityId, state.npcs);
@@ -376,6 +444,14 @@ void tickListenServer(ListenServerState& state, float dt)
                        kv.second.id, kv.second.name.c_str(),
                        kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
             state.lastLog = now;
+        }
+
+        // Heartbeat to coordinator every ~15 seconds
+        if (!state.serverCode.empty() && !state.joinToken.empty() &&
+            now - state.lastHeartbeatMs >= 15000)
+        {
+            coordinatorHeartbeat(state.serverCode, (int)state.players.size());
+            state.lastHeartbeatMs = now;
         }
 
         ++state.tick;

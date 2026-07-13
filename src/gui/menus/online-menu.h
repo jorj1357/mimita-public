@@ -12,6 +12,8 @@ struct OnlineMenuResult
     bool stopServer = false;
     bool connectToServer = false;
     std::string connectAddress;
+    uint16_t connectPort = 1357;
+    std::string joinToken;
     bool goBack = false;
 };
 

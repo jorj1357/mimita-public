@@ -18,8 +18,10 @@
       "backgroundColor": [0.15, 0.2, 0.3, 0.5]
     },
 
+    "comment": "make sure x is 210, beacuse the back button covers the create server", 
+    "comment2": "text",
     "createTitle": {
-      "type": "text", "layer": 1, "x": 60, "y": 70, "width": 400, "height": 40,
+      "type": "text", "layer": 1, "x": 210, "y": 70, "width": 400, "height": 40,
       "text": "CREATE SERVER", "fontSize": 0.50,
       "textColor": [0.85, 0.9, 0.95, 1.0]
     },

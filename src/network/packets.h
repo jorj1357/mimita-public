@@ -5,7 +5,9 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 6;
+constexpr uint16_t PROTOCOL_VERSION = 7;
+constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
+constexpr int MAX_JOIN_TOKEN_BYTES = 64;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 96;
 constexpr int MAX_NAME_BYTES = 32;
@@ -30,7 +32,14 @@ enum PacketType : uint8_t
     PACKET_CHAT_MESSAGE = 16,
     PACKET_NPC_DAMAGE_REQUEST = 17,
     PACKET_NPC_DAMAGE_EVENT = 18,
-    PACKET_SERVER_COMMAND = 19
+    PACKET_SERVER_COMMAND = 19,
+    // ── Migration packet types ──────────────────────────────────
+    PACKET_JOIN_REQUEST = 20,
+    PACKET_JOIN_ACCEPT = 21,
+    PACKET_JOIN_REJECT = 22,
+    PACKET_RECONNECT_REQUEST = 23,
+    PACKET_RECONNECT_ACCEPT = 24,
+    PACKET_DISAGREEMENT = 25
 };
 
 enum EntityType : uint8_t
@@ -56,6 +65,16 @@ enum ShotImpactType : uint8_t
     SHOT_IMPACT_NONE = 0,
     SHOT_IMPACT_WORLD = 1,
     SHOT_IMPACT_ENTITY = 2
+};
+
+enum DisagreementReason : uint8_t
+{
+    DISAGREEMENT_NONE = 0,
+    DISAGREEMENT_OCCLUDED_SHOT = 1,
+    DISAGREEMENT_INVALID_DAMAGE = 2,
+    DISAGREEMENT_POSITION_CORRECTION = 3,
+    DISAGREEMENT_INVALID_MOVEMENT = 4,
+    DISAGREEMENT_INVALID_STATE = 5
 };
 
 enum ShotEffectFlags : uint16_t
@@ -95,6 +114,7 @@ struct WelcomePacket
     uint32_t assignedPlayerId = 0;
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
+    char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
 };
 
 struct InputPacket
@@ -340,6 +360,67 @@ struct ServerCommandPacket
 struct DisconnectPacket
 {
     PacketHeader header;
+};
+
+struct JoinRequestPacket
+{
+    PacketHeader header;
+    char joinToken[MAX_JOIN_TOKEN_BYTES];
+    char name[MAX_NAME_BYTES];
+};
+
+struct JoinAcceptPacket
+{
+    PacketHeader header;
+    uint32_t assignedPlayerId = 0;
+    float tickRate = 60.0f;
+    char approvedName[MAX_NAME_BYTES];
+    char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
+};
+
+struct JoinRejectPacket
+{
+    PacketHeader header;
+    uint8_t reason = 0; // 1=full, 2=bad-token, 3=banned, 4=version-mismatch
+    uint8_t reserved[3] = {};
+};
+
+struct ReconnectRequestPacket
+{
+    PacketHeader header;
+    char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
+};
+
+struct ReconnectAcceptPacket
+{
+    PacketHeader header;
+    uint32_t assignedPlayerId = 0;
+    float tickRate = 60.0f;
+    char approvedName[MAX_NAME_BYTES];
+    char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
+    // Restored state
+    int32_t restoredHealth = 100;
+    int32_t restoredKills = 0;
+    int32_t restoredDeaths = 0;
+    float restorePx = 0.0f;
+    float restorePy = 0.0f;
+    float restorePz = 0.0f;
+};
+
+struct DisagreementPacket
+{
+    PacketHeader header;
+    uint8_t reason = DISAGREEMENT_NONE;
+    uint8_t reserved0 = 0;
+    uint8_t reserved1 = 0;
+    uint8_t reserved2 = 0;
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
+    float correctionX = 0.0f;
+    float correctionY = 0.0f;
+    float correctionZ = 0.0f;
+    char description[64];
 };
 
 #pragma pack(pop)

@@ -84,6 +84,12 @@ struct ServerPlayer
     float sizeScale = 1.0f;
     ServerInput input;
     std::deque<PositionHistoryEntry> posHistory;
+    // ── Migration: auth + reconnect ───────────────────────────────────
+    std::string joinToken;
+    std::string reconnectToken;
+    bool joinTokenValidated = false;
+    int kills = 0;
+    int deaths = 0;
 };
 
 enum class ServerNpcState {
@@ -190,6 +196,21 @@ void handleServerCommand(const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs);
 
+// ── Migration: join/reconnect packet handlers ────────────────────────
+void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut);
+void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t tick, uint64_t& totalPacketsOut);
+
+// Generate a secure reconnect token
+std::string generateReconnectToken();
+
+// Coordinator state for join token validation
+void setServerCoordinatorState(const std::string& code, const std::string& joinToken);
+const std::string& getServerCoordinatorCode();
+
 // Post-tick helpers
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players);
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -219,11 +240,16 @@ struct ListenServerState
     uint64_t startTimeMs = 0;
     uint16_t port = DEFAULT_PORT;
     std::string serverCode;
+    std::string joinToken;
     std::string serverName = "MiMITA Server";
     float accumulator = 0.0f;
+    uint64_t lastHeartbeatMs = 0;
+    std::string publicIp;
+    std::string hostSessionId;
 };
 
-bool startListenServer(ListenServerState& state, uint16_t port);
+bool startListenServer(ListenServerState& state, uint16_t port,
+    const std::string& publicIp = "", const std::string& hostSessionId = "");
 void stopListenServer(ListenServerState& state);
 void tickListenServer(ListenServerState& state, float dt);
 std::string generateServerCode();

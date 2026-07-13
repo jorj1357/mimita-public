@@ -1,13 +1,29 @@
 #include "network/server.h"
 #include "network/multiplayer-context.h"
+#include "network/coordinator-client.h"
 #include "void-death/void-death.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <limits>
+#include <random>
 
 namespace MimitaNet {
+
+// ── Global server code for coordinator validation ────────────────────
+// Set by the server when it registers with the coordinator.
+static std::string gServerCoordinatorCode;
+static std::string gServerCoordinatorJoinToken;
+
+void setServerCoordinatorState(const std::string& code, const std::string& joinToken)
+{
+    gServerCoordinatorCode = code;
+    gServerCoordinatorJoinToken = joinToken;
+}
+
+const std::string& getServerCoordinatorCode() { return gServerCoordinatorCode; }
 
 bool sameAddress(const sockaddr_in& a, const sockaddr_in& b)
 {
@@ -93,6 +109,8 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
                serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
     }
 
+    p.reconnectToken = generateReconnectToken();
+
     WelcomePacket welcome{};
     welcome.header.type = PACKET_WELCOME;
     welcome.header.tick = tick;
@@ -100,6 +118,8 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     welcome.assignedPlayerId = id;
     welcome.tickRate = SERVER_TICK_RATE;
     copyName(welcome.approvedName, p.name);
+    std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
+    std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
     sendto(sock, (const char*)&welcome, sizeof(welcome), 0, (sockaddr*)&from, sizeof(from));
     ++totalPacketsOut;
 }
@@ -276,6 +296,176 @@ void handleExplodeRequest(const char* buffer, int bytes,
     p.vel = glm::vec3(0.0f);
     printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=2.0s\n",
            serverTimestamp(), p.id);
+}
+
+void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut)
+{
+    if (bytes < (int)sizeof(JoinRequestPacket))
+        return;
+    const JoinRequestPacket* join = reinterpret_cast<const JoinRequestPacket*>(buffer);
+
+    // Check if server is full
+    if (players.size() >= MAX_PLAYERS)
+    {
+        JoinRejectPacket reject{};
+        reject.header.type = PACKET_JOIN_REJECT;
+        reject.header.tick = tick;
+        reject.reason = 1; // full
+        sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
+        ++totalPacketsOut;
+        printf("%s [SERVER JOIN REJECT] reason=server-full\n", serverTimestamp());
+        return;
+    }
+
+    // Validate join token — coordinator validation
+    const std::string joinTokenStr = join->joinToken;
+    if (joinTokenStr.empty())
+    {
+        JoinRejectPacket reject{};
+        reject.header.type = PACKET_JOIN_REJECT;
+        reject.header.tick = tick;
+        reject.reason = 2; // bad token
+        sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
+        ++totalPacketsOut;
+        printf("%s [SERVER JOIN REJECT] reason=empty-token\n", serverTimestamp());
+        return;
+    }
+
+    // If registered with coordinator, validate the join token
+    if (!gServerCoordinatorCode.empty())
+    {
+        if (!coordinatorValidateJoin(gServerCoordinatorCode, joinTokenStr))
+        {
+            JoinRejectPacket reject{};
+            reject.header.type = PACKET_JOIN_REJECT;
+            reject.header.tick = tick;
+            reject.reason = 2; // bad token
+            sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
+            ++totalPacketsOut;
+            printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
+            return;
+        }
+        printf("%s [SERVER JOIN] coordinator validated token for %s\n",
+               serverTimestamp(), join->name);
+    }
+    else
+    {
+        printf("%s [SERVER JOIN] no coordinator — accepting %s without validation\n",
+               serverTimestamp(), join->name);
+    }
+
+    // Check for existing reconnection
+    uint32_t existingId = 0;
+    for (auto& kv : players)
+    {
+        if (kv.second.reconnectToken == join->joinToken && !kv.second.dead)
+        {
+            existingId = kv.first;
+            break;
+        }
+    }
+
+    uint32_t id = existingId ? existingId : nextPlayerId++;
+    ServerPlayer& p = players[id];
+    p.id = id;
+    p.addr = from;
+    p.lastHeardMs = nowMs();
+    p.lastShotSerial = 0;
+    p.joinToken = join->joinToken;
+    p.joinTokenValidated = true;
+    p.reconnectToken = generateReconnectToken();
+    p.name = uniquePlayerName(players, join->name, id);
+
+    if (!existingId)
+    {
+        p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s token=%s\n",
+               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
+               p.reconnectToken.c_str());
+    }
+    else
+    {
+        printf("%s [SERVER REJOIN] id=%u name=\"%s\" addr=%s\n",
+               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
+    }
+
+    JoinAcceptPacket accept{};
+    accept.header.type = PACKET_JOIN_ACCEPT;
+    accept.header.tick = tick;
+    accept.header.playerId = id;
+    accept.assignedPlayerId = id;
+    accept.tickRate = SERVER_TICK_RATE;
+    copyName(accept.approvedName, p.name);
+    std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
+    std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
+    sendto(sock, (const char*)&accept, sizeof(accept), 0, (sockaddr*)&from, sizeof(from));
+    ++totalPacketsOut;
+}
+
+void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            uint32_t tick, uint64_t& totalPacketsOut)
+{
+    if (bytes < (int)sizeof(ReconnectRequestPacket))
+        return;
+    const ReconnectRequestPacket* req = reinterpret_cast<const ReconnectRequestPacket*>(buffer);
+
+    // Find player with matching reconnect token
+    uint32_t foundId = 0;
+    for (auto& kv : players)
+    {
+        if (kv.second.reconnectToken == req->reconnectToken)
+        {
+            foundId = kv.first;
+            break;
+        }
+    }
+
+    if (foundId == 0)
+    {
+        printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
+               serverTimestamp(), req->reconnectToken);
+        return;
+    }
+
+    ServerPlayer& p = players[foundId];
+    p.addr = from;
+    p.lastHeardMs = nowMs();
+    p.reconnectToken = generateReconnectToken(); // rotate token
+
+    ReconnectAcceptPacket accept{};
+    accept.header.type = PACKET_RECONNECT_ACCEPT;
+    accept.header.tick = tick;
+    accept.header.playerId = foundId;
+    accept.assignedPlayerId = foundId;
+    accept.tickRate = SERVER_TICK_RATE;
+    copyName(accept.approvedName, p.name);
+    std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
+    std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
+    accept.restoredHealth = p.health;
+    accept.restoredKills = p.kills;
+    accept.restoredDeaths = p.deaths;
+    accept.restorePx = p.pos.x;
+    accept.restorePy = p.pos.y;
+    accept.restorePz = p.pos.z;
+    sendto(sock, (const char*)&accept, sizeof(accept), 0, (sockaddr*)&from, sizeof(from));
+    ++totalPacketsOut;
+
+    printf("%s [SERVER RECONNECT] accepted id=%u name=\"%s\" health=%d\n",
+           serverTimestamp(), foundId, p.name.c_str(), p.health);
+}
+
+std::string generateReconnectToken()
+{
+    static const char chars[] = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static std::mt19937 rng((unsigned int)std::chrono::steady_clock::now().time_since_epoch().count());
+    std::uniform_int_distribution<int> dist(0, 61);
+    std::string token;
+    for (int i = 0; i < 24; ++i)
+        token += chars[dist(rng)];
+    return token;
 }
 
 void buildAndSendSnapshot(SOCKET sock,
