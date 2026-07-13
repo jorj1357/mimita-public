@@ -122,6 +122,16 @@ void AuthSystem::validateStoredToken()
     }
 }
 
+void AuthSystem::applyUserInfo(const GameUserInfo& info)
+{
+    applyInfo(mUser, info);
+    if (gpPlayer)
+        gpPlayer->username = displayName();
+    storeProfileCache({
+        info.id, info.username, info.displayName, info.avatarUrl, info.supporterTier
+    });
+}
+
 void AuthSystem::fetchFullProfile()
 {
     GameUserInfo info = getProfile(mUser.sessionToken);

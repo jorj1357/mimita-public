@@ -18,7 +18,7 @@ static std::string gServerCoordinatorCode;
 static std::string gServerCoordinatorJoinToken;
 
 // ── Global server map ID ─────────────────────────────────────────────
-static std::string gServerMapId = "funworld3";
+static std::string gServerMapId = "funworldv3";
 
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken)
 {
@@ -90,7 +90,8 @@ void logSnapshotEntity(const SnapshotEntity& entity)
 
 void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                  std::unordered_map<uint32_t, ServerPlayer>& players,
-                 uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut)
+                 uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
+                 const HeadlessWorld* world)
 {
     if (bytes < (int)sizeof(HelloPacket))
         return;
@@ -110,19 +111,36 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
 
     if (!existingId)
     {
-        p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+        // Use map spawnpoints if available
+        if (world && !world->spawnPoints.empty())
+        {
+            size_t idx = (id - 1) % world->spawnPoints.size();
+            p.pos = world->spawnPoints[idx].position;
+            p.yaw = world->spawnPoints[idx].yaw;
+            printf("%s [SERVER PLAYER SPAWN] reason=initial_join id=%u name=\"%s\" "
+                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
+                   serverTimestamp(), id, p.name.c_str(), idx,
+                   p.pos.x, p.pos.y, p.pos.z, glm::degrees(p.yaw));
+        }
+        else
+        {
+            p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+            printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
+                   "(no spawnpoints in map)\n",
+                   serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
+                   p.pos.x, p.pos.y, p.pos.z);
+        }
         p.spawned = true;
-        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f)\n",
-               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-               p.pos.x, p.pos.y, p.pos.z);
     }
 
     p.reconnectToken = generateReconnectToken();
 
+    ++p.transformEpoch;
     WelcomePacket welcome{};
     welcome.header.type = PACKET_WELCOME;
     welcome.header.tick = tick;
     welcome.header.playerId = id;
+    welcome.header.transformEpoch = p.transformEpoch;
     welcome.assignedPlayerId = id;
     welcome.tickRate = SERVER_TICK_RATE;
     copyName(welcome.approvedName, p.name);
@@ -148,6 +166,23 @@ void handleInputPacket(const char* buffer, int bytes,
         return;
     ServerPlayer& p = it->second;
     p.lastHeardMs = nowMs();
+
+    // ── Transform epoch check ─────────────────────────────────────
+    // Discard packets from before the player's most recent spawn/respawn.
+    if (in->header.transformEpoch != 0 && in->header.transformEpoch < p.transformEpoch)
+    {
+        static uint64_t lastEpochLogMs = 0;
+        uint64_t now = nowMs();
+        if (now - lastEpochLogMs >= 1000)
+        {
+            printf("%s [SERVER INPUT DROP] reason=OLD_TRANSFORM_EPOCH playerId=%u "
+                   "packetEpoch=%u currentEpoch=%u\n",
+                   serverTimestamp(), p.id, in->header.transformEpoch, p.transformEpoch);
+            lastEpochLogMs = now;
+        }
+        return;
+    }
+
     if (p.dead)
     {
         p.input.attackPressed = false;
@@ -316,7 +351,8 @@ void handleExplodeRequest(const char* buffer, int bytes,
 
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
-                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut)
+                       uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
+                       const HeadlessWorld* world)
 {
     if (bytes < (int)sizeof(JoinRequestPacket))
         return;
@@ -396,11 +432,27 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 
     if (!existingId)
     {
-        p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+        // Use map spawnpoints if available
+        if (world && !world->spawnPoints.empty())
+        {
+            size_t idx = (id - 1) % world->spawnPoints.size();
+            p.pos = world->spawnPoints[idx].position;
+            p.yaw = world->spawnPoints[idx].yaw;
+            printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
+                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",
+                   serverTimestamp(), id, p.name.c_str(), idx,
+                   p.pos.x, p.pos.y, p.pos.z, glm::degrees(p.yaw),
+                   p.reconnectToken.c_str());
+        }
+        else
+        {
+            p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+            printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
+                   "(no spawnpoints) token=%s\n",
+                   serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
+                   p.pos.x, p.pos.y, p.pos.z, p.reconnectToken.c_str());
+        }
         p.spawned = true;
-        printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) token=%s\n",
-               serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-               p.pos.x, p.pos.y, p.pos.z, p.reconnectToken.c_str());
     }
     else
     {
@@ -408,10 +460,12 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
     }
 
+    ++p.transformEpoch;
     JoinAcceptPacket accept{};
     accept.header.type = PACKET_JOIN_ACCEPT;
     accept.header.tick = tick;
     accept.header.playerId = id;
+    accept.header.transformEpoch = p.transformEpoch;
     accept.assignedPlayerId = id;
     accept.tickRate = SERVER_TICK_RATE;
     copyName(accept.approvedName, p.name);

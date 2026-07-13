@@ -4,8 +4,28 @@
 #include "gui/gui-element-render.h"
 #include "gui/gui-coord.h"
 #include "auth/auth-system.h"
+#include "auth/auth-controller.h"
 
 #include <cstdio>
+
+static bool isSignedIn()
+{
+    if (AuthSystem::instance().state() == AuthState::Authenticated)
+        return true;
+    if (AuthController::instance().runtime().state == AuthState::SignedIn)
+        return true;
+    return false;
+}
+
+static std::string getDisplayUsername()
+{
+    AuthSystem& auth = AuthSystem::instance();
+    if (auth.state() == AuthState::Authenticated && !auth.user().username.empty())
+        return auth.user().username;
+    if (!AuthController::instance().runtime().username.empty())
+        return AuthController::instance().runtime().username;
+    return auth.displayName();
+}
 
 AccountPanelAction drawAccountPanel(GLFWwindow* window)
 {
@@ -20,14 +40,13 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         drawGuiElement(window, *bgEl);
 
     // Username / No Account text from JSON
-    if (auth.state() == AuthState::Authenticated)
+    if (isSignedIn())
     {
         const GuiElement* ue = layout.get("usernameText");
         if (ue && ue->visible)
         {
-            std::string name = auth.user().username;
             GuiElement dyn = *ue;
-            dyn.text = name;
+            dyn.text = getDisplayUsername();
             drawGuiElement(window, dyn);
         }
     }
@@ -44,14 +63,26 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
         float btnAreaY = bgEl ? (cs.designToScreenY(bgEl->y + bgEl->h) - 4 * 44 - 40) : 500.0f;
         float btnAreaDesignY = cs.screenToDesignY(btnAreaY);
 
-        if (auth.state() == AuthState::Authenticated)
+        if (isSignedIn())
         {
+            int mmr = 0;
+            int wins = 0, losses = 0, kills = 0, deaths = 0;
+
+            if (auth.state() == AuthState::Authenticated)
+            {
+                mmr = auth.user().stats.currentMmr;
+                wins = auth.user().stats.wins;
+                losses = auth.user().stats.losses;
+                kills = auth.user().stats.kills;
+                deaths = auth.user().stats.deaths;
+            }
+
             // MMR text (dynamic)
             const GuiElement* mmrEl = layout.get("mmrText");
             if (mmrEl && mmrEl->visible)
             {
                 char mmrBuf[32];
-                snprintf(mmrBuf, sizeof(mmrBuf), "MMR: %d", auth.user().stats.currentMmr);
+                snprintf(mmrBuf, sizeof(mmrBuf), "MMR: %d", mmr);
                 GuiElement dyn = *mmrEl;
                 dyn.text = mmrBuf;
                 dyn.y = btnAreaDesignY;
@@ -64,8 +95,7 @@ AccountPanelAction drawAccountPanel(GLFWwindow* window)
             {
                 char statsBuf[64];
                 snprintf(statsBuf, sizeof(statsBuf), "W:%d L:%d K:%d D:%d",
-                         auth.user().stats.wins, auth.user().stats.losses,
-                         auth.user().stats.kills, auth.user().stats.deaths);
+                         wins, losses, kills, deaths);
                 GuiElement dyn = *stEl;
                 dyn.text = statsBuf;
                 dyn.y = btnAreaDesignY + 25.0f;

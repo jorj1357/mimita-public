@@ -10,6 +10,32 @@ import os
 import datetime
 import time
 
+# ── Build history tracker ─────────────────────────────────────────────
+BUILD_HISTORY_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "build", "build-history.txt"
+)
+
+def load_build_history():
+    """Return list of last 5 timestamp strings."""
+    if not os.path.exists(BUILD_HISTORY_FILE):
+        return []
+    with open(BUILD_HISTORY_FILE, "r") as f:
+        lines = [line.strip() for line in f.readlines() if line.strip()]
+    return lines[-5:]
+
+def save_build_history(timestamp):
+    """Append timestamp, keep last 5."""
+    history = load_build_history()
+    history.append(timestamp)
+    history = history[-5:]
+    os.makedirs(os.path.dirname(BUILD_HISTORY_FILE), exist_ok=True)
+    with open(BUILD_HISTORY_FILE, "w") as f:
+        for h in history:
+            f.write(h + "\n")
+
+def timestamp_now():
+    return datetime.datetime.now().strftime("%m%d%Y %H%M%S")
+
 # Auto-kill running mimita.exe so linker can overwrite it
 kill_result = subprocess.run(
     ["taskkill", "/f", "/im", "mimita.exe"],
@@ -37,6 +63,9 @@ if __name__ == "__main__":
     else:
         status = "FAILED"
 
+    current_ts = timestamp_now()
+    history = load_build_history()
+
     # Write changelog
     log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build")
     os.makedirs(log_dir, exist_ok=True)
@@ -44,6 +73,8 @@ if __name__ == "__main__":
 
     with open(log_path, "w") as f:
         f.write("=== BUILD CHANGELOG ===\n")
+        f.write(f"Current time: {current_ts}\n")
+        f.write(f"Last 5 run times: {', '.join(history) if history else '(none)'}\n")
         f.write(f"Time: {start.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Status: {status}\n")
         f.write(f"Return Code: {result.returncode}\n")
@@ -54,8 +85,12 @@ if __name__ == "__main__":
             f.write("\n--- Stderr ---\n")
             f.write(result.stderr)
 
+    save_build_history(current_ts)
+
     # Also print changelog to stdout for immediate AI inspection
     print(f"=== BUILD CHANGELOG ===")
+    print(f"Current time: {current_ts}")
+    print(f"Last 5 run times: {', '.join(history) if history else '(none)'}")
     print(f"Status: {status}")
     print(f"Duration: {elapsed:.2f}s")
     print(f"Log: {log_path}")

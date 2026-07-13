@@ -207,6 +207,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.approvedLocalName = welcome->approvedName;
             ctx.reconnectToken = welcome->reconnectToken;
             ctx.requiredMapId = welcome->mapId;
+            ctx.transformEpoch = welcome->header.transformEpoch;
+            printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s epoch=%u\n",
+                   ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
+                   welcome->mapId, ctx.transformEpoch);
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
@@ -227,6 +231,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
             ctx.requiredMapId = accept->mapId;
+            ctx.transformEpoch = accept->header.transformEpoch;
+            printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s epoch=%u\n",
+                   ctx.localPlayerId, accept->tickRate, accept->mapId, ctx.transformEpoch);
             ctx.playerRegistry[ctx.localPlayerId] = {
                 ctx.approvedLocalName.empty() ? playerName : ctx.approvedLocalName,
                 ctx.localPlayerId,
@@ -311,6 +318,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     ctx.localServerOnGround = entity.onGround != 0;
                     ctx.hasLocalServerPosition = true;
                     ctx.localServerHealth = entity.health;
+                    ctx.localServerEpoch = entity.transformEpoch;
                     ctx.localPingMs = entity.pingMs;
                     if (ctx.awaitingTeleportAck &&
                         glm::length(
@@ -470,6 +478,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.header.type = PACKET_INPUT;
         in.header.tick = ctx.tick;
         in.header.playerId = ctx.localPlayerId;
+        in.header.transformEpoch = ctx.transformEpoch;
         in.wishX = input->wishX;
         in.wishY = input->wishY;
         in.camForwardX = input->camForward.x;

@@ -100,14 +100,18 @@ else:
 # FLAGS
 # ============================================================
 
+LIBJUICE_DIR = os.path.join(ROOT, "external", "libjuice")
+
 INCLUDE_FLAGS = [
     "-Iinclude",
     "-Isrc",
     f"-I{GLFW_INCLUDE}",
+    f"-I{LIBJUICE_DIR}/include",
 ]
 
 DEFINE_FLAGS = [
     "-DGLM_ENABLE_EXPERIMENTAL",
+    "-DJUICE_STATIC",
 ]
 
 LIB_FLAGS = [
@@ -120,12 +124,14 @@ LINK_LIBS = [
     "-lgdi32",
     "-luser32",
     "-ldwmapi",
-    "-lws2_32",
     "-lwinhttp",
+    "-lws2_32",
     "-ldbghelp",
     "-lole32",
     "-luuid",
     "-loleaut32",
+    "-lbcrypt",
+    "-lpthread",
 ]
 
 # ============================================================
@@ -416,6 +422,79 @@ if source_changed(glad_path):
 else:
     print("[SKIP] src/glad.c")
     skipped_count += 1
+
+# ============================================================
+# COMPILE LIBJUICE C SOURCES
+# ============================================================
+
+juice_src_dir = os.path.join(LIBJUICE_DIR, "src")
+juice_sources = [
+    "addr.c", "agent.c", "base64.c", "conn.c", "conn_mux.c",
+    "conn_poll.c", "conn_thread.c", "const_time.c", "crc32.c",
+    "hash.c", "hmac.c", "ice.c", "juice.c", "log.c", "random.c",
+    "server.c", "stun.c", "tcp.c", "timestamp.c", "turn.c", "udp.c",
+]
+
+# Private includes: libjuice sources reference headers in src/, include/, and include/juice/
+juice_include_flags = [
+    f"-I{juice_src_dir}",
+    f"-I{LIBJUICE_DIR}/include",
+    f"-I{LIBJUICE_DIR}/include/juice",
+    "-DJUICE_STATIC",
+]
+
+for src_name in juice_sources:
+    src_path = os.path.join(juice_src_dir, src_name)
+    obj_name = "juice_" + src_name.replace(".c", ".o")
+    obj_path_full = os.path.join(OBJ_DIR, obj_name)
+
+    object_files.append(obj_path_full)
+
+    # Check if juice object needs rebuild (use simple mtime check since .d not generated for C files)
+    needs_compile = False
+    if not os.path.exists(obj_path_full):
+        needs_compile = True
+    else:
+        obj_mtime = os.path.getmtime(obj_path_full)
+        src_mtime = os.path.getmtime(src_path)
+        if src_mtime >= obj_mtime:
+            needs_compile = True
+
+    if needs_compile:
+        print("[CC  ] external/libjuice/src/" + src_name)
+
+        cmd = [
+            COMPILER,
+            "-x", "c",
+            "-c",
+            src_path,
+            "-o",
+            obj_path_full,
+        ]
+
+        # Use C flags (no -std=c++17) for libjuice C sources
+        cmd += [
+            "-std=c11",
+            "-O0",
+            "-g",
+            "-pipe",
+        ]
+        cmd += DEFINE_FLAGS
+        for f in juice_include_flags:
+            cmd.append(f)
+
+        result = subprocess.run(cmd)
+
+        if result.returncode != 0:
+            print()
+            print("==================================================")
+            print(" BUILD FAILED (libjuice)")
+            print("==================================================")
+            sys.exit(1)
+
+        compiled_count += 1
+    else:
+        skipped_count += 1
 
 # ============================================================
 # DETERMINE IF LINK NEEDED

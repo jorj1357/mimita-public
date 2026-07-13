@@ -2,9 +2,12 @@
 #include "utils/path_utils.h"
 #include "tinygltf/tiny_gltf.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <functional>
 
 namespace MimitaNet {
 namespace {
@@ -177,8 +180,52 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
         for (int node : model.scenes[sceneIndex].nodes)
             walkNode(model, node, glm::mat4(1.0f), world);
 
-    printf("%s [SERVER WORLD] loaded map collision triangles=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
-           serverTimestamp(), world.triangles.size(),
+    // Extract spawnpoints — recursive walk with full parent transform accumulation
+    {
+        std::function<void(int, glm::mat4)> walkForSpawns;
+        walkForSpawns = [&](int nodeIndex, glm::mat4 parentXform) {
+            if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size()) return;
+            const tinygltf::Node& node = model.nodes[nodeIndex];
+            glm::mat4 worldXform = parentXform * nodeTransform(node);
+
+            std::string lowerName = node.name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            if (lowerName.find("spawn") != std::string::npos)
+            {
+                glm::vec3 pos = glm::vec3(worldXform[3]);
+                if (std::isfinite(pos.x) && std::isfinite(pos.y) && std::isfinite(pos.z))
+                {
+                    ServerSpawnPoint sp;
+                    sp.position = pos;
+                    glm::vec3 forward = glm::normalize(glm::vec3(worldXform[1]));
+                    sp.yaw = std::atan2(forward.y, forward.x);
+                    world.spawnPoints.push_back(sp);
+                    printf("%s [SPAWNPOINT] node=\"%s\" position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
+                           serverTimestamp(), node.name.c_str(), pos.x, pos.y, pos.z,
+                           glm::degrees(sp.yaw));
+                }
+            }
+            for (int child : node.children)
+                walkForSpawns(child, worldXform);
+        };
+
+        int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
+        if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size())
+        {
+            for (int node : model.scenes[sceneIndex].nodes)
+                walkForSpawns(node, glm::mat4(1.0f));
+        }
+        else
+        {
+            // Fallback: walk all root-level nodes
+            for (int i = 0; i < (int)model.nodes.size(); ++i)
+                walkForSpawns(i, glm::mat4(1.0f));
+        }
+    }
+
+    printf("%s [SERVER WORLD] loaded map collision triangles=%zu spawnpoints=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+           serverTimestamp(), world.triangles.size(), world.spawnPoints.size(),
            world.boundsMin.x, world.boundsMin.y, world.boundsMin.z,
            world.boundsMax.x, world.boundsMax.y, world.boundsMax.z);
     return !world.triangles.empty();

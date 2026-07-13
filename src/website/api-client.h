@@ -104,6 +104,45 @@ std::vector<MatchEntry> getMatchHistory(const std::string& sessionToken, int pag
 json getSettings(const std::string& sessionToken);
 bool updateSettings(const std::string& sessionToken, const json& settings);
 
+// Game Auth (direct username/email + password login)
+struct GameLoginResult
+{
+    bool ok = false;
+    int accountId = 0;
+    std::string username;
+    std::vector<std::string> permissions;
+    std::string supporterTier;
+    std::string accessToken;
+    std::string accessExpiresAt;
+    std::string refreshToken;
+    std::string refreshExpiresAt;
+    std::string errorCode;
+    std::string errorMessage;
+};
+
+struct GameRefreshResult
+{
+    bool ok = false;
+    std::string accessToken;
+    std::string accessExpiresAt;
+    std::string refreshToken;
+    std::string refreshExpiresAt;
+    std::string errorCode;
+    std::string errorMessage;
+};
+
+struct GameLogoutResult
+{
+    bool ok = false;
+};
+
+GameLoginResult gameLogin(const std::string& identifier, const std::string& password,
+                          bool rememberMe, const std::string& deviceId,
+                          const std::string& deviceName, const std::string& platform,
+                          const std::string& clientBuild);
+GameRefreshResult gameRefresh(const std::string& refreshToken, const std::string& deviceId);
+GameLogoutResult gameLogout(const std::string& refreshToken, const std::string& deviceId);
+
 // Client Login (4-letter code flow)
 struct ClientCodePreview
 {

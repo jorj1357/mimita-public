@@ -123,6 +123,8 @@ struct MultiplayerContext
     glm::vec3 localServerVelocity{0.0f};
     float localServerYaw = 0.0f;
     bool localServerOnGround = false;
+    uint16_t localServerEpoch = 0;
+    uint16_t lastAppliedEpoch = 0;
     bool hasLocalServerPosition = false;
     bool localPlayerReconciled = false;
     uint64_t lastLocalCorrectionLogMs = 0;
@@ -179,6 +181,9 @@ struct MultiplayerContext
     bool serverProcessLaunched = false;
     uint64_t serverProcessLaunchMs = 0;
     uint16_t serverPort = 1357;
+
+    // ── Transform epoch for spawn/resync detection ────────────────────
+    uint32_t transformEpoch = 0;
 
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;

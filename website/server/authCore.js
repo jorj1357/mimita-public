@@ -18,16 +18,24 @@ export function usernameKey(value) {
 
 export function validateUsername(value) {
     const v = normalizeUsername(value)
-    return v.length >= 3 && v.length <= 32
+    if (v.length < 3) return { ok: false, value: null, message: "username must be at least 3 characters" }
+    if (v.length > 32) return { ok: false, value: null, message: "username must be at most 32 characters" }
+    if (!/^[a-zA-Z0-9_-]+$/.test(v)) return { ok: false, value: null, message: "username can only contain letters, numbers, hyphens, and underscores" }
+    return { ok: true, value: v, message: "" }
 }
 
 export function validatePassword(value) {
     const v = String(value || "")
-    return v.length >= 8 && /[A-Z]/.test(v) && /[!@#$%^&*(),.?":{}|<>]/.test(v)
+    if (v.length < 8) return { ok: false, value: null, message: "password must be at least 8 characters" }
+    if (!/[A-Z]/.test(v)) return { ok: false, value: null, message: "password must contain an uppercase letter" }
+    if (!/[!@#$%^&*(),.?\":{}|<>]/.test(v)) return { ok: false, value: null, message: "password must contain a symbol" }
+    return { ok: true, value: v, message: "" }
 }
 
 export function validateEmail(value) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim())
+    const v = String(value || "").trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return { ok: false, value: null, message: "invalid email address" }
+    return { ok: true, value: v, message: "" }
 }
 
 export async function hashPassword(password) {

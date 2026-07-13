@@ -159,10 +159,20 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         {
             p.dead = false;
             p.health = 100;
-            p.pos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
+            // Use map spawnpoints if available
+            if (!world.spawnPoints.empty())
+            {
+                size_t idx = (p.id - 1) % world.spawnPoints.size();
+                p.pos = world.spawnPoints[idx].position;
+            }
+            else
+            {
+                p.pos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
+            }
             ++p.transformEpoch;
-            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u\n",
-                   serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch);
+            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu\n",
+                   serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
+                   world.spawnPoints.size());
         }
         return;
     }
@@ -272,6 +282,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;
     out.lastDashSerial = player.lastDashSerial;
+    out.transformEpoch = player.transformEpoch;
     out.aimX = player.input.camForward.x;
     out.aimY = player.input.camForward.y;
     out.aimZ = player.input.camForward.z;

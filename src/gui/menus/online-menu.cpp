@@ -166,9 +166,12 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             r.connectToServer = true;
             r.connectAddress = "127.0.0.1";
             r.connectPort = MimitaNet::DEFAULT_PORT;
-            // Use server code as local join verification
-            if (!serverCodeDisplay.empty())
-                r.joinToken = serverCodeDisplay;
+        }
+        else if (id == "connectLocalhostButton" && s.clicked)
+        {
+            r.connectLocalhost = true;
+            r.connectAddress = "127.0.0.1";
+            r.connectPort = MimitaNet::DEFAULT_PORT;
         }
         else if (id == "joinServerButton" && s.clicked)
         {
@@ -210,6 +213,11 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
                     b.set("join.code", "Server offline");
                     printf("[ONLINE MENU] server offline code=%s status=%s\n",
                            code.c_str(), lookup.status.c_str());
+                }
+                else if (!lookup.reachable)
+                {
+                    b.set("join.code", "Coordinator unreachable");
+                    printf("[ONLINE MENU] coordinator unreachable for code=%s\n", code.c_str());
                 }
                 else
                 {

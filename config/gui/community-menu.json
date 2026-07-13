@@ -280,6 +280,16 @@
       "hoverColor": [0.3, 0.6, 0.7, 1.0]
     },
 
+    "connectLocalhostButton": {
+      "type": "button", "layer": 3,
+      "x": 1000, "y": 290, "width": 400, "height": 36,
+      "text": "CONNECT LOCALHOST:1357 (dev)",
+      "fontSize": 0.26,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.15, 0.4, 0.15, 1.0],
+      "hoverColor": [0.2, 0.55, 0.25, 1.0]
+    },
+
     "publicServersTitle": {
       "type": "text", "layer": 1, "x": 40, "y": 680, "width": 400, "height": 34,
       "text": "PUBLIC SERVERS", "fontSize": 0.42,

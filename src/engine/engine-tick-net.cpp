@@ -324,35 +324,9 @@ void engineTickNet(Engine& engine, float dt)
             }
         }
 
-        if (mpContext.localPlayerId != 0) {
-            InputFrame mpInput = buildInputFrame(engine.window(), camera);
-            MimitaNet::InputPacket in{};
-            in.header.type = MimitaNet::PACKET_INPUT;
-            in.header.tick = mpContext.tick;
-            in.header.playerId = mpContext.localPlayerId;
-            in.wishX = mpInput.moveX;
-            in.wishY = mpInput.moveY;
-            in.camForwardX = camera.front.x;
-            in.camForwardY = camera.front.y;
-            in.camForwardZ = camera.front.z;
-            in.yaw = camera.yaw;
-            in.clientPx = player.pos.x;
-            in.clientPy = player.pos.y;
-            in.clientPz = player.pos.z;
-            in.clientVx = player.vel.x;
-            in.clientVy = player.vel.y;
-            in.clientVz = player.vel.z;
-            in.equippedSlot = (int16_t)player.equippedSlot;
-            in.weaponState =
-                (weapons.isShooting() ? 1u : 0u) |
-                (weapons.isReloading(player) ? 2u : 0u);
-            in.clientPingMs = mpContext.localPingMs;
-            in.jumpHeld = mpInput.jump ? 1 : 0;
-            in.dashPressed = mpInput.dashPressed ? 1 : 0;
-            in.attackPressed = 0;
-            in.freezeHeld = mpInput.freezeHeld ? 1 : 0;
-            MimitaNet::mpSendPacket(mpContext, &in, sizeof(in));
-        }
+        // Input is sent inside mpTick() above — do NOT send a second packet here.
+        // The engine-tick-net.cpp duplicate InputPacket has been removed.
+        // Position, velocity, yaw, look, and wish are all captured together inside mpTick's MpInput.
 
         mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
         static bool f3Prev = false;

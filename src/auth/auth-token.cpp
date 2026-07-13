@@ -15,7 +15,9 @@ namespace {
 
 const char* TOKEN_PATH = "config/auth-token.json";
 const char* CACHE_PATH = "config/auth-cache.json";
+const char* REFRESH_PATH = "config/auth-refresh.json";
 const char* CRED_TARGET = "MimitaAuthSession";
+const char* REFRESH_CRED_TARGET = "MimitaRefreshToken";
 
 bool storeCredentialManager(const std::string& token)
 {
@@ -108,6 +110,75 @@ void clearSessionToken()
     clearCredentialManager();
     std::filesystem::remove(TOKEN_PATH);
     printf("[AUTH] session token cleared\n");
+}
+
+// ── Refresh Token (Remember-Me storage) ────────────────────────────────────────
+
+bool storeRefreshToken(const std::string& token)
+{
+    if (token.empty()) return false;
+
+    CREDENTIALW cred = {};
+    cred.Type = CRED_TYPE_GENERIC;
+    wchar_t targetName[] = L"MimitaRefreshToken";
+    cred.TargetName = targetName;
+    cred.CredentialBlobSize = (DWORD)token.size();
+    cred.CredentialBlob = (BYTE*)token.data();
+    cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    wchar_t userName[] = L"MimitaUser";
+    cred.UserName = userName;
+    if (CredWriteW(&cred, 0))
+    {
+        printf("[AUTH] refresh token stored in Credential Manager\n");
+        return true;
+    }
+
+    std::filesystem::create_directories("config");
+    std::ofstream out(REFRESH_PATH, std::ios::trunc);
+    if (!out)
+    {
+        printf("[AUTH] failed to write refresh token\n");
+        return false;
+    }
+    out << "{\"refresh_token\":\"" << token << "\"}\n";
+    printf("[AUTH] refresh token stored to file\n");
+    return out.good();
+}
+
+std::string loadRefreshToken()
+{
+    PCREDENTIALW cred = nullptr;
+    if (CredReadW(L"MimitaRefreshToken", CRED_TYPE_GENERIC, 0, &cred))
+    {
+        std::string token((const char*)cred->CredentialBlob, cred->CredentialBlobSize);
+        CredFree(cred);
+        return token;
+    }
+
+    std::ifstream in(REFRESH_PATH);
+    if (!in)
+        return {};
+
+    std::string content((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+
+    auto pos = content.find("\"refresh_token\":\"");
+    if (pos == std::string::npos)
+        return {};
+
+    pos += 16;
+    auto end = content.find('"', pos);
+    if (end == std::string::npos)
+        return {};
+
+    return content.substr(pos, end - pos);
+}
+
+void clearRefreshToken()
+{
+    CredDeleteW(L"MimitaRefreshToken", CRED_TYPE_GENERIC, 0);
+    std::filesystem::remove(REFRESH_PATH);
+    printf("[AUTH] refresh token cleared\n");
 }
 
 // ── Profile Cache ────────────────────────────────────────────────────────────

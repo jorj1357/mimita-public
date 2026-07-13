@@ -51,8 +51,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         !player.dead;
     const bool teleportCompletionResync =
         ctx.teleportResync && !ctx.awaitingTeleportAck;
+    const bool epochChanged =
+        ctx.localPlayerReconciled &&
+        ctx.localServerEpoch != ctx.lastAppliedEpoch &&
+        ctx.localServerEpoch != 0;
     const bool applyPosition =
-        initialSpawn || serverRespawnedPlayer || catastrophicDivergence || teleportCompletionResync;
+        initialSpawn || serverRespawnedPlayer || catastrophicDivergence ||
+        teleportCompletionResync || epochChanged;
 
     if (applyPosition)
         ctx.teleportResync = false;
@@ -66,6 +71,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.externalImpulse = glm::vec3(0.0f);
         player.syncLegacyStateToLayers();
         player.updateModelWorldTransforms();
+        ctx.lastAppliedEpoch = ctx.localServerEpoch;
     }
 
     if (serverRespawnedPlayer)
@@ -151,10 +157,11 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
                clientPosition.y,
                clientPosition.z,
                (int)applyPosition,
-               initialSpawn ? "initial-spawn" :
-               serverRespawnedPlayer ? "server-respawn" :
-               catastrophicDivergence ? "catastrophic-divergence" :
-               serverKilledPlayer ? "server-death" : "within-tolerance");
+                initialSpawn ? "initial-spawn" :
+                serverRespawnedPlayer ? "server-respawn" :
+                catastrophicDivergence ? "catastrophic-divergence" :
+                epochChanged ? "epoch-changed" :
+                serverKilledPlayer ? "server-death" : "within-tolerance");
         ctx.lastLocalCorrectionLogMs = currentMs;
     }
     ctx.localPlayerReconciled = true;

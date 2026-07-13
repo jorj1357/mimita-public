@@ -79,8 +79,11 @@ int runClient(const LaunchOptions& options)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
 
+    std::string clientMap = options.mapName.empty() ? "funworld3" : options.mapName;
+    std::string clientMapPath = "assets/maps/" + clientMap + ".glb";
+    printf("[CLIENT] loading map=%s path=%s\n", clientMap.c_str(), clientMapPath.c_str());
     World world;
-    loadWorldFromGLB(world, "assets/maps/mimita-aabb-only-interior-small-v4.glb");
+    loadWorldFromGLB(world, clientMapPath.c_str());
 
     Camera camera;
     engine.bindCamera(&camera);
@@ -220,6 +223,7 @@ int runClient(const LaunchOptions& options)
         InputState input = pollInput(engine.window(), camera);
         if (localPlayerId)
         {
+            auto localIt = players.find(localPlayerId);
             InputPacket in{};
             in.header.type = PACKET_INPUT;
             in.header.tick = clientTick;
@@ -230,6 +234,15 @@ int runClient(const LaunchOptions& options)
             in.camForwardY = input.camForward.y;
             in.camForwardZ = input.camForward.z;
             in.yaw = camera.yaw;
+            if (localIt != players.end())
+            {
+                in.clientPx = localIt->second.pos.x;
+                in.clientPy = localIt->second.pos.y;
+                in.clientPz = localIt->second.pos.z;
+                in.clientVx = localIt->second.vel.x;
+                in.clientVy = localIt->second.vel.y;
+                in.clientVz = localIt->second.vel.z;
+            }
             in.jumpHeld = input.jumpHeld ? 1 : 0;
             in.dashPressed = input.dashPressed ? 1 : 0;
             in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;

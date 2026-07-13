@@ -100,6 +100,7 @@ struct PacketHeader
     uint8_t reserved = 0;
     uint32_t tick = 0;
     uint32_t playerId = 0;
+    uint32_t transformEpoch = 0;
 };
 
 struct HelloPacket
@@ -143,6 +144,7 @@ struct InputPacket
     uint8_t freezeHeld = 0;
     uint8_t spawnNpcPressed = 0;
     float sizeScale = 1.0f;
+    uint32_t transformEpoch = 0;
     uint8_t reserved1 = 0;
     uint8_t reserved2 = 0;
 };

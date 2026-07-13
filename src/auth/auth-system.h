@@ -12,6 +12,15 @@ enum class AuthState
     NeedsLogin,
     Linking,
     TokenExchange,
+    SignedOut,
+    CheckingStoredSession,
+    RefreshingSession,
+    ReadyToSignIn,
+    SigningIn,
+    SignedIn,
+    LoadingAccount,
+    SigningOut,
+    Failed,
 };
 
 struct AuthUser
@@ -73,6 +82,9 @@ public:
     // Avatar data
     json getCloudAvatarData();
     bool saveCloudAvatarData(const json& avatarData);
+
+    // Apply external user info (from AuthController login)
+    void applyUserInfo(const GameUserInfo& info);
 
     // Called by auth-popup after successful code confirm
     // Uses optional userInfo to avoid depending on validateSession for identity data.

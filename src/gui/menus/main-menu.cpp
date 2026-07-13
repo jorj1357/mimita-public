@@ -6,6 +6,7 @@
 #include "../gui-element-render.h"
 #include "../gui-coord.h"
 #include "auth/auth-system.h"
+#include "auth/auth-controller.h"
 #include "auth/auth-popup.h"
 #include "avatar/avatar.h"
 #include "entities/player.h"
@@ -139,7 +140,8 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
 
     if (account.logIn)
     {
-        openBrowser("https://www.mimita.fun/clientsignin");
+        printf("[MAIN MENU] go to in-game login screen\n");
+        r.goLogin = true;
     }
     else if (account.signUp)
     {
@@ -158,7 +160,9 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     }
 
     // ── Account actions for authenticated users ─────────────────────────────
-    if (AuthSystem::instance().state() == AuthState::Authenticated)
+    bool mainMenuSignedIn = (AuthSystem::instance().state() == AuthState::Authenticated ||
+                             AuthController::instance().runtime().state == AuthState::SignedIn);
+    if (mainMenuSignedIn)
     {
         const GuiElement* accountSection = layout.get("accountSection");
         if (accountSection && accountSection->visible)

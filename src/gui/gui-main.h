@@ -38,6 +38,7 @@ enum GuiMenuState
     GUI_MENU_COMPETITIVE,
     GUI_MENU_COMPETITIVE_RESULT,
     GUI_MENU_AUTH,
+    GUI_MENU_LOGIN,
 };
 
 extern GuiMenuState gGuiMenuState;
