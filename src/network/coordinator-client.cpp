@@ -517,6 +517,7 @@ IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::st
     result.ok = extractJsonBool(response, "ok");
     result.roomCode = extractJsonStr(response, "room_code");
     result.hostSessionId = extractJsonStr(response, "host_session_id");
+    result.joinToken = extractJsonStr(response, "join_token");
     return result;
 }
 
@@ -532,6 +533,7 @@ IceJoinResult coordinatorIceJoin(const std::string& roomCode, const std::string&
     result.ok = extractJsonBool(response, "ok");
     result.hostIceDescription = jsonUnescape(extractJsonStr(response, "host_ice_description"));
     result.clientSessionId = extractJsonStr(response, "client_session_id");
+    result.joinToken = extractJsonStr(response, "join_token");
     return result;
 }
 
@@ -555,6 +557,16 @@ void coordinatorIceDone(const std::string& roomCode)
     std::string body = "{\"room_code\":\"" + jsonEscape(roomCode) + "\"}";
     std::string response;
     httpPostJson(gCoordinatorUrl + "/api/coordinator/ice/done", body, response, 3000);
+}
+
+bool coordinatorIceValidateJoin(const std::string& roomCode, const std::string& joinToken)
+{
+    std::string body = "{\"room_code\":\"" + jsonEscape(roomCode)
+        + "\",\"join_token\":\"" + jsonEscape(joinToken) + "\"}";
+    std::string response;
+    if (!httpPostJson(gCoordinatorUrl + "/api/coordinator/ice/validate-join", body, response, 5000))
+        return false;
+    return extractJsonBool(response, "valid");
 }
 
 } // namespace MimitaNet

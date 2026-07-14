@@ -49,6 +49,9 @@ public:
     IceAgentState state() const;
     const std::vector<IceCandidateInfo>& candidates() const;
 
+    // Log the selected candidate pair after connection
+    void logSelectedPath();
+
     // Drain pending events (thread-safe, call from main thread)
     void pollEvents(std::vector<IceEvent>& out);
 

@@ -43,6 +43,7 @@ import AimTestV1 from "./pages/AimTestV1"
 import RhythmTestV1 from "./pages/RhythmTestV1"
 import DreamToy from "./pages/DreamToy"
 import AdminArticleEditor from "./pages/AdminArticleEditor"
+import Jorj from "./pages/Socials-jorj"
 
 /* =========================
    APP
@@ -92,6 +93,7 @@ ReactDOM.createRoot(
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/link" element={<Link />} />
         <Route path="/clientsignin" element={<ClientSignIn />} />
+        <Route path="/jorj1357" element={<Jorj />} />
 
         <Route path="/games" element={<Games />} />
         <Route path="/games/aim-test-v1" element={<AimTestV1 />} />
