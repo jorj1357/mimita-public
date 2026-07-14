@@ -39,12 +39,14 @@ struct IceHostResult {
     bool ok = false;
     std::string roomCode;
     std::string hostSessionId;
+    std::string joinToken;
 };
 
 struct IceJoinResult {
     bool ok = false;
     std::string hostIceDescription;
     std::string clientSessionId;
+    std::string joinToken;
 };
 
 struct IcePollResult {
@@ -57,6 +59,7 @@ struct IcePollResult {
 IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription);
 IceJoinResult coordinatorIceJoin(const std::string& roomCode, const std::string& clientSessionId, const std::string& iceDescription);
 IcePollResult coordinatorIcePoll(const std::string& roomCode, const std::string& hostSessionId);
+bool coordinatorIceValidateJoin(const std::string& roomCode, const std::string& joinToken);
 void coordinatorIceDone(const std::string& roomCode);
 
 // Set coordinator base URL (default: http://107.191.48.226:3001)

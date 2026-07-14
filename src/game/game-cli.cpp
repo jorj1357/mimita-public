@@ -26,6 +26,7 @@
 #include "debug/debug-log.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
+#include "network/ice/ice-test.h"
 #include "network/coordinator-client.h"
 
 extern DuelManager gDuelManager;
@@ -124,6 +125,72 @@ void forceMainMenu()
 bool handleGameCLI(int argc, char** argv)
 {
     if (argc <= 1) return false;
+
+    // ── Lightweight ICE Host Only (no game engine init) ─────────
+    if (std::string(argv[1]) == "--ice-host-only") {
+        IceTestOptions opts;
+        for (int i = 2; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--once") opts.once = true;
+            else if (a == "--force-relay") opts.forceRelay = true;
+            else if (a == "--disable-relay") opts.disableRelay = true;
+            else if (a == "--timeout-seconds" && i + 1 < argc)
+                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+        runIceHostOnly(opts);
+        return true;
+    }
+
+    // ── Lightweight ICE Join Only (no game engine init) ─────────
+    if (std::string(argv[1]) == "--ice-join-only") {
+        if (argc < 3) {
+            printf("[ICE ONLY] usage: mimita.exe --ice-join-only <room-code> [options]\n");
+            return true;
+        }
+        IceTestOptions opts;
+        for (int i = 3; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--once") opts.once = true;
+            else if (a == "--force-relay") opts.forceRelay = true;
+            else if (a == "--disable-relay") opts.disableRelay = true;
+            else if (a == "--timeout-seconds" && i + 1 < argc)
+                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+        runIceJoinOnly(argv[2], opts);
+        return true;
+    }
+
+    // ── ICE Game Host (lightweight server with Input/Snapshot) ─────
+    if (std::string(argv[1]) == "--ice-game-host") {
+        IceTestOptions opts;
+        for (int i = 2; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--force-relay") opts.forceRelay = true;
+            else if (a == "--disable-relay") opts.disableRelay = true;
+            else if (a == "--timeout-seconds" && i + 1 < argc)
+                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+        runIceGameHost(opts);
+        return true;
+    }
+
+    // ── ICE Game Client (authenticated join + Input/Snapshot) ─────
+    if (std::string(argv[1]) == "--ice-game-client") {
+        if (argc < 3) {
+            printf("[ICE GAME] usage: mimita.exe --ice-game-client <room-code>\n");
+            return true;
+        }
+        IceTestOptions opts;
+        for (int i = 3; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--force-relay") opts.forceRelay = true;
+            else if (a == "--disable-relay") opts.disableRelay = true;
+            else if (a == "--timeout-seconds" && i + 1 < argc)
+                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+        runIceGameClient(argv[2], opts);
+        return true;
+    }
 
     if (std::string(argv[1]) == "--collision-selftest") {
         std::string summary;

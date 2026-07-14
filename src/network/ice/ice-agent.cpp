@@ -122,6 +122,32 @@ bool IceAgent::send(const void* data, size_t size)
     return true;
 }
 
+void IceAgent::logSelectedPath()
+{
+    if (!mAgent) return;
+    char localBuf[JUICE_MAX_CANDIDATE_SDP_STRING_LEN] = {};
+    char remoteBuf[JUICE_MAX_CANDIDATE_SDP_STRING_LEN] = {};
+    int ret = juice_get_selected_candidates(mAgent, localBuf, sizeof(localBuf),
+                                              remoteBuf, sizeof(remoteBuf));
+    if (ret != JUICE_ERR_SUCCESS) return;
+
+    std::string local(localBuf);
+    std::string remote(remoteBuf);
+
+    auto localType = iceCandidateTypeFromSdp(local);
+    auto remoteType = iceCandidateTypeFromSdp(remote);
+
+    bool direct = (localType == IceCandidateType::Host || localType == IceCandidateType::ServerReflexive) &&
+                  (remoteType == IceCandidateType::Host || remoteType == IceCandidateType::ServerReflexive);
+    bool relay = (localType == IceCandidateType::Relay || remoteType == IceCandidateType::Relay);
+
+    Debug::warn(Debug::Category::Networking,
+           "ICE SELECTED PATH localCandidate=%s localType=%s remoteCandidate=%s remoteType=%s direct=%d relay=%d\n",
+           local.c_str(), iceCandidateTypeToString(localType),
+           remote.c_str(), iceCandidateTypeToString(remoteType),
+           (int)direct, (int)relay);
+}
+
 void IceAgent::shutdown()
 {
     if (mAgent)

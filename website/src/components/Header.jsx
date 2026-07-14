@@ -166,6 +166,7 @@ export default function Header() {
                     >
                         Discord
                     </a>
+                    <Link className="headerMainLink" to="/jorj1357">jorj1357</Link>
                     <Link className="headerMainLink" to="/contribute">Donate</Link>
                 </div>
 

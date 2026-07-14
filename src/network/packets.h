@@ -12,6 +12,11 @@ constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 96;
 constexpr int MAX_NAME_BYTES = 32;
 
+// Safe datagram size: 1200 bytes ensures no IP fragmentation on internet paths.
+// Accounts for IP header (20), UDP header (8), ICE/STUN overhead (~32),
+// and leaves ~1140 bytes for game payload.
+constexpr int MAX_GAME_DATAGRAM_BYTES = 1200;
+
 enum PacketType : uint8_t
 {
     PACKET_HELLO = 1,
@@ -204,6 +209,39 @@ struct EntityDespawnPacket
     uint8_t entityType = ENTITY_NONE;
     uint8_t reserved[3] = {};
 };
+
+#pragma pack(push, 1)
+struct CompactEntityData
+{
+    uint32_t networkEntityId = 0;
+    uint8_t entityType = MimitaNet::ENTITY_NONE;
+    uint8_t active = 0;
+    uint16_t transformEpoch = 0;
+    uint32_t ownerClientId = 0;
+    float px = 0.0f, py = 0.0f, pz = 0.0f;
+    float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+    float yaw = 0.0f;
+    float aimX = 1.0f, aimY = 0.0f, aimZ = 0.0f;
+    int32_t health = 100;
+};
+#pragma pack(pop)
+
+// 4+1+1+2+4+12+12+4+12+4 = 56 bytes
+static_assert(sizeof(CompactEntityData) == 56, "CompactEntityData unexpected size");
+
+struct SnapshotChunkPacket
+{
+    PacketHeader header;
+    uint32_t serverTick = 0;
+    uint16_t chunkIndex = 0;
+    uint16_t chunkCount = 1;
+    uint16_t entityCount = 0;
+    uint16_t payloadBytes = 0;
+    CompactEntityData entities[18]; // 18 * 60 + header_size(28) = 1108 < 1200
+};
+
+static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
+              "SnapshotChunkPacket exceeds safe datagram limit");
 
 struct SpawnNpcRequestPacket
 {
