@@ -548,6 +548,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 lastInputEpochLogMs = nowInputLog;
             }
         }
+
+        // Build state flags from MpInput
+        uint16_t stateFlags = 0;
+        if (input->jumpHeld) stateFlags |= NET_STATE_JUMPING;
+        if (input->dashPressed) stateFlags |= NET_STATE_DASHING;
+        if (input->freezeHeld) stateFlags |= NET_STATE_FREEZING;
+
         in.wishX = input->wishX;
         in.wishY = input->wishY;
         in.camForwardX = input->camForward.x;
@@ -563,10 +570,17 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.equippedSlot = (int16_t)input->equippedSlot;
         in.weaponState = input->weaponState;
         in.clientPingMs = ctx.localPingMs;
-        in.jumpHeld = input->jumpHeld ? 1 : 0;
-        in.dashPressed = input->dashPressed ? 1 : 0;
+        in.stateFlags = stateFlags;
+        in.dashSerial = ctx.nextLocalDashSerial;
+        in.jumpSerial = ctx.nextLocalJumpSerial;
+        in.downDashSerial = ctx.nextLocalDownDashSerial;
+        in.equipSerial = ctx.nextLocalEquipSerial;
+        // Reset consumed serials
+        ctx.nextLocalDashSerial = 0;
+        ctx.nextLocalJumpSerial = 0;
+        ctx.nextLocalDownDashSerial = 0;
+        ctx.nextLocalEquipSerial = 0;
         in.attackPressed = input->attackPressed ? 1 : 0;
-        in.freezeHeld = input->freezeHeld ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
     }

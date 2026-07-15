@@ -322,7 +322,11 @@ public:
     bool hasValidWeapon = false;
     uint8_t networkWeaponState = 0;
     float networkShootEffectTimer = 0.0f;
-    uint32_t networkLastDashSerial = 0;
+    uint16_t networkLastDashSerial = 0;
+    uint16_t networkLastJumpSerial = 0;
+    uint16_t networkLastDownDashSerial = 0;
+    uint16_t networkLastEquipSerial = 0;
+    uint16_t networkStateFlags = 0;
     int revolverCylinder = 6;
     int revolverReserve = 1337;
     bool dead = false;

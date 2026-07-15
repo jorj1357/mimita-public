@@ -471,7 +471,7 @@ bool runIceJoinOnly(const std::string& roomCode, const IceTestOptions& opts)
         input.header.tick = (uint32_t)step;
         input.wishX = (step % 100 < 50) ? 5.0f : -5.0f;
         input.yaw = (float)step * 0.5f;
-        input.dashPressed = (step % 60 == 0) ? 1 : 0;
+        input.stateFlags = (step % 60 == 0) ? (uint16_t)MimitaNet::NET_STATE_DASHING : 0;
         input.attackPressed = (step % 30 == 0) ? 1 : 0;
         agent.send(&input, sizeof(input));
 
@@ -646,7 +646,7 @@ bool runIceGameHost(const IceTestOptions& opts)
                     p.vx += input->wishX * 10.0f * 0.05f;
                     p.vz += 0.0f; // no forward/back in this simple test
                     // Apply dash if pressed
-                    if (input->dashPressed) p.vx *= 2.0f;
+                    if (input->stateFlags & MimitaNet::NET_STATE_DASHING) p.vx *= 2.0f;
                     p.lastPacketMs = GetTickCount64();
                 }
             }
@@ -774,7 +774,7 @@ bool runIceGameClient(const std::string& roomCode, const IceTestOptions& opts)
         // Oscillate movement for visual confirmation
         input.wishX = (step % 100 < 50) ? 5.0f : -5.0f;
         input.yaw = (float)step * 0.5f;
-        input.dashPressed = (step % 60 == 0) ? 1 : 0;
+        input.stateFlags = (step % 60 == 0) ? (uint16_t)MimitaNet::NET_STATE_DASHING : 0;
         agent.send(&input, sizeof(input));
 
         std::vector<IceEvent> evs; agent.pollEvents(evs);

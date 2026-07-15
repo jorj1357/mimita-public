@@ -58,8 +58,13 @@ struct SnapshotTransform
     int pingMs = 0;
     uint32_t serverTick = 0;
     uint64_t receivedMs = 0;
+    uint16_t stateFlags = 0;
     uint16_t lastDashSerial = 0;
     float sizeScale = 1.0f;
+    uint16_t dashSerial = 0;
+    uint16_t jumpSerial = 0;
+    uint16_t downDashSerial = 0;
+    uint16_t equipSerial = 0;
 };
 
 struct QueuedPacket
@@ -191,6 +196,12 @@ struct MultiplayerContext
 
     // ── ClientMapReady tracking ───────────────────────────────────────
     bool clientMapReadySent = false;
+
+    // ── Local event serials for remote replication ────────────────────
+    uint16_t nextLocalDashSerial = 0;
+    uint16_t nextLocalJumpSerial = 0;
+    uint16_t nextLocalDownDashSerial = 0;
+    uint16_t nextLocalEquipSerial = 0;
     std::string clientMapReadySentForMap;
     uint32_t clientMapReadySentForPlayerId = 0;
 

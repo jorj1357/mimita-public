@@ -36,6 +36,8 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.networkEntityId = id + 1;
     e.entityType = ENTITY_PLAYER;
     e.active = 1;
+    e.stateFlags = (uint16_t)(NET_STATE_WALKING | NET_STATE_ON_GROUND);
+    e.lastDashSerial = (uint16_t)(id * 3);
     e.transformEpoch = static_cast<uint16_t>(id % 1024);
     e.ownerClientId = 1000 + id;
     e.px = 1.0f + id * 0.25f;
@@ -49,6 +51,15 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.aimY = id * 0.001f;
     e.aimZ = 0.25f;
     e.health = 100 - static_cast<int32_t>(id % 50);
+    e.onGround = 1;
+    e.equippedSlot = (int16_t)(1 + (id % 6));
+    e.weaponState = (uint8_t)(id % 8);
+    e.pingMs = (int32_t)(30 + id * 7);
+    e.sizeScale = 0.8f + (float)(id % 5) * 0.15f;
+    e.dashSerial = (uint16_t)(id * 2);
+    e.jumpSerial = (uint16_t)(id * 4);
+    e.downDashSerial = (uint16_t)(id * 5);
+    e.equipSerial = (uint16_t)(id * 6);
     return e;
 }
 
@@ -82,6 +93,8 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.networkEntityId = entity.networkEntityId;
     out.entityType = entity.entityType;
     out.active = entity.active;
+    out.stateFlags = entity.stateFlags;
+    out.lastDashSerial = entity.lastDashSerial;
     out.transformEpoch = entity.transformEpoch;
     out.ownerClientId = entity.ownerClientId;
     out.px = entity.px;
@@ -95,6 +108,15 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.aimY = entity.aimY;
     out.aimZ = entity.aimZ;
     out.health = entity.health;
+    out.onGround = entity.onGround;
+    out.equippedSlot = entity.equippedSlot;
+    out.weaponState = entity.weaponState;
+    out.pingMs = entity.pingMs;
+    out.sizeScale = entity.sizeScale;
+    out.dashSerial = entity.dashSerial;
+    out.jumpSerial = entity.jumpSerial;
+    out.downDashSerial = entity.downDashSerial;
+    out.equipSerial = entity.equipSerial;
     return out;
 }
 
@@ -104,6 +126,8 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.networkEntityId = entity.networkEntityId;
     out.entityType = entity.entityType;
     out.active = entity.active;
+    out.stateFlags = entity.stateFlags;
+    out.lastDashSerial = entity.lastDashSerial;
     out.transformEpoch = entity.transformEpoch;
     out.ownerClientId = entity.ownerClientId;
     out.px = entity.px;
@@ -117,11 +141,15 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.aimY = entity.aimY;
     out.aimZ = entity.aimZ;
     out.health = entity.health;
-    out.onGround = 0;
-    out.equippedSlot = 0;
-    out.weaponState = 0;
-    out.pingMs = 0;
-    out.sizeScale = 1.0f;
+    out.onGround = entity.onGround;
+    out.equippedSlot = entity.equippedSlot;
+    out.weaponState = entity.weaponState;
+    out.pingMs = entity.pingMs;
+    out.sizeScale = entity.sizeScale;
+    out.dashSerial = entity.dashSerial;
+    out.jumpSerial = entity.jumpSerial;
+    out.downDashSerial = entity.downDashSerial;
+    out.equipSerial = entity.equipSerial;
     return out;
 }
 
