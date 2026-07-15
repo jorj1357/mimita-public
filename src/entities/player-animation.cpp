@@ -8,6 +8,8 @@
 #include "config.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
+#include "network/net_common.h"
+using namespace MimitaNet;
 
 struct AnimOverlayResult {
     glm::vec3 translation{0.0f};
@@ -113,9 +115,37 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     if (perfectPoseSkeleton.nodes.empty() ||
         perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
+    {
+        static uint64_t lastAnimEarlySkelLogMs = 0;
+        uint64_t nowSkel = nowMs();
+        if (nowSkel - lastAnimEarlySkelLogMs >= 1000)
+        {
+            Debug::warn(Debug::Category::Animation,
+                "[ANIM EARLY RETURN] player=%s reason=invalid-skeleton "
+                "modelLoaded=%d nodes=%zu restTransforms=%zu physicalParts=%zu "
+                "movementPressed=%d\n",
+                username.c_str(), (int)modelLoaded,
+                perfectPoseSkeleton.nodes.size(),
+                perfectPoseSkeleton.restLocalTransforms.size(),
+                physicalBody.parts.size(),
+                (int)movementPressed);
+            lastAnimEarlySkelLogMs = nowSkel;
+        }
         return;
+    }
     if (proceduralFrozen) {
         updateModelWorldTransforms();
+        static uint64_t lastAnimEarlyFrozenLogMs = 0;
+        uint64_t nowFrozen = nowMs();
+        if (nowFrozen - lastAnimEarlyFrozenLogMs >= 1000)
+        {
+            Debug::warn(Debug::Category::Animation,
+                "[ANIM EARLY RETURN] player=%s reason=procedural-frozen "
+                "freezeActive=%d networkStateFlags=0x%04x movementPressed=%d\n",
+                username.c_str(), (int)freeze.freezeActive,
+                (unsigned)networkStateFlags, (int)movementPressed);
+            lastAnimEarlyFrozenLogMs = nowFrozen;
+        }
         return;
     }
 
@@ -186,6 +216,21 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    {
+        static uint64_t lastAnimStateLogMs = 0;
+        uint64_t nowAnim = nowMs();
+        if (nowAnim - lastAnimStateLogMs >= 1000)
+        {
+            printf("[ANIM STATE] player=%s movementPressed=%d walkInputTriggered=%d "
+                   "speed=%.2f move01=%.3f nowMoving=%d currentAnim=%s activeAnim=%s "
+                   "animStateTimeBefore=%.3f\n",
+                   username.c_str(), (int)movementPressed, (int)walkInputTriggered,
+                   speed, move01, (int)nowMoving,
+                   currentAnimName.c_str(), activeAnim.c_str(), animStateTime);
+            lastAnimStateLogMs = nowAnim;
+        }
+    }
+
     if (activeAnim != currentAnimName) {
         currentAnimName = activeAnim;
         if (activeAnim == "walk")
@@ -195,6 +240,17 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     animStateTime += dt;
+
+    {
+        static uint64_t lastAnimResultLogMs = 0;
+        uint64_t nowAnim2 = nowMs();
+        if (nowAnim2 - lastAnimResultLogMs >= 1000)
+        {
+            printf("[ANIM STATE RESULT] player=%s currentAnim=%s animStateTime=%.3f\n",
+                   username.c_str(), currentAnimName.c_str(), animStateTime);
+            lastAnimResultLogMs = nowAnim2;
+        }
+    }
 
     // === DASH POSE TIMER ===
     if (dash.didDash)

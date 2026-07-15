@@ -250,6 +250,41 @@ void handleInputPacket(const char* buffer, int bytes,
     p.input.jumpHeld = (in->stateFlags & NET_STATE_JUMPING) != 0;
     p.input.dashPressed = (in->stateFlags & NET_STATE_DASHING) != 0;
     p.input.freezeHeld = (in->stateFlags & NET_STATE_FREEZING) != 0;
+
+    // Store the received visual state flags by replacement (not OR).
+    // This preserves client walking/freezing/dashing state for snapshot replication.
+    {
+        constexpr uint16_t VALID_STATE_FLAGS =
+            NET_STATE_WALKING | NET_STATE_JUMPING |
+            NET_STATE_DASHING | NET_STATE_DOWN_DASHING |
+            NET_STATE_FREEZING | NET_STATE_ATTACKING;
+        p.inputStateFlags = in->stateFlags & VALID_STATE_FLAGS;
+
+        static uint64_t lastWalkStoreLogMs = 0;
+        uint64_t nowWalkStore = nowMs();
+        if (nowWalkStore - lastWalkStoreLogMs >= 1000)
+        {
+            printf("[WALK SERVER STORE] playerId=%u storedStateFlags=0x%04x walkingBit=%d\n",
+                   p.id, (unsigned)p.inputStateFlags,
+                   (int)((p.inputStateFlags & NET_STATE_WALKING) != 0));
+            lastWalkStoreLogMs = nowWalkStore;
+        }
+    }
+
+    {
+        static uint64_t lastWalkRxLogMs = 0;
+        uint64_t nowWalkRx = nowMs();
+        if (nowWalkRx - lastWalkRxLogMs >= 1000)
+        {
+            printf("[WALK SERVER RX] playerId=%u receivedStateFlags=0x%04x "
+                   "walkingBit=%d wish=(%.2f,%.2f) clientVel=(%.2f,%.2f,%.2f)\n",
+                   p.id, (unsigned)in->stateFlags,
+                   (int)((in->stateFlags & NET_STATE_WALKING) != 0),
+                   in->wishX, in->wishY, in->clientVx, in->clientVy, in->clientVz);
+            lastWalkRxLogMs = nowWalkRx;
+        }
+    }
+
     // Update event serials from input
     if (in->dashSerial != 0 && in->dashSerial != p.lastDashSerial)
     {
