@@ -242,6 +242,9 @@ int runServer(const LaunchOptions& options)
                     it->second.lastHeardMs = nowMs();
             }
 
+            // 7 15 2026can we do better than this somehow
+            //  yanderedev leads me to think that a bunch of if thens might 
+            // be inefficient but i dont know im 2 seocnds old 
             if (header->type == PACKET_HELLO)
                 handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut, &world);
             else if (header->type == PACKET_JOIN_REQUEST)
@@ -271,10 +274,35 @@ int runServer(const LaunchOptions& options)
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+                if (ready->header.playerId != ready->assignedPlayerId)
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
+                           "headerPlayerId=%u assignedPlayerId=%u\n",
+                           serverTimestamp(), ready->header.playerId, ready->assignedPlayerId);
+                    continue;
+                }
                 auto it = players.find(ready->assignedPlayerId);
-                if (it != players.end() && !it->second.spawned)
+                if (it == players.end())
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
+                           serverTimestamp(), ready->assignedPlayerId);
+                    continue;
+                }
+                std::string readyMap = normalizeMapId(ready->mapId);
+                std::string serverMap = normalizeMapId(getServerMapId());
+                if (readyMap != serverMap)
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
+                           "readyMap=%s serverMap=%s\n",
+                           serverTimestamp(), ready->assignedPlayerId,
+                           readyMap.c_str(), serverMap.c_str());
+                    continue;
+                }
+                if (!it->second.spawned)
                 {
                     it->second.spawned = true;
+                    it->second.vel = glm::vec3(0.0f);
+                    it->second.clientStateUpdated = false;
                     printf("%s [SERVER MAP READY] id=%u name=\"%s\" mapId=%s spawned=1\n",
                            serverTimestamp(), it->second.id, it->second.name.c_str(),
                            ready->mapId);
@@ -596,10 +624,35 @@ void tickListenServer(ListenServerState& state, float dt)
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+                if (ready->header.playerId != ready->assignedPlayerId)
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
+                           "headerPlayerId=%u assignedPlayerId=%u\n",
+                           serverTimestamp(), ready->header.playerId, ready->assignedPlayerId);
+                    continue;
+                }
                 auto it = state.players.find(ready->assignedPlayerId);
-                if (it != state.players.end() && !it->second.spawned)
+                if (it == state.players.end())
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
+                           serverTimestamp(), ready->assignedPlayerId);
+                    continue;
+                }
+                std::string readyMap = normalizeMapId(ready->mapId);
+                std::string serverMap = normalizeMapId(getServerMapId());
+                if (readyMap != serverMap)
+                {
+                    printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
+                           "readyMap=%s serverMap=%s\n",
+                           serverTimestamp(), ready->assignedPlayerId,
+                           readyMap.c_str(), serverMap.c_str());
+                    continue;
+                }
+                if (!it->second.spawned)
                 {
                     it->second.spawned = true;
+                    it->second.vel = glm::vec3(0.0f);
+                    it->second.clientStateUpdated = false;
                     printf("%s [SERVER MAP READY] id=%u name=\"%s\" mapId=%s spawned=1\n",
                            serverTimestamp(), it->second.id, it->second.name.c_str(),
                            ready->mapId);

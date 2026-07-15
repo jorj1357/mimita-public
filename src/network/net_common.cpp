@@ -1,5 +1,7 @@
 #include "network/net_common.h"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 
@@ -67,6 +69,27 @@ uint64_t nowMs()
 {
     using namespace std::chrono;
     return (uint64_t)duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+std::string normalizeMapId(const std::string& mapId)
+{
+    std::string result = mapId;
+    // Strip directory prefix
+    size_t lastSlash = result.find_last_of("/\\");
+    if (lastSlash != std::string::npos)
+        result = result.substr(lastSlash + 1);
+    // Strip .glb extension
+    if (result.size() > 4 && result.substr(result.size() - 4) == ".glb")
+        result = result.substr(0, result.size() - 4);
+    // Lowercase
+    for (char& c : result)
+        c = (char)std::tolower((unsigned char)c);
+    return result;
+}
+
+bool mapIdsReferToSameMap(const std::string& a, const std::string& b)
+{
+    return normalizeMapId(a) == normalizeMapId(b);
 }
 
 } // namespace MimitaNet

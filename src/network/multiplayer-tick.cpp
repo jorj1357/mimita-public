@@ -235,6 +235,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.reconnectToken = welcome->reconnectToken;
             ctx.requiredMapId = welcome->mapId;
             ctx.transformEpoch = welcome->header.transformEpoch;
+            ctx.clientMapReadySent = false;
+            ctx.clientMapReadySentForMap.clear();
+            ctx.clientMapReadySentForPlayerId = 0;
             printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s epoch=%u\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
                    welcome->mapId, ctx.transformEpoch);
@@ -259,6 +262,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.reconnectToken = accept->reconnectToken;
             ctx.requiredMapId = accept->mapId;
             ctx.transformEpoch = accept->header.transformEpoch;
+            ctx.clientMapReadySent = false;
+            ctx.clientMapReadySentForMap.clear();
+            ctx.clientMapReadySentForPlayerId = 0;
             printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s epoch=%u\n",
                    ctx.localPlayerId, accept->tickRate, accept->mapId, ctx.transformEpoch);
             ctx.playerRegistry[ctx.localPlayerId] = {
@@ -347,6 +353,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     ctx.localServerHealth = entity.health;
                     ctx.localServerEpoch = entity.transformEpoch;
                     ctx.localPingMs = entity.pingMs;
+
+                    // Sync outgoing epoch if server incremented it (respawn/teleport)
+                    if (entity.transformEpoch != 0 &&
+                        (uint32_t)entity.transformEpoch > ctx.transformEpoch)
+                    {
+                        const uint32_t oldEpoch = ctx.transformEpoch;
+                        ctx.transformEpoch = entity.transformEpoch;
+                        ctx.teleportResync = true;
+                        static uint64_t lastEpochSyncLogMs = 0;
+                        uint64_t nowSnapshot = nowMs();
+                        if (nowSnapshot - lastEpochSyncLogMs >= 500)
+                        {
+                            printf("[NET EPOCH SYNC] player=%u oldOutgoingEpoch=%u newServerEpoch=%u "
+                                   "position=(%.2f,%.2f,%.2f)\n",
+                                   ctx.localPlayerId, oldEpoch,
+                                   (uint32_t)entity.transformEpoch,
+                                   entity.px, entity.py, entity.pz);
+                            lastEpochSyncLogMs = nowSnapshot;
+                        }
+                    }
                     if (ctx.awaitingTeleportAck &&
                         glm::length(
                             ctx.localServerPosition -
@@ -506,6 +532,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.header.tick = ctx.tick;
         in.header.playerId = ctx.localPlayerId;
         in.header.transformEpoch = ctx.transformEpoch;
+
+        // Rate-limited log around respawn epoch
+        {
+            static uint64_t lastInputEpochLogMs = 0;
+            uint64_t nowInputLog = nowMs();
+            if (nowInputLog - lastInputEpochLogMs >= 1000)
+            {
+                printf("[CLIENT INPUT EPOCH] player=%u packetEpoch=%u serverEpoch=%u lastAppliedEpoch=%u "
+                       "pos=(%.2f,%.2f,%.2f) dead=%d\n",
+                       ctx.localPlayerId, ctx.transformEpoch,
+                       (uint32_t)ctx.localServerEpoch, (uint32_t)ctx.lastAppliedEpoch,
+                       input->position.x, input->position.y, input->position.z,
+                       (int)(input->position.y < -10.0f ? 1 : 0));
+                lastInputEpochLogMs = nowInputLog;
+            }
+        }
         in.wishX = input->wishX;
         in.wishY = input->wishY;
         in.camForwardX = input->camForward.x;
