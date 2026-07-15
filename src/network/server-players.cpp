@@ -295,6 +295,24 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.aimZ = player.input.camForward.z;
     out.pingMs = player.pingMs;
     out.sizeScale = player.sizeScale;
+    // Build state flags from server player state
+    uint16_t flags = 0;
+    if (player.onGround) flags |= NET_STATE_ON_GROUND;
+    if (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.1f && player.onGround)
+        flags |= NET_STATE_WALKING;
+    if (!player.onGround && player.vel.z > 1.0f)
+        flags |= NET_STATE_JUMPING;
+    if (!player.onGround && player.vel.z < -5.0f)
+        flags |= NET_STATE_DOWN_DASHING;
+    if (player.input.freezeHeld)
+        flags |= NET_STATE_FREEZING;
+    if (player.input.dashPressed || player.dashCooldownTimer > 0.0f)
+        flags |= NET_STATE_DASHING;
+    out.stateFlags = flags;
+    out.dashSerial = player.lastDashSerial;
+    out.jumpSerial = player.lastJumpSerial;
+    out.downDashSerial = player.lastDownDashSerial;
+    out.equipSerial = player.lastEquipSerial;
     copyName(out.displayName, player.name);
     return out;
 }

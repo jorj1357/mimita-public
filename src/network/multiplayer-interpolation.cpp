@@ -26,8 +26,13 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.aimDirection = {entity.aimX, entity.aimY, entity.aimZ};
     transform.pingMs = entity.pingMs;
     transform.receivedMs = nowMs();
+    transform.stateFlags = entity.stateFlags;
     transform.lastDashSerial = entity.lastDashSerial;
     transform.sizeScale = entity.sizeScale;
+    transform.dashSerial = entity.dashSerial;
+    transform.jumpSerial = entity.jumpSerial;
+    transform.downDashSerial = entity.downDashSerial;
+    transform.equipSerial = entity.equipSerial;
     return transform;
 }
 
@@ -111,14 +116,38 @@ void updateRenderedReplica(
     player.sizeScale = interpolation.target.sizeScale;
     player.username = interpolation.displayName;
 
-    // Detect dash serial change → trigger dash effect locally
-    if (interpolation.target.lastDashSerial != player.networkLastDashSerial)
+    // Apply replicated state flags directly (override per-player)
+    player.networkStateFlags = interpolation.target.stateFlags;
+    player.ground.onGround = interpolation.target.onGround;
+    player.freeze.freezeActive =
+        (interpolation.target.stateFlags & NET_STATE_FREEZING) != 0;
+    player.proceduralFrozen = player.freeze.freezeActive;
+
+    // Dash serial change → trigger dash effect once
+    if (interpolation.target.dashSerial != 0 &&
+        interpolation.target.dashSerial != player.networkLastDashSerial)
     {
         player.dash.didDash = true;
-        player.networkLastDashSerial = interpolation.target.lastDashSerial;
+        player.networkLastDashSerial = interpolation.target.dashSerial;
         EffectPartSystem::instance().spawnDash(player.pos, player.sizeScale);
         printf("[NET DASH] remote dash serial=%u\n",
-               (unsigned)interpolation.target.lastDashSerial);
+               (unsigned)interpolation.target.dashSerial);
+    }
+
+    // Jump serial change → trigger jump effect once
+    if (interpolation.target.jumpSerial != 0 &&
+        interpolation.target.jumpSerial != player.networkLastJumpSerial)
+    {
+        player.networkLastJumpSerial = interpolation.target.jumpSerial;
+        // Jump effect handled by updating procedural animation below
+    }
+
+    // Down-dash serial change → trigger down-dash effect once
+    if (interpolation.target.downDashSerial != 0 &&
+        interpolation.target.downDashSerial != player.networkLastDownDashSerial)
+    {
+        player.networkLastDownDashSerial = interpolation.target.downDashSerial;
+        // Down-dash effect handled by procedural animation
     }
 
     // Pass reconstructed aim direction so local animation system

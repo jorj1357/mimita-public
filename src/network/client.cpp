@@ -275,10 +275,14 @@ int runClient(const LaunchOptions& options)
                 in.clientVy = localIt->second.vel.y;
                 in.clientVz = localIt->second.vel.z;
             }
-            in.jumpHeld = input.jumpHeld ? 1 : 0;
-            in.dashPressed = input.dashPressed ? 1 : 0;
+            {
+                uint16_t sf = 0;
+                if (input.jumpHeld) sf |= NET_STATE_JUMPING;
+                if (input.dashPressed) sf |= NET_STATE_DASHING;
+                if (input.freezeHeld) sf |= NET_STATE_FREEZING;
+                in.stateFlags = sf;
+            }
             in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;
-            in.freezeHeld = input.freezeHeld ? 1 : 0;
             sendto(sock, (const char*)&in, sizeof(in), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
             ++packetsSent;
         }

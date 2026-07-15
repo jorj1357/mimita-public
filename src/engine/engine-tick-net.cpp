@@ -63,6 +63,28 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
         mpInput.sizeScale = player.sizeScale;
+
+        // Detect event transitions and increment serials
+        {
+            static bool prevDash = false;
+            static bool prevJump = false;
+            static bool prevDownDash = false;
+            static int prevEquipSlot = 0;
+            if (mpInput.dashPressed && !prevDash)
+                mpContext.nextLocalDashSerial++;
+            if (mpInput.jumpHeld && !prevJump)
+                mpContext.nextLocalJumpSerial++;
+            // Down-dash detected by rapid descent
+            if (!player.ground.onGround && player.vel.z < -8.0f && !prevDownDash)
+                mpContext.nextLocalDownDashSerial++;
+            if (mpInput.equippedSlot != prevEquipSlot)
+                mpContext.nextLocalEquipSerial++;
+            prevDash = mpInput.dashPressed;
+            prevJump = mpInput.jumpHeld;
+            prevDownDash = !player.ground.onGround && player.vel.z < -8.0f;
+            prevEquipSlot = mpInput.equippedSlot;
+        }
+
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);
         if (!mpContext.approvedLocalName.empty())
             player.username = mpContext.approvedLocalName;

@@ -126,9 +126,9 @@ static bool processPeerPacket(IceClientPeer& peer, const char* data, size_t size
         peer.vx += input->wishX * 20.0f * dt;
         peer.vz += input->wishY * 20.0f * dt;
 
-        if (input->jumpHeld && peer.py <= 5.01f)
+        if ((input->stateFlags & MimitaNet::NET_STATE_JUMPING) && peer.py <= 5.01f)
             peer.vy = 12.0f;
-        if (input->dashPressed) {
+        if (input->stateFlags & MimitaNet::NET_STATE_DASHING) {
             peer.vx += cosf(peer.yaw) * 30.0f * dt;
             peer.vz += sinf(peer.yaw) * 30.0f * dt;
         }
@@ -425,8 +425,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         input.header.tick = (uint32_t)step;
         input.wishX = (step % 200 < 100) ? 5.0f : -5.0f;
         input.yaw = (float)step * 0.2f;
-        input.dashPressed = (step % 120 == 0) ? 1 : 0;
-        input.jumpHeld = 0;
+        input.stateFlags = (step % 120 == 0) ? (uint16_t)MimitaNet::NET_STATE_DASHING : 0;
         agent.send(&input, sizeof(input));
 
         std::vector<IceEvent> evs; agent.pollEvents(evs);

@@ -226,18 +226,36 @@ void handleInputPacket(const char* buffer, int bytes,
     p.input.wish = {in->wishX, in->wishY};
     p.input.camForward = {in->camForwardX, in->camForwardY, in->camForwardZ};
     p.input.yaw = in->yaw;
-    p.input.jumpHeld = in->jumpHeld != 0;
-    p.input.dashPressed = in->dashPressed != 0;
-    const bool attackPressed = in->attackPressed != 0;
-    if (attackPressed && !p.input.attackPressed)
-        p.attackQueued = true;
-    p.input.attackPressed = attackPressed;
-    p.input.freezeHeld = in->freezeHeld != 0;
     p.input.tick = in->header.tick;
     p.equippedSlot = in->equippedSlot;
     p.weaponState = in->weaponState;
     p.pingMs = std::clamp(in->clientPingMs, 0, 9999);
     p.sizeScale = std::max(in->sizeScale, 0.001f);
+
+    // Reconstruct per-input booleans from state flags for existing server code
+    p.input.jumpHeld = (in->stateFlags & NET_STATE_JUMPING) != 0;
+    p.input.dashPressed = (in->stateFlags & NET_STATE_DASHING) != 0;
+    p.input.freezeHeld = (in->stateFlags & NET_STATE_FREEZING) != 0;
+    // Update event serials from input
+    if (in->dashSerial != 0 && in->dashSerial != p.lastDashSerial)
+    {
+        p.lastDashSerial = in->dashSerial;
+        p.input.dashPressed = true;
+    }
+    if (in->jumpSerial != 0 && in->jumpSerial != p.lastJumpSerial)
+        p.lastJumpSerial = in->jumpSerial;
+    if (in->downDashSerial != 0 && in->downDashSerial != p.lastDownDashSerial)
+        p.lastDownDashSerial = in->downDashSerial;
+    if (in->equipSerial != 0 && in->equipSerial != p.lastEquipSerial)
+    {
+        p.lastEquipSerial = in->equipSerial;
+        p.equippedSlot = in->equippedSlot;
+    }
+
+    const bool attackPressed = in->attackPressed != 0;
+    if (attackPressed && !p.input.attackPressed)
+        p.attackQueued = true;
+    p.input.attackPressed = attackPressed;
 
     const glm::vec3 reportedPosition{
         in->clientPx, in->clientPy, in->clientPz};
