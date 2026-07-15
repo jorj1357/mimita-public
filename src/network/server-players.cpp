@@ -151,6 +151,23 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
+    // Apply input yaw BEFORE any non-dead early return.
+    // Orientation comes from current input and must update every frame,
+    // even when clientStateUpdated causes an early return.
+    p.yaw = p.input.yaw;
+
+    {
+        static uint64_t lastLookApplyLogMs = 0;
+        uint64_t nowLookApply = nowMs();
+        if (nowLookApply - lastLookApplyLogMs >= 1000)
+        {
+            printf("[LOOK SERVER APPLY] playerId=%u inputYaw=%.2f oldYaw=%.2f newYaw=%.2f "
+                   "clientStateUpdated=%d\n",
+                   p.id, p.input.yaw, p.yaw, p.input.yaw, (int)p.clientStateUpdated);
+            lastLookApplyLogMs = nowLookApply;
+        }
+    }
+
     if (p.dead)
     {
         p.vel = glm::vec3(0.0f);
@@ -225,8 +242,6 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             ++p.lastDashSerial;
         }
     }
-
-    p.yaw = p.input.yaw;
     p.pos += p.vel * SERVER_DT;
     resolveWorldCollision(p, world);
     if (p.onGround)
@@ -295,6 +310,21 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.aimZ = player.input.camForward.z;
     out.pingMs = player.pingMs;
     out.sizeScale = player.sizeScale;
+
+    {
+        static uint64_t lastLookSnapshotLogMs = 0;
+        uint64_t nowLookSnap = nowMs();
+        if (nowLookSnap - lastLookSnapshotLogMs >= 1000)
+        {
+            printf("[LOOK SNAPSHOT BUILD] playerId=%u yaw=%.2f aim=(%.2f,%.2f,%.2f) "
+                   "pos=(%.2f,%.2f,%.2f)\n",
+                   player.id, player.yaw,
+                   player.input.camForward.x, player.input.camForward.y, player.input.camForward.z,
+                   player.pos.x, player.pos.y, player.pos.z);
+            lastLookSnapshotLogMs = nowLookSnap;
+        }
+    }
+
     // Build state flags from server player state
     uint16_t flags = 0;
     if (player.onGround) flags |= NET_STATE_ON_GROUND;

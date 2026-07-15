@@ -27,6 +27,20 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.pingMs = entity.pingMs;
     transform.receivedMs = nowMs();
     transform.stateFlags = entity.stateFlags;
+
+    {
+        static uint64_t lastLookDecodeLogMs = 0;
+        uint64_t nowLookDecode = nowMs();
+        if (nowLookDecode - lastLookDecodeLogMs >= 1000)
+        {
+            printf("[LOOK SNAPSHOT DECODE] entityId=%u epoch=%u yaw=%.2f aim=(%.2f,%.2f,%.2f) "
+                   "pos=(%.2f,%.2f,%.2f)\n",
+                   entity.networkEntityId, (unsigned)entity.transformEpoch,
+                   entity.yaw, entity.aimX, entity.aimY, entity.aimZ,
+                   entity.px, entity.py, entity.pz);
+            lastLookDecodeLogMs = nowLookDecode;
+        }
+    }
     transform.lastDashSerial = entity.lastDashSerial;
     transform.sizeScale = entity.sizeScale;
     transform.dashSerial = entity.dashSerial;
@@ -83,12 +97,52 @@ void updateRenderedReplica(
         }
     }
 
+    // Position uses interpolation for smooth movement.
     player.pos = interpolation.previous.position +
         (interpolation.target.position - interpolation.previous.position) * t;
     player.vel = interpolation.target.velocity;
-    player.yaw = angleLerpDegrees(interpolation.previous.yaw, interpolation.target.yaw, t);
     player.currentHp = interpolation.target.health;
     player.dead = interpolation.target.health <= 0;
+
+    // Body-facing yaw and aim use the NEWEST target snapshot directly.
+    // Do not interpolate look through the delayed position timeline.
+    {
+        const float previousYaw = interpolation.previous.yaw;
+        const float targetYaw = interpolation.target.yaw;
+        player.yaw = targetYaw;
+        const glm::vec3 newestAim = interpolation.target.aimDirection;
+        const glm::vec3 prevAim = interpolation.previous.aimDirection;
+        if (std::isfinite(newestAim.x) && std::isfinite(newestAim.y) && std::isfinite(newestAim.z) &&
+            glm::dot(newestAim, newestAim) > 0.000001f)
+        {
+            player.aimDirection = glm::normalize(newestAim);
+            player.hasAimData = true;
+        }
+        else
+        {
+            player.hasAimData = false;
+        }
+
+        // Rate-limited logging for look debug
+        static uint64_t lastLookLogMs = 0;
+        uint64_t nowLook = nowMs();
+        if (nowLook - lastLookLogMs >= 1000)
+        {
+            printf("[LOOK REMOTE APPLY] entityId=%u serverTick=%u "
+                   "previousYaw=%.2f targetYaw=%.2f appliedYaw=%.2f "
+                   "previousAim=(%.2f,%.2f,%.2f) targetAim=(%.2f,%.2f,%.2f) "
+                   "appliedAim=(%.2f,%.2f,%.2f) hasAim=%d interpolationT=%.3f\n",
+                   interpolation.target.serverTick,
+                   interpolation.target.serverTick,
+                   previousYaw, targetYaw, player.yaw,
+                   prevAim.x, prevAim.y, prevAim.z,
+                   newestAim.x, newestAim.y, newestAim.z,
+                   player.aimDirection.x, player.aimDirection.y, player.aimDirection.z,
+                   (int)player.hasAimData, t);
+            lastLookLogMs = nowLook;
+        }
+    }
+
     player.ground.onGround = interpolation.target.onGround;
     player.equippedSlot = interpolation.target.equippedSlot;
     {
@@ -109,10 +163,6 @@ void updateRenderedReplica(
     player.networkWeaponState = interpolation.target.weaponState;
     if (player.networkShootEffectTimer > 0.0f)
         player.networkWeaponState |= 1u;
-    player.aimDirection = interpolation.hasPrevious
-        ? glm::normalize(glm::mix(interpolation.previous.aimDirection, interpolation.target.aimDirection, t))
-        : interpolation.target.aimDirection;
-    player.hasAimData = glm::length(player.aimDirection) > 0.001f;
     player.sizeScale = interpolation.target.sizeScale;
     player.username = interpolation.displayName;
 
