@@ -15,6 +15,7 @@
 #include "auth/auth-system.h"
 
 extern bool gNetPresentationDebug;
+extern bool gRoomCodeShow;
 
 void registerNetworkCommands()
 {
@@ -78,19 +79,55 @@ void registerNetworkCommands()
         "server_info",
         [](const std::vector<std::string>&) {
             MimitaNet::ListenServerState* ls = getListenServerState();
-            if (!ls || !ls->active) {
+            ExternalServerProcessStatus external = getExternalServerProcessStatus();
+
+            const bool listenRunning = ls && ls->active;
+            const bool externalRunning = external.running;
+
+            if (!listenRunning && !externalRunning)
+            {
                 Terminal::instance().addLog("[SERVER] not running");
                 return;
             }
+
+            if (listenRunning && externalRunning)
+                Terminal::instance().addLog("[SERVER WARNING] external and listen servers are both active");
+
             char buf[256];
-            snprintf(buf, sizeof(buf), "[SERVER] code=%s port=%u players=%zu/%d tick=%u",
-                     ls->serverCode.c_str(), ls->port, ls->players.size(),
-                     MimitaNet::MAX_PLAYERS, ls->tick);
-            Terminal::instance().addLog(buf);
-            for (const auto& kv : ls->players) {
-                snprintf(buf, sizeof(buf), "  player id=%u name=\"%s\" hp=%d dead=%d",
-                         kv.second.id, kv.second.name.c_str(), kv.second.health, (int)kv.second.dead);
+
+            if (externalRunning)
+            {
+                snprintf(buf, sizeof(buf), "[SERVER] type=external-headless running=1");
                 Terminal::instance().addLog(buf);
+
+                uint64_t uptimeSec = external.uptimeMs / 1000;
+                snprintf(buf, sizeof(buf), "[SERVER] pid=%u code=%s port=%u uptime=%llus",
+                         external.processId, external.roomCode.c_str(),
+                         external.port, (unsigned long long)uptimeSec);
+                Terminal::instance().addLog(buf);
+
+                snprintf(buf, sizeof(buf), "[SERVER] name=\"%s\" map=%s",
+                         external.serverName.c_str(), external.mapName.c_str());
+                Terminal::instance().addLog(buf);
+
+                Terminal::instance().addLog("[SERVER] player count is owned by the child process and unavailable locally");
+            }
+
+            if (listenRunning)
+            {
+                snprintf(buf, sizeof(buf), "[SERVER] type=listen running=1");
+                Terminal::instance().addLog(buf);
+
+                snprintf(buf, sizeof(buf), "[SERVER] code=%s port=%u players=%zu/%d tick=%u",
+                         ls->serverCode.c_str(), ls->port, ls->players.size(),
+                         MimitaNet::MAX_PLAYERS, ls->tick);
+                Terminal::instance().addLog(buf);
+
+                for (const auto& kv : ls->players) {
+                    snprintf(buf, sizeof(buf), "  player id=%u name=\"%s\" hp=%d dead=%d",
+                             kv.second.id, kv.second.name.c_str(), kv.second.health, (int)kv.second.dead);
+                    Terminal::instance().addLog(buf);
+                }
             }
         }
     });
@@ -434,6 +471,24 @@ void registerNetworkCommands()
                     " yaw=" + std::to_string((int)kv.second.yaw));
             }
             Terminal::instance().addLog("=== END DUMP ===");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "roomcodeshow", "Show/hide room code HUD overlay",
+        "roomcodeshow 0|1",
+        [](const std::vector<std::string>& args) {
+            if (args.size() == 1 && args[0] == "0") {
+                gRoomCodeShow = false;
+                printf("[ROOM CODE] HUD hidden\n");
+                Terminal::instance().addLog("[ROOM CODE] HUD hidden");
+            } else if (args.size() == 1 && args[0] == "1") {
+                gRoomCodeShow = true;
+                printf("[ROOM CODE] HUD shown\n");
+                Terminal::instance().addLog("[ROOM CODE] HUD shown");
+            } else {
+                printf("usage: roomcodeshow 0|1\n");
+                Terminal::instance().addLog("usage: roomcodeshow 0|1");
+            }
         }
     });
 }

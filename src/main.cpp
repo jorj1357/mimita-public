@@ -210,6 +210,8 @@ bool gReplayCinematicMode = false;
 // network debug flags (toggled by net_debug_* commands)
 bool gNetPresentationDebug = false;
 bool gNetDebugEntities = false;
+// room code HUD display toggle (toggled by roomcodeshow command)
+bool gRoomCodeShow = true;
 
 int main(int argc, char** argv)
 {
