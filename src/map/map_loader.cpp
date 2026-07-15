@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <string>
 #include <vector>
+#include <chrono>
 
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -35,6 +36,7 @@
 #include "world/texture-store.h"
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
+#include "world/world-gltf-loader.h"
 
 extern TextureStore gTextures;
 
@@ -124,11 +126,18 @@ Mesh loadOBJ(const std::string& path)
     return mesh;
 }
 
-Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh)
+Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh,
+             MapLoadTiming* timing, MapLoadMetrics* metrics)
 {
+    auto ms = [](auto start) {
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
+    };
+
     std::string resolvedPath = resolveAssetPath(path);
     GLB_LOG("[GLB] path = %s\n", resolvedPath.c_str());
 
+    auto t0 = std::chrono::steady_clock::now();
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
     std::string err;
@@ -144,6 +153,40 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh)
     {
         GLB_LOG("[GLB ERROR] Failed to load GLB\n");
         return Mesh{};
+    }
+    if (timing) timing->read_glb = ms(t0);
+
+    if (metrics) {
+        metrics->meshCount = (int)model.meshes.size();
+        metrics->nodeCount = (int)model.nodes.size();
+        metrics->imageCount = (int)model.images.size();
+        for (const auto& m : model.meshes)
+            metrics->primitiveCount += (int)m.primitives.size();
+        metrics->totalDecodedImageBytes = 0;
+        for (const auto& img : model.images)
+            metrics->totalDecodedImageBytes += img.image.size();
+        metrics->largestImageW = 0;
+        metrics->largestImageH = 0;
+        for (const auto& img : model.images) {
+            if (img.width > metrics->largestImageW) metrics->largestImageW = img.width;
+            if (img.height > metrics->largestImageH) metrics->largestImageH = img.height;
+        }
+        for (const auto& m : model.meshes) {
+            for (const auto& prim : m.primitives) {
+                auto posIt = prim.attributes.find("POSITION");
+                if (posIt != prim.attributes.end() && posIt->second >= 0 && posIt->second < (int)model.accessors.size()) {
+                    const auto& acc = model.accessors[posIt->second];
+                    if (acc.count > metrics->largestPrimitiveVertexCount)
+                        metrics->largestPrimitiveVertexCount = acc.count;
+                }
+                if (prim.indices >= 0 && prim.indices < (int)model.accessors.size()) {
+                    const auto& acc = model.accessors[prim.indices];
+                    metrics->totalSourceIndices += acc.count;
+                    if (acc.count > metrics->largestPrimitiveIndexCount)
+                        metrics->largestPrimitiveIndexCount = acc.count;
+                }
+            }
+        }
     }
 
     Debug::logOnce(Debug::Category::GLB, resolvedPath.c_str(), "[GLB] model meshes=%zu nodes=%zu materials=%zu textures=%zu images=%zu scenes=%zu buffers=%zu bufferViews=%zu accessors=%zu defaultScene=%d\n",
@@ -186,7 +229,12 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh)
     std::vector<GLuint> colorTextures;
     std::vector<GLuint> materialTextures(model.materials.size(), 0);
 
+    auto tMat = std::chrono::steady_clock::now();
     processGLBMaterials(model, glbDir, imageTextures, materialTextures, colorTextures);
+    if (timing) {
+        timing->materials_decode = ms(tMat);
+        timing->texture_upload = timing->materials_decode;
+    }
 
     Mesh mesh;
     for (GLuint texture : imageTextures)
@@ -200,9 +248,15 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh)
             mesh.ownedTextures.push_back(texture);
     }
 
+    auto tWalk = std::chrono::steady_clock::now();
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
     walkGLBScene(model, materialTextures, mesh, sceneIndex, skyMesh);
+    if (timing) {
+        timing->scene_walk = ms(tWalk);
+        timing->vertex_expansion = timing->scene_walk;
+    }
 
+    auto tMerge = std::chrono::steady_clock::now();
     std::vector<Mesh::Batch> merged;
     for (const Mesh::Batch& batch : mesh.batches)
     {
@@ -220,6 +274,17 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh)
     if (merged.size() != mesh.batches.size())
         GLB_LOG("[GLB] merged material batches %zu -> %zu to reduce texture binds\n", mesh.batches.size(), merged.size());
     mesh.batches = merged;
+    if (timing) timing->batch_merge = ms(tMerge);
+
+    if (metrics) {
+        for (const auto& m : model.meshes) {
+            for (const auto& prim : m.primitives) {
+                auto posIt = prim.attributes.find("POSITION");
+                if (posIt != prim.attributes.end() && posIt->second >= 0 && posIt->second < (int)model.accessors.size())
+                    metrics->totalSourceVertices += model.accessors[posIt->second].count;
+            }
+        }
+    }
 
     // Store GLB debug data
     {

@@ -1,5 +1,6 @@
 #include "map-loader-collision.h"
 #include "world/world.h"
+#include "world/world-gltf-loader.h"
 #include <cstdio>
 #include <cmath>
 #include <glm/glm.hpp>
@@ -102,9 +103,17 @@ void buildCollisionMeshFromRenderMesh(World& world)
     }
 }
 
-void buildCollisionChunks(World& world)
+static constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
+
+void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 {
     world.collisionChunks.clear();
+    world.collisionLargeTriangles.clear();
+
+    uint64_t totalRefs = 0;
+    uint64_t maxChunks = 0;
+    double maxBounds = 0;
+    int largeTriCount = 0;
 
     for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
     {
@@ -114,12 +123,42 @@ void buildCollisionChunks(World& world)
         glm::ivec3 c0 = collisionChunkCoord(mn, world.collisionChunkSize);
         glm::ivec3 c1 = collisionChunkCoord(mx, world.collisionChunkSize);
 
+        int chunksX = c1.x - c0.x + 1;
+        int chunksY = c1.y - c0.y + 1;
+        int chunksZ = c1.z - c0.z + 1;
+        int64_t chunksTouched = (int64_t)chunksX * chunksY * chunksZ;
+
+        glm::vec3 triSize = mx - mn;
+        double maxDim = std::max({(double)triSize.x, (double)triSize.y, (double)triSize.z});
+        if (maxDim > maxBounds) maxBounds = maxDim;
+
+        if (chunksTouched > MAX_CHUNKS_PER_TRIANGLE)
+        {
+            world.collisionLargeTriangles.push_back(i);
+            ++largeTriCount;
+            continue;
+        }
+
+        totalRefs += chunksTouched;
+        if ((uint64_t)chunksTouched > maxChunks) maxChunks = chunksTouched;
+
         for (int x = c0.x; x <= c1.x; ++x)
         for (int y = c0.y; y <= c1.y; ++y)
         for (int z = c0.z; z <= c1.z; ++z)
             world.collisionChunks[glm::ivec3(x, y, z)].push_back(i);
     }
 
-    printf("[WORLD GLB COLLISION] chunks=%zu chunkSize=%.2f\n",
-           world.collisionChunks.size(), world.collisionChunkSize);
+    if (largeTriCount > 0)
+        printf("[WORLD GLB COLLISION WARNING] %d large triangles moved to collisionLargeTriangles (each exceeds %d chunks)\n",
+               largeTriCount, MAX_CHUNKS_PER_TRIANGLE);
+
+    printf("[WORLD GLB COLLISION] chunks=%zu chunkSize=%.2f totalRefs=%llu maxChunksPerTri=%llu maxBounds=%.1f largeTris=%d\n",
+           world.collisionChunks.size(), world.collisionChunkSize,
+           (unsigned long long)totalRefs, (unsigned long long)maxChunks, maxBounds, largeTriCount);
+
+    if (metrics) {
+        metrics->totalTriangleToChunkRefs = totalRefs;
+        metrics->maxChunksTouchedByOneTriangle = maxChunks;
+        metrics->maxTriangleBoundsSize = maxBounds;
+    }
 }

@@ -268,6 +268,18 @@ int runServer(const LaunchOptions& options)
                 handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick, totalPacketsOut);
             else if (header->type == PACKET_SERVER_COMMAND)
                 handleServerCommand(buffer, bytes, players, npcs);
+            else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
+            {
+                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+                auto it = players.find(ready->assignedPlayerId);
+                if (it != players.end() && !it->second.spawned)
+                {
+                    it->second.spawned = true;
+                    printf("%s [SERVER MAP READY] id=%u name=\"%s\" mapId=%s spawned=1\n",
+                           serverTimestamp(), it->second.id, it->second.name.c_str(),
+                           ready->mapId);
+                }
+            }
         }
 
         // Post-tick simulation and snapshot
@@ -581,6 +593,18 @@ void tickListenServer(ListenServerState& state, float dt)
                                        state.totalPacketsOut);
             else if (header->type == PACKET_SERVER_COMMAND)
                 handleServerCommand(buffer, bytes, state.players, state.npcs);
+            else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
+            {
+                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+                auto it = state.players.find(ready->assignedPlayerId);
+                if (it != state.players.end() && !it->second.spawned)
+                {
+                    it->second.spawned = true;
+                    printf("%s [SERVER MAP READY] id=%u name=\"%s\" mapId=%s spawned=1\n",
+                           serverTimestamp(), it->second.id, it->second.name.c_str(),
+                           ready->mapId);
+                }
+            }
         }
 
         handleClientTimeout(state.players);

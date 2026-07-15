@@ -468,12 +468,15 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                    serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
                    p.pos.x, p.pos.y, p.pos.z, p.reconnectToken.c_str());
         }
-        p.spawned = true;
+        // Player registered but not yet spawned — waits for ClientMapReady.
+        // Server will simulate and include in snapshots only after spawned=true.
+        p.spawned = false;
     }
     else
     {
         printf("%s [SERVER REJOIN] id=%u name=\"%s\" addr=%s\n",
                serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
+        p.spawned = true;
     }
 
     ++p.transformEpoch;

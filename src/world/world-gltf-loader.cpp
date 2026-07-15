@@ -26,62 +26,109 @@
 
 #include <tinygltf/tiny_gltf.h>
 
+
+
+static double msSince(std::chrono::steady_clock::time_point start)
+{
+    return std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+}
+
 bool loadWorldFromGLB(World& world, const char* path)
 {
+    MapLoadTiming timing;
+    MapLoadMetrics metrics;
     const auto loadStarted = std::chrono::steady_clock::now();
-    printf("[WORLD GLB] loading %s\n", path);
+
+    Debug::warn(Debug::Category::World, "[MAP LOAD PHASE] loading path=%s", path);
+
+    std::string resolvedPath = resolveAssetPath(path);
+    {
+        FILE* f = fopen(resolvedPath.c_str(), "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            metrics.glbFileBytes = ftell(f);
+            fclose(f);
+        }
+    }
 
     World candidate;
     candidate.renderRevision = world.renderRevision + 1;
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
-    auto tParseStart = std::chrono::steady_clock::now();
-    candidate.mesh = loadGLB(path, true, &candidate.skyMesh);
-    auto tParseEnd = std::chrono::steady_clock::now();
+    auto tStart = std::chrono::steady_clock::now();
+    candidate.mesh = loadGLB(path, true, &candidate.skyMesh, &timing, &metrics);
+    timing.parse_glb = msSince(tStart);
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] after loadGLB\n");
 
-    printf(
-        "[WORLD GLB] verts=%zu triangles=%zu batches=%zu\n",
-        candidate.mesh.verts.size(),
-        candidate.mesh.verts.size() / 3,
-        candidate.mesh.batches.size()
-    );
-
     if (candidate.mesh.verts.empty())
     {
-        printf("[WORLD GLB ERROR] GLB produced no renderable vertices\n");
+        Debug::warn(Debug::Category::World, "[MAP LOAD PHASE] GLB produced no renderable vertices path=%s", path);
         releaseMeshGLResources(candidate.mesh);
         return false;
     }
 
-    auto tColStart = std::chrono::steady_clock::now();
+    metrics.finalExpandedVertexCount = candidate.mesh.verts.size();
+    metrics.renderTriangleCount = candidate.mesh.verts.size() / 3;
+
+    tStart = std::chrono::steady_clock::now();
     buildCollisionMeshFromRenderMesh(candidate);
-    auto tChunkStart = std::chrono::steady_clock::now();
-    buildCollisionChunks(candidate);
-    auto tSpawnStart = std::chrono::steady_clock::now();
+    timing.collision_triangles = msSince(tStart);
+    metrics.collisionTriangleCount = candidate.collisionMesh.triangles.size();
+
+    tStart = std::chrono::steady_clock::now();
+    buildCollisionChunks(candidate, &metrics);
+    timing.collision_chunks = msSince(tStart);
+    metrics.collisionChunkCount = candidate.collisionChunks.size();
+
+    tStart = std::chrono::steady_clock::now();
     extractSpawnPointsFromGLB(candidate, path);
-    auto tSpawnEnd = std::chrono::steady_clock::now();
+    double spawnTime = msSince(tStart);
 
     const auto unloadStarted = std::chrono::steady_clock::now();
     releaseMeshGLResources(world.mesh);
     world = std::move(candidate);
     const auto finished = std::chrono::steady_clock::now();
-    const double unloadMs =
-        std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
-    const double loadMs =
-        std::chrono::duration<double, std::milli>(finished - loadStarted).count();
+    timing.world_commit = std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
+    timing.total = std::chrono::duration<double, std::milli>(finished - loadStarted).count();
 
-    auto ms = [](auto start, auto end) {
-        return std::chrono::duration<double, std::milli>(end - start).count();
-    };
-    printf("[WORLD GLB] load phases: parse=%.1fms collision=%.1fms chunks=%.1fms spawns=%.1fms unload=%.1fms total=%.1fms\n",
-           ms(tParseStart, tParseEnd),
-           ms(tColStart, tChunkStart),
-           ms(tChunkStart, tSpawnStart),
-           ms(tSpawnStart, tSpawnEnd),
-           unloadMs, loadMs);
+    printf("[MAP LOAD PHASE] phase=read_glb time=%.1fms\n", timing.read_glb);
+    printf("[MAP LOAD PHASE] phase=parse_glb time=%.1fms\n", timing.parse_glb);
+    printf("[MAP LOAD PHASE] phase=materials_decode time=%.1fms\n", timing.materials_decode);
+    printf("[MAP LOAD PHASE] phase=texture_upload time=%.1fms\n", timing.texture_upload);
+    printf("[MAP LOAD PHASE] phase=scene_walk time=%.1fms\n", timing.scene_walk);
+    printf("[MAP LOAD PHASE] phase=vertex_expansion time=%.1fms\n", timing.vertex_expansion);
+    printf("[MAP LOAD PHASE] phase=batch_merge time=%.1fms\n", timing.batch_merge);
+    printf("[MAP LOAD PHASE] phase=collision_triangles time=%.1fms\n", timing.collision_triangles);
+    printf("[MAP LOAD PHASE] phase=collision_chunks time=%.1fms\n", timing.collision_chunks);
+    printf("[MAP LOAD PHASE] phase=gpu_buffer_upload time=%.1fms\n", timing.gpu_buffer_upload);
+    printf("[MAP LOAD PHASE] phase=world_commit time=%.1fms\n", timing.world_commit);
+    printf("[MAP LOAD PHASE] phase=spawn_points time=%.1fms\n", spawnTime);
+    printf("[MAP LOAD PHASE] phase=total time=%.1fms\n", timing.total);
+
+    printf("[MAP LOAD METRICS] glbBytes=%llu meshes=%d nodes=%d primitives=%d images=%d\n",
+           (unsigned long long)metrics.glbFileBytes, metrics.meshCount, metrics.nodeCount,
+           metrics.primitiveCount, metrics.imageCount);
+    printf("[MAP LOAD METRICS] decodedImageBytes=%llu sourceVerts=%llu sourceIndices=%llu\n",
+           (unsigned long long)metrics.totalDecodedImageBytes,
+           (unsigned long long)metrics.totalSourceVertices,
+           (unsigned long long)metrics.totalSourceIndices);
+    printf("[MAP LOAD METRICS] expandedVerts=%llu renderTris=%llu collisionTris=%llu\n",
+           (unsigned long long)metrics.finalExpandedVertexCount,
+           (unsigned long long)metrics.renderTriangleCount,
+           (unsigned long long)metrics.collisionTriangleCount);
+    printf("[MAP LOAD METRICS] collisionChunks=%llu totalChunkRefs=%llu maxChunksPerTri=%llu maxTriBoundsSize=%.1f\n",
+           (unsigned long long)metrics.collisionChunkCount,
+           (unsigned long long)metrics.totalTriangleToChunkRefs,
+           (unsigned long long)metrics.maxChunksTouchedByOneTriangle,
+           metrics.maxTriangleBoundsSize);
+    printf("[MAP LOAD METRICS] largestImage=%dx%d largestPrimVerts=%llu largestPrimIndices=%llu\n",
+           metrics.largestImageW, metrics.largestImageH,
+           (unsigned long long)metrics.largestPrimitiveVertexCount,
+           (unsigned long long)metrics.largestPrimitiveIndexCount);
+
     printf("[WORLD GLB] load success path=%s revision=%llu spawns=%zu\n",
            path, (unsigned long long)world.renderRevision,
            world.spawnPoints.size());
@@ -207,19 +254,4 @@ void extractSpawnPointsFromGLB(World& world, const char* path)
     }
 
     printf("[SPAWN GLB] total spawn points extracted: %zu\n", world.spawnPoints.size());
-
-    FILE* debugFile = fopen("logs/map_spawn_debug.txt", "a");
-    if (debugFile) {
-        fprintf(debugFile, "Map name: %s\n", path);
-        fprintf(debugFile, "Spawnpoints found: %zu\n", world.spawnPoints.size());
-        for (size_t i = 0; i < world.spawnPoints.size(); ++i) {
-            const SpawnPoint& sp = world.spawnPoints[i];
-            fprintf(debugFile, "Spawnpoint %zu\n", i);
-            fprintf(debugFile, "  position=(%.3f %.3f %.3f)\n",
-                    sp.position.x, sp.position.y, sp.position.z);
-            fprintf(debugFile, "  tag=%s arena=%d\n",
-                    sp.tag.c_str(), sp.arenaIndex);
-        }
-        fclose(debugFile);
-    }
 }

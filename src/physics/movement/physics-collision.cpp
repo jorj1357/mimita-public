@@ -166,6 +166,25 @@ void appendChunkTrianglesForAABB(
         }
     }
 
+    // Include large triangles that exceeded MAX_CHUNKS_PER_TRIANGLE
+    if (!world.collisionLargeTriangles.empty())
+    {
+        for (int triIndex : world.collisionLargeTriangles)
+        {
+            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            if (s_triGen[triIndex] == s_gen)
+                continue;
+            s_triGen[triIndex] = s_gen;
+
+            AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
+            triBounds.min -= glm::vec3(expansion);
+            triBounds.max += glm::vec3(expansion);
+            if (overlaps(clamped, triBounds))
+                out.push_back(triIndex);
+        }
+    }
+
     auto t1 = std::chrono::steady_clock::now();
     float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
