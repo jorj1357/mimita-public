@@ -43,6 +43,7 @@
 #include "game/bomb-tag.h"
 #include "game/game-state.h"
 #include "network/multiplayer-context.h"
+#include "gui/menus/online-menu.h"
 
 #include "debug/debug-log.h"
 #include "config/player-settings.h"
@@ -54,6 +55,7 @@ extern BombTagManager gBombTagManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 extern bool gReplayCinematicMode;
+extern bool gRoomCodeShow;
 
 void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 {
@@ -420,4 +422,18 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 
     if (isHealthbarDebugEnabled())
         drawHealthbarDebugOverlay(camera);
+
+    // ── Room code HUD ───────────────────────────────────────────
+    if (gRoomCodeShow && !gReplayExportRenderMode && !gReplayCinematicMode)
+    {
+        const std::string& code = onlineMenuGetServerCode();
+        if (!code.empty() && code != "pending" && code != "See server console" && code != "server not running")
+        {
+            char buf[80];
+            snprintf(buf, sizeof(buf), "Room code: %s", code.c_str());
+            float cx = uiScreenW() * 0.5f;
+            uiDrawText(buf, cx - 90.0f, 18.0f, 0.38f, {1.0f, 1.0f, 1.0f, 1.0f});
+            uiDrawText("Open console with ` key", cx - 150.0f, 40.0f, 0.24f, {0.75f, 0.85f, 1.0f, 1.0f});
+        }
+    }
 }

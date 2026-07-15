@@ -91,6 +91,10 @@ void onlineMenuSetServerCode(const std::string& code) {
     serverCodeDisplay = code;
 }
 
+const std::string& onlineMenuGetServerCode() {
+    return serverCodeDisplay;
+}
+
 void onlineMenuHandleChar(unsigned int codepoint) {
     (void)codepoint;
 }

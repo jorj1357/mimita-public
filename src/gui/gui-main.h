@@ -71,6 +71,20 @@ struct MultiplayerConnectInfo
 MultiplayerConnectInfo getPendingMultiplayerConnect();
 void clearPendingMultiplayerConnect();
 
+struct ExternalServerProcessStatus
+{
+    bool launched = false;
+    bool running = false;
+    uint32_t processId = 0;
+    uint16_t port = 1357;
+    uint64_t uptimeMs = 0;
+    std::string roomCode;
+    std::string serverName;
+    std::string mapName;
+};
+
+ExternalServerProcessStatus getExternalServerProcessStatus();
+
 namespace MimitaNet {
 struct ListenServerState;
 }

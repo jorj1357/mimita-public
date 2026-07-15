@@ -234,6 +234,48 @@ void reportSandboxMapLoadResult(const std::string& message, bool success)
     sandboxMapMenuSetLoadResult(message, success);
 }
 
+ExternalServerProcessStatus getExternalServerProcessStatus()
+{
+    ExternalServerProcessStatus status;
+
+    if (!gServerProcessLaunched)
+        return status;
+
+    status.launched = true;
+    status.processId = (uint32_t)gServerProcessInfo.dwProcessId;
+    status.port = gServerLaunchSettings.port;
+    status.roomCode = gServerLaunchSettings.serverCode;
+    status.serverName = gServerLaunchSettings.serverName;
+    status.mapName = gServerLaunchSettings.mapName;
+    status.uptimeMs = MimitaNet::nowMs() - gServerProcessLaunchMs;
+
+    if (!gServerProcessInfo.hProcess)
+        return status;
+
+    DWORD exitCode = 0;
+    if (!GetExitCodeProcess(gServerProcessInfo.hProcess, &exitCode))
+        return status;
+
+    if (exitCode == STILL_ACTIVE)
+    {
+        status.running = true;
+    }
+    else
+    {
+        static uint64_t lastExitLogMs = 0;
+        uint64_t now = MimitaNet::nowMs();
+        if (now - lastExitLogMs >= 5000)
+        {
+            printf("[SERVER PROCESS STATUS] exited pid=%lu exitCode=%lu\n",
+                   (unsigned long)gServerProcessInfo.dwProcessId, (unsigned long)exitCode);
+            lastExitLogMs = now;
+        }
+        status.running = false;
+    }
+
+    return status;
+}
+
 MimitaNet::ListenServerState* getListenServerState()
 {
     return &gListenServer;
