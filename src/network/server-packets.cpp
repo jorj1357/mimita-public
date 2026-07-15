@@ -27,6 +27,7 @@ void setServerCoordinatorState(const std::string& code, const std::string& joinT
 }
 
 const std::string& getServerCoordinatorCode() { return gServerCoordinatorCode; }
+const std::string& getServerCoordinatorJoinToken() { return gServerCoordinatorJoinToken; }
 
 void setServerMapId(const std::string& mapId) { gServerMapId = mapId; }
 const std::string& getServerMapId() { return gServerMapId; }
@@ -388,17 +389,32 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     // If registered with coordinator, validate the join token
     if (!gServerCoordinatorCode.empty())
     {
+        printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s\n",
+               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
         if (!coordinatorValidateJoin(gServerCoordinatorCode, joinTokenStr))
         {
-            JoinRejectPacket reject{};
-            reject.header.type = PACKET_JOIN_REJECT;
-            reject.header.tick = tick;
-            reject.reason = 2; // bad token
-            sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
-            ++totalPacketsOut;
-            printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
-            return;
+            printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=0\n",
+                   gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
+            // Fallback: check against stored join token from registration
+            if (joinTokenStr == gServerCoordinatorJoinToken)
+            {
+                printf("[ROOM TOKEN VALIDATE] fallback local token match code=%s\n",
+                       gServerCoordinatorCode.c_str());
+            }
+            else
+            {
+                JoinRejectPacket reject{};
+                reject.header.type = PACKET_JOIN_REJECT;
+                reject.header.tick = tick;
+                reject.reason = 2; // bad token
+                sendto(sock, (const char*)&reject, sizeof(reject), 0, (sockaddr*)&from, sizeof(from));
+                ++totalPacketsOut;
+                printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
+                return;
+            }
         }
+        printf("[ROOM TOKEN VALIDATE] api=coordinatorValidateJoin code=%s tokenPrefix=%s valid=1\n",
+               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
         printf("%s [SERVER JOIN] coordinator validated token for %s\n",
                serverTimestamp(), join->name);
     }

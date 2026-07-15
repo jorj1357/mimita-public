@@ -16,7 +16,10 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
         else if (std::strcmp(argv[i], "--client") == 0)
             options.client = true;
         else if (std::strcmp(argv[i], "--connect") == 0 && i + 1 < argc)
+        {
             options.connect = argv[++i];
+            options.connectExplicit = true;
+        }
         else if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc)
             options.name = argv[++i];
         else if (std::strcmp(argv[i], "--session") == 0 && i + 1 < argc)
@@ -29,6 +32,10 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.npcCount = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--no-npcs") == 0)
             options.npcsEnabled = false;
+        else if (std::strcmp(argv[i], "--room-file") == 0 && i + 1 < argc)
+            options.roomFilePath = argv[++i];
+        else if (std::strcmp(argv[i], "--timeout") == 0 && i + 1 < argc)
+            options.timeoutSecs = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
             printLaunchUsage();
     }
@@ -38,9 +45,10 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
 void printLaunchUsage()
 {
     printf("Mimita local multiplayer test mode:\n");
-    printf("  mimita.exe --server\n");
+    printf("  mimita.exe --server [--timeout <secs>]\n");
     printf("  mimita.exe --client --name client1 --connect 127.0.0.1:1357\n");
     printf("  mimita.exe --session <token>\n");
+    printf("  --timeout <secs>  Auto-exit server after N seconds (0=no timeout, default)\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }
 

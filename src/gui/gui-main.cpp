@@ -40,6 +40,7 @@
 #include "gui-bindings.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
@@ -109,6 +110,10 @@ static SandboxMapSelection gPendingSandboxMap{};
 static PROCESS_INFORMATION gServerProcessInfo{};
 static bool gServerProcessLaunched = false;
 static uint64_t gServerProcessLaunchMs = 0;
+static std::string gPendingServerRoomFilePath;
+static uint64_t gPendingServerRoomFileStartMs = 0;
+static uint64_t gLastServerRoomFilePollMs = 0;
+static bool gWaitingForServerRoomCode = false;
 
 static void readServerSettingsFromBindings()
 {
@@ -137,24 +142,39 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     char exePath[MAX_PATH];
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
 
+    // Generate a temp file path for the server to write its room code
+    char tempPath[MAX_PATH];
+    char tempFile[MAX_PATH];
+    if (!GetTempPathA(MAX_PATH, tempPath) ||
+        !GetTempFileNameA(tempPath, "mimita_room_", 0, tempFile))
+    {
+        printf("[SERVER LAUNCH] GetTempFileName failed error=%d\n", (int)GetLastError());
+        return false;
+    }
+    std::string roomFilePath(tempFile);
+    // Ensure file is empty at start
+    FILE* clearFile = fopen(roomFilePath.c_str(), "w");
+    if (clearFile) fclose(clearFile);
+
     std::string args = "\"" + std::string(exePath) + "\""
         + " --server"
         + " --connect 127.0.0.1:" + std::to_string(settings.port)
         + " --name \"" + settings.serverName + "\""
         + " --map \"" + settings.mapName + "\""
-        + " --code \"" + settings.serverCode + "\""
+        + " --room-file \"" + roomFilePath + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
             : " --no-npcs");
 
     STARTUPINFOA si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_SHOW; // Show the console window
+    si.wShowWindow = SW_SHOW;
 
     if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
                         CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &gServerProcessInfo))
     {
         printf("[SERVER LAUNCH] CreateProcess failed error=%d\n", (int)GetLastError());
+        DeleteFileA(tempFile);
         return false;
     }
 
@@ -163,8 +183,16 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     gServerProcessLaunched = true;
     gServerProcessLaunchMs = MimitaNet::nowMs();
 
-    // Give server a moment to start
-    Sleep(500);
+    // Store the pending room file path for async polling
+    gPendingServerRoomFilePath = roomFilePath;
+    gPendingServerRoomFileStartMs = MimitaNet::nowMs();
+    gLastServerRoomFilePollMs = 0;
+    gWaitingForServerRoomCode = true;
+
+    printf("[ROOM CODE WAIT START] path=%s processId=%lu\n",
+           gPendingServerRoomFilePath.c_str(),
+           (unsigned long)gServerProcessInfo.dwProcessId);
+
     return true;
 }
 
@@ -180,6 +208,18 @@ static void stopServerProcess()
         gServerProcessLaunched = false;
         printf("[SERVER LAUNCH] server process terminated\n");
     }
+
+    // Clean up any pending room file state
+    if (!gPendingServerRoomFilePath.empty())
+    {
+        DeleteFileA(gPendingServerRoomFilePath.c_str());
+        printf("[ROOM CODE CLEANUP] deleted path=%s\n", gPendingServerRoomFilePath.c_str());
+    }
+    gPendingServerRoomFilePath.clear();
+    gWaitingForServerRoomCode = false;
+    gLastServerRoomFilePollMs = 0;
+    gPendingServerRoomFileStartMs = 0;
+    gServerLaunchSettings.serverCode.clear();
 }
 
 DuelConfigResult getPendingDuelConfig() { return gPendingDuelConfig; }
@@ -199,6 +239,99 @@ MimitaNet::ListenServerState* getListenServerState()
     return &gListenServer;
 }
 
+static void pollPendingServerRoomCode()
+{
+    if (!gWaitingForServerRoomCode)
+        return;
+
+    if (!gServerProcessLaunched)
+    {
+        printf("[ROOM CODE WAIT CANCEL] reason=server-process-not-running path=%s\n",
+               gPendingServerRoomFilePath.c_str());
+        if (!gPendingServerRoomFilePath.empty())
+            DeleteFileA(gPendingServerRoomFilePath.c_str());
+        gPendingServerRoomFilePath.clear();
+        gWaitingForServerRoomCode = false;
+        return;
+    }
+
+    {
+        DWORD exitCode = 0;
+        if (gServerProcessInfo.hProcess &&
+            GetExitCodeProcess(gServerProcessInfo.hProcess, &exitCode) &&
+            exitCode != STILL_ACTIVE)
+        {
+            printf("[ROOM CODE WAIT FAILED] reason=server-exited exitCode=%lu path=%s\n",
+                   exitCode, gPendingServerRoomFilePath.c_str());
+            onlineMenuSetServerCode("Server failed to create room");
+            if (!gPendingServerRoomFilePath.empty())
+                DeleteFileA(gPendingServerRoomFilePath.c_str());
+            gPendingServerRoomFilePath.clear();
+            gWaitingForServerRoomCode = false;
+            gLastServerRoomFilePollMs = 0;
+            return;
+        }
+    }
+
+    const uint64_t now = MimitaNet::nowMs();
+
+    if (gLastServerRoomFilePollMs != 0 &&
+        now - gLastServerRoomFilePollMs < 100)
+        return;
+
+    gLastServerRoomFilePollMs = now;
+
+    FILE* f = fopen(gPendingServerRoomFilePath.c_str(), "r");
+    if (f)
+    {
+        char line[256] = {};
+        std::string content;
+
+        if (fgets(line, sizeof(line), f))
+        {
+            content = line;
+            while (!content.empty() &&
+                   (content.back() == '\n' || content.back() == '\r'))
+                content.pop_back();
+        }
+
+        fclose(f);
+
+        if (!content.empty())
+        {
+            printf("[ROOM CODE SYNC] path=%s code=%s previous=%s\n",
+                   gPendingServerRoomFilePath.c_str(),
+                   content.c_str(),
+                   gServerLaunchSettings.serverCode.c_str());
+
+            gServerLaunchSettings.serverCode = content;
+            onlineMenuSetServerCode(content);
+
+            printf("[ROOM DISPLAY] source=headless-server code=%s\n",
+                   content.c_str());
+
+            DeleteFileA(gPendingServerRoomFilePath.c_str());
+            gPendingServerRoomFilePath.clear();
+            gWaitingForServerRoomCode = false;
+            return;
+        }
+    }
+
+    constexpr uint64_t ROOM_CODE_TIMEOUT_MS = 15000;
+    if (now - gPendingServerRoomFileStartMs >= ROOM_CODE_TIMEOUT_MS)
+    {
+        printf("[ROOM CODE WAIT TIMEOUT] path=%s elapsedMs=%llu\n",
+               gPendingServerRoomFilePath.c_str(),
+               (unsigned long long)(now - gPendingServerRoomFileStartMs));
+
+        onlineMenuSetServerCode("Room creation timed out");
+
+        DeleteFileA(gPendingServerRoomFilePath.c_str());
+        gPendingServerRoomFilePath.clear();
+        gWaitingForServerRoomCode = false;
+    }
+}
+
 void guiMain(GLFWwindow* win, GameState& state)
 {
     AuthSystem& auth = AuthSystem::instance();
@@ -206,6 +339,9 @@ void guiMain(GLFWwindow* win, GameState& state)
 
     if (auth.state() == AuthState::Checking)
         auth.tickValidate();
+
+    // Poll for room code from external server process (non-blocking)
+    pollPendingServerRoomCode();
 
     if (gGuiMenuState == GUI_MENU_AUTH)
     {
@@ -511,7 +647,7 @@ void guiMain(GLFWwindow* win, GameState& state)
             onlineMenuSetServerRunning(serverActive);
             if (gListenServer.active)
                 onlineMenuSetServerCode(gListenServer.serverCode);
-            else if (gServerProcessLaunched)
+            else if (gServerProcessLaunched && !gServerLaunchSettings.serverCode.empty())
                 onlineMenuSetServerCode(gServerLaunchSettings.serverCode);
 
             OnlineMenuResult r = drawOnlineMenu(win);
@@ -523,8 +659,9 @@ void guiMain(GLFWwindow* win, GameState& state)
                     // Read settings from UI bindings before starting
                     readServerSettingsFromBindings();
 
-                    // Generate ONE room code — single source of truth
-                    gServerLaunchSettings.serverCode = MimitaNet::generateServerCode();
+                    // Coordinator is the single source of truth — clear so we wait for it
+                    gServerLaunchSettings.serverCode.clear();
+                    onlineMenuSetServerCode("Creating room...");
 
                     // Launch server as separate process with a visible CMD window
                     const bool processLaunched = launchServerProcess(gServerLaunchSettings);

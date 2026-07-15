@@ -192,6 +192,38 @@ bool handleGameCLI(int argc, char** argv)
         return true;
     }
 
+    // ── ICE Server (dedicated server with real game engine) ───────
+    if (std::string(argv[1]) == "--ice-server") {
+        IceTestOptions opts;
+        for (int i = 2; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--disable-relay") opts.disableRelay = true;
+            else if (a == "--timeout-seconds" && i + 1 < argc)
+                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+        // runIceServer calls into ice-server.cpp which uses the real server loop
+        // but with ICE transport. It returns 0 on success.
+        runIceServer(opts);
+        return true;
+    }
+
+    // ── ICE Connect (client connects via ICE to an ICE server) ────
+    if (std::string(argv[1]) == "--ice-connect") {
+        if (argc < 3) {
+            printf("[ICE] usage: mimita.exe --ice-connect <room-code>\n");
+            return true;
+        }
+        IceTestOptions opts;
+        for (int i = 3; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "--disable-relay") opts.disableRelay = true;
+            else if (a == "--timeout-seconds" && i + 1 < argc)
+                opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+        runIceConnect(argv[2], opts);
+        return true;
+    }
+
     if (std::string(argv[1]) == "--collision-selftest") {
         std::string summary;
         const bool ok = collisionStressSelfTest(&summary);

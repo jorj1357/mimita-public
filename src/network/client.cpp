@@ -51,6 +51,25 @@ int runClient(const LaunchOptions& options)
         return 1;
     }
     setNonBlocking(sock);
+    printf("[CLIENT SOCKET] created sock=%d\n", (int)sock);
+
+    {
+        sockaddr_in clientBind{};
+        clientBind.sin_family = AF_INET;
+        clientBind.sin_addr.s_addr = htonl(INADDR_ANY);
+        clientBind.sin_port = htons(0);
+        if (bind(sock, (sockaddr*)&clientBind, sizeof(clientBind)) == SOCKET_ERROR)
+        {
+            printf("[CLIENT] FATAL: bind() port=0 failed error=%d\n", WSAGetLastError());
+            closesocket(sock);
+            netShutdown();
+            return 1;
+        }
+        sockaddr_in actual{};
+        int actualLen = sizeof(actual);
+        if (getsockname(sock, (sockaddr*)&actual, &actualLen) == 0)
+            printf("[CLIENT SOCKET] bound local endpoint=%s\n", addressToString(actual).c_str());
+    }
 
     sockaddr_in serverAddr{};
     if (!parseAddress(options.connect, serverAddr))
@@ -126,7 +145,20 @@ int runClient(const LaunchOptions& options)
             int fromLen = sizeof(from);
             int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromLen);
             if (bytes <= 0)
+            {
+                int wsaErr = WSAGetLastError();
+                if (wsaErr != WSAEWOULDBLOCK)
+                {
+                    sockaddr_in localEp{};
+                    int localEpLen = sizeof(localEp);
+                    std::string localStr = "(unknown)";
+                    if (getsockname(sock, (sockaddr*)&localEp, &localEpLen) == 0)
+                        localStr = addressToString(localEp);
+                    printf("[CLIENT RX ERROR] sock=%d error=%d server=%s local=%s\n",
+                           (int)sock, wsaErr, options.connect.c_str(), localStr.c_str());
+                }
                 break;
+            }
             ++packetsReceived;
 
             PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);

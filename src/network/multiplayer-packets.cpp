@@ -110,6 +110,23 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
         return false;
     }
     setNonBlocking(ctx.sock);
+    printf("[NET SOCKET] created sock=%d\n", (int)ctx.sock);
+
+    {
+        sockaddr_in localBind{};
+        localBind.sin_family = AF_INET;
+        localBind.sin_addr.s_addr = htonl(INADDR_ANY);
+        localBind.sin_port = htons(0);
+        if (bind(ctx.sock, (sockaddr*)&localBind, sizeof(localBind)) == SOCKET_ERROR)
+            printf("[NET CONNECT] WARNING: bind() port=0 failed error=%d (non-fatal)\n", WSAGetLastError());
+        else
+        {
+            sockaddr_in actual{};
+            int actualLen = sizeof(actual);
+            if (getsockname(ctx.sock, (sockaddr*)&actual, &actualLen) == 0)
+                printf("[NET SOCKET] bound local endpoint=%s\n", addressToString(actual).c_str());
+        }
+    }
 
     if (!parseAddress(address, ctx.serverAddr))
     {
@@ -123,6 +140,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.localPlayerId = 0;
     ctx.tick = 0;
     ctx.lastHelloMs = 0;
+    ctx.connectionState = ConnectionState::Connecting;
     ctx.lastSnapshotReceivedMs = 0;
     ctx.connectStartMs = nowMs();
     ctx.packetsSent = 0;
@@ -315,6 +333,23 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
         return false;
     }
     setNonBlocking(ctx.sock);
+    printf("[NET SOCKET] created sock=%d\n", (int)ctx.sock);
+
+    {
+        sockaddr_in localBind{};
+        localBind.sin_family = AF_INET;
+        localBind.sin_addr.s_addr = htonl(INADDR_ANY);
+        localBind.sin_port = htons(0);
+        if (bind(ctx.sock, (sockaddr*)&localBind, sizeof(localBind)) == SOCKET_ERROR)
+            printf("[NET CONNECT] WARNING: bind() port=0 failed error=%d (non-fatal)\n", WSAGetLastError());
+        else
+        {
+            sockaddr_in actual{};
+            int actualLen = sizeof(actual);
+            if (getsockname(ctx.sock, (sockaddr*)&actual, &actualLen) == 0)
+                printf("[NET SOCKET] bound local endpoint=%s\n", addressToString(actual).c_str());
+        }
+    }
 
     ctx.serverAddr = {};
     ctx.serverAddr.sin_family = AF_INET;

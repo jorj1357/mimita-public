@@ -1,6 +1,7 @@
 #include "network/ice/ice-test.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
+#include "network/ice/ice-server.h"
 #include "network/ice-transport.h"
 #include "network/coordinator-client.h"
 #include "network/packets.h"
@@ -800,4 +801,20 @@ bool runIceGameClient(const std::string& roomCode, const IceTestOptions& opts)
     printf("[ICE GAME CLIENT] pass=1\n");
     agent.shutdown();
     return true;
+}
+
+int runIceServer(const IceTestOptions& opts)
+{
+    IceServerOptions srv;
+    srv.timeoutSeconds = opts.timeoutSeconds;
+    srv.disableRelay = opts.disableRelay;
+    return ::runIceServer(srv);
+}
+
+int runIceConnect(const std::string& roomCode, const IceTestOptions& opts)
+{
+    IceServerOptions srv;
+    srv.timeoutSeconds = opts.timeoutSeconds;
+    srv.disableRelay = opts.disableRelay;
+    return ::runIceClient(roomCode, srv);
 }

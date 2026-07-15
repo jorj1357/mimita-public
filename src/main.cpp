@@ -215,6 +215,9 @@ int main(int argc, char** argv)
 {
     if (handleGameCLI(argc, argv)) return 0;
 
+    printf("[BUILD] compiled on %s at %s\n", __DATE__, __TIME__);
+    printf("[BUILD] commit=64b085c\n");
+
     LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
     AuthSystem::instance().init(launchOptions.sessionToken);

@@ -82,6 +82,12 @@ void onlineMenuSetServerRunning(bool running) {
 }
 
 void onlineMenuSetServerCode(const std::string& code) {
+    if (serverCodeDisplay != code)
+    {
+        printf("[ONLINE MENU SET SERVER CODE] old=%s new=%s\n",
+               serverCodeDisplay.c_str(),
+               code.c_str());
+    }
     serverCodeDisplay = code;
 }
 
@@ -163,15 +169,71 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         }
         else if (id == "connectToThisServerButton" && s.clicked)
         {
-            r.connectToServer = true;
-            r.connectAddress = "127.0.0.1";
-            r.connectPort = MimitaNet::DEFAULT_PORT;
+            // Use coordinator join flow to get a valid join token
+            std::string code = serverCodeDisplay;
+            if (!code.empty())
+            {
+                printf("[ROOM JOIN LOOKUP] api=coordinatorJoin code=%s source=connectToThisServer\n", code.c_str());
+                MimitaNet::CoordinatorJoinResult joinResult =
+                    MimitaNet::coordinatorJoin(code,
+                        AuthSystem::instance().displayName());
+                if (joinResult.ok)
+                {
+                    r.connectToServer = true;
+                    r.connectAddress = joinResult.serverIp;
+                    r.connectPort = joinResult.serverPort;
+                    r.joinToken = joinResult.joinToken;
+                    printf("[ONLINE MENU] connectToThisServer code=%s token=%s\n",
+                           code.c_str(), joinResult.joinToken.substr(0, 12).c_str());
+                }
+                else
+                {
+                    printf("[ONLINE MENU] connectToThisServer join failed, falling back to direct\n");
+                    r.connectToServer = true;
+                    r.connectAddress = "127.0.0.1";
+                    r.connectPort = MimitaNet::DEFAULT_PORT;
+                }
+            }
+            else
+            {
+                r.connectToServer = true;
+                r.connectAddress = "127.0.0.1";
+                r.connectPort = MimitaNet::DEFAULT_PORT;
+            }
         }
         else if (id == "connectLocalhostButton" && s.clicked)
         {
-            r.connectLocalhost = true;
-            r.connectAddress = "127.0.0.1";
-            r.connectPort = MimitaNet::DEFAULT_PORT;
+            // Use coordinator join flow for consistent validation
+            std::string code = serverCodeDisplay;
+            if (!code.empty())
+            {
+                printf("[ROOM JOIN LOOKUP] api=coordinatorJoin code=%s source=connectLocalhost\n", code.c_str());
+                MimitaNet::CoordinatorJoinResult joinResult =
+                    MimitaNet::coordinatorJoin(code,
+                        AuthSystem::instance().displayName());
+                if (joinResult.ok)
+                {
+                    r.connectToServer = true;
+                    r.connectAddress = joinResult.serverIp;
+                    r.connectPort = joinResult.serverPort;
+                    r.joinToken = joinResult.joinToken;
+                    printf("[ONLINE MENU] connectLocalhost code=%s token=%s\n",
+                           code.c_str(), joinResult.joinToken.substr(0, 12).c_str());
+                }
+                else
+                {
+                    printf("[ONLINE MENU] connectLocalhost join failed, falling back to direct\n");
+                    r.connectLocalhost = true;
+                    r.connectAddress = "127.0.0.1";
+                    r.connectPort = MimitaNet::DEFAULT_PORT;
+                }
+            }
+            else
+            {
+                r.connectLocalhost = true;
+                r.connectAddress = "127.0.0.1";
+                r.connectPort = MimitaNet::DEFAULT_PORT;
+            }
         }
         else if (id == "joinServerButton" && s.clicked)
         {
@@ -182,11 +244,13 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
 
             if (!code.empty())
             {
+                printf("[ROOM JOIN LOOKUP] api=coordinatorLookup code=%s\n", code.c_str());
                 // First do a coordinator lookup to verify the code exists
                 MimitaNet::CoordinatorLookupResult lookup =
                     MimitaNet::coordinatorLookup(code);
                 if (lookup.exists && lookup.status == "online")
                 {
+                    printf("[ROOM JOIN LOOKUP] api=coordinatorJoin code=%s\n", code.c_str());
                     // Then request a join token
                     MimitaNet::CoordinatorJoinResult joinResult =
                         MimitaNet::coordinatorJoin(code,

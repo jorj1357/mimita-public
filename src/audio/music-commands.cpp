@@ -152,6 +152,27 @@ void registerMusicCommands()
     });
 
     Terminal::instance().registerCommand({
+        "volume", "Set master volume (0.0 = mute, 1.0 = full)", "volume <0.0-1.0>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "[AUDIO] Volume: %.2f", GetPlayerSettings().masterVolume);
+                Terminal::instance().addLog(buf);
+                Terminal::instance().addLog("[AUDIO] Usage: volume <0.0-1.0> (0=mute, 1=full)");
+                return;
+            }
+            float vol = std::clamp(std::stof(args[0]), 0.0f, 1.0f);
+            GetPlayerSettings().masterVolume = vol;
+            GetPlayerSettings().musicVolume = vol;
+            MusicManager::instance().setVolume(vol);
+            SavePlayerSettings();
+            char buf[64];
+            snprintf(buf, sizeof(buf), "[AUDIO] Volume set to %.2f", vol);
+            Terminal::instance().addLog(buf);
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "music_status", "Show current music state", "music_status",
         [](const std::vector<std::string>&) {
             auto& mm = MusicManager::instance();
