@@ -357,8 +357,9 @@ bool coordinatorValidateJoin(const std::string& code, const std::string& joinTok
 
     if (httpPostJson(url, body, response, 5000))
     {
-        std::string valid = extractJsonStr(response, "valid");
-        bool ok = valid == "true";
+        // std::string valid = extractJsonStr(response, "valid");
+        // bool ok = valid == "true";
+        bool ok = extractJsonBool(response, "valid");
         printf("[COORDINATOR] validate-join code=%s token=%s valid=%d\n",
                code.c_str(), joinToken.substr(0, 12).c_str(), (int)ok);
         return ok;
