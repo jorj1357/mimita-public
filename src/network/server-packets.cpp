@@ -227,6 +227,20 @@ void handleInputPacket(const char* buffer, int bytes,
     p.input.camForward = {in->camForwardX, in->camForwardY, in->camForwardZ};
     p.input.yaw = in->yaw;
     p.input.tick = in->header.tick;
+
+    {
+        static uint64_t lastLookServerRxLogMs = 0;
+        uint64_t nowLookRx = nowMs();
+        if (nowLookRx - lastLookServerRxLogMs >= 1000)
+        {
+            printf("[LOOK SERVER RX] playerId=%u serverTick=%u yaw=%.2f forward=(%.2f,%.2f,%.2f) "
+                   "pos=(%.2f,%.2f,%.2f)\n",
+                   p.id, nowMs() % 65536,
+                   in->yaw, in->camForwardX, in->camForwardY, in->camForwardZ,
+                   p.pos.x, p.pos.y, p.pos.z);
+            lastLookServerRxLogMs = nowLookRx;
+        }
+    }
     p.equippedSlot = in->equippedSlot;
     p.weaponState = in->weaponState;
     p.pingMs = std::clamp(in->clientPingMs, 0, 9999);
