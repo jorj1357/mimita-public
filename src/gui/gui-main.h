@@ -67,6 +67,7 @@ struct MultiplayerConnectInfo
     std::string address = "127.0.0.1:1357";
     std::string joinToken;
     uint16_t port = 1357;
+    std::string roomCode;
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();
 void clearPendingMultiplayerConnect();

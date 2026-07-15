@@ -201,6 +201,11 @@ void engineTickState(Engine& engine, float dt)
                     player.username = AuthSystem::instance().displayName();
                     player.reset();
                     bool connected = false;
+                    if (!mci.roomCode.empty())
+                    {
+                        mpContext.currentRoomCode = mci.roomCode;
+                        printf("[ROOMCODE SET] source=join-attempt old= new=%s\n", mci.roomCode.c_str());
+                    }
                     if (!mci.joinToken.empty())
                     {
                         connected = MimitaNet::mpConnectWithToken(
