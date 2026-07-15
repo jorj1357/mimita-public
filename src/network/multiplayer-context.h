@@ -189,6 +189,11 @@ struct MultiplayerContext
     bool showServerGhost = false;
     bool waitingForMapLoad = false;
 
+    // ── ClientMapReady tracking ───────────────────────────────────────
+    bool clientMapReadySent = false;
+    std::string clientMapReadySentForMap;
+    uint32_t clientMapReadySentForPlayerId = 0;
+
     // ── Room code for HUD display ─────────────────────────────────────
     // Set on host register or client join, cleared on disconnect/leave.
     std::string currentRoomCode;

@@ -159,6 +159,13 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         {
             p.dead = false;
             p.health = 100;
+            p.vel = glm::vec3(0.0f);
+            p.input = {};
+            p.clientStateUpdated = false;
+            p.attackQueued = false;
+            p.dashAvailable = true;
+            p.onGround = false;
+            p.respawnSeconds = 0.0f;
             // Use map spawnpoints if available
             if (!world.spawnPoints.empty())
             {

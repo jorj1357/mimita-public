@@ -17,6 +17,10 @@ constexpr uint64_t SERVER_TIMEOUT_MS = 10000;
 
 bool netStartup();
 void netShutdown();
+
+// Normalize a map identifier: strip directory prefix, strip .glb, lowercase.
+std::string normalizeMapId(const std::string& mapId);
+bool mapIdsReferToSameMap(const std::string& a, const std::string& b);
 bool setNonBlocking(SOCKET socketHandle);
 bool parseAddress(const std::string& text, sockaddr_in& out);
 std::string addressToString(const sockaddr_in& addr);

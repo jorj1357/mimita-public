@@ -70,39 +70,64 @@ void engineTickNet(Engine& engine, float dt)
         // ── Map synchronization ──────────────────────────────────────────
         // Load server-required map without blocking networking.
         // mpTick() already ran above — heartbeats and packets keep flowing.
-        if (!mpContext.requiredMapId.empty() && worldLoaded &&
-            mpContext.requiredMapId != "funworld3" &&
-            ACTIVE_MAP_PATH.find(mpContext.requiredMapId) == std::string::npos)
         {
-            mpContext.waitingForMapLoad = true;
-            std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
-            printf("[NET MAP REQUIRED] mapId=%s path=%s loadingMap=1\n",
-                   mpContext.requiredMapId.c_str(), requiredPath.c_str());
+            using namespace MimitaNet;
+            const bool needsLoad = !mpContext.requiredMapId.empty() && worldLoaded &&
+                !mapIdsReferToSameMap(ACTIVE_MAP_PATH, mpContext.requiredMapId) &&
+                !mpContext.waitingForMapLoad;
 
-            if (loadWorldFromGLB(world, requiredPath.c_str()))
+            if (needsLoad)
             {
-                ACTIVE_MAP_PATH = requiredPath;
-                WORLD_LOADED = true;
-                printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
-                       ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
-                player.reset();
-            }
-            else
-            {
-                printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
+                mpContext.waitingForMapLoad = true;
+                std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
+                printf("[NET MAP REQUIRED] mapId=%s path=%s loadingMap=1\n",
+                       mpContext.requiredMapId.c_str(), requiredPath.c_str());
+
+                if (loadWorldFromGLB(world, requiredPath.c_str()))
+                {
+                    ACTIVE_MAP_PATH = requiredPath;
+                    WORLD_LOADED = true;
+                    printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
+                           ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
+                    player.reset();
+                }
+                else
+                {
+                    printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
+                }
+                mpContext.waitingForMapLoad = false;
             }
 
-            // Notify server that map is ready
-            MimitaNet::ClientMapReadyPacket ready;
-            ready.header.type = MimitaNet::PACKET_CLIENT_MAP_READY;
-            ready.header.tick = mpContext.tick;
-            ready.header.playerId = mpContext.localPlayerId;
-            ready.assignedPlayerId = mpContext.localPlayerId;
-            size_t mapIdLen = mpContext.requiredMapId.copy(ready.mapId, sizeof(ready.mapId) - 1);
-            ready.mapId[mapIdLen] = '\0';
-            MimitaNet::mpSendPacket(mpContext, &ready, sizeof(ready));
-            mpContext.waitingForMapLoad = false;
-            printf("[CLIENT MAP READY] sent mapId=%s\n", ready.mapId);
+            // Send ClientMapReady whenever the required map is ready,
+            // regardless of whether it was already loaded or just switched.
+            const bool mapReady = !mpContext.requiredMapId.empty() && worldLoaded;
+            const bool readyAlreadySent =
+                mpContext.clientMapReadySent &&
+                mpContext.clientMapReadySentForPlayerId == mpContext.localPlayerId &&
+                mapIdsReferToSameMap(mpContext.clientMapReadySentForMap, mpContext.requiredMapId);
+
+            if (mpContext.connected && mpContext.localPlayerId != 0 &&
+                mapReady && !readyAlreadySent)
+            {
+                std::string normalizedRequired = normalizeMapId(mpContext.requiredMapId);
+                ClientMapReadyPacket ready;
+                ready.header.type = PACKET_CLIENT_MAP_READY;
+                ready.header.tick = mpContext.tick;
+                ready.header.playerId = mpContext.localPlayerId;
+                ready.assignedPlayerId = mpContext.localPlayerId;
+                size_t mapIdLen = normalizedRequired.copy(ready.mapId, sizeof(ready.mapId) - 1);
+                ready.mapId[mapIdLen] = '\0';
+                mpSendPacket(mpContext, &ready, sizeof(ready));
+
+                mpContext.clientMapReadySent = true;
+                mpContext.clientMapReadySentForPlayerId = mpContext.localPlayerId;
+                mpContext.clientMapReadySentForMap = mpContext.requiredMapId;
+
+                printf("[CLIENT MAP READY] sent playerId=%u mapId=%s reason=%s\n",
+                       mpContext.localPlayerId, ready.mapId,
+                       mapIdsReferToSameMap(ACTIVE_MAP_PATH, mpContext.requiredMapId)
+                           ? "already-loaded" : "load-completed");
+            }
         }
 
         for (const MimitaNet::NetworkShotEvent& event : mpContext.shotEvents)

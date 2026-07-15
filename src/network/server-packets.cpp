@@ -9,6 +9,7 @@
 #include <chrono>
 #include <limits>
 #include <random>
+#include <unordered_map>
 
 namespace MimitaNet {
 
@@ -168,6 +169,22 @@ void handleInputPacket(const char* buffer, int bytes,
     ServerPlayer& p = it->second;
     p.lastHeardMs = nowMs();
 
+    // ── Skip unspawned players (ClientMapReady not yet received) ──────
+    if (!p.spawned)
+    {
+        static uint64_t lastSpawnedLogMs = 0;
+        uint64_t nowSpawned = nowMs();
+        if (nowSpawned - lastSpawnedLogMs >= 1000)
+        {
+            printf("%s [SERVER INPUT SKIP] playerId=%u reason=not-spawned "
+                   "connected=1 lastHeardMs=%llu\n",
+                   serverTimestamp(), p.id,
+                   (unsigned long long)(nowSpawned - p.lastHeardMs));
+            lastSpawnedLogMs = nowSpawned;
+        }
+        return;
+    }
+
     // ── Transform epoch check ─────────────────────────────────────
     // Discard packets from before the player's most recent spawn/respawn.
     if (in->header.transformEpoch != 0 && in->header.transformEpoch < p.transformEpoch)
@@ -177,11 +194,28 @@ void handleInputPacket(const char* buffer, int bytes,
         if (now - lastEpochLogMs >= 1000)
         {
             printf("%s [SERVER INPUT DROP] reason=OLD_TRANSFORM_EPOCH playerId=%u "
-                   "packetEpoch=%u currentEpoch=%u\n",
-                   serverTimestamp(), p.id, in->header.transformEpoch, p.transformEpoch);
+                   "packetEpoch=%u currentEpoch=%u dead=%d serverPos=(%.2f,%.2f,%.2f)\n",
+                   serverTimestamp(), p.id, in->header.transformEpoch, p.transformEpoch,
+                   (int)p.dead, p.pos.x, p.pos.y, p.pos.z);
             lastEpochLogMs = now;
         }
         return;
+    }
+
+    // Log first accepted packet matching the new epoch
+    if (in->header.transformEpoch == p.transformEpoch)
+    {
+        static uint64_t lastEpochAcceptLogMs = 0;
+        uint64_t nowAccept = nowMs();
+        if (nowAccept - lastEpochAcceptLogMs >= 5000)
+        {
+            printf("%s [SERVER INPUT EPOCH ACCEPT] playerId=%u epoch=%u "
+                   "clientPos=(%.2f,%.2f,%.2f) serverPosBefore=(%.2f,%.2f,%.2f)\n",
+                   serverTimestamp(), p.id, in->header.transformEpoch,
+                   in->clientPx, in->clientPy, in->clientPz,
+                   p.pos.x, p.pos.y, p.pos.z);
+            lastEpochAcceptLogMs = nowAccept;
+        }
     }
 
     if (p.dead)
@@ -575,8 +609,18 @@ void buildAndSendSnapshot(SOCKET sock,
             break;
         if (!kv.second.spawned)
         {
-            printf("%s [SERVER SNAPSHOT SKIP] playerId=%u reason=not-spawned\n",
-                   serverTimestamp(), kv.first);
+            static std::unordered_map<uint32_t, uint64_t> lastSkipLogMs;
+            uint64_t nowSkip = nowMs();
+            uint64_t& lastLog = lastSkipLogMs[kv.first];
+            if (nowSkip - lastLog >= 1000)
+            {
+                printf("%s [SERVER SNAPSHOT SKIP] playerId=%u reason=not-spawned "
+                       "connected=1 lastHeardAgoMs=%llu mapReadyReceived=0 serverMap=%s\n",
+                       serverTimestamp(), kv.first,
+                       (unsigned long long)(nowSkip - kv.second.lastHeardMs),
+                       getServerMapId().c_str());
+                lastLog = nowSkip;
+            }
             continue;
         }
         snapshot.entities[index++] = makePlayerEntity(kv.second);
