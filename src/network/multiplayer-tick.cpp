@@ -549,11 +549,33 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
         }
 
-        // Build state flags from MpInput
+        // Build state flags from MpInput — rebuilt from zero every frame
         uint16_t stateFlags = 0;
+        const bool walking =
+            std::abs(input->wishX) > 0.001f ||
+            std::abs(input->wishY) > 0.001f;
+        if (walking) stateFlags |= NET_STATE_WALKING;
         if (input->jumpHeld) stateFlags |= NET_STATE_JUMPING;
         if (input->dashPressed) stateFlags |= NET_STATE_DASHING;
         if (input->freezeHeld) stateFlags |= NET_STATE_FREEZING;
+        if (input->attackPressed) stateFlags |= NET_STATE_ATTACKING;
+
+        // Rate-limited walk send logging
+        {
+            static uint64_t lastWalkSendLogMs = 0;
+            uint64_t nowWalk = nowMs();
+            if (nowWalk - lastWalkSendLogMs >= 1000)
+            {
+                printf("[WALK CLIENT SEND] playerId=%u tick=%u wish=(%.2f,%.2f) "
+                       "walking=%d stateFlags=0x%04x walkingBit=%d velocity=(%.2f,%.2f,%.2f)\n",
+                       ctx.localPlayerId, ctx.tick,
+                       input->wishX, input->wishY,
+                       (int)walking, (unsigned)stateFlags,
+                       (int)((stateFlags & NET_STATE_WALKING) != 0),
+                       input->velocity.x, input->velocity.y, input->velocity.z);
+                lastWalkSendLogMs = nowWalk;
+            }
+        }
 
         in.wishX = input->wishX;
         in.wishY = input->wishY;

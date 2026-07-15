@@ -91,6 +91,7 @@ struct ServerPlayer
     uint16_t lastJumpSerial = 0;
     uint16_t lastDownDashSerial = 0;
     uint16_t lastEquipSerial = 0;
+    uint16_t inputStateFlags = 0;
     float dashCooldownTimer = 0.0f;
     float sizeScale = 1.0f;
     ServerInput input;

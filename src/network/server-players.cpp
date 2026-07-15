@@ -325,20 +325,40 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
         }
     }
 
-    // Build state flags from server player state
-    uint16_t flags = 0;
-    if (player.onGround) flags |= NET_STATE_ON_GROUND;
-    if (glm::length(glm::vec2(player.vel.x, player.vel.y)) > 0.1f && player.onGround)
-        flags |= NET_STATE_WALKING;
-    if (!player.onGround && player.vel.z > 1.0f)
-        flags |= NET_STATE_JUMPING;
-    if (!player.onGround && player.vel.z < -5.0f)
-        flags |= NET_STATE_DOWN_DASHING;
-    if (player.input.freezeHeld)
-        flags |= NET_STATE_FREEZING;
-    if (player.input.dashPressed || player.dashCooldownTimer > 0.0f)
-        flags |= NET_STATE_DASHING;
-    out.stateFlags = flags;
+    // Build snapshot state flags from client input state + server authoritative state.
+    // Use client-validated visual flags for cosmetic animation replication
+    // so that walking animation works even when server onGround is temporarily wrong.
+    {
+        constexpr uint16_t CLIENT_VISUAL_FLAGS =
+            NET_STATE_WALKING | NET_STATE_JUMPING |
+            NET_STATE_DASHING | NET_STATE_DOWN_DASHING |
+            NET_STATE_FREEZING | NET_STATE_ATTACKING;
+
+        uint16_t flags = player.inputStateFlags & CLIENT_VISUAL_FLAGS;
+
+        // Server retains authority over ON_GROUND
+        if (player.onGround)
+            flags |= NET_STATE_ON_GROUND;
+        else
+            flags &= ~NET_STATE_ON_GROUND;
+
+        out.stateFlags = flags;
+
+        static uint64_t lastWalkBuildLogMs = 0;
+        uint64_t nowWalkBuild = nowMs();
+        if (nowWalkBuild - lastWalkBuildLogMs >= 1000)
+        {
+            printf("[WALK SERVER BUILD] playerId=%u inputStateFlags=0x%04x "
+                   "snapshotStateFlags=0x%04x walkingInputBit=%d "
+                   "serverOnGround=%d planarSpeed=%.2f\n",
+                   player.id, (unsigned)player.inputStateFlags,
+                   (unsigned)out.stateFlags,
+                   (int)((out.stateFlags & NET_STATE_WALKING) != 0),
+                   (int)player.onGround,
+                   glm::length(glm::vec2(player.vel.x, player.vel.y)));
+            lastWalkBuildLogMs = nowWalkBuild;
+        }
+    }
     out.dashSerial = player.lastDashSerial;
     out.jumpSerial = player.lastJumpSerial;
     out.downDashSerial = player.lastDownDashSerial;

@@ -41,6 +41,22 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
             lastLookDecodeLogMs = nowLookDecode;
         }
     }
+
+    {
+        static uint64_t lastWalkDecodeLogMs = 0;
+        uint64_t nowWalkDecode = nowMs();
+        if (nowWalkDecode - lastWalkDecodeLogMs >= 1000)
+        {
+            glm::vec2 planar(entity.vx, entity.vy);
+            printf("[WALK CLIENT DECODE] entityId=%u vel=(%.2f,%.2f,%.2f) "
+                   "planarSpeed=%.2f onGround=%d stateFlags=0x%04x walkingFlag=%d\n",
+                   entity.networkEntityId, entity.vx, entity.vy, entity.vz,
+                   glm::length(planar), (int)entity.onGround,
+                   (unsigned)entity.stateFlags,
+                   (int)((entity.stateFlags & NET_STATE_WALKING) != 0));
+            lastWalkDecodeLogMs = nowWalkDecode;
+        }
+    }
     transform.lastDashSerial = entity.lastDashSerial;
     transform.sizeScale = entity.sizeScale;
     transform.dashSerial = entity.dashSerial;
@@ -202,7 +218,37 @@ void updateRenderedReplica(
 
     // Pass reconstructed aim direction so local animation system
     // produces matching limb positions for the remote player.
-    player.updateProceduralAnimation(dt, player.aimDirection, player.pos);
+    const bool remoteWalking =
+        (interpolation.target.stateFlags &
+        NET_STATE_WALKING) != 0;
+
+    {
+        static uint64_t lastAnimInputLogMs = 0;
+        uint64_t nowAnimInput = nowMs();
+        if (nowAnimInput - lastAnimInputLogMs >= 1000)
+        {
+            glm::vec2 planar(interpolation.target.velocity.x, interpolation.target.velocity.y);
+            printf("[REMOTE ANIM INPUT] entityId=%u remoteWalking=%d stateFlags=0x%04x "
+                   "vel=(%.2f,%.2f,%.2f) planarSpeed=%.2f onGround=%d "
+                   "proceduralFrozen=%d modelLoaded=%d "
+                   "currentAnim=%s animStateTime=%.3f\n",
+                   interpolation.target.serverTick, (int)remoteWalking,
+                   (unsigned)interpolation.target.stateFlags,
+                   interpolation.target.velocity.x, interpolation.target.velocity.y,
+                   interpolation.target.velocity.z, glm::length(planar),
+                   (int)interpolation.target.onGround,
+                   (int)player.proceduralFrozen, (int)player.modelLoaded,
+                   player.currentAnimName.c_str(), player.animStateTime);
+            lastAnimInputLogMs = nowAnimInput;
+        }
+    }
+
+    player.updateProceduralAnimation(
+        dt,
+        player.aimDirection,
+        player.pos,
+        remoteWalking
+    );
 }
 
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
