@@ -301,6 +301,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             glEnable(GL_DEPTH_TEST);
         }
         renderPlayer(player, camera);
+        // Draw the local weapon now while the shared viewmodel still contains
+        // the local transform calculated during WeaponSystem::update().
+        // This prevents renderRemoteWeapon (below) from overwriting the transform
+        // before the local weapon renders.
+        if (!replayPlaybackActive)
+            { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
         if (mpContext.active) {
             for (auto& kv : mpContext.remotePlayers) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
@@ -354,7 +360,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     if (!replayPlaybackActive) {
         { Perf::ScopedTimer _dr("EffectRender"); DeathSystem::instance().render(camera); }
         // [RAGDOLL RENDER REMOVED] — DeadBody render handles corpses
-        { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
+        // Local weapon render moved earlier (before renderRemoteWeapon) to prevent
+        // shared WeaponViewModel transform from being overwritten by remote players.
     }
     diagRenderStage(4);
 
