@@ -164,13 +164,41 @@ void updateRenderedReplica(
     {
         // Look up weapon ID from slot for animation system
         player.equippedWeaponId.clear();
+        player.hasValidWeapon = false;
         if (player.equippedSlot >= 1) {
             auto reg = WeaponRegistry::instance().all();
             for (const auto& w : reg) {
                 if (w.second.slot == player.equippedSlot) {
                     player.equippedWeaponId = w.first;
+                    player.hasValidWeapon = true;
                     break;
                 }
+            }
+        }
+
+        // Log remote weapon pose input
+        {
+            static uint64_t lastWeaponPoseLogMs = 0;
+            uint64_t nowWp = nowMs();
+            if (nowWp - lastWeaponPoseLogMs >= 2000)
+            {
+                const bool hasRuntime =
+                    !player.equippedWeaponId.empty() &&
+                    player.weaponRuntimes.find(player.equippedWeaponId) !=
+                        player.weaponRuntimes.end();
+                printf("[REMOTE WEAPON POSE INPUT] entityId=%u "
+                       "equippedSlot=%d equippedWeaponId=%s "
+                       "hasValidWeapon=%d hasRuntime=%d runtimeCount=%zu "
+                       "networkWeaponState=%u equipSerial=%u\n",
+                       interpolation.target.serverTick,
+                       (int)player.equippedSlot,
+                       player.equippedWeaponId.c_str(),
+                       (int)player.hasValidWeapon,
+                       (int)hasRuntime,
+                       player.weaponRuntimes.size(),
+                       (unsigned)interpolation.target.weaponState,
+                       (unsigned)interpolation.target.equipSerial);
+                lastWeaponPoseLogMs = nowWp;
             }
         }
     }
