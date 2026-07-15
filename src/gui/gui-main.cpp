@@ -746,10 +746,11 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.connectLocalhost)
             {
-                // Direct localhost connection — no coordinator, no room code, no join token
+                // Direct localhost connection
                 gPendingConnect.shouldConnect = true;
                 gPendingConnect.address = "127.0.0.1";
                 gPendingConnect.port = MimitaNet::DEFAULT_PORT;
+                gPendingConnect.roomCode = r.roomCode;
                 printf("[COMMUNITY CONNECT] localhost direct 127.0.0.1:%u\n", MimitaNet::DEFAULT_PORT);
                 onlineMenuSetActive(false);
                 state = GAME_PLAYING;
@@ -763,6 +764,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                     gPendingConnect.address = r.connectAddress;
                     gPendingConnect.port = r.connectPort;
                     gPendingConnect.joinToken = r.joinToken;
+                    gPendingConnect.roomCode = r.roomCode;
                 }
                 else
                 {
@@ -770,6 +772,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                     gPendingConnect.shouldConnect = true;
                     gPendingConnect.address = r.connectAddress;
                     gPendingConnect.port = r.connectPort;
+                    gPendingConnect.roomCode = r.roomCode;
                 }
                 printf("[COMMUNITY CONNECT] address=%s port=%u mapId=%s\n",
                        gPendingConnect.address.c_str(), gPendingConnect.port,
@@ -829,6 +832,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 serverInfoMenuSetActive(false);
                 gPendingConnect.shouldConnect = true;
                 gPendingConnect.address = gServerAddress;
+                gPendingConnect.roomCode = gListenServer.active ? gListenServer.serverCode : onlineMenuGetServerCode();
                 state = GAME_PLAYING;
             }
             else if (r.goBack)

@@ -426,14 +426,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     // ── Room code HUD ───────────────────────────────────────────
     if (gRoomCodeShow && !gReplayExportRenderMode && !gReplayCinematicMode)
     {
-        const std::string& code = onlineMenuGetServerCode();
-        if (!code.empty() && code != "pending" && code != "See server console" && code != "server not running")
+        const std::string& code = mpContext.currentRoomCode;
+        if (mpContext.active && !code.empty())
         {
             char buf[80];
             snprintf(buf, sizeof(buf), "Room code: %s", code.c_str());
             float cx = uiScreenW() * 0.5f;
             uiDrawText(buf, cx - 90.0f, 18.0f, 0.38f, {1.0f, 1.0f, 1.0f, 1.0f});
             uiDrawText("Open console with ` key", cx - 150.0f, 40.0f, 0.24f, {0.75f, 0.85f, 1.0f, 1.0f});
+            printf("[ROOMCODE HUD] active=%d connected=%d roomCode=%s\n",
+                   (int)mpContext.active, (int)mpContext.connected, code.c_str());
         }
     }
 }

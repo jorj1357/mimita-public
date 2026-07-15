@@ -178,6 +178,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             if (!code.empty())
             {
                 printf("[ROOM JOIN LOOKUP] api=coordinatorJoin code=%s source=connectToThisServer\n", code.c_str());
+                r.roomCode = code;
                 MimitaNet::CoordinatorJoinResult joinResult =
                     MimitaNet::coordinatorJoin(code,
                         AuthSystem::instance().displayName());
@@ -212,6 +213,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             if (!code.empty())
             {
                 printf("[ROOM JOIN LOOKUP] api=coordinatorJoin code=%s source=connectLocalhost\n", code.c_str());
+                r.roomCode = code;
                 MimitaNet::CoordinatorJoinResult joinResult =
                     MimitaNet::coordinatorJoin(code,
                         AuthSystem::instance().displayName());
@@ -227,6 +229,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
                 else
                 {
                     printf("[ONLINE MENU] connectLocalhost join failed, falling back to direct\n");
+                    r.roomCode = code;
                     r.connectLocalhost = true;
                     r.connectAddress = "127.0.0.1";
                     r.connectPort = MimitaNet::DEFAULT_PORT;
@@ -234,6 +237,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
             }
             else
             {
+                r.roomCode = serverCodeDisplay;
                 r.connectLocalhost = true;
                 r.connectAddress = "127.0.0.1";
                 r.connectPort = MimitaNet::DEFAULT_PORT;
@@ -261,6 +265,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
                             AuthSystem::instance().displayName());
                     if (joinResult.ok)
                     {
+                        r.roomCode = code;
                         r.connectToServer = true;
                         r.connectAddress = joinResult.serverIp;
                         r.connectPort = joinResult.serverPort;

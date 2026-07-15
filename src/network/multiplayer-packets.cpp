@@ -186,6 +186,12 @@ void mpShutdown(MultiplayerContext& ctx)
     if (!ctx.active)
         return;
 
+    if (!ctx.currentRoomCode.empty())
+    {
+        printf("[ROOMCODE CLEAR] reason=disconnect old=%s\n", ctx.currentRoomCode.c_str());
+        ctx.currentRoomCode.clear();
+    }
+
     AnalyticsManager::instance().trackDisconnect(
         ctx.connected ? "shutdown" : "connection_closed");
 

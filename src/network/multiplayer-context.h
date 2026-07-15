@@ -188,6 +188,10 @@ struct MultiplayerContext
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;
     bool waitingForMapLoad = false;
+
+    // ── Room code for HUD display ─────────────────────────────────────
+    // Set on host register or client join, cleared on disconnect/leave.
+    std::string currentRoomCode;
 };
 
 struct MpInput
