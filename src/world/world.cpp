@@ -127,6 +127,7 @@ void World::clear()
     skyMesh = Mesh{};
     collisionMesh.clear();
     collisionChunks.clear();
+    collisionLargeTriangles.clear();
 }
 
 SpawnPoint* World::pickSpawnPoint(const std::string& tag, int arenaIndex)

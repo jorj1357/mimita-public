@@ -44,30 +44,8 @@ void engineTickNet(Engine& engine, float dt)
 
     { Perf::ScopedTimer _net("Networking");
     if (mpContext.active) {
-        // ── Map synchronization ──────────────────────────────────────────
-        // If server requires a different map, load it before processing gameplay
-        if (!mpContext.requiredMapId.empty() && worldLoaded &&
-            mpContext.requiredMapId != "funworld3" &&
-            ACTIVE_MAP_PATH.find(mpContext.requiredMapId) == std::string::npos)
-        {
-            std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
-            printf("[NET MAP REQUIRED] mapId=%s path=%s\n",
-                   mpContext.requiredMapId.c_str(), requiredPath.c_str());
-
-            if (loadWorldFromGLB(world, requiredPath.c_str()))
-            {
-                ACTIVE_MAP_PATH = requiredPath;
-                WORLD_LOADED = true;
-                printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
-                       ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
-                player.reset();
-            }
-            else
-            {
-                printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
-            }
-        }
-
+        // Network tick must run every frame regardless of map loading state,
+        // so heartbeats, keepalives, and packet receive continue uninterrupted.
         MimitaNet::MpInput mpInput;
         mpInput.position = player.pos;
         mpInput.velocity = player.vel;
@@ -88,6 +66,44 @@ void engineTickNet(Engine& engine, float dt)
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);
         if (!mpContext.approvedLocalName.empty())
             player.username = mpContext.approvedLocalName;
+
+        // ── Map synchronization ──────────────────────────────────────────
+        // Load server-required map without blocking networking.
+        // mpTick() already ran above — heartbeats and packets keep flowing.
+        if (!mpContext.requiredMapId.empty() && worldLoaded &&
+            mpContext.requiredMapId != "funworld3" &&
+            ACTIVE_MAP_PATH.find(mpContext.requiredMapId) == std::string::npos)
+        {
+            mpContext.waitingForMapLoad = true;
+            std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
+            printf("[NET MAP REQUIRED] mapId=%s path=%s loadingMap=1\n",
+                   mpContext.requiredMapId.c_str(), requiredPath.c_str());
+
+            if (loadWorldFromGLB(world, requiredPath.c_str()))
+            {
+                ACTIVE_MAP_PATH = requiredPath;
+                WORLD_LOADED = true;
+                printf("[CLIENT MAP SWITCH] old=%s new=%s\n",
+                       ACTIVE_MAP_PATH.c_str(), requiredPath.c_str());
+                player.reset();
+            }
+            else
+            {
+                printf("[CLIENT MAP ERROR] failed to load map=%s\n", requiredPath.c_str());
+            }
+
+            // Notify server that map is ready
+            MimitaNet::ClientMapReadyPacket ready;
+            ready.header.type = MimitaNet::PACKET_CLIENT_MAP_READY;
+            ready.header.tick = mpContext.tick;
+            ready.header.playerId = mpContext.localPlayerId;
+            ready.assignedPlayerId = mpContext.localPlayerId;
+            size_t mapIdLen = mpContext.requiredMapId.copy(ready.mapId, sizeof(ready.mapId) - 1);
+            ready.mapId[mapIdLen] = '\0';
+            MimitaNet::mpSendPacket(mpContext, &ready, sizeof(ready));
+            mpContext.waitingForMapLoad = false;
+            printf("[CLIENT MAP READY] sent mapId=%s\n", ready.mapId);
+        }
 
         for (const MimitaNet::NetworkShotEvent& event : mpContext.shotEvents)
         {

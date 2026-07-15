@@ -44,7 +44,8 @@ enum PacketType : uint8_t
     PACKET_JOIN_REJECT = 22,
     PACKET_RECONNECT_REQUEST = 23,
     PACKET_RECONNECT_ACCEPT = 24,
-    PACKET_DISAGREEMENT = 25
+    PACKET_DISAGREEMENT = 25,
+    PACKET_CLIENT_MAP_READY = 26
 };
 
 enum EntityType : uint8_t
@@ -448,6 +449,13 @@ struct ReconnectAcceptPacket
     float restorePx = 0.0f;
     float restorePy = 0.0f;
     float restorePz = 0.0f;
+};
+
+struct ClientMapReadyPacket
+{
+    PacketHeader header;
+    uint32_t assignedPlayerId = 0;
+    char mapId[MAX_NAME_BYTES];
 };
 
 struct DisagreementPacket

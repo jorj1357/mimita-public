@@ -52,6 +52,10 @@ struct GLBDebugData {
 
 extern GLBDebugData gGLBDebug;
 
+struct MapLoadTiming;
+struct MapLoadMetrics;
+
 Mesh loadOBJ(const std::string& path);
-Mesh loadGLB(const std::string& path, bool storeDebugInfo = true, Mesh* skyMesh = nullptr);
+Mesh loadGLB(const std::string& path, bool storeDebugInfo = true, Mesh* skyMesh = nullptr,
+             MapLoadTiming* timing = nullptr, MapLoadMetrics* metrics = nullptr);
 void releaseMeshGLResources(Mesh& mesh);
