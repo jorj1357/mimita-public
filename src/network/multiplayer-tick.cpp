@@ -2,6 +2,7 @@
 #include "network/packets.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,6 +29,11 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
 
 void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
 {
+    if (ctx.sock == INVALID_SOCKET)
+    {
+        printf("[NET CONNECT] sendJoinRequest skipped: invalid socket\n");
+        return;
+    }
     JoinRequestPacket join{};
     join.header.type = PACKET_JOIN_REQUEST;
     join.header.tick = ctx.tick;
@@ -35,9 +41,12 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     std::strncpy(join.joinToken, ctx.joinToken.c_str(), sizeof(join.joinToken) - 1);
     std::memset(join.name, 0, sizeof(join.name));
     std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
-    sendto(ctx.sock, (const char*)&join, sizeof(join), 0,
+    int sent = sendto(ctx.sock, (const char*)&join, sizeof(join), 0,
            (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-    ++ctx.packetsSent;
+    if (sent == SOCKET_ERROR)
+        printf("[NET TX ERROR] sendJoinRequest sendto failed error=%d\n", WSAGetLastError());
+    else
+        ++ctx.packetsSent;
     printf("[NET CONNECT] join request sent to %s token=%s\n",
            ctx.serverAddress.c_str(), ctx.joinToken.c_str());
 }
@@ -57,6 +66,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 {
     if (!ctx.active)
         return;
+    if (ctx.sock == INVALID_SOCKET)
+    {
+        Debug::warn(Debug::Category::Networking,
+               "[NET TICK] sock=INVALID_SOCKET state=%s connected=%d active=%d\n",
+               connectionStateName(ctx.connectionState), (int)ctx.connected, (int)ctx.active);
+        return;
+    }
 
     uint64_t currentMs = nowMs();
 
@@ -120,6 +136,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     {
         ctx.connectFailed = true;
         ctx.connectionStatus = "Connection timed out";
+        ctx.connectionState = ConnectionState::Disconnected;
         printf("[NET CONNECT] timeout server=%s\n", ctx.serverAddress.c_str());
     }
 
@@ -161,8 +178,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (bytes <= 0)
         {
             int wsaErr = WSAGetLastError();
-            if (wsaErr != WSAEWOULDBLOCK)
-                printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
+            if (wsaErr == WSAEWOULDBLOCK)
+                break;
+            if (wsaErr == WSAEINVAL)
+            {
+                Debug::warn(Debug::Category::Networking,
+                       "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
+                       "state=%s connected=%d active=%d iceTransport=%d\n",
+                       (int)ctx.sock, connectionStateName(ctx.connectionState),
+                       (int)ctx.connected, (int)ctx.active, 0);
+                break;
+            }
+            printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
             break;
         }
         ++ctx.packetsReceived;

@@ -221,6 +221,7 @@ std::string generateReconnectToken();
 // Coordinator state for join token validation
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken);
 const std::string& getServerCoordinatorCode();
+const std::string& getServerCoordinatorJoinToken();
 
 // Server map identity
 void setServerMapId(const std::string& mapId);
@@ -246,6 +247,28 @@ void sendDisagreementToAll(SOCKET sock,
                            const char* description,
                            uint32_t tick,
                            uint64_t& totalPacketsOut);
+
+// ─── HostedRoomSession — single canonical room for one host action ─────────
+
+struct HostedRoomSession
+{
+    bool active = false;
+    std::string roomCode;
+    std::string hostToken;
+    std::string joinToken;
+    uint64_t serverProcessId = 0;
+    std::string serverEndpoint;
+    std::string iceHostSessionId;
+    std::string coordinatorRoomType; // "normal" or "ice"
+    uint64_t createdAtMs = 0;
+    uint64_t lastHeartbeatMs = 0;
+};
+
+inline HostedRoomSession& hostedRoomSession()
+{
+    static HostedRoomSession session;
+    return session;
+}
 
 // ─── Server Launch Settings (shared by UI, process launch, headless) ──────
 

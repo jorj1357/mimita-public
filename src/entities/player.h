@@ -12,6 +12,7 @@
 #include "physics/physics-types.h"
 #include "gui/hud/chat-bubble.h"
 
+#include "avatar/avatar.h"
 #include "combat/weapon-types.h"
 
 
@@ -458,7 +459,15 @@ public:
 
     // -------- Per-part color tints (from avatar.json colors) --------
     std::vector<glm::vec3> outfitPartColors;
+
+    // -------- Cosmetics (loaded GLB attachments) --------
+    std::vector<CosmeticSlot> mCosmetics;
+    const std::vector<CosmeticSlot>& getCosmetics() const { return mCosmetics; }
+    void setCosmetics(const std::vector<CosmeticSlot>& c) { mCosmetics = c; }
 };
 
 // Upload mesh to shared body-part VAO for ragdoll rendering
 void uploadBodyPartMesh(const Mesh& mesh);
+
+// Build a 4x4 transform from position + rotation quaternion
+glm::mat4 transformMatrix(const glm::vec3& position, const glm::quat& rotation);

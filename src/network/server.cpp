@@ -71,10 +71,14 @@ int runServer(const LaunchOptions& options)
     setNonBlocking(sock);
 
     sockaddr_in bindAddr{};
-    if (!parseAddress(options.connect, bindAddr))
+    if (options.connectExplicit && parseAddress(options.connect, bindAddr))
+    {
+        // Use explicitly provided address
+    }
+    else
     {
         bindAddr.sin_family = AF_INET;
-        bindAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        bindAddr.sin_addr.s_addr = htonl(INADDR_ANY);
         bindAddr.sin_port = htons(DEFAULT_PORT);
     }
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
@@ -89,7 +93,7 @@ int runServer(const LaunchOptions& options)
         return 1;
     }
 
-    printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(bindAddr).c_str());
+        printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(bindAddr).c_str());
     printf("%s [SERVER] waiting for connections...\n", serverTimestamp());
 
     std::unordered_map<uint32_t, ServerPlayer> players;
@@ -134,6 +138,11 @@ int runServer(const LaunchOptions& options)
     std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
     std::string serverJoinToken;
     {
+        if (hostedRoomSession().active)
+        {
+            printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=headless-server-runServer\n",
+                   hostedRoomSession().roomCode.c_str(), serverCode.c_str());
+        }
         std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
         std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
         CoordinatorRoomInfo room = coordinatorRegister(
@@ -144,8 +153,30 @@ int runServer(const LaunchOptions& options)
             serverCode = room.code;
             serverJoinToken = room.joinToken;
             setServerCoordinatorState(room.code, room.joinToken);
+            hostedRoomSession().active = true;
+            hostedRoomSession().roomCode = room.code;
+            hostedRoomSession().hostToken = room.joinToken;
+            hostedRoomSession().joinToken = room.joinToken;
+            hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+            hostedRoomSession().coordinatorRoomType = "normal";
+            hostedRoomSession().createdAtMs = nowMs();
             printf("%s [SERVER] coordinator registered code=%s map=%s name=%s\n",
                    serverTimestamp(), serverCode.c_str(), regMapName.c_str(), regServerName.c_str());
+            printf("[ROOM OWNER] subsystem=headless-server code=%s\n", serverCode.c_str());
+            printf("[MIMITA_SERVER_EVENT] {\"type\":\"room_created\",\"code\":\"%s\",\"host_token\":\"%s\"}\n",
+                   serverCode.c_str(), serverJoinToken.c_str());
+
+            // Write room code to --room-file if specified
+            if (!options.roomFilePath.empty())
+            {
+                FILE* rf = fopen(options.roomFilePath.c_str(), "w");
+                if (rf)
+                {
+                    fprintf(rf, "%s\n", serverCode.c_str());
+                    fclose(rf);
+                    printf("[SERVER] wrote room code to %s\n", options.roomFilePath.c_str());
+                }
+            }
         }
         else if (!options.serverCode.empty())
         {
@@ -157,9 +188,19 @@ int runServer(const LaunchOptions& options)
 
     uint64_t lastCoordinatorHb = 0;
 
+    uint64_t serverStartMs = nowMs();
+
     while (true)
     {
         uint64_t frameStart = nowMs();
+
+        // Auto-exit when --timeout is set (for CI/agent testing)
+        if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
+        {
+            printf("%s [SERVER] timeout=%us reached, exiting\n", serverTimestamp(), options.timeoutSecs);
+            break;
+        }
+
         char buffer[2048];
         sockaddr_in from{};
         int fromLen = sizeof(from);
@@ -172,7 +213,15 @@ int runServer(const LaunchOptions& options)
             {
                 int wsaErr = WSAGetLastError();
                 if (wsaErr != WSAEWOULDBLOCK)
-                    printf("%s [NET RX ERROR] recvfrom failed error=%d\n", serverTimestamp(), wsaErr);
+                {
+                    sockaddr_in localEp{};
+                    int localEpLen = sizeof(localEp);
+                    std::string localStr = "(unknown)";
+                    if (getsockname(sock, (sockaddr*)&localEp, &localEpLen) == 0)
+                        localStr = addressToString(localEp);
+                    printf("%s [NET RX ERROR] sock=%d error=%d local=%s\n",
+                           serverTimestamp(), (int)sock, wsaErr, localStr.c_str());
+                }
                 break;
             }
             ++totalPacketsIn;
@@ -263,6 +312,11 @@ int runServer(const LaunchOptions& options)
         if (elapsed < targetMs)
             std::this_thread::sleep_for(std::chrono::milliseconds(targetMs - elapsed));
     }
+
+    closesocket(sock);
+    netShutdown();
+    printf("%s [SERVER] shutdown complete\n", serverTimestamp());
+    return 0;
 }
 
 // ─── Listen Server ─────────────────────────────────────────────────────────
@@ -371,6 +425,12 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     // Register with coordinator (skip if external server process handles it)
     if (!settings || !settings->externalProcessLaunched)
     {
+        if (hostedRoomSession().active)
+        {
+            printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=startListenServer\n",
+                   hostedRoomSession().roomCode.c_str(), state.serverCode.c_str());
+        }
+
         std::string regMap = settings ? settings->mapName : "funworldv3";
         CoordinatorRoomInfo room = coordinatorRegister(
             hostSessionId, publicIp, port, state.serverName,
@@ -381,8 +441,18 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             state.serverCode = room.code;
             state.joinToken = room.joinToken;
             setServerCoordinatorState(room.code, room.joinToken);
+            hostedRoomSession().active = true;
+            hostedRoomSession().roomCode = room.code;
+            hostedRoomSession().hostToken = room.joinToken;
+            hostedRoomSession().joinToken = room.joinToken;
+            hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+            hostedRoomSession().coordinatorRoomType = "normal";
+            hostedRoomSession().createdAtMs = nowMs();
             printf("[LISTEN SERVER] coordinator registered code=%s joinToken=%s\n",
                    room.code.c_str(), room.joinToken.substr(0, 12).c_str());
+            printf("[ROOM OWNER] subsystem=listen-server code=%s\n", room.code.c_str());
+            printf("[MIMITA_SERVER_EVENT] {\"type\":\"room_created\",\"code\":\"%s\",\"host_token\":\"%s\"}\n",
+                   room.code.c_str(), room.joinToken.c_str());
         }
         else
         {
@@ -446,7 +516,15 @@ void tickListenServer(ListenServerState& state, float dt)
             {
                 int wsaErr = WSAGetLastError();
                 if (wsaErr != WSAEWOULDBLOCK)
-                    printf("[LISTEN SERVER RX ERROR] recvfrom failed error=%d\n", wsaErr);
+                {
+                    sockaddr_in localEp{};
+                    int localEpLen = sizeof(localEp);
+                    std::string localStr = "(unknown)";
+                    if (getsockname(state.sock, (sockaddr*)&localEp, &localEpLen) == 0)
+                        localStr = addressToString(localEp);
+                    printf("[LISTEN SERVER RX ERROR] sock=%d error=%d local=%s\n",
+                           (int)state.sock, wsaErr, localStr.c_str());
+                }
                 break;
             }
             ++state.totalPacketsIn;

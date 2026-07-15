@@ -59,8 +59,13 @@ struct SimpleAvatar {
 };
 
 struct CosmeticSlot {
-    std::string slot;    // e.g. "head", "torso", "arms", "legs"
-    std::string choice;  // e.g. "halo", "horns", "none"
+    std::string slot;        // e.g. "head", "torso", "arms", "legs" (UI category)
+    std::string choice;      // e.g. "halo", "horns", "none" (GLB filename)
+    std::string attachTo;    // body part to attach to: "root", "head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"
+    glm::vec3 offset{0.0f};  // position offset relative to attachment point
+    glm::vec3 rotation{0.0f}; // euler angles in degrees
+    glm::vec3 scale{1.0f};   // scale multiplier
+    glm::vec3 color{1.0f};   // RGB tint
 };
 
 struct AvatarPreset {

@@ -12,6 +12,10 @@ import sys
 import subprocess
 import os
 
+# ── Config ──────────────────────────────────────────────────────────
+SOUND_VOLUME = 0.1  # 1 = full volume, 0 = full mute
+# ────────────────────────────────────────────────────────────────────
+
 
 def release_locks():
     """Release all held locks via the coordination system."""
@@ -50,7 +54,32 @@ def play_sound():
 
     try:
         import winsound
-        winsound.PlaySound(sound_path, winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        import struct
+        import wave
+        import tempfile
+
+        # Read WAV, scale samples by SOUND_VOLUME, write to temp file
+        with wave.open(sound_path, 'rb') as wf:
+            params = wf.getparams()
+            frames = wf.readframes(wf.getnframes())
+
+        if SOUND_VOLUME < 1.0 and params.sampwidth == 2:
+            samples = struct.unpack_from(f'<{len(frames) // 2}h', frames)
+            scaled = [max(-32768, min(32767, int(s * SOUND_VOLUME))) for s in samples]
+            frames = struct.pack(f'<{len(scaled)}h', *scaled)
+        elif SOUND_VOLUME < 1.0 and params.sampwidth == 1:
+            samples = struct.unpack_from(f'<{len(frames)}B', frames)
+            scaled = [max(0, min(255, int((s - 128) * SOUND_VOLUME) + 128)) for s in samples]
+            frames = struct.pack(f'<{len(scaled)}B', *scaled)
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            with wave.open(tmp, 'wb') as wf:
+                wf.setparams(params)
+                wf.writeframes(frames)
+            temp_path = tmp.name
+
+        winsound.PlaySound(temp_path, winsound.SND_NODEFAULT)
+        os.unlink(temp_path)
     except Exception as e:
         print(f"[AGENT WARNING] Sound playback failed: {e}")
 
