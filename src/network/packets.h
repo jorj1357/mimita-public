@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 12;
+constexpr uint16_t PROTOCOL_VERSION = 13;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -109,7 +109,11 @@ enum DisagreementReason : uint8_t
     DISAGREEMENT_INVALID_DAMAGE = 2,
     DISAGREEMENT_POSITION_CORRECTION = 3,
     DISAGREEMENT_INVALID_MOVEMENT = 4,
-    DISAGREEMENT_INVALID_STATE = 5
+    DISAGREEMENT_INVALID_STATE = 5,
+    DISAGREEMENT_REWIND_MISS = 6,
+    DISAGREEMENT_TARGET_NOT_FOUND = 7,
+    DISAGREEMENT_TARGET_DEAD = 8,
+    DISAGREEMENT_SELF_TARGET = 9
 };
 
 enum ShotEffectFlags : uint16_t
@@ -664,6 +668,10 @@ struct DisagreementPacket
     uint8_t reserved0 = 0;
     uint8_t reserved1 = 0;
     uint8_t reserved2 = 0;
+    uint32_t eventId = 0;
+    uint32_t relatedSerial = 0;
+    uint32_t sourcePlayerId = 0;
+    uint32_t targetPlayerId = 0;
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -685,6 +693,7 @@ static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "ProjectileExplodeEventPacket exceeds safe datagram limit");
 static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
 static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
+static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

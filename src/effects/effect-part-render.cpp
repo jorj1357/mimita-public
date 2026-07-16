@@ -118,8 +118,26 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
 
         float dist = glm::length(effect.position - camera.pos);
-        if (dist > 40.0f) continue;
-        float distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
+
+        // Disagreement effects use a much larger render distance so they're visible to all clients
+        bool isDisagreementEffect =
+            effect.replayType == "server_disagreement_pulse" ||
+            effect.replayType == "server_disagreement_beam" ||
+            effect.replayType == "server_disagreement_tracer" ||
+            effect.replayType == "server_disagreement_text" ||
+            effect.replayType == "server_disagreement_particle";
+
+        float distFade;
+        if (isDisagreementEffect)
+        {
+            if (dist > 200.0f) continue;
+            distFade = (dist > 150.0f) ? (200.0f - dist) / 50.0f : 1.0f;
+        }
+        else
+        {
+            if (dist > 40.0f) continue;
+            distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
+        }
 
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
         const bool damageNumber = effect.replayType == "damage_number";
@@ -195,6 +213,9 @@ void EffectPartSystem::render(const Camera& camera) const {
                 float driftPx = (1.0f - t) * 60.0f;
                 glm::vec4 textColor = {effect.color.x, effect.color.y, effect.color.z, alpha};
                 float fontSize = 48.0f;
+                // Server disagreement text is larger for readability
+                if (effect.replayType == "server_disagreement_text")
+                    fontSize = 64.0f;
                 uiDrawText(effect.label.c_str(), x, y - driftPx, fontSize, textColor);
                 Debug::logThrottled(Debug::Category::General, "popup-render", 1.0f,
                     "[DAMAGE POPUP] RENDER label=%s screen=(%.0f %.0f) alpha=%.2f fontSize=%.0f "

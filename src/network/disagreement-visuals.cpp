@@ -21,6 +21,10 @@ static const char* reasonName(DisagreementReason reason)
         case DISAGREEMENT_POSITION_CORRECTION: return "position correction";
         case DISAGREEMENT_INVALID_MOVEMENT: return "invalid movement";
         case DISAGREEMENT_INVALID_STATE: return "invalid state";
+        case DISAGREEMENT_REWIND_MISS:   return "rewind miss";
+        case DISAGREEMENT_TARGET_NOT_FOUND: return "target not found";
+        case DISAGREEMENT_TARGET_DEAD:   return "target dead";
+        case DISAGREEMENT_SELF_TARGET:   return "self target";
         default: return "unknown";
     }
 }
@@ -34,6 +38,10 @@ static const char* reasonLabel(DisagreementReason reason)
         case DISAGREEMENT_POSITION_CORRECTION: return "POSITION CORRECTION";
         case DISAGREEMENT_INVALID_MOVEMENT: return "INVALID MOVEMENT";
         case DISAGREEMENT_INVALID_STATE: return "INVALID STATE";
+        case DISAGREEMENT_REWIND_MISS:   return "REWIND MISS";
+        case DISAGREEMENT_TARGET_NOT_FOUND: return "TARGET NOT FOUND";
+        case DISAGREEMENT_TARGET_DEAD:   return "TARGET DEAD";
+        case DISAGREEMENT_SELF_TARGET:   return "SELF TARGET";
         default: return "SERVER CORRECTION";
     }
 }
@@ -47,6 +55,10 @@ static glm::vec3 reasonColor(DisagreementReason reason)
         case DISAGREEMENT_POSITION_CORRECTION: return glm::vec3(0.0f, 1.0f, 0.8f);
         case DISAGREEMENT_INVALID_MOVEMENT: return glm::vec3(0.2f, 0.8f, 1.0f);
         case DISAGREEMENT_INVALID_STATE: return glm::vec3(0.3f, 0.9f, 0.9f);
+        case DISAGREEMENT_REWIND_MISS:   return glm::vec3(0.0f, 0.8f, 1.0f);
+        case DISAGREEMENT_TARGET_NOT_FOUND: return glm::vec3(0.2f, 0.6f, 0.9f);
+        case DISAGREEMENT_TARGET_DEAD:   return glm::vec3(0.3f, 0.7f, 0.8f);
+        case DISAGREEMENT_SELF_TARGET:   return glm::vec3(0.1f, 0.5f, 0.8f);
         default: return glm::vec3(0.0f, 0.8f, 0.8f);
     }
 }
@@ -56,20 +68,38 @@ static float correctionMagnitude(const DisagreementEvent& event)
     return glm::length(event.correction);
 }
 
+static bool isHitRejection(DisagreementReason reason)
+{
+    return reason == DISAGREEMENT_OCCLUDED_SHOT ||
+           reason == DISAGREEMENT_REWIND_MISS ||
+           reason == DISAGREEMENT_TARGET_NOT_FOUND ||
+           reason == DISAGREEMENT_TARGET_DEAD ||
+           reason == DISAGREEMENT_SELF_TARGET ||
+           reason == DISAGREEMENT_INVALID_DAMAGE;
+}
+
 static float severityRadius(const DisagreementEvent& event)
 {
     float mag = correctionMagnitude(event);
-    if (mag > 1.0f) return 3.0f;
-    if (mag > 0.25f) return 1.8f;
-    return 0.8f;
+    float radius = 0.8f;
+    if (mag > 1.0f) radius = 3.0f;
+    else if (mag > 0.25f) radius = 1.8f;
+    // For hit-rejection reasons, force a large minimum radius
+    if (isHitRejection(event.reason))
+        radius = std::max(radius, 4.0f);
+    return radius;
 }
 
 static float severityLifetime(const DisagreementEvent& event)
 {
     float mag = correctionMagnitude(event);
-    if (mag > 1.0f) return 1.5f;
-    if (mag > 0.25f) return 1.0f;
-    return 0.6f;
+    float lifetime = 0.6f;
+    if (mag > 1.0f) lifetime = 1.5f;
+    else if (mag > 0.25f) lifetime = 1.0f;
+    // For hit-rejection reasons, force a longer minimum lifetime
+    if (isHitRejection(event.reason))
+        lifetime = std::max(lifetime, 1.5f);
+    return lifetime;
 }
 
 void spawnDisagreementEffect(const DisagreementEvent& event)
@@ -88,8 +118,8 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         ^ (unsigned int)(pos.z * 83492791);
     float pitch = 1.0f + ((float)(h % 101) - 50.0f) / 1000.0f;
 
-    // Play world-space sound, audible up to 50 units
-    playWorldSound("serverdisagree", pos, vol, pitch, 50.0f);
+    // Play world-space sound, audible up to 150 units (matches extended visual range)
+    playWorldSound("serverdisagree", pos, vol, pitch, 150.0f);
 
     // ── Expanding sphere pulse ─────────────────────────────────────
     {
@@ -138,13 +168,17 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
         EffectPartSystem::instance().spawn(e);
     }
 
-    // ── Floating reason text ───────────────────────────────────────
+    // ── Floating description text ──────────────────────────────────
     {
         EffectPart e;
         e.position = pos + glm::vec3(0, 0, 0.5f);
         e.color = color;
         e.maxLifetime = lifetime + 0.3f;
-        e.label = reasonLabel(event.reason);
+        // Show the actual description from the server, or fall back to reason label
+        if (!event.description.empty())
+            e.label = "SERVER REJECTED HIT: " + event.description;
+        else
+            e.label = reasonLabel(event.reason);
         e.billboardText = true;
         e.scale = 0.3f;
         e.replayType = "server_disagreement_text";
@@ -182,9 +216,12 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
 
     // Always log at warn level so it's visible in console
     Debug::warn(Debug::Category::Networking,
-        "[SERVER DISAGREEMENT] reason=%s pos=(%.1f,%.1f,%.1f) "
-        "correction=(%.2f,%.2f,%.2f) mag=%.2f desc=\"%s\"\n",
+        "[SERVER DISAGREEMENT] eventId=%u shotSerial=%u shooter=%u target=%u "
+        "reason=%s radius=%.1f lifetime=%.1f sound=serverdisagree "
+        "pos=(%.1f,%.1f,%.1f) correction=(%.2f,%.2f,%.2f) mag=%.2f desc=\"%s\"\n",
+        event.eventId, event.relatedSerial, event.sourcePlayerId, event.targetPlayerId,
         reasonName(event.reason),
+        radius, lifetime,
         pos.x, pos.y, pos.z,
         event.correction.x, event.correction.y, event.correction.z,
         correctionMagnitude(event),

@@ -3,6 +3,7 @@
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "void-death/void-death.h"
+#include "combat/weapon-data.h"
 
 #include <cstdio>
 #include <chrono>
@@ -16,6 +17,9 @@ namespace MimitaNet {
 int runServer(const LaunchOptions& options)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
+
+    WeaponData::registerBuiltinWeapons();
+    printf("%s [SERVER] registered built-in weapons\n", serverTimestamp());
 
     printf("%s [SERVER] ========================================\n", serverTimestamp());
     printf("%s [SERVER] MiMITA Dedicated Server\n", serverTimestamp());
@@ -106,6 +110,7 @@ int runServer(const LaunchOptions& options)
     uint64_t lastLog = nowMs();
     uint64_t totalPacketsIn = 0;
     uint64_t totalPacketsOut = 0;
+    DisagreementRetransmitState disagreementRetransmit;
 
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
     {
@@ -264,7 +269,7 @@ int runServer(const LaunchOptions& options)
             else if (header->type == PACKET_EXPLODE_REQUEST)
                 handleExplodeRequest(buffer, bytes, players);
             else if (header->type == PACKET_SHOT_REQUEST)
-                handleShotRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut);
+                handleShotRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut, &disagreementRetransmit);
             else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
                 handleProjectileFireRequest(sock, from, buffer, bytes, players, projectiles,
                                             nextProjectileId, world, tick, totalPacketsOut);
@@ -330,6 +335,8 @@ int runServer(const LaunchOptions& options)
         tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
 
         buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
+
+        tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
 
         // Heartbeat to coordinator every ~15 seconds
         {
@@ -619,7 +626,8 @@ void tickListenServer(ListenServerState& state, float dt)
                 handleExplodeRequest(buffer, bytes, state.players);
             else if (header->type == PACKET_SHOT_REQUEST)
                 handleShotRequest(state.sock, from, buffer, bytes, state.players,
-                                  state.world, state.tick, state.totalPacketsOut);
+                                  state.world, state.tick, state.totalPacketsOut,
+                                  &state.disagreementRetransmit);
             else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
                 handleProjectileFireRequest(state.sock, from, buffer, bytes, state.players,
                                             state.projectiles, state.nextProjectileId,
@@ -692,6 +700,10 @@ void tickListenServer(ListenServerState& state, float dt)
 
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
                              state.tick, state.totalPacketsOut);
+
+        tickDisagreementRetransmit(state.sock, state.players,
+                                   state.disagreementRetransmit,
+                                   state.totalPacketsOut);
 
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)

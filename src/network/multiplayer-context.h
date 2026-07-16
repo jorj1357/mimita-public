@@ -6,6 +6,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -33,6 +34,10 @@ struct DisagreementEvent
 {
     uint64_t timeMs = 0;
     DisagreementReason reason = DISAGREEMENT_NONE;
+    uint32_t eventId = 0;
+    uint32_t relatedSerial = 0;
+    uint32_t sourcePlayerId = 0;
+    uint32_t targetPlayerId = 0;
     glm::vec3 position{0.0f};
     glm::vec3 correction{0.0f};
     std::string description;
@@ -211,6 +216,7 @@ struct MultiplayerContext
 
     // ── Migration: disagreement events from server ────────────────────
     std::vector<DisagreementEvent> disagreementEvents;
+    std::unordered_set<uint32_t> processedDisagreementIds;
 
     // ── Migration: server process tracking ────────────────────────────
     bool serverProcessLaunched = false;
@@ -268,7 +274,7 @@ struct MpInput
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input = nullptr);
+void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const class World& world);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
 
 // ── Migration: connection with room code + join token ─────────────────
@@ -333,7 +339,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event);
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
-void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt);
+void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
 
 // Called from mpTick (defined in multiplayer-chat.cpp)

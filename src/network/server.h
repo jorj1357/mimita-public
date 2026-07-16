@@ -116,6 +116,17 @@ struct ServerPlayer
     int kills = 0;
     int deaths = 0;
     uint16_t transformEpoch = 0;
+
+    // ── Authoritative transform acknowledgement gate ──────────────────
+    // When the server sets a discontinuous transform (spawn, respawn,
+    // teleport, map change), it increments the epoch and marks this flag.
+    // Until the client acknowledges by sending a matching epoch with a
+    // position near the authoritative one, the server rejects client
+    // position updates and keeps its own authoritative position.
+    bool awaitingAuthoritativeTransformAck = false;
+    glm::vec3 authoritativeTransformPosition{0.0f};
+    uint16_t authoritativeTransformEpoch = 0;
+    uint64_t authoritativeTransformAssignedMs = 0;
 };
 
 enum class ServerNpcState {
@@ -254,10 +265,28 @@ void handleTeleportRequest(const char* buffer, int bytes,
                            const HeadlessWorld& world);
 void handleExplodeRequest(const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players);
+// ── Disagreement retransmission (defined before use in shot/send helpers) ─
+constexpr int DISAGREEMENT_RETRANSMIT_MAX = 8;
+constexpr int DISAGREEMENT_RETRANSMIT_TICKS = 4;
+
+struct PendingDisagreement
+{
+    DisagreementPacket packet;
+    uint8_t retransmitsLeft = 0;
+    bool active = false;
+};
+
+struct DisagreementRetransmitState
+{
+    PendingDisagreement events[DISAGREEMENT_RETRANSMIT_MAX];
+    uint32_t nextEventId = 1;
+};
+
 void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
-                       uint32_t tick, uint64_t& totalPacketsOut);
+                       uint32_t tick, uint64_t& totalPacketsOut,
+                       DisagreementRetransmitState* retransmitState = nullptr);
 void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                  std::unordered_map<uint32_t, ServerProjectile>& projectiles,
@@ -307,6 +336,11 @@ const std::string& getServerCoordinatorJoinToken();
 void setServerMapId(const std::string& mapId);
 const std::string& getServerMapId();
 
+// Authoritative transform helper
+void beginAuthoritativeTransform(ServerPlayer& player,
+    const glm::vec3& position, const glm::vec3& velocity, float yaw,
+    const char* reason);
+
 // Post-tick helpers
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players);
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -319,14 +353,25 @@ void buildAndSendSnapshot(SOCKET sock,
 void logSnapshotEntity(const SnapshotEntity& entity);
 
 // Send a disagreement event to all connected players.
+// If retransmitState is non-null, queues the packet for best-effort retransmission.
 void sendDisagreementToAll(SOCKET sock,
                            const std::unordered_map<uint32_t, ServerPlayer>& players,
                            DisagreementReason reason,
+                           uint32_t eventId,
+                           uint32_t relatedSerial,
+                           uint32_t sourcePlayerId,
+                           uint32_t targetPlayerId,
                            glm::vec3 position,
                            glm::vec3 correction,
                            const char* description,
                            uint32_t tick,
-                           uint64_t& totalPacketsOut);
+                           uint64_t& totalPacketsOut,
+                           DisagreementRetransmitState* retransmitState = nullptr);
+
+void tickDisagreementRetransmit(SOCKET sock,
+                                const std::unordered_map<uint32_t, ServerPlayer>& players,
+                                DisagreementRetransmitState& state,
+                                uint64_t& totalPacketsOut);
 
 ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>& players,
                                      ServerPlayer& target,
@@ -403,6 +448,7 @@ struct ListenServerState
     uint64_t lastHeartbeatMs = 0;
     std::string publicIp;
     std::string hostSessionId;
+    DisagreementRetransmitState disagreementRetransmit;
 };
 
 bool startListenServer(ListenServerState& state, uint16_t port,

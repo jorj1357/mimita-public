@@ -253,8 +253,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     // === DASH POSE TIMER ===
-    if (dash.didDash)
+    if (dash.didDash && dashPoseTimer < 0.0f)
     {
+        printf("[DASH ANIM] player=%s starting dash pose timer\n", username.c_str());
         dashPoseTimer = 0.0f;
     }
 

@@ -117,30 +117,33 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     if (!existingId)
     {
         // Use map spawnpoints if available
+        glm::vec3 spawnPos;
+        float spawnYaw = 0.0f;
         if (world && !world->spawnPoints.empty())
         {
             size_t idx = (id - 1) % world->spawnPoints.size();
-            p.pos = world->spawnPoints[idx].position;
-            p.yaw = world->spawnPoints[idx].yaw;
+            spawnPos = world->spawnPoints[idx].position;
+            spawnYaw = world->spawnPoints[idx].yaw;
             printf("%s [SERVER PLAYER SPAWN] reason=initial_join id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
                    serverTimestamp(), id, p.name.c_str(), idx,
-                   p.pos.x, p.pos.y, p.pos.z, glm::degrees(p.yaw));
+                   spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw));
         }
         else
         {
-            p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+            spawnPos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
             printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
                    "(no spawnpoints in map)\n",
                    serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-                   p.pos.x, p.pos.y, p.pos.z);
+                   spawnPos.x, spawnPos.y, spawnPos.z);
         }
-        p.spawned = true;
+        beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "initial_join");
+        // Wait for ClientMapReady before including in snapshots.
+        // The client must load the required map first.
+        p.spawned = false;
     }
 
     p.reconnectToken = generateReconnectToken();
-
-    ++p.transformEpoch;
     WelcomePacket welcome{};
     welcome.header.type = PACKET_WELCOME;
     welcome.header.tick = tick;
@@ -342,8 +345,6 @@ void handleInputPacket(const char* buffer, int bytes,
         in->clientPx, in->clientPy, in->clientPz};
     const glm::vec3 reportedVelocity{
         in->clientVx, in->clientVy, in->clientVz};
-    constexpr float MAX_CLIENT_STATE_DELTA = 30.0f;
-    constexpr float MAX_CLIENT_REPORTED_SPEED = 180.0f;
     const bool finiteState =
         std::isfinite(reportedPosition.x) &&
         std::isfinite(reportedPosition.y) &&
@@ -351,13 +352,64 @@ void handleInputPacket(const char* buffer, int bytes,
         std::isfinite(reportedVelocity.x) &&
         std::isfinite(reportedVelocity.y) &&
         std::isfinite(reportedVelocity.z);
-    const float stateDelta = finiteState
-        ? glm::length(reportedPosition - p.pos)
-        : std::numeric_limits<float>::infinity();
     const float reportedSpeed = finiteState
         ? glm::length(reportedVelocity)
         : std::numeric_limits<float>::infinity();
-    if (finiteState &&
+    const float stateDelta = finiteState
+        ? glm::length(reportedPosition - p.pos)
+        : std::numeric_limits<float>::infinity();
+
+    bool allowClientTransform = true;
+    const char* rejectReason = nullptr;
+
+    // ── Authoritative transform gate ──────────────────────────────────
+    // After a spawn, respawn, teleport, or epoch change, the server waits
+    // for the client to acknowledge the new authoritative position before
+    // accepting any client-reported transform.
+    if (p.awaitingAuthoritativeTransformAck)
+    {
+        const bool epochMatches =
+            in->header.transformEpoch == p.authoritativeTransformEpoch;
+        const float distanceFromAuthoritative = finiteState
+            ? glm::length(reportedPosition - p.authoritativeTransformPosition)
+            : std::numeric_limits<float>::infinity();
+        constexpr float AUTHORITATIVE_ACK_DISTANCE = 5.0f;
+        const bool acknowledged =
+            epochMatches && finiteState &&
+            distanceFromAuthoritative <= AUTHORITATIVE_ACK_DISTANCE;
+
+        if (!acknowledged)
+        {
+            allowClientTransform = false;
+            if (!epochMatches)
+                rejectReason = "wrong-epoch";
+            else if (!finiteState)
+                rejectReason = "non-finite";
+            else
+                rejectReason = "too-far-from-authoritative";
+        }
+        else
+        {
+            p.awaitingAuthoritativeTransformAck = false;
+            printf("%s [SERVER TRANSFORM ACK] playerId=%u epoch=%u "
+                   "position=(%.2f,%.2f,%.2f) distance=%.2f timeSinceAssignment=%llums\n",
+                   serverTimestamp(), p.id,
+                   (unsigned)p.transformEpoch,
+                   reportedPosition.x, reportedPosition.y, reportedPosition.z,
+                   distanceFromAuthoritative,
+                   (unsigned long long)(nowMs() - p.authoritativeTransformAssignedMs));
+        }
+    }
+
+    // ── Normal movement validation ─────────────────────────────────────
+    // Reasoned limits: dash (~60 m/s), down-dash (~80 m/s), explosion
+    // knockback (~120 m/s), falling at void depth (~150 m/s).  Use 200 for
+    // a comfortable safety margin.  Position delta allows ~1.5x max speed
+    // per server tick with a small network tolerance.
+    constexpr float MAX_CLIENT_REPORTED_SPEED = 200.0f;
+    constexpr float MAX_CLIENT_STATE_DELTA = 25.0f;
+
+    if (allowClientTransform && finiteState &&
         stateDelta <= MAX_CLIENT_STATE_DELTA &&
         reportedSpeed <= MAX_CLIENT_REPORTED_SPEED)
     {
@@ -365,22 +417,46 @@ void handleInputPacket(const char* buffer, int bytes,
         p.vel = reportedVelocity;
         p.clientStateUpdated = true;
     }
-    else
+    else if (allowClientTransform)
     {
         static uint64_t lastRejectedStateLogMs = 0;
         const uint64_t rejectNowMs = nowMs();
         if (rejectNowMs - lastRejectedStateLogMs >= 500)
         {
             printf("%s [SERVER MOVEMENT REJECT] playerId=%u "
-                   "reason=position_delta serverPos=(%.2f,%.2f,%.2f) "
+                   "reason=%s serverPos=(%.2f,%.2f,%.2f) "
                    "clientPos=(%.2f,%.2f,%.2f) delta=%.2f speed=%.2f "
                    "serverMap=%s finite=%d\n",
                    serverTimestamp(), p.id,
+                   stateDelta > MAX_CLIENT_STATE_DELTA ? "position_delta" : "speed",
                    p.pos.x, p.pos.y, p.pos.z,
                    reportedPosition.x, reportedPosition.y, reportedPosition.z,
                    stateDelta, reportedSpeed,
                    gServerMapId.c_str(), (int)finiteState);
             lastRejectedStateLogMs = rejectNowMs;
+        }
+    }
+    else
+    {
+        static uint64_t lastTransformGateLogMs = 0;
+        const uint64_t gateNowMs = nowMs();
+        if (gateNowMs - lastTransformGateLogMs >= 500)
+        {
+            printf("%s [SERVER TRANSFORM GATE] playerId=%u "
+                   "accepted=0 packetEpoch=%u expectedEpoch=%u "
+                   "clientPos=(%.2f,%.2f,%.2f) authoritativePos=(%.2f,%.2f,%.2f) "
+                   "distance=%.2f reason=%s\n",
+                   serverTimestamp(), p.id,
+                   in->header.transformEpoch, (unsigned)p.authoritativeTransformEpoch,
+                   reportedPosition.x, reportedPosition.y, reportedPosition.z,
+                   p.authoritativeTransformPosition.x,
+                   p.authoritativeTransformPosition.y,
+                   p.authoritativeTransformPosition.z,
+                   finiteState
+                       ? glm::length(reportedPosition - p.authoritativeTransformPosition)
+                       : std::numeric_limits<float>::infinity(),
+                   rejectReason ? rejectReason : "unknown");
+            lastTransformGateLogMs = gateNowMs;
         }
     }
     if (in->spawnNpcPressed)
@@ -454,15 +530,14 @@ void handleTeleportRequest(const char* buffer, int bytes,
     }
 
     ServerPlayer& p = it->second;
-    p.pos = glm::clamp(
+    const glm::vec3 clampedPos = glm::clamp(
         requestedPosition,
         world.boundsMin - glm::vec3(2.0f),
         world.boundsMax + glm::vec3(2.0f));
-    p.vel = glm::vec3(0.0f);
+    beginAuthoritativeTransform(p, clampedPos, glm::vec3(0.0f), p.yaw, "teleport");
     p.onGround = false;
-    ++p.transformEpoch;
     printf("%s [SERVER TELEPORT] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u\n",
-           serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch);
+           serverTimestamp(), p.id, clampedPos.x, clampedPos.y, clampedPos.z, (unsigned)p.transformEpoch);
 }
 
 void handleExplodeRequest(const char* buffer, int bytes,
@@ -585,25 +660,28 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     if (!existingId)
     {
         // Use map spawnpoints if available
+        glm::vec3 spawnPos;
+        float spawnYaw = 0.0f;
         if (world && !world->spawnPoints.empty())
         {
             size_t idx = (id - 1) % world->spawnPoints.size();
-            p.pos = world->spawnPoints[idx].position;
-            p.yaw = world->spawnPoints[idx].yaw;
+            spawnPos = world->spawnPoints[idx].position;
+            spawnYaw = world->spawnPoints[idx].yaw;
             printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",
                    serverTimestamp(), id, p.name.c_str(), idx,
-                   p.pos.x, p.pos.y, p.pos.z, glm::degrees(p.yaw),
+                   spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw),
                    p.reconnectToken.c_str());
         }
         else
         {
-            p.pos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
+            spawnPos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
             printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
                    "(no spawnpoints) token=%s\n",
                    serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-                   p.pos.x, p.pos.y, p.pos.z, p.reconnectToken.c_str());
+                   spawnPos.x, spawnPos.y, spawnPos.z, p.reconnectToken.c_str());
         }
+        beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "join_request");
         // Player registered but not yet spawned — waits for ClientMapReady.
         // Server will simulate and include in snapshots only after spawned=true.
         p.spawned = false;
@@ -612,10 +690,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     {
         printf("%s [SERVER REJOIN] id=%u name=\"%s\" addr=%s\n",
                serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str());
+        beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "rejoin");
         p.spawned = true;
     }
 
-    ++p.transformEpoch;
     JoinAcceptPacket accept{};
     accept.header.type = PACKET_JOIN_ACCEPT;
     accept.header.tick = tick;
@@ -662,6 +740,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     p.addr = from;
     p.lastHeardMs = nowMs();
     p.reconnectToken = generateReconnectToken(); // rotate token
+    beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "reconnect");
 
     ReconnectAcceptPacket accept{};
     accept.header.type = PACKET_RECONNECT_ACCEPT;
@@ -683,6 +762,27 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
 
     printf("%s [SERVER RECONNECT] accepted id=%u name=\"%s\" health=%d\n",
            serverTimestamp(), foundId, p.name.c_str(), p.health);
+}
+
+void beginAuthoritativeTransform(ServerPlayer& player,
+    const glm::vec3& position, const glm::vec3& velocity, float yaw,
+    const char* reason)
+{
+    player.pos = position;
+    player.vel = velocity;
+    player.yaw = yaw;
+    ++player.transformEpoch;
+    player.awaitingAuthoritativeTransformAck = true;
+    player.authoritativeTransformPosition = position;
+    player.authoritativeTransformEpoch = player.transformEpoch;
+    player.authoritativeTransformAssignedMs = nowMs();
+    player.clientStateUpdated = false;
+
+    printf("%s [SERVER AUTHORITATIVE TRANSFORM] playerId=%u reason=%s "
+           "epoch=%u position=(%.2f,%.2f,%.2f) awaitingAck=1\n",
+           serverTimestamp(), player.id, reason,
+           (unsigned)player.transformEpoch,
+           position.x, position.y, position.z);
 }
 
 std::string generateReconnectToken()
@@ -765,16 +865,25 @@ void buildAndSendSnapshot(SOCKET sock,
 void sendDisagreementToAll(SOCKET sock,
                            const std::unordered_map<uint32_t, ServerPlayer>& players,
                            DisagreementReason reason,
+                           uint32_t eventId,
+                           uint32_t relatedSerial,
+                           uint32_t sourcePlayerId,
+                           uint32_t targetPlayerId,
                            glm::vec3 position,
                            glm::vec3 correction,
                            const char* description,
                            uint32_t tick,
-                           uint64_t& totalPacketsOut)
+                           uint64_t& totalPacketsOut,
+                           DisagreementRetransmitState* retransmitState)
 {
     DisagreementPacket packet{};
     packet.header.type = PACKET_DISAGREEMENT;
     packet.header.tick = tick;
     packet.reason = (uint8_t)reason;
+    packet.eventId = eventId;
+    packet.relatedSerial = relatedSerial;
+    packet.sourcePlayerId = sourcePlayerId;
+    packet.targetPlayerId = targetPlayerId;
     packet.posX = position.x;
     packet.posY = position.y;
     packet.posZ = position.z;
@@ -785,9 +894,10 @@ void sendDisagreementToAll(SOCKET sock,
     if (description)
         std::strncpy(packet.description, description, sizeof(packet.description) - 1);
 
-    printf("%s [SERVER DISAGREEMENT SEND] reason=%u pos=(%.1f,%.1f,%.1f) "
-           "correction=(%.1f,%.1f,%.1f) desc=\"%s\" players=%zu\n",
-           serverTimestamp(), (unsigned)reason,
+    printf("%s [SERVER DISAGREEMENT SEND] eventId=%u shotSerial=%u shooter=%u target=%u "
+           "reason=%u pos=(%.1f,%.1f,%.1f) correction=(%.1f,%.1f,%.1f) desc=\"%s\" players=%zu\n",
+           serverTimestamp(), eventId, relatedSerial, sourcePlayerId, targetPlayerId,
+           (unsigned)reason,
            position.x, position.y, position.z,
            correction.x, correction.y, correction.z,
            description ? description : "",
@@ -802,6 +912,52 @@ void sendDisagreementToAll(SOCKET sock,
             printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
                    serverTimestamp(), kv.first, WSAGetLastError());
         ++totalPacketsOut;
+    }
+
+    // Queue for best-effort retransmission over the next few ticks
+    if (retransmitState)
+    {
+        for (int i = 0; i < DISAGREEMENT_RETRANSMIT_MAX; ++i)
+        {
+            if (!retransmitState->events[i].active)
+            {
+                retransmitState->events[i].packet = packet;
+                retransmitState->events[i].retransmitsLeft = DISAGREEMENT_RETRANSMIT_TICKS;
+                retransmitState->events[i].active = true;
+                break;
+            }
+        }
+    }
+}
+
+// ── Retransmit pending disagreements (best-effort reliability) ────────
+void tickDisagreementRetransmit(SOCKET sock,
+                                const std::unordered_map<uint32_t, ServerPlayer>& players,
+                                DisagreementRetransmitState& state,
+                                uint64_t& totalPacketsOut)
+{
+    for (int i = 0; i < DISAGREEMENT_RETRANSMIT_MAX; ++i)
+    {
+        PendingDisagreement& pd = state.events[i];
+        if (!pd.active)
+            continue;
+
+        printf("%s [SERVER DISAGREEMENT SEND] eventId=%u attempt=%d recipients=%zu "
+               "reason=%u\n",
+               serverTimestamp(), pd.packet.eventId,
+               DISAGREEMENT_RETRANSMIT_TICKS - pd.retransmitsLeft + 1,
+               players.size(), (unsigned)pd.packet.reason);
+
+        for (const auto& kv : players)
+        {
+            sendto(sock, (const char*)&pd.packet, sizeof(pd.packet), 0,
+                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            ++totalPacketsOut;
+        }
+
+        --pd.retransmitsLeft;
+        if (pd.retransmitsLeft <= 0)
+            pd.active = false;
     }
 }
 

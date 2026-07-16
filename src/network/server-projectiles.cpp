@@ -8,6 +8,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "combat/weapon-registry.h"
+#include "combat/weapon-types.h"
+
 namespace MimitaNet {
 namespace {
 
@@ -36,56 +39,55 @@ struct ProjectileConfig
 
 ProjectileConfig projectileConfig(uint8_t weapon)
 {
-    // Values are loaded from config/weapons.json at startup.
-    // These are matched to the JSON values for canonical parity.
     ProjectileConfig cfg;
+
+    const char* weaponId = nullptr;
     if (weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
-    {
-        cfg.speed = 45.0f;
-        cfg.lifetime = 5.0f;
-        cfg.radius = 0.4f;
-        cfg.splashRadius = 12.0f;
-        cfg.splashDamage = 150.0f;
-        cfg.knockbackStrength = 160.0f;
-        cfg.selfKnockbackMultiplier = 1.0f;
-        cfg.fireDelay = 0.65f;
-        cfg.armingDistance = 0.3f;
-        cfg.armingTime = 0.0f;
-        cfg.gravity = 0.0f;
-        cfg.drag = 0.0f;
-        cfg.restitution = 0.0f;
-        cfg.friction = 0.0f;
-        cfg.upBias = 0.0f;
-        cfg.maxBounceCount = 0;
-        cfg.minBounceSpeed = 0.0f;
-        cfg.angularDrag = 0.0f;
-    }
+        weaponId = "rocket_launcher";
     else if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+        weaponId = "grenade_launcher";
+    else
+        return cfg;
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    if (!def)
     {
-        cfg.speed = 40.0f;
-        cfg.lifetime = 3.0f;
-        cfg.radius = 1.8f;
-        cfg.splashRadius = 8.0f;
-        cfg.splashDamage = 150.0f;
-        cfg.knockbackStrength = 160.0f;
-        cfg.selfKnockbackMultiplier = 0.8f;
-        cfg.fireDelay = 0.6f;
-        cfg.gravity = 20.0f;
-        cfg.drag = 0.15f;
-        cfg.restitution = 0.35f;
-        cfg.friction = 0.5f;
-        cfg.upBias = 4.0f;
-        cfg.armingDistance = 2.0f;
-        cfg.armingTime = 0.0f;
-        cfg.maxBounceCount = 10;
-        cfg.minBounceSpeed = 0.1f;
-        cfg.angularDrag = 0.3f;
+        printf("[PROJECTILE CONFIG] weapon=%s NOT FOUND in registry (id=%s) — using fallback defaults\n",
+               networkWeaponTypeName(weapon), weaponId);
+        return cfg;
     }
+
+    cfg.speed = def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f;
+    cfg.lifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
+    cfg.radius = def->projectileRadius > 0.0f ? def->projectileRadius : 0.3f;
+    cfg.fireDelay = def->fireDelay > 0.0f ? def->fireDelay : 1.0f;
+
+    auto cp = [&](const char* key, float fallback) -> float {
+        auto it = def->customParams.find(key);
+        return it != def->customParams.end() ? it->second : fallback;
+    };
+
+    cfg.splashRadius = cp("splashRadius", 8.0f);
+    cfg.splashDamage = cp("rocketDirectDamage", 150.0f);
+    cfg.splashExponent = cp("splashExponent", 2.0f);
+    cfg.knockbackStrength = cp("knockbackStrength", 160.0f);
+    cfg.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
+    cfg.gravity = cp("gravity", 0.0f);
+    cfg.drag = cp("drag", 0.0f);
+    cfg.restitution = cp("bounceRestitution", 0.0f);
+    cfg.friction = cp("bounceFriction", 0.0f);
+    cfg.upBias = cp("upBias", 0.0f);
+    cfg.armingDistance = cp("armingDistance", 0.3f);
+    cfg.armingTime = cp("armingTime", 0.0f);
+    cfg.maxBounceCount = (int)cp("maxBounceCount", 0.0f);
+    cfg.minBounceSpeed = cp("minBounceSpeed", 0.0f);
+    cfg.angularDrag = cp("angularDrag", 0.0f);
+
     printf("[PROJECTILE CONFIG] weapon=%s speed=%.2f radius=%.2f fireDelay=%.2f "
            "lifetime=%.2f splashRadius=%.2f splashDamage=%.2f gravity=%.2f "
            "drag=%.2f restitution=%.2f friction=%.2f upBias=%.2f "
            "armingDistance=%.2f maxBounce=%d minBounceSpeed=%.2f "
-           "angularDrag=%.2f source=config/weapons.json\n",
+           "angularDrag=%.2f source=weapon-registry\n",
            networkWeaponTypeName(weapon),
            cfg.speed, cfg.radius, cfg.fireDelay,
            cfg.lifetime, cfg.splashRadius, cfg.splashDamage, cfg.gravity,
