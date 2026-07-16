@@ -21,4 +21,7 @@ void spawnLocalDisagreementIndicator(const DisagreementEvent& event);
 // Debug flag
 extern bool gDisagreementDebug;
 
+// Hot-reload from config/serverdisagree.json
+void pollDisagreementReload();
+
 } // namespace MimitaNet
