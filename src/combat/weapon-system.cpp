@@ -616,7 +616,7 @@ RevolverShotResult WeaponSystem::fire(
     }
 
     if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
-        return fireRocketLauncher(camera, player, npcs, world, remotePlayers != nullptr);
+        return fireRocketLauncher(camera, player, npcs, world, remotePlayers);
     }
 
     bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
@@ -807,7 +807,7 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
     return hits;
 }
 
-RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world, bool networkProjectileOnly) {
+RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world, const std::unordered_map<uint32_t, Player>* remotePlayers) {
     RevolverShotResult result;
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
@@ -843,7 +843,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     glm::vec3 muzzlePos = vm.muzzle;
 
     WeaponFire::AimSolution aim = WeaponFire::computeAim(
-        camera, world, npcs, muzzlePos, nullptr);
+        camera, world, npcs, muzzlePos, remotePlayers);
     WeaponFire::logAimDebug("rocket_launcher", camera, aim);
     glm::vec3 dir = aim.direction;
     Debug::warn(Debug::Category::Weapons,
@@ -859,7 +859,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     result.start = muzzlePos;
     result.end = muzzlePos + dir;
     result.hitNormal = -dir;
-    if (networkProjectileOnly) {
+    if (remotePlayers) {
         rt->currentAmmo--;
         rt->fireCooldown = def->fireDelay;
         WeaponAudio::playShootSound(*def, muzzlePos);
@@ -1045,13 +1045,13 @@ void WeaponSystem::addKillLine(const std::string& line) {
         mKillfeed.erase(mKillfeed.begin());
 }
 
-void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera) {
+void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt) {
     if (player.dead) return;
     const WeaponDefinition* def = getCurrentDef(player);
     if (!def) return;
     const std::string key = std::to_string(entityId) + ":" + def->id;
     WeaponViewModel& vm = mRemoteViewModels[key];
-    vm.update(camera, const_cast<Player&>(player), 0.0f, def, true);
+    vm.update(camera, const_cast<Player&>(player), dt, def, true);
     if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
         printf("[WEAPON VISUAL INSTANCE] entityId=%u weaponId=%s resourcePtr=%p "
                "instancePtr=%p runtimePtr=%p isReloading=%d fireCooldown=%.2f "

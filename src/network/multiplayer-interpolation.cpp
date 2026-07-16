@@ -318,12 +318,16 @@ void updateRenderedReplica(
         EffectPartSystem::instance().spawnFreezeTrail(player.pos);
     }
 
-    // Direction change one-shot sphere
+    // Direction change one-shot directional walk burst
     if (interpolation.target.directionChangeSerial != 0 &&
         interpolation.target.directionChangeSerial != player.networkLastDirectionChangeSerial)
     {
         player.networkLastDirectionChangeSerial = interpolation.target.directionChangeSerial;
-        EffectPartSystem::instance().spawnDash(player.pos, player.sizeScale);
+        glm::vec3 dirWalkVel = glm::length(player.vel) > 0.001f
+            ? glm::normalize(glm::vec3(player.vel.x, player.vel.y, 0.0f))
+            : glm::vec3(0.0f, 0.0f, 0.0f);
+        float speed = glm::length(glm::vec2(player.vel.x, player.vel.y));
+        HitEffects::spawnWalkBurst(player.pos, -dirWalkVel, speed);
         printf("[NET PRESENTATION RX] entityId=%u event=directionChange serial=%u triggered=1\n",
                entityId, (unsigned)interpolation.target.directionChangeSerial);
     }

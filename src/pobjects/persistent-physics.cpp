@@ -156,8 +156,6 @@ void PersistentPhysicsSystem::physicsStep(PersistentPhysicsObject& obj, float dt
         obj.rotation = glm::normalize(delta * obj.rotation);
     }
 
-    obj.position += obj.velocity * dt;
-
     if (speed < obj.cfg.sleepVelocity && angSpeed < obj.cfg.sleepAngular) {
         obj.sleepTimer += dt;
         if (obj.sleepTimer >= obj.cfg.sleepTime)
