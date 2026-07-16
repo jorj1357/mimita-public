@@ -183,26 +183,26 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         p.respawnSeconds -= SERVER_DT;
         if (p.respawnSeconds <= 0.0f)
         {
+            glm::vec3 respawnPos;
+            float respawnYaw = 0.0f;
+            if (!world.spawnPoints.empty())
+            {
+                size_t idx = (p.id - 1) % world.spawnPoints.size();
+                respawnPos = world.spawnPoints[idx].position;
+                respawnYaw = world.spawnPoints[idx].yaw;
+            }
+            else
+            {
+                respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
+            }
+            beginAuthoritativeTransform(p, respawnPos, glm::vec3(0.0f), respawnYaw, "respawn");
             p.dead = false;
             p.health = 100;
-            p.vel = glm::vec3(0.0f);
             p.input = {};
-            p.clientStateUpdated = false;
             p.attackQueued = false;
             p.dashAvailable = true;
             p.onGround = false;
             p.respawnSeconds = 0.0f;
-            // Use map spawnpoints if available
-            if (!world.spawnPoints.empty())
-            {
-                size_t idx = (p.id - 1) % world.spawnPoints.size();
-                p.pos = world.spawnPoints[idx].position;
-            }
-            else
-            {
-                p.pos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
-            }
-            ++p.transformEpoch;
             printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu health=%d dead=%d\n",
                    serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
                    world.spawnPoints.size(), p.health, (int)p.dead);

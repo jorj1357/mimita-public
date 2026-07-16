@@ -99,6 +99,7 @@ static std::string soundPath(const std::string& name)
     if (name == "npc_death") return "assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3";
     if (name == "world_impact") return "assets/sound/U mimita sound effects.wav  - hit low 1.wav";
     if (name == "ui/hover") return "assets/sound/ui/click.wav";
+    if (name == "serverdisagree") return "assets/sound/serverdisagree.wav";
     return path;
 }
 

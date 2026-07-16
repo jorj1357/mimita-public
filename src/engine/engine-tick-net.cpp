@@ -44,6 +44,11 @@ void engineTickNet(Engine& engine, float dt)
 
     { Perf::ScopedTimer _net("Networking");
     if (mpContext.active) {
+        // Reconcile before building outgoing input so the packet carries the
+        // latest authoritative position.  This also applies pending epoch
+        // changes, respawns, and teleports before we snapshot local state.
+        MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
+
         // Network tick must run every frame regardless of map loading state,
         // so heartbeats, keepalives, and packet receive continue uninterrupted.
         MimitaNet::MpInput mpInput;
@@ -109,7 +114,7 @@ void engineTickNet(Engine& engine, float dt)
             prevJumpDead = mpInput.jumpHeld;
         }
 
-        MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);
+        MimitaNet::mpTick(mpContext, player.username, dt, &mpInput, world);
         if (!mpContext.approvedLocalName.empty())
             player.username = mpContext.approvedLocalName;
 
@@ -388,8 +393,6 @@ void engineTickNet(Engine& engine, float dt)
             captureReplayEffect(chatEvent);
         }
         mpContext.incomingChatMessages.clear();
-
-        MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
 
         // Consume pending projectile knockback for local player
         if (glm::length(mpContext.pendingKnockback) > 0.001f)

@@ -129,6 +129,8 @@ void updateRenderedReplica(
     if (!interpolation.hasTarget)
         return;
 
+    player.dash.didDash = false;
+
     constexpr double INTERPOLATION_DELAY_MS = 50.0;
     float t = 1.0f;
     if (interpolation.hasPrevious) {

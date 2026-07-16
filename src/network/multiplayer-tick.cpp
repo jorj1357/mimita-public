@@ -3,6 +3,8 @@
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+#include "terminal/terminal-state.h"
+#include "world/world.h"
 
 #include <algorithm>
 #include <cmath>
@@ -62,7 +64,7 @@ static const char* disconnectReasonStr(MultiplayerContext& ctx)
     return "unknown";
 }
 
-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input)
+void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
 {
     if (!ctx.active)
         return;
@@ -238,6 +240,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
+            // Reset reconciliation state for new connection
+            ctx.hasLocalServerPosition = false;
+            ctx.localPlayerReconciled = false;
+            ctx.localServerEpoch = 0;
+            ctx.lastAppliedEpoch = 0;
+            ctx.teleportResync = false;
+            ctx.awaitingTeleportAck = false;
             printf("[NET CONNECT] player=%u serverTick=%u tickRate=%.0f mapId=%s epoch=%u\n",
                    ctx.localPlayerId, welcome->header.tick, welcome->tickRate,
                    welcome->mapId, ctx.transformEpoch);
@@ -265,6 +274,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
+            // Reset reconciliation state for new connection
+            ctx.hasLocalServerPosition = false;
+            ctx.localPlayerReconciled = false;
+            ctx.localServerEpoch = 0;
+            ctx.lastAppliedEpoch = 0;
+            ctx.teleportResync = false;
+            ctx.awaitingTeleportAck = false;
             printf("[NET CONNECT] join accepted player=%u tickRate=%.0f mapId=%s epoch=%u\n",
                    ctx.localPlayerId, accept->tickRate, accept->mapId, ctx.transformEpoch);
             ctx.playerRegistry[ctx.localPlayerId] = {
@@ -296,7 +312,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.localServerPosition = {accept->restorePx, accept->restorePy, accept->restorePz};
             ctx.localServerHealth = accept->restoredHealth;
             ctx.hasLocalServerPosition = true;
-            printf("[NET RECONNECT] accepted player=%u health=%d kills=%d deaths=%d\n",
+            ctx.transformEpoch = accept->header.transformEpoch;
+            ctx.localServerEpoch = accept->header.transformEpoch;
+            ctx.lastAppliedEpoch = 0;
+            ctx.localPlayerReconciled = false;
+            ctx.teleportResync = false;
+            ctx.awaitingTeleportAck = false;
+            printf("[NET RECONNECT] accepted player=%u health=%d kills=%d deaths=%d epoch=%u\n",
                    ctx.localPlayerId, accept->restoredHealth,
                    accept->restoredKills, accept->restoredDeaths);
         }
@@ -613,12 +635,69 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.camForwardY = input->camForward.y;
         in.camForwardZ = input->camForward.z;
         in.yaw = input->yaw;
-        in.clientPx = input->position.x;
-        in.clientPy = input->position.y;
-        in.clientPz = input->position.z;
-        in.clientVx = input->velocity.x;
-        in.clientVy = input->velocity.y;
-        in.clientVz = input->velocity.z;
+
+        // ── Client authoritative-transform gate ────────────────────────
+        // If we have received a new server epoch but haven't applied it
+        // locally yet, send the server's authoritative position instead of
+        // our stale local position.  This prevents old local transforms from
+        // overwriting the server spawn, respawn, or teleport position.
+        const bool authoritativeTransformApplied =
+            ctx.hasLocalServerPosition &&
+            ctx.localServerEpoch != 0 &&
+            ctx.lastAppliedEpoch == ctx.localServerEpoch &&
+            ctx.transformEpoch == ctx.localServerEpoch &&
+            ctx.localPlayerReconciled;
+
+        if (!authoritativeTransformApplied && ctx.hasLocalServerPosition)
+        {
+            in.clientPx = ctx.localServerPosition.x;
+            in.clientPy = ctx.localServerPosition.y;
+            in.clientPz = ctx.localServerPosition.z;
+            in.clientVx = ctx.localServerVelocity.x;
+            in.clientVy = ctx.localServerVelocity.y;
+            in.clientVz = ctx.localServerVelocity.z;
+        }
+        else
+        {
+            in.clientPx = input->position.x;
+            in.clientPy = input->position.y;
+            in.clientPz = input->position.z;
+            in.clientVx = input->velocity.x;
+            in.clientVy = input->velocity.y;
+            in.clientVz = input->velocity.z;
+        }
+
+        {
+            static uint64_t lastTransformGateLogMs = 0;
+            uint64_t nowGate = nowMs();
+            if (nowGate - lastTransformGateLogMs >= 1000)
+            {
+                printf("[CLIENT TRANSFORM GATE] playerId=%u "
+                       "usingAuthoritative=%d packetEpoch=%u serverEpoch=%u "
+                       "lastAppliedEpoch=%u reconciled=%d hasServerPos=%d "
+                       "inputPos=(%.2f,%.2f,%.2f) outgoingPos=(%.2f,%.2f,%.2f)\n",
+                       ctx.localPlayerId,
+                       (int)(!authoritativeTransformApplied && ctx.hasLocalServerPosition),
+                       ctx.transformEpoch, (uint32_t)ctx.localServerEpoch,
+                       (uint32_t)ctx.lastAppliedEpoch, (int)ctx.localPlayerReconciled,
+                       (int)ctx.hasLocalServerPosition,
+                       input->position.x, input->position.y, input->position.z,
+                       ctx.hasLocalServerPosition
+                           ? (in.clientPx == ctx.localServerPosition.x
+                               ? ctx.localServerPosition.x : input->position.x)
+                           : input->position.x,
+                       ctx.hasLocalServerPosition
+                           ? (in.clientPy == ctx.localServerPosition.y
+                               ? ctx.localServerPosition.y : input->position.y)
+                           : input->position.y,
+                       ctx.hasLocalServerPosition
+                           ? (in.clientPz == ctx.localServerPosition.z
+                               ? ctx.localServerPosition.z : input->position.z)
+                           : input->position.z);
+                lastTransformGateLogMs = nowGate;
+            }
+        }
+
         in.equippedSlot = (int16_t)input->equippedSlot;
         in.weaponState = input->weaponState;
         in.clientPingMs = ctx.localPingMs;
@@ -640,7 +719,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     mpUpdateRemoteEntities(ctx, dt);
-    mpUpdateNetworkProjectiles(ctx, dt);
+    mpUpdateNetworkProjectiles(ctx, dt, *gpWorld);
 
     if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)
     {

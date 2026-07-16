@@ -18,18 +18,41 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     if (!ctx.connected || !ctx.hasLocalServerPosition)
         return;
 
-    // Skip reconciliation if server position is uninitialized (0,0,0)
-    const glm::vec3 serverPos = ctx.localServerPosition;
-    const float serverPosLen = glm::length(serverPos);
-    if (serverPosLen < 0.001f && !ctx.localPlayerReconciled)
+    // ── Epoch changed: apply authoritative transform immediately ──────
+    // When the server increments its epoch, the client must hard-snap
+    // to the server position before any local movement or input is built.
+    // This handles spawn, respawn, teleport, and reconnect.
+    if (ctx.localServerEpoch != 0 &&
+        ctx.lastAppliedEpoch != ctx.localServerEpoch)
     {
-        printf("[NET RECONCILE SKIP] reason=server-spawn-not-valid pos=(%.2f,%.2f,%.2f)\n",
-               serverPos.x, serverPos.y, serverPos.z);
-        return;
+        printf("[CLIENT AUTHORITATIVE SNAPSHOT] playerId=%u "
+               "snapshotEpoch=%u previousServerEpoch=%u lastAppliedEpoch=%u "
+               "position=(%.2f,%.2f,%.2f) needsApply=1\n",
+               ctx.localPlayerId,
+               (uint32_t)ctx.localServerEpoch,
+               (uint32_t)ctx.localServerEpoch,
+               (uint32_t)ctx.lastAppliedEpoch,
+               ctx.localServerPosition.x,
+               ctx.localServerPosition.y,
+               ctx.localServerPosition.z);
+
+        player.pos = ctx.localServerPosition;
+        player.vel = ctx.localServerVelocity;
+        player.yaw = ctx.localServerYaw;
+        player.ground.onGround = ctx.localServerOnGround;
+        player.externalImpulse = glm::vec3(0.0f);
+        player.syncLegacyStateToLayers();
+        player.updateModelWorldTransforms();
+        ctx.lastAppliedEpoch = ctx.localServerEpoch;
+        ctx.localPlayerReconciled = true;
+
+        // Sync outgoing epoch so the client-transform gate uses the new epoch
+        if ((uint32_t)ctx.localServerEpoch > ctx.transformEpoch)
+            ctx.transformEpoch = ctx.localServerEpoch;
     }
 
     const glm::vec3 clientPosition = player.pos;
-    const glm::vec3 correction = serverPos - player.pos;
+    const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);
     constexpr float CATASTROPHIC_DIVERGENCE = 100.0f;
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
@@ -39,22 +62,30 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         currentMs - ctx.pendingTeleportSentMs > TELEPORT_ACK_TIMEOUT_MS)
     {
         ctx.awaitingTeleportAck = false;
-        // Teleport ack timed out; force resync on next frame
         ctx.teleportResync = true;
     }
     const bool initialSpawn = !ctx.localPlayerReconciled;
     const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
-    // Detect authoritative dead→alive transition using tracked health history.
-    // This works independently of the current local player.dead boolean, which
-    // DeathSystem may have already set before reconcile runs.
     const bool serverRespawnedPlayer =
         ctx.localServerHealth > 0 &&
         ctx.lastSeenServerHealth <= 0 &&
         ctx.localPlayerReconciled;
+
+    // Catastrophic divergence: only apply after the current authoritative
+    // epoch has been applied locally.  This prevents a stale server position
+    // from snapping the player while initial spawn/respawn/teleport
+    // acknowledgement is still in flight.
+    const bool authoritativeEpochReady =
+        ctx.localServerEpoch != 0 &&
+        ctx.transformEpoch == ctx.localServerEpoch &&
+        ctx.lastAppliedEpoch == ctx.localServerEpoch;
     const bool catastrophicDivergence =
+        authoritativeEpochReady &&
+        ctx.localPlayerReconciled &&
         error > CATASTROPHIC_DIVERGENCE &&
         !ctx.awaitingTeleportAck &&
         !player.dead;
+
     const bool teleportCompletionResync =
         ctx.teleportResync && !ctx.awaitingTeleportAck;
     const bool epochChanged =
@@ -158,7 +189,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     {
         printf("[LOCAL CORRECTION] distance=%.3f "
                "serverPos=(%.2f,%.2f,%.2f) clientPos=(%.2f,%.2f,%.2f) "
-               "applied=%d reason=%s\n",
+               "applied=%d reason=%s localEpoch=%u serverEpoch=%u lastAppliedEpoch=%u\n",
                error,
                ctx.localServerPosition.x,
                ctx.localServerPosition.y,
@@ -171,7 +202,10 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
                 serverRespawnedPlayer ? "server-respawn" :
                 catastrophicDivergence ? "catastrophic-divergence" :
                 epochChanged ? "epoch-changed" :
-                serverKilledPlayer ? "server-death" : "within-tolerance");
+                serverKilledPlayer ? "server-death" : "within-tolerance",
+               ctx.transformEpoch,
+               (uint32_t)ctx.localServerEpoch,
+               (uint32_t)ctx.lastAppliedEpoch);
         ctx.lastLocalCorrectionLogMs = currentMs;
     }
     ctx.localPlayerReconciled = true;

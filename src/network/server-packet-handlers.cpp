@@ -13,7 +13,8 @@ namespace MimitaNet {
 void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
-                       uint32_t tick, uint64_t& totalPacketsOut)
+                       uint32_t tick, uint64_t& totalPacketsOut,
+                       DisagreementRetransmitState* retransmitState)
 {
     if (bytes < (int)sizeof(ShotRequestPacket))
         return;
@@ -171,6 +172,11 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     auto targetIt = players.find(shot->targetPlayerId);
     bool damageConfirmed = false;
 
+    // ── Track detailed rejection state for disagreement broadcasts ──
+    DisagreementReason rejectionReason = DISAGREEMENT_INVALID_DAMAGE;
+    const char* rejectionDescription = "REJECTED: INVALID DAMAGE";
+    glm::vec3 authoritativePosition = position;
+
     if (shot->weapon == NETWORK_WEAPON_SHOTGUN)
     {
         printf("%s [SHOTGUN SERVER REQUEST] shooter=%u serial=%u target=%u "
@@ -196,6 +202,31 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     constexpr int MAX_SHOTGUN_DAMAGE = 400;
     const int damageCap = (shot->weapon == NETWORK_WEAPON_SHOTGUN)
         ? MAX_SHOTGUN_DAMAGE : MAX_HITSCAN_DAMAGE;
+
+    // Determine exact rejection reason before validation
+    if (shot->impactType == SHOT_IMPACT_ENTITY)
+    {
+        if (targetIt == players.end())
+        {
+            rejectionReason = DISAGREEMENT_TARGET_NOT_FOUND;
+            rejectionDescription = "REJECTED: TARGET NOT FOUND";
+        }
+        else if (shooterIt == targetIt)
+        {
+            rejectionReason = DISAGREEMENT_SELF_TARGET;
+            rejectionDescription = "REJECTED: INVALID SELF TARGET";
+        }
+        else if (targetIt->second.dead)
+        {
+            rejectionReason = DISAGREEMENT_TARGET_DEAD;
+            rejectionDescription = "REJECTED: TARGET ALREADY DEAD";
+        }
+        else if (shot->damage <= 0 || shot->damage > damageCap)
+        {
+            rejectionReason = DISAGREEMENT_INVALID_DAMAGE;
+            rejectionDescription = "REJECTED: INVALID DAMAGE";
+        }
+    }
 
     if (shot->impactType == SHOT_IMPACT_ENTITY &&
         targetIt != players.end() &&
@@ -236,7 +267,7 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         if (rewindDistance <= 2.5f)
         {
             glm::vec3 shotDir = glm::normalize(direction);
-                        glm::vec3 worldHit, worldNormal;
+            glm::vec3 worldHit, worldNormal;
             bool hitWorld = serverRaycastWorld(
                 origin, shotDir, shotDistance, world, worldHit, worldNormal);
 
@@ -273,6 +304,9 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             }
             else
             {
+                rejectionReason = DISAGREEMENT_OCCLUDED_SHOT;
+                rejectionDescription = "REJECTED: WORLD BLOCKED SHOT";
+                authoritativePosition = worldHit;
                 printf("%s [NET SHOT OCCLUDED] shooter=%u target=%u "
                        "worldHit=%.2f < hitDist=%.2f\n",
                        serverTimestamp(), shooter.id, target.id,
@@ -281,6 +315,9 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         }
         else
         {
+            rejectionReason = DISAGREEMENT_REWIND_MISS;
+            rejectionDescription = "REJECTED: TARGET NOT AT HIT POSITION";
+            authoritativePosition = checkPos + glm::vec3(0.0f, 0.0f, 0.8f);
             printf("%s [NET SHOT REWIND MISS] shooter=%u target=%u "
                    "rewoundTick=%u rewindDist=%.2f (<=2.5f required) "
                    "currentDist=%.2f hasHistory=%d\n",
@@ -302,21 +339,40 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 
     if (!damageConfirmed && event.impactType == SHOT_IMPACT_ENTITY)
     {
-        if (gNetDamageDebug)
-        {
-            printf("[NET DAMAGE REJECT] shooter=%u target=%u "
-                   "reason=", shooter.id, shot->targetPlayerId);
-            if (targetIt == players.end())
-                printf("target-not-found");
-            else if (targetIt->second.dead)
-                printf("target-dead");
-            else
-                printf("rewind-dist=%.2f-or-occluded",
-                       targetIt != players.end() ?
-                       glm::length(glm::vec3(event.hitX, event.hitY, event.hitZ) -
-                       (targetIt->second.pos + glm::vec3(0,0,0.8f))) : 0.0f);
-            printf("\n");
-        }
+        printf("%s [SERVER HIT DISAGREEMENT] eventId=%u shotSerial=%u "
+               "shooter=%u target=%u reason=%s "
+               "claimedHit=(%.2f,%.2f,%.2f) "
+               "authoritative=(%.2f,%.2f,%.2f) "
+               "correction=(%.2f,%.2f,%.2f) "
+               "rewindTick=%u serverTick=%u\n",
+               serverTimestamp(), 0u, shot->shotSerial,
+               shooter.id, shot->targetPlayerId, rejectionDescription,
+               position.x, position.y, position.z,
+               authoritativePosition.x, authoritativePosition.y, authoritativePosition.z,
+               authoritativePosition.x - position.x,
+               authoritativePosition.y - position.y,
+               authoritativePosition.z - position.z,
+               shot->lastServerTick, tick);
+
+        glm::vec3 correction = authoritativePosition - position;
+
+        // Generate a unique event ID from serial + tick
+        static uint32_t localEventCounter = 0;
+        ++localEventCounter;
+        uint32_t disagreementEventId = localEventCounter;
+
+        sendDisagreementToAll(sock, players,
+                              rejectionReason,
+                              disagreementEventId,
+                              shot->shotSerial,
+                              shooter.id,
+                              shot->targetPlayerId,
+                              position,
+                              correction,
+                              rejectionDescription,
+                              tick, totalPacketsOut,
+                              retransmitState);
+
         event.targetPlayerId = 0;
         event.impactType = SHOT_IMPACT_NONE;
         event.effectFlags &= ~(

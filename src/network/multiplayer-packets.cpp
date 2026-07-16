@@ -3,6 +3,7 @@
 #include "analytics/analytics-manager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -235,6 +236,7 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.networkProjectiles.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.disagreementEvents.clear();
+    ctx.processedDisagreementIds.clear();
     ctx.reconnectAttempts = 0;
     ctx.reconnectBackoffMs = 1000;
     netShutdown();
@@ -409,6 +411,7 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     ctx.lastHeardServerMs = 0;
     ctx.lastDisconnectLogMs = 0;
     ctx.disagreementEvents.clear();
+    ctx.processedDisagreementIds.clear();
     ctx.serverPort = port;
 
     printf("[NET CONNECT] connecting to %s:%u with join token as \"%s\"\n",
@@ -420,16 +423,66 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
 
 void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPacket* packet)
 {
+    // Validate reason is in range
+    if (packet->reason > DISAGREEMENT_SELF_TARGET)
+    {
+        printf("[NET DISAGREEMENT RECV] reason=%u out of range — ignoring\n",
+               (unsigned)packet->reason);
+        return;
+    }
+
+    // Validate position and correction are finite
+    if (!std::isfinite(packet->posX) || !std::isfinite(packet->posY) || !std::isfinite(packet->posZ) ||
+        !std::isfinite(packet->correctionX) || !std::isfinite(packet->correctionY) || !std::isfinite(packet->correctionZ))
+    {
+        printf("[NET DISAGREEMENT RECV] non-finite position/correction — ignoring\n");
+        return;
+    }
+
+    // Deduplicate: skip already-processed event IDs
+    if (packet->eventId != 0)
+    {
+        if (ctx.processedDisagreementIds.count(packet->eventId))
+        {
+            printf("[NET DISAGREEMENT RECV] eventId=%u duplicate=1 skipped=1\n", packet->eventId);
+            return;
+        }
+        ctx.processedDisagreementIds.insert(packet->eventId);
+
+        // Bounded dedup set: remove old entries if it grows too large
+        if (ctx.processedDisagreementIds.size() > 128)
+            ctx.processedDisagreementIds.clear();
+    }
+
+    bool duplicate = ctx.processedDisagreementIds.count(packet->eventId) > 0;
+
     DisagreementEvent event;
     event.timeMs = nowMs();
     event.reason = (DisagreementReason)packet->reason;
+    event.eventId = packet->eventId;
+    event.relatedSerial = packet->relatedSerial;
+    event.sourcePlayerId = packet->sourcePlayerId;
+    event.targetPlayerId = packet->targetPlayerId;
     event.position = {packet->posX, packet->posY, packet->posZ};
     event.correction = {packet->correctionX, packet->correctionY, packet->correctionZ};
-    event.description = packet->description;
+    // Safely copy description with bounded length (packet may not be null-terminated)
+    {
+        char buf[sizeof(packet->description) + 1];
+        std::memcpy(buf, packet->description, sizeof(packet->description));
+        buf[sizeof(packet->description)] = '\0';
+        event.description = buf;
+    }
     ctx.disagreementEvents.push_back(event);
 
-    printf("[NET DISAGREEMENT RECV] reason=%u pos=(%.2f,%.2f,%.2f) desc=\"%s\"\n",
-           packet->reason, packet->posX, packet->posY, packet->posZ, packet->description);
+    printf("[NET DISAGREEMENT RECV] eventId=%u shotSerial=%u shooter=%u target=%u "
+           "reason=%u pos=(%.2f,%.2f,%.2f) correction=(%.2f,%.2f,%.2f) desc=\"%s\" "
+           "duplicate=%d tick=%u\n",
+           packet->eventId, packet->relatedSerial, packet->sourcePlayerId, packet->targetPlayerId,
+           (unsigned)packet->reason,
+           packet->posX, packet->posY, packet->posZ,
+           packet->correctionX, packet->correctionY, packet->correctionZ,
+           event.description.c_str(),
+           (int)duplicate, packet->header.tick);
 }
 
 // ── Migration: reconnect ──────────────────────────────────────────────
