@@ -117,7 +117,7 @@ struct IceGameServer {
                 e.vz = sp.vz;
                 e.yaw = sp.yaw;
                 e.health = sp.health;
-                e.lastDashSerial = 0;
+                e.dashSerial = 0;
                 e.transformEpoch = 0;
                 memcpy(e.displayName, sp.name.c_str(), std::min(sp.name.size() + 1, sizeof(e.displayName)));
             }

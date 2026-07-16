@@ -102,7 +102,8 @@ void sendPosition(
     const sockaddr_in& server,
     float x,
     float y,
-    float z)
+    float z,
+    uint16_t respawnSerial = 0)
 {
     MimitaNet::InputPacket input{};
     input.header.type = MimitaNet::PACKET_INPUT;
@@ -111,6 +112,7 @@ void sendPosition(
     input.clientPx = x;
     input.clientPy = y;
     input.clientPz = z;
+    input.respawnSerial = respawnSerial;
     sendto(client.socket, (const char*)&input, sizeof(input), 0,
            (const sockaddr*)&server, sizeof(server));
 }
@@ -209,7 +211,7 @@ int main()
         return 1;
 
     sockaddr_in server{};
-    if (!MimitaNet::parseAddress("127.0.0.1:2357", server))
+    if (!MimitaNet::parseAddress("127.0.0.1:1357", server))
         return 2;
 
     TestClient first;
@@ -290,30 +292,97 @@ int main()
                    entityHealth(second, second.id) == 0;
     }
 
-    bool sawRespawn = false;
-    const uint64_t respawnDeadline = MimitaNet::nowMs() + 3500;
-    while (sawDeath && !sawRespawn && MimitaNet::nowMs() < respawnDeadline)
+    // ── Test 1: Timed auto-respawn (no Space pressed) ────────────────
+    bool sawAutoRespawn = false;
+    const uint64_t autoRespawnDeadline = MimitaNet::nowMs() + 3500;
+    while (sawDeath && !sawAutoRespawn && MimitaNet::nowMs() < autoRespawnDeadline)
     {
         pump(first, MimitaNet::nowMs() + 30);
         pump(second, MimitaNet::nowMs() + 30);
-        sawRespawn = entityHealth(first, second.id) == 100 &&
-                     entityHealth(second, second.id) == 100;
+        sawAutoRespawn = entityHealth(first, second.id) == 100 &&
+                         entityHealth(second, second.id) == 100;
     }
+
+    // ── Test 2: Instant respawn via respawnSerial ────────────────────
+    // Kill second again
+    sawDeath = false;
+    for (int shot = 0; shot < 4 && !sawDeath; ++shot)
+    {
+        sendShot(first, second, server, 100 + (uint32_t)shot + 1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        pump(first, MimitaNet::nowMs() + 120);
+        pump(second, MimitaNet::nowMs() + 120);
+        sawDeath = entityHealth(first, second.id) == 0;
+    }
+    const uint64_t death2Deadline = MimitaNet::nowMs() + 1000;
+    while (!sawDeath && MimitaNet::nowMs() < death2Deadline)
+    {
+        pump(first, MimitaNet::nowMs() + 30);
+        pump(second, MimitaNet::nowMs() + 30);
+        sawDeath = entityHealth(first, second.id) == 0;
+    }
+
+    // Send respawnSerial=1 to request instant respawn
+    bool sawInstantRespawn = false;
+    const uint64_t instantRespawnDeadline = MimitaNet::nowMs() + 1000;
+    if (sawDeath)
+    {
+        const MimitaNet::SnapshotEntity* deadEntity = findEntity(second, second.id);
+        if (deadEntity)
+        {
+            sendPosition(second, server,
+                         deadEntity->px, deadEntity->py, deadEntity->pz,
+                         1 /* respawnSerial */);
+        }
+        while (!sawInstantRespawn && MimitaNet::nowMs() < instantRespawnDeadline)
+        {
+            pump(first, MimitaNet::nowMs() + 30);
+            pump(second, MimitaNet::nowMs() + 30);
+            sawInstantRespawn = entityHealth(first, second.id) == 100;
+        }
+    }
+
+    // ── Test 3: Duplicate respawnSerial does not cause second respawn ──
+    // Send the same serial again — should be ignored, health stays 100
+    if (sawInstantRespawn)
+    {
+        const MimitaNet::SnapshotEntity* aliveEntity = findEntity(second, second.id);
+        if (aliveEntity)
+        {
+            sendPosition(second, server,
+                         aliveEntity->px, aliveEntity->py, aliveEntity->pz,
+                         1 /* same serial, should be ignored */);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        pump(first, MimitaNet::nowMs() + 120);
+        pump(second, MimitaNet::nowMs() + 120);
+    }
+    bool noDoubleRespawn = entityHealth(first, second.id) == 100;
+
+    // ── Test 4: Living player sending respawnSerial does nothing ──────
+    sendPosition(first, server, 0.0f, 0.0f, 30.0f, 99 /* respawnSerial from living player */);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    pump(first, MimitaNet::nowMs() + 120);
+    pump(second, MimitaNet::nowMs() + 120);
+    bool livingNoEffect = entityHealth(first, first.id) == 100;
 
     std::printf(
         "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u "
-        "movement=%d spawned=%d/%d combatDeath=%d respawn=%d targetHealth=%d\n",
+        "movement=%d spawned=%d/%d combatDeath=%d autoRespawn=%d "
+        "instantRespawn=%d noDouble=%d livingNoEffect=%d\n",
         first.id, first.approvedName.c_str(),
         second.id, second.approvedName.c_str(),
         first.snapshot.playerCount, first.snapshot.npcCount,
         (int)movementReplicated,
         (int)firstSawSpawn, (int)secondSawSpawn,
-        (int)sawDeath, (int)sawRespawn, entityHealth(first, second.id));
+        (int)sawDeath, (int)sawAutoRespawn,
+        (int)sawInstantRespawn, (int)noDoubleRespawn, (int)livingNoEffect);
 
     disconnect(first, server);
     disconnect(second, server);
     MimitaNet::netShutdown();
     return movementReplicated &&
            firstSawSpawn && secondSawSpawn &&
-           sawDeath && sawRespawn ? 0 : 7;
+           sawAutoRespawn && sawInstantRespawn &&
+           noDoubleRespawn && livingNoEffect ? 0 : 7;
 }

@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 9;
+constexpr uint16_t PROTOCOL_VERSION = 11;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -175,13 +175,16 @@ struct InputPacket
     int32_t clientPingMs = 0;
     uint16_t stateFlags = 0;
     uint16_t dashSerial = 0;
-    uint16_t jumpSerial = 0;
+    uint16_t groundJumpSerial = 0;
+    uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
     uint16_t equipSerial = 0;
+    uint16_t freezeSerial = 0;
     uint8_t attackPressed = 0;
     uint8_t spawnNpcPressed = 0;
     float sizeScale = 1.0f;
     uint32_t transformEpoch = 0;
+    uint16_t respawnSerial = 0;
 };
 
 struct ProfilePacket
@@ -196,7 +199,6 @@ struct SnapshotEntity
     uint8_t entityType = ENTITY_NONE;
     uint8_t active = 0;
     uint16_t stateFlags = 0;
-    uint16_t lastDashSerial = 0;
     uint16_t transformEpoch = 0;
     uint32_t ownerClientId = 0;
     float px = 0.0f;
@@ -216,9 +218,11 @@ struct SnapshotEntity
     int32_t pingMs = 0;
     float sizeScale = 1.0f;
     uint16_t dashSerial = 0;
-    uint16_t jumpSerial = 0;
+    uint16_t groundJumpSerial = 0;
+    uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
     uint16_t equipSerial = 0;
+    uint16_t freezeSerial = 0;
     char displayName[MAX_NAME_BYTES];
 };
 
@@ -252,7 +256,6 @@ struct CompactEntityData
     uint8_t entityType = MimitaNet::ENTITY_NONE;
     uint8_t active = 0;
     uint16_t stateFlags = 0;
-    uint16_t lastDashSerial = 0;
     uint16_t transformEpoch = 0;
     uint32_t ownerClientId = 0;
     float px = 0.0f, py = 0.0f, pz = 0.0f;
@@ -266,13 +269,15 @@ struct CompactEntityData
     int32_t pingMs = 0;
     float sizeScale = 1.0f;
     uint16_t dashSerial = 0;
-    uint16_t jumpSerial = 0;
+    uint16_t groundJumpSerial = 0;
+    uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
     uint16_t equipSerial = 0;
+    uint16_t freezeSerial = 0;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 80, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 82, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -282,7 +287,7 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[14]; // 14 * 80 + header_size(32) = 1152 < 1200
+    CompactEntityData entities[13]; // 13 * 82 + header_size(32) = 1098 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,

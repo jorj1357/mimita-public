@@ -129,7 +129,9 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                  "respawning automatically in %.3f...", player.respawnTimer);
         hudText("deathText", deathText);
         hudText("respawnText", respawnBuf);
-        hudText("respawnHint", "press space to respawn instantly");
+        // Show Space hint only when instant respawn would actually work
+        const bool duelBlocksRespawn = gDuelManager.phase() != DuelPhase::Off;
+        hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly");
         }
     }
     if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay)
