@@ -203,6 +203,8 @@ BeamCollisionResult collideBeam(
     result.remoteVictim = nullptr;
     result.remoteTargetId = 0;
     result.hitPart.clear();
+    result.hitPosition = origin + direction * maxDistance;
+    result.sweepCenterPosition = result.hitPosition;
 
     bool useSphereCast = (beamThickness > 0.0f);
 
@@ -210,11 +212,14 @@ BeamCollisionResult collideBeam(
         if (useSphereCast) {
             glm::vec3 hNml(0.0f);
             float hDist = 0.0f;
+            glm::vec3 hPt(0.0f);
             if (sweptSphereTraverseGridCells(world, origin, direction, maxDistance,
-                                              beamThickness, hDist, hNml) && hDist < result.nearest) {
+                                              beamThickness, hDist, hNml, hPt) && hDist < result.nearest) {
                 result.nearest = hDist;
                 result.hitWorld = true;
                 result.worldNormal = hNml;
+                result.sweepCenterPosition = origin + direction * hDist;
+                result.hitPosition = hPt;
             }
         } else {
             float hDist = 0.0f;
@@ -223,6 +228,9 @@ BeamCollisionResult collideBeam(
                 result.nearest = hDist;
                 result.hitWorld = true;
                 result.worldNormal = hNml;
+                glm::vec3 absolutePoint = origin + direction * hDist;
+                result.sweepCenterPosition = absolutePoint;
+                result.hitPosition = absolutePoint;
             }
         }
     }
@@ -249,8 +257,12 @@ BeamCollisionResult collideBeam(
                     result.victim = &npc;
                     result.hitPart = part.name;
                     result.hitNormal = nml;
-                    glm::vec3 hit = origin + direction * d;
-                    result.localHeight = std::clamp((hit.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
+                    glm::vec3 sweepCenter = origin + direction * d;
+                    result.sweepCenterPosition = sweepCenter;
+                    result.hitPosition = useSphereCast
+                        ? sweepCenter - nml * beamThickness
+                        : sweepCenter;
+                    result.localHeight = std::clamp((sweepCenter.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
                 }
             }
         }
@@ -284,9 +296,13 @@ BeamCollisionResult collideBeam(
                 result.remoteVictim = &remote;
                 result.remoteTargetId = entry.first;
                 result.hitNormal = nml;
-                glm::vec3 hit = origin + direction * d;
+                glm::vec3 sweepCenter = origin + direction * d;
+                result.sweepCenterPosition = sweepCenter;
+                result.hitPosition = useSphereCast
+                    ? sweepCenter - nml * beamThickness
+                    : sweepCenter;
                 result.localHeight = std::clamp(
-                    (hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
+                    (sweepCenter.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
                 result.hitPart = result.localHeight > 0.78f ? "head" :
                     result.localHeight > 0.32f ? "torso" : "leg";
             }
@@ -311,9 +327,13 @@ BeamCollisionResult collideBeam(
             result.victim = nullptr;
             result.remoteVictim = nullptr;
             result.hitNormal = nml;
-            glm::vec3 hit = origin + direction * d;
+            glm::vec3 sweepCenter = origin + direction * d;
+            result.sweepCenterPosition = sweepCenter;
+            result.hitPosition = useSphereCast
+                ? sweepCenter - nml * beamThickness
+                : sweepCenter;
             result.localHeight = std::clamp(
-                (hit.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
+                (sweepCenter.z - mn.z) / std::max(mx.z - mn.z, 0.001f), 0.0f, 1.0f);
             result.hitPart = result.localHeight > 0.78f ? "head" :
                 result.localHeight > 0.68f ? "torso" :
                 result.localHeight > 0.32f ? "torso" : "leg";

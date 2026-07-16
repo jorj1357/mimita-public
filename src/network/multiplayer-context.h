@@ -93,6 +93,7 @@ struct NetworkShotEvent
     int targetHealth = 0;
     float power = 0.0f;
     uint16_t effectFlags = 0;
+    uint16_t targetTransformEpoch = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t impactType = SHOT_IMPACT_NONE;
     bool killed = false;
@@ -243,12 +244,22 @@ struct MultiplayerContext
     uint16_t nextLocalFreezeSerial = 0;
     uint16_t nextLocalMovementDirectionSerial = 0;
     uint16_t nextLocalEquipSerial = 0;
-    uint16_t nextLocalRespawnSerial = 0;
+    // ── Respawn lifecycle ─────────────────────────────────────────────
+    uint16_t nextLocalRespawnSerial = 1;   // permanently monotonic, never reset to 0
+    uint16_t pendingRespawnSerial = 0;     // 0 = no pending request
+    uint16_t pendingRespawnStartEpoch = 0;
+    uint64_t pendingRespawnStartedMs = 0;
+    uint64_t pendingRespawnLastSendLogMs = 0;
+
     // Pending projectile knockback impulse (consumed in engineTickNet)
     glm::vec3 pendingKnockback{0.0f};
     std::string pendingKnockbackSource;
     std::string clientMapReadySentForMap;
     uint32_t clientMapReadySentForPlayerId = 0;
+
+    // ── Snapshot lifecycle tracking for stale-state rejection ─────────
+    uint32_t latestLocalSnapshotTick = 0;
+    uint32_t latestAliveSnapshotTick = 0;
 
     // ── Room code for HUD display ─────────────────────────────────────
     // Set on host register or client join, cleared on disconnect/leave.

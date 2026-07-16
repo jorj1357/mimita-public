@@ -65,8 +65,24 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.teleportResync = true;
     }
     const bool initialSpawn = !ctx.localPlayerReconciled;
+
+    // ── Authoritative lifecycle detection ─────────────────────────────
+    // A new life is detected when the server epoch advances past our
+    // pending respawn start epoch AND the server reports health > 0.
+    const uint32_t prevEpoch = (uint32_t)ctx.lastAppliedEpoch;
+    const uint32_t newEpoch = (uint32_t)ctx.localServerEpoch;
+    const bool epochAdvanced = newEpoch != 0 && newEpoch > prevEpoch;
+    const bool authoritativeNewLife =
+        ctx.pendingRespawnSerial != 0 &&
+        epochAdvanced &&
+        ctx.localServerHealth > 0 &&
+        (ctx.pendingRespawnStartEpoch == 0 || newEpoch > (uint32_t)ctx.pendingRespawnStartEpoch) &&
+        ctx.lastAppliedEpoch == ctx.localServerEpoch;
+
     const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
+    // Legacy health-transition based detection (still useful for non-respawn deaths)
     const bool serverRespawnedPlayer =
+        !authoritativeNewLife &&
         ctx.localServerHealth > 0 &&
         ctx.lastSeenServerHealth <= 0 &&
         ctx.localPlayerReconciled;
@@ -111,24 +127,44 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
     }
 
-    if (serverRespawnedPlayer)
-        player.currentHp = ctx.localServerHealth;
-    else if (serverKilledPlayer)
-        player.currentHp = 0;
-    else
-        player.currentHp = std::min(player.currentHp, ctx.localServerHealth);
-    ctx.lastSeenServerHealth = ctx.localServerHealth;
-    if (serverRespawnedPlayer)
+    // ── Lifecycle-aware health reconciliation ─────────────────────────
+    if (authoritativeNewLife || serverRespawnedPlayer)
     {
-        resetAllWeaponRuntimesForSpawn(player, "multiplayer-reconcile serverRespawn");
+        player.currentHp = ctx.localServerHealth;
         player.dead = false;
         player.proceduralFrozen = false;
         player.respawnTimer = 0.0f;
         player.killedBy.clear();
-        ctx.nextLocalRespawnSerial = 0;
-        printf("%s [CLIENT RESPAWN CONFIRMED] player=%u respawnSerial=0 (server acknowledged)\n",
-               serverTimestamp(), ctx.localPlayerId);
+        resetAllWeaponRuntimesForSpawn(player, "multiplayer-reconcile spawn");
+        printf("[CLIENT RESPAWN CONFIRMED] playerId=%u requestSerial=%u "
+               "epoch=%u snapshotTick=%u position=(%.2f,%.2f,%.2f) "
+               "health=%d pendingMs=%llu\n",
+               ctx.localPlayerId, ctx.pendingRespawnSerial,
+               newEpoch, ctx.latestLocalSnapshotTick,
+               ctx.localServerPosition.x, ctx.localServerPosition.y,
+               ctx.localServerPosition.z,
+               ctx.localServerHealth,
+               (unsigned long long)(nowMs() - ctx.pendingRespawnStartedMs));
+        ctx.pendingRespawnSerial = 0;
+        ctx.pendingRespawnStartEpoch = 0;
     }
+    else if (serverKilledPlayer)
+    {
+        player.currentHp = 0;
+    }
+    else if (ctx.localPlayerReconciled)
+    {
+        // Within same life: apply health min (monotonic health across server updates)
+        // but ONLY if we already share the same epoch (prevent cross-life contamination)
+        if (ctx.lastAppliedEpoch == ctx.localServerEpoch)
+            player.currentHp = std::min(player.currentHp, ctx.localServerHealth);
+    }
+    else
+    {
+        // First reconciliation of this epoch — apply server health directly
+        player.currentHp = ctx.localServerHealth;
+    }
+    ctx.lastSeenServerHealth = ctx.localServerHealth;
 
     if (!player.dead)
     {

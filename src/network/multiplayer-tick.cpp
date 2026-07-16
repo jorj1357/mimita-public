@@ -367,6 +367,35 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     entity.ownerClientId == ctx.localPlayerId;
                 if (isLocal)
                 {
+                    // ── Stale snapshot rejection ──────────────────────
+                    // Reject snapshots with an epoch older than our current
+                    // epoch — prevents old-death from reverting a new life.
+                    const bool olderEpoch = entity.transformEpoch != 0 &&
+                        ctx.localServerEpoch != 0 &&
+                        (uint32_t)entity.transformEpoch < (uint32_t)ctx.localServerEpoch;
+                    const bool sameEpochOlderTick = entity.transformEpoch == ctx.localServerEpoch &&
+                        snapshot->header.tick <= ctx.latestLocalSnapshotTick;
+                    const bool acceptLifecycle =
+                        !olderEpoch && !sameEpochOlderTick;
+
+                    if (!acceptLifecycle)
+                    {
+                        const char* reason = olderEpoch ? "old-epoch" : "old-tick";
+                        printf("[CLIENT LIFE SNAPSHOT] playerId=%u snapshotTick=%u "
+                               "snapshotEpoch=%u currentEpoch=%u health=%d accepted=0 reason=%s\n",
+                               ctx.localPlayerId, snapshot->header.tick,
+                               (uint32_t)entity.transformEpoch,
+                               (uint32_t)ctx.localServerEpoch,
+                               entity.health, reason);
+                        ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+                        ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
+                        ctx.localServerYaw = entity.yaw;
+                        ctx.localServerOnGround = entity.onGround != 0;
+                        ctx.localPingMs = entity.pingMs;
+                        ctx.hasLocalServerPosition = true;
+                        continue;
+                    }
+
                     ctx.localServerPosition = {entity.px, entity.py, entity.pz};
                     ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
                     ctx.localServerYaw = entity.yaw;
@@ -375,6 +404,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     ctx.localServerHealth = entity.health;
                     ctx.localServerEpoch = entity.transformEpoch;
                     ctx.localPingMs = entity.pingMs;
+                    ctx.latestLocalSnapshotTick = snapshot->header.tick;
+                    if (entity.health > 0)
+                        ctx.latestAliveSnapshotTick = snapshot->header.tick;
 
                     // Sync outgoing epoch if server incremented it (respawn/teleport)
                     if (entity.transformEpoch != 0 &&
@@ -709,10 +741,28 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.directionChangeSerial = ctx.nextLocalMovementDirectionSerial;
         in.equipSerial = ctx.nextLocalEquipSerial;
         in.freezeSerial = ctx.nextLocalFreezeSerial;
-        in.respawnSerial = ctx.nextLocalRespawnSerial;
-        // Do NOT reset event serials to zero. Serials are persistent monotonic
-        // counters. Each event type has one upward-only counter.
-        // Respawn serial persists until server confirms (reset in mpReconcileLocalPlayer).
+        // Send pending respawn serial repeatedly until confirmed.
+        // The pending serial is set in engineTickNet when the user requests
+        // an instant respawn, and cleared in mpReconcileLocalPlayer after
+        // the server's authoritative new-life snapshot is applied.
+        in.respawnSerial = ctx.pendingRespawnSerial;
+
+        // Rate-limited log for pending respawn
+        if (ctx.pendingRespawnSerial != 0)
+        {
+            uint64_t nowRespawnLog = nowMs();
+            if (nowRespawnLog - ctx.pendingRespawnLastSendLogMs >= 250)
+            {
+                printf("[CLIENT RESPAWN SEND] playerId=%u serial=%u packetEpoch=%u "
+                       "pendingForMs=%llu playerDead=%d serverHealth=%d\n",
+                       ctx.localPlayerId, ctx.pendingRespawnSerial,
+                       ctx.transformEpoch,
+                       (unsigned long long)(nowRespawnLog - ctx.pendingRespawnStartedMs),
+                       (int)(input->position.y < -10.0f ? 1 : 0),
+                       ctx.localServerHealth);
+                ctx.pendingRespawnLastSendLogMs = nowRespawnLog;
+            }
+        }
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));

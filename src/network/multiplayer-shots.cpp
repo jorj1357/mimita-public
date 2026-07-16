@@ -33,6 +33,7 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
     out.targetHealth = event->targetHealth;
     out.power = event->power;
     out.effectFlags = event->effectFlags;
+    out.targetTransformEpoch = event->targetTransformEpoch;
     out.weapon = event->weapon;
     out.impactType = event->impactType;
     out.killed = event->killed != 0;

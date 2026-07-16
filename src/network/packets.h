@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 13;
+constexpr uint16_t PROTOCOL_VERSION = 14;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -368,6 +368,7 @@ struct ShotEventPacket
     int32_t targetHealth = 0;
     float power = 0.0f;
     uint16_t effectFlags = 0;
+    uint16_t targetTransformEpoch = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t impactType = SHOT_IMPACT_NONE;
     uint8_t killed = 0;

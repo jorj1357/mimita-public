@@ -235,6 +235,7 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         shot->damage > 0 && shot->damage <= damageCap)
     {
         ServerPlayer& target = targetIt->second;
+        event.targetTransformEpoch = target.transformEpoch;
 
         glm::vec3 rewoundPos;
         bool hasRewound = getPositionAtTick(

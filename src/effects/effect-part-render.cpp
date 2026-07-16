@@ -176,7 +176,7 @@ void EffectPartSystem::render(const Camera& camera) const {
             float x = 0.0f, y = 0.0f;
             const glm::vec3 projectPos = damageNumber
                 ? effect.position
-                : effect.position + glm::vec3(0, 0, effect.scale + 0.15f);
+                : effect.position + glm::vec3(0, 0, 0.5f);
             bool projected = DebugVis::projectToScreen(camera, projectPos, x, y);
             if (!projected) {
                 Debug::logThrottled(Debug::Category::General, "popup-project-fail", 2.0f,
@@ -212,10 +212,7 @@ void EffectPartSystem::render(const Camera& camera) const {
                 float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
                 float driftPx = (1.0f - t) * 60.0f;
                 glm::vec4 textColor = {effect.color.x, effect.color.y, effect.color.z, alpha};
-                float fontSize = 48.0f;
-                // Server disagreement text is larger for readability
-                if (effect.replayType == "server_disagreement_text")
-                    fontSize = 64.0f;
+                float fontSize = std::abs(effect.scale);
                 uiDrawText(effect.label.c_str(), x, y - driftPx, fontSize, textColor);
                 Debug::logThrottled(Debug::Category::General, "popup-render", 1.0f,
                     "[DAMAGE POPUP] RENDER label=%s screen=(%.0f %.0f) alpha=%.2f fontSize=%.0f "
