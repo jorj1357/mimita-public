@@ -15,6 +15,7 @@
 #include "combat/weapon-config.h"
 #include "combat/weapon-registry.h"
 #include "network/net_mode.h"
+#include "network/network-weapons.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "entities/player-animation-config.h"
@@ -76,17 +77,50 @@ void registerWeaponCommands()
                         MimitaNet::SHOT_EFFECT_DEBRIS |
                         MimitaNet::SHOT_EFFECT_HIT_SOUND;
                 }
-                uint8_t netWeapon = MimitaNet::NETWORK_WEAPON_REVOLVER;
                 const WeaponDefinition* wdef = weapons.getCurrentDef(player);
-                if (wdef) {
-                    if (wdef->id == "shotgun")
-                        netWeapon = MimitaNet::NETWORK_WEAPON_SHOTGUN;
-                    else if (wdef->id == "godball")
-                        netWeapon = MimitaNet::NETWORK_WEAPON_GODBALL;
-                    else if (wdef->id == "swordsword")
-                        netWeapon = MimitaNet::NETWORK_WEAPON_SWORDSWORD;
-                    else if (wdef->id == "rocket_launcher")
-                        netWeapon = MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER;
+                uint8_t netWeapon = wdef
+                    ? MimitaNet::networkWeaponTypeForDefinition(*wdef)
+                    : MimitaNet::NETWORK_WEAPON_NONE;
+                const bool usesProjectilePath =
+                    MimitaNet::networkWeaponTypeIsProjectile(netWeapon);
+                const bool usesHitscanPath =
+                    MimitaNet::networkWeaponTypeIsHitscan(netWeapon);
+                printf("[WEAPON FIRE ROUTE] playerId=%u weaponId=%s behaviorType=%d "
+                       "usesHitscanPath=%d usesProjectilePath=%d shotResultFired=%d "
+                       "shotResultTargetRemote=%d shotResultTargetId=%u shotResultDamage=%.0f "
+                       "networkAction=%s\n",
+                       mpContext.localPlayerId,
+                       wdef ? wdef->id.c_str() : "none",
+                       wdef ? (int)wdef->behaviorType : -1,
+                       (int)usesHitscanPath, (int)usesProjectilePath,
+                       (int)shot.fired, (int)shot.targetIsRemotePlayer,
+                       shot.targetId, shot.damage,
+                       netWeapon == MimitaNet::NETWORK_WEAPON_NONE ? "reject-unknown-weapon" :
+                       usesProjectilePath ? "send-projectile-request" :
+                       netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD ? "send-melee-request" :
+                       "send-shot-request");
+
+                if (netWeapon == MimitaNet::NETWORK_WEAPON_NONE) {
+                    Terminal::instance().addLog("[WEAPON] network weapon mapping missing; shot not sent");
+                    return;
+                }
+
+                if (usesProjectilePath) {
+                    MimitaNet::mpSendProjectileFireRequest(
+                        mpContext, netWeapon, shot.start, direction);
+                    Terminal::instance().addLog("[WEAPON] fired");
+                    return;
+                }
+
+                if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
+                    if (shot.targetIsRemotePlayer) {
+                        MimitaNet::mpSendMeleeHitRequest(
+                            mpContext, shot.targetId, (int)shot.damage,
+                            netWeapon, 1, shot.end, shot.hitNormal,
+                            shot.knockbackImpulse, glm::length(player.vel));
+                    }
+                    Terminal::instance().addLog("[WEAPON] fired");
+                    return;
                 }
                 MimitaNet::mpSendShotEvent(
                     mpContext, targetId, damage, shot.damage,

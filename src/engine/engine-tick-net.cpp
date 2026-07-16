@@ -62,6 +62,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.freezeHeld = InputCommandSystem::instance().isFreezeHeld();
         mpInput.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         mpInput.equippedSlot = player.equippedSlot;
+        mpInput.weaponState = weapons.networkVisualState(player);
         mpInput.sizeScale = player.sizeScale;
 
         // Detect event transitions and increment serials

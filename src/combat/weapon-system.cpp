@@ -9,6 +9,7 @@
 #include "weapon-collision-config.h"
 #include "combat/projectile-render.h"
 #include "pobjects/persistent-physics.h"
+#include "network/packets.h"
 
 #include <algorithm>
 #include <cmath>
@@ -606,8 +607,7 @@ RevolverShotResult WeaponSystem::fire(
     }
 
     if (def->behaviorType == WeaponBehaviorType::Swordsword) {
-        fireSwordsword(camera, player, npcs);
-        return {};
+        return fireSwordsword(camera, player, npcs, remotePlayers);
     }
 
     if (def->behaviorType == WeaponBehaviorType::Hafs) {
@@ -616,8 +616,7 @@ RevolverShotResult WeaponSystem::fire(
     }
 
     if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
-        fireRocketLauncher(camera, player, npcs, world);
-        return {};
+        return fireRocketLauncher(camera, player, npcs, world, remotePlayers != nullptr);
     }
 
     bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
@@ -668,13 +667,22 @@ RevolverShotResult WeaponSystem::fire(
         float recoilStrength = def->customParams.count("firingRecoilStrength")
             ? def->customParams.at("firingRecoilStrength") : 20.0f;
         player.externalImpulse -= dir * recoilStrength;
-        WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
+        RevolverShotResult result;
+        result.fired = true;
+        result.start = muzzlePos;
+        result.end = muzzlePos + dir;
+        result.hitNormal = -dir;
+        if (remotePlayers) {
+            WeaponAudio::playShootSound(*def, muzzlePos);
+        } else {
+            WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
+        }
 
         Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired ammo=%d/%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f)\n",
                    rt->currentAmmo, rt->reserveAmmo,
                    muzzlePos.x, muzzlePos.y, muzzlePos.z,
                    dir.x, dir.y, dir.z);
-        return {};
+        return result;
     }
 
     return fireHitscan(camera, player, npcs, world, remotePlayers);
@@ -799,14 +807,15 @@ std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
     return hits;
 }
 
-void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
+RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world, bool networkProjectileOnly) {
+    RevolverShotResult result;
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
-    if (!def || !rt) return;
+    if (!def || !rt) return result;
 
     if (rt->fireCooldown > 0.0f && !rt->isReloading) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
-        return;
+        return result;
     }
 
     // Allow firing during reload if clip has ammo
@@ -816,9 +825,9 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         if (!rt->isReloading && rt->reserveAmmo > 0)
             reload(player);
-        return;
+        return result;
     } else if (rt->fireCooldown > 0.0f) {
-        return;
+        return result;
     }
 
     // Interrupt reload on successful fire (WeaponRocketLauncher::fire handles ammo consumption)
@@ -846,10 +855,21 @@ void WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem&
         ? def->customParams.at("firingRecoilStrength") : 30.0f;
     player.externalImpulse -= dir * recoilStrength;
 
-    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+    result.fired = true;
+    result.start = muzzlePos;
+    result.end = muzzlePos + dir;
+    result.hitNormal = -dir;
+    if (networkProjectileOnly) {
+        rt->currentAmmo--;
+        rt->fireCooldown = def->fireDelay;
+        WeaponAudio::playShootSound(*def, muzzlePos);
+    } else {
+        WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+    }
     rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;
     AnalyticsManager::instance().trackWeaponUsed(def->id);
+    return result;
 }
 
 void WeaponSystem::fireGodball(Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
@@ -857,15 +877,20 @@ void WeaponSystem::fireGodball(Camera& camera, Player& player, NpcSystem& npcs, 
     // Fire input is a no-op for godball (always "automatic").
 }
 
-void WeaponSystem::fireSwordsword(Camera& camera, Player& player, NpcSystem& npcs) {
+RevolverShotResult WeaponSystem::fireSwordsword(
+    Camera& camera,
+    Player& player,
+    NpcSystem& npcs,
+    const std::unordered_map<uint32_t, Player>* remotePlayers) {
+    RevolverShotResult result;
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
-    if (!def || !rt) return;
+    if (!def || !rt) return result;
 
-    if (rt->isReloading || rt->fireCooldown > 0.0f) return;
+    if (rt->isReloading || rt->fireCooldown > 0.0f) return result;
 
     if (mSwordswordState.state != SwordswordState::AttackState::Idle &&
-        mSwordswordState.state != SwordswordState::AttackState::SlashRecover) return;
+        mSwordswordState.state != SwordswordState::AttackState::SlashRecover) return result;
 
     float slashCooldown = weaponParamOr(*def, "slashCooldown", 0.25f);
     rt->fireCooldown = slashCooldown;
@@ -873,6 +898,54 @@ void WeaponSystem::fireSwordsword(Camera& camera, Player& player, NpcSystem& npc
 
     WeaponSwordsword::startSlash(mSwordswordState, *def, player);
     AnalyticsManager::instance().trackWeaponUsed(def->id);
+    result.fired = true;
+    result.start = player.pos;
+    result.end = player.pos + player.aimDirection * weaponParamOr(*def, "bladeLength", 4.0f);
+    result.hitNormal = -player.aimDirection;
+
+    if (remotePlayers) {
+        const float bladeLength = weaponParamOr(*def, "bladeLength", 4.0f);
+        const float maxDistance = bladeLength + 1.5f;
+        const float baseDamage = weaponParamOr(*def, "slashBaseDamage", 5.0f);
+        const float globalDamage = weaponParamOr(*def, "globalDamageMultiplier", 1.0f);
+        const float baseKnockback = weaponParamOr(*def, "slashBaseKnockback", 25.0f);
+        const float globalKnockback = weaponParamOr(*def, "globalKnockbackMultiplier", 1.0f);
+        const glm::vec3 forward = glm::length(player.aimDirection) > 0.001f
+            ? glm::normalize(player.aimDirection)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+        float bestDistance = maxDistance;
+        for (const auto& entry : *remotePlayers) {
+            const Player& target = entry.second;
+            if (target.dead || target.currentHp <= 0)
+                continue;
+            const glm::vec3 toTarget = target.pos - player.pos;
+            const float distance = glm::length(toTarget);
+            if (distance > bestDistance)
+                continue;
+            const glm::vec3 dir = distance > 0.001f
+                ? toTarget / distance
+                : forward;
+            if (glm::dot(forward, dir) < -0.2f)
+                continue;
+            bestDistance = distance;
+            result.targetIsRemotePlayer = true;
+            result.hitEntity = true;
+            result.targetId = entry.first;
+            result.end = target.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+            result.damage = std::clamp(baseDamage * globalDamage, 1.0f, 200.0f);
+            result.knockbackImpulse = dir * baseKnockback * globalKnockback * 0.04f;
+            result.hitNormal = -dir;
+            printf("[SWORD REMOTE CANDIDATE] attackerId=local targetId=%u "
+                   "attackSerial=pending attackState=slash weaponSpeed=%.2f "
+                   "distance=%.2f contactPoint=(%.2f,%.2f,%.2f) damage=%.1f "
+                   "knockback=(%.2f,%.2f,%.2f)\n",
+                   entry.first, mSwordswordState.swordSpeed, distance,
+                   result.end.x, result.end.y, result.end.z, result.damage,
+                   result.knockbackImpulse.x, result.knockbackImpulse.y,
+                   result.knockbackImpulse.z);
+        }
+    }
+    return result;
 }
 
 RevolverShotResult WeaponSystem::fireAlt(
@@ -934,6 +1007,25 @@ bool WeaponSystem::isReloading(const Player& player) const {
     return it != player.weaponRuntimes.end() && it->second.isReloading;
 }
 
+uint8_t WeaponSystem::networkVisualState(const Player& player) const {
+    uint8_t state = 0;
+    const WeaponDefinition* def = getCurrentDef(player);
+    if (!def) return state;
+    auto it = player.weaponRuntimes.find(def->id);
+    if (it == player.weaponRuntimes.end())
+        return state;
+    const WeaponRuntime& rt = it->second;
+    if (rt.shootEffectTimer > 0.0f)
+        state |= MimitaNet::NET_WEAPON_STATE_FIRING;
+    if (rt.isReloading)
+        state |= MimitaNet::NET_WEAPON_STATE_RELOADING;
+    if (rt.fireCooldown > 0.0f)
+        state |= MimitaNet::NET_WEAPON_STATE_COOLDOWN;
+    if (rt.currentAmmo <= 0)
+        state |= MimitaNet::NET_WEAPON_STATE_EMPTY;
+    return state;
+}
+
 WeaponCrosshairState WeaponSystem::crosshairState(const Player& player) const {
     const WeaponDefinition* def = getCurrentDef(player);
     if (!def) return WeaponCrosshairState::Ready;
@@ -953,11 +1045,25 @@ void WeaponSystem::addKillLine(const std::string& line) {
         mKillfeed.erase(mKillfeed.begin());
 }
 
-void WeaponSystem::renderRemoteWeapon(const Player& player, const Camera& camera) {
+void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera) {
     if (player.dead) return;
     const WeaponDefinition* def = getCurrentDef(player);
     if (!def) return;
-    int idx = slotIndex(def->slot);
-    mViewModels[idx].update(camera, const_cast<Player&>(player), 0.0f, def, true);
-    mViewModels[idx].render(camera, player, def->slot);
+    const std::string key = std::to_string(entityId) + ":" + def->id;
+    WeaponViewModel& vm = mRemoteViewModels[key];
+    vm.update(camera, const_cast<Player&>(player), 0.0f, def, true);
+    if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
+        printf("[WEAPON VISUAL INSTANCE] entityId=%u weaponId=%s resourcePtr=%p "
+               "instancePtr=%p runtimePtr=%p isReloading=%d fireCooldown=%.2f "
+               "tint=(%.2f,%.2f,%.2f) reloadBlend=%.2f\n",
+               entityId, def->id.c_str(), (const void*)vm.loadedModelPath.c_str(),
+               (void*)&vm,
+               player.weaponRuntimes.count(def->id)
+                   ? (const void*)&player.weaponRuntimes.at(def->id)
+                   : nullptr,
+               (int)((player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_RELOADING) != 0),
+               (player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_COOLDOWN) ? 1.0f : 0.0f,
+               vm.mTint.r, vm.mTint.g, vm.mTint.b, vm.mReloadBlendCurrent);
+    }
+    vm.render(camera, player, def->slot);
 }

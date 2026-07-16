@@ -310,11 +310,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         if (mpContext.active) {
             for (auto& kv : mpContext.remotePlayers) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
-                weapons.renderRemoteWeapon(kv.second, camera);
+                weapons.renderRemoteWeapon(kv.first, kv.second, camera);
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
             }
+            MimitaNet::mpRenderNetworkProjectiles(mpContext, camera);
             // Render server position ghost if enabled
             engineRenderGhost(player, camera);
         }

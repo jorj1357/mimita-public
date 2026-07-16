@@ -98,8 +98,10 @@ int runServer(const LaunchOptions& options)
 
     std::unordered_map<uint32_t, ServerPlayer> players;
     std::unordered_map<uint32_t, ServerNpc> npcs;
+    std::unordered_map<uint32_t, ServerProjectile> projectiles;
     uint32_t nextPlayerId = 1;
     uint32_t nextEntityId = 1000;
+    uint32_t nextProjectileId = 1;
     uint32_t tick = 0;
     uint64_t lastLog = nowMs();
     uint64_t totalPacketsIn = 0;
@@ -263,6 +265,11 @@ int runServer(const LaunchOptions& options)
                 handleExplodeRequest(buffer, bytes, players);
             else if (header->type == PACKET_SHOT_REQUEST)
                 handleShotRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut);
+            else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
+                handleProjectileFireRequest(sock, from, buffer, bytes, players, projectiles,
+                                            nextProjectileId, world, tick, totalPacketsOut);
+            else if (header->type == PACKET_MELEE_HIT_REQUEST)
+                handleMeleeHitRequest(sock, from, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_CHAT_MESSAGE)
                 handleChatMessage(sock, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_PING)
@@ -320,6 +327,7 @@ int runServer(const LaunchOptions& options)
         checkVoidDeath(players, npcs);
         for (auto& kv : npcs)
             simulateNpc(kv.second, players);
+        tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
 
         buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
 
@@ -421,8 +429,10 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.port = port;
     state.players.clear();
     state.npcs.clear();
+    state.projectiles.clear();
     state.nextPlayerId = 1;
     state.nextEntityId = 1000;
+    state.nextProjectileId = 1;
     state.tick = 0;
     state.lastLog = 0;
     state.totalPacketsIn = 0;
@@ -610,6 +620,13 @@ void tickListenServer(ListenServerState& state, float dt)
             else if (header->type == PACKET_SHOT_REQUEST)
                 handleShotRequest(state.sock, from, buffer, bytes, state.players,
                                   state.world, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
+                handleProjectileFireRequest(state.sock, from, buffer, bytes, state.players,
+                                            state.projectiles, state.nextProjectileId,
+                                            state.world, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_MELEE_HIT_REQUEST)
+                handleMeleeHitRequest(state.sock, from, buffer, bytes, state.players,
+                                      state.tick, state.totalPacketsOut);
             else if (header->type == PACKET_CHAT_MESSAGE)
                 handleChatMessage(state.sock, buffer, bytes, state.players,
                                   state.tick, state.totalPacketsOut);
@@ -669,6 +686,9 @@ void tickListenServer(ListenServerState& state, float dt)
         checkVoidDeath(state.players, state.npcs);
         for (auto& kv : state.npcs)
             simulateNpc(kv.second, state.players);
+        tickServerProjectiles(state.sock, state.players, state.projectiles,
+                              state.world, SERVER_DT, state.tick,
+                              state.totalPacketsOut);
 
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
                              state.tick, state.totalPacketsOut);

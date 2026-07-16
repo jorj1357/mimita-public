@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace MimitaNet {
 
@@ -94,6 +95,25 @@ struct NetworkShotEvent
     glm::vec3 knockback{0.0f};
 };
 
+struct NetworkProjectile
+{
+    uint32_t projectileId = 0;
+    uint32_t ownerPlayerId = 0;
+    uint32_t fireSerial = 0;
+    uint8_t weaponType = NETWORK_WEAPON_NONE;
+    glm::vec3 position{0.0f};
+    glm::vec3 previousPosition{0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 angularVelocity{0.0f};
+    float age = 0.0f;
+    float lifetime = 0.0f;
+    float radius = 0.0f;
+    float smokeAccumulator = 0.0f;
+    bool predicted = false;
+    bool exploded = false;
+};
+
 struct EntityInterpolationState
 {
     SnapshotTransform previous;
@@ -155,6 +175,7 @@ struct MultiplayerContext
     uint64_t lastFakeLagLogMs = 0;
     std::vector<QueuedPacket> outgoingQueue;
     std::vector<NetworkShotEvent> shotEvents;
+    std::unordered_map<uint32_t, NetworkProjectile> networkProjectiles;
     struct IncomingChatMessage
     {
         std::string senderName;
@@ -163,6 +184,8 @@ struct MultiplayerContext
     std::vector<IncomingChatMessage> incomingChatMessages;
     std::unordered_map<uint32_t, uint32_t> lastReceivedShotSerial;
     uint32_t nextLocalShotSerial = 1;
+    uint32_t nextLocalProjectileFireSerial = 1;
+    uint32_t nextLocalMeleeAttackSerial = 1;
     uint32_t latestServerTick = 0;
     uint64_t lastPingSentMs = 0;
     int localPingMs = 0;
@@ -262,6 +285,21 @@ uint32_t mpSendShotEvent(
     const glm::vec3& direction,
     const glm::vec3& normal,
     const glm::vec3& knockbackImpulse = glm::vec3(0.0f));
+uint32_t mpSendProjectileFireRequest(
+    MultiplayerContext& ctx,
+    uint8_t weapon,
+    const glm::vec3& origin,
+    const glm::vec3& direction);
+uint32_t mpSendMeleeHitRequest(
+    MultiplayerContext& ctx,
+    uint32_t targetPlayerId,
+    int damage,
+    uint8_t weapon,
+    uint8_t attackType,
+    const glm::vec3& hit,
+    const glm::vec3& normal,
+    const glm::vec3& knockback,
+    float weaponSpeed);
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
 
 // Packet queue flush (defined in multiplayer-packets.cpp)
@@ -274,6 +312,13 @@ void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs);
 // Called from mpTick (defined in multiplayer-shots.cpp)
 void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event);
 void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEventPacket* event);
+void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const ProjectileSpawnEventPacket* event);
+void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const ProjectileStateEventPacket* event);
+void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event);
+void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
+void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
+void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt);
+void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
 
 // Called from mpTick (defined in multiplayer-chat.cpp)
 void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);

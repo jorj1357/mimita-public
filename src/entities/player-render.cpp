@@ -93,7 +93,7 @@ void Player::renderCurrentPose(unsigned int shader,
     if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
         static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
-        static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1;
+        static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1, uTintLoc = -1;
         static GLint uAlphaCutoffLoc = -1, uDebugViewLoc = -1;
         if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
         if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
@@ -101,6 +101,7 @@ void Player::renderCurrentPose(unsigned int shader,
         if (uUseColorLoc < 0) uUseColorLoc = glGetUniformLocation(shader, "uUseColor");
         if (uColorLoc < 0) uColorLoc = glGetUniformLocation(shader, "uColor");
         if (uTexLoc < 0) uTexLoc = glGetUniformLocation(shader, "uTex");
+        if (uTintLoc < 0) uTintLoc = glGetUniformLocation(shader, "uTint");
         if (uAlphaCutoffLoc < 0) uAlphaCutoffLoc = glGetUniformLocation(shader, "uAlphaCutoff");
         if (uDebugViewLoc < 0) uDebugViewLoc = glGetUniformLocation(shader, "uDebugView");
 
@@ -110,6 +111,13 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
         glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
         glUniform1i(uTexLoc, 0);
+        if (uTintLoc >= 0)
+            glUniform3f(uTintLoc, 1.0f, 1.0f, 1.0f);
+        if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
+            printf("[PLAYER SHADER RESET] entityId=%s bodyColor=(1.00,1.00,1.00) "
+                   "useTexture=1 useColor=%d\n",
+                   username.c_str(), whiteOverride ? 1 : 0);
+        }
 
         // Set debug view (UV checker etc.) for player too
         glUniform1i(uDebugViewLoc, DebugVis::shaderDebugView());
@@ -264,6 +272,7 @@ void Player::renderCurrentPose(unsigned int shader,
         if (whiteOverride)
             glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
+        glUniform3f(glGetUniformLocation(shader,"uTint"), 1.0f, 1.0f, 1.0f);
 
         MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
         MIMITA_GL_CALL(glBindVertexArray(playerVAO));
@@ -289,6 +298,7 @@ void Player::renderCurrentPose(unsigned int shader,
     if (whiteOverride)
         glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
     glUniform1i(glGetUniformLocation(shader,"uTex"),0);
+    glUniform3f(glGetUniformLocation(shader,"uTint"), 1.0f, 1.0f, 1.0f);
 
     MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1")));

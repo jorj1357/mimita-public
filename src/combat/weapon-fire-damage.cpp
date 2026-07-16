@@ -337,7 +337,6 @@ void processMultiPelletRemoteHit(
     glm::vec3& lastHitNormal,
     const std::string& victimName)
 {
-    (void)result;
     float dmg = def.damage;
     if (hitPart == "head") dmg *= def.headshotMultiplier;
     else if (hitPart == "leg") dmg *= 0.5f;
@@ -350,6 +349,9 @@ void processMultiPelletRemoteHit(
     if (fit != def.customParams.end()) minFrac = fit->second;
     dmg *= std::clamp(1.0f - pelletNearest / falloffStart, minFrac, 1.0f);
     int totalDmg = std::max(1, (int)std::round(dmg));
+    result.targetIsRemotePlayer = true;
+    result.hitEntity = true;
+    result.targetId = pelletRemoteTargetId;
     accumulatedDamage += (float)totalDmg;
     anyHitEntity = true;
     lastTargetId = pelletRemoteTargetId;

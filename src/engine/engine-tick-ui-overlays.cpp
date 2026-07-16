@@ -432,8 +432,20 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             char buf[80];
             snprintf(buf, sizeof(buf), "Room code: %s", code.c_str());
             float cx = uiScreenW() * 0.5f;
-            uiDrawText(buf, cx - 90.0f, 18.0f, 0.38f, {1.0f, 1.0f, 1.0f, 1.0f});
-            uiDrawText("Open console with ` key", cx - 150.0f, 40.0f, 0.24f, {0.75f, 0.85f, 1.0f, 1.0f});
+            // 7 16 2026 todo make this hot reloadable, all things in gui should be hot
+            // reloadable, but do later 
+            float codeScale = 0.50f;
+            float codeW = uiMeasureText(buf, codeScale);
+            uiDrawText(buf, cx - codeW * 0.5f, 18.0f, codeScale, {1.0f, 1.0f, 1.0f, 1.0f});
+            float instrScale = 0.32f;
+            const char* line1 = "Press ` to open console";
+            const char* line2 = "Type roomcodeshow 0 to hide this";
+            float line1W = uiMeasureText(line1, instrScale);
+            float line2W = uiMeasureText(line2, instrScale);
+            float instrY = 46.0f;
+            float lineGap = 16.0f;
+            uiDrawText(line1, cx - line1W * 0.5f, instrY, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
+            uiDrawText(line2, cx - line2W * 0.5f, instrY + lineGap, instrScale, {0.75f, 0.85f, 1.0f, 1.0f});
             printf("[ROOMCODE HUD] active=%d connected=%d roomCode=%s\n",
                    (int)mpContext.active, (int)mpContext.connected, code.c_str());
         }

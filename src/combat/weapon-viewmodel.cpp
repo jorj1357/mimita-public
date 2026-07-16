@@ -20,6 +20,7 @@
 #include "entities/player.h"
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
+#include "network/packets.h"
 #include "world/texture-store.h"
 #include "world/world.h"
 
@@ -212,16 +213,26 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     //   - Empty magazine → flash purple/yellow every ~60 ticks
     //   - Fire delay active → full red
     if (def && (def->id == "rocket_launcher" || def->id == "grenade_launcher") &&
-        player.weaponRuntimes.count(def->id))
+        (player.weaponRuntimes.count(def->id) || player.networkWeaponState != 0))
     {
-        const WeaponRuntime& rt = player.weaponRuntimes.at(def->id);
+        const bool hasRuntime = player.weaponRuntimes.count(def->id) != 0;
+        const WeaponRuntime* rt = hasRuntime ? &player.weaponRuntimes.at(def->id) : nullptr;
+        const bool isReloading = rt
+            ? rt->isReloading
+            : (player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_RELOADING) != 0;
+        const bool isEmpty = rt
+            ? rt->currentAmmo <= 0
+            : (player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_EMPTY) != 0;
+        const bool isCoolingDown = rt
+            ? rt->fireCooldown > 0.0f
+            : (player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_COOLDOWN) != 0;
 
         // Reloading overrides everything — weapon is fully disabled
-        if (rt.isReloading) {
+        if (isReloading) {
             mTint = glm::vec3(0.2f, 0.2f, 0.2f);
         }
         // Empty magazine — flash between purple and yellow
-        else if (rt.currentAmmo <= 0) {
+        else if (isEmpty) {
             mEmptyFlashTimer += dt;
             // Alternate every ~60 ticks (1 second at 60 FPS)
             int phase = (int)(mEmptyFlashTimer * 60.0f) % 120;
@@ -229,7 +240,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                                  : glm::vec3(1.0f, 1.0f, 0.2f);   // yellow
         }
         // Fire delay active — weapon is on cooldown
-        else if (rt.fireCooldown > 0.0f) {
+        else if (isCoolingDown) {
             mTint = glm::vec3(1.0f, 0.0f, 0.0f);  // full red
         }
         else {
@@ -310,6 +321,8 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             bool isReloading = false;
             if (def && player.weaponRuntimes.count(def->id))
                 isReloading = player.weaponRuntimes.at(def->id).isReloading;
+            else if (def)
+                isReloading = (player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_RELOADING) != 0;
 
             // Fire animation timer
             if (hasConfig && vmcfg->hasFireAnim && recoil > recoil * 0.5f && !isReloading) {
@@ -457,6 +470,11 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
     glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
     glUniform3f(glGetUniformLocation(shader, "uTint"), mTint.r, mTint.g, mTint.b);
+    if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
+        printf("[WEAPON SHADER STATE] entityId=%s weaponId=slot_%d tint=(%.2f,%.2f,%.2f) "
+               "useTexture=1 useColor=0\n",
+               player.username.c_str(), equippedSlot, mTint.r, mTint.g, mTint.b);
+    }
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vao);
     for (const Mesh::Batch& batch : heldMesh.batches) {

@@ -55,6 +55,7 @@ public:
 
     WeaponCrosshairState crosshairState(const Player& player) const;
     bool isReloading(const Player& player) const;
+    uint8_t networkVisualState(const Player& player) const;
     bool isShooting() const { return mShootingTimer > 0.0f; }
 
     const std::vector<std::string>& killfeed() const { return mKillfeed; }
@@ -62,7 +63,7 @@ public:
     // Render the equipped weapon on a remote player's hand.
     // Uses the same viewmodel mesh and attachment logic as the local player,
     // but does not modify the remote player's arm poses.
-    void renderRemoteWeapon(const Player& player, const Camera& camera);
+    void renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera);
 
     const GodballPhysics& godballPhysics() const { return mGodballPhys; }
     GodballPhysics& godballPhysics() { return mGodballPhys; }
@@ -73,6 +74,7 @@ public:
 private:
     static constexpr int MAX_SLOTS = 64;
     WeaponViewModel mViewModels[MAX_SLOTS];
+    std::unordered_map<std::string, WeaponViewModel> mRemoteViewModels;
     GodballPhysics mGodballPhys;
     SwordswordState mSwordswordState;
     HafsState mHafsState;
@@ -104,8 +106,17 @@ private:
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers);
     void fireGodball(Camera& camera, Player& player, NpcSystem& npcs, const World& world);
-    void fireSwordsword(Camera& camera, Player& player, NpcSystem& npcs);
-    void fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world);
+    RevolverShotResult fireSwordsword(
+        Camera& camera,
+        Player& player,
+        NpcSystem& npcs,
+        const std::unordered_map<uint32_t, Player>* remotePlayers);
+    RevolverShotResult fireRocketLauncher(
+        Camera& camera,
+        Player& player,
+        NpcSystem& npcs,
+        const World& world,
+        bool networkProjectileOnly);
 
     WeaponRuntime* getCurrentRuntime(Player& player);
 
