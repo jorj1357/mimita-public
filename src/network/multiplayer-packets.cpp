@@ -151,6 +151,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    ctx.networkProjectiles.clear();
     ctx.playerRegistry.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
@@ -171,6 +172,8 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.shotEvents.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
+    ctx.nextLocalProjectileFireSerial = 1;
+    ctx.nextLocalMeleeAttackSerial = 1;
     ctx.lastPingSentMs = 0;
     ctx.localPingMs = 0;
     ctx.lastHeardServerMs = 0;
@@ -214,6 +217,7 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    ctx.networkProjectiles.clear();
     ctx.playerRegistry.clear();
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;
@@ -228,6 +232,7 @@ void mpShutdown(MultiplayerContext& ctx)
     ctx.connectionState = ConnectionState::Disconnected;
     ctx.outgoingQueue.clear();
     ctx.shotEvents.clear();
+    ctx.networkProjectiles.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.disagreementEvents.clear();
     ctx.reconnectAttempts = 0;
@@ -382,6 +387,7 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    ctx.networkProjectiles.clear();
     ctx.playerRegistry.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
@@ -396,6 +402,8 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     ctx.shotEvents.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
+    ctx.nextLocalProjectileFireSerial = 1;
+    ctx.nextLocalMeleeAttackSerial = 1;
     ctx.lastPingSentMs = 0;
     ctx.localPingMs = 0;
     ctx.lastHeardServerMs = 0;

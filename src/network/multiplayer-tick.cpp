@@ -505,6 +505,36 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             mpProcessShotEventPacket(ctx, reinterpret_cast<const ShotEventPacket*>(buffer));
         }
+        else if (header->type == PACKET_PROJECTILE_SPAWN_EVENT &&
+                 bytes >= (int)sizeof(ProjectileSpawnEventPacket))
+        {
+            mpProcessProjectileSpawnEventPacket(
+                ctx, reinterpret_cast<const ProjectileSpawnEventPacket*>(buffer));
+        }
+        else if (header->type == PACKET_PROJECTILE_STATE_EVENT &&
+                 bytes >= (int)sizeof(ProjectileStateEventPacket))
+        {
+            mpProcessProjectileStateEventPacket(
+                ctx, reinterpret_cast<const ProjectileStateEventPacket*>(buffer));
+        }
+        else if (header->type == PACKET_PROJECTILE_EXPLODE_EVENT &&
+                 bytes >= (int)sizeof(ProjectileExplodeEventPacket))
+        {
+            mpProcessProjectileExplodeEventPacket(
+                ctx, reinterpret_cast<const ProjectileExplodeEventPacket*>(buffer));
+        }
+        else if (header->type == PACKET_PROJECTILE_DESPAWN_EVENT &&
+                 bytes >= (int)sizeof(ProjectileDespawnEventPacket))
+        {
+            mpProcessProjectileDespawnEventPacket(
+                ctx, reinterpret_cast<const ProjectileDespawnEventPacket*>(buffer));
+        }
+        else if (header->type == PACKET_MELEE_HIT_EVENT &&
+                 bytes >= (int)sizeof(MeleeHitEventPacket))
+        {
+            mpProcessMeleeHitEventPacket(
+                ctx, reinterpret_cast<const MeleeHitEventPacket*>(buffer));
+        }
         else if (header->type == PACKET_NPC_DAMAGE_EVENT &&
                  bytes >= (int)sizeof(NpcDamageEventPacket))
         {
@@ -608,6 +638,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     mpUpdateRemoteEntities(ctx, dt);
+    mpUpdateNetworkProjectiles(ctx, dt);
 
     if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)
     {

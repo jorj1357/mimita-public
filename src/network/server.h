@@ -87,6 +87,9 @@ struct ServerPlayer
     uint8_t weaponState = 0;
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
+    uint32_t lastProjectileFireSerial = 0;
+    uint32_t lastMeleeAttackSerial = 0;
+    float projectileFireCooldown = 0.0f;
     uint16_t lastDashSerial = 0;
     uint16_t lastJumpSerial = 0;
     uint16_t lastDownDashSerial = 0;
@@ -129,6 +132,55 @@ struct ServerNpc
     float stateTimer = 0.0f;
     float orbitAngle = 0.0f;
     ServerNpcState aiState = ServerNpcState::Chase;
+};
+
+enum class ServerDamageSource : uint8_t
+{
+    Hitscan,
+    Melee,
+    RocketExplosion,
+    GrenadeExplosion
+};
+
+struct ServerDamageResult
+{
+    bool applied = false;
+    bool killed = false;
+    int healthBefore = 0;
+    int healthAfter = 0;
+};
+
+struct ServerProjectile
+{
+    uint32_t id = 0;
+    uint32_t ownerPlayerId = 0;
+    uint32_t fireSerial = 0;
+    uint8_t weaponType = NETWORK_WEAPON_NONE;
+    glm::vec3 position{0.0f};
+    glm::vec3 previousPosition{0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 angularVelocity{0.0f};
+    float age = 0.0f;
+    float lifetime = 0.0f;
+    float radius = 0.0f;
+    float splashRadius = 0.0f;
+    float splashDamage = 0.0f;
+    float splashExponent = 2.0f;
+    float knockbackStrength = 0.0f;
+    float selfKnockbackMultiplier = 1.0f;
+    float gravity = 0.0f;
+    float drag = 0.0f;
+    float restitution = 0.0f;
+    float friction = 0.0f;
+    float armingDistance = 0.0f;
+    float distanceTraveled = 0.0f;
+    float stateAccumulator = 0.0f;
+    int bounceCount = 0;
+    int maxBounceCount = 0;
+    bool exploded = false;
+    bool worldTouched = false;
+    uint32_t spawnTick = 0;
 };
 
 // Timestamp
@@ -197,6 +249,20 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
                        uint32_t tick, uint64_t& totalPacketsOut);
+void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                                 std::unordered_map<uint32_t, ServerPlayer>& players,
+                                 std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                                 uint32_t& nextProjectileId,
+                                 const HeadlessWorld& world,
+                                 uint32_t tick, uint64_t& totalPacketsOut);
+void tickServerProjectiles(SOCKET sock,
+                           std::unordered_map<uint32_t, ServerPlayer>& players,
+                           std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                           const HeadlessWorld& world,
+                           float dt, uint32_t tick, uint64_t& totalPacketsOut);
+void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                           std::unordered_map<uint32_t, ServerPlayer>& players,
+                           uint32_t tick, uint64_t& totalPacketsOut);
 void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut);
@@ -253,6 +319,13 @@ void sendDisagreementToAll(SOCKET sock,
                            uint32_t tick,
                            uint64_t& totalPacketsOut);
 
+ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>& players,
+                                     ServerPlayer& target,
+                                     uint32_t attackerPlayerId,
+                                     int damage,
+                                     const glm::vec3& knockback,
+                                     ServerDamageSource source);
+
 // ─── HostedRoomSession — single canonical room for one host action ─────────
 
 struct HostedRoomSession
@@ -303,9 +376,11 @@ struct ListenServerState
     SOCKET sock = INVALID_SOCKET;
     std::unordered_map<uint32_t, ServerPlayer> players;
     std::unordered_map<uint32_t, ServerNpc> npcs;
+    std::unordered_map<uint32_t, ServerProjectile> projectiles;
     HeadlessWorld world;
     uint32_t nextPlayerId = 1;
     uint32_t nextEntityId = 1000;
+    uint32_t nextProjectileId = 1;
     uint32_t tick = 0;
     uint64_t lastLog = 0;
     uint64_t totalPacketsIn = 0;

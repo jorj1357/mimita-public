@@ -1,5 +1,6 @@
 #include "network/server.h"
 #include "network/multiplayer-context.h"
+#include "network/network-weapons.h"
 #include "void-death/void-death.h"
 
 #include <algorithm>
@@ -44,12 +45,9 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     }
 
     const bool validWeapon =
-        shot->weapon == NETWORK_WEAPON_REVOLVER ||
-        shot->weapon == NETWORK_WEAPON_GODBALL ||
-        shot->weapon == NETWORK_WEAPON_SHOTGUN ||
-        shot->weapon == NETWORK_WEAPON_SWORDSWORD ||
-        shot->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER ||
-        shot->weapon == NETWORK_WEAPON_HAFS;
+        std::strcmp(networkWeaponTypeName(shot->weapon), "unknown") != 0 &&
+        shot->weapon != NETWORK_WEAPON_NONE &&
+        !networkWeaponTypeIsProjectile(shot->weapon);
     const bool validImpact =
         shot->impactType <= SHOT_IMPACT_ENTITY;
     const glm::vec3 origin{
@@ -85,10 +83,11 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         shot->shotSerial == 0)
     {
         printf("%s [NET SHOT FILTER] shooter=%u serial=%u "
-               "accepted=0 weapon=%u impact=%u finite=%d "
+               "accepted=0 weapon=%u weaponName=%s impact=%u finite=%d "
                "distance=%.2f originDistance=%.2f dirLength=%.2f\n",
                serverTimestamp(), shooter.id, shot->shotSerial,
-               shot->weapon, shot->impactType, (int)finite,
+               shot->weapon, networkWeaponTypeName(shot->weapon),
+               shot->impactType, (int)finite,
                shotDistance, originDistance, directionLength);
         return;
     }
@@ -172,6 +171,14 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     auto targetIt = players.find(shot->targetPlayerId);
     bool damageConfirmed = false;
 
+    if (shot->weapon == NETWORK_WEAPON_SHOTGUN)
+    {
+        printf("%s [SHOTGUN SERVER REQUEST] shooter=%u serial=%u target=%u "
+               "claimedDamage=%d accepted=pending reason=validation-start\n",
+               serverTimestamp(), shooter.id, shot->shotSerial,
+               shot->targetPlayerId, shot->damage);
+    }
+
     if (MimitaNet::gNetDamageDebug)
     {
         printf("[NET DAMAGE] shooter=%u target=%u impactType=%u "
@@ -242,16 +249,14 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             {
                 damageConfirmed = true;
                 event.damage = shot->damage;
-                target.health = std::max(0, target.health - shot->damage);
-                event.targetHealth = target.health;
+                ServerDamageResult damage = applyServerDamage(
+                    players, target, shooter.id, shot->damage,
+                    glm::vec3(shot->knockX, shot->knockY, shot->knockZ),
+                    ServerDamageSource::Hitscan);
+                event.targetHealth = damage.healthAfter;
                 event.damageConfirmed = 1;
-                if (target.health == 0)
-                {
-                    target.dead = true;
-                    target.respawnSeconds = 2.0f;
-                    target.vel = glm::vec3(0.0f);
+                if (damage.killed)
                     event.killed = 1;
-                }
 
                 printf("%s [NET SHOT REWIND] shooter=%u target=%u "
                        "rewoundTick=%u rewindDist=%.2f occluded=%d "
@@ -278,6 +283,15 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                    glm::length(position - (target.pos + glm::vec3(0,0,0.8f))),
                    (int)hasRewound);
         }
+    }
+
+    if (shot->weapon == NETWORK_WEAPON_SHOTGUN)
+    {
+        printf("%s [SHOTGUN SERVER REQUEST] shooter=%u serial=%u target=%u "
+               "claimedDamage=%d accepted=%d reason=%s\n",
+               serverTimestamp(), shooter.id, shot->shotSerial,
+               shot->targetPlayerId, shot->damage, (int)damageConfirmed,
+               damageConfirmed ? "accepted" : "validation-failed");
     }
 
     if (!damageConfirmed && event.impactType == SHOT_IMPACT_ENTITY)

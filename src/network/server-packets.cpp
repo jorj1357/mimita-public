@@ -108,6 +108,9 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     p.addr = from;
     p.lastHeardMs = nowMs();
     p.lastShotSerial = 0;
+    p.lastProjectileFireSerial = 0;
+    p.lastMeleeAttackSerial = 0;
+    p.projectileFireCooldown = 0.0f;
     p.name = uniquePlayerName(
         players, reinterpret_cast<const HelloPacket*>(buffer)->name, id);
 
@@ -542,6 +545,9 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.addr = from;
     p.lastHeardMs = nowMs();
     p.lastShotSerial = 0;
+    p.lastProjectileFireSerial = 0;
+    p.lastMeleeAttackSerial = 0;
+    p.projectileFireCooldown = 0.0f;
     p.joinToken = join->joinToken;
     p.joinTokenValidated = true;
     p.reconnectToken = generateReconnectToken();

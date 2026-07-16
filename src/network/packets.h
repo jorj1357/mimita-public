@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 8;
+constexpr uint16_t PROTOCOL_VERSION = 9;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -57,7 +57,14 @@ enum PacketType : uint8_t
     PACKET_RECONNECT_REQUEST = 23,
     PACKET_RECONNECT_ACCEPT = 24,
     PACKET_DISAGREEMENT = 25,
-    PACKET_CLIENT_MAP_READY = 26
+    PACKET_CLIENT_MAP_READY = 26,
+    PACKET_PROJECTILE_FIRE_REQUEST = 27,
+    PACKET_PROJECTILE_SPAWN_EVENT = 28,
+    PACKET_PROJECTILE_STATE_EVENT = 29,
+    PACKET_PROJECTILE_EXPLODE_EVENT = 30,
+    PACKET_PROJECTILE_DESPAWN_EVENT = 31,
+    PACKET_MELEE_HIT_REQUEST = 32,
+    PACKET_MELEE_HIT_EVENT = 33
 };
 
 enum EntityType : uint8_t
@@ -75,7 +82,17 @@ enum NetworkWeaponType : uint8_t
     NETWORK_WEAPON_SHOTGUN = 3,
     NETWORK_WEAPON_SWORDSWORD = 4,
     NETWORK_WEAPON_ROCKET_LAUNCHER = 5,
-    NETWORK_WEAPON_HAFS = 6
+    NETWORK_WEAPON_HAFS = 6,
+    NETWORK_WEAPON_GRENADE_LAUNCHER = 7
+};
+
+enum NetworkWeaponStateFlags : uint8_t
+{
+    NET_WEAPON_STATE_FIRING = 1 << 0,
+    NET_WEAPON_STATE_RELOADING = 1 << 1,
+    NET_WEAPON_STATE_COOLDOWN = 1 << 2,
+    NET_WEAPON_STATE_EMPTY = 1 << 3,
+    NET_WEAPON_STATE_EQUIPPING = 1 << 4
 };
 
 enum ShotImpactType : uint8_t
@@ -361,6 +378,153 @@ struct ShotEventPacket
     float knockZ = 0.0f;
 };
 
+constexpr int MAX_PROJECTILE_DAMAGE_RESULTS = 8;
+
+struct ProjectileDamageResultPacket
+{
+    uint32_t victimPlayerId = 0;
+    int32_t damage = 0;
+    int32_t healthAfter = 0;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+    uint8_t killed = 0;
+    uint8_t reserved[3] = {};
+};
+
+struct ProjectileFireRequestPacket
+{
+    PacketHeader header;
+    uint32_t fireSerial = 0;
+    uint32_t lastServerTick = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t reserved[3] = {};
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float dirX = 0.0f;
+    float dirY = 0.0f;
+    float dirZ = 0.0f;
+};
+
+struct ProjectileSpawnEventPacket
+{
+    PacketHeader header;
+    uint32_t projectileId = 0;
+    uint32_t ownerPlayerId = 0;
+    uint32_t fireSerial = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t reserved[3] = {};
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
+    float velX = 0.0f;
+    float velY = 0.0f;
+    float velZ = 0.0f;
+    float rotX = 0.0f;
+    float rotY = 0.0f;
+    float rotZ = 0.0f;
+    float rotW = 1.0f;
+    float angVelX = 0.0f;
+    float angVelY = 0.0f;
+    float angVelZ = 0.0f;
+    uint32_t spawnTick = 0;
+    float lifetime = 0.0f;
+    float radius = 0.0f;
+};
+
+struct ProjectileStateEventPacket
+{
+    PacketHeader header;
+    uint32_t projectileId = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t reserved[3] = {};
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
+    float velX = 0.0f;
+    float velY = 0.0f;
+    float velZ = 0.0f;
+    float rotX = 0.0f;
+    float rotY = 0.0f;
+    float rotZ = 0.0f;
+    float rotW = 1.0f;
+    float angVelX = 0.0f;
+    float angVelY = 0.0f;
+    float angVelZ = 0.0f;
+    float age = 0.0f;
+};
+
+struct ProjectileExplodeEventPacket
+{
+    PacketHeader header;
+    uint32_t projectileId = 0;
+    uint32_t ownerPlayerId = 0;
+    uint32_t fireSerial = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t victimCount = 0;
+    uint8_t reserved[2] = {};
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
+    float radius = 0.0f;
+    ProjectileDamageResultPacket victims[MAX_PROJECTILE_DAMAGE_RESULTS];
+};
+
+struct ProjectileDespawnEventPacket
+{
+    PacketHeader header;
+    uint32_t projectileId = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t reason = 0;
+    uint8_t reserved[2] = {};
+};
+
+struct MeleeHitRequestPacket
+{
+    PacketHeader header;
+    uint32_t attackSerial = 0;
+    uint32_t lastServerTick = 0;
+    uint32_t targetPlayerId = 0;
+    int32_t damage = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t attackType = 0;
+    uint8_t reserved[2] = {};
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+    float weaponSpeed = 0.0f;
+};
+
+struct MeleeHitEventPacket
+{
+    PacketHeader header;
+    uint32_t attackSerial = 0;
+    uint32_t attackerPlayerId = 0;
+    uint32_t targetPlayerId = 0;
+    int32_t damage = 0;
+    int32_t targetHealth = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t attackType = 0;
+    uint8_t killed = 0;
+    uint8_t damageConfirmed = 0;
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+};
+
 struct ChatPacket
 {
     PacketHeader header;
@@ -506,6 +670,13 @@ struct DisagreementPacket
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 132, "ShotEventPacket is too large");
+static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");
+static_assert(sizeof(ProjectileSpawnEventPacket) <= 128, "ProjectileSpawnEventPacket is too large");
+static_assert(sizeof(ProjectileStateEventPacket) <= 104, "ProjectileStateEventPacket is too large");
+static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
+              "ProjectileExplodeEventPacket exceeds safe datagram limit");
+static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
+static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

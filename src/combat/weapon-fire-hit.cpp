@@ -258,6 +258,10 @@ void fireMultiPellet(
     glm::vec3 lastHitNormal(0.0f);
     bool anyHitEntity = false;
     bool anyHitWorld = false;
+    int remotePlayersHit = 0;
+    float totalRemoteDamage = 0.0f;
+    int worldPellets = 0;
+    int missedPellets = 0;
     uint32_t lastTargetId = 0;
     glm::vec3 accumulatedKnockback(0.0f);
     float nearestPelletDist = MAX_SHOT_DISTANCE;
@@ -270,6 +274,7 @@ void fireMultiPellet(
     {
         auto ts = ShotProfiler::Scope(&shotProf.pelletLoopMs);
         for (int p = 0; p < shotProf.totalPellets; ++p) {
+            ++totalPellets;
             const glm::vec3& pelletDir = pelletDirs[p];
 
             {
@@ -307,13 +312,18 @@ void fireMultiPellet(
                 } else if (pelletRemoteVictim) {
                     shotProf.npcHits++;
                     auto td = ShotProfiler::Scope(&shotProf.damageMs);
+                    const float damageBefore = accumulatedDamage;
                     processMultiPelletRemoteHit(outResult, def, pelletPart, pelletHitNml, pelletEnd, pelletDir, pelletNearest, shooter, pelletRemoteTargetId, accumulatedDamage, anyHitEntity, lastTargetId, accumulatedKnockback, nearestPelletDist, lastPelletEnd, lastHitNormal, pelletRemoteVictim->username);
+                    totalRemoteDamage += accumulatedDamage - damageBefore;
+                    ++remotePlayersHit;
                 } else if (hitW) {
                     shotProf.worldHits++;
+                    ++worldPellets;
                     auto td = ShotProfiler::Scope(&shotProf.damageMs);
                     processMultiPelletWorldHit(def, pelletEnd, worldNml, pelletDir, pelletNearest, shooter, anyHitWorld, nearestPelletDist, lastPelletEnd, lastHitNormal);
                 } else {
                     shotProf.misses++;
+                    ++missedPellets;
                     if (pelletNearest < nearestPelletDist) {
                         nearestPelletDist = pelletNearest;
                         lastPelletEnd = pelletEnd;
@@ -330,6 +340,13 @@ void fireMultiPellet(
     EffectPartSystem::instance().drainPendingWorldHits(6);
 
     finalizeMultiPelletResult(outResult, muzzlePos, lastPelletEnd, lastHitNormal, accumulatedDamage, anyHitEntity, anyHitWorld, lastTargetId, accumulatedKnockback, totalPellets, def, shooter);
+    printf("[SHOTGUN LOCAL RESULT] shotSerial=pending pelletCount=%d remotePlayersHit=%d "
+           "totalRemoteDamage=%.0f primaryTargetId=%u returnedTargetId=%u "
+           "returnedDamage=%.0f worldPellets=%d missedPellets=%d\n",
+           totalPellets, remotePlayersHit, totalRemoteDamage,
+           outResult.targetIsRemotePlayer ? outResult.targetId : 0,
+           outResult.targetId, outResult.damage,
+           worldPellets, missedPellets);
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s\n",
         outResult.end.x, outResult.end.y, outResult.end.z,

@@ -171,6 +171,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     if (p.dead)
     {
         p.vel = glm::vec3(0.0f);
+        p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
         p.respawnSeconds -= SERVER_DT;
         if (p.respawnSeconds <= 0.0f)
         {
@@ -200,6 +201,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         }
         return;
     }
+
+    p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
 
     if (p.clientStateUpdated)
     {
