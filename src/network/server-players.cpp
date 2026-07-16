@@ -172,6 +172,14 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     {
         p.vel = glm::vec3(0.0f);
         p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
+        // Instant respawn request from client Space press
+        if (p.instantRespawnRequested)
+        {
+            p.instantRespawnRequested = false;
+            p.respawnSeconds = 0.0f;
+            printf("%s [SERVER RESPAWN INSTANT] playerId=%u trigger=instantRespawnRequested\n",
+                   serverTimestamp(), p.id);
+        }
         p.respawnSeconds -= SERVER_DT;
         if (p.respawnSeconds <= 0.0f)
         {
@@ -195,9 +203,9 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 p.pos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
             }
             ++p.transformEpoch;
-            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu\n",
+            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu health=%d dead=%d\n",
                    serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
-                   world.spawnPoints.size());
+                   world.spawnPoints.size(), p.health, (int)p.dead);
         }
         return;
     }
@@ -242,7 +250,10 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             p.vel.x += dashDir.x * DASH_IMPULSE;
             p.vel.y += dashDir.y * DASH_IMPULSE;
             p.dashAvailable = false;
-            ++p.lastDashSerial;
+            // Do NOT increment lastDashSerial here — that field is reserved for
+            // client-originated serial comparison. Presentation serials
+            // (lastPresentationDashSerial etc.) pass through unchanged
+            // and are emitted in the snapshot for remote VFX/anim trigger.
         }
     }
     p.pos += p.vel * SERVER_DT;
@@ -306,7 +317,6 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.onGround = player.onGround ? 1 : 0;
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;
-    out.lastDashSerial = player.lastDashSerial;
     out.transformEpoch = player.transformEpoch;
     out.aimX = player.input.camForward.x;
     out.aimY = player.input.camForward.y;
@@ -362,10 +372,14 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
             lastWalkBuildLogMs = nowWalkBuild;
         }
     }
-    out.dashSerial = player.lastDashSerial;
-    out.jumpSerial = player.lastJumpSerial;
-    out.downDashSerial = player.lastDownDashSerial;
+    // Emit presentation serials (replicated from client, pass through unchanged).
+    // These are the canonical event-ordered serials for remote VFX/anim trigger.
+    out.dashSerial = player.lastPresentationDashSerial;
+    out.groundJumpSerial = player.lastPresentationGroundJumpSerial;
+    out.airJumpSerial = player.lastPresentationAirJumpSerial;
+    out.downDashSerial = player.lastPresentationDownDashSerial;
     out.equipSerial = player.lastEquipSerial;
+    out.freezeSerial = player.lastPresentationFreezeSerial;
     copyName(out.displayName, player.name);
     return out;
 }

@@ -1,4 +1,5 @@
 #include "network/multiplayer-context.h"
+#include "network/server.h"
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
@@ -87,6 +88,9 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.proceduralFrozen = false;
         player.respawnTimer = 0.0f;
         player.killedBy.clear();
+        ctx.nextLocalRespawnSerial = 0;
+        printf("%s [CLIENT RESPAWN CONFIRMED] player=%u respawnSerial=0 (server acknowledged)\n",
+               serverTimestamp(), ctx.localPlayerId);
     }
 
     if (!player.dead)

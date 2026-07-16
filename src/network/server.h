@@ -94,9 +94,17 @@ struct ServerPlayer
     uint16_t lastJumpSerial = 0;
     uint16_t lastDownDashSerial = 0;
     uint16_t lastEquipSerial = 0;
+    uint16_t lastRespawnSerial = 0;
+    bool instantRespawnRequested = false;
     uint16_t inputStateFlags = 0;
     float dashCooldownTimer = 0.0f;
     float sizeScale = 1.0f;
+    // Presentation serials (replicated from client, pass through unchanged)
+    uint16_t lastPresentationDashSerial = 0;
+    uint16_t lastPresentationGroundJumpSerial = 0;
+    uint16_t lastPresentationAirJumpSerial = 0;
+    uint16_t lastPresentationDownDashSerial = 0;
+    uint16_t lastPresentationFreezeSerial = 0;
     ServerInput input;
     std::deque<PositionHistoryEntry> posHistory;
     // ── Migration: auth + reconnect ───────────────────────────────────

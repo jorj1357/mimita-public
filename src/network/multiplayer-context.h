@@ -60,12 +60,13 @@ struct SnapshotTransform
     uint32_t serverTick = 0;
     uint64_t receivedMs = 0;
     uint16_t stateFlags = 0;
-    uint16_t lastDashSerial = 0;
     float sizeScale = 1.0f;
     uint16_t dashSerial = 0;
-    uint16_t jumpSerial = 0;
+    uint16_t groundJumpSerial = 0;
+    uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
     uint16_t equipSerial = 0;
+    uint16_t freezeSerial = 0;
 };
 
 struct QueuedPacket
@@ -221,10 +222,16 @@ struct MultiplayerContext
     bool clientMapReadySent = false;
 
     // ── Local event serials for remote replication ────────────────────
+    // Persistent monotonic counters. Never reset to 0.
+    // Incremented when the corresponding gameplay event flag is set.
     uint16_t nextLocalDashSerial = 0;
-    uint16_t nextLocalJumpSerial = 0;
+    uint16_t nextLocalGroundJumpSerial = 0;
+    uint16_t nextLocalAirJumpSerial = 0;
     uint16_t nextLocalDownDashSerial = 0;
+    uint16_t nextLocalFreezeSerial = 0;
+    uint16_t nextLocalLandSerial = 0;
     uint16_t nextLocalEquipSerial = 0;
+    uint16_t nextLocalRespawnSerial = 0;
     std::string clientMapReadySentForMap;
     uint32_t clientMapReadySentForPlayerId = 0;
 

@@ -624,14 +624,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.clientPingMs = ctx.localPingMs;
         in.stateFlags = stateFlags;
         in.dashSerial = ctx.nextLocalDashSerial;
-        in.jumpSerial = ctx.nextLocalJumpSerial;
+        in.groundJumpSerial = ctx.nextLocalGroundJumpSerial;
+        in.airJumpSerial = ctx.nextLocalAirJumpSerial;
         in.downDashSerial = ctx.nextLocalDownDashSerial;
         in.equipSerial = ctx.nextLocalEquipSerial;
-        // Reset consumed serials
-        ctx.nextLocalDashSerial = 0;
-        ctx.nextLocalJumpSerial = 0;
-        ctx.nextLocalDownDashSerial = 0;
-        ctx.nextLocalEquipSerial = 0;
+        in.freezeSerial = ctx.nextLocalFreezeSerial;
+        in.respawnSerial = ctx.nextLocalRespawnSerial;
+        // Do NOT reset event serials to zero. Serials are persistent monotonic
+        // counters. Each event type has one upward-only counter.
+        // Respawn serial persists until server confirms (reset in mpReconcileLocalPlayer).
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));

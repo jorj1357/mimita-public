@@ -1,5 +1,9 @@
 Favor deleting code over adding code when both solutions achieve the same result.
 
+# EXE Safety
+
+Never launch `mimita.exe` without `--server` or `--timeout <secs>`. Without these flags the game opens a full graphics window and stays open indefinitely (it won't automatically exit). If you need to test server behavior, always use `--server --timeout 30 --no-coordinator` or similar so the process self-terminates.
+
 # Mandatory Overseer Check
 
 Before marking ANY task as complete, ALWAYS run `python overseer.py` from the workspace root.

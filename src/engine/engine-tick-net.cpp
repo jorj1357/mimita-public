@@ -65,25 +65,37 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.weaponState = weapons.networkVisualState(player);
         mpInput.sizeScale = player.sizeScale;
 
-        // Detect event transitions and increment serials
+        // Detect canonical gameplay events and increment serials.
+        // These flags are set by physicsMainUpdate() -> physicsMainUpdate_Internal()
+        // in simulateTick (called from engineTickReplay, which runs before this tick).
+        // They remain true until player.updateAudio() consumes them in engineTickCombat.
+        // Using actual gameplay flags ensures we only replicate *accepted* events,
+        // not rejected input attempts (e.g. dash on cooldown).
         {
-            static bool prevDash = false;
-            static bool prevJump = false;
-            static bool prevDownDash = false;
             static int prevEquipSlot = 0;
-            if (mpInput.dashPressed && !prevDash)
+            static bool prevJumpDead = false;
+            if (player.dash.didDash)
                 mpContext.nextLocalDashSerial++;
-            if (mpInput.jumpHeld && !prevJump)
-                mpContext.nextLocalJumpSerial++;
-            // Down-dash detected by rapid descent
-            if (!player.ground.onGround && player.vel.z < -8.0f && !prevDownDash)
+            if (player.jump.didGroundJump)
+                mpContext.nextLocalGroundJumpSerial++;
+            if (player.jump.didAirJump)
+                mpContext.nextLocalAirJumpSerial++;
+            if (player.dash.didDownDash)
                 mpContext.nextLocalDownDashSerial++;
+            if (player.freeze.didFreeze)
+                mpContext.nextLocalFreezeSerial++;
+            if (player.ground.didLand)
+                mpContext.nextLocalLandSerial++;
             if (mpInput.equippedSlot != prevEquipSlot)
                 mpContext.nextLocalEquipSerial++;
-            prevDash = mpInput.dashPressed;
-            prevJump = mpInput.jumpHeld;
-            prevDownDash = !player.ground.onGround && player.vel.z < -8.0f;
+            // Space press while dead → request instant server respawn
+            // Serial persists until server confirms (reset in mpReconcileLocalPlayer).
+            if (mpInput.jumpHeld && !prevJumpDead && player.dead)
+                mpContext.nextLocalRespawnSerial =
+                    mpContext.nextLocalRespawnSerial == 0 ? 1
+                    : mpContext.nextLocalRespawnSerial + 1;
             prevEquipSlot = mpInput.equippedSlot;
+            prevJumpDead = mpInput.jumpHeld;
         }
 
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput);

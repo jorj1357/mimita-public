@@ -221,6 +221,20 @@ void handleInputPacket(const char* buffer, int bytes,
         }
     }
 
+    // Process respawn serial even when dead — Space press requests instant respawn
+    if (in->respawnSerial != 0 && in->respawnSerial != p.lastRespawnSerial)
+    {
+        p.lastRespawnSerial = in->respawnSerial;
+        printf("%s [SERVER RESPAWN REQUEST] playerId=%u dead=%d respawnSerial=%u\n",
+               serverTimestamp(), p.id, (int)p.dead, (unsigned)in->respawnSerial);
+        if (p.dead)
+        {
+            p.instantRespawnRequested = true;
+            printf("%s [SERVER RESPAWN ACCEPT] playerId=%u reason=instant-respawn-serial\n",
+                   serverTimestamp(), p.id);
+        }
+    }
+
     if (p.dead)
     {
         p.input.attackPressed = false;
@@ -289,20 +303,29 @@ void handleInputPacket(const char* buffer, int bytes,
     }
 
     // Update event serials from input
+    // Dash serial: first new serial also triggers server-side dash impulse
     if (in->dashSerial != 0 && in->dashSerial != p.lastDashSerial)
     {
         p.lastDashSerial = in->dashSerial;
         p.input.dashPressed = true;
     }
-    if (in->jumpSerial != 0 && in->jumpSerial != p.lastJumpSerial)
-        p.lastJumpSerial = in->jumpSerial;
+    if (in->groundJumpSerial != 0 && in->groundJumpSerial != p.lastPresentationGroundJumpSerial)
+        p.lastPresentationGroundJumpSerial = in->groundJumpSerial;
+    if (in->airJumpSerial != 0 && in->airJumpSerial != p.lastPresentationAirJumpSerial)
+        p.lastPresentationAirJumpSerial = in->airJumpSerial;
     if (in->downDashSerial != 0 && in->downDashSerial != p.lastDownDashSerial)
         p.lastDownDashSerial = in->downDashSerial;
+    if (in->freezeSerial != 0 && in->freezeSerial != p.lastPresentationFreezeSerial)
+        p.lastPresentationFreezeSerial = in->freezeSerial;
     if (in->equipSerial != 0 && in->equipSerial != p.lastEquipSerial)
     {
         p.lastEquipSerial = in->equipSerial;
         p.equippedSlot = in->equippedSlot;
     }
+
+    // Also update presentation dash serial from input (separate from simulation serial)
+    if (in->dashSerial != 0 && in->dashSerial != p.lastPresentationDashSerial)
+        p.lastPresentationDashSerial = in->dashSerial;
 
     const bool attackPressed = in->attackPressed != 0;
     if (attackPressed && !p.input.attackPressed)

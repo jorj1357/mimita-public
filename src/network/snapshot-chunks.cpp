@@ -37,7 +37,6 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.entityType = ENTITY_PLAYER;
     e.active = 1;
     e.stateFlags = (uint16_t)(NET_STATE_WALKING | NET_STATE_ON_GROUND);
-    e.lastDashSerial = (uint16_t)(id * 3);
     e.transformEpoch = static_cast<uint16_t>(id % 1024);
     e.ownerClientId = 1000 + id;
     e.px = 1.0f + id * 0.25f;
@@ -57,9 +56,11 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.pingMs = (int32_t)(30 + id * 7);
     e.sizeScale = 0.8f + (float)(id % 5) * 0.15f;
     e.dashSerial = (uint16_t)(id * 2);
-    e.jumpSerial = (uint16_t)(id * 4);
+    e.groundJumpSerial = (uint16_t)(id * 4);
+    e.airJumpSerial = (uint16_t)(id * 3);
     e.downDashSerial = (uint16_t)(id * 5);
     e.equipSerial = (uint16_t)(id * 6);
+    e.freezeSerial = (uint16_t)(id * 7);
     return e;
 }
 
@@ -94,7 +95,6 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.entityType = entity.entityType;
     out.active = entity.active;
     out.stateFlags = entity.stateFlags;
-    out.lastDashSerial = entity.lastDashSerial;
     out.transformEpoch = entity.transformEpoch;
     out.ownerClientId = entity.ownerClientId;
     out.px = entity.px;
@@ -114,9 +114,11 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.pingMs = entity.pingMs;
     out.sizeScale = entity.sizeScale;
     out.dashSerial = entity.dashSerial;
-    out.jumpSerial = entity.jumpSerial;
+    out.groundJumpSerial = entity.groundJumpSerial;
+    out.airJumpSerial = entity.airJumpSerial;
     out.downDashSerial = entity.downDashSerial;
     out.equipSerial = entity.equipSerial;
+    out.freezeSerial = entity.freezeSerial;
     return out;
 }
 
@@ -127,7 +129,6 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.entityType = entity.entityType;
     out.active = entity.active;
     out.stateFlags = entity.stateFlags;
-    out.lastDashSerial = entity.lastDashSerial;
     out.transformEpoch = entity.transformEpoch;
     out.ownerClientId = entity.ownerClientId;
     out.px = entity.px;
@@ -147,9 +148,11 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.pingMs = entity.pingMs;
     out.sizeScale = entity.sizeScale;
     out.dashSerial = entity.dashSerial;
-    out.jumpSerial = entity.jumpSerial;
+    out.groundJumpSerial = entity.groundJumpSerial;
+    out.airJumpSerial = entity.airJumpSerial;
     out.downDashSerial = entity.downDashSerial;
     out.equipSerial = entity.equipSerial;
+    out.freezeSerial = entity.freezeSerial;
     return out;
 }
 
