@@ -127,7 +127,29 @@ struct ServerPlayer
     glm::vec3 authoritativeTransformPosition{0.0f};
     uint16_t authoritativeTransformEpoch = 0;
     uint64_t authoritativeTransformAssignedMs = 0;
+
+    // ── Last accepted client transform (for trajectory validation) ────
+    // The last client-reported position/velocity that the server accepted.
+    // Used to compute elapsed-time movement envelopes instead of comparing
+    // against the server-simulated p.pos, which may diverge after packet
+    // loss or rejection.
+    glm::vec3 lastAcceptedClientPosition{0.0f};
+    glm::vec3 lastAcceptedClientVelocity{0.0f};
+    uint64_t lastAcceptedClientTransformMs = 0;
+    bool hasAcceptedClientTransform = false;
 };
+
+// ── Movement validation constants ────────────────────────────────────
+// Derived from PHYS config and gameplay values in physics/config.h:
+//   DASH_IMPULSE = 100, jump strength = 19, gravity = -58,
+//   MAX_FALL_SPEED = 400, DOWN_DASH_SPEED = -100.
+// Knockback can add ~120 horizontal, ~80 vertical.
+constexpr float MAX_HORIZONTAL_SPEED = 150.0f;   // dash 100 + knockback ~50
+constexpr float MAX_UPWARD_SPEED    = 80.0f;     // knockback + jump
+constexpr float MAX_DOWNWARD_SPEED  = 400.0f;    // matches MAX_FALL_SPEED
+constexpr float HORIZONTAL_NET_TOL  = 4.0f;      // ~2 units per tick + buffer
+constexpr float VERTICAL_NET_TOL    = 8.0f;      // ~6.7 units per tick + buffer
+constexpr float FALL_PREDICTION_TOL = 15.0f;     // generous for packet delay/predict mismatch
 
 enum class ServerNpcState {
     Chase,

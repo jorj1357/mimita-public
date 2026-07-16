@@ -118,12 +118,25 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
         }
     }
 
-    if (p.pos.z < world.boundsMin.z + PLAYER_HEIGHT * 0.5f)
+    // Debug log when a real triangle collision resolves below the map bounds
+    if (p.pos.z < world.boundsMin.z)
     {
-        p.pos.z = world.boundsMin.z + PLAYER_HEIGHT * 0.5f;
-        if (p.vel.z < 0.0f) p.vel.z = 0.0f;
-        p.onGround = true;
+        static uint64_t lastBelowBoundsCollisionLogMs = 0;
+        uint64_t nowBc = nowMs();
+        if (nowBc - lastBelowBoundsCollisionLogMs >= 1000)
+        {
+            printf("%s [SERVER BELOW-MAP COLLISION] playerId=%u "
+                   "posZBefore=%.2f posZAfter=%.2f onGround=%d\n",
+                   serverTimestamp(), p.id,
+                   p.pos.z, p.pos.z, (int)p.onGround);
+            lastBelowBoundsCollisionLogMs = nowBc;
+        }
     }
+
+    // Note: the world.boundsMin.z global floor clamp has been intentionally
+    // removed.  world.boundsMin is map metadata, not collision geometry.
+    // Players below bounds must continue falling naturally until the
+    // void-death threshold.  Actual collision triangles handle platforms.
 }
 
 void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
@@ -217,6 +230,21 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         p.clientStateUpdated = false;
         resolveWorldCollision(p, world);
         return;
+    }
+
+    // Log server-simulated fall when below bounds and no client state accepted
+    if (p.pos.z < -50.0f)
+    {
+        static uint64_t lastFallSimLogMs = 0;
+        uint64_t nowFs = nowMs();
+        if (nowFs - lastFallSimLogMs >= 500)
+        {
+            printf("%s [SERVER FALL SIM] playerId=%u "
+                   "beforeZ=%.2f beforeVelZ=%.2f onGround=%d\n",
+                   serverTimestamp(), p.id,
+                   p.pos.z, p.vel.z, (int)p.onGround);
+            lastFallSimLogMs = nowFs;
+        }
     }
 
     glm::vec2 wish = p.input.wish;

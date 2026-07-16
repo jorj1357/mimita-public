@@ -401,39 +401,155 @@ void handleInputPacket(const char* buffer, int bytes,
         }
     }
 
-    // ── Normal movement validation ─────────────────────────────────────
-    // Reasoned limits: dash (~60 m/s), down-dash (~80 m/s), explosion
-    // knockback (~120 m/s), falling at void depth (~150 m/s).  Use 200 for
-    // a comfortable safety margin.  Position delta allows ~1.5x max speed
-    // per server tick with a small network tolerance.
-    constexpr float MAX_CLIENT_REPORTED_SPEED = 200.0f;
-    constexpr float MAX_CLIENT_STATE_DELTA = 25.0f;
+    // ── Component-aware movement validation ────────────────────────────
+    // Validate horizontal, upward, and downward velocity separately so
+    // that a fast fall cannot be blocked by a combined total-speed limit.
+    const glm::vec2 reportedHorizontalVelocity{
+        reportedVelocity.x, reportedVelocity.y};
+    const float horizontalSpeed = glm::length(reportedHorizontalVelocity);
+    const float upwardSpeed = std::max(0.0f, reportedVelocity.z);
+    const float downwardSpeed = std::max(0.0f, -reportedVelocity.z);
 
-    if (allowClientTransform && finiteState &&
-        stateDelta <= MAX_CLIENT_STATE_DELTA &&
-        reportedSpeed <= MAX_CLIENT_REPORTED_SPEED)
+    bool speedValid = false;
+    const char* speedFailReason = nullptr;
+
+    if (horizontalSpeed <= MAX_HORIZONTAL_SPEED &&
+        upwardSpeed <= MAX_UPWARD_SPEED &&
+        downwardSpeed <= MAX_DOWNWARD_SPEED)
+    {
+        speedValid = true;
+    }
+    else if (horizontalSpeed > MAX_HORIZONTAL_SPEED)
+        speedFailReason = "horizontal-speed";
+    else if (upwardSpeed > MAX_UPWARD_SPEED)
+        speedFailReason = "upward-speed";
+    else
+        speedFailReason = "downward-speed";
+
+    // ── Elapsed-time trajectory validation ─────────────────────────────
+    // Compare the reported position against the last *accepted* client
+    // transform, not against the server-simulated p.pos.  This prevents
+    // a single rejected packet from freezing movement permanently.
+    const uint64_t currentMs = nowMs();
+    const float elapsedSeconds =
+        p.hasAcceptedClientTransform
+            ? std::clamp(
+                float(currentMs - p.lastAcceptedClientTransformMs) / 1000.0f,
+                1.0f / 240.0f,
+                0.5f)
+            : SERVER_DT;
+
+    const glm::vec3 acceptedDelta =
+        reportedPosition - p.lastAcceptedClientPosition;
+
+    const float horizontalDelta =
+        glm::length(glm::vec2(acceptedDelta.x, acceptedDelta.y));
+    const float verticalDelta = std::abs(acceptedDelta.z);
+
+    const float allowedHorizontalDelta =
+        MAX_HORIZONTAL_SPEED * elapsedSeconds + HORIZONTAL_NET_TOL;
+    const float allowedVerticalDelta =
+        MAX_DOWNWARD_SPEED * elapsedSeconds + VERTICAL_NET_TOL;
+
+    const bool trajectoryValid =
+        horizontalDelta <= allowedHorizontalDelta &&
+        verticalDelta <= allowedVerticalDelta;
+
+    // ── Continuous-fall recovery path ──────────────────────────────────
+    // If the raw position delta exceeds the envelope, but the client is
+    // clearly falling (descending, downward velocity, horizontal within
+    // bounds), re-acquire via gravity prediction.
+    bool accept = false;
+    const char* acceptReason = nullptr;
+
+    if (allowClientTransform && finiteState && speedValid)
+    {
+        if (trajectoryValid)
+        {
+            accept = true;
+            acceptReason = "normal";
+        }
+        else if (downwardSpeed > 0.0f &&
+                 reportedPosition.z <= p.lastAcceptedClientPosition.z + 2.0f &&
+                 horizontalDelta <= allowedHorizontalDelta &&
+                 !p.dead &&
+                 !p.awaitingAuthoritativeTransformAck)
+        {
+            // Predict Z from last accepted state using server gravity
+            const float predictedZ =
+                p.lastAcceptedClientPosition.z +
+                p.lastAcceptedClientVelocity.z * elapsedSeconds +
+                0.5f * (-58.0f) * elapsedSeconds * elapsedSeconds;
+
+            if (std::abs(reportedPosition.z - predictedZ) <= FALL_PREDICTION_TOL)
+            {
+                accept = true;
+                acceptReason = "continuous-fall";
+            }
+        }
+    }
+
+    if (accept)
     {
         p.pos = reportedPosition;
         p.vel = reportedVelocity;
         p.clientStateUpdated = true;
+
+        p.lastAcceptedClientPosition = reportedPosition;
+        p.lastAcceptedClientVelocity = reportedVelocity;
+        p.lastAcceptedClientTransformMs = currentMs;
+        p.hasAcceptedClientTransform = true;
+
+        // Log continuous-fall acceptances below map bounds
+        if (strcmp(acceptReason, "continuous-fall") == 0 &&
+            reportedPosition.z < 0.0f)
+        {
+            static uint64_t lastFallAcceptLogMs = 0;
+            if (currentMs - lastFallAcceptLogMs >= 250)
+            {
+                printf("%s [SERVER FALL ACCEPT] playerId=%u "
+                       "posZ=%.2f velZ=%.2f horizontalSpeed=%.2f "
+                       "downwardSpeed=%.2f elapsedMs=%llu "
+                       "horizontalDelta=%.2f verticalDelta=%.2f "
+                       "allowedHorizontal=%.2f allowedVertical=%.2f\n",
+                       serverTimestamp(), p.id,
+                       reportedPosition.z, reportedVelocity.z,
+                       horizontalSpeed, downwardSpeed,
+                       (unsigned long long)(currentMs - p.lastAcceptedClientTransformMs),
+                       horizontalDelta, verticalDelta,
+                       allowedHorizontalDelta, allowedVerticalDelta);
+                lastFallAcceptLogMs = currentMs;
+            }
+        }
     }
     else if (allowClientTransform)
     {
         static uint64_t lastRejectedStateLogMs = 0;
-        const uint64_t rejectNowMs = nowMs();
-        if (rejectNowMs - lastRejectedStateLogMs >= 500)
+        if (currentMs - lastRejectedStateLogMs >= 500)
         {
             printf("%s [SERVER MOVEMENT REJECT] playerId=%u "
-                   "reason=%s serverPos=(%.2f,%.2f,%.2f) "
-                   "clientPos=(%.2f,%.2f,%.2f) delta=%.2f speed=%.2f "
-                   "serverMap=%s finite=%d\n",
+                   "reason=%s "
+                   "horizontalSpeed=%.2f upwardSpeed=%.2f downwardSpeed=%.2f "
+                   "horizontalDelta=%.2f verticalDelta=%.2f "
+                   "allowedHorizontal=%.2f allowedVertical=%.2f "
+                   "elapsedMs=%llu "
+                   "lastAcceptedPos=(%.2f,%.2f,%.2f) "
+                   "serverPos=(%.2f,%.2f,%.2f) "
+                   "clientPos=(%.2f,%.2f,%.2f)\n",
                    serverTimestamp(), p.id,
-                   stateDelta > MAX_CLIENT_STATE_DELTA ? "position_delta" : "speed",
+                   speedValid
+                       ? (trajectoryValid ? "unknown" : "trajectory")
+                       : speedFailReason,
+                   horizontalSpeed, upwardSpeed, downwardSpeed,
+                   horizontalDelta, verticalDelta,
+                   allowedHorizontalDelta, allowedVerticalDelta,
+                   (unsigned long long)(currentMs - p.lastAcceptedClientTransformMs),
+                   p.lastAcceptedClientPosition.x,
+                   p.lastAcceptedClientPosition.y,
+                   p.lastAcceptedClientPosition.z,
                    p.pos.x, p.pos.y, p.pos.z,
-                   reportedPosition.x, reportedPosition.y, reportedPosition.z,
-                   stateDelta, reportedSpeed,
-                   gServerMapId.c_str(), (int)finiteState);
-            lastRejectedStateLogMs = rejectNowMs;
+                   reportedPosition.x, reportedPosition.y, reportedPosition.z);
+            lastRejectedStateLogMs = currentMs;
         }
     }
     else
@@ -777,6 +893,12 @@ void beginAuthoritativeTransform(ServerPlayer& player,
     player.authoritativeTransformEpoch = player.transformEpoch;
     player.authoritativeTransformAssignedMs = nowMs();
     player.clientStateUpdated = false;
+
+    // Reset accepted-client-state tracking for the new transform
+    player.lastAcceptedClientPosition = position;
+    player.lastAcceptedClientVelocity = velocity;
+    player.lastAcceptedClientTransformMs = nowMs();
+    player.hasAcceptedClientTransform = true;
 
     printf("%s [SERVER AUTHORITATIVE TRANSFORM] playerId=%u reason=%s "
            "epoch=%u position=(%.2f,%.2f,%.2f) awaitingAck=1\n",

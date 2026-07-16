@@ -12,6 +12,7 @@
 #include "config/size-scaling-config.h"
 #include "gui/hud/healthbar-config.h"
 #include "effects/hit-effects.h"
+#include "network/disagreement-visuals.h"
 #include "config/camera-config.h"
 #include "config/weapon-hitfx-config.h"
 #include "hot-reload/hot-reload-system.h"
@@ -35,6 +36,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     pollWorldCrosshairConfig();
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
+    MimitaNet::pollDisagreementReload();
     CamConfig::instance().pollReload();
     SizeScalingConfig::instance().pollReload();
     AvatarSystem::instance().pollHotReload();
