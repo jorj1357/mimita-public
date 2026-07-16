@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 11;
+constexpr uint16_t PROTOCOL_VERSION = 12;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -178,6 +178,7 @@ struct InputPacket
     uint16_t groundJumpSerial = 0;
     uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
+    uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
     uint8_t attackPressed = 0;
@@ -221,6 +222,7 @@ struct SnapshotEntity
     uint16_t groundJumpSerial = 0;
     uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
+    uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
     char displayName[MAX_NAME_BYTES];
@@ -272,12 +274,13 @@ struct CompactEntityData
     uint16_t groundJumpSerial = 0;
     uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
+    uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 82, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 84, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -287,7 +290,7 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[13]; // 13 * 82 + header_size(32) = 1098 < 1200
+    CompactEntityData entities[13]; // 13 * 84 + header_size(32) = 1124 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,

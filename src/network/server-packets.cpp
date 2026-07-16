@@ -313,10 +313,12 @@ void handleInputPacket(const char* buffer, int bytes,
         p.lastPresentationGroundJumpSerial = in->groundJumpSerial;
     if (in->airJumpSerial != 0 && in->airJumpSerial != p.lastPresentationAirJumpSerial)
         p.lastPresentationAirJumpSerial = in->airJumpSerial;
-    if (in->downDashSerial != 0 && in->downDashSerial != p.lastDownDashSerial)
-        p.lastDownDashSerial = in->downDashSerial;
+    if (in->downDashSerial != 0 && in->downDashSerial != p.lastPresentationDownDashSerial)
+        p.lastPresentationDownDashSerial = in->downDashSerial;
     if (in->freezeSerial != 0 && in->freezeSerial != p.lastPresentationFreezeSerial)
         p.lastPresentationFreezeSerial = in->freezeSerial;
+    if (in->directionChangeSerial != 0 && in->directionChangeSerial != p.lastPresentationDirectionChangeSerial)
+        p.lastPresentationDirectionChangeSerial = in->directionChangeSerial;
     if (in->equipSerial != 0 && in->equipSerial != p.lastEquipSerial)
     {
         p.lastEquipSerial = in->equipSerial;
@@ -325,7 +327,11 @@ void handleInputPacket(const char* buffer, int bytes,
 
     // Also update presentation dash serial from input (separate from simulation serial)
     if (in->dashSerial != 0 && in->dashSerial != p.lastPresentationDashSerial)
+    {
         p.lastPresentationDashSerial = in->dashSerial;
+        printf("%s [DASH PRESENTATION SERIAL] playerId=%u dashSerial=%u lastSimSerial=%u\n",
+               serverTimestamp(), p.id, (unsigned)in->dashSerial, (unsigned)p.lastDashSerial);
+    }
 
     const bool attackPressed = in->attackPressed != 0;
     if (attackPressed && !p.input.attackPressed)

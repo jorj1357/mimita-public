@@ -59,6 +59,7 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.groundJumpSerial = (uint16_t)(id * 4);
     e.airJumpSerial = (uint16_t)(id * 3);
     e.downDashSerial = (uint16_t)(id * 5);
+    e.directionChangeSerial = (uint16_t)(id * 8);
     e.equipSerial = (uint16_t)(id * 6);
     e.freezeSerial = (uint16_t)(id * 7);
     return e;
@@ -117,6 +118,7 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.groundJumpSerial = entity.groundJumpSerial;
     out.airJumpSerial = entity.airJumpSerial;
     out.downDashSerial = entity.downDashSerial;
+    out.directionChangeSerial = entity.directionChangeSerial;
     out.equipSerial = entity.equipSerial;
     out.freezeSerial = entity.freezeSerial;
     return out;
@@ -151,6 +153,7 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.groundJumpSerial = entity.groundJumpSerial;
     out.airJumpSerial = entity.airJumpSerial;
     out.downDashSerial = entity.downDashSerial;
+    out.directionChangeSerial = entity.directionChangeSerial;
     out.equipSerial = entity.equipSerial;
     out.freezeSerial = entity.freezeSerial;
     return out;

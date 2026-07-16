@@ -44,8 +44,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     }
     const bool initialSpawn = !ctx.localPlayerReconciled;
     const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
+    // Detect authoritative dead→alive transition using tracked health history.
+    // This works independently of the current local player.dead boolean, which
+    // DeathSystem may have already set before reconcile runs.
     const bool serverRespawnedPlayer =
-        ctx.localServerHealth > 0 && player.dead;
+        ctx.localServerHealth > 0 &&
+        ctx.lastSeenServerHealth <= 0 &&
+        ctx.localPlayerReconciled;
     const bool catastrophicDivergence =
         error > CATASTROPHIC_DIVERGENCE &&
         !ctx.awaitingTeleportAck &&
@@ -81,6 +86,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.currentHp = 0;
     else
         player.currentHp = std::min(player.currentHp, ctx.localServerHealth);
+    ctx.lastSeenServerHealth = ctx.localServerHealth;
     if (serverRespawnedPlayer)
     {
         resetAllWeaponRuntimesForSpawn(player, "multiplayer-reconcile serverRespawn");

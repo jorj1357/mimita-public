@@ -627,6 +627,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.groundJumpSerial = ctx.nextLocalGroundJumpSerial;
         in.airJumpSerial = ctx.nextLocalAirJumpSerial;
         in.downDashSerial = ctx.nextLocalDownDashSerial;
+        in.directionChangeSerial = ctx.nextLocalMovementDirectionSerial;
         in.equipSerial = ctx.nextLocalEquipSerial;
         in.freezeSerial = ctx.nextLocalFreezeSerial;
         in.respawnSerial = ctx.nextLocalRespawnSerial;

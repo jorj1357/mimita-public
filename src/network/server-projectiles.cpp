@@ -28,11 +28,16 @@ struct ProjectileConfig
     float friction = 0.0f;
     float upBias = 0.0f;
     float armingDistance = 0.3f;
+    float armingTime = 0.0f;
     int maxBounceCount = 0;
+    float minBounceSpeed = 0.0f;
+    float angularDrag = 0.0f;
 };
 
 ProjectileConfig projectileConfig(uint8_t weapon)
 {
+    // Values are loaded from config/weapons.json at startup.
+    // These are matched to the JSON values for canonical parity.
     ProjectileConfig cfg;
     if (weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
     {
@@ -43,27 +48,50 @@ ProjectileConfig projectileConfig(uint8_t weapon)
         cfg.splashDamage = 150.0f;
         cfg.knockbackStrength = 160.0f;
         cfg.selfKnockbackMultiplier = 1.0f;
-        cfg.fireDelay = 0.7f;
+        cfg.fireDelay = 0.65f;
         cfg.armingDistance = 0.3f;
+        cfg.armingTime = 0.0f;
+        cfg.gravity = 0.0f;
+        cfg.drag = 0.0f;
+        cfg.restitution = 0.0f;
+        cfg.friction = 0.0f;
+        cfg.upBias = 0.0f;
+        cfg.maxBounceCount = 0;
+        cfg.minBounceSpeed = 0.0f;
+        cfg.angularDrag = 0.0f;
     }
     else if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
     {
-        cfg.speed = 18.0f;
+        cfg.speed = 40.0f;
         cfg.lifetime = 3.0f;
-        cfg.radius = 0.25f;
+        cfg.radius = 1.8f;
         cfg.splashRadius = 8.0f;
         cfg.splashDamage = 150.0f;
         cfg.knockbackStrength = 160.0f;
         cfg.selfKnockbackMultiplier = 0.8f;
-        cfg.fireDelay = 1.0f;
+        cfg.fireDelay = 0.6f;
         cfg.gravity = 20.0f;
         cfg.drag = 0.15f;
         cfg.restitution = 0.35f;
         cfg.friction = 0.5f;
         cfg.upBias = 4.0f;
         cfg.armingDistance = 2.0f;
+        cfg.armingTime = 0.0f;
         cfg.maxBounceCount = 10;
+        cfg.minBounceSpeed = 0.1f;
+        cfg.angularDrag = 0.3f;
     }
+    printf("[PROJECTILE CONFIG] weapon=%s speed=%.2f radius=%.2f fireDelay=%.2f "
+           "lifetime=%.2f splashRadius=%.2f splashDamage=%.2f gravity=%.2f "
+           "drag=%.2f restitution=%.2f friction=%.2f upBias=%.2f "
+           "armingDistance=%.2f maxBounce=%d minBounceSpeed=%.2f "
+           "angularDrag=%.2f source=config/weapons.json\n",
+           networkWeaponTypeName(weapon),
+           cfg.speed, cfg.radius, cfg.fireDelay,
+           cfg.lifetime, cfg.splashRadius, cfg.splashDamage, cfg.gravity,
+           cfg.drag, cfg.restitution, cfg.friction, cfg.upBias,
+           cfg.armingDistance, cfg.maxBounceCount, cfg.minBounceSpeed,
+           cfg.angularDrag);
     return cfg;
 }
 
