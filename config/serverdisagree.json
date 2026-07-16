@@ -42,7 +42,7 @@
         "enabled": true,
         "zOffset": 0.5,
         "lifetimeExtra": 10.3,
-        "scale": 1,
+        "scale": 64,
         "prefix": "server rejected hit T_T: "
     },
 
