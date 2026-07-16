@@ -368,9 +368,16 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     const float directionLength = finiteVec(direction)
         ? glm::length(direction)
         : 0.0f;
-    const bool serialNew = request->fireSerial != 0 &&
-        (shooter.lastProjectileFireSerial == 0 ||
-         (int32_t)(request->fireSerial - shooter.lastProjectileFireSerial) > 0);
+    bool serialNew = request->fireSerial != 0;
+    if (serialNew)
+    {
+        for (uint8_t i = 0; i < shooter.recentProjectileSerialCount; ++i)
+            if (shooter.recentProjectileSerials[i] == request->fireSerial)
+            {
+                serialNew = false;
+                break;
+            }
+    }
     const uint8_t equippedWeapon = networkWeaponTypeForSlot(shooter.equippedSlot);
     const bool weaponEquippedValid = equippedWeapon == request->weapon;
     const bool cooldownValid = shooter.projectileFireCooldown <= 0.0f;
@@ -435,6 +442,13 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.spawnTick = tick;
 
     shooter.lastProjectileFireSerial = request->fireSerial;
+    if (shooter.recentProjectileSerialCount < 4)
+        shooter.recentProjectileSerials[shooter.recentProjectileSerialCount++] = request->fireSerial;
+    else {
+        for (uint8_t i = 0; i < 3; ++i)
+            shooter.recentProjectileSerials[i] = shooter.recentProjectileSerials[i + 1];
+        shooter.recentProjectileSerials[3] = request->fireSerial;
+    }
     shooter.projectileFireCooldown = cfg.fireDelay;
 
     ProjectileSpawnEventPacket spawn{};

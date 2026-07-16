@@ -310,7 +310,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         if (mpContext.active) {
             for (auto& kv : mpContext.remotePlayers) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);
-                weapons.renderRemoteWeapon(kv.first, kv.second, camera);
+                weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 renderNetworkPlayer(kv.second, camera, kv.first, false);

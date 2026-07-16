@@ -256,7 +256,6 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (dash.didDash)
     {
         dashPoseTimer = 0.0f;
-        dash.didDash = false;
     }
 
     float dashWeight = 0.0f;

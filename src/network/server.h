@@ -88,6 +88,8 @@ struct ServerPlayer
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
     uint32_t lastProjectileFireSerial = 0;
+    uint32_t recentProjectileSerials[4] = {};
+    uint8_t recentProjectileSerialCount = 0;
     uint32_t lastMeleeAttackSerial = 0;
     float projectileFireCooldown = 0.0f;
     uint16_t lastDashSerial = 0;

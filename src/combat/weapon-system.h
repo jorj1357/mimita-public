@@ -63,7 +63,7 @@ public:
     // Render the equipped weapon on a remote player's hand.
     // Uses the same viewmodel mesh and attachment logic as the local player,
     // but does not modify the remote player's arm poses.
-    void renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera);
+    void renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt);
 
     const GodballPhysics& godballPhysics() const { return mGodballPhys; }
     GodballPhysics& godballPhysics() { return mGodballPhys; }
@@ -116,7 +116,7 @@ private:
         Player& player,
         NpcSystem& npcs,
         const World& world,
-        bool networkProjectileOnly);
+        const std::unordered_map<uint32_t, Player>* remotePlayers);
 
     WeaponRuntime* getCurrentRuntime(Player& player);
 

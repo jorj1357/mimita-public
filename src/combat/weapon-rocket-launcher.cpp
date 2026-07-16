@@ -73,6 +73,31 @@ static void doExplosion(
 
     EffectPartSystem::instance().spawnMuzzleFlash(position, "rocket_explosion", owner.sizeScale);
     EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f, owner.sizeScale);
+    {
+        const int smokeCount = 12;
+        for (int i = 0; i < smokeCount; ++i) {
+            EffectPart p;
+            p.position = position + glm::vec3(
+                ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
+                ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
+                ((float)rand() / RAND_MAX - 0.5f) * 2.0f);
+            p.velocity = glm::vec3(
+                ((float)rand() / RAND_MAX - 0.5f) * 6.0f,
+                ((float)rand() / RAND_MAX - 0.5f) * 6.0f,
+                (float)rand() / RAND_MAX * 4.0f + 2.0f);
+            p.lifetime = 0.0f;
+            p.maxLifetime = 1.2f + (float)rand() / RAND_MAX * 0.6f;
+            p.scale = 0.5f + (float)rand() / RAND_MAX * 0.5f;
+            p.endScale = 1.5f + (float)rand() / RAND_MAX * 1.0f;
+            p.color = glm::vec3(0.3f, 0.3f, 0.3f);
+            p.alpha = 0.7f;
+            p.gravity = 1.0f;
+            p.affectedByGravity = true;
+            p.billboardText = false;
+            p.replayType = "rocket_launcher_explosion_smoke";
+            EffectPartSystem::instance().spawn(p);
+        }
+    }
 
     {
         float distToCam = glm::length(position - camera.pos);
@@ -434,6 +459,7 @@ void update(
                     p.alpha = smokeAlpha;
                     p.gravity = smokeGravity;
                     p.affectedByGravity = std::fabs(smokeGravity) > 0.001f;
+                    p.billboardText = false;
                     p.replayType = "rocket_trail";
                     EffectPartSystem::instance().spawn(p);
                 }
