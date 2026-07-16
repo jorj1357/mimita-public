@@ -112,7 +112,7 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     event.clientTimeMs = shot->clientTimeMs;
     event.shooterPlayerId = shooter.id;
     event.targetPlayerId = shot->targetPlayerId;
-    event.power = std::clamp(shot->power, 0.0f, 200.0f);
+    event.power = std::clamp(shot->power, 0.0f, 999.0f);
     event.effectFlags = shot->effectFlags & ALLOWED_EFFECT_FLAGS;
     event.weapon = shot->weapon;
     event.impactType = shot->impactType;
@@ -191,11 +191,17 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                targetIt != players.end() ? targetIt->second.health : -1);
     }
 
+    // Shotgun aggregates 15 pellet damages; set adequate per-weapon cap.
+    constexpr int MAX_HITSCAN_DAMAGE = 200;
+    constexpr int MAX_SHOTGUN_DAMAGE = 400;
+    const int damageCap = (shot->weapon == NETWORK_WEAPON_SHOTGUN)
+        ? MAX_SHOTGUN_DAMAGE : MAX_HITSCAN_DAMAGE;
+
     if (shot->impactType == SHOT_IMPACT_ENTITY &&
         targetIt != players.end() &&
         shooterIt != targetIt &&
         !targetIt->second.dead &&
-        shot->damage > 0 && shot->damage <= 200)
+        shot->damage > 0 && shot->damage <= damageCap)
     {
         ServerPlayer& target = targetIt->second;
 
@@ -234,7 +240,7 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             bool hitWorld = serverRaycastWorld(
                 origin, shotDir, shotDistance, world, worldHit, worldNormal);
 
-            bool occluded = hitWorld && glm::length(worldHit - origin) < rewindDistance;
+            bool occluded = hitWorld && glm::length(worldHit - origin) < shotDistance - 0.1f;
 
             if (gNetHitDebug)
             {

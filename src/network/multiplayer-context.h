@@ -61,10 +61,13 @@ struct SnapshotTransform
     uint64_t receivedMs = 0;
     uint16_t stateFlags = 0;
     float sizeScale = 1.0f;
+    uint32_t networkEntityId = 0;
+    uint16_t transformEpoch = 0;
     uint16_t dashSerial = 0;
     uint16_t groundJumpSerial = 0;
     uint16_t airJumpSerial = 0;
     uint16_t downDashSerial = 0;
+    uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
 };
@@ -122,6 +125,8 @@ struct EntityInterpolationState
     bool hasPrevious = false;
     bool hasTarget = false;
     bool renderRegistered = false;
+    uint32_t networkEntityId = 0;
+    uint16_t lastTransformEpoch = 0;
     std::string displayName;
 };
 
@@ -160,6 +165,7 @@ struct MultiplayerContext
     bool awaitingExplodeDeath = false;
     bool teleportResync = false;
     int localServerHealth = 100;
+    int lastSeenServerHealth = 100;
     std::string approvedLocalName;
     std::string serverAddress = "127.0.0.1:1357";
     std::string connectionStatus;
@@ -229,9 +235,12 @@ struct MultiplayerContext
     uint16_t nextLocalAirJumpSerial = 0;
     uint16_t nextLocalDownDashSerial = 0;
     uint16_t nextLocalFreezeSerial = 0;
-    uint16_t nextLocalLandSerial = 0;
+    uint16_t nextLocalMovementDirectionSerial = 0;
     uint16_t nextLocalEquipSerial = 0;
     uint16_t nextLocalRespawnSerial = 0;
+    // Pending projectile knockback impulse (consumed in engineTickNet)
+    glm::vec3 pendingKnockback{0.0f};
+    std::string pendingKnockbackSource;
     std::string clientMapReadySentForMap;
     uint32_t clientMapReadySentForPlayerId = 0;
 

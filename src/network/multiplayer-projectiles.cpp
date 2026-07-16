@@ -233,7 +233,28 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
 {
     auto it = ctx.networkProjectiles.find(event->projectileId);
     if (it == ctx.networkProjectiles.end())
+    {
+        // Lost spawn event — recover from state update
+        NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
+        projectile.projectileId = event->projectileId;
+        projectile.ownerPlayerId = 0; // will be filled by explosion event
+        projectile.weaponType = event->weapon;
+        projectile.position = {event->posX, event->posY, event->posZ};
+        projectile.previousPosition = projectile.position;
+        projectile.velocity = {event->velX, event->velY, event->velZ};
+        projectile.rotation = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+        projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
+        projectile.age = event->age;
+        projectile.lifetime = 0.0f;
+        projectile.radius = 0.0f;
+        projectile.predicted = false;
+        projectile.exploded = false;
+        printf("[PROJECTILE STATE RECOVER] projectileId=%u weapon=%s "
+               "position=(%.2f,%.2f,%.2f) age=%.2f\n",
+               event->projectileId, networkWeaponTypeName(event->weapon),
+               event->posX, event->posY, event->posZ, event->age);
         return;
+    }
     NetworkProjectile& projectile = it->second;
     projectile.position = {event->posX, event->posY, event->posZ};
     projectile.velocity = {event->velX, event->velY, event->velZ};
@@ -255,6 +276,32 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         position, 1.0f, 1.0f, 50.0f);
     EffectPartSystem::instance().spawnMuzzleFlash(position, std::string(weaponName) + "_explosion");
     EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
+    // Explosion smoke burst — config-driven burst for rockets and grenades
+    {
+        const int smokeParticleCount = 12;
+        for (int i = 0; i < smokeParticleCount; ++i)
+        {
+            EffectPart part;
+            part.position = position + glm::vec3(
+                ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
+                ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
+                ((float)rand() / RAND_MAX - 0.5f) * 2.0f);
+            part.velocity = glm::vec3(
+                ((float)rand() / RAND_MAX - 0.5f) * 6.0f,
+                ((float)rand() / RAND_MAX - 0.5f) * 6.0f,
+                (float)rand() / RAND_MAX * 4.0f + 2.0f);
+            part.lifetime = 0.0f;
+            part.maxLifetime = 1.2f + (float)rand() / RAND_MAX * 0.6f;
+            part.scale = 0.5f + (float)rand() / RAND_MAX * 0.5f;
+            part.endScale = 1.5f + (float)rand() / RAND_MAX * 1.0f;
+            part.color = glm::vec3(0.3f, 0.3f, 0.3f);
+            part.alpha = 0.7f;
+            part.gravity = 1.0f;
+            part.affectedByGravity = true;
+            part.replayType = std::string(weaponName) + "_explosion_smoke";
+            EffectPartSystem::instance().spawn(part);
+        }
+    }
 
     HitEvent hit;
     hit.position = position;
@@ -271,6 +318,14 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         if (victim.victimPlayerId == ctx.localPlayerId)
         {
             ctx.localServerHealth = victim.healthAfter;
+            ctx.pendingKnockback += glm::vec3(
+                victim.knockX, victim.knockY, victim.knockZ);
+            ctx.pendingKnockbackSource = weaponName;
+            printf("[NET KNOCKBACK APPLY] projectileId=%u victim=local "
+                   "impulse=(%.2f,%.2f,%.2f) source=%s\n",
+                   event->projectileId,
+                   victim.knockX, victim.knockY, victim.knockZ,
+                   weaponName);
         }
         else
         {

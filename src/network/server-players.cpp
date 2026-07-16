@@ -378,6 +378,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.groundJumpSerial = player.lastPresentationGroundJumpSerial;
     out.airJumpSerial = player.lastPresentationAirJumpSerial;
     out.downDashSerial = player.lastPresentationDownDashSerial;
+    out.directionChangeSerial = player.lastPresentationDirectionChangeSerial;
     out.equipSerial = player.lastEquipSerial;
     out.freezeSerial = player.lastPresentationFreezeSerial;
     copyName(out.displayName, player.name);

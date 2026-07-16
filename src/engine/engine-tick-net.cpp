@@ -74,6 +74,7 @@ void engineTickNet(Engine& engine, float dt)
         {
             static int prevEquipSlot = 0;
             static bool prevJumpDead = false;
+            static glm::vec2 prevWish{0.0f, 0.0f};
             if (player.dash.didDash)
                 mpContext.nextLocalDashSerial++;
             if (player.jump.didGroundJump)
@@ -84,8 +85,18 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.nextLocalDownDashSerial++;
             if (player.freeze.didFreeze)
                 mpContext.nextLocalFreezeSerial++;
-            if (player.ground.didLand)
-                mpContext.nextLocalLandSerial++;
+            // Detect movement direction change: net wish direction change
+            // while moving, or first movement press while idle.
+            const glm::vec2 curWish(mpInput.wishX, mpInput.wishY);
+            const float curWishLen = glm::length(curWish);
+            const float prevWishLen = glm::length(prevWish);
+            if (curWishLen > 0.001f)
+            {
+                // Movement key(s) held. Detect direction change.
+                if (prevWishLen < 0.001f || glm::dot(glm::normalize(curWish), glm::normalize(prevWish)) < 0.85f)
+                    mpContext.nextLocalMovementDirectionSerial++;
+            }
+            prevWish = curWish;
             if (mpInput.equippedSlot != prevEquipSlot)
                 mpContext.nextLocalEquipSerial++;
             // Space press while dead → request instant server respawn
@@ -379,6 +390,21 @@ void engineTickNet(Engine& engine, float dt)
         mpContext.incomingChatMessages.clear();
 
         MimitaNet::mpReconcileLocalPlayer(mpContext, player, dt);
+
+        // Consume pending projectile knockback for local player
+        if (glm::length(mpContext.pendingKnockback) > 0.001f)
+        {
+            player.externalImpulse += mpContext.pendingKnockback;
+            printf("[NET KNOCKBACK APPLY] player=%u impulse=(%.2f,%.2f,%.2f) "
+                   "source=%s pos=(%.2f,%.2f,%.2f)\n",
+                   mpContext.localPlayerId,
+                   mpContext.pendingKnockback.x, mpContext.pendingKnockback.y,
+                   mpContext.pendingKnockback.z,
+                   mpContext.pendingKnockbackSource.c_str(),
+                   player.pos.x, player.pos.y, player.pos.z);
+            mpContext.pendingKnockback = glm::vec3(0.0f);
+            mpContext.pendingKnockbackSource.clear();
+        }
 
         {
             static std::unordered_set<uint32_t> spawnedNpcIds;

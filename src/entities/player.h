@@ -326,6 +326,7 @@ public:
     uint16_t networkLastGroundJumpSerial = 0;
     uint16_t networkLastAirJumpSerial = 0;
     uint16_t networkLastDownDashSerial = 0;
+    uint16_t networkLastDirectionChangeSerial = 0;
     uint16_t networkLastFreezeSerial = 0;
     uint16_t networkLastEquipSerial = 0;
     uint16_t networkStateFlags = 0;
