@@ -130,6 +130,11 @@ struct BeamCollisionResult {
     float localHeight;
     uint32_t remoteTargetId;
     const Player* remoteVictim;
+
+    // Exact surface contact point (on the triangle/entity surface)
+    glm::vec3 hitPosition{0.0f};
+    // Center of the swept sphere at first contact
+    glm::vec3 sweepCenterPosition{0.0f};
 };
 
 BeamCollisionResult collideBeam(

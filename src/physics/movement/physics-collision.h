@@ -98,7 +98,8 @@ bool sweptSphereTraverseGridCells(
     float maxDistance,
     float radius,
     float& hitDistance,
-    glm::vec3& hitNormal
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint
 );
 
 // Swept-sphere vs triangle test (needed by collision traversal and weapon code).

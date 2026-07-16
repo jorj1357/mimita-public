@@ -504,6 +504,28 @@ bool rayTraverseGridCells(
             break;
     }
 
+    // ── Test large triangles that exceed MAX_CHUNKS_PER_TRIANGLE ──────
+    if (!world.collisionLargeTriangles.empty())
+    {
+        for (int triIndex : world.collisionLargeTriangles)
+        {
+            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            if (s_triGen[triIndex] == s_gen)
+                continue;
+            s_triGen[triIndex] = s_gen;
+
+            float d = 0.0f;
+            if (rayTriangle(rayOrigin, rayDir, world.collisionMesh.triangles[triIndex], d) &&
+                d >= 0.0f && d <= nearest && d < nearest)
+            {
+                nearest = d;
+                bestN = world.collisionMesh.triangles[triIndex].normal;
+                hit = true;
+            }
+        }
+    }
+
     auto t1 = std::chrono::steady_clock::now();
     float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
     if (cellCount > 200) {
@@ -528,12 +550,14 @@ bool sweptSphereTraverseGridCells(
     float maxDistance,
     float radius,
     float& hitDistance,
-    glm::vec3& hitNormal)
+    glm::vec3& hitNormal,
+    glm::vec3& hitPoint)
 {
     auto t0 = std::chrono::steady_clock::now();
 
     if (glm::dot(direction, direction) < 0.000001f) {
         hitDistance = maxDistance;
+        hitPoint = origin + direction * maxDistance;
         return false;
     }
 
@@ -542,6 +566,7 @@ bool sweptSphereTraverseGridCells(
     {
         float nearest = maxDistance;
         glm::vec3 bestN(0.0f);
+        glm::vec3 bestP = origin + direction * maxDistance;
         bool hit = false;
         for (size_t i = 0; i < world.collisionMesh.triangles.size(); ++i) {
             float d = 0.0f;
@@ -550,11 +575,13 @@ bool sweptSphereTraverseGridCells(
                                      world.collisionMesh.triangles[i], maxDistance, d, n, p) && d < nearest) {
                 nearest = d;
                 bestN = n;
+                bestP = p;
                 hit = true;
             }
         }
         hitDistance = nearest;
         hitNormal = bestN;
+        hitPoint = bestP;
         return hit;
     }
 
@@ -618,6 +645,7 @@ bool sweptSphereTraverseGridCells(
 
     float nearest = maxDistance;
     glm::vec3 bestN(0.0f);
+    glm::vec3 bestP = origin + direction * maxDistance;
     bool hit = false;
     int centerCellCount = 0;
     int neighborCellCount = 0;
@@ -664,6 +692,7 @@ bool sweptSphereTraverseGridCells(
                                          maxDistance, d, n, p) && d < nearest) {
                     nearest = d;
                     bestN = n;
+                    bestP = p;
                     hit = true;
                     // We found a hit, but continue checking remaining triangles
                     // in this cell's neighborhood — they could be closer.
@@ -698,6 +727,32 @@ bool sweptSphereTraverseGridCells(
             break;
     }
 
+    // ── Test large triangles that exceed MAX_CHUNKS_PER_TRIANGLE ──────
+    if (!world.collisionLargeTriangles.empty())
+    {
+        for (int triIndex : world.collisionLargeTriangles)
+        {
+            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                continue;
+            if (s_triGen[triIndex] == s_gen)
+                continue;
+            s_triGen[triIndex] = s_gen;
+
+            float d = maxDistance;
+            glm::vec3 n(0.0f);
+            glm::vec3 p(0.0f);
+            if (sweptSphereTriangle(origin, direction, radius,
+                                     world.collisionMesh.triangles[triIndex],
+                                     maxDistance, d, n, p) && d < nearest)
+            {
+                nearest = d;
+                bestN = n;
+                bestP = p;
+                hit = true;
+            }
+        }
+    }
+
     auto t1 = std::chrono::steady_clock::now();
     float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
     if (neighborCellCount > 200) {
@@ -710,5 +765,6 @@ bool sweptSphereTraverseGridCells(
 
     hitDistance = nearest;
     hitNormal = bestN;
+    hitPoint = bestP;
     return hit;
 }

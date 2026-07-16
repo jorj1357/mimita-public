@@ -78,7 +78,6 @@ void engineTickNet(Engine& engine, float dt)
         // not rejected input attempts (e.g. dash on cooldown).
         {
             static int prevEquipSlot = 0;
-            static bool prevJumpDead = false;
             static glm::vec2 prevWish{0.0f, 0.0f};
             if (player.dash.didDash)
                 mpContext.nextLocalDashSerial++;
@@ -104,14 +103,58 @@ void engineTickNet(Engine& engine, float dt)
             prevWish = curWish;
             if (mpInput.equippedSlot != prevEquipSlot)
                 mpContext.nextLocalEquipSerial++;
-            // Space press while dead → request instant server respawn
-            // Serial persists until server confirms (reset in mpReconcileLocalPlayer).
-            if (mpInput.jumpHeld && !prevJumpDead && player.dead)
-                mpContext.nextLocalRespawnSerial =
-                    mpContext.nextLocalRespawnSerial == 0 ? 1
-                    : mpContext.nextLocalRespawnSerial + 1;
             prevEquipSlot = mpInput.equippedSlot;
-            prevJumpDead = mpInput.jumpHeld;
+        }
+
+        // ── Instant respawn request ──────────────────────────────────────
+        // Detect Space input separately from gameplay events.  Supports:
+        //   * Pressing Space after death
+        //   * Holding Space when death occurs
+        //   * Buffered Space within 250 ms before death becomes authoritative
+        {
+            static bool prevSpaceHeld = false;
+            static bool wasOnlineDead = false;
+            static uint64_t lastSpacePressMs = 0;
+
+            const bool spaceHeld = mpInput.jumpHeld;  // Space key
+            const bool spacePressed = spaceHeld && !prevSpaceHeld;
+
+            // Determine online death state using both local presentation and server health
+            const bool onlineDead = player.dead || player.currentHp <= 0 ||
+                (mpContext.connected && mpContext.localServerHealth <= 0);
+            const bool justBecameOnlineDead = onlineDead && !wasOnlineDead;
+
+            constexpr uint64_t RESPAWN_INPUT_BUFFER_MS = 250;
+            const bool spaceBuffered = !spaceHeld && !spacePressed &&
+                (MimitaNet::nowMs() - lastSpacePressMs < RESPAWN_INPUT_BUFFER_MS) &&
+                justBecameOnlineDead;
+
+            const bool duelBlocksRespawn = false; // simplified; can check gDuelManager
+
+            const bool shouldRequestRespawn = onlineDead && !duelBlocksRespawn &&
+                (spacePressed || (justBecameOnlineDead && spaceHeld) || spaceBuffered);
+
+            if (shouldRequestRespawn && mpContext.pendingRespawnSerial == 0)
+            {
+                mpContext.pendingRespawnSerial = mpContext.nextLocalRespawnSerial++;
+                if (mpContext.nextLocalRespawnSerial == 0)
+                    mpContext.nextLocalRespawnSerial = 1;
+                mpContext.pendingRespawnStartEpoch = mpContext.localServerEpoch;
+                mpContext.pendingRespawnStartedMs = MimitaNet::nowMs();
+
+                const char* reason = spacePressed ? "space-press" :
+                    (spaceHeld ? "held-on-death" : "buffered-press");
+                printf("[CLIENT RESPAWN CREATE] playerId=%u serial=%u startEpoch=%u "
+                       "localSnapshotTick=%u reason=%s\n",
+                       mpContext.localPlayerId, mpContext.pendingRespawnSerial,
+                       mpContext.localServerEpoch, mpContext.latestLocalSnapshotTick, reason);
+            }
+
+            if (spacePressed)
+                lastSpacePressMs = MimitaNet::nowMs();
+
+            prevSpaceHeld = spaceHeld;
+            wasOnlineDead = onlineDead;
         }
 
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput, world);
@@ -200,13 +243,33 @@ void engineTickNet(Engine& engine, float dt)
                 ? targetInfo->second.name
                 : "player_" + std::to_string(event.targetPlayerId);
 
+            // ── Stale damage rejection by epoch ─────────────────────────
+            // Damage events from a previous life are discarded to prevent
+            // re-killing a newly respawned player.
+            const bool staleDamage =
+                event.damageConfirmed &&
+                localTarget &&
+                event.targetTransformEpoch != 0 &&
+                mpContext.localServerEpoch != 0 &&
+                event.targetTransformEpoch != mpContext.localServerEpoch;
+
+            if (staleDamage)
+            {
+                printf("[CLIENT DAMAGE DROP] target=%u eventEpoch=%u currentEpoch=%u "
+                       "eventSerial=%u reason=old-life\n",
+                       event.targetPlayerId, event.targetTransformEpoch,
+                       mpContext.localServerEpoch, event.shotSerial);
+            }
+
             printf("[NET SHOT APPLY] shooter=%u serial=%u target=%u "
-                   "damage=%d weapon=%u impact=%u damageConfirmed=%d\n",
+                   "damage=%d weapon=%u impact=%u damageConfirmed=%d "
+                   "targetEpoch=%u staleEpoch=%d\n",
                    event.shooterPlayerId, event.shotSerial,
                    event.targetPlayerId, event.damage, event.weapon,
-                   event.impactType, (int)event.damageConfirmed);
+                   event.impactType, (int)event.damageConfirmed,
+                   event.targetTransformEpoch, (int)staleDamage);
 
-            if (event.damageConfirmed && localTarget)
+            if (event.damageConfirmed && localTarget && !staleDamage)
             {
                 player.currentHp = event.targetHealth;
                 mpContext.localServerHealth = event.targetHealth;

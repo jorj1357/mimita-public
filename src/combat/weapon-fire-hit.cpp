@@ -85,8 +85,39 @@ RevolverShotResult tryFireHitscan(
     uint32_t remoteTargetId = beam.remoteTargetId;
     const Player* remoteVictim = beam.remoteVictim;
 
-    result.end = muzzlePos + shotDirection * nearest;
+    // Use exact surface contact for visuals, entity hits, and world effects.
+    // For a miss, hitPosition is the default endpoint at maxDistance.
+    result.end = beam.hitPosition;
     result.hitNormal = victim || remoteVictim ? hitNormal : worldNormal;
+
+    if (gDebugWeapon)
+    {
+        printf("[BEAM COLLISION] weapon=%s type=%s radius=%.2f "
+               "origin=(%.2f,%.2f,%.2f) direction=(%.4f,%.4f,%.4f) "
+               "distance=%.2f sweepCenter=(%.2f,%.2f,%.2f) "
+               "surfacePoint=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f) "
+               "hitKind=%s\n",
+               def.id.c_str(),
+               (def.beamThickness > 0.0f) ? "sphere" : "ray",
+               def.beamThickness,
+               rayOrigin.x, rayOrigin.y, rayOrigin.z,
+               shotDirection.x, shotDirection.y, shotDirection.z,
+               nearest,
+               beam.sweepCenterPosition.x, beam.sweepCenterPosition.y, beam.sweepCenterPosition.z,
+               beam.hitPosition.x, beam.hitPosition.y, beam.hitPosition.z,
+               worldNormal.x, worldNormal.y, worldNormal.z,
+               victim ? "npc" : (remoteVictim ? "remote" : (hitWorld ? "world" : "none")));
+        printf("[BEAM ENDPOINT] muzzle=(%.2f,%.2f,%.2f) rayOrigin=(%.2f,%.2f,%.2f) "
+               "sweepCenter=(%.2f,%.2f,%.2f) surfacePoint=(%.2f,%.2f,%.2f) "
+               "visualEnd=(%.2f,%.2f,%.2f) diffCenterToSurface=%.2f\n",
+               muzzlePos.x, muzzlePos.y, muzzlePos.z,
+               rayOrigin.x, rayOrigin.y, rayOrigin.z,
+               beam.sweepCenterPosition.x, beam.sweepCenterPosition.y, beam.sweepCenterPosition.z,
+               beam.hitPosition.x, beam.hitPosition.y, beam.hitPosition.z,
+               result.end.x, result.end.y, result.end.z,
+               glm::length(beam.sweepCenterPosition - beam.hitPosition));
+    }
+
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Final Direction Used By Hitscan: (%.4f, %.4f, %.4f)\n"
         "[AIM] Impact Position: (%.2f, %.2f, %.2f) hit=%s distance=%.2f\n"
@@ -161,7 +192,7 @@ RevolverShotResult tryFireHitscanDir(
     glm::vec3 hitNormal = beam.hitNormal;
     float localHeight = beam.localHeight;
 
-    result.end = muzzlePos + shotDirection * nearest;
+    result.end = beam.hitPosition;
     result.hitNormal = hitPlayer ? hitNormal : worldNormal;
 
     ReplayEffectEvent gunshotEvent;
@@ -294,7 +325,8 @@ void fireMultiPellet(
                 uint32_t pelletRemoteTargetId = pelletBeam.remoteTargetId;
                 const Player* pelletRemoteVictim = pelletBeam.remoteVictim;
 
-                glm::vec3 pelletEnd = muzzlePos + pelletDir * pelletNearest;
+                // Use exact surface contact for pellet visual endpoint
+                glm::vec3 pelletEnd = pelletBeam.hitPosition;
 
                 if (gDebugWeapon && p < 3)
                     printf("pellet%d direction=(%.4f %.4f %.4f)\n", p, pelletDir.x, pelletDir.y, pelletDir.z);
