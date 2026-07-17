@@ -170,57 +170,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         mpTickReconnect(ctx);
     }
 
+    // ── Receive loop ──
+    // Polls either the ICE transport or raw UDP socket for incoming packets.
+    // Processes each packet through the shared dispatch chain.
     char buffer[16384];
-    for (;;)
-    {
-        sockaddr_in from{};
-        int fromLen = sizeof(from);
-        int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
-                             (sockaddr*)&from, &fromLen);
-        if (bytes <= 0)
-        {
-            int wsaErr = WSAGetLastError();
-            if (wsaErr == WSAEWOULDBLOCK)
-                break;
-            if (wsaErr == WSAEINVAL)
-            {
-                Debug::warn(Debug::Category::Networking,
-                       "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
-                       "state=%s connected=%d active=%d iceTransport=%d\n",
-                       (int)ctx.sock, connectionStateName(ctx.connectionState),
-                       (int)ctx.connected, (int)ctx.active, 0);
-                break;
-            }
-            printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
-            break;
-        }
-        ++ctx.packetsReceived;
-        if (!isSameAddress(from, ctx.serverAddr))
-        {
-            printf("[NET PACKET FILTER] accepted=0 reason=not-server from=%s\n",
-                   addressToString(from).c_str());
-            continue;
-        }
 
+    // Lambda to process a single validated packet from buffer[0..bytes)
+    auto processPacket = [&](int bytes) {
         PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
-        if (bytes < (int)sizeof(PacketHeader))
-        {
-            printf("[NET RX] rejected=packet-too-small bytes=%d\n", bytes);
-            continue;
-        }
-        if (header->magic != PROTOCOL_MAGIC)
-        {
-            printf("[NET RX] rejected=bad-magic magic=0x%llx\n", (unsigned long long)header->magic);
-            continue;
-        }
-        if (header->version != PROTOCOL_VERSION)
-        {
-            printf("[NET RX] rejected=bad-version version=%d expected=%d\n",
-                   header->version, PROTOCOL_VERSION);
-            continue;
-        }
-
-        ctx.lastHeardServerMs = nowMs();
+        if (bytes < (int)sizeof(PacketHeader) ||
+            header->magic != PROTOCOL_MAGIC ||
+            header->version != PROTOCOL_VERSION)
+            return;
 
         printf("[NET RX] type=%d seq=%u bytes=%d\n",
                header->type, header->tick, bytes);
@@ -616,11 +577,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             const GodballStatePacket* gbPkt =
                 reinterpret_cast<const GodballStatePacket*>(buffer);
+            printf("[GODBALL CLIENT RX] ownerId=%u pos=(%.1f,%.1f,%.1f) active=%d\n",
+                   gbPkt->ownerPlayerId, gbPkt->posX, gbPkt->posY, gbPkt->posZ,
+                   (int)gbPkt->active);
             auto it = ctx.remotePlayers.find(gbPkt->ownerPlayerId);
             if (it != ctx.remotePlayers.end())
             {
                 it->second.godballPosition = {gbPkt->posX, gbPkt->posY, gbPkt->posZ};
                 it->second.godballActive = gbPkt->active != 0;
+            }
+            else
+            {
+                printf("[GODBALL CLIENT RX] ownerId=%u NOT FOUND in remotePlayers\n",
+                       gbPkt->ownerPlayerId);
             }
         }
         else if (header->type == PACKET_PING &&
@@ -826,6 +795,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     mpUpdateRemoteEntities(ctx, dt);
+    mpUpdateRemoteSwordStates(ctx, dt);
     mpUpdateNetworkProjectiles(ctx, dt, *gpWorld);
 
     if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)

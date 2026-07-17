@@ -16,6 +16,7 @@
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/death-system.h"
 #include "network/multiplayer-context.h"
+#include "network/network-weapons.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 #include "replay/replay.h"
@@ -217,7 +218,20 @@ void engineTickCombat(Engine& engine, float dt)
     if (!replayPlaybackActive && !duelCountdown &&
         !Terminal::instance().isOpen() && rightMouseDown && !rightMousePrev) {
         if (!editorMode) {
-            weapons.fireAlt(camera, player, npcSystem, world);
+            RevolverShotResult altResult = weapons.fireAlt(camera, player, npcSystem, world);
+            // For Swordsword lunge in online mode, send attack-start
+            if (altResult.fired && mpContext.active) {
+                const WeaponDefinition* curDef = weapons.getCurrentDef(player);
+                if (curDef && curDef->behaviorType == WeaponBehaviorType::Swordsword) {
+                    uint8_t netWeapon = MimitaNet::networkWeaponTypeForDefinition(*curDef);
+                    if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
+                        MimitaNet::mpSendMeleeHitRequest(
+                            mpContext, 0, 0, netWeapon, 2,
+                            glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f),
+                            glm::vec3(0.0f), 0.0f);
+                    }
+                }
+            }
         }
     }
     rightMousePrev = rightMouseDown;

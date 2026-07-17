@@ -149,11 +149,49 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
                "!!  Failed to parse config/weapons.json: %s\n"
-               "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
+               "!!  Using hardcoded physics fallbacks.\n"
                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                "\n", e.what());
-        return cfg;
     }
+
+    // ── Hardcoded physics fallbacks ────────────────────────────────────
+    // These ensure the grenade always has usable physics (gravity, drag,
+    // bounce) even when config/weapons.json cannot be opened or parsed.
+    // The JSON override from registerWeaponFromJson() can still override
+    // these values later.
+    if (!cfg.loaded)
+    {
+        static const struct { const char* key; float val; } fallbacks[] = {
+            {"gravity",              20.0f},
+            {"drag",                  0.15f},
+            {"bounceRestitution",     0.35f},
+            {"bounceFriction",         0.5f},
+            {"maxBounceCount",        10.0f},
+            {"upBias",                 4.0f},
+            {"forwardSpeed",          18.0f},
+            {"angSpeed",               6.0f},
+            {"mass",                   1.5f},
+            {"angularDrag",            0.3f},
+            {"minBounceSpeed",         0.1f},
+            {"armingDistance",         2.0f},
+            {"armingTime",             0.0f},
+            {"splashRadius",           8.0f},
+            {"splashExponent",         2.0f},
+            {"rocketDirectDamage",   150.0f},
+            {"knockbackStrength",    160.0f},
+            {"selfKnockbackMultiplier", 0.8f},
+            {"firingRecoilStrength",  20.0f},
+            {"reserveAmmo",         1337.0f},
+        };
+        for (const auto& fb : fallbacks)
+        {
+            if (cfg.customParams.find(fb.key) == cfg.customParams.end())
+                cfg.customParams[fb.key] = fb.val;
+        }
+        printf("[GRENADE LAUNCHER] Using %zu hardcoded physics fallbacks.\n",
+               sizeof(fallbacks)/sizeof(fallbacks[0]));
+    }
+    return cfg;
 }
 
 WeaponDefinition createRevolverDefinition() {

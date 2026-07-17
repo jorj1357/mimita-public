@@ -529,6 +529,8 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         int torsoPellets = 0;
         int totalDamage = 0;
         glm::vec3 totalKnockback{0.0f};
+        int healthAfter = 0;
+        bool killed = false;
     };
     TargetAccum targets[MAX_PLAYERS];
     int targetCount = 0;
@@ -687,14 +689,16 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         }
     }
 
-    // Apply accumulated damage per target
-    for (int t = 0; t < targetCount; ++t)
+    // Apply accumulated damage per target and store results for event
+    for (int t = 0; t < targetCount && t < MAX_PELLET_BLAST_TARGETS; ++t)
     {
         int damage = std::min(targets[t].totalDamage, 400);
         glm::vec3 knockback = targets[t].totalKnockback;
         ServerDamageResult dmg = applyServerDamage(
             players, players[targets[t].id], shooter.id,
             damage, knockback, ServerDamageSource::Hitscan);
+        targets[t].healthAfter = dmg.healthAfter;
+        targets[t].killed = dmg.killed;
 
         printf("[PELLET TARGET RESULT] serial=%u target=%u pelletsHit=%d "
                "head=%d torso=%d damage=%d healthBefore=%d healthAfter=%d "
@@ -717,7 +721,19 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
     event.baseDirX = dir.x; event.baseDirY = dir.y; event.baseDirZ = dir.z;
     event.weapon = request->weapon;
     event.pelletCount = (uint8_t)generated;
+    event.targetCount = (uint8_t)std::min(targetCount, MAX_PELLET_BLAST_TARGETS);
     memcpy(event.pellets, results, sizeof(NetworkPelletResult) * generated);
+    for (int t = 0; t < event.targetCount; ++t)
+    {
+        event.targets[t].targetPlayerId = targets[t].id;
+        event.targets[t].totalDamage = (int16_t)std::min(targets[t].totalDamage, 32767);
+        event.targets[t].healthAfter = (int16_t)std::clamp(targets[t].healthAfter, -32768, 32767);
+        event.targets[t].knockX = (int16_t)std::clamp((int)targets[t].totalKnockback.x, -32768, 32767);
+        event.targets[t].knockY = (int16_t)std::clamp((int)targets[t].totalKnockback.y, -32768, 32767);
+        event.targets[t].knockZ = (int16_t)std::clamp((int)targets[t].totalKnockback.z, -32768, 32767);
+        event.targets[t].pelletsHit = (uint8_t)targets[t].pelletsHit;
+        event.targets[t].killed = targets[t].killed ? 1 : 0;
+    }
 
     for (const auto& kv : players)
     {
@@ -745,18 +761,27 @@ void handleGodballState(SOCKET sock,
     if (bytes < (int)sizeof(GodballStatePacket)) return;
     GodballStatePacket* pkt = reinterpret_cast<GodballStatePacket*>(buffer);
     auto it = players.find(pkt->ownerPlayerId);
-    if (it == players.end()) return;
+    if (it == players.end()) {
+        printf("[GODBALL SERVER RX] playerId=%u NOT FOUND in players\n", pkt->ownerPlayerId);
+        return;
+    }
     ServerPlayer& p = it->second;
     p.godballX = pkt->posX;
     p.godballY = pkt->posY;
     p.godballZ = pkt->posZ;
     p.godballActive = pkt->active != 0;
+    printf("[GODBALL SERVER RX] playerId=%u pos=(%.1f,%.1f,%.1f) active=%d\n",
+           pkt->ownerPlayerId, pkt->posX, pkt->posY, pkt->posZ, (int)pkt->active);
     // Rebroadcast to all OTHER connected players
+    int forwarded = 0;
     for (auto& kv : players) {
         if (kv.first == pkt->ownerPlayerId) continue;
         sendto(sock, (const char*)buffer, bytes, 0,
                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        forwarded++;
     }
+    printf("[GODBALL SERVER TX] playerId=%u forwardedTo=%d clients\n",
+           pkt->ownerPlayerId, forwarded);
 }
 
 } // namespace MimitaNet

@@ -41,6 +41,10 @@ bool parseAimMode(const json& value, GameplayAimMode& out)
         out = GameplayAimMode::Farpoint;
         return true;
     }
+    if (mode == "camforward") {
+        out = GameplayAimMode::CamForward;
+        return true;
+    }
     return false;
 }
 
@@ -77,6 +81,7 @@ const char* gameplayAimModeName(GameplayAimMode mode)
     switch (mode) {
         case GameplayAimMode::WorldHit: return "world_hit";
         case GameplayAimMode::Farpoint: return "farpoint";
+        case GameplayAimMode::CamForward: return "camforward";
         case GameplayAimMode::Crosshair:
         default: return "crosshair";
     }
@@ -120,7 +125,7 @@ bool GameplayConfig::load(const std::string& path)
         if (root.contains("aim_mode") && !parseAimMode(root["aim_mode"], next.aimMode)) {
             mLastWrite = writeTime;
             Debug::error(Debug::Category::Weapons,
-                "[GAMEPLAY CONFIG] Invalid aim_mode in %s; expected \"crosshair\", \"world_hit\", or \"farpoint\". Keeping previous valid settings.\n",
+                "[GAMEPLAY CONFIG] Invalid aim_mode in %s; expected \"crosshair\", \"world_hit\", \"farpoint\", or \"camforward\". Keeping previous valid settings.\n",
                 mPath.c_str());
             return false;
         }

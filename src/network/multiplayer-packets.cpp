@@ -1,5 +1,6 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
+#include "network/udp-transport.h"
 #include "analytics/analytics-manager.h"
 
 #include <algorithm>
@@ -11,8 +12,18 @@ namespace MimitaNet {
 
 void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 {
-    if (!ctx.active || ctx.sock == INVALID_SOCKET || !data || bytes <= 0)
+    if (!ctx.active || !data || bytes <= 0)
         return;
+    if (!ctx.transport && ctx.sock == INVALID_SOCKET)
+        return;
+
+    // Use ICE transport if available
+    if (ctx.transport)
+    {
+        ctx.transport->send(data, (size_t)bytes);
+        ++ctx.packetsSent;
+        return;
+    }
 
     int delayMs = 0;
     if (ctx.fakeLagMode == 1)
@@ -47,6 +58,11 @@ void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 
 void flushOutgoingPackets(MultiplayerContext& ctx)
 {
+    if (!ctx.active)
+        return;
+    if (!ctx.transport && ctx.sock == INVALID_SOCKET)
+        return;
+
     const uint64_t currentMs = nowMs();
     for (size_t i = 0; i < ctx.outgoingQueue.size(); )
     {
@@ -57,8 +73,11 @@ void flushOutgoingPackets(MultiplayerContext& ctx)
             continue;
         }
 
-        sendto(ctx.sock, queued.bytes.data(), (int)queued.bytes.size(), 0,
-               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        if (ctx.transport)
+            ctx.transport->send(queued.bytes.data(), queued.bytes.size());
+        else
+            sendto(ctx.sock, queued.bytes.data(), (int)queued.bytes.size(), 0,
+                   (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
         ++ctx.packetsSent;
         ctx.outgoingQueue.erase(ctx.outgoingQueue.begin() + i);
     }
@@ -137,6 +156,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
         return false;
     }
 
+    ctx.transport = std::make_unique<UdpTransport>(ctx.sock, ctx.serverAddr);
     ctx.active = true;
     ctx.localPlayerId = 0;
     ctx.tick = 0;
@@ -203,15 +223,26 @@ void mpShutdown(MultiplayerContext& ctx)
     {
         DisconnectPacket bye{};
         bye.header.type = PACKET_DISCONNECT;
-        bye.header.playerId = ctx.localPlayerId;
         bye.header.tick = ctx.tick;
-        sendto(ctx.sock, (const char*)&bye, sizeof(bye), 0,
-               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        bye.header.playerId = ctx.localPlayerId;
+        if (ctx.transport)
+            ctx.transport->send(&bye, sizeof(bye));
+        else
+            sendto(ctx.sock, (const char*)&bye, sizeof(bye), 0,
+                   (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
         printf("[NET DISCONNECT] sent disconnect for id=%u\n", ctx.localPlayerId);
     }
 
-    closesocket(ctx.sock);
-    ctx.sock = INVALID_SOCKET;
+    if (ctx.transport)
+    {
+        ctx.transport->close();
+        ctx.transport.reset();
+    }
+    if (ctx.sock != INVALID_SOCKET)
+    {
+        closesocket(ctx.sock);
+        ctx.sock = INVALID_SOCKET;
+    }
     ctx.active = false;
     ctx.localPlayerId = 0;
     ctx.remotePlayers.clear();
@@ -375,6 +406,7 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
         return false;
     }
 
+    ctx.transport = std::make_unique<UdpTransport>(ctx.sock, ctx.serverAddr);
     ctx.active = true;
     ctx.localPlayerId = 0;
     ctx.tick = 0;

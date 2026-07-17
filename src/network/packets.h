@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 15;
+constexpr uint16_t PROTOCOL_VERSION = 16;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -724,6 +724,19 @@ struct PelletBlastRequestPacket
     float baseDirZ = 0.0f;
 };
 
+constexpr int MAX_PELLET_BLAST_TARGETS = 8;
+
+struct PelletBlastTargetResult
+{
+    uint32_t targetPlayerId = 0;
+    int16_t totalDamage = 0;
+    int16_t healthAfter = 0;
+    int16_t knockX = 0, knockY = 0, knockZ = 0;
+    uint8_t pelletsHit = 0;
+    uint8_t killed = 0;
+    uint16_t reserved = 0;
+};
+
 struct NetworkPelletResult
 {
     float hitX = 0.0f;
@@ -754,8 +767,10 @@ struct PelletBlastEventPacket
     float baseDirZ = 0.0f;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t pelletCount = 0;
-    uint16_t reserved = 0;
+    uint8_t targetCount = 0;
+    uint8_t reserved = 0;
     NetworkPelletResult pellets[MAX_NETWORK_PELLETS];
+    PelletBlastTargetResult targets[MAX_PELLET_BLAST_TARGETS];
 };
 
 // ── Godball state (position for remote visual replication) ────────────
@@ -808,6 +823,7 @@ static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too larg
 static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket is too large");
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "PelletBlastEventPacket exceeds safe datagram limit");
+static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

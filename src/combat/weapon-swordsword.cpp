@@ -443,6 +443,8 @@ void startSlash(SwordswordState& state, const WeaponDefinition& def, Player& own
     owner.vel.y += dir2D.y * slashImpulse;
 
     playWorldSound("weapon/hafs/hafsswing", owner.pos, 0.8f, 1.0f, 30.0f);
+    Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=slash-start\n",
+               owner.username.c_str());
     Debug::log(Debug::Category::Weapons, "[SWORDSWORD] slash start impulse=%.1f dir=(%.2f %.2f)\n",
                slashImpulse, dir2D.x, dir2D.y);
 }
@@ -461,6 +463,8 @@ void startLunge(SwordswordState& state, const WeaponDefinition& def, Player& own
     owner.vel.y += dir2D.y * lungeImpulse;
 
     playWorldSound("weapon/hafs/hafslunge", owner.pos, 0.8f, 1.0f, 30.0f);
+    Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=lunge-start\n",
+               owner.username.c_str());
     Debug::log(Debug::Category::Weapons, "[SWORDSWORD] lunge start impulse=%.1f dir=(%.2f %.2f)\n",
                lungeImpulse, dir2D.x, dir2D.y);
 }
@@ -542,6 +546,8 @@ void update(SwordswordState& state, const WeaponDefinition& def,
         if (state.stateTimer >= slashWindup) {
             state.state = SwordswordState::AttackState::SlashActive;
             state.stateTimer = 0.0f;
+            Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=slash-active\n",
+                       owner.username.c_str());
         }
 
     } else if (state.state == SwordswordState::AttackState::SlashActive) {

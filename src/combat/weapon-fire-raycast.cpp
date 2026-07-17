@@ -56,6 +56,12 @@ AimSolution computeAim(
         result.modeName = "farpoint";
         result.cameraHitKind = AimHitKind::None;
         result.usesCameraTarget = false;
+    } else if (mode == GameplayAimMode::CamForward) {
+        result.aimPoint = muzzlePos + glm::normalize(camera.front) * kMaxShotDistance;
+        result.cameraDistance = kMaxShotDistance;
+        result.modeName = "camforward";
+        result.cameraHitKind = AimHitKind::None;
+        result.usesCameraTarget = false;
     } else {
         result.aimPoint = camera.pos + camera.front * kMaxShotDistance;
         result.modeName = "world_hit";
