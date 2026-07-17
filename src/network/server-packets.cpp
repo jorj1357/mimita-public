@@ -969,17 +969,25 @@ void buildAndSendSnapshot(SOCKET sock,
 
     for (const auto& kv : players)
     {
-        int bytesSent = sendto(
-            sock, (const char*)&snapshot, sizeof(snapshot), 0,
-            (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-        if (bytesSent == SOCKET_ERROR)
-            printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
-                   serverTimestamp(), kv.first, WSAGetLastError());
+        bool sent = false;
+        if (kv.second.transport)
+        {
+            sent = kv.second.transport->send(&snapshot, sizeof(snapshot));
+        }
+        else
+        {
+            int bytesSent = sendto(
+                sock, (const char*)&snapshot, sizeof(snapshot), 0,
+                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            sent = (bytesSent != SOCKET_ERROR);
+            if (!sent)
+                printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
+                       serverTimestamp(), kv.first, WSAGetLastError());
+        }
         ++totalPacketsOut;
         if (tick % 60 == 0)
-            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u bytes=%d entityCount=%u playerCount=%u npcCount=%u\n",
-                   serverTimestamp(), kv.first, bytesSent, snapshot.entityCount,
-                   snapshot.playerCount, snapshot.npcCount);
+            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u sent=%d bytes=%zu\n",
+                   serverTimestamp(), kv.first, (int)sent, sizeof(snapshot));
     }
 }
 

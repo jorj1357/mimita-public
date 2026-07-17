@@ -206,7 +206,12 @@ void engineTickState(Engine& engine, float dt)
                         mpContext.currentRoomCode = mci.roomCode;
                         printf("[ROOMCODE SET] source=join-attempt old= new=%s\n", mci.roomCode.c_str());
                     }
-                    if (!mci.joinToken.empty())
+                    if (mci.useIce)
+                    {
+                        connected = MimitaNet::mpIceConnect(
+                            mpContext, mci.roomCode, player.username);
+                    }
+                    else if (!mci.joinToken.empty())
                     {
                         connected = MimitaNet::mpConnectWithToken(
                             mpContext, mci.address, mci.port, mci.joinToken, player.username);

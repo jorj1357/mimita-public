@@ -416,9 +416,12 @@ void tickServerSwordCombat(SOCKET sock,
 
             for (const auto& pe : players)
             {
-                sendto(sock, (const char*)&event, sizeof(event), 0,
-                       (sockaddr*)&pe.second.addr,
-                       sizeof(pe.second.addr));
+                if (pe.second.transport)
+                    pe.second.transport->send(&event, sizeof(event));
+                else
+                    sendto(sock, (const char*)&event, sizeof(event), 0,
+                           (sockaddr*)&pe.second.addr,
+                           sizeof(pe.second.addr));
                 ++totalPacketsOut;
             }
         }

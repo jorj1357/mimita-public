@@ -2,9 +2,13 @@
 
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "network/game-transport.h"
+#include "network/ice/ice-agent.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "combat/weapon-swordsword.h"
+
+#include <memory>
 
 #include <algorithm>
 #include <cmath>
@@ -110,6 +114,8 @@ struct ServerPlayer
     uint16_t lastPresentationDirectionChangeSerial = 0;
     uint16_t lastPresentationFreezeSerial = 0;
     ServerInput input;
+    std::unique_ptr<IGameTransport> transport;
+    std::string iceSessionId;
     SwordswordState swordswordState;
     float meleeCooldownTimer = 0.0f;
     std::deque<PositionHistoryEntry> posHistory;
@@ -335,6 +341,17 @@ void tickServerSwordCombat(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut);
+void tickServerIceTransports(SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>& npcs,
+                             std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                             uint32_t& nextEntityId,
+                             uint32_t& nextPlayerId,
+                             std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports,
+                             const HeadlessWorld& world,
+                             uint32_t tick, uint64_t& totalPacketsOut);
+bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
+                         const void* data, size_t size);
 void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                std::unordered_map<uint32_t, ServerPlayer>& players,
                                const HeadlessWorld& world,
@@ -459,6 +476,8 @@ struct ServerLaunchSettings
     uint16_t port = DEFAULT_PORT;
     std::string serverCode;
     bool externalProcessLaunched = false;
+    bool iceEnabled = false;
+    std::string turnPassword;
 
     // Resolved state (set during startup, not from UI)
     std::string resolvedMapPath;
@@ -491,6 +510,15 @@ struct ListenServerState
     std::string publicIp;
     std::string hostSessionId;
     DisagreementRetransmitState disagreementRetransmit;
+
+    // ── ICE server support ─────────────────────────────────────────────
+    bool iceEnabled = false;
+    std::unique_ptr<class IceAgent> iceListenerAgent;
+    std::string iceSessionId;
+    uint64_t lastIceCoordinatorPollMs = 0;
+    // Pending ICE transports: agents created for new clients but not yet
+    // associated with a player (waiting for first Hello packet).
+    std::vector<std::unique_ptr<IGameTransport>> pendingIceTransports;
 };
 
 bool startListenServer(ListenServerState& state, uint16_t port,
@@ -498,6 +526,9 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     const ServerLaunchSettings* settings = nullptr);
 void stopListenServer(ListenServerState& state);
 void tickListenServer(ListenServerState& state, float dt);
+bool initServerIceListener(ListenServerState& state);
+void tickIceCoordinator(ListenServerState& state);
+bool waitForAgentState(class IceAgent& agent, IceAgentState target, int timeoutMs);
 std::string generateServerCode();
 
 } // namespace MimitaNet

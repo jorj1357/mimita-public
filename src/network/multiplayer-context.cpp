@@ -39,7 +39,7 @@ static const char* disconnectReasonStr(MultiplayerContext& ctx)
     if (!ctx.active) return "inactive";
     if (ctx.connectFailed) return "connection-timeout";
     if (!ctx.connected) return "not-connected";
-    if (ctx.sock == INVALID_SOCKET) return "invalid-socket";
+    if (ctx.sock == INVALID_SOCKET && !ctx.transport) return "no-transport";
     return "unknown";
 }
 
