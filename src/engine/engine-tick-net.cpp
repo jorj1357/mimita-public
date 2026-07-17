@@ -69,6 +69,11 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.equippedSlot = player.equippedSlot;
         mpInput.weaponState = weapons.networkVisualState(player);
         mpInput.sizeScale = player.sizeScale;
+        {
+            const auto& gb = weapons.godballPhysics();
+            mpInput.godballPosition = gb.position;
+            mpInput.godballActive = gb.active;
+        }
 
         // Detect canonical gameplay events and increment serials.
         // These flags are set by physicsMainUpdate() -> physicsMainUpdate_Internal()

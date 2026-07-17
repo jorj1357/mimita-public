@@ -311,9 +311,9 @@ bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& worl
         if (penetration > bestPenetration)
         {
             bestPenetration = penetration;
+            // Use the separation direction (center→closestPoint, points toward sphere center from surface)
+            // Do NOT flip based on triangle winding — the closest-point direction is already correct.
             bestNormal = diff / dist;
-            if (glm::dot(bestNormal, tri.normal) < 0.0f)
-                bestNormal = -bestNormal;
             hit = true;
         }
     }
@@ -321,13 +321,17 @@ bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& worl
     if (!hit)
         return false;
 
+    // Depenetrate
     projectile.position += bestNormal * (bestPenetration + 0.001f);
+
     const float into = glm::dot(projectile.velocity, bestNormal);
     if (into < 0.0f)
     {
+        // Stable bounce: separate normal and tangential components
+        // tangentRetention = clamp(1 - friction, 0, 1) ensures energy never increases
         glm::vec3 tangent = projectile.velocity - bestNormal * into;
-        projectile.velocity -= bestNormal * into * (1.0f + projectile.restitution);
-        projectile.velocity += tangent * projectile.friction;
+        float tangentRetention = std::clamp(1.0f - projectile.friction, 0.0f, 1.0f);
+        projectile.velocity = tangent * tangentRetention - bestNormal * into * projectile.restitution;
     }
     projectile.angularVelocity *= 0.35f;
     projectile.worldTouched = true;
@@ -452,6 +456,9 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.restitution = cfg.restitution;
     projectile.friction = cfg.friction;
     projectile.armingDistance = cfg.armingDistance;
+    projectile.armingTime = cfg.armingTime;
+    projectile.minBounceSpeed = cfg.minBounceSpeed;
+    projectile.angularDrag = cfg.angularDrag;
     projectile.maxBounceCount = cfg.maxBounceCount;
     projectile.spawnTick = tick;
 
@@ -563,41 +570,61 @@ void tickServerProjectiles(SOCKET sock,
         }
         else if (projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER)
         {
-            projectile.velocity.z -= projectile.gravity * dt;
-            projectile.velocity *= std::max(0.0f, 1.0f - projectile.drag * dt);
-            const float speed = glm::length(projectile.velocity);
-            projectile.position += projectile.velocity * dt;
-            projectile.distanceTraveled += speed * dt;
+            // Adaptive substeps to prevent tunneling with small collision radius
+            float speed = glm::length(projectile.velocity);
+            float maxStep = std::max(projectile.radius * 0.5f, 0.1f);
+            int steps = std::min((int)std::ceil(speed * dt / maxStep) + 1, 8);
+            float subDt = dt / (float)steps;
 
-            const float angSpeed = glm::length(projectile.angularVelocity);
-            if (angSpeed > 0.0001f)
+            for (int s = 0; s < steps && !projectile.exploded; ++s)
             {
-                glm::quat delta = glm::angleAxis(
-                    angSpeed * dt, glm::normalize(projectile.angularVelocity));
-                projectile.rotation = glm::normalize(delta * projectile.rotation);
-            }
+                projectile.velocity.z -= projectile.gravity * subDt;
+                projectile.velocity *= std::max(0.0f, 1.0f - projectile.drag * subDt);
+                glm::vec3 step = projectile.velocity * subDt;
+                projectile.position += step;
+                projectile.distanceTraveled += glm::length(step);
 
-            if (resolveGrenadeWorld(projectile, world) &&
-                projectile.bounceCount >= projectile.maxBounceCount)
-            {
-                projectile.velocity *= 0.2f;
-            }
-
-            for (auto& entry : players)
-            {
-                ServerPlayer& target = entry.second;
-                if (target.dead)
-                    continue;
-                if (target.id == projectile.ownerPlayerId &&
-                    projectile.distanceTraveled < projectile.armingDistance)
-                    continue;
-                glm::vec3 closest(0.0f);
-                if (projectileTouchesPlayer(projectile, target, closest))
+                // Apply angular drag to angular velocity only (never affects linear)
+                float angSpeed = glm::length(projectile.angularVelocity);
+                if (projectile.angularDrag > 0.0f && angSpeed > 0.0f)
                 {
-                    explodeProjectile(sock, players, projectile, closest,
-                                      "player", target.id, tick,
-                                      totalPacketsOut);
-                    break;
+                    projectile.angularVelocity *= std::max(0.0f, 1.0f - projectile.angularDrag * subDt);
+                }
+                if (angSpeed > 0.0001f)
+                {
+                    float newAngSpeed = glm::length(projectile.angularVelocity);
+                    if (newAngSpeed > 0.0001f)
+                    {
+                        glm::quat delta = glm::angleAxis(
+                            newAngSpeed * subDt, glm::normalize(projectile.angularVelocity));
+                        projectile.rotation = glm::normalize(delta * projectile.rotation);
+                    }
+                }
+
+                // World collision per substep
+                if (resolveGrenadeWorld(projectile, world) &&
+                    projectile.bounceCount >= projectile.maxBounceCount)
+                {
+                    projectile.velocity *= 0.2f;
+                }
+
+                // Player collision per substep (skip owner during grace period)
+                for (auto& entry : players)
+                {
+                    ServerPlayer& target = entry.second;
+                    if (target.dead)
+                        continue;
+                    if (target.id == projectile.ownerPlayerId &&
+                        (projectile.distanceTraveled < projectile.armingDistance))
+                        continue;
+                    glm::vec3 closest(0.0f);
+                    if (projectileTouchesPlayer(projectile, target, closest))
+                    {
+                        explodeProjectile(sock, players, projectile, closest,
+                                          "player", target.id, tick,
+                                          totalPacketsOut);
+                        break;
+                    }
                 }
             }
         }

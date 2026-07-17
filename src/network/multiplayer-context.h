@@ -317,6 +317,8 @@ struct MpInput
     int equippedSlot = 0;
     uint8_t weaponState = 0;
     float sizeScale = 1.0f;
+    glm::vec3 godballPosition{0.0f};
+    bool godballActive = false;
 };
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);

@@ -439,7 +439,7 @@
     "spread": 0.0,
     "recoil": 30.0,
     "projectile_speed": 40.0,
-    "projectile_radius": 1.8,
+    "projectile_radius": 0.3,
     "projectile_lifetime": 3.0,
     "fire_mode": "semi_auto",
     "behavior_type": "grenade_launcher",

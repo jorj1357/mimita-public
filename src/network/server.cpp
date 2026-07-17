@@ -281,6 +281,8 @@ int runServer(const LaunchOptions& options)
                 handleChatMessage(sock, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_PING)
                 handlePing(sock, from, buffer, bytes, tick);
+            else if (header->type == PACKET_GODBALL_STATE)
+                handleGodballState(sock, players, buffer, bytes);
             else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
                 handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick, totalPacketsOut);
             else if (header->type == PACKET_SERVER_COMMAND)
@@ -646,6 +648,8 @@ void tickListenServer(ListenServerState& state, float dt)
                                   state.tick, state.totalPacketsOut);
             else if (header->type == PACKET_PING)
                 handlePing(state.sock, from, buffer, bytes, state.tick);
+            else if (header->type == PACKET_GODBALL_STATE)
+                handleGodballState(state.sock, state.players, buffer, bytes);
             else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
                 handleNpcDamageRequest(state.sock, buffer, bytes, from,
                                        state.players, state.npcs, state.tick,

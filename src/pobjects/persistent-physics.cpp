@@ -247,9 +247,10 @@ void PersistentPhysicsSystem::checkCollisions(
                         friction = 1.0f;
                     }
 
+                    // Stable bounce: separate normal and tangential; friction reduces tangent, never amplifies
                     glm::vec3 tangent = obj.velocity - normal * velDot;
-                    obj.velocity -= normal * velDot * (1.0f + restitution);
-                    obj.velocity += tangent * friction;
+                    float tangentRetention = std::clamp(1.0f - friction, 0.0f, 1.0f);
+                    obj.velocity = tangent * tangentRetention - normal * velDot * restitution;
 
                     float speedAfter = glm::length(obj.velocity);
                     if (speedAfter > speedBefore * 0.98f)

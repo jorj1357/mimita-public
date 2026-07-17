@@ -358,6 +358,10 @@ public:
     CollisionState collision;
     GroundReturnState groundReturn;
 
+    // -------- Godball replication (set from network) --------
+    glm::vec3 godballPosition{0.0f};
+    bool godballActive = false;
+
     // -------- Body/weapon collision push (debug) --------
     glm::vec3 debugBodyCollisionPush{0.0f};
     glm::vec3 debugWeaponCollisionPush{0.0f};

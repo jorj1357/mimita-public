@@ -10,6 +10,7 @@
 #include "combat/projectile-render.h"
 #include "pobjects/persistent-physics.h"
 #include "network/packets.h"
+#include "debug/debug-visuals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1066,4 +1067,14 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
                vm.mTint.r, vm.mTint.g, vm.mTint.b, vm.mReloadBlendCurrent);
     }
     vm.render(camera, player, def->slot);
+
+    // Render godball sphere for remote players if godball is active
+    if (player.godballActive)
+    {
+        float radius = 0.4f;
+        DebugVis::drawFilledSphere(camera, player.godballPosition, radius,
+                                   {0.2f, 0.4f, 0.8f, 0.6f});
+        DebugVis::drawWireSphere(camera, player.godballPosition, radius,
+                                 {0.4f, 0.6f, 1.0f, 0.8f});
+    }
 }

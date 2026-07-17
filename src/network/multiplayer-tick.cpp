@@ -611,6 +611,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             mpProcessChatPacket(ctx, reinterpret_cast<const ChatPacket*>(buffer));
         }
+        else if (header->type == PACKET_GODBALL_STATE &&
+                 bytes >= (int)sizeof(GodballStatePacket))
+        {
+            const GodballStatePacket* gbPkt =
+                reinterpret_cast<const GodballStatePacket*>(buffer);
+            auto it = ctx.remotePlayers.find(gbPkt->ownerPlayerId);
+            if (it != ctx.remotePlayers.end())
+            {
+                it->second.godballPosition = {gbPkt->posX, gbPkt->posY, gbPkt->posZ};
+                it->second.godballActive = gbPkt->active != 0;
+            }
+        }
         else if (header->type == PACKET_PING &&
                  bytes >= (int)sizeof(PingPacket))
         {
@@ -778,6 +790,39 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.attackPressed = input->attackPressed ? 1 : 0;
         in.sizeScale = input->sizeScale;
         mpSendPacket(ctx, &in, sizeof(in));
+
+        // Send godball position if godball is active (for remote visual replication)
+        {
+            static GodballStatePacket lastSentGb = {};
+            GodballStatePacket gbPkt{};
+            gbPkt.header.type = PACKET_GODBALL_STATE;
+            gbPkt.header.tick = ctx.tick;
+            gbPkt.header.playerId = ctx.localPlayerId;
+            gbPkt.ownerPlayerId = ctx.localPlayerId;
+            glm::vec3 gbPos = input->godballPosition;
+            bool gbActive = input->godballActive;
+            gbPkt.posX = gbPos.x;
+            gbPkt.posY = gbPos.y;
+            gbPkt.posZ = gbPos.z;
+            gbPkt.active = gbActive ? 1 : 0;
+            // Send if state changed or rate-limit to ~20Hz
+            uint64_t now = nowMs();
+            static uint64_t lastGbSendMs = 0;
+            bool stateChanged = (gbPkt.posX != lastSentGb.posX || gbPkt.posY != lastSentGb.posY ||
+                                 gbPkt.posZ != lastSentGb.posZ || gbPkt.active != lastSentGb.active);
+            if (gbActive && (stateChanged || now - lastGbSendMs >= 50))
+            {
+                lastGbSendMs = now;
+                lastSentGb = gbPkt;
+                mpSendPacket(ctx, &gbPkt, sizeof(gbPkt));
+            }
+            else if (!gbActive && lastSentGb.active != 0)
+            {
+                // Send one final deactivate packet
+                lastSentGb = gbPkt;
+                mpSendPacket(ctx, &gbPkt, sizeof(gbPkt));
+            }
+        }
     }
 
     mpUpdateRemoteEntities(ctx, dt);
