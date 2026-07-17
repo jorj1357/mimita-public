@@ -18,6 +18,7 @@ struct LaunchOptions
     bool npcsEnabled = true;
     uint32_t npcCount = 3;
     uint32_t timeoutSecs = 0; // 0 = no timeout (default), >0 = auto-exit after N seconds
+    bool iceEnabled = false;  // enable ICE for NAT traversal
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

@@ -13,6 +13,9 @@ public:
     IceTransport(std::unique_ptr<IceAgent> agent)
         : mAgent(std::move(agent)) {}
 
+    IceTransport(IceTransport&&) = default;
+    IceTransport& operator=(IceTransport&&) = default;
+
     bool send(const void* data, size_t size) override
     {
         return mAgent && mAgent->send(data, size);

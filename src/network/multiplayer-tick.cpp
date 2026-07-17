@@ -600,6 +600,59 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.localPingMs = (int)std::min<uint64_t>(
                 9999, nowMs() - ping->clientTimeMs);
         }
+    };
+
+    // ── Poll ICE transport (if available) ──
+    if (ctx.transport)
+    {
+        std::vector<ReceivedPacket> pkts;
+        ctx.transport->poll(pkts);
+        for (const ReceivedPacket& rp : pkts)
+        {
+            if (rp.bytes.size() < (int)sizeof(PacketHeader))
+                continue;
+            if (rp.bytes.size() > sizeof(buffer))
+                continue;
+            memcpy(buffer, rp.bytes.data(), rp.bytes.size());
+            int packetBytes = (int)rp.bytes.size();
+            processPacket(packetBytes);
+        }
+    }
+    else
+    {
+        // ── Raw UDP recv loop ──
+        for (;;)
+    {
+        sockaddr_in from{};
+        int fromLen = sizeof(from);
+        int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
+                             (sockaddr*)&from, &fromLen);
+        if (bytes <= 0)
+        {
+            int wsaErr = WSAGetLastError();
+            if (wsaErr == WSAEWOULDBLOCK)
+                break;
+            if (wsaErr == WSAEINVAL)
+            {
+                Debug::warn(Debug::Category::Networking,
+                       "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
+                       "state=%s connected=%d active=%d\n",
+                       (int)ctx.sock, connectionStateName(ctx.connectionState),
+                       (int)ctx.connected, (int)ctx.active);
+                break;
+            }
+            printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
+            break;
+        }
+        ++ctx.packetsReceived;
+        if (!isSameAddress(from, ctx.serverAddr))
+        {
+            printf("[NET PACKET FILTER] accepted=0 reason=not-server from=%s\n",
+                   addressToString(from).c_str());
+            continue;
+        }
+        processPacket(bytes);
+    }
     }
 
     if (ctx.connected && ctx.localPlayerId && input)

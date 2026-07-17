@@ -112,6 +112,13 @@ int runServer(const LaunchOptions& options)
     uint64_t totalPacketsOut = 0;
     DisagreementRetransmitState disagreementRetransmit;
 
+    // ── Dedicated server ICE support ──
+    std::unique_ptr<IceAgent> iceListenerAgent;
+    std::string iceSessionId;
+    uint64_t lastIceCoordinatorPollMs = 0;
+    std::vector<std::unique_ptr<IGameTransport>> pendingIceTransports;
+    bool iceEnabled = options.iceEnabled;
+
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
     {
         uint32_t npcCount = options.npcsEnabled ? options.npcCount : 0;
@@ -193,7 +200,46 @@ int runServer(const LaunchOptions& options)
         }
     }
 
+    // ── Initialize dedicated server ICE listener ──
+    if (iceEnabled)
+    {
+        printf("%s [SERVER ICE] initializing ICE listener for NAT traversal\n", serverTimestamp());
+        IceConfiguration iceCfg = loadIceConfig();
+        auto iceAgent = std::make_unique<IceAgent>();
+        if (iceAgent->initialize(iceCfg) && iceAgent->gatherCandidates())
+        {
+            if (waitForAgentState(*iceAgent, IceAgentState::GatheringComplete, 15000))
+            {
+                iceSessionId = "host_" + std::to_string(GetCurrentProcessId())
+                    + "_" + std::to_string(nowMs());
+                auto hostResult = coordinatorIceHost(iceSessionId, iceAgent->localSdp());
+                if (hostResult.ok)
+                {
+                    serverCode = hostResult.roomCode;
+                    serverJoinToken = hostResult.joinToken;
+                    iceListenerAgent = std::move(iceAgent);
+                    lastIceCoordinatorPollMs = nowMs();
+                    printf("%s [SERVER ICE] listener registered: code=%s\n",
+                           serverTimestamp(), serverCode.c_str());
+                }
+                else
+                {
+                    printf("%s [SERVER ICE] coordinatorIceHost failed; LAN only\n", serverTimestamp());
+                }
+            }
+            else
+            {
+                printf("%s [SERVER ICE] gather timeout; LAN only\n", serverTimestamp());
+            }
+        }
+        else
+        {
+            printf("%s [SERVER ICE] agent init/gather failed; LAN only\n", serverTimestamp());
+        }
+    }
+
     uint64_t lastCoordinatorHb = 0;
+    uint64_t iceCoordinatorPollCount = 0;
 
     uint64_t serverStartMs = nowMs();
 
@@ -339,6 +385,46 @@ int runServer(const LaunchOptions& options)
         tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
 
         tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+
+        // ── ICE coordinator polling (accept new ICE clients) ──
+        if (iceEnabled && iceListenerAgent && tick % 30 == 0)
+        {
+            uint64_t nowIce = nowMs();
+            if (nowIce - lastIceCoordinatorPollMs > 500)
+            {
+                lastIceCoordinatorPollMs = nowIce;
+                auto pollResult = coordinatorIcePoll(serverCode, iceSessionId);
+                if (pollResult.ok && pollResult.status == "client_ready"
+                    && !pollResult.clientIceDescription.empty())
+                {
+                    printf("%s [SERVER ICE] new client via coordinator\n", serverTimestamp());
+                    IceConfiguration iceCfg = loadIceConfig();
+                    auto clientAgent = std::make_unique<IceAgent>();
+                    if (clientAgent->initialize(iceCfg)
+                        && clientAgent->gatherCandidates()
+                        && waitForAgentState(*clientAgent, IceAgentState::GatheringComplete, 10000)
+                        && clientAgent->setRemoteDescription(pollResult.clientIceDescription)
+                        && waitForAgentState(*clientAgent, IceAgentState::Connected, 20000))
+                    {
+                        clientAgent->logSelectedPath();
+                        auto transport = std::make_unique<IceTransport>(std::move(clientAgent));
+                        pendingIceTransports.push_back(std::move(transport));
+                        printf("%s [SERVER ICE] client transport created (pending=%zu)\n",
+                               serverTimestamp(), pendingIceTransports.size());
+                    }
+                    else
+                    {
+                        printf("%s [SERVER ICE] failed to establish ICE with new client\n",
+                               serverTimestamp());
+                    }
+                }
+            }
+        }
+
+        // ── Process ICE transports (existing + pending) ──
+        tickServerIceTransports(sock, players, npcs, projectiles,
+                                nextEntityId, nextPlayerId,
+                                pendingIceTransports, world, tick, totalPacketsOut);
 
         buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
 
@@ -531,6 +617,20 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     }
 
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
+
+    // Initialize ICE listener for NAT traversal (if enabled)
+    if (settings && settings->iceEnabled)
+    {
+        if (initServerIceListener(state))
+        {
+            printf("[LISTEN SERVER] ICE listener enabled: code=%s\n", state.serverCode.c_str());
+        }
+        else
+        {
+            printf("[LISTEN SERVER] WARNING: ICE listener initialization failed; LAN only\n");
+        }
+    }
+
     return true;
 }
 
@@ -714,6 +814,12 @@ void tickListenServer(ListenServerState& state, float dt)
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
 
+        tickIceCoordinator(state);
+        tickServerIceTransports(state.sock, state.players, state.npcs,
+                                state.projectiles, state.nextEntityId,
+                                state.nextPlayerId, state.pendingIceTransports,
+                                state.world, state.tick, state.totalPacketsOut);
+
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
                              state.tick, state.totalPacketsOut);
 
@@ -791,6 +897,7 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     opts.mapName = settings.mapName;
     opts.npcsEnabled = settings.startupNpcsEnabled;
     opts.npcCount = settings.startupNpcCount;
+    opts.iceEnabled = settings.iceEnabled;
     opts.connect = "127.0.0.1:" + std::to_string(settings.port);
 
     // Delegate to existing runServer

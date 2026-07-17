@@ -112,9 +112,16 @@ void broadcastPacket(SOCKET sock,
 {
     for (const auto& playerEntry : players)
     {
-        sendto(sock, (const char*)&packet, sizeof(packet), 0,
-               (sockaddr*)&playerEntry.second.addr,
-               sizeof(playerEntry.second.addr));
+        if (playerEntry.second.transport)
+        {
+            playerEntry.second.transport->send(&packet, sizeof(packet));
+        }
+        else
+        {
+            sendto(sock, (const char*)&packet, sizeof(packet), 0,
+                   (sockaddr*)&playerEntry.second.addr,
+                   sizeof(playerEntry.second.addr));
+        }
         ++totalPacketsOut;
     }
 }

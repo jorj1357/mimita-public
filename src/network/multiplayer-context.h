@@ -372,6 +372,8 @@ uint32_t mpSendProjectileFireRequest(
     uint8_t weapon,
     const glm::vec3& origin,
     const glm::vec3& direction);
+bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
+                  const std::string& playerName);
 uint32_t mpSendMeleeHitRequest(
     MultiplayerContext& ctx,
     uint32_t targetPlayerId,

@@ -68,6 +68,7 @@ struct MultiplayerConnectInfo
     std::string joinToken;
     uint16_t port = 1357;
     std::string roomCode;
+    bool useIce = false;
 };
 MultiplayerConnectInfo getPendingMultiplayerConnect();
 void clearPendingMultiplayerConnect();

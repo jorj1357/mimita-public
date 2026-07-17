@@ -1,6 +1,10 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "network/udp-transport.h"
+#include "network/ice-transport.h"
+#include "network/ice/ice-agent.h"
+#include "network/ice/ice-config.h"
+#include "network/coordinator-client.h"
 #include "analytics/analytics-manager.h"
 
 #include <algorithm>
@@ -448,6 +452,170 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
 
     printf("[NET CONNECT] connecting to %s:%u with join token as \"%s\"\n",
            address.c_str(), port, playerName.c_str());
+    return true;
+}
+
+// ── ICE client connection ──────────────────────────────────────────────
+// Connects to an ICE-enabled server via the coordinator.
+// Creates an IceAgent, exchanges SDP through coordinator, establishes
+// an encrypted (or direct) P2P path, and wraps it in IceTransport.
+// On return, ctx.transport is set to the ICE transport.
+// The caller must still send Hello/JoinRequest through the normal flow.
+
+static bool waitForIceAgentState(IceAgent& agent, IceAgentState target,
+                                   int timeoutMs, std::string* earlyRecv = nullptr)
+{
+    int waited = 0;
+    while (waited < timeoutMs)
+    {
+        agent.tick();
+        std::vector<IceEvent> evs;
+        agent.pollEvents(evs);
+        for (auto& ev : evs)
+        {
+            if (ev.type == IceEventType::Recv && earlyRecv)
+                earlyRecv->assign(ev.data.data(), ev.data.size());
+        }
+
+        auto s = agent.state();
+        if (s == target || s == IceAgentState::Completed ||
+            s == IceAgentState::Connected)
+            return true;
+        if (s == IceAgentState::Failed)
+            return false;
+
+        Sleep(50);
+        waited += 50;
+    }
+    return false;
+}
+
+bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
+                  const std::string& playerName)
+{
+    if (ctx.active)
+        mpShutdown(ctx);
+
+    printf("[ICE CONNECT] starting ICE connection to room=%s as \"%s\"\n",
+           roomCode.c_str(), playerName.c_str());
+
+    if (!netStartup())
+    {
+        printf("[ICE CONNECT] FATAL: WSAStartup failed\n");
+        return false;
+    }
+
+    // Load ICE config (STUN + optional TURN from VPS)
+    IceConfiguration iceConfig = loadIceConfig();
+    if (iceConfig.turn.password.empty())
+    {
+        printf("[ICE CONNECT] WARNING: no TURN password in ice-dev.json; "
+               "direct connections may fail behind symmetric NAT\n");
+    }
+
+    // Create ICE agent on heap (IceAgent is not movable)
+    auto agentPtr = std::make_unique<IceAgent>();
+    if (!agentPtr->initialize(iceConfig))
+    {
+        printf("[ICE CONNECT] FATAL: agent initialization failed\n");
+        netShutdown();
+        return false;
+    }
+    ctx.connectionState = ConnectionState::NatNegotiating;
+    ctx.connectionStatus = "ICE: gathering candidates...";
+
+    if (!agentPtr->gatherCandidates())
+    {
+        printf("[ICE CONNECT] FATAL: candidate gathering failed\n");
+        netShutdown();
+        return false;
+    }
+    if (!waitForIceAgentState(*agentPtr, IceAgentState::GatheringComplete, 15000))
+    {
+        printf("[ICE CONNECT] FATAL: gather timeout (15s)\n");
+        netShutdown();
+        return false;
+    }
+    printf("[ICE CONNECT] candidates gathered\n");
+
+    // Exchange SDP via coordinator
+    std::string sessionId = "client_" + std::to_string(GetCurrentProcessId())
+        + "_" + std::to_string(nowMs());
+    ctx.connectionStatus = "ICE: contacting coordinator...";
+
+    auto joinResult = coordinatorIceJoin(roomCode, sessionId, agentPtr->localSdp());
+    if (!joinResult.ok || joinResult.hostIceDescription.empty())
+    {
+        printf("[ICE CONNECT] FATAL: coordinator ICE join failed\n");
+        netShutdown();
+        return false;
+    }
+    printf("[ICE CONNECT] received host SDP (%zu bytes)\n",
+           joinResult.hostIceDescription.size());
+
+    // Set remote description (host's SDP)
+    if (!agentPtr->setRemoteDescription(joinResult.hostIceDescription))
+    {
+        printf("[ICE CONNECT] FATAL: setRemoteDescription failed\n");
+        netShutdown();
+        return false;
+    }
+    ctx.connectionStatus = "ICE: connecting...";
+
+    // Wait for ICE connection
+    std::string earlyRecv;
+    if (!waitForIceAgentState(*agentPtr, IceAgentState::Connected, 30000, &earlyRecv))
+    {
+        printf("[ICE CONNECT] FATAL: connection timeout (30s)\n");
+        netShutdown();
+        return false;
+    }
+    printf("[ICE CONNECT] ICE connection established\n");
+    agentPtr->logSelectedPath();
+
+    // Create ICE transport, reset multiplayer context state
+    ctx.transport = std::make_unique<IceTransport>(std::move(agentPtr));
+    ctx.useIce = true;
+    ctx.active = true;
+    ctx.localPlayerId = 0;
+    ctx.tick = 0;
+    ctx.lastHelloMs = 0;
+    ctx.lastSnapshotReceivedMs = 0;
+    ctx.connectStartMs = nowMs();
+    ctx.packetsSent = 0;
+    ctx.packetsReceived = 0;
+    ctx.snapshotsReceived = 0;
+    ctx.snapshotsMissed = 0;
+    ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
+    ctx.remotePlayerInterpolation.clear();
+    ctx.remoteNpcInterpolation.clear();
+    ctx.networkProjectiles.clear();
+    ctx.playerRegistry.clear();
+    ctx.approvedLocalName.clear();
+    ctx.hasLocalServerPosition = false;
+    ctx.localPlayerReconciled = false;
+    ctx.connectionState = ConnectionState::Connecting;
+    ctx.joinToken = joinResult.joinToken;
+    ctx.serverAddress = "ice:" + roomCode;
+    ctx.connected = false;
+    ctx.connectFailed = false;
+    ctx.connectionStatus = "Connected via ICE";
+    ctx.outgoingQueue.clear();
+    ctx.shotEvents.clear();
+    ctx.lastReceivedShotSerial.clear();
+    ctx.nextLocalShotSerial = 1;
+    ctx.nextLocalProjectileFireSerial = 1;
+    ctx.nextLocalMeleeAttackSerial = 1;
+    ctx.lastPingSentMs = 0;
+    ctx.localPingMs = 0;
+    ctx.lastHeardServerMs = 0;
+    ctx.lastDisconnectLogMs = 0;
+    ctx.disagreementEvents.clear();
+    ctx.processedDisagreementIds.clear();
+    ctx.currentRoomCode = roomCode;
+
+    printf("[ICE CONNECT] connected via ICE to room=%s\n", roomCode.c_str());
     return true;
 }
 

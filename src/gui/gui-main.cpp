@@ -131,8 +131,11 @@ static void readServerSettingsFromBindings()
     gServerLaunchSettings.startupNpcCount = (uint32_t)std::max(0, std::atoi(npcCountStr.c_str()));
     gServerLaunchSettings.port = MimitaNet::DEFAULT_PORT;
     gServerLaunchSettings.resolvedMapPath = "assets/maps/" + mapName + ".glb";
+    // ICE is always enabled for global play. Setting to false disables
+    // NAT traversal (LAN/localhost only).
+    gServerLaunchSettings.iceEnabled = true;
 
-    printf("[COMMUNITY SERVER START] requestedMap=%s serverName=%s maxPlayers=%u npcs=%d count=%u\n",
+    printf("[COMMUNITY SERVER START] requestedMap=%s serverName=%s maxPlayers=%u npcs=%d count=%u ice=%d\n",
            mapName.c_str(), name.c_str(), gServerLaunchSettings.maxPlayers,
            (int)gServerLaunchSettings.startupNpcsEnabled, gServerLaunchSettings.startupNpcCount);
 }
@@ -164,7 +167,8 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
         + " --room-file \"" + roomFilePath + "\""
         + (settings.startupNpcsEnabled
             ? " --npcs " + std::to_string(settings.startupNpcCount)
-            : " --no-npcs");
+            : " --no-npcs")
+        + (settings.iceEnabled ? " --ice" : "");
 
     STARTUPINFOA si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
@@ -765,6 +769,9 @@ void guiMain(GLFWwindow* win, GameState& state)
                     gPendingConnect.port = r.connectPort;
                     gPendingConnect.joinToken = r.joinToken;
                     gPendingConnect.roomCode = r.roomCode;
+                    // Room code + token implies remotely hosted → use ICE
+                    if (!r.roomCode.empty() && r.connectAddress.find("127.0.0.1") != 0)
+                        gPendingConnect.useIce = true;
                 }
                 else
                 {
@@ -774,8 +781,9 @@ void guiMain(GLFWwindow* win, GameState& state)
                     gPendingConnect.port = r.connectPort;
                     gPendingConnect.roomCode = r.roomCode;
                 }
-                printf("[COMMUNITY CONNECT] address=%s port=%u mapId=%s\n",
+                printf("[COMMUNITY CONNECT] address=%s port=%u useIce=%d mapId=%s\n",
                        gPendingConnect.address.c_str(), gPendingConnect.port,
+                       (int)gPendingConnect.useIce,
                        gServerLaunchSettings.mapName.c_str());
                 onlineMenuSetActive(false);
                 state = GAME_PLAYING;
