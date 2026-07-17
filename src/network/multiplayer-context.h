@@ -111,6 +111,8 @@ struct NetworkProjectile
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
     uint8_t weaponType = NETWORK_WEAPON_NONE;
+
+    // Authoritative/server state (directly from packets, NOT for rendering)
     glm::vec3 position{0.0f};
     glm::vec3 previousPosition{0.0f};
     glm::vec3 velocity{0.0f};
@@ -122,6 +124,26 @@ struct NetworkProjectile
     float smokeAccumulator = 0.0f;
     bool predicted = false;
     bool exploded = false;
+
+    // Interpolation state (for smooth visual rendering)
+    glm::vec3 renderPosition{0.0f};
+    glm::vec3 renderVelocity{0.0f};
+    glm::quat renderRotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 renderAngularVelocity{0.0f};
+
+    uint32_t prevStateTick = 0;
+    glm::vec3 prevStatePos{0.0f};
+    glm::vec3 prevStateVel{0.0f};
+    glm::quat prevStateRot{1.0f, 0.0f, 0.0f, 0.0f};
+
+    uint32_t targetStateTick = 0;
+    glm::vec3 targetStatePos{0.0f};
+    glm::vec3 targetStateVel{0.0f};
+    glm::quat targetStateRot{1.0f, 0.0f, 0.0f, 0.0f};
+
+    uint32_t latestAcceptedTick = 0;
+    uint64_t lastTargetReceivedMs = 0;
+    bool hasTargetState = false;
 };
 
 struct EntityInterpolationState
@@ -218,6 +240,7 @@ struct MultiplayerContext
     // ── Migration: disagreement events from server ────────────────────
     std::vector<DisagreementEvent> disagreementEvents;
     std::unordered_set<uint32_t> processedDisagreementIds;
+    std::unordered_set<uint64_t> processedPelletBlastSerials;
 
     // ── Migration: server process tracking ────────────────────────────
     bool serverProcessLaunched = false;
@@ -260,6 +283,19 @@ struct MultiplayerContext
     // ── Snapshot lifecycle tracking for stale-state rejection ─────────
     uint32_t latestLocalSnapshotTick = 0;
     uint32_t latestAliveSnapshotTick = 0;
+
+    // ── Pending projectile fire requests (retransmission) ────────────
+    struct PendingFireRequest {
+        uint32_t fireSerial = 0;
+        uint8_t weapon = NETWORK_WEAPON_NONE;
+        glm::vec3 origin{0.0f};
+        glm::vec3 direction{0.0f};
+        uint64_t firstSentMs = 0;
+        uint64_t lastSentMs = 0;
+        int attempts = 0;
+        bool acknowledged = false;
+    };
+    std::unordered_map<uint32_t, PendingFireRequest> pendingFireRequests;
 
     // ── Room code for HUD display ─────────────────────────────────────
     // Set on host register or client join, cleared on disconnect/leave.
@@ -349,7 +385,10 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
 void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const ProjectileStateEventPacket* event);
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event);
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
+void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event);
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
+void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
+void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
 

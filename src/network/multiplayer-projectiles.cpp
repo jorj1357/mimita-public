@@ -13,6 +13,7 @@
 #include "combat/projectile-render.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
+#include "config/weapon-hitfx-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "physics/physics-types.h"
@@ -98,10 +99,11 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
     {
         projectile.smokeAccumulator -= 1.0f;
         EffectPart part;
-        part.position = projectile.position;
+        // Trails use render position for smoothness
+        part.position = projectile.renderPosition;
         part.velocity = rocket
-            ? projectile.velocity * -0.08f
-            : projectile.velocity * 0.10f;
+            ? projectile.renderVelocity * -0.08f
+            : projectile.renderVelocity * 0.10f;
         part.lifetime = 0.0f;
         part.maxLifetime = rocket ? 0.8f : 0.25f;
         part.scale = rocket ? 0.18f : 0.04f;
@@ -148,6 +150,18 @@ uint32_t mpSendProjectileFireRequest(
     packet.dirY = dir.y;
     packet.dirZ = dir.z;
     mpSendPacket(ctx, &packet, sizeof(packet));
+
+    // Track pending fire request for retransmission
+    MultiplayerContext::PendingFireRequest pfr;
+    pfr.fireSerial = packet.fireSerial;
+    pfr.weapon = weapon;
+    pfr.origin = origin;
+    pfr.direction = dir;
+    pfr.firstSentMs = nowMs();
+    pfr.lastSentMs = nowMs();
+    pfr.attempts = 1;
+    ctx.pendingFireRequests[packet.fireSerial] = pfr;
+
     printf("[PROJECTILE FIRE REQUEST SEND] localPlayerId=%u localFireSerial=%u "
            "weapon=%s origin=(%.2f,%.2f,%.2f) direction=(%.3f,%.3f,%.3f) "
            "velocity=(server-derived) clientTick=%u\n",
@@ -206,6 +220,10 @@ uint32_t mpSendMeleeHitRequest(
 
 void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const ProjectileSpawnEventPacket* event)
 {
+    // Mark pending fire request as acknowledged
+    if (event->fireSerial != 0)
+        ctx.pendingFireRequests.erase(event->fireSerial);
+
     NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
     projectile.projectileId = event->projectileId;
     projectile.ownerPlayerId = event->ownerPlayerId;
@@ -221,6 +239,28 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.radius = event->radius;
     projectile.predicted = false;
     projectile.exploded = false;
+
+    // Initialize render state directly from spawn (first state = immediate render)
+    projectile.renderPosition = projectile.position;
+    projectile.renderVelocity = projectile.velocity;
+    projectile.renderRotation = projectile.rotation;
+    projectile.renderAngularVelocity = projectile.angularVelocity;
+
+    // Initialize interpolation state
+    projectile.prevStateTick = event->spawnTick;
+    projectile.prevStatePos = projectile.position;
+    projectile.prevStateVel = projectile.velocity;
+    projectile.prevStateRot = projectile.rotation;
+
+    projectile.targetStateTick = event->spawnTick;
+    projectile.targetStatePos = projectile.position;
+    projectile.targetStateVel = projectile.velocity;
+    projectile.targetStateRot = projectile.rotation;
+
+    projectile.latestAcceptedTick = event->spawnTick;
+    projectile.lastTargetReceivedMs = nowMs();
+    projectile.hasTargetState = true;
+
     printf("[PROJECTILE CLIENT SPAWN] projectileId=%u ownerPlayerId=%u "
            "weapon=%s position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f) "
            "spawnTick=%u\n",
@@ -239,7 +279,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         // Lost spawn event — recover from state update
         NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
         projectile.projectileId = event->projectileId;
-        projectile.ownerPlayerId = 0; // will be filled by explosion event
+        projectile.ownerPlayerId = 0;
         projectile.weaponType = event->weapon;
         projectile.position = {event->posX, event->posY, event->posZ};
         projectile.previousPosition = projectile.position;
@@ -251,6 +291,21 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.radius = 0.0f;
         projectile.predicted = false;
         projectile.exploded = false;
+        // Initialize render state for recovery
+        projectile.renderPosition = projectile.position;
+        projectile.renderVelocity = projectile.velocity;
+        projectile.renderRotation = projectile.rotation;
+        projectile.prevStateTick = event->header.tick;
+        projectile.prevStatePos = projectile.position;
+        projectile.prevStateVel = projectile.velocity;
+        projectile.prevStateRot = projectile.rotation;
+        projectile.targetStateTick = event->header.tick;
+        projectile.targetStatePos = projectile.position;
+        projectile.targetStateVel = projectile.velocity;
+        projectile.targetStateRot = projectile.rotation;
+        projectile.latestAcceptedTick = event->header.tick;
+        projectile.lastTargetReceivedMs = nowMs();
+        projectile.hasTargetState = true;
         printf("[PROJECTILE STATE RECOVER] projectileId=%u weapon=%s "
                "position=(%.2f,%.2f,%.2f) age=%.2f\n",
                event->projectileId, networkWeaponTypeName(event->weapon),
@@ -258,11 +313,46 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         return;
     }
     NetworkProjectile& projectile = it->second;
-    projectile.position = {event->posX, event->posY, event->posZ};
-    projectile.velocity = {event->velX, event->velY, event->velZ};
-    projectile.rotation = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+
+    // ── Stale state rejection ──────────────────────────────────────
+    // Reject states older than our latest accepted state.
+    const uint32_t newTick = event->header.tick;
+    if (newTick <= projectile.latestAcceptedTick)
+    {
+        printf("[PROJECTILE STATE RX] projectileId=%u serverTick=%u "
+               "latestAcceptedTick=%u accepted=0 reason=stale-or-duplicate\n",
+               event->projectileId, newTick, projectile.latestAcceptedTick);
+        return;
+    }
+
+    // ── Move current target to previous, set new target ────────────
+    projectile.prevStateTick = projectile.targetStateTick;
+    projectile.prevStatePos = projectile.targetStatePos;
+    projectile.prevStateVel = projectile.targetStateVel;
+    projectile.prevStateRot = projectile.targetStateRot;
+
+    projectile.targetStateTick = newTick;
+    projectile.targetStatePos = {event->posX, event->posY, event->posZ};
+    projectile.targetStateVel = {event->velX, event->velY, event->velZ};
+    projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+
+    // Also update raw authoritative state
+    projectile.position = projectile.targetStatePos;
+    projectile.velocity = projectile.targetStateVel;
+    projectile.rotation = projectile.targetStateRot;
     projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
     projectile.age = event->age;
+
+    projectile.latestAcceptedTick = newTick;
+    projectile.lastTargetReceivedMs = nowMs();
+    projectile.hasTargetState = true;
+
+    printf("[PROJECTILE STATE RX] projectileId=%u serverTick=%u "
+           "latestAcceptedTick=%u accepted=1 pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) age=%.2f\n",
+           event->projectileId, newTick, projectile.latestAcceptedTick,
+           event->posX, event->posY, event->posZ,
+           event->velX, event->velY, event->velZ,
+           event->age);
 }
 
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event)
@@ -280,28 +370,52 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
     EffectPartSystem::instance().spawnWorldDebris(position, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
     // Explosion smoke burst — config-driven burst for rockets and grenades
     {
-        const int smokeParticleCount = 12;
-        for (int i = 0; i < smokeParticleCount; ++i)
+        const std::string weaponId = weaponName;
+        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
+        if (expCfg.smoke.enabled)
         {
-            EffectPart part;
-            part.position = position + glm::vec3(
-                ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
-                ((float)rand() / RAND_MAX - 0.5f) * 2.0f,
-                ((float)rand() / RAND_MAX - 0.5f) * 2.0f);
-            part.velocity = glm::vec3(
-                ((float)rand() / RAND_MAX - 0.5f) * 6.0f,
-                ((float)rand() / RAND_MAX - 0.5f) * 6.0f,
-                (float)rand() / RAND_MAX * 4.0f + 2.0f);
-            part.lifetime = 0.0f;
-            part.maxLifetime = 1.2f + (float)rand() / RAND_MAX * 0.6f;
-            part.scale = 0.5f + (float)rand() / RAND_MAX * 0.5f;
-            part.endScale = 1.5f + (float)rand() / RAND_MAX * 1.0f;
-            part.color = glm::vec3(0.3f, 0.3f, 0.3f);
-            part.alpha = 0.7f;
-            part.gravity = 1.0f;
-            part.affectedByGravity = true;
-            part.replayType = std::string(weaponName) + "_explosion_smoke";
-            EffectPartSystem::instance().spawn(part);
+            for (int i = 0; i < expCfg.smoke.count; ++i)
+            {
+                EffectPart part;
+                part.position = position + glm::vec3(
+                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
+                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread,
+                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.spread);
+                part.velocity = glm::vec3(
+                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
+                    ((float)rand() / RAND_MAX - 0.5f) * expCfg.smoke.speed,
+                    (float)rand() / RAND_MAX * expCfg.smoke.speed * 0.5f + expCfg.smoke.upwardBias);
+                part.lifetime = 0.0f;
+                part.maxLifetime = expCfg.smoke.lifetime + (float)rand() / RAND_MAX * expCfg.smoke.lifetime * 0.3f;
+                part.scale = expCfg.smoke.size + (float)rand() / RAND_MAX * expCfg.smoke.size * 0.5f;
+                part.endScale = expCfg.smoke.endSize + (float)rand() / RAND_MAX * expCfg.smoke.endSize * 0.5f;
+                part.color = expCfg.smoke.color;
+                part.alpha = expCfg.smoke.alpha;
+                part.gravity = 1.0f;
+                part.affectedByGravity = true;
+                part.billboardText = false;
+                part.replayType = std::string(weaponName) + "_explosion_smoke";
+                EffectPartSystem::instance().spawn(part);
+            }
+        }
+    }
+
+    // ── Config-driven explosion sphere ─────────────────────────────────
+    {
+        const std::string weaponId = weaponName;
+        const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
+        if (expCfg.sphere.enabled)
+        {
+            EffectPart sphere;
+            sphere.position = position;
+            sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
+            sphere.scale = expCfg.sphere.startRadius;
+            sphere.endScale = expCfg.sphere.endRadius;
+            sphere.color = expCfg.sphere.startColor * expCfg.sphere.brightnessStart;
+            sphere.alpha = expCfg.sphere.alphaStart;
+            sphere.billboardText = false;
+            sphere.replayType = std::string(weaponName) + "_explosion_sphere";
+            EffectPartSystem::instance().spawn(sphere);
         }
     }
 
@@ -354,6 +468,21 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
            event->projectileId, weaponName,
            position.x, position.y, position.z, event->header.tick,
            (int)removedVisual);
+}
+
+void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)
+{
+    // Acknowledge pending fire request
+    if (event->accepted)
+    {
+        auto it = ctx.pendingFireRequests.find(event->fireSerial);
+        if (it != ctx.pendingFireRequests.end())
+        {
+            it->second.acknowledged = true;
+            printf("[PROJECTILE FIRE RESULT] fireSerial=%u projectileId=%u accepted=1\n",
+                   event->fireSerial, event->projectileId);
+        }
+    }
 }
 
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event)
@@ -455,39 +584,118 @@ static bool resolveClientGrenadeWorld(NetworkProjectile& projectile, const World
 
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
 {
+    (void)world;
+
+    // ── Retransmit unacknowledged fire requests ─────────────────────
+    const uint64_t now = nowMs();
+    for (auto it = ctx.pendingFireRequests.begin(); it != ctx.pendingFireRequests.end(); )
+    {
+        MultiplayerContext::PendingFireRequest& pfr = it->second;
+        if (pfr.acknowledged)
+        {
+            it = ctx.pendingFireRequests.erase(it);
+            continue;
+        }
+        // Retry every 100ms, up to 10 attempts
+        if (now - pfr.lastSentMs >= 100 && pfr.attempts < 10)
+        {
+            ProjectileFireRequestPacket packet{};
+            packet.header.type = PACKET_PROJECTILE_FIRE_REQUEST;
+            packet.header.tick = ctx.tick;
+            packet.header.playerId = ctx.localPlayerId;
+            packet.fireSerial = pfr.fireSerial;
+            packet.lastServerTick = ctx.latestServerTick;
+            packet.weapon = pfr.weapon;
+            packet.originX = pfr.origin.x; packet.originY = pfr.origin.y; packet.originZ = pfr.origin.z;
+            packet.dirX = pfr.direction.x; packet.dirY = pfr.direction.y; packet.dirZ = pfr.direction.z;
+            mpSendPacket(ctx, &packet, sizeof(packet));
+            pfr.lastSentMs = now;
+            pfr.attempts++;
+            printf("[PROJECTILE FIRE RETRY] fireSerial=%u attempt=%d\n",
+                   pfr.fireSerial, pfr.attempts);
+        }
+        // Timeout after 3 seconds
+        if (now - pfr.firstSentMs > 3000)
+        {
+            printf("[PROJECTILE FIRE TIMEOUT] fireSerial=%u dropped\n", pfr.fireSerial);
+            it = ctx.pendingFireRequests.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
     for (auto it = ctx.networkProjectiles.begin(); it != ctx.networkProjectiles.end(); )
     {
         NetworkProjectile& projectile = it->second;
         projectile.previousPosition = projectile.position;
         projectile.age += dt;
+
         if (projectile.lifetime > 0.0f && projectile.age > projectile.lifetime + 1.0f)
         {
             it = ctx.networkProjectiles.erase(it);
             continue;
         }
-        projectile.velocity.z -= projectileGravity(projectile.weaponType) * dt;
-        projectile.velocity *= std::max(0.0f, 1.0f - projectileDrag(projectile.weaponType) * dt);
-        projectile.position += projectile.velocity * dt;
 
-        if (projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER && projectile.radius > 0.0f)
+        // ── Interpolate or extrapolate render position ─────────────
+        // Interpolation: blend between previous and target state over server tick interval.
+        // Extrapolation: if no recent target state, briefly extrapolate with authoritative velocity.
+        if (projectile.hasTargetState)
         {
-            const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
-            resolveClientGrenadeWorld(projectile, world, def);
+            constexpr float SERVER_TICK_INTERVAL = 1.0f / 60.0f; // 60 Hz server
+            constexpr float EXTRAPOLATION_LIMIT = 0.15f; // 150ms max extrapolation
+
+            const uint64_t nowMsVal = nowMs();
+            const float elapsedSinceTargetMs = (float)(nowMsVal - projectile.lastTargetReceivedMs);
+
+            if (elapsedSinceTargetMs < 200.0f)
+            {
+                // Normal interpolation between previous and target
+                const float timeBetweenStates = (float)(projectile.targetStateTick - projectile.prevStateTick) * SERVER_TICK_INTERVAL;
+                const float timeSincePrev = elapsedSinceTargetMs / 1000.0f;
+                const float alpha = timeBetweenStates > 0.001f
+                    ? std::clamp(timeSincePrev / timeBetweenStates, 0.0f, 1.0f)
+                    : 1.0f;
+
+                projectile.renderPosition = glm::mix(projectile.prevStatePos, projectile.targetStatePos, alpha);
+                projectile.renderVelocity = glm::mix(projectile.prevStateVel, projectile.targetStateVel, alpha);
+                projectile.renderRotation = glm::normalize(glm::slerp(projectile.prevStateRot, projectile.targetStateRot, alpha));
+            }
+            else
+            {
+                // Extrapolation: continue from target state with its velocity
+                const float extrapSec = std::min((elapsedSinceTargetMs - 200.0f) / 1000.0f, EXTRAPOLATION_LIMIT);
+                projectile.renderPosition = projectile.targetStatePos + projectile.targetStateVel * extrapSec;
+                projectile.renderVelocity = projectile.targetStateVel;
+                projectile.renderRotation = projectile.targetStateRot;
+            }
+        }
+        else if (projectile.predicted)
+        {
+            // Owner prediction: run local simulation
+            projectile.velocity.z -= projectileGravity(projectile.weaponType) * dt;
+            projectile.velocity *= std::max(0.0f, 1.0f - projectileDrag(projectile.weaponType) * dt);
+            projectile.position += projectile.velocity * dt;
+            projectile.renderPosition = projectile.position;
+            projectile.renderVelocity = projectile.velocity;
+        }
+        else
+        {
+            // Fallback: just use authoritative position directly
+            projectile.renderPosition = projectile.position;
+            projectile.renderVelocity = projectile.velocity;
         }
 
-        const float angSpeed = glm::length(projectile.angularVelocity);
-        if (angSpeed > 0.0001f)
+        // Rotation from render velocity
+        const float renderSpeed = glm::length(projectile.renderVelocity);
+        if (renderSpeed > 0.001f)
         {
-            glm::quat delta = glm::angleAxis(
-                angSpeed * dt, glm::normalize(projectile.angularVelocity));
-            projectile.rotation = glm::normalize(delta * projectile.rotation);
-        }
-        else if (glm::length(projectile.velocity) > 0.001f)
-        {
-            projectile.rotation = glm::rotation(
+            projectile.renderRotation = glm::rotation(
                 glm::vec3(0.0f, 0.0f, 1.0f),
-                glm::normalize(projectile.velocity));
+                glm::normalize(projectile.renderVelocity));
         }
+
         spawnProjectileTrail(projectile, dt);
         ++it;
     }
@@ -501,7 +709,7 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         if (projectile.exploded)
             continue;
         ProjectileVisualConfig cfg = projectileVisualConfig(projectile.weaponType);
-        renderProjectile(camera, projectile.position, projectile.rotation, cfg);
+        renderProjectile(camera, projectile.renderPosition, projectile.renderRotation, cfg);
     }
 }
 

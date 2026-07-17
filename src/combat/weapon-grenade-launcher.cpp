@@ -56,10 +56,12 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     float angSpeed = cp(def, "angSpeed", 6.0f);
 
     glm::vec3 vel = aimDir * forwardSpeed + glm::vec3(0.0f, 0.0f, upBias);
-    glm::vec3 angVel(
-        ((float)(rand() % 2001) / 1000.0f - 1.0f) * angSpeed,
-        ((float)(rand() % 2001) / 1000.0f - 1.0f) * angSpeed,
-        ((float)(rand() % 2001) / 1000.0f - 1.0f) * angSpeed);
+
+    // Deterministic angular velocity (same on client and server — no rand())
+    glm::vec3 forward = glm::length(aimDir) > 0.0001f ? glm::normalize(aimDir) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 refUp = std::fabs(forward.z) < 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
+    glm::vec3 angVel = right * angSpeed;
 
     PersistentPhysicsSystem::instance().spawn(cfg, muzzlePos, vel, angVel,
                                               0, owner.username, def.id, owner.pos);

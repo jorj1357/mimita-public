@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 14;
+constexpr uint16_t PROTOCOL_VERSION = 15;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -64,7 +64,10 @@ enum PacketType : uint8_t
     PACKET_PROJECTILE_EXPLODE_EVENT = 30,
     PACKET_PROJECTILE_DESPAWN_EVENT = 31,
     PACKET_MELEE_HIT_REQUEST = 32,
-    PACKET_MELEE_HIT_EVENT = 33
+    PACKET_MELEE_HIT_EVENT = 33,
+    PACKET_PELLET_BLAST_REQUEST = 34,
+    PACKET_PELLET_BLAST_EVENT = 35,
+    PACKET_PROJECTILE_FIRE_RESULT = 36
 };
 
 enum EntityType : uint8_t
@@ -83,7 +86,8 @@ enum NetworkWeaponType : uint8_t
     NETWORK_WEAPON_SWORDSWORD = 4,
     NETWORK_WEAPON_ROCKET_LAUNCHER = 5,
     NETWORK_WEAPON_HAFS = 6,
-    NETWORK_WEAPON_GRENADE_LAUNCHER = 7
+    NETWORK_WEAPON_GRENADE_LAUNCHER = 7,
+    NETWORK_WEAPON_AA12 = 8
 };
 
 enum NetworkWeaponStateFlags : uint8_t
@@ -115,6 +119,24 @@ enum DisagreementReason : uint8_t
     DISAGREEMENT_TARGET_DEAD = 8,
     DISAGREEMENT_SELF_TARGET = 9
 };
+
+// ── Pellet blast impact types ──────────────────────────────────────
+enum PelletImpactType : uint8_t
+{
+    PELLET_IMPACT_NONE = 0,
+    PELLET_IMPACT_WORLD = 1,
+    PELLET_IMPACT_PLAYER = 2
+};
+
+enum HitBodyPart : uint8_t
+{
+    HIT_BODY_HEAD = 0,
+    HIT_BODY_TORSO = 1,
+    HIT_BODY_ARM = 2,
+    HIT_BODY_LEG = 3
+};
+
+constexpr int MAX_NETWORK_PELLETS = 16;
 
 enum ShotEffectFlags : uint16_t
 {
@@ -682,6 +704,84 @@ struct DisagreementPacket
     char description[64];
 };
 
+// ── Pellet blast packets ─────────────────────────────────────────────
+struct PelletBlastRequestPacket
+{
+    PacketHeader header;
+    uint32_t shotSerial = 0;
+    uint64_t clientTimeMs = 0;
+    uint32_t lastServerTick = 0;
+    uint32_t spreadSeed = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t reserved0 = 0;
+    uint16_t reserved1 = 0;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float baseDirX = 0.0f;
+    float baseDirY = 0.0f;
+    float baseDirZ = 0.0f;
+};
+
+struct NetworkPelletResult
+{
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    uint32_t targetPlayerId = 0;
+    uint8_t impactType = PELLET_IMPACT_NONE;
+    uint8_t bodyPart = 0;
+    uint8_t pelletIndex = 0;
+    uint8_t reserved = 0;
+};
+
+struct PelletBlastEventPacket
+{
+    PacketHeader header;
+    uint32_t shotSerial = 0;
+    uint64_t clientTimeMs = 0;
+    uint32_t shooterPlayerId = 0;
+    uint32_t spreadSeed = 0;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float originZ = 0.0f;
+    float baseDirX = 0.0f;
+    float baseDirY = 0.0f;
+    float baseDirZ = 0.0f;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t pelletCount = 0;
+    uint16_t reserved = 0;
+    NetworkPelletResult pellets[MAX_NETWORK_PELLETS];
+};
+
+// ── Projectile fire result ────────────────────────────────────────────
+enum ProjectileFireResultReason : uint8_t
+{
+    PROJECTILE_FIRE_ACCEPTED = 0,
+    PROJECTILE_FIRE_ALREADY_ACCEPTED = 1,
+    PROJECTILE_FIRE_DEAD = 2,
+    PROJECTILE_FIRE_COOLDOWN = 3,
+    PROJECTILE_FIRE_WEAPON_MISMATCH = 4,
+    PROJECTILE_FIRE_ORIGIN_INVALID = 5,
+    PROJECTILE_FIRE_DIRECTION_INVALID = 6,
+    PROJECTILE_FIRE_CONFIG_MISSING = 7
+};
+
+struct ProjectileFireResultPacket
+{
+    PacketHeader header;
+    uint32_t fireSerial = 0;
+    uint32_t projectileId = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t accepted = 0;
+    uint8_t reason = 0;
+    uint8_t reserved = 0;
+    float cooldownRemaining = 0.0f;
+};
+
 #pragma pack(pop)
 
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
@@ -695,6 +795,9 @@ static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
 static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
 static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
 static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too large");
+static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket is too large");
+static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
+              "PelletBlastEventPacket exceeds safe datagram limit");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

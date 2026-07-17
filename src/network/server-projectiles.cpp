@@ -35,6 +35,7 @@ struct ProjectileConfig
     int maxBounceCount = 0;
     float minBounceSpeed = 0.0f;
     float angularDrag = 0.0f;
+    float angularSpeed = 6.0f;
 };
 
 ProjectileConfig projectileConfig(uint8_t weapon)
@@ -82,6 +83,7 @@ ProjectileConfig projectileConfig(uint8_t weapon)
     cfg.maxBounceCount = (int)cp("maxBounceCount", 0.0f);
     cfg.minBounceSpeed = cp("minBounceSpeed", 0.0f);
     cfg.angularDrag = cp("angularDrag", 0.0f);
+    cfg.angularSpeed = cp("angSpeed", 6.0f);
 
     printf("[PROJECTILE CONFIG] weapon=%s speed=%.2f radius=%.2f fireDelay=%.2f "
            "lifetime=%.2f splashRadius=%.2f splashDamage=%.2f gravity=%.2f "
@@ -421,13 +423,23 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.ownerPlayerId = shooter.id;
     projectile.fireSerial = request->fireSerial;
     projectile.weaponType = request->weapon;
-    projectile.position = origin + dir * 0.5f;
+    // Match client spawn position exactly (no 0.5f forward offset)
+    projectile.position = origin;
     projectile.previousPosition = origin;
     projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    projectile.angularVelocity = request->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
-        ? glm::vec3(4.0f, 2.0f, 6.0f)
-        : glm::vec3(0.0f);
+    // Deterministic angular velocity for grenades (no rand())
+    if (request->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+    {
+        glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 refUp = std::fabs(forward.z) < 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
+        projectile.angularVelocity = right * cfg.angularSpeed;
+    }
+    else
+    {
+        projectile.angularVelocity = glm::vec3(0.0f);
+    }
     projectile.lifetime = cfg.lifetime;
     projectile.radius = cfg.radius;
     projectile.splashRadius = cfg.splashRadius;
@@ -469,6 +481,24 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
            projectile.spawnTick, projectile.lifetime);
 
     broadcastPacket(sock, players, spawn, totalPacketsOut);
+
+    // Send fire result to the shooter
+    ProjectileFireResultPacket result{};
+    result.header.type = PACKET_PROJECTILE_FIRE_RESULT;
+    result.header.tick = tick;
+    result.header.playerId = shooter.id;
+    result.fireSerial = request->fireSerial;
+    result.projectileId = projectile.id;
+    result.weapon = request->weapon;
+    result.accepted = 1;
+    result.reason = PROJECTILE_FIRE_ACCEPTED;
+    result.cooldownRemaining = shooter.projectileFireCooldown;
+    for (const auto& kv : players)
+    {
+        if (kv.first == shooter.id)
+            sendto(sock, (const char*)&result, sizeof(result), 0,
+                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+    }
 }
 
 void tickServerProjectiles(SOCKET sock,

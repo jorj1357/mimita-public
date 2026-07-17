@@ -439,7 +439,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             uiDrawText(buf, cx - codeW * 0.5f, 18.0f, codeScale, {1.0f, 1.0f, 1.0f, 1.0f});
             float instrScale = 0.32f;
             const char* line1 = "Press ` to open console";
-            const char* line2 = "Type roomcodeshow 0 to hide this";
+            const char* line2 = "Type roomcodeshow 0 to hide the code Vro :heart:";
             float line1W = uiMeasureText(line1, instrScale);
             float line2W = uiMeasureText(line2, instrScale);
             float instrY = 46.0f;

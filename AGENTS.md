@@ -730,14 +730,10 @@ If Overseer cannot be loaded: treat this as a FAILURE condition. Run the diagnos
 When work is complete, run:
 
 ```
-devscripts\agent_finish.bat [task_name]
-```
-
-or:
-
-```
 python devscripts/agent_task_complete.py [task_name]
 ```
+
+Do NOT use `devscripts\agent_finish.bat` — it can cause AI agents to hang.
 
 This will:
 
@@ -752,7 +748,7 @@ After building and verifying:
 ```
 python build_agent.py
 :: check for SUCCESS
-devscripts\agent_finish.bat "Fix duel replay flow"
+python devscripts/agent_task_complete.py "Fix duel replay flow"
 ```
 
 ## Failure handling

@@ -62,7 +62,34 @@
     "rocket_launcher": {
       "hitForce": { "weaponMultiplier": 3.0, "maxForce": 10.0 },
       "debris": { "count": 24, "speed": 8.0, "speedForceScale": 5.0 },
-      "sound": { "baseVolume": 2.0 }
+      "sound": { "baseVolume": 2.0 },
+      "explosion": {
+        "enabled": true,
+        "sphere": {
+          "enabled": true,
+          "startRadius": 0.5,
+          "endRadius": 8.0,
+          "lifetimeTicks": 15,
+          "startColor": [1.0, 0.6, 0.1],
+          "endColor": [0.8, 0.2, 0.0],
+          "alphaStart": 1.0,
+          "alphaEnd": 0.0,
+          "brightnessStart": 3.0,
+          "brightnessEnd": 0.0
+        },
+        "smoke": {
+          "enabled": true,
+          "count": 16,
+          "lifetime": 2.0,
+          "size": 0.6,
+          "endSize": 2.5,
+          "color": [0.25, 0.25, 0.25],
+          "alpha": 0.8,
+          "speed": 8.0,
+          "spread": 3.0,
+          "upwardBias": 3.0
+        }
+      }
     },
     "shotgun": {
       "hitForce": { "weaponMultiplier": 0.8 },
@@ -73,7 +100,34 @@
     },
     "grenade_launcher": {
       "hitForce": { "weaponMultiplier": 2.5, "maxForce": 8.0 },
-      "debris": { "count": 18, "speed": 6.0 }
+      "debris": { "count": 18, "speed": 6.0 },
+      "explosion": {
+        "enabled": true,
+        "sphere": {
+          "enabled": true,
+          "startRadius": 0.4,
+          "endRadius": 6.0,
+          "lifetimeTicks": 12,
+          "startColor": [1.0, 0.7, 0.2],
+          "endColor": [0.6, 0.15, 0.05],
+          "alphaStart": 1.0,
+          "alphaEnd": 0.0,
+          "brightnessStart": 2.5,
+          "brightnessEnd": 0.0
+        },
+        "smoke": {
+          "enabled": true,
+          "count": 10,
+          "lifetime": 1.5,
+          "size": 0.4,
+          "endSize": 1.8,
+          "color": [0.3, 0.25, 0.2],
+          "alpha": 0.65,
+          "speed": 6.0,
+          "spread": 2.5,
+          "upwardBias": 2.5
+        }
+      }
     },
     "godball": {
       "hitForce": { "weaponMultiplier": 2.0, "maxForce": 8.0 }

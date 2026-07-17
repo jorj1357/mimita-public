@@ -270,6 +270,8 @@ int runServer(const LaunchOptions& options)
                 handleExplodeRequest(buffer, bytes, players);
             else if (header->type == PACKET_SHOT_REQUEST)
                 handleShotRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut, &disagreementRetransmit);
+            else if (header->type == PACKET_PELLET_BLAST_REQUEST)
+                handlePelletBlastRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut, &disagreementRetransmit);
             else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
                 handleProjectileFireRequest(sock, from, buffer, bytes, players, projectiles,
                                             nextProjectileId, world, tick, totalPacketsOut);
@@ -628,6 +630,10 @@ void tickListenServer(ListenServerState& state, float dt)
                 handleShotRequest(state.sock, from, buffer, bytes, state.players,
                                   state.world, state.tick, state.totalPacketsOut,
                                   &state.disagreementRetransmit);
+            else if (header->type == PACKET_PELLET_BLAST_REQUEST)
+                handlePelletBlastRequest(state.sock, from, buffer, bytes, state.players,
+                                         state.world, state.tick, state.totalPacketsOut,
+                                         &state.disagreementRetransmit);
             else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
                 handleProjectileFireRequest(state.sock, from, buffer, bytes, state.players,
                                             state.projectiles, state.nextProjectileId,

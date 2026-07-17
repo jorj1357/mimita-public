@@ -112,6 +112,20 @@ void registerWeaponCommands()
                     return;
                 }
 
+                // Multi-pellet weapons (shotgun, AA12) use dedicated blast request
+                if (netWeapon == MimitaNet::NETWORK_WEAPON_SHOTGUN ||
+                    netWeapon == MimitaNet::NETWORK_WEAPON_AA12)
+                {
+                    unsigned int seed = (unsigned int)(shot.start.x * 73856093)
+                        ^ (unsigned int)(shot.start.y * 19349663)
+                        ^ (unsigned int)(shot.start.z * 83492791)
+                        ^ mpContext.nextLocalShotSerial;
+                    MimitaNet::mpSendPelletBlastRequest(
+                        mpContext, netWeapon, shot.start, direction, seed);
+                    Terminal::instance().addLog("[WEAPON] fired");
+                    return;
+                }
+
                 if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
                     if (shot.targetIsRemotePlayer) {
                         MimitaNet::mpSendMeleeHitRequest(

@@ -66,11 +66,44 @@ struct WeaponHitFxForceConfig {
     bool momentumEnabled = true;
 };
 
+struct WeaponHitFxExplosionBurstSphere {
+    bool enabled = true;
+    float startRadius = 0.5f;
+    float endRadius = 8.0f;
+    int lifetimeTicks = 15;
+    glm::vec3 startColor{1.0f, 0.6f, 0.1f};
+    glm::vec3 endColor{0.8f, 0.2f, 0.0f};
+    float alphaStart = 1.0f;
+    float alphaEnd = 0.0f;
+    float brightnessStart = 3.0f;
+    float brightnessEnd = 0.0f;
+};
+
+struct WeaponHitFxExplosionBurstSmoke {
+    bool enabled = true;
+    int count = 12;
+    float lifetime = 1.8f;
+    float size = 0.5f;
+    float endSize = 2.0f;
+    glm::vec3 color{0.3f, 0.3f, 0.3f};
+    float alpha = 0.7f;
+    float speed = 6.0f;
+    float spread = 2.0f;
+    float upwardBias = 2.0f;
+};
+
+struct WeaponHitFxExplosionBurstConfig {
+    bool enabled = true;
+    WeaponHitFxExplosionBurstSphere sphere;
+    WeaponHitFxExplosionBurstSmoke smoke;
+};
+
 struct WeaponHitFxPerWeapon {
     WeaponHitFxForceConfig hitForce;
     WeaponHitFxDebrisConfig debris;
     WeaponHitFxBloodConfig blood;
     WeaponHitFxSoundConfig sound;
+    WeaponHitFxExplosionBurstConfig explosionBurst;
 };
 
 class WeaponHitFxConfig {
@@ -89,6 +122,7 @@ public:
     const WeaponHitFxDebrisConfig& debrisFor(const std::string& weaponId) const;
     const WeaponHitFxBloodConfig& bloodFor(const std::string& weaponId) const;
     const WeaponHitFxSoundConfig& soundFor(const std::string& weaponId) const;
+    const WeaponHitFxExplosionBurstConfig& explosionBurstFor(const std::string& weaponId) const;
 
 private:
     WeaponHitFxConfig() = default;

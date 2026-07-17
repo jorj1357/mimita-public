@@ -583,6 +583,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpProcessProjectileDespawnEventPacket(
                 ctx, reinterpret_cast<const ProjectileDespawnEventPacket*>(buffer));
         }
+        else if (header->type == PACKET_PROJECTILE_FIRE_RESULT &&
+                 bytes >= (int)sizeof(ProjectileFireResultPacket))
+        {
+            mpProcessProjectileFireResultPacket(
+                ctx, reinterpret_cast<const ProjectileFireResultPacket*>(buffer));
+        }
+        else if (header->type == PACKET_PELLET_BLAST_EVENT &&
+                 bytes >= (int)sizeof(PelletBlastEventPacket))
+        {
+            mpProcessPelletBlastEventPacket(
+                ctx, reinterpret_cast<const PelletBlastEventPacket*>(buffer));
+        }
         else if (header->type == PACKET_MELEE_HIT_EVENT &&
                  bytes >= (int)sizeof(MeleeHitEventPacket))
         {
