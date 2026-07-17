@@ -17,6 +17,203 @@ namespace MimitaNet {
 
 namespace {
 
+// ── Shared snapshot entity processing ──────────────────────────────
+// Called by both legacy (SnapshotPacket) and chunked (CompactEntityData)
+// snapshot paths.  Handles local-player state, remote-player/NPC creation,
+// interpolation, and cleanup of missing entities.
+static void processSnapshotEntities(
+    MultiplayerContext& ctx,
+    const SnapshotEntity* entities,
+    uint32_t entityCount,
+    uint32_t serverTick,
+    float dt,
+    const char* sourceName)
+{
+    std::unordered_map<uint32_t, bool> seenPlayers;
+    std::unordered_map<uint32_t, bool> seenNpcs;
+
+    for (uint32_t i = 0; i < entityCount; ++i)
+    {
+        const SnapshotEntity& entity = entities[i];
+        if (!entity.active || entity.networkEntityId == 0)
+        {
+            printf("[CLIENT ENTITY SKIP] entityId=%u reason=inactive-or-zero-id\n",
+                   entity.networkEntityId);
+            continue;
+        }
+
+        const bool isLocal =
+            entity.entityType == ENTITY_PLAYER &&
+            entity.ownerClientId == ctx.localPlayerId;
+        if (isLocal)
+        {
+            const bool olderEpoch = entity.transformEpoch != 0 &&
+                ctx.localServerEpoch != 0 &&
+                (uint32_t)entity.transformEpoch < (uint32_t)ctx.localServerEpoch;
+            const bool sameEpochOlderTick = entity.transformEpoch == ctx.localServerEpoch &&
+                serverTick <= ctx.latestLocalSnapshotTick;
+            const bool acceptLifecycle = !olderEpoch && !sameEpochOlderTick;
+
+            if (!acceptLifecycle)
+            {
+                ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+                ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
+                ctx.localServerYaw = entity.yaw;
+                ctx.localServerOnGround = entity.onGround != 0;
+                ctx.localPingMs = entity.pingMs;
+                ctx.hasLocalServerPosition = true;
+                continue;
+            }
+
+            ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+            ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
+            ctx.localServerYaw = entity.yaw;
+            ctx.localServerOnGround = entity.onGround != 0;
+            ctx.hasLocalServerPosition = true;
+            ctx.localServerHealth = entity.health;
+            ctx.localServerEpoch = entity.transformEpoch;
+            ctx.localPingMs = entity.pingMs;
+            ctx.latestLocalSnapshotTick = serverTick;
+            if (entity.health > 0)
+                ctx.latestAliveSnapshotTick = serverTick;
+
+            if (entity.transformEpoch != 0 &&
+                (uint32_t)entity.transformEpoch > ctx.transformEpoch)
+            {
+                const uint32_t oldEpoch = ctx.transformEpoch;
+                ctx.transformEpoch = entity.transformEpoch;
+                ctx.teleportResync = true;
+                static uint64_t lastEpochSyncLogMs = 0;
+                uint64_t nowSnapshot = nowMs();
+                if (nowSnapshot - lastEpochSyncLogMs >= 500)
+                {
+                    printf("[NET EPOCH SYNC] player=%u oldOutgoingEpoch=%u newServerEpoch=%u "
+                           "position=(%.2f,%.2f,%.2f)\n",
+                           ctx.localPlayerId, oldEpoch,
+                           (uint32_t)entity.transformEpoch,
+                           entity.px, entity.py, entity.pz);
+                    lastEpochSyncLogMs = nowSnapshot;
+                }
+            }
+            if (ctx.awaitingTeleportAck &&
+                glm::length(ctx.localServerPosition -
+                            ctx.pendingTeleportPosition) <= 1.0f)
+            {
+                ctx.awaitingTeleportAck = false;
+                ctx.teleportResync = true;
+                printf("[NET TELEPORT ACK] position=%.1f,%.1f,%.1f\n",
+                       ctx.localServerPosition.x, ctx.localServerPosition.y,
+                       ctx.localServerPosition.z);
+            }
+            if (ctx.awaitingExplodeDeath && entity.health <= 0)
+                ctx.awaitingExplodeDeath = false;
+            ctx.playerRegistry[entity.networkEntityId] = {
+                entity.displayName, entity.networkEntityId, entity.pingMs
+            };
+            printf("[CLIENT SNAPSHOT] %s tick=%u local pos=(%.2f,%.2f,%.2f) hp=%d epoch=%u\n",
+                   sourceName, serverTick,
+                   entity.px, entity.py, entity.pz, entity.health, entity.transformEpoch);
+            continue;
+        }
+
+        std::unordered_map<uint32_t, Player>* replicas = nullptr;
+        std::unordered_map<uint32_t, EntityInterpolationState>* interpolationMap = nullptr;
+        std::unordered_map<uint32_t, bool>* seen = nullptr;
+        const char* typeName = nullptr;
+        if (entity.entityType == ENTITY_PLAYER)
+        {
+            replicas = &ctx.remotePlayers;
+            interpolationMap = &ctx.remotePlayerInterpolation;
+            seen = &seenPlayers;
+            typeName = "Player";
+            ctx.playerRegistry[entity.networkEntityId] = {
+                entity.displayName, entity.networkEntityId, entity.pingMs
+            };
+        }
+        else if (entity.entityType == ENTITY_NPC)
+        {
+            replicas = &ctx.remoteNpcs;
+            interpolationMap = &ctx.remoteNpcInterpolation;
+            seen = &seenNpcs;
+            typeName = "NPC";
+        }
+        else
+        {
+            printf("[CLIENT ENTITY SKIP] entityId=%u reason=unknown-entity-type-%u\n",
+                   entity.networkEntityId, entity.entityType);
+            continue;
+        }
+
+        bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+        Player& p = (*replicas)[entity.networkEntityId];
+        bool isNew = !existsBefore;
+        EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
+        if (isNew)
+        {
+            if (GetPlayerSettings().avatarName.empty()) {
+                AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
+            } else {
+                AvatarSystem::instance().applyToPlayer(p);
+            }
+            interpolation.renderRegistered = true;
+            printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
+                   "mesh=%s position=(%.2f,%.2f,%.2f)\n",
+                   entity.networkEntityId, typeName, entity.ownerClientId,
+                   p.modelLoaded ? "player-glb" : "fallback-capsule",
+                   entity.px, entity.py, entity.pz);
+        }
+
+        pushInterpolationTarget(interpolation, entity, serverTick);
+        if (isNew)
+            updateRenderedReplica(p, interpolation, dt);
+        (*seen)[entity.networkEntityId] = true;
+
+        static uint64_t lastEntityLogMs = 0;
+        uint64_t nowEnt = nowMs();
+        if (isNew || nowEnt - lastEntityLogMs >= 1000)
+        {
+            lastEntityLogMs = nowEnt;
+            printf("[CLIENT ENTITY] entityId=%u type=%s ownerId=%u isLocal=0 existsBefore=%d "
+                   "createdReplica=%d renderRegistered=%d position=(%.2f,%.2f,%.2f) rot=%.2f name=%s\n",
+                   entity.networkEntityId, typeName, entity.ownerClientId,
+                   (int)existsBefore, (int)isNew, (int)interpolation.renderRegistered,
+                   entity.px, entity.py, entity.pz, entity.yaw,
+                   entity.displayName);
+        }
+    }
+
+    // Clean up missing entities
+    for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
+    {
+        if (!seenPlayers[it->first])
+        {
+            const uint32_t eid = it->first;
+            printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=Player name=\"%s\"\n",
+                   eid, ctx.playerRegistry[eid].name.c_str());
+            it = ctx.remotePlayers.erase(it);
+            ctx.remotePlayerInterpolation.erase(eid);
+            ctx.playerRegistry.erase(eid);
+        }
+        else
+            ++it;
+    }
+    for (auto it = ctx.remoteNpcs.begin(); it != ctx.remoteNpcs.end(); )
+    {
+        if (!seenNpcs[it->first])
+        {
+            const uint32_t eid = it->first;
+            printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=NPC name=\"%s\"\n",
+                   eid, it->second.username.c_str());
+            it = ctx.remoteNpcs.erase(it);
+            ctx.remoteNpcInterpolation.erase(eid);
+        }
+        else
+            ++it;
+    }
+}
+
+// (anonymous namespace continues below)
+
 bool isSameAddress(const sockaddr_in& a, const sockaddr_in& b)
 {
     return a.sin_family == b.sin_family &&
@@ -300,216 +497,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.latestServerTick = snapshot->header.tick;
             ctx.lastSnapshotReceivedMs = nowMs();
             uint32_t count = std::min(snapshot->entityCount, (uint32_t)MAX_SNAPSHOT_ENTITIES);
-            const bool logSnapshot = snapshot->header.tick % 60 == 0;
 
-            if (logSnapshot)
-                printf("[CLIENT SNAPSHOT] entityCount=%u playerCount=%u npcCount=%u bytes=%d tick=%u\n",
-                       snapshot->entityCount, snapshot->playerCount,
-                       snapshot->npcCount, bytes, snapshot->header.tick);
-
-            std::unordered_map<uint32_t, bool> seenPlayers;
-            std::unordered_map<uint32_t, bool> seenNpcs;
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                const SnapshotEntity& entity = snapshot->entities[i];
-                if (!entity.active || entity.networkEntityId == 0)
-                {
-                    printf("[CLIENT ENTITY SKIP] entityId=%u reason=inactive-or-zero-id\n",
-                           entity.networkEntityId);
-                    continue;
-                }
-
-                const bool isLocal =
-                    entity.entityType == ENTITY_PLAYER &&
-                    entity.ownerClientId == ctx.localPlayerId;
-                if (isLocal)
-                {
-                    // ── Stale snapshot rejection ──────────────────────
-                    // Reject snapshots with an epoch older than our current
-                    // epoch — prevents old-death from reverting a new life.
-                    const bool olderEpoch = entity.transformEpoch != 0 &&
-                        ctx.localServerEpoch != 0 &&
-                        (uint32_t)entity.transformEpoch < (uint32_t)ctx.localServerEpoch;
-                    const bool sameEpochOlderTick = entity.transformEpoch == ctx.localServerEpoch &&
-                        snapshot->header.tick <= ctx.latestLocalSnapshotTick;
-                    const bool acceptLifecycle =
-                        !olderEpoch && !sameEpochOlderTick;
-
-                    if (!acceptLifecycle)
-                    {
-                        const char* reason = olderEpoch ? "old-epoch" : "old-tick";
-                        printf("[CLIENT LIFE SNAPSHOT] playerId=%u snapshotTick=%u "
-                               "snapshotEpoch=%u currentEpoch=%u health=%d accepted=0 reason=%s\n",
-                               ctx.localPlayerId, snapshot->header.tick,
-                               (uint32_t)entity.transformEpoch,
-                               (uint32_t)ctx.localServerEpoch,
-                               entity.health, reason);
-                        ctx.localServerPosition = {entity.px, entity.py, entity.pz};
-                        ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
-                        ctx.localServerYaw = entity.yaw;
-                        ctx.localServerOnGround = entity.onGround != 0;
-                        ctx.localPingMs = entity.pingMs;
-                        ctx.hasLocalServerPosition = true;
-                        continue;
-                    }
-
-                    ctx.localServerPosition = {entity.px, entity.py, entity.pz};
-                    ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
-                    ctx.localServerYaw = entity.yaw;
-                    ctx.localServerOnGround = entity.onGround != 0;
-                    ctx.hasLocalServerPosition = true;
-                    ctx.localServerHealth = entity.health;
-                    ctx.localServerEpoch = entity.transformEpoch;
-                    ctx.localPingMs = entity.pingMs;
-                    ctx.latestLocalSnapshotTick = snapshot->header.tick;
-                    if (entity.health > 0)
-                        ctx.latestAliveSnapshotTick = snapshot->header.tick;
-
-                    // Sync outgoing epoch if server incremented it (respawn/teleport)
-                    if (entity.transformEpoch != 0 &&
-                        (uint32_t)entity.transformEpoch > ctx.transformEpoch)
-                    {
-                        const uint32_t oldEpoch = ctx.transformEpoch;
-                        ctx.transformEpoch = entity.transformEpoch;
-                        ctx.teleportResync = true;
-                        static uint64_t lastEpochSyncLogMs = 0;
-                        uint64_t nowSnapshot = nowMs();
-                        if (nowSnapshot - lastEpochSyncLogMs >= 500)
-                        {
-                            printf("[NET EPOCH SYNC] player=%u oldOutgoingEpoch=%u newServerEpoch=%u "
-                                   "position=(%.2f,%.2f,%.2f)\n",
-                                   ctx.localPlayerId, oldEpoch,
-                                   (uint32_t)entity.transformEpoch,
-                                   entity.px, entity.py, entity.pz);
-                            lastEpochSyncLogMs = nowSnapshot;
-                        }
-                    }
-                    if (ctx.awaitingTeleportAck &&
-                        glm::length(
-                            ctx.localServerPosition -
-                            ctx.pendingTeleportPosition) <= 1.0f)
-                    {
-                        ctx.awaitingTeleportAck = false;
-                        ctx.teleportResync = true;
-                        printf("[NET TELEPORT ACK] position=%.1f,%.1f,%.1f\n",
-                               ctx.localServerPosition.x,
-                               ctx.localServerPosition.y,
-                               ctx.localServerPosition.z);
-                    }
-                    if (ctx.awaitingExplodeDeath && entity.health <= 0)
-                        ctx.awaitingExplodeDeath = false;
-                    ctx.playerRegistry[entity.networkEntityId] = {
-                        entity.displayName, entity.networkEntityId, entity.pingMs
-                    };
-                    if (logSnapshot)
-                    {
-                        printf("[CLIENT ENTITY] entityId=%u type=Player ownerId=%u isLocal=1 existsBefore=1 "
-                               "createdReplica=0 renderRegistered=1 position=(%.2f,%.2f,%.2f) rotation=%.2f\n",
-                               entity.networkEntityId, entity.ownerClientId,
-                               entity.px, entity.py, entity.pz, entity.yaw);
-                        printf("[CLIENT ENTITY SKIP] entityId=%u reason=local-prediction-keeps-transform\n",
-                               entity.networkEntityId);
-                    }
-                    continue;
-                }
-
-                std::unordered_map<uint32_t, Player>* replicas = nullptr;
-                std::unordered_map<uint32_t, EntityInterpolationState>* interpolationMap = nullptr;
-                std::unordered_map<uint32_t, bool>* seen = nullptr;
-                const char* typeName = nullptr;
-                if (entity.entityType == ENTITY_PLAYER)
-                {
-                    replicas = &ctx.remotePlayers;
-                    interpolationMap = &ctx.remotePlayerInterpolation;
-                    seen = &seenPlayers;
-                    typeName = "Player";
-                    ctx.playerRegistry[entity.networkEntityId] = {
-                        entity.displayName, entity.networkEntityId, entity.pingMs
-                    };
-                }
-                else if (entity.entityType == ENTITY_NPC)
-                {
-                    replicas = &ctx.remoteNpcs;
-                    interpolationMap = &ctx.remoteNpcInterpolation;
-                    seen = &seenNpcs;
-                    typeName = "NPC";
-                }
-                else
-                {
-                    printf("[CLIENT ENTITY SKIP] entityId=%u reason=unknown-entity-type-%u\n",
-                           entity.networkEntityId, entity.entityType);
-                    continue;
-                }
-
-                bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
-                Player& p = (*replicas)[entity.networkEntityId];
-                bool isNew = !existsBefore;
-                EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
-                if (isNew)
-                {
-                    if (GetPlayerSettings().avatarName.empty()) {
-                        AvatarSystem::applySingleTexture(p, GetPlayerSettings().outfitPath);
-                    } else {
-                        AvatarSystem::instance().applyToPlayer(p);
-                    }
-                    interpolation.renderRegistered = true;
-                    printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
-                           "mesh=%s position=(%.2f,%.2f,%.2f)\n",
-                           entity.networkEntityId, typeName, entity.ownerClientId,
-                           p.modelLoaded ? "player-glb" : "fallback-capsule",
-                           entity.px, entity.py, entity.pz);
-                }
-
-                pushInterpolationTarget(interpolation, entity, snapshot->header.tick);
-                if (isNew)
-                    updateRenderedReplica(p, interpolation, dt);
-                (*seen)[entity.networkEntityId] = true;
-
-                if (isNew || logSnapshot)
-                {
-                    printf("[CLIENT ENTITY] entityId=%u type=%s ownerId=%u isLocal=0 existsBefore=%d "
-                           "createdReplica=%d renderRegistered=%d position=(%.2f,%.2f,%.2f) rotation=%.2f\n",
-                           entity.networkEntityId, typeName, entity.ownerClientId,
-                           (int)existsBefore, (int)isNew, (int)interpolation.renderRegistered,
-                           entity.px, entity.py, entity.pz, entity.yaw);
-                    printf("[INTERPOLATION] entityId=%u snapshotCount=%d renderPos=(%.2f,%.2f,%.2f) "
-                           "targetPos=(%.2f,%.2f,%.2f)\n",
-                           entity.networkEntityId,
-                           interpolation.hasPrevious && interpolation.hasTarget ? 2 : 1,
-                           p.pos.x, p.pos.y, p.pos.z,
-                           interpolation.target.position.x,
-                           interpolation.target.position.y,
-                           interpolation.target.position.z);
-                }
-            }
-
-            for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
-            {
-                if (!seenPlayers[it->first])
-                {
-                    const uint32_t entityId = it->first;
-                    printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=Player name=\"%s\"\n",
-                           it->first, ctx.playerRegistry[it->first].name.c_str());
-                    it = ctx.remotePlayers.erase(it);
-                    ctx.remotePlayerInterpolation.erase(entityId);
-                    ctx.playerRegistry.erase(entityId);
-                }
-                else
-                    ++it;
-            }
-            for (auto it = ctx.remoteNpcs.begin(); it != ctx.remoteNpcs.end(); )
-            {
-                if (!seenNpcs[it->first])
-                {
-                    const uint32_t entityId = it->first;
-                    printf("[ENTITY DESTROY] reason=missing-from-snapshot entityId=%u type=NPC name=\"%s\"\n",
-                           it->first, it->second.username.c_str());
-                    it = ctx.remoteNpcs.erase(it);
-                    ctx.remoteNpcInterpolation.erase(entityId);
-                }
-                else
-                    ++it;
-            }
+            processSnapshotEntities(ctx, snapshot->entities, count,
+                                    snapshot->header.tick, dt, "legacy");
         }
         else if (header->type == PACKET_SHOT_EVENT &&
                  bytes >= (int)sizeof(ShotEventPacket))
@@ -529,62 +519,78 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (!parseSnapshotChunk(buffer, (size_t)bytes, chunk))
                 return;
 
-            ++ctx.snapshotsReceived;
+            // Buffer the chunk
             ctx.latestServerTick = chunk.header.tick;
-
             auto& bufMap = ctx.snapshotChunkBuffers[chunk.header.tick];
             bufMap.chunks[chunk.chunkIndex] = chunk;
             bufMap.lastReceiveMs = nowMs();
 
-            if (bufMap.chunks.size() == chunk.chunkCount)
+            // Do NOT increment snapshotsReceived per chunk — wait for full reassembly
+            // Do NOT update lastSnapshotTick yet — wait until all chunks arrive
+
+            // Check if all chunks for this tick have arrived
+            if (bufMap.chunks.size() != chunk.chunkCount)
             {
-                std::vector<SnapshotChunkPacket> sorted;
-                for (uint16_t ci = 0; ci < chunk.chunkCount; ++ci)
+                // Clean stale buffers
+                uint64_t nowClean = nowMs();
+                for (auto it = ctx.snapshotChunkBuffers.begin(); it != ctx.snapshotChunkBuffers.end(); )
                 {
-                    auto it = bufMap.chunks.find(ci);
-                    if (it == bufMap.chunks.end()) { sorted.clear(); break; }
-                    sorted.push_back(it->second);
+                    if (nowClean - it->second.lastReceiveMs > 1000)
+                        it = ctx.snapshotChunkBuffers.erase(it);
+                    else ++it;
                 }
-                if (!sorted.empty())
-                {
-                    std::vector<CompactEntityData> outEntities;
-                    if (reassembleSnapshotChunks(sorted, outEntities))
-                    {
-                        ctx.lastSnapshotTick = chunk.header.tick;
-                        ctx.lastSnapshotReceivedMs = nowMs();
-                        for (const auto& ce : outEntities)
-                        {
-                            SnapshotEntity entity = snapshotEntityFromCompact(ce);
-                            if (!entity.active || entity.networkEntityId == 0) break;
-                            const bool isLocal = entity.entityType == ENTITY_PLAYER &&
-                                entity.ownerClientId == ctx.localPlayerId;
-                            if (isLocal)
-                            {
-                                ctx.localServerPosition = {entity.px, entity.py, entity.pz};
-                                ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
-                                ctx.localServerYaw = entity.yaw;
-                                ctx.localServerOnGround = entity.onGround != 0;
-                                ctx.hasLocalServerPosition = true;
-                                ctx.localServerHealth = entity.health;
-                                ctx.localServerEpoch = entity.transformEpoch;
-                                ctx.localPingMs = entity.pingMs;
-                                ctx.latestLocalSnapshotTick = chunk.header.tick;
-                                if (entity.health > 0)
-                                    ctx.latestAliveSnapshotTick = chunk.header.tick;
-                                break;
-                            }
-                        }
-                    }
-                }
+                return;
+            }
+
+            // All chunks received — sort and reassemble
+            std::vector<SnapshotChunkPacket> sorted;
+            sorted.reserve(chunk.chunkCount);
+            for (uint16_t ci = 0; ci < chunk.chunkCount; ++ci)
+            {
+                auto it = bufMap.chunks.find(ci);
+                if (it == bufMap.chunks.end()) { sorted.clear(); break; }
+                sorted.push_back(it->second);
+            }
+            if (sorted.empty())
+            {
                 ctx.snapshotChunkBuffers.erase(chunk.header.tick);
+                return;
             }
-            uint64_t nowClean = nowMs();
-            for (auto it = ctx.snapshotChunkBuffers.begin(); it != ctx.snapshotChunkBuffers.end(); )
+
+            std::vector<CompactEntityData> outEntities;
+            if (!reassembleSnapshotChunks(sorted, outEntities))
             {
-                if (nowClean - it->second.lastReceiveMs > 1000)
-                    it = ctx.snapshotChunkBuffers.erase(it);
-                else ++it;
+                ctx.snapshotChunkBuffers.erase(chunk.header.tick);
+                return;
             }
+
+            // Track missed snapshots
+            if (ctx.lastSnapshotTick != 0 &&
+                chunk.header.tick > ctx.lastSnapshotTick + 1)
+            {
+                ctx.snapshotsMissed += chunk.header.tick - ctx.lastSnapshotTick - 1;
+            }
+
+            // Update stats exactly once per complete snapshot
+            ++ctx.snapshotsReceived;
+            ctx.lastSnapshotTick = chunk.header.tick;
+            ctx.lastSnapshotReceivedMs = nowMs();
+
+            // Convert compact entities to snapshot entities and process
+            std::vector<SnapshotEntity> snapshotEntities;
+            snapshotEntities.reserve(outEntities.size());
+            for (const auto& ce : outEntities)
+                snapshotEntities.push_back(snapshotEntityFromCompact(ce));
+
+            printf("[CLIENT CHUNK SNAPSHOT] tick=%u chunks=%d entities=%zu snapshotsReceived=%llu\n",
+                   chunk.header.tick, chunk.chunkCount, snapshotEntities.size(),
+                   (unsigned long long)ctx.snapshotsReceived);
+
+            processSnapshotEntities(ctx, snapshotEntities.data(),
+                                    (uint32_t)snapshotEntities.size(),
+                                    chunk.header.tick, dt, "chunk");
+
+            ctx.snapshotChunkBuffers.erase(chunk.header.tick);
         }
         else if (header->type == PACKET_PROJECTILE_SPAWN_EVENT &&
                  bytes >= (int)sizeof(ProjectileSpawnEventPacket))

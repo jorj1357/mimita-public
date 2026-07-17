@@ -62,6 +62,7 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.directionChangeSerial = (uint16_t)(id * 8);
     e.equipSerial = (uint16_t)(id * 6);
     e.freezeSerial = (uint16_t)(id * 7);
+    snprintf(e.displayName, sizeof(e.displayName), "Player_%u", id);
     return e;
 }
 
@@ -121,6 +122,8 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.directionChangeSerial = entity.directionChangeSerial;
     out.equipSerial = entity.equipSerial;
     out.freezeSerial = entity.freezeSerial;
+    std::memset(out.displayName, 0, sizeof(out.displayName));
+    std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     return out;
 }
 
@@ -156,6 +159,8 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.directionChangeSerial = entity.directionChangeSerial;
     out.equipSerial = entity.equipSerial;
     out.freezeSerial = entity.freezeSerial;
+    std::memset(out.displayName, 0, sizeof(out.displayName));
+    std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
     return out;
 }
 

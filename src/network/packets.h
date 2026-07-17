@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 16;
+constexpr uint16_t PROTOCOL_VERSION = 17;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -304,10 +304,11 @@ struct CompactEntityData
     uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
+    char displayName[32]; // MAX_NAME_BYTES
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 84, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 116, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -317,7 +318,7 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[13]; // 13 * 84 + header_size(32) = 1124 < 1200
+    CompactEntityData entities[10]; // 10 * 116 + header(32) = 1192 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
