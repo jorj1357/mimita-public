@@ -67,6 +67,7 @@ enum PacketType : uint8_t
     PACKET_MELEE_HIT_EVENT = 33,
     PACKET_PELLET_BLAST_REQUEST = 34,
     PACKET_PELLET_BLAST_EVENT = 35,
+    PACKET_GODBALL_STATE = 36,
     PACKET_PROJECTILE_FIRE_RESULT = 36
 };
 
@@ -755,6 +756,15 @@ struct PelletBlastEventPacket
     uint8_t pelletCount = 0;
     uint16_t reserved = 0;
     NetworkPelletResult pellets[MAX_NETWORK_PELLETS];
+};
+
+// ── Godball state (position for remote visual replication) ────────────
+struct GodballStatePacket
+{
+    PacketHeader header;
+    uint32_t ownerPlayerId = 0;
+    float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
+    uint8_t active = 0;
 };
 
 // ── Projectile fire result ────────────────────────────────────────────

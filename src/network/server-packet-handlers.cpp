@@ -122,14 +122,6 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     event.effectFlags = shot->effectFlags & ALLOWED_EFFECT_FLAGS;
     event.weapon = shot->weapon;
     event.impactType = shot->impactType;
-    if (event.weapon == NETWORK_WEAPON_GODBALL)
-    {
-        event.effectFlags &= ~(
-            SHOT_EFFECT_MUZZLE |
-            SHOT_EFFECT_TRACER |
-            SHOT_EFFECT_SHOOT_SOUND |
-            SHOT_EFFECT_WEAPON_TRIGGER);
-    }
     if (event.impactType == SHOT_IMPACT_NONE)
     {
         event.effectFlags &= ~(
@@ -556,75 +548,36 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         glm::vec3 hitNml = -pelletDir;
         uint32_t hitPlayerId = 0;
 
-        // ── Player collision first (ray vs capsule for each valid target) ──
-        // Test each player's capsule to find the nearest ray intersection.
+        // ── Player collision — ray vs axis-aligned bounding box ──
         for (auto& entry : players)
         {
             const ServerPlayer& target = entry.second;
             if (target.id == shooter.id || target.dead) continue;
 
-            // Build capsule bottom/top. ServerPlayer::pos is the capsule center (from server-players.cpp:87-89).
-            // The capsule extends from pos.z - HEIGHT*0.5 + RADIUS to pos.z + HEIGHT*0.5 - RADIUS.
-            glm::vec3 capsuleBottom(
-                target.pos.x, target.pos.y,
-                target.pos.z - kPlayerHeight * 0.5f + kPlayerRadius);
-            glm::vec3 capsuleTop(
-                target.pos.x, target.pos.y,
-                target.pos.z + kPlayerHeight * 0.5f - kPlayerRadius);
+            glm::vec3 mn(
+                target.pos.x - kPlayerRadius,
+                target.pos.y - kPlayerRadius,
+                target.pos.z - kPlayerHeight * 0.5f);
+            glm::vec3 mx(
+                target.pos.x + kPlayerRadius,
+                target.pos.y + kPlayerRadius,
+                target.pos.z + kPlayerHeight * 0.5f);
 
-            // Ray-capsule intersection: treat as ray vs finite cylinder
-            glm::vec3 seg = capsuleTop - capsuleBottom;
-            float segLen = glm::length(seg);
-            if (segLen < 0.001f) continue;
-            glm::vec3 segDir = seg / segLen;
-
-            // Project ray origin onto segment axis
-            glm::vec3 rel = rayOrigin - capsuleBottom;
-            float t = glm::dot(rel, segDir);
-            glm::vec3 closestOnAxis = capsuleBottom + segDir * glm::clamp(t, 0.0f, segLen);
-
-            // Radial distance from ray origin to axis at closest point
-            glm::vec3 radialVec = rel - segDir * t;
-            float radialDist = glm::length(radialVec);
-            if (radialDist > kPlayerRadius) continue; // too far sideways
-
-            // Distance along ray direction to the cylinder surface
-            float dirDotRel = glm::dot(pelletDir, rel);
-            float dirDotSeg = glm::dot(pelletDir, segDir);
-            float a = 1.0f - dirDotSeg * dirDotSeg;
-            float b = 2.0f * (dirDotRel - dirDotSeg * glm::dot(rel, segDir));
-            float c = radialDist * radialDist - kPlayerRadius * kPlayerRadius;
-
-            float disc = b * b - 4.0f * a * c;
-            if (disc < 0.0f) continue;
-
-            float sqrtDisc = std::sqrt(disc);
-            float t0 = (-b - sqrtDisc) / (2.0f * a);
-            float t1 = (-b + sqrtDisc) / (2.0f * a);
-            float tHit = (t0 >= 0.0f) ? t0 : t1;
-
-            if (tHit < 0.01f || tHit >= nearest) continue;
-
-            // Verify the hit point is within the capsule segment
-            glm::vec3 hitPt = rayOrigin + pelletDir * tHit;
-            float alongSeg = glm::dot(hitPt - capsuleBottom, segDir);
-            if (alongSeg < 0.0f || alongSeg > segLen) continue;
-
-            // Valid player hit — closer than current nearest
-            nearest = tHit;
-            hitPos = hitPt;
-            hitPlayerId = target.id;
-            glm::vec3 radialAtHit = hitPt - closestOnAxis;
-            float radialLenAtHit = glm::length(radialAtHit);
-            hitNml = radialLenAtHit > 0.001f ? radialAtHit / radialLenAtHit : glm::vec3(0.0f, 0.0f, 1.0f);
-
-            // Determine body part from hit height
-            float hitHeightFraction = alongSeg / segLen;
-            r.bodyPart = hitHeightFraction > 0.78f ? 0  // head
-                       : hitHeightFraction > 0.68f ? 0  // head
-                       : hitHeightFraction > 0.32f ? 1  // torso
-                       : hitHeightFraction > 0.15f ? 2  // arms
-                       : (uint8_t)3;                    // legs
+            float d = 0.0f;
+            glm::vec3 nml;
+            if (WeaponFire::rayAabb(rayOrigin, pelletDir, mn, mx, d, nml) &&
+                d > 0.01f && d < nearest)
+            {
+                nearest = d;
+                hitPos = rayOrigin + pelletDir * d;
+                hitPlayerId = target.id;
+                hitNml = nml;
+                float hitFrac = (hitPos.z - mn.z) / (mx.z - mn.z);
+                r.bodyPart = hitFrac > 0.78f ? 0       // head
+                           : hitFrac > 0.32f ? 1       // torso
+                           : hitFrac > 0.15f ? 2       // arms
+                           : (uint8_t)3;               // legs
+            }
         }
 
         // ── World collision — iterate all world triangles ──
@@ -784,6 +737,26 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
     for (int i = 0; i < targetCount; ++i) totalDamage += targets[i].totalDamage;
     printf("[PELLET BLAST SERVER DAMAGE] serial=%u total=%d\n",
            request->shotSerial, totalDamage);
+}
+
+void handleGodballState(SOCKET sock,
+                        std::unordered_map<uint32_t, ServerPlayer>& players,
+                        char* buffer, int bytes) {
+    if (bytes < (int)sizeof(GodballStatePacket)) return;
+    GodballStatePacket* pkt = reinterpret_cast<GodballStatePacket*>(buffer);
+    auto it = players.find(pkt->ownerPlayerId);
+    if (it == players.end()) return;
+    ServerPlayer& p = it->second;
+    p.godballX = pkt->posX;
+    p.godballY = pkt->posY;
+    p.godballZ = pkt->posZ;
+    p.godballActive = pkt->active != 0;
+    // Rebroadcast to all OTHER connected players
+    for (auto& kv : players) {
+        if (kv.first == pkt->ownerPlayerId) continue;
+        sendto(sock, (const char*)buffer, bytes, 0,
+               (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+    }
 }
 
 } // namespace MimitaNet

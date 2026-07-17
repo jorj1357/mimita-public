@@ -4,8 +4,157 @@
 #include "../debug/debug-log.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace WeaponData {
+
+// ── Helper: read grenade launcher config from JSON file ──────────────
+struct GrenadeLauncherJsonConfig {
+    float fireDelay = 0.6f;
+    float reloadTime = 1.5f;
+    float magazineSize = 4;
+    float projectileSpeed = 40.0f;
+    float projectileRadius = 0.3f;
+    float projectileLifetime = 3.0f;
+    std::unordered_map<std::string, float> customParams;
+    bool loaded = false;
+};
+
+static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
+{
+    GrenadeLauncherJsonConfig cfg;
+    std::ifstream file("config/weapons.json");
+    if (!file.is_open())
+    {
+        printf("\n"
+               "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+               "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
+               "!!  Cannot open config/weapons.json                          !!\n"
+               "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
+               "!!  Grenades will fly straight and stop in mid-air.          !!\n"
+               "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+               "\n");
+        return cfg;
+    }
+    try {
+        json root;
+        file >> root;
+        if (!root.is_object() || !root.contains("grenade_launcher"))
+        {
+            printf("\n"
+                   "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+                   "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
+                   "!!  config/weapons.json missing grenade_launcher section     !!\n"
+                   "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
+                   "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+                   "\n");
+            return cfg;
+        }
+        const json& gl = root["grenade_launcher"];
+
+        // ── Read top-level fields ───────────────────────────────────
+        auto readFloat = [&](const char* key, float fallback) -> float {
+            return gl.contains(key) && gl[key].is_number() ? gl[key].get<float>() : fallback;
+        };
+        cfg.fireDelay = readFloat("fire_delay", 0.6f);
+        cfg.reloadTime = readFloat("reload_time", 1.5f);
+        cfg.magazineSize = readFloat("magazine_size", 4.0f);
+        cfg.projectileSpeed = readFloat("projectile_speed", 40.0f);
+        cfg.projectileRadius = readFloat("projectile_radius", 0.3f);
+        cfg.projectileLifetime = readFloat("projectile_lifetime", 3.0f);
+
+        // ── Read custom_params ───────────────────────────────────────
+        if (!gl.contains("custom_params") || !gl["custom_params"].is_object())
+        {
+            printf("\n"
+                   "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+                   "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
+                   "!!  config/weapons.json grenade_launcher.custom_params       !!\n"
+                   "!!  section is missing or not an object.                     !!\n"
+                   "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
+                   "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+                   "\n");
+            return cfg;
+        }
+
+        const json& cp = gl["custom_params"];
+        static const char* requiredParams[] = {
+            "forwardSpeed", "upBias", "angSpeed",
+            "gravity", "drag", "bounceRestitution", "bounceFriction",
+            "minBounceSpeed", "maxBounceCount", "mass",
+            "angularDrag", "armingDistance", "armingTime",
+            "splashRadius", "splashExponent", "rocketDirectDamage",
+            "knockbackStrength", "selfKnockbackMultiplier",
+            "firingRecoilStrength", "reserveAmmo", "shootPoseTime",
+            "equipPoseTime", "reloadOneAtATime",
+            "projectileVisualLength", "projectileVisualRadius",
+            "projectileVisualScaleX", "projectileVisualScaleY", "projectileVisualScaleZ",
+            "projectileVisualRotationOffsetX", "projectileVisualRotationOffsetY", "projectileVisualRotationOffsetZ",
+            "projectileVisualTextureTilingU", "projectileVisualTextureTilingV",
+            "projectileFillAlpha", "projectileOutlineEnabled",
+            "projectileOutlineColorR", "projectileOutlineColorG", "projectileOutlineColorB",
+            "projectileOutlineAlpha", "projectileOutlineScale",
+            "projectileGlowEnabled",
+            "projectileGlowColorR", "projectileGlowColorG", "projectileGlowColorB",
+            "projectileGlowAlpha", "projectileGlowRadiusMultiplier",
+            "sparkEnabled", "sparkEmissionRate", "sparkParticlesPerEmission",
+            "sparkSpawnOffsetX", "sparkSpawnOffsetY", "sparkSpawnOffsetZ",
+            "sparkSpawnRadius", "sparkInheritVelocity", "sparkSpeed", "sparkSpeedRandom",
+            "sparkSpreadDegrees", "sparkLifetime", "sparkLifetimeRandom",
+            "sparkSize", "sparkEndSize", "sparkSizeRandom",
+            "sparkGravity", "sparkDrag",
+            "sparkColorR", "sparkColorG", "sparkColorB", "sparkColorA",
+            "sparkEndColorR", "sparkEndColorG", "sparkEndColorB", "sparkEndColorA",
+            nullptr
+        };
+
+        bool allValid = true;
+        for (int i = 0; requiredParams[i]; ++i)
+        {
+            const char* key = requiredParams[i];
+            if (!cp.contains(key) || !cp[key].is_number())
+            {
+                printf("!!  MISSING or NON-NUMERIC custom_param: \"%s\"\n", key);
+                allValid = false;
+            }
+            else
+            {
+                cfg.customParams[key] = cp[key].get<float>();
+            }
+        }
+
+        if (!allValid)
+        {
+            printf("\n"
+                   "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+                   "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
+                   "!!  Some custom_params in config/weapons.json are missing.    !!\n"
+                   "!!  Check the MISSING lines above. Using fallback defaults.   !!\n"
+                   "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
+                   "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+                   "\n");
+            return cfg;
+        }
+
+        cfg.loaded = true;
+        return cfg;
+
+    } catch (const std::exception& e) {
+        printf("\n"
+               "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+               "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
+               "!!  Failed to parse config/weapons.json: %s\n"
+               "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
+               "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+               "\n", e.what());
+        return cfg;
+    }
+}
 
 WeaponDefinition createRevolverDefinition() {
     WeaponDefinition def;
@@ -391,6 +540,8 @@ WeaponDefinition createRocketLauncherDefinition() {
 }
 
 WeaponDefinition createGrenadeLauncherDefinition() {
+    GrenadeLauncherJsonConfig jsonCfg = loadGrenadeLauncherJsonConfig();
+
     WeaponDefinition def;
     def.id = "grenade_launcher";
     def.displayName = "Grenade Launcher";
@@ -403,16 +554,16 @@ WeaponDefinition createGrenadeLauncherDefinition() {
 
     def.damage = 0.0f;
     def.headshotMultiplier = 1.0f;
-    def.fireDelay = 1.0f;
-    def.reloadTime = 1.5f;
-    def.magazineSize = 4;
+    def.fireDelay = jsonCfg.fireDelay;
+    def.reloadTime = jsonCfg.reloadTime;
+    def.magazineSize = (int)jsonCfg.magazineSize;
     def.pelletCount = 1;
 
     def.spread = 0.0f;
     def.recoil = 30.0f;
-    def.projectileSpeed = 0.0f;
-    def.projectileRadius = 0.25f;
-    def.projectileLifetime = 0.0f;
+    def.projectileSpeed = jsonCfg.projectileSpeed;
+    def.projectileRadius = jsonCfg.projectileRadius;
+    def.projectileLifetime = jsonCfg.projectileLifetime;
 
     def.fireMode = WeaponFireMode::SemiAuto;
     def.behaviorType = WeaponBehaviorType::GrenadeLauncher;
@@ -425,66 +576,13 @@ WeaponDefinition createGrenadeLauncherDefinition() {
     def.soundDryFire = "ui/click";
     def.soundEquip = "";
 
-    def.customParams["splashRadius"] = 8.0f;
-    def.customParams["splashExponent"] = 2.0f;
-    def.customParams["rocketDirectDamage"] = 150.0f;
-    def.customParams["knockbackStrength"] = 160.0f;
-    def.customParams["firingRecoilStrength"] = 20.0f;
-    def.customParams["reserveAmmo"] = 1337.0f;
-
-    // Projectile visual defaults
-    def.customParams["projectileVisualTexture"] = 1.0f;
-    def.customParams["projectileVisualLength"] = 1.8f;
-    def.customParams["projectileVisualRadius"] = 0.28f;
-    def.customParams["projectileVisualScaleX"] = 1.0f;
-    def.customParams["projectileVisualScaleY"] = 1.0f;
-    def.customParams["projectileVisualScaleZ"] = 1.0f;
-    def.customParams["projectileVisualRotationOffsetX"] = 0.0f;
-    def.customParams["projectileVisualRotationOffsetY"] = 0.0f;
-    def.customParams["projectileVisualRotationOffsetZ"] = 0.0f;
-    def.customParams["projectileVisualTextureTilingU"] = 1.0f;
-    def.customParams["projectileVisualTextureTilingV"] = 1.0f;
-    def.customParams["projectileFillAlpha"] = 1.0f;
-    def.customParams["projectileOutlineEnabled"] = 1.0f;
-    def.customParams["projectileOutlineColorR"] = 1.0f;
-    def.customParams["projectileOutlineColorG"] = 0.8f;
-    def.customParams["projectileOutlineColorB"] = 0.2f;
-    def.customParams["projectileOutlineAlpha"] = 0.4f;
-    def.customParams["projectileOutlineScale"] = 1.15f;
-    def.customParams["projectileGlowEnabled"] = 1.0f;
-    def.customParams["projectileGlowColorR"] = 1.0f;
-    def.customParams["projectileGlowColorG"] = 0.6f;
-    def.customParams["projectileGlowColorB"] = 0.0f;
-    def.customParams["projectileGlowAlpha"] = 0.15f;
-    def.customParams["projectileGlowRadiusMultiplier"] = 3.0f;
-
-    // Spark effect defaults
-    def.customParams["sparkEnabled"] = 1.0f;
-    def.customParams["sparkEmissionRate"] = 45.0f;
-    def.customParams["sparkParticlesPerEmission"] = 2.0f;
-    def.customParams["sparkSpawnOffsetX"] = 0.0f;
-    def.customParams["sparkSpawnOffsetY"] = 0.0f;
-    def.customParams["sparkSpawnOffsetZ"] = -0.7f;
-    def.customParams["sparkSpawnRadius"] = 0.04f;
-    def.customParams["sparkInheritVelocity"] = 0.15f;
-    def.customParams["sparkSpeed"] = 5.0f;
-    def.customParams["sparkSpeedRandom"] = 2.0f;
-    def.customParams["sparkSpreadDegrees"] = 35.0f;
-    def.customParams["sparkLifetime"] = 0.35f;
-    def.customParams["sparkLifetimeRandom"] = 0.15f;
-    def.customParams["sparkSize"] = 0.05f;
-    def.customParams["sparkEndSize"] = 0.01f;
-    def.customParams["sparkSizeRandom"] = 0.005f;
-    def.customParams["sparkGravity"] = 8.0f;
-    def.customParams["sparkDrag"] = 0.2f;
-    def.customParams["sparkColorR"] = 1.0f;
-    def.customParams["sparkColorG"] = 0.75f;
-    def.customParams["sparkColorB"] = 0.2f;
-    def.customParams["sparkColorA"] = 1.0f;
-    def.customParams["sparkEndColorR"] = 1.0f;
-    def.customParams["sparkEndColorG"] = 0.1f;
-    def.customParams["sparkEndColorB"] = 0.0f;
-    def.customParams["sparkEndColorA"] = 0.0f;
+    // Populate ALL custom_params from JSON — this ensures the server
+    // has correct physics (gravity, drag, bounce, etc.) regardless of
+    // JSON hot-reload timing.  If the JSON was missing or invalid, the
+    // helper printed a loud error and the fields will still have sensible
+    // fallback defaults from the struct initializer above.
+    for (const auto& kv : jsonCfg.customParams)
+        def.customParams[kv.first] = kv.second;
 
     return def;
 }
