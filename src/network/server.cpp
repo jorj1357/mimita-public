@@ -2,6 +2,7 @@
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
+#include "network/ice-transport.h"
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
 
@@ -148,7 +149,9 @@ int runServer(const LaunchOptions& options)
                serverTimestamp(), (int)options.npcsEnabled, npcCount, npcs.size());
     }
 
-    // Register dedicated server with coordinator (use actual options)
+    // ── Register server with coordinator ──
+    // When ICE is enabled, use coordinatorIceHost which handles NAT traversal.
+    // Otherwise use the normal coordinatorRegister for LAN/direct-IP servers.
     std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
     std::string serverJoinToken;
     {
@@ -157,58 +160,15 @@ int runServer(const LaunchOptions& options)
             printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=headless-server-runServer\n",
                    hostedRoomSession().roomCode.c_str(), serverCode.c_str());
         }
-        std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
-        std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
-        CoordinatorRoomInfo room = coordinatorRegister(
-            regServerName, "", DEFAULT_PORT, regServerName,
-            regMapName, "sandbox", MAX_PLAYERS);
-        if (!room.code.empty())
-        {
-            serverCode = room.code;
-            serverJoinToken = room.joinToken;
-            setServerCoordinatorState(room.code, room.joinToken);
-            hostedRoomSession().active = true;
-            hostedRoomSession().roomCode = room.code;
-            hostedRoomSession().hostToken = room.joinToken;
-            hostedRoomSession().joinToken = room.joinToken;
-            hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
-            hostedRoomSession().coordinatorRoomType = "normal";
-            hostedRoomSession().createdAtMs = nowMs();
-            printf("%s [SERVER] coordinator registered code=%s map=%s name=%s\n",
-                   serverTimestamp(), serverCode.c_str(), regMapName.c_str(), regServerName.c_str());
-            printf("[ROOM OWNER] subsystem=headless-server code=%s\n", serverCode.c_str());
-            printf("[MIMITA_SERVER_EVENT] {\"type\":\"room_created\",\"code\":\"%s\",\"host_token\":\"%s\"}\n",
-                   serverCode.c_str(), serverJoinToken.c_str());
 
-            // Write room code to --room-file if specified
-            if (!options.roomFilePath.empty())
-            {
-                FILE* rf = fopen(options.roomFilePath.c_str(), "w");
-                if (rf)
-                {
-                    fprintf(rf, "%s\n", serverCode.c_str());
-                    fclose(rf);
-                    printf("[SERVER] wrote room code to %s\n", options.roomFilePath.c_str());
-                }
-            }
-        }
-        else if (!options.serverCode.empty())
+        if (iceEnabled)
         {
-            // Pre-generated code but coordinator unreachable — still set it for display
-            printf("%s [SERVER] coordinator unreachable; using pre-assigned code=%s (LAN-only)\n",
-                   serverTimestamp(), serverCode.c_str());
-        }
-    }
-
-    // ── Initialize dedicated server ICE listener ──
-    if (iceEnabled)
-    {
-        printf("%s [SERVER ICE] initializing ICE listener for NAT traversal\n", serverTimestamp());
-        IceConfiguration iceCfg = loadIceConfig();
-        auto iceAgent = std::make_unique<IceAgent>();
-        if (iceAgent->initialize(iceCfg) && iceAgent->gatherCandidates())
-        {
-            if (waitForAgentState(*iceAgent, IceAgentState::GatheringComplete, 15000))
+            // ── ICE mode: single registration via coordinatorIceHost ──
+            printf("%s [SERVER ICE] initializing ICE listener\n", serverTimestamp());
+            IceConfiguration iceCfg = loadIceConfig();
+            auto iceAgent = std::make_unique<IceAgent>();
+            if (iceAgent->initialize(iceCfg) && iceAgent->gatherCandidates()
+                && waitForAgentState(*iceAgent, IceAgentState::GatheringComplete, 15000))
             {
                 iceSessionId = "host_" + std::to_string(GetCurrentProcessId())
                     + "_" + std::to_string(nowMs());
@@ -219,7 +179,15 @@ int runServer(const LaunchOptions& options)
                     serverJoinToken = hostResult.joinToken;
                     iceListenerAgent = std::move(iceAgent);
                     lastIceCoordinatorPollMs = nowMs();
-                    printf("%s [SERVER ICE] listener registered: code=%s\n",
+                    setServerCoordinatorState(serverCode, serverJoinToken);
+                    hostedRoomSession().active = true;
+                    hostedRoomSession().roomCode = serverCode;
+                    hostedRoomSession().hostToken = serverJoinToken;
+                    hostedRoomSession().joinToken = serverJoinToken;
+                    hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+                    hostedRoomSession().coordinatorRoomType = "ice";
+                    hostedRoomSession().createdAtMs = nowMs();
+                    printf("%s [SERVER ICE] registered: code=%s\n",
                            serverTimestamp(), serverCode.c_str());
                 }
                 else
@@ -229,12 +197,50 @@ int runServer(const LaunchOptions& options)
             }
             else
             {
-                printf("%s [SERVER ICE] gather timeout; LAN only\n", serverTimestamp());
+                printf("%s [SERVER ICE] agent init/gather failed; LAN only\n", serverTimestamp());
             }
         }
         else
         {
-            printf("%s [SERVER ICE] agent init/gather failed; LAN only\n", serverTimestamp());
+            // ── Normal (non-ICE) mode: standard coordinator registration ──
+            std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+            std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
+            CoordinatorRoomInfo room = coordinatorRegister(
+                regServerName, "", DEFAULT_PORT, regServerName,
+                regMapName, "sandbox", MAX_PLAYERS);
+            if (!room.code.empty())
+            {
+                serverCode = room.code;
+                serverJoinToken = room.joinToken;
+                setServerCoordinatorState(room.code, room.joinToken);
+                hostedRoomSession().active = true;
+                hostedRoomSession().roomCode = room.code;
+                hostedRoomSession().hostToken = room.joinToken;
+                hostedRoomSession().joinToken = room.joinToken;
+                hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+                hostedRoomSession().coordinatorRoomType = "normal";
+                hostedRoomSession().createdAtMs = nowMs();
+                printf("%s [SERVER] coordinator registered code=%s map=%s\n",
+                       serverTimestamp(), serverCode.c_str(), regMapName.c_str());
+                printf("[ROOM OWNER] subsystem=headless-server code=%s\n", serverCode.c_str());
+            }
+            else if (!options.serverCode.empty())
+            {
+                printf("%s [SERVER] coordinator unreachable; using pre-assigned code=%s (LAN-only)\n",
+                       serverTimestamp(), serverCode.c_str());
+            }
+        }
+    }
+
+    // ── Write room code to --room-file (after registration) ──
+    if (!options.roomFilePath.empty() && !serverCode.empty())
+    {
+        FILE* rf = fopen(options.roomFilePath.c_str(), "w");
+        if (rf)
+        {
+            fprintf(rf, "%s\n", serverCode.c_str());
+            fclose(rf);
+            printf("[SERVER] wrote room code %s to %s\n", serverCode.c_str(), options.roomFilePath.c_str());
         }
     }
 
@@ -386,40 +392,49 @@ int runServer(const LaunchOptions& options)
 
         tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
-        // ── ICE coordinator polling (accept new ICE clients) ──
+        // ── ICE coordinator polling + non-blocking peer handshakes ──
         if (iceEnabled && iceListenerAgent && tick % 30 == 0)
         {
             uint64_t nowIce = nowMs();
             if (nowIce - lastIceCoordinatorPollMs > 500)
             {
                 lastIceCoordinatorPollMs = nowIce;
-                auto pollResult = coordinatorIcePoll(serverCode, iceSessionId);
-                if (pollResult.ok && pollResult.status == "client_ready"
-                    && !pollResult.clientIceDescription.empty())
+                // Two-phase: poll via host-poll endpoint (non-mutating)
+                auto pending = coordinatorIceHostPoll(serverCode, iceSessionId);
+                if (pending.hasRequest && !pending.clientIceDescription.empty())
                 {
-                    printf("%s [SERVER ICE] new client via coordinator\n", serverTimestamp());
-                    IceConfiguration iceCfg = loadIceConfig();
-                    auto clientAgent = std::make_unique<IceAgent>();
-                    if (clientAgent->initialize(iceCfg)
-                        && clientAgent->gatherCandidates()
-                        && waitForAgentState(*clientAgent, IceAgentState::GatheringComplete, 10000)
-                        && clientAgent->setRemoteDescription(pollResult.clientIceDescription)
-                        && waitForAgentState(*clientAgent, IceAgentState::Connected, 20000))
+                    if (pending.clientIceDescription.find("a=ice-ufrag:") == std::string::npos ||
+                        pending.clientIceDescription.find("a=ice-pwd:") == std::string::npos)
                     {
-                        clientAgent->logSelectedPath();
-                        auto transport = std::make_unique<IceTransport>(std::move(clientAgent));
-                        pendingIceTransports.push_back(std::move(transport));
-                        printf("%s [SERVER ICE] client transport created (pending=%zu)\n",
-                               serverTimestamp(), pendingIceTransports.size());
+                        printf("%s [SERVER ICE] req=%s invalid SDP (no ufrag/pwd)\n",
+                               serverTimestamp(), pending.requestId.substr(0, 12).c_str());
                     }
                     else
                     {
-                        printf("%s [SERVER ICE] failed to establish ICE with new client\n",
-                               serverTimestamp());
+                        printf("%s [SERVER ICE] new client req=%s\n",
+                               serverTimestamp(), pending.requestId.substr(0, 12).c_str());
+                        auto peer = std::make_unique<PendingIcePeer>();
+                        peer->requestId = pending.requestId;
+                        peer->clientSessionId = pending.clientSessionId;
+                        peer->clientIceDescription = pending.clientIceDescription;
+                        peer->startedAtMs = nowIce;
+                        peer->lastEventMs = nowIce;
+                        IceConfiguration iceCfg = loadIceConfig();
+                        auto ca = std::make_unique<IceAgent>();
+                        if (ca->initialize(iceCfg) && ca->gatherCandidates()) {
+                            peer->agent = std::move(ca);
+                            peer->state = PendingIcePeer::State::Gathering;
+                            gPendingIcePeers.push_back(std::move(peer));
+                            printf("%s [SERVER ICE] peer created (total=%zu)\n",
+                                   serverTimestamp(), gPendingIcePeers.size());
+                        }
                     }
                 }
             }
         }
+
+        // Advance non-blocking peer handshakes
+        tickIcePeers(serverCode, iceSessionId, pendingIceTransports);
 
         // ── Process ICE transports (existing + pending) ──
         tickServerIceTransports(sock, players, npcs, projectiles,
@@ -580,57 +595,56 @@ bool startListenServer(ListenServerState& state, uint16_t port,
                    hostedRoomSession().roomCode.c_str(), state.serverCode.c_str());
         }
 
-        std::string regMap = settings ? settings->mapName : "funworldv3";
-        CoordinatorRoomInfo room = coordinatorRegister(
-            hostSessionId, publicIp, port, state.serverName,
-            regMap, "sandbox", 32);
-
-        if (!room.code.empty())
+        if (settings && settings->iceEnabled)
         {
-            state.serverCode = room.code;
-            state.joinToken = room.joinToken;
-            setServerCoordinatorState(room.code, room.joinToken);
-            hostedRoomSession().active = true;
-            hostedRoomSession().roomCode = room.code;
-            hostedRoomSession().hostToken = room.joinToken;
-            hostedRoomSession().joinToken = room.joinToken;
-            hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
-            hostedRoomSession().coordinatorRoomType = "normal";
-            hostedRoomSession().createdAtMs = nowMs();
-            printf("[LISTEN SERVER] coordinator registered code=%s joinToken=%s\n",
-                   room.code.c_str(), room.joinToken.substr(0, 12).c_str());
-            printf("[ROOM OWNER] subsystem=listen-server code=%s\n", room.code.c_str());
-            printf("[MIMITA_SERVER_EVENT] {\"type\":\"room_created\",\"code\":\"%s\",\"host_token\":\"%s\"}\n",
-                   room.code.c_str(), room.joinToken.c_str());
+            // ── ICE mode: single registration via coordinatorIceHost ──
+            if (initServerIceListener(state))
+            {
+                printf("[LISTEN SERVER] ICE registered: code=%s\n", state.serverCode.c_str());
+                hostedRoomSession().coordinatorRoomType = "ice";
+            }
+            else
+            {
+                printf("[LISTEN SERVER] ICE init failed; LAN only\n");
+            }
         }
         else
         {
-            setServerCoordinatorState("", "");
-            printf("[LISTEN SERVER] coordinator unreachable — running in LAN-only mode code=%s\n",
-                   state.serverCode.c_str());
+            // ── Normal (non-ICE) mode: standard coordinator registration ──
+            std::string regMap = settings ? settings->mapName : "funworldv3";
+            CoordinatorRoomInfo room = coordinatorRegister(
+                hostSessionId, publicIp, port, state.serverName,
+                regMap, "sandbox", 32);
+
+            if (!room.code.empty())
+            {
+                state.serverCode = room.code;
+                state.joinToken = room.joinToken;
+                setServerCoordinatorState(room.code, room.joinToken);
+                hostedRoomSession().active = true;
+                hostedRoomSession().roomCode = room.code;
+                hostedRoomSession().hostToken = room.joinToken;
+                hostedRoomSession().joinToken = room.joinToken;
+                hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+                hostedRoomSession().coordinatorRoomType = "normal";
+                hostedRoomSession().createdAtMs = nowMs();
+                printf("[LISTEN SERVER] coordinator registered code=%s\n", room.code.c_str());
+                printf("[ROOM OWNER] subsystem=listen-server code=%s\n", room.code.c_str());
+            }
+            else
+            {
+                setServerCoordinatorState("", "");
+                printf("[LISTEN SERVER] coordinator unreachable; LAN-only mode code=%s\n",
+                       state.serverCode.c_str());
+            }
         }
     }
     else
     {
-        // External server process handles coordinator registration
-        printf("[LISTEN SERVER] external server process running; skipping coordinator registration\n");
+        printf("[LISTEN SERVER] external server process handles coordinator registration\n");
     }
 
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
-
-    // Initialize ICE listener for NAT traversal (if enabled)
-    if (settings && settings->iceEnabled)
-    {
-        if (initServerIceListener(state))
-        {
-            printf("[LISTEN SERVER] ICE listener enabled: code=%s\n", state.serverCode.c_str());
-        }
-        else
-        {
-            printf("[LISTEN SERVER] WARNING: ICE listener initialization failed; LAN only\n");
-        }
-    }
-
     return true;
 }
 
@@ -815,6 +829,7 @@ void tickListenServer(ListenServerState& state, float dt)
                               state.totalPacketsOut);
 
         tickIceCoordinator(state);
+        tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);
         tickServerIceTransports(state.sock, state.players, state.npcs,
                                 state.projectiles, state.nextEntityId,
                                 state.nextPlayerId, state.pendingIceTransports,

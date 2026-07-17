@@ -1,5 +1,6 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
+#include "network/snapshot-chunks.h"
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
@@ -31,9 +32,9 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
 
 void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
 {
-    if (ctx.sock == INVALID_SOCKET)
+    if (ctx.sock == INVALID_SOCKET && !ctx.transport)
     {
-        printf("[NET CONNECT] sendJoinRequest skipped: invalid socket\n");
+        printf("[NET CONNECT] sendJoinRequest skipped: no transport\n");
         return;
     }
     JoinRequestPacket join{};
@@ -43,14 +44,8 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     std::strncpy(join.joinToken, ctx.joinToken.c_str(), sizeof(join.joinToken) - 1);
     std::memset(join.name, 0, sizeof(join.name));
     std::strncpy(join.name, playerName.c_str(), sizeof(join.name) - 1);
-    int sent = sendto(ctx.sock, (const char*)&join, sizeof(join), 0,
-           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-    if (sent == SOCKET_ERROR)
-        printf("[NET TX ERROR] sendJoinRequest sendto failed error=%d\n", WSAGetLastError());
-    else
-        ++ctx.packetsSent;
-    printf("[NET CONNECT] join request sent to %s token=%s\n",
-           ctx.serverAddress.c_str(), ctx.joinToken.c_str());
+    mpSendPacket(ctx, &join, sizeof(join));
+    printf("[NET CONNECT] join request sent token=%s\n", ctx.joinToken.c_str());
 }
 
 } // namespace
@@ -68,11 +63,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 {
     if (!ctx.active)
         return;
-    if (ctx.sock == INVALID_SOCKET)
+    if (ctx.sock == INVALID_SOCKET && !ctx.transport)
     {
         Debug::warn(Debug::Category::Networking,
-               "[NET TICK] sock=INVALID_SOCKET state=%s connected=%d active=%d\n",
-               connectionStateName(ctx.connectionState), (int)ctx.connected, (int)ctx.active);
+               "[NET TICK] sock=INVALID_SOCKET state=%s connected=%d active=%d transport=%d\n",
+               connectionStateName(ctx.connectionState), (int)ctx.connected, (int)ctx.active,
+               (int)(ctx.transport != nullptr));
         return;
     }
 
@@ -519,6 +515,76 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(ShotEventPacket))
         {
             mpProcessShotEventPacket(ctx, reinterpret_cast<const ShotEventPacket*>(buffer));
+        }
+        // Chunked snapshot: smaller than legacy SnapshotPacket = chunk
+        else if (header->type == PACKET_SNAPSHOT &&
+                 bytes >= (int)sizeof(PacketHeader) + 12 &&
+                 bytes < (int)sizeof(SnapshotPacket))
+        {
+            if (ctx.connectionState == ConnectionState::WaitJoinAccept ||
+                ctx.connectionState == ConnectionState::Connecting)
+                ctx.connectionState = ConnectionState::Connected;
+
+            SnapshotChunkPacket chunk{};
+            if (!parseSnapshotChunk(buffer, (size_t)bytes, chunk))
+                return;
+
+            ++ctx.snapshotsReceived;
+            ctx.latestServerTick = chunk.header.tick;
+
+            auto& bufMap = ctx.snapshotChunkBuffers[chunk.header.tick];
+            bufMap.chunks[chunk.chunkIndex] = chunk;
+            bufMap.lastReceiveMs = nowMs();
+
+            if (bufMap.chunks.size() == chunk.chunkCount)
+            {
+                std::vector<SnapshotChunkPacket> sorted;
+                for (uint16_t ci = 0; ci < chunk.chunkCount; ++ci)
+                {
+                    auto it = bufMap.chunks.find(ci);
+                    if (it == bufMap.chunks.end()) { sorted.clear(); break; }
+                    sorted.push_back(it->second);
+                }
+                if (!sorted.empty())
+                {
+                    std::vector<CompactEntityData> outEntities;
+                    if (reassembleSnapshotChunks(sorted, outEntities))
+                    {
+                        ctx.lastSnapshotTick = chunk.header.tick;
+                        ctx.lastSnapshotReceivedMs = nowMs();
+                        for (const auto& ce : outEntities)
+                        {
+                            SnapshotEntity entity = snapshotEntityFromCompact(ce);
+                            if (!entity.active || entity.networkEntityId == 0) break;
+                            const bool isLocal = entity.entityType == ENTITY_PLAYER &&
+                                entity.ownerClientId == ctx.localPlayerId;
+                            if (isLocal)
+                            {
+                                ctx.localServerPosition = {entity.px, entity.py, entity.pz};
+                                ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
+                                ctx.localServerYaw = entity.yaw;
+                                ctx.localServerOnGround = entity.onGround != 0;
+                                ctx.hasLocalServerPosition = true;
+                                ctx.localServerHealth = entity.health;
+                                ctx.localServerEpoch = entity.transformEpoch;
+                                ctx.localPingMs = entity.pingMs;
+                                ctx.latestLocalSnapshotTick = chunk.header.tick;
+                                if (entity.health > 0)
+                                    ctx.latestAliveSnapshotTick = chunk.header.tick;
+                                break;
+                            }
+                        }
+                    }
+                }
+                ctx.snapshotChunkBuffers.erase(chunk.header.tick);
+            }
+            uint64_t nowClean = nowMs();
+            for (auto it = ctx.snapshotChunkBuffers.begin(); it != ctx.snapshotChunkBuffers.end(); )
+            {
+                if (nowClean - it->second.lastReceiveMs > 1000)
+                    it = ctx.snapshotChunkBuffers.erase(it);
+                else ++it;
+            }
         }
         else if (header->type == PACKET_PROJECTILE_SPAWN_EVENT &&
                  bytes >= (int)sizeof(ProjectileSpawnEventPacket))

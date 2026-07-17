@@ -9,10 +9,11 @@
 
 namespace MimitaNet {
 
-// ── ICE agent state polling helper ───────────────────────────────────
+std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 
-bool waitForAgentState(IceAgent& agent, IceAgentState target,
-                        int timeoutMs)
+// ── Wait for agent state (blocking, for startup only) ────────────────
+
+bool waitForAgentState(IceAgent& agent, IceAgentState target, int timeoutMs)
 {
     int waited = 0;
     while (waited < timeoutMs)
@@ -21,8 +22,7 @@ bool waitForAgentState(IceAgent& agent, IceAgentState target,
         std::vector<IceEvent> evs;
         agent.pollEvents(evs);
         auto s = agent.state();
-        if (s == target || s == IceAgentState::Completed ||
-            s == IceAgentState::Connected)
+        if (s == target || s == IceAgentState::Completed || s == IceAgentState::Connected)
             return true;
         if (s == IceAgentState::Failed)
             return false;
@@ -32,20 +32,32 @@ bool waitForAgentState(IceAgent& agent, IceAgentState target,
     return false;
 }
 
-// ── Initialize server-side ICE listener ──────────────────────────────
-// Creates an ICE agent, registers with coordinator via ice/host endpoint,
-// and stores the agent in state.iceListenerAgent.
-// Returns the room code for display.
+// ── Non-blocking agent tick ──────────────────────────────────────────
+// Ticks the agent once, returns current state. Never blocks.
+static IceAgentState tickAgentOnce(IceAgent& agent)
+{
+    agent.tick();
+    std::vector<IceEvent> evs;
+    agent.pollEvents(evs);
+    return agent.state();
+}
+
+// ── Initialize ICE listener ──────────────────────────────────────────
 
 bool initServerIceListener(ListenServerState& state)
 {
     printf("[SERVER ICE] initializing ICE listener\n");
 
-    IceConfiguration iceConfig = loadIceConfig();
+    // Request TURN credentials from coordinator
+    TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+    IceConfiguration iceConfig;
+    if (turnCreds.ok)
+        iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
+                                           turnCreds.username, turnCreds.credential);
+    else
+        iceConfig = loadIceConfig();
     if (iceConfig.turn.password.empty())
-    {
-        printf("[SERVER ICE] WARNING: no TURN password; direct connections only\n");
-    }
+        printf("[SERVER ICE] WARNING: no TURN credentials; direct connections only\n");
 
     auto agent = std::make_unique<IceAgent>();
     if (!agent->initialize(iceConfig))
@@ -58,10 +70,26 @@ bool initServerIceListener(ListenServerState& state)
         printf("[SERVER ICE] FATAL: gather failed\n");
         return false;
     }
-    if (!waitForAgentState(*agent, IceAgentState::GatheringComplete, 15000))
+
+    // Non-blocking gather loop (up to 15s, but returns immediately for tick loop)
     {
-        printf("[SERVER ICE] FATAL: gather timeout\n");
-        return false;
+        int waited = 0;
+        while (waited < 15000)
+        {
+            auto s = tickAgentOnce(*agent);
+            if (s == IceAgentState::GatheringComplete || s == IceAgentState::Connected || s == IceAgentState::Completed)
+                break;
+            if (s == IceAgentState::Failed) {
+                printf("[SERVER ICE] FATAL: gather failed\n");
+                return false;
+            }
+            Sleep(50);
+            waited += 50;
+        }
+        if (waited >= 15000) {
+            printf("[SERVER ICE] FATAL: gather timeout\n");
+            return false;
+        }
     }
 
     state.iceSessionId = "host_" + std::to_string(GetCurrentProcessId())
@@ -80,15 +108,21 @@ bool initServerIceListener(ListenServerState& state)
     state.iceEnabled = true;
     state.lastIceCoordinatorPollMs = nowMs();
 
+    hostedRoomSession().active = true;
+    hostedRoomSession().roomCode = hostResult.roomCode;
+    hostedRoomSession().hostToken = hostResult.joinToken;
+    hostedRoomSession().joinToken = hostResult.joinToken;
+    hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+    hostedRoomSession().coordinatorRoomType = "ice";
+    hostedRoomSession().createdAtMs = nowMs();
+    setServerCoordinatorState(hostResult.roomCode, hostResult.joinToken);
+
     printf("[SERVER ICE] listener registered: code=%s session=%s\n",
            hostResult.roomCode.c_str(), state.iceSessionId.c_str());
     return true;
 }
 
-// ── Poll coordinator for new ICE clients ─────────────────────────────
-// Called every ~500ms from the server tick. When a new client is found
-// (via coordinatorIcePoll returning "client_ready"), creates a new
-// IceAgent for that client and adds it to pendingIceTransports.
+// ── Poll coordinator for new requests + advance existing peers ───────
 
 void tickIceCoordinator(ListenServerState& state)
 {
@@ -100,64 +134,142 @@ void tickIceCoordinator(ListenServerState& state)
         return;
     state.lastIceCoordinatorPollMs = now;
 
-    auto pollResult = coordinatorIcePoll(state.serverCode, state.iceSessionId);
-    if (!pollResult.ok)
-        return;
-
-    if (pollResult.status == "client_ready" &&
-        !pollResult.clientIceDescription.empty())
+    // Non-blocking: poll coordinator for pending client requests
+    auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId);
+    if (pending.hasRequest)
     {
-        printf("[SERVER ICE] new client detected via coordinator polling\n");
+        // Validate SDP before creating agent
+        if (pending.clientIceDescription.find("a=ice-ufrag:") == std::string::npos ||
+            pending.clientIceDescription.find("a=ice-pwd:") == std::string::npos)
+        {
+            printf("[ICE HOST REQUEST] req=%s REJECTED: invalid SDP (missing ufrag/pwd)\n",
+                   pending.requestId.substr(0, 12).c_str());
+            return;
+        }
 
-        // Create a dedicated ICE agent for this client
-        IceConfiguration iceConfig = loadIceConfig();
+        // Create per-client peer agent
+        auto peer = std::make_unique<PendingIcePeer>();
+        peer->requestId = pending.requestId;
+        peer->clientSessionId = pending.clientSessionId;
+        peer->clientIceDescription = pending.clientIceDescription;
+        peer->startedAtMs = now;
+        peer->lastEventMs = now;
+
+        printf("[ICE HOST REQUEST] req=%s client=%s creating peer agent...\n",
+               pending.requestId.substr(0, 12).c_str(),
+               pending.clientSessionId.substr(0, 12).c_str());
+
+        // Get TURN credentials for peer agent
+        TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+        IceConfiguration iceConfig;
+        if (turnCreds.ok)
+            iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
+                                               turnCreds.username, turnCreds.credential);
+        else
+            iceConfig = loadIceConfig();
+
         auto clientAgent = std::make_unique<IceAgent>();
         if (!clientAgent->initialize(iceConfig))
         {
-            printf("[SERVER ICE] client agent init failed\n");
+            printf("[ICE HOST REQUEST] peer agent init failed\n");
             return;
         }
         if (!clientAgent->gatherCandidates())
         {
-            printf("[SERVER ICE] client agent gather failed\n");
+            printf("[ICE HOST REQUEST] peer agent gather failed\n");
             return;
         }
-        if (!waitForAgentState(*clientAgent, IceAgentState::GatheringComplete, 10000))
-        {
-            printf("[SERVER ICE] client agent gather timeout\n");
-            return;
-        }
-
-        // Set the client's remote description
-        clientAgent->setRemoteDescription(pollResult.clientIceDescription);
-
-        // Wait for ICE connection
-        if (!waitForAgentState(*clientAgent, IceAgentState::Connected, 20000))
-        {
-            printf("[SERVER ICE] client agent connection timeout\n");
-            return;
-        }
-        clientAgent->logSelectedPath();
-
-        // Wrap in IceTransport and add to pending transports
-        auto transport = std::make_unique<IceTransport>(std::move(clientAgent));
-        printf("[SERVER ICE] pushing transport to pending (count before=%zu)\n",
-               state.pendingIceTransports.size());
-        state.pendingIceTransports.push_back(std::move(transport));
-        printf("[SERVER ICE] pending transport now=%zu\n", state.pendingIceTransports.size());
-
-        printf("[SERVER ICE] client ICE transport created and pending\n");
+        peer->agent = std::move(clientAgent);
+        peer->state = PendingIcePeer::State::Gathering;
+        gPendingIcePeers.push_back(std::move(peer));
     }
-    else if (pollResult.status == "waiting_client")
+}
+
+// ── Tick all pending ICE peers (non-blocking) ────────────────────────
+
+void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,
+                  std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports)
+{
+    uint64_t now = nowMs();
+
+    for (auto it = gPendingIcePeers.begin(); it != gPendingIcePeers.end(); )
     {
-        printf("[SERVER ICE] waiting for first client...\n");
+        PendingIcePeer& peer = **it;
+        peer.lastEventMs = now;
+        IceAgent* agent = peer.agent.get();
+        if (!agent) { it = gPendingIcePeers.erase(it); continue; }
+
+        IceAgentState agentState = tickAgentOnce(*agent);
+
+        if (agentState == IceAgentState::Failed) {
+            printf("[ICE PEER FAIL] req=%s state=failed\n", peer.requestId.substr(0, 12).c_str());
+            coordinatorIceRequestComplete(serverCode, peer.requestId);
+            it = gPendingIcePeers.erase(it);
+            continue;
+        }
+
+        if (peer.state == PendingIcePeer::State::Gathering)
+        {
+            if (agentState == IceAgentState::GatheringComplete ||
+                agentState == IceAgentState::Connected ||
+                agentState == IceAgentState::Completed)
+            {
+                printf("[ICE HOST GATHER] req=%s complete. Applying client SDP...\n",
+                       peer.requestId.substr(0, 12).c_str());
+
+                if (!agent->setRemoteDescription(peer.clientIceDescription))
+                {
+                    printf("[ICE HOST GATHER] setRemoteDescription FAILED\n");
+                    coordinatorIceRequestComplete(serverCode, peer.requestId);
+                    it = gPendingIcePeers.erase(it);
+                    continue;
+                }
+                peer.state = PendingIcePeer::State::Connecting;
+            }
+            else if (now - peer.startedAtMs > 15000)
+            {
+                printf("[ICE HOST GATHER] req=%s timed out (15s)\n",
+                       peer.requestId.substr(0, 12).c_str());
+                coordinatorIceRequestComplete(serverCode, peer.requestId);
+                it = gPendingIcePeers.erase(it);
+                continue;
+            }
+        }
+        else if (peer.state == PendingIcePeer::State::Connecting)
+        {
+            if (agentState == IceAgentState::Connected || agentState == IceAgentState::Completed)
+            {
+                printf("[ICE HOST CONNECT] req=%s connected!\n",
+                       peer.requestId.substr(0, 12).c_str());
+                agent->logSelectedPath();
+                peer.state = PendingIcePeer::State::Connected;
+
+                coordinatorIceHostAnswer(serverCode, iceSessionId,
+                                         peer.requestId, agent->localSdp());
+
+                auto transport = std::make_unique<IceTransport>(std::move(peer.agent));
+                pendingIceTransports.push_back(std::move(transport));
+                printf("[ICE PEER] transport pushed (pending=%zu)\n", pendingIceTransports.size());
+
+                coordinatorIceRequestComplete(serverCode, peer.requestId);
+                it = gPendingIcePeers.erase(it);
+                continue;
+            }
+            else if (now - peer.startedAtMs > 30000)
+            {
+                printf("[ICE HOST CONNECT] req=%s timed out (30s)\n",
+                       peer.requestId.substr(0, 12).c_str());
+                coordinatorIceRequestComplete(serverCode, peer.requestId);
+                it = gPendingIcePeers.erase(it);
+                continue;
+            }
+        }
+
+        ++it;
     }
 }
 
 // ── Poll all connected players' ICE transports ───────────────────────
-// Called from the server tick loop. Processes packets from:
-//   1. All existing players' ICE transports
-//   2. Pending (unregistered) ICE transports
 
 void tickServerIceTransports(SOCKET sock,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -169,7 +281,7 @@ void tickServerIceTransports(SOCKET sock,
                              const HeadlessWorld& world,
                              uint32_t tick, uint64_t& totalPacketsOut)
 {
-    char buffer[2048];
+    char buf[2048];
 
     // 1. Poll existing players' ICE transports
     for (auto& kv : players)
@@ -183,62 +295,58 @@ void tickServerIceTransports(SOCKET sock,
 
         for (const ReceivedPacket& rp : pkts)
         {
-            if (rp.bytes.size() < (int)sizeof(PacketHeader) || rp.bytes.size() > sizeof(buffer))
+            if (rp.bytes.size() < (int)sizeof(PacketHeader) || rp.bytes.size() > sizeof(buf))
                 continue;
-            memcpy(buffer, rp.bytes.data(), rp.bytes.size());
-            PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+            memcpy(buf, rp.bytes.data(), rp.bytes.size());
+            PacketHeader* header = reinterpret_cast<PacketHeader*>(buf);
             if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
                 continue;
 
             sockaddr_in from = player.addr;
 
-            // Dispatch to handlers
             if (header->type == PACKET_INPUT)
-                handleInputPacket(buffer, (int)rp.bytes.size(), players, world,
-                                  nextEntityId, npcs);
+                handleInputPacket(buf, (int)rp.bytes.size(), players, world, nextEntityId, npcs);
             else if (header->type == PACKET_DISCONNECT)
-                handleDisconnect(players, buffer);
+                handleDisconnect(players, buf);
             else if (header->type == PACKET_SHOT_REQUEST)
-                handleShotRequest(sock, from, buffer, (int)rp.bytes.size(), players, world, tick, totalPacketsOut);
+                handleShotRequest(sock, from, buf, (int)rp.bytes.size(), players, world, tick, totalPacketsOut);
             else if (header->type == PACKET_MELEE_HIT_REQUEST)
-                handleMeleeHitRequest(sock, from, buffer, (int)rp.bytes.size(), players, tick, totalPacketsOut);
+                handleMeleeHitRequest(sock, from, buf, (int)rp.bytes.size(), players, tick, totalPacketsOut);
             else if (header->type == PACKET_PELLET_BLAST_REQUEST)
-                handlePelletBlastRequest(sock, from, buffer, (int)rp.bytes.size(), players, world, tick, totalPacketsOut);
+                handlePelletBlastRequest(sock, from, buf, (int)rp.bytes.size(), players, world, tick, totalPacketsOut);
             else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
-                handleProjectileFireRequest(sock, from, buffer, (int)rp.bytes.size(), players,
+                handleProjectileFireRequest(sock, from, buf, (int)rp.bytes.size(), players,
                                             projectiles, nextEntityId, world, tick, totalPacketsOut);
             else if (header->type == PACKET_CHAT_MESSAGE)
-                handleChatMessage(sock, buffer, (int)rp.bytes.size(), players, tick, totalPacketsOut);
+                handleChatMessage(sock, buf, (int)rp.bytes.size(), players, tick, totalPacketsOut);
             else if (header->type == PACKET_PING)
-                handlePing(sock, from, buffer, (int)rp.bytes.size(), tick);
+                handlePing(sock, from, buf, (int)rp.bytes.size(), tick);
             else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
-                handleNpcDamageRequest(sock, buffer, (int)rp.bytes.size(), from,
-                                       players, npcs, tick, totalPacketsOut);
+                handleNpcDamageRequest(sock, buf, (int)rp.bytes.size(), from, players, npcs, tick, totalPacketsOut);
             else if (header->type == PACKET_SERVER_COMMAND)
-                handleServerCommand(buffer, (int)rp.bytes.size(), players, npcs);
+                handleServerCommand(buf, (int)rp.bytes.size(), players, npcs);
+            else if (header->type == PACKET_GODBALL_STATE)
+                handleGodballState(sock, players, buf, (int)rp.bytes.size());
             else if (header->type == PACKET_CLIENT_MAP_READY && (int)rp.bytes.size() >= (int)sizeof(ClientMapReadyPacket))
             {
-                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buf);
                 if (ready->header.playerId == ready->assignedPlayerId)
                 {
-                    auto it = players.find(ready->assignedPlayerId);
-                    if (it != players.end() && !it->second.spawned)
+                    auto pi = players.find(ready->assignedPlayerId);
+                    if (pi != players.end() && !pi->second.spawned)
                     {
-                        it->second.spawned = true;
-                        it->second.vel = glm::vec3(0.0f);
-                        it->second.clientStateUpdated = false;
+                        pi->second.spawned = true;
+                        pi->second.vel = glm::vec3(0.0f);
+                        pi->second.clientStateUpdated = false;
                         printf("%s [MAP READY/ICE] id=%u name=\"%s\"\n",
-                               serverTimestamp(), it->second.id, it->second.name.c_str());
+                               serverTimestamp(), pi->second.id, pi->second.name.c_str());
                     }
                 }
             }
         }
     }
 
-    // 2. Poll pending ICE transports (unregistered clients)
-    // Each pending transport gets a unique ICE client ID to avoid
-    // handleHello's sameAddress collision (all ICE clients would
-    // otherwise match the empty address since they don't have real UDP addr).
+    // 2. Process pending ICE transports (unregistered clients)
     static uint32_t nextIceClientId = 1000000;
     for (auto it = pendingIceTransports.begin(); it != pendingIceTransports.end(); )
     {
@@ -246,59 +354,123 @@ void tickServerIceTransports(SOCKET sock,
         std::vector<ReceivedPacket> pkts;
         transport->poll(pkts);
 
-        // Assign a unique fake address for this ICE client
         sockaddr_in iceAddr{};
         iceAddr.sin_family = AF_INET;
         iceAddr.sin_addr.s_addr = htonl(nextIceClientId++);
         iceAddr.sin_port = htons(1);
 
-        bool processedHello = false;
+        bool processed = false;
         for (const ReceivedPacket& rp : pkts)
         {
-            if (rp.bytes.size() < (int)sizeof(PacketHeader) || rp.bytes.size() > sizeof(buffer))
+            if (rp.bytes.size() < (int)sizeof(PacketHeader) || rp.bytes.size() > sizeof(buf))
                 continue;
-            memcpy(buffer, rp.bytes.data(), rp.bytes.size());
-            PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+            memcpy(buf, rp.bytes.data(), rp.bytes.size());
+            PacketHeader* header = reinterpret_cast<PacketHeader*>(buf);
             if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
                 continue;
 
             if (header->type == PACKET_HELLO && (int)rp.bytes.size() >= (int)sizeof(HelloPacket))
             {
-                printf("[SERVER ICE] Hello via ICE transport\n");
-
-                handleHello(sock, iceAddr, buffer, (int)rp.bytes.size(), players,
-                            nextPlayerId, tick, totalPacketsOut, &world);
-
-                uint32_t newPlayerId = nextPlayerId > 1 ? nextPlayerId - 1 : 1;
-                auto newPlayer = players.find(newPlayerId);
-                if (newPlayer != players.end())
-                {
-                    newPlayer->second.transport = std::move(*it);
-                    printf("[SERVER ICE] player %u assigned ICE transport\n", newPlayerId);
+                printf("[ICE GAME RX] Hello via ICE transport\n");
+                // Assign transport BEFORE calling handler so WelcomePacket goes through ICE
+                uint32_t newId = nextPlayerId++;
+                ServerPlayer& p = players[newId];
+                p.id = newId;
+                p.addr = iceAddr;
+                p.transport = std::move(*it);
+                p.lastHeardMs = nowMs();
+                p.lastShotSerial = 0;
+                p.lastProjectileFireSerial = 0;
+                p.lastMeleeAttackSerial = 0;
+                p.projectileFireCooldown = 0.0f;
+                p.name = uniquePlayerName(players,
+                    reinterpret_cast<const HelloPacket*>(buf)->name, newId);
+                glm::vec3 spawnPos = {1.0f + (float)((newId - 1) % 16) * 1.5f, 5.0f, 30.0f};
+                if (!world.spawnPoints.empty()) {
+                    size_t idx = (newId - 1) % world.spawnPoints.size();
+                    spawnPos = world.spawnPoints[idx].position;
                 }
-                processedHello = true;
+                beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), 0.0f, "ice_hello");
+                p.spawned = false;
+
+                // Send WelcomePacket through transport
+                WelcomePacket welcome{};
+                welcome.header.type = PACKET_WELCOME;
+                welcome.header.tick = tick;
+                welcome.header.playerId = newId;
+                welcome.header.transformEpoch = p.transformEpoch;
+                welcome.assignedPlayerId = newId;
+                welcome.tickRate = SERVER_TICK_RATE;
+                copyName(welcome.approvedName, p.name);
+                std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
+                std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
+                std::memset(welcome.mapId, 0, sizeof(welcome.mapId));
+                std::strncpy(welcome.mapId, getServerMapId().c_str(), sizeof(welcome.mapId) - 1);
+                p.transport->send(&welcome, sizeof(welcome));
+                ++totalPacketsOut;
+                printf("[ICE PLAYER ASSIGN] id=%u name=\"%s\" transport=%p\n",
+                       newId, p.name.c_str(), (void*)p.transport.get());
+                processed = true;
                 break;
             }
             else if (header->type == PACKET_JOIN_REQUEST && (int)rp.bytes.size() >= (int)sizeof(JoinRequestPacket))
             {
-                printf("[SERVER ICE] JoinRequest via ICE transport\n");
+                printf("[ICE GAME RX] JoinRequest via ICE transport\n");
+                const JoinRequestPacket* joinReq = reinterpret_cast<const JoinRequestPacket*>(buf);
 
-                handleJoinRequest(sock, iceAddr, buffer, (int)rp.bytes.size(), players,
-                                  nextPlayerId, tick, totalPacketsOut, &world);
-
-                uint32_t newPlayerId = nextPlayerId > 1 ? nextPlayerId - 1 : 1;
-                auto newPlayer = players.find(newPlayerId);
-                if (newPlayer != players.end())
+                // Validate ICE join token
+                if (!coordinatorIceValidateJoin(getServerCoordinatorCode(), joinReq->joinToken))
                 {
-                    newPlayer->second.transport = std::move(*it);
-                    printf("[SERVER ICE] player %u assigned ICE transport (join)\n", newPlayerId);
+                    printf("[ICE JOIN REJECT] invalid token\n");
+                    JoinRejectPacket reject{};
+                    reject.header.type = PACKET_JOIN_REJECT;
+                    reject.reason = 2;
+                    transport->send(&reject, sizeof(reject));
+                    processed = true;
+                    break;
                 }
-                processedHello = true;
+
+                // Assign transport before sending JoinAccept
+                uint32_t newId = nextPlayerId++;
+                ServerPlayer& p = players[newId];
+                p.id = newId;
+                p.addr = iceAddr;
+                p.transport = std::move(*it);
+                p.lastHeardMs = nowMs();
+                p.joinTokenValidated = true;
+                p.joinToken = joinReq->joinToken;
+                p.name = uniquePlayerName(players, joinReq->name, newId);
+                glm::vec3 spawnPos = {1.0f + (float)((newId - 1) % 16) * 1.5f, 5.0f, 30.0f};
+                if (!world.spawnPoints.empty()) {
+                    size_t idx = (newId - 1) % world.spawnPoints.size();
+                    spawnPos = world.spawnPoints[idx].position;
+                }
+                beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), 0.0f, "ice_join");
+                p.spawned = false;
+
+                JoinAcceptPacket accept{};
+                accept.header.type = PACKET_JOIN_ACCEPT;
+                accept.header.tick = tick;
+                accept.header.playerId = newId;
+                accept.header.transformEpoch = p.transformEpoch;
+                accept.assignedPlayerId = newId;
+                accept.tickRate = SERVER_TICK_RATE;
+                copyName(accept.approvedName, p.name);
+                std::string rt = generateReconnectToken();
+                p.reconnectToken = rt;
+                std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
+                std::strncpy(accept.reconnectToken, rt.c_str(), sizeof(accept.reconnectToken) - 1);
+                std::memset(accept.mapId, 0, sizeof(accept.mapId));
+                std::strncpy(accept.mapId, getServerMapId().c_str(), sizeof(accept.mapId) - 1);
+                p.transport->send(&accept, sizeof(accept));
+                ++totalPacketsOut;
+                printf("[ICE PLAYER ASSIGN] id=%u name=\"%s\" via JoinRequest\n", newId, p.name.c_str());
+                processed = true;
                 break;
             }
         }
 
-        if (processedHello)
+        if (processed)
             it = pendingIceTransports.erase(it);
         else
             ++it;
@@ -306,17 +478,13 @@ void tickServerIceTransports(SOCKET sock,
 }
 
 // ── Send data to a specific player ───────────────────────────────────
-// Uses ICE transport if available, falls back to raw sendto.
 
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size)
 {
     if (player.transport)
         return player.transport->send(data, size);
-
-    if (sock == INVALID_SOCKET)
-        return false;
-
+    if (sock == INVALID_SOCKET) return false;
     int sent = sendto(sock, (const char*)data, (int)size, 0,
                       (sockaddr*)&player.addr, sizeof(player.addr));
     return sent != SOCKET_ERROR;

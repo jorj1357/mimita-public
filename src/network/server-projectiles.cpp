@@ -507,8 +507,13 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     for (const auto& kv : players)
     {
         if (kv.first == shooter.id)
-            sendto(sock, (const char*)&result, sizeof(result), 0,
-                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        {
+            if (kv.second.transport)
+                kv.second.transport->send(&result, sizeof(result));
+            else
+                sendto(sock, (const char*)&result, sizeof(result), 0,
+                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        }
     }
 }
 

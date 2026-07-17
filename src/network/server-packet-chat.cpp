@@ -28,9 +28,12 @@ void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
     {
         if (playerEntry.first == chat->header.playerId)
             continue;
-        sendto(sock, (const char*)chat, sizeof(ChatPacket), 0,
-               (sockaddr*)&playerEntry.second.addr,
-               sizeof(playerEntry.second.addr));
+        if (playerEntry.second.transport)
+            playerEntry.second.transport->send(chat, sizeof(ChatPacket));
+        else
+            sendto(sock, (const char*)chat, sizeof(ChatPacket), 0,
+                   (sockaddr*)&playerEntry.second.addr,
+                   sizeof(playerEntry.second.addr));
         ++totalPacketsOut;
     }
 }
@@ -89,8 +92,11 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
 
     for (const auto& pe : players)
     {
-        sendto(sock, (const char*)&event, sizeof(event), 0,
-               (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+        if (pe.second.transport)
+            pe.second.transport->send(&event, sizeof(event));
+        else
+            sendto(sock, (const char*)&event, sizeof(event), 0,
+                   (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
         ++totalPacketsOut;
     }
 

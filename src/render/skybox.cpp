@@ -1,6 +1,7 @@
 #include "skybox.h"
 #include "camera.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -385,7 +386,8 @@ void Skybox::render(const Camera& camera) {
         return;
     }
 
-    SKYDBG("render: CALLED tex=%u shader=%u\n", mCubemapTex, mShader);
+    if (StructuredLogger::instance().config().rendering.fileOutput)
+        SKYDBG("render: CALLED tex=%u shader=%u\n", mCubemapTex, mShader);
 
     // Save render state
     GLint prevCullFaceMode, prevDepthFunc;

@@ -1,8 +1,8 @@
 {
     "enabled": true,
-    "length": 50.0,
+    "length": 510.0,
     "start_alpha": 1.0,
-    "end_alpha": 0.0,
+    "end_alpha": 1.0,
     "color": [1.0, 0.0, 0.0],
     "start_size": 1.0,
     "end_size": 0.0

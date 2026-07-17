@@ -395,9 +395,12 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 
     for (const auto& playerEntry : players)
     {
-        sendto(sock, (const char*)&event, sizeof(event), 0,
-               (sockaddr*)&playerEntry.second.addr,
-               sizeof(playerEntry.second.addr));
+        if (playerEntry.second.transport)
+            playerEntry.second.transport->send(&event, sizeof(event));
+        else
+            sendto(sock, (const char*)&event, sizeof(event), 0,
+                   (sockaddr*)&playerEntry.second.addr,
+                   sizeof(playerEntry.second.addr));
         ++totalPacketsOut;
     }
 }
@@ -737,8 +740,11 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
 
     for (const auto& kv : players)
     {
-        sendto(sock, (const char*)&event, sizeof(event), 0,
-               (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        if (kv.second.transport)
+            kv.second.transport->send(&event, sizeof(event));
+        else
+            sendto(sock, (const char*)&event, sizeof(event), 0,
+                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
         ++totalPacketsOut;
     }
 
@@ -776,8 +782,11 @@ void handleGodballState(SOCKET sock,
     int forwarded = 0;
     for (auto& kv : players) {
         if (kv.first == pkt->ownerPlayerId) continue;
-        sendto(sock, (const char*)buffer, bytes, 0,
-               (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        if (kv.second.transport)
+            kv.second.transport->send(buffer, bytes);
+        else
+            sendto(sock, (const char*)buffer, bytes, 0,
+                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
         forwarded++;
     }
     printf("[GODBALL SERVER TX] playerId=%u forwardedTo=%d clients\n",

@@ -9,7 +9,15 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <unordered_map>
 #include <nlohmann/json.hpp>
+
+namespace {
+double nowSeconds() {
+    static const auto start = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+}
 
 // ── Singleton ───────────────────────────────────────────────
 
@@ -128,6 +136,8 @@ static StructuredLogConfig::CategoryConfig parseCategoryConfig(
     }
     if (j.contains("file_output"))
         cfg.fileOutput = j["file_output"].get<bool>();
+    if (j.contains("throttle"))
+        cfg.throttleSeconds = j["throttle"].get<float>();
     return cfg;
 }
 
@@ -503,8 +513,6 @@ void StructuredLogger::write(const Entry& e) {
 
     int idx = (int)e.category;
     if (idx < 0 || idx >= 11) return;
-    FILE* f = mCategoryFiles[idx];
-    if (!f) return;
 
     uint64_t& counter = mEventCounters[idx];
     counter++;
@@ -572,22 +580,132 @@ void StructuredLogger::write(const Entry& e) {
 
     pos += std::snprintf(buf + pos, sizeof(buf) - pos, "\n");
 
-    fprintf(f, "%s", buf);
-    fflush(f);
-
-    // Console output
-    if (mConfig.consoleOutput) {
-        printf("[%s][%s] %s", categoryName(e.category).c_str(),
-               levelToString(e.level).c_str(), e.reason.c_str());
+    std::string fileLine(buf);
+    std::string consoleLine;
+    {
+        char cbuf[512];
+        int cp = 0;
+        cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
+            "[%s][%s] %s", categoryName(e.category).c_str(),
+            levelToString(e.level).c_str(), e.reason.c_str());
         if (!e.numericKeys.empty()) {
             for (size_t i = 0; i < e.numericKeys.size(); i++) {
                 double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
                 double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
-                printf(" %s: exp=%.4f act=%.4f diff=%.4f",
-                       e.numericKeys[i].c_str(), expected, actual, actual - expected);
+                cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
+                    " %s: exp=%.4f act=%.4f diff=%.4f",
+                    e.numericKeys[i].c_str(), expected, actual, actual - expected);
             }
         }
-        printf("\n");
+        cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp, "\n");
+        consoleLine = cbuf;
+    }
+
+    // ── Check if this category is throttled ───────────────────────
+    auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
+        switch (e.category) {
+            case StructuredCategory::Replay:      return mConfig.replay;
+            case StructuredCategory::Camera:      return mConfig.camera;
+            case StructuredCategory::Audio:       return mConfig.audio;
+            case StructuredCategory::Performance: return mConfig.performance;
+            case StructuredCategory::Collision:   return mConfig.collision;
+            case StructuredCategory::Gui:         return mConfig.gui;
+            case StructuredCategory::Avatar:      return mConfig.avatar;
+            case StructuredCategory::Network:     return mConfig.network;
+            case StructuredCategory::Rendering:   return mConfig.rendering;
+            case StructuredCategory::GlbModels:   return mConfig.glbModels;
+            case StructuredCategory::Executable:  return mConfig.executable;
+            default: return mConfig.replay;
+        }
+    }();
+
+    if (catCfg.throttleSeconds > 0.0f)
+    {
+        // Buffer instead of writing immediately
+        ThrottledBuffer& tb = mThrottledBuffers[idx];
+        tb.lines.push_back(fileLine);
+        if (mConfig.consoleOutput)
+            tb.consoleLines.push_back(consoleLine);
+
+        // Flush if enough time has passed
+        double now = nowSeconds();
+        if (now - tb.lastFlushTime >= (double)catCfg.throttleSeconds)
+            flushThrottled(idx);
+        return;
+    }
+
+    // ── Non-throttled: write immediately ──────────────────────────
+    {
+        FILE* f = mCategoryFiles[idx];
+        if (f) {
+            fprintf(f, "%s", fileLine.c_str());
+            fflush(f);
+        }
+    }
+
+    if (mConfig.consoleOutput)
+        printf("%s", consoleLine.c_str());
+}
+
+void StructuredLogger::flushThrottled(int catIdx) {
+    auto it = mThrottledBuffers.find(catIdx);
+    if (it == mThrottledBuffers.end() || it->second.lines.empty())
+        return;
+
+    ThrottledBuffer& tb = it->second;
+
+    // Write all buffered file lines
+    FILE* f = mCategoryFiles[catIdx];
+    if (f) {
+        char header[128];
+        std::snprintf(header, sizeof(header),
+            "--- Throttled flush at %s (%zu lines) ---\n",
+            timestamp().c_str(), tb.lines.size());
+        fprintf(f, "%s", header);
+        for (const auto& line : tb.lines)
+            fprintf(f, "%s", line.c_str());
+        fflush(f);
+    }
+
+    // Write all buffered console lines
+    if (mConfig.consoleOutput && !tb.consoleLines.empty()) {
+        printf("--- Throttled flush (%zu lines) ---\n", tb.consoleLines.size());
+        for (const auto& line : tb.consoleLines)
+            printf("%s", line.c_str());
+    }
+
+    tb.lines.clear();
+    tb.consoleLines.clear();
+    tb.lastFlushTime = nowSeconds();
+}
+
+void StructuredLogger::tick() {
+    if (!mInitialized || !mConfig.enabled) return;
+    double now = nowSeconds();
+    for (auto& kv : mThrottledBuffers) {
+        int catIdx = kv.first;
+        ThrottledBuffer& tb = kv.second;
+        if (tb.lines.empty()) continue;
+
+        // Get category throttle config
+        StructuredCategory cat = (StructuredCategory)catIdx;
+        float throttle = 0.0f;
+        switch (cat) {
+            case StructuredCategory::Replay:      throttle = mConfig.replay.throttleSeconds; break;
+            case StructuredCategory::Camera:      throttle = mConfig.camera.throttleSeconds; break;
+            case StructuredCategory::Audio:       throttle = mConfig.audio.throttleSeconds; break;
+            case StructuredCategory::Performance: throttle = mConfig.performance.throttleSeconds; break;
+            case StructuredCategory::Collision:   throttle = mConfig.collision.throttleSeconds; break;
+            case StructuredCategory::Gui:         throttle = mConfig.gui.throttleSeconds; break;
+            case StructuredCategory::Avatar:      throttle = mConfig.avatar.throttleSeconds; break;
+            case StructuredCategory::Network:     throttle = mConfig.network.throttleSeconds; break;
+            case StructuredCategory::Rendering:   throttle = mConfig.rendering.throttleSeconds; break;
+            case StructuredCategory::GlbModels:   throttle = mConfig.glbModels.throttleSeconds; break;
+            case StructuredCategory::Executable:  throttle = mConfig.executable.throttleSeconds; break;
+            default: break;
+        }
+        if (throttle > 0.0f && now - tb.lastFlushTime >= (double)throttle)
+            flushThrottled(catIdx);
     }
 }
 

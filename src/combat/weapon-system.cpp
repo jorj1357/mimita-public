@@ -733,7 +733,11 @@ RevolverShotResult WeaponSystem::fire(
         result.start = muzzlePos;
         result.end = muzzlePos + dir;
         result.hitNormal = -dir;
-        WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
+        if (remotePlayers) {
+            WeaponAudio::playShootSound(*def, muzzlePos);
+        } else {
+            WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
+        }
 
         Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired ammo=%d/%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f)\n",
                    rt->currentAmmo, rt->reserveAmmo,
@@ -1087,10 +1091,17 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
     // Render godball sphere for remote players if godball is active
     if (player.godballActive)
     {
+        float radius = 0.5f;
+        const WeaponDefinition* gbDef = WeaponRegistry::instance().get("godball");
+        if (gbDef)
+        {
+            auto it = gbDef->customParams.find("radius");
+            if (it != gbDef->customParams.end())
+                radius = it->second;
+        }
         printf("[GODBALL RENDER] entityId=%u pos=(%.1f,%.1f,%.1f) radius=%.2f\n",
                entityId, player.godballPosition.x, player.godballPosition.y,
-               player.godballPosition.z, 0.4f);
-        float radius = 0.4f;
+               player.godballPosition.z, radius);
         DebugVis::drawFilledSphere(camera, player.godballPosition, radius,
                                     {0.2f, 0.4f, 0.8f, 0.6f});
         DebugVis::drawWireSphere(camera, player.godballPosition, radius,

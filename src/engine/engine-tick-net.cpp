@@ -18,6 +18,7 @@
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
+#include "network/network-weapons.h"
 #include "network/disagreement-visuals.h"
 #include "render/render-player.h"
 #include "perf/perf.h"
@@ -165,6 +166,25 @@ void engineTickNet(Engine& engine, float dt)
         MimitaNet::mpTick(mpContext, player.username, dt, &mpInput, world);
         if (!mpContext.approvedLocalName.empty())
             player.username = mpContext.approvedLocalName;
+
+        // ── Ammo refund for rejected projectile fire requests ───────────
+        for (const auto& rej : mpContext.fireRejections)
+        {
+            const WeaponDefinition* def = weapons.getCurrentDef(player);
+            if (def)
+            {
+                auto rtIt = player.weaponRuntimes.find(def->id);
+                if (rtIt != player.weaponRuntimes.end())
+                {
+                    rtIt->second.currentAmmo = std::min(rtIt->second.currentAmmo + 1, def->magazineSize);
+                    rtIt->second.fireCooldown = 0.0f;
+                    printf("[AMMO REFUND] fireSerial=%u weapon=%s — restored 1 ammo (now %d/%d)\n",
+                           rej.fireSerial, MimitaNet::networkWeaponTypeName(rej.weapon),
+                           rtIt->second.currentAmmo, def->magazineSize);
+                }
+            }
+        }
+        mpContext.fireRejections.clear();
 
         // ── Map synchronization ──────────────────────────────────────────
         // Load server-required map without blocking networking.

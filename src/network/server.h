@@ -526,9 +526,36 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     const ServerLaunchSettings* settings = nullptr);
 void stopListenServer(ListenServerState& state);
 void tickListenServer(ListenServerState& state, float dt);
+// ── Non-blocking ICE peer handshake state ────────────────────────────
+struct PendingIcePeer {
+    std::string requestId;
+    std::string clientSessionId;
+    std::string clientIceDescription;
+    std::unique_ptr<class IceAgent> agent;
+    enum class State { Idle, Gathering, WaitingAnswer, Connecting, Connected, Failed };
+    State state = State::Idle;
+    uint64_t startedAtMs = 0;
+    uint64_t lastEventMs = 0;
+    int failCount = 0;
+};
+
+extern std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
+
 bool initServerIceListener(ListenServerState& state);
 void tickIceCoordinator(ListenServerState& state);
+void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,
+                  std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports);
 bool waitForAgentState(class IceAgent& agent, IceAgentState target, int timeoutMs);
+void tickServerIceTransports(SOCKET sock,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>& npcs,
+                             std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                             uint32_t& nextEntityId,
+                             uint32_t& nextPlayerId,
+                             std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports,
+                             const HeadlessWorld& world,
+                             uint32_t tick, uint64_t& totalPacketsOut);
+bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player, const void* data, size_t size);
 std::string generateServerCode();
 
 } // namespace MimitaNet

@@ -27,7 +27,12 @@ struct IceConfiguration
     IceTurnConfig turn;
 };
 
-inline IceConfiguration loadIceConfig(const std::string& path = "config/network/ice-dev.json")
+// Load config from file, optionally overriding TURN credentials
+inline IceConfiguration loadIceConfig(const std::string& path = "config/network/ice-dev.json");
+inline IceConfiguration loadIceConfigWithTurn(const std::string& turnHost, uint16_t turnPort,
+    const std::string& turnUsername, const std::string& turnCredential);
+
+inline IceConfiguration loadIceConfig(const std::string& path)
 {
     IceConfiguration config;
 
@@ -72,5 +77,19 @@ inline IceConfiguration loadIceConfig(const std::string& path = "config/network/
     {
     }
 
+    return config;
+}
+
+inline IceConfiguration loadIceConfigWithTurn(const std::string& turnHost, uint16_t turnPort,
+    const std::string& turnUsername, const std::string& turnCredential)
+{
+    IceConfiguration config = loadIceConfig();
+    if (!turnCredential.empty())
+    {
+        config.turn.host = turnHost;
+        config.turn.port = turnPort;
+        config.turn.username = turnUsername;
+        config.turn.password = turnCredential;
+    }
     return config;
 }

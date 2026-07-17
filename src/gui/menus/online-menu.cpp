@@ -246,20 +246,27 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         else if (id == "joinServerButton" && s.clicked)
         {
             std::string code = b.get("join.code");
-            // Remove placeholder text
             if (code.find("______") != std::string::npos)
                 code.clear();
 
             if (!code.empty())
             {
-                printf("[ROOM JOIN LOOKUP] api=coordinatorLookup code=%s\n", code.c_str());
-                // First do a coordinator lookup to verify the code exists
+                // Non-mutating lookup: check if room exists and its type
+                printf("[ROOM JOIN] looking up code=%s\n", code.c_str());
                 MimitaNet::CoordinatorLookupResult lookup =
-                    MimitaNet::coordinatorLookup(code);
-                if (lookup.exists && lookup.status == "online")
+                    MimitaNet::coordinatorIceLookup(code);
+                if (lookup.reachable && lookup.isIce && lookup.exists)
                 {
-                    printf("[ROOM JOIN LOOKUP] api=coordinatorJoin code=%s\n", code.c_str());
-                    // Then request a join token
+                    // ICE room — full ICE negotiation happens in mpIceConnect.
+                    r.roomCode = code;
+                    r.connectToServer = true;
+                    r.connectAddress = "ice:" + code;  // ICE marker address
+                    r.connectPort = 0;
+                    printf("[ONLINE MENU] ICE room code=%s\n", code.c_str());
+                }
+                else if (lookup.reachable && lookup.exists && lookup.status == "online")
+                {
+                    // Normal (non-ICE) room
                     MimitaNet::CoordinatorJoinResult joinResult =
                         MimitaNet::coordinatorJoin(code,
                             AuthSystem::instance().displayName());
@@ -270,32 +277,27 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
                         r.connectAddress = joinResult.serverIp;
                         r.connectPort = joinResult.serverPort;
                         r.joinToken = joinResult.joinToken;
-                        printf("[ONLINE MENU] join code=%s server=%s:%u token=%s\n",
+                        printf("[ONLINE MENU] normal join code=%s server=%s:%u\n",
                                code.c_str(), joinResult.serverIp.c_str(),
-                               joinResult.serverPort,
-                               joinResult.joinToken.substr(0, 12).c_str());
+                               joinResult.serverPort);
                     }
                     else
                     {
-                        b.set("join.code", "Join failed (coordinator error)");
+                        b.set("join.code", "Join failed");
                         printf("[ONLINE MENU] join FAILED for code=%s\n", code.c_str());
                     }
                 }
                 else if (lookup.exists)
                 {
                     b.set("join.code", "Server offline");
-                    printf("[ONLINE MENU] server offline code=%s status=%s\n",
-                           code.c_str(), lookup.status.c_str());
                 }
                 else if (!lookup.reachable)
                 {
                     b.set("join.code", "Coordinator unreachable");
-                    printf("[ONLINE MENU] coordinator unreachable for code=%s\n", code.c_str());
                 }
                 else
                 {
                     b.set("join.code", "Room not found");
-                    printf("[ONLINE MENU] code not found: %s\n", code.c_str());
                 }
             }
         }

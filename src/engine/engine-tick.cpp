@@ -191,8 +191,9 @@ void engineTick(Engine& engine)
 
     { MIMITA_PERF_SCOPE("Sleep"); gFramePacer.endFrame(); }
 
-    // ── Structured logger config hot-reload ──────────
+    // ── Structured logger config hot-reload + tick ────
     StructuredLogger::instance().pollConfig();
+    StructuredLogger::instance().tick();
 
     // ── Frame timing breakdown ───────────────────────
     {
