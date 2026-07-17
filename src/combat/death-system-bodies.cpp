@@ -22,7 +22,7 @@ extern Renderer* gRenderer;
 namespace {
 
 constexpr float DEAD_GRAVITY = 30.0f;
-constexpr float DEAD_DRAG = 0.3f;
+constexpr float DEAD_DRAG = 1.3f;
 constexpr float DEAD_ANGULAR_DRAG = 0.5f;
 constexpr float DEAD_BOUNCE = 0.15f;
 constexpr float DEAD_FRICTION = 0.8f;

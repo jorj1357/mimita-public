@@ -48,6 +48,7 @@ uint8_t networkWeaponTypeForSlot(int slot)
         return NETWORK_WEAPON_GRENADE_LAUNCHER;
     case 10:
         return NETWORK_WEAPON_HAFS;
+    case 4:
     case 11:
         return NETWORK_WEAPON_SWORDSWORD;
     default:

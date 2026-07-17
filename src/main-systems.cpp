@@ -340,8 +340,10 @@ void gameInitSubsystems(Engine& engine)
     registerWeaponBenchCommands();
     registerWeaponDebugCommand();
     loadWorldCrosshairConfig();
+    loadCoolShotLineConfig();
     applyStartupDefaults();
     registerWorldXhReloadCommand();
+    registerCoolShotLineCommands();
     registerCameraCommands();
     registerGuiEditorCommands();
     registerPostFxCommands();

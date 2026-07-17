@@ -34,6 +34,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     GameplayConfig::instance().pollReload();
     CrosshairConfig::instance().pollReload();
     pollWorldCrosshairConfig();
+    pollCoolShotLineConfig();
     HealthbarConfig::instance().pollReload();
     HitEffects::pollReload();
     MimitaNet::pollDisagreementReload();

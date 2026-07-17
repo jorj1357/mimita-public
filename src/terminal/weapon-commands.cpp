@@ -7,6 +7,7 @@
 #include <vector>
 #include <fstream>
 #include <nlohmann/json.hpp>
+using json = nlohmann::json;
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "combat/weapon-system.h"
@@ -127,12 +128,11 @@ void registerWeaponCommands()
                 }
 
                 if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
-                    if (shot.targetIsRemotePlayer) {
-                        MimitaNet::mpSendMeleeHitRequest(
-                            mpContext, shot.targetId, (int)shot.damage,
-                            netWeapon, 1, shot.end, shot.hitNormal,
-                            shot.knockbackImpulse, glm::length(player.vel));
-                    }
+                    // Send attack-start command. Server simulates the full attack.
+                    MimitaNet::mpSendMeleeHitRequest(
+                        mpContext, 0, 0, netWeapon, 1,
+                        glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f),
+                        glm::vec3(0.0f), 0.0f);
                     Terminal::instance().addLog("[WEAPON] fired");
                     return;
                 }
@@ -931,6 +931,228 @@ void registerWorldXhReloadCommand()
             char buf[80];
             snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] json_hitboxes=%d", (int)val);
             Terminal::instance().addLog(std::string(buf));
+        }
+    });
+}
+
+// ── Cool shot line (camforward aiming beam) ──────────────────────────
+
+static const char* COOL_SHOT_LINE_CONFIG_PATH = "config/weapon-cool-shot-line.json";
+static int64_t gCoolShotLineLastModified = 0;
+static bool gCoolShotLineWatchLogged = false;
+
+struct CoolShotLineState {
+    bool enabled = true;
+    float length = 50.0f;
+    float startAlpha = 1.0f;
+    float endAlpha = 0.0f;
+    float r = 1.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    float startSize = 1.0f;
+    float endSize = 0.0f;
+};
+
+static int64_t coolShotLineModifiedTime()
+{
+    std::error_code ec;
+    const auto time = std::filesystem::last_write_time(COOL_SHOT_LINE_CONFIG_PATH, ec);
+    if (ec) return 0;
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        time.time_since_epoch()).count();
+}
+
+static CoolShotLineState currentCoolShotLineState()
+{
+    CoolShotLineState s;
+    s.enabled = DebugConfig::COOL_SHOT_LINE_ENABLED;
+    s.length = DebugConfig::COOL_SHOT_LINE_LENGTH;
+    s.startAlpha = DebugConfig::COOL_SHOT_LINE_START_ALPHA;
+    s.endAlpha = DebugConfig::COOL_SHOT_LINE_END_ALPHA;
+    s.r = DebugConfig::COOL_SHOT_LINE_COLOR_R;
+    s.g = DebugConfig::COOL_SHOT_LINE_COLOR_G;
+    s.b = DebugConfig::COOL_SHOT_LINE_COLOR_B;
+    s.startSize = DebugConfig::COOL_SHOT_LINE_START_SIZE;
+    s.endSize = DebugConfig::COOL_SHOT_LINE_END_SIZE;
+    return s;
+}
+
+static void logCoolShotLine(const char* msg)
+{
+    printf("[COOL SHOT LINE] %s\n", msg);
+}
+
+static bool applyCoolShotLineState(const CoolShotLineState& s)
+{
+    DebugConfig::COOL_SHOT_LINE_ENABLED = s.enabled;
+    DebugConfig::COOL_SHOT_LINE_LENGTH = std::max(0.1f, s.length);
+    DebugConfig::COOL_SHOT_LINE_START_ALPHA = glm::clamp(s.startAlpha, 0.0f, 1.0f);
+    DebugConfig::COOL_SHOT_LINE_END_ALPHA = glm::clamp(s.endAlpha, 0.0f, 1.0f);
+    DebugConfig::COOL_SHOT_LINE_COLOR_R = glm::clamp(s.r, 0.0f, 1.0f);
+    DebugConfig::COOL_SHOT_LINE_COLOR_G = glm::clamp(s.g, 0.0f, 1.0f);
+    DebugConfig::COOL_SHOT_LINE_COLOR_B = glm::clamp(s.b, 0.0f, 1.0f);
+    DebugConfig::COOL_SHOT_LINE_START_SIZE = std::max(0.0f, s.startSize);
+    DebugConfig::COOL_SHOT_LINE_END_SIZE = std::max(0.0f, s.endSize);
+    char buf[256];
+    snprintf(buf, sizeof(buf), "Applied: enabled=%d length=%.1f start_alpha=%.2f end_alpha=%.2f "
+             "color=(%.2f,%.2f,%.2f) start_size=%.2f end_size=%.2f",
+             (int)s.enabled, s.length, s.startAlpha, s.endAlpha,
+             s.r, s.g, s.b, s.startSize, s.endSize);
+    logCoolShotLine(buf);
+    return true;
+}
+
+void loadCoolShotLineConfig()
+{
+    const int64_t mtime = coolShotLineModifiedTime();
+    if (!gCoolShotLineWatchLogged) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Watching: %s", COOL_SHOT_LINE_CONFIG_PATH);
+        logCoolShotLine(buf);
+        gCoolShotLineWatchLogged = true;
+    }
+
+    std::ifstream file(COOL_SHOT_LINE_CONFIG_PATH);
+    if (!file.is_open()) {
+        logCoolShotLine("Config file not found; using default settings.");
+        return;
+    }
+
+    try {
+        json root;
+        file >> root;
+
+        CoolShotLineState next;
+        if (root.contains("enabled") && root["enabled"].is_boolean())
+            next.enabled = root["enabled"].get<bool>();
+        if (root.contains("length") && root["length"].is_number())
+            next.length = root["length"].get<float>();
+        if (root.contains("start_alpha") && root["start_alpha"].is_number())
+            next.startAlpha = root["start_alpha"].get<float>();
+        if (root.contains("end_alpha") && root["end_alpha"].is_number())
+            next.endAlpha = root["end_alpha"].get<float>();
+        if (root.contains("color") && root["color"].is_array() && root["color"].size() >= 3) {
+            next.r = root["color"][0].get<float>();
+            next.g = root["color"][1].get<float>();
+            next.b = root["color"][2].get<float>();
+        }
+        if (root.contains("start_size") && root["start_size"].is_number())
+            next.startSize = root["start_size"].get<float>();
+        if (root.contains("end_size") && root["end_size"].is_number())
+            next.endSize = root["end_size"].get<float>();
+
+        applyCoolShotLineState(next);
+        gCoolShotLineLastModified = mtime;
+
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Loaded %s", COOL_SHOT_LINE_CONFIG_PATH);
+        logCoolShotLine(buf);
+    } catch (const std::exception& e) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Parse error in %s: %s. Keeping previous valid settings.",
+                 COOL_SHOT_LINE_CONFIG_PATH, e.what());
+        logCoolShotLine(buf);
+    }
+}
+
+void pollCoolShotLineConfig()
+{
+    const int64_t now = coolShotLineModifiedTime();
+    if (now == 0 || now == gCoolShotLineLastModified)
+        return;
+
+    char buf[128];
+    snprintf(buf, sizeof(buf), "Detected change: %s", COOL_SHOT_LINE_CONFIG_PATH);
+    logCoolShotLine(buf);
+    logCoolShotLine("Reloading...");
+
+    std::ifstream file(COOL_SHOT_LINE_CONFIG_PATH);
+    if (!file.is_open()) {
+        logCoolShotLine("Reload failed; file not openable. Keeping previous valid settings.");
+        gCoolShotLineLastModified = now;
+        return;
+    }
+
+    try {
+        json root;
+        file >> root;
+
+        CoolShotLineState next;
+        if (root.contains("enabled") && root["enabled"].is_boolean())
+            next.enabled = root["enabled"].get<bool>();
+        if (root.contains("length") && root["length"].is_number())
+            next.length = root["length"].get<float>();
+        if (root.contains("start_alpha") && root["start_alpha"].is_number())
+            next.startAlpha = root["start_alpha"].get<float>();
+        if (root.contains("end_alpha") && root["end_alpha"].is_number())
+            next.endAlpha = root["end_alpha"].get<float>();
+        if (root.contains("color") && root["color"].is_array() && root["color"].size() >= 3) {
+            next.r = root["color"][0].get<float>();
+            next.g = root["color"][1].get<float>();
+            next.b = root["color"][2].get<float>();
+        }
+        if (root.contains("start_size") && root["start_size"].is_number())
+            next.startSize = root["start_size"].get<float>();
+        if (root.contains("end_size") && root["end_size"].is_number())
+            next.endSize = root["end_size"].get<float>();
+
+        applyCoolShotLineState(next);
+        gCoolShotLineLastModified = now;
+        logCoolShotLine("Reloaded successfully.");
+    } catch (const std::exception& e) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Reload failed: %s. Keeping previous valid settings.", e.what());
+        logCoolShotLine(buf);
+        gCoolShotLineLastModified = now;
+    }
+}
+
+void registerCoolShotLineCommands()
+{
+    Terminal::instance().registerCommand({
+        "wpn_cool_shot_line",
+        "Toggle the camforward aiming beam (0=off, 1=on). Separate from wpn_shot_line.",
+        "wpn_cool_shot_line <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::COOL_SHOT_LINE_ENABLED = !DebugConfig::COOL_SHOT_LINE_ENABLED;
+            } else {
+                DebugConfig::COOL_SHOT_LINE_ENABLED = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::COOL_SHOT_LINE_ENABLED
+                ? "[OK] wpn_cool_shot_line enabled (camforward aiming beam visible)"
+                : "[OK] wpn_cool_shot_line disabled");
+        },
+        "2026-07-17",
+        CommandCategory::Weapon
+    });
+
+    Terminal::instance().registerCommand({
+        "wpn_cool_shot_line_reload",
+        "Reload config/weapon-cool-shot-line.json and apply changes immediately.",
+        "wpn_cool_shot_line_reload",
+        [](const std::vector<std::string>&) {
+            pollCoolShotLineConfig();
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "wpn_cool_shot_line_inspect",
+        "Print current cool shot line state.",
+        "wpn_cool_shot_line_inspect",
+        [](const std::vector<std::string>&) {
+            CoolShotLineState s = currentCoolShotLineState();
+            printf("[COOL SHOT LINE]\n"
+                   "enabled=%d\n"
+                   "length=%.3f\n"
+                   "start_alpha=%.3f\n"
+                   "end_alpha=%.3f\n"
+                   "color=%.3f,%.3f,%.3f\n"
+                   "start_size=%.3f\n"
+                   "end_size=%.3f\n",
+                   (int)s.enabled, s.length, s.startAlpha, s.endAlpha,
+                   s.r, s.g, s.b, s.startSize, s.endSize);
         }
     });
 }

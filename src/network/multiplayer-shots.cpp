@@ -262,6 +262,79 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
             }
         }
     }
+
+    // ── Apply authoritative target results (knockback + death) ──────
+    const char* shooterName = "";
+    {
+        auto si = ctx.playerRegistry.find(event->shooterPlayerId);
+        if (si != ctx.playerRegistry.end())
+            shooterName = si->second.name.c_str();
+    }
+    const glm::vec3 baseDirection(event->baseDirX, event->baseDirY, event->baseDirZ);
+
+    for (uint8_t t = 0; t < event->targetCount && t < MAX_PELLET_BLAST_TARGETS; ++t)
+    {
+        const PelletBlastTargetResult& targetRes = event->targets[t];
+        const bool isLocalTarget = targetRes.targetPlayerId == ctx.localPlayerId;
+
+        // ── Knockback ────────────────────────────────────────────────
+        glm::vec3 knockback(
+            (float)targetRes.knockX,
+            (float)targetRes.knockY,
+            (float)targetRes.knockZ);
+
+        if (glm::length(knockback) > 0.001f)
+        {
+            if (isLocalTarget)
+            {
+                ctx.pendingKnockback += knockback;
+                ctx.pendingKnockbackSource = weaponName;
+                printf("[PELLET KNOCKBACK APPLY] victim=local "
+                       "impulse=(%.2f,%.2f,%.2f) source=%s\n",
+                       knockback.x, knockback.y, knockback.z, weaponName);
+            }
+            else
+            {
+                auto remote = ctx.remotePlayers.find(targetRes.targetPlayerId);
+                if (remote != ctx.remotePlayers.end())
+                {
+                    remote->second.externalImpulse += knockback;
+                    printf("[PELLET KNOCKBACK APPLY] player=%u "
+                           "impulse=(%.2f,%.2f,%.2f)\n",
+                           targetRes.targetPlayerId,
+                           knockback.x, knockback.y, knockback.z);
+                }
+            }
+        }
+
+        // ── Death effect for killed targets (shooter and others) ─────
+        if (targetRes.killed && !isLocalTarget)
+        {
+            NetworkShotEvent deathEvent;
+            deathEvent.shotSerial = event->shotSerial;
+            deathEvent.shooterPlayerId = event->shooterPlayerId;
+            deathEvent.targetPlayerId = targetRes.targetPlayerId;
+            deathEvent.damage = targetRes.totalDamage;
+            deathEvent.targetHealth = targetRes.healthAfter;
+            deathEvent.weapon = event->weapon;
+            deathEvent.impactType = SHOT_IMPACT_ENTITY;
+            deathEvent.killed = true;
+            deathEvent.damageConfirmed = true;
+            deathEvent.direction = glm::length(baseDirection) > 0.001f
+                ? glm::normalize(baseDirection) : glm::vec3(0.0f, 0.0f, -1.0f);
+            deathEvent.knockback = knockback;
+            ctx.shotEvents.push_back(deathEvent);
+
+            printf("[PELLET DEATH] shooter=%u target=%u serial=%u\n",
+                   event->shooterPlayerId, targetRes.targetPlayerId, event->shotSerial);
+        }
+
+        // ── Update local player health from authoritative result ─────
+        if (isLocalTarget)
+        {
+            ctx.localServerHealth = targetRes.healthAfter;
+        }
+    }
 }
 
 } // namespace MimitaNet

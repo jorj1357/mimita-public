@@ -338,6 +338,8 @@ int runServer(const LaunchOptions& options)
             simulateNpc(kv.second, players);
         tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
 
+        tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+
         buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
 
         tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
@@ -705,6 +707,10 @@ void tickListenServer(ListenServerState& state, float dt)
         for (auto& kv : state.npcs)
             simulateNpc(kv.second, state.players);
         tickServerProjectiles(state.sock, state.players, state.projectiles,
+                              state.world, SERVER_DT, state.tick,
+                              state.totalPacketsOut);
+
+        tickServerSwordCombat(state.sock, state.players,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
 

@@ -379,7 +379,8 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     bool serialNew = request->fireSerial != 0;
     if (serialNew)
     {
-        for (uint8_t i = 0; i < shooter.recentProjectileSerialCount; ++i)
+        uint8_t checkCount = std::min(shooter.recentProjectileSerialCount, (uint8_t)4);
+        for (uint8_t i = 0; i < checkCount; ++i)
             if (shooter.recentProjectileSerials[i] == request->fireSerial)
             {
                 serialNew = false;
@@ -463,13 +464,9 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.spawnTick = tick;
 
     shooter.lastProjectileFireSerial = request->fireSerial;
-    if (shooter.recentProjectileSerialCount < 4)
-        shooter.recentProjectileSerials[shooter.recentProjectileSerialCount++] = request->fireSerial;
-    else {
-        for (uint8_t i = 0; i < 3; ++i)
-            shooter.recentProjectileSerials[i] = shooter.recentProjectileSerials[i + 1];
-        shooter.recentProjectileSerials[3] = request->fireSerial;
-    }
+    shooter.recentProjectileSerials[shooter.recentProjectileSerialCount % 4] = request->fireSerial;
+    if (shooter.recentProjectileSerialCount < 255)
+        shooter.recentProjectileSerialCount++;
     shooter.projectileFireCooldown = cfg.fireDelay;
 
     ProjectileSpawnEventPacket spawn{};

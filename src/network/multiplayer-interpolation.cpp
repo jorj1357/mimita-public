@@ -3,6 +3,7 @@
 #include "avatar/avatar.h"
 #include "config/player-settings.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-runtime.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
@@ -218,6 +219,19 @@ void updateRenderedReplica(
                     player.hasValidWeapon = true;
                     break;
                 }
+            }
+        }
+    }
+
+    // ── Ensure remote player has a WeaponRuntime for animation ──────
+    if (player.hasValidWeapon && !player.equippedWeaponId.empty()) {
+        auto rtIt = player.weaponRuntimes.find(player.equippedWeaponId);
+        if (rtIt == player.weaponRuntimes.end()) {
+            const WeaponDefinition* wdef = WeaponRegistry::instance().get(player.equippedWeaponId);
+            if (wdef) {
+                WeaponRuntime& rt = player.weaponRuntimes[player.equippedWeaponId];
+                rt = WeaponRuntime{};
+                WeaponRuntimeHelper::initRuntime(rt, *wdef);
             }
         }
     }

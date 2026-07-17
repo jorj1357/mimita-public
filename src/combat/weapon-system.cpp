@@ -332,8 +332,10 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             DebugVis::drawFilledBeam(camera, muzzlePos, hitPoint, visThickness, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
             DebugVis::drawFilledSphere(camera, hitPoint, 0.08f, glm::vec4(1.0f, 0.0f, 0.0f, 0.7f));
 
+            const GameplayAimMode aimMode = GameplayConfig::instance().aimMode();
+
             // Farpoint debug: draw camera forward ray + farpoint target + weapon direction
-            if (GameplayConfig::instance().aimMode() == GameplayAimMode::Farpoint) {
+            if (aimMode == GameplayAimMode::Farpoint) {
                 float farDist = GameplayConfig::instance().farpointDistance();
                 glm::vec3 farTarget = camera.pos + camera.front * farDist;
                 // BLUE: camera forward ray (shortened to 100m for visibility)
@@ -345,6 +347,64 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 glm::vec3 wpnDir = glm::normalize(farTarget - muzzlePos);
                 glm::vec3 wpnRayEnd = muzzlePos + wpnDir * 100.0f;
                 DebugVis::drawFilledBeam(camera, muzzlePos, wpnRayEnd, 0.03f, glm::vec4(1.0f, 0.2f, 0.2f, 0.6f));
+            }
+
+            // Camforward debug: draw camera forward direction from muzzle (parallel to camera)
+            if (aimMode == GameplayAimMode::CamForward) {
+                glm::vec3 camDir = glm::normalize(camera.front);
+                glm::vec3 muzzleRayEnd = muzzlePos + camDir * 100.0f;
+                DebugVis::drawFilledBeam(camera, muzzlePos, muzzleRayEnd, 0.03f, glm::vec4(1.0f, 1.0f, 0.0f, 0.6f));
+                DebugVis::drawFilledSphere(camera, muzzleRayEnd, 0.1f, glm::vec4(1.0f, 1.0f, 0.0f, 0.5f));
+            }
+        }
+
+        // ── Cool shot line (camforward aiming beam) ──────────
+        {
+            bool coolLineActive = DebugConfig::COOL_SHOT_LINE_ENABLED
+                && GameplayConfig::instance().aimMode() == GameplayAimMode::CamForward
+                && def;
+            if (coolLineActive)
+            {
+                glm::vec3 beamOrigin = muzzlePos;
+                glm::vec3 beamDir = glm::normalize(camera.front);
+                float beamLen = std::max(0.1f, DebugConfig::COOL_SHOT_LINE_LENGTH);
+                float startAlpha = glm::clamp(DebugConfig::COOL_SHOT_LINE_START_ALPHA, 0.0f, 1.0f);
+                float endAlpha = glm::clamp(DebugConfig::COOL_SHOT_LINE_END_ALPHA, 0.0f, 1.0f);
+                float startSize = std::max(0.0f, DebugConfig::COOL_SHOT_LINE_START_SIZE);
+                float endSize = std::max(0.0f, DebugConfig::COOL_SHOT_LINE_END_SIZE);
+                glm::vec4 beamColor(
+                    DebugConfig::COOL_SHOT_LINE_COLOR_R,
+                    DebugConfig::COOL_SHOT_LINE_COLOR_G,
+                    DebugConfig::COOL_SHOT_LINE_COLOR_B,
+                    1.0f);
+
+                // Raycast along beam to find world obstruction
+                float hitDist = beamLen;
+                for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+                    float d = 0.0f;
+                    if (WeaponFire::rayTriangle(beamOrigin, beamDir, tri, d) && d < hitDist) {
+                        hitDist = d;
+                    }
+                }
+
+                // Draw segmented tapered beam
+                constexpr int SEGMENTS = 32;
+                float segLen = hitDist / (float)SEGMENTS;
+                for (int s = 0; s < SEGMENTS; ++s) {
+                    float t0 = (float)s / (float)SEGMENTS;
+                    float t1 = (float)(s + 1) / (float)SEGMENTS;
+                    float a0 = glm::mix(startAlpha, endAlpha, t0);
+                    float a1 = glm::mix(startAlpha, endAlpha, t1);
+                    float size0 = glm::mix(startSize, endSize, t0);
+                    float size1 = glm::mix(startSize, endSize, t1);
+                    glm::vec3 segStart = beamOrigin + beamDir * (t0 * hitDist);
+                    glm::vec3 segEnd = beamOrigin + beamDir * (t1 * hitDist);
+                    glm::vec3 segMid = (segStart + segEnd) * 0.5f;
+                    float midAlpha = (a0 + a1) * 0.5f;
+                    float midSize = (size0 + size1) * 0.5f;
+                    if (midAlpha > 0.001f && midSize > 0.0001f)
+                        DebugVis::drawFilledCylinder(camera, segMid, beamDir, midSize * 0.02f, segLen, glm::vec4(beamColor.r, beamColor.g, beamColor.b, midAlpha));
+                }
             }
         }
 
@@ -673,11 +733,7 @@ RevolverShotResult WeaponSystem::fire(
         result.start = muzzlePos;
         result.end = muzzlePos + dir;
         result.hitNormal = -dir;
-        if (remotePlayers) {
-            WeaponAudio::playShootSound(*def, muzzlePos);
-        } else {
-            WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
-        }
+        WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
 
         Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired ammo=%d/%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f)\n",
                    rt->currentAmmo, rt->reserveAmmo,
@@ -860,13 +916,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     result.start = muzzlePos;
     result.end = muzzlePos + dir;
     result.hitNormal = -dir;
-    if (remotePlayers) {
-        rt->currentAmmo--;
-        rt->fireCooldown = def->fireDelay;
-        WeaponAudio::playShootSound(*def, muzzlePos);
-    } else {
-        WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
-    }
+    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
     rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;
     AnalyticsManager::instance().trackWeaponUsed(def->id);
@@ -904,47 +954,11 @@ RevolverShotResult WeaponSystem::fireSwordsword(
     result.end = player.pos + player.aimDirection * weaponParamOr(*def, "bladeLength", 4.0f);
     result.hitNormal = -player.aimDirection;
 
+    // In online mode, result.fired triggers mpSendMeleeHitRequest from the
+    // caller (weapon-commands.cpp). The client no longer selects a target.
+    // Attack type 1 = slash.
     if (remotePlayers) {
-        const float bladeLength = weaponParamOr(*def, "bladeLength", 4.0f);
-        const float maxDistance = bladeLength + 1.5f;
-        const float baseDamage = weaponParamOr(*def, "slashBaseDamage", 5.0f);
-        const float globalDamage = weaponParamOr(*def, "globalDamageMultiplier", 1.0f);
-        const float baseKnockback = weaponParamOr(*def, "slashBaseKnockback", 25.0f);
-        const float globalKnockback = weaponParamOr(*def, "globalKnockbackMultiplier", 1.0f);
-        const glm::vec3 forward = glm::length(player.aimDirection) > 0.001f
-            ? glm::normalize(player.aimDirection)
-            : glm::vec3(1.0f, 0.0f, 0.0f);
-        float bestDistance = maxDistance;
-        for (const auto& entry : *remotePlayers) {
-            const Player& target = entry.second;
-            if (target.dead || target.currentHp <= 0)
-                continue;
-            const glm::vec3 toTarget = target.pos - player.pos;
-            const float distance = glm::length(toTarget);
-            if (distance > bestDistance)
-                continue;
-            const glm::vec3 dir = distance > 0.001f
-                ? toTarget / distance
-                : forward;
-            if (glm::dot(forward, dir) < -0.2f)
-                continue;
-            bestDistance = distance;
-            result.targetIsRemotePlayer = true;
-            result.hitEntity = true;
-            result.targetId = entry.first;
-            result.end = target.pos + glm::vec3(0.0f, 0.0f, 0.8f);
-            result.damage = std::clamp(baseDamage * globalDamage, 1.0f, 200.0f);
-            result.knockbackImpulse = dir * baseKnockback * globalKnockback * 0.04f;
-            result.hitNormal = -dir;
-            printf("[SWORD REMOTE CANDIDATE] attackerId=local targetId=%u "
-                   "attackSerial=pending attackState=slash weaponSpeed=%.2f "
-                   "distance=%.2f contactPoint=(%.2f,%.2f,%.2f) damage=%.1f "
-                   "knockback=(%.2f,%.2f,%.2f)\n",
-                   entry.first, mSwordswordState.swordSpeed, distance,
-                   result.end.x, result.end.y, result.end.z, result.damage,
-                   result.knockbackImpulse.x, result.knockbackImpulse.y,
-                   result.knockbackImpulse.z);
-        }
+        result.targetIsRemotePlayer = false;
     }
     return result;
 }
@@ -985,6 +999,8 @@ RevolverShotResult WeaponSystem::fireAlt(
 
     RevolverShotResult res;
     res.fired = true;
+    // In online mode, the caller (engine-tick-combat.cpp) will detect res.fired
+    // and send a melee attack request. We mark the serial as pending.
     return res;
 }
 
@@ -1071,10 +1087,19 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
     // Render godball sphere for remote players if godball is active
     if (player.godballActive)
     {
+        printf("[GODBALL RENDER] entityId=%u pos=(%.1f,%.1f,%.1f) radius=%.2f\n",
+               entityId, player.godballPosition.x, player.godballPosition.y,
+               player.godballPosition.z, 0.4f);
         float radius = 0.4f;
         DebugVis::drawFilledSphere(camera, player.godballPosition, radius,
-                                   {0.2f, 0.4f, 0.8f, 0.6f});
+                                    {0.2f, 0.4f, 0.8f, 0.6f});
         DebugVis::drawWireSphere(camera, player.godballPosition, radius,
                                  {0.4f, 0.6f, 1.0f, 0.8f});
+    }
+    else
+    {
+        printf("[GODBALL RENDER] entityId=%u godballActive=0 (equippedSlot=%d def=%s)\n",
+               entityId, player.equippedSlot,
+               def ? def->id.c_str() : "null");
     }
 }

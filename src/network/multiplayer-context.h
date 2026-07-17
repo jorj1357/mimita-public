@@ -8,8 +8,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include "combat/weapon-swordsword.h"
+#include "network/game-transport.h"
 
 namespace MimitaNet {
 
@@ -162,6 +165,8 @@ struct MultiplayerContext
 {
     bool active = false;
     SOCKET sock = INVALID_SOCKET;
+    std::unique_ptr<IGameTransport> transport;
+    bool useIce = false;
     sockaddr_in serverAddr{};
     uint32_t localPlayerId = 0;
     uint32_t tick = 0;
@@ -254,6 +259,9 @@ struct MultiplayerContext
     bool showServerGhost = false;
     bool waitingForMapLoad = false;
 
+    // ── Remote sword state for visual reconstruction ──────────────────
+    std::unordered_map<uint32_t, SwordswordState> remoteSwordStates;
+
     // ── ClientMapReady tracking ───────────────────────────────────────
     bool clientMapReadySent = false;
 
@@ -296,6 +304,9 @@ struct MultiplayerContext
         bool acknowledged = false;
     };
     std::unordered_map<uint32_t, PendingFireRequest> pendingFireRequests;
+
+    // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
+    std::unordered_set<uint32_t> predictedProjectileIds;
 
     // ── Room code for HUD display ─────────────────────────────────────
     // Set on host register or client join, cleared on disconnect/leave.
@@ -389,6 +400,7 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event);
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
+void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);

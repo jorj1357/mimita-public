@@ -82,6 +82,17 @@ namespace DebugConfig
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
     inline bool DEBUG_WPN_SHOT_LINE = true;
 
+    // Cool shot line: configurable aiming beam for camforward mode
+    inline bool COOL_SHOT_LINE_ENABLED = false;
+    inline float COOL_SHOT_LINE_LENGTH = 50.0f;
+    inline float COOL_SHOT_LINE_START_ALPHA = 1.0f;
+    inline float COOL_SHOT_LINE_END_ALPHA = 0.0f;
+    inline float COOL_SHOT_LINE_COLOR_R = 1.0f;
+    inline float COOL_SHOT_LINE_COLOR_G = 0.0f;
+    inline float COOL_SHOT_LINE_COLOR_B = 0.0f;
+    inline float COOL_SHOT_LINE_START_SIZE = 1.0f;
+    inline float COOL_SHOT_LINE_END_SIZE = 0.0f;
+
     // World-space crosshair master switch (0=disabled, 1=enabled)
     inline bool  WORLD_XH_ENABLED = false;
 

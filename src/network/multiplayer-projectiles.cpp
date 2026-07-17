@@ -12,6 +12,7 @@
 #include "camera.h"
 #include "combat/projectile-render.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
 #include "config/weapon-hitfx-config.h"
 #include "effects/effect-part.h"
@@ -224,6 +225,18 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     if (event->fireSerial != 0)
         ctx.pendingFireRequests.erase(event->fireSerial);
 
+    // Predicted projectile: local player's own projectile — local simulation handles it
+    if (event->ownerPlayerId == ctx.localPlayerId)
+    {
+        ctx.predictedProjectileIds.insert(event->projectileId);
+        printf("[PROJECTILE PREDICTED] projectileId=%u fireSerial=%u weapon=%s "
+               "pos=(%.2f,%.2f,%.2f) — suppressed server interpolation\n",
+               event->projectileId, event->fireSerial,
+               networkWeaponTypeName(event->weapon),
+               event->posX, event->posY, event->posZ);
+        return;
+    }
+
     NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
     projectile.projectileId = event->projectileId;
     projectile.ownerPlayerId = event->ownerPlayerId;
@@ -273,6 +286,10 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
 
 void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const ProjectileStateEventPacket* event)
 {
+    // Skip state updates for locally-predicted projectiles
+    if (ctx.predictedProjectileIds.count(event->projectileId))
+        return;
+
     auto it = ctx.networkProjectiles.find(event->projectileId);
     if (it == ctx.networkProjectiles.end())
     {
@@ -357,6 +374,25 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
 
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event)
 {
+    // Predicted projectile: reconcile health but skip visuals/knockback (already applied locally)
+    if (ctx.predictedProjectileIds.erase(event->projectileId))
+    {
+        for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
+        {
+            const ProjectileDamageResultPacket& victim = event->victims[i];
+            if (victim.victimPlayerId == ctx.localPlayerId)
+            {
+                ctx.localServerHealth = victim.healthAfter;
+                printf("[PROJECTILE PREDICTED EXPLODE] projectileId=%u victim=local "
+                       "healthAfter=%d (reconciled, no knockback)\n",
+                       event->projectileId, victim.healthAfter);
+            }
+        }
+        printf("[PROJECTILE PREDICTED EXPLODE] projectileId=%u weapon=%s — suppressed dupe effects\n",
+               event->projectileId, networkWeaponTypeName(event->weapon));
+        return;
+    }
+
     const glm::vec3 position(event->posX, event->posY, event->posZ);
     const char* weaponName = networkWeaponTypeName(event->weapon);
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
@@ -515,6 +551,150 @@ void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPa
         : -out.normal;
     out.origin = out.hit - out.direction;
     ctx.shotEvents.push_back(out);
+
+    // Initialize remote sword state for animation reconstruction
+    if (event->attackerPlayerId == 0 || event->attackerPlayerId == ctx.localPlayerId)
+        return;
+    auto playerIt = ctx.remotePlayers.find(event->attackerPlayerId);
+    if (playerIt == ctx.remotePlayers.end())
+        return;
+
+    Player& attacker = playerIt->second;
+    auto rtIt = attacker.weaponRuntimes.find("swordsword");
+    if (rtIt == attacker.weaponRuntimes.end())
+    {
+        // Ensure runtime exists
+        const WeaponDefinition* def = WeaponRegistry::instance().get("swordsword");
+        if (!def) return;
+        WeaponRuntime& rt = attacker.weaponRuntimes["swordsword"];
+        rt = WeaponRuntime{};
+        WeaponRuntimeHelper::initRuntime(rt, *def);
+    }
+
+    // Set pose state for immediate visual feedback
+    WeaponRuntime& rt = attacker.weaponRuntimes["swordsword"];
+    rt.shootEffectTimer = 0.18f;
+    if (event->attackType == 1)
+        rt.customFloats["swordPoseState"] = 1.0f;
+    else if (event->attackType == 2)
+        rt.customFloats["swordPoseState"] = 2.0f;
+
+    // Create/replace sword state for lifecycle tracking
+    SwordswordState& ss = ctx.remoteSwordStates[event->attackerPlayerId];
+    ss = SwordswordState{};
+    if (event->attackType == 1)
+        ss.state = SwordswordState::AttackState::SlashWindup;
+    else
+        ss.state = SwordswordState::AttackState::LungeWindup;
+    ss.stateTimer = 0.0f;
+    ss.animTimer = 0.0f;
+}
+
+void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
+{
+    const WeaponDefinition* def = WeaponRegistry::instance().get("swordsword");
+    if (!def) return;
+
+    float slashWindup  = 0.08f; float slashActive  = 0.15f; float slashRecover = 0.10f;
+    float lungeWindup  = 0.10f; float lungeActive  = 0.20f; float lungeRecover = 0.12f;
+
+    auto it = ctx.remoteSwordStates.begin();
+    while (it != ctx.remoteSwordStates.end())
+    {
+        uint32_t attackerId = it->first;
+        SwordswordState& ss = it->second;
+        Player* attacker = nullptr;
+        {
+            auto pi = ctx.remotePlayers.find(attackerId);
+            if (pi != ctx.remotePlayers.end())
+                attacker = &pi->second;
+        }
+
+        if (ss.state == SwordswordState::AttackState::Idle)
+        {
+            it = ctx.remoteSwordStates.erase(it);
+            continue;
+        }
+
+        // Advance state
+        if (ss.state == SwordswordState::AttackState::SlashWindup) {
+            ss.stateTimer += dt;
+            ss.animTimer = ss.stateTimer / slashWindup;
+            if (ss.stateTimer >= slashWindup) {
+                ss.state = SwordswordState::AttackState::SlashActive;
+                ss.stateTimer = 0.0f;
+            }
+        } else if (ss.state == SwordswordState::AttackState::SlashActive) {
+            ss.stateTimer += dt;
+            ss.animTimer = ss.stateTimer / slashActive;
+            if (ss.stateTimer >= slashActive) {
+                ss.state = SwordswordState::AttackState::SlashRecover;
+                ss.stateTimer = 0.0f;
+            }
+        } else if (ss.state == SwordswordState::AttackState::SlashRecover) {
+            ss.stateTimer += dt;
+            ss.animTimer = ss.stateTimer / slashRecover;
+            if (ss.stateTimer >= slashRecover) {
+                ss.state = SwordswordState::AttackState::Idle;
+                if (attacker) {
+                    auto rtIt = attacker->weaponRuntimes.find("swordsword");
+                    if (rtIt != attacker->weaponRuntimes.end())
+                        rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                }
+                it = ctx.remoteSwordStates.erase(it);
+                continue;
+            }
+        } else if (ss.state == SwordswordState::AttackState::LungeWindup) {
+            ss.stateTimer += dt;
+            ss.animTimer = ss.stateTimer / lungeWindup;
+            if (ss.stateTimer >= lungeWindup) {
+                ss.state = SwordswordState::AttackState::LungeActive;
+                ss.stateTimer = 0.0f;
+            }
+        } else if (ss.state == SwordswordState::AttackState::LungeActive) {
+            ss.stateTimer += dt;
+            ss.animTimer = ss.stateTimer / lungeActive;
+            if (ss.stateTimer >= lungeActive) {
+                ss.state = SwordswordState::AttackState::LungeRecover;
+                ss.stateTimer = 0.0f;
+            }
+        } else if (ss.state == SwordswordState::AttackState::LungeRecover) {
+            ss.stateTimer += dt;
+            ss.animTimer = ss.stateTimer / lungeRecover;
+            if (ss.stateTimer >= lungeRecover) {
+                ss.state = SwordswordState::AttackState::Idle;
+                if (attacker) {
+                    auto rtIt = attacker->weaponRuntimes.find("swordsword");
+                    if (rtIt != attacker->weaponRuntimes.end())
+                        rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                }
+                it = ctx.remoteSwordStates.erase(it);
+                continue;
+            }
+        }
+
+        // Update swordPoseState on remote player's runtime
+        if (attacker)
+        {
+            auto rtIt = attacker->weaponRuntimes.find("swordsword");
+            if (rtIt != attacker->weaponRuntimes.end())
+            {
+                rtIt->second.shootEffectTimer = 0.18f;
+                if (ss.state == SwordswordState::AttackState::SlashWindup ||
+                    ss.state == SwordswordState::AttackState::LungeWindup)
+                    rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                else if (ss.state == SwordswordState::AttackState::SlashActive)
+                    rtIt->second.customFloats["swordPoseState"] = 1.0f;
+                else if (ss.state == SwordswordState::AttackState::LungeActive)
+                    rtIt->second.customFloats["swordPoseState"] = 2.0f;
+                else if (ss.state == SwordswordState::AttackState::SlashRecover ||
+                         ss.state == SwordswordState::AttackState::LungeRecover)
+                    rtIt->second.customFloats["swordPoseState"] = 0.0f;
+            }
+        }
+
+        ++it;
+    }
 }
 
 static glm::vec3 closestPtOnTri(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
