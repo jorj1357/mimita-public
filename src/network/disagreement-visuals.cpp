@@ -126,6 +126,7 @@ struct DisagreementReasonColorConfig {
 
 struct DisagreementConfig {
     bool hotReload = true;
+    bool rejectAllHits = false;
     DisagreementSoundConfig sound;
     DisagreementPulseConfig pulse;
     DisagreementBeamConfig beam;
@@ -246,6 +247,7 @@ static bool loadDisagreementConfig(const std::string& path)
         };
 
         if (j.contains("hotReload")) gDisagreeConfig.hotReload = j["hotReload"];
+        if (j.contains("rejectAllHits")) gDisagreeConfig.rejectAllHits = j["rejectAllHits"];
         if (j.contains("sound")) loadSound(j["sound"], gDisagreeConfig.sound);
         if (j.contains("pulse")) loadPulse(j["pulse"], gDisagreeConfig.pulse);
         if (j.contains("beam")) loadBeam(j["beam"], gDisagreeConfig.beam);
@@ -569,6 +571,11 @@ void spawnLocalDisagreementIndicator(const DisagreementEvent& event)
         event.position.y + event.correction.y,
         event.position.z + event.correction.z,
         event.correction.x, event.correction.y, event.correction.z);
+}
+
+bool isRejectAllHitsEnabled()
+{
+    return gDisagreeConfig.rejectAllHits;
 }
 
 } // namespace MimitaNet

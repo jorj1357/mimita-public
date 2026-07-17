@@ -1,7 +1,12 @@
 #include "network/server.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
+#include "network/disagreement-visuals.h"
 #include "void-death/void-death.h"
+#include "combat/pellet-pattern.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-fire.h"
+#include "physics/movement/physics-collision.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -228,11 +233,19 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         }
     }
 
+    // Debug flag: reject all hits to force disagreement VFX
+    if (isRejectAllHitsEnabled() && shot->impactType == SHOT_IMPACT_ENTITY)
+    {
+        rejectionReason = DISAGREEMENT_INVALID_DAMAGE;
+        rejectionDescription = "REJECTED: ALL HITS REJECTED (debug)";
+    }
+
     if (shot->impactType == SHOT_IMPACT_ENTITY &&
         targetIt != players.end() &&
         shooterIt != targetIt &&
         !targetIt->second.dead &&
-        shot->damage > 0 && shot->damage <= damageCap)
+        shot->damage > 0 && shot->damage <= damageCap &&
+        !isRejectAllHitsEnabled())
     {
         ServerPlayer& target = targetIt->second;
         event.targetTransformEpoch = target.transformEpoch;
@@ -407,6 +420,370 @@ void handlePing(SOCKET sock, const sockaddr_in& from, const char* buffer, int by
     pong.header.tick = tick;
     sendto(sock, (const char*)&pong, sizeof(pong), 0,
            (sockaddr*)&from, sizeof(from));
+}
+
+// ── Pellet blast request handler ─────────────────────────────────────
+void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                               std::unordered_map<uint32_t, ServerPlayer>& players,
+                               const HeadlessWorld& world,
+                               uint32_t tick, uint64_t& totalPacketsOut,
+                               DisagreementRetransmitState* retransmitState)
+{
+    (void)retransmitState;
+    if (bytes < (int)sizeof(PelletBlastRequestPacket))
+        return;
+    const PelletBlastRequestPacket* request =
+        reinterpret_cast<const PelletBlastRequestPacket*>(buffer);
+    auto shooterIt = players.find(request->header.playerId);
+    const bool ownsShooter =
+        shooterIt != players.end() &&
+        sameAddress(shooterIt->second.addr, from);
+    if (!ownsShooter)
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u accepted=0 reason=sender-address-mismatch\n",
+               serverTimestamp(), request->header.playerId);
+        return;
+    }
+    ServerPlayer& shooter = shooterIt->second;
+    if (shooter.dead)
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u accepted=0 reason=dead\n",
+               serverTimestamp(), shooter.id, request->shotSerial);
+        return;
+    }
+    // Serial dedup
+    if (request->shotSerial != 0 &&
+        shooter.lastShotSerial != 0 &&
+        (int32_t)(request->shotSerial - shooter.lastShotSerial) <= 0)
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u accepted=0 reason=duplicate-or-stale\n",
+               serverTimestamp(), shooter.id, request->shotSerial);
+        return;
+    }
+    shooter.lastShotSerial = request->shotSerial;
+
+    const glm::vec3 origin(request->originX, request->originY, request->originZ);
+    const glm::vec3 baseDir(request->baseDirX, request->baseDirY, request->baseDirZ);
+    const float originDist = glm::length(origin - shooter.pos);
+    const float dirLen = glm::length(baseDir);
+    if (originDist > 8.0f || dirLen < 0.5f || dirLen > 1.5f)
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u accepted=0 "
+               "reason=invalid-geometry originDist=%.2f dirLen=%.2f\n",
+               serverTimestamp(), shooter.id, request->shotSerial, originDist, dirLen);
+        return;
+    }
+
+    uint8_t equippedWeapon = networkWeaponTypeForSlot(shooter.equippedSlot);
+    if (equippedWeapon != request->weapon)
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u accepted=0 "
+               "reason=weapon-mismatch requested=%u equipped=%u\n",
+               serverTimestamp(), shooter.id, request->shotSerial,
+               request->weapon, equippedWeapon);
+        return;
+    }
+
+    const char* weaponId = nullptr;
+    if (request->weapon == NETWORK_WEAPON_SHOTGUN)
+        weaponId = "shotgun";
+    else if (request->weapon == NETWORK_WEAPON_AA12)
+        weaponId = "aa12";
+    else
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u accepted=0 reason=unsupported-weapon\n",
+               serverTimestamp(), shooter.id, request->shotSerial);
+        return;
+    }
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    if (!def)
+    {
+        printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u accepted=0 reason=weapon-not-found\n",
+               serverTimestamp(), shooter.id, request->shotSerial);
+        return;
+    }
+
+    printf("%s [PELLET BLAST SERVER REQUEST] shooter=%u serial=%u weapon=%s accepted=1 "
+           "originDist=%.2f dirLen=%.2f\n",
+           serverTimestamp(), shooter.id, request->shotSerial, weaponId, originDist, dirLen);
+
+    const glm::vec3 dir = glm::normalize(baseDir);
+    constexpr float MAX_SHOT_DISTANCE = 100.0f;
+    const int pelletCount = std::max(1, def->pelletCount);
+    const float beamThickness = def->beamThickness;
+
+    // Generate pellet directions (same pattern as client)
+    PelletPatternConfig ppc;
+    ppc.pelletCount = pelletCount;
+    ppc.spreadDegrees = def->spread;
+    ppc.spreadSeed = request->spreadSeed;
+    glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST];
+    int generated = generatePelletDirections(dir, ppc, pelletDirs, MAX_PELLETS_PER_BLAST);
+
+    // Push origin forward slightly
+    glm::vec3 rayOrigin = origin + dir * 0.01f;
+    const bool useSphereCast = beamThickness > 0.0f;
+
+    // Use authoritative server player dimensions
+    const float kPlayerRadius = PLAYER_RADIUS;
+    const float kPlayerHeight = PLAYER_HEIGHT;
+
+    // Per-target accumulator
+    struct TargetAccum {
+        uint32_t id = 0;
+        int pelletsHit = 0;
+        int headPellets = 0;
+        int torsoPellets = 0;
+        int totalDamage = 0;
+        glm::vec3 totalKnockback{0.0f};
+    };
+    TargetAccum targets[MAX_PLAYERS];
+    int targetCount = 0;
+
+    NetworkPelletResult results[MAX_NETWORK_PELLETS] = {};
+    int worldHits = 0, playerHits = 0, misses = 0;
+
+    for (int p = 0; p < generated && p < MAX_NETWORK_PELLETS; ++p)
+    {
+        NetworkPelletResult& r = results[p];
+        r.pelletIndex = (uint8_t)p;
+        r.impactType = PELLET_IMPACT_NONE;
+        const glm::vec3& pelletDir = pelletDirs[p];
+
+        float nearest = MAX_SHOT_DISTANCE;
+        glm::vec3 hitPos = rayOrigin + pelletDir * MAX_SHOT_DISTANCE;
+        glm::vec3 hitNml = -pelletDir;
+        uint32_t hitPlayerId = 0;
+
+        // ── Player collision first (ray vs capsule for each valid target) ──
+        // Test each player's capsule to find the nearest ray intersection.
+        for (auto& entry : players)
+        {
+            const ServerPlayer& target = entry.second;
+            if (target.id == shooter.id || target.dead) continue;
+
+            // Build capsule bottom/top. ServerPlayer::pos is the capsule center (from server-players.cpp:87-89).
+            // The capsule extends from pos.z - HEIGHT*0.5 + RADIUS to pos.z + HEIGHT*0.5 - RADIUS.
+            glm::vec3 capsuleBottom(
+                target.pos.x, target.pos.y,
+                target.pos.z - kPlayerHeight * 0.5f + kPlayerRadius);
+            glm::vec3 capsuleTop(
+                target.pos.x, target.pos.y,
+                target.pos.z + kPlayerHeight * 0.5f - kPlayerRadius);
+
+            // Ray-capsule intersection: treat as ray vs finite cylinder
+            glm::vec3 seg = capsuleTop - capsuleBottom;
+            float segLen = glm::length(seg);
+            if (segLen < 0.001f) continue;
+            glm::vec3 segDir = seg / segLen;
+
+            // Project ray origin onto segment axis
+            glm::vec3 rel = rayOrigin - capsuleBottom;
+            float t = glm::dot(rel, segDir);
+            glm::vec3 closestOnAxis = capsuleBottom + segDir * glm::clamp(t, 0.0f, segLen);
+
+            // Radial distance from ray origin to axis at closest point
+            glm::vec3 radialVec = rel - segDir * t;
+            float radialDist = glm::length(radialVec);
+            if (radialDist > kPlayerRadius) continue; // too far sideways
+
+            // Distance along ray direction to the cylinder surface
+            float dirDotRel = glm::dot(pelletDir, rel);
+            float dirDotSeg = glm::dot(pelletDir, segDir);
+            float a = 1.0f - dirDotSeg * dirDotSeg;
+            float b = 2.0f * (dirDotRel - dirDotSeg * glm::dot(rel, segDir));
+            float c = radialDist * radialDist - kPlayerRadius * kPlayerRadius;
+
+            float disc = b * b - 4.0f * a * c;
+            if (disc < 0.0f) continue;
+
+            float sqrtDisc = std::sqrt(disc);
+            float t0 = (-b - sqrtDisc) / (2.0f * a);
+            float t1 = (-b + sqrtDisc) / (2.0f * a);
+            float tHit = (t0 >= 0.0f) ? t0 : t1;
+
+            if (tHit < 0.01f || tHit >= nearest) continue;
+
+            // Verify the hit point is within the capsule segment
+            glm::vec3 hitPt = rayOrigin + pelletDir * tHit;
+            float alongSeg = glm::dot(hitPt - capsuleBottom, segDir);
+            if (alongSeg < 0.0f || alongSeg > segLen) continue;
+
+            // Valid player hit — closer than current nearest
+            nearest = tHit;
+            hitPos = hitPt;
+            hitPlayerId = target.id;
+            glm::vec3 radialAtHit = hitPt - closestOnAxis;
+            float radialLenAtHit = glm::length(radialAtHit);
+            hitNml = radialLenAtHit > 0.001f ? radialAtHit / radialLenAtHit : glm::vec3(0.0f, 0.0f, 1.0f);
+
+            // Determine body part from hit height
+            float hitHeightFraction = alongSeg / segLen;
+            r.bodyPart = hitHeightFraction > 0.78f ? 0  // head
+                       : hitHeightFraction > 0.68f ? 0  // head
+                       : hitHeightFraction > 0.32f ? 1  // torso
+                       : hitHeightFraction > 0.15f ? 2  // arms
+                       : (uint8_t)3;                    // legs
+        }
+
+        // ── World collision — iterate all world triangles ──
+        for (const CollisionTriangle& tri : world.triangles)
+        {
+            float d = 0.0f;
+            glm::vec3 n(0.0f), p(0.0f);
+
+            if (useSphereCast)
+            {
+                if (::sweptSphereTriangle(rayOrigin, pelletDir, beamThickness,
+                                         tri, nearest, d, n, p) && d < nearest)
+                {
+                    nearest = d;
+                    hitPos = p;
+                    hitNml = n;
+                    hitPlayerId = 0;
+                }
+            }
+            else
+            {
+                if (WeaponFire::rayTriangle(rayOrigin, pelletDir, tri, d) && d >= 0.01f && d < nearest)
+                {
+                    nearest = d;
+                    hitPos = rayOrigin + pelletDir * d;
+                    hitNml = tri.normal;
+                    hitPlayerId = 0;
+                }
+            }
+        }
+
+        if (hitPlayerId != 0)
+            r.bodyPart = r.bodyPart;
+        else
+            r.bodyPart = 0;
+
+        r.hitX = hitPos.x; r.hitY = hitPos.y; r.hitZ = hitPos.z;
+        r.normalX = hitNml.x; r.normalY = hitNml.y; r.normalZ = hitNml.z;
+        r.targetPlayerId = hitPlayerId;
+
+        printf("[PELLET COLLISION DEBUG] serial=%u pellet=%d dir=(%.4f,%.4f,%.4f) "
+               "hitType=%s target=%d dist=%.2f hitPos=(%.2f,%.2f,%.2f)\n",
+               request->shotSerial, p,
+               pelletDir.x, pelletDir.y, pelletDir.z,
+               hitPlayerId ? "player" : (nearest < MAX_SHOT_DISTANCE ? "world" : "miss"),
+               hitPlayerId, nearest, hitPos.x, hitPos.y, hitPos.z);
+
+        r.hitX = hitPos.x; r.hitY = hitPos.y; r.hitZ = hitPos.z;
+        r.normalX = hitNml.x; r.normalY = hitNml.y; r.normalZ = hitNml.z;
+        r.targetPlayerId = hitPlayerId;
+
+        if (hitPlayerId != 0)
+        {
+            r.impactType = PELLET_IMPACT_PLAYER;
+
+            // Per-pellet damage with body-part multiplier
+            float baseDmg = def->damage > 0.0f ? def->damage : 12.0f;
+
+            float bodyMul = 1.0f;
+            if (r.bodyPart == 0) { bodyMul = def->headshotMultiplier; }
+            else if (r.bodyPart == 1) { bodyMul = 1.0f; }
+            else if (r.bodyPart == 2) { bodyMul = 0.5f; }
+            else if (r.bodyPart == 3) { bodyMul = 0.75f; }
+
+            float distanceFalloffStart = 110.0f;
+            auto foIt = def->customParams.find("distanceFalloffStart");
+            if (foIt != def->customParams.end()) distanceFalloffStart = foIt->second;
+            float distanceFactor = std::clamp(1.0f - nearest / distanceFalloffStart, 0.05f, 1.0f);
+
+            int pelletDamage = std::max(1, (int)std::round(baseDmg * bodyMul * distanceFactor));
+
+            // Accumulate per target
+            bool found = false;
+            for (int t = 0; t < targetCount; ++t)
+            {
+                if (targets[t].id == hitPlayerId)
+                {
+                    targets[t].pelletsHit++;
+                    if (r.bodyPart == 0) targets[t].headPellets++;
+                    else targets[t].torsoPellets++;
+                    targets[t].totalDamage += pelletDamage;
+                    targets[t].totalKnockback += pelletDir * (float)pelletDamage * 0.08f;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && targetCount < MAX_PLAYERS)
+            {
+                targets[targetCount].id = hitPlayerId;
+                targets[targetCount].pelletsHit = 1;
+                if (r.bodyPart == 0) targets[targetCount].headPellets = 1;
+                else targets[targetCount].torsoPellets = 1;
+                targets[targetCount].totalDamage = pelletDamage;
+                targets[targetCount].totalKnockback = pelletDir * (float)pelletDamage * 0.08f;
+                targetCount++;
+            }
+            playerHits++;
+        }
+        else if (nearest < MAX_SHOT_DISTANCE)
+        {
+            r.impactType = PELLET_IMPACT_WORLD;
+            worldHits++;
+        }
+        else
+        {
+            misses++;
+        }
+    }
+
+    // Apply accumulated damage per target
+    for (int t = 0; t < targetCount; ++t)
+    {
+        int damage = std::min(targets[t].totalDamage, 400);
+        glm::vec3 knockback = targets[t].totalKnockback;
+        ServerDamageResult dmg = applyServerDamage(
+            players, players[targets[t].id], shooter.id,
+            damage, knockback, ServerDamageSource::Hitscan);
+
+        printf("[PELLET TARGET RESULT] serial=%u target=%u pelletsHit=%d "
+               "head=%d torso=%d damage=%d healthBefore=%d healthAfter=%d "
+               "knockback=(%.2f,%.2f,%.2f) killed=%d\n",
+               request->shotSerial, targets[t].id, targets[t].pelletsHit,
+               targets[t].headPellets, targets[t].torsoPellets,
+               damage, dmg.healthBefore, dmg.healthAfter,
+               knockback.x, knockback.y, knockback.z, (int)dmg.killed);
+    }
+
+    // Build and broadcast event
+    PelletBlastEventPacket event{};
+    event.header.type = PACKET_PELLET_BLAST_EVENT;
+    event.header.tick = tick;
+    event.shotSerial = request->shotSerial;
+    event.clientTimeMs = request->clientTimeMs;
+    event.shooterPlayerId = shooter.id;
+    event.spreadSeed = request->spreadSeed;
+    event.originX = origin.x; event.originY = origin.y; event.originZ = origin.z;
+    event.baseDirX = dir.x; event.baseDirY = dir.y; event.baseDirZ = dir.z;
+    event.weapon = request->weapon;
+    event.pelletCount = (uint8_t)generated;
+    memcpy(event.pellets, results, sizeof(NetworkPelletResult) * generated);
+
+    for (const auto& kv : players)
+    {
+        sendto(sock, (const char*)&event, sizeof(event), 0,
+               (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        ++totalPacketsOut;
+    }
+
+    printf("[PELLET BLAST SERVER RESULT] shooter=%u serial=%u weapon=%s "
+           "pelletsGenerated=%d misses=%d worldHits=%d playerHits=%d "
+           "targetsHit=%d eventBytes=%zu\n",
+           shooter.id, request->shotSerial, weaponId,
+           generated, misses, worldHits, playerHits, targetCount,
+           sizeof(event));
+
+    int totalDamage = 0;
+    for (int i = 0; i < targetCount; ++i) totalDamage += targets[i].totalDamage;
+    printf("[PELLET BLAST SERVER DAMAGE] serial=%u total=%d\n",
+           request->shotSerial, totalDamage);
 }
 
 } // namespace MimitaNet

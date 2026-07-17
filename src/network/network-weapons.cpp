@@ -13,8 +13,10 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_REVOLVER;
     if (definition.id == "godball")
         return NETWORK_WEAPON_GODBALL;
-    if (definition.id == "shotgun" || definition.id == "aa12")
+    if (definition.id == "shotgun")
         return NETWORK_WEAPON_SHOTGUN;
+    if (definition.id == "aa12")
+        return NETWORK_WEAPON_AA12;
     if (definition.id == "swordsword")
         return NETWORK_WEAPON_SWORDSWORD;
     if (definition.id == "rocket_launcher")
@@ -37,8 +39,9 @@ uint8_t networkWeaponTypeForSlot(int slot)
     case 2:
         return NETWORK_WEAPON_GODBALL;
     case 3:
-    case 6:
         return NETWORK_WEAPON_SHOTGUN;
+    case 6:
+        return NETWORK_WEAPON_AA12;
     case 7:
         return NETWORK_WEAPON_ROCKET_LAUNCHER;
     case 8:
@@ -64,6 +67,7 @@ const char* networkWeaponTypeName(uint8_t type)
     case NETWORK_WEAPON_ROCKET_LAUNCHER: return "rocket_launcher";
     case NETWORK_WEAPON_HAFS: return "hafs";
     case NETWORK_WEAPON_GRENADE_LAUNCHER: return "grenade_launcher";
+    case NETWORK_WEAPON_AA12: return "aa12";
     default: return "unknown";
     }
 }
@@ -77,7 +81,8 @@ bool networkWeaponTypeIsProjectile(uint8_t type)
 bool networkWeaponTypeIsHitscan(uint8_t type)
 {
     return type == NETWORK_WEAPON_REVOLVER ||
-        type == NETWORK_WEAPON_SHOTGUN;
+        type == NETWORK_WEAPON_SHOTGUN ||
+        type == NETWORK_WEAPON_AA12;
 }
 
 bool networkWeaponTypeIsMelee(uint8_t type)

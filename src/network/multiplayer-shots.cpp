@@ -1,9 +1,12 @@
 #include "network/multiplayer-context.h"
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "network/network-weapons.h"
 #include "combat/weapon-fire.h"
 #include "combat/death-system.h"
 #include "effects/effect-part.h"
+#include "effects/hit-effects.h"
+#include "audio/audio.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -148,6 +151,117 @@ void mpSendNpcDamageRequest(MultiplayerContext& ctx, uint32_t npcEntityId, int d
     mpSendPacket(ctx, &packet, sizeof(packet));
     printf("[NET NPC DAMAGE SEND] npcId=%u damage=%d origin=(%.2f,%.2f,%.2f)\n",
            npcEntityId, damage, origin.x, origin.y, origin.z);
+}
+
+void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon,
+    const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    PelletBlastRequestPacket packet{};
+    packet.header.type = PACKET_PELLET_BLAST_REQUEST;
+    packet.header.tick = ctx.tick;
+    packet.header.playerId = ctx.localPlayerId;
+    packet.shotSerial = ctx.nextLocalShotSerial++;
+    if (ctx.nextLocalShotSerial == 0)
+        ctx.nextLocalShotSerial = 1;
+    packet.clientTimeMs = nowMs();
+    packet.lastServerTick = ctx.latestServerTick;
+    packet.spreadSeed = spreadSeed;
+    packet.weapon = weapon;
+    packet.originX = origin.x; packet.originY = origin.y; packet.originZ = origin.z;
+    const glm::vec3 dir = glm::normalize(baseDirection);
+    packet.baseDirX = dir.x; packet.baseDirY = dir.y; packet.baseDirZ = dir.z;
+    mpSendPacket(ctx, &packet, sizeof(packet));
+    printf("[PELLET BLAST CLIENT SEND] shooter=%u serial=%u weapon=%s "
+           "origin=(%.2f,%.2f,%.2f) baseDirection=(%.3f,%.3f,%.3f) "
+           "seed=%u lastServerTick=%u\n",
+           ctx.localPlayerId, packet.shotSerial,
+           networkWeaponTypeName(weapon),
+           origin.x, origin.y, origin.z,
+           dir.x, dir.y, dir.z,
+           spreadSeed, packet.lastServerTick);
+}
+
+void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event)
+{
+    // Deduplicate by shooter + serial
+    uint64_t dedupKey = ((uint64_t)event->shooterPlayerId << 32) | event->shotSerial;
+    if (ctx.processedPelletBlastSerials.count(dedupKey))
+    {
+        printf("[PELLET BLAST CLIENT RECV] shooter=%u serial=%u duplicate=1 skipped=1\n",
+               event->shooterPlayerId, event->shotSerial);
+        return;
+    }
+    ctx.processedPelletBlastSerials.insert(dedupKey);
+    if (ctx.processedPelletBlastSerials.size() > 256)
+        ctx.processedPelletBlastSerials.clear();
+
+    const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
+    const glm::vec3 origin(event->originX, event->originY, event->originZ);
+    const glm::vec3 baseDir(event->baseDirX, event->baseDirY, event->baseDirZ);
+    const char* weaponName = networkWeaponTypeName(event->weapon);
+
+    printf("[PELLET BLAST CLIENT RECV] shooter=%u serial=%u weapon=%s "
+           "pelletCount=%u origin=(%.2f,%.2f,%.2f) localShooter=%d\n",
+           event->shooterPlayerId, event->shotSerial, weaponName,
+           event->pelletCount, origin.x, origin.y, origin.z, (int)isLocalShooter);
+
+    // For non-shooter: play sound and muzzle flash once
+    if (!isLocalShooter)
+    {
+        playWorldSound("shotgunshoot", origin, 1.0f, 1.0f, 80.0f);
+        EffectPartSystem::instance().spawnMuzzleFlash(origin, weaponName);
+    }
+
+    // Render each pellet tracer + impact
+    for (uint8_t i = 0; i < event->pelletCount && i < MAX_NETWORK_PELLETS; ++i)
+    {
+        const NetworkPelletResult& pellet = event->pellets[i];
+        const glm::vec3 hitPos(pellet.hitX, pellet.hitY, pellet.hitZ);
+        const glm::vec3 hitNml(pellet.normalX, pellet.normalY, pellet.normalZ);
+
+        // Only render tracers for non-shooter (shooter already predicted)
+        if (!isLocalShooter)
+        {
+            EffectPartSystem::instance().spawnTracer(origin, hitPos, weaponName);
+        }
+
+        if (pellet.impactType == PELLET_IMPACT_WORLD)
+        {
+            if (!isLocalShooter)
+            {
+                HitEvent ev;
+                ev.position = hitPos;
+                ev.normal = hitNml;
+                ev.direction = -hitNml;
+                ev.hitWorld = true;
+                ev.damage = 0;
+                ev.attacker = weaponName;
+                ev.weaponSource = "pellet_blast";
+                HitEffects::onHit(ev);
+            }
+        }
+        else if (pellet.impactType == PELLET_IMPACT_PLAYER && !isLocalShooter)
+        {
+            HitEvent ev;
+            ev.position = hitPos;
+            ev.normal = hitNml;
+            ev.direction = -hitNml;
+            ev.hitEntity = true;
+            ev.damage = 0;
+            ev.attacker = weaponName;
+            ev.weaponSource = "pellet_blast";
+            HitEffects::onHit(ev);
+
+            auto remote = ctx.remotePlayers.find(pellet.targetPlayerId);
+            if (remote != ctx.remotePlayers.end())
+            {
+                printf("[PELLET HIT] player=%u damage=pending\n", pellet.targetPlayerId);
+            }
+        }
+    }
 }
 
 } // namespace MimitaNet

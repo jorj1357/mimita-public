@@ -1,5 +1,7 @@
 {
     "hotReload": true,
+    "comment": "doesnt work 7 16 2026 dont use rejectAllHits ill fix later ",
+    "rejectAllHits": false,
 
     "sound": {
         "sample": "serverdisagree",

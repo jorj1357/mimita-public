@@ -28,7 +28,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 1.0,
+    "beam_thickness": 0.1,
     "uses_physics_projectile": false,
     "sound": {
       "shoot": "revolvershoot",

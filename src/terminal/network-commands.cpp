@@ -491,4 +491,13 @@ void registerNetworkCommands()
             }
         }
     });
+    Terminal::instance().registerCommand({
+        "server_rejectallhits", "Show rejectAllHits flag. Edit config/serverdisagree.json to toggle (hot-reloads).",
+        "server_rejectallhits",
+        [](const std::vector<std::string>&) {
+            int val = MimitaNet::isRejectAllHitsEnabled() ? 1 : 0;
+            printf("[SERVER] rejectAllHits=%d (edit config/serverdisagree.json to change)\n", val);
+            Terminal::instance().addLog(std::string("[SERVER] rejectAllHits=") + std::to_string(val) + " (edit config to change)");
+        }
+    });
 }

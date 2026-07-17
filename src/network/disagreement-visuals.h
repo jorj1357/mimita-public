@@ -24,4 +24,8 @@ extern bool gDisagreementDebug;
 // Hot-reload from config/serverdisagree.json
 void pollDisagreementReload();
 
+// Returns true when the server should reject all hits (debug/testing).
+// Reads from the "rejectAllHits" field in config/serverdisagree.json.
+bool isRejectAllHitsEnabled();
+
 } // namespace MimitaNet

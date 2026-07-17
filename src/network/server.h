@@ -323,6 +323,11 @@ void tickServerProjectiles(SOCKET sock,
 void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            uint32_t tick, uint64_t& totalPacketsOut);
+void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                               std::unordered_map<uint32_t, ServerPlayer>& players,
+                               const HeadlessWorld& world,
+                               uint32_t tick, uint64_t& totalPacketsOut,
+                               DisagreementRetransmitState* retransmitState = nullptr);
 void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        uint32_t tick, uint64_t& totalPacketsOut);

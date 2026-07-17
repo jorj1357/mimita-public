@@ -116,6 +116,47 @@ static void readSound(const json& j, WeaponHitFxSoundConfig& cfg)
     cfg.nearDistance = readJsonFloat(s, "nearDistance", cfg.nearDistance);
 }
 
+static void readExplosionBurstSphere(const json& j, WeaponHitFxExplosionBurstSphere& cfg)
+{
+    if (!j.contains("sphere")) return;
+    const auto& s = j["sphere"];
+    cfg.enabled = readJsonBool(s, "enabled", cfg.enabled);
+    cfg.startRadius = readJsonFloat(s, "startRadius", cfg.startRadius);
+    cfg.endRadius = readJsonFloat(s, "endRadius", cfg.endRadius);
+    cfg.lifetimeTicks = (int)readJsonFloat(s, "lifetimeTicks", (float)cfg.lifetimeTicks);
+    cfg.startColor = readJsonVec3(s, "startColor", cfg.startColor);
+    cfg.endColor = readJsonVec3(s, "endColor", cfg.endColor);
+    cfg.alphaStart = readJsonFloat(s, "alphaStart", cfg.alphaStart);
+    cfg.alphaEnd = readJsonFloat(s, "alphaEnd", cfg.alphaEnd);
+    cfg.brightnessStart = readJsonFloat(s, "brightnessStart", cfg.brightnessStart);
+    cfg.brightnessEnd = readJsonFloat(s, "brightnessEnd", cfg.brightnessEnd);
+}
+
+static void readExplosionBurstSmoke(const json& j, WeaponHitFxExplosionBurstSmoke& cfg)
+{
+    if (!j.contains("smoke")) return;
+    const auto& s = j["smoke"];
+    cfg.enabled = readJsonBool(s, "enabled", cfg.enabled);
+    cfg.count = (int)readJsonFloat(s, "count", (float)cfg.count);
+    cfg.lifetime = readJsonFloat(s, "lifetime", cfg.lifetime);
+    cfg.size = readJsonFloat(s, "size", cfg.size);
+    cfg.endSize = readJsonFloat(s, "endSize", cfg.endSize);
+    cfg.color = readJsonVec3(s, "color", cfg.color);
+    cfg.alpha = readJsonFloat(s, "alpha", cfg.alpha);
+    cfg.speed = readJsonFloat(s, "speed", cfg.speed);
+    cfg.spread = readJsonFloat(s, "spread", cfg.spread);
+    cfg.upwardBias = readJsonFloat(s, "upwardBias", cfg.upwardBias);
+}
+
+static void readExplosion(const json& j, WeaponHitFxExplosionBurstConfig& cfg)
+{
+    if (!j.contains("explosion")) return;
+    const auto& ex = j["explosion"];
+    cfg.enabled = readJsonBool(ex, "enabled", cfg.enabled);
+    readExplosionBurstSphere(ex, cfg.sphere);
+    readExplosionBurstSmoke(ex, cfg.smoke);
+}
+
 static void readPerWeapon(const json& j, const std::string& key, WeaponHitFxPerWeapon& out)
 {
     if (!j.contains(key)) return;
@@ -124,6 +165,7 @@ static void readPerWeapon(const json& j, const std::string& key, WeaponHitFxPerW
     readDebris(pw, out.debris);
     readBlood(pw, out.blood);
     readSound(pw, out.sound);
+    readExplosion(pw, out.explosionBurst);
 }
 
 static void mergeForce(const WeaponHitFxForceConfig& src, WeaponHitFxForceConfig& dst)
@@ -304,4 +346,13 @@ const WeaponHitFxSoundConfig& WeaponHitFxConfig::soundFor(const std::string& wea
     auto it = mPerWeapon.find(weaponId);
     if (it != mPerWeapon.end()) return it->second.sound;
     return mDefaults.sound;
+}
+
+const WeaponHitFxExplosionBurstConfig& WeaponHitFxConfig::explosionBurstFor(const std::string& weaponId) const
+{
+    static WeaponHitFxExplosionBurstConfig s_defaultExplosion;
+    auto it = mPerWeapon.find(weaponId);
+    if (it != mPerWeapon.end() && it->second.explosionBurst.enabled)
+        return it->second.explosionBurst;
+    return s_defaultExplosion;
 }
