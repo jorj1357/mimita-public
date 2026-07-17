@@ -35,6 +35,7 @@ struct StructuredLogConfig {
     struct CategoryConfig {
         StructuredLevel level = StructuredLevel::Off;
         bool fileOutput = true;
+        float throttleSeconds = 0.0f; // 0 = no throttle; >0 = buffer and flush at this rate
     };
 
     CategoryConfig replay;
@@ -120,6 +121,9 @@ public:
     // Write a structured entry
     void write(const Entry& e);
 
+    // Tick: flush throttled buffers
+    void tick();
+
     // Convenience: numeric assertion
     void assertNear(const std::string& eventId, const std::string& correlationId,
                     const std::string& reason, StructuredCategory cat,
@@ -168,6 +172,15 @@ private:
     // Config file tracking for hot-reload
     uint64_t mConfigLastWrite = 0;
     int mConfigReloadErrors = 0;
+
+    // ── Per-category throttled buffers ────────────────────────────
+    struct ThrottledBuffer {
+        std::vector<std::string> lines;     // accumulated formatted lines
+        std::vector<std::string> consoleLines; // accumulated console lines
+        double lastFlushTime = 0.0;
+    };
+    std::unordered_map<int, ThrottledBuffer> mThrottledBuffers;
+    void flushThrottled(int catIdx);
 };
 
 // ── Audio buffer analysis ───────────────────────────────────

@@ -285,10 +285,10 @@ MimitaNet::ListenServerState* getListenServerState()
     return &gListenServer;
 }
 
-static void pollPendingServerRoomCode()
+static bool pollPendingServerRoomCode()
 {
     if (!gWaitingForServerRoomCode)
-        return;
+        return false;
 
     if (!gServerProcessLaunched)
     {
@@ -298,7 +298,7 @@ static void pollPendingServerRoomCode()
             DeleteFileA(gPendingServerRoomFilePath.c_str());
         gPendingServerRoomFilePath.clear();
         gWaitingForServerRoomCode = false;
-        return;
+        return false;
     }
 
     {
@@ -315,7 +315,7 @@ static void pollPendingServerRoomCode()
             gPendingServerRoomFilePath.clear();
             gWaitingForServerRoomCode = false;
             gLastServerRoomFilePollMs = 0;
-            return;
+            return false;
         }
     }
 
@@ -323,7 +323,7 @@ static void pollPendingServerRoomCode()
 
     if (gLastServerRoomFilePollMs != 0 &&
         now - gLastServerRoomFilePollMs < 100)
-        return;
+        return false;
 
     gLastServerRoomFilePollMs = now;
 
@@ -359,7 +359,7 @@ static void pollPendingServerRoomCode()
             DeleteFileA(gPendingServerRoomFilePath.c_str());
             gPendingServerRoomFilePath.clear();
             gWaitingForServerRoomCode = false;
-            return;
+            return true;
         }
     }
 
@@ -376,6 +376,7 @@ static void pollPendingServerRoomCode()
         gPendingServerRoomFilePath.clear();
         gWaitingForServerRoomCode = false;
     }
+    return false;
 }
 
 void guiMain(GLFWwindow* win, GameState& state)
@@ -386,8 +387,24 @@ void guiMain(GLFWwindow* win, GameState& state)
     if (auth.state() == AuthState::Checking)
         auth.tickValidate();
 
-    // Poll for room code from external server process (non-blocking)
-    pollPendingServerRoomCode();
+    // Poll for room code from external server process (non-blocking).
+    // Returns true when the room code file was successfully read.
+    if (pollPendingServerRoomCode())
+    {
+        printf("[COMMUNITY AUTO CONNECT] localhost=127.0.0.1:%u room=%s\n",
+               gServerLaunchSettings.port, gServerLaunchSettings.serverCode.c_str());
+
+        gPendingConnect = {};
+        gPendingConnect.shouldConnect = true;
+        gPendingConnect.address = "127.0.0.1";
+        gPendingConnect.port = gServerLaunchSettings.port;
+        gPendingConnect.roomCode = gServerLaunchSettings.serverCode;
+        gPendingConnect.useIce = false;
+
+        onlineMenuSetActive(false);
+        state = GAME_PLAYING;
+        return;
+    }
 
     if (gGuiMenuState == GUI_MENU_AUTH)
     {
@@ -730,6 +747,20 @@ void guiMain(GLFWwindow* win, GameState& state)
                             printf("[ONLINE MENU] Listen server started (fallback) port=%u code=%s map=%s\n",
                                    gServerLaunchSettings.port, gListenServer.serverCode.c_str(),
                                    gServerLaunchSettings.mapName.c_str());
+
+                            // Auto-connect to the listen server via localhost
+                            printf("[COMMUNITY AUTO CONNECT] listen-server localhost=127.0.0.1:%u room=%s\n",
+                                   gServerLaunchSettings.port, gListenServer.serverCode.c_str());
+
+                            gPendingConnect = {};
+                            gPendingConnect.shouldConnect = true;
+                            gPendingConnect.address = "127.0.0.1";
+                            gPendingConnect.port = gServerLaunchSettings.port;
+                            gPendingConnect.roomCode = gListenServer.serverCode;
+                            gPendingConnect.useIce = false;
+
+                            onlineMenuSetActive(false);
+                            state = GAME_PLAYING;
                         }
                     }
                 }
@@ -761,26 +792,18 @@ void guiMain(GLFWwindow* win, GameState& state)
             }
             else if (r.connectToServer)
             {
-                // If we have a join token, use coordinator join flow
-                if (!r.joinToken.empty())
-                {
-                    gPendingConnect.shouldConnect = true;
-                    gPendingConnect.address = r.connectAddress;
-                    gPendingConnect.port = r.connectPort;
-                    gPendingConnect.joinToken = r.joinToken;
-                    gPendingConnect.roomCode = r.roomCode;
-                    // Room code + token implies remotely hosted → use ICE
-                    if (!r.roomCode.empty() && r.connectAddress.find("127.0.0.1") != 0)
-                        gPendingConnect.useIce = true;
-                }
-                else
-                {
-                    // Direct connection without coordinator (localhost or known IP)
-                    gPendingConnect.shouldConnect = true;
-                    gPendingConnect.address = r.connectAddress;
-                    gPendingConnect.port = r.connectPort;
-                    gPendingConnect.roomCode = r.roomCode;
-                }
+                gPendingConnect.shouldConnect = true;
+                gPendingConnect.address = r.connectAddress;
+                gPendingConnect.port = r.connectPort;
+                gPendingConnect.joinToken = r.joinToken;
+                gPendingConnect.roomCode = r.roomCode;
+
+                // Detect ICE mode: address starts with "ice:" or has room code and non-localhost
+                bool iceDetected = (r.connectAddress.find("ice:") == 0);
+                if (!iceDetected && !r.roomCode.empty() && r.connectAddress.find("127.0.0.1") != 0)
+                    iceDetected = true;
+                gPendingConnect.useIce = iceDetected;
+
                 printf("[COMMUNITY CONNECT] address=%s port=%u useIce=%d mapId=%s\n",
                        gPendingConnect.address.c_str(), gPendingConnect.port,
                        (int)gPendingConnect.useIce,

@@ -225,8 +225,9 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     if (event->fireSerial != 0)
         ctx.pendingFireRequests.erase(event->fireSerial);
 
-    // Predicted projectile: local player's own projectile — local simulation handles it
-    if (event->ownerPlayerId == ctx.localPlayerId)
+    // Rocket launcher: local simulation handles it — suppress server interpolation
+    if (event->ownerPlayerId == ctx.localPlayerId &&
+        event->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
     {
         ctx.predictedProjectileIds.insert(event->projectileId);
         printf("[PROJECTILE PREDICTED] projectileId=%u fireSerial=%u weapon=%s "
@@ -238,6 +239,10 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     }
 
     NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
+
+    // Grenade launcher: local projectile uses prediction physics
+    if (event->ownerPlayerId == ctx.localPlayerId)
+        projectile.predicted = true;
     projectile.projectileId = event->projectileId;
     projectile.ownerPlayerId = event->ownerPlayerId;
     projectile.fireSerial = event->fireSerial;
@@ -508,16 +513,20 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)
 {
-    // Acknowledge pending fire request
+    auto it = ctx.pendingFireRequests.find(event->fireSerial);
     if (event->accepted)
     {
-        auto it = ctx.pendingFireRequests.find(event->fireSerial);
         if (it != ctx.pendingFireRequests.end())
         {
             it->second.acknowledged = true;
             printf("[PROJECTILE FIRE RESULT] fireSerial=%u projectileId=%u accepted=1\n",
                    event->fireSerial, event->projectileId);
         }
+    }
+    else
+    {
+        printf("[PROJECTILE FIRE RESULT] fireSerial=%u accepted=0 reason=%d\n",
+               event->fireSerial, (int)event->reason);
     }
 }
 
@@ -528,29 +537,33 @@ void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const Projec
 
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event)
 {
-    NetworkShotEvent out;
-    out.shotSerial = event->attackSerial;
-    out.shooterPlayerId = event->attackerPlayerId;
-    out.targetPlayerId = event->targetPlayerId;
-    out.damage = event->damage;
-    out.targetHealth = event->targetHealth;
-    out.effectFlags =
-        SHOT_EFFECT_ENTITY_IMPACT |
-        SHOT_EFFECT_BLOOD |
-        SHOT_EFFECT_HIT_SOUND |
-        SHOT_EFFECT_WEAPON_TRIGGER;
-    out.weapon = event->weapon;
-    out.impactType = SHOT_IMPACT_ENTITY;
-    out.killed = event->killed != 0;
-    out.damageConfirmed = event->damageConfirmed != 0;
-    out.hit = {event->hitX, event->hitY, event->hitZ};
-    out.normal = {event->normalX, event->normalY, event->normalZ};
-    out.knockback = {event->knockX, event->knockY, event->knockZ};
-    out.direction = glm::length(out.knockback) > 0.001f
-        ? glm::normalize(out.knockback)
-        : -out.normal;
-    out.origin = out.hit - out.direction;
-    ctx.shotEvents.push_back(out);
+    // Animation-only event (targetPlayerId=0): create sword state but skip VFX
+    if (event->targetPlayerId != 0)
+    {
+        NetworkShotEvent out;
+        out.shotSerial = event->attackSerial;
+        out.shooterPlayerId = event->attackerPlayerId;
+        out.targetPlayerId = event->targetPlayerId;
+        out.damage = event->damage;
+        out.targetHealth = event->targetHealth;
+        out.effectFlags =
+            SHOT_EFFECT_ENTITY_IMPACT |
+            SHOT_EFFECT_BLOOD |
+            SHOT_EFFECT_HIT_SOUND |
+            SHOT_EFFECT_WEAPON_TRIGGER;
+        out.weapon = event->weapon;
+        out.impactType = SHOT_IMPACT_ENTITY;
+        out.killed = event->killed != 0;
+        out.damageConfirmed = event->damageConfirmed != 0;
+        out.hit = {event->hitX, event->hitY, event->hitZ};
+        out.normal = {event->normalX, event->normalY, event->normalZ};
+        out.knockback = {event->knockX, event->knockY, event->knockZ};
+        out.direction = glm::length(out.knockback) > 0.001f
+            ? glm::normalize(out.knockback)
+            : -out.normal;
+        out.origin = out.hit - out.direction;
+        ctx.shotEvents.push_back(out);
+    }
 
     // Initialize remote sword state for animation reconstruction
     if (event->attackerPlayerId == 0 || event->attackerPlayerId == ctx.localPlayerId)
@@ -764,8 +777,6 @@ static bool resolveClientGrenadeWorld(NetworkProjectile& projectile, const World
 
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
 {
-    (void)world;
-
     // ── Retransmit unacknowledged fire requests ─────────────────────
     const uint64_t now = nowMs();
     for (auto it = ctx.pendingFireRequests.begin(); it != ctx.pendingFireRequests.end(); )
@@ -818,11 +829,60 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             continue;
         }
 
-        // ── Interpolate or extrapolate render position ─────────────
-        // Interpolation: blend between previous and target state over server tick interval.
-        // Extrapolation: if no recent target state, briefly extrapolate with authoritative velocity.
-        if (projectile.hasTargetState)
+        // ── Predicted projectile: local physics simulation ──────────
+        if (projectile.predicted)
         {
+            const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+            const float grav = projectileGravity(projectile.weaponType);
+            const float drag = projectileDrag(projectile.weaponType);
+            const float angDrag = def ? cp(def, "angularDrag", 0.3f) : 0.0f;
+
+            // Gravity
+            if (grav > 0.0f)
+                projectile.velocity.z -= grav * dt;
+
+            // Drag
+            if (drag > 0.0f)
+                projectile.velocity *= std::max(0.0f, 1.0f - drag * dt);
+
+            // Angular velocity
+            float angSpeed = glm::length(projectile.angularVelocity);
+            if (angDrag > 0.0f && angSpeed > 0.0f)
+                projectile.angularVelocity *= std::max(0.0f, 1.0f - angDrag * dt);
+            if (angSpeed > 0.0001f)
+            {
+                float newAngSpeed = glm::length(projectile.angularVelocity);
+                if (newAngSpeed > 0.0001f)
+                {
+                    glm::quat delta = glm::angleAxis(newAngSpeed * dt, glm::normalize(projectile.angularVelocity));
+                    projectile.rotation = glm::normalize(delta * projectile.rotation);
+                }
+            }
+
+            // Move
+            glm::vec3 step = projectile.velocity * dt;
+            projectile.position += step;
+
+            // World collision (grenade bouncing)
+            if (projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER)
+                resolveClientGrenadeWorld(projectile, world, def);
+
+            // Blend toward server state if available
+            if (projectile.hasTargetState)
+            {
+                constexpr float BLEND_RATE = 0.15f;
+                projectile.position = glm::mix(projectile.position, projectile.targetStatePos, BLEND_RATE);
+                projectile.velocity = glm::mix(projectile.velocity, projectile.targetStateVel, BLEND_RATE);
+            }
+
+            // Render from predicted position
+            projectile.renderPosition = projectile.position;
+            projectile.renderVelocity = projectile.velocity;
+            projectile.renderRotation = projectile.rotation;
+        }
+        else if (projectile.hasTargetState)
+        {
+            // Normal interpolation or extrapolation
             constexpr float SERVER_TICK_INTERVAL = 1.0f / 60.0f; // 60 Hz server
             constexpr float EXTRAPOLATION_LIMIT = 0.15f; // 150ms max extrapolation
 
@@ -850,15 +910,6 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 projectile.renderVelocity = projectile.targetStateVel;
                 projectile.renderRotation = projectile.targetStateRot;
             }
-        }
-        else if (projectile.predicted)
-        {
-            // Owner prediction: run local simulation
-            projectile.velocity.z -= projectileGravity(projectile.weaponType) * dt;
-            projectile.velocity *= std::max(0.0f, 1.0f - projectileDrag(projectile.weaponType) * dt);
-            projectile.position += projectile.velocity * dt;
-            projectile.renderPosition = projectile.position;
-            projectile.renderVelocity = projectile.velocity;
         }
         else
         {

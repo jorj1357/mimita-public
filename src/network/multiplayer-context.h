@@ -308,6 +308,17 @@ struct MultiplayerContext
     // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
     std::unordered_set<uint32_t> predictedProjectileIds;
 
+    // ── Snapshot chunk reassembly buffers ─────────────────────────────
+    struct SnapshotChunkBuffer {
+        std::unordered_map<uint16_t, SnapshotChunkPacket> chunks;
+        uint64_t lastReceiveMs = 0;
+    };
+    std::unordered_map<uint32_t, SnapshotChunkBuffer> snapshotChunkBuffers;
+
+    // ── Rejected projectile fire requests (for ammo refund) ──────────
+    struct FireRejection { uint32_t fireSerial; uint8_t weapon; };
+    std::vector<FireRejection> fireRejections;
+
     // ── Room code for HUD display ─────────────────────────────────────
     // Set on host register or client join, cleared on disconnect/leave.
     std::string currentRoomCode;

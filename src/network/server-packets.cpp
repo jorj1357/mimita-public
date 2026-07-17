@@ -1,6 +1,7 @@
 #include "network/server.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
+#include "network/snapshot-chunks.h"
 #include "void-death/void-death.h"
 
 #include <algorithm>
@@ -923,13 +924,13 @@ void buildAndSendSnapshot(SOCKET sock,
                           const std::unordered_map<uint32_t, ServerNpc>& npcs,
                           uint32_t tick, uint64_t& totalPacketsOut)
 {
-    SnapshotPacket snapshot{};
-    snapshot.header.type = PACKET_SNAPSHOT;
-    snapshot.header.tick = tick;
-    uint32_t index = 0;
+    // Build compact entity list
+    CompactEntityData entities[MAX_SNAPSHOT_ENTITIES];
+    uint32_t entityCount = 0;
+
     for (const auto& kv : players)
     {
-        if (index >= MAX_SNAPSHOT_ENTITIES)
+        if (entityCount >= MAX_SNAPSHOT_ENTITIES)
             break;
         if (!kv.second.spawned)
         {
@@ -947,47 +948,61 @@ void buildAndSendSnapshot(SOCKET sock,
             }
             continue;
         }
-        snapshot.entities[index++] = makePlayerEntity(kv.second);
-        ++snapshot.playerCount;
+        entities[entityCount++] = compactEntityFromSnapshot(makePlayerEntity(kv.second));
     }
     for (const auto& kv : npcs)
     {
-        if (index >= MAX_SNAPSHOT_ENTITIES)
+        if (entityCount >= MAX_SNAPSHOT_ENTITIES)
             break;
-        snapshot.entities[index++] = makeNpcEntity(kv.second);
-        ++snapshot.npcCount;
+        entities[entityCount++] = compactEntityFromSnapshot(makeNpcEntity(kv.second));
     }
-    snapshot.entityCount = index;
 
-    if (tick % 60 == 0)
+    if (tick % 120 == 0)
     {
-        printf("%s [SERVER SNAPSHOT BUILD] tick=%u playersIncluded=%u npcsIncluded=%u entitiesIncluded=%u\n",
-               serverTimestamp(), tick, snapshot.playerCount, snapshot.npcCount, snapshot.entityCount);
-        for (uint32_t i = 0; i < snapshot.entityCount; ++i)
-            logSnapshotEntity(snapshot.entities[i]);
+        printf("%s [SERVER SNAPSHOT BUILD] tick=%u entities=%u\n",
+               serverTimestamp(), tick, entityCount);
+    }
+
+    // Build chunks from compact entities
+    std::vector<std::vector<uint8_t>> chunks;
+    if (!buildSnapshotChunks(entities, entityCount, tick, 0, chunks))
+    {
+        printf("%s [SERVER SNAPSHOT] chunk build failed for tick=%u\n",
+               serverTimestamp(), tick);
+        return;
+    }
+
+    if (tick % 120 == 0)
+    {
+        printf("%s [SERVER SNAPSHOT CHUNKS] tick=%u chunks=%zu maxChunkBytes=%zu\n",
+               serverTimestamp(), tick, chunks.size(),
+               chunks.empty() ? 0 : chunks[0].size());
     }
 
     for (const auto& kv : players)
     {
-        bool sent = false;
-        if (kv.second.transport)
+        for (const auto& chunk : chunks)
         {
-            sent = kv.second.transport->send(&snapshot, sizeof(snapshot));
+            bool sent = false;
+            if (kv.second.transport)
+            {
+                sent = kv.second.transport->send(chunk.data(), chunk.size());
+            }
+            else
+            {
+                int bytesSent = sendto(
+                    sock, (const char*)chunk.data(), (int)chunk.size(), 0,
+                    (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+                sent = (bytesSent != SOCKET_ERROR);
+                if (!sent)
+                    printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
+                           serverTimestamp(), kv.first, WSAGetLastError());
+            }
+            ++totalPacketsOut;
         }
-        else
-        {
-            int bytesSent = sendto(
-                sock, (const char*)&snapshot, sizeof(snapshot), 0,
-                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-            sent = (bytesSent != SOCKET_ERROR);
-            if (!sent)
-                printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
-                       serverTimestamp(), kv.first, WSAGetLastError());
-        }
-        ++totalPacketsOut;
-        if (tick % 60 == 0)
-            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u sent=%d bytes=%zu\n",
-                   serverTimestamp(), kv.first, (int)sent, sizeof(snapshot));
+        if (tick % 120 == 0)
+            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu\n",
+                   serverTimestamp(), kv.first, chunks.size());
     }
 }
 
@@ -1035,12 +1050,19 @@ void sendDisagreementToAll(SOCKET sock,
 
     for (const auto& kv : players)
     {
-        int bytesSent = sendto(
-            sock, (const char*)&packet, sizeof(packet), 0,
-            (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-        if (bytesSent == SOCKET_ERROR)
-            printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
-                   serverTimestamp(), kv.first, WSAGetLastError());
+        bool ok = false;
+        if (kv.second.transport)
+            ok = kv.second.transport->send(&packet, sizeof(packet));
+        else
+        {
+            int bytesSent = sendto(
+                sock, (const char*)&packet, sizeof(packet), 0,
+                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            ok = (bytesSent != SOCKET_ERROR);
+            if (!ok)
+                printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
+                       serverTimestamp(), kv.first, WSAGetLastError());
+        }
         ++totalPacketsOut;
     }
 
@@ -1080,8 +1102,11 @@ void tickDisagreementRetransmit(SOCKET sock,
 
         for (const auto& kv : players)
         {
-            sendto(sock, (const char*)&pd.packet, sizeof(pd.packet), 0,
-                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            if (kv.second.transport)
+                kv.second.transport->send(&pd.packet, sizeof(pd.packet));
+            else
+                sendto(sock, (const char*)&pd.packet, sizeof(pd.packet), 0,
+                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
             ++totalPacketsOut;
         }
 

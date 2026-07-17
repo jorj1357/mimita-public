@@ -159,6 +159,34 @@ void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buf
 
     attacker.lastMeleeAttackSerial = request->attackSerial;
 
+    // Broadcast attack-started event to ALL players (for remote animation)
+    {
+        MeleeHitEventPacket animEvent{};
+        animEvent.header.type = PACKET_MELEE_HIT_EVENT;
+        animEvent.header.tick = tick;
+        animEvent.header.playerId = attacker.id;
+        animEvent.attackSerial = request->attackSerial;
+        animEvent.attackerPlayerId = attacker.id;
+        animEvent.targetPlayerId = 0;        // 0 = no hit, animation only
+        animEvent.damage = 0;
+        animEvent.weapon = NETWORK_WEAPON_SWORDSWORD;
+        animEvent.attackType = request->attackType;
+        animEvent.killed = 0;
+        animEvent.damageConfirmed = 0;
+        for (const auto& pe : players)
+        {
+            if (pe.second.transport)
+                pe.second.transport->send(&animEvent, sizeof(animEvent));
+            else
+                sendto(sock, (const char*)&animEvent, sizeof(animEvent), 0,
+                       (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+            ++totalPacketsOut;
+        }
+        printf("%s [SWORD ATTACK ANIM] attackerId=%u serial=%u type=%u broadcast to %zu players\n",
+               serverTimestamp(), attacker.id, request->attackSerial,
+               request->attackType, players.size());
+    }
+
     // ── Start server-side sword attack state ──
     const WeaponDefinition* def = WeaponRegistry::instance().get("swordsword");
     float slashWindup  = swordCp(def, "slashWindupTime", 0.08f);

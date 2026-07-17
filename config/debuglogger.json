@@ -38,11 +38,12 @@
     },
     "network": {
       "level": "off",
-      "file_output": true
+      "file_output": true,
+      "throttle": 1.0
     },
     "rendering": {
       "level": "verbose",
-      "file_output": true
+      "file_output": false
     },
     "glb_models": {
       "level": "off",
