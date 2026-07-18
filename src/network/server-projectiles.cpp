@@ -1,5 +1,6 @@
 #include "network/server.h"
 #include "network/network-weapons.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -290,6 +291,28 @@ void explodeProjectile(SOCKET sock,
            serverTimestamp(), projectile.id,
            networkWeaponTypeName(projectile.weaponType), impactType,
            position.x, position.y, position.z, directTargetId);
+    {
+        auto& _log = ::StructuredLogger::instance();
+        if (_log.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
+            ::StructuredLogger::Entry e;
+            e.category = ::StructuredCategory::GrenadeLauncher;
+            e.level = ::StructuredLevel::Important;
+            e.eventId = "GRENADE_SERVER_EXPLODE";
+            e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                + "_F" + std::to_string(projectile.fireSerial)
+                + "_J" + std::to_string(projectile.id);
+            e.reason = impactType;
+            char buf[512]; std::snprintf(buf, sizeof(buf),
+                "position=(%.2f,%.2f,%.2f) age=%.2f splashRadius=%.2f splashDamage=%.1f "
+                "victimCount=%u bounceCount=%d distanceTraveled=%.1f",
+                position.x, position.y, position.z, projectile.age,
+                projectile.splashRadius, projectile.splashDamage,
+                victimsLogged, projectile.bounceCount, projectile.distanceTraveled);
+            e.message = buf;
+            _log.write(e);
+        }
+    }
+
     printf("%s [PROJECTILE SERVER EXPLOSION] projectileId=%u ownerPlayerId=%u "
            "weapon=%s position=(%.2f,%.2f,%.2f) radius=%.2f victimCount=%u\n",
            serverTimestamp(), projectile.id, projectile.ownerPlayerId,
@@ -332,17 +355,71 @@ bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& worl
     projectile.position += bestNormal * (bestPenetration + 0.001f);
 
     const float into = glm::dot(projectile.velocity, bestNormal);
+
+    // Log every overlap (inward or outward)
+    {
+        auto& _lg = ::StructuredLogger::instance();
+        if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
+            ::StructuredLogger::Entry e;
+            e.category = ::StructuredCategory::GrenadeLauncher;
+            e.level = ::StructuredLevel::Verbose;
+            e.eventId = into < 0.0f ? "" : "GRENADE_SERVER_CONTACT_OVERLAP";
+            if (e.eventId.empty()) {
+                // Impact is logged separately below; skip dup
+            } else {
+                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                    + "_F" + std::to_string(projectile.fireSerial)
+                    + "_J" + std::to_string(projectile.id);
+                e.reason = "overlap-only";
+                char b[512]; std::snprintf(b, sizeof(b),
+                    "into=%.3f penetration=%.3f normal=(%.3f,%.3f,%.3f) "
+                    "vel=(%.2f,%.2f,%.2f) speed=%.2f bounceCount=%d",
+                    into, bestPenetration, bestNormal.x, bestNormal.y, bestNormal.z,
+                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+                    glm::length(projectile.velocity), projectile.bounceCount);
+                e.message = b;
+                _lg.write(e);
+            }
+        }
+    }
+
     if (into < 0.0f)
     {
         // Stable bounce: separate normal and tangential components
-        // tangentRetention = clamp(1 - friction, 0, 1) ensures energy never increases
         glm::vec3 tangent = projectile.velocity - bestNormal * into;
         float tangentRetention = std::clamp(1.0f - projectile.friction, 0.0f, 1.0f);
+        glm::vec3 velBefore = projectile.velocity;
+        float speedBefore = glm::length(velBefore);
         projectile.velocity = tangent * tangentRetention - bestNormal * into * projectile.restitution;
+        float speedAfter = glm::length(projectile.velocity);
+
+        projectile.angularVelocity *= 0.35f;
+        projectile.worldTouched = true;
+        ++projectile.bounceCount;
+
+        {
+            auto& _lg = ::StructuredLogger::instance();
+            if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
+                ::StructuredLogger::Entry e;
+                e.category = ::StructuredCategory::GrenadeLauncher;
+                e.level = ::StructuredLevel::Verbose;
+                e.eventId = "GRENADE_SERVER_CONTACT_IMPACT";
+                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                    + "_F" + std::to_string(projectile.fireSerial)
+                    + "_J" + std::to_string(projectile.id);
+                e.reason = "impact";
+                char b[512]; std::snprintf(b, sizeof(b),
+                    "bounceCount=%d speedBefore=%.3f speedAfter=%.3f "
+                    "restitution=%.2f friction=%.2f tangentRetention=%.2f "
+                    "into=%.3f normal=(%.3f,%.3f,%.3f)",
+                    projectile.bounceCount, speedBefore, speedAfter,
+                    projectile.restitution, projectile.friction, tangentRetention,
+                    into, bestNormal.x, bestNormal.y, bestNormal.z);
+                e.message = b;
+                _lg.write(e);
+            }
+        }
     }
-    projectile.angularVelocity *= 0.35f;
-    projectile.worldTouched = true;
-    ++projectile.bounceCount;
     return true;
 }
 
@@ -396,7 +473,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     }
     const uint8_t equippedWeapon = networkWeaponTypeForSlot(shooter.equippedSlot);
     const bool weaponEquippedValid = equippedWeapon == request->weapon;
-    const bool cooldownValid = shooter.projectileFireCooldown <= 0.0f;
+    const bool cooldownValid = shooter.projectileFireCooldown <= 0.05f; // 50ms grace for network jitter
     const bool directionValid = directionLength >= 0.5f && directionLength <= 1.5f;
     const bool accepted =
         !shooter.dead &&
@@ -423,7 +500,58 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
            originDistance > 8.0f ? "origin-too-far" : "invalid-direction");
 
     if (!accepted)
+    {
+        // Send rejection result for every structurally valid request from a known player
+        ProjectileFireResultPacket reject{};
+        reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
+        reject.header.tick = tick;
+        reject.header.playerId = shooter.id;
+        reject.fireSerial = request->fireSerial;
+        reject.weapon = request->weapon;
+        reject.accepted = 0;
+        reject.cooldownRemaining = shooter.projectileFireCooldown;
+
+        if (shooter.dead) reject.reason = PROJECTILE_FIRE_DEAD;
+        else if (!serialNew) reject.reason = PROJECTILE_FIRE_ALREADY_ACCEPTED;
+        else if (!networkWeaponTypeIsProjectile(request->weapon)) reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
+        else if (!weaponEquippedValid) reject.reason = PROJECTILE_FIRE_WEAPON_MISMATCH;
+        else if (!cooldownValid) reject.reason = PROJECTILE_FIRE_COOLDOWN;
+        else if (originDistance > 8.0f) reject.reason = PROJECTILE_FIRE_ORIGIN_INVALID;
+        else reject.reason = PROJECTILE_FIRE_DIRECTION_INVALID;
+
+        for (const auto& kv : players)
+        {
+            if (kv.first == shooter.id)
+            {
+                if (kv.second.transport)
+                    kv.second.transport->send(&reject, sizeof(reject));
+                else
+                    sendto(sock, (const char*)&reject, sizeof(reject), 0,
+                           (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            }
+        }
+        {
+            auto& _log = ::StructuredLogger::instance();
+            if (_log.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
+                ::StructuredLogger::Entry e;
+                e.category = ::StructuredCategory::GrenadeLauncher;
+                e.level = ::StructuredLevel::Important;
+                e.eventId = "GRENADE_SERVER_REQUEST";
+                e.correlationId = "GRENADE_P" + std::to_string(shooter.id)
+                    + "_F" + std::to_string(request->fireSerial) + "_J0";
+                e.reason = "rejected";
+                char buf[512]; std::snprintf(buf, sizeof(buf),
+                    "playerId=%u fireSerial=%u weapon=%s serialNew=%d coordValid=%d weaponOk=%d "
+                    "dirLen=%.2f originDist=%.2f cooldown=%.3f",
+                    shooter.id, request->fireSerial, networkWeaponTypeName(request->weapon),
+                    (int)serialNew, (int)cooldownValid, (int)weaponEquippedValid,
+                    directionLength, originDistance, shooter.projectileFireCooldown);
+                e.message = buf;
+                _log.write(e);
+            }
+        }
         return;
+    }
 
     const ProjectileConfig cfg = projectileConfig(request->weapon);
     const glm::vec3 dir = glm::normalize(direction);
@@ -481,6 +609,71 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     spawn.header.tick = tick;
     fillProjectilePose(spawn, projectile);
     projectiles[projectile.id] = projectile;
+
+    {
+        auto& _lg = ::StructuredLogger::instance();
+        if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
+            ::StructuredLogger::Entry e;
+            e.category = ::StructuredCategory::GrenadeLauncher;
+            e.level = ::StructuredLevel::Important;
+            e.eventId = "GRENADE_SERVER_REQUEST";
+            e.correlationId = "GRENADE_P" + std::to_string(shooter.id)
+                + "_F" + std::to_string(request->fireSerial)
+                + "_J" + std::to_string(projectile.id);
+            e.reason = "accepted";
+            char b[512]; std::snprintf(b, sizeof(b),
+                "projectileId=%u playerId=%u fireSerial=%u weapon=%s "
+                "spawnPos=(%.2f,%.2f,%.2f) spawnVel=(%.2f,%.2f,%.2f) "
+                "lifetime=%.1f radius=%.2f speed=%.1f gravity=%.1f drag=%.2f "
+                "restitution=%.2f friction=%.2f upBias=%.1f "
+                "angSpeed=%.1f angDrag=%.2f maxBounce=%d minBounceSpeed=%.1f armingDist=%.1f",
+                projectile.id, shooter.id, request->fireSerial,
+                networkWeaponTypeName(request->weapon),
+                projectile.position.x, projectile.position.y, projectile.position.z,
+                projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+                projectile.lifetime, projectile.radius, cfg.speed, projectile.gravity,
+                projectile.drag, projectile.restitution, projectile.friction,
+                cfg.upBias, cfg.angularSpeed, projectile.angularDrag,
+                projectile.maxBounceCount, projectile.minBounceSpeed,
+                projectile.armingDistance);
+            e.message = b;
+            _lg.write(e);
+        }
+    }
+
+    {
+        auto& _lg = ::StructuredLogger::instance();
+        if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
+            ::StructuredLogger::Entry e;
+            e.category = ::StructuredCategory::GrenadeLauncher;
+            e.level = ::StructuredLevel::Important;
+            e.eventId = "GRENADE_SERVER_SPAWN";
+            e.correlationId = "GRENADE_P" + std::to_string(shooter.id)
+                + "_F" + std::to_string(request->fireSerial)
+                + "_J" + std::to_string(projectile.id);
+            e.reason = "spawn";
+            char b[512]; std::snprintf(b, sizeof(b),
+                "projectileId=%u playerId=%u fireSerial=%u weapon=%s "
+                "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) speed=%.1f "
+                "angVel=(%.2f,%.2f,%.2f) radius=%.2f gravity=%.1f drag=%.2f "
+                "angDrag=%.2f restitution=%.2f friction=%.2f "
+                "maxBounce=%d lifetime=%.1f armingDist=%.1f armingTime=%.1f "
+                "upBias=%.1f minBounceSpeed=%.1f",
+                projectile.id, shooter.id, request->fireSerial,
+                networkWeaponTypeName(request->weapon),
+                projectile.position.x, projectile.position.y, projectile.position.z,
+                projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+                glm::length(projectile.velocity),
+                projectile.angularVelocity.x, projectile.angularVelocity.y, projectile.angularVelocity.z,
+                projectile.radius, projectile.gravity, projectile.drag,
+                projectile.angularDrag, projectile.restitution, projectile.friction,
+                projectile.maxBounceCount, projectile.lifetime,
+                projectile.armingDistance, projectile.armingTime,
+                cfg.upBias, projectile.minBounceSpeed);
+            e.message = b;
+            _lg.write(e);
+        }
+    }
 
     printf("%s [PROJECTILE SERVER SPAWN] projectileId=%u ownerPlayerId=%u "
            "weapon=%s position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f) "
@@ -611,10 +804,61 @@ void tickServerProjectiles(SOCKET sock,
                 }
 
                 // World collision per substep
-                if (resolveGrenadeWorld(projectile, world) &&
-                    projectile.bounceCount >= projectile.maxBounceCount)
+                if (resolveGrenadeWorld(projectile, world))
                 {
-                    projectile.velocity *= 0.2f;
+                    static int settleCallCount = 0;
+                    if (projectile.bounceCount >= projectile.maxBounceCount &&
+                        projectile.velocity != glm::vec3(0.0f))
+                    {
+                        // After max bounces: kill restitution, kill tangent, let it settle
+                        float speedBefore = glm::length(projectile.velocity);
+                        glm::vec3 velBefore = projectile.velocity;
+                        float lateralSpeedBefore = glm::length(glm::vec3(velBefore.x, velBefore.y, 0.0f));
+                        float intoComp = glm::dot(projectile.velocity, glm::vec3(0.0f, 0.0f, 1.0f));
+
+                        if (speedBefore > 0.1f)
+                        {
+                            glm::vec3 lateral = projectile.velocity;
+                            lateral.z = 0.0f;
+                            projectile.velocity -= lateral * 0.95f;
+                            if (projectile.velocity.z < -20.0f)
+                                projectile.velocity.z = -20.0f;
+                        }
+                        else
+                        {
+                            projectile.velocity = glm::vec3(0.0f);
+                            projectile.angularVelocity = glm::vec3(0.0f);
+                        }
+
+                        ++settleCallCount;
+                        {
+                            auto& _lg = ::StructuredLogger::instance();
+                            if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
+                                ::StructuredLogger::Entry e;
+                                e.category = ::StructuredCategory::GrenadeLauncher;
+                                e.level = ::StructuredLevel::Verbose;
+                                e.eventId = "GRENADE_SERVER_SETTLE";
+                                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                                    + "_F" + std::to_string(projectile.fireSerial)
+                                    + "_J" + std::to_string(projectile.id);
+                                e.reason = "max-bounce-settle";
+                                char b[512]; std::snprintf(b, sizeof(b),
+                                    "tick=%u bounceCount=%d maxBounce=%d "
+                                    "speedBefore=%.2f speedAfter=%.2f "
+                                    "lateralBefore=%.2f lateralAfter=%.2f "
+                                    "downVelBefore=%.2f downVelAfter=%.2f "
+                                    "settleCount=%d",
+                                    tick, projectile.bounceCount, projectile.maxBounceCount,
+                                    speedBefore, glm::length(projectile.velocity),
+                                    lateralSpeedBefore,
+                                    glm::length(glm::vec3(projectile.velocity.x, projectile.velocity.y, 0.0f)),
+                                    intoComp, projectile.velocity.z,
+                                    settleCallCount);
+                                e.message = b;
+                                _lg.write(e);
+                            }
+                        }
+                    }
                 }
 
                 // Player collision per substep (skip owner during grace period)
@@ -638,8 +882,56 @@ void tickServerProjectiles(SOCKET sock,
             }
         }
 
+        // Rate-limited tick log
+        if (projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER && (tick % 15) == 0)
+        {
+            auto& _lg = ::StructuredLogger::instance();
+            if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
+                ::StructuredLogger::Entry e;
+                e.category = ::StructuredCategory::GrenadeLauncher;
+                e.level = ::StructuredLevel::Verbose;
+                e.eventId = "GRENADE_SERVER_TICK";
+                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                    + "_F" + std::to_string(projectile.fireSerial)
+                    + "_J" + std::to_string(projectile.id);
+                e.reason = "sim";
+                char b[512]; std::snprintf(b, sizeof(b),
+                    "tick=%u age=%.2f pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) speed=%.2f "
+                    "angVel=(%.2f,%.2f,%.2f) bounceCount=%d distanceTraveled=%.1f",
+                    tick, projectile.age,
+                    projectile.position.x, projectile.position.y, projectile.position.z,
+                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+                    glm::length(projectile.velocity),
+                    projectile.angularVelocity.x, projectile.angularVelocity.y, projectile.angularVelocity.z,
+                    projectile.bounceCount, projectile.distanceTraveled);
+                e.message = b;
+                _lg.write(e);
+            }
+        }
+
         if (projectile.exploded)
         {
+            {
+                auto& _lg = ::StructuredLogger::instance();
+                if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
+                    ::StructuredLogger::Entry e;
+                    e.category = ::StructuredCategory::GrenadeLauncher;
+                    e.level = ::StructuredLevel::Verbose;
+                    e.eventId = "GRENADE_SERVER_REMOVE";
+                    e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                        + "_F" + std::to_string(projectile.fireSerial)
+                        + "_J" + std::to_string(projectile.id);
+                    e.reason = "exploded";
+                    char b[256]; std::snprintf(b, sizeof(b),
+                        "tick=%u age=%.2f pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) bounceCount=%d",
+                        tick, projectile.age,
+                        projectile.position.x, projectile.position.y, projectile.position.z,
+                        projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+                        projectile.bounceCount);
+                    e.message = b;
+                    _lg.write(e);
+                }
+            }
             it = projectiles.erase(it);
             continue;
         }
@@ -649,6 +941,26 @@ void tickServerProjectiles(SOCKET sock,
             projectile.stateAccumulator = 0.0f;
             broadcastProjectileState(sock, players, projectile,
                                      tick, totalPacketsOut);
+            {
+                auto& _lg = ::StructuredLogger::instance();
+                if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
+                    ::StructuredLogger::Entry e;
+                    e.category = ::StructuredCategory::GrenadeLauncher;
+                    e.level = ::StructuredLevel::Verbose;
+                    e.eventId = "GRENADE_SERVER_STATE_SEND";
+                    e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
+                        + "_F" + std::to_string(projectile.fireSerial)
+                        + "_J" + std::to_string(projectile.id);
+                    e.reason = "broadcast";
+                    char b[256]; std::snprintf(b, sizeof(b),
+                        "tick=%u pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) age=%.2f players=%zu",
+                        tick, projectile.position.x, projectile.position.y, projectile.position.z,
+                        projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
+                        projectile.age, players.size());
+                    e.message = b;
+                    _lg.write(e);
+                }
+            }
         }
         ++it;
     }

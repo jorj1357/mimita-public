@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <windows.h>
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
@@ -66,34 +67,38 @@ std::string StructuredLogger::runTimestamp() const {
 
 std::string StructuredLogger::categoryName(StructuredCategory cat) const {
     switch (cat) {
-        case StructuredCategory::Replay:      return "REPLAY";
-        case StructuredCategory::Camera:      return "CAMERA";
-        case StructuredCategory::Audio:       return "AUDIO";
-        case StructuredCategory::Performance: return "PERFORMANCE";
-        case StructuredCategory::Collision:   return "COLLISION";
-        case StructuredCategory::Gui:         return "GUI";
-        case StructuredCategory::Avatar:      return "AVATAR";
-        case StructuredCategory::Network:     return "NETWORK";
-        case StructuredCategory::Rendering:   return "RENDERING";
-        case StructuredCategory::GlbModels:   return "GLB_MODELS";
-        case StructuredCategory::Executable:  return "EXECUTABLE";
+        case StructuredCategory::Replay:          return "REPLAY";
+        case StructuredCategory::Camera:          return "CAMERA";
+        case StructuredCategory::Audio:           return "AUDIO";
+        case StructuredCategory::Performance:     return "PERFORMANCE";
+        case StructuredCategory::Collision:       return "COLLISION";
+        case StructuredCategory::Gui:             return "GUI";
+        case StructuredCategory::Avatar:          return "AVATAR";
+        case StructuredCategory::Network:         return "NETWORK";
+        case StructuredCategory::Rendering:       return "RENDERING";
+        case StructuredCategory::GlbModels:       return "GLB_MODELS";
+        case StructuredCategory::Executable:      return "EXECUTABLE";
+        case StructuredCategory::GrenadeLauncher: return "GRENADE_LAUNCHER";
+        case StructuredCategory::Count:           return "COUNT";
     }
     return "UNKNOWN";
 }
 
 std::string StructuredLogger::categoryDirName(StructuredCategory cat) const {
     switch (cat) {
-        case StructuredCategory::Replay:      return "Replay";
-        case StructuredCategory::Camera:      return "Camera";
-        case StructuredCategory::Audio:       return "Audio";
-        case StructuredCategory::Performance: return "Performance";
-        case StructuredCategory::Collision:   return "Collisions";
-        case StructuredCategory::Gui:         return "GUI";
-        case StructuredCategory::Avatar:      return "Avatar";
-        case StructuredCategory::Network:     return "Network";
-        case StructuredCategory::Rendering:   return "Rendering";
-        case StructuredCategory::GlbModels:   return "GLBModels";
-        case StructuredCategory::Executable:  return "Executable";
+        case StructuredCategory::Replay:          return "Replay";
+        case StructuredCategory::Camera:          return "Camera";
+        case StructuredCategory::Audio:           return "Audio";
+        case StructuredCategory::Performance:     return "Performance";
+        case StructuredCategory::Collision:       return "Collisions";
+        case StructuredCategory::Gui:             return "GUI";
+        case StructuredCategory::Avatar:          return "Avatar";
+        case StructuredCategory::Network:         return "Network";
+        case StructuredCategory::Rendering:       return "Rendering";
+        case StructuredCategory::GlbModels:       return "GLBModels";
+        case StructuredCategory::Executable:      return "Executable";
+        case StructuredCategory::GrenadeLauncher: return "GrenadeLauncher";
+        case StructuredCategory::Count:           return "Count";
     }
     return "Unknown";
 }
@@ -187,6 +192,8 @@ void StructuredLogger::loadConfig() {
                 cfg.glbModels = parseCategoryConfig(cats["glb_models"], cfg.defaultLevel);
             if (cats.contains("executable"))
                 cfg.executable = parseCategoryConfig(cats["executable"], cfg.defaultLevel);
+            if (cats.contains("grenade_launcher"))
+                cfg.grenadeLauncher = parseCategoryConfig(cats["grenade_launcher"], cfg.defaultLevel);
         }
 
         if (j.contains("sampling")) {
@@ -256,7 +263,7 @@ void StructuredLogger::createLogDir() {
 
 void StructuredLogger::openCategoryFile(StructuredCategory cat) {
     int idx = (int)cat;
-    if (idx < 0 || idx >= 11) return;
+    if (idx < 0 || idx >= (int)StructuredCategory::Count) return;
     if (mCategoryFiles[idx]) return;
 
     auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
@@ -271,14 +278,48 @@ void StructuredLogger::openCategoryFile(StructuredCategory cat) {
             case StructuredCategory::Network:     return mConfig.network;
             case StructuredCategory::Rendering:   return mConfig.rendering;
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
-            case StructuredCategory::Executable:  return mConfig.executable;
-        }
+        case StructuredCategory::Executable:      return mConfig.executable;
+        case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
+    }
         return mConfig.replay;
     }();
 
     if (!catCfg.fileOutput) return;
 
-    std::string fileName = categoryDirName(cat) + "_log_" + mRunId + ".txt";
+    std::string fileName;
+    if (cat == StructuredCategory::GrenadeLauncher)
+    {
+        // Process-specific filename: grenade-{role}-{MMDDYYYY}-{HHMMSS}-{PID}.txt
+        bool isServer = false;
+        // Heuristic: if we are running a server (listen or dedicated), call it server
+        // Otherwise it's a client.  Simple check: look for --server or listen-server state.
+        {
+            // Server detection is best-effort; fallback to "client"
+            static int check = 0;
+            if (check == 0) {
+                const char* cmd = GetCommandLineA();
+                isServer = (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")));
+                check = 1;
+            }
+        }
+        char fname[256];
+        DWORD pid = GetCurrentProcessId();
+        std::string datePart = mRunId; // reuse the seconds part; need date too
+        // Build MMDDYYYY from our date dir name (MM-DD-YYYY)
+        std::string dateDir = mLogDir;
+        size_t lastSlash = dateDir.rfind('/');
+        if (lastSlash != std::string::npos) dateDir = dateDir.substr(lastSlash + 1);
+        std::string dateCompact;
+        for (char c : dateDir) if (c != '-') dateCompact += c;
+        snprintf(fname, sizeof(fname), "grenade-%s-%s-%s-%lu.txt",
+                 isServer ? "server" : "client",
+                 dateCompact.c_str(), mRunId.c_str(), (unsigned long)pid);
+        fileName = fname;
+    }
+    else
+    {
+        fileName = categoryDirName(cat) + "_log_" + mRunId + ".txt";
+    }
     std::string filePath = mLogDir + "/" + fileName;
 
     FILE* f = fopen(filePath.c_str(), "w");
@@ -291,6 +332,14 @@ void StructuredLogger::openCategoryFile(StructuredCategory cat) {
         fprintf(f, " Run ID: %s\n", mRunId.c_str());
         fprintf(f, "==================================================\n\n");
         fflush(f);
+        if (cat == ::StructuredCategory::GrenadeLauncher) {
+            // Detect role: heuristic based on command line
+            bool isServer = false;
+            const char* cmd = GetCommandLineA();
+            isServer = (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")));
+            printf("[GRENADE_LOG_PATH] role=%s path=\"%s\"\n",
+                   isServer ? "server" : "client", filePath.c_str());
+        }
     }
 }
 
@@ -305,7 +354,7 @@ void StructuredLogger::writeStartupMetadata() {
         fprintf(f, " Run ID: %s\n", mRunId.c_str());
         fprintf(f, " Log directory: %s\n", mLogDir.c_str());
         fprintf(f, " Enabled categories:\n");
-        for (int i = 0; i < 11; i++) {
+        for (int i = 0; i < (int)StructuredCategory::Count; i++) {
             if (mCategoryFiles[i]) {
                 StructuredCategory cat = (StructuredCategory)i;
                 auto& cfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
@@ -351,7 +400,7 @@ void StructuredLogger::writeSummary() {
     fprintf(sf, "==================================================\n\n");
 
     // Collect content from all category files
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
         if (!mCategoryFiles[i]) continue;
         StructuredCategory cat = (StructuredCategory)i;
 
@@ -360,7 +409,25 @@ void StructuredLogger::writeSummary() {
             fflush(mCategoryFiles[i]);
         }
 
-        std::string fileName = categoryDirName(cat) + "_log_" + mRunId + ".txt";
+        std::string fileName;
+        if (cat == StructuredCategory::GrenadeLauncher) {
+            bool isServer = false;
+            const char* cmd = GetCommandLineA();
+            isServer = (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")));
+            DWORD pid = GetCurrentProcessId();
+            std::string dateDir = mLogDir;
+            size_t lastSlash = dateDir.rfind('/');
+            if (lastSlash != std::string::npos) dateDir = dateDir.substr(lastSlash + 1);
+            std::string dateCompact;
+            for (char c : dateDir) if (c != '-') dateCompact += c;
+            char fname[256];
+            snprintf(fname, sizeof(fname), "grenade-%s-%s-%s-%lu.txt",
+                     isServer ? "server" : "client",
+                     dateCompact.c_str(), mRunId.c_str(), (unsigned long)pid);
+            fileName = fname;
+        } else {
+            fileName = categoryDirName(cat) + "_log_" + mRunId + ".txt";
+        }
         std::string filePath = mLogDir + "/" + fileName;
 
         fprintf(sf, "\n");
@@ -396,7 +463,7 @@ void StructuredLogger::init() {
     createLogDir();
 
     // Open category files for enabled categories
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
         openCategoryFile((StructuredCategory)i);
     }
 
@@ -413,7 +480,7 @@ void StructuredLogger::shutdown() {
 
     writeSummary();
 
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
         if (mCategoryFiles[i]) {
             fprintf(mCategoryFiles[i], "\n--- End of log ---\n");
             fclose(mCategoryFiles[i]);
@@ -447,7 +514,7 @@ void StructuredLogger::pollConfig() {
 
         // Re-open category files if level/file_output changed
         if (mInitialized) {
-            for (int i = 0; i < 11; i++) {
+            for (int i = 0; i < (int)StructuredCategory::Count; i++) {
                 StructuredCategory cat = (StructuredCategory)i;
                 auto& newCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
                     switch (cat) {
@@ -497,8 +564,9 @@ bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) 
             case StructuredCategory::Network:     return mConfig.network;
             case StructuredCategory::Rendering:   return mConfig.rendering;
             case StructuredCategory::GlbModels:   return mConfig.glbModels;
-            case StructuredCategory::Executable:  return mConfig.executable;
-        }
+        case StructuredCategory::Executable:      return mConfig.executable;
+        case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
+    }
         return mConfig.replay;
     }();
 

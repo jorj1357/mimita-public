@@ -316,8 +316,15 @@ struct MultiplayerContext
     std::unordered_map<uint32_t, SnapshotChunkBuffer> snapshotChunkBuffers;
 
     // ── Rejected projectile fire requests (for ammo refund) ──────────
-    struct FireRejection { uint32_t fireSerial; uint8_t weapon; };
+    struct FireRejection {
+        uint32_t fireSerial = 0;
+        uint8_t weapon = 0;
+        uint8_t reason = 0;
+        float cooldownRemaining = 0.0f;
+    };
     std::vector<FireRejection> fireRejections;
+    // Tracks processed fireSerials to prevent double-refund across frames
+    std::unordered_set<uint32_t> processedRefundSerials;
 
     // ── Room code for HUD display ─────────────────────────────────────
     // Set on host register or client join, cleared on disconnect/leave.

@@ -49,6 +49,7 @@ struct StructuredLogConfig {
     CategoryConfig rendering;
     CategoryConfig glbModels;
     CategoryConfig executable;
+    CategoryConfig grenadeLauncher;
 
     struct Sampling {
         int defaultEveryNFrames = 60;
@@ -82,7 +83,9 @@ enum class StructuredCategory {
     Network,
     Rendering,
     GlbModels,
-    Executable
+    Executable,
+    GrenadeLauncher,
+    Count
 };
 
 // ── StructuredLogger ────────────────────────────────────────
@@ -164,10 +167,10 @@ private:
     bool mInitialized = false;
     std::string mLogDir;       // logs/MM-DD-YYYY/
     std::string mRunId;        // HHMMSS used for all files this run
-    uint64_t mEventCounters[11] = {}; // per-category monotonic counters
+    uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
 
     // Category file handles (nullptr = not open for this run)
-    FILE* mCategoryFiles[11] = {};
+    FILE* mCategoryFiles[(int)StructuredCategory::Count] = {};
 
     // Config file tracking for hot-reload
     uint64_t mConfigLastWrite = 0;
@@ -227,23 +230,25 @@ void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
 // These capture __FILE__, __LINE__, __FUNCTION__ automatically.
 
 #define MIMITA_LOG(cat, level, eventId, correlationId, reason, ...) do { \
-    if (StructuredLogger::instance().shouldLog(cat, level)) { \
-        StructuredLogger::Entry _e; \
-        _e.category = cat; \
-        _e.level = level; \
-        _e.eventId = eventId; \
-        _e.correlationId = correlationId; \
-        _e.reason = reason; \
-        _e.sourceFile = __FILE__; \
-        _e.sourceLine = __LINE__; \
-        _e.functionName = __FUNCTION__; \
-        _e.message = ""; \
-        StructuredLogger::instance().write(_e); \
+    if (::StructuredLogger::instance().shouldLog(cat, level)) { \
+        ::StructuredLogger::Entry _e__; \
+        _e__.category = cat; \
+        _e__.level = level; \
+        _e__.eventId = eventId; \
+        _e__.correlationId = correlationId; \
+        _e__.reason = reason; \
+        _e__.sourceFile = __FILE__; \
+        _e__.sourceLine = __LINE__; \
+        _e__.functionName = __FUNCTION__; \
+        char _msg__[1024] = {}; \
+        std::snprintf(_msg__, sizeof(_msg__), ##__VA_ARGS__); \
+        _e__.message = _msg__; \
+        ::StructuredLogger::instance().write(_e__); \
     } \
 } while(0)
 
 #define MIMITA_ASSERT_NEAR(cat, eventId, corrId, reason, key, expected, actual, tolerance) \
-    StructuredLogger::instance().assertNear( \
+    ::StructuredLogger::instance().assertNear( \
         eventId, corrId, reason, cat, \
         __FILE__, __LINE__, __FUNCTION__, \
         key, (double)(expected), (double)(actual), (double)(tolerance))
