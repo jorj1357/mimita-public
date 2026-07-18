@@ -93,12 +93,19 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
 
         for (glm::vec3 sample : samples)
         {
-            for (const CollisionTriangle& tri : world.triangles)
+            // Broadphase: gather only triangles near the sample point
+            AABB queryBounds;
+            queryBounds.min = sample - glm::vec3(PLAYER_RADIUS + 0.1f);
+            queryBounds.max = sample + glm::vec3(PLAYER_RADIUS + 0.1f);
+            thread_local std::vector<int> s_candidates;
+            s_candidates.clear();
+            gatherHeadlessTrianglesForAABB(world, queryBounds, PLAYER_RADIUS * 0.1f, s_candidates);
+
+            for (int triIdx : s_candidates)
             {
-                glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c) - glm::vec3(PLAYER_RADIUS + 0.1f);
-                glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c) + glm::vec3(PLAYER_RADIUS + 0.1f);
-                if (sample.x < mn.x || sample.x > mx.x || sample.y < mn.y || sample.y > mx.y || sample.z < mn.z || sample.z > mx.z)
+                if (triIdx < 0 || triIdx >= (int)world.triangles.size())
                     continue;
+                const CollisionTriangle& tri = world.triangles[triIdx];
 
                 glm::vec3 cp = closestPointTriangle(sample, tri.a, tri.b, tri.c);
                 glm::vec3 delta = sample - cp;
