@@ -11,6 +11,7 @@
 #include <memory>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -19,6 +20,7 @@
 #include <deque>
 #include <limits>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -45,12 +47,24 @@ struct ServerSpawnPoint
     float yaw = 0.0f;
 };
 
+// Hash for ivec3 keys used in HeadlessWorld spatial grid
+struct HeadlessIVec3Hash {
+    size_t operator()(const glm::ivec3& v) const {
+        return std::hash<int>()(v.x) ^ std::hash<int>()(v.y) ^ std::hash<int>()(v.z);
+    }
+};
+
 struct HeadlessWorld
 {
     std::vector<CollisionTriangle> triangles;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
     std::vector<ServerSpawnPoint> spawnPoints;
+
+    // Uniform spatial grid for accelerating projectile-triangle queries
+    float collisionChunkSize = 6.0f;
+    std::unordered_map<glm::ivec3, std::vector<int>, HeadlessIVec3Hash> collisionChunks;
+    std::vector<int> collisionLargeTriangles;
 };
 
 struct ServerInput
@@ -520,7 +534,11 @@ struct ListenServerState
     std::string serverCode;
     std::string joinToken;
     std::string serverName = "MiMITA Server";
-    uint64_t lastWallclockUs = 0;  // steady_clock usec for independent server timing
+    // ── Background thread for 60 Hz independent server timing ──────
+    std::atomic<bool> serverRunning{false};
+    std::thread serverThread;
+
+    // ── Legacy timing (kept for compatibility) ─────────────────────
     float accumulator = 0.0f;
     uint64_t lastHeartbeatMs = 0;
     std::string publicIp;
