@@ -298,6 +298,14 @@ std::string uniquePlayerName(
 // World loading
 bool loadHeadlessWorld(const char* path, HeadlessWorld& world);
 
+// Broadphase: gather candidate triangle indices intersecting an AABB
+// Uses HeadlessWorld's uniform spatial grid. Shared by player and projectile collision.
+void gatherHeadlessTrianglesForAABB(
+    const HeadlessWorld& world,
+    const AABB& queryBounds,
+    float expansion,
+    std::vector<int>& out);
+
 // Geometry
 glm::vec3 closestPointTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c);
 

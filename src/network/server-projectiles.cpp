@@ -18,10 +18,13 @@
 namespace MimitaNet {
 namespace {
 
+// ── ProjectileConfig and helpers (anonymous, file-local) ─────────────
+
+} // anonymous namespace
+
 // ── Broadphase: gather candidate triangle indices intersecting an AABB ──
-// Uses HeadlessWorld's uniform spatial grid. Falls back to full scan if grid
-// is empty. Replaces the old brute-force scan of all triangles.
-static void gatherHeadlessTrianglesForAABB(
+// (declared in server.h)
+void gatherHeadlessTrianglesForAABB(
     const HeadlessWorld& world,
     const AABB& queryBounds,
     float expansion,
@@ -208,6 +211,8 @@ std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
            cfg.angularDrag);
     return cfg;
 }
+
+namespace {
 
 bool finiteVec(const glm::vec3& v)
 {

@@ -432,7 +432,7 @@ int runServer(const LaunchOptions& options)
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
             struct {
-                uint64_t simUs = 0, snapshotUs = 0, iceUs = 0;
+                uint64_t simUs = 0, snapshotUs = 0, iceUs = 0, collisionUs = 0;
             } tickProfile;
 
             auto t0 = std::chrono::steady_clock::now();
@@ -442,8 +442,13 @@ int runServer(const LaunchOptions& options)
             for (auto& kv : players)
                 simulatePlayer(kv.second, world);
             tickWeaponRuntimes(players, tick);
+
+            auto tCollision = std::chrono::steady_clock::now();
             resolvePlayerCollision(players);
             checkVoidDeath(players, npcs);
+            tickProfile.collisionUs = (uint64_t)std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - tCollision).count();
+
             for (auto& kv : npcs)
                 simulateNpc(kv.second, players);
             tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
@@ -471,21 +476,23 @@ int runServer(const LaunchOptions& options)
                 std::chrono::steady_clock::now() - t2).count();
 
             // Profile logging — every 600 ticks
-            static uint64_t s_totalSimUs = 0, s_totalSnapshotUs = 0, s_totalIceUs = 0;
+            static uint64_t s_totalSimUs = 0, s_totalSnapshotUs = 0, s_totalIceUs = 0, s_totalCollisionUs = 0;
             static uint32_t s_profileTicks = 0;
             s_totalSimUs += tickProfile.simUs;
             s_totalSnapshotUs += tickProfile.snapshotUs;
             s_totalIceUs += tickProfile.iceUs;
+            s_totalCollisionUs += tickProfile.collisionUs;
             s_profileTicks++;
             if (s_profileTicks >= 600)
             {
                 Debug::log(Debug::Category::General,
-                    "[TICK PROFILE] simAvg=%.1f snapshotAvg=%.1f iceAvg=%.1f players=%zu projectiles=%zu\n",
+                    "[TICK PROFILE] simAvg=%.2f collisionAvg=%.2f snapshotAvg=%.2f iceAvg=%.2f players=%zu projectiles=%zu\n",
                     (double)s_totalSimUs / s_profileTicks / 1000.0,
+                    (double)s_totalCollisionUs / s_profileTicks / 1000.0,
                     (double)s_totalSnapshotUs / s_profileTicks / 1000.0,
                     (double)s_totalIceUs / s_profileTicks / 1000.0,
                     players.size(), projectiles.size());
-                s_totalSimUs = s_totalSnapshotUs = s_totalIceUs = 0;
+                s_totalSimUs = s_totalSnapshotUs = s_totalIceUs = s_totalCollisionUs = 0;
                 s_profileTicks = 0;
             }
 
