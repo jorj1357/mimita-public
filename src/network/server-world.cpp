@@ -1,13 +1,16 @@
 #include "network/server.h"
 #include "utils/path_utils.h"
 #include "tinygltf/tiny_gltf.h"
+#include "physics/movement/physics-collision-shared.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <functional>
+#include <unordered_map>
 
 namespace MimitaNet {
 namespace {
@@ -222,6 +225,34 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
             for (int i = 0; i < (int)model.nodes.size(); ++i)
                 walkForSpawns(i, glm::mat4(1.0f));
         }
+    }
+
+    // Build uniform spatial grid for broadphase collision queries
+    {
+        constexpr float CS = 6.0f;
+        constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
+        world.collisionChunkSize = CS;
+        world.collisionChunks.clear();
+        world.collisionLargeTriangles.clear();
+
+        for (int i = 0; i < (int)world.triangles.size(); ++i)
+        {
+            AABB tb = makeTriangleAABB(world.triangles[i]);
+            glm::ivec3 c0 = collisionChunkCoord(tb.min, CS);
+            glm::ivec3 c1 = collisionChunkCoord(tb.max, CS);
+            int chunkCount = (c1.x - c0.x + 1) * (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
+            if (chunkCount > MAX_CHUNKS_PER_TRIANGLE)
+            {
+                world.collisionLargeTriangles.push_back(i);
+                continue;
+            }
+            for (int x = c0.x; x <= c1.x; ++x)
+            for (int y = c0.y; y <= c1.y; ++y)
+            for (int z = c0.z; z <= c1.z; ++z)
+                world.collisionChunks[glm::ivec3(x, y, z)].push_back(i);
+        }
+        printf("%s [SERVER WORLD] built collision grid: chunks=%zu largeTris=%zu\n",
+               serverTimestamp(), world.collisionChunks.size(), world.collisionLargeTriangles.size());
     }
 
     printf("%s [SERVER WORLD] loaded map collision triangles=%zu spawnpoints=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",

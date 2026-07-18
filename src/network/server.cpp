@@ -17,6 +17,9 @@
 
 namespace MimitaNet {
 
+// Forward declaration for background listen server thread
+static void listenServerThreadFunc(ListenServerState& state);
+
 int runServer(const LaunchOptions& options)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -674,6 +677,11 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     }
 
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
+
+    // Spawn background thread for genuine 60 Hz independent server timing
+    state.serverRunning = true;
+    state.serverThread = std::thread(listenServerThreadFunc, std::ref(state));
+
     return true;
 }
 
@@ -682,9 +690,15 @@ void stopListenServer(ListenServerState& state)
     if (!state.active)
         return;
 
-    printf("[LISTEN SERVER] stopping code=%s players=%zu uptime=%llus\n",
+    printf("[LISTEN SERVER] stopping code=%s players=%zu uptime=%llus tick=%u\n",
            state.serverCode.c_str(), state.players.size(),
-           (unsigned long long)((nowMs() - state.startTimeMs) / 1000));
+           (unsigned long long)((nowMs() - state.startTimeMs) / 1000),
+           state.tick);
+
+    // Signal background thread to stop
+    state.serverRunning = false;
+    if (state.serverThread.joinable())
+        state.serverThread.join();
 
     // Deregister with coordinator
     if (!state.serverCode.empty())
@@ -693,34 +707,14 @@ void stopListenServer(ListenServerState& state)
     closesocket(state.sock);
     state.sock = INVALID_SOCKET;
     state.active = false;
-    state.accumulator = 0.0f;
     netShutdown();
 }
 
-void tickListenServer(ListenServerState& state, float /*dt*/)
+// ── One tick of the authoritative server simulation ────────────────────
+// This is the shared body used by both the background listen server thread
+// and extracted from the old tickListenServer accumulator loop.
+static void simulateOneServerTick(ListenServerState& state)
 {
-    if (!state.active || state.sock == INVALID_SOCKET)
-        return;
-
-    // Compute real elapsed wallclock time independent of render frame dt
-    uint64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (state.lastWallclockUs == 0)
-        state.lastWallclockUs = nowUs;
-    uint64_t elapsedUs = nowUs - state.lastWallclockUs;
-    state.lastWallclockUs = nowUs;
-
-    // Convert to seconds, clamp to avoid spiral-of-death after pauses
-    float realDt = (float)((double)elapsedUs / 1000000.0);
-    if (realDt > 0.1f) realDt = 0.1f;
-    if (realDt < 0.0001f) realDt = 0.0001f;
-
-    state.accumulator += realDt;
-
-    constexpr int MAX_CATCHUP_STEPS = 4;
-    int steps = 0;
-
-    while (state.accumulator >= SERVER_DT && steps < MAX_CATCHUP_STEPS)
     {
         char buffer[2048];
         sockaddr_in from{};
@@ -891,10 +885,13 @@ void tickListenServer(ListenServerState& state, float /*dt*/)
                    (unsigned long long)state.totalPacketsIn,
                    (unsigned long long)state.totalPacketsOut,
                    state.serverCode.c_str());
-            for (const auto& kv : state.players)
-                printf("[LISTEN SERVER] player id=%u name=\"%s\" pos=(%.1f,%.1f,%.1f)\n",
-                       kv.second.id, kv.second.name.c_str(),
-                       kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+            if (state.players.size() <= 10)
+            {
+                for (const auto& kv : state.players)
+                    printf("[LISTEN SERVER] player id=%u name=\"%s\" pos=(%.1f,%.1f,%.1f)\n",
+                           kv.second.id, kv.second.name.c_str(),
+                           kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+            }
             state.lastLog = now;
         }
 
@@ -907,19 +904,50 @@ void tickListenServer(ListenServerState& state, float /*dt*/)
         }
 
         ++state.tick;
-        ++steps;
-        state.accumulator -= SERVER_DT;
+    }
+}
+
+// ── Background thread: runs the listen server at a genuine 60 Hz ─────
+static void listenServerThreadFunc(ListenServerState& state)
+{
+    using namespace std::chrono;
+    auto nextTick = steady_clock::now();
+    constexpr auto tickInterval = nanoseconds(1'000'000'000 / 60);
+
+    printf("[LISTEN SERVER THREAD] started at 60 Hz\n");
+
+    uint64_t lastLogTick = 0;
+
+    while (state.serverRunning)
+    {
+        simulateOneServerTick(state);
+        nextTick += tickInterval;
+
+        // Flush structured logger periodically (not every tick to reduce overhead)
+        if (state.tick - lastLogTick >= 60)
+        {
+            ::StructuredLogger::instance().tick();
+            lastLogTick = state.tick;
+        }
+
+        std::this_thread::sleep_until(nextTick);
     }
 
-    if (steps >= MAX_CATCHUP_STEPS)
+    printf("[LISTEN SERVER THREAD] exiting\n");
+}
+
+void tickListenServer(ListenServerState& state, float /*dt*/)
+{
+    // No-op: the background thread handles all authoritative server ticks.
+    // This function exists only as compatibility for the render-loop caller.
+    if (!state.serverRunning && state.active)
     {
-        static uint64_t lastOverrunLog = 0;
-        uint64_t nowMsVal = nowMs();
-        if (nowMsVal - lastOverrunLog > 5000)
+        static uint64_t lastWarn = 0;
+        uint64_t now = nowMs();
+        if (now - lastWarn > 5000)
         {
-            lastOverrunLog = nowMsVal;
-            printf("[LISTEN SERVER OVERRUN] tick=%u steps=%d realDt=%.3f accumulator=%.4f\n",
-                   state.tick, steps, realDt, state.accumulator);
+            printf("[LISTEN SERVER] thread died unexpectedly at tick=%u\n", state.tick);
+            lastWarn = now;
         }
     }
 }

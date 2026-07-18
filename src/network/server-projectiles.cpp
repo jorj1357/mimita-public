@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
 #include <cstdio>
 #include <optional>
 
@@ -12,9 +13,94 @@
 
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
+#include "physics/movement/physics-collision-shared.h"
 
 namespace MimitaNet {
 namespace {
+
+// ── Broadphase: gather candidate triangle indices intersecting an AABB ──
+// Uses HeadlessWorld's uniform spatial grid. Falls back to full scan if grid
+// is empty. Replaces the old brute-force scan of all triangles.
+static void gatherHeadlessTrianglesForAABB(
+    const HeadlessWorld& world,
+    const AABB& queryBounds,
+    float expansion,
+    std::vector<int>& out)
+{
+    if (world.collisionChunks.empty() || world.collisionChunkSize <= 0.001f)
+    {
+        // Fallback: scan all triangles (no acceleration structure)
+        for (int i = 0; i < (int)world.triangles.size(); ++i)
+        {
+            AABB tb = makeTriangleAABB(world.triangles[i]);
+            tb.min -= glm::vec3(expansion);
+            tb.max += glm::vec3(expansion);
+            if (overlaps(queryBounds, tb))
+                out.push_back(i);
+        }
+        return;
+    }
+
+    glm::ivec3 c0 = collisionChunkCoord(queryBounds.min - glm::vec3(expansion), world.collisionChunkSize);
+    glm::ivec3 c1 = collisionChunkCoord(queryBounds.max + glm::vec3(expansion), world.collisionChunkSize);
+
+    // Clamp cell range
+    constexpr int MAX_CELLS = 100;
+    int64_t cellsX = (int64_t)c1.x - (int64_t)c0.x + 1;
+    int64_t cellsY = (int64_t)c1.y - (int64_t)c0.y + 1;
+    int64_t cellsZ = (int64_t)c1.z - (int64_t)c0.z + 1;
+    if (cellsX > MAX_CELLS) { c1.x = c0.x + MAX_CELLS - 1; cellsX = MAX_CELLS; }
+    if (cellsY > MAX_CELLS) { c1.y = c0.y + MAX_CELLS - 1; cellsY = MAX_CELLS; }
+    if (cellsZ > MAX_CELLS) { c1.z = c0.z + MAX_CELLS - 1; cellsZ = MAX_CELLS; }
+
+    // Thread-local dedup generation counter
+    thread_local std::vector<uint32_t> s_gen;
+    thread_local uint32_t s_curGen = 0;
+    s_curGen++;
+    if (s_curGen == 0) { s_gen.assign(world.triangles.size(), 0); s_curGen = 1; }
+    if (s_gen.size() != world.triangles.size())
+        s_gen.assign(world.triangles.size(), 0);
+
+    for (int x = c0.x; x <= c1.x; ++x)
+    for (int y = c0.y; y <= c1.y; ++y)
+    for (int z = c0.z; z <= c1.z; ++z)
+    {
+        auto it = world.collisionChunks.find(glm::ivec3(x, y, z));
+        if (it == world.collisionChunks.end())
+            continue;
+
+        for (int triIdx : it->second)
+        {
+            if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+                continue;
+            if (s_gen[triIdx] == s_curGen)
+                continue;
+            s_gen[triIdx] = s_curGen;
+
+            AABB tb = makeTriangleAABB(world.triangles[triIdx]);
+            tb.min -= glm::vec3(expansion);
+            tb.max += glm::vec3(expansion);
+            if (overlaps(queryBounds, tb))
+                out.push_back(triIdx);
+        }
+    }
+
+    // Large triangles that exceeded per-chunk limit
+    for (int triIdx : world.collisionLargeTriangles)
+    {
+        if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+            continue;
+        if (s_gen[triIdx] == s_curGen)
+            continue;
+        s_gen[triIdx] = s_curGen;
+
+        AABB tb = makeTriangleAABB(world.triangles[triIdx]);
+        tb.min -= glm::vec3(expansion);
+        tb.max += glm::vec3(expansion);
+        if (overlaps(queryBounds, tb))
+            out.push_back(triIdx);
+    }
+}
 
 struct ProjectileConfig
 {
@@ -352,8 +438,18 @@ bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& worl
     glm::vec3 bestNormal(0.0f, 0.0f, 1.0f);
     float bestPenetration = 0.0f;
 
-    for (const CollisionTriangle& tri : world.triangles)
+    // Broadphase: gather candidate triangles near the projectile sphere
+    AABB queryBounds;
+    queryBounds.min = projectile.position - glm::vec3(projectile.radius);
+    queryBounds.max = projectile.position + glm::vec3(projectile.radius);
+    std::vector<int> candidates;
+    gatherHeadlessTrianglesForAABB(world, queryBounds, projectile.radius * 0.1f, candidates);
+
+    for (int triIdx : candidates)
     {
+        if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+            continue;
+        const CollisionTriangle& tri = world.triangles[triIdx];
         const glm::vec3 closest = closestPointTriangle(
             projectile.position, tri.a, tri.b, tri.c);
         glm::vec3 diff = projectile.position - closest;
@@ -364,8 +460,6 @@ bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& worl
         if (penetration > bestPenetration)
         {
             bestPenetration = penetration;
-            // Use the separation direction (center→closestPoint, points toward sphere center from surface)
-            // Do NOT flip based on triangle winding — the closest-point direction is already correct.
             bestNormal = diff / dist;
             hit = true;
         }
@@ -885,6 +979,9 @@ void tickServerProjectiles(SOCKET sock,
                 }
 
                 // World collision per substep
+                // Resolve overlap/depenetration. If the grenade is genuinely moving
+                // into a surface, resolveGrenadeWorld applies bounce and increments
+                // bounceCount. Persistent resting contacts are handled below.
                 if (resolveGrenadeWorld(projectile, world))
                 {
                     static int settleCallCount = 0;
