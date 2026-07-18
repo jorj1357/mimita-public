@@ -2,6 +2,10 @@
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
+#include "network/network-weapons.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-types.h"
+#include "debug/debug-log.h"
 #include "void-death/void-death.h"
 
 #include <algorithm>
@@ -139,6 +143,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
                    spawnPos.x, spawnPos.y, spawnPos.z);
         }
         beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "initial_join");
+        resetPlayerForSpawn(p, true);  // initial spawn — build inventory
         // Wait for ClientMapReady before including in snapshots.
         // The client must load the required map first.
         p.spawned = false;
@@ -1114,6 +1119,96 @@ void tickDisagreementRetransmit(SOCKET sock,
         if (pd.retransmitsLeft <= 0)
             pd.active = false;
     }
+}
+
+// ── Reload request ───────────────────────────────────────────────────
+void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          uint32_t tick, uint64_t& totalPacketsOut)
+{
+    (void)sock;
+    (void)totalPacketsOut;
+    if (bytes < (int)sizeof(ReloadRequestPacket))
+        return;
+
+    const ReloadRequestPacket* req = reinterpret_cast<const ReloadRequestPacket*>(buffer);
+
+    auto it = players.find(req->header.playerId);
+    if (it == players.end() || !sameAddress(it->second.addr, from))
+        return;
+
+    ServerPlayer& p = it->second;
+
+    // Validate spawn generation
+    if (req->spawnGeneration != p.spawnGeneration)
+        return;
+
+    // Resolve weapon
+    const std::string* wepId = weaponIdForDefNetworkId(req->weaponDefNetworkId);
+    if (!wepId)
+        return;
+
+    auto rtIt = p.weaponRuntimes.find(*wepId);
+    if (rtIt == p.weaponRuntimes.end() || !rtIt->second.initialized)
+        return;
+
+    ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(*wepId);
+
+    ReloadResultPacket result{};
+    result.header.type = PACKET_RELOAD_RESULT;
+    result.header.tick = tick;
+    result.header.playerId = p.id;
+    result.requestId = req->requestId;
+    result.spawnGeneration = req->spawnGeneration;
+
+    if (p.dead)
+    {
+        result.accepted = 0;
+        result.reason = 2; // dead
+    }
+    else if (rt.magazineAmmo >= (def ? def->magazineSize : 999))
+    {
+        result.accepted = 0;
+        result.reason = 3; // already full
+    }
+    else if (rt.reserveAmmo <= 0)
+    {
+        result.accepted = 0;
+        result.reason = 4; // no reserve
+    }
+    else
+    {
+        rt.reloading = true;
+        float reloadTime = def ? def->reloadTime : 0.55f;
+        rt.reloadCompleteTick = tick + (uint32_t)std::ceil(reloadTime * 60.0f);
+        rt.stateRevision++;
+        result.accepted = 1;
+        result.reason = 0;
+    }
+
+    result.magazineAmmo = rt.magazineAmmo;
+    result.reserveAmmo = rt.reserveAmmo;
+    result.reloadCompleteTick = rt.reloadCompleteTick;
+    result.reloading = rt.reloading ? 1 : 0;
+    result.stateRevision = rt.stateRevision;
+
+    // Send result back to the requesting player only
+    for (const auto& kv : players)
+    {
+        if (kv.first == p.id)
+        {
+            if (kv.second.transport)
+                kv.second.transport->send(&result, sizeof(result));
+            else
+                sendto(sock, (const char*)&result, sizeof(result), 0,
+                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        }
+    }
+
+    Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u weapon=%s accepted=%d reason=%d ammo=%d/%d\n",
+               p.id, wepId->c_str(), (int)result.accepted, (int)result.reason,
+               rt.magazineAmmo, rt.reserveAmmo);
 }
 
 } // namespace MimitaNet

@@ -452,6 +452,7 @@ WeaponDefinition createOpRevolverDefinition() {
     def.magazineSize = 999;
     def.customParams["reserveAmmo"] = 9999.0f;
     def.fireMode = WeaponFireMode::Automatic;
+    def.restricted = true;
     def.poseId = "revolver";
     return def;
 }
@@ -635,6 +636,7 @@ WeaponDefinition createAdminRevolverDefinition() {
     def.magazineSize = 9999;
     def.customParams["reserveAmmo"] = 123456.0f;
     def.fireMode = WeaponFireMode::Automatic;
+    def.restricted = true;
     def.poseId = "revolver";
     return def;
 }

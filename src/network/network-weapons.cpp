@@ -56,6 +56,35 @@ uint8_t networkWeaponTypeForSlot(int slot)
     }
 }
 
+// ── Weapon definition network ID (stable uint16 per definition) ─────
+// Registered during WeaponData::registerBuiltinWeapons().
+static std::unordered_map<std::string, uint16_t> s_weaponDefNetworkIds;
+static uint16_t s_nextWeaponDefNetworkId = 1;
+
+uint16_t registerWeaponDefNetworkId(const std::string& weaponId)
+{
+    auto it = s_weaponDefNetworkIds.find(weaponId);
+    if (it != s_weaponDefNetworkIds.end())
+        return it->second;
+    uint16_t id = s_nextWeaponDefNetworkId++;
+    s_weaponDefNetworkIds[weaponId] = id;
+    return id;
+}
+
+uint16_t weaponDefNetworkIdFor(const std::string& weaponId)
+{
+    auto it = s_weaponDefNetworkIds.find(weaponId);
+    return it != s_weaponDefNetworkIds.end() ? it->second : 0;
+}
+
+const std::string* weaponIdForDefNetworkId(uint16_t networkId)
+{
+    for (const auto& kv : s_weaponDefNetworkIds)
+        if (kv.second == networkId)
+            return &kv.first;
+    return nullptr;
+}
+
 int slotForNetworkWeaponType(uint8_t type)
 {
     switch (type)

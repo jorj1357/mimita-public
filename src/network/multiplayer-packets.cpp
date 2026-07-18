@@ -116,6 +116,146 @@ void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs)
     ctx.fakeLagNextRandomizeMs = 0;
 }
 
+// ── Connection lifecycle ──────────────────────────────────────────────
+const char* disconnectPolicyName(DisconnectPolicy policy)
+{
+    switch (policy)
+    {
+    case DisconnectPolicy::Leave: return "leave";
+    case DisconnectPolicy::Timeout: return "timeout";
+    case DisconnectPolicy::NewConnection: return "new-connection";
+    case DisconnectPolicy::Rejected: return "rejected";
+    case DisconnectPolicy::AuthFailure: return "auth-failure";
+    case DisconnectPolicy::ConnectionFailure: return "connection-failure";
+    case DisconnectPolicy::ServerStopped: return "server-stopped";
+    default: return "unknown";
+    }
+}
+
+void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
+{
+    // Log the teardown
+    printf("[NET TEARDOWN] policy=%s reason=%s\n",
+           disconnectPolicyName(policy),
+           ctx.connectionStatus.c_str());
+
+    // Policy: keep reconnectToken only for timeout to same session
+    if (policy != DisconnectPolicy::Timeout)
+        ctx.reconnectToken.clear();
+
+    // Clear join token, room code, session identity
+    ctx.joinToken.clear();
+    ctx.roomCode.clear();
+    ctx.serverAddress = "127.0.0.1:1357";
+    ctx.serverPort = 1357;
+    ctx.currentRoomCode.clear();
+    ctx.sessionId.clear();
+
+    // Clear local identity and connection flags
+    ctx.localPlayerId = 0;
+    ctx.active = false;
+    ctx.connected = false;
+    ctx.connectFailed = false;
+    ctx.connectionState = ConnectionState::Disconnected;
+    ctx.connectionStatus.clear();
+    ctx.waitingForMapLoad = false;
+    ctx.clientMapReadySent = false;
+    ctx.requiredMapId.clear();
+    ctx.showPlayerList = false;
+
+    // Clear remote state
+    ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
+    ctx.remotePlayerInterpolation.clear();
+    ctx.remoteNpcInterpolation.clear();
+    ctx.networkProjectiles.clear();
+    ctx.playerRegistry.clear();
+    ctx.predictedProjectileIds.clear();
+    ctx.remoteSwordStates.clear();
+
+    // Clear reconciliation state
+    ctx.hasLocalServerPosition = false;
+    ctx.localPlayerReconciled = false;
+    ctx.localServerPosition = glm::vec3(0.0f);
+    ctx.localServerVelocity = glm::vec3(0.0f);
+    ctx.localServerHealth = 100;
+    ctx.lastSeenServerHealth = 100;
+    ctx.localServerEpoch = 0;
+    ctx.lastAppliedEpoch = 0;
+    ctx.pendingTeleportPosition = glm::vec3(0.0f);
+    ctx.pendingTeleportSentMs = 0;
+    ctx.awaitingTeleportAck = false;
+    ctx.awaitingExplodeDeath = false;
+    ctx.teleportResync = false;
+    ctx.transformEpoch = 0;
+
+    // Clear pending requests and events
+    ctx.shotEvents.clear();
+    ctx.disagreementEvents.clear();
+    ctx.processedDisagreementIds.clear();
+    ctx.processedPelletBlastSerials.clear();
+    ctx.lastReceivedShotSerial.clear();
+    ctx.fireRejections.clear();
+    ctx.processedRefundSerials.clear();
+    ctx.pendingFireRequests.clear();
+    ctx.pendingKnockback = glm::vec3(0.0f);
+    ctx.pendingKnockbackSource.clear();
+    ctx.incomingChatMessages.clear();
+    ctx.outgoingQueue.clear();
+
+    // Reset reconnect timers
+    ctx.reconnectAttempts = 0;
+    ctx.reconnectBackoffMs = 1000;
+    ctx.lastReconnectAttemptMs = 0;
+
+    // Preserve monotonically increasing serials (NEVER reset):
+    //   nextLocalProjectileFireSerial
+    //   nextLocalShotSerial
+    //   nextLocalMeleeAttackSerial
+    //   nextLocalDashSerial, nextLocalGroundJumpSerial, etc.
+    //   nextLocalRespawnSerial
+
+    // Close transport if open
+    if (ctx.transport)
+    {
+        ctx.transport->close();
+        ctx.transport.reset();
+    }
+    if (ctx.sock != INVALID_SOCKET)
+    {
+        closesocket(ctx.sock);
+        ctx.sock = INVALID_SOCKET;
+    }
+
+    // Log state after teardown
+    printf("[NET TEARDOWN] complete policy=%s\n", disconnectPolicyName(policy));
+}
+
+void beginConnectionAttempt(MultiplayerContext& ctx, const std::string& roomCode,
+    const std::string& address, uint16_t port)
+{
+    // Tear down any previous session first
+    teardownPreviousSession(ctx, DisconnectPolicy::NewConnection);
+
+    // Increment attempt ID (never reset, permanently monotonic)
+    ++ctx.connectionAttemptId;
+
+    // Install new connection parameters
+    ctx.roomCode = roomCode;
+    ctx.serverAddress = address;
+    ctx.serverPort = port;
+    ctx.currentRoomCode = roomCode;
+
+    // Enter initial connecting state
+    ctx.connectionState = ConnectionState::Connecting;
+    ctx.active = true;
+    ctx.connectStartMs = nowMs();
+    ctx.connectionStatus = "Connecting...";
+
+    printf("[NET CONNECT ATTEMPT] attemptId=%u room=%s addr=%s:%u\n",
+           ctx.connectionAttemptId, roomCode.c_str(), address.c_str(), port);
+}
+
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName)
 {
     ctx.serverAddress = address;
@@ -214,15 +354,9 @@ void mpShutdown(MultiplayerContext& ctx)
     if (!ctx.active)
         return;
 
-    if (!ctx.currentRoomCode.empty())
-    {
-        printf("[ROOMCODE CLEAR] reason=disconnect old=%s\n", ctx.currentRoomCode.c_str());
-        ctx.currentRoomCode.clear();
-    }
+    printf("[NET DISCONNECT] initiating shutdown for playerId=%u\n", ctx.localPlayerId);
 
-    AnalyticsManager::instance().trackDisconnect(
-        ctx.connected ? "shutdown" : "connection_closed");
-
+    // Send goodbye
     if (ctx.localPlayerId)
     {
         DisconnectPacket bye{};
@@ -231,49 +365,12 @@ void mpShutdown(MultiplayerContext& ctx)
         bye.header.playerId = ctx.localPlayerId;
         if (ctx.transport)
             ctx.transport->send(&bye, sizeof(bye));
-        else
+        else if (ctx.sock != INVALID_SOCKET)
             sendto(ctx.sock, (const char*)&bye, sizeof(bye), 0,
                    (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-        printf("[NET DISCONNECT] sent disconnect for id=%u\n", ctx.localPlayerId);
     }
 
-    if (ctx.transport)
-    {
-        ctx.transport->close();
-        ctx.transport.reset();
-    }
-    if (ctx.sock != INVALID_SOCKET)
-    {
-        closesocket(ctx.sock);
-        ctx.sock = INVALID_SOCKET;
-    }
-    ctx.active = false;
-    ctx.localPlayerId = 0;
-    ctx.remotePlayers.clear();
-    ctx.remoteNpcs.clear();
-    ctx.remotePlayerInterpolation.clear();
-    ctx.remoteNpcInterpolation.clear();
-    ctx.networkProjectiles.clear();
-    ctx.playerRegistry.clear();
-    ctx.hasLocalServerPosition = false;
-    ctx.localPlayerReconciled = false;
-    ctx.lastLocalCorrectionLogMs = 0;
-    ctx.pendingTeleportPosition = glm::vec3(0.0f);
-    ctx.pendingTeleportSentMs = 0;
-    ctx.awaitingTeleportAck = false;
-    ctx.awaitingExplodeDeath = false;
-    ctx.connected = false;
-    ctx.connectFailed = false;
-    ctx.connectionStatus.clear();
-    ctx.connectionState = ConnectionState::Disconnected;
-    ctx.outgoingQueue.clear();
-    ctx.shotEvents.clear();
-    ctx.networkProjectiles.clear();
-    ctx.lastReceivedShotSerial.clear();
-    ctx.disagreementEvents.clear();
-    ctx.processedDisagreementIds.clear();
-    ctx.reconnectAttempts = 0;
-    ctx.reconnectBackoffMs = 1000;
+    teardownPreviousSession(ctx, DisconnectPolicy::Leave);
     netShutdown();
     printf("[NET DISCONNECT] shutdown complete\n");
 }
@@ -364,9 +461,8 @@ const char* connectionStateName(ConnectionState state)
 bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     uint16_t port, const std::string& joinToken, const std::string& playerName)
 {
-    if (ctx.active)
-        mpShutdown(ctx);
-
+    // beginConnectionAttempt must be called first. This function does NOT
+    // tear down the previous session — that ownership belongs to beginConnectionAttempt.
     if (!netStartup())
     {
         printf("[NET CONNECT] FATAL: WSAStartup failed\n");

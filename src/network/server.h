@@ -134,9 +134,12 @@ struct ServerPlayer
         uint64_t nextAllowedFireTick = 0;
         bool reloading = false;
         uint64_t reloadCompleteTick = 0;
+        uint32_t stateRevision = 0;
         bool initialized = false;
     };
     std::unordered_map<std::string, ServerWeaponRuntime> weaponRuntimes;
+    uint32_t spawnGeneration = 0;
+    std::vector<std::string> ownedWeaponIds;
     uint16_t lastDashSerial = 0;
     uint16_t lastEquipSerial = 0;
     uint16_t lastRespawnSerial = 0;
@@ -303,6 +306,11 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world);
 void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players);
 
 // Player simulation
+void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn);
+void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uint32_t currentTick);
+void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          uint32_t tick, uint64_t& totalPacketsOut);
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world);
 void pushPositionHistory(ServerPlayer& p, uint32_t tick);
 bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos);
@@ -363,6 +371,12 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                        const HeadlessWorld& world,
                        uint32_t tick, uint64_t& totalPacketsOut,
                        DisagreementRetransmitState* retransmitState = nullptr);
+void handleAttackRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerProjectile>& projectiles,
+                         uint32_t& nextProjectileId,
+                         const HeadlessWorld& world,
+                         uint32_t tick, uint64_t& totalPacketsOut);
 void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                  std::unordered_map<uint32_t, ServerProjectile>& projectiles,

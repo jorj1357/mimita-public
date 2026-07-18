@@ -1,4 +1,6 @@
 #include "network/server.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-types.h"
 
 #include <cstdio>
 #include <cstring>
@@ -162,6 +164,103 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
     }
 }
 
+// ── Initial inventory: temporary — grants non-restricted weapons ─────
+// Documented as: temporary until a proper inventory/ownership system exists.
+// Excludes weapons with `restricted=true` (admin_revolver, op_revolver).
+static void getInitialInventory(std::vector<std::string>& out)
+{
+    out.clear();
+    for (const auto& kv : WeaponRegistry::instance().all())
+    {
+        if (!kv.second.restricted)
+            out.push_back(kv.first);
+    }
+}
+
+// ── Centralized spawn/respawn reset ──────────────────────────────────
+void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
+{
+    // Health and death
+    player.dead = false;
+    player.health = 100;
+
+    // Increment spawn generation (never decremented, never reset)
+    ++player.spawnGeneration;
+
+    // Build or preserve owned weapon inventory
+    if (isInitialSpawn)
+        getInitialInventory(player.ownedWeaponIds);
+
+    // Reset weapon runtimes for every owned weapon
+    for (const std::string& wepId : player.ownedWeaponIds)
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(wepId);
+        if (!def)
+            continue;
+
+        ServerPlayer::ServerWeaponRuntime rt;
+        rt.magazineAmmo = def->magazineSize;
+        auto it = def->customParams.find("reserveAmmo");
+        rt.reserveAmmo = (it != def->customParams.end()) ? (int)it->second : 0;
+        rt.nextAllowedFireTick = 0;  // cooldown cleared — new life may fire immediately
+        rt.reloading = false;
+        rt.reloadCompleteTick = 0;
+        rt.stateRevision = 0;
+        rt.initialized = true;
+        player.weaponRuntimes[wepId] = rt;
+    }
+
+    // Clear transient combat/reload state
+    player.projectileFireCooldown = 0.0f;
+
+    printf("[SERVER SPAWN RESET] playerId=%u spawnGeneration=%u ownedWeapons=%zu"
+           " isInitialSpawn=%d\n",
+           player.id, player.spawnGeneration, player.ownedWeaponIds.size(),
+           (int)isInitialSpawn);
+}
+
+// ── Advance all reload timers — called once per server tick ─────────
+void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uint32_t currentTick)
+{
+    for (auto& kv : players)
+    {
+        ServerPlayer& p = kv.second;
+        for (auto& rtKv : p.weaponRuntimes)
+        {
+            ServerPlayer::ServerWeaponRuntime& rt = rtKv.second;
+            if (!rt.initialized || !rt.reloading)
+                continue;
+            if (currentTick >= rt.reloadCompleteTick)
+            {
+                const WeaponDefinition* def = WeaponRegistry::instance().get(rtKv.first);
+                if (!def)
+                {
+                    rt.reloading = false;
+                    continue;
+                }
+                // Add one shell
+                if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
+                {
+                    rt.magazineAmmo++;
+                    rt.reserveAmmo--;
+                    rt.stateRevision++;
+                }
+                // Schedule next shell or finish
+                if (rt.magazineAmmo < def->magazineSize && rt.reserveAmmo > 0)
+                {
+                    float reloadInterval = def->customParams.count("reloadTimePerShell")
+                        ? def->customParams.at("reloadTimePerShell") : (def->reloadTime > 0 ? def->reloadTime : 0.55f);
+                    rt.reloadCompleteTick = currentTick + (uint32_t)std::ceil(reloadInterval * 60.0f);
+                }
+                else
+                {
+                    rt.reloading = false;
+                }
+            }
+        }
+    }
+}
+
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
     // Apply input yaw BEFORE any non-dead early return.
@@ -209,16 +308,15 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
             }
             beginAuthoritativeTransform(p, respawnPos, glm::vec3(0.0f), respawnYaw, "respawn");
-            p.dead = false;
-            p.health = 100;
+            resetPlayerForSpawn(p, false);  // preserve ownedWeaponIds
             p.input = {};
             p.attackQueued = false;
             p.dashAvailable = true;
             p.onGround = false;
             p.respawnSeconds = 0.0f;
-            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu health=%d dead=%d\n",
+            printf("%s [SERVER RESPAWN] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u spawnpoints=%zu spawnGeneration=%u health=%d\n",
                    serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
-                   world.spawnPoints.size(), p.health, (int)p.dead);
+                   world.spawnPoints.size(), p.spawnGeneration, p.health);
         }
         return;
     }

@@ -295,11 +295,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             return;
         }
 
-        ctx.connected = false;
-        ctx.active = false;
-        ctx.connectionState = ConnectionState::Disconnected;
-        closesocket(ctx.sock);
-        ctx.sock = INVALID_SOCKET;
+        teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
         return;
     }
 
@@ -329,10 +325,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     flushOutgoingPackets(ctx);
     if (!ctx.connected && !ctx.connectFailed && currentMs - ctx.connectStartMs > 6000)
     {
-        ctx.connectFailed = true;
         ctx.connectionStatus = "Connection timed out";
-        ctx.connectionState = ConnectionState::Disconnected;
         printf("[NET CONNECT] timeout server=%s\n", ctx.serverAddress.c_str());
+        teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
     }
 
     // ── Connection state machine ───────────────────────────────────────
@@ -448,10 +443,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
         {
             const JoinRejectPacket* reject = reinterpret_cast<const JoinRejectPacket*>(buffer);
-            ctx.connectFailed = true;
-            ctx.connectionState = ConnectionState::Disconnected;
             ctx.connectionStatus = "Join rejected";
             printf("[NET CONNECT] join rejected reason=%u\n", reject->reason);
+            teardownPreviousSession(ctx, DisconnectPolicy::Rejected);
         }
         else if (header->type == PACKET_RECONNECT_ACCEPT && bytes >= (int)sizeof(ReconnectAcceptPacket))
         {
