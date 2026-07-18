@@ -56,6 +56,22 @@ uint8_t networkWeaponTypeForSlot(int slot)
     }
 }
 
+int slotForNetworkWeaponType(uint8_t type)
+{
+    switch (type)
+    {
+    case NETWORK_WEAPON_REVOLVER: return 1;
+    case NETWORK_WEAPON_GODBALL: return 2;
+    case NETWORK_WEAPON_SHOTGUN: return 3;
+    case NETWORK_WEAPON_SWORDSWORD: return 4;
+    case NETWORK_WEAPON_AA12: return 6;
+    case NETWORK_WEAPON_ROCKET_LAUNCHER: return 7;
+    case NETWORK_WEAPON_GRENADE_LAUNCHER: return 8;
+    case NETWORK_WEAPON_HAFS: return 10;
+    default: return -1;
+    }
+}
+
 const char* networkWeaponTypeName(uint8_t type)
 {
     switch (type)

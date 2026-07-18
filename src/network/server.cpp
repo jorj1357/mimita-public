@@ -5,6 +5,7 @@
 #include "network/ice-transport.h"
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
+#include "combat/weapon-registry.h"
 #include "debug/structured-log.h"
 
 #include <cstdio>
@@ -25,6 +26,29 @@ int runServer(const LaunchOptions& options)
     WeaponData::registerBuiltinWeapons();
     printf("%s [SERVER] registered built-in weapons\n", serverTimestamp());
 
+    // Validate grenade launcher config at startup
+    {
+        const WeaponDefinition* glDef = WeaponRegistry::instance().get("grenade_launcher");
+        if (glDef) {
+            printf("%s [SERVER GRENADE CONFIG] projectileSpeed=%.1f projectileRadius=%.2f "
+                   "projectileLifetime=%.1f fireDelay=%.2f customParams=%zu\n",
+                   serverTimestamp(), glDef->projectileSpeed, glDef->projectileRadius,
+                   glDef->projectileLifetime, glDef->fireDelay, glDef->customParams.size());
+            auto cp = [&](const char* key, float fb) {
+                auto it = glDef->customParams.find(key);
+                return it != glDef->customParams.end() ? it->second : fb;
+            };
+            printf("%s [SERVER GRENADE PHYSICS] gravity=%.1f drag=%.2f restitution=%.2f "
+                   "friction=%.2f upBias=%.1f maxBounce=%.0f forwardSpeed=%.1f\n",
+                   serverTimestamp(), cp("gravity", 20.0f), cp("drag", 0.15f),
+                   cp("bounceRestitution", 0.35f), cp("bounceFriction", 0.5f),
+                   cp("upBias", 4.0f), cp("maxBounceCount", 10.0f),
+                   cp("forwardSpeed", 18.0f));
+        } else {
+            printf("%s [SERVER GRENADE CONFIG] grenade_launcher NOT FOUND in registry\n", serverTimestamp());
+        }
+    }
+
     printf("%s [SERVER] ========================================\n", serverTimestamp());
     printf("%s [SERVER] MiMITA Dedicated Server\n", serverTimestamp());
     printf("%s [SERVER] protocol version=%u\n", serverTimestamp(), PROTOCOL_VERSION);
@@ -40,7 +64,7 @@ int runServer(const LaunchOptions& options)
            options.name.c_str(), "pending");
 
     // Determine map path from options
-    std::string mapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+    std::string mapName = options.mapName.empty() ? "funworld3" : options.mapName;
     std::string mapPath = "assets/maps/" + mapName + ".glb";
     setServerMapId(mapName);
     printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
@@ -206,7 +230,7 @@ int runServer(const LaunchOptions& options)
         else
         {
             // ── Normal (non-ICE) mode: standard coordinator registration ──
-            std::string regMapName = options.mapName.empty() ? "funworldv3" : options.mapName;
+            std::string regMapName = options.mapName.empty() ? "funworld3" : options.mapName;
             std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
             CoordinatorRoomInfo room = coordinatorRegister(
                 regServerName, "", DEFAULT_PORT, regServerName,
@@ -532,7 +556,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
     // Determine map path from settings
-    std::string mapName = settings ? settings->mapName : "funworldv3";
+    std::string mapName = settings ? settings->mapName : "funworld3";
     std::string mapPath = settings ? settings->resolvedMapPath : "";
     if (mapPath.empty())
         mapPath = "assets/maps/" + mapName + ".glb";
@@ -616,7 +640,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         else
         {
             // ── Normal (non-ICE) mode: standard coordinator registration ──
-            std::string regMap = settings ? settings->mapName : "funworldv3";
+            std::string regMap = settings ? settings->mapName : "funworld3";
             CoordinatorRoomInfo room = coordinatorRegister(
                 hostSessionId, publicIp, port, state.serverName,
                 regMap, "sandbox", 32);
@@ -673,18 +697,30 @@ void stopListenServer(ListenServerState& state)
     netShutdown();
 }
 
-void tickListenServer(ListenServerState& state, float dt)
+void tickListenServer(ListenServerState& state, float /*dt*/)
 {
     if (!state.active || state.sock == INVALID_SOCKET)
         return;
 
-    uint64_t frameStart = nowMs();
+    // Compute real elapsed wallclock time independent of render frame dt
+    uint64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (state.lastWallclockUs == 0)
+        state.lastWallclockUs = nowUs;
+    uint64_t elapsedUs = nowUs - state.lastWallclockUs;
+    state.lastWallclockUs = nowUs;
 
-    state.accumulator += dt;
-    if (state.accumulator > 0.05f)
-        state.accumulator = 0.05f;
+    // Convert to seconds, clamp to avoid spiral-of-death after pauses
+    float realDt = (float)((double)elapsedUs / 1000000.0);
+    if (realDt > 0.1f) realDt = 0.1f;
+    if (realDt < 0.0001f) realDt = 0.0001f;
 
-    while (state.accumulator >= SERVER_DT)
+    state.accumulator += realDt;
+
+    constexpr int MAX_CATCHUP_STEPS = 4;
+    int steps = 0;
+
+    while (state.accumulator >= SERVER_DT && steps < MAX_CATCHUP_STEPS)
     {
         char buffer[2048];
         sockaddr_in from{};
@@ -871,7 +907,20 @@ void tickListenServer(ListenServerState& state, float dt)
         }
 
         ++state.tick;
+        ++steps;
         state.accumulator -= SERVER_DT;
+    }
+
+    if (steps >= MAX_CATCHUP_STEPS)
+    {
+        static uint64_t lastOverrunLog = 0;
+        uint64_t nowMsVal = nowMs();
+        if (nowMsVal - lastOverrunLog > 5000)
+        {
+            lastOverrunLog = nowMsVal;
+            printf("[LISTEN SERVER OVERRUN] tick=%u steps=%d realDt=%.3f accumulator=%.4f\n",
+                   state.tick, steps, realDt, state.accumulator);
+        }
     }
 }
 

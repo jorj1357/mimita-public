@@ -26,8 +26,6 @@
 #include "config/weapon-hitfx-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
-#include "physics/physics-types.h"
-#include "world/world.h"
 
 namespace MimitaNet {
 namespace {
@@ -72,16 +70,6 @@ static void logGrenadeEvent(
 bool finiteVec(const glm::vec3& v)
 {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-}
-
-float projectileGravity(uint8_t weapon)
-{
-    return weapon == NETWORK_WEAPON_GRENADE_LAUNCHER ? 20.0f : 0.0f;
-}
-
-float projectileDrag(uint8_t weapon)
-{
-    return weapon == NETWORK_WEAPON_GRENADE_LAUNCHER ? 0.15f : 0.0f;
 }
 
 const WeaponDefinition* projectileDefinition(uint8_t weapon)
@@ -308,9 +296,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.age = 0.0f;
     projectile.lifetime = event->lifetime;
     projectile.radius = event->radius;
-    // Locally owned grenades use prediction; rockets use predictedProjectileIds suppression
-    projectile.predicted = (event->ownerPlayerId == ctx.localPlayerId &&
-                           event->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER);
+    projectile.predicted = false; // grenades are never predicted — server is authoritative
     projectile.exploded = false;
 
     // Initialize render state directly from spawn (first state = immediate render)
@@ -360,7 +346,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important,
         "GRENADE_CLIENT_SPAWN",
         "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-        projectile.predicted ? "predicted" : "authoritative",
+        "authoritative",
         "projectileId=%u ownerId=%u fireSerial=%u weapon=%s predicted=%d isLocal=%d "
         "pos=(%.6f,%.6f,%.6f) vel=(%.6f,%.6f,%.6f) angVel=(%.6f,%.6f,%.6f) "
         "radius=%.6f lifetime=%.6f spawnTick=%u",
@@ -646,10 +632,9 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
     auto it = ctx.pendingFireRequests.find(event->fireSerial);
     if (event->accepted)
     {
+        // Accepted: erase immediately, never refund
         if (it != ctx.pendingFireRequests.end())
-        {
-            it->second.acknowledged = true;
-        }
+            ctx.pendingFireRequests.erase(it);
         {
             auto& _lg = ::StructuredLogger::instance();
             if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
@@ -674,7 +659,7 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
     {
         if (it != ctx.pendingFireRequests.end())
         {
-            // Queue refund for processing in engine tick (deduplicated via processedRefundSerials)
+            // Genuine rejection of a still-pending, never-accepted serial
             if (ctx.processedRefundSerials.count(event->fireSerial) == 0)
             {
                 MultiplayerContext::FireRejection fr;
@@ -907,107 +892,7 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
     }
 }
 
-static glm::vec3 closestPtOnTri(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
-{
-    glm::vec3 ab = b - a, ac = c - a, ap = p - a;
-    float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
-    if (d1 <= 0.0f && d2 <= 0.0f) return a;
-    glm::vec3 bp = p - b;
-    float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
-    if (d3 >= 0.0f && d4 <= d3) return b;
-    glm::vec3 cp = p - c;
-    float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
-    if (d5 >= 0.0f && d6 >= 0.0f) return c;
-    float vc = d1 * d4 - d3 * d2;
-    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
-        return a + (d1 / (d1 - d3)) * ab;
-    float vb = d5 * d2 - d1 * d6;
-    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
-        return a + (d2 / (d2 - d6)) * ac;
-    float va = d3 * d6 - d5 * d4;
-    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
-        return b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * (c - b);
-    float denom = va + vb + vc;
-    return denom == 0.0f ? a : (va * a + vb * b + vc * c) / denom;
-}
-
-static bool resolveClientGrenadeWorld(NetworkProjectile& projectile, const World& world, const WeaponDefinition* def)
-{
-    float restitution = 0.35f, friction = 0.5f;
-    if (def)
-    {
-        restitution = cp(def, "bounceRestitution", 0.35f);
-        friction = cp(def, "bounceFriction", 0.5f);
-    }
-    bool hit = false;
-    glm::vec3 bestNormal(0.0f, 0.0f, 1.0f);
-    float bestPenetration = 0.0f;
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles)
-    {
-        glm::vec3 closest = closestPtOnTri(projectile.position, tri.a, tri.b, tri.c);
-        glm::vec3 diff = projectile.position - closest;
-        float dist = glm::length(diff);
-        if (dist >= projectile.radius || dist <= 0.0001f)
-            continue;
-        float penetration = projectile.radius - dist;
-        if (penetration > bestPenetration)
-        {
-            bestPenetration = penetration;
-            bestNormal = diff / dist;
-            if (glm::dot(bestNormal, tri.normal) < 0.0f)
-                bestNormal = -bestNormal;
-            hit = true;
-        }
-    }
-    if (!hit) return false;
-    glm::vec3 posBeforeDepenetrate = projectile.position;
-    projectile.position += bestNormal * (bestPenetration + 0.001f);
-    float into = glm::dot(projectile.velocity, bestNormal);
-    bool inwardImpact = (into < 0.0f);
-    glm::vec3 velBefore = projectile.velocity;
-    glm::vec3 tangent(0.0f);
-    float tangentRetention = 0.0f;
-
-    logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose,
-        "GRENADE_CLIENT_CONTACT",
-        "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-        inwardImpact ? "impact" : "overlap",
-        "inward=%d into=%.6f penetration=%.6f normal=(%.6f,%.6f,%.6f) "
-        "posBefore=(%.6f,%.6f,%.6f) posAfter=(%.6f,%.6f,%.6f) "
-        "velBefore=(%.6f,%.6f,%.6f) speedBefore=%.6f "
-        "friction=%.6f restitution=%.6f",
-        (int)inwardImpact, into, bestPenetration,
-        bestNormal.x, bestNormal.y, bestNormal.z,
-        posBeforeDepenetrate.x, posBeforeDepenetrate.y, posBeforeDepenetrate.z,
-        projectile.position.x, projectile.position.y, projectile.position.z,
-        velBefore.x, velBefore.y, velBefore.z, glm::length(velBefore),
-        friction, restitution);
-
-    if (inwardImpact)
-    {
-        tangent = projectile.velocity - bestNormal * into;
-        tangentRetention = std::clamp(1.0f - friction, 0.0f, 1.0f);
-        glm::vec3 velBeforeBounce = projectile.velocity;
-        float speedBeforeBounce = glm::length(velBeforeBounce);
-        projectile.velocity = tangent * tangentRetention - bestNormal * into * restitution;
-        float speedAfterBounce = glm::length(projectile.velocity);
-        projectile.angularVelocity *= 0.35f;
-
-        if (speedBeforeBounce > 1.0f && speedAfterBounce < speedBeforeBounce * 0.5f)
-        {
-            logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Errors,
-                "GRENADE_ASSERT_SPEED_DISCONTINUITY",
-                "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-                "contact",
-                "speedBefore=%.6f speedAfter=%.6f restitution=%.6f friction=%.6f into=%.6f normal=(%.6f,%.6f,%.6f)",
-                speedBeforeBounce, speedAfterBounce, restitution, friction,
-                into, bestNormal.x, bestNormal.y, bestNormal.z);
-        }
-    }
-    return true;
-}
-
-void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
+void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt)
 {
     // ── Retransmit unacknowledged fire requests ─────────────────────
     const uint64_t now = nowMs();
@@ -1081,109 +966,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             continue;
         }
 
-        // ── Predicted projectile: local physics simulation ──────────
-        if (projectile.predicted)
-        {
-            const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
-            const float grav = projectileGravity(projectile.weaponType);
-            const float drag = projectileDrag(projectile.weaponType);
-            const float angDrag = def ? cp(def, "angularDrag", 0.3f) : 0.0f;
-
-            // Gravity
-            if (grav > 0.0f)
-                projectile.velocity.z -= grav * dt;
-
-            // Drag
-            if (drag > 0.0f)
-                projectile.velocity *= std::max(0.0f, 1.0f - drag * dt);
-
-            // Angular velocity
-            float angSpeed = glm::length(projectile.angularVelocity);
-            if (angDrag > 0.0f && angSpeed > 0.0f)
-                projectile.angularVelocity *= std::max(0.0f, 1.0f - angDrag * dt);
-            if (angSpeed > 0.0001f)
-            {
-                float newAngSpeed = glm::length(projectile.angularVelocity);
-                if (newAngSpeed > 0.0001f)
-                {
-                    glm::quat delta = glm::angleAxis(newAngSpeed * dt, glm::normalize(projectile.angularVelocity));
-                    projectile.rotation = glm::normalize(delta * projectile.rotation);
-                }
-            }
-
-            // Move
-            glm::vec3 step = projectile.velocity * dt;
-            glm::vec3 posBeforeStep = projectile.position;
-            glm::vec3 velBeforeStep = projectile.velocity;
-            projectile.position += step;
-
-            // World collision (grenade bouncing)
-            if (projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER)
-                resolveClientGrenadeWorld(projectile, world, def);
-
-            // Render from predicted position
-            projectile.renderPosition = projectile.position;
-            projectile.renderVelocity = projectile.velocity;
-            projectile.renderRotation = projectile.rotation;
-
-            // Assertion: non-finite check
-            if (!finiteVec(projectile.position) || !finiteVec(projectile.velocity) ||
-                !finiteVec(projectile.angularVelocity))
-            {
-                logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Errors,
-                    "GRENADE_ASSERT_NONFINITE",
-                    "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-                    "nonfinite",
-                    "tick=%u pos=(%.6f,%.6f,%.6f) vel=(%.6f,%.6f,%.6f) angVel=(%.6f,%.6f,%.6f)",
-                    ctx.tick,
-                    projectile.position.x, projectile.position.y, projectile.position.z,
-                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-                    projectile.angularVelocity.x, projectile.angularVelocity.y, projectile.angularVelocity.z);
-            }
-
-            // Assertion: stationary early detection
-            float tickSpeed = glm::length(projectile.velocity);
-            static std::unordered_map<uint32_t, int> stationaryEarlyCount;
-            if (tickSpeed < 0.10f && projectile.age < 0.50f && !projectile.exploded)
-            {
-                stationaryEarlyCount[projectile.projectileId]++;
-                if (stationaryEarlyCount[projectile.projectileId] >= 3)
-                {
-                    logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Errors,
-                        "GRENADE_ASSERT_STATIONARY_EARLY",
-                        "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-                        "stationary-early",
-                        "tick=%u age=%.6f speed=%.6f predicted=%d consecutive=%d",
-                        ctx.tick, projectile.age, tickSpeed, (int)projectile.predicted,
-                        stationaryEarlyCount[projectile.projectileId]);
-                }
-            }
-            else
-            {
-                stationaryEarlyCount[projectile.projectileId] = 0;
-            }
-
-            if ((ctx.tick % 10) == 0)
-            {
-                logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose,
-                    "GRENADE_CLIENT_TICK",
-                    "GRENADE_P" + std::to_string(projectile.ownerPlayerId) + "_F" + std::to_string(projectile.fireSerial) + "_J" + std::to_string(projectile.projectileId),
-                    "sim",
-            "tick=%u dt=%.6f age=%.6f predicted=%d "
-            "pos=(%.6f,%.6f,%.6f) vel=(%.6f,%.6f,%.6f) speed=%.6f "
-            "angVel=(%.6f,%.6f,%.6f) "
-            "targetPos=(%.6f,%.6f,%.6f) targetVel=(%.6f,%.6f,%.6f) posErr=%.6f",
-                    ctx.tick, dt, projectile.age, (int)projectile.predicted,
-                    projectile.position.x, projectile.position.y, projectile.position.z,
-                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-                    glm::length(projectile.velocity),
-                    projectile.angularVelocity.x, projectile.angularVelocity.y, projectile.angularVelocity.z,
-                    projectile.targetStatePos.x, projectile.targetStatePos.y, projectile.targetStatePos.z,
-                    projectile.targetStateVel.x, projectile.targetStateVel.y, projectile.targetStateVel.z,
-                    glm::length(projectile.targetStatePos - projectile.position));
-            }
-        }
-        else if (projectile.hasTargetState)
+        if (projectile.hasTargetState)
         {
             // Normal interpolation or extrapolation
             constexpr float SERVER_TICK_INTERVAL = 1.0f / 60.0f; // 60 Hz server

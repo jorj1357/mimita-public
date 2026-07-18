@@ -921,7 +921,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     mpUpdateRemoteEntities(ctx, dt);
     mpUpdateRemoteSwordStates(ctx, dt);
-    mpUpdateNetworkProjectiles(ctx, dt, *gpWorld);
+    mpUpdateNetworkProjectiles(ctx, dt);
 
     if (ctx.connected && currentMs - ctx.lastPingSentMs >= 1000)
     {
