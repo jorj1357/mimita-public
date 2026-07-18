@@ -1,0 +1,1963 @@
+﻿src\terminal\weapon-commands.cpp-10-using json = nlohmann::json;
+src\terminal\weapon-commands.cpp-11-#include "devtools/terminal.h"
+src\terminal\weapon-commands.cpp-12-#include "terminal/terminal-state.h"
+src\terminal\weapon-commands.cpp-13-#include "combat/weapon-system.h"
+src\terminal\weapon-commands.cpp-14-#include "combat/weapon-fire.h"
+src\terminal\weapon-commands.cpp-15-#include "combat/weapon-data.h"
+src\terminal\weapon-commands.cpp-16-#include "combat/weapon-config.h"
+src\terminal\weapon-commands.cpp-17-#include "combat/weapon-registry.h"
+src\terminal\weapon-commands.cpp-18-#include "network/net_mode.h"
+src\terminal\weapon-commands.cpp-19-#include "network/network-weapons.h"
+src\terminal\weapon-commands.cpp-20-#include "config/player-settings.h"
+src\terminal\weapon-commands.cpp-21-#include "debug/debug-log.h"
+src\terminal\weapon-commands.cpp-22-#include "entities/player-animation-config.h"
+src\terminal\weapon-commands.cpp-23-
+src\terminal\weapon-commands.cpp-24-void registerWeaponCommands()
+src\terminal\weapon-commands.cpp-25-{
+src\terminal\weapon-commands.cpp-26-    Terminal::instance().registerCommand({
+src\terminal\weapon-commands.cpp-27-        "shoot", "Fire weapon", "shoot",
+src\terminal\weapon-commands.cpp-28-        [](const std::vector<std::string>&) {
+src\terminal\weapon-commands.cpp-29-            Camera& camera = THE_CAMERA;
+src\terminal\weapon-commands.cpp-30-            Player& player = THE_PLAYER;
+src\terminal\weapon-commands.cpp-31-            NpcSystem& npcSystem = THE_NPC_SYSTEM;
+src\terminal\weapon-commands.cpp-32-            World& world = THE_WORLD;
+src\terminal\weapon-commands.cpp-33-            WeaponSystem& weapons = THE_WEAPONS;
+src\terminal\weapon-commands.cpp-34-            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+src\terminal\weapon-commands.cpp-35-
+src\terminal\weapon-commands.cpp-36-            const auto* remotePlayers = mpContext.active
+src\terminal\weapon-commands.cpp-37-                ? &mpContext.remotePlayers
+src\terminal\weapon-commands.cpp-38-                : nullptr;
+src\terminal\weapon-commands.cpp-39-            RevolverShotResult shot = weapons.fire(
+src\terminal\weapon-commands.cpp-40-                camera, player, npcSystem, world, remotePlayers);
+src\terminal\weapon-commands.cpp-41-            if (!shot.fired) {
+src\terminal\weapon-commands.cpp-42-                Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
+src\terminal\weapon-commands.cpp-43-                return;
+src\terminal\weapon-commands.cpp-44-            }
+src\terminal\weapon-commands.cpp-45-
+src\terminal\weapon-commands.cpp-46-            {
+src\terminal\weapon-commands.cpp-47-                float pitchKick = GetPlayerSettings().weaponRecoilCameraPitch;
+src\terminal\weapon-commands.cpp-48-                camera.addPunch(pitchKick, 0.0f);
+src\terminal\weapon-commands.cpp-49-                if (DebugConfig::DEBUG_RECOIL)
+src\terminal\weapon-commands.cpp-50-                    Debug::log(Debug::Category::General, "[RECOIL] camera punch=%.2f pitch=%.2f\n",
+src\terminal\weapon-commands.cpp-51-                               pitchKick, camera.punchPitch);
+src\terminal\weapon-commands.cpp-52-            }
+src\terminal\weapon-commands.cpp-53-
+src\terminal\weapon-commands.cpp-54-            if (mpContext.active) {
+src\terminal\weapon-commands.cpp-55-                const glm::vec3 direction = glm::length(shot.end - shot.start) > 0.001f
+src\terminal\weapon-commands.cpp-56-                    ? glm::normalize(shot.end - shot.start)
+src\terminal\weapon-commands.cpp-57-                    : camera.front;
+src\terminal\weapon-commands.cpp-58-                uint16_t effectFlags =
+src\terminal\weapon-commands.cpp-59-                    MimitaNet::SHOT_EFFECT_MUZZLE |
+src\terminal\weapon-commands.cpp-60-                    MimitaNet::SHOT_EFFECT_TRACER |
+src\terminal\weapon-commands.cpp-61-                    MimitaNet::SHOT_EFFECT_SHOOT_SOUND |
+src\terminal\weapon-commands.cpp-62-                    MimitaNet::SHOT_EFFECT_WEAPON_TRIGGER;
+src\terminal\weapon-commands.cpp-63-                uint8_t impactType = MimitaNet::SHOT_IMPACT_NONE;
+src\terminal\weapon-commands.cpp-64-                uint32_t targetId = 0;
+src\terminal\weapon-commands.cpp-65-                int damage = 0;
+src\terminal\weapon-commands.cpp-66-                if (shot.targetIsRemotePlayer) {
+src\terminal\weapon-commands.cpp-67-                    impactType = MimitaNet::SHOT_IMPACT_ENTITY;
+src\terminal\weapon-commands.cpp-68-                    targetId = shot.targetId;
+src\terminal\weapon-commands.cpp-69-                    damage = (int)shot.damage;
+src\terminal\weapon-commands.cpp-70-                    effectFlags |=
+src\terminal\weapon-commands.cpp-71-                        MimitaNet::SHOT_EFFECT_ENTITY_IMPACT |
+src\terminal\weapon-commands.cpp-72-                        MimitaNet::SHOT_EFFECT_BLOOD |
+src\terminal\weapon-commands.cpp-73-                        MimitaNet::SHOT_EFFECT_HIT_SOUND;
+src\terminal\weapon-commands.cpp-74-                } else if (shot.hitWorld) {
+src\terminal\weapon-commands.cpp-75-                    impactType = MimitaNet::SHOT_IMPACT_WORLD;
+src\terminal\weapon-commands.cpp-76-                    effectFlags |=
+src\terminal\weapon-commands.cpp-77-                        MimitaNet::SHOT_EFFECT_WORLD_IMPACT |
+src\terminal\weapon-commands.cpp-78-                        MimitaNet::SHOT_EFFECT_DEBRIS |
+src\terminal\weapon-commands.cpp-79-                        MimitaNet::SHOT_EFFECT_HIT_SOUND;
+src\terminal\weapon-commands.cpp-80-                }
+src\terminal\weapon-commands.cpp-81-                const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+src\terminal\weapon-commands.cpp-82-                uint8_t netWeapon = wdef
+src\terminal\weapon-commands.cpp-83-                    ? MimitaNet::networkWeaponTypeForDefinition(*wdef)
+src\terminal\weapon-commands.cpp-84-                    : MimitaNet::NETWORK_WEAPON_NONE;
+src\terminal\weapon-commands.cpp-85-                const bool usesProjectilePath =
+src\terminal\weapon-commands.cpp-86-                    MimitaNet::networkWeaponTypeIsProjectile(netWeapon);
+src\terminal\weapon-commands.cpp-87-                const bool usesHitscanPath =
+src\terminal\weapon-commands.cpp-88-                    MimitaNet::networkWeaponTypeIsHitscan(netWeapon);
+src\terminal\weapon-commands.cpp-89-                printf("[WEAPON FIRE ROUTE] playerId=%u weaponId=%s behaviorType=%d "
+src\terminal\weapon-commands.cpp-90-                       "usesHitscanPath=%d usesProjectilePath=%d shotResultFired=%d "
+src\terminal\weapon-commands.cpp-91-                       "shotResultTargetRemote=%d shotResultTargetId=%u shotResultDamage=%.0f "
+src\terminal\weapon-commands.cpp-92-                       "networkAction=%s\n",
+src\terminal\weapon-commands.cpp-93-                       mpContext.localPlayerId,
+src\terminal\weapon-commands.cpp-94-                       wdef ? wdef->id.c_str() : "none",
+src\terminal\weapon-commands.cpp-95-                       wdef ? (int)wdef->behaviorType : -1,
+src\terminal\weapon-commands.cpp-96-                       (int)usesHitscanPath, (int)usesProjectilePath,
+src\terminal\weapon-commands.cpp-97-                       (int)shot.fired, (int)shot.targetIsRemotePlayer,
+src\terminal\weapon-commands.cpp-98-                       shot.targetId, shot.damage,
+src\terminal\weapon-commands.cpp-99-                       netWeapon == MimitaNet::NETWORK_WEAPON_NONE ? "reject-unknown-weapon" :
+src\terminal\weapon-commands.cpp-100-                       usesProjectilePath ? "send-projectile-request" :
+src\terminal\weapon-commands.cpp-101-                       netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD ? "send-melee-request" :
+src\terminal\weapon-commands.cpp-102-                       "send-shot-request");
+src\terminal\weapon-commands.cpp-103-
+src\terminal\weapon-commands.cpp-104-                if (netWeapon == MimitaNet::NETWORK_WEAPON_NONE) {
+src\terminal\weapon-commands.cpp-105-                    Terminal::instance().addLog("[WEAPON] network weapon mapping missing; shot not sent");
+src\terminal\weapon-commands.cpp-106-                    return;
+src\terminal\weapon-commands.cpp-107-                }
+src\terminal\weapon-commands.cpp-108-
+src\terminal\weapon-commands.cpp-109-                if (usesProjectilePath) {
+src\terminal\weapon-commands.cpp:110:                    MimitaNet::mpSendProjectileFireRequest(
+src\terminal\weapon-commands.cpp-111-                        mpContext, netWeapon, shot.start, direction);
+src\terminal\weapon-commands.cpp-112-                    Terminal::instance().addLog("[WEAPON] fired");
+src\terminal\weapon-commands.cpp-113-                    return;
+src\terminal\weapon-commands.cpp-114-                }
+src\terminal\weapon-commands.cpp-115-
+src\terminal\weapon-commands.cpp-116-                // Multi-pellet weapons (shotgun, AA12) use dedicated blast request
+src\terminal\weapon-commands.cpp-117-                if (netWeapon == MimitaNet::NETWORK_WEAPON_SHOTGUN ||
+src\terminal\weapon-commands.cpp-118-                    netWeapon == MimitaNet::NETWORK_WEAPON_AA12)
+src\terminal\weapon-commands.cpp-119-                {
+src\terminal\weapon-commands.cpp-120-                    unsigned int seed = (unsigned int)(shot.start.x * 73856093)
+src\terminal\weapon-commands.cpp-121-                        ^ (unsigned int)(shot.start.y * 19349663)
+src\terminal\weapon-commands.cpp-122-                        ^ (unsigned int)(shot.start.z * 83492791)
+src\terminal\weapon-commands.cpp-123-                        ^ mpContext.nextLocalShotSerial;
+src\terminal\weapon-commands.cpp-124-                    MimitaNet::mpSendPelletBlastRequest(
+src\terminal\weapon-commands.cpp-125-                        mpContext, netWeapon, shot.start, direction, seed);
+src\terminal\weapon-commands.cpp-126-                    Terminal::instance().addLog("[WEAPON] fired");
+src\terminal\weapon-commands.cpp-127-                    return;
+src\terminal\weapon-commands.cpp-128-                }
+src\terminal\weapon-commands.cpp-129-
+src\terminal\weapon-commands.cpp-130-                if (netWeapon == MimitaNet::NETWORK_WEAPON_SWORDSWORD) {
+src\terminal\weapon-commands.cpp-131-                    // Send attack-start command. Server simulates the full attack.
+src\terminal\weapon-commands.cpp-132-                    MimitaNet::mpSendMeleeHitRequest(
+src\terminal\weapon-commands.cpp-133-                        mpContext, 0, 0, netWeapon, 1,
+src\terminal\weapon-commands.cpp-134-                        glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f),
+src\terminal\weapon-commands.cpp-135-                        glm::vec3(0.0f), 0.0f);
+src\terminal\weapon-commands.cpp-136-                    Terminal::instance().addLog("[WEAPON] fired");
+src\terminal\weapon-commands.cpp-137-                    return;
+src\terminal\weapon-commands.cpp-138-                }
+src\terminal\weapon-commands.cpp-139-                MimitaNet::mpSendShotEvent(
+src\terminal\weapon-commands.cpp-140-                    mpContext, targetId, damage, shot.damage,
+src\terminal\weapon-commands.cpp-141-                    effectFlags,
+src\terminal\weapon-commands.cpp-142-                    netWeapon,
+src\terminal\weapon-commands.cpp-143-                    impactType,
+src\terminal\weapon-commands.cpp-144-                    shot.start, shot.end, direction, shot.hitNormal,
+src\terminal\weapon-commands.cpp-145-                    shot.knockbackImpulse);
+src\terminal\weapon-commands.cpp-146-            }
+src\terminal\weapon-commands.cpp-147-            Terminal::instance().addLog("[WEAPON] fired");
+src\terminal\weapon-commands.cpp-148-        }
+src\terminal\weapon-commands.cpp-149-    });
+src\terminal\weapon-commands.cpp-150-
+src\terminal\weapon-commands.cpp-151-    Terminal::instance().registerCommand({
+src\terminal\weapon-commands.cpp-152-        "reload", "Reload weapon", "reload",
+src\terminal\weapon-commands.cpp-153-        [](const std::vector<std::string>&) {
+src\terminal\weapon-commands.cpp-154-            Player& player = THE_PLAYER;
+src\terminal\weapon-commands.cpp-155-            WeaponSystem& weapons = THE_WEAPONS;
+src\terminal\weapon-commands.cpp-156-            bool loaded = weapons.reload(player);
+src\terminal\weapon-commands.cpp-157-            if (DebugConfig::DEBUG_INPUT)
+src\terminal\weapon-commands.cpp-158-                Debug::log(Debug::Category::General, "[INPUT] action=reload command=reload weapon=%s\n",
+src\terminal\weapon-commands.cpp-159-                           loaded ? "executed" : "ignored");
+src\terminal\weapon-commands.cpp-160-            Terminal::instance().addLog(loaded ? "[WEAPON] reload complete" : "[WEAPON] reload unavailable");
+src\terminal\weapon-commands.cpp-161-        }
+src\terminal\weapon-commands.cpp-162-    });
+src\terminal\weapon-commands.cpp-163-
+src\terminal\weapon-commands.cpp-164-    Terminal::instance().registerCommand({
+src\terminal\weapon-commands.cpp-165-        "openinventory", "Toggle inventory", "openinventory",
+src\terminal\weapon-commands.cpp-166-        [](const std::vector<std::string>&) {
+src\terminal\weapon-commands.cpp-167-            Player& player = THE_PLAYER;
+src\terminal\weapon-commands.cpp-168-            player.inventoryOpen = !player.inventoryOpen;
+src\terminal\weapon-commands.cpp-169-            Terminal::instance().addLog(player.inventoryOpen ? "[INVENTORY] opened" : "[INVENTORY] closed");
+src\terminal\weapon-commands.cpp-170-        }
+src\terminal\weapon-commands.cpp-171-    });
+src\terminal\weapon-commands.cpp-172-
+src\terminal\weapon-commands.cpp-173-    // Register equipslot0-9 (maps to slots 10, 1-9)
+src\terminal\weapon-commands.cpp-174-    for (int keySlot = 0; keySlot <= 9; ++keySlot) {
+src\terminal\weapon-commands.cpp-175-        int slot = keySlot == 0 ? 10 : keySlot;
+src\terminal\weapon-commands.cpp-176-        std::string name = "equipslot" + std::to_string(keySlot);
+src\terminal\weapon-commands.cpp-177-        Terminal::instance().registerCommand({
+src\terminal\weapon-commands.cpp-178-            name, "Equip inventory slot " + std::to_string(slot), name,
+src\terminal\weapon-commands.cpp-179-            [slot](const std::vector<std::string>&) {
+src\terminal\weapon-commands.cpp-180-                Player& player = THE_PLAYER;
+src\terminal\weapon-commands.cpp-181-                WeaponSystem& weapons = THE_WEAPONS;
+src\terminal\weapon-commands.cpp-182-                if (player.equippedSlot == slot && player.hasValidWeapon) {
+src\terminal\weapon-commands.cpp-183-                    weapons.unequip(player);
+src\terminal\weapon-commands.cpp-184-                    GetPlayerSettings().equippedSlot = 0;
+src\terminal\weapon-commands.cpp-185-                    SavePlayerSettings();
+src\terminal\weapon-commands.cpp-186-                    Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
+src\terminal\weapon-commands.cpp-187-                } else {
+src\terminal\weapon-commands.cpp-188-                    weapons.equip(player, slot);
+src\terminal\weapon-commands.cpp-189-                    GetPlayerSettings().equippedSlot = slot;
+src\terminal\weapon-commands.cpp-190-                    SavePlayerSettings();
+src\terminal\weapon-commands.cpp-191-                    Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
+src\terminal\weapon-commands.cpp-192-                }
+src\terminal\weapon-commands.cpp-193-            }
+src\terminal\weapon-commands.cpp-194-    });
+src\terminal\weapon-commands.cpp-195-
+src\terminal\weapon-commands.cpp-196-    // Register equip command with arbitrary slot number
+src\terminal\weapon-commands.cpp-197-    Terminal::instance().registerCommand({
+src\terminal\weapon-commands.cpp-198-        "equip", "Equip weapon at slot number", "equip <slot>",
+src\terminal\weapon-commands.cpp-199-        [](const std::vector<std::string>& args) {
+src\terminal\weapon-commands.cpp-200-            if (args.size() < 2) {
+src\terminal\weapon-commands.cpp-201-                Terminal::instance().addLog("[INVENTORY] usage: equip <slot>");
+src\terminal\weapon-commands.cpp-202-                return;
+src\terminal\weapon-commands.cpp-203-            }
+src\terminal\weapon-commands.cpp-204-            int slot = std::atoi(args[1].c_str());
+src\terminal\weapon-commands.cpp-205-            if (slot <= 0) {
+src\terminal\weapon-commands.cpp-206-                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+src\terminal\weapon-commands.cpp-207-                return;
+src\terminal\weapon-commands.cpp-208-            }
+src\terminal\weapon-commands.cpp-209-            Player& player = THE_PLAYER;
+src\terminal\weapon-commands.cpp-210-            WeaponSystem& weapons = THE_WEAPONS;
+--
+src\combat\weapon-system.cpp-1-#include "weapon-system.h"
+src\combat\weapon-system.cpp-2-#include "physics/movement/physics-collision.h"
+src\combat\weapon-system.cpp-3-#include "weapon-audio.h"
+src\combat\weapon-system.cpp-4-#include "weapon-data.h"
+src\combat\weapon-system.cpp-5-#include "weapon-fire.h"
+src\combat\weapon-system.cpp-6-#include "weapon-grenade-launcher.h"
+src\combat\weapon-system.cpp-7-#include "weapon-registry.h"
+src\combat\weapon-system.cpp-8-#include "weapon-runtime.h"
+src\combat\weapon-system.cpp-9-#include "weapon-collision-config.h"
+src\combat\weapon-system.cpp-10-#include "combat/projectile-render.h"
+src\combat\weapon-system.cpp-11-#include "pobjects/persistent-physics.h"
+src\combat\weapon-system.cpp-12-#include "network/packets.h"
+src\combat\weapon-system.cpp-13-#include "debug/debug-visuals.h"
+src\combat\weapon-system.cpp-14-
+src\combat\weapon-system.cpp-15-#include <algorithm>
+src\combat\weapon-system.cpp-16-#include <cmath>
+src\combat\weapon-system.cpp-17-#include <cstdio>
+src\combat\weapon-system.cpp-18-#include <cstdlib>
+src\combat\weapon-system.cpp-19-
+src\combat\weapon-system.cpp-20-#include "audio/audio.h"
+src\combat\weapon-system.cpp-21-#include "analytics/analytics-manager.h"
+src\combat\weapon-system.cpp-22-#include "camera.h"
+src\combat\weapon-system.cpp-23-#include "config.h"
+src\combat\weapon-system.cpp-24-#include "config/player-settings.h"
+src\combat\weapon-system.cpp-25-#include "config/gameplay-config.h"
+src\combat\weapon-system.cpp-26-#include "debug/debug-log.h"
+src\combat\weapon-system.cpp-27-
+src\combat\weapon-system.cpp-28-// Overlay triangle buffer for always-on-top rendering (shared with debug visuals)
+src\combat\weapon-system.cpp-29-struct TrailTriVert { glm::vec3 pos; glm::vec4 color; };
+src\combat\weapon-system.cpp-30-extern std::vector<TrailTriVert> gOverlayTriVerts;
+src\combat\weapon-system.cpp-31-
+src\combat\weapon-system.cpp-32-bool gWeaponCollisionVisualsJson = false;
+src\combat\weapon-system.cpp-33-bool gWeaponCollisionVisualsProbes = false;
+src\combat\weapon-system.cpp-34-#include "debug/debug-visuals.h"
+src\combat\weapon-system.cpp-35-#include "devtools/terminal.h"
+src\combat\weapon-system.cpp-36-#include "effects/effect-part.h"
+src\combat\weapon-system.cpp-37-#include "effects/hit-effects.h"
+src\combat\weapon-system.cpp-38-#include "entities/player.h"
+src\combat\weapon-system.cpp-39-#include "npc/npc.h"
+src\combat\weapon-system.cpp-40-#include "ui/hitmarker.h"
+src\combat\weapon-system.cpp-41-#include "world/world.h"
+src\combat\weapon-system.cpp-42-
+src\combat\weapon-system.cpp-43-static float weaponParamOr(const WeaponDefinition& def, const char* key, float fallback)
+src\combat\weapon-system.cpp-44-{
+src\combat\weapon-system.cpp-45-    auto it = def.customParams.find(key);
+src\combat\weapon-system.cpp-46-    return it != def.customParams.end() ? it->second : fallback;
+src\combat\weapon-system.cpp-47-}
+src\combat\weapon-system.cpp-48-
+src\combat\weapon-system.cpp-49-WeaponSystem::WeaponSystem() {
+src\combat\weapon-system.cpp-50-    WeaponData::registerBuiltinWeapons();
+src\combat\weapon-system.cpp-51-    Debug::log(Debug::Category::Weapons, "[WEAPON SYSTEM] initialized");
+src\combat\weapon-system.cpp-52-    printf("[WORLD XH] enabled=%d\n", (int)DebugConfig::WORLD_XH_ENABLED);
+src\combat\weapon-system.cpp-53-}
+src\combat\weapon-system.cpp-54-
+src\combat\weapon-system.cpp-55-const WeaponDefinition* WeaponSystem::getDefForSlot(int slot) const {
+src\combat\weapon-system.cpp-56-    if (slot <= 0) return nullptr;
+src\combat\weapon-system.cpp-57-    for (const auto& pair : WeaponRegistry::instance().all()) {
+src\combat\weapon-system.cpp-58-        if (pair.second.slot == slot) {
+src\combat\weapon-system.cpp-59-            return &pair.second;
+src\combat\weapon-system.cpp-60-        }
+src\combat\weapon-system.cpp-61-    }
+src\combat\weapon-system.cpp-62-    return nullptr;
+src\combat\weapon-system.cpp-63-}
+src\combat\weapon-system.cpp-64-
+src\combat\weapon-system.cpp-65-const WeaponDefinition* WeaponSystem::getCurrentDef(const Player& player) const {
+src\combat\weapon-system.cpp-66-    return getDefForSlot(player.equippedSlot);
+src\combat\weapon-system.cpp-67-}
+src\combat\weapon-system.cpp-68-
+src\combat\weapon-system.cpp-69-WeaponRuntime* WeaponSystem::getCurrentRuntime(Player& player) {
+src\combat\weapon-system.cpp-70-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-71-    if (!def) return nullptr;
+src\combat\weapon-system.cpp-72-    auto it = player.weaponRuntimes.find(def->id);
+src\combat\weapon-system.cpp-73-    if (it != player.weaponRuntimes.end()) {
+src\combat\weapon-system.cpp-74-        return &it->second;
+src\combat\weapon-system.cpp-75-    }
+src\combat\weapon-system.cpp-76-    player.weaponRuntimes[def->id] = WeaponRuntime{};
+src\combat\weapon-system.cpp-77-    WeaponRuntime* rt = &player.weaponRuntimes[def->id];
+src\combat\weapon-system.cpp-78-    WeaponRuntimeHelper::initRuntime(*rt, *def);
+src\combat\weapon-system.cpp-79-    return rt;
+src\combat\weapon-system.cpp-80-}
+src\combat\weapon-system.cpp-81-
+src\combat\weapon-system.cpp:82:void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const World& world, float dt) {
+src\combat\weapon-system.cpp-83-    if (WeaponData::reloadBuiltinWeaponsIfChanged())
+src\combat\weapon-system.cpp-84-        Terminal::instance().addLog("[WEAPON] Reloaded config/weapons.json");
+src\combat\weapon-system.cpp-85-
+src\combat\weapon-system.cpp-86-    // Hot reload weapon collision config
+src\combat\weapon-system.cpp-87-    WeaponCollisionJsonConfig::instance().pollHotReload();
+src\combat\weapon-system.cpp-88-
+src\combat\weapon-system.cpp-89-    mShotCooldown = std::max(0.0f, mShotCooldown - dt);
+src\combat\weapon-system.cpp-90-    mShootingTimer = std::max(0.0f, mShootingTimer - dt);
+src\combat\weapon-system.cpp-91-    mRecoilValue = std::max(0.0f, mRecoilValue - dt * 15.0f);
+src\combat\weapon-system.cpp-92-    mDisturbance = std::max(0.0f, mDisturbance - dt * 8.0f);
+src\combat\weapon-system.cpp-93-
+src\combat\weapon-system.cpp-94-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-95-    WeaponRuntime* rt = getCurrentRuntime(player);
+src\combat\weapon-system.cpp-96-
+src\combat\weapon-system.cpp-97-    if (def && rt) {
+src\combat\weapon-system.cpp-98-        if (rt->isReloading) {
+src\combat\weapon-system.cpp-99-            bool wasReloading = rt->isReloading;
+src\combat\weapon-system.cpp-100-            WeaponRuntimeHelper::tickReload(*rt, *def, dt);
+src\combat\weapon-system.cpp-101-            if (wasReloading && !rt->isReloading && !def->soundReload.empty())
+src\combat\weapon-system.cpp-102-                playWorldSound(def->soundReload, player.pos, 0.9f, 1.0f, 10.0f);
+src\combat\weapon-system.cpp-103-        }
+src\combat\weapon-system.cpp-104-
+src\combat\weapon-system.cpp-105-        if (rt->reloadBufferTimer > 0.0f) {
+src\combat\weapon-system.cpp-106-            if (!rt->isReloading) {
+src\combat\weapon-system.cpp-107-                rt->reloadBufferTimer = 0.0f;
+src\combat\weapon-system.cpp-108-                if (DebugConfig::DEBUG_RELOAD)
+src\combat\weapon-system.cpp-109-                    Debug::log(Debug::Category::General, "[RELOAD] buffer consumed -> auto-start\n");
+src\combat\weapon-system.cpp-110-                reload(player);
+src\combat\weapon-system.cpp-111-            } else {
+src\combat\weapon-system.cpp-112-                rt->reloadBufferTimer = std::max(0.0f, rt->reloadBufferTimer - dt);
+src\combat\weapon-system.cpp-113-                if (rt->reloadBufferTimer <= 0.0f && DebugConfig::DEBUG_RELOAD)
+src\combat\weapon-system.cpp-114-                    Debug::log(Debug::Category::General, "[RELOAD] buffer expired\n");
+src\combat\weapon-system.cpp-115-            }
+src\combat\weapon-system.cpp-116-        }
+src\combat\weapon-system.cpp-117-
+src\combat\weapon-system.cpp-118-        rt->fireCooldown = std::max(0.0f, rt->fireCooldown - dt);
+src\combat\weapon-system.cpp-119-        rt->shootEffectTimer = std::max(0.0f, rt->shootEffectTimer - dt);
+src\combat\weapon-system.cpp-120-        auto equipTimer = rt->customFloats.find("equipTimer");
+src\combat\weapon-system.cpp-121-        if (equipTimer != rt->customFloats.end())
+src\combat\weapon-system.cpp-122-            equipTimer->second = std::max(0.0f, equipTimer->second - dt);
+src\combat\weapon-system.cpp-123-
+src\combat\weapon-system.cpp-124-        int idx = slotIndex(def->slot);
+src\combat\weapon-system.cpp-125-        if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
+src\combat\weapon-system.cpp:126:            printf("[VMTRACE] WeaponSystem::update calling mViewModels[%d].update for %s\n", idx, def->id.c_str());
+src\combat\weapon-system.cpp-127-        mViewModels[idx].update(camera, player, dt, def, true, &world);
+src\combat\weapon-system.cpp-128-        if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
+src\combat\weapon-system.cpp:129:            printf("[VMTRACE] WeaponSystem::update done for %s (slot=%d idx=%d)\n", def->id.c_str(), def->slot, idx);
+src\combat\weapon-system.cpp-130-
+src\combat\weapon-system.cpp-131-        if (def->behaviorType == WeaponBehaviorType::Godball) {
+src\combat\weapon-system.cpp-132-            if (!mGodballPhys.active) {
+src\combat\weapon-system.cpp-133-                WeaponGodball::spawnBall(mGodballPhys, *def, player);
+src\combat\weapon-system.cpp-134-            }
+src\combat\weapon-system.cpp-135-            WeaponGodball::updatePhysics(mGodballPhys, *def, *rt, player, camera, dt);
+src\combat\weapon-system.cpp-136-            // Continuous overlap damage every frame, not just on fire input
+src\combat\weapon-system.cpp-137-            WeaponGodball::checkOverlaps(mGodballPhys, *def, *rt, player, npcs, camera, dt);
+src\combat\weapon-system.cpp-138-        } else if (def->behaviorType == WeaponBehaviorType::Swordsword) {
+src\combat\weapon-system.cpp-139-            WeaponSwordsword::update(mSwordswordState, *def, *rt, player, npcs, camera, world, dt);
+src\combat\weapon-system.cpp-140-        } else if (def->behaviorType == WeaponBehaviorType::Hafs) {
+src\combat\weapon-system.cpp-141-            WeaponHafs::update(mHafsState, *def, *rt, player, npcs, camera, world, dt);
+src\combat\weapon-system.cpp-142-        } else if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+src\combat\weapon-system.cpp-143-            WeaponRocketLauncher::update(mRocketState, *def, *rt, player, npcs, world, camera, dt);
+src\combat\weapon-system.cpp-144-        } else if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+src\combat\weapon-system.cpp-145-            WeaponGrenadeLauncher::update(*def, *rt, player, npcs, world, camera, dt);
+src\combat\weapon-system.cpp-146-        } else {
+src\combat\weapon-system.cpp-147-            if (mGodballPhys.active) {
+src\combat\weapon-system.cpp-148-                WeaponGodball::despawnBall(mGodballPhys);
+src\combat\weapon-system.cpp-149-            }
+src\combat\weapon-system.cpp-150-        }
+src\combat\weapon-system.cpp-151-    } else {
+src\combat\weapon-system.cpp-152-        player.collision.hasWeaponCollisionCapsule = false;
+src\combat\weapon-system.cpp-153-        player.weaponCollisionName.clear();
+src\combat\weapon-system.cpp-154-        if (mGodballPhys.active) {
+src\combat\weapon-system.cpp-155-            WeaponGodball::despawnBall(mGodballPhys);
+src\combat\weapon-system.cpp-156-        }
+src\combat\weapon-system.cpp-157-    }
+src\combat\weapon-system.cpp-158-
+src\combat\weapon-system.cpp-159-    // ── Off-hand reloads — tick every reloading weapon regardless of equip ──
+src\combat\weapon-system.cpp-160-    std::string equippedId = def ? def->id : "";
+src\combat\weapon-system.cpp-161-    for (auto& [wepId, wepRt] : player.weaponRuntimes) {
+src\combat\weapon-system.cpp-162-        if (wepId == equippedId) continue;
+src\combat\weapon-system.cpp-163-        if (!wepRt.isReloading) continue;
+src\combat\weapon-system.cpp-164-        const WeaponDefinition* wepDef = WeaponRegistry::instance().get(wepId);
+src\combat\weapon-system.cpp-165-        if (!wepDef) continue;
+src\combat\weapon-system.cpp-166-        WeaponRuntimeHelper::tickReload(wepRt, *wepDef, dt);
+src\combat\weapon-system.cpp-167-    }
+src\combat\weapon-system.cpp-168-
+src\combat\weapon-system.cpp-169-    // ── World-space aim crosshair (permanent) ──────────────
+src\combat\weapon-system.cpp-170-    if (DebugConfig::WORLD_XH_ENABLED && def && rt) {
+src\combat\weapon-system.cpp-171-        int idx = slotIndex(def->slot);
+src\combat\weapon-system.cpp-172-        const WeaponViewModel& vm = mViewModels[idx];
+src\combat\weapon-system.cpp-173-        glm::vec3 muzzlePos = vm.muzzle;
+src\combat\weapon-system.cpp-174-
+src\combat\weapon-system.cpp-175-        WeaponFire::AimSolution aim = WeaponFire::computeAim(
+src\combat\weapon-system.cpp-176-            camera, world, npcs, muzzlePos, nullptr);
+src\combat\weapon-system.cpp-177-        glm::vec3 shotDir = aim.direction;
+src\combat\weapon-system.cpp-178-
+src\combat\weapon-system.cpp-179-        constexpr float MAX_DIST = 100.0f;
+src\combat\weapon-system.cpp-180-        float nearest = MAX_DIST;
+src\combat\weapon-system.cpp-181-        glm::vec3 hitPoint = muzzlePos + shotDir * MAX_DIST;
+src\combat\weapon-system.cpp-182-        glm::vec3 hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+src\combat\weapon-system.cpp-183-
+src\combat\weapon-system.cpp-184-        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+src\combat\weapon-system.cpp-185-            float d = 0.0f;
+src\combat\weapon-system.cpp-186-            if (WeaponFire::rayTriangle(muzzlePos, shotDir, tri, d) && d < nearest) {
+src\combat\weapon-system.cpp-187-                nearest = d;
+src\combat\weapon-system.cpp-188-                hitPoint = muzzlePos + shotDir * d;
+src\combat\weapon-system.cpp-189-                hitNormal = tri.normal;
+src\combat\weapon-system.cpp-190-            }
+src\combat\weapon-system.cpp-191-        }
+src\combat\weapon-system.cpp-192-        for (Npc& npc : npcs.all()) {
+src\combat\weapon-system.cpp-193-            if (npc.body.currentHp <= 0) continue;
+src\combat\weapon-system.cpp-194-            npc.body.updateModelWorldTransforms();
+src\combat\weapon-system.cpp-195-            for (const PhysicalBodyPart& part : npc.body.physicalBody.parts) {
+src\combat\weapon-system.cpp-196-                glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+src\combat\weapon-system.cpp-197-                glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+src\combat\weapon-system.cpp-198-                glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+src\combat\weapon-system.cpp-199-                float d = 0.0f;
+src\combat\weapon-system.cpp-200-                glm::vec3 nml;
+src\combat\weapon-system.cpp-201-                if (WeaponFire::rayAabb(muzzlePos, shotDir, center - half, center + half, d, nml) && d < nearest) {
+src\combat\weapon-system.cpp-202-                    nearest = d;
+src\combat\weapon-system.cpp-203-                    hitPoint = muzzlePos + shotDir * d;
+src\combat\weapon-system.cpp-204-                    hitNormal = nml;
+src\combat\weapon-system.cpp-205-                }
+src\combat\weapon-system.cpp-206-            }
+src\combat\weapon-system.cpp-207-        }
+src\combat\weapon-system.cpp-208-
+src\combat\weapon-system.cpp-209-        // In crosshair mode the reticle is the camera-ray target. In world_hit
+src\combat\weapon-system.cpp-210-        // mode it keeps the old predicted muzzle-impact behavior.
+src\combat\weapon-system.cpp-211-        glm::vec3 crossPos = aim.usesCameraTarget ? aim.aimPoint : hitPoint;
+src\combat\weapon-system.cpp-212-        float crossDistance = aim.usesCameraTarget ? aim.cameraDistance : nearest;
+src\combat\weapon-system.cpp-213-
+src\combat\weapon-system.cpp-214-        // ── World-space aim trail ───────────────────────────────
+src\combat\weapon-system.cpp-215-        int trailInterval = DebugConfig::WORLD_XH_TRAIL_SPAWN_INTERVAL;
+src\combat\weapon-system.cpp-216-        if (DebugConfig::WORLD_XH_TRAIL_ENABLED && trailInterval > 0 && (mTrailTick % trailInterval) == 0)
+src\combat\weapon-system.cpp-217-        {
+src\combat\weapon-system.cpp-218-            int maxPts = glm::clamp(DebugConfig::WORLD_XH_TRAIL_MAX_POINTS, 1, MAX_TRAIL_POINTS);
+src\combat\weapon-system.cpp-219-            mTrailPoints[mTrailHead] = {crossPos, hitNormal, mTrailTick};
+src\combat\weapon-system.cpp-220-            mTrailHead = (mTrailHead + 1) % maxPts;
+src\combat\weapon-system.cpp-221-            if (mTrailCount < maxPts) mTrailCount++;
+src\combat\weapon-system.cpp-222-        }
+src\combat\weapon-system.cpp-223-        mTrailTick++;
+src\combat\weapon-system.cpp-224-
+src\combat\weapon-system.cpp-225-        // Visibility ray from camera to crossPos: if something is between
+src\combat\weapon-system.cpp-226-        // the camera and the hit point, the crosshair is hidden. Otherwise
+src\combat\weapon-system.cpp-227-        // it renders as an overlay (not occluded by the hit surface itself).
+src\combat\weapon-system.cpp-228-        bool crosshairVisible = true;
+src\combat\weapon-system.cpp-229-        {
+--
+src\combat\weapon-system.cpp-545-        cfg.textureTiling = glm::vec2(cp("projectileVisualTextureTilingU", 1.0f), cp("projectileVisualTextureTilingV", 1.0f));
+src\combat\weapon-system.cpp-546-        cfg.fillAlpha = cp("projectileFillAlpha", 1.0f);
+src\combat\weapon-system.cpp-547-        cfg.outlineEnabled = cp("projectileOutlineEnabled", 1.0f) > 0.0f;
+src\combat\weapon-system.cpp-548-        cfg.outlineColor = glm::vec3(cp("projectileOutlineColorR", 1.0f), cp("projectileOutlineColorG", 0.8f), cp("projectileOutlineColorB", 0.2f));
+src\combat\weapon-system.cpp-549-        cfg.outlineAlpha = cp("projectileOutlineAlpha", 0.4f);
+src\combat\weapon-system.cpp-550-        cfg.outlineScale = cp("projectileOutlineScale", 1.15f);
+src\combat\weapon-system.cpp-551-        cfg.glowEnabled = cp("projectileGlowEnabled", 1.0f) > 0.0f;
+src\combat\weapon-system.cpp-552-        cfg.glowColor = glm::vec3(cp("projectileGlowColorR", 1.0f), cp("projectileGlowColorG", 0.6f), cp("projectileGlowColorB", 0.0f));
+src\combat\weapon-system.cpp-553-        cfg.glowAlpha = cp("projectileGlowAlpha", 0.15f);
+src\combat\weapon-system.cpp-554-        cfg.glowRadiusMultiplier = cp("projectileGlowRadiusMultiplier", 3.0f);
+src\combat\weapon-system.cpp-555-        return cfg;
+src\combat\weapon-system.cpp-556-    };
+src\combat\weapon-system.cpp-557-
+src\combat\weapon-system.cpp-558-    // ── Projectile rendering for rocket launcher ──
+src\combat\weapon-system.cpp-559-    if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+src\combat\weapon-system.cpp-560-        ProjectileVisualConfig cfg = buildProjCfg(*def, true);
+src\combat\weapon-system.cpp-561-        for (const auto& rocket : mRocketState.activeRockets) {
+src\combat\weapon-system.cpp-562-            if (rocket.exploded) continue;
+src\combat\weapon-system.cpp-563-            renderProjectile(camera, rocket.position, rocket.orientation, cfg);
+src\combat\weapon-system.cpp-564-        }
+src\combat\weapon-system.cpp-565-    }
+src\combat\weapon-system.cpp-566-
+src\combat\weapon-system.cpp-567-    // ── Projectile rendering for grenade launcher ──
+src\combat\weapon-system.cpp-568-    if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+src\combat\weapon-system.cpp-569-        ProjectileVisualConfig cfg = buildProjCfg(*def, false);
+src\combat\weapon-system.cpp-570-        for (const PersistentPhysicsObject& obj : PersistentPhysicsSystem::instance().objects()) {
+src\combat\weapon-system.cpp-571-            if (obj.exploded || obj.weaponId != "grenade_launcher") continue;
+src\combat\weapon-system.cpp-572-            renderProjectile(camera, obj.position, obj.rotation, cfg);
+src\combat\weapon-system.cpp-573-        }
+src\combat\weapon-system.cpp-574-    }
+src\combat\weapon-system.cpp-575-
+src\combat\weapon-system.cpp-576-    // Weapon collision debug visuals (draws actual runtime collision data)
+src\combat\weapon-system.cpp-577-    bool anyVis = gWeaponCollisionVisualsJson || gWeaponCollisionVisualsProbes;
+src\combat\weapon-system.cpp-578-    if (anyVis && player.weaponCollisionDebug.valid) {
+src\combat\weapon-system.cpp-579-        const auto& wcd = player.weaponCollisionDebug;
+src\combat\weapon-system.cpp-580-
+src\combat\weapon-system.cpp-581-        // Count spheres by type for logging
+src\combat\weapon-system.cpp-582-        if (DebugConfig::DEBUG_WEAPON_COLLISION)
+src\combat\weapon-system.cpp-583-        {
+src\combat\weapon-system.cpp-584-            static float logTimer = 0.0f;
+src\combat\weapon-system.cpp-585-            logTimer -= 0.016f;
+src\combat\weapon-system.cpp-586-            if (logTimer <= 0.0f) {
+src\combat\weapon-system.cpp-587-                logTimer = 1.0f;
+src\combat\weapon-system.cpp-588-                int jsonCount = 0, probeCount = 0;
+src\combat\weapon-system.cpp-589-                for (const auto& s : wcd.spheres) {
+src\combat\weapon-system.cpp-590-                    if (!s.collidesWithWorld) continue;
+src\combat\weapon-system.cpp-591-                    if (s.sourceType == WeaponColliderDebugSphere::SourceType::JsonSphere)
+src\combat\weapon-system.cpp-592-                        ++jsonCount;
+src\combat\weapon-system.cpp-593-                    else
+src\combat\weapon-system.cpp-594-                        ++probeCount;
+src\combat\weapon-system.cpp-595-                }
+src\combat\weapon-system.cpp-596-                Debug::log(Debug::Category::Weapons,
+src\combat\weapon-system.cpp-597-                    "[WEAPON COLLISION VISUALS] weapon=%s json=%d probes=%d capsule=%d",
+src\combat\weapon-system.cpp-598-                    wcd.weaponId.c_str(), jsonCount, probeCount, (int)wcd.capsule.enabled);
+src\combat\weapon-system.cpp-599-            }
+src\combat\weapon-system.cpp-600-        }
+src\combat\weapon-system.cpp-601-
+src\combat\weapon-system.cpp-602-        // Capsule wireframes (only shown with probes)
+src\combat\weapon-system.cpp-603-        if (gWeaponCollisionVisualsProbes && wcd.capsule.enabled) {
+src\combat\weapon-system.cpp-604-            // Current capsule wire (darker blue)
+src\combat\weapon-system.cpp-605-            Capsule curCap;
+src\combat\weapon-system.cpp-606-            curCap.a = wcd.capsule.currentStart;
+src\combat\weapon-system.cpp-607-            curCap.b = wcd.capsule.currentEnd;
+src\combat\weapon-system.cpp-608-            curCap.r = wcd.capsule.radius;
+src\combat\weapon-system.cpp-609-            DebugVis::drawWeaponCapsuleWire(camera, curCap, {0.0f, 0.5f, 1.0f, 0.5f});
+src\combat\weapon-system.cpp-610-
+src\combat\weapon-system.cpp-611-            // Previous capsule wire (darker red)
+src\combat\weapon-system.cpp-612-            float prevLen = glm::length(wcd.capsule.previousEnd - wcd.capsule.previousStart);
+src\combat\weapon-system.cpp-613-            if (prevLen > 0.001f) {
+src\combat\weapon-system.cpp-614-                Capsule prevCap;
+src\combat\weapon-system.cpp-615-                prevCap.a = wcd.capsule.previousStart;
+src\combat\weapon-system.cpp-616-                prevCap.b = wcd.capsule.previousEnd;
+src\combat\weapon-system.cpp-617-                prevCap.r = wcd.capsule.radius;
+src\combat\weapon-system.cpp-618-                DebugVis::drawWeaponCapsuleWire(camera, prevCap, {0.5f, 0.0f, 0.0f, 0.4f});
+src\combat\weapon-system.cpp-619-            }
+src\combat\weapon-system.cpp-620-        }
+src\combat\weapon-system.cpp-621-
+src\combat\weapon-system.cpp-622-        for (const auto& ds : wcd.spheres) {
+src\combat\weapon-system.cpp-623-            if (!ds.collidesWithWorld)
+src\combat\weapon-system.cpp-624-                continue;
+src\combat\weapon-system.cpp-625-
+src\combat\weapon-system.cpp-626-            // Filter by source type: JSON spheres vs probe spheres
+src\combat\weapon-system.cpp-627-            bool isJson = (ds.sourceType == WeaponColliderDebugSphere::SourceType::JsonSphere);
+src\combat\weapon-system.cpp-628-            if (isJson && !gWeaponCollisionVisualsJson) continue;
+src\combat\weapon-system.cpp-629-            if (!isJson && !gWeaponCollisionVisualsProbes) continue;
+src\combat\weapon-system.cpp-630-
+src\combat\weapon-system.cpp-631-            // Current sphere: turquoise, 50% transparent
+src\combat\weapon-system.cpp-632-            DebugVis::drawWeaponWireSphere(camera, ds.currentCenter, ds.radius, {0.0f, 1.0f, 1.0f, 0.5f});
+src\combat\weapon-system.cpp-633-
+src\combat\weapon-system.cpp-634-            float prevDist = glm::length(ds.previousCenter - ds.currentCenter);
+src\combat\weapon-system.cpp-635-            if (prevDist > 0.001f) {
+src\combat\weapon-system.cpp-636-                // Previous sphere: red, 50% transparent
+src\combat\weapon-system.cpp-637-                DebugVis::drawWeaponWireSphere(camera, ds.previousCenter, ds.radius, {1.0f, 0.0f, 0.0f, 0.5f});
+src\combat\weapon-system.cpp-638-                // Sweep line: yellow
+src\combat\weapon-system.cpp-639-                DebugVis::drawWeaponLine(camera, ds.previousCenter, ds.currentCenter, {1.0f, 1.0f, 0.0f, 0.9f});
+src\combat\weapon-system.cpp-640-            }
+src\combat\weapon-system.cpp-641-        }
+src\combat\weapon-system.cpp-642-    }
+src\combat\weapon-system.cpp-643-}
+src\combat\weapon-system.cpp-644-
+src\combat\weapon-system.cpp:645:RevolverShotResult WeaponSystem::fire(
+src\combat\weapon-system.cpp-646-    Camera& camera,
+src\combat\weapon-system.cpp-647-    Player& player,
+src\combat\weapon-system.cpp-648-    NpcSystem& npcs,
+src\combat\weapon-system.cpp-649-    const World& world,
+src\combat\weapon-system.cpp-650-    const std::unordered_map<uint32_t, Player>* remotePlayers) {
+src\combat\weapon-system.cpp-651-    if (player.dead) {
+src\combat\weapon-system.cpp-652-        Terminal::instance().addLog("[WEAPON] cannot fire - player is dead");
+src\combat\weapon-system.cpp-653-        return {};
+src\combat\weapon-system.cpp-654-    }
+src\combat\weapon-system.cpp-655-
+src\combat\weapon-system.cpp-656-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-657-    if (!def) {
+src\combat\weapon-system.cpp-658-        Terminal::instance().addLog("[WEAPON] no weapon equipped in slot " + std::to_string(player.equippedSlot));
+src\combat\weapon-system.cpp-659-        return {};
+src\combat\weapon-system.cpp-660-    }
+src\combat\weapon-system.cpp-661-
+src\combat\weapon-system.cpp-662-    WeaponRuntime* rt = getCurrentRuntime(player);
+src\combat\weapon-system.cpp-663-    if (!rt) return {};
+src\combat\weapon-system.cpp-664-
+src\combat\weapon-system.cpp-665-    if (def->behaviorType == WeaponBehaviorType::Godball) {
+src\combat\weapon-system.cpp-666-        fireGodball(camera, player, npcs, world);
+src\combat\weapon-system.cpp-667-        return {};
+src\combat\weapon-system.cpp-668-    }
+src\combat\weapon-system.cpp-669-
+src\combat\weapon-system.cpp-670-    if (def->behaviorType == WeaponBehaviorType::Swordsword) {
+src\combat\weapon-system.cpp-671-        return fireSwordsword(camera, player, npcs, remotePlayers);
+src\combat\weapon-system.cpp-672-    }
+src\combat\weapon-system.cpp-673-
+src\combat\weapon-system.cpp-674-    if (def->behaviorType == WeaponBehaviorType::Hafs) {
+src\combat\weapon-system.cpp-675-        WeaponHafs::startSlash(mHafsState, *def, player);
+src\combat\weapon-system.cpp-676-        return {};
+src\combat\weapon-system.cpp-677-    }
+src\combat\weapon-system.cpp-678-
+src\combat\weapon-system.cpp-679-    if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
+src\combat\weapon-system.cpp-680-        return fireRocketLauncher(camera, player, npcs, world, remotePlayers);
+src\combat\weapon-system.cpp-681-    }
+src\combat\weapon-system.cpp-682-
+src\combat\weapon-system.cpp-683-    bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
+src\combat\weapon-system.cpp-684-
+src\combat\weapon-system.cpp-685-    if (!canInterruptReload && (rt->isReloading || rt->fireCooldown > 0.0f)) {
+src\combat\weapon-system.cpp-686-        return {};
+src\combat\weapon-system.cpp-687-    }
+src\combat\weapon-system.cpp-688-
+src\combat\weapon-system.cpp-689-    // Allow firing during reload if clip has ammo (interrupts reload for rocket/grenade)
+src\combat\weapon-system.cpp-690-    if (canInterruptReload && rt->isReloading && rt->currentAmmo > 0) {
+src\combat\weapon-system.cpp-691-        // Fire loaded projectile, interrupt reload, discard partial progress
+src\combat\weapon-system.cpp-692-    } else if (rt->fireCooldown > 0.0f) {
+src\combat\weapon-system.cpp-693-        return {};
+src\combat\weapon-system.cpp-694-    }
+src\combat\weapon-system.cpp-695-
+src\combat\weapon-system.cpp-696-    if (rt->currentAmmo <= 0) {
+src\combat\weapon-system.cpp-697-        WeaponAudio::playDryFireSound(*def);
+src\combat\weapon-system.cpp-698-        if (!rt->isReloading && rt->reserveAmmo > 0) {
+src\combat\weapon-system.cpp-699-            reload(player);
+src\combat\weapon-system.cpp-700-        }
+src\combat\weapon-system.cpp-701-        return {};
+src\combat\weapon-system.cpp-702-    }
+src\combat\weapon-system.cpp-703-
+src\combat\weapon-system.cpp-704-    if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+src\combat\weapon-system.cpp-705-        rt->currentAmmo--;
+src\combat\weapon-system.cpp-706-        rt->fireCooldown = def->fireDelay;
+src\combat\weapon-system.cpp-707-        // Interrupt reload on successful fire
+src\combat\weapon-system.cpp-708-        if (rt->isReloading) {
+src\combat\weapon-system.cpp-709-            rt->isReloading = false;
+src\combat\weapon-system.cpp-710-            rt->reloadTimer = 0.0f;
+src\combat\weapon-system.cpp-711-            if (DebugConfig::DEBUG_RELOAD)
+src\combat\weapon-system.cpp-712-                Debug::log(Debug::Category::General, "[RELOAD] interrupted by fire; partial progress discarded\n");
+src\combat\weapon-system.cpp-713-        }
+src\combat\weapon-system.cpp-714-        rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
+src\combat\weapon-system.cpp-715-        mShotCooldown = def->fireDelay;
+src\combat\weapon-system.cpp-716-        WeaponFire::applyRecoil(player, *def,
+src\combat\weapon-system.cpp-717-            camera.front, mRecoilValue, 1.0f / 60.0f);
+src\combat\weapon-system.cpp-718-        mDisturbance += 1.2f;
+src\combat\weapon-system.cpp-719-        AnalyticsManager::instance().trackWeaponUsed(def->id);
+src\combat\weapon-system.cpp-720-
+src\combat\weapon-system.cpp-721-        int idx = slotIndex(def->slot);
+src\combat\weapon-system.cpp-722-        const WeaponViewModel& vm = mViewModels[idx];
+src\combat\weapon-system.cpp-723-        glm::vec3 muzzlePos = vm.muzzle;
+src\combat\weapon-system.cpp-724-        glm::vec3 muzzleDir = vm.forward;
+src\combat\weapon-system.cpp-725-        WeaponFire::AimSolution aim = WeaponFire::computeAim(
+src\combat\weapon-system.cpp-726-            camera, world, npcs, muzzlePos, nullptr);
+src\combat\weapon-system.cpp-727-        glm::vec3 dir = aim.direction;
+src\combat\weapon-system.cpp-728-        float recoilStrength = def->customParams.count("firingRecoilStrength")
+src\combat\weapon-system.cpp-729-            ? def->customParams.at("firingRecoilStrength") : 20.0f;
+src\combat\weapon-system.cpp-730-        player.externalImpulse -= dir * recoilStrength;
+src\combat\weapon-system.cpp-731-        RevolverShotResult result;
+src\combat\weapon-system.cpp-732-        result.fired = true;
+src\combat\weapon-system.cpp-733-        result.start = muzzlePos;
+src\combat\weapon-system.cpp-734-        result.end = muzzlePos + dir;
+src\combat\weapon-system.cpp-735-        result.hitNormal = -dir;
+src\combat\weapon-system.cpp-736-        if (remotePlayers) {
+src\combat\weapon-system.cpp-737-            WeaponAudio::playShootSound(*def, muzzlePos);
+src\combat\weapon-system.cpp-738-        } else {
+src\combat\weapon-system.cpp:739:            WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
+src\combat\weapon-system.cpp-740-        }
+src\combat\weapon-system.cpp-741-
+src\combat\weapon-system.cpp-742-        Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired ammo=%d/%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f)\n",
+src\combat\weapon-system.cpp-743-                   rt->currentAmmo, rt->reserveAmmo,
+src\combat\weapon-system.cpp-744-                   muzzlePos.x, muzzlePos.y, muzzlePos.z,
+src\combat\weapon-system.cpp-745-                   dir.x, dir.y, dir.z);
+src\combat\weapon-system.cpp-746-        return result;
+src\combat\weapon-system.cpp-747-    }
+src\combat\weapon-system.cpp-748-
+src\combat\weapon-system.cpp-749-    return fireHitscan(camera, player, npcs, world, remotePlayers);
+src\combat\weapon-system.cpp-750-}
+src\combat\weapon-system.cpp-751-
+src\combat\weapon-system.cpp:752:RevolverShotResult WeaponSystem::fireHitscan(
+src\combat\weapon-system.cpp-753-    const Camera& camera,
+src\combat\weapon-system.cpp-754-    Player& player,
+src\combat\weapon-system.cpp-755-    NpcSystem& npcs,
+src\combat\weapon-system.cpp-756-    const World& world,
+src\combat\weapon-system.cpp-757-    const std::unordered_map<uint32_t, Player>* remotePlayers) {
+src\combat\weapon-system.cpp-758-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-759-    WeaponRuntime* rt = getCurrentRuntime(player);
+src\combat\weapon-system.cpp-760-    if (!def || !rt) return {};
+src\combat\weapon-system.cpp-761-
+src\combat\weapon-system.cpp-762-    rt->currentAmmo--;
+src\combat\weapon-system.cpp-763-    rt->fireCooldown = def->fireDelay;
+src\combat\weapon-system.cpp-764-    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
+src\combat\weapon-system.cpp-765-    mShotCooldown = def->fireDelay;
+src\combat\weapon-system.cpp-766-    mShootingTimer = 0.1f;
+src\combat\weapon-system.cpp-767-
+src\combat\weapon-system.cpp-768-    int idx = slotIndex(def->slot);
+src\combat\weapon-system.cpp-769-    const WeaponViewModel& vm = mViewModels[idx];
+src\combat\weapon-system.cpp-770-    glm::vec3 muzzlePos = vm.muzzle;
+src\combat\weapon-system.cpp-771-    glm::vec3 muzzleDir = vm.forward;
+src\combat\weapon-system.cpp-772-
+src\combat\weapon-system.cpp-773-    RevolverShotResult result;
+src\combat\weapon-system.cpp-774-
+src\combat\weapon-system.cpp-775-    if (def->pelletCount > 1) {
+src\combat\weapon-system.cpp-776-        WeaponFire::fireMultiPellet(
+src\combat\weapon-system.cpp-777-            *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
+src\combat\weapon-system.cpp-778-            remotePlayers, result);
+src\combat\weapon-system.cpp-779-    } else {
+src\combat\weapon-system.cpp-780-        result = WeaponFire::tryFireHitscan(
+src\combat\weapon-system.cpp-781-            *def, *rt, camera, player, npcs, world, muzzlePos, muzzleDir,
+src\combat\weapon-system.cpp-782-            remotePlayers);
+src\combat\weapon-system.cpp-783-    }
+src\combat\weapon-system.cpp-784-
+src\combat\weapon-system.cpp-785-    WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
+src\combat\weapon-system.cpp-786-    mDisturbance += 1.2f;
+src\combat\weapon-system.cpp-787-    AnalyticsManager::instance().trackWeaponUsed(def->id);
+src\combat\weapon-system.cpp-788-
+src\combat\weapon-system.cpp-789-        Debug::log(Debug::Category::Weapons, "[WEAPON] hitscan fired: slot=%d weapon=%s ammo=%d",
+src\combat\weapon-system.cpp-790-           def->slot, def->id.c_str(), rt->currentAmmo);
+src\combat\weapon-system.cpp-791-        if (def->id == "aa12")
+src\combat\weapon-system.cpp-792-            Debug::log(Debug::Category::Weapons, "[AA12] Fired: ammo=%d, cooldown=%.2f", rt->currentAmmo, rt->fireCooldown);
+src\combat\weapon-system.cpp-793-        if (def->id == "admin_revolver")
+src\combat\weapon-system.cpp-794-            Debug::log(Debug::Category::Weapons,
+src\combat\weapon-system.cpp-795-                "[ADMIN REVOLVER] Shots Fired  Current Clip: %d  Fire Interval: %.4f  Spread: %.1f\n",
+src\combat\weapon-system.cpp-796-                rt->currentAmmo, def->fireDelay, def->spread);
+src\combat\weapon-system.cpp-797-
+src\combat\weapon-system.cpp-798-    return result;
+src\combat\weapon-system.cpp-799-}
+src\combat\weapon-system.cpp-800-
+src\combat\weapon-system.cpp-801-std::vector<RevolverShotResult> WeaponSystem::collectRemoteGodballHits(
+src\combat\weapon-system.cpp-802-    Player& player,
+src\combat\weapon-system.cpp-803-    const std::unordered_map<uint32_t, Player>& remotePlayers,
+src\combat\weapon-system.cpp-804-    float dt)
+src\combat\weapon-system.cpp-805-{
+src\combat\weapon-system.cpp-806-    std::vector<RevolverShotResult> hits;
+src\combat\weapon-system.cpp-807-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-808-    if (!def || def->behaviorType != WeaponBehaviorType::Godball ||
+src\combat\weapon-system.cpp-809-        !mGodballPhys.active)
+src\combat\weapon-system.cpp-810-        return hits;
+src\combat\weapon-system.cpp-811-
+src\combat\weapon-system.cpp-812-    for (auto& entry : mRemoteGodballCooldowns)
+src\combat\weapon-system.cpp-813-        entry.second = std::max(0.0f, entry.second - dt);
+src\combat\weapon-system.cpp-814-
+src\combat\weapon-system.cpp-815-    const float tickInterval = def->customParams.count("damageTickInterval")
+src\combat\weapon-system.cpp-816-        ? def->customParams.at("damageTickInterval") : 0.1f;
+src\combat\weapon-system.cpp-817-
+src\combat\weapon-system.cpp-818-    for (const auto& entry : remotePlayers)
+src\combat\weapon-system.cpp-819-    {
+src\combat\weapon-system.cpp-820-        const uint32_t targetId = entry.first;
+src\combat\weapon-system.cpp-821-        const Player& target = entry.second;
+src\combat\weapon-system.cpp-822-        if (target.dead || target.currentHp <= 0 ||
+src\combat\weapon-system.cpp-823-            mRemoteGodballCooldowns[targetId] > 0.0f)
+src\combat\weapon-system.cpp-824-            continue;
+src\combat\weapon-system.cpp-825-
+src\combat\weapon-system.cpp-826-        const glm::vec3 toTarget = target.pos - mGodballPhys.position;
+src\combat\weapon-system.cpp-827-        const float distance = glm::length(toTarget);
+src\combat\weapon-system.cpp-828-        if (distance >= mGodballPhys.radius + 0.65f)
+src\combat\weapon-system.cpp-829-            continue;
+src\combat\weapon-system.cpp-830-
+src\combat\weapon-system.cpp-831-        const glm::vec3 direction = distance > 0.001f
+src\combat\weapon-system.cpp-832-            ? toTarget / distance
+src\combat\weapon-system.cpp-833-            : glm::vec3(0.0f, 1.0f, 0.0f);
+src\combat\weapon-system.cpp-834-        const int damage = std::clamp(
+src\combat\weapon-system.cpp-835-            (int)std::round(WeaponGodball::computeDamage(
+src\combat\weapon-system.cpp-836-                mGodballPhys, *def, player, target,
+src\combat\weapon-system.cpp-837-                mGodballPhys.position + direction * mGodballPhys.radius)),
+src\combat\weapon-system.cpp-838-            1, 200);
+src\combat\weapon-system.cpp-839-
+src\combat\weapon-system.cpp-840-        RevolverShotResult hit;
+src\combat\weapon-system.cpp-841-        hit.fired = true;
+src\combat\weapon-system.cpp-842-        hit.hitEntity = true;
+src\combat\weapon-system.cpp-843-        hit.targetIsRemotePlayer = true;
+src\combat\weapon-system.cpp-844-        hit.targetId = targetId;
+src\combat\weapon-system.cpp-845-        hit.damage = (float)damage;
+src\combat\weapon-system.cpp-846-        hit.start = WeaponGodball::getHandPosition(player);
+src\combat\weapon-system.cpp-847-        hit.end = target.pos + glm::vec3(0.0f, 0.0f, 0.8f);
+src\combat\weapon-system.cpp-848-        hits.push_back(hit);
+src\combat\weapon-system.cpp-849-        mRemoteGodballCooldowns[targetId] = tickInterval;
+src\combat\weapon-system.cpp-850-
+src\combat\weapon-system.cpp-851-        hitmarker(damage);
+src\combat\weapon-system.cpp-852-        {
+src\combat\weapon-system.cpp-853-            HitEvent ev;
+src\combat\weapon-system.cpp-854-            ev.position = hit.end;
+src\combat\weapon-system.cpp-855-            ev.normal = direction;
+src\combat\weapon-system.cpp-856-            ev.direction = direction;
+src\combat\weapon-system.cpp-857-            ev.hitEntity = true;
+src\combat\weapon-system.cpp-858-            ev.damage = damage;
+src\combat\weapon-system.cpp-859-            ev.attacker = player.username;
+src\combat\weapon-system.cpp-860-            ev.victim = target.username;
+src\combat\weapon-system.cpp-861-            ev.weaponSource = "godball_remote";
+src\combat\weapon-system.cpp-862-            HitEffects::onHit(ev);
+src\combat\weapon-system.cpp-863-        }
+src\combat\weapon-system.cpp-864-        WeaponAudio::playGodballImpact(
+src\combat\weapon-system.cpp-865-            hit.end, std::clamp(hit.damage / 100.0f, 0.0f, 1.0f));
+src\combat\weapon-system.cpp-866-    }
+src\combat\weapon-system.cpp-867-
+src\combat\weapon-system.cpp-868-    return hits;
+src\combat\weapon-system.cpp-869-}
+src\combat\weapon-system.cpp-870-
+src\combat\weapon-system.cpp:871:RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& player, NpcSystem& npcs, const World& world, const std::unordered_map<uint32_t, Player>* remotePlayers) {
+src\combat\weapon-system.cpp-872-    RevolverShotResult result;
+src\combat\weapon-system.cpp-873-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-874-    WeaponRuntime* rt = getCurrentRuntime(player);
+src\combat\weapon-system.cpp-875-    if (!def || !rt) return result;
+src\combat\weapon-system.cpp-876-
+src\combat\weapon-system.cpp-877-    if (rt->fireCooldown > 0.0f && !rt->isReloading) {
+src\combat\weapon-system.cpp-878-        playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+src\combat\weapon-system.cpp-879-        return result;
+src\combat\weapon-system.cpp-880-    }
+src\combat\weapon-system.cpp-881-
+src\combat\weapon-system.cpp-882-    // Allow firing during reload if clip has ammo
+src\combat\weapon-system.cpp-883-    if (rt->currentAmmo > 0 && rt->isReloading) {
+src\combat\weapon-system.cpp-884-        // Fire loaded projectile, interrupt reload, discard partial progress
+src\combat\weapon-system.cpp-885-    } else if (rt->currentAmmo <= 0) {
+src\combat\weapon-system.cpp-886-        playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+src\combat\weapon-system.cpp-887-        if (!rt->isReloading && rt->reserveAmmo > 0)
+src\combat\weapon-system.cpp-888-            reload(player);
+src\combat\weapon-system.cpp-889-        return result;
+src\combat\weapon-system.cpp-890-    } else if (rt->fireCooldown > 0.0f) {
+src\combat\weapon-system.cpp-891-        return result;
+src\combat\weapon-system.cpp-892-    }
+src\combat\weapon-system.cpp-893-
+src\combat\weapon-system.cpp-894-    // Interrupt reload on successful fire (WeaponRocketLauncher::fire handles ammo consumption)
+src\combat\weapon-system.cpp-895-    if (rt->isReloading) {
+src\combat\weapon-system.cpp-896-        rt->isReloading = false;
+src\combat\weapon-system.cpp-897-        rt->reloadTimer = 0.0f;
+src\combat\weapon-system.cpp-898-        if (DebugConfig::DEBUG_RELOAD)
+src\combat\weapon-system.cpp-899-            Debug::log(Debug::Category::General, "[RELOAD] interrupted by fire; partial progress discarded\n");
+src\combat\weapon-system.cpp-900-    }
+src\combat\weapon-system.cpp-901-
+src\combat\weapon-system.cpp-902-    int idx = slotIndex(def->slot);
+src\combat\weapon-system.cpp-903-    const WeaponViewModel& vm = mViewModels[idx];
+src\combat\weapon-system.cpp-904-    glm::vec3 muzzlePos = vm.muzzle;
+src\combat\weapon-system.cpp-905-
+src\combat\weapon-system.cpp-906-    WeaponFire::AimSolution aim = WeaponFire::computeAim(
+src\combat\weapon-system.cpp-907-        camera, world, npcs, muzzlePos, remotePlayers);
+src\combat\weapon-system.cpp-908-    WeaponFire::logAimDebug("rocket_launcher", camera, aim);
+src\combat\weapon-system.cpp-909-    glm::vec3 dir = aim.direction;
+src\combat\weapon-system.cpp-910-    Debug::warn(Debug::Category::Weapons,
+src\combat\weapon-system.cpp-911-        "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
+src\combat\weapon-system.cpp-912-        dir.x, dir.y, dir.z);
+src\combat\weapon-system.cpp-913-
+src\combat\weapon-system.cpp-914-    // Firing recoil: push player opposite the rocket direction
+src\combat\weapon-system.cpp-915-    float recoilStrength = def->customParams.count("firingRecoilStrength")
+src\combat\weapon-system.cpp-916-        ? def->customParams.at("firingRecoilStrength") : 30.0f;
+src\combat\weapon-system.cpp-917-    player.externalImpulse -= dir * recoilStrength;
+src\combat\weapon-system.cpp-918-
+src\combat\weapon-system.cpp-919-    result.fired = true;
+src\combat\weapon-system.cpp-920-    result.start = muzzlePos;
+src\combat\weapon-system.cpp-921-    result.end = muzzlePos + dir;
+src\combat\weapon-system.cpp-922-    result.hitNormal = -dir;
+src\combat\weapon-system.cpp-923-    WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir);
+src\combat\weapon-system.cpp-924-    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
+src\combat\weapon-system.cpp-925-    mShotCooldown = def->fireDelay;
+src\combat\weapon-system.cpp-926-    AnalyticsManager::instance().trackWeaponUsed(def->id);
+src\combat\weapon-system.cpp-927-    return result;
+src\combat\weapon-system.cpp-928-}
+src\combat\weapon-system.cpp-929-
+src\combat\weapon-system.cpp:930:void WeaponSystem::fireGodball(Camera& camera, Player& player, NpcSystem& npcs, const World& world) {
+src\combat\weapon-system.cpp-931-    // Overlap damage is handled continuously in update().
+src\combat\weapon-system.cpp-932-    // Fire input is a no-op for godball (always "automatic").
+src\combat\weapon-system.cpp-933-}
+src\combat\weapon-system.cpp-934-
+src\combat\weapon-system.cpp:935:RevolverShotResult WeaponSystem::fireSwordsword(
+src\combat\weapon-system.cpp-936-    Camera& camera,
+src\combat\weapon-system.cpp-937-    Player& player,
+src\combat\weapon-system.cpp-938-    NpcSystem& npcs,
+src\combat\weapon-system.cpp-939-    const std::unordered_map<uint32_t, Player>* remotePlayers) {
+src\combat\weapon-system.cpp-940-    RevolverShotResult result;
+src\combat\weapon-system.cpp-941-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-942-    WeaponRuntime* rt = getCurrentRuntime(player);
+src\combat\weapon-system.cpp-943-    if (!def || !rt) return result;
+src\combat\weapon-system.cpp-944-
+src\combat\weapon-system.cpp-945-    if (rt->isReloading || rt->fireCooldown > 0.0f) return result;
+src\combat\weapon-system.cpp-946-
+src\combat\weapon-system.cpp-947-    if (mSwordswordState.state != SwordswordState::AttackState::Idle &&
+src\combat\weapon-system.cpp-948-        mSwordswordState.state != SwordswordState::AttackState::SlashRecover) return result;
+src\combat\weapon-system.cpp-949-
+src\combat\weapon-system.cpp-950-    float slashCooldown = weaponParamOr(*def, "slashCooldown", 0.25f);
+src\combat\weapon-system.cpp-951-    rt->fireCooldown = slashCooldown;
+src\combat\weapon-system.cpp-952-    mShotCooldown = slashCooldown;
+src\combat\weapon-system.cpp-953-
+src\combat\weapon-system.cpp-954-    WeaponSwordsword::startSlash(mSwordswordState, *def, player);
+src\combat\weapon-system.cpp-955-    AnalyticsManager::instance().trackWeaponUsed(def->id);
+src\combat\weapon-system.cpp-956-    result.fired = true;
+src\combat\weapon-system.cpp-957-    result.start = player.pos;
+src\combat\weapon-system.cpp-958-    result.end = player.pos + player.aimDirection * weaponParamOr(*def, "bladeLength", 4.0f);
+src\combat\weapon-system.cpp-959-    result.hitNormal = -player.aimDirection;
+src\combat\weapon-system.cpp-960-
+src\combat\weapon-system.cpp-961-    // In online mode, result.fired triggers mpSendMeleeHitRequest from the
+src\combat\weapon-system.cpp-962-    // caller (weapon-commands.cpp). The client no longer selects a target.
+src\combat\weapon-system.cpp-963-    // Attack type 1 = slash.
+src\combat\weapon-system.cpp-964-    if (remotePlayers) {
+src\combat\weapon-system.cpp-965-        result.targetIsRemotePlayer = false;
+src\combat\weapon-system.cpp-966-    }
+src\combat\weapon-system.cpp-967-    return result;
+src\combat\weapon-system.cpp-968-}
+src\combat\weapon-system.cpp-969-
+src\combat\weapon-system.cpp:970:RevolverShotResult WeaponSystem::fireAlt(
+src\combat\weapon-system.cpp-971-    Camera& camera,
+src\combat\weapon-system.cpp-972-    Player& player,
+src\combat\weapon-system.cpp-973-    NpcSystem& npcs,
+src\combat\weapon-system.cpp-974-    const World& world) {
+src\combat\weapon-system.cpp-975-    if (player.dead) return {};
+src\combat\weapon-system.cpp-976-
+src\combat\weapon-system.cpp-977-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-978-    if (!def) return {};
+src\combat\weapon-system.cpp-979-
+src\combat\weapon-system.cpp-980-    WeaponRuntime* rt = getCurrentRuntime(player);
+src\combat\weapon-system.cpp-981-    if (!rt) return {};
+src\combat\weapon-system.cpp-982-
+src\combat\weapon-system.cpp-983-    if (def->behaviorType == WeaponBehaviorType::Hafs) {
+src\combat\weapon-system.cpp-984-        WeaponHafs::startLunge(mHafsState, *def, player);
+src\combat\weapon-system.cpp-985-        RevolverShotResult res;
+src\combat\weapon-system.cpp-986-        res.fired = true;
+src\combat\weapon-system.cpp-987-        return res;
+src\combat\weapon-system.cpp-988-    }
+src\combat\weapon-system.cpp-989-
+src\combat\weapon-system.cpp-990-    if (def->behaviorType != WeaponBehaviorType::Swordsword) return {};
+src\combat\weapon-system.cpp-991-
+src\combat\weapon-system.cpp-992-    if (rt->isReloading || rt->fireCooldown > 0.0f) return {};
+src\combat\weapon-system.cpp-993-
+src\combat\weapon-system.cpp-994-    if (mSwordswordState.state != SwordswordState::AttackState::Idle &&
+src\combat\weapon-system.cpp-995-        mSwordswordState.state != SwordswordState::AttackState::LungeRecover) return {};
+src\combat\weapon-system.cpp-996-
+src\combat\weapon-system.cpp-997-    float lungeCooldown = weaponParamOr(*def, "lungeCooldown", 0.5f);
+src\combat\weapon-system.cpp-998-    rt->fireCooldown = lungeCooldown;
+src\combat\weapon-system.cpp-999-    mShotCooldown = lungeCooldown;
+src\combat\weapon-system.cpp-1000-
+src\combat\weapon-system.cpp-1001-    WeaponSwordsword::startLunge(mSwordswordState, *def, player);
+src\combat\weapon-system.cpp-1002-    AnalyticsManager::instance().trackWeaponUsed(def->id);
+src\combat\weapon-system.cpp-1003-
+src\combat\weapon-system.cpp-1004-    RevolverShotResult res;
+src\combat\weapon-system.cpp-1005-    res.fired = true;
+src\combat\weapon-system.cpp-1006-    // In online mode, the caller (engine-tick-combat.cpp) will detect res.fired
+src\combat\weapon-system.cpp-1007-    // and send a melee attack request. We mark the serial as pending.
+src\combat\weapon-system.cpp-1008-    return res;
+src\combat\weapon-system.cpp-1009-}
+src\combat\weapon-system.cpp-1010-
+src\combat\weapon-system.cpp-1011-void WeaponSystem::inspect() const {
+src\combat\weapon-system.cpp-1012-    if (mCurrentSlot > 0 && !mCurrentWeaponId.empty()) {
+src\combat\weapon-system.cpp-1013-        const WeaponDefinition* def = WeaponRegistry::instance().get(mCurrentWeaponId);
+src\combat\weapon-system.cpp-1014-        if (def) {
+src\combat\weapon-system.cpp-1015-            Terminal::instance().addLog("[WEAPON] active: " + def->id + " (" + def->displayName + ")");
+src\combat\weapon-system.cpp-1016-        } else {
+src\combat\weapon-system.cpp-1017-            Terminal::instance().addLog("[WEAPON] active: " + mCurrentWeaponId);
+src\combat\weapon-system.cpp-1018-        }
+src\combat\weapon-system.cpp-1019-    } else {
+src\combat\weapon-system.cpp-1020-        Terminal::instance().addLog("[WEAPON] no weapon equipped");
+src\combat\weapon-system.cpp-1021-    }
+src\combat\weapon-system.cpp-1022-}
+src\combat\weapon-system.cpp-1023-
+src\combat\weapon-system.cpp-1024-bool WeaponSystem::isReloading(const Player& player) const {
+src\combat\weapon-system.cpp-1025-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-1026-    if (!def) return false;
+src\combat\weapon-system.cpp-1027-    auto it = player.weaponRuntimes.find(def->id);
+src\combat\weapon-system.cpp-1028-    return it != player.weaponRuntimes.end() && it->second.isReloading;
+src\combat\weapon-system.cpp-1029-}
+src\combat\weapon-system.cpp-1030-
+src\combat\weapon-system.cpp-1031-uint8_t WeaponSystem::networkVisualState(const Player& player) const {
+src\combat\weapon-system.cpp-1032-    uint8_t state = 0;
+src\combat\weapon-system.cpp-1033-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-1034-    if (!def) return state;
+src\combat\weapon-system.cpp-1035-    auto it = player.weaponRuntimes.find(def->id);
+src\combat\weapon-system.cpp-1036-    if (it == player.weaponRuntimes.end())
+src\combat\weapon-system.cpp-1037-        return state;
+src\combat\weapon-system.cpp-1038-    const WeaponRuntime& rt = it->second;
+src\combat\weapon-system.cpp-1039-    if (rt.shootEffectTimer > 0.0f)
+src\combat\weapon-system.cpp-1040-        state |= MimitaNet::NET_WEAPON_STATE_FIRING;
+src\combat\weapon-system.cpp-1041-    if (rt.isReloading)
+src\combat\weapon-system.cpp-1042-        state |= MimitaNet::NET_WEAPON_STATE_RELOADING;
+src\combat\weapon-system.cpp-1043-    if (rt.fireCooldown > 0.0f)
+src\combat\weapon-system.cpp-1044-        state |= MimitaNet::NET_WEAPON_STATE_COOLDOWN;
+src\combat\weapon-system.cpp-1045-    if (rt.currentAmmo <= 0)
+src\combat\weapon-system.cpp-1046-        state |= MimitaNet::NET_WEAPON_STATE_EMPTY;
+src\combat\weapon-system.cpp-1047-    return state;
+src\combat\weapon-system.cpp-1048-}
+src\combat\weapon-system.cpp-1049-
+src\combat\weapon-system.cpp-1050-WeaponCrosshairState WeaponSystem::crosshairState(const Player& player) const {
+src\combat\weapon-system.cpp-1051-    const WeaponDefinition* def = getCurrentDef(player);
+src\combat\weapon-system.cpp-1052-    if (!def) return WeaponCrosshairState::Ready;
+src\combat\weapon-system.cpp-1053-    auto it = player.weaponRuntimes.find(def->id);
+src\combat\weapon-system.cpp-1054-    if (it != player.weaponRuntimes.end()) {
+src\combat\weapon-system.cpp-1055-        if (it->second.isReloading)
+src\combat\weapon-system.cpp-1056-            return WeaponCrosshairState::Reloading;
+src\combat\weapon-system.cpp-1057-        if (it->second.fireCooldown > 0.0f)
+src\combat\weapon-system.cpp-1058-            return WeaponCrosshairState::Delay;
+src\combat\weapon-system.cpp-1059-    }
+src\combat\weapon-system.cpp-1060-    return WeaponCrosshairState::Ready;
+src\combat\weapon-system.cpp-1061-}
+src\combat\weapon-system.cpp-1062-
+src\combat\weapon-system.cpp-1063-void WeaponSystem::addKillLine(const std::string& line) {
+src\combat\weapon-system.cpp-1064-    mKillfeed.push_back(line);
+src\combat\weapon-system.cpp-1065-    if (mKillfeed.size() > 20)
+src\combat\weapon-system.cpp-1066-        mKillfeed.erase(mKillfeed.begin());
+src\combat\weapon-system.cpp-1067-}
+src\combat\weapon-system.cpp-1068-
+src\combat\weapon-system.cpp-1069-void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt) {
+src\combat\weapon-system.cpp-1070-    if (player.dead) return;
+--
+src\pobjects\persistent-physics.cpp-1-#include "persistent-physics.h"
+src\pobjects\persistent-physics.cpp-2-
+src\pobjects\persistent-physics.cpp-3-#include <algorithm>
+src\pobjects\persistent-physics.cpp-4-#include <cmath>
+src\pobjects\persistent-physics.cpp-5-#include <cstdio>
+src\pobjects\persistent-physics.cpp-6-
+src\pobjects\persistent-physics.cpp-7-#include <glm/gtc/matrix_transform.hpp>
+src\pobjects\persistent-physics.cpp-8-#include <glm/gtx/quaternion.hpp>
+src\pobjects\persistent-physics.cpp-9-
+src\pobjects\persistent-physics.cpp-10-#include "audio/audio.h"
+src\pobjects\persistent-physics.cpp-11-#include "camera.h"
+src\pobjects\persistent-physics.cpp-12-#include "config.h"
+src\pobjects\persistent-physics.cpp-13-#include "debug/debug-log.h"
+src\pobjects\persistent-physics.cpp-14-#include "debug/debug-visuals.h"
+src\pobjects\persistent-physics.cpp-15-#include "effects/effect-part.h"
+src\pobjects\persistent-physics.cpp-16-#include "effects/hit-effects.h"
+src\pobjects\persistent-physics.cpp-17-#include "entities/player.h"
+src\pobjects\persistent-physics.cpp-18-#include "npc/npc.h"
+src\pobjects\persistent-physics.cpp-19-#include "physics/movement/physics-collision.h"
+src\pobjects\persistent-physics.cpp-20-#include "physics/physics-types.h"
+src\pobjects\persistent-physics.cpp-21-#include "renderer/renderer.h"
+src\pobjects\persistent-physics.cpp-22-#include "replay/replay.h"
+src\pobjects\persistent-physics.cpp-23-#include "world/world.h"
+src\pobjects\persistent-physics.cpp-24-
+src\pobjects\persistent-physics.cpp-25-extern Renderer* gRenderer;
+src\pobjects\persistent-physics.cpp-26-
+src\pobjects\persistent-physics.cpp-27-PersistentPhysicsSystem& PersistentPhysicsSystem::instance()
+src\pobjects\persistent-physics.cpp-28-{
+src\pobjects\persistent-physics.cpp-29-    static PersistentPhysicsSystem sys;
+src\pobjects\persistent-physics.cpp-30-    return sys;
+src\pobjects\persistent-physics.cpp-31-}
+src\pobjects\persistent-physics.cpp-32-
+src\pobjects\persistent-physics.cpp:33:uint32_t PersistentPhysicsSystem::spawn(
+src\pobjects\persistent-physics.cpp-34-    const PersistentPhysicsConfig& cfg,
+src\pobjects\persistent-physics.cpp-35-    const glm::vec3& position,
+src\pobjects\persistent-physics.cpp-36-    const glm::vec3& velocity,
+src\pobjects\persistent-physics.cpp-37-    const glm::vec3& angularVelocity,
+src\pobjects\persistent-physics.cpp-38-    uint32_t ownerId,
+src\pobjects\persistent-physics.cpp-39-    const std::string& ownerName,
+src\pobjects\persistent-physics.cpp-40-    const std::string& weaponId,
+src\pobjects\persistent-physics.cpp-41-    const glm::vec3& ownerPos)
+src\pobjects\persistent-physics.cpp-42-{
+src\pobjects\persistent-physics.cpp-43-    PersistentPhysicsObject obj;
+src\pobjects\persistent-physics.cpp-44-    obj.id = mNextId++;
+src\pobjects\persistent-physics.cpp-45-    obj.ownerId = ownerId;
+src\pobjects\persistent-physics.cpp-46-    obj.ownerName = ownerName;
+src\pobjects\persistent-physics.cpp-47-    obj.cfg = cfg;
+src\pobjects\persistent-physics.cpp-48-    obj.position = position;
+src\pobjects\persistent-physics.cpp-49-    obj.velocity = velocity;
+src\pobjects\persistent-physics.cpp-50-    obj.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+src\pobjects\persistent-physics.cpp-51-    obj.angularVelocity = angularVelocity;
+src\pobjects\persistent-physics.cpp-52-    obj.age = 0.0f;
+src\pobjects\persistent-physics.cpp-53-    obj.bounceCount = 0;
+src\pobjects\persistent-physics.cpp-54-    obj.exploded = false;
+src\pobjects\persistent-physics.cpp-55-    obj.sleeping = false;
+src\pobjects\persistent-physics.cpp-56-    obj.sleepTimer = 0.0f;
+src\pobjects\persistent-physics.cpp-57-    obj.alive = true;
+src\pobjects\persistent-physics.cpp-58-    obj.weaponId = weaponId;
+src\pobjects\persistent-physics.cpp-59-    obj.worldTouched = false;
+src\pobjects\persistent-physics.cpp-60-    obj.ownerIgnored = false;
+src\pobjects\persistent-physics.cpp-61-    obj.distFromOwner = glm::length(position - ownerPos);
+src\pobjects\persistent-physics.cpp-62-
+src\pobjects\persistent-physics.cpp-63-    bool ownerArmed = false;
+src\pobjects\persistent-physics.cpp-64-    if (cfg.armingDistance > 0.0f && obj.distFromOwner < cfg.armingDistance) {
+src\pobjects\persistent-physics.cpp-65-        obj.ownerIgnored = true;
+src\pobjects\persistent-physics.cpp-66-        Debug::log(Debug::Category::Weapons, "[POBJ] id=%u owner=%s ownerIgnored=YES distFromOwner=%.2f armingDistance=%.2f\n",
+src\pobjects\persistent-physics.cpp-67-                   obj.id, ownerName.c_str(), obj.distFromOwner, cfg.armingDistance);
+src\pobjects\persistent-physics.cpp-68-    } else {
+src\pobjects\persistent-physics.cpp-69-        ownerArmed = true;
+src\pobjects\persistent-physics.cpp-70-    }
+src\pobjects\persistent-physics.cpp-71-
+src\pobjects\persistent-physics.cpp-72-    Debug::log(Debug::Category::Weapons, "[POBJ] SPAWN id=%u type=%s owner=%s pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) "
+src\pobjects\persistent-physics.cpp-73-               "ownerIgnored=%d armingDist=%.1f\n",
+src\pobjects\persistent-physics.cpp-74-               obj.id, weaponId.c_str(), ownerName.c_str(),
+src\pobjects\persistent-physics.cpp-75-               position.x, position.y, position.z,
+src\pobjects\persistent-physics.cpp-76-               velocity.x, velocity.y, velocity.z,
+src\pobjects\persistent-physics.cpp-77-               (int)obj.ownerIgnored, cfg.armingDistance);
+src\pobjects\persistent-physics.cpp-78-
+src\pobjects\persistent-physics.cpp-79-    if (!cfg.spawnSound.empty()) {
+src\pobjects\persistent-physics.cpp-80-        Debug::log(Debug::Category::Audio, "[POBJ] sound=spawn path=%s pos=(%.2f %.2f %.2f)\n",
+src\pobjects\persistent-physics.cpp-81-                   cfg.spawnSound.c_str(), position.x, position.y, position.z);
+src\pobjects\persistent-physics.cpp-82-        playWorldSound(cfg.spawnSound, position, 1.0f, 1.0f, 50.0f);
+src\pobjects\persistent-physics.cpp-83-    }
+src\pobjects\persistent-physics.cpp-84-
+src\pobjects\persistent-physics.cpp-85-    ReplayEffectEvent spawnEvent;
+src\pobjects\persistent-physics.cpp-86-    spawnEvent.type = "persistent_spawn";
+src\pobjects\persistent-physics.cpp-87-    spawnEvent.position = position;
+src\pobjects\persistent-physics.cpp-88-    spawnEvent.direction = velocity;
+src\pobjects\persistent-physics.cpp-89-    spawnEvent.velocity = angularVelocity;
+src\pobjects\persistent-physics.cpp-90-    spawnEvent.sourceActorId = ownerName;
+src\pobjects\persistent-physics.cpp-91-    spawnEvent.targetActorId = weaponId + "_" + std::to_string(obj.id);
+src\pobjects\persistent-physics.cpp-92-    spawnEvent.scale = {cfg.radius, cfg.height, (float)cfg.shape};
+src\pobjects\persistent-physics.cpp-93-    spawnEvent.lifetime = cfg.lifetime;
+src\pobjects\persistent-physics.cpp-94-    captureReplayEffect(spawnEvent);
+src\pobjects\persistent-physics.cpp-95-
+src\pobjects\persistent-physics.cpp-96-    mObjects.push_back(std::move(obj));
+src\pobjects\persistent-physics.cpp-97-    return mObjects.back().id;
+src\pobjects\persistent-physics.cpp-98-}
+src\pobjects\persistent-physics.cpp-99-
+src\pobjects\persistent-physics.cpp:100:void PersistentPhysicsSystem::update(float dt, const World& world, Player& player, NpcSystem& npcs, Camera* camera)
+src\pobjects\persistent-physics.cpp-101-{
+src\pobjects\persistent-physics.cpp-102-    for (auto it = mObjects.begin(); it != mObjects.end();) {
+src\pobjects\persistent-physics.cpp-103-        PersistentPhysicsObject& obj = *it;
+src\pobjects\persistent-physics.cpp-104-
+src\pobjects\persistent-physics.cpp-105-        if (obj.exploded) {
+src\pobjects\persistent-physics.cpp-106-            it = mObjects.erase(it);
+src\pobjects\persistent-physics.cpp-107-            continue;
+src\pobjects\persistent-physics.cpp-108-        }
+src\pobjects\persistent-physics.cpp-109-
+src\pobjects\persistent-physics.cpp-110-        obj.age += dt;
+src\pobjects\persistent-physics.cpp-111-        if (obj.cfg.armingTime > 0.0f && obj.age >= obj.cfg.armingTime) {
+src\pobjects\persistent-physics.cpp-112-            if (obj.ownerIgnored) {
+src\pobjects\persistent-physics.cpp-113-                obj.ownerIgnored = false;
+src\pobjects\persistent-physics.cpp-114-                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u armingTime elapsed (%.2fs) — owner collision ENABLED\n",
+src\pobjects\persistent-physics.cpp-115-                           obj.id, obj.cfg.armingTime);
+src\pobjects\persistent-physics.cpp-116-            }
+src\pobjects\persistent-physics.cpp-117-        }
+src\pobjects\persistent-physics.cpp-118-
+src\pobjects\persistent-physics.cpp-119-        if (obj.cfg.lifetime > 0.0f && obj.age >= obj.cfg.lifetime) {
+src\pobjects\persistent-physics.cpp-120-            Debug::log(Debug::Category::Weapons, "[POBJ] id=%u lifetime expired (%.2fs) — exploding\n",
+src\pobjects\persistent-physics.cpp-121-                       obj.id, obj.cfg.lifetime);
+src\pobjects\persistent-physics.cpp-122-            if (obj.cfg.explosionRadius > 0.0f) {
+src\pobjects\persistent-physics.cpp-123-                doExplosion(obj, world, player, npcs, camera);
+src\pobjects\persistent-physics.cpp-124-            }
+src\pobjects\persistent-physics.cpp-125-            it = mObjects.erase(it);
+src\pobjects\persistent-physics.cpp-126-            continue;
+src\pobjects\persistent-physics.cpp-127-        }
+src\pobjects\persistent-physics.cpp-128-
+src\pobjects\persistent-physics.cpp-129-        physicsStep(obj, dt, world);
+src\pobjects\persistent-physics.cpp-130-        checkCollisions(obj, dt, world, player, npcs);
+src\pobjects\persistent-physics.cpp-131-
+src\pobjects\persistent-physics.cpp-132-        if (!obj.exploded)
+src\pobjects\persistent-physics.cpp-133-            ++it;
+src\pobjects\persistent-physics.cpp-134-    }
+src\pobjects\persistent-physics.cpp-135-}
+src\pobjects\persistent-physics.cpp-136-
+src\pobjects\persistent-physics.cpp:137:void PersistentPhysicsSystem::physicsStep(PersistentPhysicsObject& obj, float dt, const World& world)
+src\pobjects\persistent-physics.cpp-138-{
+src\pobjects\persistent-physics.cpp-139-    if (obj.sleeping) return;
+src\pobjects\persistent-physics.cpp-140-
+src\pobjects\persistent-physics.cpp-141-    obj.velocity.z -= obj.cfg.gravity * dt;
+src\pobjects\persistent-physics.cpp-142-
+src\pobjects\persistent-physics.cpp-143-    obj.velocity *= (1.0f - obj.cfg.drag * dt);
+src\pobjects\persistent-physics.cpp-144-    if (glm::length(obj.velocity) < 0.001f) obj.velocity = glm::vec3(0.0f);
+src\pobjects\persistent-physics.cpp-145-    obj.angularVelocity *= (1.0f - obj.cfg.angularDrag * dt);
+src\pobjects\persistent-physics.cpp-146-
+src\pobjects\persistent-physics.cpp-147-    float speed = glm::length(obj.velocity);
+src\pobjects\persistent-physics.cpp-148-    if (speed > obj.cfg.maxLinearVelocity)
+src\pobjects\persistent-physics.cpp-149-        obj.velocity *= obj.cfg.maxLinearVelocity / speed;
+src\pobjects\persistent-physics.cpp-150-    float angSpeed = glm::length(obj.angularVelocity);
+src\pobjects\persistent-physics.cpp-151-    if (angSpeed > obj.cfg.maxAngularVelocity)
+src\pobjects\persistent-physics.cpp-152-        obj.angularVelocity *= obj.cfg.maxAngularVelocity / angSpeed;
+src\pobjects\persistent-physics.cpp-153-
+src\pobjects\persistent-physics.cpp-154-    if (angSpeed > 0.0001f) {
+src\pobjects\persistent-physics.cpp-155-        glm::quat delta = glm::angleAxis(angSpeed * dt, glm::normalize(obj.angularVelocity));
+src\pobjects\persistent-physics.cpp-156-        obj.rotation = glm::normalize(delta * obj.rotation);
+src\pobjects\persistent-physics.cpp-157-    }
+src\pobjects\persistent-physics.cpp-158-
+src\pobjects\persistent-physics.cpp-159-    if (speed < obj.cfg.sleepVelocity && angSpeed < obj.cfg.sleepAngular) {
+src\pobjects\persistent-physics.cpp-160-        obj.sleepTimer += dt;
+src\pobjects\persistent-physics.cpp-161-        if (obj.sleepTimer >= obj.cfg.sleepTime)
+src\pobjects\persistent-physics.cpp-162-            obj.sleeping = true;
+src\pobjects\persistent-physics.cpp-163-    } else {
+src\pobjects\persistent-physics.cpp-164-        obj.sleepTimer = 0.0f;
+src\pobjects\persistent-physics.cpp-165-    }
+src\pobjects\persistent-physics.cpp-166-}
+src\pobjects\persistent-physics.cpp-167-
+src\pobjects\persistent-physics.cpp-168-static glm::vec3 closestPointOnTriangleFn(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
+src\pobjects\persistent-physics.cpp-169-{
+src\pobjects\persistent-physics.cpp-170-    glm::vec3 ab = b - a;
+src\pobjects\persistent-physics.cpp-171-    glm::vec3 ac = c - a;
+src\pobjects\persistent-physics.cpp-172-    glm::vec3 ap = p - a;
+src\pobjects\persistent-physics.cpp-173-    float d1 = glm::dot(ab, ap);
+src\pobjects\persistent-physics.cpp-174-    float d2 = glm::dot(ac, ap);
+src\pobjects\persistent-physics.cpp-175-    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+src\pobjects\persistent-physics.cpp-176-    glm::vec3 bp = p - b;
+src\pobjects\persistent-physics.cpp-177-    float d3 = glm::dot(ab, bp);
+src\pobjects\persistent-physics.cpp-178-    float d4 = glm::dot(ac, bp);
+src\pobjects\persistent-physics.cpp-179-    if (d3 >= 0.0f && d4 <= d3) return b;
+src\pobjects\persistent-physics.cpp-180-    glm::vec3 cp = p - c;
+src\pobjects\persistent-physics.cpp-181-    float d5 = glm::dot(ab, cp);
+src\pobjects\persistent-physics.cpp-182-    float d6 = glm::dot(ac, cp);
+src\pobjects\persistent-physics.cpp-183-    if (d5 >= 0.0f && d6 >= 0.0f) return c;
+src\pobjects\persistent-physics.cpp-184-    float vc = d1 * d4 - d3 * d2;
+src\pobjects\persistent-physics.cpp-185-    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+src\pobjects\persistent-physics.cpp-186-        float v = d1 / (d1 - d3);
+src\pobjects\persistent-physics.cpp-187-        return a + v * ab;
+src\pobjects\persistent-physics.cpp-188-    }
+src\pobjects\persistent-physics.cpp-189-    float vb = d5 * d2 - d1 * d6;
+src\pobjects\persistent-physics.cpp-190-    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+src\pobjects\persistent-physics.cpp-191-        float w = d2 / (d2 - d6);
+src\pobjects\persistent-physics.cpp-192-        return a + w * ac;
+src\pobjects\persistent-physics.cpp-193-    }
+src\pobjects\persistent-physics.cpp-194-    float va = d3 * d6 - d5 * d4;
+src\pobjects\persistent-physics.cpp-195-    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+src\pobjects\persistent-physics.cpp-196-        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+src\pobjects\persistent-physics.cpp-197-        return b + w * (c - b);
+src\pobjects\persistent-physics.cpp-198-    }
+src\pobjects\persistent-physics.cpp-199-    float denom = va + vb + vc;
+src\pobjects\persistent-physics.cpp-200-    if (denom == 0.0f) return a;
+src\pobjects\persistent-physics.cpp-201-    float u = va / denom;
+src\pobjects\persistent-physics.cpp-202-    float v = vb / denom;
+src\pobjects\persistent-physics.cpp-203-    float w = vc / denom;
+src\pobjects\persistent-physics.cpp-204-    return u * a + v * b + w * c;
+src\pobjects\persistent-physics.cpp-205-}
+src\pobjects\persistent-physics.cpp-206-
+src\pobjects\persistent-physics.cpp:207:void PersistentPhysicsSystem::checkCollisions(
+src\pobjects\persistent-physics.cpp-208-    PersistentPhysicsObject& obj, float dt,
+src\pobjects\persistent-physics.cpp-209-    const World& world, Player& player, NpcSystem& npcs)
+src\pobjects\persistent-physics.cpp-210-{
+src\pobjects\persistent-physics.cpp-211-    if (obj.sleeping || obj.exploded) return;
+src\pobjects\persistent-physics.cpp-212-
+src\pobjects\persistent-physics.cpp-213-    float r = obj.cfg.radius;
+src\pobjects\persistent-physics.cpp-214-    float maxStep = std::max(r * 0.5f, 0.1f);
+src\pobjects\persistent-physics.cpp-215-    int steps = std::min((int)std::ceil(glm::length(obj.velocity * dt) / maxStep) + 1, 8);
+src\pobjects\persistent-physics.cpp-216-    glm::vec3 stepVel = obj.velocity * dt / (float)steps;
+src\pobjects\persistent-physics.cpp-217-
+src\pobjects\persistent-physics.cpp-218-    for (int s = 0; s < steps && !obj.exploded; ++s) {
+src\pobjects\persistent-physics.cpp-219-        obj.position += stepVel;
+src\pobjects\persistent-physics.cpp-220-
+src\pobjects\persistent-physics.cpp-221-        if (!obj.cfg.collideWithWorld) continue;
+src\pobjects\persistent-physics.cpp-222-        AABB queryBounds;
+src\pobjects\persistent-physics.cpp-223-        queryBounds.min = obj.position - glm::vec3(r + 0.5f);
+src\pobjects\persistent-physics.cpp-224-        queryBounds.max = obj.position + glm::vec3(r + 0.5f);
+src\pobjects\persistent-physics.cpp-225-        std::vector<int> candidates;
+src\pobjects\persistent-physics.cpp-226-        appendChunkTrianglesForAABB(const_cast<World&>(world), queryBounds, 0.1f, candidates, "persistentPhysicsCollide");
+src\pobjects\persistent-physics.cpp-227-
+src\pobjects\persistent-physics.cpp-228-        for (int ti : candidates) {
+src\pobjects\persistent-physics.cpp-229-            if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
+src\pobjects\persistent-physics.cpp-230-            const CollisionTriangle& tri = world.collisionMesh.triangles[ti];
+src\pobjects\persistent-physics.cpp-231-            glm::vec3 closest = closestPointOnTriangleFn(obj.position, tri.a, tri.b, tri.c);
+src\pobjects\persistent-physics.cpp-232-            glm::vec3 diff = obj.position - closest;
+src\pobjects\persistent-physics.cpp-233-            float dist = glm::length(diff);
+src\pobjects\persistent-physics.cpp-234-            if (dist < r && dist > 0.0001f) {
+src\pobjects\persistent-physics.cpp-235-                glm::vec3 normal = diff / dist;
+src\pobjects\persistent-physics.cpp-236-                float penetration = r - dist;
+src\pobjects\persistent-physics.cpp-237-                obj.position += normal * penetration;
+src\pobjects\persistent-physics.cpp-238-
+src\pobjects\persistent-physics.cpp-239-                float velDot = glm::dot(obj.velocity, normal);
+src\pobjects\persistent-physics.cpp-240-                if (velDot < 0.0f) {
+src\pobjects\persistent-physics.cpp-241-                    float speedBefore = glm::length(obj.velocity);
+src\pobjects\persistent-physics.cpp-242-                    float restitution = obj.cfg.restitution;
+src\pobjects\persistent-physics.cpp-243-                    float friction = obj.cfg.friction;
+src\pobjects\persistent-physics.cpp-244-
+src\pobjects\persistent-physics.cpp-245-                    if (obj.cfg.maxBounceCount > 0 && obj.bounceCount >= obj.cfg.maxBounceCount) {
+src\pobjects\persistent-physics.cpp-246-                        restitution = 0.0f;
+src\pobjects\persistent-physics.cpp-247-                        friction = 1.0f;
+src\pobjects\persistent-physics.cpp-248-                    }
+src\pobjects\persistent-physics.cpp-249-
+src\pobjects\persistent-physics.cpp-250-                    // Stable bounce: separate normal and tangential; friction reduces tangent, never amplifies
+src\pobjects\persistent-physics.cpp-251-                    glm::vec3 tangent = obj.velocity - normal * velDot;
+src\pobjects\persistent-physics.cpp-252-                    float tangentRetention = std::clamp(1.0f - friction, 0.0f, 1.0f);
+src\pobjects\persistent-physics.cpp-253-                    obj.velocity = tangent * tangentRetention - normal * velDot * restitution;
+src\pobjects\persistent-physics.cpp-254-
+src\pobjects\persistent-physics.cpp-255-                    float speedAfter = glm::length(obj.velocity);
+src\pobjects\persistent-physics.cpp-256-                    if (speedAfter > speedBefore * 0.98f)
+src\pobjects\persistent-physics.cpp-257-                        obj.velocity *= (speedBefore * 0.95f) / speedAfter;
+src\pobjects\persistent-physics.cpp-258-
+src\pobjects\persistent-physics.cpp-259-                    if (obj.cfg.minBounceSpeed > 0.0f && speedAfter < obj.cfg.minBounceSpeed) {
+src\pobjects\persistent-physics.cpp-260-                        obj.velocity = glm::vec3(0.0f);
+src\pobjects\persistent-physics.cpp-261-                        obj.angularVelocity = glm::vec3(0.0f);
+src\pobjects\persistent-physics.cpp-262-                        obj.sleeping = true;
+src\pobjects\persistent-physics.cpp-263-                    } else {
+src\pobjects\persistent-physics.cpp-264-                        obj.angularVelocity = glm::vec3(0.0f);
+src\pobjects\persistent-physics.cpp-265-                    }
+src\pobjects\persistent-physics.cpp-266-                    obj.bounceCount++;
+src\pobjects\persistent-physics.cpp-267-
+src\pobjects\persistent-physics.cpp-268-                    obj.worldTouched = true;
+src\pobjects\persistent-physics.cpp-269-
+src\pobjects\persistent-physics.cpp-270-                    Debug::log(Debug::Category::Collision,
+src\pobjects\persistent-physics.cpp-271-                        "[POBJ] WORLD_HIT id=%u pos=(%.2f %.2f %.2f) normal=(%.2f %.2f %.2f) "
+src\pobjects\persistent-physics.cpp-272-                        "speedBefore=%.2f speedAfter=%.2f restitution=%.2f friction=%.2f bounce=%d/%d\n",
+src\pobjects\persistent-physics.cpp-273-                        obj.id, obj.position.x, obj.position.y, obj.position.z,
+src\pobjects\persistent-physics.cpp-274-                        normal.x, normal.y, normal.z,
+src\pobjects\persistent-physics.cpp-275-                        speedBefore, speedAfter, restitution, friction,
+src\pobjects\persistent-physics.cpp-276-                        obj.bounceCount, obj.cfg.maxBounceCount);
+src\pobjects\persistent-physics.cpp-277-
+src\pobjects\persistent-physics.cpp-278-                    ReplayEffectEvent impactEvent;
+src\pobjects\persistent-physics.cpp-279-                    impactEvent.type = "impact_world";
+src\pobjects\persistent-physics.cpp-280-                    impactEvent.position = obj.position;
+src\pobjects\persistent-physics.cpp-281-                    impactEvent.normal = normal;
+src\pobjects\persistent-physics.cpp-282-                    impactEvent.direction = glm::normalize(obj.velocity);
+src\pobjects\persistent-physics.cpp-283-                    impactEvent.scale = {obj.cfg.radius * 2.2f, 0.0f, 0.0f};
+src\pobjects\persistent-physics.cpp-284-                    impactEvent.alpha = 0.5f;
+src\pobjects\persistent-physics.cpp-285-                    impactEvent.lifetime = 0.25f;
+src\pobjects\persistent-physics.cpp-286-                    captureReplayEffect(impactEvent);
+src\pobjects\persistent-physics.cpp-287-
+src\pobjects\persistent-physics.cpp-288-                    EffectPart impact;
+src\pobjects\persistent-physics.cpp-289-                    impact.position = obj.position;
+src\pobjects\persistent-physics.cpp-290-                    impact.color = {0.5f, 0.5f, 0.5f};
+src\pobjects\persistent-physics.cpp-291-                    impact.normal = normal;
+src\pobjects\persistent-physics.cpp-292-                    impact.velocity = -normal * 0.3f;
+src\pobjects\persistent-physics.cpp-293-                    impact.lifetime = 0.25f;
+src\pobjects\persistent-physics.cpp-294-                    impact.maxLifetime = 0.25f;
+src\pobjects\persistent-physics.cpp-295-                    impact.scale = obj.cfg.radius * 2.2f;
+src\pobjects\persistent-physics.cpp-296-                    impact.endScale = 0.0f;
+src\pobjects\persistent-physics.cpp-297-                    impact.alpha = 0.5f;
+src\pobjects\persistent-physics.cpp-298-                    impact.replayType = "impact_indicator";
+src\pobjects\persistent-physics.cpp-299-                    impact.sticky = true;
+src\pobjects\persistent-physics.cpp-300-                    EffectPartSystem::instance().spawn(impact);
+src\pobjects\persistent-physics.cpp-301-                }
+src\pobjects\persistent-physics.cpp-302-                break;
+src\pobjects\persistent-physics.cpp-303-            }
+src\pobjects\persistent-physics.cpp-304-        }
+src\pobjects\persistent-physics.cpp-305-    }
+src\pobjects\persistent-physics.cpp-306-
+src\pobjects\persistent-physics.cpp-307-    if (obj.cfg.collideWithPlayer && !player.dead) {
+src\pobjects\persistent-physics.cpp-308-        glm::vec3 toPlayer = player.pos - obj.position;
+src\pobjects\persistent-physics.cpp-309-        float dist = glm::length(toPlayer);
+src\pobjects\persistent-physics.cpp-310-        float hitDist = r + 0.5f;
+src\pobjects\persistent-physics.cpp-311-        if (dist < hitDist) {
+src\pobjects\persistent-physics.cpp-312-            if (obj.ownerIgnored) {
+src\pobjects\persistent-physics.cpp-313-                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u IGNORED player collision (owner grace period)\n", obj.id);
+src\pobjects\persistent-physics.cpp-314-            } else if (obj.worldTouched) {
+src\pobjects\persistent-physics.cpp-315-                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u IGNORED player collision (already touched world)\n", obj.id);
+src\pobjects\persistent-physics.cpp-316-            } else {
+src\pobjects\persistent-physics.cpp-317-                Debug::log(Debug::Category::Weapons, "[POBJ] id=%u EXPLODE from airborne player hit dist=%.2f\n",
+src\pobjects\persistent-physics.cpp-318-                           obj.id, dist);
+src\pobjects\persistent-physics.cpp-319-                doExplosion(obj, world, player, npcs, nullptr);
+src\pobjects\persistent-physics.cpp-320-                return;
+src\pobjects\persistent-physics.cpp-321-            }
+src\pobjects\persistent-physics.cpp-322-        }
+src\pobjects\persistent-physics.cpp-323-    }
+src\pobjects\persistent-physics.cpp-324-
+src\pobjects\persistent-physics.cpp-325-    if (obj.cfg.collideWithNpcs) {
+src\pobjects\persistent-physics.cpp-326-        for (const Npc& npc : npcs.all()) {
+src\pobjects\persistent-physics.cpp-327-            if (npc.body.dead) continue;
+src\pobjects\persistent-physics.cpp-328-            glm::vec3 toNpc = npc.body.pos - obj.position;
+src\pobjects\persistent-physics.cpp-329-            float dist = glm::length(toNpc);
+src\pobjects\persistent-physics.cpp-330-            float hitDist = r + 0.5f;
+src\pobjects\persistent-physics.cpp-331-            if (dist < hitDist) {
+src\pobjects\persistent-physics.cpp-332-                if (obj.worldTouched) {
+src\pobjects\persistent-physics.cpp-333-                    Debug::log(Debug::Category::Weapons, "[POBJ] id=%u IGNORED NPC collision (already touched world)\n", obj.id);
+src\pobjects\persistent-physics.cpp-334-                } else {
+src\pobjects\persistent-physics.cpp-335-                    Debug::log(Debug::Category::Weapons, "[POBJ] id=%u EXPLODE from airborne NPC hit dist=%.2f\n",
+src\pobjects\persistent-physics.cpp-336-                               obj.id, dist);
+src\pobjects\persistent-physics.cpp-337-                    doExplosion(obj, world, player, npcs, nullptr);
+src\pobjects\persistent-physics.cpp-338-                    return;
+src\pobjects\persistent-physics.cpp-339-                }
+src\pobjects\persistent-physics.cpp-340-            }
+src\pobjects\persistent-physics.cpp-341-        }
+src\pobjects\persistent-physics.cpp-342-    }
+src\pobjects\persistent-physics.cpp-343-}
+src\pobjects\persistent-physics.cpp-344-
+src\pobjects\persistent-physics.cpp:345:void PersistentPhysicsSystem::doExplosion(
+src\pobjects\persistent-physics.cpp-346-    PersistentPhysicsObject& obj,
+src\pobjects\persistent-physics.cpp-347-    const World& world, Player& player, NpcSystem& npcs, Camera* camera)
+src\pobjects\persistent-physics.cpp-348-{
+src\pobjects\persistent-physics.cpp-349-    if (obj.exploded) return;
+src\pobjects\persistent-physics.cpp-350-    obj.exploded = true;
+src\pobjects\persistent-physics.cpp-351-
+src\pobjects\persistent-physics.cpp-352-    glm::vec3 pos = obj.position;
+src\pobjects\persistent-physics.cpp-353-    float radius = obj.cfg.explosionRadius;
+src\pobjects\persistent-physics.cpp-354-    float baseDamage = obj.cfg.explosionDamage;
+src\pobjects\persistent-physics.cpp-355-    float knockbackStrength = obj.cfg.explosionKnockback;
+src\pobjects\persistent-physics.cpp-356-    float splashExp = obj.cfg.splashExponent;
+src\pobjects\persistent-physics.cpp-357-
+src\pobjects\persistent-physics.cpp-358-    Debug::log(Debug::Category::Weapons, "[POBJ] EXPLOSION id=%u pos=(%.2f %.2f %.2f) radius=%.1f damage=%.0f exponent=%.1f\n",
+src\pobjects\persistent-physics.cpp-359-               obj.id, pos.x, pos.y, pos.z, radius, baseDamage, splashExp);
+src\pobjects\persistent-physics.cpp-360-
+src\pobjects\persistent-physics.cpp-361-    if (!obj.cfg.explosionSound.empty()) {
+src\pobjects\persistent-physics.cpp-362-        Debug::log(Debug::Category::Audio, "[POBJ] sound=explosion path=%s pos=(%.2f %.2f %.2f)\n",
+src\pobjects\persistent-physics.cpp-363-                   obj.cfg.explosionSound.c_str(), pos.x, pos.y, pos.z);
+src\pobjects\persistent-physics.cpp-364-        playWorldSound(obj.cfg.explosionSound, pos, 1.0f, 1.0f, 50.0f);
+src\pobjects\persistent-physics.cpp-365-    }
+src\pobjects\persistent-physics.cpp-366-
+src\pobjects\persistent-physics.cpp-367-    {
+src\pobjects\persistent-physics.cpp-368-        HitEvent ev;
+src\pobjects\persistent-physics.cpp-369-        ev.position = pos;
+src\pobjects\persistent-physics.cpp-370-        ev.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+src\pobjects\persistent-physics.cpp-371-        ev.direction = glm::vec3(0.0f);
+src\pobjects\persistent-physics.cpp-372-        ev.hitWorld = true;
+src\pobjects\persistent-physics.cpp-373-        ev.hitEntity = false;
+src\pobjects\persistent-physics.cpp-374-        ev.damage = 0;
+src\pobjects\persistent-physics.cpp-375-        ev.attacker = obj.ownerName;
+src\pobjects\persistent-physics.cpp-376-        ev.weaponSource = obj.weaponId;
+src\pobjects\persistent-physics.cpp-377-        HitEffects::onHit(ev);
+src\pobjects\persistent-physics.cpp-378-    }
+src\pobjects\persistent-physics.cpp-379-
+src\pobjects\persistent-physics.cpp-380-    EffectPartSystem::instance().spawnMuzzleFlash(pos, obj.weaponId + "_explosion");
+src\pobjects\persistent-physics.cpp-381-    EffectPartSystem::instance().spawnWorldDebris(pos, glm::vec3(0.0f, 0.0f, 1.0f), 3.0f);
+src\pobjects\persistent-physics.cpp-382-
+src\pobjects\persistent-physics.cpp-383-    if (camera) {
+src\pobjects\persistent-physics.cpp-384-        float distToCam = glm::length(pos - camera->pos);
+src\pobjects\persistent-physics.cpp-385-        float shakeStrength = std::clamp(1.0f - distToCam / radius, 0.0f, 1.0f);
+src\pobjects\persistent-physics.cpp-386-        camera->addPunch(shakeStrength * 4.0f, shakeStrength * 2.0f);
+src\pobjects\persistent-physics.cpp-387-    }
+src\pobjects\persistent-physics.cpp-388-
+src\pobjects\persistent-physics.cpp-389-    for (Npc& npc : npcs.all()) {
+src\pobjects\persistent-physics.cpp-390-        if (npc.body.currentHp <= 0) continue;
+src\pobjects\persistent-physics.cpp-391-        glm::vec3 toEntity = npc.body.pos - pos;
+src\pobjects\persistent-physics.cpp-392-        float dist = glm::length(toEntity);
+src\pobjects\persistent-physics.cpp-393-        if (dist >= radius) continue;
+src\pobjects\persistent-physics.cpp-394-        glm::vec3 dir = dist > 0.001f ? toEntity / dist : glm::vec3(0.0f, 1.0f, 0.0f);
+src\pobjects\persistent-physics.cpp-395-        float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
+src\pobjects\persistent-physics.cpp-396-        int finalDmg = std::max(1, (int)std::round(dmgScaled));
+src\pobjects\persistent-physics.cpp-397-        npc.body.currentHp -= finalDmg;
+src\pobjects\persistent-physics.cpp-398-        if (npc.body.currentHp < 0) npc.body.currentHp = 0;
+src\pobjects\persistent-physics.cpp-399-        float t = dist / radius;
+src\pobjects\persistent-physics.cpp-400-        float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+src\pobjects\persistent-physics.cpp-401-        npc.body.externalImpulse += dir * knockbackStrength * knockScale;
+src\pobjects\persistent-physics.cpp-402-        HitEvent ev;
+src\pobjects\persistent-physics.cpp-403-        ev.position = npc.body.pos;
+src\pobjects\persistent-physics.cpp-404-        ev.normal = dir;
+src\pobjects\persistent-physics.cpp-405-        ev.direction = -dir;
+src\pobjects\persistent-physics.cpp-406-        ev.hitEntity = true;
+src\pobjects\persistent-physics.cpp-407-        ev.damage = finalDmg;
+src\pobjects\persistent-physics.cpp-408-        ev.attacker = obj.ownerName;
+src\pobjects\persistent-physics.cpp-409-        ev.victim = npc.body.username;
+src\pobjects\persistent-physics.cpp-410-        ev.weaponSource = obj.weaponId;
+src\pobjects\persistent-physics.cpp-411-        HitEffects::onHit(ev);
+src\pobjects\persistent-physics.cpp-412-        Debug::log(Debug::Category::Weapons, "[POBJ] npc=%u damage=%d dist=%.1f\n",
+src\pobjects\persistent-physics.cpp-413-                   npc.id, finalDmg, dist);
+src\pobjects\persistent-physics.cpp-414-    }
+src\pobjects\persistent-physics.cpp-415-
+src\pobjects\persistent-physics.cpp-416-    {
+src\pobjects\persistent-physics.cpp-417-        glm::vec3 toPlayer = player.pos - pos;
+src\pobjects\persistent-physics.cpp-418-        float dist = glm::length(toPlayer);
+src\pobjects\persistent-physics.cpp-419-        if (dist < radius) {
+src\pobjects\persistent-physics.cpp-420-            glm::vec3 dir = dist > 0.001f ? toPlayer / dist : glm::vec3(0.0f, 1.0f, 0.0f);
+src\pobjects\persistent-physics.cpp-421-            float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
+src\pobjects\persistent-physics.cpp-422-            int finalDmg = std::max(1, (int)std::round(dmgScaled));
+src\pobjects\persistent-physics.cpp-423-            float t = dist / radius;
+src\pobjects\persistent-physics.cpp-424-            float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
+src\pobjects\persistent-physics.cpp-425-            glm::vec3 knockback = dir * knockbackStrength * knockScale * obj.cfg.explosionSelfKnockbackMul;
+src\pobjects\persistent-physics.cpp-426-            player.takeDamage(finalDmg, knockback, 8.0f);
+src\pobjects\persistent-physics.cpp-427-            Debug::log(Debug::Category::Weapons, "[POBJ] player damage=%d dist=%.1f knockback=(%.2f %.2f %.2f)\n",
+src\pobjects\persistent-physics.cpp-428-                       finalDmg, dist, knockback.x, knockback.y, knockback.z);
+src\pobjects\persistent-physics.cpp-429-        }
+src\pobjects\persistent-physics.cpp-430-    }
+src\pobjects\persistent-physics.cpp-431-
+src\pobjects\persistent-physics.cpp-432-    ReplayEffectEvent explosionEvent;
+src\pobjects\persistent-physics.cpp-433-    explosionEvent.type = "persistent_explosion";
+src\pobjects\persistent-physics.cpp-434-    explosionEvent.position = pos;
+src\pobjects\persistent-physics.cpp-435-    explosionEvent.scale = {radius, 0.0f, 0.0f};
+src\pobjects\persistent-physics.cpp-436-    explosionEvent.sourceActorId = obj.ownerName;
+src\pobjects\persistent-physics.cpp-437-    explosionEvent.targetActorId = obj.weaponId + "_" + std::to_string(obj.id);
+src\pobjects\persistent-physics.cpp-438-    captureReplayEffect(explosionEvent);
+src\pobjects\persistent-physics.cpp-439-}
+src\pobjects\persistent-physics.cpp-440-
+src\pobjects\persistent-physics.cpp-441-void PersistentPhysicsSystem::render(const Camera& camera) const
+src\pobjects\persistent-physics.cpp-442-{
+src\pobjects\persistent-physics.cpp-443-    for (const PersistentPhysicsObject& obj : mObjects) {
+src\pobjects\persistent-physics.cpp-444-        if (obj.exploded) continue;
+src\pobjects\persistent-physics.cpp-445-        renderPrimitive(obj, camera);
+--
+src\engine\engine-tick-render.cpp-205-                actor->applyReplayPose(
+src\engine\engine-tick-render.cpp-206-                    actorState.position,
+src\engine\engine-tick-render.cpp-207-                    actorState.rotation.z,
+src\engine\engine-tick-render.cpp-208-                    actorState.bodyParts);
+src\engine\engine-tick-render.cpp-209-
+src\engine\engine-tick-render.cpp-210-                const bool hideFirstPersonActor =
+src\engine\engine-tick-render.cpp-211-                    gReplayPlayer.cameraController().mode() ==
+src\engine\engine-tick-render.cpp-212-                        ReplayCameraMode::FirstPerson &&
+src\engine\engine-tick-render.cpp-213-                    actorState.id == gReplayPlayer.killerId();
+src\engine\engine-tick-render.cpp-214-                if (!hideFirstPersonActor) {
+src\engine\engine-tick-render.cpp-215-                    const bool isImpactVictim = gKillImpactFrame.active &&
+src\engine\engine-tick-render.cpp-216-                        actorState.id == gKillImpactFrame.victimId;
+src\engine\engine-tick-render.cpp-217-                    if (isImpactVictim) {
+src\engine\engine-tick-render.cpp-218-                        GLuint shader = engine.renderer->shaderProgram;
+src\engine\engine-tick-render.cpp-219-                        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+src\engine\engine-tick-render.cpp-220-                        glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+src\engine\engine-tick-render.cpp-221-                        actor->renderCurrentPose(shader, replayView, replayProj);
+src\engine\engine-tick-render.cpp-222-                        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+src\engine\engine-tick-render.cpp-223-                    } else {
+src\engine\engine-tick-render.cpp-224-                        actor->renderCurrentPose(
+src\engine\engine-tick-render.cpp-225-                            engine.renderer->shaderProgram,
+src\engine\engine-tick-render.cpp-226-                            replayView, replayProj);
+src\engine\engine-tick-render.cpp-227-                    }
+src\engine\engine-tick-render.cpp-228-                }
+src\engine\engine-tick-render.cpp-229-
+src\engine\engine-tick-render.cpp-230-                const WeaponDefinition* definition =
+src\engine\engine-tick-render.cpp-231-                    WeaponRegistry::instance().get(
+src\engine\engine-tick-render.cpp-232-                        actorState.weaponName);
+src\engine\engine-tick-render.cpp-233-                if (definition && !definition->modelPath.empty()) {
+src\engine\engine-tick-render.cpp-234-                    actor->equippedSlot = definition->slot;
+src\engine\engine-tick-render.cpp-235-                    const std::string weaponKey =
+src\engine\engine-tick-render.cpp-236-                        actorState.id + ":" + definition->id;
+src\engine\engine-tick-render.cpp-237-                    WeaponViewModel& viewModel =
+src\engine\engine-tick-render.cpp-238-                        replayWeaponModels[weaponKey];
+src\engine\engine-tick-render.cpp-239-                    viewModel.update(
+src\engine\engine-tick-render.cpp-240-                        camera, *actor, dt, definition, false);
+src\engine\engine-tick-render.cpp-241-                    viewModel.render(
+src\engine\engine-tick-render.cpp-242-                        camera, *actor, definition->slot);
+src\engine\engine-tick-render.cpp-243-                }
+src\engine\engine-tick-render.cpp-244-            }
+src\engine\engine-tick-render.cpp-245-            if (gKillImpactFrame.active) {
+src\engine\engine-tick-render.cpp-246-                // Red sphere at death position
+src\engine\engine-tick-render.cpp-247-                EffectPartSystem::instance().spawnDeathEllipsoid(
+src\engine\engine-tick-render.cpp-248-                    gKillImpactFrame.victimPosition,
+src\engine\engine-tick-render.cpp-249-                    glm::vec3(0.0f, 0.0f, 1.0f), 0.5f, 2.0f, 0.3f);
+src\engine\engine-tick-render.cpp-250-                // Full-screen black overlay (impact frame)
+src\engine\engine-tick-render.cpp-251-                static GLuint impactVao = 0, impactVbo = 0;
+src\engine\engine-tick-render.cpp-252-                if (!impactVao) {
+src\engine\engine-tick-render.cpp-253-                    float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+src\engine\engine-tick-render.cpp-254-                    glGenVertexArrays(1, &impactVao);
+src\engine\engine-tick-render.cpp-255-                    glGenBuffers(1, &impactVbo);
+src\engine\engine-tick-render.cpp-256-                    glBindVertexArray(impactVao);
+src\engine\engine-tick-render.cpp-257-                    glBindBuffer(GL_ARRAY_BUFFER, impactVbo);
+src\engine\engine-tick-render.cpp-258-                    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+src\engine\engine-tick-render.cpp-259-                    glEnableVertexAttribArray(0);
+src\engine\engine-tick-render.cpp-260-                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+src\engine\engine-tick-render.cpp-261-                }
+src\engine\engine-tick-render.cpp-262-                GLuint shader = engine.renderer->shaderProgram;
+src\engine\engine-tick-render.cpp-263-                glDisable(GL_DEPTH_TEST);
+src\engine\engine-tick-render.cpp-264-                glUseProgram(shader);
+src\engine\engine-tick-render.cpp-265-                glm::mat4 id(1.0f);
+src\engine\engine-tick-render.cpp-266-                glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+src\engine\engine-tick-render.cpp-267-                glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+src\engine\engine-tick-render.cpp-268-                glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+src\engine\engine-tick-render.cpp-269-                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+src\engine\engine-tick-render.cpp-270-                glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 0.6f);
+src\engine\engine-tick-render.cpp-271-                glBindVertexArray(impactVao);
+src\engine\engine-tick-render.cpp-272-                glDrawArrays(GL_TRIANGLES, 0, 3);
+src\engine\engine-tick-render.cpp-273-                glEnable(GL_DEPTH_TEST);
+src\engine\engine-tick-render.cpp-274-                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+src\engine\engine-tick-render.cpp-275-            }
+src\engine\engine-tick-render.cpp-276-        }
+src\engine\engine-tick-render.cpp-277-    } else {
+src\engine\engine-tick-render.cpp-278-        if (player.spawnFlashTimer > 0.0f) {
+src\engine\engine-tick-render.cpp-279-            static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
+src\engine\engine-tick-render.cpp-280-            if (!spawnFlashVao) {
+src\engine\engine-tick-render.cpp-281-                float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+src\engine\engine-tick-render.cpp-282-                glGenVertexArrays(1, &spawnFlashVao);
+src\engine\engine-tick-render.cpp-283-                glGenBuffers(1, &spawnFlashVbo);
+src\engine\engine-tick-render.cpp-284-                glBindVertexArray(spawnFlashVao);
+src\engine\engine-tick-render.cpp-285-                glBindBuffer(GL_ARRAY_BUFFER, spawnFlashVbo);
+src\engine\engine-tick-render.cpp-286-                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+src\engine\engine-tick-render.cpp-287-                glEnableVertexAttribArray(0);
+src\engine\engine-tick-render.cpp-288-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+src\engine\engine-tick-render.cpp-289-            }
+src\engine\engine-tick-render.cpp-290-            GLuint shader = engine.renderer->shaderProgram;
+src\engine\engine-tick-render.cpp-291-            glDisable(GL_DEPTH_TEST);
+src\engine\engine-tick-render.cpp-292-            glUseProgram(shader);
+src\engine\engine-tick-render.cpp-293-            glm::mat4 id(1.0f);
+src\engine\engine-tick-render.cpp-294-            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+src\engine\engine-tick-render.cpp-295-            glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+src\engine\engine-tick-render.cpp-296-            glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+src\engine\engine-tick-render.cpp-297-            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+src\engine\engine-tick-render.cpp-298-            glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 1.0f);
+src\engine\engine-tick-render.cpp-299-            glBindVertexArray(spawnFlashVao);
+src\engine\engine-tick-render.cpp-300-            glDrawArrays(GL_TRIANGLES, 0, 3);
+src\engine\engine-tick-render.cpp-301-            glEnable(GL_DEPTH_TEST);
+src\engine\engine-tick-render.cpp-302-        }
+src\engine\engine-tick-render.cpp-303-        renderPlayer(player, camera);
+src\engine\engine-tick-render.cpp-304-        // Draw the local weapon now while the shared viewmodel still contains
+src\engine\engine-tick-render.cpp:305:        // the local transform calculated during WeaponSystem::update().
+src\engine\engine-tick-render.cpp-306-        // This prevents renderRemoteWeapon (below) from overwriting the transform
+src\engine\engine-tick-render.cpp-307-        // before the local weapon renders.
+src\engine\engine-tick-render.cpp-308-        if (!replayPlaybackActive)
+src\engine\engine-tick-render.cpp-309-            { Perf::ScopedTimer _wr("WeaponRender"); weapons.render(camera, player); }
+src\engine\engine-tick-render.cpp-310-        if (mpContext.active) {
+src\engine\engine-tick-render.cpp-311-            for (auto& kv : mpContext.remotePlayers) {
+src\engine\engine-tick-render.cpp-312-                renderNetworkPlayer(kv.second, camera, kv.first, false);
+src\engine\engine-tick-render.cpp-313-                weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+src\engine\engine-tick-render.cpp-314-            }
+src\engine\engine-tick-render.cpp-315-            for (auto& kv : mpContext.remoteNpcs) {
+src\engine\engine-tick-render.cpp-316-                renderNetworkPlayer(kv.second, camera, kv.first, false);
+src\engine\engine-tick-render.cpp-317-            }
+src\engine\engine-tick-render.cpp-318-            MimitaNet::mpRenderNetworkProjectiles(mpContext, camera);
+src\engine\engine-tick-render.cpp-319-            // Render server position ghost if enabled
+src\engine\engine-tick-render.cpp-320-            engineRenderGhost(player, camera);
+src\engine\engine-tick-render.cpp-321-        }
+src\engine\engine-tick-render.cpp-322-        npcSystem.render(camera);
+src\engine\engine-tick-render.cpp-323-    }
+src\engine\engine-tick-render.cpp-324-    diagRenderStage(3);
+src\engine\engine-tick-render.cpp-325-    {   static float rlogTimer = 0.0f; rlogTimer -= dt;
+src\engine\engine-tick-render.cpp-326-        if (rlogTimer <= 0.0f && replayPlaybackActive) {
+src\engine\engine-tick-render.cpp-327-            rlogTimer = 1.0f;
+src\engine\engine-tick-render.cpp-328-            const auto* rframe = gReplayPlayer.currentSceneFrame();
+src\engine\engine-tick-render.cpp-329-            printf("[REPLAY] cameraMode=%s freecam=%d paused=%d "
+src\engine\engine-tick-render.cpp-330-                   "viewingActor=%s tick=%u actorCount=%zu effectCount=%zu\n",
+src\engine\engine-tick-render.cpp-331-                   gReplayPlayer.cameraController().modeName(),
+src\engine\engine-tick-render.cpp-332-                   (int)(gReplayPlayer.cameraController().mode() == ReplayCameraMode::Freecam),
+src\engine\engine-tick-render.cpp-333-                   (int)gReplayPlayer.isPaused(),
+src\engine\engine-tick-render.cpp-334-                   rframe && !rframe->actors.empty() ? rframe->actors[0].name.c_str() : "none",
+src\engine\engine-tick-render.cpp-335-                   gReplayPlayer.currentTick(),
+src\engine\engine-tick-render.cpp-336-                   rframe ? rframe->actors.size() : 0,
+src\engine\engine-tick-render.cpp-337-                   gReplayPlayer.totalEffectCount());
+src\engine\engine-tick-render.cpp-338-        }
+src\engine\engine-tick-render.cpp-339-    }
+src\engine\engine-tick-render.cpp-340-    if (mpContext.active && !replayPlaybackActive)
+src\engine\engine-tick-render.cpp-341-    {
+src\engine\engine-tick-render.cpp-342-        static uint64_t lastReplicaRenderLogMs = 0;
+src\engine\engine-tick-render.cpp-343-        const uint64_t renderLogNow = MimitaNet::nowMs();
+src\engine\engine-tick-render.cpp-344-        if (renderLogNow - lastReplicaRenderLogMs >= 1000)
+src\engine\engine-tick-render.cpp-345-        {
+src\engine\engine-tick-render.cpp-346-            for (const auto& kv : mpContext.remotePlayers)
+src\engine\engine-tick-render.cpp-347-                printf("[CLIENT RENDER ENTITY] entityId=%u type=Player visible=%d mesh=%s "
+src\engine\engine-tick-render.cpp-348-                       "position=(%.2f,%.2f,%.2f)\n",
+src\engine\engine-tick-render.cpp-349-                       kv.first, (int)!kv.second.dead,
+src\engine\engine-tick-render.cpp-350-                       kv.second.modelLoaded ? "player-glb" : "fallback-capsule",
+src\engine\engine-tick-render.cpp-351-                       kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+src\engine\engine-tick-render.cpp-352-            for (const auto& kv : mpContext.remoteNpcs)
+src\engine\engine-tick-render.cpp-353-                printf("[CLIENT RENDER ENTITY] entityId=%u type=NPC visible=%d mesh=%s "
+src\engine\engine-tick-render.cpp-354-                       "position=(%.2f,%.2f,%.2f)\n",
+src\engine\engine-tick-render.cpp-355-                       kv.first, (int)!kv.second.dead,
+src\engine\engine-tick-render.cpp-356-                       kv.second.modelLoaded ? "player-glb" : "fallback-capsule",
+src\engine\engine-tick-render.cpp-357-                       kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
+src\engine\engine-tick-render.cpp-358-            lastReplicaRenderLogMs = renderLogNow;
+src\engine\engine-tick-render.cpp-359-        }
+src\engine\engine-tick-render.cpp-360-    }
+src\engine\engine-tick-render.cpp-361-    if (!replayPlaybackActive) {
+src\engine\engine-tick-render.cpp-362-        { Perf::ScopedTimer _dr("EffectRender"); DeathSystem::instance().render(camera); }
+src\engine\engine-tick-render.cpp-363-        // [RAGDOLL RENDER REMOVED] — DeadBody render handles corpses
+src\engine\engine-tick-render.cpp-364-        // Local weapon render moved earlier (before renderRemoteWeapon) to prevent
+src\engine\engine-tick-render.cpp-365-        // shared WeaponViewModel transform from being overwritten by remote players.
+src\engine\engine-tick-render.cpp-366-    }
+src\engine\engine-tick-render.cpp-367-    diagRenderStage(4);
+src\engine\engine-tick-render.cpp-368-
+src\engine\engine-tick-render.cpp-369-    if (gNetPresentationDebug && mpContext.active)
+src\engine\engine-tick-render.cpp-370-    {
+src\engine\engine-tick-render.cpp-371-        float debugY = 120.0f;
+src\engine\engine-tick-render.cpp-372-        for (const auto& kv : mpContext.remotePlayers)
+src\engine\engine-tick-render.cpp-373-        {
+src\engine\engine-tick-render.cpp-374-            const Player& rp = kv.second;
+src\engine\engine-tick-render.cpp-375-            auto it = mpContext.remotePlayerInterpolation.find(kv.first);
+src\engine\engine-tick-render.cpp-376-            const MimitaNet::EntityInterpolationState* interp =
+src\engine\engine-tick-render.cpp-377-                it != mpContext.remotePlayerInterpolation.end() ? &it->second : nullptr;
+src\engine\engine-tick-render.cpp-378-
+src\engine\engine-tick-render.cpp-379-            char buf[256];
+src\engine\engine-tick-render.cpp-380-            snprintf(buf, sizeof(buf),
+src\engine\engine-tick-render.cpp-381-                "REMOTE id=%u  weapon=%s  hp=%d  dead=%d  ground=%d  "
+src\engine\engine-tick-render.cpp-382-                "dashSer=%u  aim=(%.2f,%.2f)",
+src\engine\engine-tick-render.cpp-383-                kv.first, rp.equippedWeaponId.c_str(),
+src\engine\engine-tick-render.cpp-384-                rp.currentHp, (int)rp.dead, (int)rp.ground.onGround,
+src\engine\engine-tick-render.cpp-385-                (unsigned)rp.networkLastDashSerial,
+src\engine\engine-tick-render.cpp-386-                rp.aimDirection.x, rp.aimDirection.y);
+src\engine\engine-tick-render.cpp-387-            uiDrawText(buf, 10.0f, debugY, 0.32f,
+src\engine\engine-tick-render.cpp-388-                rp.dead ? glm::vec4(1,0,0,1) : glm::vec4(0.3f,1,0.5f,1));
+src\engine\engine-tick-render.cpp-389-            debugY += 22.0f;
+src\engine\engine-tick-render.cpp-390-
+src\engine\engine-tick-render.cpp-391-            if (interp)
+src\engine\engine-tick-render.cpp-392-            {
+src\engine\engine-tick-render.cpp-393-                snprintf(buf, sizeof(buf),
+src\engine\engine-tick-render.cpp-394-                    "  pos=(%.1f,%.1f,%.1f)  vel=(%.1f,%.1f,%.1f)  yaw=%.1f",
+src\engine\engine-tick-render.cpp-395-                    rp.pos.x, rp.pos.y, rp.pos.z,
+src\engine\engine-tick-render.cpp-396-                    rp.vel.x, rp.vel.y, rp.vel.z, rp.yaw);
+src\engine\engine-tick-render.cpp-397-                uiDrawText(buf, 10.0f, debugY, 0.28f, {0.6f,0.7f,0.9f,1});
+src\engine\engine-tick-render.cpp-398-                debugY += 20.0f;
+src\engine\engine-tick-render.cpp-399-            }
+src\engine\engine-tick-render.cpp-400-        }
+src\engine\engine-tick-render.cpp-401-    }
+src\engine\engine-tick-render.cpp-402-
+src\engine\engine-tick-render.cpp-403-    if (gNetDebugEntities && mpContext.active)
+src\engine\engine-tick-render.cpp-404-    {
+src\engine\engine-tick-render.cpp-405-        float debugY = 120.0f;
+--
+src\network\multiplayer-projectiles.cpp-64-
+src\network\multiplayer-projectiles.cpp-65-bool finiteVec(const glm::vec3& v)
+src\network\multiplayer-projectiles.cpp-66-{
+src\network\multiplayer-projectiles.cpp-67-    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+src\network\multiplayer-projectiles.cpp-68-}
+src\network\multiplayer-projectiles.cpp-69-
+src\network\multiplayer-projectiles.cpp-70-float projectileGravity(uint8_t weapon)
+src\network\multiplayer-projectiles.cpp-71-{
+src\network\multiplayer-projectiles.cpp-72-    return weapon == NETWORK_WEAPON_GRENADE_LAUNCHER ? 20.0f : 0.0f;
+src\network\multiplayer-projectiles.cpp-73-}
+src\network\multiplayer-projectiles.cpp-74-
+src\network\multiplayer-projectiles.cpp-75-float projectileDrag(uint8_t weapon)
+src\network\multiplayer-projectiles.cpp-76-{
+src\network\multiplayer-projectiles.cpp-77-    return weapon == NETWORK_WEAPON_GRENADE_LAUNCHER ? 0.15f : 0.0f;
+src\network\multiplayer-projectiles.cpp-78-}
+src\network\multiplayer-projectiles.cpp-79-
+src\network\multiplayer-projectiles.cpp-80-const WeaponDefinition* projectileDefinition(uint8_t weapon)
+src\network\multiplayer-projectiles.cpp-81-{
+src\network\multiplayer-projectiles.cpp-82-    const char* id = weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
+src\network\multiplayer-projectiles.cpp-83-        ? "grenade_launcher"
+src\network\multiplayer-projectiles.cpp-84-        : "rocket_launcher";
+src\network\multiplayer-projectiles.cpp-85-    return WeaponRegistry::instance().get(id);
+src\network\multiplayer-projectiles.cpp-86-}
+src\network\multiplayer-projectiles.cpp-87-
+src\network\multiplayer-projectiles.cpp-88-float cp(const WeaponDefinition* def, const char* key, float fallback)
+src\network\multiplayer-projectiles.cpp-89-{
+src\network\multiplayer-projectiles.cpp-90-    if (!def)
+src\network\multiplayer-projectiles.cpp-91-        return fallback;
+src\network\multiplayer-projectiles.cpp-92-    auto it = def->customParams.find(key);
+src\network\multiplayer-projectiles.cpp-93-    return it != def->customParams.end() ? it->second : fallback;
+src\network\multiplayer-projectiles.cpp-94-}
+src\network\multiplayer-projectiles.cpp-95-
+src\network\multiplayer-projectiles.cpp-96-ProjectileVisualConfig projectileVisualConfig(uint8_t weapon)
+src\network\multiplayer-projectiles.cpp-97-{
+src\network\multiplayer-projectiles.cpp-98-    const bool isRocket = weapon == NETWORK_WEAPON_ROCKET_LAUNCHER;
+src\network\multiplayer-projectiles.cpp-99-    const WeaponDefinition* def = projectileDefinition(weapon);
+src\network\multiplayer-projectiles.cpp-100-    ProjectileVisualConfig cfg;
+src\network\multiplayer-projectiles.cpp-101-    cfg.texturePath = isRocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
+src\network\multiplayer-projectiles.cpp-102-    cfg.length = cp(def, "projectileVisualLength", isRocket ? 1.5f : 1.8f);
+src\network\multiplayer-projectiles.cpp-103-    cfg.radius = cp(def, "projectileVisualRadius", isRocket ? 0.18f : 0.28f);
+src\network\multiplayer-projectiles.cpp-104-    cfg.scale = glm::vec3(
+src\network\multiplayer-projectiles.cpp-105-        cp(def, "projectileVisualScaleX", 1.0f),
+src\network\multiplayer-projectiles.cpp-106-        cp(def, "projectileVisualScaleY", 1.0f),
+src\network\multiplayer-projectiles.cpp-107-        cp(def, "projectileVisualScaleZ", 1.0f));
+src\network\multiplayer-projectiles.cpp-108-    cfg.rotationOffsetDegrees = glm::vec3(
+src\network\multiplayer-projectiles.cpp-109-        cp(def, "projectileVisualRotationOffsetX", 0.0f),
+src\network\multiplayer-projectiles.cpp-110-        cp(def, "projectileVisualRotationOffsetY", 0.0f),
+src\network\multiplayer-projectiles.cpp-111-        cp(def, "projectileVisualRotationOffsetZ", 0.0f));
+src\network\multiplayer-projectiles.cpp-112-    cfg.textureTiling = glm::vec2(
+src\network\multiplayer-projectiles.cpp-113-        cp(def, "projectileVisualTextureTilingU", 1.0f),
+src\network\multiplayer-projectiles.cpp-114-        cp(def, "projectileVisualTextureTilingV", 1.0f));
+src\network\multiplayer-projectiles.cpp-115-    cfg.fillAlpha = cp(def, "projectileFillAlpha", 1.0f);
+src\network\multiplayer-projectiles.cpp-116-    cfg.outlineEnabled = cp(def, "projectileOutlineEnabled", 1.0f) > 0.0f;
+src\network\multiplayer-projectiles.cpp-117-    cfg.outlineColor = glm::vec3(
+src\network\multiplayer-projectiles.cpp-118-        cp(def, "projectileOutlineColorR", 1.0f),
+src\network\multiplayer-projectiles.cpp-119-        cp(def, "projectileOutlineColorG", 0.8f),
+src\network\multiplayer-projectiles.cpp-120-        cp(def, "projectileOutlineColorB", 0.2f));
+src\network\multiplayer-projectiles.cpp-121-    cfg.outlineAlpha = cp(def, "projectileOutlineAlpha", 0.4f);
+src\network\multiplayer-projectiles.cpp-122-    cfg.outlineScale = cp(def, "projectileOutlineScale", 1.15f);
+src\network\multiplayer-projectiles.cpp-123-    cfg.glowEnabled = cp(def, "projectileGlowEnabled", 1.0f) > 0.0f;
+src\network\multiplayer-projectiles.cpp-124-    cfg.glowColor = glm::vec3(
+src\network\multiplayer-projectiles.cpp-125-        cp(def, "projectileGlowColorR", 1.0f),
+src\network\multiplayer-projectiles.cpp-126-        cp(def, "projectileGlowColorG", 0.6f),
+src\network\multiplayer-projectiles.cpp-127-        cp(def, "projectileGlowColorB", 0.0f));
+src\network\multiplayer-projectiles.cpp-128-    cfg.glowAlpha = cp(def, "projectileGlowAlpha", 0.15f);
+src\network\multiplayer-projectiles.cpp-129-    cfg.glowRadiusMultiplier = cp(def, "projectileGlowRadiusMultiplier", 3.0f);
+src\network\multiplayer-projectiles.cpp-130-    return cfg;
+src\network\multiplayer-projectiles.cpp-131-}
+src\network\multiplayer-projectiles.cpp-132-
+src\network\multiplayer-projectiles.cpp-133-void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
+src\network\multiplayer-projectiles.cpp-134-{
+src\network\multiplayer-projectiles.cpp-135-    const bool rocket = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER;
+src\network\multiplayer-projectiles.cpp-136-    const float rate = rocket ? 30.0f : 18.0f;
+src\network\multiplayer-projectiles.cpp-137-    projectile.smokeAccumulator += rate * dt;
+src\network\multiplayer-projectiles.cpp-138-    while (projectile.smokeAccumulator >= 1.0f)
+src\network\multiplayer-projectiles.cpp-139-    {
+src\network\multiplayer-projectiles.cpp-140-        projectile.smokeAccumulator -= 1.0f;
+src\network\multiplayer-projectiles.cpp-141-        EffectPart part;
+src\network\multiplayer-projectiles.cpp-142-        // Trails use render position for smoothness
+src\network\multiplayer-projectiles.cpp-143-        part.position = projectile.renderPosition;
+src\network\multiplayer-projectiles.cpp-144-        part.velocity = rocket
+src\network\multiplayer-projectiles.cpp-145-            ? projectile.renderVelocity * -0.08f
+src\network\multiplayer-projectiles.cpp-146-            : projectile.renderVelocity * 0.10f;
+src\network\multiplayer-projectiles.cpp-147-        part.lifetime = 0.0f;
+src\network\multiplayer-projectiles.cpp-148-        part.maxLifetime = rocket ? 0.8f : 0.25f;
+src\network\multiplayer-projectiles.cpp-149-        part.scale = rocket ? 0.18f : 0.04f;
+src\network\multiplayer-projectiles.cpp-150-        part.endScale = rocket ? 0.6f : 0.01f;
+src\network\multiplayer-projectiles.cpp-151-        part.color = rocket
+src\network\multiplayer-projectiles.cpp-152-            ? glm::vec3(0.55f, 0.55f, 0.55f)
+src\network\multiplayer-projectiles.cpp-153-            : glm::vec3(1.0f, 0.65f, 0.15f);
+src\network\multiplayer-projectiles.cpp-154-        part.alpha = rocket ? 0.55f : 0.9f;
+src\network\multiplayer-projectiles.cpp-155-        part.gravity = rocket ? 0.0f : 8.0f;
+src\network\multiplayer-projectiles.cpp-156-        part.affectedByGravity = !rocket;
+src\network\multiplayer-projectiles.cpp-157-        part.replayType = rocket ? "net_rocket_trail" : "net_grenade_spark";
+src\network\multiplayer-projectiles.cpp-158-        EffectPartSystem::instance().spawn(part);
+src\network\multiplayer-projectiles.cpp-159-    }
+src\network\multiplayer-projectiles.cpp-160-}
+src\network\multiplayer-projectiles.cpp-161-
+src\network\multiplayer-projectiles.cpp-162-} // namespace
+src\network\multiplayer-projectiles.cpp-163-
+src\network\multiplayer-projectiles.cpp:164:uint32_t mpSendProjectileFireRequest(
+src\network\multiplayer-projectiles.cpp-165-    MultiplayerContext& ctx,
+src\network\multiplayer-projectiles.cpp-166-    uint8_t weapon,
+src\network\multiplayer-projectiles.cpp-167-    const glm::vec3& origin,
+src\network\multiplayer-projectiles.cpp-168-    const glm::vec3& direction)
+src\network\multiplayer-projectiles.cpp-169-{
+src\network\multiplayer-projectiles.cpp-170-    if (!ctx.active || !ctx.localPlayerId ||
+src\network\multiplayer-projectiles.cpp-171-        !networkWeaponTypeIsProjectile(weapon) ||
+src\network\multiplayer-projectiles.cpp-172-        !finiteVec(origin) || !finiteVec(direction) ||
+src\network\multiplayer-projectiles.cpp-173-        glm::length(direction) <= 0.001f)
+src\network\multiplayer-projectiles.cpp-174-        return 0;
+src\network\multiplayer-projectiles.cpp-175-
+src\network\multiplayer-projectiles.cpp-176-    ProjectileFireRequestPacket packet{};
+src\network\multiplayer-projectiles.cpp-177-    packet.header.type = PACKET_PROJECTILE_FIRE_REQUEST;
+src\network\multiplayer-projectiles.cpp-178-    packet.header.tick = ctx.tick;
+src\network\multiplayer-projectiles.cpp-179-    packet.header.playerId = ctx.localPlayerId;
+src\network\multiplayer-projectiles.cpp-180-    packet.fireSerial = ctx.nextLocalProjectileFireSerial++;
+src\network\multiplayer-projectiles.cpp-181-    if (ctx.nextLocalProjectileFireSerial == 0)
+src\network\multiplayer-projectiles.cpp-182-        ctx.nextLocalProjectileFireSerial = 1;
+src\network\multiplayer-projectiles.cpp-183-    packet.lastServerTick = ctx.latestServerTick;
+src\network\multiplayer-projectiles.cpp-184-    packet.weapon = weapon;
+src\network\multiplayer-projectiles.cpp-185-    const glm::vec3 dir = glm::normalize(direction);
+src\network\multiplayer-projectiles.cpp-186-    packet.originX = origin.x;
+src\network\multiplayer-projectiles.cpp-187-    packet.originY = origin.y;
+src\network\multiplayer-projectiles.cpp-188-    packet.originZ = origin.z;
+src\network\multiplayer-projectiles.cpp-189-    packet.dirX = dir.x;
+src\network\multiplayer-projectiles.cpp-190-    packet.dirY = dir.y;
+src\network\multiplayer-projectiles.cpp-191-    packet.dirZ = dir.z;
+src\network\multiplayer-projectiles.cpp-192-    mpSendPacket(ctx, &packet, sizeof(packet));
+src\network\multiplayer-projectiles.cpp-193-
+src\network\multiplayer-projectiles.cpp-194-    // Track pending fire request for retransmission
+src\network\multiplayer-projectiles.cpp-195-    MultiplayerContext::PendingFireRequest pfr;
+src\network\multiplayer-projectiles.cpp-196-    pfr.fireSerial = packet.fireSerial;
+src\network\multiplayer-projectiles.cpp-197-    pfr.weapon = weapon;
+src\network\multiplayer-projectiles.cpp-198-    pfr.origin = origin;
+src\network\multiplayer-projectiles.cpp-199-    pfr.direction = dir;
+src\network\multiplayer-projectiles.cpp-200-    pfr.firstSentMs = nowMs();
+src\network\multiplayer-projectiles.cpp-201-    pfr.lastSentMs = nowMs();
+src\network\multiplayer-projectiles.cpp-202-    pfr.attempts = 1;
+src\network\multiplayer-projectiles.cpp-203-    ctx.pendingFireRequests[packet.fireSerial] = pfr;
+src\network\multiplayer-projectiles.cpp-204-
+src\network\multiplayer-projectiles.cpp-205-    logGrenadeEvent(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important,
+src\network\multiplayer-projectiles.cpp-206-        "GRENADE_CLIENT_REQUEST",
+src\network\multiplayer-projectiles.cpp-207-        "GRENADE_P" + std::to_string(ctx.localPlayerId) + "_F" + std::to_string(packet.fireSerial) + "_J0",
+src\network\multiplayer-projectiles.cpp-208-        "send",
+src\network\multiplayer-projectiles.cpp-209-        "playerId=%u fireSerial=%u weapon=%s origin=(%.6f,%.6f,%.6f) dir=(%.6f,%.6f,%.6f) "
+src\network\multiplayer-projectiles.cpp-210-        "clientTick=%u pending=%zu attempt=1 transport=%d",
+src\network\multiplayer-projectiles.cpp-211-        ctx.localPlayerId, packet.fireSerial, networkWeaponTypeName(weapon),
+src\network\multiplayer-projectiles.cpp-212-        origin.x, origin.y, origin.z, dir.x, dir.y, dir.z,
+src\network\multiplayer-projectiles.cpp-213-        ctx.tick, ctx.pendingFireRequests.size() + 1, (int)(ctx.transport != nullptr));
+src\network\multiplayer-projectiles.cpp-214-
+src\network\multiplayer-projectiles.cpp-215-    printf("[PROJECTILE FIRE REQUEST SEND] localPlayerId=%u localFireSerial=%u "
+src\network\multiplayer-projectiles.cpp-216-           "weapon=%s origin=(%.2f,%.2f,%.2f) direction=(%.3f,%.3f,%.3f) "
+src\network\multiplayer-projectiles.cpp-217-           "velocity=(server-derived) clientTick=%u\n",
+src\network\multiplayer-projectiles.cpp-218-           ctx.localPlayerId, packet.fireSerial,
+src\network\multiplayer-projectiles.cpp-219-           networkWeaponTypeName(weapon),
+src\network\multiplayer-projectiles.cpp-220-           origin.x, origin.y, origin.z,
+src\network\multiplayer-projectiles.cpp-221-           dir.x, dir.y, dir.z, ctx.tick);
+src\network\multiplayer-projectiles.cpp-222-    return packet.fireSerial;
+src\network\multiplayer-projectiles.cpp-223-}
+src\network\multiplayer-projectiles.cpp-224-
+src\network\multiplayer-projectiles.cpp-225-uint32_t mpSendMeleeHitRequest(
+src\network\multiplayer-projectiles.cpp-226-    MultiplayerContext& ctx,
+src\network\multiplayer-projectiles.cpp-227-    uint32_t targetPlayerId,
+src\network\multiplayer-projectiles.cpp-228-    int damage,
+src\network\multiplayer-projectiles.cpp-229-    uint8_t weapon,
+src\network\multiplayer-projectiles.cpp-230-    uint8_t attackType,
+src\network\multiplayer-projectiles.cpp-231-    const glm::vec3& hit,
+src\network\multiplayer-projectiles.cpp-232-    const glm::vec3& normal,
+src\network\multiplayer-projectiles.cpp-233-    const glm::vec3& knockback,
+src\network\multiplayer-projectiles.cpp-234-    float weaponSpeed)
+src\network\multiplayer-projectiles.cpp-235-{
+src\network\multiplayer-projectiles.cpp-236-    if (!ctx.active || !ctx.localPlayerId || targetPlayerId == 0 ||
+src\network\multiplayer-projectiles.cpp-237-        weapon != NETWORK_WEAPON_SWORDSWORD)
+src\network\multiplayer-projectiles.cpp-238-        return 0;
+src\network\multiplayer-projectiles.cpp-239-
+src\network\multiplayer-projectiles.cpp-240-    MeleeHitRequestPacket packet{};
+src\network\multiplayer-projectiles.cpp-241-    packet.header.type = PACKET_MELEE_HIT_REQUEST;
+src\network\multiplayer-projectiles.cpp-242-    packet.header.tick = ctx.tick;
+src\network\multiplayer-projectiles.cpp-243-    packet.header.playerId = ctx.localPlayerId;
+src\network\multiplayer-projectiles.cpp-244-    packet.attackSerial = ctx.nextLocalMeleeAttackSerial++;
+src\network\multiplayer-projectiles.cpp-245-    if (ctx.nextLocalMeleeAttackSerial == 0)
+src\network\multiplayer-projectiles.cpp-246-        ctx.nextLocalMeleeAttackSerial = 1;
+src\network\multiplayer-projectiles.cpp-247-    packet.lastServerTick = ctx.latestServerTick;
+src\network\multiplayer-projectiles.cpp-248-    packet.targetPlayerId = targetPlayerId;
+src\network\multiplayer-projectiles.cpp-249-    packet.damage = std::clamp(damage, 1, 200);
+src\network\multiplayer-projectiles.cpp-250-    packet.weapon = weapon;
+src\network\multiplayer-projectiles.cpp-251-    packet.attackType = attackType;
+src\network\multiplayer-projectiles.cpp-252-    packet.hitX = hit.x;
+src\network\multiplayer-projectiles.cpp-253-    packet.hitY = hit.y;
+src\network\multiplayer-projectiles.cpp-254-    packet.hitZ = hit.z;
+src\network\multiplayer-projectiles.cpp-255-    packet.normalX = normal.x;
+src\network\multiplayer-projectiles.cpp-256-    packet.normalY = normal.y;
+src\network\multiplayer-projectiles.cpp-257-    packet.normalZ = normal.z;
+src\network\multiplayer-projectiles.cpp-258-    packet.knockX = knockback.x;
+src\network\multiplayer-projectiles.cpp-259-    packet.knockY = knockback.y;
+src\network\multiplayer-projectiles.cpp-260-    packet.knockZ = knockback.z;
+src\network\multiplayer-projectiles.cpp-261-    packet.weaponSpeed = weaponSpeed;
+src\network\multiplayer-projectiles.cpp-262-    mpSendPacket(ctx, &packet, sizeof(packet));
+src\network\multiplayer-projectiles.cpp-263-    printf("[SWORD HIT REQUEST SEND] attackerId=%u targetId=%u attackSerial=%u "
+src\network\multiplayer-projectiles.cpp-264-           "damage=%d hit=(%.2f,%.2f,%.2f) knockback=(%.2f,%.2f,%.2f)\n",
+--
+src\network\multiplayer-context.h-288-    std::string clientMapReadySentForMap;
+src\network\multiplayer-context.h-289-    uint32_t clientMapReadySentForPlayerId = 0;
+src\network\multiplayer-context.h-290-
+src\network\multiplayer-context.h-291-    // ── Snapshot lifecycle tracking for stale-state rejection ─────────
+src\network\multiplayer-context.h-292-    uint32_t latestLocalSnapshotTick = 0;
+src\network\multiplayer-context.h-293-    uint32_t latestAliveSnapshotTick = 0;
+src\network\multiplayer-context.h-294-
+src\network\multiplayer-context.h-295-    // ── Pending projectile fire requests (retransmission) ────────────
+src\network\multiplayer-context.h-296-    struct PendingFireRequest {
+src\network\multiplayer-context.h-297-        uint32_t fireSerial = 0;
+src\network\multiplayer-context.h-298-        uint8_t weapon = NETWORK_WEAPON_NONE;
+src\network\multiplayer-context.h-299-        glm::vec3 origin{0.0f};
+src\network\multiplayer-context.h-300-        glm::vec3 direction{0.0f};
+src\network\multiplayer-context.h-301-        uint64_t firstSentMs = 0;
+src\network\multiplayer-context.h-302-        uint64_t lastSentMs = 0;
+src\network\multiplayer-context.h-303-        int attempts = 0;
+src\network\multiplayer-context.h-304-        bool acknowledged = false;
+src\network\multiplayer-context.h-305-    };
+src\network\multiplayer-context.h-306-    std::unordered_map<uint32_t, PendingFireRequest> pendingFireRequests;
+src\network\multiplayer-context.h-307-
+src\network\multiplayer-context.h-308-    // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
+src\network\multiplayer-context.h-309-    std::unordered_set<uint32_t> predictedProjectileIds;
+src\network\multiplayer-context.h-310-
+src\network\multiplayer-context.h-311-    // ── Snapshot chunk reassembly buffers ─────────────────────────────
+src\network\multiplayer-context.h-312-    struct SnapshotChunkBuffer {
+src\network\multiplayer-context.h-313-        std::unordered_map<uint16_t, SnapshotChunkPacket> chunks;
+src\network\multiplayer-context.h-314-        uint64_t lastReceiveMs = 0;
+src\network\multiplayer-context.h-315-    };
+src\network\multiplayer-context.h-316-    std::unordered_map<uint32_t, SnapshotChunkBuffer> snapshotChunkBuffers;
+src\network\multiplayer-context.h-317-
+src\network\multiplayer-context.h-318-    // ── Rejected projectile fire requests (for ammo refund) ──────────
+src\network\multiplayer-context.h-319-    struct FireRejection {
+src\network\multiplayer-context.h-320-        uint32_t fireSerial = 0;
+src\network\multiplayer-context.h-321-        uint8_t weapon = 0;
+src\network\multiplayer-context.h-322-        uint8_t reason = 0;
+src\network\multiplayer-context.h-323-        float cooldownRemaining = 0.0f;
+src\network\multiplayer-context.h-324-    };
+src\network\multiplayer-context.h-325-    std::vector<FireRejection> fireRejections;
+src\network\multiplayer-context.h-326-    // Tracks processed fireSerials to prevent double-refund across frames
+src\network\multiplayer-context.h-327-    std::unordered_set<uint32_t> processedRefundSerials;
+src\network\multiplayer-context.h-328-
+src\network\multiplayer-context.h-329-    // ── Room code for HUD display ─────────────────────────────────────
+src\network\multiplayer-context.h-330-    // Set on host register or client join, cleared on disconnect/leave.
+src\network\multiplayer-context.h-331-    std::string currentRoomCode;
+src\network\multiplayer-context.h-332-};
+src\network\multiplayer-context.h-333-
+src\network\multiplayer-context.h-334-struct MpInput
+src\network\multiplayer-context.h-335-{
+src\network\multiplayer-context.h-336-    glm::vec3 position{0.0f};
+src\network\multiplayer-context.h-337-    glm::vec3 velocity{0.0f};
+src\network\multiplayer-context.h-338-    float yaw = 0.0f;
+src\network\multiplayer-context.h-339-    glm::vec3 camForward{1.0f, 0.0f, 0.0f};
+src\network\multiplayer-context.h-340-    float wishX = 0.0f;
+src\network\multiplayer-context.h-341-    float wishY = 0.0f;
+src\network\multiplayer-context.h-342-    bool jumpHeld = false;
+src\network\multiplayer-context.h-343-    bool dashPressed = false;
+src\network\multiplayer-context.h-344-    bool attackPressed = false;
+src\network\multiplayer-context.h-345-    bool freezeHeld = false;
+src\network\multiplayer-context.h-346-    int equippedSlot = 0;
+src\network\multiplayer-context.h-347-    uint8_t weaponState = 0;
+src\network\multiplayer-context.h-348-    float sizeScale = 1.0f;
+src\network\multiplayer-context.h-349-    glm::vec3 godballPosition{0.0f};
+src\network\multiplayer-context.h-350-    bool godballActive = false;
+src\network\multiplayer-context.h-351-};
+src\network\multiplayer-context.h-352-
+src\network\multiplayer-context.h-353-bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
+src\network\multiplayer-context.h-354-void mpShutdown(MultiplayerContext& ctx);
+src\network\multiplayer-context.h-355-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const class World& world);
+src\network\multiplayer-context.h-356-void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
+src\network\multiplayer-context.h-357-
+src\network\multiplayer-context.h-358-// ── Migration: connection with room code + join token ─────────────────
+src\network\multiplayer-context.h-359-bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
+src\network\multiplayer-context.h-360-    uint16_t port, const std::string& joinToken, const std::string& playerName);
+src\network\multiplayer-context.h-361-
+src\network\multiplayer-context.h-362-// ── Migration: disagreement packet processing ─────────────────────────
+src\network\multiplayer-context.h-363-void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPacket* packet);
+src\network\multiplayer-context.h-364-
+src\network\multiplayer-context.h-365-// ── Migration: reconnect helpers ──────────────────────────────────────
+src\network\multiplayer-context.h-366-void mpStartReconnect(MultiplayerContext& ctx);
+src\network\multiplayer-context.h-367-void mpTickReconnect(MultiplayerContext& ctx);
+src\network\multiplayer-context.h-368-void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty = 1.0f);
+src\network\multiplayer-context.h-369-void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
+src\network\multiplayer-context.h-370-void mpRequestExplode(MultiplayerContext& ctx);
+src\network\multiplayer-context.h-371-void mpSendNpcDamageRequest(MultiplayerContext& ctx, uint32_t npcEntityId, int damage,
+src\network\multiplayer-context.h-372-    const glm::vec3& origin, const glm::vec3& hit, const glm::vec3& direction,
+src\network\multiplayer-context.h-373-    const glm::vec3& normal, const glm::vec3& knockback, uint16_t effectFlags, uint8_t weapon);
+src\network\multiplayer-context.h-374-void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
+src\network\multiplayer-context.h-375-uint32_t mpSendShotEvent(
+src\network\multiplayer-context.h-376-    MultiplayerContext& ctx,
+src\network\multiplayer-context.h-377-    uint32_t targetPlayerId,
+src\network\multiplayer-context.h-378-    int damage,
+src\network\multiplayer-context.h-379-    float power,
+src\network\multiplayer-context.h-380-    uint16_t effectFlags,
+src\network\multiplayer-context.h-381-    uint8_t weapon,
+src\network\multiplayer-context.h-382-    uint8_t impactType,
+src\network\multiplayer-context.h-383-    const glm::vec3& origin,
+src\network\multiplayer-context.h-384-    const glm::vec3& hit,
+src\network\multiplayer-context.h-385-    const glm::vec3& direction,
+src\network\multiplayer-context.h-386-    const glm::vec3& normal,
+src\network\multiplayer-context.h-387-    const glm::vec3& knockbackImpulse = glm::vec3(0.0f));
+src\network\multiplayer-context.h:388:uint32_t mpSendProjectileFireRequest(
+src\network\multiplayer-context.h-389-    MultiplayerContext& ctx,
+src\network\multiplayer-context.h-390-    uint8_t weapon,
+src\network\multiplayer-context.h-391-    const glm::vec3& origin,
+src\network\multiplayer-context.h-392-    const glm::vec3& direction);
+src\network\multiplayer-context.h-393-bool mpIceConnect(MultiplayerContext& ctx, const std::string& roomCode,
+src\network\multiplayer-context.h-394-                  const std::string& playerName);
+src\network\multiplayer-context.h-395-uint32_t mpSendMeleeHitRequest(
+src\network\multiplayer-context.h-396-    MultiplayerContext& ctx,
+src\network\multiplayer-context.h-397-    uint32_t targetPlayerId,
+src\network\multiplayer-context.h-398-    int damage,
+src\network\multiplayer-context.h-399-    uint8_t weapon,
+src\network\multiplayer-context.h-400-    uint8_t attackType,
+src\network\multiplayer-context.h-401-    const glm::vec3& hit,
+src\network\multiplayer-context.h-402-    const glm::vec3& normal,
+src\network\multiplayer-context.h-403-    const glm::vec3& knockback,
+src\network\multiplayer-context.h-404-    float weaponSpeed);
+src\network\multiplayer-context.h-405-void mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
+src\network\multiplayer-context.h-406-
+src\network\multiplayer-context.h-407-// Packet queue flush (defined in multiplayer-packets.cpp)
+src\network\multiplayer-context.h-408-void flushOutgoingPackets(MultiplayerContext& ctx);
+src\network\multiplayer-context.h-409-
+src\network\multiplayer-context.h-410-void mpSetFakeLagMode(MultiplayerContext& ctx, int mode);
+src\network\multiplayer-context.h-411-void mpSetFakeLagStatic(MultiplayerContext& ctx, int milliseconds);
+src\network\multiplayer-context.h-412-void mpSetFakeLagRange(MultiplayerContext& ctx, int minimumMs, int maximumMs);
+src\network\multiplayer-context.h-413-
+src\network\multiplayer-context.h-414-// Called from mpTick (defined in multiplayer-shots.cpp)
+src\network\multiplayer-context.h-415-void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* event);
+src\network\multiplayer-context.h-416-void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEventPacket* event);
+src\network\multiplayer-context.h-417-void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const ProjectileSpawnEventPacket* event);
+src\network\multiplayer-context.h-418-void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const ProjectileStateEventPacket* event);
+src\network\multiplayer-context.h-419-void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event);
+src\network\multiplayer-context.h-420-void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
+src\network\multiplayer-context.h-421-void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event);
+src\network\multiplayer-context.h-422-void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
+src\network\multiplayer-context.h-423-void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
+src\network\multiplayer-context.h-424-void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
+src\network\multiplayer-context.h-425-void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
+src\network\multiplayer-context.h-426-void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
+src\network\multiplayer-context.h-427-void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
+src\network\multiplayer-context.h-428-
+src\network\multiplayer-context.h-429-// Called from mpTick (defined in multiplayer-chat.cpp)
+src\network\multiplayer-context.h-430-void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);
+src\network\multiplayer-context.h-431-
+src\network\multiplayer-context.h-432-// Interpolation helpers (defined in multiplayer-interpolation.cpp)
+src\network\multiplayer-context.h-433-void pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
+src\network\multiplayer-context.h-434-void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation, float dt);
+src\network\multiplayer-context.h-435-void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
+src\network\multiplayer-context.h-436-
+src\network\multiplayer-context.h-437-// Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
+src\network\multiplayer-context.h-438-extern bool gNetDamageDebug;
+src\network\multiplayer-context.h-439-extern bool gNetHitDebug;
+src\network\multiplayer-context.h-440-
+src\network\multiplayer-context.h-441-} // namespace MimitaNet

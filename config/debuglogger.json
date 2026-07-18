@@ -64,7 +64,8 @@
     "effects": {
       "level": "trace",
       "file_output": true
-    }
+    },
+    "grenade_launcher": { "level": "trace", "file_output": true, "throttle": 0.0 }
   },
 
   "sampling": {
@@ -105,3 +106,5 @@
     "log_render_counts": true
   }
 }
+
+

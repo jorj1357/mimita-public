@@ -8,6 +8,7 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "config/camera-config.h"
+#include "debug/structured-log.h"
 #include "input/input-state.h"
 #include "input/input-poll.h"
 #include "render/render-world.h"
@@ -38,6 +39,7 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
 int runClient(const LaunchOptions& options)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
+    ::StructuredLogger::instance().init();
     printf("[CLIENT] connecting name=%s target=%s\n", options.name.c_str(), options.connect.c_str());
 
     if (!netStartup())
@@ -355,6 +357,7 @@ int runClient(const LaunchOptions& options)
         sendto(sock, (const char*)&bye, sizeof(bye), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
     }
 
+    ::StructuredLogger::instance().shutdown();
     engine.shutdown();
     closesocket(sock);
     netShutdown();

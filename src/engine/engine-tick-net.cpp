@@ -13,6 +13,8 @@
 #include "audio/hitmarker-audio.h"
 #include "combat/death-system.h"
 #include "combat/weapon-system.h"
+#include "combat/weapon-registry.h"
+#include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "replay/replay.h"
@@ -168,19 +170,52 @@ void engineTickNet(Engine& engine, float dt)
             player.username = mpContext.approvedLocalName;
 
         // ── Ammo refund for rejected projectile fire requests ───────────
+        // Refund goes to the weapon that sent the request, not the currently equipped weapon.
         for (const auto& rej : mpContext.fireRejections)
         {
-            const WeaponDefinition* def = weapons.getCurrentDef(player);
-            if (def)
+            const std::string weaponId = MimitaNet::networkWeaponTypeName(rej.weapon);
+            if (weaponId == "unknown" || weaponId == "none") continue;
+            const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+            if (!def) continue;
+            auto rtIt = player.weaponRuntimes.find(weaponId);
+            if (rtIt != player.weaponRuntimes.end())
             {
-                auto rtIt = player.weaponRuntimes.find(def->id);
-                if (rtIt != player.weaponRuntimes.end())
+                float ammoBefore = (float)rtIt->second.currentAmmo;
+                float cdBefore = rtIt->second.fireCooldown;
+
+                rtIt->second.currentAmmo = std::min(rtIt->second.currentAmmo + 1, def->magazineSize);
+
+                // For cooldown rejection: preserve server cooldown, never zero it
+                if (rej.reason == MimitaNet::PROJECTILE_FIRE_COOLDOWN && rej.cooldownRemaining > 0.0f)
                 {
-                    rtIt->second.currentAmmo = std::min(rtIt->second.currentAmmo + 1, def->magazineSize);
-                    rtIt->second.fireCooldown = 0.0f;
-                    printf("[AMMO REFUND] fireSerial=%u weapon=%s — restored 1 ammo (now %d/%d)\n",
-                           rej.fireSerial, MimitaNet::networkWeaponTypeName(rej.weapon),
-                           rtIt->second.currentAmmo, def->magazineSize);
+                    rtIt->second.fireCooldown = std::max(rtIt->second.fireCooldown, rej.cooldownRemaining);
+                }
+                else if (rej.reason != 255)
+                {
+                    // Non-timeout, non-cooldown rejection: cooldown stays as-is
+                }
+                // Timeout (reason==255): refund once, don't force cooldown to zero
+
+                {
+                    auto& _lg = ::StructuredLogger::instance();
+                    if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
+                        ::StructuredLogger::Entry e;
+                        e.category = ::StructuredCategory::GrenadeLauncher;
+                        e.level = ::StructuredLevel::Important;
+                        e.eventId = "GRENADE_AMMO_REFUND";
+                        e.correlationId = "GRENADE_P" + std::to_string(mpContext.localPlayerId)
+                            + "_F" + std::to_string(rej.fireSerial) + "_J0";
+                        e.reason = "refund";
+                        char b[256]; std::snprintf(b, sizeof(b),
+                            "fireSerial=%u weapon=%s reason=%u ammoBefore=%.0f ammoAfter=%d "
+                            "cdBefore=%.3f cdAfter=%.3f serverCd=%.2f",
+                            rej.fireSerial, weaponId.c_str(), rej.reason,
+                            ammoBefore, rtIt->second.currentAmmo,
+                            cdBefore, rtIt->second.fireCooldown,
+                            rej.cooldownRemaining);
+                        e.message = b;
+                        _lg.write(e);
+                    }
                 }
             }
         }

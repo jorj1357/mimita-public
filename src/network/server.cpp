@@ -5,6 +5,7 @@
 #include "network/ice-transport.h"
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
+#include "debug/structured-log.h"
 
 #include <cstdio>
 #include <chrono>
@@ -18,6 +19,8 @@ namespace MimitaNet {
 int runServer(const LaunchOptions& options)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
+
+    ::StructuredLogger::instance().init();
 
     WeaponData::registerBuiltinWeapons();
     printf("%s [SERVER] registered built-in weapons\n", serverTimestamp());
@@ -468,6 +471,7 @@ int runServer(const LaunchOptions& options)
             lastLog = nowMs();
         }
 
+        ::StructuredLogger::instance().tick();
         ++tick;
         uint64_t elapsed = nowMs() - frameStart;
         uint64_t targetMs = (uint64_t)(1000.0f / SERVER_TICK_RATE);
@@ -475,6 +479,7 @@ int runServer(const LaunchOptions& options)
             std::this_thread::sleep_for(std::chrono::milliseconds(targetMs - elapsed));
     }
 
+    ::StructuredLogger::instance().shutdown();
     closesocket(sock);
     netShutdown();
     printf("%s [SERVER] shutdown complete\n", serverTimestamp());

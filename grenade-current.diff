@@ -1,0 +1,295 @@
+﻿diff --git a/src/engine/engine-tick-net.cpp b/src/engine/engine-tick-net.cpp
+index fef7eba..95484da 100644
+--- a/src/engine/engine-tick-net.cpp
++++ b/src/engine/engine-tick-net.cpp
+@@ -13,6 +13,7 @@
+ #include "audio/hitmarker-audio.h"
+ #include "combat/death-system.h"
+ #include "combat/weapon-system.h"
++#include "combat/weapon-registry.h"
+ #include "effects/effect-part.h"
+ #include "effects/hit-effects.h"
+ #include "replay/replay.h"
+@@ -168,20 +169,21 @@ void engineTickNet(Engine& engine, float dt)
+             player.username = mpContext.approvedLocalName;
+ 
+         // ── Ammo refund for rejected projectile fire requests ───────────
++        // Refund goes to the weapon that sent the request, not the currently equipped weapon.
+         for (const auto& rej : mpContext.fireRejections)
+         {
+-            const WeaponDefinition* def = weapons.getCurrentDef(player);
+-            if (def)
++            const std::string weaponId = MimitaNet::networkWeaponTypeName(rej.weapon);
++            if (weaponId == "unknown" || weaponId == "none") continue;
++            const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
++            if (!def) continue;
++            auto rtIt = player.weaponRuntimes.find(weaponId);
++            if (rtIt != player.weaponRuntimes.end())
+             {
+-                auto rtIt = player.weaponRuntimes.find(def->id);
+-                if (rtIt != player.weaponRuntimes.end())
+-                {
+-                    rtIt->second.currentAmmo = std::min(rtIt->second.currentAmmo + 1, def->magazineSize);
+-                    rtIt->second.fireCooldown = 0.0f;
+-                    printf("[AMMO REFUND] fireSerial=%u weapon=%s — restored 1 ammo (now %d/%d)\n",
+-                           rej.fireSerial, MimitaNet::networkWeaponTypeName(rej.weapon),
+-                           rtIt->second.currentAmmo, def->magazineSize);
+-                }
++                rtIt->second.currentAmmo = std::min(rtIt->second.currentAmmo + 1, def->magazineSize);
++                rtIt->second.fireCooldown = 0.0f;
++                printf("[AMMO REFUND] fireSerial=%u weapon=%s — restored 1 ammo (now %d/%d)\n",
++                       rej.fireSerial, weaponId.c_str(),
++                       rtIt->second.currentAmmo, def->magazineSize);
+             }
+         }
+         mpContext.fireRejections.clear();
+diff --git a/src/network/multiplayer-projectiles.cpp b/src/network/multiplayer-projectiles.cpp
+index 392ff02..a6594c1 100644
+--- a/src/network/multiplayer-projectiles.cpp
++++ b/src/network/multiplayer-projectiles.cpp
+@@ -240,9 +240,6 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
+ 
+     NetworkProjectile& projectile = ctx.networkProjectiles[event->projectileId];
+ 
+-    // Grenade launcher: local projectile uses prediction physics
+-    if (event->ownerPlayerId == ctx.localPlayerId)
+-        projectile.predicted = true;
+     projectile.projectileId = event->projectileId;
+     projectile.ownerPlayerId = event->ownerPlayerId;
+     projectile.fireSerial = event->fireSerial;
+@@ -255,7 +252,9 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
+     projectile.age = 0.0f;
+     projectile.lifetime = event->lifetime;
+     projectile.radius = event->radius;
+-    projectile.predicted = false;
++    // Locally owned grenades use prediction; rockets use predictedProjectileIds suppression
++    projectile.predicted = (event->ownerPlayerId == ctx.localPlayerId &&
++                           event->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER);
+     projectile.exploded = false;
+ 
+     // Initialize render state directly from spawn (first state = immediate render)
+@@ -291,7 +290,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
+ 
+ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const ProjectileStateEventPacket* event)
+ {
+-    // Skip state updates for locally-predicted projectiles
++    // Skip state updates for rocket-predicted projectiles
+     if (ctx.predictedProjectileIds.count(event->projectileId))
+         return;
+ 
+@@ -358,12 +357,22 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
+     projectile.targetStateVel = {event->velX, event->velY, event->velZ};
+     projectile.targetStateRot = glm::quat(event->rotW, event->rotX, event->rotY, event->rotZ);
+ 
+-    // Also update raw authoritative state
+-    projectile.position = projectile.targetStatePos;
+-    projectile.velocity = projectile.targetStateVel;
+-    projectile.rotation = projectile.targetStateRot;
+-    projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
+-    projectile.age = event->age;
++    // For predicted projectiles, store as correction target without overwriting live state
++    if (projectile.predicted)
++    {
++        // Don't overwrite position/velocity — prediction loop will blend toward target
++        projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
++        projectile.age = event->age;
++    }
++    else
++    {
++        // Non-predicted: update raw authoritative state directly
++        projectile.position = projectile.targetStatePos;
++        projectile.velocity = projectile.targetStateVel;
++        projectile.rotation = projectile.targetStateRot;
++        projectile.angularVelocity = {event->angVelX, event->angVelY, event->angVelZ};
++        projectile.age = event->age;
++    }
+ 
+     projectile.latestAcceptedTick = newTick;
+     projectile.lastTargetReceivedMs = nowMs();
+@@ -519,14 +528,32 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
+         if (it != ctx.pendingFireRequests.end())
+         {
+             it->second.acknowledged = true;
+-            printf("[PROJECTILE FIRE RESULT] fireSerial=%u projectileId=%u accepted=1\n",
+-                   event->fireSerial, event->projectileId);
+         }
++        printf("[FIRE_ACCEPT] fireSerial=%u projectileId=%u weapon=%s\n",
++               event->fireSerial, event->projectileId,
++               networkWeaponTypeName(event->weapon));
+     }
+     else
+     {
+-        printf("[PROJECTILE FIRE RESULT] fireSerial=%u accepted=0 reason=%d\n",
+-               event->fireSerial, (int)event->reason);
++        if (it != ctx.pendingFireRequests.end())
++        {
++            // Queue refund for processing in engine tick (deduplicated)
++            bool alreadyQueued = false;
++            for (const auto& r : ctx.fireRejections)
++                if (r.fireSerial == event->fireSerial) { alreadyQueued = true; break; }
++            if (!alreadyQueued)
++                ctx.fireRejections.push_back({event->fireSerial, event->weapon});
++            printf("[FIRE_REJECT] fireSerial=%u weapon=%s reason=%d cooldown=%.2f "
++                   "ammoRefundQueued=1\n",
++                   event->fireSerial, networkWeaponTypeName(event->weapon),
++                   (int)event->reason, event->cooldownRemaining);
++            ctx.pendingFireRequests.erase(it);
++        }
++        else
++        {
++            printf("[FIRE_REJECT] fireSerial=%u reason=%d (no matching pending request)\n",
++                   event->fireSerial, (int)event->reason);
++        }
+     }
+ }
+ 
+@@ -767,11 +794,12 @@ static bool resolveClientGrenadeWorld(NetworkProjectile& projectile, const World
+     float into = glm::dot(projectile.velocity, bestNormal);
+     if (into < 0.0f)
+     {
++        // Stable bounce matching offline physics: separate normal/tangent
+         glm::vec3 tangent = projectile.velocity - bestNormal * into;
+-        projectile.velocity -= bestNormal * into * (1.0f + restitution);
+-        projectile.velocity += tangent * friction;
++        float tangentRetention = std::clamp(1.0f - friction, 0.0f, 1.0f);
++        projectile.velocity = tangent * tangentRetention - bestNormal * into * restitution;
++        projectile.angularVelocity *= 0.35f;
+     }
+-    projectile.angularVelocity *= 0.35f;
+     return true;
+ }
+ 
+@@ -808,7 +836,13 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World&
+         // Timeout after 3 seconds
+         if (now - pfr.firstSentMs > 3000)
+         {
+-            printf("[PROJECTILE FIRE TIMEOUT] fireSerial=%u dropped\n", pfr.fireSerial);
++            printf("[FIRE_TIMEOUT] fireSerial=%u weapon=%s — refund queued\n",
++                   pfr.fireSerial, networkWeaponTypeName(pfr.weapon));
++            bool alreadyQueued = false;
++            for (const auto& r : ctx.fireRejections)
++                if (r.fireSerial == pfr.fireSerial) { alreadyQueued = true; break; }
++            if (!alreadyQueued)
++                ctx.fireRejections.push_back({pfr.fireSerial, pfr.weapon});
+             it = ctx.pendingFireRequests.erase(it);
+         }
+         else
+@@ -918,13 +952,16 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World&
+             projectile.renderVelocity = projectile.velocity;
+         }
+ 
+-        // Rotation from render velocity
+-        const float renderSpeed = glm::length(projectile.renderVelocity);
+-        if (renderSpeed > 0.001f)
++        // Rotation: grenades keep integrated quaternion (tumbling); rockets face velocity
++        if (projectile.weaponType != NETWORK_WEAPON_GRENADE_LAUNCHER)
+         {
+-            projectile.renderRotation = glm::rotation(
+-                glm::vec3(0.0f, 0.0f, 1.0f),
+-                glm::normalize(projectile.renderVelocity));
++            const float renderSpeed = glm::length(projectile.renderVelocity);
++            if (renderSpeed > 0.001f)
++            {
++                projectile.renderRotation = glm::rotation(
++                    glm::vec3(0.0f, 0.0f, 1.0f),
++                    glm::normalize(projectile.renderVelocity));
++            }
+         }
+ 
+         spawnProjectileTrail(projectile, dt);
+diff --git a/src/network/server-projectiles.cpp b/src/network/server-projectiles.cpp
+index d00154a..dda04e1 100644
+--- a/src/network/server-projectiles.cpp
++++ b/src/network/server-projectiles.cpp
+@@ -339,10 +339,12 @@ bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& worl
+         glm::vec3 tangent = projectile.velocity - bestNormal * into;
+         float tangentRetention = std::clamp(1.0f - projectile.friction, 0.0f, 1.0f);
+         projectile.velocity = tangent * tangentRetention - bestNormal * into * projectile.restitution;
++
++        // Only count bounce for an actual inward impact
++        projectile.angularVelocity *= 0.35f;
++        projectile.worldTouched = true;
++        ++projectile.bounceCount;
+     }
+-    projectile.angularVelocity *= 0.35f;
+-    projectile.worldTouched = true;
+-    ++projectile.bounceCount;
+     return true;
+ }
+ 
+@@ -423,7 +425,41 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
+            originDistance > 8.0f ? "origin-too-far" : "invalid-direction");
+ 
+     if (!accepted)
++    {
++        // Send rejection result for every structurally valid request from a known player
++        ProjectileFireResultPacket reject{};
++        reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
++        reject.header.tick = tick;
++        reject.header.playerId = shooter.id;
++        reject.fireSerial = request->fireSerial;
++        reject.weapon = request->weapon;
++        reject.accepted = 0;
++        reject.cooldownRemaining = shooter.projectileFireCooldown;
++
++        if (shooter.dead) reject.reason = PROJECTILE_FIRE_DEAD;
++        else if (!serialNew) reject.reason = PROJECTILE_FIRE_ALREADY_ACCEPTED;
++        else if (!networkWeaponTypeIsProjectile(request->weapon)) reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
++        else if (!weaponEquippedValid) reject.reason = PROJECTILE_FIRE_WEAPON_MISMATCH;
++        else if (!cooldownValid) reject.reason = PROJECTILE_FIRE_COOLDOWN;
++        else if (originDistance > 8.0f) reject.reason = PROJECTILE_FIRE_ORIGIN_INVALID;
++        else reject.reason = PROJECTILE_FIRE_DIRECTION_INVALID;
++
++        for (const auto& kv : players)
++        {
++            if (kv.first == shooter.id)
++            {
++                if (kv.second.transport)
++                    kv.second.transport->send(&reject, sizeof(reject));
++                else
++                    sendto(sock, (const char*)&reject, sizeof(reject), 0,
++                           (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
++            }
++        }
++        printf("%s [FIRE_REJECT] playerId=%u fireSerial=%u reason=%s cooldown=%.2f\n",
++               serverTimestamp(), shooter.id, request->fireSerial,
++               networkWeaponTypeName(request->weapon), shooter.projectileFireCooldown);
+         return;
++    }
+ 
+     const ProjectileConfig cfg = projectileConfig(request->weapon);
+     const glm::vec3 dir = glm::normalize(direction);
+@@ -611,10 +647,30 @@ void tickServerProjectiles(SOCKET sock,
+                 }
+ 
+                 // World collision per substep
+-                if (resolveGrenadeWorld(projectile, world) &&
+-                    projectile.bounceCount >= projectile.maxBounceCount)
++                if (resolveGrenadeWorld(projectile, world))
+                 {
+-                    projectile.velocity *= 0.2f;
++                    if (projectile.bounceCount >= projectile.maxBounceCount &&
++                        projectile.velocity != glm::vec3(0.0f))
++                    {
++                        // After max bounces: kill restitution, kill tangent, let it settle
++                        float speed = glm::length(projectile.velocity);
++                        float into = glm::dot(projectile.velocity, glm::vec3(0.0f, 0.0f, 1.0f));
++                        if (speed > 0.1f)
++                        {
++                            // Remove lateral velocity, keep only downward settling
++                            glm::vec3 lateral = projectile.velocity;
++                            lateral.z = 0.0f;
++                            projectile.velocity -= lateral * 0.95f;
++                            // Clamp downward speed
++                            if (projectile.velocity.z < -20.0f)
++                                projectile.velocity.z = -20.0f;
++                        }
++                        else
++                        {
++                            projectile.velocity = glm::vec3(0.0f);
++                            projectile.angularVelocity = glm::vec3(0.0f);
++                        }
++                    }
+                 }
+ 
+                 // Player collision per substep (skip owner during grace period)
