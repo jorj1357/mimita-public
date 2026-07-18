@@ -142,4 +142,5 @@ struct RevolverShotResult {
     bool hitWorld = false;
     glm::vec3 hitNormal{0.0f};
     glm::vec3 knockbackImpulse{0.0f};
+    bool autoReloadTriggered = false;  // set when fire() starts auto-reload on empty
 };

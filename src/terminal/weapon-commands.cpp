@@ -38,8 +38,34 @@ void registerWeaponCommands()
                 : nullptr;
             RevolverShotResult shot = weapons.fire(
                 camera, player, npcSystem, world, remotePlayers);
+
+            // Auto-reload on empty trigger: send ReloadRequest before returning
+            if (shot.autoReloadTriggered && mpContext.active && mpContext.localPlayerId)
+            {
+                const WeaponDefinition* wdef = weapons.getCurrentDef(player);
+                if (wdef)
+                {
+                    uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef->id);
+                    if (netId != 0)
+                    {
+                        MimitaNet::ReloadRequestPacket req{};
+                        req.header.type = MimitaNet::PACKET_RELOAD_REQUEST;
+                        req.header.tick = mpContext.tick;
+                        req.header.playerId = mpContext.localPlayerId;
+                        req.requestId = mpContext.nextActionRequestId++;
+                        if (mpContext.nextActionRequestId == 0) mpContext.nextActionRequestId = 1;
+                        req.weaponDefNetworkId = netId;
+                        MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
+                        Debug::log(Debug::Category::Weapons,
+                                   "[RELOAD AUTO SEND] playerId=%u requestId=%u weapon=%s\n",
+                                   mpContext.localPlayerId, req.requestId, wdef->id.c_str());
+                    }
+                }
+            }
+
             if (!shot.fired) {
-                Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
+                if (!shot.autoReloadTriggered)
+                    Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
             }
 
@@ -174,7 +200,8 @@ void registerWeaponCommands()
                         req.header.type = MimitaNet::PACKET_RELOAD_REQUEST;
                         req.header.tick = mpContext.tick;
                         req.header.playerId = mpContext.localPlayerId;
-                        req.requestId = mpContext.nextLocalProjectileFireSerial; // reuse monotonic serial
+                        req.requestId = mpContext.nextActionRequestId++;
+                        if (mpContext.nextActionRequestId == 0) mpContext.nextActionRequestId = 1;
                         req.spawnGeneration = 0; // server will validate; 0 = unset for now
                         req.weaponDefNetworkId = netId;
                         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
