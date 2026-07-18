@@ -232,7 +232,7 @@ struct MultiplayerContext
     uint64_t lastHeardServerMs = 0;
     uint64_t lastDisconnectLogMs = 0;
 
-    // ── Migration: connection state machine ───────────────────────────
+    // ── Connection lifecycle ──────────────────────────────────────────
     ConnectionState connectionState = ConnectionState::Disconnected;
     std::string roomCode;
     std::string joinToken;
@@ -241,6 +241,10 @@ struct MultiplayerContext
     int reconnectAttempts = 0;
     uint64_t lastReconnectAttemptMs = 0;
     uint64_t reconnectBackoffMs = 1000;
+
+    // ── Session identity (monotonically increasing, never reset) ──────
+    uint32_t connectionAttemptId = 0;
+    std::string sessionId; // server-session identifier for reconnect-token policy
 
     // ── Migration: disagreement events from server ────────────────────
     std::vector<DisagreementEvent> disagreementEvents;
@@ -349,6 +353,21 @@ struct MpInput
     glm::vec3 godballPosition{0.0f};
     bool godballActive = false;
 };
+
+// ── Connection lifecycle — central session management ─────────────────
+enum class DisconnectPolicy : uint8_t {
+    Leave,               // explicit leave — clear all
+    Timeout,             // unintentional — preserve reconnectToken
+    NewConnection,       // new room/server — clear all
+    Rejected,            // server/coordinator rejected — clear all
+    AuthFailure,         // token/auth failure — clear all
+    ConnectionFailure,   // transport failure — clear all
+    ServerStopped        // local server stopped — clear all
+};
+const char* disconnectPolicyName(DisconnectPolicy policy);
+void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy);
+void beginConnectionAttempt(MultiplayerContext& ctx, const std::string& roomCode,
+    const std::string& address, uint16_t port);
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);

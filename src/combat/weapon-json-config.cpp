@@ -3,6 +3,7 @@
 #include "weapon-data.h"
 #include "weapon-registry.h"
 #include "../debug/debug-log.h"
+#include "../network/network-weapons.h"
 
 #include <algorithm>
 #include <cctype>
@@ -219,6 +220,8 @@ void registerWeaponFromJson(WeaponDefinition def)
     if (gWeaponConfigRoot.contains(def.id))
         applyWeaponJson(def, gWeaponConfigRoot[def.id]);
     WeaponRegistry::instance().registerWeapon(def);
+    // Assign a stable network ID for the generic AttackRequest pipeline
+    MimitaNet::registerWeaponDefNetworkId(def.id);
 }
 
 bool reloadBuiltinWeaponsIfChanged()

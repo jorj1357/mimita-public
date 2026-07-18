@@ -36,8 +36,29 @@ extern DuelManager gDuelManager;
 extern BombTagManager gBombTagManager;
 extern bool gReplayCinematicMode;
 
+// ── Client fixed-step prediction accumulator ─────────────────────────
+// Runs input consumption, projectile prediction, and cooldowns at 60 Hz
+// independent of render FPS.
+static double g_clientPredictionAccumulator = 0.0;
+static uint32_t g_clientSimulationTick = 0;
+
 void engineTickCombat(Engine& engine, float dt)
 {
+    // Fixed-step client prediction loop
+    g_clientPredictionAccumulator += (double)dt;
+    constexpr double kClientFixedDt = 1.0 / 60.0;
+    constexpr int kMaxClientSteps = 5;
+    int clientSteps = 0;
+    while (g_clientPredictionAccumulator >= kClientFixedDt && clientSteps < kMaxClientSteps)
+    {
+        g_clientPredictionAccumulator -= kClientFixedDt;
+        ++g_clientSimulationTick;
+        ++clientSteps;
+
+        // TODO: consume input buffer, advance predicted projectiles,
+        // advance client-side cooldowns and reload timers.
+    }
+
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
     World& world = THE_WORLD;

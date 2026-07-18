@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 17;
+constexpr uint16_t PROTOCOL_VERSION = 18;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -68,7 +68,16 @@ enum PacketType : uint8_t
     PACKET_PELLET_BLAST_REQUEST = 34,
     PACKET_PELLET_BLAST_EVENT = 35,
     PACKET_GODBALL_STATE = 36,
-    PACKET_PROJECTILE_FIRE_RESULT = 37
+    PACKET_PROJECTILE_FIRE_RESULT = 37,
+    // ── Generic attack pipeline ─────────────────────────────────────
+    PACKET_ATTACK_REQUEST = 38,
+    PACKET_ATTACK_RESULT = 39,
+    // ── Authoritative reload ────────────────────────────────────────
+    PACKET_RELOAD_REQUEST = 40,
+    PACKET_RELOAD_RESULT = 41,
+    // ── Respawn ─────────────────────────────────────────────────────
+    PACKET_RESPAWN_REQUEST = 42,
+    PACKET_PLAYER_RESPAWNED = 43
 };
 
 enum EntityType : uint8_t
@@ -810,6 +819,89 @@ struct ProjectileFireResultPacket
 
 #pragma pack(pop)
 
+// ── Generic attack: one request type for all weapons ─────────────────
+// All weapons (hitscan, projectile, melee) share this packet.
+// weaponDefNetworkId is a stable uint16 assigned during protocol init.
+// basedOnInputSequence ties the attack to a specific equip/input frame.
+struct AttackRequestPacket
+{
+    PacketHeader header;
+    uint32_t requestId = 0;
+    uint32_t spawnGeneration = 0;
+    uint32_t clientSimulationTick = 0;
+    uint16_t basedOnInputSequence = 0;
+    int16_t equippedSlot = 0;
+    uint16_t weaponDefNetworkId = 0;
+    float aimOriginX = 0, aimOriginY = 0, aimOriginZ = 0;
+    float aimDirX = 0, aimDirY = 0, aimDirZ = 0;
+    float muzzlePosX = 0, muzzlePosY = 0, muzzlePosZ = 0;
+    uint32_t deterministicSeed = 0;
+};
+
+struct AttackResultPacket
+{
+    PacketHeader header;
+    uint32_t requestId = 0;
+    uint32_t spawnGeneration = 0;
+    uint8_t accepted = 0;
+    uint8_t reason = 0;
+    uint32_t projectileId = 0;
+    int32_t magazineAmmo = 0;
+    int32_t reserveAmmo = 0;
+    uint64_t nextAllowedFireTick = 0;
+    uint32_t stateRevision = 0;
+    uint32_t serverTick = 0;
+};
+
+// ── Reload request/result ────────────────────────────────────────────
+struct ReloadRequestPacket
+{
+    PacketHeader header;
+    uint32_t requestId = 0;
+    uint32_t spawnGeneration = 0;
+    uint16_t weaponDefNetworkId = 0;
+};
+
+struct ReloadResultPacket
+{
+    PacketHeader header;
+    uint32_t requestId = 0;
+    uint32_t spawnGeneration = 0;
+    uint8_t accepted = 0;
+    uint8_t reason = 0;
+    int32_t magazineAmmo = 0;
+    int32_t reserveAmmo = 0;
+    uint64_t reloadCompleteTick = 0;
+    uint8_t reloading = 0;
+    uint32_t stateRevision = 0;
+};
+
+// ── Respawn request/result ───────────────────────────────────────────
+struct RespawnRequestPacket
+{
+    PacketHeader header;
+    uint32_t requestId = 0;
+    uint32_t spawnGeneration = 0; // current generation at time of request
+};
+
+struct PlayerRespawnedPacket
+{
+    PacketHeader header;
+    uint32_t spawnGeneration = 0;
+    int32_t health = 100;
+    // Weapon inventory follows (compact format, up to 16 weapons)
+    struct WeaponSlot {
+        uint16_t weaponDefNetworkId = 0;
+        int32_t magazineAmmo = 0;
+        int32_t reserveAmmo = 0;
+        uint64_t nextAllowedFireTick = 0;
+        uint32_t stateRevision = 0;
+        uint8_t reloading = 0;
+    };
+    WeaponSlot weapons[16];
+    uint8_t weaponCount = 0;
+};
+
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 132, "ShotEventPacket is too large");
@@ -825,6 +917,12 @@ static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket 
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "PelletBlastEventPacket exceeds safe datagram limit");
 static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is too large");
+static_assert(sizeof(AttackRequestPacket) <= 96, "AttackRequestPacket is too large");
+static_assert(sizeof(AttackResultPacket) <= 64, "AttackResultPacket is too large");
+static_assert(sizeof(ReloadRequestPacket) <= 32, "ReloadRequestPacket is too large");
+static_assert(sizeof(ReloadResultPacket) <= 64, "ReloadResultPacket is too large");
+static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too large");
+static_assert(sizeof(PlayerRespawnedPacket) <= 576, "PlayerRespawnedPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

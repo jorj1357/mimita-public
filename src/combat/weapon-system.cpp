@@ -739,11 +739,9 @@ RevolverShotResult WeaponSystem::fire(
         result.start = muzzlePos;
         result.end = muzzlePos + dir;
         result.hitNormal = -dir;
-        if (remotePlayers) {
-            WeaponAudio::playShootSound(*def, muzzlePos);
-        } else {
-            WeaponGrenadeLauncher::fire(*def, *rt, player, muzzlePos, dir);
-        }
+        // Always play sound — the actual grenade is created on the server
+        // after it accepts the AttackRequest. No local grenade spawn here.
+        WeaponAudio::playShootSound(*def, muzzlePos);
 
         Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired ammo=%d/%d pos=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f)\n",
                    rt->currentAmmo, rt->reserveAmmo,

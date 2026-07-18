@@ -279,16 +279,26 @@ int runServer(const LaunchOptions& options)
 
     uint64_t serverStartMs = nowMs();
 
+    // Accumulator-based fixed-step timing
+    auto previousTime = std::chrono::steady_clock::now();
+    double accumulator = 0.0;
+    constexpr int MAX_STEPS = 5;
+
     while (true)
     {
-        uint64_t frameStart = nowMs();
-
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
         {
             printf("%s [SERVER] timeout=%us reached, exiting\n", serverTimestamp(), options.timeoutSecs);
             break;
         }
+
+        // Measure wall-clock elapsed time
+        auto currentTime = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(currentTime - previousTime).count();
+        previousTime = currentTime;
+        if (elapsed > 0.1) elapsed = 0.1;
+        accumulator += elapsed;
 
         char buffer[2048];
         sockaddr_in from{};
@@ -357,12 +367,18 @@ int runServer(const LaunchOptions& options)
             else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
                 handleProjectileFireRequest(sock, from, buffer, bytes, players, projectiles,
                                             nextProjectileId, world, tick, totalPacketsOut);
+            else if (header->type == PACKET_ATTACK_REQUEST)
+                handleAttackRequest(sock, from, buffer, bytes, players, projectiles,
+                                    nextProjectileId, world, tick, totalPacketsOut);
             else if (header->type == PACKET_MELEE_HIT_REQUEST)
                 handleMeleeHitRequest(sock, from, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_CHAT_MESSAGE)
                 handleChatMessage(sock, buffer, bytes, players, tick, totalPacketsOut);
             else if (header->type == PACKET_PING)
                 handlePing(sock, from, buffer, bytes, tick);
+            else if (header->type == PACKET_RELOAD_REQUEST)
+                handleReloadRequest(sock, from, buffer, bytes, players,
+                                    tick, totalPacketsOut);
             else if (header->type == PACKET_GODBALL_STATE)
                 handleGodballState(sock, players, buffer, bytes);
             else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
@@ -499,11 +515,51 @@ int runServer(const LaunchOptions& options)
         }
 
         ::StructuredLogger::instance().tick();
-        ++tick;
-        uint64_t elapsed = nowMs() - frameStart;
-        uint64_t targetMs = (uint64_t)(1000.0f / SERVER_TICK_RATE);
-        if (elapsed < targetMs)
-            std::this_thread::sleep_for(std::chrono::milliseconds(targetMs - elapsed));
+
+        // Accumulator-based timing: run simulation ticks for accumulated debt
+        int steps = 0;
+        while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
+        {
+            handleClientTimeout(players);
+            for (auto& kv : players)
+                pushPositionHistory(kv.second, tick);
+            for (auto& kv : players)
+                simulatePlayer(kv.second, world);
+            tickWeaponRuntimes(players, tick);
+            resolvePlayerCollision(players);
+            checkVoidDeath(players, npcs);
+            for (auto& kv : npcs)
+                simulateNpc(kv.second, players);
+            tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
+            tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+
+            // ICE coordinator polling + peer handshakes (rate-limited in the called functions)
+            if (iceEnabled && iceListenerAgent && tick % 30 == 0)
+            {
+                uint64_t nowIce = nowMs();
+                if (nowIce - lastIceCoordinatorPollMs > 500) { /* poll logic */ }
+            }
+            tickIcePeers(serverCode, iceSessionId, pendingIceTransports);
+            tickServerIceTransports(sock, players, npcs, projectiles,
+                                    nextEntityId, nextPlayerId,
+                                    pendingIceTransports, world, tick, totalPacketsOut);
+
+            buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
+            tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
+
+            accumulator -= (double)SERVER_DT;
+            ++tick;
+            ++steps;
+        }
+
+        // Sleep only when no simulation debt remains
+        if (accumulator < (double)SERVER_DT)
+        {
+            double sleepSec = (double)SERVER_DT - accumulator;
+            uint64_t sleepMs = (uint64_t)(sleepSec * 1000.0);
+            if (sleepMs > 1)
+                std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        }
     }
 
     ::StructuredLogger::instance().shutdown();
@@ -791,6 +847,10 @@ static void simulateOneServerTick(ListenServerState& state)
                 handleProjectileFireRequest(state.sock, from, buffer, bytes, state.players,
                                             state.projectiles, state.nextProjectileId,
                                             state.world, state.tick, state.totalPacketsOut);
+            else if (header->type == PACKET_ATTACK_REQUEST)
+                handleAttackRequest(state.sock, from, buffer, bytes, state.players,
+                                    state.projectiles, state.nextProjectileId,
+                                    state.world, state.tick, state.totalPacketsOut);
             else if (header->type == PACKET_MELEE_HIT_REQUEST)
                 handleMeleeHitRequest(state.sock, from, buffer, bytes, state.players,
                                       state.tick, state.totalPacketsOut);
@@ -799,6 +859,9 @@ static void simulateOneServerTick(ListenServerState& state)
                                   state.tick, state.totalPacketsOut);
             else if (header->type == PACKET_PING)
                 handlePing(state.sock, from, buffer, bytes, state.tick);
+            else if (header->type == PACKET_RELOAD_REQUEST)
+                handleReloadRequest(state.sock, from, buffer, bytes, state.players,
+                                    state.tick, state.totalPacketsOut);
             else if (header->type == PACKET_GODBALL_STATE)
                 handleGodballState(state.sock, state.players, buffer, bytes);
             else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
@@ -851,6 +914,7 @@ static void simulateOneServerTick(ListenServerState& state)
             pushPositionHistory(kv.second, state.tick);
         for (auto& kv : state.players)
             simulatePlayer(kv.second, state.world);
+        tickWeaponRuntimes(state.players, state.tick);
         resolvePlayerCollision(state.players);
         checkVoidDeath(state.players, state.npcs);
         for (auto& kv : state.npcs)

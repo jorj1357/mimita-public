@@ -71,6 +71,7 @@ struct WeaponDefinition {
 
     float beamThickness = 0.0f;  // hitscan collision radius (0 = thin ray)
     bool weaponCollisionEnabled = true;
+    bool restricted = false;  // admin/dev weapons — not granted in normal loadout
 
     std::unordered_map<std::string, float> customParams;
 
