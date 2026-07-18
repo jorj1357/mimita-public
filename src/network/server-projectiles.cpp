@@ -634,6 +634,37 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
         shooter.nextCachedFireResultSlot = (shooter.nextCachedFireResultSlot + 1) % ServerPlayer::MAX_CACHED_FIRE_RESULTS;
     };
 
+    // ── Authoritative weapon runtime ──────────────────────────────────
+    // Lazy-init the runtime from WeaponDefinition on first use
+    const char* wepId = (request->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER) ? "grenade_launcher"
+                      : (request->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER) ? "rocket_launcher"
+                      : nullptr;
+    ServerPlayer::ServerWeaponRuntime* runtime = nullptr;
+    if (wepId)
+    {
+        auto rtIt = shooter.weaponRuntimes.find(wepId);
+        if (rtIt == shooter.weaponRuntimes.end())
+        {
+            // Initialize from WeaponDefinition
+            const WeaponDefinition* def = WeaponRegistry::instance().get(wepId);
+            if (def)
+            {
+                ServerPlayer::ServerWeaponRuntime rt;
+                rt.magazineAmmo = def->magazineSize;
+                rt.reserveAmmo = (int)def->customParams.count("reserveAmmo")
+                    ? (int)def->customParams.at("reserveAmmo") : 1337;
+                rt.nextAllowedFireTick = 0;
+                rt.initialized = true;
+                shooter.weaponRuntimes[wepId] = rt;
+                rtIt = shooter.weaponRuntimes.find(wepId);
+            }
+        }
+        if (rtIt != shooter.weaponRuntimes.end())
+            runtime = &rtIt->second;
+    }
+
+    const bool hasAmmo = runtime ? runtime->magazineAmmo > 0 : true;
+
     // Tick-based cooldown validation (replaces float cooldown)
     constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
     const uint64_t currentTick = tick;
@@ -646,24 +677,29 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
         !shooter.dead &&
         serialNew &&
         networkWeaponTypeIsProjectile(request->weapon) &&
+        hasAmmo &&
         cooldownValid &&
         originDistance <= 8.0f &&
         directionValid;
 
+    int serverAmmo = runtime ? runtime->magazineAmmo : -1;
     printf("%s [PROJECTILE FIRE REQUEST RX] playerId=%u fireSerial=%u "
            "weapon=%s originDistance=%.2f directionLength=%.2f "
            "serverTick=%u nextAllowedTick=%llu remainingTicks=%llu "
+           "hasAmmo=%d serverAmmo=%d "
            "cooldownValid=%d accepted=%d reason=%s\n",
            serverTimestamp(), shooter.id, request->fireSerial,
            networkWeaponTypeName(request->weapon), originDistance,
            directionLength, currentTick,
            (unsigned long long)shooter.nextProjectileFireTick,
            (unsigned long long)remainingCooldownTicks,
+           (int)hasAmmo, serverAmmo,
            (int)cooldownValid,
            (int)accepted,
            accepted ? "accepted" :
            shooter.dead ? "dead" :
            !serialNew ? "zero-serial" :
+           !hasAmmo ? "out-of-ammo" :
            !networkWeaponTypeIsProjectile(request->weapon) ? "not-projectile-weapon" :
            !cooldownValid ? "cooldown" :
            originDistance > 8.0f ? "origin-too-far" : "invalid-direction");
@@ -682,6 +718,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
         if (shooter.dead) reject.reason = PROJECTILE_FIRE_DEAD;
         else if (!serialNew) reject.reason = PROJECTILE_FIRE_ALREADY_ACCEPTED;
         else if (!networkWeaponTypeIsProjectile(request->weapon)) reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
+        else if (!hasAmmo) reject.reason = PROJECTILE_FIRE_DEAD; // reuse DEAD as out-of-ammo for now
         else if (!cooldownValid) reject.reason = PROJECTILE_FIRE_COOLDOWN;
         else if (originDistance > 8.0f) reject.reason = PROJECTILE_FIRE_ORIGIN_INVALID;
         else reject.reason = PROJECTILE_FIRE_DIRECTION_INVALID;
@@ -785,6 +822,16 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     uint32_t cooldownTicks = (uint32_t)std::ceil(cfg.fireDelay * 60.0f);
     shooter.nextProjectileFireTick = (uint64_t)tick + cooldownTicks;
     shooter.projectileFireCooldown = cfg.fireDelay; // kept for legacy snapshot serialization
+
+    // Authoritative ammo consumption
+    if (runtime)
+    {
+        if (runtime->magazineAmmo > 0)
+            --runtime->magazineAmmo;
+        printf("[SERVER WEAPON RUNTIME] playerId=%u weapon=%s magazineAmmo=%d/%d\n",
+               shooter.id, wepId ? wepId : "?", runtime->magazineAmmo,
+               runtime->magazineAmmo + (int)(runtime->reserveAmmo > 0));
+    }
 
     ProjectileSpawnEventPacket spawn{};
     spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
