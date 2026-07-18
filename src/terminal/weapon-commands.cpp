@@ -153,10 +153,37 @@ void registerWeaponCommands()
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
             WeaponSystem& weapons = THE_WEAPONS;
+            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+
+            // Always do local predicted reload
             bool loaded = weapons.reload(player);
             if (DebugConfig::DEBUG_INPUT)
                 Debug::log(Debug::Category::General, "[INPUT] action=reload command=reload weapon=%s\n",
                            loaded ? "executed" : "ignored");
+
+            // In multiplayer, send authoritative reload request to server
+            if (mpContext.active && mpContext.localPlayerId)
+            {
+                const WeaponDefinition* def = weapons.getCurrentDef(player);
+                if (def)
+                {
+                    uint16_t netId = MimitaNet::weaponDefNetworkIdFor(def->id);
+                    if (netId != 0)
+                    {
+                        MimitaNet::ReloadRequestPacket req{};
+                        req.header.type = MimitaNet::PACKET_RELOAD_REQUEST;
+                        req.header.tick = mpContext.tick;
+                        req.header.playerId = mpContext.localPlayerId;
+                        req.requestId = mpContext.nextLocalProjectileFireSerial; // reuse monotonic serial
+                        req.spawnGeneration = 0; // server will validate; 0 = unset for now
+                        req.weaponDefNetworkId = netId;
+                        MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
+                        Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s\n",
+                                   mpContext.localPlayerId, req.requestId, def->id.c_str());
+                    }
+                }
+            }
+
             Terminal::instance().addLog(loaded ? "[WEAPON] reload complete" : "[WEAPON] reload unavailable");
         }
     });

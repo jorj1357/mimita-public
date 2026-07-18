@@ -628,6 +628,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpProcessMeleeHitEventPacket(
                 ctx, reinterpret_cast<const MeleeHitEventPacket*>(buffer));
         }
+        else if (header->type == PACKET_RELOAD_RESULT &&
+                 bytes >= (int)sizeof(ReloadResultPacket))
+        {
+            const ReloadResultPacket* rr = reinterpret_cast<const ReloadResultPacket*>(buffer);
+            Debug::log(Debug::Category::Weapons, "[RELOAD RESULT RX] playerId=%u requestId=%u accepted=%d reason=%d ammo=%d/%d stateRev=%u\n",
+                       ctx.localPlayerId, rr->requestId, (int)rr->accepted, (int)rr->reason,
+                       rr->magazineAmmo, rr->reserveAmmo, rr->stateRevision);
+            // Reconcile client-side weapon runtime with authoritative values
+            // TODO: update player.weaponRuntimes from rr data
+        }
         else if (header->type == PACKET_NPC_DAMAGE_EVENT &&
                  bytes >= (int)sizeof(NpcDamageEventPacket))
         {
