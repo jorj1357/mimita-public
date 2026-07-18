@@ -1144,8 +1144,8 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST RX] playerId=%u requestId=%u spawnGen=%u weapon=%s tick=%u\n",
                p.id, req->requestId, req->spawnGeneration, wepId->c_str(), tick);
 
-    // Validate spawn generation (0 = skip check for backward compat during migration)
-    if (req->spawnGeneration != 0 && req->spawnGeneration != p.spawnGeneration)
+    // Validate spawn generation
+    if (req->spawnGeneration != p.spawnGeneration)
     {
         Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u stale spawnGeneration req=%u cur=%u\n",
                    p.id, req->spawnGeneration, p.spawnGeneration);

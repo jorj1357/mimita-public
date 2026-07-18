@@ -256,6 +256,38 @@ static const char* disconnectReasonStr(MultiplayerContext& ctx)
     return "unknown";
 }
 
+// ── Apply authoritative spawn state from server ──────────────────────
+void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacket* spawn)
+{
+    uint32_t oldGen = ctx.lastKnownSpawnGeneration;
+    ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
+
+    // Cancel old-life pending attack requests
+    for (auto it = ctx.pendingAttackRequests.begin(); it != ctx.pendingAttackRequests.end(); )
+    {
+        if (it->second.spawnGeneration == oldGen)
+        {
+            Debug::log(Debug::Category::Weapons, "[SPAWN SYNC CANCEL] requestId=%u oldGen=%u newGen=%u\n",
+                       it->second.requestId, oldGen, spawn->spawnGeneration);
+            it = ctx.pendingAttackRequests.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    // Clear old-life predicted state
+    ctx.networkProjectiles.clear();
+    ctx.predictedProjectileIds.clear();
+    ctx.pendingFireRequests.clear();
+    ctx.fireRejections.clear();
+    ctx.processedRefundSerials.clear();
+
+    Debug::log(Debug::Category::Weapons, "[SPAWN SYNC APPLY] oldGen=%u newGen=%u health=%d weapons=%u\n",
+               oldGen, spawn->spawnGeneration, spawn->health, spawn->weaponCount);
+}
+
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
 {
     if (!ctx.active)
@@ -610,6 +642,20 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpProcessProjectileDespawnEventPacket(
                 ctx, reinterpret_cast<const ProjectileDespawnEventPacket*>(buffer));
         }
+        else if (header->type == PACKET_ATTACK_RESULT &&
+                 bytes >= (int)sizeof(AttackResultPacket))
+        {
+            const AttackResultPacket* ar = reinterpret_cast<const AttackResultPacket*>(buffer);
+            // Erase pending attack request
+            auto pendingIt = ctx.pendingAttackRequests.find(ar->requestId);
+            if (pendingIt != ctx.pendingAttackRequests.end())
+                ctx.pendingAttackRequests.erase(pendingIt);
+            Debug::log(Debug::Category::Weapons, "[ATTACK RESULT RX] playerId=%u requestId=%u accepted=%d reason=%d ammo=%d/%d projId=%u\n",
+                       ctx.localPlayerId, ar->requestId, (int)ar->accepted, (int)ar->reason,
+                       ar->magazineAmmo, ar->reserveAmmo, ar->projectileId);
+            // TODO: reconcile client-side weapon runtime from ar values
+            // when ammo/cooldown fields are wired to player state
+        }
         else if (header->type == PACKET_PROJECTILE_FIRE_RESULT &&
                  bytes >= (int)sizeof(ProjectileFireResultPacket))
         {
@@ -647,10 +693,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(PlayerRespawnedPacket))
         {
             const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
-            ctx.lastKnownSpawnGeneration = pr->spawnGeneration;
-            Debug::log(Debug::Category::Weapons, "[PLAYER RESPAWNED RX] spawnGeneration=%u health=%d weapons=%u\n",
-                       pr->spawnGeneration, pr->health, pr->weaponCount);
-            // TODO: reconcile weapon runtimes from inventory
+            applyAuthoritativeSpawn(ctx, pr);
         }
         else if (header->type == PACKET_CHAT_MESSAGE &&
                  bytes >= (int)sizeof(ChatPacket))
@@ -928,6 +971,58 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 // Send one final deactivate packet
                 lastSentGb = gbPkt;
                 mpSendPacket(ctx, &gbPkt, sizeof(gbPkt));
+            }
+        }
+    }
+
+    // ── Retry unacknowledged generic attack requests ────────────────────
+    {
+        const uint64_t now = nowMs();
+        for (auto it = ctx.pendingAttackRequests.begin(); it != ctx.pendingAttackRequests.end(); )
+        {
+            MultiplayerContext::PendingAttackRequest& p = it->second;
+            if (p.accepted || p.rejected)
+            {
+                it = ctx.pendingAttackRequests.erase(it);
+                continue;
+            }
+            // Retry every 100ms up to 10 attempts
+            if (now - p.lastSentMs >= 100 && p.attempts < 10)
+            {
+                AttackRequestPacket retry{};
+                retry.header.type = PACKET_ATTACK_REQUEST;
+                retry.header.tick = ctx.tick;
+                retry.header.playerId = ctx.localPlayerId;
+                retry.requestId = p.requestId;
+                retry.spawnGeneration = p.spawnGeneration;
+                retry.equippedSlot = p.equippedSlot;
+                retry.weaponDefNetworkId = p.weaponDefNetworkId;
+                retry.aimOriginX = p.aimOrigin.x;
+                retry.aimOriginY = p.aimOrigin.y;
+                retry.aimOriginZ = p.aimOrigin.z;
+                retry.aimDirX = p.aimDirection.x;
+                retry.aimDirY = p.aimDirection.y;
+                retry.aimDirZ = p.aimDirection.z;
+                retry.muzzlePosX = p.predictedMuzzle.x;
+                retry.muzzlePosY = p.predictedMuzzle.y;
+                retry.muzzlePosZ = p.predictedMuzzle.z;
+                mpSendPacket(ctx, &retry, sizeof(retry));
+                p.lastSentMs = now;
+                p.attempts++;
+                Debug::log(Debug::Category::Weapons, "[ATTACK RETRY] requestId=%u attempt=%d\n",
+                           p.requestId, p.attempts);
+            }
+            // Timeout after 3 seconds
+            if (now - p.firstSentMs > 3000)
+            {
+                Debug::log(Debug::Category::Weapons, "[ATTACK TIMEOUT] requestId=%u — removing\n",
+                           p.requestId);
+                // TODO: reconcile predicted state on timeout
+                it = ctx.pendingAttackRequests.erase(it);
+            }
+            else
+            {
+                ++it;
             }
         }
     }

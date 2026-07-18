@@ -311,6 +311,23 @@ struct MultiplayerContext
     };
     std::unordered_map<uint32_t, PendingFireRequest> pendingFireRequests;
 
+    // ── Generic pending attack requests (retransmission) ──────────────
+    struct PendingAttackRequest {
+        uint32_t requestId = 0;
+        uint32_t spawnGeneration = 0;
+        uint16_t weaponDefNetworkId = 0;
+        int16_t equippedSlot = 0;
+        glm::vec3 aimOrigin{0.0f};
+        glm::vec3 aimDirection{0.0f};
+        glm::vec3 predictedMuzzle{0.0f};
+        uint64_t firstSentMs = 0;
+        uint64_t lastSentMs = 0;
+        int attempts = 0;
+        bool accepted = false;
+        bool rejected = false;
+    };
+    std::unordered_map<uint32_t, PendingAttackRequest> pendingAttackRequests;
+
     // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
     std::unordered_set<uint32_t> predictedProjectileIds;
 
@@ -375,6 +392,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const class World& world);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
+void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacket* spawn);
 
 // ── Migration: connection with room code + join token ─────────────────
 bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
@@ -392,6 +410,12 @@ void mpRequestExplode(MultiplayerContext& ctx);
 void mpSendNpcDamageRequest(MultiplayerContext& ctx, uint32_t npcEntityId, int damage,
     const glm::vec3& origin, const glm::vec3& hit, const glm::vec3& direction,
     const glm::vec3& normal, const glm::vec3& knockback, uint16_t effectFlags, uint8_t weapon);
+void mpSendAttackRequest(MultiplayerContext& ctx,
+    uint16_t weaponDefNetworkId,
+    int16_t equippedSlot,
+    const glm::vec3& aimOrigin,
+    const glm::vec3& aimDirection,
+    const glm::vec3& predictedMuzzle);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,

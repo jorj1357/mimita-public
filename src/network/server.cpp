@@ -2,6 +2,7 @@
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
+#include "network/network-weapons.h"
 #include "network/ice-transport.h"
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
@@ -418,9 +419,7 @@ int runServer(const LaunchOptions& options)
                     it->second.spawned = true;
                     it->second.vel = glm::vec3(0.0f);
                     it->second.clientStateUpdated = false;
-                    printf("%s [SERVER MAP READY] id=%u name=\"%s\" mapId=%s spawned=1\n",
-                           serverTimestamp(), it->second.id, it->second.name.c_str(),
-                           ready->mapId);
+                    completeAuthoritativeSpawn(sock, it->second, true);
                 }
             }
         }
@@ -439,11 +438,18 @@ int runServer(const LaunchOptions& options)
             handleClientTimeout(players);
             for (auto& kv : players)
                 pushPositionHistory(kv.second, tick);
-            for (auto& kv : players)
-                simulatePlayer(kv.second, world);
-            tickWeaponRuntimes(players, tick);
+        for (auto& kv : players)
+        {
+            simulatePlayer(kv.second, world);
+            if (kv.second.justRespawned)
+            {
+                kv.second.justRespawned = false;
+                completeAuthoritativeSpawn(sock, kv.second, false);
+            }
+        }
+        tickWeaponRuntimes(players, tick);
 
-            auto tCollision = std::chrono::steady_clock::now();
+        auto tCollision = std::chrono::steady_clock::now();
             resolvePlayerCollision(players);
             checkVoidDeath(players, npcs);
             tickProfile.collisionUs = (uint64_t)std::chrono::duration<double, std::micro>(
@@ -892,9 +898,7 @@ static void simulateOneServerTick(ListenServerState& state)
                     it->second.spawned = true;
                     it->second.vel = glm::vec3(0.0f);
                     it->second.clientStateUpdated = false;
-                    printf("%s [SERVER MAP READY] id=%u name=\"%s\" mapId=%s spawned=1\n",
-                           serverTimestamp(), it->second.id, it->second.name.c_str(),
-                           ready->mapId);
+                    completeAuthoritativeSpawn(state.sock, it->second, true);
                 }
             }
         }
@@ -903,7 +907,14 @@ static void simulateOneServerTick(ListenServerState& state)
         for (auto& kv : state.players)
             pushPositionHistory(kv.second, state.tick);
         for (auto& kv : state.players)
+        {
             simulatePlayer(kv.second, state.world);
+            if (kv.second.justRespawned)
+            {
+                kv.second.justRespawned = false;
+                completeAuthoritativeSpawn(state.sock, kv.second, false);
+            }
+        }
         tickWeaponRuntimes(state.players, state.tick);
         resolvePlayerCollision(state.players);
         checkVoidDeath(state.players, state.npcs);

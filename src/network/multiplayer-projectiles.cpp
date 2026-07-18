@@ -629,6 +629,11 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)
 {
+    // Also clear generic pending attack entry (migration bridge)
+    auto genIt = ctx.pendingAttackRequests.find(event->fireSerial);
+    if (genIt != ctx.pendingAttackRequests.end())
+        ctx.pendingAttackRequests.erase(genIt);
+
     auto it = ctx.pendingFireRequests.find(event->fireSerial);
     if (event->accepted)
     {

@@ -6,6 +6,7 @@
 #include "network/ice/ice-config.h"
 #include "network/coordinator-client.h"
 #include "analytics/analytics-manager.h"
+#include "debug/debug-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -420,6 +421,64 @@ void mpRequestExplode(MultiplayerContext& ctx)
     request.header.playerId = ctx.localPlayerId;
     ctx.awaitingExplodeDeath = true;
     mpSendPacket(ctx, &request, sizeof(request));
+}
+
+// ── Generic AttackRequest with pending tracking and retry ──────────────
+void mpSendAttackRequest(MultiplayerContext& ctx,
+    uint16_t weaponDefNetworkId,
+    int16_t equippedSlot,
+    const glm::vec3& aimOrigin,
+    const glm::vec3& aimDirection,
+    const glm::vec3& predictedMuzzle)
+{
+    if (!ctx.active || !ctx.localPlayerId)
+        return;
+
+    uint32_t requestId = ctx.nextActionRequestId++;
+    if (ctx.nextActionRequestId == 0)
+        ctx.nextActionRequestId = 1;
+
+    AttackRequestPacket req{};
+    req.header.type = PACKET_ATTACK_REQUEST;
+    req.header.tick = ctx.tick;
+    req.header.playerId = ctx.localPlayerId;
+    req.requestId = requestId;
+    req.spawnGeneration = ctx.lastKnownSpawnGeneration;
+    req.clientSimulationTick = 0;
+    req.basedOnInputSequence = 0;
+    req.equippedSlot = equippedSlot;
+    req.weaponDefNetworkId = weaponDefNetworkId;
+    req.aimOriginX = aimOrigin.x;
+    req.aimOriginY = aimOrigin.y;
+    req.aimOriginZ = aimOrigin.z;
+    glm::vec3 dir = glm::length(aimDirection) > 0.001f ? glm::normalize(aimDirection) : glm::vec3(1.0f, 0.0f, 0.0f);
+    req.aimDirX = dir.x;
+    req.aimDirY = dir.y;
+    req.aimDirZ = dir.z;
+    req.muzzlePosX = predictedMuzzle.x;
+    req.muzzlePosY = predictedMuzzle.y;
+    req.muzzlePosZ = predictedMuzzle.z;
+    req.deterministicSeed = (uint32_t)(requestId * 73856093);
+
+    mpSendPacket(ctx, &req, sizeof(req));
+
+    // Track pending attack for retransmission
+    MultiplayerContext::PendingAttackRequest pending;
+    pending.requestId = requestId;
+    pending.spawnGeneration = req.spawnGeneration;
+    pending.weaponDefNetworkId = weaponDefNetworkId;
+    pending.equippedSlot = equippedSlot;
+    pending.aimOrigin = aimOrigin;
+    pending.aimDirection = dir;
+    pending.predictedMuzzle = predictedMuzzle;
+    pending.firstSentMs = nowMs();
+    pending.lastSentMs = nowMs();
+    pending.attempts = 1;
+    ctx.pendingAttackRequests[requestId] = pending;
+
+    Debug::log(Debug::Category::Weapons, "[ATTACK REQUEST SEND] playerId=%u requestId=%u weaponDefNetId=%u spawnGen=%u pending=%zu\n",
+               ctx.localPlayerId, requestId, weaponDefNetworkId, req.spawnGeneration,
+               ctx.pendingAttackRequests.size());
 }
 
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
