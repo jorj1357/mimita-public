@@ -1,6 +1,7 @@
 #include "structured-log.h"
 #include "debug-log.h"
 #include "../config.h"
+#include "../utils/path_utils.h"
 
 #include <algorithm>
 #include <chrono>
@@ -254,9 +255,28 @@ void StructuredLogger::createLogDir() {
 #endif
     char dateBuf[16];
     std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &local);
-    mLogDir = "logs/" + std::string(dateBuf);
-    std::error_code ec;
-    std::filesystem::create_directories(mLogDir, ec);
+    std::string relPath = "logs/" + std::string(dateBuf);
+
+    // Resolve log directory from executable directory first, fallback to relative
+    mLogDir = relPath;
+    {
+        std::string exeDir = getExecutableDirectory();
+        std::string candidate = exeDir + relPath;
+        std::error_code ec;
+        if (std::filesystem::create_directories(candidate, ec) || !ec)
+        {
+            // Successfully created or already exists
+            mLogDir = candidate;
+        }
+        else
+        {
+            // Fallback to relative path
+            std::filesystem::create_directories(relPath, ec);
+            printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d). Falling back to %s\n",
+                   candidate.c_str(), ec.value(), relPath.c_str());
+        }
+    }
+    printf("[STRUCTURED LOG] log directory: %s\n", mLogDir.c_str());
 }
 
 // ── Category file ───────────────────────────────────────────

@@ -1121,12 +1121,11 @@ void tickDisagreementRetransmit(SOCKET sock,
     }
 }
 
-// ── Reload request ───────────────────────────────────────────────────
+// ── Reload request (with idempotent caching) ─────────────────────────
 void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
                           uint32_t tick, uint64_t& totalPacketsOut)
 {
-    (void)sock;
     (void)totalPacketsOut;
     if (bytes < (int)sizeof(ReloadRequestPacket))
         return;
@@ -1138,15 +1137,36 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
         return;
 
     ServerPlayer& p = it->second;
-
-    // Validate spawn generation
-    if (req->spawnGeneration != p.spawnGeneration)
-        return;
-
-    // Resolve weapon
     const std::string* wepId = weaponIdForDefNetworkId(req->weaponDefNetworkId);
     if (!wepId)
         return;
+
+    Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST RX] playerId=%u requestId=%u spawnGen=%u weapon=%s tick=%u\n",
+               p.id, req->requestId, req->spawnGeneration, wepId->c_str(), tick);
+
+    // Validate spawn generation (0 = skip check for backward compat during migration)
+    if (req->spawnGeneration != 0 && req->spawnGeneration != p.spawnGeneration)
+    {
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u stale spawnGeneration req=%u cur=%u\n",
+                   p.id, req->spawnGeneration, p.spawnGeneration);
+        return;
+    }
+
+    // ── Idempotent cache lookup ────────────────────────────────────
+    // Cache reload results by (playerId, spawnGeneration, requestId)
+    // Similar to projectile fire result caching.
+    // For the initial implementation, just deduplicate with a simple set.
+    static std::unordered_set<uint64_t> s_processedReloads;
+    uint64_t cacheKey = ((uint64_t)p.id << 32) | ((uint64_t)req->spawnGeneration << 16) | req->requestId;
+    if (s_processedReloads.count(cacheKey))
+    {
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u duplicate requestId=%u (already processed)\n",
+                   p.id, req->requestId);
+        return;
+    }
+    s_processedReloads.insert(cacheKey);
+    if (s_processedReloads.size() > 256)
+        s_processedReloads.clear();
 
     auto rtIt = p.weaponRuntimes.find(*wepId);
     if (rtIt == p.weaponRuntimes.end() || !rtIt->second.initialized)
@@ -1165,26 +1185,41 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     if (p.dead)
     {
         result.accepted = 0;
-        result.reason = 2; // dead
+        result.reason = 2;
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u dead — rejected\n", p.id);
     }
     else if (rt.magazineAmmo >= (def ? def->magazineSize : 999))
     {
         result.accepted = 0;
-        result.reason = 3; // already full
+        result.reason = 3;
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u magazine already full (%d/%d)\n",
+                   p.id, rt.magazineAmmo, def ? def->magazineSize : -1);
     }
     else if (rt.reserveAmmo <= 0)
     {
         result.accepted = 0;
-        result.reason = 4; // no reserve
+        result.reason = 4;
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u no reserve ammo\n", p.id);
+    }
+    else if (rt.reloading)
+    {
+        // Already reloading — accept but report current state
+        result.accepted = 1;
+        result.reason = 5; // already reloading
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u already reloading — report current state\n", p.id);
     }
     else
     {
         rt.reloading = true;
         float reloadTime = def ? def->reloadTime : 0.55f;
-        rt.reloadCompleteTick = tick + (uint32_t)std::ceil(reloadTime * 60.0f);
+        uint32_t reloadTicks = (uint32_t)std::ceil(reloadTime * 60.0f);
+        rt.reloadCompleteTick = tick + reloadTicks;
         rt.stateRevision++;
         result.accepted = 1;
         result.reason = 0;
+        Debug::log(Debug::Category::Weapons, "[RELOAD ACCEPT] playerId=%u weapon=%s reloadTicks=%u completeTick=%llu stateRev=%u ammo=%d/%d\n",
+                   p.id, wepId->c_str(), reloadTicks, (unsigned long long)rt.reloadCompleteTick,
+                   rt.stateRevision, rt.magazineAmmo, rt.reserveAmmo);
     }
 
     result.magazineAmmo = rt.magazineAmmo;
@@ -1194,21 +1229,7 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     result.stateRevision = rt.stateRevision;
 
     // Send result back to the requesting player only
-    for (const auto& kv : players)
-    {
-        if (kv.first == p.id)
-        {
-            if (kv.second.transport)
-                kv.second.transport->send(&result, sizeof(result));
-            else
-                sendto(sock, (const char*)&result, sizeof(result), 0,
-                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-        }
-    }
-
-    Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u weapon=%s accepted=%d reason=%d ammo=%d/%d\n",
-               p.id, wepId->c_str(), (int)result.accepted, (int)result.reason,
-               rt.magazineAmmo, rt.reserveAmmo);
+    serverSendToPlayer(sock, p, &result, sizeof(result));
 }
 
 } // namespace MimitaNet
