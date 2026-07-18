@@ -908,29 +908,64 @@ static void simulateOneServerTick(ListenServerState& state)
 }
 
 // ── Background thread: runs the listen server at a genuine 60 Hz ─────
+// Uses accumulator-based timing (not sleep_until deadline) so that late
+// wakes are caught up on the next iteration rather than drifting forever.
 static void listenServerThreadFunc(ListenServerState& state)
 {
     using namespace std::chrono;
-    auto nextTick = steady_clock::now();
-    constexpr auto tickInterval = nanoseconds(1'000'000'000 / 60);
+    constexpr double kFixedDt = 1.0 / 60.0;
+    constexpr auto kFixedDtNs = nanoseconds(1'000'000'000 / 60);
+    constexpr int kMaxCatchup = 5;
 
-    printf("[LISTEN SERVER THREAD] started at 60 Hz\n");
+    auto previousTime = steady_clock::now();
+    double accumulator = 0.0;
+
+    printf("[LISTEN SERVER THREAD] started with accumulator timing\n");
 
     uint64_t lastLogTick = 0;
+    uint64_t lastHzLog = 0;
 
     while (state.serverRunning)
     {
-        simulateOneServerTick(state);
-        nextTick += tickInterval;
+        auto currentTime = steady_clock::now();
+        double elapsed = duration_cast<duration<double>>(currentTime - previousTime).count();
+        previousTime = currentTime;
 
-        // Flush structured logger periodically (not every tick to reduce overhead)
+        // Clamp excessive elapsed time (pauses, debugger stops) to prevent spiral
+        if (elapsed > 0.1) elapsed = 0.1;
+
+        accumulator += elapsed;
+
+        int steps = 0;
+        while (accumulator >= kFixedDt && steps < kMaxCatchup)
+        {
+            simulateOneServerTick(state);
+            accumulator -= kFixedDt;
+            ++steps;
+        }
+
+        // Log Hz every ~10 seconds
+        if (state.tick - lastHzLog >= 600)
+        {
+            printf("[LISTEN SERVER THREAD] tick=%u accumulator=%.4f catchupSteps=%d\n",
+                   state.tick, accumulator, steps);
+            lastHzLog = state.tick;
+        }
+
+        // Flush structured logger periodically
         if (state.tick - lastLogTick >= 60)
         {
             ::StructuredLogger::instance().tick();
             lastLogTick = state.tick;
         }
 
-        std::this_thread::sleep_until(nextTick);
+        // Sleep for approximately one tick interval. This is NOT a deadline —
+        // lateness is absorbed by the accumulator on the next iteration.
+        if (accumulator < kFixedDt)
+        {
+            auto sleepUntil = steady_clock::now() + kFixedDtNs;
+            std::this_thread::sleep_until(sleepUntil);
+        }
     }
 
     printf("[LISTEN SERVER THREAD] exiting\n");

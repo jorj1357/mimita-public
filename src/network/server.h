@@ -126,6 +126,17 @@ struct ServerPlayer
     uint32_t lastMeleeAttackSerial = 0;
     float projectileFireCooldown = 0.0f;
     uint64_t nextProjectileFireTick = 0; // tick-based cooldown for projectiles
+
+    // ── Authoritative per-player per-weapon runtime ─────────────────────
+    struct ServerWeaponRuntime {
+        int magazineAmmo = 0;
+        int reserveAmmo = 0;
+        uint64_t nextAllowedFireTick = 0;
+        bool reloading = false;
+        uint64_t reloadCompleteTick = 0;
+        bool initialized = false;
+    };
+    std::unordered_map<std::string, ServerWeaponRuntime> weaponRuntimes;
     uint16_t lastDashSerial = 0;
     uint16_t lastEquipSerial = 0;
     uint16_t lastRespawnSerial = 0;
