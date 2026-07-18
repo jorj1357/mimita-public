@@ -6,6 +6,7 @@
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
+#include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
 #include <cstdio>
@@ -430,6 +431,11 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
+            struct {
+                uint64_t simUs = 0, snapshotUs = 0, iceUs = 0;
+            } tickProfile;
+
+            auto t0 = std::chrono::steady_clock::now();
             handleClientTimeout(players);
             for (auto& kv : players)
                 pushPositionHistory(kv.second, tick);
@@ -442,8 +448,10 @@ int runServer(const LaunchOptions& options)
                 simulateNpc(kv.second, players);
             tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+            tickProfile.simUs = (uint64_t)std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - t0).count();
 
-            // ICE coordinator polling + peer handshakes (rate-limited in the called functions)
+            auto t1 = std::chrono::steady_clock::now();
             if (iceEnabled && iceListenerAgent && tick % 30 == 0)
             {
                 uint64_t nowIce = nowMs();
@@ -453,9 +461,33 @@ int runServer(const LaunchOptions& options)
             tickServerIceTransports(sock, players, npcs, projectiles,
                                     nextEntityId, nextPlayerId,
                                     pendingIceTransports, world, tick, totalPacketsOut);
+            tickProfile.iceUs = (uint64_t)std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - t1).count();
 
+            auto t2 = std::chrono::steady_clock::now();
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
+            tickProfile.snapshotUs = (uint64_t)std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - t2).count();
+
+            // Profile logging — every 600 ticks
+            static uint64_t s_totalSimUs = 0, s_totalSnapshotUs = 0, s_totalIceUs = 0;
+            static uint32_t s_profileTicks = 0;
+            s_totalSimUs += tickProfile.simUs;
+            s_totalSnapshotUs += tickProfile.snapshotUs;
+            s_totalIceUs += tickProfile.iceUs;
+            s_profileTicks++;
+            if (s_profileTicks >= 600)
+            {
+                Debug::log(Debug::Category::General,
+                    "[TICK PROFILE] simAvg=%.1f snapshotAvg=%.1f iceAvg=%.1f players=%zu projectiles=%zu\n",
+                    (double)s_totalSimUs / s_profileTicks / 1000.0,
+                    (double)s_totalSnapshotUs / s_profileTicks / 1000.0,
+                    (double)s_totalIceUs / s_profileTicks / 1000.0,
+                    players.size(), projectiles.size());
+                s_totalSimUs = s_totalSnapshotUs = s_totalIceUs = 0;
+                s_profileTicks = 0;
+            }
 
             accumulator -= (double)SERVER_DT;
             ++tick;
@@ -496,13 +528,20 @@ int runServer(const LaunchOptions& options)
             lastLog = nowMs();
         }
 
-        // Sleep only when no simulation debt remains
+        // Remeasure elapsed time for post-simulation work (heartbeat, logs)
+        auto postSimNow = std::chrono::steady_clock::now();
+        double postElapsed = std::chrono::duration<double>(postSimNow - currentTime).count();
+        currentTime = postSimNow;
+        if (postElapsed > 0.001) // only add if more than negligible
+            accumulator += postElapsed;
+
+        // Sleep only when no simulation debt remains. Use microseconds for precision.
         if (accumulator < (double)SERVER_DT)
         {
             double sleepSec = (double)SERVER_DT - accumulator;
-            uint64_t sleepMs = (uint64_t)(sleepSec * 1000.0);
-            if (sleepMs > 1)
-                std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+            uint64_t sleepUs = (uint64_t)(sleepSec * 1000000.0);
+            if (sleepUs > 1000)
+                std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
         }
     }
 
@@ -967,12 +1006,15 @@ static void listenServerThreadFunc(ListenServerState& state)
             lastLogTick = state.tick;
         }
 
-        // Sleep for approximately one tick interval. This is NOT a deadline —
-        // lateness is absorbed by the accumulator on the next iteration.
+        // Sleep only for the remaining time until the next tick is due.
         if (accumulator < kFixedDt)
         {
-            auto sleepUntil = steady_clock::now() + kFixedDtNs;
-            std::this_thread::sleep_until(sleepUntil);
+            double sleepSec = kFixedDt - accumulator;
+            if (sleepSec > 0.001) // only sleep if more than 1ms
+            {
+                auto sleepUs = duration_cast<microseconds>(duration<double>(sleepSec));
+                std::this_thread::sleep_for(sleepUs);
+            }
         }
     }
 
