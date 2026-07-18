@@ -701,10 +701,12 @@ RevolverShotResult WeaponSystem::fire(
 
     if (rt->currentAmmo <= 0) {
         WeaponAudio::playDryFireSound(*def);
+        RevolverShotResult dryResult;
         if (!rt->isReloading && rt->reserveAmmo > 0) {
             reload(player);
+            dryResult.autoReloadTriggered = true;
         }
-        return {};
+        return dryResult;
     }
 
     if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {

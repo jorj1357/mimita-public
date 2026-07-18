@@ -424,96 +424,6 @@ int runServer(const LaunchOptions& options)
             }
         }
 
-        // Post-tick simulation and snapshot
-        handleClientTimeout(players);
-        for (auto& kv : players)
-            pushPositionHistory(kv.second, tick);
-        for (auto& kv : players)
-            simulatePlayer(kv.second, world);
-        resolvePlayerCollision(players);
-        checkVoidDeath(players, npcs);
-        for (auto& kv : npcs)
-            simulateNpc(kv.second, players);
-        tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
-
-        tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
-
-        // ── ICE coordinator polling + non-blocking peer handshakes ──
-        if (iceEnabled && iceListenerAgent && tick % 30 == 0)
-        {
-            uint64_t nowIce = nowMs();
-            if (nowIce - lastIceCoordinatorPollMs > 500)
-            {
-                lastIceCoordinatorPollMs = nowIce;
-                // Two-phase: poll via host-poll endpoint (non-mutating)
-                auto pending = coordinatorIceHostPoll(serverCode, iceSessionId);
-                if (pending.hasRequest && !pending.clientIceDescription.empty())
-                {
-                    if (pending.clientIceDescription.find("a=ice-ufrag:") == std::string::npos ||
-                        pending.clientIceDescription.find("a=ice-pwd:") == std::string::npos)
-                    {
-                        printf("%s [SERVER ICE] req=%s invalid SDP (no ufrag/pwd)\n",
-                               serverTimestamp(), pending.requestId.substr(0, 12).c_str());
-                    }
-                    else
-                    {
-                        printf("%s [SERVER ICE] new client req=%s\n",
-                               serverTimestamp(), pending.requestId.substr(0, 12).c_str());
-                        auto peer = std::make_unique<PendingIcePeer>();
-                        peer->requestId = pending.requestId;
-                        peer->clientSessionId = pending.clientSessionId;
-                        peer->clientIceDescription = pending.clientIceDescription;
-                        peer->startedAtMs = nowIce;
-                        peer->lastEventMs = nowIce;
-                        IceConfiguration iceCfg = loadIceConfig();
-                        auto ca = std::make_unique<IceAgent>();
-                        if (ca->initialize(iceCfg) && ca->gatherCandidates()) {
-                            peer->agent = std::move(ca);
-                            peer->state = PendingIcePeer::State::Gathering;
-                            gPendingIcePeers.push_back(std::move(peer));
-                            printf("%s [SERVER ICE] peer created (total=%zu)\n",
-                                   serverTimestamp(), gPendingIcePeers.size());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Advance non-blocking peer handshakes
-        tickIcePeers(serverCode, iceSessionId, pendingIceTransports);
-
-        // ── Process ICE transports (existing + pending) ──
-        tickServerIceTransports(sock, players, npcs, projectiles,
-                                nextEntityId, nextPlayerId,
-                                pendingIceTransports, world, tick, totalPacketsOut);
-
-        buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
-
-        tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
-
-        // Heartbeat to coordinator every ~15 seconds
-        {
-            const uint64_t now = nowMs();
-            if (!serverCode.empty() && now - lastCoordinatorHb >= 15000)
-            {
-                coordinatorHeartbeat(serverCode, (int)players.size());
-                lastCoordinatorHb = now;
-            }
-        }
-
-        // Status log every second
-        if (nowMs() - lastLog >= 1000)
-        {
-            printf("%s [SERVER STATUS] tick=%u players=%zu packetsIn=%llu packetsOut=%llu\n",
-                   serverTimestamp(), tick, players.size(),
-                   (unsigned long long)totalPacketsIn, (unsigned long long)totalPacketsOut);
-            for (const auto& kv : players)
-                printf("%s [SERVER PLAYER] id=%u name=\"%s\" pos=(%.1f,%.1f,%.1f)\n",
-                       serverTimestamp(), kv.second.id, kv.second.name.c_str(),
-                       kv.second.pos.x, kv.second.pos.y, kv.second.pos.z);
-            lastLog = nowMs();
-        }
-
         ::StructuredLogger::instance().tick();
 
         // Accumulator-based timing: run simulation ticks for accumulated debt
@@ -550,6 +460,40 @@ int runServer(const LaunchOptions& options)
             accumulator -= (double)SERVER_DT;
             ++tick;
             ++steps;
+        }
+
+        // Heartbeat to coordinator every ~15 seconds
+        {
+            const uint64_t now = nowMs();
+            if (!serverCode.empty() && now - lastCoordinatorHb >= 15000)
+            {
+                coordinatorHeartbeat(serverCode, (int)players.size());
+                lastCoordinatorHb = now;
+            }
+        }
+
+        // Timing measurement every 600 ticks (~10 seconds)
+        static uint32_t s_lastTimingTick = 0;
+        static uint64_t s_timingStartMs = nowMs();
+        if (tick - s_lastTimingTick >= 600)
+        {
+            uint64_t nowMsVal = nowMs();
+            double elapsedSec = (double)(nowMsVal - s_timingStartMs) / 1000.0;
+            double actualHz = (double)(tick - s_lastTimingTick) / elapsedSec;
+            printf("%s [SERVER TIMING] ticks=%u elapsed=%.1fs actualHz=%.1f players=%zu projectiles=%zu\n",
+                   serverTimestamp(), tick - s_lastTimingTick, elapsedSec, actualHz,
+                   players.size(), projectiles.size());
+            s_lastTimingTick = tick;
+            s_timingStartMs = nowMsVal;
+        }
+
+        // Status log every second
+        if (nowMs() - lastLog >= 1000)
+        {
+            printf("%s [SERVER STATUS] tick=%u players=%zu packetsIn=%llu packetsOut=%llu\n",
+                   serverTimestamp(), tick, players.size(),
+                   (unsigned long long)totalPacketsIn, (unsigned long long)totalPacketsOut);
+            lastLog = nowMs();
         }
 
         // Sleep only when no simulation debt remains

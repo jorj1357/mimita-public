@@ -226,6 +226,7 @@ struct MultiplayerContext
     uint32_t nextLocalShotSerial = 1;
     uint32_t nextLocalProjectileFireSerial = 1;
     uint32_t nextLocalMeleeAttackSerial = 1;
+    uint32_t nextActionRequestId = 1;  // monotonic, shared across all action types
     uint32_t latestServerTick = 0;
     uint64_t lastPingSentMs = 0;
     int localPingMs = 0;
@@ -258,6 +259,7 @@ struct MultiplayerContext
 
     // ── Transform epoch for spawn/resync detection ────────────────────
     uint32_t transformEpoch = 0;
+    uint32_t lastKnownSpawnGeneration = 0;  // from server's PlayerRespawned
 
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;

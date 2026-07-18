@@ -643,6 +643,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             mpProcessNpcDamageEventPacket(ctx, reinterpret_cast<const NpcDamageEventPacket*>(buffer));
         }
+        else if (header->type == PACKET_PLAYER_RESPAWNED &&
+                 bytes >= (int)sizeof(PlayerRespawnedPacket))
+        {
+            const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
+            ctx.lastKnownSpawnGeneration = pr->spawnGeneration;
+            Debug::log(Debug::Category::Weapons, "[PLAYER RESPAWNED RX] spawnGeneration=%u health=%d weapons=%u\n",
+                       pr->spawnGeneration, pr->health, pr->weaponCount);
+            // TODO: reconcile weapon runtimes from inventory
+        }
         else if (header->type == PACKET_CHAT_MESSAGE &&
                  bytes >= (int)sizeof(ChatPacket))
         {
