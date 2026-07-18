@@ -54,6 +54,7 @@ void registerWeaponCommands()
                         req.header.playerId = mpContext.localPlayerId;
                         req.requestId = mpContext.nextActionRequestId++;
                         if (mpContext.nextActionRequestId == 0) mpContext.nextActionRequestId = 1;
+                        req.spawnGeneration = mpContext.lastKnownSpawnGeneration;
                         req.weaponDefNetworkId = netId;
                         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
                         Debug::log(Debug::Category::Weapons,
@@ -133,8 +134,21 @@ void registerWeaponCommands()
                 }
 
                 if (usesProjectilePath) {
-                    MimitaNet::mpSendProjectileFireRequest(
-                        mpContext, netWeapon, shot.start, direction);
+                    // Send generic AttackRequest (migration from ProjectileFireRequest)
+                    const WeaponDefinition* wdef2 = weapons.getCurrentDef(player);
+                    if (wdef2)
+                    {
+                        uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef2->id);
+                        if (netId != 0)
+                        {
+                            MimitaNet::mpSendAttackRequest(
+                                mpContext, netId, wdef2->slot,
+                                shot.start, direction, shot.start);
+                            Debug::log(Debug::Category::Weapons,
+                                       "[ATTACK] sent for weapon=%s netId=%u\n",
+                                       wdef2->id.c_str(), netId);
+                        }
+                    }
                     Terminal::instance().addLog("[WEAPON] fired");
                     return;
                 }
@@ -202,7 +216,7 @@ void registerWeaponCommands()
                         req.header.playerId = mpContext.localPlayerId;
                         req.requestId = mpContext.nextActionRequestId++;
                         if (mpContext.nextActionRequestId == 0) mpContext.nextActionRequestId = 1;
-                        req.spawnGeneration = 0; // server will validate; 0 = unset for now
+                        req.spawnGeneration = mpContext.lastKnownSpawnGeneration;
                         req.weaponDefNetworkId = netId;
                         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
                         Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s\n",

@@ -1,4 +1,5 @@
 #include "network/server.h"
+#include "network/network-weapons.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 
@@ -226,6 +227,46 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
            (int)isInitialSpawn);
 }
 
+// ── Complete authoritative spawn and notify client ────────────────────
+// Called from every spawn path: initial spawn, auto-respawn, instant-respawn.
+// Sends PlayerRespawnedPacket with authoritative generation and inventory.
+void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn)
+{
+    resetPlayerForSpawn(player, isInitialSpawn);
+
+    PlayerRespawnedPacket spawnSync{};
+    spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
+    spawnSync.header.tick = 0;
+    spawnSync.header.playerId = player.id;
+    spawnSync.spawnGeneration = player.spawnGeneration;
+    spawnSync.health = player.health;
+    spawnSync.weaponCount = 0;
+    for (const auto& wkv : player.weaponRuntimes)
+    {
+        if (spawnSync.weaponCount >= 16) break;
+        uint16_t wid = weaponDefNetworkIdFor(wkv.first);
+        if (wid == 0) continue;
+        auto& ws = spawnSync.weapons[spawnSync.weaponCount++];
+        ws.weaponDefNetworkId = wid;
+        ws.magazineAmmo = wkv.second.magazineAmmo;
+        ws.reserveAmmo = wkv.second.reserveAmmo;
+        ws.nextAllowedFireTick = wkv.second.nextAllowedFireTick;
+        ws.stateRevision = wkv.second.stateRevision;
+        ws.reloading = wkv.second.reloading ? 1 : 0;
+    }
+
+    // Send to this player only
+    if (player.transport)
+        player.transport->send(&spawnSync, sizeof(spawnSync));
+    else
+        sendto(sock, (const char*)&spawnSync, sizeof(spawnSync), 0,
+               (sockaddr*)&player.addr, sizeof(player.addr));
+
+    printf("[SPAWN SYNC SERVER SEND] id=%u spawnGen=%u reason=%s health=%d\n",
+           player.id, player.spawnGeneration,
+           isInitialSpawn ? "initial" : "respawn", player.health);
+}
+
 // ── Advance all reload timers — called once per server tick ─────────
 void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uint32_t currentTick)
 {
@@ -316,6 +357,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             }
             beginAuthoritativeTransform(p, respawnPos, glm::vec3(0.0f), respawnYaw, "respawn");
             resetPlayerForSpawn(p, false);  // preserve ownedWeaponIds
+            p.justRespawned = true;  // signal caller to send spawn sync
             p.input = {};
             p.attackQueued = false;
             p.dashAvailable = true;
