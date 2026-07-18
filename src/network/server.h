@@ -93,10 +93,25 @@ struct ServerPlayer
     int pingMs = 0;
     uint32_t lastShotSerial = 0;
     uint32_t lastProjectileFireSerial = 0;
-    uint32_t recentProjectileSerials[4] = {};
-    uint8_t recentProjectileSerialCount = 0;
+
+    // ── Idempotent projectile fire result cache ───────────────────────
+    // When the client retries a fire request, the server must respond with
+    // the same result instead of rejecting the duplicate.
+    static constexpr uint8_t MAX_CACHED_FIRE_RESULTS = 32;
+    struct CachedFireResult {
+        uint32_t fireSerial = 0;
+        bool accepted = false;
+        uint32_t projectileId = 0;
+        uint8_t weapon = NETWORK_WEAPON_NONE;
+        uint8_t reason = 0;
+        float cooldownRemaining = 0.0f;
+        bool valid = false;
+    };
+    CachedFireResult cachedFireResults[MAX_CACHED_FIRE_RESULTS] = {};
+    uint8_t nextCachedFireResultSlot = 0;
     uint32_t lastMeleeAttackSerial = 0;
     float projectileFireCooldown = 0.0f;
+    uint64_t nextProjectileFireTick = 0; // tick-based cooldown for projectiles
     uint16_t lastDashSerial = 0;
     uint16_t lastEquipSerial = 0;
     uint16_t lastRespawnSerial = 0;
@@ -505,6 +520,7 @@ struct ListenServerState
     std::string serverCode;
     std::string joinToken;
     std::string serverName = "MiMITA Server";
+    uint64_t lastWallclockUs = 0;  // steady_clock usec for independent server timing
     float accumulator = 0.0f;
     uint64_t lastHeartbeatMs = 0;
     std::string publicIp;

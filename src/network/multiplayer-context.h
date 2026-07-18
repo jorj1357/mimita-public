@@ -423,7 +423,7 @@ void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPa
 void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
-void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
+void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
 
 // Called from mpTick (defined in multiplayer-chat.cpp)

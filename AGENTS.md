@@ -1,4 +1,14 @@
 Favor deleting code over adding code when both solutions achieve the same result.
+7 18 2026 addition: always maintain this format at the top of files
+// mm dd yyyy, hh mm
+/* purpose
+* fill in purpose of file
+* fill in 2nd line
+* fill in 3rd line
+* fill in what this file DOES NOT do
+* fill in 2nd line
+* fill in 3rd line
+*/
 
 # EXE Safety
 

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -39,7 +40,7 @@ struct ProjectileConfig
     float angularSpeed = 6.0f;
 };
 
-ProjectileConfig projectileConfig(uint8_t weapon)
+std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
 {
     ProjectileConfig cfg;
 
@@ -49,14 +50,14 @@ ProjectileConfig projectileConfig(uint8_t weapon)
     else if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
         weaponId = "grenade_launcher";
     else
-        return cfg;
+        return std::nullopt;
 
     const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
     if (!def)
     {
-        printf("[PROJECTILE CONFIG] weapon=%s NOT FOUND in registry (id=%s) — using fallback defaults\n",
+        printf("[PROJECTILE CONFIG] weapon=%s NOT FOUND in registry (id=%s) — rejecting request\n",
                networkWeaponTypeName(weapon), weaponId);
-        return cfg;
+        return std::nullopt;
     }
 
     cfg.speed = def->projectileSpeed > 0.0f ? def->projectileSpeed : 40.0f;
@@ -74,17 +75,39 @@ ProjectileConfig projectileConfig(uint8_t weapon)
     cfg.splashExponent = cp("splashExponent", 2.0f);
     cfg.knockbackStrength = cp("knockbackStrength", 160.0f);
     cfg.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
-    cfg.gravity = cp("gravity", 0.0f);
-    cfg.drag = cp("drag", 0.0f);
-    cfg.restitution = cp("bounceRestitution", 0.0f);
-    cfg.friction = cp("bounceFriction", 0.0f);
-    cfg.upBias = cp("upBias", 0.0f);
-    cfg.armingDistance = cp("armingDistance", 0.3f);
+    cfg.gravity = cp("gravity", 20.0f);
+    cfg.drag = cp("drag", 0.15f);
+    cfg.restitution = cp("bounceRestitution", 0.35f);
+    cfg.friction = cp("bounceFriction", 0.5f);
+    cfg.upBias = cp("upBias", 4.0f);
+    cfg.armingDistance = cp("armingDistance", 2.0f);
     cfg.armingTime = cp("armingTime", 0.0f);
-    cfg.maxBounceCount = (int)cp("maxBounceCount", 0.0f);
-    cfg.minBounceSpeed = cp("minBounceSpeed", 0.0f);
-    cfg.angularDrag = cp("angularDrag", 0.0f);
+    cfg.maxBounceCount = (int)cp("maxBounceCount", 10.0f);
+    cfg.minBounceSpeed = cp("minBounceSpeed", 0.1f);
+    cfg.angularDrag = cp("angularDrag", 0.3f);
     cfg.angularSpeed = cp("angSpeed", 6.0f);
+
+    // Validate essential config values; reject if critical fields are invalid
+    bool valid = true;
+    if (cfg.speed <= 0.0f || !std::isfinite(cfg.speed))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID speed=%.2f\n", networkWeaponTypeName(weapon), cfg.speed); valid = false; }
+    if (cfg.radius <= 0.0f || !std::isfinite(cfg.radius))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID radius=%.2f\n", networkWeaponTypeName(weapon), cfg.radius); valid = false; }
+    if (cfg.lifetime <= 0.0f || !std::isfinite(cfg.lifetime))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID lifetime=%.2f\n", networkWeaponTypeName(weapon), cfg.lifetime); valid = false; }
+    if (!std::isfinite(cfg.gravity))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID gravity=%.2f\n", networkWeaponTypeName(weapon), cfg.gravity); valid = false; }
+    if (!std::isfinite(cfg.drag))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID drag=%.2f\n", networkWeaponTypeName(weapon), cfg.drag); valid = false; }
+    if (!std::isfinite(cfg.restitution))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID restitution=%.2f\n", networkWeaponTypeName(weapon), cfg.restitution); valid = false; }
+    if (!std::isfinite(cfg.friction))
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID friction=%.2f\n", networkWeaponTypeName(weapon), cfg.friction); valid = false; }
+    if (!std::isfinite(cfg.splashRadius) || cfg.splashRadius <= 0.0f)
+    { printf("[PROJECTILE CONFIG] weapon=%s INVALID splashRadius=%.2f\n", networkWeaponTypeName(weapon), cfg.splashRadius); valid = false; }
+
+    if (!valid)
+        return std::nullopt;
 
     printf("[PROJECTILE CONFIG] weapon=%s speed=%.2f radius=%.2f fireDelay=%.2f "
            "lifetime=%.2f splashRadius=%.2f splashDamage=%.2f gravity=%.2f "
@@ -452,6 +475,49 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     }
 
     ServerPlayer& shooter = shooterIt->second;
+
+    // ── Cache lookup: if this fireSerial was already processed, resend ──
+    for (uint8_t ci = 0; ci < ServerPlayer::MAX_CACHED_FIRE_RESULTS; ++ci)
+    {
+        const auto& cached = shooter.cachedFireResults[ci];
+        if (!cached.valid || cached.fireSerial != request->fireSerial)
+            continue;
+
+        ProjectileFireResultPacket cachedResult{};
+        cachedResult.header.type = PACKET_PROJECTILE_FIRE_RESULT;
+        cachedResult.header.tick = tick;
+        cachedResult.header.playerId = shooter.id;
+        cachedResult.fireSerial = cached.fireSerial;
+        cachedResult.projectileId = cached.projectileId;
+        cachedResult.weapon = cached.weapon;
+        cachedResult.accepted = cached.accepted ? 1 : 0;
+        cachedResult.reason = cached.reason;
+        cachedResult.cooldownRemaining = cached.cooldownRemaining;
+        for (const auto& kv : players)
+        {
+            if (kv.first == shooter.id)
+            {
+                if (kv.second.transport) kv.second.transport->send(&cachedResult, sizeof(cachedResult));
+                else sendto(sock, (const char*)&cachedResult, sizeof(cachedResult), 0,
+                            (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            }
+        }
+        // If accepted and the projectile still exists, resend the spawn to this client
+        if (cached.accepted && cached.projectileId != 0)
+        {
+            auto projIt = projectiles.find(cached.projectileId);
+            if (projIt != projectiles.end())
+            {
+                ProjectileSpawnEventPacket spawn{};
+                spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
+                spawn.header.tick = tick;
+                fillProjectilePose(spawn, projIt->second);
+                serverSendToPlayer(sock, shooter, &spawn, sizeof(spawn));
+            }
+        }
+        return;
+    }
+
     const glm::vec3 origin(request->originX, request->originY, request->originZ);
     const glm::vec3 direction(request->dirX, request->dirY, request->dirZ);
     const float originDistance = finiteVec(origin)
@@ -460,48 +526,56 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     const float directionLength = finiteVec(direction)
         ? glm::length(direction)
         : 0.0f;
-    bool serialNew = request->fireSerial != 0;
-    if (serialNew)
-    {
-        uint8_t checkCount = std::min(shooter.recentProjectileSerialCount, (uint8_t)4);
-        for (uint8_t i = 0; i < checkCount; ++i)
-            if (shooter.recentProjectileSerials[i] == request->fireSerial)
-            {
-                serialNew = false;
-                break;
-            }
-    }
-    const uint8_t equippedWeapon = networkWeaponTypeForSlot(shooter.equippedSlot);
-    const bool weaponEquippedValid = equippedWeapon == request->weapon;
-    const bool cooldownValid = shooter.projectileFireCooldown <= 0.05f; // 50ms grace for network jitter
+    const bool serialNew = request->fireSerial != 0;
+
+    auto cacheResult = [&](bool accepted, uint32_t projId, uint8_t reason, float cooldown) {
+        auto& slot = shooter.cachedFireResults[shooter.nextCachedFireResultSlot];
+        slot.fireSerial = request->fireSerial;
+        slot.accepted = accepted;
+        slot.projectileId = projId;
+        slot.weapon = request->weapon;
+        slot.reason = reason;
+        slot.cooldownRemaining = cooldown;
+        slot.valid = true;
+        shooter.nextCachedFireResultSlot = (shooter.nextCachedFireResultSlot + 1) % ServerPlayer::MAX_CACHED_FIRE_RESULTS;
+    };
+
+    // Tick-based cooldown validation (replaces float cooldown)
+    constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
+    const uint64_t currentTick = tick;
+    const bool cooldownValid = currentTick + COOLDOWN_GRACE_TICKS >= shooter.nextProjectileFireTick;
+    const uint64_t remainingCooldownTicks = shooter.nextProjectileFireTick > currentTick
+        ? shooter.nextProjectileFireTick - currentTick : 0;
+
     const bool directionValid = directionLength >= 0.5f && directionLength <= 1.5f;
     const bool accepted =
         !shooter.dead &&
         serialNew &&
         networkWeaponTypeIsProjectile(request->weapon) &&
-        weaponEquippedValid &&
         cooldownValid &&
         originDistance <= 8.0f &&
         directionValid;
 
     printf("%s [PROJECTILE FIRE REQUEST RX] playerId=%u fireSerial=%u "
            "weapon=%s originDistance=%.2f directionLength=%.2f "
-           "cooldownValid=%d weaponEquippedValid=%d accepted=%d reason=%s\n",
+           "serverTick=%u nextAllowedTick=%llu remainingTicks=%llu "
+           "cooldownValid=%d accepted=%d reason=%s\n",
            serverTimestamp(), shooter.id, request->fireSerial,
            networkWeaponTypeName(request->weapon), originDistance,
-           directionLength, (int)cooldownValid, (int)weaponEquippedValid,
+           directionLength, currentTick,
+           (unsigned long long)shooter.nextProjectileFireTick,
+           (unsigned long long)remainingCooldownTicks,
+           (int)cooldownValid,
            (int)accepted,
            accepted ? "accepted" :
            shooter.dead ? "dead" :
-           !serialNew ? "duplicate-or-stale-serial" :
+           !serialNew ? "zero-serial" :
            !networkWeaponTypeIsProjectile(request->weapon) ? "not-projectile-weapon" :
-           !weaponEquippedValid ? "equipped-weapon-mismatch" :
            !cooldownValid ? "cooldown" :
            originDistance > 8.0f ? "origin-too-far" : "invalid-direction");
 
     if (!accepted)
     {
-        // Send rejection result for every structurally valid request from a known player
         ProjectileFireResultPacket reject{};
         reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
         reject.header.tick = tick;
@@ -509,27 +583,18 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
         reject.fireSerial = request->fireSerial;
         reject.weapon = request->weapon;
         reject.accepted = 0;
-        reject.cooldownRemaining = shooter.projectileFireCooldown;
+        reject.cooldownRemaining = (float)remainingCooldownTicks / 60.0f;
 
         if (shooter.dead) reject.reason = PROJECTILE_FIRE_DEAD;
         else if (!serialNew) reject.reason = PROJECTILE_FIRE_ALREADY_ACCEPTED;
         else if (!networkWeaponTypeIsProjectile(request->weapon)) reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
-        else if (!weaponEquippedValid) reject.reason = PROJECTILE_FIRE_WEAPON_MISMATCH;
         else if (!cooldownValid) reject.reason = PROJECTILE_FIRE_COOLDOWN;
         else if (originDistance > 8.0f) reject.reason = PROJECTILE_FIRE_ORIGIN_INVALID;
         else reject.reason = PROJECTILE_FIRE_DIRECTION_INVALID;
 
-        for (const auto& kv : players)
-        {
-            if (kv.first == shooter.id)
-            {
-                if (kv.second.transport)
-                    kv.second.transport->send(&reject, sizeof(reject));
-                else
-                    sendto(sock, (const char*)&reject, sizeof(reject), 0,
-                           (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-            }
-        }
+        cacheResult(false, 0, reject.reason, reject.cooldownRemaining);
+
+        serverSendToPlayer(sock, shooter, &reject, sizeof(reject));
         {
             auto& _log = ::StructuredLogger::instance();
             if (_log.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
@@ -541,11 +606,12 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
                     + "_F" + std::to_string(request->fireSerial) + "_J0";
                 e.reason = "rejected";
                 char buf[512]; std::snprintf(buf, sizeof(buf),
-                    "playerId=%u fireSerial=%u weapon=%s serialNew=%d coordValid=%d weaponOk=%d "
-                    "dirLen=%.2f originDist=%.2f cooldown=%.3f",
+                    "playerId=%u fireSerial=%u weapon=%s serialNew=%d "
+                    "dirLen=%.2f originDist=%.2f cooldownRemainingTicks=%llu",
                     shooter.id, request->fireSerial, networkWeaponTypeName(request->weapon),
-                    (int)serialNew, (int)cooldownValid, (int)weaponEquippedValid,
-                    directionLength, originDistance, shooter.projectileFireCooldown);
+                    (int)serialNew,
+                    directionLength, originDistance,
+                    (unsigned long long)remainingCooldownTicks);
                 e.message = buf;
                 _log.write(e);
             }
@@ -553,7 +619,31 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
         return;
     }
 
-    const ProjectileConfig cfg = projectileConfig(request->weapon);
+    auto cfgOpt = projectileConfig(request->weapon);
+    if (!cfgOpt)
+    {
+        // Config missing or invalid — reject without consuming state
+        ProjectileFireResultPacket reject{};
+        reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
+        reject.header.tick = tick;
+        reject.header.playerId = shooter.id;
+        reject.fireSerial = request->fireSerial;
+        reject.weapon = request->weapon;
+        reject.accepted = 0;
+        reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
+        reject.cooldownRemaining = shooter.projectileFireCooldown;
+        cacheResult(false, 0, PROJECTILE_FIRE_CONFIG_MISSING, shooter.projectileFireCooldown);
+        serverSendToPlayer(sock, shooter, &reject, sizeof(reject));
+        return;
+    }
+    const ProjectileConfig& cfg = *cfgOpt;
+    // Update equipped slot from weapon type to handle equip-input/fire-request race
+    if (networkWeaponTypeIsProjectile(request->weapon))
+    {
+        int slotForWeapon = slotForNetworkWeaponType(request->weapon);
+        if (slotForWeapon > 0)
+            shooter.equippedSlot = slotForWeapon;
+    }
     const glm::vec3 dir = glm::normalize(direction);
 
     ServerProjectile projectile;
@@ -563,12 +653,10 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.ownerPlayerId = shooter.id;
     projectile.fireSerial = request->fireSerial;
     projectile.weaponType = request->weapon;
-    // Match client spawn position exactly (no 0.5f forward offset)
     projectile.position = origin;
     projectile.previousPosition = origin;
     projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    // Deterministic angular velocity for grenades (no rand())
     if (request->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
     {
         glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
@@ -599,16 +687,19 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.spawnTick = tick;
 
     shooter.lastProjectileFireSerial = request->fireSerial;
-    shooter.recentProjectileSerials[shooter.recentProjectileSerialCount % 4] = request->fireSerial;
-    if (shooter.recentProjectileSerialCount < 255)
-        shooter.recentProjectileSerialCount++;
-    shooter.projectileFireCooldown = cfg.fireDelay;
+    // Tick-based cooldown: ceil(fireDelay * 60) ticks
+    uint32_t cooldownTicks = (uint32_t)std::ceil(cfg.fireDelay * 60.0f);
+    shooter.nextProjectileFireTick = (uint64_t)tick + cooldownTicks;
+    shooter.projectileFireCooldown = cfg.fireDelay; // kept for legacy snapshot serialization
 
     ProjectileSpawnEventPacket spawn{};
     spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
     spawn.header.tick = tick;
     fillProjectilePose(spawn, projectile);
     projectiles[projectile.id] = projectile;
+
+    // Cache the accepted result BEFORE sending so retries can be answered idempotently
+    cacheResult(true, projectile.id, PROJECTILE_FIRE_ACCEPTED, shooter.projectileFireCooldown);
 
     {
         auto& _lg = ::StructuredLogger::instance();
@@ -697,17 +788,7 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     result.accepted = 1;
     result.reason = PROJECTILE_FIRE_ACCEPTED;
     result.cooldownRemaining = shooter.projectileFireCooldown;
-    for (const auto& kv : players)
-    {
-        if (kv.first == shooter.id)
-        {
-            if (kv.second.transport)
-                kv.second.transport->send(&result, sizeof(result));
-            else
-                sendto(sock, (const char*)&result, sizeof(result), 0,
-                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-        }
-    }
+    serverSendToPlayer(sock, shooter, &result, sizeof(result));
 }
 
 void tickServerProjectiles(SOCKET sock,

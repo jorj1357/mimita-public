@@ -1,3 +1,9 @@
+/**
+ * 7 18 2026 0850
+ * purpose: what does this file even do
+ * we need to put purposes at the tops of files always and maintain them 
+ */
+
 #include "weapon-system.h"
 #include "physics/movement/physics-collision.h"
 #include "weapon-audio.h"

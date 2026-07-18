@@ -366,17 +366,169 @@ int main()
     pump(second, MimitaNet::nowMs() + 120);
     bool livingNoEffect = entityHealth(first, first.id) == 100;
 
+    // ── Test 5: Grenade projectile fire + idempotent retry ────────────
+    bool grenadeTestPassed = false;
+    bool grenadeIdempotentPassed = false;
+    bool grenadeRejectionPassed = false;
+    bool grenadeSecondAcceptPassed = false;
+    uint32_t firstProjectileId = 0;
+    uint32_t secondProjectileId = 0;
+
+    // Helper: send ProjectileFireRequestPacket for grenade launcher
+    auto sendGrenadeRequest = [&](TestClient& client, uint32_t serial,
+                                  float ox, float oy, float oz,
+                                  float dx, float dy, float dz) {
+        MimitaNet::ProjectileFireRequestPacket req{};
+        req.header.type = MimitaNet::PACKET_PROJECTILE_FIRE_REQUEST;
+        req.header.playerId = client.id;
+        req.fireSerial = serial;
+        req.lastServerTick = 0;
+        req.weapon = MimitaNet::NETWORK_WEAPON_GRENADE_LAUNCHER;
+        float len = std::sqrt(dx*dx + dy*dy + dz*dz);
+        if (len > 0.001f) { dx /= len; dy /= len; dz /= len; }
+        req.originX = ox; req.originY = oy; req.originZ = oz;
+        req.dirX = dx; req.dirY = dy; req.dirZ = dz;
+        sendto(client.socket, (const char*)&req, sizeof(req), 0,
+               (const sockaddr*)&server, sizeof(server));
+    };
+
+    // Helper: pump and collect projectile result
+    struct PendingResult {
+        uint32_t fireSerial = 0;
+        uint32_t projectileId = 0;
+        bool accepted = false;
+        uint8_t reason = 0;
+        bool received = false;
+    };
+    PendingResult lastResult;
+    auto pumpExpectResult = [&](TestClient& client, uint32_t serial,
+                                uint64_t timeoutMs) -> bool {
+        const uint64_t deadline = MimitaNet::nowMs() + timeoutMs;
+        while (MimitaNet::nowMs() < deadline)
+        {
+            char buffer[16384];
+            sockaddr_in from{};
+            int fromLength = sizeof(from);
+            int bytes = recvfrom(client.socket, buffer, sizeof(buffer), 0,
+                                 (sockaddr*)&from, &fromLength);
+            if (bytes <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
+            auto* header = reinterpret_cast<MimitaNet::PacketHeader*>(buffer);
+            if (bytes < (int)sizeof(*header) ||
+                header->magic != MimitaNet::PROTOCOL_MAGIC ||
+                header->version != MimitaNet::PROTOCOL_VERSION)
+                continue;
+            if (header->type == MimitaNet::PACKET_PROJECTILE_FIRE_RESULT &&
+                bytes >= (int)sizeof(MimitaNet::ProjectileFireResultPacket))
+            {
+                auto* result = reinterpret_cast<MimitaNet::ProjectileFireResultPacket*>(buffer);
+                if (result->fireSerial == serial)
+                {
+                    lastResult.fireSerial = result->fireSerial;
+                    lastResult.projectileId = result->projectileId;
+                    lastResult.accepted = result->accepted != 0;
+                    lastResult.reason = result->reason;
+                    lastResult.received = true;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // Equip grenade launcher (slot 8) by sending input packet with equipSerial
+    {
+        MimitaNet::InputPacket input{};
+        input.header.type = MimitaNet::PACKET_INPUT;
+        input.header.playerId = first.id;
+        input.equipSlot = 8;
+        input.equipSerial = 42;
+        sendto(first.socket, (const char*)&input, sizeof(input), 0,
+               (const sockaddr*)&server, sizeof(server));
+    }
+
+    // Test 5a: Send serial 1, expect accepted
+    const float origin[3] = {0.0f, 0.0f, 32.0f};
+    sendGrenadeRequest(first, 1, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
+    if (pumpExpectResult(first, 1, 2000) && lastResult.accepted && lastResult.projectileId != 0)
+    {
+        grenadeTestPassed = true;
+        firstProjectileId = lastResult.projectileId;
+    }
+
+    // Test 5b: Resend serial 1, expect same projectileId (idempotent)
+    sendGrenadeRequest(first, 1, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
+    if (pumpExpectResult(first, 1, 2000) && lastResult.accepted)
+    {
+        grenadeIdempotentPassed = (lastResult.projectileId == firstProjectileId);
+    }
+
+    // Test 5c: Send serial 2 immediately (cooldown active), expect rejection
+    sendGrenadeRequest(first, 2, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
+    if (pumpExpectResult(first, 2, 2000) && !lastResult.accepted)
+    {
+        grenadeRejectionPassed = true;
+    }
+
+    // Test 5d: Wait for cooldown (~1s), send serial 3, expect new projectile
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    sendGrenadeRequest(first, 3, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
+    if (pumpExpectResult(first, 3, 2000) && lastResult.accepted && lastResult.projectileId != 0)
+    {
+        grenadeSecondAcceptPassed = (lastResult.projectileId != firstProjectileId);
+        secondProjectileId = lastResult.projectileId;
+    }
+
+    // Test 5e: Verify state packets arrive with position changes
+    bool sawStatePackets = false;
+    {
+        const uint64_t stateDeadline = MimitaNet::nowMs() + 3000;
+        int stateCount = 0;
+        while (MimitaNet::nowMs() < stateDeadline && stateCount < 3)
+        {
+            char buffer[16384];
+            sockaddr_in from{};
+            int fromLength = sizeof(from);
+            int bytes = recvfrom(first.socket, buffer, sizeof(buffer), 0,
+                                 (sockaddr*)&from, &fromLength);
+            if (bytes <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue; }
+            auto* header = reinterpret_cast<MimitaNet::PacketHeader*>(buffer);
+            if (bytes < (int)sizeof(*header) ||
+                header->magic != MimitaNet::PROTOCOL_MAGIC)
+                continue;
+            if (header->type == MimitaNet::PACKET_PROJECTILE_STATE_EVENT &&
+                bytes >= (int)sizeof(MimitaNet::ProjectileStateEventPacket))
+            {
+                auto* state = reinterpret_cast<MimitaNet::ProjectileStateEventPacket*>(buffer);
+                if (state->projectileId == secondProjectileId)
+                    ++stateCount;
+            }
+            else if (header->type == MimitaNet::PACKET_PROJECTILE_EXPLODE_EVENT &&
+                     bytes >= (int)sizeof(MimitaNet::ProjectileExplodeEventPacket))
+            {
+                auto* expl = reinterpret_cast<MimitaNet::ProjectileExplodeEventPacket*>(buffer);
+                if (expl->projectileId == secondProjectileId)
+                    ++stateCount; // count explosion as final state
+            }
+        }
+        sawStatePackets = stateCount >= 3;
+    }
+
     std::printf(
         "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u "
         "movement=%d spawned=%d/%d combatDeath=%d autoRespawn=%d "
-        "instantRespawn=%d noDouble=%d livingNoEffect=%d\n",
+        "instantRespawn=%d noDouble=%d livingNoEffect=%d "
+        "grenadeAccept=%d grenadeIdempotent=%d grenadeReject=%d grenadeSecondAccept=%d "
+        "statePackets=%d firstProjId=%u secondProjId=%u\n",
         first.id, first.approvedName.c_str(),
         second.id, second.approvedName.c_str(),
         first.snapshot.playerCount, first.snapshot.npcCount,
         (int)movementReplicated,
         (int)firstSawSpawn, (int)secondSawSpawn,
         (int)sawDeath, (int)sawAutoRespawn,
-        (int)sawInstantRespawn, (int)noDoubleRespawn, (int)livingNoEffect);
+        (int)sawInstantRespawn, (int)noDoubleRespawn, (int)livingNoEffect,
+        (int)grenadeTestPassed, (int)grenadeIdempotentPassed,
+        (int)grenadeRejectionPassed, (int)grenadeSecondAcceptPassed,
+        (int)sawStatePackets, firstProjectileId, secondProjectileId);
 
     disconnect(first, server);
     disconnect(second, server);
@@ -384,5 +536,8 @@ int main()
     return movementReplicated &&
            firstSawSpawn && secondSawSpawn &&
            sawAutoRespawn && sawInstantRespawn &&
-           noDoubleRespawn && livingNoEffect ? 0 : 7;
+           noDoubleRespawn && livingNoEffect &&
+           grenadeTestPassed && grenadeIdempotentPassed &&
+           grenadeRejectionPassed && grenadeSecondAcceptPassed &&
+           sawStatePackets ? 0 : 7;
 }
