@@ -73,12 +73,6 @@ void doSigninPassword(const std::string& password)
     }
 
     GameBootstrap bootstrap = getGameBootstrap(login.accessToken);
-    if (!bootstrap.valid)
-    {
-        term.addLog("[AUTH] Signed in, but account data failed to load.");
-        return;
-    }
-
     AuthController::instance().updateFromLoginResult(
         login.accountId,
         login.username,
@@ -86,13 +80,34 @@ void doSigninPassword(const std::string& password)
         login.refreshToken,
         true);
     AuthController::instance().runtime().state = AuthState::SignedIn;
-    AuthSystem::instance().applyBootstrap(login.accessToken, bootstrap);
+
+    if (bootstrap.valid)
+    {
+        AuthSystem::instance().applyBootstrap(login.accessToken, bootstrap);
+    }
+    else
+    {
+        GameUserInfo info = validateSession(login.accessToken);
+        if (!info.valid)
+        {
+            info.valid = true;
+            info.id = login.accountId;
+            info.username = login.username;
+            info.displayName = login.username;
+            info.supporterTier = login.supporterTier;
+            info.role = login.permissions.empty() ? "user" : login.permissions[0];
+        }
+        AuthSystem::instance().finishAuth(login.accessToken, &info, false);
+        term.addLog("[AUTH] New account bootstrap unavailable; using login account data.");
+    }
     if (gpPlayer)
         gpPlayer->username = AuthSystem::instance().displayName();
 
-    term.addLog("[AUTH] Signed in as " + bootstrap.user.username);
-    term.addLog("[AUTH] This exe is now linked to account id " + std::to_string(bootstrap.user.id));
-    term.addLog("[AUTH] MMR: " + std::to_string(bootstrap.stats.currentMmr));
+    const AuthUser& user = AuthSystem::instance().user();
+    term.addLog("[AUTH] Signed in as " + user.username);
+    term.addLog("[AUTH] Successfully linked Mimita site account to this Mimita.exe client.");
+    term.addLog("[AUTH] Account id: " + std::to_string(user.id));
+    term.addLog("[AUTH] MMR: " + std::to_string(user.stats.currentMmr));
     clearPendingSignin();
 }
 
@@ -136,7 +151,12 @@ void registerAuthCommands()
             GameAccountLookupResult lookup = gameLookupAccount(identifier);
             if (!lookup.ok)
             {
-                term.addLog("[AUTH] Account lookup failed: " + lookup.errorMessage);
+                gPendingIdentifier = identifier;
+                gPendingUsername.clear();
+                gAwaitingPassword = true;
+                gAwaitingSignoutConfirm = false;
+                term.addLog("[AUTH] Account lookup unavailable; continuing to password sign in.");
+                term.addLog("[AUTH] Enter password with: signinpw <password>");
                 return;
             }
             if (!lookup.exists)

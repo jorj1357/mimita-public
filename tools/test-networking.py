@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# 07 19 2026, 10 38
+# purpose
+# Runs MiMITA networking validation suites from one command.
+# Preserves caller-selected build, relay, and same-machine harness options.
+# Captures subprocess logs for deterministic pass/fail inspection.
+# Does NOT implement game networking, packet parsing, or ICE signaling.
+# Does NOT hide child-process failures or turn timeouts into success.
+# Does NOT own the per-suite assertions.
+
 import argparse
 import datetime as _dt
 import os
@@ -91,6 +100,8 @@ def run_ice_harness(args, log_dir):
         command.append("--disable-relay")
     if args.force_relay:
         command.append("--force-relay")
+    if args.same_machine:
+        command.append("--same-machine")
     if args.verbose:
         command.append("--verbose")
     if args.keep_logs:
