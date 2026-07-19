@@ -1,12 +1,25 @@
+// 07 19 2026, 09 29
+/* purpose
+* Shared deterministic projectile physics declarations.
+* Defines projectile state, config, collision results, and world query interface.
+* Used by server authority, client prediction, and deterministic tests.
+* Does NOT send packets, apply damage, spawn effects, or own weapon policy.
+* Does NOT define map geometry ownership or networking delivery.
+* Does NOT decide whether an impact becomes an explosion.
+*/
+
 #pragma once
 
 #include <cstdint>
+#include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "physics/physics-types.h"
+
 // ── Shared projectile simulation ─────────────────────────────────────
-// Pure physics: gravity, drag, angular velocity, collision, bounce, fuse.
-// No game logic (ammo, damage, effects, packets).
+// Pure physics: gravity, drag, angular velocity, collision, bounce.
+// No game logic (ammo, damage, effects, packets, weapon names).
 // Called by both server (authoritative) and client (predicted).
 
 struct ProjectilePhysicsState
@@ -32,36 +45,55 @@ struct ProjectilePhysicsConfig
     float lifetime = 5.0f;
     float restitution = 0.0f;
     float friction = 0.0f;
-    float upBias = 0.0f;
     float armingDistance = 0.3f;
     int maxBounceCount = 0;
     float minBounceSpeed = 0.0f;
+    bool bounceEnabled = false;
 };
 
-// Abstract collision world interface (server and client provide adapters)
-struct CollisionTriangle
+struct SweptPlayerCapsule
 {
-    glm::vec3 a{0.0f}, b{0.0f}, c{0.0f};
-    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    uint32_t playerId = 0;
+    uint32_t spawnGeneration = 0;
+    glm::vec3 a{0.0f};
+    glm::vec3 b{0.0f};
+    float radius = 0.0f;
+};
+
+enum class ProjectileCollisionType : uint8_t
+{
+    None,
+    WorldBounce,
+    WorldImpact,
+    PlayerImpact,
+    LifetimeExpired
+};
+
+struct ProjectileStepResult
+{
+    ProjectileCollisionType type = ProjectileCollisionType::None;
+    glm::vec3 hitPosition{0.0f};
+    glm::vec3 hitNormal{0.0f, 0.0f, 1.0f};
+    float impactSpeed = 0.0f;
+    float travelDistance = 0.0f;
+    uint32_t hitPlayerId = 0;
+    uint32_t hitPlayerSpawnGeneration = 0;
 };
 
 struct CollisionWorldView
 {
     virtual ~CollisionWorldView() = default;
-    // Gather candidate triangle indices near a sphere at `center` with `radius`
-    virtual void querySphereTriangles(
-        const glm::vec3& center, float radius,
+    virtual void queryTrianglesSwept(
+        const glm::vec3& from, const glm::vec3& to, float radius,
         std::vector<int>& outIndices) const = 0;
-    // Access triangle by index
     virtual const CollisionTriangle& triangleAt(int index) const = 0;
-    // Total triangle count
     virtual int triangleCount() const = 0;
+    virtual void queryPlayerCapsulesSwept(
+        const glm::vec3& from, const glm::vec3& to, float radius,
+        std::vector<SweptPlayerCapsule>& out) const = 0;
 };
 
-// Step one projectile forward by `fixedDt` seconds (typically 1/60).
-// Returns true if the projectile is still alive after this step.
-// Sets `state.exploded = true` when lifetime expires.
-bool simulateProjectileTick(
+ProjectileStepResult simulateProjectileTick(
     ProjectilePhysicsState& state,
     const ProjectilePhysicsConfig& config,
     const CollisionWorldView& world,

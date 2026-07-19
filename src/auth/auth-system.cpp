@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Maintain the active Mimita account session inside the exe.
+* Restore, validate, refresh, and clear account state for gameplay.
+* Cache safe profile display data for fast menu startup.
+* DOES NOT save passwords or own website credential verification.
+* DOES NOT define database tables or backend auth policy.
+* DOES NOT render login form widgets.
+*/
+
 #include "auth/auth-system.h"
 #include "auth/auth-token.h"
 #include "website/api-client.h"
@@ -93,24 +103,10 @@ void AuthSystem::tickValidate()
 
 void AuthSystem::validateStoredToken()
 {
-    GameUserInfo info = validateSession(mUser.sessionToken);
-    if (info.valid)
+    GameBootstrap bootstrap = getGameBootstrap(mUser.sessionToken);
+    if (bootstrap.valid)
     {
-        mState = AuthState::Authenticated;
-        if (!info.username.empty()) {
-            applyInfo(mUser, info);
-            Debug::warn(Debug::Category::Auth,
-                "session restored: username=%s displayName=%s userId=%d\n",
-                info.username.c_str(), info.displayName.c_str(), info.id);
-        } else {
-            Debug::warn(Debug::Category::Auth,
-                "server returned empty user data, preserving cached profile: %s\n",
-                mUser.username.c_str());
-        }
-        if (gpPlayer)
-            gpPlayer->username = displayName();
-        cacheAndFinish(mUser);
-        refreshStats();
+        applyBootstrap(mUser.sessionToken, bootstrap);
     }
     else
     {
@@ -130,6 +126,25 @@ void AuthSystem::applyUserInfo(const GameUserInfo& info)
     storeProfileCache({
         info.id, info.username, info.displayName, info.avatarUrl, info.supporterTier
     });
+}
+
+void AuthSystem::applyBootstrap(const std::string& token, const GameBootstrap& bootstrap)
+{
+    if (!bootstrap.valid) return;
+    mUser.sessionToken = token;
+    applyInfo(mUser, bootstrap.user);
+    mUser.stats = bootstrap.stats;
+    mUser.settings = bootstrap.settings;
+    mUser.inventory = bootstrap.inventory;
+    mUser.titles = bootstrap.titles;
+    mUser.loadout = bootstrap.loadout;
+    mState = AuthState::Authenticated;
+    if (gpPlayer)
+        gpPlayer->username = displayName();
+    cacheAndFinish(mUser);
+    Debug::warn(Debug::Category::Auth,
+        "account bootstrap loaded: username=%s userId=%d mmr=%d\n",
+        mUser.username.c_str(), mUser.id, mUser.stats.currentMmr);
 }
 
 void AuthSystem::fetchFullProfile()
@@ -268,9 +283,10 @@ GameUserInfo AuthSystem::finishTokenExchange(const std::string& sessionToken)
     return validateSession(sessionToken);
 }
 
-void AuthSystem::finishAuth(const std::string& token, const GameUserInfo* userInfo)
+void AuthSystem::finishAuth(const std::string& token, const GameUserInfo* userInfo, bool persistSession)
 {
-    storeSessionToken(token);
+    if (persistSession)
+        storeSessionToken(token);
     mUser.sessionToken = token;
 
     int loggedIn = 0;
@@ -333,6 +349,7 @@ void AuthSystem::finishAuth(const std::string& token, const GameUserInfo* userIn
 void AuthSystem::logout()
 {
     clearSessionToken();
+    clearRefreshToken();
     clearProfileCache();
     mState = AuthState::NeedsLogin;
     mUser = {};
@@ -346,6 +363,7 @@ void AuthSystem::logout()
 void AuthSystem::clearSession()
 {
     clearSessionToken();
+    clearRefreshToken();
     clearProfileCache();
     mUser.sessionToken.clear();
     mState = AuthState::NeedsLogin;
