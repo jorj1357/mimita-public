@@ -173,6 +173,7 @@ static bool waitForState(IceAgent& agent, IceAgentState target, int timeoutMs,
 bool runIceHostOnly(const IceTestOptions& opts)
 {
     const uint64_t startedMs = GetTickCount64();
+    IceAgent agent;
     auto elapsedMs = [&]() -> unsigned long long {
         return (unsigned long long)(GetTickCount64() - startedMs);
     };
@@ -212,7 +213,6 @@ bool runIceHostOnly(const IceTestOptions& opts)
         logFailure("config", "no-turn-password"); return false;
     }
 
-    IceAgent agent;
     if (!agent.initialize(iceConfig)) { logFailure("init", "init-failed"); return false; }
     if (!agent.gatherCandidates()) { logFailure("gather", "gather-failed"); return false; }
     if (!waitForState(agent, IceAgentState::GatheringComplete, 15000)) {
