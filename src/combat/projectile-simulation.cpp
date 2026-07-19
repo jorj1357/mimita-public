@@ -223,7 +223,12 @@ static bool sweepSphereCapsule(
         {
             outT = 0.0f;
             outPoint = closest;
-            outNormal = (dist > 1e-6f) ? glm::normalize(diff) : glm::vec3(0.0f, 0.0f, 1.0f);
+            if (dist > 1e-6f)
+                outNormal = glm::normalize(diff);
+            else if (velLen > 1e-10f)
+                outNormal = -glm::normalize(vel);
+            else
+                outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
             return true;
         }
     }
@@ -300,7 +305,13 @@ static bool sweepSphereCapsule(
     Qs = closestPointOnSegment(Pt, capA, capB);
     outPoint = Qs;
     diff = Pt - Qs;
-    outNormal = (glm::length(diff) > 1e-6f) ? glm::normalize(diff) : glm::vec3(0.0f, 0.0f, 1.0f);
+    float diffLen = glm::length(diff);
+    if (diffLen > 1e-6f)
+        outNormal = glm::normalize(diff);
+    else if (velLen > 1e-10f)
+        outNormal = -glm::normalize(vel);
+    else
+        outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
     return true;
 }
 

@@ -56,6 +56,82 @@ function profileFromUser(u) {
     }
 }
 
+function defaultInventory() {
+    return {
+        version: 1,
+        items: [],
+        equipped: {}
+    }
+}
+
+function defaultLoadout() {
+    return {
+        version: 1,
+        weapons: {},
+        cosmetics: {}
+    }
+}
+
+function roleTitleForUser(user) {
+    if (user.role === "owner") return "owner"
+    if (user.role === "admin") return "admin"
+    if (user.role === "moderator") return "moderator"
+    if (user.supporter_tier && user.supporter_tier !== "free") return user.supporter_tier
+    return "neutral"
+}
+
+function defaultTitles(user) {
+    const baseTitle = roleTitleForUser(user)
+    return {
+        version: 1,
+        unlocked: [baseTitle],
+        equipped: baseTitle,
+        effects: {
+            owner: { color: "black_red_phase", period_ticks: 60 },
+            admin: { color: "black" },
+            moderator: { color: "blue" },
+            neutral: { color: "grey" },
+            vip: { color: "supporter" },
+            super_vip: { color: "rainbow" },
+            ultra_vip: { color: "rainbow_weird" }
+        }
+    }
+}
+
+function withDefaultTitle(user, titles) {
+    const result = titles && typeof titles === "object" ? { ...titles } : defaultTitles(user)
+    const baseTitle = roleTitleForUser(user)
+    const unlocked = Array.isArray(result.unlocked) ? result.unlocked : []
+    if (!unlocked.includes(baseTitle)) unlocked.push(baseTitle)
+    result.version = result.version || 1
+    result.unlocked = unlocked
+    result.equipped = result.equipped || baseTitle
+    return result
+}
+
+async function getAccountData(user) {
+    const [statsResult, settingsResult, inventoryResult, loadoutResult, titlesResult] = await Promise.all([
+        pool.query(
+            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
+                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak
+             FROM game_stats WHERE user_id = $1`,
+            [user.id]
+        ),
+        pool.query(`SELECT settings_json FROM user_settings WHERE user_id = $1`, [user.id]),
+        pool.query(`SELECT inventory_json FROM user_inventory WHERE user_id = $1`, [user.id]),
+        pool.query(`SELECT loadout_json FROM user_loadouts WHERE user_id = $1`, [user.id]),
+        pool.query(`SELECT titles_json FROM user_titles WHERE user_id = $1`, [user.id])
+    ])
+
+    return {
+        stats: statsResult.rowCount ? statsResult.rows[0] : defaultStats(),
+        settings: settingsResult.rowCount ? settingsResult.rows[0].settings_json : {},
+        inventory: inventoryResult.rowCount ? inventoryResult.rows[0].inventory_json : defaultInventory(),
+        loadout: loadoutResult.rowCount ? loadoutResult.rows[0].loadout_json : defaultLoadout(),
+        titles: withDefaultTitle(user, titlesResult.rowCount ? titlesResult.rows[0].titles_json : null)
+    }
+}
+
 async function authenticateToken(req, res, next) {
     try {
         let token = parseCookies(req)[sessionCookieName]
@@ -98,17 +174,7 @@ async function authenticateToken(req, res, next) {
 
 router.get("/game/me", authenticateToken, async (req, res, next) => {
     try {
-        const statsResult = await pool.query(
-            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
-                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak
-             FROM game_stats WHERE user_id = $1`,
-            [req.user.id]
-        )
-
-        const settingsResult = await pool.query(
-            `SELECT settings_json FROM user_settings WHERE user_id = $1`,
-            [req.user.id]
-        )
+        const data = await getAccountData(req.user)
 
         res.json({
             success: true,
@@ -119,28 +185,105 @@ router.get("/game/me", authenticateToken, async (req, res, next) => {
                 supporter_tier: req.user.supporter_tier || "free"
             },
             profile: profileFromUser(req.user),
-            stats: statsResult.rowCount ? statsResult.rows[0] : defaultStats(),
-            settings: settingsResult.rowCount ? settingsResult.rows[0].settings_json : {},
+            stats: data.stats,
+            settings: data.settings,
             avatar: {
                 avatar_url: req.user.avatar_url || "",
                 avatar_data: req.user.avatar_data || null
             },
-            inventory: {
-                version: 1,
-                items: [],
-                equipped: {}
-            },
-            titles: {
-                version: 1,
-                unlocked: [],
-                equipped: ""
-            },
-            loadout: {
-                version: 1,
-                weapons: {},
-                cosmetics: {}
-            }
+            inventory: data.inventory,
+            titles: data.titles,
+            loadout: data.loadout
         })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+router.get("/game/inventory", authenticateToken, async (req, res, next) => {
+    try {
+        const result = await pool.query(
+            `SELECT inventory_json FROM user_inventory WHERE user_id = $1`,
+            [req.user.id]
+        )
+        res.json({ success: true, inventory: result.rowCount ? result.rows[0].inventory_json : defaultInventory() })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+router.put("/game/inventory", authenticateToken, async (req, res, next) => {
+    try {
+        const inventory = req.body.inventory || defaultInventory()
+        inventory.version = inventory.version || 1
+        await pool.query(
+            `INSERT INTO user_inventory (user_id, inventory_json, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET inventory_json = $2, updated_at = NOW()`,
+            [req.user.id, JSON.stringify(inventory)]
+        )
+        res.json({ success: true, inventory })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+router.get("/game/loadout", authenticateToken, async (req, res, next) => {
+    try {
+        const result = await pool.query(
+            `SELECT loadout_json FROM user_loadouts WHERE user_id = $1`,
+            [req.user.id]
+        )
+        res.json({ success: true, loadout: result.rowCount ? result.rows[0].loadout_json : defaultLoadout() })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+router.post("/game/loadout", authenticateToken, async (req, res, next) => {
+    try {
+        const loadout = req.body.loadout || defaultLoadout()
+        loadout.version = loadout.version || 1
+        await pool.query(
+            `INSERT INTO user_loadouts (user_id, loadout_json, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET loadout_json = $2, updated_at = NOW()`,
+            [req.user.id, JSON.stringify(loadout)]
+        )
+        res.json({ success: true, loadout })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+router.get("/game/titles", authenticateToken, async (req, res, next) => {
+    try {
+        const result = await pool.query(
+            `SELECT titles_json FROM user_titles WHERE user_id = $1`,
+            [req.user.id]
+        )
+        res.json({ success: true, titles: withDefaultTitle(req.user, result.rowCount ? result.rows[0].titles_json : null) })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
+router.post("/game/titles", authenticateToken, async (req, res, next) => {
+    try {
+        const titles = withDefaultTitle(req.user, req.body.titles || defaultTitles(req.user))
+        await pool.query(
+            `INSERT INTO user_titles (user_id, titles_json, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET titles_json = $2, updated_at = NOW()`,
+            [req.user.id, JSON.stringify(titles)]
+        )
+        res.json({ success: true, titles })
     }
     catch (error) {
         next(error)

@@ -436,6 +436,174 @@ static void testNearMiss()
     PASS();
 }
 
+// ── Test 13: Degenerate point capsule — direct hit ───────────────────
+
+static void testDegenerateCapsuleHit()
+{
+    TEST("degenerate point capsule direct hit");
+
+    // A point capsule with a==b, simulating vertex via sweepSphereCapsule
+    class PointWorld : public CollisionWorldView {
+    public:
+        CollisionTriangle tri[1];
+        SweptPlayerCapsule cap;
+        PointWorld() {
+            tri[0].a = glm::vec3(0,0,-100); tri[0].b = glm::vec3(1,0,-100);
+            tri[0].c = glm::vec3(0,1,-100); tri[0].normal = glm::vec3(0,0,1);
+            cap.playerId = 17; cap.spawnGeneration = 3;
+            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,0); // a == b
+            cap.radius = 0.0f; // degenerate: zero-length segment, zero cap radius
+        }
+        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {}
+        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+        int triangleCount() const override { return 0; }
+        void queryPlayerCapsulesSwept(const glm::vec3& f, const glm::vec3& t, float r,
+                                      std::vector<SweptPlayerCapsule>& out) const override {
+            out = {cap};
+        }
+    };
+
+    PointWorld world;
+    ProjectilePhysicsConfig cfg;
+    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+
+    ProjectilePhysicsState state;
+    state.position = glm::vec3(0.0f, 0.0f, -5.0f);
+    state.velocity = glm::vec3(0.0f, 0.0f, 30.0f);
+
+    ProjectileStepResult result;
+    for (int t = 0; t < 10; ++t)
+    {
+        result = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+        if (result.type == ProjectileCollisionType::PlayerImpact)
+            break;
+    }
+
+    CHECK(result.type == ProjectileCollisionType::PlayerImpact,
+          "expected PlayerImpact, got %d", (int)result.type);
+    CHECK(result.hitPlayerId == 17,
+          "expected playerId 17, got %u", result.hitPlayerId);
+    CHECK(result.hitPlayerSpawnGeneration == 3,
+          "expected spawnGen 3, got %u", result.hitPlayerSpawnGeneration);
+    CHECK(std::isfinite(result.hitPosition.x) && std::isfinite(result.hitPosition.y) && std::isfinite(result.hitPosition.z),
+          "hitPosition not finite");
+    CHECK(std::isfinite(result.hitNormal.x) && std::isfinite(result.hitNormal.y) && std::isfinite(result.hitNormal.z),
+          "hitNormal not finite");
+    float nl = glm::length(result.hitNormal);
+    CHECK(std::fabs(nl - 1.0f) < 1e-4f,
+          "normal length %.6f not approximately 1", nl);
+
+    PASS();
+}
+
+// ── Test 14: Degenerate point capsule — near miss ───────────────────
+
+static void testDegenerateCapsuleMiss()
+{
+    TEST("degenerate point capsule near miss");
+
+    class PointWorld : public CollisionWorldView {
+    public:
+        CollisionTriangle tri[1];
+        SweptPlayerCapsule cap;
+        PointWorld() {
+            tri[0].a = glm::vec3(0,0,-100); tri[0].b = glm::vec3(1,0,-100);
+            tri[0].c = glm::vec3(0,1,-100); tri[0].normal = glm::vec3(0,0,1);
+            cap.playerId = 17; cap.spawnGeneration = 3;
+            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,0);
+            cap.radius = 0.0f;
+        }
+        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {}
+        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+        int triangleCount() const override { return 0; }
+        void queryPlayerCapsulesSwept(const glm::vec3& f, const glm::vec3& t, float r,
+                                      std::vector<SweptPlayerCapsule>& out) const override {
+            out = {cap};
+        }
+    };
+
+    PointWorld world;
+    ProjectilePhysicsConfig cfg;
+    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+
+    // Path passes 0.5 units from the point — > 0.3 radius → miss
+    ProjectilePhysicsState state;
+    state.position = glm::vec3(0.5f, 0.0f, -5.0f);
+    state.velocity = glm::vec3(0.0f, 0.0f, 30.0f);
+
+    bool hit = false;
+    for (int t = 0; t < 10; ++t)
+    {
+        ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+        if (r.type == ProjectileCollisionType::PlayerImpact)
+        {
+            hit = true;
+            break;
+        }
+    }
+    CHECK(!hit, "near miss incorrectly detected as PlayerImpact");
+    PASS();
+}
+
+// ── Test 15: Exact-center overlap with degenerate point capsule ──────
+
+static void testDegenerateCapsuleExactCenter()
+{
+    TEST("degenerate point capsule exact-center overlap");
+
+    class PointWorld : public CollisionWorldView {
+    public:
+        CollisionTriangle tri[1];
+        SweptPlayerCapsule cap;
+        PointWorld() {
+            tri[0].a = glm::vec3(0,0,-100); tri[0].b = glm::vec3(1,0,-100);
+            tri[0].c = glm::vec3(0,1,-100); tri[0].normal = glm::vec3(0,0,1);
+            cap.playerId = 42; cap.spawnGeneration = 7;
+            cap.a = glm::vec3(0,0,0); cap.b = glm::vec3(0,0,0);
+            cap.radius = 0.0f;
+        }
+        void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float, std::vector<int>& out) const override {}
+        const CollisionTriangle& triangleAt(int i) const override { return tri[i]; }
+        int triangleCount() const override { return 0; }
+        void queryPlayerCapsulesSwept(const glm::vec3& f, const glm::vec3& t, float r,
+                                      std::vector<SweptPlayerCapsule>& out) const override {
+            out = {cap};
+        }
+    };
+
+    PointWorld world;
+    ProjectilePhysicsConfig cfg;
+    cfg.radius = 0.3f; cfg.gravity = 0; cfg.drag = 0;
+    cfg.bounceEnabled = false; cfg.lifetime = 10.0f;
+
+    // Sphere center EXACTLY at the degenerate point (0,0,0)
+    ProjectilePhysicsState state;
+    state.position = glm::vec3(0.0f, 0.0f, 0.0f);
+    state.velocity = glm::vec3(1.0f, 2.0f, 3.0f); // any non-zero direction
+
+    ProjectileStepResult r = simulateProjectileTick(state, cfg, world, 1.0f / 60.0f);
+
+    CHECK(r.type == ProjectileCollisionType::PlayerImpact,
+          "expected PlayerImpact, got %d", (int)r.type);
+    CHECK(std::isfinite(r.hitPosition.x) && std::isfinite(r.hitPosition.y) && std::isfinite(r.hitPosition.z),
+          "hitPosition not finite");
+    CHECK(std::isfinite(r.hitNormal.x) && std::isfinite(r.hitNormal.y) && std::isfinite(r.hitNormal.z),
+          "hitNormal not finite");
+    float nl = glm::length(r.hitNormal);
+    CHECK(std::fabs(nl - 1.0f) < 1e-4f,
+          "normal length %.6f not approximately 1", nl);
+    // Exact-center fallback: normal should be opposite of motion direction
+    glm::vec3 expectedNormal = glm::normalize(glm::vec3(-1.0f, -2.0f, -3.0f));
+    CHECK(glm::length(r.hitNormal - expectedNormal) < 1e-4f,
+          "exact-center normal mismatch: expected (%.4f,%.4f,%.4f) got (%.4f,%.4f,%.4f)",
+          expectedNormal.x, expectedNormal.y, expectedNormal.z,
+          r.hitNormal.x, r.hitNormal.y, r.hitNormal.z);
+
+    PASS();
+}
+
 // ── Test 7: Capsule order independence ───────────────────────────────
 // Two worlds with same two capsules in different query order must
 // select playerId 3 (lower) every time.
@@ -894,6 +1062,9 @@ int main()
     testVertexGrazing();
     testParallelEdgeCollision();
     testNearMiss();
+    testDegenerateCapsuleHit();
+    testDegenerateCapsuleMiss();
+    testDegenerateCapsuleExactCenter();
     testCapsuleOrderIndependence();
     testWorldPlayerEqualTOI();
     testPlayerBeforeWall();

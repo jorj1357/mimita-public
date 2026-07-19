@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Configure the website Postgres connection and bootstrap database schema.
+* Create account, analytics, auth, game, email, and session tables locally or on VPS.
+* Keep schema setup centralized for server startup and tests.
+* DOES NOT render website pages or game UI.
+* DOES NOT store client-side auth tokens.
+* DOES NOT implement request handlers directly.
+*/
+
 import dotenv from "dotenv"
 dotenv.config()
 
@@ -238,6 +248,27 @@ const MIGRATION_STATEMENTS = [
         id BIGSERIAL PRIMARY KEY,
         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
         settings_json JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS user_inventory (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        inventory_json JSONB NOT NULL DEFAULT '{"version":1,"items":[],"equipped":{}}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS user_loadouts (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        loadout_json JSONB NOT NULL DEFAULT '{"version":1,"weapons":{},"cosmetics":{}}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS user_titles (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        titles_json JSONB NOT NULL DEFAULT '{"version":1,"unlocked":[],"equipped":""}',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
 
