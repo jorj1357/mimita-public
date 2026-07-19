@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Own the game client's authenticated user state.
+* Expose the small account/session API used by menus and gameplay.
+* Bridge website account data into the local player profile.
+* DOES NOT store raw passwords or own HTTP transport details.
+* DOES NOT own account database schema or website routes.
+* DOES NOT render account UI directly.
+*/
+
 #pragma once
 
 #include <string>
@@ -39,6 +49,10 @@ struct AuthUser
     std::string createdAt;
     std::string sessionToken;
     GameStats stats;
+    json settings;
+    json inventory;
+    json titles;
+    json loadout;
 };
 
 class AuthSystem
@@ -85,10 +99,11 @@ public:
 
     // Apply external user info (from AuthController login)
     void applyUserInfo(const GameUserInfo& info);
+    void applyBootstrap(const std::string& token, const GameBootstrap& bootstrap);
 
     // Called by auth-popup after successful code confirm
     // Uses optional userInfo to avoid depending on validateSession for identity data.
-    void finishAuth(const std::string& token, const GameUserInfo* userInfo = nullptr);
+    void finishAuth(const std::string& token, const GameUserInfo* userInfo = nullptr, bool persistSession = true);
 
 private:
     AuthSystem() = default;

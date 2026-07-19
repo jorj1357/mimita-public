@@ -1,8 +1,20 @@
+// 07 19 2026, 12 00
+/* purpose
+* Store and load local auth tokens and safe profile cache data.
+* Prefer Windows Credential Manager for session secrets.
+* Fall back to per-user AppData files instead of repository config files.
+* DOES NOT store passwords or verify credentials.
+* DOES NOT contact the account server.
+* DOES NOT decide whether a token is valid.
+*/
+
 #include "auth/auth-token.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <windows.h>
 #include <wincred.h>
 #include <nlohmann/json.hpp>
@@ -18,6 +30,56 @@ const char* CACHE_PATH = "config/auth-cache.json";
 const char* REFRESH_PATH = "config/auth-refresh.json";
 const char* CRED_TARGET = "MimitaAuthSession";
 const char* REFRESH_CRED_TARGET = "MimitaRefreshToken";
+
+std::filesystem::path authDataDir()
+{
+    const char* local = std::getenv("LOCALAPPDATA");
+    if (local && local[0])
+        return std::filesystem::path(local) / "Mimita";
+
+    const char* roaming = std::getenv("APPDATA");
+    if (roaming && roaming[0])
+        return std::filesystem::path(roaming) / "Mimita";
+
+    return std::filesystem::path("config");
+}
+
+std::filesystem::path sessionTokenPath()
+{
+    return authDataDir() / "session.dat";
+}
+
+std::filesystem::path refreshTokenPath()
+{
+    return authDataDir() / "refresh.dat";
+}
+
+std::filesystem::path profileCachePath()
+{
+    return authDataDir() / "profile-cache.json";
+}
+
+std::filesystem::path devicePath()
+{
+    return authDataDir() / "device.json";
+}
+
+std::string randomHex(size_t bytes)
+{
+    static const char* digits = "0123456789abcdef";
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dist(0, 255);
+    std::string out;
+    out.reserve(bytes * 2);
+    for (size_t i = 0; i < bytes; ++i)
+    {
+        int v = dist(gen);
+        out.push_back(digits[(v >> 4) & 15]);
+        out.push_back(digits[v & 15]);
+    }
+    return out;
+}
 
 bool storeCredentialManager(const std::string& token)
 {
@@ -68,8 +130,8 @@ bool storeSessionToken(const std::string& token)
     if (storeCredentialManager(token))
         return true;
 
-    std::filesystem::create_directories("config");
-    std::ofstream out(TOKEN_PATH, std::ios::trunc);
+    std::filesystem::create_directories(authDataDir());
+    std::ofstream out(sessionTokenPath(), std::ios::trunc);
     if (!out)
     {
         printf("[AUTH] failed to write session token\n");
@@ -86,7 +148,9 @@ std::string loadSessionToken()
     if (!token.empty())
         return token;
 
-    std::ifstream in(TOKEN_PATH);
+    std::ifstream in(sessionTokenPath());
+    if (!in)
+        in.open(TOKEN_PATH);
     if (!in)
         return {};
 
@@ -108,6 +172,7 @@ std::string loadSessionToken()
 void clearSessionToken()
 {
     clearCredentialManager();
+    std::filesystem::remove(sessionTokenPath());
     std::filesystem::remove(TOKEN_PATH);
     printf("[AUTH] session token cleared\n");
 }
@@ -133,8 +198,8 @@ bool storeRefreshToken(const std::string& token)
         return true;
     }
 
-    std::filesystem::create_directories("config");
-    std::ofstream out(REFRESH_PATH, std::ios::trunc);
+    std::filesystem::create_directories(authDataDir());
+    std::ofstream out(refreshTokenPath(), std::ios::trunc);
     if (!out)
     {
         printf("[AUTH] failed to write refresh token\n");
@@ -155,7 +220,9 @@ std::string loadRefreshToken()
         return token;
     }
 
-    std::ifstream in(REFRESH_PATH);
+    std::ifstream in(refreshTokenPath());
+    if (!in)
+        in.open(REFRESH_PATH);
     if (!in)
         return {};
 
@@ -177,8 +244,44 @@ std::string loadRefreshToken()
 void clearRefreshToken()
 {
     CredDeleteW(L"MimitaRefreshToken", CRED_TYPE_GENERIC, 0);
+    std::filesystem::remove(refreshTokenPath());
     std::filesystem::remove(REFRESH_PATH);
     printf("[AUTH] refresh token cleared\n");
+}
+
+std::string loadOrCreateDeviceId()
+{
+    std::ifstream in(devicePath());
+    if (in)
+    {
+        try {
+            json j;
+            in >> j;
+            std::string id = j.value("device_id", "");
+            if (!id.empty())
+                return id;
+        } catch (...) {}
+    }
+
+    std::string id = "mimita-" + randomHex(16);
+    try {
+        std::filesystem::create_directories(authDataDir());
+        json j;
+        j["device_id"] = id;
+        std::ofstream out(devicePath(), std::ios::trunc);
+        if (out)
+            out << j.dump(2);
+    } catch (...) {}
+    return id;
+}
+
+std::string getDeviceName()
+{
+    char name[MAX_COMPUTERNAME_LENGTH + 1] = {};
+    DWORD size = sizeof(name);
+    if (GetComputerNameA(name, &size) && size > 0)
+        return std::string(name, size);
+    return "Windows PC";
 }
 
 // ── Profile Cache ────────────────────────────────────────────────────────────
@@ -186,7 +289,7 @@ void clearRefreshToken()
 bool storeProfileCache(const CachedProfile& profile)
 {
     try {
-        std::filesystem::create_directories("config");
+        std::filesystem::create_directories(authDataDir());
         json j;
         j["id"] = profile.id;
         j["username"] = profile.username;
@@ -194,7 +297,7 @@ bool storeProfileCache(const CachedProfile& profile)
         j["avatar_url"] = profile.avatarUrl;
         j["supporter_tier"] = profile.supporterTier;
 
-        std::ofstream out(CACHE_PATH, std::ios::trunc);
+        std::ofstream out(profileCachePath(), std::ios::trunc);
         if (!out)
         {
             printf("[AUTH] failed to write profile cache\n");
@@ -212,7 +315,9 @@ bool storeProfileCache(const CachedProfile& profile)
 CachedProfile loadProfileCache()
 {
     CachedProfile profile;
-    std::ifstream in(CACHE_PATH);
+    std::ifstream in(profileCachePath());
+    if (!in)
+        in.open(CACHE_PATH);
     if (!in)
         return profile;
 
@@ -235,6 +340,7 @@ CachedProfile loadProfileCache()
 
 void clearProfileCache()
 {
+    std::filesystem::remove(profileCachePath());
     std::filesystem::remove(CACHE_PATH);
     printf("[AUTH] profile cache cleared\n");
 }

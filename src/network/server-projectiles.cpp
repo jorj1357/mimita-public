@@ -1,3 +1,13 @@
+// 07 19 2026, 09 29
+/* purpose
+* Authoritative server projectile spawn, simulation, damage, and replication.
+* Validates projectile fire requests and owns server-created projectile state.
+* Bridges server projectiles into the shared deterministic physics kernel.
+* Does NOT implement client prediction, render interpolation, or input capture.
+* Does NOT own weapon definitions, ammo data, or packet schema definitions.
+* Does NOT create a separate local-play projectile simulation path.
+*/
+
 #include "network/server.h"
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
@@ -11,6 +21,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "combat/projectile-simulation.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -298,18 +309,147 @@ glm::vec3 playerDamageCenter(const ServerPlayer& player)
     return player.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
 }
 
-bool projectileTouchesPlayer(const ServerProjectile& projectile,
-                             const ServerPlayer& player,
-                             glm::vec3& outClosest)
+class ServerProjectileWorldView final : public CollisionWorldView
 {
-    const glm::vec3 center = playerDamageCenter(player);
-    const glm::vec3 segment = projectile.position - projectile.previousPosition;
-    const float segmentLen2 = glm::dot(segment, segment);
-    float t = 1.0f;
-    if (segmentLen2 > 0.000001f)
-        t = std::clamp(glm::dot(center - projectile.previousPosition, segment) / segmentLen2, 0.0f, 1.0f);
-    outClosest = projectile.previousPosition + segment * t;
-    return glm::length(center - outClosest) <= PLAYER_RADIUS + projectile.radius;
+public:
+    ServerProjectileWorldView(const HeadlessWorld& world,
+                              const std::unordered_map<uint32_t, ServerPlayer>& players,
+                              uint32_t ownerPlayerId,
+                              bool skipOwner)
+        : mWorld(world),
+          mPlayers(players),
+          mOwnerPlayerId(ownerPlayerId),
+          mSkipOwner(skipOwner)
+    {
+    }
+
+    void queryTrianglesSwept(const glm::vec3& from,
+                             const glm::vec3& to,
+                             float radius,
+                             std::vector<int>& outIndices) const override
+    {
+        AABB queryBounds;
+        queryBounds.min = glm::min(from, to) - glm::vec3(radius);
+        queryBounds.max = glm::max(from, to) + glm::vec3(radius);
+        gatherHeadlessTrianglesForAABB(mWorld, queryBounds,
+                                       radius * 0.1f, outIndices);
+        std::sort(outIndices.begin(), outIndices.end());
+        outIndices.erase(std::unique(outIndices.begin(), outIndices.end()),
+                         outIndices.end());
+    }
+
+    const CollisionTriangle& triangleAt(int index) const override
+    {
+        return mWorld.triangles[(size_t)index];
+    }
+
+    int triangleCount() const override
+    {
+        return (int)mWorld.triangles.size();
+    }
+
+    void queryPlayerCapsulesSwept(const glm::vec3& from,
+                                  const glm::vec3& to,
+                                  float radius,
+                                  std::vector<SweptPlayerCapsule>& out) const override
+    {
+        AABB projectileBounds;
+        projectileBounds.min = glm::min(from, to) - glm::vec3(radius);
+        projectileBounds.max = glm::max(from, to) + glm::vec3(radius);
+
+        for (const auto& entry : mPlayers)
+        {
+            const ServerPlayer& player = entry.second;
+            if (player.dead)
+                continue;
+            if (mSkipOwner && player.id == mOwnerPlayerId)
+                continue;
+
+            SweptPlayerCapsule cap;
+            cap.playerId = player.id;
+            cap.spawnGeneration = player.spawnGeneration;
+            cap.a = player.pos + glm::vec3(0.0f, 0.0f,
+                                           -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS);
+            cap.b = player.pos + glm::vec3(0.0f, 0.0f,
+                                           PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS);
+            cap.radius = PLAYER_RADIUS;
+
+            AABB capsuleBounds;
+            capsuleBounds.min = glm::min(cap.a, cap.b) - glm::vec3(cap.radius);
+            capsuleBounds.max = glm::max(cap.a, cap.b) + glm::vec3(cap.radius);
+            if (overlaps(projectileBounds, capsuleBounds))
+                out.push_back(cap);
+        }
+
+        std::sort(out.begin(), out.end(),
+                  [](const SweptPlayerCapsule& a, const SweptPlayerCapsule& b) {
+                      if (a.playerId != b.playerId)
+                          return a.playerId < b.playerId;
+                      return a.spawnGeneration < b.spawnGeneration;
+                  });
+    }
+
+private:
+    const HeadlessWorld& mWorld;
+    const std::unordered_map<uint32_t, ServerPlayer>& mPlayers;
+    uint32_t mOwnerPlayerId = 0;
+    bool mSkipOwner = false;
+};
+
+ProjectilePhysicsState makePhysicsState(const ServerProjectile& projectile)
+{
+    ProjectilePhysicsState state;
+    state.position = projectile.position;
+    state.velocity = projectile.velocity;
+    state.rotation = projectile.rotation;
+    state.angularVelocity = projectile.angularVelocity;
+    state.age = projectile.age;
+    state.bounceCount = projectile.bounceCount;
+    state.exploded = projectile.exploded;
+    state.sleeping =
+        projectile.worldTouched &&
+        glm::length(projectile.velocity) <= 0.0001f &&
+        glm::length(projectile.angularVelocity) <= 0.0001f;
+    return state;
+}
+
+ProjectilePhysicsConfig makePhysicsConfig(const ServerProjectile& projectile)
+{
+    ProjectilePhysicsConfig config;
+    config.speed = glm::length(projectile.velocity);
+    config.radius = projectile.radius;
+    config.lifetime = projectile.lifetime;
+    config.armingDistance = projectile.armingDistance;
+    config.gravity = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER
+        ? 0.0f
+        : projectile.gravity;
+    config.drag = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER
+        ? 0.0f
+        : projectile.drag;
+    config.angularDrag = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER
+        ? 0.0f
+        : projectile.angularDrag;
+    config.restitution = projectile.restitution;
+    config.friction = projectile.friction;
+    config.maxBounceCount = projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER
+        ? projectile.maxBounceCount
+        : 0;
+    config.minBounceSpeed = projectile.minBounceSpeed;
+    config.bounceEnabled =
+        projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER &&
+        projectile.maxBounceCount > 0;
+    return config;
+}
+
+void applyPhysicsState(ServerProjectile& projectile,
+                       const ProjectilePhysicsState& state)
+{
+    projectile.position = state.position;
+    projectile.velocity = state.velocity;
+    projectile.rotation = state.rotation;
+    projectile.angularVelocity = state.angularVelocity;
+    projectile.age = state.age;
+    projectile.bounceCount = state.bounceCount;
 }
 
 void explodeProjectile(SOCKET sock,
@@ -435,114 +575,6 @@ void explodeProjectile(SOCKET sock,
            victimsLogged);
 
     broadcastPacket(sock, players, packet, totalPacketsOut);
-}
-
-bool resolveGrenadeWorld(ServerProjectile& projectile, const HeadlessWorld& world)
-{
-    bool hit = false;
-    glm::vec3 bestNormal(0.0f, 0.0f, 1.0f);
-    float bestPenetration = 0.0f;
-
-    // Broadphase: gather candidate triangles near the projectile sphere
-    AABB queryBounds;
-    queryBounds.min = projectile.position - glm::vec3(projectile.radius);
-    queryBounds.max = projectile.position + glm::vec3(projectile.radius);
-    std::vector<int> candidates;
-    gatherHeadlessTrianglesForAABB(world, queryBounds, projectile.radius * 0.1f, candidates);
-
-    for (int triIdx : candidates)
-    {
-        if (triIdx < 0 || triIdx >= (int)world.triangles.size())
-            continue;
-        const CollisionTriangle& tri = world.triangles[triIdx];
-        const glm::vec3 closest = closestPointTriangle(
-            projectile.position, tri.a, tri.b, tri.c);
-        glm::vec3 diff = projectile.position - closest;
-        float dist = glm::length(diff);
-        if (dist >= projectile.radius || dist <= 0.0001f)
-            continue;
-        const float penetration = projectile.radius - dist;
-        if (penetration > bestPenetration)
-        {
-            bestPenetration = penetration;
-            bestNormal = diff / dist;
-            hit = true;
-        }
-    }
-
-    if (!hit)
-        return false;
-
-    // Depenetrate
-    projectile.position += bestNormal * (bestPenetration + 0.001f);
-
-    const float into = glm::dot(projectile.velocity, bestNormal);
-
-    // Log every overlap (inward or outward)
-    {
-        auto& _lg = ::StructuredLogger::instance();
-        if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
-            ::StructuredLogger::Entry e;
-            e.category = ::StructuredCategory::GrenadeLauncher;
-            e.level = ::StructuredLevel::Verbose;
-            e.eventId = into < 0.0f ? "" : "GRENADE_SERVER_CONTACT_OVERLAP";
-            if (e.eventId.empty()) {
-                // Impact is logged separately below; skip dup
-            } else {
-                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
-                    + "_F" + std::to_string(projectile.fireSerial)
-                    + "_J" + std::to_string(projectile.id);
-                e.reason = "overlap-only";
-                char b[512]; std::snprintf(b, sizeof(b),
-                    "into=%.3f penetration=%.3f normal=(%.3f,%.3f,%.3f) "
-                    "vel=(%.2f,%.2f,%.2f) speed=%.2f bounceCount=%d",
-                    into, bestPenetration, bestNormal.x, bestNormal.y, bestNormal.z,
-                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-                    glm::length(projectile.velocity), projectile.bounceCount);
-                e.message = b;
-                _lg.write(e);
-            }
-        }
-    }
-
-    if (into < 0.0f)
-    {
-        // Stable bounce: separate normal and tangential components
-        glm::vec3 tangent = projectile.velocity - bestNormal * into;
-        float tangentRetention = std::clamp(1.0f - projectile.friction, 0.0f, 1.0f);
-        glm::vec3 velBefore = projectile.velocity;
-        float speedBefore = glm::length(velBefore);
-        projectile.velocity = tangent * tangentRetention - bestNormal * into * projectile.restitution;
-        float speedAfter = glm::length(projectile.velocity);
-
-        projectile.angularVelocity *= 0.35f;
-        projectile.worldTouched = true;
-        ++projectile.bounceCount;
-
-        {
-            auto& _lg = ::StructuredLogger::instance();
-            if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
-                ::StructuredLogger::Entry e;
-                e.category = ::StructuredCategory::GrenadeLauncher;
-                e.level = ::StructuredLevel::Verbose;
-                e.eventId = "GRENADE_SERVER_CONTACT_IMPACT";
-                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
-                    + "_F" + std::to_string(projectile.fireSerial)
-                    + "_J" + std::to_string(projectile.id);
-                e.reason = "impact";
-                char b[512]; std::snprintf(b, sizeof(b),
-                    "bounceCount=%d speedBefore=%.3f speedAfter=%.3f "
-                    "restitution=%.2f friction=%.2f tangentRetention=%.2f "
-                    "into=%.3f normal=(%.3f,%.3f,%.3f)",
-                    projectile.bounceCount, speedBefore, speedAfter,
-                    projectile.restitution, projectile.friction, tangentRetention,
-                    into, bestNormal.x, bestNormal.y, bestNormal.z);
-                e.message = b;
-                _lg.write(e);
-            }
-        }
-    }
-    return true;
 }
 
 } // namespace
@@ -947,168 +979,66 @@ void tickServerProjectiles(SOCKET sock,
     {
         ServerProjectile& projectile = it->second;
         projectile.previousPosition = projectile.position;
-        projectile.age += dt;
         projectile.stateAccumulator += dt;
 
-        if (projectile.age >= projectile.lifetime)
+        const bool sharedProjectile =
+            projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER ||
+            projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
+
+        if (sharedProjectile)
         {
-            explodeProjectile(sock, players, projectile, projectile.position,
-                              "lifetime", 0, tick, totalPacketsOut);
-        }
-        else if (projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER)
-        {
-            const glm::vec3 step = projectile.velocity * dt;
-            const float stepLen = glm::length(step);
-            const glm::vec3 dir = stepLen > 0.0001f
-                ? step / stepLen
-                : glm::vec3(1.0f, 0.0f, 0.0f);
-            glm::vec3 worldHit(0.0f);
-            glm::vec3 worldNormal(0.0f, 0.0f, 1.0f);
-            if (serverRaycastWorld(projectile.position, dir, stepLen,
-                                   world, worldHit, worldNormal))
+            const int previousBounceCount = projectile.bounceCount;
+            ProjectilePhysicsState state = makePhysicsState(projectile);
+            ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
+            ServerProjectileWorldView physicsWorld(
+                world, players, projectile.ownerPlayerId,
+                projectile.distanceTraveled < projectile.armingDistance);
+
+            ProjectileStepResult step =
+                simulateProjectileTick(state, config, physicsWorld, dt);
+            applyPhysicsState(projectile, state);
+            projectile.distanceTraveled += step.travelDistance;
+            if (state.sleeping || state.bounceCount > previousBounceCount ||
+                step.type == ProjectileCollisionType::WorldBounce ||
+                step.type == ProjectileCollisionType::WorldImpact)
             {
-                explodeProjectile(sock, players, projectile, worldHit,
+                projectile.worldTouched = true;
+            }
+
+            if (step.type == ProjectileCollisionType::LifetimeExpired)
+            {
+                explodeProjectile(sock, players, projectile, projectile.position,
+                                  "lifetime", 0, tick, totalPacketsOut);
+            }
+            else if (step.type == ProjectileCollisionType::PlayerImpact)
+            {
+                explodeProjectile(sock, players, projectile, step.hitPosition,
+                                  "player", step.hitPlayerId, tick,
+                                  totalPacketsOut);
+            }
+            else if (step.type == ProjectileCollisionType::WorldImpact &&
+                     projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER)
+            {
+                explodeProjectile(sock, players, projectile, step.hitPosition,
                                   "world", 0, tick, totalPacketsOut);
             }
-            else
+
+            if (!projectile.exploded &&
+                projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER &&
+                glm::length(projectile.velocity) > 0.001f)
             {
-                projectile.position += step;
-                projectile.distanceTraveled += stepLen;
-                for (auto& entry : players)
-                {
-                    ServerPlayer& target = entry.second;
-                    if (target.dead)
-                        continue;
-                    if (target.id == projectile.ownerPlayerId &&
-                        projectile.distanceTraveled < projectile.armingDistance)
-                        continue;
-                    glm::vec3 closest(0.0f);
-                    if (projectileTouchesPlayer(projectile, target, closest))
-                    {
-                        explodeProjectile(sock, players, projectile, closest,
-                                          "player", target.id, tick,
-                                          totalPacketsOut);
-                        break;
-                    }
-                }
-                if (!projectile.exploded && glm::length(projectile.velocity) > 0.001f)
-                    projectile.rotation = glm::rotation(
-                        glm::vec3(0.0f, 0.0f, 1.0f),
-                        glm::normalize(projectile.velocity));
+                projectile.rotation = glm::rotation(
+                    glm::vec3(0.0f, 0.0f, 1.0f),
+                    glm::normalize(projectile.velocity));
             }
         }
-        else if (projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER)
+        else
         {
-            // Adaptive substeps to prevent tunneling with small collision radius
-            float speed = glm::length(projectile.velocity);
-            float maxStep = std::max(projectile.radius * 0.5f, 0.1f);
-            int steps = std::min((int)std::ceil(speed * dt / maxStep) + 1, 8);
-            float subDt = dt / (float)steps;
-
-            for (int s = 0; s < steps && !projectile.exploded; ++s)
+            projectile.age += dt;
+            if (projectile.age >= projectile.lifetime)
             {
-                projectile.velocity.z -= projectile.gravity * subDt;
-                projectile.velocity *= std::max(0.0f, 1.0f - projectile.drag * subDt);
-                glm::vec3 step = projectile.velocity * subDt;
-                projectile.position += step;
-                projectile.distanceTraveled += glm::length(step);
-
-                // Apply angular drag to angular velocity only (never affects linear)
-                float angSpeed = glm::length(projectile.angularVelocity);
-                if (projectile.angularDrag > 0.0f && angSpeed > 0.0f)
-                {
-                    projectile.angularVelocity *= std::max(0.0f, 1.0f - projectile.angularDrag * subDt);
-                }
-                if (angSpeed > 0.0001f)
-                {
-                    float newAngSpeed = glm::length(projectile.angularVelocity);
-                    if (newAngSpeed > 0.0001f)
-                    {
-                        glm::quat delta = glm::angleAxis(
-                            newAngSpeed * subDt, glm::normalize(projectile.angularVelocity));
-                        projectile.rotation = glm::normalize(delta * projectile.rotation);
-                    }
-                }
-
-                // World collision per substep
-                // Resolve overlap/depenetration. If the grenade is genuinely moving
-                // into a surface, resolveGrenadeWorld applies bounce and increments
-                // bounceCount. Persistent resting contacts are handled below.
-                if (resolveGrenadeWorld(projectile, world))
-                {
-                    static int settleCallCount = 0;
-                    if (projectile.bounceCount >= projectile.maxBounceCount &&
-                        projectile.velocity != glm::vec3(0.0f))
-                    {
-                        // After max bounces: kill restitution, kill tangent, let it settle
-                        float speedBefore = glm::length(projectile.velocity);
-                        glm::vec3 velBefore = projectile.velocity;
-                        float lateralSpeedBefore = glm::length(glm::vec3(velBefore.x, velBefore.y, 0.0f));
-                        float intoComp = glm::dot(projectile.velocity, glm::vec3(0.0f, 0.0f, 1.0f));
-
-                        if (speedBefore > 0.1f)
-                        {
-                            glm::vec3 lateral = projectile.velocity;
-                            lateral.z = 0.0f;
-                            projectile.velocity -= lateral * 0.95f;
-                            if (projectile.velocity.z < -20.0f)
-                                projectile.velocity.z = -20.0f;
-                        }
-                        else
-                        {
-                            projectile.velocity = glm::vec3(0.0f);
-                            projectile.angularVelocity = glm::vec3(0.0f);
-                        }
-
-                        ++settleCallCount;
-                        {
-                            auto& _lg = ::StructuredLogger::instance();
-                            if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Verbose)) {
-                                ::StructuredLogger::Entry e;
-                                e.category = ::StructuredCategory::GrenadeLauncher;
-                                e.level = ::StructuredLevel::Verbose;
-                                e.eventId = "GRENADE_SERVER_SETTLE";
-                                e.correlationId = "GRENADE_P" + std::to_string(projectile.ownerPlayerId)
-                                    + "_F" + std::to_string(projectile.fireSerial)
-                                    + "_J" + std::to_string(projectile.id);
-                                e.reason = "max-bounce-settle";
-                                char b[512]; std::snprintf(b, sizeof(b),
-                                    "tick=%u bounceCount=%d maxBounce=%d "
-                                    "speedBefore=%.2f speedAfter=%.2f "
-                                    "lateralBefore=%.2f lateralAfter=%.2f "
-                                    "downVelBefore=%.2f downVelAfter=%.2f "
-                                    "settleCount=%d",
-                                    tick, projectile.bounceCount, projectile.maxBounceCount,
-                                    speedBefore, glm::length(projectile.velocity),
-                                    lateralSpeedBefore,
-                                    glm::length(glm::vec3(projectile.velocity.x, projectile.velocity.y, 0.0f)),
-                                    intoComp, projectile.velocity.z,
-                                    settleCallCount);
-                                e.message = b;
-                                _lg.write(e);
-                            }
-                        }
-                    }
-                }
-
-                // Player collision per substep (skip owner during grace period)
-                for (auto& entry : players)
-                {
-                    ServerPlayer& target = entry.second;
-                    if (target.dead)
-                        continue;
-                    if (target.id == projectile.ownerPlayerId &&
-                        (projectile.distanceTraveled < projectile.armingDistance))
-                        continue;
-                    glm::vec3 closest(0.0f);
-                    if (projectileTouchesPlayer(projectile, target, closest))
-                    {
-                        explodeProjectile(sock, players, projectile, closest,
-                                          "player", target.id, tick,
-                                          totalPacketsOut);
-                        break;
-                    }
-                }
+                explodeProjectile(sock, players, projectile, projectile.position,
+                                  "lifetime", 0, tick, totalPacketsOut);
             }
         }
 

@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Drive the username/email plus password login flow in the exe.
+* Convert auth form input into game auth API calls and runtime state.
+* Persist only remember-me refresh credentials when requested.
+* DOES NOT store passwords locally or render login widgets.
+* DOES NOT own backend password verification or account schema.
+* DOES NOT implement browser code-link account login.
+*/
+
 #include "auth/auth-controller.h"
 #include "auth/auth-system.h"
 #include "auth/auth-token.h"
@@ -31,8 +41,11 @@ void AuthController::signIn()
     mRuntime.state = AuthState::SigningIn;
     setStatus("Signing in...");
 
+    const std::string deviceId = loadOrCreateDeviceId();
+    const std::string deviceName = getDeviceName();
+
     GameLoginResult login = gameLogin(identifier, password, rememberMe,
-                                      "mimita-device-unknown", "", "windows", "0.1.0");
+                                      deviceId, deviceName, "windows", "0.1.0");
 
     if (!login.ok)
     {
@@ -54,23 +67,23 @@ void AuthController::signIn()
     mRuntime.state = AuthState::LoadingAccount;
     setStatus("Loading account...");
 
-    GameUserInfo info = validateSession(login.accessToken);
-    if (info.valid)
+    GameBootstrap bootstrap = getGameBootstrap(login.accessToken);
+    if (bootstrap.valid)
     {
-        AuthSystem::instance().applyUserInfo(info);
+        AuthSystem::instance().applyBootstrap(login.accessToken, bootstrap);
         mRuntime.state = AuthState::SignedIn;
-        setStatus("Signed in as " + info.username);
+        setStatus("Signed in as " + bootstrap.user.username);
 
         CachedProfile cache;
-        cache.id = info.id;
-        cache.username = info.username;
-        cache.displayName = info.displayName;
-        cache.avatarUrl = info.avatarUrl;
-        cache.supporterTier = info.supporterTier;
+        cache.id = bootstrap.user.id;
+        cache.username = bootstrap.user.username;
+        cache.displayName = bootstrap.user.displayName;
+        cache.avatarUrl = bootstrap.user.avatarUrl;
+        cache.supporterTier = bootstrap.user.supporterTier;
         storeProfileCache(cache);
 
         Debug::warn(Debug::Category::Auth, "LOGIN SUCCESS username=%s accountId=%d\n",
-               info.username.c_str(), info.id);
+               bootstrap.user.username.c_str(), bootstrap.user.id);
     }
     else
     {
@@ -96,9 +109,10 @@ void AuthController::signOut()
 {
     if (!mRuntime.refreshToken.empty())
     {
-        gameLogout(mRuntime.refreshToken, "mimita-device-unknown");
+        gameLogout(mRuntime.refreshToken, loadOrCreateDeviceId());
     }
     clearSessionToken();
+    clearRefreshToken();
     clearProfileCache();
     mRuntime = {};
     mForm = {};
@@ -120,42 +134,85 @@ void AuthController::checkStoredSession()
     setStatus("Checking for stored session...");
 
     std::string stored = loadSessionToken();
-    if (stored.empty())
+    if (!stored.empty())
     {
-        Debug::warn(Debug::Category::Auth, "no stored session found\n");
+        mRuntime.accessToken = stored;
+        Debug::log(Debug::Category::Auth, "stored legacy access token found\n");
+
+        CachedProfile cached = loadProfileCache();
+        if (!cached.username.empty())
+        {
+            mRuntime.username = cached.username;
+            mRuntime.accountId = std::to_string(cached.id);
+        }
+
+        GameUserInfo info = validateSession(stored);
+        if (info.valid)
+        {
+            mRuntime.state = AuthState::SignedIn;
+            mRuntime.accountId = std::to_string(info.id);
+            mRuntime.username = info.username;
+            mRuntime.supporterTier = info.supporterTier;
+            AuthSystem::instance().finishAuth(stored, &info, false);
+            setStatus("Signed in as " + info.username);
+            Debug::warn(Debug::Category::Auth, "session restored from legacy access token: username=%s\n",
+                   info.username.c_str());
+            return;
+        }
+
+        Debug::warn(Debug::Category::Auth, "stored legacy access token invalid\n");
+        clearSessionToken();
+    }
+
+    std::string refreshToken = loadRefreshToken();
+    if (refreshToken.empty())
+    {
+        Debug::warn(Debug::Category::Auth, "no stored refresh session found\n");
         mRuntime.state = AuthState::SignedOut;
         return;
     }
 
-    mRuntime.accessToken = stored;
-    Debug::log(Debug::Category::Auth, "stored session token found\n");
+    mRuntime.refreshToken = refreshToken;
+    Debug::log(Debug::Category::Auth, "stored refresh token found, refreshing session\n");
 
-    CachedProfile cached = loadProfileCache();
-    if (!cached.username.empty())
+    const std::string deviceId = loadOrCreateDeviceId();
+    GameRefreshResult refreshed = gameRefresh(refreshToken, deviceId);
+    if (!refreshed.ok || refreshed.accessToken.empty())
     {
-        mRuntime.username = cached.username;
-        mRuntime.accountId = std::to_string(cached.id);
-    }
-
-    GameUserInfo info = validateSession(stored);
-    if (info.valid)
-    {
-        mRuntime.state = AuthState::SignedIn;
-        mRuntime.accountId = std::to_string(info.id);
-        mRuntime.username = info.username;
-        mRuntime.supporterTier = info.supporterTier;
-        AuthSystem::instance().applyUserInfo(info);
-        setStatus("Signed in as " + info.username);
-        Debug::warn(Debug::Category::Auth, "session restored: username=%s\n",
-               info.username.c_str());
-    }
-    else
-    {
-        Debug::warn(Debug::Category::Auth, "stored session invalid or unreachable\n");
-        mRuntime.state = AuthState::SignedOut;
-        clearSessionToken();
+        Debug::warn(Debug::Category::Auth, "stored refresh session invalid: %s\n",
+            refreshed.errorCode.c_str());
+        clearRefreshToken();
         clearProfileCache();
+        mRuntime.state = AuthState::SignedOut;
+        return;
     }
+
+    mRuntime.accessToken = refreshed.accessToken;
+    if (!refreshed.refreshToken.empty() && refreshed.refreshToken != refreshToken)
+    {
+        mRuntime.refreshToken = refreshed.refreshToken;
+        storeRefreshToken(refreshed.refreshToken);
+    }
+
+    GameBootstrap bootstrap = getGameBootstrap(refreshed.accessToken);
+    if (!bootstrap.valid)
+    {
+        Debug::warn(Debug::Category::Auth, "refreshed session could not load account data\n");
+        clearRefreshToken();
+        clearProfileCache();
+        mRuntime.state = AuthState::SignedOut;
+        return;
+    }
+
+    mRuntime.state = AuthState::SignedIn;
+    mRuntime.accountId = std::to_string(bootstrap.user.id);
+    mRuntime.username = bootstrap.user.username;
+    mRuntime.supporterTier = bootstrap.user.supporterTier;
+    mRuntime.rememberMe = true;
+    AuthSystem::instance().applyBootstrap(refreshed.accessToken, bootstrap);
+    setStatus("Signed in as " + bootstrap.user.username);
+    Debug::warn(Debug::Category::Auth, "session restored from refresh token: username=%s\n",
+           bootstrap.user.username.c_str());
 }
 
 void AuthController::refreshSession()
@@ -169,7 +226,7 @@ void AuthController::refreshSession()
     mRuntime.state = AuthState::RefreshingSession;
     setStatus("Refreshing session...");
 
-    GameRefreshResult refresh = gameRefresh(mRuntime.refreshToken, "mimita-device-unknown");
+    GameRefreshResult refresh = gameRefresh(mRuntime.refreshToken, loadOrCreateDeviceId());
 
     if (refresh.ok)
     {
@@ -177,6 +234,7 @@ void AuthController::refreshSession()
         if (!refresh.refreshToken.empty() && refresh.refreshToken != mRuntime.refreshToken)
         {
             mRuntime.refreshToken = refresh.refreshToken;
+            storeRefreshToken(refresh.refreshToken);
         }
         mRuntime.state = AuthState::SignedIn;
         setStatus("Session refreshed.");
@@ -187,6 +245,7 @@ void AuthController::refreshSession()
         Debug::warn(Debug::Category::Auth, "session refresh failed: %s\n",
                refresh.errorCode.c_str());
         clearSessionToken();
+        clearRefreshToken();
         clearProfileCache();
         mRuntime = {};
         mForm = {};
@@ -219,6 +278,12 @@ void AuthController::updateFromLoginResult(int accountId, const std::string& use
 
     if (rememberMe)
     {
-        storeSessionToken(accessToken);
+        clearSessionToken();
+        storeRefreshToken(refreshToken);
+    }
+    else
+    {
+        clearSessionToken();
+        clearRefreshToken();
     }
 }

@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Declare HTTP helpers used by the game client to talk to mimita.fun APIs.
+* Model account, auth, profile, stats, settings, and game bootstrap responses.
+* Keep website API shapes explicit for exe-side account loading.
+* DOES NOT store local tokens or passwords.
+* DOES NOT render UI or own gameplay state.
+* DOES NOT implement backend database logic.
+*/
+
 #pragma once
 
 #include <string>
@@ -72,12 +82,24 @@ struct LeaderboardEntry
     GameStats stats;
 };
 
+struct GameBootstrap
+{
+    bool valid = false;
+    GameUserInfo user;
+    GameStats stats;
+    json settings;
+    json inventory;
+    json titles;
+    json loadout;
+};
+
 // Core auth
 bool websiteReachable();
 LinkCodeResult requestAuthLink();
 bool pollLinkStatus(const std::string& code);
 std::string finalizeLink(const std::string& code, const std::string& grantToken);
 GameUserInfo validateSession(const std::string& sessionToken);
+GameBootstrap getGameBootstrap(const std::string& sessionToken);
 
 // Token exchange (mimita:// flow)
 std::string exchangeTempToken(const std::string& exchangeToken);

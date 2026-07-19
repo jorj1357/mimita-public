@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Expose game-client account data endpoints for the Mimita exe.
+* Authenticate bearer/cookie sessions and return profile, stats, settings, and avatar data.
+* Keep game-facing account bootstrap data in one backend owner.
+* DOES NOT verify passwords or create login sessions.
+* DOES NOT render website pages or admin dashboards.
+* DOES NOT store client-side tokens.
+*/
+
 import { Router } from "express"
 import { hashToken, getClientIp } from "./authCore.js"
 import { pool } from "./db.js"
@@ -12,6 +22,38 @@ function debugAim(...args) {
 
 function makeDebugId() {
     return "aim_" + crypto.randomBytes(4).toString("hex")
+}
+
+function defaultStats() {
+    return {
+        wins: 0,
+        losses: 0,
+        kills: 0,
+        deaths: 0,
+        games_played: 0,
+        playtime_seconds: 0,
+        highest_mmr: 5000,
+        current_mmr: 5000,
+        accuracy: 0.0,
+        headshots: 0,
+        best_kill_streak: 0
+    }
+}
+
+function profileFromUser(u) {
+    return {
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name || u.username,
+        email: u.email,
+        bio: u.bio,
+        avatar_url: u.avatar_url,
+        avatar_data: u.avatar_data,
+        supporter_tier: u.supporter_tier,
+        role: u.role,
+        created_at: u.created_at,
+        email_verified: u.email_verified
+    }
 }
 
 async function authenticateToken(req, res, next) {
@@ -54,22 +96,62 @@ async function authenticateToken(req, res, next) {
     }
 }
 
+router.get("/game/me", authenticateToken, async (req, res, next) => {
+    try {
+        const statsResult = await pool.query(
+            `SELECT wins, losses, kills, deaths, games_played, playtime_seconds,
+                    highest_mmr, current_mmr, accuracy, headshots, best_kill_streak
+             FROM game_stats WHERE user_id = $1`,
+            [req.user.id]
+        )
+
+        const settingsResult = await pool.query(
+            `SELECT settings_json FROM user_settings WHERE user_id = $1`,
+            [req.user.id]
+        )
+
+        res.json({
+            success: true,
+            account: {
+                id: req.user.id,
+                username: req.user.username,
+                permissions: [req.user.role || "user"],
+                supporter_tier: req.user.supporter_tier || "free"
+            },
+            profile: profileFromUser(req.user),
+            stats: statsResult.rowCount ? statsResult.rows[0] : defaultStats(),
+            settings: settingsResult.rowCount ? settingsResult.rows[0].settings_json : {},
+            avatar: {
+                avatar_url: req.user.avatar_url || "",
+                avatar_data: req.user.avatar_data || null
+            },
+            inventory: {
+                version: 1,
+                items: [],
+                equipped: {}
+            },
+            titles: {
+                version: 1,
+                unlocked: [],
+                equipped: ""
+            },
+            loadout: {
+                version: 1,
+                weapons: {},
+                cosmetics: {}
+            }
+        })
+    }
+    catch (error) {
+        next(error)
+    }
+})
+
 router.get("/profile", authenticateToken, (req, res) => {
     const u = req.user
     res.json({
         success: true,
-        profile: {
-            id: u.id,
-            username: u.username,
-            display_name: u.display_name || u.username,
-            email: u.email,
-            bio: u.bio,
-            avatar_url: u.avatar_url,
-            avatar_data: u.avatar_data,
-            supporter_tier: u.supporter_tier,
-            role: u.role,
-            created_at: u.created_at
-        }
+        profile: profileFromUser(u)
     })
 })
 
@@ -139,10 +221,7 @@ router.get("/stats", authenticateToken, async (req, res, next) => {
             return res.json({
                 success: true,
                 stats: {
-                    wins: 0, losses: 0, kills: 0, deaths: 0,
-                    games_played: 0, playtime_seconds: 0,
-                    highest_mmr: 5000, current_mmr: 5000,
-                    accuracy: 0.0, headshots: 0, best_kill_streak: 0
+                    ...defaultStats()
                 }
             })
         }

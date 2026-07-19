@@ -1,3 +1,13 @@
+// 07 19 2026, 12 00
+/* purpose
+* Implement the game client's HTTP calls to mimita.fun APIs.
+* Parse account, auth, profile, stats, settings, and bootstrap JSON responses.
+* Keep transport details isolated from auth/gameplay systems.
+* DOES NOT store local tokens or passwords.
+* DOES NOT render UI or mutate player state directly.
+* DOES NOT implement backend database logic.
+*/
+
 #include "website/api-client.h"
 
 #include <cstdio>
@@ -114,6 +124,40 @@ bool httpRequest(const std::string& method, const std::string& url,
 
 }
 
+static void parseUserInfo(GameUserInfo& info, const json& u)
+{
+    info.valid = true;
+    info.id = u.value("id", 0);
+    info.username = u.value("username", "");
+    info.displayName = u.value("display_name", "");
+    if (info.displayName.empty())
+        info.displayName = info.username;
+    info.email = u.value("email", "");
+    info.bio = u.value("bio", "");
+    info.avatarUrl = u.value("avatar_url", "");
+    if (u.contains("avatar_data") && !u["avatar_data"].is_null())
+        info.avatarData = u["avatar_data"];
+    info.supporterTier = u.value("supporter_tier", "free");
+    info.role = u.value("role", "user");
+    info.emailVerified = u.value("email_verified", false);
+    info.createdAt = u.value("created_at", "");
+}
+
+static void parseStats(GameStats& stats, const json& s)
+{
+    stats.wins = s.value("wins", 0);
+    stats.losses = s.value("losses", 0);
+    stats.kills = s.value("kills", 0);
+    stats.deaths = s.value("deaths", 0);
+    stats.gamesPlayed = s.value("games_played", 0);
+    stats.playtimeSeconds = s.value("playtime_seconds", 0LL);
+    stats.highestMmr = s.value("highest_mmr", 5000);
+    stats.currentMmr = s.value("current_mmr", 5000);
+    stats.accuracy = s.value("accuracy", 0.0f);
+    stats.headshots = s.value("headshots", 0);
+    stats.bestKillStreak = s.value("best_kill_streak", 0);
+}
+
 bool websiteReachable()
 {
     std::string body;
@@ -191,22 +235,34 @@ GameUserInfo validateSession(const std::string& sessionToken)
     try {
         json j = json::parse(body);
         if (!j.value("success", false)) return info;
-        auto u = j["user"];
-        info.valid = true;
-        info.id = u.value("id", 0);
-        info.username = u.value("username", "");
-        info.displayName = u.value("display_name", "");
-        if (info.displayName.empty())
-            info.displayName = info.username;
-        info.email = u.value("email", "");
-        info.bio = u.value("bio", "");
-        info.avatarUrl = u.value("avatar_url", "");
-        info.supporterTier = u.value("supporter_tier", "free");
-        info.role = u.value("role", "user");
-        info.emailVerified = u.value("email_verified", false);
-        info.createdAt = u.value("created_at", "");
+        parseUserInfo(info, j["user"]);
     } catch (...) {}
     return info;
+}
+
+GameBootstrap getGameBootstrap(const std::string& sessionToken)
+{
+    GameBootstrap bootstrap;
+    if (sessionToken.empty()) return bootstrap;
+
+    std::string body;
+    int httpCode = 0;
+    bool ok = httpRequest("GET", "https://mimita.fun/api/game/me",
+                          "", sessionToken, body, httpCode);
+    if (!ok || httpCode != 200) return bootstrap;
+
+    try {
+        json j = json::parse(body);
+        if (!j.value("success", false)) return bootstrap;
+        parseUserInfo(bootstrap.user, j["profile"]);
+        parseStats(bootstrap.stats, j.value("stats", json::object()));
+        bootstrap.settings = j.value("settings", json::object());
+        bootstrap.inventory = j.value("inventory", json::object());
+        bootstrap.titles = j.value("titles", json::object());
+        bootstrap.loadout = j.value("loadout", json::object());
+        bootstrap.valid = bootstrap.user.valid && !bootstrap.user.username.empty();
+    } catch (...) {}
+    return bootstrap;
 }
 
 std::string exchangeTempToken(const std::string& exchangeToken)
@@ -242,19 +298,7 @@ GameUserInfo getProfile(const std::string& sessionToken)
     try {
         json j = json::parse(body);
         if (!j.value("success", false)) return info;
-        auto p = j["profile"];
-        info.valid = true;
-        info.id = p.value("id", 0);
-        info.username = p.value("username", "");
-        info.displayName = p.value("display_name", p.value("username", ""));
-        info.email = p.value("email", "");
-        info.bio = p.value("bio", "");
-        info.avatarUrl = p.value("avatar_url", "");
-        if (p.contains("avatar_data") && !p["avatar_data"].is_null())
-            info.avatarData = p["avatar_data"];
-        info.supporterTier = p.value("supporter_tier", "free");
-        info.role = p.value("role", "user");
-        info.createdAt = p.value("created_at", "");
+        parseUserInfo(info, j["profile"]);
     } catch (...) {}
     return info;
 }
@@ -316,18 +360,7 @@ GameStats getStats(const std::string& sessionToken)
     try {
         json j = json::parse(respBody);
         if (!j.value("success", false)) return stats;
-        auto s = j["stats"];
-        stats.wins = s.value("wins", 0);
-        stats.losses = s.value("losses", 0);
-        stats.kills = s.value("kills", 0);
-        stats.deaths = s.value("deaths", 0);
-        stats.gamesPlayed = s.value("games_played", 0);
-        stats.playtimeSeconds = s.value("playtime_seconds", 0LL);
-        stats.highestMmr = s.value("highest_mmr", 5000);
-        stats.currentMmr = s.value("current_mmr", 5000);
-        stats.accuracy = s.value("accuracy", 0.0f);
-        stats.headshots = s.value("headshots", 0);
-        stats.bestKillStreak = s.value("best_kill_streak", 0);
+        parseStats(stats, j["stats"]);
     } catch (...) {}
     return stats;
 }

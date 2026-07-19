@@ -1,5 +1,16 @@
+// 07 19 2026, 09 29
+/* purpose
+* Local UDP protocol smoke test for server/client networking behavior.
+* Verifies joins, snapshots, movement, combat, respawn, and projectile fire flow.
+* Exercises grenade projectile accept, retry, rejection, second fire, and state packets.
+* Does NOT launch the server process or configure deployment services.
+* Does NOT test ICE relay behavior, browser UI, or rendering.
+* Does NOT replace focused deterministic unit tests for individual subsystems.
+*/
+
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "network/snapshot-chunks.h"
 
 #include <cstdio>
 #include <chrono>
@@ -15,8 +26,14 @@ struct TestClient
     SOCKET socket = INVALID_SOCKET;
     uint32_t id = 0;
     std::string approvedName;
+    std::string mapId;
+    uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
+    bool mapReadySent = false;
     MimitaNet::SnapshotPacket snapshot{};
 };
+
+const sockaddr_in* gServerAddress = nullptr;
 
 void copyName(char (&out)[MimitaNet::MAX_NAME_BYTES], const char* name)
 {
@@ -40,7 +57,42 @@ void sendHello(TestClient& client, const sockaddr_in& server)
            (const sockaddr*)&server, sizeof(server));
 }
 
-bool pump(TestClient& client, uint64_t deadline)
+void sendMapReady(TestClient& client, const sockaddr_in& server)
+{
+    if (!client.id || client.mapReadySent)
+        return;
+
+    MimitaNet::ClientMapReadyPacket ready{};
+    ready.header.type = MimitaNet::PACKET_CLIENT_MAP_READY;
+    ready.header.playerId = client.id;
+    ready.assignedPlayerId = client.id;
+    copyName(ready.mapId, client.mapId.empty() ? "funworld3" : client.mapId.c_str());
+    sendto(client.socket, (const char*)&ready, sizeof(ready), 0,
+           (const sockaddr*)&server, sizeof(server));
+    client.mapReadySent = true;
+}
+
+void sendSpawnAck(TestClient& client,
+                  const MimitaNet::PlayerRespawnedPacket& spawn,
+                  const sockaddr_in& server)
+{
+    if (!client.id)
+        return;
+
+    client.spawnGeneration = spawn.spawnGeneration;
+    client.transformEpoch = spawn.transformEpoch;
+
+    MimitaNet::SpawnAckPacket ack{};
+    ack.header.type = MimitaNet::PACKET_SPAWN_ACK;
+    ack.header.playerId = client.id;
+    ack.header.transformEpoch = client.transformEpoch;
+    ack.spawnGeneration = client.spawnGeneration;
+    ack.transformEpoch = client.transformEpoch;
+    sendto(client.socket, (const char*)&ack, sizeof(ack), 0,
+           (const sockaddr*)&server, sizeof(server));
+}
+
+bool pump(TestClient& client, uint64_t deadline, const sockaddr_in* server = nullptr)
 {
     char buffer[16384];
     while (MimitaNet::nowMs() < deadline)
@@ -57,6 +109,7 @@ bool pump(TestClient& client, uint64_t deadline)
         }
 
         auto* header = reinterpret_cast<MimitaNet::PacketHeader*>(buffer);
+        const sockaddr_in* serverForResponse = server ? server : gServerAddress;
         if (bytes < (int)sizeof(*header) ||
             header->magic != MimitaNet::PROTOCOL_MAGIC ||
             header->version != MimitaNet::PROTOCOL_VERSION)
@@ -68,12 +121,34 @@ bool pump(TestClient& client, uint64_t deadline)
             auto* welcome = reinterpret_cast<MimitaNet::WelcomePacket*>(buffer);
             client.id = welcome->assignedPlayerId;
             client.approvedName = welcome->approvedName;
+            client.mapId = welcome->mapId[0] ? welcome->mapId : "funworld3";
+            if (serverForResponse)
+                sendMapReady(client, *serverForResponse);
+        }
+        else if (header->type == MimitaNet::PACKET_PLAYER_RESPAWNED &&
+                 bytes >= (int)sizeof(MimitaNet::PlayerRespawnedPacket))
+        {
+            auto* spawn = reinterpret_cast<MimitaNet::PlayerRespawnedPacket*>(buffer);
+            if (serverForResponse)
+                sendSpawnAck(client, *spawn, *serverForResponse);
         }
         else if (header->type == MimitaNet::PACKET_SNAPSHOT &&
                  bytes >= (int)sizeof(MimitaNet::SnapshotPacket))
         {
             client.snapshot =
                 *reinterpret_cast<MimitaNet::SnapshotPacket*>(buffer);
+            if (client.id && client.snapshot.playerCount >= 2 &&
+                client.snapshot.npcCount >= 3)
+                return true;
+        }
+        else if (header->type == MimitaNet::PACKET_SNAPSHOT)
+        {
+            MimitaNet::SnapshotChunkPacket chunk{};
+            if (!MimitaNet::parseSnapshotChunk(buffer, (size_t)bytes, chunk))
+                continue;
+            MimitaNet::clearSnapshotPacket(client.snapshot, chunk.header.tick);
+            if (!MimitaNet::appendSnapshotChunkToPacket(chunk, client.snapshot))
+                continue;
             if (client.id && client.snapshot.playerCount >= 2 &&
                 client.snapshot.npcCount >= 3)
                 return true;
@@ -108,10 +183,13 @@ void sendPosition(
     MimitaNet::InputPacket input{};
     input.header.type = MimitaNet::PACKET_INPUT;
     input.header.playerId = client.id;
+    input.header.transformEpoch = client.transformEpoch;
     input.camForwardX = 1.0f;
     input.clientPx = x;
     input.clientPy = y;
     input.clientPz = z;
+    input.transformEpoch = client.transformEpoch;
+    input.sizeScale = 1.0f;
     input.respawnSerial = respawnSerial;
     sendto(client.socket, (const char*)&input, sizeof(input), 0,
            (const sockaddr*)&server, sizeof(server));
@@ -213,6 +291,7 @@ int main()
     sockaddr_in server{};
     if (!MimitaNet::parseAddress("127.0.0.1:1357", server))
         return 2;
+    gServerAddress = &server;
 
     TestClient first;
     TestClient second;
@@ -222,9 +301,14 @@ int main()
     sendHello(first, server);
     sendHello(second, server);
 
+    bool firstReady = false;
+    bool secondReady = false;
     const uint64_t deadline = MimitaNet::nowMs() + 4000;
-    const bool firstReady = pump(first, deadline);
-    const bool secondReady = pump(second, deadline);
+    while (MimitaNet::nowMs() < deadline && (!firstReady || !secondReady))
+    {
+        firstReady = pump(first, MimitaNet::nowMs() + 30, &server) || firstReady;
+        secondReady = pump(second, MimitaNet::nowMs() + 30, &server) || secondReady;
+    }
     if (!firstReady || !secondReady)
         return 4;
     if (first.id == second.id || first.approvedName == second.approvedName)
@@ -440,14 +524,30 @@ int main()
         MimitaNet::InputPacket input{};
         input.header.type = MimitaNet::PACKET_INPUT;
         input.header.playerId = first.id;
-        input.equipSlot = 8;
+        input.header.transformEpoch = first.transformEpoch;
+        input.equippedSlot = 8;
         input.equipSerial = 42;
+        input.transformEpoch = first.transformEpoch;
+        if (const MimitaNet::SnapshotEntity* playerEntity = findEntity(first, first.id))
+        {
+            input.clientPx = playerEntity->px;
+            input.clientPy = playerEntity->py;
+            input.clientPz = playerEntity->pz;
+        }
+        input.camForwardX = 1.0f;
+        input.sizeScale = 1.0f;
         sendto(first.socket, (const char*)&input, sizeof(input), 0,
                (const sockaddr*)&server, sizeof(server));
     }
 
     // Test 5a: Send serial 1, expect accepted
-    const float origin[3] = {0.0f, 0.0f, 32.0f};
+    float origin[3] = {0.0f, 0.0f, 32.0f};
+    if (const MimitaNet::SnapshotEntity* playerEntity = findEntity(first, first.id))
+    {
+        origin[0] = playerEntity->px;
+        origin[1] = playerEntity->py;
+        origin[2] = playerEntity->pz + 0.8f;
+    }
     sendGrenadeRequest(first, 1, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
     if (pumpExpectResult(first, 1, 2000) && lastResult.accepted && lastResult.projectileId != 0)
     {
