@@ -79,6 +79,14 @@ void registerWeaponCommands()
             }
 
             if (mpContext.active) {
+                // Block attacks until SpawnActivated confirms server has accepted our spawn ACK
+                if (!mpContext.gameplayActive)
+                {
+                    Debug::log(Debug::Category::Weapons, "[ATTACK BLOCKED] playerId=%u — not yet Active (awaiting SpawnActivated)\n",
+                               mpContext.localPlayerId);
+                    Terminal::instance().addLog("[WEAPON] not yet ready");
+                    return;
+                }
                 const glm::vec3 direction = glm::length(shot.end - shot.start) > 0.001f
                     ? glm::normalize(shot.end - shot.start)
                     : camera.front;

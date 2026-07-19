@@ -2,6 +2,7 @@
 #include "network/network-weapons.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
+#include "debug/debug-log.h"
 
 #include <cstdio>
 #include <cstring>
@@ -233,12 +234,14 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn)
 {
     resetPlayerForSpawn(player, isInitialSpawn);
+    player.spawnState = ServerPlayer::AwaitingSpawnAck;
 
     PlayerRespawnedPacket spawnSync{};
     spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
     spawnSync.header.tick = 0;
     spawnSync.header.playerId = player.id;
     spawnSync.spawnGeneration = player.spawnGeneration;
+    spawnSync.transformEpoch = player.transformEpoch;
     spawnSync.health = player.health;
     spawnSync.weaponCount = 0;
     for (const auto& wkv : player.weaponRuntimes)
@@ -262,9 +265,48 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
         sendto(sock, (const char*)&spawnSync, sizeof(spawnSync), 0,
                (sockaddr*)&player.addr, sizeof(player.addr));
 
-    printf("[SPAWN SYNC SERVER SEND] id=%u spawnGen=%u reason=%s health=%d\n",
-           player.id, player.spawnGeneration,
-           isInitialSpawn ? "initial" : "respawn", player.health);
+    printf("[SPAWN TX CREATE] id=%u spawnGen=%u epoch=%u reason=%s health=%d ownedWeapons=%zu\n",
+           player.id, player.spawnGeneration, player.transformEpoch,
+           isInitialSpawn ? "initial" : "respawn", player.health, player.ownedWeaponIds.size());
+}
+
+// ── Retransmit SpawnConfirmed while awaiting ack ─────────────────────
+void retrySpawnSync(SOCKET sock, ServerPlayer& player)
+{
+    if (player.spawnState != ServerPlayer::AwaitingSpawnAck)
+        return;
+
+    // Rebuild and resend the identical spawn transaction
+    PlayerRespawnedPacket spawnSync{};
+    spawnSync.header.type = PACKET_PLAYER_RESPAWNED;
+    spawnSync.header.tick = 0;
+    spawnSync.header.playerId = player.id;
+    spawnSync.spawnGeneration = player.spawnGeneration;
+    spawnSync.transformEpoch = player.transformEpoch;
+    spawnSync.health = player.health;
+    spawnSync.weaponCount = 0;
+    for (const auto& wkv : player.weaponRuntimes)
+    {
+        if (spawnSync.weaponCount >= 16) break;
+        uint16_t wid = weaponDefNetworkIdFor(wkv.first);
+        if (wid == 0) continue;
+        auto& ws = spawnSync.weapons[spawnSync.weaponCount++];
+        ws.weaponDefNetworkId = wid;
+        ws.magazineAmmo = wkv.second.magazineAmmo;
+        ws.reserveAmmo = wkv.second.reserveAmmo;
+        ws.nextAllowedFireTick = wkv.second.nextAllowedFireTick;
+        ws.stateRevision = wkv.second.stateRevision;
+        ws.reloading = wkv.second.reloading ? 1 : 0;
+    }
+
+    if (player.transport)
+        player.transport->send(&spawnSync, sizeof(spawnSync));
+    else
+        sendto(sock, (const char*)&spawnSync, sizeof(spawnSync), 0,
+               (sockaddr*)&player.addr, sizeof(player.addr));
+
+    Debug::log(Debug::Category::Weapons, "[SPAWN TX RETRY] id=%u spawnGen=%u epoch=%u\n",
+               player.id, player.spawnGeneration, player.transformEpoch);
 }
 
 // ── Advance all reload timers — called once per server tick ─────────
@@ -356,7 +398,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
             }
             beginAuthoritativeTransform(p, respawnPos, glm::vec3(0.0f), respawnYaw, "respawn");
-            resetPlayerForSpawn(p, false);  // preserve ownedWeaponIds
+            // resetPlayerForSpawn is called by completeAuthoritativeSpawn
+            // which is triggered by justRespawned flag in the server pump.
             p.justRespawned = true;  // signal caller to send spawn sync
             p.input = {};
             p.attackQueued = false;
@@ -367,6 +410,14 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                    serverTimestamp(), p.id, p.pos.x, p.pos.y, p.pos.z, (unsigned)p.transformEpoch,
                    world.spawnPoints.size(), p.spawnGeneration, p.health);
         }
+        return;
+    }
+
+    // If not Active (awaiting spawn ack), freeze movement
+    if (p.spawnState != ServerPlayer::Active)
+    {
+        p.vel = glm::vec3(0.0f);
+        p.clientStateUpdated = false;
         return;
     }
 

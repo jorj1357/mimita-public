@@ -694,6 +694,34 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         {
             const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
             applyAuthoritativeSpawn(ctx, pr);
+            // Send spawn acknowledgement so server can activate gameplay
+            if (ctx.active && ctx.localPlayerId)
+            {
+                SpawnAckPacket ack{};
+                ack.header.type = PACKET_SPAWN_ACK;
+                ack.header.tick = ctx.tick;
+                ack.header.playerId = ctx.localPlayerId;
+                ack.spawnGeneration = pr->spawnGeneration;
+                ack.transformEpoch = pr->transformEpoch;
+                mpSendPacket(ctx, &ack, sizeof(ack));
+                Debug::log(Debug::Category::Weapons, "[SPAWN ACK SEND] playerId=%u spawnGen=%u epoch=%u (from spawn packet)\n",
+                           ctx.localPlayerId, ack.spawnGeneration, ack.transformEpoch);
+
+                // Update ctx.transformEpoch so reconciliation tracks correctly
+                ctx.transformEpoch = pr->transformEpoch;
+                ctx.gameplayActive = false;  // waiting for SpawnActivated
+            }
+        }
+        else if (header->type == PACKET_SPAWN_ACTIVATED &&
+                 bytes >= (int)sizeof(SpawnActivatedPacket))
+        {
+            const SpawnActivatedPacket* act = reinterpret_cast<const SpawnActivatedPacket*>(buffer);
+            if (act->spawnGeneration == ctx.lastKnownSpawnGeneration)
+            {
+                ctx.gameplayActive = true;
+                Debug::log(Debug::Category::Weapons, "[SPAWN ACTIVATED RX] playerId=%u spawnGen=%u epoch=%u — gameplay enabled\n",
+                           ctx.localPlayerId, act->spawnGeneration, act->transformEpoch);
+            }
         }
         else if (header->type == PACKET_CHAT_MESSAGE &&
                  bytes >= (int)sizeof(ChatPacket))

@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 18;
+constexpr uint16_t PROTOCOL_VERSION = 19;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -77,7 +77,9 @@ enum PacketType : uint8_t
     PACKET_RELOAD_RESULT = 41,
     // ── Respawn ─────────────────────────────────────────────────────
     PACKET_RESPAWN_REQUEST = 42,
-    PACKET_PLAYER_RESPAWNED = 43
+    PACKET_PLAYER_RESPAWNED = 43,
+    PACKET_SPAWN_ACK = 44,
+    PACKET_SPAWN_ACTIVATED = 45
 };
 
 enum EntityType : uint8_t
@@ -888,6 +890,7 @@ struct PlayerRespawnedPacket
 {
     PacketHeader header;
     uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
     int32_t health = 100;
     // Weapon inventory follows (compact format, up to 16 weapons)
     struct WeaponSlot {
@@ -900,6 +903,23 @@ struct PlayerRespawnedPacket
     };
     WeaponSlot weapons[16];
     uint8_t weaponCount = 0;
+};
+
+// ── Spawn acknowledgement ────────────────────────────────────────────
+struct SpawnAckPacket
+{
+    PacketHeader header;
+    uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
+};
+
+// ── Spawn activated (server confirms ACK was received) ────────────────
+struct SpawnActivatedPacket
+{
+    PacketHeader header;
+    uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
+    uint32_t serverTick = 0;
 };
 
 static_assert(sizeof(SnapshotPacket) < 16000, "SnapshotPacket exceeds client receive buffer");
