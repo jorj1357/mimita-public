@@ -126,6 +126,14 @@ std::vector<MatchEntry> getMatchHistory(const std::string& sessionToken, int pag
 json getSettings(const std::string& sessionToken);
 bool updateSettings(const std::string& sessionToken, const json& settings);
 
+// Account-owned game data
+json getInventory(const std::string& sessionToken);
+bool updateInventory(const std::string& sessionToken, const json& inventory);
+json getLoadout(const std::string& sessionToken);
+bool updateLoadout(const std::string& sessionToken, const json& loadout);
+json getTitles(const std::string& sessionToken);
+bool updateTitles(const std::string& sessionToken, const json& titles);
+
 // Game Auth (direct username/email + password login)
 struct GameLoginResult
 {
@@ -158,6 +166,16 @@ struct GameLogoutResult
     bool ok = false;
 };
 
+struct GameAccountLookupResult
+{
+    bool ok = false;
+    bool exists = false;
+    int accountId = 0;
+    std::string username;
+    std::string errorMessage;
+};
+
+GameAccountLookupResult gameLookupAccount(const std::string& identifier);
 GameLoginResult gameLogin(const std::string& identifier, const std::string& password,
                           bool rememberMe, const std::string& deviceId,
                           const std::string& deviceName, const std::string& platform,

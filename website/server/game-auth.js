@@ -9,10 +9,45 @@ import { createRateLimit } from "./rateLimit.js"
 
 const router = Router()
 const loginRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 10, name: "game_auth_login" })
+const lookupRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 20, name: "game_auth_lookup" })
 
 function hashRefreshToken(token) {
     return crypto.createHash("sha256").update("mimita_refresh:").update(token).digest("hex")
 }
+
+// POST /api/game/auth/lookup
+router.post("/lookup", lookupRateLimit, async (req, res, next) => {
+    try {
+        const identifier = String(req.body.identifier || "").trim()
+        if (!identifier) {
+            return res.status(400).json({ ok: false, exists: false })
+        }
+
+        const result = await pool.query(
+            `SELECT id, username
+             FROM users
+             WHERE deleted_at IS NULL
+               AND (username_key = $1 OR email = $2)
+             LIMIT 1`,
+            [usernameKey(identifier), normalizeEmail(identifier)]
+        )
+
+        if (!result.rowCount) {
+            return res.json({ ok: true, exists: false })
+        }
+
+        res.json({
+            ok: true,
+            exists: true,
+            account: {
+                id: result.rows[0].id,
+                username: result.rows[0].username
+            }
+        })
+    } catch (error) {
+        next(error)
+    }
+})
 
 // POST /api/game/auth/login
 router.post("/login", loginRateLimit, async (req, res, next) => {

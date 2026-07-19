@@ -97,6 +97,14 @@ public:
     json getCloudAvatarData();
     bool saveCloudAvatarData(const json& avatarData);
 
+    // Account-owned game data
+    json getCloudInventory();
+    bool saveCloudInventory(const json& inventory);
+    json getCloudLoadout();
+    bool saveCloudLoadout(const json& loadout);
+    json getCloudTitles();
+    bool saveCloudTitles(const json& titles);
+
     // Apply external user info (from AuthController login)
     void applyUserInfo(const GameUserInfo& info);
     void applyBootstrap(const std::string& token, const GameBootstrap& bootstrap);

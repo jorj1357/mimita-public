@@ -403,3 +403,48 @@ bool AuthSystem::saveCloudAvatarData(const json& avatarData)
     if (mState != AuthState::Authenticated) return false;
     return ::uploadAvatarData(mUser.sessionToken, avatarData);
 }
+
+json AuthSystem::getCloudInventory()
+{
+    if (mState != AuthState::Authenticated) return {};
+    mUser.inventory = getInventory(mUser.sessionToken);
+    return mUser.inventory;
+}
+
+bool AuthSystem::saveCloudInventory(const json& inventory)
+{
+    if (mState != AuthState::Authenticated) return false;
+    bool ok = updateInventory(mUser.sessionToken, inventory);
+    if (ok) mUser.inventory = inventory;
+    return ok;
+}
+
+json AuthSystem::getCloudLoadout()
+{
+    if (mState != AuthState::Authenticated) return {};
+    mUser.loadout = getLoadout(mUser.sessionToken);
+    return mUser.loadout;
+}
+
+bool AuthSystem::saveCloudLoadout(const json& loadout)
+{
+    if (mState != AuthState::Authenticated) return false;
+    bool ok = updateLoadout(mUser.sessionToken, loadout);
+    if (ok) mUser.loadout = loadout;
+    return ok;
+}
+
+json AuthSystem::getCloudTitles()
+{
+    if (mState != AuthState::Authenticated) return {};
+    mUser.titles = getTitles(mUser.sessionToken);
+    return mUser.titles;
+}
+
+bool AuthSystem::saveCloudTitles(const json& titles)
+{
+    if (mState != AuthState::Authenticated) return false;
+    bool ok = updateTitles(mUser.sessionToken, titles);
+    if (ok) mUser.titles = titles;
+    return ok;
+}

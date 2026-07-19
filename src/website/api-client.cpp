@@ -483,7 +483,140 @@ bool updateSettings(const std::string& sessionToken, const json& settings)
     return false;
 }
 
+json getInventory(const std::string& sessionToken)
+{
+    json empty;
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("GET", "https://mimita.fun/api/game/inventory",
+                          "", sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return empty;
+    try {
+        json j = json::parse(respBody);
+        if (j.value("success", false))
+            return j.value("inventory", empty);
+    } catch (...) {}
+    return empty;
+}
+
+bool updateInventory(const std::string& sessionToken, const json& inventory)
+{
+    json req;
+    req["inventory"] = inventory;
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("PUT", "https://mimita.fun/api/game/inventory",
+                          req.dump(), sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return false;
+    try {
+        json j = json::parse(respBody);
+        return j.value("success", false);
+    } catch (...) {}
+    return false;
+}
+
+json getLoadout(const std::string& sessionToken)
+{
+    json empty;
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("GET", "https://mimita.fun/api/game/loadout",
+                          "", sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return empty;
+    try {
+        json j = json::parse(respBody);
+        if (j.value("success", false))
+            return j.value("loadout", empty);
+    } catch (...) {}
+    return empty;
+}
+
+bool updateLoadout(const std::string& sessionToken, const json& loadout)
+{
+    json req;
+    req["loadout"] = loadout;
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/game/loadout",
+                          req.dump(), sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return false;
+    try {
+        json j = json::parse(respBody);
+        return j.value("success", false);
+    } catch (...) {}
+    return false;
+}
+
+json getTitles(const std::string& sessionToken)
+{
+    json empty;
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("GET", "https://mimita.fun/api/game/titles",
+                          "", sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return empty;
+    try {
+        json j = json::parse(respBody);
+        if (j.value("success", false))
+            return j.value("titles", empty);
+    } catch (...) {}
+    return empty;
+}
+
+bool updateTitles(const std::string& sessionToken, const json& titles)
+{
+    json req;
+    req["titles"] = titles;
+    std::string respBody;
+    int httpCode = 0;
+    bool ok = httpRequest("POST", "https://mimita.fun/api/game/titles",
+                          req.dump(), sessionToken, respBody, httpCode);
+    if (!ok || httpCode != 200) return false;
+    try {
+        json j = json::parse(respBody);
+        return j.value("success", false);
+    } catch (...) {}
+    return false;
+}
+
 // ── Game Auth (direct username/email + password login) ───────────────────────
+
+GameAccountLookupResult gameLookupAccount(const std::string& identifier)
+{
+    GameAccountLookupResult result;
+    json req;
+    req["identifier"] = identifier;
+
+    std::string respBody;
+    int httpCode = 0;
+    bool transportOk = httpRequest("POST", "https://mimita.fun/api/game/auth/lookup",
+                                    req.dump(), "", respBody, httpCode);
+    if (!transportOk)
+    {
+        result.errorMessage = "Could not reach the account server.";
+        return result;
+    }
+    if (httpCode < 200 || httpCode > 299)
+    {
+        result.errorMessage = "Account lookup failed.";
+        return result;
+    }
+
+    try {
+        json j = json::parse(respBody);
+        result.ok = j.value("ok", false);
+        result.exists = j.value("exists", false);
+        if (j.contains("account") && j["account"].is_object())
+        {
+            result.accountId = j["account"].value("id", 0);
+            result.username = j["account"].value("username", "");
+        }
+    } catch (...) {
+        result.ok = false;
+        result.errorMessage = "Invalid account lookup response.";
+    }
+    return result;
+}
 
 GameLoginResult gameLogin(const std::string& identifier, const std::string& password,
                           bool rememberMe, const std::string& deviceId,

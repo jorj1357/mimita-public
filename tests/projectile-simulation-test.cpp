@@ -1047,6 +1047,56 @@ static void testPhysicsDoesNotOwnExplosionPolicy()
     CHECK(!state.exploded,
           "physics kernel should not set exploded on player impact");
 
+    // ── WorldImpact ownership ───────────────────────────────────────
+    {
+        TestCollisionWorld w2;
+        w2.addTriangle(
+            glm::vec3(-10,-10,0), glm::vec3(10,-10,0),
+            glm::vec3(10,10,0), glm::vec3(0,0,1), 0);
+        w2.addTriangle(
+            glm::vec3(-10,-10,0), glm::vec3(10,10,0),
+            glm::vec3(-10,10,0), glm::vec3(0,0,1), 1);
+
+        ProjectilePhysicsConfig c2;
+        c2.radius = 0.3f; c2.gravity = 0; c2.drag = 0;
+        c2.bounceEnabled = false; c2.lifetime = 10.0f;
+
+        ProjectilePhysicsState s2;
+        s2.position = glm::vec3(0,0,5);
+        s2.velocity = glm::vec3(0,0,-60);
+
+        ProjectileStepResult r2;
+        for (int t = 0; t < 10; ++t)
+        {
+            r2 = simulateProjectileTick(s2, c2, w2, 1.0f/60.0f);
+            if (r2.type == ProjectileCollisionType::WorldImpact)
+                break;
+        }
+        CHECK(r2.type == ProjectileCollisionType::WorldImpact,
+              "expected WorldImpact got %d", (int)r2.type);
+        CHECK(!s2.exploded,
+              "physics kernel should not set exploded on world impact");
+    }
+
+    // ── Caller-owned untouched — exploded=true before call ──────────
+    {
+        ProjectilePhysicsConfig c3;
+        c3.lifetime = 10.0f;
+
+        ProjectilePhysicsState s3;
+        s3.position = glm::vec3(5,5,5);
+        s3.velocity = glm::vec3(10,0,0);
+        s3.exploded = true; // caller marked it as ended
+
+        ProjectileStepResult r3 = simulateProjectileTick(s3, c3, world, 1.0f/60.0f);
+        CHECK(r3.type == ProjectileCollisionType::None,
+              "exploded projectile should return None, got %d", (int)r3.type);
+        CHECK(s3.exploded == true,
+              "caller-owned exploded flag was cleared by kernel");
+        CHECK(s3.position == glm::vec3(5,5,5),
+              "exploded projectile position changed");
+    }
+
     PASS();
 }
 

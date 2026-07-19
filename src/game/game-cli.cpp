@@ -1,5 +1,16 @@
+// 07 19 2026, 10 16
+/* purpose
+* Owns lightweight command-line self-tests and diagnostic launch paths.
+* Runs requested checks before normal graphics or gameplay startup.
+* Keeps dedicated verification commands process-bounded and script-friendly.
+* Does NOT own the main game loop, rendering lifecycle, or packet schemas.
+* Does NOT implement gameplay systems or long-running server/client loops.
+* Does NOT replace feature-owned test logic.
+*/
+
 #include "game/game-cli.h"
 #include "combat/weapon-runtime.h"
+#include "network/snapshot-chunks.h"
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
@@ -222,6 +233,14 @@ bool handleGameCLI(int argc, char** argv)
         }
         runIceConnect(argv[2], opts);
         return true;
+    }
+
+    if (std::string(argv[1]) == "--snapshot-chunk-selftest") {
+        std::string report;
+        const bool ok = MimitaNet::runSnapshotChunkSelfTest(&report);
+        printf("%s", report.c_str());
+        printf("[SNAPSHOT CHUNK SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
     }
 
     if (std::string(argv[1]) == "--collision-selftest") {
