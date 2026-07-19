@@ -118,6 +118,7 @@ void registerCursorCommands();
 #include "terminal/duel-commands.h"
 #include "terminal/editor-commands.h"
 #include "terminal/network-commands.h"
+#include "terminal/auth-commands.h"
 #include "perf/perf.h"
 #include "replay/replay-export.h"
 #include "effects/hitfx-commands.h"
@@ -336,6 +337,7 @@ void gameInitSubsystems(Engine& engine)
     gpMpContext = &mpContext;
 
     registerPlayerCommands();
+    registerAuthCommands();
     registerWeaponCommands();
     registerWeaponBenchCommands();
     registerWeaponDebugCommand();
