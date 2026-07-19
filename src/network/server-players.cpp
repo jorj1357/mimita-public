@@ -549,6 +549,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.aimZ = player.input.camForward.z;
     out.pingMs = player.pingMs;
     out.sizeScale = player.sizeScale;
+    out.spawnGeneration = player.spawnGeneration;
 
     {
         static uint64_t lastLookSnapshotLogMs = 0;

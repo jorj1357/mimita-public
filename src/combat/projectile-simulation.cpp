@@ -378,6 +378,10 @@ ProjectileStepResult simulateProjectileTick(
     float subDt = fixedDt / (float)subSteps;
 
     static constexpr int MAX_BOUNCE_ITER = 4;
+    std::vector<int> triCandidates;
+    std::vector<SweptPlayerCapsule> capsuleCandidates;
+    triCandidates.reserve(64);
+    capsuleCandidates.reserve(16);
 
     for (int s = 0; s < subSteps && !state.exploded && !state.sleeping; ++s)
     {
@@ -440,8 +444,11 @@ ProjectileStepResult simulateProjectileTick(
             CollisionCandidate best{};
             best.t = 2.0f;
 
-            std::vector<int> triCandidates;
+            triCandidates.clear();
             world.queryTrianglesSwept(state.position, proposedPos, config.radius, triCandidates);
+            ++result.triangleQueryCount;
+            result.triangleCandidateTotal += (uint32_t)triCandidates.size();
+            result.triangleCandidateMax = std::max(result.triangleCandidateMax, (uint32_t)triCandidates.size());
             for (int triIdx : triCandidates)
             {
                 const CollisionTriangle& tri = world.triangleAt(triIdx);
@@ -456,8 +463,10 @@ ProjectileStepResult simulateProjectileTick(
                 }
             }
 
-            std::vector<SweptPlayerCapsule> capsuleCandidates;
+            capsuleCandidates.clear();
             world.queryPlayerCapsulesSwept(state.position, proposedPos, config.radius, capsuleCandidates);
+            result.playerCapsuleCandidateTotal += (uint32_t)capsuleCandidates.size();
+            result.playerCapsuleCandidateMax = std::max(result.playerCapsuleCandidateMax, (uint32_t)capsuleCandidates.size());
             for (int ci = 0; ci < (int)capsuleCandidates.size(); ++ci)
             {
                 const SweptPlayerCapsule& cap = capsuleCandidates[ci];

@@ -74,6 +74,8 @@ static void processSnapshotEntities(
             ctx.localServerEpoch = entity.transformEpoch;
             ctx.localPingMs = entity.pingMs;
             ctx.latestLocalSnapshotTick = serverTick;
+            if (entity.spawnGeneration != 0)
+                ctx.lastKnownSpawnGeneration = entity.spawnGeneration;
             if (entity.health > 0)
                 ctx.latestAliveSnapshotTick = serverTick;
 
@@ -148,6 +150,7 @@ static void processSnapshotEntities(
         Player& p = (*replicas)[entity.networkEntityId];
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
+        p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
         {
             if (GetPlayerSettings().avatarName.empty()) {

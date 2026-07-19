@@ -186,7 +186,13 @@ def source_changed(src):
 
     # zero-byte object file — stale artifact from aborted parallel build
     if os.path.getsize(obj) == 0:
-        os.remove(obj)
+        try:
+            os.remove(obj)
+        except PermissionError:
+            # Another compiler thread/process can briefly hold stale zero-byte
+            # objects after an aborted parallel build. Treat it as changed so
+            # this translation unit is retried instead of crashing the build.
+            pass
         return True
 
     obj_time = os.path.getmtime(obj)

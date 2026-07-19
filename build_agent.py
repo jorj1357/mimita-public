@@ -1,19 +1,116 @@
+# 07 19 2026, 11 10
+# purpose
+# Build script for AI agents that compiles MiMITA without launching the game.
+# Serializes agent builds through a visible lock file to avoid object-file races.
+# Writes build/changelog.txt after each build so agents can verify status.
+# Does NOT run mimita.exe, open graphics windows, or deploy builds.
+# Does NOT modify source code other than normal compiler outputs.
+# Does NOT hide failed builds or lock ownership from callers.
+
 # build_agent.py
-# Build script for AI agents.
-# Builds without running the exe, so agents never hang.
-# Writes build/changelog.txt after each build so AI agents
-# can verify whether a real build happened.
 
 import subprocess
 import sys
 import os
 import datetime
 import time
+import json
+import socket
+import atexit
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+BUILD_DIR = os.path.join(ROOT, "build")
+LOCK_FILE = os.path.join(BUILD_DIR, "build-agent.lock")
+LOCK_WAIT_SECONDS = 900
+LOCK_POLL_SECONDS = 2
 
 # ── Build history tracker ─────────────────────────────────────────────
 BUILD_HISTORY_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "build", "build-history.txt"
+    ROOT, "build", "build-history.txt"
 )
+
+
+def _process_is_running(pid):
+    if not pid or pid <= 0:
+        return False
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return f'"{pid}"' in result.stdout or f',{pid},' in result.stdout
+    except Exception:
+        return True
+
+
+def _read_lock_info():
+    try:
+        with open(LOCK_FILE, "r", encoding="utf-8", errors="replace") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _format_lock_info(info):
+    if not info:
+        return "unknown owner"
+    return (
+        f"pid={info.get('pid', '?')} "
+        f"host={info.get('host', '?')} "
+        f"started={info.get('started', '?')} "
+        f"cmd={info.get('cmd', '?')}"
+    )
+
+
+def acquire_build_lock():
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    deadline = time.time() + LOCK_WAIT_SECONDS
+    warned_owner = None
+    payload = {
+        "pid": os.getpid(),
+        "host": socket.gethostname(),
+        "started": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "cmd": " ".join([sys.executable] + sys.argv),
+    }
+
+    while True:
+        try:
+            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            print(f"[BUILD LOCK] acquired pid={payload['pid']} file={LOCK_FILE}")
+            return True
+        except FileExistsError:
+            info = _read_lock_info()
+            owner = _format_lock_info(info)
+            owner_pid = int(info.get("pid", 0) or 0)
+            if not _process_is_running(owner_pid):
+                print(f"[BUILD LOCK] removing stale lock: {owner}")
+                try:
+                    os.remove(LOCK_FILE)
+                    continue
+                except OSError:
+                    pass
+
+            if owner != warned_owner:
+                print(f"[BUILD LOCK] waiting for active build: {owner}")
+                warned_owner = owner
+            if time.time() >= deadline:
+                print(f"[BUILD LOCK] timeout waiting for active build: {owner}")
+                return False
+            time.sleep(LOCK_POLL_SECONDS)
+
+
+def release_build_lock():
+    info = _read_lock_info()
+    if int(info.get("pid", 0) or 0) == os.getpid():
+        try:
+            os.remove(LOCK_FILE)
+            print("[BUILD LOCK] released")
+        except FileNotFoundError:
+            pass
 
 def load_build_history():
     """Return list of last 5 timestamp strings."""
@@ -44,6 +141,10 @@ kill_result = subprocess.run(
 time.sleep(0.5)
 
 if __name__ == "__main__":
+    if not acquire_build_lock():
+        sys.exit(2)
+    atexit.register(release_build_lock)
+
     start = datetime.datetime.now()
 
     result = subprocess.run(

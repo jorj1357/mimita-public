@@ -170,6 +170,9 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
     ctx.networkProjectiles.clear();
+    ctx.projectileTerminals.clear();
+    ctx.processedReliableEventIds.clear();
+    ctx.processedReliableEventOrder.clear();
     ctx.playerRegistry.clear();
     ctx.predictedProjectileIds.clear();
     ctx.remoteSwordStates.clear();
@@ -194,6 +197,8 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.shotEvents.clear();
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
+    ctx.processedReliableEventIds.clear();
+    ctx.processedReliableEventOrder.clear();
     ctx.processedPelletBlastSerials.clear();
     ctx.lastReceivedShotSerial.clear();
     ctx.fireRejections.clear();
@@ -318,6 +323,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
     ctx.networkProjectiles.clear();
+    ctx.projectileTerminals.clear();
     ctx.playerRegistry.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
@@ -424,7 +430,7 @@ void mpRequestExplode(MultiplayerContext& ctx)
 }
 
 // ── Generic AttackRequest with pending tracking and retry ──────────────
-void mpSendAttackRequest(MultiplayerContext& ctx,
+uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint16_t weaponDefNetworkId,
     int16_t equippedSlot,
     const glm::vec3& aimOrigin,
@@ -432,7 +438,7 @@ void mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& predictedMuzzle)
 {
     if (!ctx.active || !ctx.localPlayerId)
-        return;
+        return 0;
 
     uint32_t requestId = ctx.nextActionRequestId++;
     if (ctx.nextActionRequestId == 0)
@@ -479,6 +485,7 @@ void mpSendAttackRequest(MultiplayerContext& ctx,
     Debug::log(Debug::Category::Weapons, "[ATTACK REQUEST SEND] playerId=%u requestId=%u weaponDefNetId=%u spawnGen=%u pending=%zu\n",
                ctx.localPlayerId, requestId, weaponDefNetworkId, req.spawnGeneration,
                ctx.pendingAttackRequests.size());
+    return requestId;
 }
 
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
@@ -581,6 +588,7 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
     ctx.networkProjectiles.clear();
+    ctx.projectileTerminals.clear();
     ctx.playerRegistry.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
@@ -603,6 +611,8 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     ctx.lastDisconnectLogMs = 0;
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
+    ctx.processedReliableEventIds.clear();
+    ctx.processedReliableEventOrder.clear();
     ctx.serverPort = port;
 
     printf("[NET CONNECT] connecting to %s:%u with join token as \"%s\"\n",

@@ -232,6 +232,8 @@ void fire(
     rocket.ownerId = (uint32_t)(uintptr_t)(&owner);
     rocket.spawnTime = state.gameTime;
     rocket.smokeAccumulator = 0.0f;
+    rocket.fireSerial = 0;
+    rocket.authoritativeProjectileId = 0;
 
     state.activeRockets.push_back(rocket);
 
@@ -511,6 +513,65 @@ void update(
 
 void clear(RocketLauncherState& state) {
     state.activeRockets.clear();
+}
+
+void tagLatestLocalRocket(RocketLauncherState& state, uint32_t fireSerial)
+{
+    if (fireSerial == 0 || state.activeRockets.empty())
+        return;
+    for (auto it = state.activeRockets.rbegin(); it != state.activeRockets.rend(); ++it)
+    {
+        if (it->fireSerial == 0 && it->authoritativeProjectileId == 0)
+        {
+            it->fireSerial = fireSerial;
+            return;
+        }
+    }
+}
+
+bool attachAuthoritativeRocket(RocketLauncherState& state, uint32_t fireSerial, uint32_t projectileId)
+{
+    if (fireSerial == 0 || projectileId == 0)
+        return false;
+    for (auto& rocket : state.activeRockets)
+    {
+        if (rocket.fireSerial == fireSerial)
+        {
+            rocket.authoritativeProjectileId = projectileId;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool removeAuthoritativeRocket(RocketLauncherState& state, uint32_t projectileId)
+{
+    if (projectileId == 0)
+        return false;
+    for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); ++it)
+    {
+        if (it->authoritativeProjectileId == projectileId)
+        {
+            state.activeRockets.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool removeLocalRocketByFireSerial(RocketLauncherState& state, uint32_t fireSerial)
+{
+    if (fireSerial == 0)
+        return false;
+    for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); ++it)
+    {
+        if (it->fireSerial == fireSerial)
+        {
+            state.activeRockets.erase(it);
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace WeaponRocketLauncher

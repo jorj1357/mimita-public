@@ -149,9 +149,11 @@ void registerWeaponCommands()
                         uint16_t netId = MimitaNet::weaponDefNetworkIdFor(wdef2->id);
                         if (netId != 0)
                         {
-                            MimitaNet::mpSendAttackRequest(
+                            uint32_t requestId = MimitaNet::mpSendAttackRequest(
                                 mpContext, netId, wdef2->slot,
                                 shot.start, direction, shot.start);
+                            if (requestId != 0 && netWeapon == MimitaNet::NETWORK_WEAPON_ROCKET_LAUNCHER)
+                                weapons.tagLatestLocalRocket(requestId);
                             Debug::log(Debug::Category::Weapons,
                                        "[ATTACK] sent for weapon=%s netId=%u\n",
                                        wdef2->id.c_str(), netId);

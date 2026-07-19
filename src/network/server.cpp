@@ -1,3 +1,13 @@
+// 07 19 2026, 11 05
+/* purpose
+* Owns authoritative server startup, fixed-step scheduling, and tick orchestration.
+* Routes packets into server subsystems and reports server tick health diagnostics.
+* Keeps gameplay simulation at the shared fixed 60 Hz server delta.
+* Does NOT render, implement client prediction, or create local-only gameplay rules.
+* Does NOT own weapon definitions, projectile physics internals, or packet schemas.
+* Does NOT change simulation delta to compensate for load.
+*/
+
 #include "network/server.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
@@ -10,14 +20,94 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <random>
 #include <system_error>
 #include <thread>
 
 namespace MimitaNet {
+
+namespace {
+
+struct ServerLoopPerf
+{
+    std::array<double, 240> loopMs{};
+    uint32_t sampleCount = 0;
+    uint32_t sampleWrite = 0;
+    uint64_t totalLoopUs = 0;
+    double maxLoopMs = 0.0;
+    uint64_t overrunCount = 0;
+    uint64_t cappedCatchupCount = 0;
+};
+
+void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
+{
+    const double loopMs = (double)loopUs / 1000.0;
+    perf.loopMs[perf.sampleWrite % perf.loopMs.size()] = loopMs;
+    ++perf.sampleWrite;
+    if (perf.sampleCount < perf.loopMs.size())
+        ++perf.sampleCount;
+    perf.totalLoopUs += loopUs;
+    perf.maxLoopMs = std::max(perf.maxLoopMs, loopMs);
+    if (loopUs > 16667)
+        ++perf.overrunCount;
+    if (cappedCatchup)
+        ++perf.cappedCatchupCount;
+}
+
+double serverLoopP95Ms(const ServerLoopPerf& perf)
+{
+    if (perf.sampleCount == 0)
+        return 0.0;
+    std::array<double, 240> copy = perf.loopMs;
+    std::sort(copy.begin(), copy.begin() + perf.sampleCount);
+    size_t idx = (size_t)std::ceil((double)perf.sampleCount * 0.95) - 1;
+    if (idx >= perf.sampleCount)
+        idx = perf.sampleCount - 1;
+    return copy[idx];
+}
+
+void reportServerPerf(const char* label,
+                      ServerLoopPerf& perf,
+                      uint32_t tick,
+                      uint32_t previousTick,
+                      uint64_t elapsedMs)
+{
+    const ServerProjectilePerfStats projectile = consumeServerProjectilePerfStats();
+    const double elapsedSec = std::max(0.001, (double)elapsedMs / 1000.0);
+    const double hz = (double)(tick - previousTick) / elapsedSec;
+    const double avgLoopMs = perf.sampleCount > 0
+        ? (double)perf.totalLoopUs / (double)perf.sampleCount / 1000.0
+        : 0.0;
+    const double p95LoopMs = serverLoopP95Ms(perf);
+    const double projectileSimMs = (double)projectile.projectileSimUs / 1000.0;
+
+    printf("%s [SERVER PERF] hz=%.1f loopAvg=%.3fms loopP95=%.3fms loopMax=%.3fms "
+           "overruns=%llu cappedCatchup=%llu activeProjectiles=%u moving=%u sleeping=%u "
+           "projectileSim=%.3fms triQueries=%llu triCandidates=%llu triMax=%u "
+           "playerCapsuleCandidates=%llu playerCapsuleMax=%u projectileCorrections=%llu correctionBytes=%llu\n",
+           label, hz, avgLoopMs, p95LoopMs, perf.maxLoopMs,
+           (unsigned long long)perf.overrunCount,
+           (unsigned long long)perf.cappedCatchupCount,
+           projectile.activeProjectiles, projectile.movingProjectiles,
+           projectile.sleepingProjectiles, projectileSimMs,
+           (unsigned long long)projectile.triangleQueryCount,
+           (unsigned long long)projectile.triangleCandidateTotal,
+           projectile.triangleCandidateMax,
+           (unsigned long long)projectile.playerCapsuleCandidateTotal,
+           projectile.playerCapsuleCandidateMax,
+           (unsigned long long)projectile.correctionPackets,
+           (unsigned long long)projectile.correctionBytes);
+
+    perf = ServerLoopPerf{};
+}
+
+} // namespace
 
 // Forward declaration for background listen server thread
 static void listenServerThreadFunc(ListenServerState& state);
@@ -285,9 +375,13 @@ int runServer(const LaunchOptions& options)
     auto previousTime = std::chrono::steady_clock::now();
     double accumulator = 0.0;
     constexpr int MAX_STEPS = 5;
+    ServerLoopPerf loopPerf;
+    uint32_t lastPerfTick = 0;
+    uint64_t lastPerfMs = nowMs();
 
     while (true)
     {
+        auto loopStart = std::chrono::steady_clock::now();
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
         {
@@ -389,6 +483,8 @@ int runServer(const LaunchOptions& options)
                 handleServerCommand(buffer, bytes, players, npcs);
             else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
                 handleSpawnAck(sock, buffer, bytes, players, tick);
+            else if (header->type == PACKET_RELIABLE_EVENT_ACK && bytes >= (int)sizeof(ReliableEventAckPacket))
+                handleReliableEventAck(buffer, bytes, players);
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
@@ -432,42 +528,32 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
-            struct {
-                uint64_t simUs = 0, snapshotUs = 0, iceUs = 0, collisionUs = 0;
-            } tickProfile;
-
-            auto t0 = std::chrono::steady_clock::now();
             handleClientTimeout(players);
             for (auto& kv : players)
                 pushPositionHistory(kv.second, tick);
-        for (auto& kv : players)
-        {
-            simulatePlayer(kv.second, world);
-            if (kv.second.justRespawned)
-            {
-                kv.second.justRespawned = false;
-                completeAuthoritativeSpawn(sock, kv.second, false);
-            }
-            // Retry spawn sync for players awaiting ACK (every 6 ticks ≈ 100ms)
-            if (kv.second.spawnState == ServerPlayer::AwaitingSpawnAck && (tick % 6 == 0))
-                retrySpawnSync(sock, kv.second);
-        }
-        tickWeaponRuntimes(players, tick);
 
-        auto tCollision = std::chrono::steady_clock::now();
+            for (auto& kv : players)
+            {
+                simulatePlayer(kv.second, world);
+                if (kv.second.justRespawned)
+                {
+                    kv.second.justRespawned = false;
+                    completeAuthoritativeSpawn(sock, kv.second, false);
+                }
+                // Retry spawn sync for players awaiting ACK (every 6 ticks ≈ 100ms)
+                if (kv.second.spawnState == ServerPlayer::AwaitingSpawnAck && (tick % 6 == 0))
+                    retrySpawnSync(sock, kv.second);
+            }
+            tickWeaponRuntimes(players, tick);
+
             resolvePlayerCollision(players);
             checkVoidDeath(players, npcs);
-            tickProfile.collisionUs = (uint64_t)std::chrono::duration<double, std::micro>(
-                std::chrono::steady_clock::now() - tCollision).count();
 
             for (auto& kv : npcs)
                 simulateNpc(kv.second, players);
             tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
-            tickProfile.simUs = (uint64_t)std::chrono::duration<double, std::micro>(
-                std::chrono::steady_clock::now() - t0).count();
 
-            auto t1 = std::chrono::steady_clock::now();
             if (iceEnabled && iceListenerAgent && tick % 30 == 0)
             {
                 uint64_t nowIce = nowMs();
@@ -477,40 +563,16 @@ int runServer(const LaunchOptions& options)
             tickServerIceTransports(sock, players, npcs, projectiles,
                                     nextEntityId, nextPlayerId,
                                     pendingIceTransports, world, tick, totalPacketsOut);
-            tickProfile.iceUs = (uint64_t)std::chrono::duration<double, std::micro>(
-                std::chrono::steady_clock::now() - t1).count();
 
-            auto t2 = std::chrono::steady_clock::now();
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
-            tickProfile.snapshotUs = (uint64_t)std::chrono::duration<double, std::micro>(
-                std::chrono::steady_clock::now() - t2).count();
-
-            // Profile logging — every 600 ticks
-            static uint64_t s_totalSimUs = 0, s_totalSnapshotUs = 0, s_totalIceUs = 0, s_totalCollisionUs = 0;
-            static uint32_t s_profileTicks = 0;
-            s_totalSimUs += tickProfile.simUs;
-            s_totalSnapshotUs += tickProfile.snapshotUs;
-            s_totalIceUs += tickProfile.iceUs;
-            s_totalCollisionUs += tickProfile.collisionUs;
-            s_profileTicks++;
-            if (s_profileTicks >= 600)
-            {
-                Debug::log(Debug::Category::General,
-                    "[TICK PROFILE] simAvg=%.2f collisionAvg=%.2f snapshotAvg=%.2f iceAvg=%.2f players=%zu projectiles=%zu\n",
-                    (double)s_totalSimUs / s_profileTicks / 1000.0,
-                    (double)s_totalCollisionUs / s_profileTicks / 1000.0,
-                    (double)s_totalSnapshotUs / s_profileTicks / 1000.0,
-                    (double)s_totalIceUs / s_profileTicks / 1000.0,
-                    players.size(), projectiles.size());
-                s_totalSimUs = s_totalSnapshotUs = s_totalIceUs = s_totalCollisionUs = 0;
-                s_profileTicks = 0;
-            }
+            tickReliableGameplayEvents(sock, players, totalPacketsOut);
 
             accumulator -= (double)SERVER_DT;
             ++tick;
             ++steps;
         }
+        const bool cappedCatchup = steps >= MAX_STEPS && accumulator >= (double)SERVER_DT;
 
         // Heartbeat to coordinator every ~15 seconds
         {
@@ -552,6 +614,18 @@ int runServer(const LaunchOptions& options)
         currentTime = postSimNow;
         if (postElapsed > 0.001) // only add if more than negligible
             accumulator += postElapsed;
+
+        const uint64_t loopUs = (uint64_t)std::chrono::duration<double, std::micro>(
+            std::chrono::steady_clock::now() - loopStart).count();
+        recordServerLoopPerf(loopPerf, loopUs, cappedCatchup);
+        const uint64_t perfNowMs = nowMs();
+        if (perfNowMs - lastPerfMs >= 1000)
+        {
+            reportServerPerf(serverTimestamp(), loopPerf, tick, lastPerfTick,
+                             perfNowMs - lastPerfMs);
+            lastPerfTick = tick;
+            lastPerfMs = perfNowMs;
+        }
 
         // Sleep only when no simulation debt remains. Use microseconds for precision.
         if (accumulator < (double)SERVER_DT)
@@ -873,6 +947,8 @@ static void simulateOneServerTick(ListenServerState& state)
                 handleServerCommand(buffer, bytes, state.players, state.npcs);
             else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
                 handleSpawnAck(state.sock, buffer, bytes, state.players, state.tick);
+            else if (header->type == PACKET_RELIABLE_EVENT_ACK && bytes >= (int)sizeof(ReliableEventAckPacket))
+                handleReliableEventAck(buffer, bytes, state.players);
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
@@ -950,6 +1026,8 @@ static void simulateOneServerTick(ListenServerState& state)
         tickDisagreementRetransmit(state.sock, state.players,
                                    state.disagreementRetransmit,
                                    state.totalPacketsOut);
+        tickReliableGameplayEvents(state.sock, state.players,
+                                   state.totalPacketsOut);
 
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)
@@ -998,9 +1076,13 @@ static void listenServerThreadFunc(ListenServerState& state)
 
     uint64_t lastLogTick = 0;
     uint64_t lastHzLog = 0;
+    ServerLoopPerf loopPerf;
+    uint32_t lastPerfTick = 0;
+    uint64_t lastPerfMs = nowMs();
 
     while (state.serverRunning)
     {
+        auto loopStart = steady_clock::now();
         auto currentTime = steady_clock::now();
         double elapsed = duration_cast<duration<double>>(currentTime - previousTime).count();
         previousTime = currentTime;
@@ -1017,6 +1099,7 @@ static void listenServerThreadFunc(ListenServerState& state)
             accumulator -= kFixedDt;
             ++steps;
         }
+        const bool cappedCatchup = steps >= kMaxCatchup && accumulator >= kFixedDt;
 
         // Log Hz every ~10 seconds
         if (state.tick - lastHzLog >= 600)
@@ -1031,6 +1114,18 @@ static void listenServerThreadFunc(ListenServerState& state)
         {
             ::StructuredLogger::instance().tick();
             lastLogTick = state.tick;
+        }
+
+        const uint64_t loopUs = (uint64_t)duration_cast<duration<double, std::micro>>(
+            steady_clock::now() - loopStart).count();
+        recordServerLoopPerf(loopPerf, loopUs, cappedCatchup);
+        const uint64_t perfNowMs = nowMs();
+        if (perfNowMs - lastPerfMs >= 1000)
+        {
+            reportServerPerf("[LISTEN SERVER]", loopPerf, state.tick,
+                             lastPerfTick, perfNowMs - lastPerfMs);
+            lastPerfTick = state.tick;
+            lastPerfMs = perfNowMs;
         }
 
         // Sleep only for the remaining time until the next tick is due.

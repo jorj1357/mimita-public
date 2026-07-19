@@ -20,12 +20,14 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/projectile-render.h"
+#include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
 #include "config/weapon-hitfx-config.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "terminal/terminal-state.h"
 
 namespace MimitaNet {
 namespace {
@@ -154,6 +156,42 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
     }
 }
 
+uint64_t reliableEventKey(uint32_t eventSessionId, uint32_t eventId)
+{
+    return ((uint64_t)eventSessionId << 32) | (uint64_t)eventId;
+}
+
+void ackReliableEvent(MultiplayerContext& ctx, uint32_t eventId, uint32_t eventSessionId)
+{
+    if (eventId == 0 || eventSessionId == 0)
+        return;
+    ReliableEventAckPacket ack{};
+    ack.header.type = PACKET_RELIABLE_EVENT_ACK;
+    ack.header.tick = ctx.tick;
+    ack.header.playerId = ctx.localPlayerId;
+    ack.eventId = eventId;
+    ack.eventSessionId = eventSessionId;
+    mpSendPacket(ctx, &ack, sizeof(ack));
+}
+
+bool acceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t eventSessionId)
+{
+    if (eventId == 0 || eventSessionId == 0)
+        return true;
+    ackReliableEvent(ctx, eventId, eventSessionId);
+    const uint64_t key = reliableEventKey(eventSessionId, eventId);
+    if (ctx.processedReliableEventIds.count(key))
+        return false;
+    ctx.processedReliableEventIds.insert(key);
+    ctx.processedReliableEventOrder.push_back(key);
+    while (ctx.processedReliableEventOrder.size() > 512)
+    {
+        ctx.processedReliableEventIds.erase(ctx.processedReliableEventOrder.front());
+        ctx.processedReliableEventOrder.pop_front();
+    }
+    return true;
+}
+
 } // namespace
 
 uint32_t mpSendProjectileFireRequest(
@@ -265,6 +303,13 @@ uint32_t mpSendMeleeHitRequest(
 
 void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const ProjectileSpawnEventPacket* event)
 {
+    if (ctx.projectileTerminals.has(event->projectileId))
+    {
+        printf("[PROJECTILE CLIENT SPAWN] projectileId=%u weapon=%s accepted=0 reason=already-terminated\n",
+               event->projectileId, networkWeaponTypeName(event->weapon));
+        return;
+    }
+
     // Mark pending fire request as acknowledged
     if (event->fireSerial != 0)
         ctx.pendingFireRequests.erase(event->fireSerial);
@@ -274,6 +319,8 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
         event->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
     {
         ctx.predictedProjectileIds.insert(event->projectileId);
+        if (gpWeapons)
+            gpWeapons->attachAuthoritativeRocket(event->fireSerial, event->projectileId);
         printf("[PROJECTILE PREDICTED] projectileId=%u fireSerial=%u weapon=%s "
                "pos=(%.2f,%.2f,%.2f) — suppressed server interpolation\n",
                event->projectileId, event->fireSerial,
@@ -371,6 +418,13 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
 
 void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const ProjectileStateEventPacket* event)
 {
+    if (ctx.projectileTerminals.has(event->projectileId))
+    {
+        printf("[PROJECTILE STATE RX] projectileId=%u serverTick=%u accepted=0 reason=already-terminated\n",
+               event->projectileId, event->header.tick);
+        return;
+    }
+
     // Skip state updates for rocket-predicted projectiles
     if (ctx.predictedProjectileIds.count(event->projectileId))
         return;
@@ -495,28 +549,31 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
 
 void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const ProjectileExplodeEventPacket* event)
 {
-    // Predicted projectile: reconcile health but skip visuals/knockback (already applied locally)
-    if (ctx.predictedProjectileIds.erase(event->projectileId))
+    if (!acceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
     {
-        for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
-        {
-            const ProjectileDamageResultPacket& victim = event->victims[i];
-            if (victim.victimPlayerId == ctx.localPlayerId)
-            {
-                ctx.localServerHealth = victim.healthAfter;
-                printf("[PROJECTILE PREDICTED EXPLODE] projectileId=%u victim=local "
-                       "healthAfter=%d (reconciled, no knockback)\n",
-                       event->projectileId, victim.healthAfter);
-            }
-        }
-        printf("[PROJECTILE PREDICTED EXPLODE] projectileId=%u weapon=%s — suppressed dupe effects\n",
+        printf("[PROJECTILE CLIENT TERMINAL] eventId=%u projectileId=%u weapon=%s terminal=explode accepted=0 reason=duplicate-event\n",
+               event->eventId, event->projectileId, networkWeaponTypeName(event->weapon));
+        return;
+    }
+
+    if (!ctx.projectileTerminals.record(event->projectileId))
+    {
+        printf("[PROJECTILE CLIENT TERMINAL] projectileId=%u weapon=%s terminal=explode accepted=0 reason=duplicate\n",
                event->projectileId, networkWeaponTypeName(event->weapon));
         return;
     }
 
     const glm::vec3 position(event->posX, event->posY, event->posZ);
     const char* weaponName = networkWeaponTypeName(event->weapon);
+    const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
+    bool removedLegacy = false;
+    if (gpWeapons)
+    {
+        removedLegacy = gpWeapons->removeAuthoritativeRocket(event->projectileId);
+        if (!removedLegacy)
+            removedLegacy = gpWeapons->removeLocalRocketByFireSerial(event->fireSerial);
+    }
 
     playWorldSound(
         event->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER
@@ -621,10 +678,10 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
     }
 
     printf("[PROJECTILE CLIENT EXPLODE] projectileId=%u weapon=%s "
-           "position=(%.2f,%.2f,%.2f) serverTick=%u removedVisual=%d\n",
+           "position=(%.2f,%.2f,%.2f) serverTick=%u removedVisual=%d removedLegacy=%d predicted=%d\n",
            event->projectileId, weaponName,
            position.x, position.y, position.z, event->header.tick,
-           (int)removedVisual);
+           (int)removedVisual, (int)removedLegacy, (int)wasPredicted);
 }
 
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)
@@ -719,7 +776,30 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
 
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event)
 {
-    ctx.networkProjectiles.erase(event->projectileId);
+    if (!acceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
+    {
+        printf("[PROJECTILE CLIENT TERMINAL] eventId=%u projectileId=%u weapon=%s terminal=despawn accepted=0 reason=duplicate-event\n",
+               event->eventId, event->projectileId, networkWeaponTypeName(event->weapon));
+        return;
+    }
+
+    if (!ctx.projectileTerminals.record(event->projectileId))
+    {
+        printf("[PROJECTILE CLIENT TERMINAL] projectileId=%u weapon=%s terminal=despawn accepted=0 reason=duplicate\n",
+               event->projectileId, networkWeaponTypeName(event->weapon));
+        return;
+    }
+    const bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
+    const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
+    bool removedLegacy = false;
+    if (gpWeapons)
+    {
+        removedLegacy = gpWeapons->removeAuthoritativeRocket(event->projectileId);
+    }
+    printf("[PROJECTILE CLIENT DESPAWN] projectileId=%u weapon=%s reason=%u removedVisual=%d removedLegacy=%d predicted=%d\n",
+           event->projectileId, networkWeaponTypeName(event->weapon),
+           (unsigned)event->reason, (int)removedVisual,
+           (int)removedLegacy, (int)wasPredicted);
 }
 
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event)

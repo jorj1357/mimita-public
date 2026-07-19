@@ -78,6 +78,11 @@ struct ProjectileStepResult
     float travelDistance = 0.0f;
     uint32_t hitPlayerId = 0;
     uint32_t hitPlayerSpawnGeneration = 0;
+    uint32_t triangleQueryCount = 0;
+    uint32_t triangleCandidateTotal = 0;
+    uint32_t triangleCandidateMax = 0;
+    uint32_t playerCapsuleCandidateTotal = 0;
+    uint32_t playerCapsuleCandidateMax = 0;
 };
 
 struct CollisionWorldView

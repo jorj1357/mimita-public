@@ -147,6 +147,8 @@ bool handleGameCLI(int argc, char** argv)
             else if (a == "--disable-relay") opts.disableRelay = true;
             else if (a == "--timeout-seconds" && i + 1 < argc)
                 opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
+            else if (a == "--clients" && i + 1 < argc)
+                opts.expectedClients = std::max(1, std::atoi(argv[++i]));
         }
         const bool ok = runIceHostOnly(opts);
         std::exit(ok ? 0 : 1);
