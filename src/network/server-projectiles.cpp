@@ -420,24 +420,14 @@ ProjectilePhysicsConfig makePhysicsConfig(const ServerProjectile& projectile)
     config.radius = projectile.radius;
     config.lifetime = projectile.lifetime;
     config.armingDistance = projectile.armingDistance;
-    config.gravity = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER
-        ? 0.0f
-        : projectile.gravity;
-    config.drag = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER
-        ? 0.0f
-        : projectile.drag;
-    config.angularDrag = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER
-        ? 0.0f
-        : projectile.angularDrag;
+    config.gravity = projectile.gravity;
+    config.drag = projectile.drag;
+    config.angularDrag = projectile.angularDrag;
     config.restitution = projectile.restitution;
     config.friction = projectile.friction;
-    config.maxBounceCount = projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER
-        ? projectile.maxBounceCount
-        : 0;
+    config.maxBounceCount = projectile.maxBounceCount;
     config.minBounceSpeed = projectile.minBounceSpeed;
-    config.bounceEnabled =
-        projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER &&
-        projectile.maxBounceCount > 0;
+    config.bounceEnabled = projectile.maxBounceCount > 0;
     return config;
 }
 

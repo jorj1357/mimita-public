@@ -10,6 +10,7 @@
 
 #include "website/api-client.h"
 
+#include <cstdlib>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -127,7 +128,13 @@ bool httpRequest(const std::string& method, const std::string& url,
 static void parseUserInfo(GameUserInfo& info, const json& u)
 {
     info.valid = true;
-    info.id = u.value("id", 0);
+    if (u.contains("id"))
+    {
+        if (u["id"].is_number_integer())
+            info.id = u["id"].get<int>();
+        else if (u["id"].is_string())
+            info.id = std::atoi(u["id"].get<std::string>().c_str());
+    }
     info.username = u.value("username", "");
     info.displayName = u.value("display_name", "");
     if (info.displayName.empty())
@@ -608,7 +615,13 @@ GameAccountLookupResult gameLookupAccount(const std::string& identifier)
         result.exists = j.value("exists", false);
         if (j.contains("account") && j["account"].is_object())
         {
-            result.accountId = j["account"].value("id", 0);
+            if (j["account"].contains("id"))
+            {
+                if (j["account"]["id"].is_number_integer())
+                    result.accountId = j["account"]["id"].get<int>();
+                else if (j["account"]["id"].is_string())
+                    result.accountId = std::atoi(j["account"]["id"].get<std::string>().c_str());
+            }
             result.username = j["account"].value("username", "");
         }
     } catch (...) {
@@ -666,7 +679,13 @@ GameLoginResult gameLogin(const std::string& identifier, const std::string& pass
         auto acct = j["account"];
         auto ses = j["session"];
         result.ok = true;
-        result.accountId = acct.value("id", 0);
+        if (acct.contains("id"))
+        {
+            if (acct["id"].is_number_integer())
+                result.accountId = acct["id"].get<int>();
+            else if (acct["id"].is_string())
+                result.accountId = std::atoi(acct["id"].get<std::string>().c_str());
+        }
         result.username = acct.value("username", "");
         result.supporterTier = acct.value("supporter_tier", "free");
         for (const auto& p : acct["permissions"])

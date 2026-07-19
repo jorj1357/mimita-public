@@ -520,6 +520,16 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["firingRecoilStrength"] = 30.0f;
     def.customParams["reserveAmmo"] = 1337.0f;
 
+    // Rocket physics: zero gravity, no bounce, straight-flight
+    def.customParams["gravity"] = 0.0f;
+    def.customParams["drag"] = 0.0f;
+    def.customParams["angularDrag"] = 0.0f;
+    def.customParams["maxBounceCount"] = 0.0f;
+    def.customParams["upBias"] = 0.0f;
+    def.customParams["bounceRestitution"] = 0.0f;
+    def.customParams["bounceFriction"] = 0.0f;
+    def.customParams["minBounceSpeed"] = 0.0f;
+
     // Projectile visual defaults
     def.customParams["projectileVisualTexture"] = 1.0f; // flag: use default path
     def.customParams["projectileVisualLength"] = 1.5f;
