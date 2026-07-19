@@ -288,6 +288,9 @@ struct ServerProjectile
     int maxBounceCount = 0;
     bool exploded = false;
     bool worldTouched = false;
+    bool explodeOnPlayerImpact = true;
+    bool explodeOnWorldImpact = false;
+    bool explodeOnLifetime = true;
     uint32_t spawnTick = 0;
 };
 

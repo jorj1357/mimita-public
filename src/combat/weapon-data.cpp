@@ -529,6 +529,10 @@ WeaponDefinition createRocketLauncherDefinition() {
     def.customParams["bounceRestitution"] = 0.0f;
     def.customParams["bounceFriction"] = 0.0f;
     def.customParams["minBounceSpeed"] = 0.0f;
+    // Explosion triggers: explode on player/world impact, on lifetime expiry
+    def.customParams["explodeOnPlayerImpact"] = 1.0f;
+    def.customParams["explodeOnWorldImpact"] = 1.0f;
+    def.customParams["explodeOnLifetime"] = 1.0f;
 
     // Projectile visual defaults
     def.customParams["projectileVisualTexture"] = 1.0f; // flag: use default path

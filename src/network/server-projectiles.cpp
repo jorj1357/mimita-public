@@ -842,6 +842,19 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     projectile.minBounceSpeed = cfg.minBounceSpeed;
     projectile.angularDrag = cfg.angularDrag;
     projectile.maxBounceCount = cfg.maxBounceCount;
+    // Generic explosion-trigger policy captured at spawn from weapon definition
+    if (wepId) {
+        const WeaponDefinition* spawnDef = WeaponRegistry::instance().get(std::string(wepId));
+        if (spawnDef) {
+            auto spawnCp = [&](const char* key, float fb) -> float {
+                auto it = spawnDef->customParams.find(key);
+                return it != spawnDef->customParams.end() ? it->second : fb;
+            };
+            projectile.explodeOnPlayerImpact = spawnCp("explodeOnPlayerImpact", 1.0f) > 0.0f;
+            projectile.explodeOnWorldImpact = spawnCp("explodeOnWorldImpact", 0.0f) > 0.0f;
+            projectile.explodeOnLifetime = spawnCp("explodeOnLifetime", 1.0f) > 0.0f;
+        }
+    }
     projectile.spawnTick = tick;
 
     shooter.lastProjectileFireSerial = request->fireSerial;
@@ -995,19 +1008,33 @@ void tickServerProjectiles(SOCKET sock,
                 projectile.worldTouched = true;
             }
 
-            if (step.type == ProjectileCollisionType::LifetimeExpired)
+            // Generic explosion policy — no weapon names, no weapon enums
+            printf("[POLICY] projectileId=%u weaponDefId=%s stepType=%d "
+                   "explodeOnPlayerImpact=%d explodeOnWorldImpact=%d explodeOnLifetime=%d "
+                   "action=%s\n",
+                   projectile.id, networkWeaponTypeName(projectile.weaponType),
+                   (int)step.type,
+                   (int)projectile.explodeOnPlayerImpact,
+                   (int)projectile.explodeOnWorldImpact,
+                   (int)projectile.explodeOnLifetime,
+                   (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime) ? "explode" :
+                   (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact) ? "explode" :
+                   (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact) ? "explode" :
+                   (step.type == ProjectileCollisionType::WorldBounce) ? "continue-bounce" :
+                   "continue");
+
+            if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
             {
                 explodeProjectile(sock, players, projectile, projectile.position,
                                   "lifetime", 0, tick, totalPacketsOut);
             }
-            else if (step.type == ProjectileCollisionType::PlayerImpact)
+            else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
             {
                 explodeProjectile(sock, players, projectile, step.hitPosition,
                                   "player", step.hitPlayerId, tick,
                                   totalPacketsOut);
             }
-            else if (step.type == ProjectileCollisionType::WorldImpact &&
-                     projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER)
+            else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
             {
                 explodeProjectile(sock, players, projectile, step.hitPosition,
                                   "world", 0, tick, totalPacketsOut);
