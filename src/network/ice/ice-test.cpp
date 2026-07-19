@@ -1,3 +1,13 @@
+// 07 19 2026, 10 45
+/* purpose
+* Owns lightweight ICE command-line host, join, and server test paths.
+* Exercises coordinator signaling and packet exchange without graphics startup.
+* Emits deterministic diagnostics for automated networking harnesses.
+* Does NOT own libjuice setup, production server loops, or packet definitions.
+* Does NOT implement projectile, weapon, damage, or snapshot serialization logic.
+* Does NOT replace the full game networking runtime.
+*/
+
 #include "network/ice/ice-test.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
@@ -5,6 +15,7 @@
 #include "network/ice-transport.h"
 #include "network/coordinator-client.h"
 #include "network/packets.h"
+#include "network/test-events.h"
 #include "debug/debug-log.h"
 
 #include <cstdio>
@@ -137,6 +148,7 @@ static bool waitForState(IceAgent& agent, IceAgentState target, int timeoutMs,
 {
     int waited = 0;
     while (waited < timeoutMs) {
+        agent.tick();
         std::vector<IceEvent> evs;
         agent.pollEvents(evs);
         // Preserve Recv events
@@ -160,26 +172,65 @@ static bool waitForState(IceAgent& agent, IceAgentState target, int timeoutMs,
 
 bool runIceHostOnly(const IceTestOptions& opts)
 {
+    const uint64_t startedMs = GetTickCount64();
+    auto elapsedMs = [&]() -> unsigned long long {
+        return (unsigned long long)(GetTickCount64() - startedMs);
+    };
+    auto countCandidates = [&](int& hostCandidates, int& srflxCandidates, int& relayCandidates) {
+        hostCandidates = 0;
+        srflxCandidates = 0;
+        relayCandidates = 0;
+        for (const auto& candidate : agent.candidates())
+        {
+            switch (candidate.type)
+            {
+            case IceCandidateType::Host: ++hostCandidates; break;
+            case IceCandidateType::ServerReflexive: ++srflxCandidates; break;
+            case IceCandidateType::Relay: ++relayCandidates; break;
+            default: break;
+            }
+        }
+    };
+    auto logFailure = [&](const char* stage, const char* reason) {
+        int hostCandidates = 0, srflxCandidates = 0, relayCandidates = 0;
+        countCandidates(hostCandidates, srflxCandidates, relayCandidates);
+        printf("[ICE HOST FAILURE] stage=%s elapsedMs=%llu hostCandidates=%d srflxCandidates=%d relayCandidates=%d state=%d reason=%s\n",
+               stage, elapsedMs(), hostCandidates, srflxCandidates, relayCandidates,
+               (int)agent.state(), reason);
+        printf("[ICE ONLY RESULT] pass=0 reason=%s\n", reason);
+        fflush(stdout);
+    };
+
     printf("[ICE ONLY START] role=HOST processId=%lu\n", (unsigned long)GetCurrentProcessId());
+    printf("[ICE HOST START] disableRelay=%d forceRelay=%d timeoutSeconds=%d\n",
+           (int)opts.disableRelay, (int)opts.forceRelay, opts.timeoutSeconds);
     fflush(stdout);
     IceConfiguration iceConfig = loadIceConfig();
     bool usingTurn = !iceConfig.turn.password.empty();
     if (opts.disableRelay) { iceConfig.turn.password.clear(); usingTurn = false; }
     if (usingTurn && iceConfig.turn.password.empty()) {
-        printf("[ICE ONLY RESULT] pass=0 reason=no-turn-password\n"); return false;
+        logFailure("config", "no-turn-password"); return false;
     }
 
     IceAgent agent;
-    if (!agent.initialize(iceConfig)) { printf("[ICE ONLY RESULT] pass=0 reason=init-failed\n"); return false; }
-    if (!agent.gatherCandidates()) { printf("[ICE ONLY RESULT] pass=0 reason=gather-failed\n"); return false; }
+    if (!agent.initialize(iceConfig)) { logFailure("init", "init-failed"); return false; }
+    if (!agent.gatherCandidates()) { logFailure("gather", "gather-failed"); return false; }
     if (!waitForState(agent, IceAgentState::GatheringComplete, 15000)) {
-        printf("[ICE ONLY RESULT] pass=0 reason=gather-timeout\n"); return false;
+        logFailure("gather", "gather-timeout"); return false;
     }
+    int hostCandidates = 0, srflxCandidates = 0, relayCandidates = 0;
+    countCandidates(hostCandidates, srflxCandidates, relayCandidates);
+    printf("[ICE CANDIDATE COUNTS] stage=gather-complete elapsedMs=%llu hostCandidates=%d srflxCandidates=%d relayCandidates=%d state=%d gatheringDone=1\n",
+           elapsedMs(), hostCandidates, srflxCandidates, relayCandidates, (int)agent.state());
+    fflush(stdout);
 
     std::string sessionId = "host_" + std::to_string(GetCurrentProcessId());
     auto hostResult = MimitaNet::coordinatorIceHost(sessionId, agent.localSdp());
-    if (!hostResult.ok) { printf("[ICE ONLY RESULT] pass=0 reason=coord-failed\n"); return false; }
+    if (!hostResult.ok) { logFailure("coordinator-register", "coord-failed"); return false; }
+    printf("[ICE ROOM REGISTER] ok=1 elapsedMs=%llu code=%s\n", elapsedMs(), hostResult.roomCode.c_str());
     printf("[ICE ONLY ROOM] code=%s\n", hostResult.roomCode.c_str()); fflush(stdout);
+    MimitaNet::emitTestEvent("room_created",
+        "\"code\":\"" + MimitaNet::testEventJsonEscape(hostResult.roomCode) + "\"");
 
     std::string clientDesc;
     int timeoutMs = opts.timeoutSeconds * 1000, waited = 0;
@@ -191,13 +242,13 @@ bool runIceHostOnly(const IceTestOptions& opts)
         std::this_thread::sleep_for(std::chrono::milliseconds(200)); waited += 200;
     }
     if (clientDesc.empty()) {
-        printf("[ICE ONLY RESULT] pass=0 reason=poll-timeout\n");
+        logFailure("coordinator-poll", "poll-timeout");
         MimitaNet::coordinatorIceDone(hostResult.roomCode); return false;
     }
     printf("[ICE ONLY SIGNAL] role=HOST descriptionBytes=%zu\n", clientDesc.size());
 
     if (!agent.setRemoteDescription(clientDesc)) {
-        printf("[ICE ONLY RESULT] pass=0 reason=remote-desc-failed\n");
+        logFailure("remote-description", "remote-desc-failed");
         MimitaNet::coordinatorIceDone(hostResult.roomCode); return false;
     }
     printf("[ICE ONLY HOST] waiting for connection...\n"); fflush(stdout);
@@ -206,10 +257,11 @@ bool runIceHostOnly(const IceTestOptions& opts)
     bool connected = waitForState(agent, IceAgentState::Connected, 20000, &earlyRecv) ||
                      waitForState(agent, IceAgentState::Completed, 5000, &earlyRecv);
     if (!connected) {
-        printf("[ICE ONLY RESULT] pass=0 reason=connection-timeout\n");
+        logFailure("connect", "connection-timeout");
         MimitaNet::coordinatorIceDone(hostResult.roomCode); return false;
     }
     printf("[ICE ONLY STATE] role=HOST connected\n");
+    MimitaNet::emitTestEvent("ice_connected", "\"role\":\"host\"");
     agent.logSelectedPath();
     fflush(stdout);
 
@@ -226,7 +278,7 @@ bool runIceHostOnly(const IceTestOptions& opts)
         }
     }
     if (recvd.empty() && opts.once) {
-        printf("[ICE ONLY RESULT] pass=0 reason=no-data\n");
+        logFailure("receive", "no-data");
         MimitaNet::coordinatorIceDone(hostResult.roomCode); return false;
     }
 
@@ -266,6 +318,8 @@ bool runIceHostOnly(const IceTestOptions& opts)
                                     auto* ihdr = reinterpret_cast<const MimitaNet::PacketHeader*>(ev.data.data());
                                     if (ihdr->magic == MimitaNet::PROTOCOL_MAGIC && ihdr->type == MimitaNet::PACKET_INPUT) {
                                         printf("[ICE GAME INPUT] tick=%u\n", ihdr->tick); fflush(stdout);
+                                        MimitaNet::emitTestEvent("input_received",
+                                            "\"tick\":" + std::to_string(ihdr->tick));
                                     }
                                 }
                             }
@@ -362,6 +416,7 @@ bool runIceJoinOnly(const std::string& roomCode, const IceTestOptions& opts)
         printf("[ICE ONLY RESULT] pass=0 reason=connection-timeout\n"); return false;
     }
     printf("[ICE ONLY STATE] role=JOIN connected\n");
+    MimitaNet::emitTestEvent("ice_connected", "\"role\":\"client\"");
     agent.logSelectedPath();
     fflush(stdout);
 
@@ -457,6 +512,8 @@ bool runIceJoinOnly(const std::string& roomCode, const IceTestOptions& opts)
     printf("[ICE GAME JOIN ACCEPT] playerId=%u mapId=%.*s tickRate=%.1f\n",
            accept->assignedPlayerId, (int)sizeof(accept->mapId), accept->mapId, accept->tickRate);
     fflush(stdout);
+    MimitaNet::emitTestEvent("join_accepted",
+        "\"playerId\":" + std::to_string(accept->assignedPlayerId));
 
     // Now send InputPackets and receive compact SnapshotChunks
     uint32_t myPlayerId = accept->assignedPlayerId;
@@ -484,6 +541,9 @@ bool runIceJoinOnly(const std::string& roomCode, const IceTestOptions& opts)
                     auto* snap = reinterpret_cast<const MimitaNet::SnapshotChunkPacket*>(ev.data.data());
                     printf("[ICE GAME SNAPSHOT] tick=%u entities=%d chunk=%d/%d\n",
                            snap->serverTick, snap->entityCount, snap->chunkIndex, snap->chunkCount);
+                    MimitaNet::emitTestEvent("snapshot_received",
+                        "\"tick\":" + std::to_string(snap->serverTick) +
+                        ",\"entities\":" + std::to_string(snap->entityCount));
                     for (uint16_t ei = 0; ei < snap->entityCount; ++ei) {
                         auto& e = snap->entities[ei];
                         printf("[ICE GAME ENTITY] id=%u owner=%u pos=(%.1f,%.1f,%.1f) yaw=%.1f hp=%d\n",

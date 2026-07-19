@@ -1,7 +1,18 @@
+// 07 19 2026, 10 45
+/* purpose
+* Owns ICE configuration loading for lightweight networking paths.
+* Reads JSON defaults and applies runtime environment overrides.
+* Keeps local-only automated tests independent from public STUN services.
+* Does NOT perform ICE agent setup, coordinator registration, or signaling.
+* Does NOT own TURN credential issuance or networking packet schemas.
+* Does NOT start sockets, threads, or gameplay systems.
+*/
+
 #pragma once
 
 #include <string>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -32,13 +43,34 @@ inline IceConfiguration loadIceConfig(const std::string& path = "config/network/
 inline IceConfiguration loadIceConfigWithTurn(const std::string& turnHost, uint16_t turnPort,
     const std::string& turnUsername, const std::string& turnCredential);
 
+inline bool iceEnvEnabled(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value && *value &&
+        std::strcmp(value, "0") != 0 &&
+        std::strcmp(value, "false") != 0 &&
+        std::strcmp(value, "FALSE") != 0;
+}
+
+inline void applyIceEnvOverrides(IceConfiguration& config)
+{
+    if (iceEnvEnabled("MIMITA_ICE_LOCAL_ONLY"))
+    {
+        config.stun.host.clear();
+        config.stun.port = 0;
+    }
+}
+
 inline IceConfiguration loadIceConfig(const std::string& path)
 {
     IceConfiguration config;
 
     std::ifstream in(path);
     if (!in)
+    {
+        applyIceEnvOverrides(config);
         return config;
+    }
 
     try
     {
@@ -77,6 +109,7 @@ inline IceConfiguration loadIceConfig(const std::string& path)
     {
     }
 
+    applyIceEnvOverrides(config);
     return config;
 }
 

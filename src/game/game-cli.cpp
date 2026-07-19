@@ -148,8 +148,8 @@ bool handleGameCLI(int argc, char** argv)
             else if (a == "--timeout-seconds" && i + 1 < argc)
                 opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
         }
-        runIceHostOnly(opts);
-        return true;
+        const bool ok = runIceHostOnly(opts);
+        std::exit(ok ? 0 : 1);
     }
 
     // ── Lightweight ICE Join Only (no game engine init) ─────────
@@ -167,8 +167,8 @@ bool handleGameCLI(int argc, char** argv)
             else if (a == "--timeout-seconds" && i + 1 < argc)
                 opts.timeoutSeconds = std::max(1, std::atoi(argv[++i]));
         }
-        runIceJoinOnly(argv[2], opts);
-        return true;
+        const bool ok = runIceJoinOnly(argv[2], opts);
+        std::exit(ok ? 0 : 1);
     }
 
     // ── ICE Game Host (lightweight server with Input/Snapshot) ─────

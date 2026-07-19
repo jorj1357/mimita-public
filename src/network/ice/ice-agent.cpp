@@ -1,3 +1,13 @@
+// 07 19 2026, 10 45
+/* purpose
+* Owns the thin libjuice ICE agent wrapper used by networking code.
+* Converts libjuice callbacks into queued engine events and diagnostics.
+* Applies ICE configuration exactly as loaded by the network config owner.
+* Does NOT own coordinator signaling, packet schemas, or gameplay state.
+* Does NOT implement the automated host/client harness assertions.
+* Does NOT decide whether relay or local-only mode should be requested.
+*/
+
 #include "network/ice/ice-agent.h"
 #include "debug/debug-log.h"
 
@@ -15,9 +25,10 @@ bool IceAgent::initialize(const IceConfiguration& config)
 {
     if (mInitialized) shutdown();
 
+    const bool stunConfigured = !config.stun.host.empty();
     Debug::warn(Debug::Category::Networking, "ICE INIT libjuiceVersion=%s\n", "1.7.2");
     Debug::warn(Debug::Category::Networking, "ICE INIT stunHost=%s stunPort=%u\n",
-           config.stun.host.c_str(), config.stun.port);
+           stunConfigured ? config.stun.host.c_str() : "(disabled)", config.stun.port);
 
     juice_turn_server_t turnServer;
     bool turnConfigured = !config.turn.password.empty();
@@ -36,8 +47,11 @@ bool IceAgent::initialize(const IceConfiguration& config)
     juice_config_t juiceCfg = {};
     juiceCfg.concurrency_mode = JUICE_CONCURRENCY_MODE_POLL;
 
-    juiceCfg.stun_server_host = config.stun.host.c_str();
-    juiceCfg.stun_server_port = config.stun.port;
+    if (stunConfigured)
+    {
+        juiceCfg.stun_server_host = config.stun.host.c_str();
+        juiceCfg.stun_server_port = config.stun.port;
+    }
 
     if (turnConfigured)
     {

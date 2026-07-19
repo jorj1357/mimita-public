@@ -1,6 +1,17 @@
+// 07 19 2026, 10 45
+/* purpose
+* Owns HTTP communication with the MiMITA coordinator service.
+* Provides room registration, lookup, ICE signaling, and token validation APIs.
+* Applies the process-level coordinator URL override for automated tests.
+* Does NOT own ICE candidate gathering, gameplay packet handling, or UI state.
+* Does NOT implement server simulation or local harness assertions.
+* Does NOT store persistent room, auth, or player state.
+*/
+
 #include "network/coordinator-client.h"
 #include "network/net_common.h"
 
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -17,7 +28,13 @@ namespace MimitaNet {
 
 namespace {
 
-std::string gCoordinatorUrl = "http://107.191.48.226:3001";
+std::string defaultCoordinatorUrl()
+{
+    const char* envUrl = std::getenv("MIMITA_COORDINATOR_URL");
+    return envUrl && *envUrl ? std::string(envUrl) : "http://107.191.48.226:3001";
+}
+
+std::string gCoordinatorUrl = defaultCoordinatorUrl();
 
 struct UrlParts {
     std::wstring host;
