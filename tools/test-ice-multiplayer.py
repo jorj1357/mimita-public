@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# 07 19 2026, 11 15
+# purpose
+# Runs automated local ICE host/join validation against a local coordinator.
+# Emulates the production coordinator's ICE signaling route shape for tests.
+# Captures child process logs and reports join/candidate/snapshot milestones.
+# Does NOT fake JoinAccept, inject clients into the server, or bypass tokens.
+# Does NOT simulate gameplay, projectile, weapon, damage, or prediction logic.
+# Does NOT log credentials, complete tokens, or full ICE descriptions.
 import argparse
 import datetime as _dt
 import json
@@ -81,9 +89,103 @@ class LocalIceCoordinator:
                         "assigned": False,
                     }],
                     "pending": [],
+                    "requests": {},
                 }
                 self.tokens[token] = {"room": code, "used": False}
+                print(f"[LOCAL ICE COORD] host room={code} slots=1")
                 return {"ok": True, "room_code": code, "join_token": token}
+
+            if path == "/api/coordinator/ice/begin-join":
+                code = data.get("room_code", "")
+                room = self.rooms.get(code)
+                if not room:
+                    print(f"[LOCAL ICE COORD] begin-join room={code} status=missing")
+                    return {"ok": False, "error": "room-not-found"}
+                slot = next((s for s in room["host_slots"] if not s["assigned"]), None)
+                if not slot:
+                    print(f"[LOCAL ICE COORD] begin-join room={code} status=no-host-slot")
+                    return {"ok": False, "error": "no-host-slot"}
+                slot["assigned"] = True
+                request_id = self._new_token()
+                token = self._new_token()
+                self.tokens[token] = {
+                    "room": code,
+                    "client_session_id": data.get("client_session_id", ""),
+                    "used": False,
+                }
+                room.setdefault("requests", {})[request_id] = {
+                    "host_session_id": slot["host_session_id"],
+                    "client_session_id": data.get("client_session_id", ""),
+                    "client_ice_description": data.get("ice_description", ""),
+                    "host_ice_description": slot["host_ice_description"],
+                    "host_peer_sdp": "",
+                    "status": "pending_host",
+                }
+                print(f"[LOCAL ICE COORD] begin-join room={code} req={request_id[:12]} status=queued")
+                return {
+                    "ok": True,
+                    "request_id": request_id,
+                    "host_ice_description": slot["host_ice_description"],
+                    "join_token": token,
+                }
+
+            if path == "/api/coordinator/ice/host-poll":
+                code = data.get("room_code", "")
+                room = self.rooms.get(code)
+                if not room:
+                    return {"ok": False, "has_request": False, "error": "room-not-found"}
+                host_session_id = data.get("host_session_id", "")
+                for request_id, request in room.get("requests", {}).items():
+                    if request["host_session_id"] == host_session_id and request["status"] == "pending_host":
+                        request["status"] = "host_received"
+                        print(f"[LOCAL ICE COORD] host-poll room={code} req={request_id[:12]} status=client-ready")
+                        return {
+                            "ok": True,
+                            "has_request": True,
+                            "request_id": request_id,
+                            "client_session_id": request["client_session_id"],
+                            "client_ice_description": request["client_ice_description"],
+                        }
+                return {"ok": True, "has_request": False}
+
+            if path == "/api/coordinator/ice/host-answer":
+                code = data.get("room_code", "")
+                request_id = data.get("request_id", "")
+                room = self.rooms.get(code)
+                request = room and room.get("requests", {}).get(request_id)
+                if not request:
+                    print(f"[LOCAL ICE COORD] host-answer room={code} req={request_id[:12]} status=missing")
+                    return {"ok": False, "error": "request-not-found"}
+                request["host_peer_sdp"] = data.get("host_peer_sdp", "")
+                request["status"] = "host_answered"
+                print(f"[LOCAL ICE COORD] host-answer room={code} req={request_id[:12]} status=stored")
+                return {"ok": True}
+
+            if path == "/api/coordinator/ice/client-poll":
+                code = data.get("room_code", "")
+                request_id = data.get("request_id", "")
+                room = self.rooms.get(code)
+                request = room and room.get("requests", {}).get(request_id)
+                if not request:
+                    return {"ok": False, "status": "missing", "error": "request-not-found"}
+                if request["status"] == "host_answered" and request["host_peer_sdp"]:
+                    print(f"[LOCAL ICE COORD] client-poll room={code} req={request_id[:12]} status=answer-ready")
+                    return {
+                        "ok": True,
+                        "status": "host_answer_ready",
+                        "host_ice_description": request["host_peer_sdp"],
+                    }
+                return {"ok": True, "status": "waiting_host"}
+
+            if path == "/api/coordinator/ice/request-complete":
+                code = data.get("room_code", "")
+                request_id = data.get("request_id", "")
+                room = self.rooms.get(code)
+                request = room and room.get("requests", {}).get(request_id)
+                if request:
+                    request["status"] = "complete"
+                print(f"[LOCAL ICE COORD] request-complete room={code} req={request_id[:12]} found={int(bool(request))}")
+                return {"ok": True}
 
             if path == "/api/coordinator/ice/host-peer":
                 code = data.get("room_code", "")
@@ -96,6 +198,7 @@ class LocalIceCoordinator:
                     "host_ice_description": data.get("ice_description", ""),
                     "assigned": False,
                 })
+                room.setdefault("requests", {})
                 self.tokens[token] = {"room": code, "used": False}
                 return {"ok": True, "room_code": code, "join_token": token}
 

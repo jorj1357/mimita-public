@@ -67,6 +67,10 @@ public:
 
     const GodballPhysics& godballPhysics() const { return mGodballPhys; }
     GodballPhysics& godballPhysics() { return mGodballPhys; }
+    void tagLatestLocalRocket(uint32_t fireSerial);
+    bool attachAuthoritativeRocket(uint32_t fireSerial, uint32_t projectileId);
+    bool removeAuthoritativeRocket(uint32_t projectileId);
+    bool removeLocalRocketByFireSerial(uint32_t fireSerial);
 
     const WeaponDefinition* getCurrentDef(const Player& player) const;
     const WeaponDefinition* getDefForSlot(int slot) const;

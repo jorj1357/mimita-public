@@ -2,9 +2,11 @@
 
 #include "network/net_common.h"
 #include "network/packets.h"
+#include "network/projectile-terminal-dedupe.h"
 #include "entities/player.h"
 
 #include <string>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -216,6 +218,7 @@ struct MultiplayerContext
     std::vector<QueuedPacket> outgoingQueue;
     std::vector<NetworkShotEvent> shotEvents;
     std::unordered_map<uint32_t, NetworkProjectile> networkProjectiles;
+    ProjectileTerminalDedupe projectileTerminals;
     struct IncomingChatMessage
     {
         std::string senderName;
@@ -250,6 +253,8 @@ struct MultiplayerContext
     // ── Migration: disagreement events from server ────────────────────
     std::vector<DisagreementEvent> disagreementEvents;
     std::unordered_set<uint32_t> processedDisagreementIds;
+    std::unordered_set<uint64_t> processedReliableEventIds;
+    std::deque<uint64_t> processedReliableEventOrder;
     std::unordered_set<uint64_t> processedPelletBlastSerials;
 
     // ── Migration: server process tracking ────────────────────────────
@@ -411,7 +416,7 @@ void mpRequestExplode(MultiplayerContext& ctx);
 void mpSendNpcDamageRequest(MultiplayerContext& ctx, uint32_t npcEntityId, int damage,
     const glm::vec3& origin, const glm::vec3& hit, const glm::vec3& direction,
     const glm::vec3& normal, const glm::vec3& knockback, uint16_t effectFlags, uint8_t weapon);
-void mpSendAttackRequest(MultiplayerContext& ctx,
+uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint16_t weaponDefNetworkId,
     int16_t equippedSlot,
     const glm::vec3& aimOrigin,

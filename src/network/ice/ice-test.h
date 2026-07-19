@@ -8,6 +8,7 @@ struct IceTestOptions
     bool disableRelay = false;
     bool once = false;
     int timeoutSeconds = 60;
+    int expectedClients = 1;
 };
 
 bool runIceHostOnly(const IceTestOptions& opts);

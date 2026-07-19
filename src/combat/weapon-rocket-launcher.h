@@ -23,6 +23,8 @@ struct RocketLauncherState {
         float spawnTime = 0.0f;
         float lastInAirSoundTime = 0.0f;
         float smokeAccumulator = 0.0f;
+        uint32_t fireSerial = 0;
+        uint32_t authoritativeProjectileId = 0;
     };
     std::vector<Rocket> activeRockets;
     float gameTime = 0.0f;
@@ -49,5 +51,9 @@ void update(
     float dt);
 
 void clear(RocketLauncherState& state);
+void tagLatestLocalRocket(RocketLauncherState& state, uint32_t fireSerial);
+bool attachAuthoritativeRocket(RocketLauncherState& state, uint32_t fireSerial, uint32_t projectileId);
+bool removeAuthoritativeRocket(RocketLauncherState& state, uint32_t projectileId);
+bool removeLocalRocketByFireSerial(RocketLauncherState& state, uint32_t fireSerial);
 
 } // namespace WeaponRocketLauncher

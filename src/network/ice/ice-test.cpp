@@ -227,10 +227,145 @@ bool runIceHostOnly(const IceTestOptions& opts)
     std::string sessionId = "host_" + std::to_string(GetCurrentProcessId());
     auto hostResult = MimitaNet::coordinatorIceHost(sessionId, agent.localSdp());
     if (!hostResult.ok) { logFailure("coordinator-register", "coord-failed"); return false; }
+
+    std::vector<std::unique_ptr<IceAgent>> extraAgents;
+    std::vector<std::string> slotSessions;
+    slotSessions.push_back(sessionId);
+    for (int i = 1; i < opts.expectedClients; ++i)
+    {
+        auto extra = std::make_unique<IceAgent>();
+        if (!extra->initialize(iceConfig)) { logFailure("peer-init", "init-failed"); return false; }
+        if (!extra->gatherCandidates()) { logFailure("peer-gather", "gather-failed"); return false; }
+        if (!waitForState(*extra, IceAgentState::GatheringComplete, 15000)) {
+            logFailure("peer-gather", "gather-timeout"); return false;
+        }
+        std::string peerSessionId = "host_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(i + 1);
+        auto peerResult = MimitaNet::coordinatorIceHostPeer(hostResult.roomCode, peerSessionId, extra->localSdp());
+        if (!peerResult.ok) { logFailure("peer-register", "coord-failed"); return false; }
+        slotSessions.push_back(peerSessionId);
+        extraAgents.push_back(std::move(extra));
+    }
+
     printf("[ICE ROOM REGISTER] ok=1 elapsedMs=%llu code=%s\n", elapsedMs(), hostResult.roomCode.c_str());
     printf("[ICE ONLY ROOM] code=%s\n", hostResult.roomCode.c_str()); fflush(stdout);
     MimitaNet::emitTestEvent("room_created",
         "\"code\":\"" + MimitaNet::testEventJsonEscape(hostResult.roomCode) + "\"");
+
+    if (opts.expectedClients > 1)
+    {
+        const int timeoutMs = opts.timeoutSeconds * 1000;
+        std::vector<IceAgent*> slotAgents;
+        slotAgents.push_back(&agent);
+        for (auto& extra : extraAgents)
+            slotAgents.push_back(extra.get());
+
+        std::vector<bool> slotOk((size_t)opts.expectedClients, false);
+        std::vector<std::thread> slotThreads;
+        for (int slot = 0; slot < opts.expectedClients; ++slot)
+        {
+            slotThreads.emplace_back([&, slot]() {
+                IceAgent& slotAgent = *slotAgents[(size_t)slot];
+                const std::string& slotSession = slotSessions[(size_t)slot];
+                std::string clientDesc;
+                int waited = 0;
+                while (waited < timeoutMs) {
+                    auto pollResult = MimitaNet::coordinatorIcePoll(hostResult.roomCode, slotSession);
+                    if (pollResult.ok && pollResult.status == "client_ready" && !pollResult.clientIceDescription.empty()) {
+                        clientDesc = pollResult.clientIceDescription; break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200)); waited += 200;
+                }
+                if (clientDesc.empty()) { printf("[ICE HOST SLOT] slot=%d poll-timeout\n", slot + 1); return; }
+                printf("[ICE HOST SLOT] slot=%d candidate-exchange-started descriptionBytes=%zu\n", slot + 1, clientDesc.size());
+
+                if (!slotAgent.setRemoteDescription(clientDesc)) { printf("[ICE HOST SLOT] slot=%d remote-desc-failed\n", slot + 1); return; }
+                std::string earlyRecv;
+                bool connected = waitForState(slotAgent, IceAgentState::Connected, 20000, &earlyRecv) ||
+                                 waitForState(slotAgent, IceAgentState::Completed, 5000, &earlyRecv);
+                if (!connected) { printf("[ICE HOST SLOT] slot=%d connection-timeout\n", slot + 1); return; }
+                printf("[ICE ONLY STATE] role=HOST slot=%d connected\n", slot + 1);
+                MimitaNet::emitTestEvent("ice_connected", "\"role\":\"host\",\"slot\":" + std::to_string(slot + 1));
+
+                std::string recvd = earlyRecv;
+                waited = 0;
+                while (recvd.empty() && waited < timeoutMs) {
+                    std::vector<IceEvent> evs; slotAgent.pollEvents(evs);
+                    for (auto& ev : evs) if (ev.type == IceEventType::Recv)
+                        recvd.assign(ev.data.data(), ev.data.size());
+                    if (!recvd.empty()) break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50)); waited += 50;
+                }
+                if (recvd.size() < sizeof(MimitaNet::JoinRequestPacket)) { printf("[ICE HOST SLOT] slot=%d no-join-request\n", slot + 1); return; }
+                auto* hdr = reinterpret_cast<const MimitaNet::PacketHeader*>(recvd.data());
+                if (hdr->magic != MimitaNet::PROTOCOL_MAGIC || hdr->type != MimitaNet::PACKET_JOIN_REQUEST) {
+                    printf("[ICE HOST SLOT] slot=%d unexpected-packet type=%u\n", slot + 1, hdr->type); return;
+                }
+
+                auto* join = reinterpret_cast<const MimitaNet::JoinRequestPacket*>(recvd.data());
+                std::string token((const char*)join->joinToken);
+                token = token.c_str();
+                bool valid = MimitaNet::coordinatorIceValidateJoin(hostResult.roomCode, token);
+                printf("[ICE GAME JOIN REQUEST] slot=%d name=%.*s valid=%d\n", slot + 1, (int)sizeof(join->name), join->name, (int)valid);
+                if (!valid) return;
+
+                const uint32_t playerId = 1001u + (uint32_t)slot;
+                MimitaNet::JoinAcceptPacket accept{};
+                accept.header.magic = MimitaNet::PROTOCOL_MAGIC;
+                accept.header.version = MimitaNet::PROTOCOL_VERSION;
+                accept.header.type = MimitaNet::PACKET_JOIN_ACCEPT;
+                accept.assignedPlayerId = playerId;
+                accept.tickRate = 60.0f;
+                memcpy(accept.approvedName, join->name, sizeof(accept.approvedName));
+                memcpy(accept.mapId, "funworldv3", 11);
+                const char* rt = "test-recon";
+                memcpy(accept.reconnectToken, rt, strlen(rt) + 1);
+                slotAgent.send(&accept, sizeof(accept));
+                printf("[ICE GAME JOIN ACCEPT SEND] slot=%d playerId=%u\n", slot + 1, playerId);
+
+                for (int step = 0; step < 200; ++step) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::vector<IceEvent> evs; slotAgent.pollEvents(evs);
+                    for (auto& ev : evs) {
+                        if (ev.type == IceEventType::Recv && ev.data.size() >= (int)sizeof(MimitaNet::PacketHeader)) {
+                            auto* ihdr = reinterpret_cast<const MimitaNet::PacketHeader*>(ev.data.data());
+                            if (ihdr->magic == MimitaNet::PROTOCOL_MAGIC && ihdr->type == MimitaNet::PACKET_INPUT) {
+                                MimitaNet::emitTestEvent("input_received", "\"tick\":" + std::to_string(ihdr->tick));
+                            }
+                        }
+                    }
+                    MimitaNet::SnapshotChunkPacket snap{};
+                    snap.header.magic = MimitaNet::PROTOCOL_MAGIC;
+                    snap.header.version = MimitaNet::PROTOCOL_VERSION;
+                    snap.header.type = MimitaNet::PACKET_SNAPSHOT;
+                    snap.serverTick = (uint32_t)step;
+                    snap.chunkIndex = 0; snap.chunkCount = 1;
+                    auto& e = snap.entities[0];
+                    e.networkEntityId = playerId; e.entityType = MimitaNet::ENTITY_PLAYER;
+                    e.active = 1; e.ownerClientId = (uint32_t)(slot + 1);
+                    e.px = 1.0f + (float)step * 0.1f; e.py = 5.0f + (float)slot; e.pz = 30.0f;
+                    e.yaw = (float)step * 0.5f; e.health = 100;
+                    snap.entityCount = 1;
+                    snap.payloadBytes = sizeof(MimitaNet::CompactEntityData);
+                    size_t snapSize = sizeof(MimitaNet::PacketHeader) + 12 + snap.entityCount * sizeof(MimitaNet::CompactEntityData);
+                    slotAgent.send(&snap, snapSize);
+                }
+                slotOk[(size_t)slot] = true;
+                printf("[ICE HOST SLOT] slot=%d done\n", slot + 1);
+            });
+        }
+
+        bool allOk = true;
+        for (auto& thread : slotThreads)
+            thread.join();
+        for (bool ok : slotOk)
+            allOk = allOk && ok;
+        printf("[ICE ONLY RESULT] pass=%d clients=%d\n", (int)allOk, opts.expectedClients);
+        MimitaNet::coordinatorIceDone(hostResult.roomCode);
+        agent.shutdown();
+        for (auto& extra : extraAgents)
+            extra->shutdown();
+        return allOk;
+    }
 
     std::string clientDesc;
     int timeoutMs = opts.timeoutSeconds * 1000, waited = 0;

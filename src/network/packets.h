@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 19;
+constexpr uint16_t PROTOCOL_VERSION = 20;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -79,7 +79,8 @@ enum PacketType : uint8_t
     PACKET_RESPAWN_REQUEST = 42,
     PACKET_PLAYER_RESPAWNED = 43,
     PACKET_SPAWN_ACK = 44,
-    PACKET_SPAWN_ACTIVATED = 45
+    PACKET_SPAWN_ACTIVATED = 45,
+    PACKET_RELIABLE_EVENT_ACK = 46
 };
 
 enum EntityType : uint8_t
@@ -263,6 +264,7 @@ struct SnapshotEntity
     uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
+    uint32_t spawnGeneration = 0;
     char displayName[MAX_NAME_BYTES];
 };
 
@@ -315,11 +317,12 @@ struct CompactEntityData
     uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
+    uint32_t spawnGeneration = 0;
     char displayName[32]; // MAX_NAME_BYTES
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 116, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 120, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -329,7 +332,7 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[10]; // 10 * 116 + header(32) = 1192 < 1200
+    CompactEntityData entities[9]; // 9 * 120 + header(32) = 1112 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
@@ -506,6 +509,8 @@ struct ProjectileStateEventPacket
 struct ProjectileExplodeEventPacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint32_t projectileId = 0;
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
@@ -522,10 +527,19 @@ struct ProjectileExplodeEventPacket
 struct ProjectileDespawnEventPacket
 {
     PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
     uint32_t projectileId = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t reason = 0;
     uint8_t reserved[2] = {};
+};
+
+struct ReliableEventAckPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
 };
 
 struct MeleeHitRequestPacket

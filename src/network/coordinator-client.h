@@ -101,6 +101,7 @@ const std::string& getCoordinatorUrl();
 
 // Host: register an ICE room
 IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::string& iceDescription);
+IceHostResult coordinatorIceHostPeer(const std::string& roomCode, const std::string& hostSessionId, const std::string& iceDescription);
 
 // Legacy ICE API (deprecated, kept for test compatibility)
 struct IceJoinResult {

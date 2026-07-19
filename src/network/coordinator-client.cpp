@@ -251,6 +251,37 @@ IceHostResult coordinatorIceHost(const std::string& hostSessionId, const std::st
     return result;
 }
 
+IceHostResult coordinatorIceHostPeer(const std::string& roomCode,
+    const std::string& hostSessionId, const std::string& iceDescription)
+{
+    IceHostResult result;
+    std::string body = "{\"room_code\":\"" + jsonEscape(roomCode)
+        + "\",\"host_session_id\":\"" + jsonEscape(hostSessionId)
+        + "\",\"ice_description\":\"" + jsonEscape(iceDescription) + "\"}";
+    std::string response;
+    long httpCode = 0;
+    uint64_t t0 = nowMs();
+    if (!httpPostJsonInner(gCoordinatorUrl + "/api/coordinator/ice/host-peer", body, response, 5000, httpCode))
+    {
+        printf("[ICE HOST PEER REGISTER] code=%s status=%ld duration=%llums FAILED\n",
+               roomCode.c_str(), httpCode, nowMs() - t0);
+        return result;
+    }
+    try {
+        auto j = json::parse(response);
+        result.ok = jsonBool(j, "ok");
+        result.roomCode = jsonStr(j, "room_code");
+        result.hostSessionId = hostSessionId;
+        result.joinToken = jsonStr(j, "join_token");
+        printf("[ICE HOST PEER REGISTER] code=%s session=%s ok=%d sdp=%s duration=%llums\n",
+               roomCode.c_str(), hostSessionId.substr(0, 12).c_str(),
+               (int)result.ok, iceLogSdpSummary(iceDescription).c_str(), nowMs() - t0);
+    } catch (const std::exception& e) {
+        printf("[ICE HOST PEER REGISTER] parse error: %s\n", e.what());
+    }
+    return result;
+}
+
 // ── IceLookup (non-mutating) ─────────────────────────────────────────
 
 CoordinatorLookupResult coordinatorIceLookup(const std::string& roomCode)

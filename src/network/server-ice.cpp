@@ -327,6 +327,8 @@ void tickServerIceTransports(SOCKET sock,
                 handleServerCommand(buf, (int)rp.bytes.size(), players, npcs);
             else if (header->type == PACKET_GODBALL_STATE)
                 handleGodballState(sock, players, buf, (int)rp.bytes.size());
+            else if (header->type == PACKET_RELIABLE_EVENT_ACK && (int)rp.bytes.size() >= (int)sizeof(ReliableEventAckPacket))
+                handleReliableEventAck(buf, (int)rp.bytes.size(), players);
             else if (header->type == PACKET_CLIENT_MAP_READY && (int)rp.bytes.size() >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buf);

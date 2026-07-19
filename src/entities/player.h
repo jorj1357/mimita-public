@@ -342,6 +342,7 @@ public:
     std::string lastDamagedBy;
     bool voidDeathTriggered = false;
     float sizeScale = 1.0f;  // player size multiplier
+    uint32_t spawnGeneration = 0;
     // -------- Core State --------
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};

@@ -755,6 +755,26 @@ RevolverShotResult WeaponSystem::fire(
     return fireHitscan(camera, player, npcs, world, remotePlayers);
 }
 
+void WeaponSystem::tagLatestLocalRocket(uint32_t fireSerial)
+{
+    WeaponRocketLauncher::tagLatestLocalRocket(mRocketState, fireSerial);
+}
+
+bool WeaponSystem::attachAuthoritativeRocket(uint32_t fireSerial, uint32_t projectileId)
+{
+    return WeaponRocketLauncher::attachAuthoritativeRocket(mRocketState, fireSerial, projectileId);
+}
+
+bool WeaponSystem::removeAuthoritativeRocket(uint32_t projectileId)
+{
+    return WeaponRocketLauncher::removeAuthoritativeRocket(mRocketState, projectileId);
+}
+
+bool WeaponSystem::removeLocalRocketByFireSerial(uint32_t fireSerial)
+{
+    return WeaponRocketLauncher::removeLocalRocketByFireSerial(mRocketState, fireSerial);
+}
+
 RevolverShotResult WeaponSystem::fireHitscan(
     const Camera& camera,
     Player& player,

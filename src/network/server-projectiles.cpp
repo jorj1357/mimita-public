@@ -13,6 +13,7 @@
 #include "debug/structured-log.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cfloat>
 #include <cstdio>
@@ -29,9 +30,31 @@
 namespace MimitaNet {
 namespace {
 
+ServerProjectilePerfStats gProjectilePerf;
+
 // ── ProjectileConfig and helpers (anonymous, file-local) ─────────────
 
+bool projectileIsSleeping(const ServerProjectile& projectile)
+{
+    return projectile.worldTouched &&
+        glm::length(projectile.velocity) <= 0.0001f &&
+        glm::length(projectile.angularVelocity) <= 0.0001f;
+}
+
 } // anonymous namespace
+
+ServerProjectilePerfStats consumeServerProjectilePerfStats()
+{
+    ServerProjectilePerfStats out = gProjectilePerf;
+    const uint32_t active = gProjectilePerf.activeProjectiles;
+    const uint32_t moving = gProjectilePerf.movingProjectiles;
+    const uint32_t sleeping = gProjectilePerf.sleepingProjectiles;
+    gProjectilePerf = ServerProjectilePerfStats{};
+    gProjectilePerf.activeProjectiles = active;
+    gProjectilePerf.movingProjectiles = moving;
+    gProjectilePerf.sleepingProjectiles = sleeping;
+    return out;
+}
 
 // ── Broadphase: gather candidate triangle indices intersecting an AABB ──
 // (declared in server.h)
@@ -301,6 +324,8 @@ void broadcastProjectileState(SOCKET sock,
     packet.angVelY = projectile.angularVelocity.y;
     packet.angVelZ = projectile.angularVelocity.z;
     packet.age = projectile.age;
+    gProjectilePerf.correctionPackets += players.size();
+    gProjectilePerf.correctionBytes += players.size() * sizeof(packet);
     broadcastPacket(sock, players, packet, totalPacketsOut);
 }
 
@@ -406,10 +431,7 @@ ProjectilePhysicsState makePhysicsState(const ServerProjectile& projectile)
     state.age = projectile.age;
     state.bounceCount = projectile.bounceCount;
     state.exploded = projectile.exploded;
-    state.sleeping =
-        projectile.worldTouched &&
-        glm::length(projectile.velocity) <= 0.0001f &&
-        glm::length(projectile.angularVelocity) <= 0.0001f;
+    state.sleeping = projectileIsSleeping(projectile);
     return state;
 }
 
@@ -459,6 +481,8 @@ void explodeProjectile(SOCKET sock,
     ProjectileExplodeEventPacket packet{};
     packet.header.type = PACKET_PROJECTILE_EXPLODE_EVENT;
     packet.header.tick = tick;
+    packet.eventId = nextReliableGameplayEventId();
+    packet.eventSessionId = serverReliableEventSessionId();
     packet.projectileId = projectile.id;
     packet.ownerPlayerId = projectile.ownerPlayerId;
     packet.fireSerial = projectile.fireSerial;
@@ -564,7 +588,9 @@ void explodeProjectile(SOCKET sock,
            position.x, position.y, position.z, projectile.splashRadius,
            victimsLogged);
 
-    broadcastPacket(sock, players, packet, totalPacketsOut);
+    queueReliableGameplayEventToAll(sock, players, &packet, sizeof(packet),
+                                    packet.eventId, packet.eventSessionId,
+                                    totalPacketsOut);
 }
 
 } // namespace
@@ -978,9 +1004,19 @@ void tickServerProjectiles(SOCKET sock,
                            const HeadlessWorld& world,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut)
 {
+    uint32_t activeCount = 0;
+    uint32_t movingCount = 0;
+    uint32_t sleepingCount = 0;
+
     for (auto it = projectiles.begin(); it != projectiles.end(); )
     {
         ServerProjectile& projectile = it->second;
+        ++activeCount;
+        if (projectileIsSleeping(projectile))
+            ++sleepingCount;
+        else
+            ++movingCount;
+
         projectile.previousPosition = projectile.position;
         projectile.stateAccumulator += dt;
 
@@ -997,8 +1033,18 @@ void tickServerProjectiles(SOCKET sock,
                 world, players, projectile.ownerPlayerId,
                 projectile.distanceTraveled < projectile.armingDistance);
 
+            auto simStart = std::chrono::steady_clock::now();
             ProjectileStepResult step =
                 simulateProjectileTick(state, config, physicsWorld, dt);
+            gProjectilePerf.projectileSimUs += (uint64_t)std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - simStart).count();
+            gProjectilePerf.triangleQueryCount += step.triangleQueryCount;
+            gProjectilePerf.triangleCandidateTotal += step.triangleCandidateTotal;
+            gProjectilePerf.triangleCandidateMax = std::max(
+                gProjectilePerf.triangleCandidateMax, step.triangleCandidateMax);
+            gProjectilePerf.playerCapsuleCandidateTotal += step.playerCapsuleCandidateTotal;
+            gProjectilePerf.playerCapsuleCandidateMax = std::max(
+                gProjectilePerf.playerCapsuleCandidateMax, step.playerCapsuleCandidateMax);
             applyPhysicsState(projectile, state);
             projectile.distanceTraveled += step.travelDistance;
             if (state.sleeping || state.bounceCount > previousBounceCount ||
@@ -1008,20 +1054,30 @@ void tickServerProjectiles(SOCKET sock,
                 projectile.worldTouched = true;
             }
 
-            // Generic explosion policy — no weapon names, no weapon enums
-            printf("[POLICY] projectileId=%u weaponDefId=%s stepType=%d "
-                   "explodeOnPlayerImpact=%d explodeOnWorldImpact=%d explodeOnLifetime=%d "
-                   "action=%s\n",
-                   projectile.id, networkWeaponTypeName(projectile.weaponType),
-                   (int)step.type,
-                   (int)projectile.explodeOnPlayerImpact,
-                   (int)projectile.explodeOnWorldImpact,
-                   (int)projectile.explodeOnLifetime,
-                   (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime) ? "explode" :
-                   (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact) ? "explode" :
-                   (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact) ? "explode" :
-                   (step.type == ProjectileCollisionType::WorldBounce) ? "continue-bounce" :
-                   "continue");
+            if (step.type != ProjectileCollisionType::None)
+            {
+                auto& _lg = ::StructuredLogger::instance();
+                if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
+                    ::StructuredLogger::Entry e;
+                    e.category = ::StructuredCategory::GrenadeLauncher;
+                    e.level = ::StructuredLevel::Important;
+                    e.eventId = "PROJECTILE_POLICY_EVENT";
+                    e.correlationId = "PROJECTILE_" + std::to_string(projectile.id);
+                    e.reason =
+                        (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime) ? "explode-lifetime" :
+                        (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact) ? "explode-player" :
+                        (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact) ? "explode-world" :
+                        (step.type == ProjectileCollisionType::WorldBounce) ? "continue-bounce" :
+                        "continue-event";
+                    char b[256]; std::snprintf(b, sizeof(b),
+                        "projectileId=%u weapon=%s stepType=%d hitPlayerId=%u age=%.2f bounceCount=%d",
+                        projectile.id, networkWeaponTypeName(projectile.weaponType),
+                        (int)step.type, step.hitPlayerId, projectile.age,
+                        projectile.bounceCount);
+                    e.message = b;
+                    _lg.write(e);
+                }
+            }
 
             if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
             {
@@ -1113,7 +1169,9 @@ void tickServerProjectiles(SOCKET sock,
             continue;
         }
 
-        if (projectile.stateAccumulator >= 0.05f)
+        const bool sleepingNow = projectileIsSleeping(projectile);
+        const float stateInterval = sleepingNow ? 1.0f : 0.05f;
+        if (projectile.stateAccumulator >= stateInterval)
         {
             projectile.stateAccumulator = 0.0f;
             broadcastProjectileState(sock, players, projectile,
@@ -1141,6 +1199,10 @@ void tickServerProjectiles(SOCKET sock,
         }
         ++it;
     }
+
+    gProjectilePerf.activeProjectiles = activeCount;
+    gProjectilePerf.movingProjectiles = movingCount;
+    gProjectilePerf.sleepingProjectiles = sleepingCount;
 }
 
 } // namespace MimitaNet

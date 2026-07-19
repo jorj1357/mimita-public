@@ -1,3 +1,13 @@
+// 07 19 2026, 11 05
+/* purpose
+* Declares authoritative server state, constants, and subsystem entry points.
+* Shares fixed 60 Hz server interfaces with network, projectile, NPC, and player code.
+* Exposes lightweight diagnostics required by server tick stability reporting.
+* Does NOT implement packet transport, rendering, or gameplay simulation bodies.
+* Does NOT define local-only gameplay paths or client prediction behavior.
+* Does NOT own weapon definitions, website APIs, or asset loading policy.
+*/
+
 #pragma once
 
 #include "network/net_common.h"
@@ -200,6 +210,19 @@ struct ServerPlayer
     glm::vec3 lastAcceptedClientVelocity{0.0f};
     uint64_t lastAcceptedClientTransformMs = 0;
     bool hasAcceptedClientTransform = false;
+
+    // ── Reliable unordered gameplay events ───────────────────────────
+    struct PendingReliableEvent
+    {
+        uint32_t eventId = 0;
+        uint32_t eventSessionId = 0;
+        uint8_t packetType = 0;
+        uint64_t createdMs = 0;
+        uint64_t lastSendMs = 0;
+        uint8_t attempts = 0;
+        std::vector<char> bytes;
+    };
+    std::deque<PendingReliableEvent> pendingReliableEvents;
 };
 
 // ── Movement validation constants ────────────────────────────────────
@@ -293,6 +316,23 @@ struct ServerProjectile
     bool explodeOnLifetime = true;
     uint32_t spawnTick = 0;
 };
+
+struct ServerProjectilePerfStats
+{
+    uint64_t projectileSimUs = 0;
+    uint64_t triangleQueryCount = 0;
+    uint64_t triangleCandidateTotal = 0;
+    uint32_t triangleCandidateMax = 0;
+    uint64_t playerCapsuleCandidateTotal = 0;
+    uint32_t playerCapsuleCandidateMax = 0;
+    uint64_t correctionPackets = 0;
+    uint64_t correctionBytes = 0;
+    uint32_t activeProjectiles = 0;
+    uint32_t movingProjectiles = 0;
+    uint32_t sleepingProjectiles = 0;
+};
+
+ServerProjectilePerfStats consumeServerProjectilePerfStats();
 
 // Timestamp
 const char* serverTimestamp();
@@ -640,6 +680,20 @@ void tickServerIceTransports(SOCKET sock,
                              const HeadlessWorld& world,
                              uint32_t tick, uint64_t& totalPacketsOut);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player, const void* data, size_t size);
+uint32_t serverReliableEventSessionId();
+uint32_t nextReliableGameplayEventId();
+void queueReliableGameplayEventToAll(SOCKET sock,
+                                     std::unordered_map<uint32_t, ServerPlayer>& players,
+                                     const void* data,
+                                     size_t size,
+                                     uint32_t eventId,
+                                     uint32_t eventSessionId,
+                                     uint64_t& totalPacketsOut);
+void handleReliableEventAck(const char* buffer, int bytes,
+                            std::unordered_map<uint32_t, ServerPlayer>& players);
+void tickReliableGameplayEvents(SOCKET sock,
+                                std::unordered_map<uint32_t, ServerPlayer>& players,
+                                uint64_t& totalPacketsOut);
 std::string generateServerCode();
 
 } // namespace MimitaNet
