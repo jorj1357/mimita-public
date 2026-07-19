@@ -141,6 +141,14 @@ struct ServerPlayer
     uint32_t spawnGeneration = 0;
     std::vector<std::string> ownedWeaponIds;
     bool justRespawned = false;  // set by simulatePlayer when respawn timer fires
+
+    // ── Spawn handshake lifecycle ───────────────────────────────────
+    enum SpawnState : uint8_t {
+        AwaitingMapReady,   // after JoinAccept, waiting for PACKET_CLIENT_MAP_READY
+        AwaitingSpawnAck,   // spawn sent, waiting for position acknowledgement
+        Active              // normal gameplay
+    };
+    SpawnState spawnState = AwaitingMapReady;
     uint16_t lastDashSerial = 0;
     uint16_t lastEquipSerial = 0;
     uint16_t lastRespawnSerial = 0;
@@ -317,7 +325,11 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 // Player simulation
 void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn);
 void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn);
+void retrySpawnSync(SOCKET sock, ServerPlayer& player);
 void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uint32_t currentTick);
+void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
+                     std::unordered_map<uint32_t, ServerPlayer>& players,
+                     uint32_t tick);
 void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
                           uint32_t tick, uint64_t& totalPacketsOut);

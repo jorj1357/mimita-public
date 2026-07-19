@@ -387,6 +387,8 @@ int runServer(const LaunchOptions& options)
                 handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick, totalPacketsOut);
             else if (header->type == PACKET_SERVER_COMMAND)
                 handleServerCommand(buffer, bytes, players, npcs);
+            else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
+                handleSpawnAck(sock, buffer, bytes, players, tick);
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
@@ -446,6 +448,9 @@ int runServer(const LaunchOptions& options)
                 kv.second.justRespawned = false;
                 completeAuthoritativeSpawn(sock, kv.second, false);
             }
+            // Retry spawn sync for players awaiting ACK (every 6 ticks ≈ 100ms)
+            if (kv.second.spawnState == ServerPlayer::AwaitingSpawnAck && (tick % 6 == 0))
+                retrySpawnSync(sock, kv.second);
         }
         tickWeaponRuntimes(players, tick);
 
@@ -866,6 +871,8 @@ static void simulateOneServerTick(ListenServerState& state)
                                        state.totalPacketsOut);
             else if (header->type == PACKET_SERVER_COMMAND)
                 handleServerCommand(buffer, bytes, state.players, state.npcs);
+            else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
+                handleSpawnAck(state.sock, buffer, bytes, state.players, state.tick);
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
@@ -914,6 +921,8 @@ static void simulateOneServerTick(ListenServerState& state)
                 kv.second.justRespawned = false;
                 completeAuthoritativeSpawn(state.sock, kv.second, false);
             }
+            if (kv.second.spawnState == ServerPlayer::AwaitingSpawnAck && (state.tick % 6 == 0))
+                retrySpawnSync(state.sock, kv.second);
         }
         tickWeaponRuntimes(state.players, state.tick);
         resolvePlayerCollision(state.players);

@@ -141,6 +141,15 @@ void handleAttackRequest(
         }
     }
 
+    // ── Spawn state check — not Active yet ────────────────────────────
+    if (shooter.spawnState != ServerPlayer::Active)
+    {
+        Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u spawnState not Active — awaiting spawn ack\n",
+                   shooter.id, req->requestId);
+        sendAttackResult(sock, shooter, req, tick, false, 8, 0, -1, -1, 0, 0);
+        return;
+    }
+
     // ── Resolve weapon definition ──────────────────────────────────────
     const std::string* wepId = weaponIdForDefNetworkId(req->weaponDefNetworkId);
     if (!wepId)

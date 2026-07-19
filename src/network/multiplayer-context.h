@@ -260,6 +260,7 @@ struct MultiplayerContext
     // ── Transform epoch for spawn/resync detection ────────────────────
     uint32_t transformEpoch = 0;
     uint32_t lastKnownSpawnGeneration = 0;  // from server's PlayerRespawned
+    bool gameplayActive = false;  // true after SpawnActivated received (not just transport connected)
 
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;

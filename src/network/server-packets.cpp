@@ -143,7 +143,8 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
                    spawnPos.x, spawnPos.y, spawnPos.z);
         }
         beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "initial_join");
-        resetPlayerForSpawn(p, true);  // initial spawn — build inventory
+        // resetPlayerForSpawn and inventory setup happen in completeAuthoritativeSpawn
+        // when the client sends ClientMapReady and spawned becomes true.
         // Wait for ClientMapReady before including in snapshots.
         // The client must load the required map first.
         p.spawned = false;
@@ -1152,6 +1153,13 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
         return;
     }
 
+    // Validate spawn state
+    if (p.spawnState != ServerPlayer::Active)
+    {
+        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u spawnState not Active — rejected\n", p.id);
+        return;
+    }
+
     // ── Idempotent cache lookup ────────────────────────────────────
     // Cache reload results by (playerId, spawnGeneration, requestId)
     // Similar to projectile fire result caching.
@@ -1230,6 +1238,57 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
 
     // Send result back to the requesting player only
     serverSendToPlayer(sock, p, &result, sizeof(result));
+}
+
+// ── Spawn acknowledgement ────────────────────────────────────────────
+void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
+                     std::unordered_map<uint32_t, ServerPlayer>& players,
+                     uint32_t tick)
+{
+    if (bytes < (int)sizeof(SpawnAckPacket))
+        return;
+    const SpawnAckPacket* ack = reinterpret_cast<const SpawnAckPacket*>(buffer);
+    auto it = players.find(ack->header.playerId);
+    if (it == players.end())
+        return;
+
+    ServerPlayer& p = it->second;
+
+    // Log every ACK received, even if stale
+    if (ack->spawnGeneration != p.spawnGeneration || ack->transformEpoch != p.transformEpoch || p.spawnState != ServerPlayer::AwaitingSpawnAck)
+    {
+        Debug::log(Debug::Category::Weapons, "[SPAWN ACK REJECT] playerId=%u recvGen=%u recvEpoch=%u expectGen=%u expectEpoch=%u state=%d\n",
+                   p.id, ack->spawnGeneration, ack->transformEpoch, p.spawnGeneration, p.transformEpoch, (int)p.spawnState);
+        return;
+    }
+
+    // Duplicate matching ACK after already Active — harmless
+    if (p.spawnState == ServerPlayer::Active)
+    {
+        Debug::log(Debug::Category::Weapons, "[SPAWN ACK] playerId=%u spawnGen=%u epoch=%u — already Active, idempotent\n",
+                   p.id, ack->spawnGeneration, ack->transformEpoch);
+        return;
+    }
+
+    p.spawnState = ServerPlayer::Active;
+    Debug::log(Debug::Category::Weapons, "[SPAWN ACK ACCEPT] playerId=%u spawnGen=%u epoch=%u — now Active\n",
+               p.id, ack->spawnGeneration, ack->transformEpoch);
+
+    // Send SpawnActivated confirmation
+    SpawnActivatedPacket act{};
+    act.header.type = PACKET_SPAWN_ACTIVATED;
+    act.header.tick = tick;
+    act.header.playerId = p.id;
+    act.spawnGeneration = p.spawnGeneration;
+    act.transformEpoch = p.transformEpoch;
+    act.serverTick = tick;
+    if (p.transport)
+        p.transport->send(&act, sizeof(act));
+    else
+        sendto(sock, (const char*)&act, sizeof(act), 0,
+               (sockaddr*)&p.addr, sizeof(p.addr));
+    Debug::log(Debug::Category::Weapons, "[SPAWN ACTIVATED SEND] playerId=%u spawnGen=%u epoch=%u\n",
+               p.id, act.spawnGeneration, act.transformEpoch);
 }
 
 } // namespace MimitaNet

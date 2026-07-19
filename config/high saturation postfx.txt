@@ -1,0 +1,33 @@
+{
+    "brightness": 0.7,
+    "contrast": 1,
+    "saturation": 10.0,
+    "gamma": 1.6,
+    "hueShift": 99.0,
+    "colorTemperature": 0.0,
+    "vignette": 0,
+    "filmGrain": 0,
+    "chromaticAberration": 0.1,
+    "lensDistortion": 0.0,
+    "scanlines": 0.0,
+    "pixelation": 0.0,
+    "posterize": 0.0,
+
+    "guiBrightness": 1.0,
+    "guiContrast": 1.0,
+    "guiSaturation": 1.0,
+    "guiHueShift": 0.0,
+
+    "dreamStrength": 1.0,
+    "voidStrength": 0.0,
+    "psychedelicStrength": 1.0,
+    "retroStrength": 0.0,
+    "glitchStrength": 0,
+
+    "worldWave": 0.0,
+    "screenWave": 0.1,
+    "screenShakeFx": 0,
+    "edgeGlow": 1.0,
+    "outlineBoost": 0.0,
+    "shadowBoost": 0.0
+}
