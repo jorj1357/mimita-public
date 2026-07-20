@@ -157,6 +157,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     welcome.header.playerId = id;
     welcome.header.transformEpoch = p.transformEpoch;
     welcome.assignedPlayerId = id;
+    welcome.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
     welcome.tickRate = SERVER_TICK_RATE;
     copyName(welcome.approvedName, p.name);
     std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
@@ -823,6 +824,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     accept.header.playerId = id;
     accept.header.transformEpoch = p.transformEpoch;
     accept.assignedPlayerId = id;
+    accept.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
     accept.tickRate = SERVER_TICK_RATE;
     copyName(accept.approvedName, p.name);
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
@@ -862,6 +864,8 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     ServerPlayer& p = players[foundId];
     p.addr = from;
     p.lastHeardMs = nowMs();
+    p.pendingReliableEvents.clear();
+    p.reliableEventSessionId = 0;
     p.reconnectToken = generateReconnectToken(); // rotate token
     beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "reconnect");
 
@@ -870,6 +874,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     accept.header.tick = tick;
     accept.header.playerId = foundId;
     accept.assignedPlayerId = foundId;
+    accept.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
     accept.tickRate = SERVER_TICK_RATE;
     copyName(accept.approvedName, p.name);
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
@@ -1189,6 +1194,7 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     result.header.playerId = p.id;
     result.requestId = req->requestId;
     result.spawnGeneration = req->spawnGeneration;
+    result.weaponDefNetworkId = req->weaponDefNetworkId;
 
     if (p.dead)
     {
@@ -1233,6 +1239,7 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     result.magazineAmmo = rt.magazineAmmo;
     result.reserveAmmo = rt.reserveAmmo;
     result.reloadCompleteTick = rt.reloadCompleteTick;
+    result.nextAllowedFireTick = rt.nextAllowedFireTick;
     result.reloading = rt.reloading ? 1 : 0;
     result.stateRevision = rt.stateRevision;
 

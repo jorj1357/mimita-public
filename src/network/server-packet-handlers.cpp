@@ -296,6 +296,11 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                     players, target, shooter.id, shot->damage,
                     glm::vec3(shot->knockX, shot->knockY, shot->knockZ),
                     ServerDamageSource::Hitscan);
+                queueServerDamageConfirmedEvent(
+                    sock, players, tick, totalPacketsOut, shooter.id, target,
+                    shot->damage, damage, position, normalizedNormal,
+                    glm::vec3(shot->knockX, shot->knockY, shot->knockZ),
+                    ServerDamageSource::Hitscan, shot->weapon, shot->shotSerial);
                 event.targetHealth = damage.healthAfter;
                 event.damageConfirmed = 1;
                 if (damage.killed)
@@ -700,6 +705,11 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
         ServerDamageResult dmg = applyServerDamage(
             players, players[targets[t].id], shooter.id,
             damage, knockback, ServerDamageSource::Hitscan);
+        queueServerDamageConfirmedEvent(
+            sock, players, tick, totalPacketsOut, shooter.id, players[targets[t].id],
+            damage, dmg, players[targets[t].id].pos + glm::vec3(0.0f, 0.0f, 0.8f),
+            dir, knockback, ServerDamageSource::Hitscan,
+            request->weapon, request->shotSerial);
         targets[t].healthAfter = dmg.healthAfter;
         targets[t].killed = dmg.killed;
 

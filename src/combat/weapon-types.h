@@ -92,6 +92,9 @@ struct WeaponRuntime {
     bool isCharging = false;
     float chargeAmount = 0.0f;
 
+    uint32_t authoritativeStateRevision = 0;
+    uint32_t authoritativeSpawnGeneration = 0;
+
     struct GodballState {
         uint32_t ballEntityId = 0;
         glm::vec3 ballPosition{0.0f};

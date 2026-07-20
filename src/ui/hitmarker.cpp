@@ -22,8 +22,14 @@ float gHitmarkerTimer = 0.0f;
 
 void hitmarker(int damage)
 {
-    gHitmarkerTimer = HITMARKER_DURATION;
+    hitmarkerVisualOnly(damage);
     playHitmarkerSound(damage);
+}
+
+void hitmarkerVisualOnly(int damage)
+{
+    (void)damage;
+    gHitmarkerTimer = HITMARKER_DURATION;
 }
 
 void drawHitmarker(float dt)

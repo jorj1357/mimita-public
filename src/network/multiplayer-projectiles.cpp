@@ -6,6 +6,7 @@
  */
 
 #include "network/multiplayer-context.h"
+#include "network/confirmed-damage-presentation.h"
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
 
@@ -178,6 +179,8 @@ bool acceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t
 {
     if (eventId == 0 || eventSessionId == 0)
         return true;
+    if (ctx.reliableEventSessionId != 0 && eventSessionId != ctx.reliableEventSessionId)
+        return false;
     ackReliableEvent(ctx, eventId, eventSessionId);
     const uint64_t key = reliableEventKey(eventSessionId, eventId);
     if (ctx.processedReliableEventIds.count(key))
@@ -647,7 +650,6 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         const ProjectileDamageResultPacket& victim = event->victims[i];
         if (victim.victimPlayerId == ctx.localPlayerId)
         {
-            ctx.localServerHealth = victim.healthAfter;
             ctx.pendingKnockback += glm::vec3(
                 victim.knockX, victim.knockY, victim.knockZ);
             ctx.pendingKnockbackSource = weaponName;
@@ -662,14 +664,9 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             auto remote = ctx.remotePlayers.find(victim.victimPlayerId);
             if (remote != ctx.remotePlayers.end())
             {
-                remote->second.currentHp = victim.healthAfter;
-                remote->second.dead = victim.healthAfter <= 0;
                 remote->second.externalImpulse += glm::vec3(
                     victim.knockX, victim.knockY, victim.knockZ);
             }
-            auto interpolation = ctx.remotePlayerInterpolation.find(victim.victimPlayerId);
-            if (interpolation != ctx.remotePlayerInterpolation.end())
-                interpolation->second.target.health = victim.healthAfter;
         }
         printf("[NET PROJECTILE DAMAGE RECV] projectileId=%u victimPlayerId=%u "
                "damage=%d healthAfter=%d killed=%d\n",
@@ -682,6 +679,25 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
            event->projectileId, weaponName,
            position.x, position.y, position.z, event->header.tick,
            (int)removedVisual, (int)removedLegacy, (int)wasPredicted);
+}
+
+void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
+                                         const DamageConfirmedEventPacket* event,
+                                         const ConfirmedDamagePresentationSink* sink)
+{
+    if (!acceptReliableEventOnce(ctx, event->eventId, event->eventSessionId))
+    {
+        printf("[NET DAMAGE CONFIRMED] eventId=%u target=%u accepted=0 reason=duplicate-or-stale\n",
+               event->eventId, event->targetPlayerId);
+        return;
+    }
+
+    presentConfirmedDamage(ctx, *event, sink);
+
+    printf("[NET DAMAGE CONFIRMED] eventId=%u source=%u attacker=%u target=%u damage=%d healthBefore=%d healthAfter=%d killed=%d\n",
+           event->eventId, (unsigned)event->source, event->attackerPlayerId,
+           event->targetPlayerId, event->damage, event->healthBefore,
+           event->healthAfter, (int)event->killed);
 }
 
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)

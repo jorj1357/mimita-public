@@ -329,11 +329,6 @@ void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastE
                    event->shooterPlayerId, targetRes.targetPlayerId, event->shotSerial);
         }
 
-        // ── Update local player health from authoritative result ─────
-        if (isLocalTarget)
-        {
-            ctx.localServerHealth = targetRes.healthAfter;
-        }
     }
 }
 

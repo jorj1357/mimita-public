@@ -14,6 +14,7 @@
 #include "network/packets.h"
 #include "network/game-transport.h"
 #include "network/ice/ice-agent.h"
+#include "network/simulation-constants.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "combat/weapon-swordsword.h"
@@ -46,8 +47,9 @@
 
 namespace MimitaNet {
 
-constexpr float SERVER_TICK_RATE = 60.0f;
-constexpr float SERVER_DT = 1.0f / SERVER_TICK_RATE;
+// Simulation rate shared with client via simulation-constants.h
+constexpr float SERVER_TICK_RATE = static_cast<float>(GAMEPLAY_SIMULATION_HZ);
+constexpr float SERVER_DT = GAMEPLAY_FIXED_DT;
 constexpr float PLAYER_RADIUS = 0.65f;
 constexpr float PLAYER_HEIGHT = 3.5f;
 
@@ -212,6 +214,7 @@ struct ServerPlayer
     bool hasAcceptedClientTransform = false;
 
     // ── Reliable unordered gameplay events ───────────────────────────
+    uint32_t reliableEventSessionId = 0;
     struct PendingReliableEvent
     {
         uint32_t eventId = 0;
@@ -223,6 +226,13 @@ struct ServerPlayer
         std::vector<char> bytes;
     };
     std::deque<PendingReliableEvent> pendingReliableEvents;
+};
+
+enum class ReliableGameplayEventQueueResult : uint8_t
+{
+    Queued,
+    ConnectionUnavailable,
+    BacklogSaturated
 };
 
 // ── Movement validation constants ────────────────────────────────────
@@ -557,6 +567,22 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
                                      int damage,
                                      const glm::vec3& knockback,
                                      ServerDamageSource source);
+ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t tick,
+    uint64_t& totalPacketsOut,
+    uint32_t attackerPlayerId,
+    const ServerPlayer& target,
+    int damage,
+    const ServerDamageResult& result,
+    const glm::vec3& hit,
+    const glm::vec3& normal,
+    const glm::vec3& knockback,
+    ServerDamageSource source,
+    uint8_t weapon,
+    uint32_t causeSerial = 0,
+    uint32_t projectileId = 0);
 
 // ─── HostedRoomSession — single canonical room for one host action ─────────
 
@@ -682,18 +708,22 @@ void tickServerIceTransports(SOCKET sock,
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player, const void* data, size_t size);
 uint32_t serverReliableEventSessionId();
 uint32_t nextReliableGameplayEventId();
-void queueReliableGameplayEventToAll(SOCKET sock,
-                                     std::unordered_map<uint32_t, ServerPlayer>& players,
-                                     const void* data,
-                                     size_t size,
-                                     uint32_t eventId,
-                                     uint32_t eventSessionId,
-                                     uint64_t& totalPacketsOut);
+uint32_t reliableGameplayEventSessionForPlayer(ServerPlayer& player);
+ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
+                                                                 std::unordered_map<uint32_t, ServerPlayer>& players,
+                                                                 const void* data,
+                                                                 size_t size,
+                                                                 uint32_t eventId,
+                                                                 uint32_t eventSessionId,
+                                                                 uint64_t& totalPacketsOut);
 void handleReliableEventAck(const char* buffer, int bytes,
-                            std::unordered_map<uint32_t, ServerPlayer>& players);
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const sockaddr_in* from = nullptr,
+                            const ServerPlayer* authenticatedPlayer = nullptr);
 void tickReliableGameplayEvents(SOCKET sock,
                                 std::unordered_map<uint32_t, ServerPlayer>& players,
                                 uint64_t& totalPacketsOut);
+void setReliableGameplayEventTestNowMs(uint64_t nowMsOverride);
 std::string generateServerCode();
 
 } // namespace MimitaNet

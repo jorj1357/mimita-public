@@ -7,6 +7,7 @@
 
 #include <string>
 #include <deque>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -253,8 +254,11 @@ struct MultiplayerContext
     // ── Migration: disagreement events from server ────────────────────
     std::vector<DisagreementEvent> disagreementEvents;
     std::unordered_set<uint32_t> processedDisagreementIds;
+    uint32_t reliableEventSessionId = 0;
     std::unordered_set<uint64_t> processedReliableEventIds;
     std::deque<uint64_t> processedReliableEventOrder;
+    std::unordered_set<uint64_t> presentedDamageEventIds;
+    std::deque<uint64_t> presentedDamageEventOrder;
     std::unordered_set<uint64_t> processedPelletBlastSerials;
 
     // ── Migration: server process tracking ────────────────────────────
@@ -333,6 +337,24 @@ struct MultiplayerContext
         bool rejected = false;
     };
     std::unordered_map<uint32_t, PendingAttackRequest> pendingAttackRequests;
+
+    // ── Pending reload requests ────────────────────────────────────────
+    struct PendingReloadRequest {
+        uint32_t requestId = 0;
+        uint32_t spawnGeneration = 0;
+        uint16_t weaponDefNetworkId = 0;
+        uint64_t sentAtMs = 0;
+    };
+    std::unordered_map<uint32_t, PendingReloadRequest> pendingReloadRequests;
+
+    // ── Pending reload result (queued outside mpTick for player-scoped processing) ──
+    std::vector<ReloadResultPacket> pendingReloadResults;
+
+    // ── Pending authoritative spawn (queued outside mpTick for player-scoped weapon reconciliation) ──
+    // Stores the most recent PlayerRespawnedPacket until weapon runtimes are reconciled
+    // and SpawnAck is sent in engineTickNet where Player is in scope.
+    // Cleared after processing or when the spawn handshake completes.
+    std::optional<PlayerRespawnedPacket> pendingAuthoritativeSpawn;
 
     // ── Predicted projectile IDs (locally simulated, suppress server interpolation) ──
     std::unordered_set<uint32_t> predictedProjectileIds;
@@ -471,6 +493,10 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const ProjectileDespawnEventPacket* event);
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event);
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event);
+struct ConfirmedDamagePresentationSink;
+void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
+                                         const DamageConfirmedEventPacket* event,
+                                         const ConfirmedDamagePresentationSink* sink = nullptr);
 void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);

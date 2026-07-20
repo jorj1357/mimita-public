@@ -171,6 +171,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.remoteNpcInterpolation.clear();
     ctx.networkProjectiles.clear();
     ctx.projectileTerminals.clear();
+    ctx.reliableEventSessionId = 0;
     ctx.processedReliableEventIds.clear();
     ctx.processedReliableEventOrder.clear();
     ctx.playerRegistry.clear();
@@ -197,6 +198,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.shotEvents.clear();
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
+    ctx.reliableEventSessionId = 0;
     ctx.processedReliableEventIds.clear();
     ctx.processedReliableEventOrder.clear();
     ctx.processedPelletBlastSerials.clear();
@@ -204,6 +206,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.fireRejections.clear();
     ctx.processedRefundSerials.clear();
     ctx.pendingFireRequests.clear();
+    ctx.pendingReloadRequests.clear();
     ctx.pendingKnockback = glm::vec3(0.0f);
     ctx.pendingKnockbackSource.clear();
     ctx.incomingChatMessages.clear();
@@ -324,6 +327,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.remoteNpcInterpolation.clear();
     ctx.networkProjectiles.clear();
     ctx.projectileTerminals.clear();
+    ctx.reliableEventSessionId = 0;
     ctx.playerRegistry.clear();
     ctx.approvedLocalName.clear();
     ctx.hasLocalServerPosition = false;
@@ -611,6 +615,7 @@ bool mpConnectWithToken(MultiplayerContext& ctx, const std::string& address,
     ctx.lastDisconnectLogMs = 0;
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
+    ctx.reliableEventSessionId = 0;
     ctx.processedReliableEventIds.clear();
     ctx.processedReliableEventOrder.clear();
     ctx.serverPort = port;

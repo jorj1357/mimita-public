@@ -5,7 +5,7 @@
 namespace MimitaNet {
 
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
-constexpr uint16_t PROTOCOL_VERSION = 20;
+constexpr uint16_t PROTOCOL_VERSION = 23;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -80,7 +80,16 @@ enum PacketType : uint8_t
     PACKET_PLAYER_RESPAWNED = 43,
     PACKET_SPAWN_ACK = 44,
     PACKET_SPAWN_ACTIVATED = 45,
-    PACKET_RELIABLE_EVENT_ACK = 46
+    PACKET_RELIABLE_EVENT_ACK = 46,
+    PACKET_DAMAGE_CONFIRMED_EVENT = 47
+};
+
+enum DamageConfirmedSource : uint8_t
+{
+    DAMAGE_CONFIRMED_HITSCAN = 1,
+    DAMAGE_CONFIRMED_MELEE = 2,
+    DAMAGE_CONFIRMED_ROCKET_EXPLOSION = 3,
+    DAMAGE_CONFIRMED_GRENADE_EXPLOSION = 4
 };
 
 enum EntityType : uint8_t
@@ -187,6 +196,7 @@ struct WelcomePacket
 {
     PacketHeader header;
     uint32_t assignedPlayerId = 0;
+    uint32_t reliableEventSessionId = 0;
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
@@ -542,6 +552,35 @@ struct ReliableEventAckPacket
     uint32_t eventSessionId = 0;
 };
 
+struct DamageConfirmedEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t attackerPlayerId = 0;
+    uint32_t targetPlayerId = 0;
+    uint32_t causeSerial = 0;
+    uint32_t projectileId = 0;
+    uint32_t attackerSpawnGeneration = 0;
+    uint32_t targetSpawnGeneration = 0;
+    int32_t damage = 0;
+    int32_t healthBefore = 0;
+    int32_t healthAfter = 0;
+    uint8_t source = 0;
+    uint8_t weapon = NETWORK_WEAPON_NONE;
+    uint8_t killed = 0;
+    uint8_t reserved = 0;
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 0.0f;
+    float knockX = 0.0f;
+    float knockY = 0.0f;
+    float knockZ = 0.0f;
+};
+
 struct MeleeHitRequestPacket
 {
     PacketHeader header;
@@ -669,6 +708,7 @@ struct JoinAcceptPacket
 {
     PacketHeader header;
     uint32_t assignedPlayerId = 0;
+    uint32_t reliableEventSessionId = 0;
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
@@ -692,6 +732,7 @@ struct ReconnectAcceptPacket
 {
     PacketHeader header;
     uint32_t assignedPlayerId = 0;
+    uint32_t reliableEventSessionId = 0;
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
@@ -883,11 +924,13 @@ struct ReloadResultPacket
     PacketHeader header;
     uint32_t requestId = 0;
     uint32_t spawnGeneration = 0;
+    uint16_t weaponDefNetworkId = 0;
     uint8_t accepted = 0;
     uint8_t reason = 0;
     int32_t magazineAmmo = 0;
     int32_t reserveAmmo = 0;
     uint64_t reloadCompleteTick = 0;
+    uint64_t nextAllowedFireTick = 0;
     uint8_t reloading = 0;
     uint32_t stateRevision = 0;
 };
@@ -946,6 +989,7 @@ static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "ProjectileExplodeEventPacket exceeds safe datagram limit");
 static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
 static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
+static_assert(sizeof(DamageConfirmedEventPacket) <= 104, "DamageConfirmedEventPacket is too large");
 static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too large");
 static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket is too large");
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
@@ -954,7 +998,7 @@ static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is
 static_assert(sizeof(AttackRequestPacket) <= 96, "AttackRequestPacket is too large");
 static_assert(sizeof(AttackResultPacket) <= 64, "AttackResultPacket is too large");
 static_assert(sizeof(ReloadRequestPacket) <= 32, "ReloadRequestPacket is too large");
-static_assert(sizeof(ReloadResultPacket) <= 64, "ReloadResultPacket is too large");
+static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");
 static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too large");
 static_assert(sizeof(PlayerRespawnedPacket) <= 576, "PlayerRespawnedPacket is too large");
 

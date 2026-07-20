@@ -482,7 +482,6 @@ void explodeProjectile(SOCKET sock,
     packet.header.type = PACKET_PROJECTILE_EXPLODE_EVENT;
     packet.header.tick = tick;
     packet.eventId = nextReliableGameplayEventId();
-    packet.eventSessionId = serverReliableEventSessionId();
     packet.projectileId = projectile.id;
     packet.ownerPlayerId = projectile.ownerPlayerId;
     packet.fireSerial = projectile.fireSerial;
@@ -531,6 +530,10 @@ void explodeProjectile(SOCKET sock,
         ServerDamageResult damage = applyServerDamage(
             players, victim, projectile.ownerPlayerId, finalDamage,
             knockback, source);
+        queueServerDamageConfirmedEvent(
+            sock, players, tick, totalPacketsOut, projectile.ownerPlayerId, victim,
+            finalDamage, damage, center, dir, knockback, source,
+            projectile.weaponType, projectile.fireSerial, projectile.id);
 
         if (packet.victimCount < MAX_PROJECTILE_DAMAGE_RESULTS && damage.applied)
         {

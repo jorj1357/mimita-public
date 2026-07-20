@@ -12,6 +12,7 @@
 #include "debug/debug-log.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace MimitaNet {
 namespace {
@@ -20,12 +21,91 @@ constexpr size_t RELIABLE_EVENT_MAX_PENDING_PER_PLAYER = 64;
 constexpr uint64_t RELIABLE_EVENT_RETRY_MS = 100;
 constexpr uint64_t RELIABLE_EVENT_TTL_MS = 10000;
 constexpr uint8_t RELIABLE_EVENT_MAX_ATTEMPTS = 80;
+constexpr size_t RELIABLE_EVENT_ID_OFFSET = sizeof(PacketHeader);
+constexpr size_t RELIABLE_EVENT_SESSION_OFFSET = sizeof(PacketHeader) + sizeof(uint32_t);
+
+uint64_t gTestNowMs = 0;
+
+struct ReliableFailureStats
+{
+    uint32_t saturated = 0;
+    uint32_t sendFailed = 0;
+    uint32_t attemptsExhausted = 0;
+    uint32_t ttlExpired = 0;
+};
+
+ReliableFailureStats gFailureStats;
+
+uint64_t reliableNowMs()
+{
+    return gTestNowMs ? gTestNowMs : nowMs();
+}
 
 uint32_t makeSessionId()
 {
     uint64_t t = nowMs();
     uint32_t v = (uint32_t)(t ^ (t >> 32) ^ 0x4d494d38u);
     return v ? v : 1;
+}
+
+uint32_t nextSessionId()
+{
+    static uint32_t nextId = makeSessionId();
+    uint32_t id = nextId++;
+    if (nextId == 0)
+        nextId = 1;
+    return id ? id : 1;
+}
+
+uint32_t& mutableEventId(char* data)
+{
+    return *reinterpret_cast<uint32_t*>(data + RELIABLE_EVENT_ID_OFFSET);
+}
+
+uint32_t& mutableEventSessionId(char* data)
+{
+    return *reinterpret_cast<uint32_t*>(data + RELIABLE_EVENT_SESSION_OFFSET);
+}
+
+bool sameReliableAckAddress(const sockaddr_in& a, const sockaddr_in& b)
+{
+    return a.sin_family == b.sin_family &&
+        a.sin_addr.s_addr == b.sin_addr.s_addr &&
+        a.sin_port == b.sin_port;
+}
+
+ReliableGameplayEventQueueResult worseResult(ReliableGameplayEventQueueResult a,
+                                             ReliableGameplayEventQueueResult b)
+{
+    if (a == ReliableGameplayEventQueueResult::ConnectionUnavailable ||
+        b == ReliableGameplayEventQueueResult::ConnectionUnavailable)
+        return ReliableGameplayEventQueueResult::ConnectionUnavailable;
+    if (a == ReliableGameplayEventQueueResult::BacklogSaturated ||
+        b == ReliableGameplayEventQueueResult::BacklogSaturated)
+        return ReliableGameplayEventQueueResult::BacklogSaturated;
+    return ReliableGameplayEventQueueResult::Queued;
+}
+
+void logReliableFailureAggregate(const char* trigger,
+                                 const ServerPlayer& player,
+                                 uint8_t packetType,
+                                 uint32_t eventId)
+{
+    Debug::logThrottled(Debug::Category::Networking, "reliable-event-fail-aggregate", 1.0f,
+                        "[RELIABLE EVENT FAIL] trigger=%s playerId=%u packetType=%u eventId=%u action=disconnect saturated=%u sendFailed=%u attemptsExhausted=%u ttlExpired=%u\n",
+                        trigger, player.id, (unsigned)packetType, eventId,
+                        gFailureStats.saturated, gFailureStats.sendFailed,
+                        gFailureStats.attemptsExhausted, gFailureStats.ttlExpired);
+}
+
+void markReliableConnectionUnhealthy(std::unordered_map<uint32_t, ServerPlayer>& players,
+                                     std::unordered_map<uint32_t, ServerPlayer>::iterator& it,
+                                     const char* trigger,
+                                     uint8_t packetType,
+                                     uint32_t eventId)
+{
+    logReliableFailureAggregate(trigger, it->second, packetType, eventId);
+    it = players.erase(it);
 }
 
 } // namespace
@@ -45,48 +125,93 @@ uint32_t nextReliableGameplayEventId()
     return id;
 }
 
-void queueReliableGameplayEventToAll(SOCKET sock,
-                                     std::unordered_map<uint32_t, ServerPlayer>& players,
-                                     const void* data,
-                                     size_t size,
-                                     uint32_t eventId,
-                                     uint32_t eventSessionId,
-                                     uint64_t& totalPacketsOut)
+uint32_t reliableGameplayEventSessionForPlayer(ServerPlayer& player)
 {
-    if (!data || size < sizeof(PacketHeader) || eventId == 0 || eventSessionId == 0)
-        return;
+    if (player.reliableEventSessionId == 0)
+        player.reliableEventSessionId = nextSessionId();
+    return player.reliableEventSessionId;
+}
+
+ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
+                                                                 std::unordered_map<uint32_t, ServerPlayer>& players,
+                                                                 const void* data,
+                                                                 size_t size,
+                                                                 uint32_t eventId,
+                                                                 uint32_t eventSessionId,
+                                                                 uint64_t& totalPacketsOut)
+{
+    if (!data || size < RELIABLE_EVENT_SESSION_OFFSET + sizeof(uint32_t) || eventId == 0)
+        return ReliableGameplayEventQueueResult::ConnectionUnavailable;
 
     const PacketHeader* header = reinterpret_cast<const PacketHeader*>(data);
-    const uint64_t now = nowMs();
-    for (auto& entry : players)
+    const uint64_t now = reliableNowMs();
+    ReliableGameplayEventQueueResult result = ReliableGameplayEventQueueResult::Queued;
+    for (auto it = players.begin(); it != players.end(); )
     {
-        ServerPlayer& player = entry.second;
+        ServerPlayer& player = it->second;
         if (player.pendingReliableEvents.size() >= RELIABLE_EVENT_MAX_PENDING_PER_PLAYER)
-            player.pendingReliableEvents.pop_front();
+        {
+            ++gFailureStats.saturated;
+            Debug::logThrottled(Debug::Category::Networking, "reliable-gameplay-events-full", 1.0f,
+                                "[RELIABLE EVENT SATURATED] playerId=%u pending=%zu max=%zu packetType=%u eventId=%u action=disconnect\n",
+                                player.id, player.pendingReliableEvents.size(),
+                                RELIABLE_EVENT_MAX_PENDING_PER_PLAYER,
+                                (unsigned)header->type, eventId);
+            result = worseResult(result, ReliableGameplayEventQueueResult::BacklogSaturated);
+            markReliableConnectionUnhealthy(players, it, "backlog-saturated", header->type, eventId);
+            continue;
+        }
+
+        reliableGameplayEventSessionForPlayer(player);
+
+        std::vector<char> packetBytes((const char*)data, (const char*)data + size);
+        mutableEventId(packetBytes.data()) = eventId;
+        mutableEventSessionId(packetBytes.data()) = player.reliableEventSessionId;
 
         ServerPlayer::PendingReliableEvent pending;
         pending.eventId = eventId;
-        pending.eventSessionId = eventSessionId;
+        pending.eventSessionId = player.reliableEventSessionId;
         pending.packetType = header->type;
         pending.createdMs = now;
         pending.lastSendMs = now;
         pending.attempts = 1;
-        pending.bytes.assign((const char*)data, (const char*)data + size);
+        pending.bytes = std::move(packetBytes);
         player.pendingReliableEvents.push_back(std::move(pending));
 
-        serverSendToPlayer(sock, player, data, size);
+        const bool sent = serverSendToPlayer(sock, player,
+                                            player.pendingReliableEvents.back().bytes.data(),
+                                            player.pendingReliableEvents.back().bytes.size());
+        if (!sent)
+        {
+            ++gFailureStats.sendFailed;
+            result = worseResult(result, ReliableGameplayEventQueueResult::ConnectionUnavailable);
+            markReliableConnectionUnhealthy(players, it, "initial-send-failed", header->type, eventId);
+            continue;
+        }
         ++totalPacketsOut;
+        ++it;
     }
+
+    (void)eventSessionId;
+    return result;
 }
 
 void handleReliableEventAck(const char* buffer, int bytes,
-                            std::unordered_map<uint32_t, ServerPlayer>& players)
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const sockaddr_in* from,
+                            const ServerPlayer* authenticatedPlayer)
 {
     if (bytes < (int)sizeof(ReliableEventAckPacket))
         return;
     const ReliableEventAckPacket* ack = reinterpret_cast<const ReliableEventAckPacket*>(buffer);
     auto playerIt = players.find(ack->header.playerId);
     if (playerIt == players.end())
+        return;
+    if (authenticatedPlayer && authenticatedPlayer->id != ack->header.playerId)
+        return;
+    if (from && !sameReliableAckAddress(playerIt->second.addr, *from))
+        return;
+    if (ack->eventSessionId == 0 || ack->eventSessionId != playerIt->second.reliableEventSessionId)
         return;
     auto& pending = playerIt->second.pendingReliableEvents;
     pending.erase(std::remove_if(pending.begin(), pending.end(),
@@ -99,25 +224,44 @@ void tickReliableGameplayEvents(SOCKET sock,
                                 std::unordered_map<uint32_t, ServerPlayer>& players,
                                 uint64_t& totalPacketsOut)
 {
-    const uint64_t now = nowMs();
+    const uint64_t now = reliableNowMs();
     uint32_t pendingCount = 0;
     uint32_t resentCount = 0;
     uint32_t expiredCount = 0;
 
-    for (auto& entry : players)
+    for (auto playerIt = players.begin(); playerIt != players.end(); )
     {
-        ServerPlayer& player = entry.second;
+        ServerPlayer& player = playerIt->second;
+        bool disconnected = false;
         for (auto it = player.pendingReliableEvents.begin(); it != player.pendingReliableEvents.end(); )
         {
-            if (now - it->createdMs > RELIABLE_EVENT_TTL_MS || it->attempts >= RELIABLE_EVENT_MAX_ATTEMPTS)
+            const bool ttlExpired = now - it->createdMs > RELIABLE_EVENT_TTL_MS;
+            const bool attemptsExhausted = it->attempts >= RELIABLE_EVENT_MAX_ATTEMPTS;
+            if (ttlExpired || attemptsExhausted)
             {
-                it = player.pendingReliableEvents.erase(it);
+                if (ttlExpired)
+                    ++gFailureStats.ttlExpired;
+                if (attemptsExhausted)
+                    ++gFailureStats.attemptsExhausted;
                 ++expiredCount;
-                continue;
+                markReliableConnectionUnhealthy(players, playerIt,
+                    ttlExpired ? "ttl-expired" : "attempts-exhausted",
+                    it->packetType, it->eventId);
+                disconnected = true;
+                break;
             }
             if (now - it->lastSendMs >= RELIABLE_EVENT_RETRY_MS)
             {
-                serverSendToPlayer(sock, player, it->bytes.data(), it->bytes.size());
+                const bool sent = serverSendToPlayer(sock, player, it->bytes.data(), it->bytes.size());
+                if (!sent)
+                {
+                    ++gFailureStats.sendFailed;
+                    ++expiredCount;
+                    markReliableConnectionUnhealthy(players, playerIt,
+                        "retry-send-failed", it->packetType, it->eventId);
+                    disconnected = true;
+                    break;
+                }
                 it->lastSendMs = now;
                 ++it->attempts;
                 ++totalPacketsOut;
@@ -126,6 +270,8 @@ void tickReliableGameplayEvents(SOCKET sock,
             ++pendingCount;
             ++it;
         }
+        if (!disconnected)
+            ++playerIt;
     }
 
     static uint64_t lastLogMs = 0;
@@ -138,6 +284,11 @@ void tickReliableGameplayEvents(SOCKET sock,
                             (unsigned long long)RELIABLE_EVENT_TTL_MS);
         lastLogMs = now;
     }
+}
+
+void setReliableGameplayEventTestNowMs(uint64_t nowMsOverride)
+{
+    gTestNowMs = nowMsOverride;
 }
 
 } // namespace MimitaNet

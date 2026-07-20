@@ -21,6 +21,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
+#include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
 #include "render/render-player.h"
 #include "perf/perf.h"
@@ -221,6 +222,81 @@ void engineTickNet(Engine& engine, float dt)
         }
         mpContext.fireRejections.clear();
 
+        // ── Process pending reload results ────────────────────────────────
+        for (const auto& rr : mpContext.pendingReloadResults)
+        {
+            Debug::log(Debug::Category::Weapons, "[RELOAD PROCESS] playerId=%u requestId=%u accepted=%d reason=%d ammo=%d/%d stateRev=%u\n",
+                       mpContext.localPlayerId, rr.requestId, (int)rr.accepted, (int)rr.reason,
+                       rr.magazineAmmo, rr.reserveAmmo, rr.stateRevision);
+
+            MimitaNet::reconcileAuthoritativeWeaponRuntime(
+                mpContext, player, rr.weaponDefNetworkId,
+                rr.magazineAmmo, rr.reserveAmmo,
+                rr.nextAllowedFireTick,
+                rr.reloading != 0,
+                rr.reloadCompleteTick,
+                rr.stateRevision,
+                rr.spawnGeneration,
+                "reload-result");
+
+            auto pendingIt = mpContext.pendingReloadRequests.find(rr.requestId);
+            if (pendingIt != mpContext.pendingReloadRequests.end())
+            {
+                mpContext.pendingReloadRequests.erase(pendingIt);
+                Debug::log(Debug::Category::Weapons, "[RELOAD PENDING CLEAR] requestId=%u\n", rr.requestId);
+            }
+        }
+        mpContext.pendingReloadResults.clear();
+
+        // ── Process pending authoritative spawn ───────────────────────────
+        if (mpContext.pendingAuthoritativeSpawn.has_value())
+        {
+            const auto& spawn = *mpContext.pendingAuthoritativeSpawn;
+            Debug::log(Debug::Category::Weapons, "[SPAWN AUTHORITATIVE APPLY] playerId=%u spawnGen=%u epoch=%u health=%d weapons=%u\n",
+                       mpContext.localPlayerId, spawn.spawnGeneration, spawn.transformEpoch,
+                       spawn.health, spawn.weaponCount);
+
+            // Reset temporary local weapon-runtime state before applying authoritative entries
+            player.weaponRuntimes.clear();
+
+            // Process every valid authoritative weapon entry via the canonical reconciler
+            for (uint8_t i = 0; i < spawn.weaponCount; ++i)
+            {
+                const auto& slot = spawn.weapons[i];
+                Debug::log(Debug::Category::Weapons, "[SPAWN WEAPON ENTRY] idx=%u defId=%u mag=%d res=%d nextFire=%llu reload=%d rev=%u\n",
+                           i, slot.weaponDefNetworkId, slot.magazineAmmo, slot.reserveAmmo,
+                           (unsigned long long)slot.nextAllowedFireTick, (int)slot.reloading, slot.stateRevision);
+
+                MimitaNet::reconcileAuthoritativeWeaponRuntime(
+                    mpContext, player,
+                    slot.weaponDefNetworkId,
+                    slot.magazineAmmo,
+                    slot.reserveAmmo,
+                    slot.nextAllowedFireTick,
+                    slot.reloading != 0,
+                    0, // reloadCompleteTick not in spawn packet; timer from 0 if reloading
+                    slot.stateRevision,
+                    spawn.spawnGeneration,
+                    "spawn-packet");
+            }
+
+            // Send SpawnAck only after authoritative state is installed
+            if (mpContext.active && mpContext.localPlayerId)
+            {
+                MimitaNet::SpawnAckPacket ack{};
+                ack.header.type = MimitaNet::PACKET_SPAWN_ACK;
+                ack.header.tick = mpContext.tick;
+                ack.header.playerId = mpContext.localPlayerId;
+                ack.spawnGeneration = spawn.spawnGeneration;
+                ack.transformEpoch = spawn.transformEpoch;
+                MimitaNet::mpSendPacket(mpContext, &ack, sizeof(ack));
+                Debug::log(Debug::Category::Weapons, "[SPAWN ACK SEND] playerId=%u spawnGen=%u epoch=%u (after weapon reconciliation)\n",
+                           mpContext.localPlayerId, ack.spawnGeneration, ack.transformEpoch);
+            }
+
+            mpContext.pendingAuthoritativeSpawn.reset();
+        }
+
         // ── Map synchronization ──────────────────────────────────────────
         // Load server-required map without blocking networking.
         // mpTick() already ran above — heartbeats and packets keep flowing.
@@ -328,26 +404,6 @@ void engineTickNet(Engine& engine, float dt)
                    event.targetPlayerId, event.damage, event.weapon,
                    event.impactType, (int)event.damageConfirmed,
                    event.targetTransformEpoch, (int)staleDamage);
-
-            if (event.damageConfirmed && localTarget && !staleDamage)
-            {
-                player.currentHp = event.targetHealth;
-                mpContext.localServerHealth = event.targetHealth;
-            }
-            else if (event.damageConfirmed)
-            {
-                auto remote = mpContext.remotePlayers.find(
-                    event.targetPlayerId);
-                if (remote != mpContext.remotePlayers.end())
-                    remote->second.currentHp = event.targetHealth;
-                auto interpolation =
-                    mpContext.remotePlayerInterpolation.find(
-                        event.targetPlayerId);
-                if (interpolation !=
-                    mpContext.remotePlayerInterpolation.end())
-                    interpolation->second.target.health =
-                        event.targetHealth;
-            }
 
             if (!localShooter && glm::length(event.knockback) > 0.001f)
             {

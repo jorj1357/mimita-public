@@ -284,6 +284,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     ctx.networkProjectiles.clear();
     ctx.predictedProjectileIds.clear();
     ctx.pendingFireRequests.clear();
+    ctx.pendingReloadRequests.clear();
     ctx.fireRejections.clear();
     ctx.processedRefundSerials.clear();
 
@@ -419,6 +420,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.connectionStatus = "Connected";
             ctx.approvedLocalName = welcome->approvedName;
             ctx.reconnectToken = welcome->reconnectToken;
+            ctx.reliableEventSessionId = welcome->reliableEventSessionId;
             ctx.requiredMapId = welcome->mapId;
             ctx.transformEpoch = welcome->header.transformEpoch;
             ctx.clientMapReadySent = false;
@@ -453,6 +455,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.connectionStatus = "Connected";
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
+            ctx.reliableEventSessionId = accept->reliableEventSessionId;
             ctx.requiredMapId = accept->mapId;
             ctx.transformEpoch = accept->header.transformEpoch;
             ctx.clientMapReadySent = false;
@@ -492,6 +495,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.connectionStatus = "Reconnected";
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
+            ctx.reliableEventSessionId = accept->reliableEventSessionId;
             ctx.localServerPosition = {accept->restorePx, accept->restorePy, accept->restorePz};
             ctx.localServerHealth = accept->restoredHealth;
             ctx.hasLocalServerPosition = true;
@@ -677,6 +681,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpProcessMeleeHitEventPacket(
                 ctx, reinterpret_cast<const MeleeHitEventPacket*>(buffer));
         }
+        else if (header->type == PACKET_DAMAGE_CONFIRMED_EVENT &&
+                 bytes >= (int)sizeof(DamageConfirmedEventPacket))
+        {
+            mpProcessDamageConfirmedEventPacket(
+                ctx, reinterpret_cast<const DamageConfirmedEventPacket*>(buffer));
+        }
         else if (header->type == PACKET_RELOAD_RESULT &&
                  bytes >= (int)sizeof(ReloadResultPacket))
         {
@@ -684,8 +694,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             Debug::log(Debug::Category::Weapons, "[RELOAD RESULT RX] playerId=%u requestId=%u accepted=%d reason=%d ammo=%d/%d stateRev=%u\n",
                        ctx.localPlayerId, rr->requestId, (int)rr->accepted, (int)rr->reason,
                        rr->magazineAmmo, rr->reserveAmmo, rr->stateRevision);
-            // Reconcile client-side weapon runtime with authoritative values
-            // TODO: update player.weaponRuntimes from rr data
+
+            // Store for processing outside mpTick where Player is in scope
+            ctx.pendingReloadResults.push_back(*rr);
+            if (ctx.pendingReloadResults.size() > 64)
+                ctx.pendingReloadResults.erase(ctx.pendingReloadResults.begin());
         }
         else if (header->type == PACKET_NPC_DAMAGE_EVENT &&
                  bytes >= (int)sizeof(NpcDamageEventPacket))
@@ -696,23 +709,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(PlayerRespawnedPacket))
         {
             const PlayerRespawnedPacket* pr = reinterpret_cast<const PlayerRespawnedPacket*>(buffer);
+
+            // Reject older spawn generation
+            if (pr->spawnGeneration < ctx.lastKnownSpawnGeneration)
+            {
+                Debug::log(Debug::Category::Weapons, "[SPAWN RESPAWN REJECT] old spawnGen=%u < %u\n",
+                           pr->spawnGeneration, ctx.lastKnownSpawnGeneration);
+                return;
+            }
+
             applyAuthoritativeSpawn(ctx, pr);
-            // Send spawn acknowledgement so server can activate gameplay
+
             if (ctx.active && ctx.localPlayerId)
             {
-                SpawnAckPacket ack{};
-                ack.header.type = PACKET_SPAWN_ACK;
-                ack.header.tick = ctx.tick;
-                ack.header.playerId = ctx.localPlayerId;
-                ack.spawnGeneration = pr->spawnGeneration;
-                ack.transformEpoch = pr->transformEpoch;
-                mpSendPacket(ctx, &ack, sizeof(ack));
-                Debug::log(Debug::Category::Weapons, "[SPAWN ACK SEND] playerId=%u spawnGen=%u epoch=%u (from spawn packet)\n",
-                           ctx.localPlayerId, ack.spawnGeneration, ack.transformEpoch);
-
-                // Update ctx.transformEpoch so reconciliation tracks correctly
+                // Store for weapon reconciliation outside mpTick where Player is in scope.
+                // SpawnAck is sent after weapon runtime reconciliation in engineTickNet.
+                ctx.pendingAuthoritativeSpawn = *pr;
                 ctx.transformEpoch = pr->transformEpoch;
                 ctx.gameplayActive = false;  // waiting for SpawnActivated
+                Debug::log(Debug::Category::Weapons, "[SPAWN RESPAWN QUEUE] playerId=%u spawnGen=%u epoch=%u weapons=%u\n",
+                           ctx.localPlayerId, pr->spawnGeneration, pr->transformEpoch, pr->weaponCount);
             }
         }
         else if (header->type == PACKET_SPAWN_ACTIVATED &&

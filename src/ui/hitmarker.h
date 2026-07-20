@@ -9,4 +9,5 @@
 extern float gHitmarkerTimer;
 
 void hitmarker(int damage = 0);
+void hitmarkerVisualOnly(int damage = 0);
 void drawHitmarker(float dt);

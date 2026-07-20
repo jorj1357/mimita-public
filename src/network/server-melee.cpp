@@ -412,6 +412,11 @@ void tickServerSwordCombat(SOCKET sock,
             ServerDamageResult dmgResult = applyServerDamage(
                 players, target, attacker.id, (int)damage, kbVec,
                 ServerDamageSource::Melee);
+            queueServerDamageConfirmedEvent(
+                sock, players, tick, totalPacketsOut, attacker.id, target,
+                (int)damage, dmgResult, hitPoint, kbDir, kbVec,
+                ServerDamageSource::Melee, NETWORK_WEAPON_SWORDSWORD,
+                attacker.lastMeleeAttackSerial);
 
             ss.hitCooldowns[target.id] = tickInterval;
 

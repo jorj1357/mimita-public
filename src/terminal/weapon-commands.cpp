@@ -57,9 +57,13 @@ void registerWeaponCommands()
                         req.spawnGeneration = mpContext.lastKnownSpawnGeneration;
                         req.weaponDefNetworkId = netId;
                         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
+                        mpContext.pendingReloadRequests[req.requestId] = {
+                            req.requestId, req.spawnGeneration, netId, MimitaNet::nowMs()
+                        };
                         Debug::log(Debug::Category::Weapons,
-                                   "[RELOAD AUTO SEND] playerId=%u requestId=%u weapon=%s\n",
-                                   mpContext.localPlayerId, req.requestId, wdef->id.c_str());
+                                   "[RELOAD AUTO SEND] playerId=%u requestId=%u weapon=%s pending=%zu\n",
+                                   mpContext.localPlayerId, req.requestId, wdef->id.c_str(),
+                                   mpContext.pendingReloadRequests.size());
                     }
                 }
             }
@@ -229,8 +233,12 @@ void registerWeaponCommands()
                         req.spawnGeneration = mpContext.lastKnownSpawnGeneration;
                         req.weaponDefNetworkId = netId;
                         MimitaNet::mpSendPacket(mpContext, &req, sizeof(req));
-                        Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s\n",
-                                   mpContext.localPlayerId, req.requestId, def->id.c_str());
+                        mpContext.pendingReloadRequests[req.requestId] = {
+                            req.requestId, req.spawnGeneration, netId, MimitaNet::nowMs()
+                        };
+                        Debug::log(Debug::Category::Weapons, "[RELOAD REQUEST SEND] playerId=%u requestId=%u weapon=%s pending=%zu\n",
+                                   mpContext.localPlayerId, req.requestId, def->id.c_str(),
+                                   mpContext.pendingReloadRequests.size());
                     }
                 }
             }
