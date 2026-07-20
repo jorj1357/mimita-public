@@ -56,6 +56,13 @@
       "pitchMin": 0.25,
       "pitchMax": 3.0,
       "nearDistance": 5.0
+    },
+    "presentation": {
+      "enabled": true,
+      "hitmarker": true,
+      "damageNumber": true,
+      "hitSound": true,
+      "selfDamageFeedback": false
     }
   },
   "perWeapon": {

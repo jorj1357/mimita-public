@@ -116,6 +116,17 @@ static void readSound(const json& j, WeaponHitFxSoundConfig& cfg)
     cfg.nearDistance = readJsonFloat(s, "nearDistance", cfg.nearDistance);
 }
 
+static void readPresentation(const json& j, WeaponHitFxPresentationConfig& cfg)
+{
+    if (!j.contains("presentation")) return;
+    const auto& p = j["presentation"];
+    cfg.enabled = readJsonBool(p, "enabled", cfg.enabled);
+    cfg.hitmarker = readJsonBool(p, "hitmarker", cfg.hitmarker);
+    cfg.damageNumber = readJsonBool(p, "damageNumber", cfg.damageNumber);
+    cfg.hitSound = readJsonBool(p, "hitSound", cfg.hitSound);
+    cfg.selfDamageFeedback = readJsonBool(p, "selfDamageFeedback", cfg.selfDamageFeedback);
+}
+
 static void readExplosionBurstSphere(const json& j, WeaponHitFxExplosionBurstSphere& cfg)
 {
     if (!j.contains("sphere")) return;
@@ -165,6 +176,7 @@ static void readPerWeapon(const json& j, const std::string& key, WeaponHitFxPerW
     readDebris(pw, out.debris);
     readBlood(pw, out.blood);
     readSound(pw, out.sound);
+    readPresentation(pw, out.presentation);
     readExplosion(pw, out.explosionBurst);
 }
 
@@ -233,6 +245,15 @@ static void mergeSound(const WeaponHitFxSoundConfig& src, WeaponHitFxSoundConfig
     dst.nearDistance = src.nearDistance;
 }
 
+static void mergePresentation(const WeaponHitFxPresentationConfig& src, WeaponHitFxPresentationConfig& dst)
+{
+    if (!src.enabled) return;
+    dst.hitmarker = src.hitmarker;
+    dst.damageNumber = src.damageNumber;
+    dst.hitSound = src.hitSound;
+    dst.selfDamageFeedback = src.selfDamageFeedback;
+}
+
 } // anonymous namespace
 
 WeaponHitFxConfig& WeaponHitFxConfig::instance()
@@ -275,6 +296,7 @@ bool WeaponHitFxConfig::load(const std::string& path)
             readDebris(d, defs.debris);
             readBlood(d, defs.blood);
             readSound(d, defs.sound);
+            readPresentation(d, defs.presentation);
         }
         mDefaults = defs;
 
@@ -287,6 +309,7 @@ bool WeaponHitFxConfig::load(const std::string& path)
                 wp.debris = defs.debris;
                 wp.blood = defs.blood;
                 wp.sound = defs.sound;
+                wp.presentation = defs.presentation;
                 readPerWeapon(pw, it.key(), wp);
                 mPerWeapon[it.key()] = wp;
             }
@@ -346,6 +369,13 @@ const WeaponHitFxSoundConfig& WeaponHitFxConfig::soundFor(const std::string& wea
     auto it = mPerWeapon.find(weaponId);
     if (it != mPerWeapon.end()) return it->second.sound;
     return mDefaults.sound;
+}
+
+const WeaponHitFxPresentationConfig& WeaponHitFxConfig::presentationFor(const std::string& weaponId) const
+{
+    auto it = mPerWeapon.find(weaponId);
+    if (it != mPerWeapon.end()) return it->second.presentation;
+    return mDefaults.presentation;
 }
 
 const WeaponHitFxExplosionBurstConfig& WeaponHitFxConfig::explosionBurstFor(const std::string& weaponId) const

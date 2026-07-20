@@ -328,7 +328,7 @@ void tickServerIceTransports(SOCKET sock,
             else if (header->type == PACKET_GODBALL_STATE)
                 handleGodballState(sock, players, buf, (int)rp.bytes.size());
             else if (header->type == PACKET_RELIABLE_EVENT_ACK && (int)rp.bytes.size() >= (int)sizeof(ReliableEventAckPacket))
-                handleReliableEventAck(buf, (int)rp.bytes.size(), players);
+                handleReliableEventAck(buf, (int)rp.bytes.size(), players, &from, &player);
             else if (header->type == PACKET_CLIENT_MAP_READY && (int)rp.bytes.size() >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buf);
@@ -402,6 +402,7 @@ void tickServerIceTransports(SOCKET sock,
                 welcome.header.playerId = newId;
                 welcome.header.transformEpoch = p.transformEpoch;
                 welcome.assignedPlayerId = newId;
+                welcome.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
                 welcome.tickRate = SERVER_TICK_RATE;
                 copyName(welcome.approvedName, p.name);
                 std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
@@ -456,6 +457,7 @@ void tickServerIceTransports(SOCKET sock,
                 accept.header.playerId = newId;
                 accept.header.transformEpoch = p.transformEpoch;
                 accept.assignedPlayerId = newId;
+                accept.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
                 accept.tickRate = SERVER_TICK_RATE;
                 copyName(accept.approvedName, p.name);
                 std::string rt = generateReconnectToken();

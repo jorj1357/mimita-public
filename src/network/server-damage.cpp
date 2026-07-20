@@ -17,6 +17,18 @@ static const char* damageSourceName(ServerDamageSource source)
     }
 }
 
+static uint8_t damageConfirmedSource(ServerDamageSource source)
+{
+    switch (source)
+    {
+    case ServerDamageSource::Hitscan: return DAMAGE_CONFIRMED_HITSCAN;
+    case ServerDamageSource::Melee: return DAMAGE_CONFIRMED_MELEE;
+    case ServerDamageSource::RocketExplosion: return DAMAGE_CONFIRMED_ROCKET_EXPLOSION;
+    case ServerDamageSource::GrenadeExplosion: return DAMAGE_CONFIRMED_GRENADE_EXPLOSION;
+    default: return 0;
+    }
+}
+
 ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>& players,
                                      ServerPlayer& target,
                                      uint32_t attackerPlayerId,
@@ -67,6 +79,60 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
            clampedDamage, result.healthBefore, result.healthAfter,
            (int)result.killed, knockback.x, knockback.y, knockback.z);
     return result;
+}
+
+ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t tick,
+    uint64_t& totalPacketsOut,
+    uint32_t attackerPlayerId,
+    const ServerPlayer& target,
+    int damage,
+    const ServerDamageResult& result,
+    const glm::vec3& hit,
+    const glm::vec3& normal,
+    const glm::vec3& knockback,
+    ServerDamageSource source,
+    uint8_t weapon,
+    uint32_t causeSerial,
+    uint32_t projectileId)
+{
+    if (!result.applied)
+        return ReliableGameplayEventQueueResult::Queued;
+
+    DamageConfirmedEventPacket event{};
+    event.header.type = PACKET_DAMAGE_CONFIRMED_EVENT;
+    event.header.tick = tick;
+    event.header.playerId = attackerPlayerId;
+    event.eventId = nextReliableGameplayEventId();
+    event.eventSessionId = serverReliableEventSessionId();
+    event.attackerPlayerId = attackerPlayerId;
+    event.targetPlayerId = target.id;
+    event.causeSerial = causeSerial;
+    event.projectileId = projectileId;
+    auto attackerIt = players.find(attackerPlayerId);
+    event.attackerSpawnGeneration = attackerIt != players.end()
+        ? attackerIt->second.spawnGeneration : 0;
+    event.targetSpawnGeneration = target.spawnGeneration;
+    event.damage = damage;
+    event.healthBefore = result.healthBefore;
+    event.healthAfter = result.healthAfter;
+    event.source = damageConfirmedSource(source);
+    event.weapon = weapon;
+    event.killed = result.killed ? 1 : 0;
+    event.hitX = hit.x;
+    event.hitY = hit.y;
+    event.hitZ = hit.z;
+    event.normalX = normal.x;
+    event.normalY = normal.y;
+    event.normalZ = normal.z;
+    event.knockX = knockback.x;
+    event.knockY = knockback.y;
+    event.knockZ = knockback.z;
+    return queueReliableGameplayEventToAll(
+        sock, players, &event, sizeof(event), event.eventId,
+        event.eventSessionId, totalPacketsOut);
 }
 
 } // namespace MimitaNet

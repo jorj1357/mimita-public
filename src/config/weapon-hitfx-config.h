@@ -57,6 +57,14 @@ struct WeaponHitFxSoundConfig {
     float nearDistance = 5.0f;
 };
 
+struct WeaponHitFxPresentationConfig {
+    bool enabled = true;
+    bool hitmarker = true;
+    bool damageNumber = true;
+    bool hitSound = true;
+    bool selfDamageFeedback = false;
+};
+
 struct WeaponHitFxForceConfig {
     bool enabled = true;
     float minForce = 0.1f;
@@ -103,6 +111,7 @@ struct WeaponHitFxPerWeapon {
     WeaponHitFxDebrisConfig debris;
     WeaponHitFxBloodConfig blood;
     WeaponHitFxSoundConfig sound;
+    WeaponHitFxPresentationConfig presentation;
     WeaponHitFxExplosionBurstConfig explosionBurst;
 };
 
@@ -122,6 +131,7 @@ public:
     const WeaponHitFxDebrisConfig& debrisFor(const std::string& weaponId) const;
     const WeaponHitFxBloodConfig& bloodFor(const std::string& weaponId) const;
     const WeaponHitFxSoundConfig& soundFor(const std::string& weaponId) const;
+    const WeaponHitFxPresentationConfig& presentationFor(const std::string& weaponId) const;
     const WeaponHitFxExplosionBurstConfig& explosionBurstFor(const std::string& weaponId) const;
 
 private:
@@ -132,6 +142,7 @@ private:
         WeaponHitFxDebrisConfig debris;
         WeaponHitFxBloodConfig blood;
         WeaponHitFxSoundConfig sound;
+        WeaponHitFxPresentationConfig presentation;
     };
 
     Config mDefaults;

@@ -484,7 +484,7 @@ int runServer(const LaunchOptions& options)
             else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
                 handleSpawnAck(sock, buffer, bytes, players, tick);
             else if (header->type == PACKET_RELIABLE_EVENT_ACK && bytes >= (int)sizeof(ReliableEventAckPacket))
-                handleReliableEventAck(buffer, bytes, players);
+                handleReliableEventAck(buffer, bytes, players, &from);
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
@@ -948,7 +948,7 @@ static void simulateOneServerTick(ListenServerState& state)
             else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
                 handleSpawnAck(state.sock, buffer, bytes, state.players, state.tick);
             else if (header->type == PACKET_RELIABLE_EVENT_ACK && bytes >= (int)sizeof(ReliableEventAckPacket))
-                handleReliableEventAck(buffer, bytes, state.players);
+                handleReliableEventAck(buffer, bytes, state.players, &from);
             else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
             {
                 const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
