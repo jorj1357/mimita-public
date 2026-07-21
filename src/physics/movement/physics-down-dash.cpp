@@ -1,19 +1,18 @@
-// Purpose:
-// - Immediate downward impulse on Q press
-// - No resource, no cooldown, no scripted behavior
-// - Collisions naturally handle landing/sliding/bouncing
-//
-// Uses physics/config.h
-// No collision / no grounding logic
+// 07 21 2026, 16 30
+/* purpose
+* Adapts the legacy Player down-dash entry point to the shared movement helper.
+* Preserves the Q-triggered compatibility function while using target base Z assignment.
+* Keeps down-dash availability and one-tick event state synchronized through MovementState.
+* Does NOT own a second down-dash formula, collision handling, VFX, audio, or packets.
+* Does NOT block grounded down dash, freeze vertical movement, or slope collision behavior.
+* Does NOT implement Ground Return or contact-reset generation.
+*/
 
-#include <cstdio>
-#include <algorithm>
+#include "physics/movement/physics-down-dash.h"
 
-#include "physics/config.h"
 #include "entities/player.h"
-#include "debug/debug-log.h"
-
-#define DD_LOG(...) Debug::logThrottled(Debug::Category::Physics, "down-dash", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+#include "physics/movement/movement-conversion.h"
+#include "physics/movement/movement-step.h"
 
 void doDownDash(
     Player& p,
@@ -21,29 +20,16 @@ void doDownDash(
     float dt
 ) {
     (void)dt;
-
     if (!downDashPressed)
         return;
 
-    if (p.freeze.freezeActive)
-        return;
+    MovementCommand command;
+    command.lifecycle = MovementLifecycleIdentity{p.spawnGeneration, 0};
+    command.downDashPressed = true;
 
-    if (!p.dash.downDashAvailable)
-        return;
-
-    float beforeVelZ = p.vel.z;
-
-    p.vel.z = DOWN_DASH_SPEED;
-    p.dash.downDashAvailable = false;
-    p.dash.didDownDash = true;
-
-    Debug::log(Debug::Category::Physics, "[DOWN DASH] activated vel.z=%.0f pos=(%.2f %.2f %.2f)\n",
-               p.vel.z, p.pos.x, p.pos.y, p.pos.z);
-
-    DD_LOG(
-        "[DOWN_DASH] vel.z %.3f -> %.3f (onGround=%d)\n",
-        beforeVelZ,
-        p.vel.z,
-        (int)p.ground.onGround
-    );
+    MovementState state = movementStateFromPlayer(p, command.lifecycle);
+    MovementStepEvents events;
+    const MovementConfig config = makeCurrentRuntimeMovementConfig();
+    tryActivateDownDash(state, command, config, events);
+    applyMovementStateToPlayer(state, p);
 }

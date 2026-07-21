@@ -1,3 +1,13 @@
+// 07 21 2026, 16 30
+/* purpose
+* Runs one fixed gameplay simulation tick for local Player, NPC, death, and void systems.
+* Converts an InputFrame into physics input before calling the movement orchestrator.
+* Keeps rendering, networking transport, and variable frame timing outside fixed simulation.
+* Does NOT own movement formulas, collision internals, packet layout, or weapon authority.
+* Does NOT run the main loop, load maps, serialize replay files, or allocate servers.
+* Does NOT replace subsystem-owned update functions for NPC, combat, physics, or effects.
+*/
+
 #include "sim/sim-context.h"
 #include "input/input-frame.h"
 #include "perf/perf.h"
@@ -32,6 +42,7 @@ static InputState inputStateFromFrame(const InputFrame& frame)
     state.groundReturnPressed = frame.groundReturnPressed;
     state.downDashPressed = frame.downDashPressed;
     state.freezeHeld = frame.freezeHeld;
+    state.freezePressed = frame.freezePressed;
 
     float yawRad = glm::radians(frame.lookYaw);
     float pitchRad = glm::radians(frame.lookPitch);

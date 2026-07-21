@@ -1,15 +1,13 @@
-// C:\important\quiet\n\mimita-priv-v7\src\input\input-state.h
-// feb 10 2026
-/**
- * purpose
- * Dumb data carrier
- * No GLFW, no math
- * headers and function declare for 
- * when the plauer is inputting keys
- * FINALLT WE JUST PUT GLFW_KEY_WASD IN HERE NOWHERE ELSE i tihnk.
- */
+// 07 21 2026, 16 30
+/* purpose
+* Defines the current local input state consumed by physics and simulation.
+* Carries camera-relative movement, held controls, and edge-triggered gameplay actions.
+* Keeps hardware polling output separate from movement formulas and Player state.
+* Does NOT poll GLFW, send network packets, run physics, or own key bindings.
+* Does NOT store UI focus, replay history, presentation flags, or authority decisions.
+* Does NOT duplicate movement command serialization or shared movement state.
+*/
 
-// input_state.h
 #pragma once
 #include <glm/glm.hpp>
 
@@ -23,6 +21,7 @@ struct InputState {
     bool groundReturnPressed = false;
     bool downDashPressed = false;
     bool freezeHeld = false;
+    bool freezePressed = false;
     float movementHeldDuration = 0.0f;
     glm::vec3 camForward{0,0,1};
 };

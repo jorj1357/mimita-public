@@ -1,9 +1,9 @@
 // 07 21 2026, 10 54
 /* purpose
-* Declares the shared Stage 2A walking, gravity, jump, and impulse kernel.
+* Declares the shared walking, gravity, jump, impulse, and special movement kernel.
 * Exposes pure movement helpers so legacy Player wrappers and shared state reuse one formula.
 * Keeps the collision phase represented as explicit feedback instead of owning collision.
-* Does NOT implement dash, down dash, freeze, Ground Return, or universal contact resets.
+* Does NOT implement collision sweeps, contact generation, or universal contact reset migration.
 * Does NOT include Player, server, renderer, audio, weapon, packet, or authority logic.
 * Does NOT replace the complete local physics orchestrator.
 */
@@ -28,7 +28,14 @@ float movementScaledGroundSpeed(const MovementConfig& config, float sizeScale);
 float movementScaledAirSpeed(const MovementConfig& config, float sizeScale);
 float movementScaledJumpVelocity(const MovementConfig& config, float sizeScale);
 float movementScaledJumpVelocity(float jumpVelocity, float sizeScale, float jumpHeightExponent);
+float movementDashImpulse(const MovementConfig& config);
 bool movementHasMoveInput(glm::vec2 axes, float epsilon = 0.001f);
+glm::vec2 movementHorizontalForwardFromYaw(float yawDegrees);
+glm::vec2 movementDashDirection(const MovementCommand& command,
+                                float epsilon = MOVEMENT_INPUT_EPSILON);
+bool movementDirectionsEquivalent(glm::vec2 a,
+                                  glm::vec2 b,
+                                  float epsilon = MOVEMENT_INPUT_EPSILON);
 
 float movementApplyGravityZ(float velocityZ,
                             float gravityZ,
@@ -82,6 +89,35 @@ void movementDecayAndClampExternalImpulse(glm::vec3& externalImpulse,
 
 bool movementCanGroundJump(const MovementState& state);
 bool movementCanAirJump(const MovementState& state);
+float freezeHorizontalPassThrough(const MovementFreezeState& freeze,
+                                  const MovementConfig& config);
+glm::vec2 effectiveHorizontalVelocity(const MovementState& state,
+                                      float horizontalPassThrough);
+MovementVelocityView movementVelocityViewForCollision(const MovementState& state,
+                                                      const MovementConfig& config);
+glm::vec3 calculateEffectiveMovementVelocity(const MovementState& state,
+                                             const MovementConfig& config);
+void restoreSpecialAbilityAvailability(MovementState& state);
+void resetSpecialMovementLifecycleState(MovementState& state);
+bool shouldWalkingOverwriteDashMomentum(const MovementState& state,
+                                        const MovementCommand& command,
+                                        float epsilon = MOVEMENT_INPUT_EPSILON);
+void updateDashMomentumProtectionForWalk(MovementState& state,
+                                         const MovementCommand& command,
+                                         float epsilon = MOVEMENT_INPUT_EPSILON);
+bool tryActivateDash(MovementState& state,
+                     const MovementCommand& command,
+                     const MovementConfig& config,
+                     MovementStepEvents& events);
+bool tryActivateDownDash(MovementState& state,
+                         const MovementCommand& command,
+                         const MovementConfig& config,
+                         MovementStepEvents& events);
+void updateFreeze(MovementState& state,
+                  const MovementCommand& command,
+                  const MovementConfig& config,
+                  float fixedDt,
+                  MovementStepEvents& events);
 
 void applyBasicGravity(MovementState& state,
                        const MovementConfig& config,
@@ -109,14 +145,40 @@ void applyPreCollisionBasicMovement(MovementState& state,
                                     const MovementConfig& config,
                                     float fixedDt);
 
+void applySpecialMovementPreCollision(MovementState& state,
+                                      const MovementCommand& command,
+                                      const MovementConfig& config,
+                                      float fixedDt,
+                                      MovementStepEvents& events);
+
+void applySpecialMovementPostCollision(MovementState& state,
+                                       const MovementCommand& command,
+                                       const MovementConfig& config,
+                                       float fixedDt,
+                                       MovementStepEvents& events);
+
 MovementStepResult applyPostCollisionBasicMovement(MovementState& state,
                                                    const MovementCommand& command,
                                                    const MovementConfig& config,
                                                    const MovementCollisionFeedback& collision,
                                                    float fixedDt);
 
+MovementStepResult applyPostCollisionMovementWithSpecials(
+    MovementState& state,
+    const MovementCommand& command,
+    const MovementConfig& config,
+    const MovementCollisionFeedback& collision,
+    float fixedDt,
+    MovementStepEvents preCollisionEvents = MovementStepEvents{});
+
 MovementStepResult simulateBasicMovementStep(MovementState& state,
                                              const MovementCommand& command,
                                              const MovementConfig& config,
                                              const MovementCollisionFeedback& collision,
                                              float fixedDt);
+
+MovementStepResult simulateMovementStepWithSpecials(MovementState& state,
+                                                    const MovementCommand& command,
+                                                    const MovementConfig& config,
+                                                    const MovementCollisionFeedback& collision,
+                                                    float fixedDt);

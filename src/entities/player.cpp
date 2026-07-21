@@ -1,6 +1,12 @@
-// feb 10 2026 CLEANED : slim + correct
-// Split into player-config.cpp, player-loader.cpp,
-// player-animation.cpp, player-render.cpp
+// 07 21 2026, 16 30
+/* purpose
+* Implements core Player construction, reset, layer sync, audio/VFX triggers, and damage handling.
+* Keeps runtime Player data synchronized with legacy movement capsule and render state.
+* Owns Player presentation side effects that consume one-tick gameplay flags.
+* Does NOT implement shared movement formulas, collision sweeps, packet transport, or weapon fire.
+* Does NOT own avatar loading, procedural animation internals, or replay serialization.
+* Does NOT replace subsystem-owned physics, audio, combat, or effects APIs.
+*/
 
 #include "player.h"
 #include "combat/weapon-runtime.h"
@@ -77,6 +83,10 @@ void Player::reset()
     jump.jumpHeldPrev = false;
     dash.moveHeldPrev = false;
     dash.dashHeldPrev = false;
+    dash.momentumProtectionActive = false;
+    dash.momentumProtectionUsedCameraForwardFallback = false;
+    dash.momentumProtectedMoveAxes = glm::vec2(0.0f);
+    dash.movementInputGeneration = 0;
     jump.jumpIntentTimer = 0.0f;
     jump.coyoteTimer = 0.0f;
     jump.airJumpsLeft = 1;

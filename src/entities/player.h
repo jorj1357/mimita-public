@@ -1,7 +1,15 @@
-// C:\important\quiet\n\mimita-priv-v7\src\entities\player.h
-// feb 10 2026 CLEANED: slim + physics-safe
+// 07 21 2026, 16 30
+/* purpose
+* Declares Player runtime state, rendering data, and gameplay presentation fields.
+* Groups legacy movement, combat, avatar, weapon, and collision data consumed by engine systems.
+* Provides Player methods for reset, render, animation, and state synchronization.
+* Does NOT implement movement physics, collision solving, networking transport, or weapon fire.
+* Does NOT own shared movement formulas, packet serialization, or asset-management rules.
+* Does NOT replace subsystem-owned APIs for combat, audio, replay, or UI.
+*/
 
 #pragma once
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -281,6 +289,10 @@ struct DashState {
     bool didDownDash = false;
     float frictionOverride = 1.0f;
     bool tickPerfectDash = false;
+    bool momentumProtectionActive = false;
+    bool momentumProtectionUsedCameraForwardFallback = false;
+    glm::vec2 momentumProtectedMoveAxes{0.0f};
+    uint32_t movementInputGeneration = 0;
 };
 
 struct FreezeState {

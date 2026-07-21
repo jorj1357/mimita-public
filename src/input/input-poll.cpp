@@ -1,12 +1,13 @@
-// C:\important\quiet\n\mimita-priv-v7\src\input\input-state.h
-// feb 10 2026
-// /**
-//  * ONLY translate GLFW -> InputState
-//     Print edges, not spam   
-// 
-// #pragma message("COMPILING input-poll.cpp")
+// 07 21 2026, 16 30
+/* purpose
+* Converts current input command state into InputState and InputFrame data.
+* Builds camera-relative movement axes and edge-triggered gameplay action fields.
+* Applies terminal input overrides before the fixed-step simulation consumes them.
+* Does NOT run movement physics, send packets, decide authority, or own bindings.
+* Does NOT render UI, mutate Player state, or perform replay serialization.
+* Does NOT implement gameplay ability formulas or prediction history.
+*/
 
-// input_poll.cpp
 #include "input/input-state.h"
 #include "input/input-commands.h"
 #include "input/input-frame.h"
@@ -91,6 +92,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.groundReturnPressed = cmd.isGroundReturnPressed();
     in.downDashPressed = cmd.isDownDashPressed();
     in.freezeHeld = cmd.isFreezeHeld();
+    in.freezePressed = cmd.getState("freeze").pressed;
 
     if (in.dashPressed)
         printf("[INPUT] Dash pressed\n");
@@ -151,6 +153,7 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.groundReturnPressed = cmd.isGroundReturnPressed() || gTerminalInputOverride.groundReturnPressed;
     frame.downDashPressed = cmd.isDownDashPressed() || gTerminalInputOverride.downDashPressed;
     frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
+    frame.freezePressed = cmd.getState("freeze").pressed || gTerminalInputOverride.freezePressed;
 
     if (gTerminalInputOverride.moveX != 0.0f || gTerminalInputOverride.moveY != 0.0f) {
         frame.moveX = gTerminalInputOverride.moveX;

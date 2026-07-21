@@ -1,12 +1,12 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\physics-mini.cpp
-// feb 10 2026
-/**
- * purpose
- * is the real phsics file, physics-mini is the real one
- * a physics file that ONLY calls functions from other files
- * theres no logic, theres no glm vec 3 vec 2 whatever 
- * its just like jump(args), dash(args), walk(args) etc
- */
+// 07 21 2026, 16 30
+/* purpose
+* Orchestrates the local Player/NPC physics tick around the collision boundary.
+* Adapts legacy Player/InputState data to the shared movement kernel phases.
+* Keeps collision, animation, and debug movement ordered around deterministic movement state.
+* Does NOT own movement formulas, collision sweeps, input polling, packets, or rendering.
+* Does NOT run server authority, prediction history, replay serialization, or weapon logic.
+* Does NOT keep Ground Return in the active target movement path.
+*/
 
 // #pragma message("COMPILING physics-mini.cpp")
 
@@ -29,6 +29,8 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
+#include "physics/movement/movement-conversion.h"
+#include "physics/movement/movement-step.h"
 
 #include "physics/physics-debug-movement.h"
 #include "input/input-state.h"
@@ -54,6 +56,100 @@ static void updateVisualFacingFromCamera(Player& p, const glm::vec3& camForward,
     p.yaw = targetYaw;
 }
 
+struct CollisionVelocityOverride {
+    bool active = false;
+    float horizontalPassThrough = 1.0f;
+    glm::vec3 storedBaseVelocity{0.0f};
+    glm::vec3 storedExternalImpulse{0.0f};
+};
+
+static MovementCommand buildMovementCommandFromPhysicsInputs(
+    const Player& p,
+    const glm::vec2& wishMoveXY,
+    bool jumpHeld,
+    bool jumpPressed,
+    bool dashPressed,
+    bool movementPressed,
+    bool movementJustPressed,
+    bool groundReturnPressed,
+    bool downDashPressed,
+    const glm::vec3& camForward,
+    bool freezeHeld,
+    bool freezePressed,
+    float inputMovementHeldDuration)
+{
+    MovementCommand command;
+    command.lifecycle = MovementLifecycleIdentity{p.spawnGeneration, 0};
+    command.moveAxes = movementClampUnitOrZero(wishMoveXY);
+    command.horizontalCameraForward = camForward;
+    command.lookYaw = p.yaw;
+    command.jumpHeld = jumpHeld;
+    command.jumpPressed = jumpPressed;
+    command.dashPressed = dashPressed;
+    command.groundReturnPressed = groundReturnPressed;
+    command.downDashPressed = downDashPressed;
+    command.freezeHeld = freezeHeld;
+    command.freezePressed = freezePressed || (freezeHeld && !p.freeze.freezeHeldPrev);
+    command.movementHeldDurationSeconds = inputMovementHeldDuration;
+
+    const MovementDirectionTransition transition =
+        movementDirectionTransition(p.inputWishMove, command.moveAxes);
+    command.movementDirectionPressed =
+        movementPressed || transition.currentPressed;
+    command.movementDirectionFreshPressed =
+        movementJustPressed || transition.freshPress;
+    command.movementDirectionReleased = transition.released;
+    command.movementDirectionChanged = transition.directionChanged;
+    return command;
+}
+
+static CollisionVelocityOverride applyEffectiveVelocityForCollision(
+    Player& p,
+    const MovementState& state,
+    const MovementConfig& config)
+{
+    CollisionVelocityOverride overrideState;
+    overrideState.horizontalPassThrough =
+        freezeHorizontalPassThrough(state.freeze, config);
+    overrideState.storedBaseVelocity = state.baseVelocity;
+    overrideState.storedExternalImpulse = state.externalImpulse;
+
+    if (!state.freeze.active ||
+        overrideState.horizontalPassThrough >= 1.0f) {
+        return overrideState;
+    }
+
+    const MovementVelocityView view =
+        movementVelocityViewForCollision(state, config);
+    p.vel = view.effectiveBaseVelocity;
+    p.externalImpulse = view.effectiveExternalImpulse;
+    overrideState.active = true;
+    return overrideState;
+}
+
+static void reconcileEffectiveCollisionVelocity(
+    MovementState& state,
+    const CollisionVelocityOverride& overrideState,
+    const MovementConfig& config)
+{
+    if (!overrideState.active)
+        return;
+
+    const float restoreThreshold =
+        std::max(config.freezeDashMinimumPassThrough, MOVEMENT_INPUT_EPSILON);
+    if (overrideState.horizontalPassThrough > restoreThreshold) {
+        state.baseVelocity.x /= overrideState.horizontalPassThrough;
+        state.baseVelocity.y /= overrideState.horizontalPassThrough;
+        state.externalImpulse.x /= overrideState.horizontalPassThrough;
+        state.externalImpulse.y /= overrideState.horizontalPassThrough;
+    } else {
+        state.baseVelocity.x = overrideState.storedBaseVelocity.x;
+        state.baseVelocity.y = overrideState.storedBaseVelocity.y;
+        state.externalImpulse.x = overrideState.storedExternalImpulse.x;
+        state.externalImpulse.y = overrideState.storedExternalImpulse.y;
+    }
+}
+
 // --------------------------------------------------
 // INTERNAL physics function
 // --------------------------------------------------
@@ -75,33 +171,42 @@ static void physicsMainUpdate_Internal(
     GLFWwindow* debugWindow,
     const Camera* debugCamera,
     bool freezeHeld,
+    bool freezePressed,
     int subSteps,
     float inputMovementHeldDuration = 0.0f
 ){
     Perf::ScopedTimer _t("Physics");
-    dt = std::min(dt, 0.033f);
-    p.inputWishMove = wishMoveXY;
+    const MovementConfig movementConfig = makeCurrentRuntimeMovementConfig();
+    dt = movementClampStepDelta(dt, movementConfig);
+    if (dt <= 0.0f)
+        return;
 
-    // reset per-frame flags
-    p.jump.didGroundJump = false;
-    p.jump.didAirJump    = false;
-    p.dash.didDash       = false;
-    p.dash.didDownDash   = false;
-    p.ground.didLand       = false;
-    p.freeze.didFreeze     = false;
+    MovementCommand command = buildMovementCommandFromPhysicsInputs(
+        p,
+        wishMoveXY,
+        jumpHeld,
+        jumpPressed,
+        dashPressed,
+        movementPressed,
+        movementJustPressed,
+        groundReturnPressed,
+        downDashPressed,
+        camForward,
+        freezeHeld,
+        freezePressed,
+        inputMovementHeldDuration);
 
-    doGravity(p, dt);
+    MovementState movementState =
+        movementStateFromPlayer(p, command.lifecycle);
+    applyPreCollisionBasicMovement(movementState, command, movementConfig, dt);
 
-    // freeze is after gravit and friction, but before everthing else
-    doFreeze(p, freezeHeld, dt);
+    MovementStepEvents preCollisionEvents;
+    applySpecialMovementPreCollision(
+        movementState, command, movementConfig, dt, preCollisionEvents);
+    applyMovementStateToPlayer(movementState, p);
 
-    doGroundReturn(p, groundReturnPressed, dt);
-    if (p.dash.didDash && DebugConfig::DEBUG_INPUT)
-        Debug::log(Debug::Category::General, "[DASH] start direction=(%.2f %.2f) vel=(%.2f %.2f)\n",
-                   wishMoveXY.x, wishMoveXY.y, p.vel.x, p.vel.y);
-
-    int steps = subSteps;
-    float subdt = dt / steps;
+    const int steps = std::max(1, subSteps);
+    const float subdt = dt / (float)steps;
 
     bool groundedThisFrame = false;
 
@@ -110,33 +215,37 @@ static void physicsMainUpdate_Internal(
     p.ground.hasWorldContact = p.ground.worldContactLostTimer > 0.0f;
     p.ground.realWorldContactThisFrame = false;
 
-    // Down dash must run BEFORE collision so the collision system
-    // processes the downward velocity on the same frame — no one-frame delay.
-    doDownDash(p, downDashPressed, dt);
+    const CollisionVelocityOverride velocityOverride =
+        applyEffectiveVelocityForCollision(p, movementState, movementConfig);
 
     for (int i = 0; i < steps; i++)
     {
         doCollisions(p, world, groundedThisFrame, subdt);
     }
 
-    // --------------------------------------------------
-    // Immediately sync ground state from collision (source of truth)
-    // BEFORE jump, friction, landing events.
-    // doJump may modify p.ground.onGround (set false on jump).
-    // --------------------------------------------------
+    MovementState collisionState =
+        movementStateFromPlayer(p, command.lifecycle);
+    reconcileEffectiveCollisionVelocity(
+        collisionState, velocityOverride, movementConfig);
 
-    // Save previous state for transition detection
-    bool prevOnGround = p.ground.onGround;
-    bool prevStableOnGround = p.ground.stableOnGround;
+    MovementCollisionFeedback collisionFeedback;
+    collisionFeedback.onGround = groundedThisFrame;
+    collisionFeedback.hasWorldContact = p.ground.hasWorldContact;
+    collisionFeedback.realWorldContactThisFrame =
+        p.ground.realWorldContactThisFrame;
 
-    p.ground.onGround = groundedThisFrame;
+    const bool prevOnGround = collisionState.ground.onGround;
+    const float previousAirborneTime =
+        collisionState.ground.airborneTimerSeconds;
 
-    if (groundedThisFrame)
-        p.ground.groundLostTimer = 0.0f;
-    else
-        p.ground.groundLostTimer += dt;
-
-    p.ground.stableOnGround = groundedThisFrame || (p.ground.groundLostTimer < 0.08f);
+    MovementStepResult movementResult =
+        applyPostCollisionMovementWithSpecials(collisionState,
+                                               command,
+                                               movementConfig,
+                                               collisionFeedback,
+                                               dt,
+                                               preCollisionEvents);
+    applyMovementStateToPlayer(movementResult.state, p);
 
     // Floor-fall diagnostics
     if (DebugConfig::DEBUG_PHYSICS && !groundedThisFrame && p.vel.z < -5.0f)
@@ -148,58 +257,6 @@ static void physicsMainUpdate_Internal(
             feetZ, p.vel.z, (int)groundedThisFrame, p.pos.x, p.pos.y, p.pos.z);
     }
 
-    // Track ticks with movement held while airborne for dash quality.
-    if (!groundedThisFrame && movementPressed) {
-        if (p.dash.dashMovementTicks < 99) p.dash.dashMovementTicks++;
-    } else {
-        p.dash.dashMovementTicks = 0;
-    }
-
-    // Clear external velocity when player takes direct movement control.
-    // Movement keys, dash, and freeze get priority over recoil/knockback.
-    // Jump does NOT trigger this clear (preserves external velocity through jumps).
-    // Preserve upward external impulse Z so knockback still counteracts downward velocity.
-    if (movementPressed || dashPressed || freezeHeld)
-    {
-        float upZ = p.externalImpulse.z > 0.0f ? p.externalImpulse.z : 0.0f;
-        p.externalImpulse = glm::vec3(0.0f);
-        p.externalImpulse.z = upZ;
-    }
-
-    // Walk applies movement input — ground and air (sets base horizontal velocity).
-    // Skip walk when tick-perfect friction override is active — preserves momentum.
-    if (movementPressed && p.dash.frictionOverride >= 1.0f) {
-        doWalk(p, wishMoveXY, groundedThisFrame, dt);
-    } else if (movementPressed && p.dash.frictionOverride < 1.0f) {
-        Debug::logThrottled(Debug::Category::Physics, "walk-skip", 0.5f,
-            "[VEL MODIFY] source=walk_suppressed tickPerfect=1 speed=%.1f\n",
-            glm::length(glm::vec2(p.vel.x, p.vel.y)));
-    }
-
-    // Air dash — single impulse triggered by Left Shift while airborne.
-    // The dash impulse fires ONCE. Low-friction mode (from tick perfect) is handled
-    // independently by doFriction reading p.dash.frictionOverride.
-    if (!groundedThisFrame && dashPressed && p.dash.dashAvailable) {
-        doAirDash(p, wishMoveXY, true, movementPressed, !groundedThisFrame,
-                  p.dash.dashMovementTicks, inputMovementHeldDuration, dt, camForward);
-    }
-
-    // Jump — space is always jump, never dash
-    doJump(p, jumpHeld, jumpPressed, dt);
-
-    // Friction override management
-    // Do NOT reset on the same frame the dash fires — the override was just set by doAirDash.
-    if (p.dash.frictionOverride < 1.0f && !p.dash.didDash) {
-        // The next frame after the dash, any meaningful input restores normal friction.
-        bool inputDetected = movementJustPressed || dashPressed || freezeHeld || downDashPressed;
-        bool abilityUsed = p.dash.didDownDash || p.freeze.didFreeze;
-        if (inputDetected || abilityUsed) {
-            float speedBefore = glm::length(glm::vec2(p.vel.x, p.vel.y));
-            p.dash.frictionOverride = 1.0f;
-            p.dash.tickPerfectDash = false;
-            Debug::log(Debug::Category::Physics, "[FRICTION OVERRIDE] disabled inputDetected=%d speed=%.1f\n", (int)inputDetected, speedBefore);
-        }
-    }
     if (DebugConfig::DEBUG_INPUT) {
         if (p.jump.didGroundJump)
             Debug::log(Debug::Category::General, "[JUMP] start ground velocityZ=%.2f\n", p.vel.z);
@@ -212,33 +269,6 @@ static void physicsMainUpdate_Internal(
                        (int)p.ground.onGround, p.jump.coyoteTimer, p.jump.airJumpsLeft,
                        (int)p.jump.airJumpLocked, (int)p.jump.airJumpArmed);
     }
-
-    // reset ALL abilities when grounded (not just dash)
-    // applyTouchResets (called during collision contact resolution, above) already
-    // restores airJumpsLeft, airJumpArmed, dash, etc. This block is a safety net
-    // for grounded frames where applyTouchResets may not have fired.
-    // NOTE: do NOT re-arm airJumpArmed here — it runs AFTER doJump and would undo
-    // the air-jump-armed=false that a ground jump just set, causing an immediate
-    // free air jump while holding Space on the next frame.
-    if (groundedThisFrame)
-    {
-        p.jump.airJumpsLeft = AIR_JUMPS_MAX;
-        p.dash.dashAvailable = true;
-        p.groundReturn.available = true;
-        p.dash.downDashAvailable = true;
-        p.freeze.freezeAvailable = true;
-    }
-
-    doFriction(p, p.ground.stableOnGround, dt);
-
-    // save previous airborne time BEFORE reset
-    float previousAirborneTime = p.ground.airborneTimer;
-
-    // track stable airborne duration
-    if (p.ground.stableOnGround)
-        p.ground.airborneTimer = 0.0f;
-    else
-        p.ground.airborneTimer += dt;
 
     // Debug: log grounded/contact state transitions (rate-limited)
     if (DebugConfig::DEBUG_PHYSICS) {
@@ -260,21 +290,12 @@ static void physicsMainUpdate_Internal(
                 p.ground.worldContactLostTimer, p.jump.airJumpsLeft, (int)p.dash.dashAvailable, (int)p.groundReturn.available);
     }
 
-    // Landing event: fires once per real landing using stableOnGround transition.
-    p.ground.landingCooldown = std::max(0.0f, p.ground.landingCooldown - dt);
-    bool stableLanding = !prevStableOnGround && p.ground.stableOnGround;
-    if (stableLanding && previousAirborneTime > 0.08f && p.ground.landingCooldown <= 0.0f)
-    {
-        p.ground.didLand = true;
-        p.ground.landingCooldown = 0.3f;
-    }
-
-    // store stable state for next frame
-    p.ground.wasOnGround = p.ground.stableOnGround;
-
     updateVisualFacingFromCamera(p, camForward, dt);
 
-    p.updateProceduralAnimation(dt, camForward, debugCamera ? debugCamera->pos : p.pos, movementPressed);
+    p.updateProceduralAnimation(dt,
+                                camForward,
+                                debugCamera ? debugCamera->pos : p.pos,
+                                command.movementDirectionPressed);
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {
@@ -324,6 +345,7 @@ void physicsMainUpdate(
         nullptr,
         nullptr,
         input.freezeHeld,
+        input.freezePressed,
         subSteps,
         input.movementHeldDuration
     );

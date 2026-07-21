@@ -115,17 +115,24 @@ void testDefaults()
     check(command.sequence == 0, "command sequence defaults to zero");
     checkVec2(command.moveAxes, glm::vec2(0.0f), "command move axes default to zero");
     check(command.jumpHeld == false, "command jump held defaults false");
+    check(command.freezePressed == false, "command freeze press defaults false");
     check(state.movementEnabled == true, "movement state defaults enabled");
     checkVec3(state.ground.groundNormal, glm::vec3(0.0f, 0.0f, 1.0f),
               "ground normal defaults up");
     check(!state.ground.didLand, "ground didLand defaults false");
     check(state.dash.dashAvailable == true, "dash availability default matches runtime new-life state");
+    check(!state.dashMomentumProtection.active,
+          "dash momentum protection defaults inactive");
     check(state.freeze.available == true, "freeze availability default matches runtime new-life state");
     check(contact.kind == MovementContactKind::Unknown, "contact kind defaults unknown");
     checkVec3(contact.normal, glm::vec3(0.0f, 0.0f, 1.0f), "contact normal defaults up");
     check(event.type == MovementExternalEventType::AddImpulse,
           "external event defaults to add impulse");
     check(!result.events.leftGround, "step result left-ground event defaults false");
+    check(!result.events.freezeStarted && !result.events.freezeEnded,
+          "freeze transition events default false");
+    check(!result.events.dashRejectedByFreeze,
+          "dash freeze-rejection event defaults false");
     check(result.events.contacts.empty(), "step result contacts default empty");
 }
 
@@ -142,6 +149,7 @@ void testCommandConversion()
     frame.groundReturnPressed = true;
     frame.downDashPressed = true;
     frame.freezeHeld = true;
+    frame.freezePressed = true;
     frame.lookYaw = 90.0f;
     frame.lookPitch = -12.0f;
 
@@ -156,6 +164,7 @@ void testCommandConversion()
     input.groundReturnPressed = true;
     input.downDashPressed = true;
     input.freezeHeld = true;
+    input.freezePressed = true;
     input.movementHeldDuration = 0.25f;
 
     MovementCommand command = movementCommandFromInput(
@@ -176,6 +185,7 @@ void testCommandConversion()
     check(command.downDashPressed, "command maps down dash press");
     check(command.groundReturnPressed, "command maps ground return press");
     check(command.freezeHeld, "command maps freeze held");
+    check(command.freezePressed, "command maps freeze press");
     check(command.movementDirectionPressed, "command maps movement pressed");
     check(command.movementDirectionFreshPressed, "command maps movement fresh press");
     check(command.movementDirectionChanged, "command maps current direction-change edge");
@@ -224,6 +234,10 @@ void fillPlayerMovementFields(Player& player)
     player.dash.didDownDash = true;
     player.dash.frictionOverride = 0.5f;
     player.dash.tickPerfectDash = true;
+    player.dash.momentumProtectionActive = true;
+    player.dash.momentumProtectionUsedCameraForwardFallback = false;
+    player.dash.momentumProtectedMoveAxes = glm::vec2(0.6f, 0.8f);
+    player.dash.movementInputGeneration = 17;
 
     player.freeze.freezeAvailable = false;
     player.freeze.freezeHeldPrev = true;
@@ -259,11 +273,18 @@ void testPlayerMappingAndApply()
     check(state.ground.didLand, "player maps landing event");
     check(state.jump.airJumpLocked, "player maps air jump lock");
     check(state.dash.tickPerfectDash, "player maps tick-perfect dash");
+    check(state.dashMomentumProtection.active,
+          "player maps dash momentum protection active");
+    checkVec2(state.dashMomentumProtection.protectedMoveAxes,
+              glm::vec2(0.6f, 0.8f),
+              "player maps dash momentum protected axes");
+    check(!state.dashMomentumProtection.usedCameraForwardFallback,
+          "player maps dash momentum fallback flag");
+    check(state.dashMomentumProtection.movementInputGeneration == 17,
+          "player maps dash momentum generation");
     check(!state.downDash.available, "player maps down dash availability");
     check(state.freeze.active, "player maps freeze active");
     check(state.groundReturn.charges == 2, "player maps ground return charges");
-    check(!state.dashMomentumProtection.active,
-          "player mapping does not invent dash momentum protection state");
 
     Player target(false);
     target.currentHp = 88;
@@ -281,6 +302,17 @@ void testPlayerMappingAndApply()
     check(target.jump.airJumpsLeft == state.jump.airJumpsLeft, "apply writes jump state");
     check(target.dash.downDashAvailable == state.downDash.available,
           "apply writes down dash state");
+    check(target.dash.momentumProtectionActive == state.dashMomentumProtection.active,
+          "apply writes dash momentum protection active");
+    checkVec2(target.dash.momentumProtectedMoveAxes,
+              state.dashMomentumProtection.protectedMoveAxes,
+              "apply writes dash momentum protected axes");
+    check(target.dash.momentumProtectionUsedCameraForwardFallback ==
+              state.dashMomentumProtection.usedCameraForwardFallback,
+          "apply writes dash momentum fallback flag");
+    check(target.dash.movementInputGeneration ==
+              state.dashMomentumProtection.movementInputGeneration,
+          "apply writes dash momentum generation");
     check(target.freeze.freezeTimer == state.freeze.timerSeconds,
           "apply writes freeze timer");
     check(target.groundReturn.rechargeTimer == state.groundReturn.rechargeTimerSeconds,
@@ -296,6 +328,11 @@ void testPlayerMappingAndApply()
     checkVec3(roundTrip.externalImpulse, state.externalImpulse,
               "round trip preserves external impulse");
     check(roundTrip.freeze.active == state.freeze.active, "round trip preserves freeze active");
+    check(roundTrip.dashMomentumProtection.active == state.dashMomentumProtection.active,
+          "round trip preserves dash momentum protection active");
+    checkVec2(roundTrip.dashMomentumProtection.protectedMoveAxes,
+              state.dashMomentumProtection.protectedMoveAxes,
+              "round trip preserves dash momentum protected axes");
     check(movementIsFinite(roundTrip), "round trip state validates finite values");
 }
 
@@ -347,6 +384,7 @@ void testServerMapping()
     check(command.jumpHeld, "server input command maps jump held");
     check(command.dashPressed, "server input command maps dash pressed");
     check(command.freezeHeld, "server input command maps freeze held");
+    check(!command.freezePressed, "server input command does not invent freeze edge without packet support");
 
     MovementState nextState = state;
     nextState.lifecycle = MovementLifecycleIdentity{45, 10};
@@ -372,7 +410,7 @@ void testServerMapping()
     check(support.position && support.baseVelocity && support.lifecycleTransformEpoch,
           "server conversion support reports mapped fields");
     check(!support.externalImpulse && !support.jumpTimers && !support.downDashState &&
-              !support.freezeTimerState,
+              !support.freezeTimerState && !support.dashMomentumProtection,
           "server conversion support reports parity gaps");
 }
 
@@ -396,12 +434,16 @@ void testConfigAndFreezeCurve()
               "config maps current ground/server dash impulse");
     checkNear(config.airDashImpulse, 50.0f, 0.0001f,
               "config maps current local air dash impulse");
+    checkNear(config.dashHorizontalImpulse, 50.0f, 0.0001f,
+              "config maps approved shared dash impulse");
     checkNear(config.downDashVerticalSpeed, -100.0f, 0.0001f,
               "config maps down dash speed");
     checkNear(config.freezeDurationSeconds, 5.0f, 0.0001f,
               "config maps freeze duration");
     checkNear(config.freezeCurveExponent, 4.0f, 0.0001f,
               "config uses target quartic freeze curve exponent");
+    checkNear(config.freezeDashMinimumPassThrough, 0.001f, 0.000001f,
+              "config maps freeze dash rejection threshold");
     checkNear(config.maximumExternalImpulseSpeed, 120.0f, 0.0001f,
               "config maps external impulse clamp");
     checkNear(config.externalImpulseDecay, 0.6f, 0.0001f,
