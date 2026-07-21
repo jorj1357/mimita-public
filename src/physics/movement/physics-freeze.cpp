@@ -1,61 +1,18 @@
-// C:\important\quiet\n\mimita-priv-v7\src\physics\movement\physics-freeze.cpp
-// mar 8 2026
-/**
- * purpose
- * freeze logic
- * exposes doFreeze(args)
- * like this 
- * Hold G = 
- * At 0 seconds
- * Ur velocity is 0 
- * At 5 seconds
- * Ur velocity is back to normal gravity
- * Make it so seconds 0 to 2.5 is like 
- * 0 velocity , 0.5 velocity, 1.2 velocity, super small
- * Then 2.5 and above is like
- * 1.2 , 2.8, 3.9, 5.9, 10.5, increase faster as it gets to 5 sec
- * And 5 sec = normal falling velocity i think 
- *  */
+// 07 21 2026, 16 30
+/* purpose
+* Adapts the legacy Player freeze entry point to the shared movement freeze state machine.
+* Preserves the compatibility function while using the target fresh-press and pow4 timer rules.
+* Keeps freeze availability, active state, timer, held edge, and start event synchronized.
+* Does NOT own a second freeze curve, collision velocity view, audio, VFX, or packets.
+* Does NOT destructively scale stored horizontal impulse or suppress vertical movement.
+* Does NOT implement contact-reset generation or prediction history.
+*/
 
-#include <cstdio>
-#include <algorithm>
-#include <cmath>
-
-#include "physics/config.h"
-#include "entities/player.h"
 #include "physics/movement/physics-freeze.h"
-#include "debug/debug-log.h"
 
-// =====================================================
-// DEBUG
-// =====================================================
-
-#define FREEZE_LOG(...) Debug::logThrottled(Debug::Category::Physics, "freeze", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
-
-
-// =====================================================
-// FREEZE VELOCITY CURVE
-// =====================================================
-
-static float freezeVelocityMultiplier(float t)
-{
-    // t = 0 → 5 seconds
-
-    if (t < 2.5f)
-    {
-        float x = t / 2.5f;
-        return x * x * 0.2f;
-    }
-
-    float x = (t - 2.5f) / 2.5f;
-
-    return 0.2f + x * x * 0.8f;
-}
-
-
-// =====================================================
-// FREEZE
-// =====================================================
+#include "entities/player.h"
+#include "physics/movement/movement-conversion.h"
+#include "physics/movement/movement-step.h"
 
 void doFreeze(
     Player& p,
@@ -63,98 +20,14 @@ void doFreeze(
     float dt
 )
 {
-    // --------------------------------------------------
-    // EDGE DETECT
-    // --------------------------------------------------
+    MovementCommand command;
+    command.lifecycle = MovementLifecycleIdentity{p.spawnGeneration, 0};
+    command.freezeHeld = freezeHeld;
+    command.freezePressed = freezeHeld && !p.freeze.freezeHeldPrev;
 
-    bool freezeJustPressed = freezeHeld && !p.freeze.freezeHeldPrev;
-    bool freezeJustReleased = !freezeHeld && p.freeze.freezeHeldPrev;
-
-    p.freeze.freezeHeldPrev = freezeHeld;
-
-
-    // --------------------------------------------------
-    // START FREEZE
-    // --------------------------------------------------
-
-    if (freezeJustPressed)
-    {
-        if (!p.freeze.freezeAvailable)
-        {
-            FREEZE_LOG("[FREEZE] blocked (not available)\n");
-            return;
-        }
-
-        // set velocit to 0 here? idk
-        p.vel = glm::vec3(0.0f);
-        p.freeze.freezeActive = true;
-        p.freeze.freezeTimer = 0.0f;
-        p.freeze.freezeAvailable = false;
-        p.freeze.freezeHoldSoundPlayed = false;
-
-        p.freeze.didFreeze = true;
-
-        FREEZE_LOG("[FREEZE] begin\n");
-    }
-
-
-    // --------------------------------------------------
-    // END FREEZE
-    // --------------------------------------------------
-
-    if (freezeJustReleased && p.freeze.freezeActive)
-    {
-        p.freeze.freezeActive = false;
-
-        FREEZE_LOG("[FREEZE] end\n");
-
-    }
-
-
-    // --------------------------------------------------
-    // HOLD FREEZE
-    // --------------------------------------------------
-
-    if (!p.freeze.freezeActive)
-        return;
-
-    p.freeze.freezeTimer += dt;
-
-    if (!p.freeze.freezeHoldSoundPlayed && p.freeze.freezeTimer >= 999.0f)
-    {
-        p.freeze.freezeHoldSoundPlayed = true;
-    }
-
-    if (p.freeze.freezeTimer > FREEZE_MAX_TIME)
-        p.freeze.freezeTimer = FREEZE_MAX_TIME;
-
-    float mult = freezeVelocityMultiplier(p.freeze.freezeTimer);
-
-    // reduce velocity
-
-    // mar 8 2026 this is v1 
-    // we want to set all velocities to 0 and then scale nicely to the default velocities 
-    // over 5 sec
-    // but the new function we testing
-    // mar 8 2026 im using this bc freeze applies to all axises not just z
-    p.vel.x *= mult;
-    p.vel.y *= mult;
-    p.vel.z *= mult;
-
-    // testing this might not work mar 8 2026 
-    // freeze controls gravity influence instead of scaling velocity
-
-    // float gravityScale = freezeVelocityMultiplier(p.freeze.freezeTimer);
-
-    // // apply scaled gravity manually
-    // p.vel.z += PHYS.gravity * gravityScale * dt;
-
-    FREEZE_LOG(
-        "[FREEZE] t=%.2f mult=%.3f\n",
-        p.freeze.freezeTimer,
-        mult
-    );
-
-    // TODO sound
-    // playSoundLoop("entity/player/freezehold");
+    MovementState state = movementStateFromPlayer(p, command.lifecycle);
+    MovementStepEvents events;
+    const MovementConfig config = makeCurrentRuntimeMovementConfig();
+    updateFreeze(state, command, config, dt, events);
+    applyMovementStateToPlayer(state, p);
 }

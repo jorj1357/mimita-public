@@ -1,11 +1,11 @@
 // 07 21 2026, 15 45
 /* purpose
 * Defines neutral movement command, state, config, contact, and event data.
-* Provides deterministic helpers needed by future shared client/server movement.
+* Provides deterministic helpers needed by shared client/server movement.
 * Keeps movement vocabulary independent from Player, server, rendering, audio, and transport.
-* Does NOT simulate a movement tick, send packets, or decide network authority.
-* Does NOT apply damage, play effects, or mutate runtime state.
-* Does NOT replace current local or server movement behavior.
+* Does NOT send packets, decide network authority, or own collision sweeps.
+* Does NOT apply damage, play effects, or mutate runtime Player state.
+* Does NOT include presentation-only animation, audio, or network serial fields.
 */
 
 #pragma once
@@ -94,6 +94,7 @@ struct MovementCommand {
     bool downDashPressed = false;
     bool groundReturnPressed = false;
     bool freezeHeld = false;
+    bool freezePressed = false;
 
     bool movementDirectionPressed = false;
     bool movementDirectionFreshPressed = false;
@@ -160,6 +161,7 @@ struct MovementGroundReturnState {
 struct MovementDashMomentumProtectionState {
     bool active = false;
     glm::vec2 protectedMoveAxes{0.0f};
+    bool usedCameraForwardFallback = false;
     uint32_t movementInputGeneration = 0;
 };
 
@@ -202,11 +204,13 @@ struct MovementConfig {
 
     float groundDashImpulse = 0.0f;
     float airDashImpulse = 0.0f;
+    float dashHorizontalImpulse = 0.0f;
     float downDashVerticalSpeed = 0.0f;
     float groundReturnVerticalSpeed = 0.0f;
 
     float freezeDurationSeconds = 0.0f;
     float freezeCurveExponent = 4.0f;
+    float freezeDashMinimumPassThrough = 0.001f;
 
     float maximumExternalImpulseSpeed = 0.0f;
     float externalImpulseDecay = 0.0f;
@@ -290,6 +294,9 @@ struct MovementStepEvents {
     bool didDownDash = false;
     bool didLand = false;
     bool didFreeze = false;
+    bool freezeStarted = false;
+    bool freezeEnded = false;
+    bool dashRejectedByFreeze = false;
     bool touchedGround = false;
     bool touchedWall = false;
     bool touchedCeiling = false;
@@ -301,6 +308,12 @@ struct MovementStepEvents {
 struct MovementStepResult {
     MovementState state;
     MovementStepEvents events;
+};
+
+struct MovementVelocityView {
+    glm::vec3 effectiveBaseVelocity{0.0f};
+    glm::vec3 effectiveExternalImpulse{0.0f};
+    float horizontalPassThrough = 1.0f;
 };
 
 inline float movementFreezeHorizontalPassThrough(float elapsedSeconds,

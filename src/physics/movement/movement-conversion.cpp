@@ -65,6 +65,7 @@ MovementCommand movementCommandFromInput(const InputFrame& frame,
     command.downDashPressed = input.downDashPressed || frame.downDashPressed;
     command.groundReturnPressed = input.groundReturnPressed || frame.groundReturnPressed;
     command.freezeHeld = input.freezeHeld || frame.freezeHeld;
+    command.freezePressed = input.freezePressed || frame.freezePressed;
 
     command.movementDirectionPressed =
         input.movementPressed || frame.movementPressed ||
@@ -138,6 +139,13 @@ MovementState movementStateFromPlayer(const Player& player,
     state.dash.didDash = player.dash.didDash;
     state.dash.frictionOverride = player.dash.frictionOverride;
     state.dash.tickPerfectDash = player.dash.tickPerfectDash;
+    state.dashMomentumProtection.active = player.dash.momentumProtectionActive;
+    state.dashMomentumProtection.protectedMoveAxes =
+        movementClampUnitOrZero(player.dash.momentumProtectedMoveAxes);
+    state.dashMomentumProtection.usedCameraForwardFallback =
+        player.dash.momentumProtectionUsedCameraForwardFallback;
+    state.dashMomentumProtection.movementInputGeneration =
+        player.dash.movementInputGeneration;
 
     state.downDash.available = player.dash.downDashAvailable;
     state.downDash.didDownDash = player.dash.didDownDash;
@@ -192,6 +200,13 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.dash.didDash = state.dash.didDash;
     player.dash.frictionOverride = state.dash.frictionOverride;
     player.dash.tickPerfectDash = state.dash.tickPerfectDash;
+    player.dash.momentumProtectionActive = state.dashMomentumProtection.active;
+    player.dash.momentumProtectedMoveAxes =
+        movementClampUnitOrZero(state.dashMomentumProtection.protectedMoveAxes);
+    player.dash.momentumProtectionUsedCameraForwardFallback =
+        state.dashMomentumProtection.usedCameraForwardFallback;
+    player.dash.movementInputGeneration =
+        state.dashMomentumProtection.movementInputGeneration;
     player.dash.downDashAvailable = state.downDash.available;
     player.dash.didDownDash = state.downDash.didDownDash;
 
@@ -260,10 +275,12 @@ MovementConfig makeCurrentRuntimeMovementConfig()
     config.maximumAirJumps = AIR_JUMPS_MAX;
     config.groundDashImpulse = DASH_IMPULSE;
     config.airDashImpulse = AIR_DASH_IMPULSE;
+    config.dashHorizontalImpulse = AIR_DASH_IMPULSE;
     config.downDashVerticalSpeed = DOWN_DASH_SPEED;
     config.groundReturnVerticalSpeed = GROUND_RETURN_SPEED;
     config.freezeDurationSeconds = FREEZE_MAX_TIME;
     config.freezeCurveExponent = 4.0f;
+    config.freezeDashMinimumPassThrough = 0.001f;
     config.maximumExternalImpulseSpeed = MAX_EXTERNAL_IMPULSE_SPEED;
     config.externalImpulseDecay = EXTERNAL_IMPULSE_DECAY;
     config.externalImpulseSteerRate = EXTERNAL_IMPULSE_STEER_RATE;

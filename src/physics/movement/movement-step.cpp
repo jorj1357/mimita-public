@@ -1,10 +1,10 @@
 // 07 21 2026, 10 54
 /* purpose
-* Implements the shared Stage 2A basic movement kernel and pure formula helpers.
-* Preserves current local ordering around collision by splitting pre and post phases.
-* Reuses the same helpers legacy walking, gravity, jump speed, friction, and impulse code call.
+* Implements the shared movement kernel and pure formula helpers.
+* Preserves local collision boundaries by splitting pre and post collision phases.
+* Reuses one formula for walking, gravity, jump, impulse, dash, down dash, and freeze.
 * Does NOT perform collision sweeps, packet handling, rendering, audio, or authority decisions.
-* Does NOT implement dash, down dash, freeze, Ground Return, or contact reset simulation.
+* Does NOT migrate universal contact generation, Ground Return, or server prediction history.
 * Does NOT own presentation state or mutate Player directly.
 */
 
@@ -62,10 +62,7 @@ void applyGroundedResourceSafetyReset(MovementState& state,
         return;
 
     state.jump.airJumpsLeft = config.maximumAirJumps;
-    state.dash.dashAvailable = true;
-    state.groundReturn.available = true;
-    state.downDash.available = true;
-    state.freeze.available = true;
+    restoreSpecialAbilityAvailability(state);
 }
 
 void applyBasicLandingTimers(MovementState& state,
@@ -140,9 +137,58 @@ float movementScaledJumpVelocity(float jumpVelocity, float sizeScale, float jump
     return jumpVelocity * movementSizeScaleFactor(sizeScale, jumpHeightExponent);
 }
 
+float movementDashImpulse(const MovementConfig& config)
+{
+    return positiveOrDefault(
+        config.dashHorizontalImpulse,
+        positiveOrDefault(config.airDashImpulse, 50.0f));
+}
+
 bool movementHasMoveInput(glm::vec2 axes, float epsilon)
 {
     return axes.x * axes.x + axes.y * axes.y > epsilon * epsilon;
+}
+
+glm::vec2 movementHorizontalForwardFromYaw(float yawDegrees)
+{
+    if (!std::isfinite(yawDegrees))
+        return glm::vec2(1.0f, 0.0f);
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float radians = yawDegrees * (kPi / 180.0f);
+    return glm::vec2(std::cos(radians), std::sin(radians));
+}
+
+glm::vec2 movementDashDirection(const MovementCommand& command, float epsilon)
+{
+    const glm::vec2 move = movementNormalizeDirectionOrZero(command.moveAxes, epsilon);
+    if (movementHasMoveInput(move, epsilon))
+        return move;
+
+    if (movementIsFinite(command.horizontalCameraForward)) {
+        const glm::vec2 cameraForward(
+            command.horizontalCameraForward.x,
+            command.horizontalCameraForward.y);
+        const glm::vec2 normalizedForward =
+            movementNormalizeDirectionOrZero(cameraForward, epsilon);
+        if (movementHasMoveInput(normalizedForward, epsilon))
+            return normalizedForward;
+    }
+
+    return movementHorizontalForwardFromYaw(command.lookYaw);
+}
+
+bool movementDirectionsEquivalent(glm::vec2 a, glm::vec2 b, float epsilon)
+{
+    const glm::vec2 normalizedA = movementNormalizeDirectionOrZero(a, epsilon);
+    const glm::vec2 normalizedB = movementNormalizeDirectionOrZero(b, epsilon);
+    const bool aPressed = movementHasMoveInput(normalizedA, epsilon);
+    const bool bPressed = movementHasMoveInput(normalizedB, epsilon);
+    if (!aPressed || !bPressed)
+        return aPressed == bPressed;
+
+    const glm::vec2 delta = normalizedA - normalizedB;
+    return delta.x * delta.x + delta.y * delta.y <= epsilon * epsilon;
 }
 
 float movementApplyGravityZ(float velocityZ,
@@ -283,6 +329,201 @@ bool movementCanAirJump(const MovementState& state)
     return state.jump.airJumpsLeft > 0 && state.jump.airJumpArmed;
 }
 
+float freezeHorizontalPassThrough(const MovementFreezeState& freeze,
+                                  const MovementConfig& config)
+{
+    if (!freeze.active)
+        return 1.0f;
+    return movementFreezeHorizontalPassThrough(freeze.timerSeconds,
+                                               config.freezeDurationSeconds,
+                                               config.freezeCurveExponent);
+}
+
+glm::vec2 effectiveHorizontalVelocity(const MovementState& state,
+                                      float horizontalPassThrough)
+{
+    const glm::vec2 base(state.baseVelocity.x, state.baseVelocity.y);
+    const glm::vec2 impulse(state.externalImpulse.x, state.externalImpulse.y);
+    return (base + impulse) * horizontalPassThrough;
+}
+
+MovementVelocityView movementVelocityViewForCollision(const MovementState& state,
+                                                      const MovementConfig& config)
+{
+    MovementVelocityView view;
+    view.horizontalPassThrough = freezeHorizontalPassThrough(state.freeze, config);
+    view.effectiveBaseVelocity = state.baseVelocity;
+    view.effectiveExternalImpulse = state.externalImpulse;
+    view.effectiveBaseVelocity.x *= view.horizontalPassThrough;
+    view.effectiveBaseVelocity.y *= view.horizontalPassThrough;
+    view.effectiveExternalImpulse.x *= view.horizontalPassThrough;
+    view.effectiveExternalImpulse.y *= view.horizontalPassThrough;
+    return view;
+}
+
+glm::vec3 calculateEffectiveMovementVelocity(const MovementState& state,
+                                             const MovementConfig& config)
+{
+    const MovementVelocityView view = movementVelocityViewForCollision(state, config);
+    return view.effectiveBaseVelocity + view.effectiveExternalImpulse;
+}
+
+void restoreSpecialAbilityAvailability(MovementState& state)
+{
+    state.dash.dashAvailable = true;
+    state.groundReturn.available = true;
+    state.downDash.available = true;
+    state.freeze.available = true;
+}
+
+void resetSpecialMovementLifecycleState(MovementState& state)
+{
+    state.dash = MovementDashState{};
+    state.downDash = MovementDownDashState{};
+    state.freeze = MovementFreezeState{};
+    state.groundReturn = MovementGroundReturnState{};
+    state.dashMomentumProtection = MovementDashMomentumProtectionState{};
+}
+
+bool shouldWalkingOverwriteDashMomentum(const MovementState& state,
+                                        const MovementCommand& command,
+                                        float epsilon)
+{
+    if (!state.dashMomentumProtection.active)
+        return true;
+    if (!command.movementDirectionPressed)
+        return false;
+    if (command.movementDirectionFreshPressed || command.movementDirectionChanged)
+        return true;
+    if (state.dashMomentumProtection.usedCameraForwardFallback)
+        return true;
+    return !movementDirectionsEquivalent(command.moveAxes,
+                                         state.dashMomentumProtection.protectedMoveAxes,
+                                         epsilon);
+}
+
+void updateDashMomentumProtectionForWalk(MovementState& state,
+                                         const MovementCommand& command,
+                                         float epsilon)
+{
+    if (!state.dashMomentumProtection.active)
+        return;
+
+    if (!command.movementDirectionPressed) {
+        if (command.movementDirectionReleased)
+            ++state.dashMomentumProtection.movementInputGeneration;
+        return;
+    }
+
+    if (!shouldWalkingOverwriteDashMomentum(state, command, epsilon))
+        return;
+
+    state.dashMomentumProtection.active = false;
+    state.dashMomentumProtection.protectedMoveAxes = glm::vec2(0.0f);
+    state.dashMomentumProtection.usedCameraForwardFallback = false;
+    ++state.dashMomentumProtection.movementInputGeneration;
+}
+
+bool tryActivateDash(MovementState& state,
+                     const MovementCommand& command,
+                     const MovementConfig& config,
+                     MovementStepEvents& events)
+{
+    if (!command.dashPressed)
+        return false;
+    if (!state.dash.dashAvailable)
+        return false;
+
+    const float passThrough = freezeHorizontalPassThrough(state.freeze, config);
+    if (state.freeze.active && passThrough <= config.freezeDashMinimumPassThrough) {
+        events.dashRejectedByFreeze = true;
+        return false;
+    }
+
+    const glm::vec2 direction = movementDashDirection(command);
+    if (!movementHasMoveInput(direction, MOVEMENT_INPUT_EPSILON))
+        return false;
+
+    const float impulse = movementDashImpulse(config);
+    state.baseVelocity.x += direction.x * impulse;
+    state.baseVelocity.y += direction.y * impulse;
+    state.dash.dashAvailable = false;
+    state.dash.didDash = true;
+    state.dash.frictionOverride = 1.0f;
+    state.dash.tickPerfectDash = false;
+    state.jump.airJumpsLeft = 0;
+
+    const bool usedMoveInput = movementHasMoveInput(command.moveAxes, MOVEMENT_INPUT_EPSILON);
+    state.dashMomentumProtection.active = true;
+    state.dashMomentumProtection.usedCameraForwardFallback = !usedMoveInput;
+    state.dashMomentumProtection.protectedMoveAxes =
+        usedMoveInput ? movementNormalizeDirectionOrZero(command.moveAxes)
+                      : glm::vec2(0.0f);
+    ++state.dashMomentumProtection.movementInputGeneration;
+
+    events.didDash = true;
+    return true;
+}
+
+bool tryActivateDownDash(MovementState& state,
+                         const MovementCommand& command,
+                         const MovementConfig& config,
+                         MovementStepEvents& events)
+{
+    if (!command.downDashPressed)
+        return false;
+    if (!state.downDash.available)
+        return false;
+
+    state.baseVelocity.z = config.downDashVerticalSpeed;
+    state.downDash.available = false;
+    state.downDash.didDownDash = true;
+    events.didDownDash = true;
+    return true;
+}
+
+void updateFreeze(MovementState& state,
+                  const MovementCommand& command,
+                  const MovementConfig& config,
+                  float fixedDt,
+                  MovementStepEvents& events)
+{
+    const float dt = movementClampStepDelta(fixedDt, config);
+    const bool freezePressed =
+        command.freezePressed ||
+        (command.freezeHeld && !state.freeze.heldPreviously);
+    const bool freezeReleased =
+        !command.freezeHeld && state.freeze.heldPreviously;
+
+    bool startedThisTick = false;
+    if (freezePressed && state.freeze.available) {
+        state.baseVelocity.x = 0.0f;
+        state.baseVelocity.y = 0.0f;
+        state.freeze.active = true;
+        state.freeze.available = false;
+        state.freeze.timerSeconds = 0.0f;
+        state.freeze.didFreeze = true;
+        events.didFreeze = true;
+        events.freezeStarted = true;
+        startedThisTick = true;
+    }
+
+    if (freezeReleased && state.freeze.active) {
+        state.freeze.active = false;
+        events.freezeEnded = true;
+    }
+
+    state.freeze.heldPreviously = command.freezeHeld;
+
+    if (!state.freeze.active || !command.freezeHeld || startedThisTick)
+        return;
+
+    state.freeze.timerSeconds += dt;
+    if (config.freezeDurationSeconds > 0.0f)
+        state.freeze.timerSeconds =
+            std::min(state.freeze.timerSeconds, config.freezeDurationSeconds);
+}
+
 void applyBasicGravity(MovementState& state,
                        const MovementConfig& config,
                        float fixedDt)
@@ -304,6 +545,21 @@ void applyBasicExternalImpulseControl(MovementState& state,
     const float upZ = state.externalImpulse.z > 0.0f ? state.externalImpulse.z : 0.0f;
     state.externalImpulse = glm::vec3(0.0f);
     state.externalImpulse.z = upZ;
+}
+
+static void applySpecialExternalImpulseControl(MovementState& state,
+                                               const MovementCommand& command)
+{
+    if (!command.movementDirectionPressed)
+        return;
+    if (command.dashPressed ||
+        command.downDashPressed ||
+        command.freezeHeld ||
+        state.dashMomentumProtection.active) {
+        return;
+    }
+
+    applyBasicExternalImpulseControl(state, command);
 }
 
 void applyBasicWalk(MovementState& state,
@@ -418,13 +674,35 @@ void applyPreCollisionBasicMovement(MovementState& state,
     applyBasicGravity(state, config, fixedDt);
 }
 
-MovementStepResult applyPostCollisionBasicMovement(MovementState& state,
-                                                   const MovementCommand& command,
-                                                   const MovementConfig& config,
-                                                   const MovementCollisionFeedback& collision,
-                                                   float fixedDt)
+void applySpecialMovementPreCollision(MovementState& state,
+                                      const MovementCommand& command,
+                                      const MovementConfig& config,
+                                      float fixedDt,
+                                      MovementStepEvents& events)
 {
-    MovementStepEvents events;
+    updateFreeze(state, command, config, fixedDt, events);
+    tryActivateDownDash(state, command, config, events);
+}
+
+void applySpecialMovementPostCollision(MovementState& state,
+                                       const MovementCommand& command,
+                                       const MovementConfig& config,
+                                       float fixedDt,
+                                       MovementStepEvents& events)
+{
+    (void)fixedDt;
+    tryActivateDash(state, command, config, events);
+}
+
+static MovementStepResult applyPostCollisionMovementInternal(
+    MovementState& state,
+    const MovementCommand& command,
+    const MovementConfig& config,
+    const MovementCollisionFeedback& collision,
+    float fixedDt,
+    bool specialMovementEnabled,
+    MovementStepEvents events)
+{
     const float dt = movementClampStepDelta(fixedDt, config);
     const bool previousOnGround = state.ground.onGround;
     const bool previousStableOnGround = state.ground.stableOnGround;
@@ -454,11 +732,24 @@ MovementStepResult applyPostCollisionBasicMovement(MovementState& state,
         state.dash.dashMovementTicks = 0;
     }
 
-    applyBasicExternalImpulseControl(state, command);
+    if (specialMovementEnabled) {
+        updateDashMomentumProtectionForWalk(state, command);
+        applySpecialExternalImpulseControl(state, command);
+    } else {
+        applyBasicExternalImpulseControl(state, command);
+    }
 
-    if (command.movementDirectionPressed && state.dash.frictionOverride >= 1.0f)
+    const bool walkingMayOverwriteDash =
+        !specialMovementEnabled ||
+        shouldWalkingOverwriteDashMomentum(state, command);
+    if (command.movementDirectionPressed &&
+        state.dash.frictionOverride >= 1.0f &&
+        walkingMayOverwriteDash) {
         applyBasicWalk(state, command, config);
+    }
 
+    if (specialMovementEnabled)
+        applySpecialMovementPostCollision(state, command, config, dt, events);
     applyBasicJump(state, command, config, dt, &events);
     applyBasicFrictionOverrideRecovery(state, command);
     applyGroundedResourceSafetyReset(state, config, collision.onGround);
@@ -469,11 +760,36 @@ MovementStepResult applyPostCollisionBasicMovement(MovementState& state,
     events.didGroundJump = state.jump.didGroundJump;
     events.didAirJump = state.jump.didAirJump;
     events.didLand = state.ground.didLand;
+    events.didDash = state.dash.didDash;
+    events.didDownDash = state.downDash.didDownDash;
+    events.didFreeze = state.freeze.didFreeze;
 
     MovementStepResult result;
     result.state = state;
     result.events = events;
     return result;
+}
+
+MovementStepResult applyPostCollisionBasicMovement(MovementState& state,
+                                                   const MovementCommand& command,
+                                                   const MovementConfig& config,
+                                                   const MovementCollisionFeedback& collision,
+                                                   float fixedDt)
+{
+    return applyPostCollisionMovementInternal(
+        state, command, config, collision, fixedDt, false, MovementStepEvents{});
+}
+
+MovementStepResult applyPostCollisionMovementWithSpecials(
+    MovementState& state,
+    const MovementCommand& command,
+    const MovementConfig& config,
+    const MovementCollisionFeedback& collision,
+    float fixedDt,
+    MovementStepEvents preCollisionEvents)
+{
+    return applyPostCollisionMovementInternal(
+        state, command, config, collision, fixedDt, true, preCollisionEvents);
 }
 
 MovementStepResult simulateBasicMovementStep(MovementState& state,
@@ -484,4 +800,17 @@ MovementStepResult simulateBasicMovementStep(MovementState& state,
 {
     applyPreCollisionBasicMovement(state, command, config, fixedDt);
     return applyPostCollisionBasicMovement(state, command, config, collision, fixedDt);
+}
+
+MovementStepResult simulateMovementStepWithSpecials(MovementState& state,
+                                                    const MovementCommand& command,
+                                                    const MovementConfig& config,
+                                                    const MovementCollisionFeedback& collision,
+                                                    float fixedDt)
+{
+    applyPreCollisionBasicMovement(state, command, config, fixedDt);
+    MovementStepEvents preCollisionEvents;
+    applySpecialMovementPreCollision(state, command, config, fixedDt, preCollisionEvents);
+    return applyPostCollisionMovementWithSpecials(
+        state, command, config, collision, fixedDt, preCollisionEvents);
 }
