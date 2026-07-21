@@ -1,8 +1,8 @@
-// 07 21 2026, 10 54
+// 07 21 2026, 17 25
 /* purpose
 * Verifies the shared Stage 2A walking, gravity, jump, and external impulse kernel.
 * Compares shared MovementState simulation against the current local Player basic slice.
-* Covers deterministic helper behavior, event reset, phase ordering, and randomized parity.
+* Covers deterministic helper behavior, contact reset phase ordering, and randomized parity.
 * Does NOT launch mimita.exe, render, play audio, send packets, or require networking.
 * Does NOT test dash, down dash, freeze, Ground Return, projectiles, weapons, or collision sweeps.
 * Does NOT change runtime authority or packet layout.
@@ -193,6 +193,16 @@ void legacyBasicStep(Player& player,
     player.ground.hasWorldContact = collision.hasWorldContact;
     player.ground.realWorldContactThisFrame = collision.realWorldContactThisFrame;
 
+    if (collision.onGround) {
+        player.jump.airJumpsLeft = config.maximumAirJumps;
+        player.jump.airJumpArmed = true;
+        player.jump.airJumpLocked = false;
+        player.dash.dashAvailable = true;
+        player.groundReturn.available = true;
+        player.dash.downDashAvailable = true;
+        player.freeze.freezeAvailable = true;
+    }
+
     if (!collision.onGround && command.movementDirectionPressed) {
         if (player.dash.dashMovementTicks < 99)
             ++player.dash.dashMovementTicks;
@@ -222,14 +232,6 @@ void legacyBasicStep(Player& player,
             player.dash.frictionOverride = 1.0f;
             player.dash.tickPerfectDash = false;
         }
-    }
-
-    if (collision.onGround) {
-        player.jump.airJumpsLeft = config.maximumAirJumps;
-        player.dash.dashAvailable = true;
-        player.groundReturn.available = true;
-        player.dash.downDashAvailable = true;
-        player.freeze.freezeAvailable = true;
     }
 
     doFriction(player, player.ground.stableOnGround, dt);

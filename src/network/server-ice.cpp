@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns dedicated-server ICE listener setup and ICE transport packet dispatch.
+* Routes ICE game packets into the same server handlers as UDP networking.
+* Maintains pending ICE peer state while the main server tick keeps authority.
+* Does NOT implement movement validation, packet schemas, or gameplay simulation.
+* Does NOT own coordinator persistence, renderer state, or client prediction.
+* Does NOT bypass server ownership checks for ICE-originated packets.
+*/
+
 #include "network/server.h"
 #include "network/game-transport.h"
 #include "network/ice-transport.h"
@@ -188,7 +198,7 @@ void tickIceCoordinator(ListenServerState& state)
 // ── Tick all pending ICE peers (non-blocking) ────────────────────────
 
 void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,
-                  std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports)
+                  std::vector<PendingServerTransport>& pendingIceTransports)
 {
     uint64_t now = nowMs();
 
@@ -224,6 +234,8 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                     it = gPendingIcePeers.erase(it);
                     continue;
                 }
+                coordinatorIceHostAnswer(serverCode, iceSessionId,
+                                         peer.requestId, agent->localSdp());
                 peer.state = PendingIcePeer::State::Connecting;
             }
             else if (now - peer.startedAtMs > 15000)
@@ -244,12 +256,17 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                 agent->logSelectedPath();
                 peer.state = PendingIcePeer::State::Connected;
 
-                coordinatorIceHostAnswer(serverCode, iceSessionId,
-                                         peer.requestId, agent->localSdp());
-
-                auto transport = std::make_unique<IceTransport>(std::move(peer.agent));
-                pendingIceTransports.push_back(std::move(transport));
-                printf("[ICE PEER] transport pushed (pending=%zu)\n", pendingIceTransports.size());
+                PendingServerTransport pending{};
+                pending.connectionId = allocateIceConnectionId();
+                pending.diagnosticEndpoint =
+                    legacyEndpointForTransportConnection(pending.connectionId);
+                pending.connectedAtMs = now;
+                pending.transport =
+                    std::make_unique<IceTransport>(std::move(peer.agent));
+                pendingIceTransports.push_back(std::move(pending));
+                printf("[ICE PEER] transport pushed connection=%llu pending=%zu\n",
+                       (unsigned long long)pendingIceTransports.back().connectionId.value,
+                       pendingIceTransports.size());
 
                 coordinatorIceRequestComplete(serverCode, peer.requestId);
                 it = gPendingIcePeers.erase(it);
@@ -276,202 +293,81 @@ void tickServerIceTransports(SOCKET sock,
                              std::unordered_map<uint32_t, ServerNpc>& npcs,
                              std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                              uint32_t& nextEntityId,
+                             uint32_t& nextProjectileId,
                              uint32_t& nextPlayerId,
-                             std::vector<std::unique_ptr<IGameTransport>>& pendingIceTransports,
+                             std::vector<PendingServerTransport>& pendingIceTransports,
                              const HeadlessWorld& world,
-                             uint32_t tick, uint64_t& totalPacketsOut)
+                             uint32_t tick,
+                             uint64_t& totalPacketsIn,
+                             uint64_t& totalPacketsOut,
+                             ServerPacketStats* stats,
+                             DisagreementRetransmitState* retransmitState)
 {
-    char buf[2048];
-
     // 1. Poll existing players' ICE transports
     for (auto& kv : players)
     {
         ServerPlayer& player = kv.second;
         if (!player.transport)
             continue;
+        if (!player.hasConnectionId)
+        {
+            player.connectionId = allocateIceConnectionId();
+            player.hasConnectionId = true;
+            player.addr = legacyEndpointForTransportConnection(player.connectionId);
+        }
 
         std::vector<ReceivedPacket> pkts;
         player.transport->poll(pkts);
 
         for (const ReceivedPacket& rp : pkts)
         {
-            if (rp.bytes.size() < (int)sizeof(PacketHeader) || rp.bytes.size() > sizeof(buf))
-                continue;
-            memcpy(buf, rp.bytes.data(), rp.bytes.size());
-            PacketHeader* header = reinterpret_cast<PacketHeader*>(buf);
-            if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
-                continue;
-
-            sockaddr_in from = player.addr;
-
-            if (header->type == PACKET_INPUT)
-                handleInputPacket(buf, (int)rp.bytes.size(), players, world, nextEntityId, npcs);
-            else if (header->type == PACKET_DISCONNECT)
-                handleDisconnect(players, buf);
-            else if (header->type == PACKET_SHOT_REQUEST)
-                handleShotRequest(sock, from, buf, (int)rp.bytes.size(), players, world, tick, totalPacketsOut);
-            else if (header->type == PACKET_MELEE_HIT_REQUEST)
-                handleMeleeHitRequest(sock, from, buf, (int)rp.bytes.size(), players, tick, totalPacketsOut);
-            else if (header->type == PACKET_PELLET_BLAST_REQUEST)
-                handlePelletBlastRequest(sock, from, buf, (int)rp.bytes.size(), players, world, tick, totalPacketsOut);
-            else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
-                handleProjectileFireRequest(sock, from, buf, (int)rp.bytes.size(), players,
-                                            projectiles, nextEntityId, world, tick, totalPacketsOut);
-            else if (header->type == PACKET_CHAT_MESSAGE)
-                handleChatMessage(sock, buf, (int)rp.bytes.size(), players, tick, totalPacketsOut);
-            else if (header->type == PACKET_PING)
-                handlePing(sock, from, buf, (int)rp.bytes.size(), tick);
-            else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
-                handleNpcDamageRequest(sock, buf, (int)rp.bytes.size(), from, players, npcs, tick, totalPacketsOut);
-            else if (header->type == PACKET_SERVER_COMMAND)
-                handleServerCommand(buf, (int)rp.bytes.size(), players, npcs);
-            else if (header->type == PACKET_GODBALL_STATE)
-                handleGodballState(sock, players, buf, (int)rp.bytes.size());
-            else if (header->type == PACKET_RELIABLE_EVENT_ACK && (int)rp.bytes.size() >= (int)sizeof(ReliableEventAckPacket))
-                handleReliableEventAck(buf, (int)rp.bytes.size(), players, &from, &player);
-            else if (header->type == PACKET_CLIENT_MAP_READY && (int)rp.bytes.size() >= (int)sizeof(ClientMapReadyPacket))
-            {
-                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buf);
-                if (ready->header.playerId == ready->assignedPlayerId)
-                {
-                    auto pi = players.find(ready->assignedPlayerId);
-                    if (pi != players.end() && !pi->second.spawned)
-                    {
-                        pi->second.spawned = true;
-                        pi->second.vel = glm::vec3(0.0f);
-                        pi->second.clientStateUpdated = false;
-                        printf("%s [MAP READY/ICE] id=%u name=\"%s\"\n",
-                               serverTimestamp(), pi->second.id, pi->second.name.c_str());
-                    }
-                }
-            }
+            TransportReceiveEvent event{};
+            event.connectionId = player.connectionId;
+            event.remoteEndpoint = player.addr;
+            event.payload = rp.bytes.data();
+            event.payloadBytes = (int)rp.bytes.size();
+            event.receivedAtMs = rp.receivedAtMs;
+            event.transportKind = TransportKind::Ice;
+            processServerPacket(sock, event, players, npcs, projectiles,
+                                nextPlayerId, nextEntityId, nextProjectileId,
+                                world, tick, totalPacketsIn, totalPacketsOut,
+                                stats, retransmitState, &player, nullptr);
         }
     }
 
     // 2. Process pending ICE transports (unregistered clients)
-    static uint32_t nextIceClientId = 1000000;
     for (auto it = pendingIceTransports.begin(); it != pendingIceTransports.end(); )
     {
-        IGameTransport* transport = it->get();
-        std::vector<ReceivedPacket> pkts;
-        transport->poll(pkts);
+        PendingServerTransport& pending = *it;
+        if (!pending.transport)
+        {
+            it = pendingIceTransports.erase(it);
+            continue;
+        }
 
-        sockaddr_in iceAddr{};
-        iceAddr.sin_family = AF_INET;
-        iceAddr.sin_addr.s_addr = htonl(nextIceClientId++);
-        iceAddr.sin_port = htons(1);
+        std::vector<ReceivedPacket> pkts;
+        pending.transport->poll(pkts);
 
         bool processed = false;
         for (const ReceivedPacket& rp : pkts)
         {
-            if (rp.bytes.size() < (int)sizeof(PacketHeader) || rp.bytes.size() > sizeof(buf))
-                continue;
-            memcpy(buf, rp.bytes.data(), rp.bytes.size());
-            PacketHeader* header = reinterpret_cast<PacketHeader*>(buf);
-            if (header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
-                continue;
-
-            if (header->type == PACKET_HELLO && (int)rp.bytes.size() >= (int)sizeof(HelloPacket))
-            {
-                printf("[ICE GAME RX] Hello via ICE transport\n");
-                // Assign transport BEFORE calling handler so WelcomePacket goes through ICE
-                uint32_t newId = nextPlayerId++;
-                ServerPlayer& p = players[newId];
-                p.id = newId;
-                p.addr = iceAddr;
-                p.transport = std::move(*it);
-                p.lastHeardMs = nowMs();
-                p.lastShotSerial = 0;
-                p.lastProjectileFireSerial = 0;
-                p.lastMeleeAttackSerial = 0;
-                p.projectileFireCooldown = 0.0f;
-                p.name = uniquePlayerName(players,
-                    reinterpret_cast<const HelloPacket*>(buf)->name, newId);
-                glm::vec3 spawnPos = {1.0f + (float)((newId - 1) % 16) * 1.5f, 5.0f, 30.0f};
-                if (!world.spawnPoints.empty()) {
-                    size_t idx = (newId - 1) % world.spawnPoints.size();
-                    spawnPos = world.spawnPoints[idx].position;
-                }
-                beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), 0.0f, "ice_hello");
-                p.spawned = false;
-
-                // Send WelcomePacket through transport
-                WelcomePacket welcome{};
-                welcome.header.type = PACKET_WELCOME;
-                welcome.header.tick = tick;
-                welcome.header.playerId = newId;
-                welcome.header.transformEpoch = p.transformEpoch;
-                welcome.assignedPlayerId = newId;
-                welcome.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
-                welcome.tickRate = SERVER_TICK_RATE;
-                copyName(welcome.approvedName, p.name);
-                std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
-                std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
-                std::memset(welcome.mapId, 0, sizeof(welcome.mapId));
-                std::strncpy(welcome.mapId, getServerMapId().c_str(), sizeof(welcome.mapId) - 1);
-                p.transport->send(&welcome, sizeof(welcome));
-                ++totalPacketsOut;
-                printf("[ICE PLAYER ASSIGN] id=%u name=\"%s\" transport=%p\n",
-                       newId, p.name.c_str(), (void*)p.transport.get());
-                processed = true;
+            TransportReceiveEvent event{};
+            event.connectionId = pending.connectionId;
+            event.remoteEndpoint = pending.diagnosticEndpoint;
+            event.payload = rp.bytes.data();
+            event.payloadBytes = (int)rp.bytes.size();
+            event.receivedAtMs = rp.receivedAtMs;
+            event.transportKind = TransportKind::Ice;
+            ServerPacketProcessResult result =
+                processServerPacket(sock, event, players, npcs, projectiles,
+                                    nextPlayerId, nextEntityId,
+                                    nextProjectileId, world, tick,
+                                    totalPacketsIn, totalPacketsOut, stats,
+                                    retransmitState, nullptr,
+                                    &pending.transport);
+            processed = result.transportConsumed;
+            if (processed)
                 break;
-            }
-            else if (header->type == PACKET_JOIN_REQUEST && (int)rp.bytes.size() >= (int)sizeof(JoinRequestPacket))
-            {
-                printf("[ICE GAME RX] JoinRequest via ICE transport\n");
-                const JoinRequestPacket* joinReq = reinterpret_cast<const JoinRequestPacket*>(buf);
-
-                // Validate ICE join token
-                if (!coordinatorIceValidateJoin(getServerCoordinatorCode(), joinReq->joinToken))
-                {
-                    printf("[ICE JOIN REJECT] invalid token\n");
-                    JoinRejectPacket reject{};
-                    reject.header.type = PACKET_JOIN_REJECT;
-                    reject.reason = 2;
-                    transport->send(&reject, sizeof(reject));
-                    processed = true;
-                    break;
-                }
-
-                // Assign transport before sending JoinAccept
-                uint32_t newId = nextPlayerId++;
-                ServerPlayer& p = players[newId];
-                p.id = newId;
-                p.addr = iceAddr;
-                p.transport = std::move(*it);
-                p.lastHeardMs = nowMs();
-                p.joinTokenValidated = true;
-                p.joinToken = joinReq->joinToken;
-                p.name = uniquePlayerName(players, joinReq->name, newId);
-                glm::vec3 spawnPos = {1.0f + (float)((newId - 1) % 16) * 1.5f, 5.0f, 30.0f};
-                if (!world.spawnPoints.empty()) {
-                    size_t idx = (newId - 1) % world.spawnPoints.size();
-                    spawnPos = world.spawnPoints[idx].position;
-                }
-                beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), 0.0f, "ice_join");
-                p.spawned = false;
-
-                JoinAcceptPacket accept{};
-                accept.header.type = PACKET_JOIN_ACCEPT;
-                accept.header.tick = tick;
-                accept.header.playerId = newId;
-                accept.header.transformEpoch = p.transformEpoch;
-                accept.assignedPlayerId = newId;
-                accept.reliableEventSessionId = reliableGameplayEventSessionForPlayer(p);
-                accept.tickRate = SERVER_TICK_RATE;
-                copyName(accept.approvedName, p.name);
-                std::string rt = generateReconnectToken();
-                p.reconnectToken = rt;
-                std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
-                std::strncpy(accept.reconnectToken, rt.c_str(), sizeof(accept.reconnectToken) - 1);
-                std::memset(accept.mapId, 0, sizeof(accept.mapId));
-                std::strncpy(accept.mapId, getServerMapId().c_str(), sizeof(accept.mapId) - 1);
-                p.transport->send(&accept, sizeof(accept));
-                ++totalPacketsOut;
-                printf("[ICE PLAYER ASSIGN] id=%u name=\"%s\" via JoinRequest\n", newId, p.name.c_str());
-                processed = true;
-                break;
-            }
         }
 
         if (processed)

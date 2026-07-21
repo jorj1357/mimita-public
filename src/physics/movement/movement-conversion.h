@@ -5,7 +5,7 @@
 * Exposes current runtime movement config without changing existing simulation callers.
 * Does NOT implement movement simulation, packet serialization, rendering, or audio.
 * Does NOT include server, transport, OpenGL, GLFW, or weapon runtime headers.
-* Does NOT make unsupported server fields appear equivalent to local Player fields.
+* Does NOT invent authority, networking, packet serialization, or simulation ownership.
 */
 
 #pragma once

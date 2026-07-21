@@ -1,3 +1,13 @@
+// 07 21 2026, 17 25
+/* purpose
+* Dispatches Player collision between GLB mesh and legacy block world paths.
+* Emits typed movement contact facts from block collision while preserving response behavior.
+* Provides collision state summaries and local debug diagnostics.
+* Does NOT own movement reset formulas, networking, rendering effects, audio, or damage.
+* Does NOT change projectile, weapon, death, respawn, ICE, or protocol behavior.
+* Does NOT replace the specialized GLB collision implementation files.
+*/
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -196,11 +206,13 @@ void doCollisions(
         if (std::fabs(hitNormal.z) < 0.2f)
         {
             p.ground.realWorldContactThisFrame = true;
-
-            p.jump.airJumpsLeft = AIR_JUMPS_MAX;
-            p.dash.dashAvailable = true;
-            p.groundReturn.available = true;
-            p.freeze.freezeAvailable = true;
+            appendPlayerMovementContact(
+                p,
+                MovementContactKind::Wall,
+                hitNormal,
+                p.pos,
+                0.0f,
+                -1);
 
             float feetZ = cap.a.z - cap.r;
 
@@ -268,6 +280,13 @@ void doCollisions(
                         BLOCK_LOG("[BLOCK STEP] stepped up %.3f\n", stepHeight);
                         cap = p.getCapsule();
                         groundedThisFrame = true;
+                        appendPlayerMovementContact(
+                            p,
+                            MovementContactKind::Step,
+                            glm::vec3(0.0f, 0.0f, 1.0f),
+                            p.pos,
+                            stepHeight,
+                            -1);
 
                         if (p.vel.z < 0.0f)
                             p.vel.z = 0.0f;
@@ -285,20 +304,31 @@ void doCollisions(
         {
             groundedThisFrame = true;
             p.ground.realWorldContactThisFrame = true;
+            appendPlayerMovementContactForNormal(
+                p,
+                true,
+                false,
+                hitNormal,
+                p.pos,
+                0.0f,
+                -1);
 
             if (p.vel.z <= 0.0f)
             {
-                p.jump.airJumpsLeft = AIR_JUMPS_MAX;
-                p.dash.dashAvailable = true;
-                p.groundReturn.available = true;
-                p.freeze.freezeAvailable = true;
-
                 p.vel.z = 0.0f;
             }
             DebugVis::recordGroundNormal(p.pos, hitNormal, "block-ground");
         }
         else if (hitNormal.z < 0.0f)
         {
+            appendPlayerMovementContactForNormal(
+                p,
+                false,
+                false,
+                hitNormal,
+                p.pos,
+                0.0f,
+                -1);
             if (p.vel.z > 0.0f)
                 p.vel.z = 0.0f;
         }

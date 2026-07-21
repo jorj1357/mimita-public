@@ -8,6 +8,9 @@ struct IceServerOptions {
     uint32_t npcCount = 0;
     int timeoutSeconds = 3600;
     bool disableRelay = false;
+    int deathRespawnCycles = 0;
+    int clientIndex = 0;
+    std::string reconnectToken;
 };
 
 int runIceServer(const IceServerOptions& opts);

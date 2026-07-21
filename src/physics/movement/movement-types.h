@@ -10,7 +10,9 @@
 
 #pragma once
 
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -165,6 +167,252 @@ struct MovementDashMomentumProtectionState {
     uint32_t movementInputGeneration = 0;
 };
 
+enum class MovementContactKind : uint8_t {
+    Unknown,
+    Ground,
+    Wall,
+    Ceiling,
+    Slope,
+    Step,
+    StaticWorld,
+    MovingWorld,
+    PlayerRoot,
+    PlayerBody,
+    Weapon,
+    Projectile,
+    Explosion,
+    Water,
+    Ladder,
+    OtherGameplay
+};
+
+enum class MovementContactSource : uint8_t {
+    Unknown,
+    StaticWorld,
+    MovingWorld,
+    MovingStructure,
+    PlayerRoot,
+    PlayerBody,
+    Weapon,
+    FriendlyWeapon,
+    EnemyWeapon,
+    OwnWeapon,
+    Projectile,
+    FriendlyProjectile,
+    EnemyProjectile,
+    OwnProjectile,
+    RollingGrenade,
+    Explosion,
+    Water,
+    Ladder,
+    OtherGameplay
+};
+
+struct MovementContact {
+    MovementContactKind kind = MovementContactKind::Unknown;
+    MovementContactSource source = MovementContactSource::Unknown;
+    MovementLifecycleIdentity targetLifecycle;
+    uint64_t contactId = 0;
+    uint64_t sourceEventId = 0;
+    uint32_t sourceEntityId = 0;
+    uint32_t surfaceId = 0;
+    uint64_t simulationTick = 0;
+    glm::vec3 point{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 surfaceVelocity{0.0f};
+    float strength = 0.0f;
+    float penetrationDepth = 0.0f;
+    bool resetsAbilities = true;
+};
+
+inline int movementQuantizeContactComponent(float value)
+{
+    if (!std::isfinite(value))
+        return 0;
+    return static_cast<int>(std::round(value * 1024.0f));
+}
+
+inline bool movementContactMatchesLifecycle(const MovementContact& contact,
+                                            const MovementLifecycleIdentity& lifecycle)
+{
+    return sameMovementLifecycle(contact.targetLifecycle, lifecycle);
+}
+
+inline bool movementContactsMatchTickLocalIdentity(const MovementContact& a,
+                                                   const MovementContact& b)
+{
+    return a.simulationTick == b.simulationTick &&
+           a.kind == b.kind &&
+           a.source == b.source &&
+           a.sourceEntityId == b.sourceEntityId &&
+           a.surfaceId == b.surfaceId &&
+           sameMovementLifecycle(a.targetLifecycle, b.targetLifecycle) &&
+           movementQuantizeContactComponent(a.normal.x) ==
+               movementQuantizeContactComponent(b.normal.x) &&
+           movementQuantizeContactComponent(a.normal.y) ==
+               movementQuantizeContactComponent(b.normal.y) &&
+           movementQuantizeContactComponent(a.normal.z) ==
+               movementQuantizeContactComponent(b.normal.z);
+}
+
+inline bool movementContactsMatchStableIdentity(const MovementContact& a,
+                                                const MovementContact& b)
+{
+    if (!sameMovementLifecycle(a.targetLifecycle, b.targetLifecycle))
+        return false;
+
+    if (a.sourceEventId != 0 || b.sourceEventId != 0) {
+        return a.sourceEventId != 0 &&
+               a.sourceEventId == b.sourceEventId &&
+               a.sourceEntityId == b.sourceEntityId &&
+               a.source == b.source;
+    }
+
+    if (a.contactId != 0 || b.contactId != 0) {
+        return a.contactId != 0 &&
+               a.contactId == b.contactId &&
+               a.kind == b.kind &&
+               a.source == b.source &&
+               a.sourceEntityId == b.sourceEntityId;
+    }
+
+    return false;
+}
+
+inline bool movementContactsEquivalent(const MovementContact& a,
+                                       const MovementContact& b)
+{
+    if (movementContactsMatchStableIdentity(a, b))
+        return true;
+    return movementContactsMatchTickLocalIdentity(a, b);
+}
+
+struct MovementContactSet {
+    static constexpr std::size_t Capacity = 32;
+
+    std::array<MovementContact, Capacity> items{};
+    uint8_t count = 0;
+    uint16_t duplicateCount = 0;
+    uint16_t overflowCount = 0;
+
+    void clear()
+    {
+        count = 0;
+        duplicateCount = 0;
+        overflowCount = 0;
+    }
+
+    bool empty() const { return count == 0; }
+    std::size_t size() const { return count; }
+    const MovementContact* data() const { return items.data(); }
+    MovementContact* data() { return items.data(); }
+    const MovementContact* begin() const { return items.data(); }
+    const MovementContact* end() const { return items.data() + count; }
+    MovementContact* begin() { return items.data(); }
+    MovementContact* end() { return items.data() + count; }
+    const MovementContact& operator[](std::size_t index) const { return items[index]; }
+    MovementContact& operator[](std::size_t index) { return items[index]; }
+
+    bool addDeduplicated(const MovementContact& contact)
+    {
+        for (std::size_t i = 0; i < count; ++i) {
+            if (movementContactsEquivalent(items[i], contact)) {
+                ++duplicateCount;
+                return false;
+            }
+        }
+
+        if (count < Capacity) {
+            items[count++] = contact;
+            return true;
+        }
+
+        ++overflowCount;
+        if (contact.resetsAbilities) {
+            for (std::size_t i = 0; i < count; ++i) {
+                if (!items[i].resetsAbilities) {
+                    items[i] = contact;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+};
+
+struct MovementContactHistory {
+    static constexpr std::size_t Capacity = 64;
+
+    std::array<MovementContact, Capacity> recent{};
+    uint8_t count = 0;
+    uint8_t nextIndex = 0;
+    MovementLifecycleIdentity lifecycle;
+    bool lifecycleInitialized = false;
+
+    void clear()
+    {
+        count = 0;
+        nextIndex = 0;
+        lifecycle = MovementLifecycleIdentity{};
+        lifecycleInitialized = false;
+    }
+
+    void resetForLifecycle(MovementLifecycleIdentity nextLifecycle)
+    {
+        count = 0;
+        nextIndex = 0;
+        lifecycle = nextLifecycle;
+        lifecycleInitialized = true;
+    }
+
+    void ensureLifecycle(MovementLifecycleIdentity nextLifecycle)
+    {
+        if (!lifecycleInitialized || !sameMovementLifecycle(lifecycle, nextLifecycle))
+            resetForLifecycle(nextLifecycle);
+    }
+
+    bool containsStable(const MovementContact& contact) const
+    {
+        if (contact.sourceEventId == 0 && contact.contactId == 0)
+            return false;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (movementContactsMatchStableIdentity(recent[i], contact))
+                return true;
+        }
+        return false;
+    }
+
+    void recordStable(const MovementContact& contact)
+    {
+        if (contact.sourceEventId == 0 && contact.contactId == 0)
+            return;
+
+        recent[nextIndex] = contact;
+        nextIndex = static_cast<uint8_t>((nextIndex + 1) % Capacity);
+        if (count < Capacity)
+            ++count;
+    }
+};
+
+struct MovementAbilityResetResult {
+    bool airJumpRestored = false;
+    bool dashRestored = false;
+    bool downDashRestored = false;
+    bool freezeRestored = false;
+    bool groundReturnRestored = false;
+    bool anyRestored = false;
+};
+
+struct MovementContactConsumeResult {
+    bool consumedAnyContact = false;
+    bool appliedReset = false;
+    MovementAbilityResetResult reset;
+    uint8_t qualifyingContactCount = 0;
+    uint8_t ignoredLifecycleCount = 0;
+    uint8_t duplicateContactCount = 0;
+    uint16_t contactOverflowCount = 0;
+};
+
 struct MovementState {
     MovementLifecycleIdentity lifecycle;
     bool movementEnabled = true;
@@ -183,6 +431,7 @@ struct MovementState {
     MovementFreezeState freeze;
     MovementGroundReturnState groundReturn;
     MovementDashMomentumProtectionState dashMomentumProtection;
+    MovementContactHistory contactHistory;
 };
 
 struct MovementConfig {
@@ -229,36 +478,6 @@ struct MovementConfig {
     float landingCooldownResetSeconds = 0.3f;
 };
 
-enum class MovementContactKind : uint8_t {
-    Unknown,
-    Ground,
-    Wall,
-    Ceiling,
-    Slope,
-    Step,
-    StaticWorld,
-    MovingWorld,
-    PlayerRoot,
-    PlayerBody,
-    Weapon,
-    Projectile,
-    Explosion,
-    Water,
-    Ladder,
-    OtherGameplay
-};
-
-struct MovementContact {
-    MovementContactKind kind = MovementContactKind::Unknown;
-    MovementLifecycleIdentity targetLifecycle;
-    uint32_t sourceEntityId = 0;
-    uint32_t eventId = 0;
-    glm::vec3 point{0.0f};
-    glm::vec3 normal{0.0f, 0.0f, 1.0f};
-    glm::vec3 surfaceVelocity{0.0f};
-    float penetrationDepth = 0.0f;
-};
-
 enum class MovementExternalEventType : uint8_t {
     AddImpulse,
     SetVelocity,
@@ -301,7 +520,16 @@ struct MovementStepEvents {
     bool touchedWall = false;
     bool touchedCeiling = false;
     bool resetAirControlAbilities = false;
-    std::vector<MovementContact> contacts;
+    bool abilitiesReset = false;
+    bool airJumpRestored = false;
+    bool dashRestored = false;
+    bool downDashRestored = false;
+    bool freezeRestored = false;
+    bool groundReturnRestored = false;
+    uint8_t qualifyingContactCount = 0;
+    uint8_t dedupedContactCount = 0;
+    uint16_t contactOverflowCount = 0;
+    MovementContactSet contacts;
     std::vector<MovementExternalEvent> consumedExternalEvents;
 };
 

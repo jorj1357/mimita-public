@@ -22,6 +22,7 @@
 
 #include "avatar/avatar.h"
 #include "combat/weapon-types.h"
+#include "physics/movement/movement-types.h"
 
 
 struct ReplayBodyPartState;
@@ -355,6 +356,9 @@ public:
     bool voidDeathTriggered = false;
     float sizeScale = 1.0f;  // player size multiplier
     uint32_t spawnGeneration = 0;
+    uint64_t movementSimulationTick = 0;
+    MovementContactSet movementContacts;
+    MovementContactHistory movementContactHistory;
     // -------- Core State --------
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};

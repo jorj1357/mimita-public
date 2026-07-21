@@ -29,6 +29,7 @@
 #include <random>
 #include <system_error>
 #include <thread>
+#include <windows.h>
 
 namespace MimitaNet {
 
@@ -44,6 +45,77 @@ struct ServerLoopPerf
     uint64_t overrunCount = 0;
     uint64_t cappedCatchupCount = 0;
 };
+
+struct ServerTransportStats
+{
+    uint64_t recvAttempts = 0;
+    uint64_t recvWouldBlock = 0;
+    uint64_t recvErrors = 0;
+    uint64_t malformedPackets = 0;
+    uint64_t protocolMismatches = 0;
+    uint64_t unknownPacketTypes = 0;
+    uint64_t helloPackets = 0;
+    uint64_t joinPackets = 0;
+    uint64_t reconnectPackets = 0;
+    uint64_t inputPackets = 0;
+};
+
+std::string processPath()
+{
+    char path[MAX_PATH] = {};
+    DWORD length = GetModuleFileNameA(nullptr, path, (DWORD)sizeof(path));
+    if (length == 0 || length >= sizeof(path))
+        return "(unknown)";
+    return std::string(path, path + length);
+}
+
+std::string currentDirectory()
+{
+    std::error_code error;
+    std::filesystem::path path = std::filesystem::current_path(error);
+    if (error)
+        return "(unknown)";
+    return path.string();
+}
+
+sockaddr_in actualSocketAddress(SOCKET sock, const sockaddr_in& fallback)
+{
+    sockaddr_in actual = fallback;
+    int actualLen = sizeof(actual);
+    if (getsockname(sock, (sockaddr*)&actual, &actualLen) != 0)
+        actual = fallback;
+    return actual;
+}
+
+bool resolveServerBindAddress(const LaunchOptions& options,
+                              sockaddr_in& bindAddr,
+                              std::string& requested)
+{
+    if (options.bindExplicit)
+        requested = options.bind;
+    else if (options.connectExplicit)
+        requested = options.connect;
+    else
+        requested = "0.0.0.0:" + std::to_string(DEFAULT_PORT);
+    return parseAddress(requested, bindAddr, true);
+}
+
+void countPacketType(ServerTransportStats& stats, uint8_t type)
+{
+    if (type == PACKET_HELLO)
+        ++stats.helloPackets;
+    else if (type == PACKET_JOIN_REQUEST)
+        ++stats.joinPackets;
+    else if (type == PACKET_RECONNECT_REQUEST)
+        ++stats.reconnectPackets;
+    else if (type == PACKET_INPUT)
+        ++stats.inputPackets;
+}
+
+bool isKnownPacketType(uint8_t type)
+{
+    return type >= PACKET_HELLO && type <= PACKET_DAMAGE_CONFIRMED_EVENT;
+}
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
 {
@@ -150,7 +222,8 @@ int runServer(const LaunchOptions& options)
     printf("%s [SERVER] tick rate=%.0f Hz\n", serverTimestamp(), SERVER_TICK_RATE);
     printf("%s [SERVER] max players=%d\n", serverTimestamp(), MAX_PLAYERS);
     printf("%s [SERVER] timeout=%llums\n", serverTimestamp(), (unsigned long long)CLIENT_TIMEOUT_MS);
-    printf("%s [SERVER] coordinator=%s\n", serverTimestamp(), getCoordinatorUrl().c_str());
+    printf("%s [SERVER] coordinator=%s\n", serverTimestamp(),
+           options.noCoordinator ? "(disabled)" : getCoordinatorUrl().c_str());
     printf("%s [SERVER] ========================================\n", serverTimestamp());
 
     printf("%s [SERVER START SETTINGS] map=%s npcCount=%u serverName=%s roomCode=%s\n",
@@ -195,18 +268,17 @@ int runServer(const LaunchOptions& options)
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR)
         printf("%s [SERVER] WARNING: setsockopt SO_REUSEADDR failed error=%d (non-fatal)\n", serverTimestamp(), WSAGetLastError());
 
-    setNonBlocking(sock);
+    const bool nonBlockingOk = setNonBlocking(sock);
 
     sockaddr_in bindAddr{};
-    if (options.connectExplicit && parseAddress(options.connect, bindAddr))
+    std::string requestedBind;
+    if (!resolveServerBindAddress(options, bindAddr, requestedBind))
     {
-        // Use explicitly provided address
-    }
-    else
-    {
-        bindAddr.sin_family = AF_INET;
-        bindAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        bindAddr.sin_port = htons(DEFAULT_PORT);
+        printf("%s [SERVER] FATAL: invalid bind address requested=%s family=AF_INET\n",
+               serverTimestamp(), requestedBind.c_str());
+        closesocket(sock);
+        netShutdown();
+        return 1;
     }
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
     {
@@ -220,7 +292,15 @@ int runServer(const LaunchOptions& options)
         return 1;
     }
 
-        printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(bindAddr).c_str());
+    sockaddr_in actualBindAddr = actualSocketAddress(sock, bindAddr);
+    const uint16_t actualPort = ntohs(actualBindAddr.sin_port);
+    printf("%s [SERVER TRANSPORT READY] protocol=%u role=dedicated-udp pid=%lu exe=\"%s\" cwd=\"%s\" "
+           "requested=%s actual=%s family=AF_INET reuse=1 nonblocking=%d noCoordinator=%d\n",
+           serverTimestamp(), PROTOCOL_VERSION, (unsigned long)GetCurrentProcessId(),
+           processPath().c_str(), currentDirectory().c_str(),
+           requestedBind.c_str(), addressToString(actualBindAddr).c_str(),
+           (int)nonBlockingOk, (int)options.noCoordinator);
+    printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(actualBindAddr).c_str());
     printf("%s [SERVER] waiting for connections...\n", serverTimestamp());
 
     std::unordered_map<uint32_t, ServerPlayer> players;
@@ -233,14 +313,14 @@ int runServer(const LaunchOptions& options)
     uint64_t lastLog = nowMs();
     uint64_t totalPacketsIn = 0;
     uint64_t totalPacketsOut = 0;
+    ServerPacketStats transportStats;
     DisagreementRetransmitState disagreementRetransmit;
 
     // ── Dedicated server ICE support ──
-    std::unique_ptr<IceAgent> iceListenerAgent;
-    std::string iceSessionId;
-    uint64_t lastIceCoordinatorPollMs = 0;
-    std::vector<std::unique_ptr<IGameTransport>> pendingIceTransports;
     bool iceEnabled = options.iceEnabled;
+    ListenServerState dedicatedIceState;
+    dedicatedIceState.iceEnabled = iceEnabled;
+    std::vector<PendingServerTransport> pendingIceTransports;
 
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
     {
@@ -277,58 +357,38 @@ int runServer(const LaunchOptions& options)
     std::string serverCode = options.serverCode.empty() ? generateServerCode() : options.serverCode;
     std::string serverJoinToken;
     {
-        if (hostedRoomSession().active)
+        if (options.noCoordinator)
+        {
+            printf("%s [SERVER] coordinator disabled by --no-coordinator; LAN-only code=%s\n",
+                   serverTimestamp(), serverCode.c_str());
+        }
+        else if (hostedRoomSession().active)
         {
             printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=headless-server-runServer\n",
                    hostedRoomSession().roomCode.c_str(), serverCode.c_str());
         }
 
-        if (iceEnabled)
+        if (!options.noCoordinator && iceEnabled)
         {
-            // ── ICE mode: single registration via coordinatorIceHost ──
-            printf("%s [SERVER ICE] initializing ICE listener\n", serverTimestamp());
-            IceConfiguration iceCfg = loadIceConfig();
-            auto iceAgent = std::make_unique<IceAgent>();
-            if (iceAgent->initialize(iceCfg) && iceAgent->gatherCandidates()
-                && waitForAgentState(*iceAgent, IceAgentState::GatheringComplete, 15000))
+            if (initServerIceListener(dedicatedIceState))
             {
-                iceSessionId = "host_" + std::to_string(GetCurrentProcessId())
-                    + "_" + std::to_string(nowMs());
-                auto hostResult = coordinatorIceHost(iceSessionId, iceAgent->localSdp());
-                if (hostResult.ok)
-                {
-                    serverCode = hostResult.roomCode;
-                    serverJoinToken = hostResult.joinToken;
-                    iceListenerAgent = std::move(iceAgent);
-                    lastIceCoordinatorPollMs = nowMs();
-                    setServerCoordinatorState(serverCode, serverJoinToken);
-                    hostedRoomSession().active = true;
-                    hostedRoomSession().roomCode = serverCode;
-                    hostedRoomSession().hostToken = serverJoinToken;
-                    hostedRoomSession().joinToken = serverJoinToken;
-                    hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
-                    hostedRoomSession().coordinatorRoomType = "ice";
-                    hostedRoomSession().createdAtMs = nowMs();
-                    printf("%s [SERVER ICE] registered: code=%s\n",
-                           serverTimestamp(), serverCode.c_str());
-                }
-                else
-                {
-                    printf("%s [SERVER ICE] coordinatorIceHost failed; LAN only\n", serverTimestamp());
-                }
+                serverCode = dedicatedIceState.serverCode;
+                serverJoinToken = dedicatedIceState.joinToken;
+                printf("%s [SERVER ICE] registered: code=%s\n",
+                       serverTimestamp(), serverCode.c_str());
             }
             else
             {
-                printf("%s [SERVER ICE] agent init/gather failed; LAN only\n", serverTimestamp());
+                printf("%s [SERVER ICE] init failed; LAN only\n", serverTimestamp());
             }
         }
-        else
+        else if (!options.noCoordinator)
         {
             // ── Normal (non-ICE) mode: standard coordinator registration ──
             std::string regMapName = options.mapName.empty() ? "funworld3" : options.mapName;
             std::string regServerName = options.name.empty() ? "MiMITA Server" : options.name;
             CoordinatorRoomInfo room = coordinatorRegister(
-                regServerName, "", DEFAULT_PORT, regServerName,
+                regServerName, "", actualPort, regServerName,
                 regMapName, "sandbox", MAX_PLAYERS);
             if (!room.code.empty())
             {
@@ -398,11 +458,12 @@ int runServer(const LaunchOptions& options)
 
         char buffer[2048];
         sockaddr_in from{};
-        int fromLen = sizeof(from);
 
         // Drain all pending packets
         for (;;)
         {
+            int fromLen = sizeof(from);
+            ++transportStats.recvAttempts;
             int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromLen);
             if (bytes <= 0)
             {
@@ -416,110 +477,23 @@ int runServer(const LaunchOptions& options)
                         localStr = addressToString(localEp);
                     printf("%s [NET RX ERROR] sock=%d error=%d local=%s\n",
                            serverTimestamp(), (int)sock, wsaErr, localStr.c_str());
+                    ++transportStats.recvErrors;
                 }
+                else
+                    ++transportStats.recvWouldBlock;
                 break;
             }
-            ++totalPacketsIn;
-
-            PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
-            if (bytes < (int)sizeof(PacketHeader) || header->magic != PROTOCOL_MAGIC || header->version != PROTOCOL_VERSION)
-            {
-                printf("%s [SERVER PACKET] rejected invalid header magic=0x%08x ver=%u\n",
-                       serverTimestamp(), header->magic, header->version);
-                continue;
-            }
-
-            // Update lastHeardMs for ANY valid packet from a known player
-            if (header->type != PACKET_HELLO)
-            {
-                auto it = players.find(header->playerId);
-                if (it != players.end())
-                    it->second.lastHeardMs = nowMs();
-            }
-
-            // 7 15 2026can we do better than this somehow
-            //  yanderedev leads me to think that a bunch of if thens might 
-            // be inefficient but i dont know im 2 seocnds old 
-            if (header->type == PACKET_HELLO)
-                handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut, &world);
-            else if (header->type == PACKET_JOIN_REQUEST)
-                handleJoinRequest(sock, from, buffer, bytes, players, nextPlayerId, tick, totalPacketsOut, &world);
-            else if (header->type == PACKET_RECONNECT_REQUEST)
-                handleReconnectRequest(sock, from, buffer, bytes, players, tick, totalPacketsOut);
-            else if (header->type == PACKET_INPUT)
-                handleInputPacket(buffer, bytes, players, world, nextEntityId, npcs);
-            else if (header->type == PACKET_DISCONNECT)
-                handleDisconnect(players, buffer);
-            else if (header->type == PACKET_SPAWN_NPC_REQUEST)
-                handleSpawnNpcRequest(buffer, bytes, players, nextEntityId, npcs);
-            else if (header->type == PACKET_TELEPORT_REQUEST)
-                handleTeleportRequest(buffer, bytes, players, world);
-            else if (header->type == PACKET_EXPLODE_REQUEST)
-                handleExplodeRequest(buffer, bytes, players);
-            else if (header->type == PACKET_SHOT_REQUEST)
-                handleShotRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut, &disagreementRetransmit);
-            else if (header->type == PACKET_PELLET_BLAST_REQUEST)
-                handlePelletBlastRequest(sock, from, buffer, bytes, players, world, tick, totalPacketsOut, &disagreementRetransmit);
-            else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
-                handleProjectileFireRequest(sock, from, buffer, bytes, players, projectiles,
-                                            nextProjectileId, world, tick, totalPacketsOut);
-            else if (header->type == PACKET_ATTACK_REQUEST)
-                handleAttackRequest(sock, from, buffer, bytes, players, projectiles,
-                                    nextProjectileId, world, tick, totalPacketsOut);
-            else if (header->type == PACKET_MELEE_HIT_REQUEST)
-                handleMeleeHitRequest(sock, from, buffer, bytes, players, tick, totalPacketsOut);
-            else if (header->type == PACKET_CHAT_MESSAGE)
-                handleChatMessage(sock, buffer, bytes, players, tick, totalPacketsOut);
-            else if (header->type == PACKET_PING)
-                handlePing(sock, from, buffer, bytes, tick);
-            else if (header->type == PACKET_RELOAD_REQUEST)
-                handleReloadRequest(sock, from, buffer, bytes, players,
-                                    tick, totalPacketsOut);
-            else if (header->type == PACKET_GODBALL_STATE)
-                handleGodballState(sock, players, buffer, bytes);
-            else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
-                handleNpcDamageRequest(sock, buffer, bytes, from, players, npcs, tick, totalPacketsOut);
-            else if (header->type == PACKET_SERVER_COMMAND)
-                handleServerCommand(buffer, bytes, players, npcs);
-            else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
-                handleSpawnAck(sock, buffer, bytes, players, tick);
-            else if (header->type == PACKET_RELIABLE_EVENT_ACK && bytes >= (int)sizeof(ReliableEventAckPacket))
-                handleReliableEventAck(buffer, bytes, players, &from);
-            else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
-            {
-                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
-                if (ready->header.playerId != ready->assignedPlayerId)
-                {
-                    printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
-                           "headerPlayerId=%u assignedPlayerId=%u\n",
-                           serverTimestamp(), ready->header.playerId, ready->assignedPlayerId);
-                    continue;
-                }
-                auto it = players.find(ready->assignedPlayerId);
-                if (it == players.end())
-                {
-                    printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
-                           serverTimestamp(), ready->assignedPlayerId);
-                    continue;
-                }
-                std::string readyMap = normalizeMapId(ready->mapId);
-                std::string serverMap = normalizeMapId(getServerMapId());
-                if (readyMap != serverMap)
-                {
-                    printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
-                           "readyMap=%s serverMap=%s\n",
-                           serverTimestamp(), ready->assignedPlayerId,
-                           readyMap.c_str(), serverMap.c_str());
-                    continue;
-                }
-                if (!it->second.spawned)
-                {
-                    it->second.spawned = true;
-                    it->second.vel = glm::vec3(0.0f);
-                    it->second.clientStateUpdated = false;
-                    completeAuthoritativeSpawn(sock, it->second, true);
-                }
-            }
+            TransportReceiveEvent event{};
+            event.connectionId = makeUdpConnectionId(from);
+            event.remoteEndpoint = from;
+            event.payload = reinterpret_cast<const uint8_t*>(buffer);
+            event.payloadBytes = bytes;
+            event.receivedAtMs = nowMs();
+            event.transportKind = TransportKind::Udp;
+            processServerPacket(sock, event, players, npcs, projectiles,
+                                nextPlayerId, nextEntityId, nextProjectileId,
+                                world, tick, totalPacketsIn, totalPacketsOut,
+                                &transportStats, &disagreementRetransmit);
         }
 
         ::StructuredLogger::instance().tick();
@@ -554,15 +528,15 @@ int runServer(const LaunchOptions& options)
             tickServerProjectiles(sock, players, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerSwordCombat(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
-            if (iceEnabled && iceListenerAgent && tick % 30 == 0)
-            {
-                uint64_t nowIce = nowMs();
-                if (nowIce - lastIceCoordinatorPollMs > 500) { /* poll logic */ }
-            }
-            tickIcePeers(serverCode, iceSessionId, pendingIceTransports);
+            if (iceEnabled)
+                tickIceCoordinator(dedicatedIceState);
+            tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
+                         pendingIceTransports);
             tickServerIceTransports(sock, players, npcs, projectiles,
-                                    nextEntityId, nextPlayerId,
-                                    pendingIceTransports, world, tick, totalPacketsOut);
+                                    nextEntityId, nextProjectileId,
+                                    nextPlayerId, pendingIceTransports, world,
+                                    tick, totalPacketsIn, totalPacketsOut,
+                                    &transportStats, &disagreementRetransmit);
 
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
@@ -577,7 +551,7 @@ int runServer(const LaunchOptions& options)
         // Heartbeat to coordinator every ~15 seconds
         {
             const uint64_t now = nowMs();
-            if (!serverCode.empty() && now - lastCoordinatorHb >= 15000)
+            if (!options.noCoordinator && !serverCode.empty() && now - lastCoordinatorHb >= 15000)
             {
                 coordinatorHeartbeat(serverCode, (int)players.size());
                 lastCoordinatorHb = now;
@@ -602,9 +576,21 @@ int runServer(const LaunchOptions& options)
         // Status log every second
         if (nowMs() - lastLog >= 1000)
         {
-            printf("%s [SERVER STATUS] tick=%u players=%zu packetsIn=%llu packetsOut=%llu\n",
+            printf("%s [SERVER STATUS] tick=%u players=%zu packetsIn=%llu packetsOut=%llu "
+                   "recvAttempts=%llu recvWouldBlock=%llu recvErrors=%llu malformed=%llu "
+                   "protocolMismatch=%llu unknown=%llu hello=%llu join=%llu reconnect=%llu input=%llu\n",
                    serverTimestamp(), tick, players.size(),
-                   (unsigned long long)totalPacketsIn, (unsigned long long)totalPacketsOut);
+                   (unsigned long long)totalPacketsIn, (unsigned long long)totalPacketsOut,
+                   (unsigned long long)transportStats.recvAttempts,
+                   (unsigned long long)transportStats.recvWouldBlock,
+                   (unsigned long long)transportStats.recvErrors,
+                   (unsigned long long)transportStats.malformedPackets,
+                   (unsigned long long)transportStats.protocolMismatches,
+                   (unsigned long long)transportStats.unknownPacketTypes,
+                   (unsigned long long)transportStats.helloPackets,
+                   (unsigned long long)transportStats.joinPackets,
+                   (unsigned long long)transportStats.reconnectPackets,
+                   (unsigned long long)transportStats.inputPackets);
             lastLog = nowMs();
         }
 
@@ -849,10 +835,9 @@ static void simulateOneServerTick(ListenServerState& state)
     {
         char buffer[2048];
         sockaddr_in from{};
-        int fromLen = sizeof(from);
-
         for (;;)
         {
+            int fromLen = sizeof(from);
             int bytes = recvfrom(state.sock, buffer, sizeof(buffer), 0,
                                  (sockaddr*)&from, &fromLen);
             if (bytes <= 0)
@@ -870,120 +855,19 @@ static void simulateOneServerTick(ListenServerState& state)
                 }
                 break;
             }
-            ++state.totalPacketsIn;
-
-            PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
-            if (bytes < (int)sizeof(PacketHeader) ||
-                header->magic != PROTOCOL_MAGIC ||
-                header->version != PROTOCOL_VERSION)
-            {
-                printf("[LISTEN SERVER] rejected invalid header magic=0x%08x ver=%u\n",
-                       header->magic, header->version);
-                continue;
-            }
-
-            if (header->type != PACKET_HELLO)
-            {
-                auto it = state.players.find(header->playerId);
-                if (it != state.players.end())
-                    it->second.lastHeardMs = nowMs();
-            }
-
-            if (header->type == PACKET_HELLO)
-                handleHello(state.sock, from, buffer, bytes, state.players,
-                            state.nextPlayerId, state.tick, state.totalPacketsOut, &state.world);
-            else if (header->type == PACKET_JOIN_REQUEST)
-                handleJoinRequest(state.sock, from, buffer, bytes, state.players,
-                                  state.nextPlayerId, state.tick, state.totalPacketsOut, &state.world);
-            else if (header->type == PACKET_RECONNECT_REQUEST)
-                handleReconnectRequest(state.sock, from, buffer, bytes, state.players,
-                                       state.tick, state.totalPacketsOut);
-            else if (header->type == PACKET_INPUT)
-                handleInputPacket(buffer, bytes, state.players, state.world,
-                                  state.nextEntityId, state.npcs);
-            else if (header->type == PACKET_DISCONNECT)
-                handleDisconnect(state.players, buffer);
-            else if (header->type == PACKET_SPAWN_NPC_REQUEST)
-                handleSpawnNpcRequest(buffer, bytes, state.players,
-                                      state.nextEntityId, state.npcs);
-            else if (header->type == PACKET_TELEPORT_REQUEST)
-                handleTeleportRequest(buffer, bytes, state.players, state.world);
-            else if (header->type == PACKET_EXPLODE_REQUEST)
-                handleExplodeRequest(buffer, bytes, state.players);
-            else if (header->type == PACKET_SHOT_REQUEST)
-                handleShotRequest(state.sock, from, buffer, bytes, state.players,
-                                  state.world, state.tick, state.totalPacketsOut,
-                                  &state.disagreementRetransmit);
-            else if (header->type == PACKET_PELLET_BLAST_REQUEST)
-                handlePelletBlastRequest(state.sock, from, buffer, bytes, state.players,
-                                         state.world, state.tick, state.totalPacketsOut,
-                                         &state.disagreementRetransmit);
-            else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
-                handleProjectileFireRequest(state.sock, from, buffer, bytes, state.players,
-                                            state.projectiles, state.nextProjectileId,
-                                            state.world, state.tick, state.totalPacketsOut);
-            else if (header->type == PACKET_ATTACK_REQUEST)
-                handleAttackRequest(state.sock, from, buffer, bytes, state.players,
-                                    state.projectiles, state.nextProjectileId,
-                                    state.world, state.tick, state.totalPacketsOut);
-            else if (header->type == PACKET_MELEE_HIT_REQUEST)
-                handleMeleeHitRequest(state.sock, from, buffer, bytes, state.players,
-                                      state.tick, state.totalPacketsOut);
-            else if (header->type == PACKET_CHAT_MESSAGE)
-                handleChatMessage(state.sock, buffer, bytes, state.players,
-                                  state.tick, state.totalPacketsOut);
-            else if (header->type == PACKET_PING)
-                handlePing(state.sock, from, buffer, bytes, state.tick);
-            else if (header->type == PACKET_RELOAD_REQUEST)
-                handleReloadRequest(state.sock, from, buffer, bytes, state.players,
-                                    state.tick, state.totalPacketsOut);
-            else if (header->type == PACKET_GODBALL_STATE)
-                handleGodballState(state.sock, state.players, buffer, bytes);
-            else if (header->type == PACKET_NPC_DAMAGE_REQUEST)
-                handleNpcDamageRequest(state.sock, buffer, bytes, from,
-                                       state.players, state.npcs, state.tick,
-                                       state.totalPacketsOut);
-            else if (header->type == PACKET_SERVER_COMMAND)
-                handleServerCommand(buffer, bytes, state.players, state.npcs);
-            else if (header->type == PACKET_SPAWN_ACK && bytes >= (int)sizeof(SpawnAckPacket))
-                handleSpawnAck(state.sock, buffer, bytes, state.players, state.tick);
-            else if (header->type == PACKET_RELIABLE_EVENT_ACK && bytes >= (int)sizeof(ReliableEventAckPacket))
-                handleReliableEventAck(buffer, bytes, state.players, &from);
-            else if (header->type == PACKET_CLIENT_MAP_READY && bytes >= (int)sizeof(ClientMapReadyPacket))
-            {
-                const ClientMapReadyPacket* ready = reinterpret_cast<const ClientMapReadyPacket*>(buffer);
-                if (ready->header.playerId != ready->assignedPlayerId)
-                {
-                    printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
-                           "headerPlayerId=%u assignedPlayerId=%u\n",
-                           serverTimestamp(), ready->header.playerId, ready->assignedPlayerId);
-                    continue;
-                }
-                auto it = state.players.find(ready->assignedPlayerId);
-                if (it == state.players.end())
-                {
-                    printf("%s [SERVER MAP READY REJECT] reason=player-not-found id=%u\n",
-                           serverTimestamp(), ready->assignedPlayerId);
-                    continue;
-                }
-                std::string readyMap = normalizeMapId(ready->mapId);
-                std::string serverMap = normalizeMapId(getServerMapId());
-                if (readyMap != serverMap)
-                {
-                    printf("%s [SERVER MAP READY REJECT] reason=map-mismatch id=%u "
-                           "readyMap=%s serverMap=%s\n",
-                           serverTimestamp(), ready->assignedPlayerId,
-                           readyMap.c_str(), serverMap.c_str());
-                    continue;
-                }
-                if (!it->second.spawned)
-                {
-                    it->second.spawned = true;
-                    it->second.vel = glm::vec3(0.0f);
-                    it->second.clientStateUpdated = false;
-                    completeAuthoritativeSpawn(state.sock, it->second, true);
-                }
-            }
+            TransportReceiveEvent event{};
+            event.connectionId = makeUdpConnectionId(from);
+            event.remoteEndpoint = from;
+            event.payload = reinterpret_cast<const uint8_t*>(buffer);
+            event.payloadBytes = bytes;
+            event.receivedAtMs = nowMs();
+            event.transportKind = TransportKind::Udp;
+            processServerPacket(state.sock, event, state.players, state.npcs,
+                                state.projectiles, state.nextPlayerId,
+                                state.nextEntityId, state.nextProjectileId,
+                                state.world, state.tick, state.totalPacketsIn,
+                                state.totalPacketsOut, nullptr,
+                                &state.disagreementRetransmit);
         }
 
         handleClientTimeout(state.players);
@@ -1017,8 +901,11 @@ static void simulateOneServerTick(ListenServerState& state)
         tickIcePeers(state.serverCode, state.iceSessionId, state.pendingIceTransports);
         tickServerIceTransports(state.sock, state.players, state.npcs,
                                 state.projectiles, state.nextEntityId,
-                                state.nextPlayerId, state.pendingIceTransports,
-                                state.world, state.tick, state.totalPacketsOut);
+                                state.nextProjectileId, state.nextPlayerId,
+                                state.pendingIceTransports, state.world,
+                                state.tick, state.totalPacketsIn,
+                                state.totalPacketsOut, nullptr,
+                                &state.disagreementRetransmit);
 
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
                              state.tick, state.totalPacketsOut);
@@ -1202,7 +1089,8 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     opts.npcsEnabled = settings.startupNpcsEnabled;
     opts.npcCount = settings.startupNpcCount;
     opts.iceEnabled = settings.iceEnabled;
-    opts.connect = "127.0.0.1:" + std::to_string(settings.port);
+    opts.bind = "0.0.0.0:" + std::to_string(settings.port);
+    opts.bindExplicit = true;
 
     // Delegate to existing runServer
     return runServer(opts);

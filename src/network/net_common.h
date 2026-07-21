@@ -1,3 +1,13 @@
+// 07 21 2026, 18 32
+/* purpose
+* Owns shared WinSock startup, endpoint parsing, and socket utility helpers.
+* Provides small transport primitives reused by UDP server, client, and tests.
+* Keeps IPv4 endpoint formatting consistent in logs and harnesses.
+* Does NOT own packet schemas, game transport policy, or coordinator behavior.
+* Does NOT perform DNS resolution, ICE negotiation, or gameplay simulation.
+* Does NOT start servers, clients, threads, or rendering systems.
+*/
+
 #pragma once
 
 #include <cstdint>
@@ -22,7 +32,7 @@ void netShutdown();
 std::string normalizeMapId(const std::string& mapId);
 bool mapIdsReferToSameMap(const std::string& a, const std::string& b);
 bool setNonBlocking(SOCKET socketHandle);
-bool parseAddress(const std::string& text, sockaddr_in& out);
+bool parseAddress(const std::string& text, sockaddr_in& out, bool allowPortZero = false);
 std::string addressToString(const sockaddr_in& addr);
 uint64_t nowMs();
 

@@ -79,6 +79,9 @@ void Player::reset()
     spawnFlashTimer = 0.0f;
     killedBy.clear();
     respawnPosition = pos;
+    movementSimulationTick = 0;
+    movementContacts.clear();
+    movementContactHistory.clear();
 
     jump.jumpHeldPrev = false;
     dash.moveHeldPrev = false;

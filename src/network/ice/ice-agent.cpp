@@ -45,7 +45,9 @@ bool IceAgent::initialize(const IceConfiguration& config)
     }
 
     juice_config_t juiceCfg = {};
-    juiceCfg.concurrency_mode = JUICE_CONCURRENCY_MODE_POLL;
+    juiceCfg.concurrency_mode = JUICE_CONCURRENCY_MODE_THREAD;
+    Debug::warn(Debug::Category::Networking,
+        "ICE INIT concurrency=thread reason=vendored-libjuice-has-no-public-poll-pump\n");
 
     if (stunConfigured)
     {
@@ -179,6 +181,9 @@ void IceAgent::shutdown()
 
 void IceAgent::tick()
 {
+    if (!mAgent || !mInitialized)
+        return;
+    (void)juice_get_state(mAgent);
 }
 
 IceAgentState IceAgent::state() const

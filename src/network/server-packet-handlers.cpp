@@ -411,15 +411,18 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 }
 
 void handlePing(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
-                uint32_t tick)
+                uint32_t tick, const ServerPlayer* authenticatedPlayer)
 {
     if (bytes < (int)sizeof(PingPacket))
         return;
     PingPacket pong =
         *reinterpret_cast<const PingPacket*>(buffer);
     pong.header.tick = tick;
-    sendto(sock, (const char*)&pong, sizeof(pong), 0,
-           (sockaddr*)&from, sizeof(from));
+    if (authenticatedPlayer)
+        serverSendToPlayer(sock, *authenticatedPlayer, &pong, sizeof(pong));
+    else
+        sendto(sock, (const char*)&pong, sizeof(pong), 0,
+               (sockaddr*)&from, sizeof(from));
 }
 
 // ── Pellet blast request handler ─────────────────────────────────────

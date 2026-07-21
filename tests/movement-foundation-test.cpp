@@ -357,21 +357,38 @@ void testServerMapping()
     serverPlayer.input.tick = 1234;
     serverPlayer.health = 23;
     serverPlayer.dead = false;
+    serverPlayer.movement.baseVelocity = glm::vec3(12.0f, 12.0f, 12.0f);
+    serverPlayer.movement.externalImpulse = glm::vec3(1.0f, 2.0f, 3.0f);
+    serverPlayer.movement.jump.airJumpsLeft = 1;
+    serverPlayer.movement.jump.airJumpArmed = true;
+    serverPlayer.movement.downDash.available = false;
+    serverPlayer.movement.freeze.available = false;
+    serverPlayer.movement.freeze.active = true;
+    serverPlayer.movement.dashMomentumProtection.active = true;
+    serverPlayer.movement.dashMomentumProtection.protectedMoveAxes =
+        glm::vec2(0.6f, 0.8f);
 
     MovementState state = movementStateFromServerPlayer(serverPlayer);
     check(sameMovementLifecycle(state.lifecycle, MovementLifecycleIdentity{44, 9}),
           "server mapping preserves lifecycle fields");
     checkVec3(state.position, glm::vec3(10.0f, 11.0f, 12.0f),
               "server maps position");
-    checkVec3(state.baseVelocity, glm::vec3(13.0f, 14.0f, 15.0f),
-              "server maps velocity");
-    checkVec3(state.externalImpulse, glm::vec3(0.0f),
-              "server mapping leaves unsupported external impulse zero");
+    checkVec3(state.baseVelocity, glm::vec3(12.0f, 12.0f, 12.0f),
+              "server maps base velocity");
+    checkVec3(state.baseVelocity + state.externalImpulse,
+              glm::vec3(13.0f, 14.0f, 15.0f),
+              "server maps effective velocity");
+    checkVec3(state.externalImpulse, glm::vec3(1.0f, 2.0f, 3.0f),
+              "server maps external impulse");
     check(state.ground.onGround, "server maps ground bool");
     check(!state.dash.dashAvailable, "server maps dash availability");
-    check(state.jump.airJumpsLeft == 0, "server mapping does not invent air jump state");
-    check(!state.downDash.didDownDash, "server mapping does not invent down dash event");
+    check(state.jump.airJumpsLeft == 1, "server maps air jump state");
+    check(!state.downDash.available, "server maps down dash availability");
+    check(state.dashMomentumProtection.active,
+          "server maps dash momentum protection");
     check(state.freeze.heldPreviously, "server maps available freeze input hint");
+    check(state.freeze.active && !state.freeze.available,
+          "server maps freeze state");
 
     MovementCommand command = movementCommandFromServerInput(
         serverPlayer.input, 77, state.lifecycle);
@@ -390,17 +407,23 @@ void testServerMapping()
     nextState.lifecycle = MovementLifecycleIdentity{45, 10};
     nextState.position = glm::vec3(-1.0f, -2.0f, -3.0f);
     nextState.baseVelocity = glm::vec3(-4.0f, -5.0f, -6.0f);
+    nextState.externalImpulse = glm::vec3(1.0f, 2.0f, 3.0f);
     nextState.lastInputMoveAxes = glm::vec2(0.25f, 0.25f);
     nextState.yaw = 91.0f;
     nextState.sizeScale = 1.4f;
     nextState.ground.onGround = false;
     nextState.dash.dashAvailable = true;
+    nextState.downDash.available = true;
+    nextState.freeze.active = false;
     applyMovementStateToServerPlayer(nextState, serverPlayer);
 
     check(serverPlayer.spawnGeneration == 45, "server apply writes spawn generation");
     check(serverPlayer.transformEpoch == 10, "server apply writes transform epoch");
     checkVec3(serverPlayer.pos, nextState.position, "server apply writes position");
-    checkVec3(serverPlayer.vel, nextState.baseVelocity, "server apply writes velocity");
+    checkVec3(serverPlayer.vel, nextState.baseVelocity + nextState.externalImpulse,
+              "server apply writes effective velocity");
+    checkVec3(serverPlayer.movement.externalImpulse, nextState.externalImpulse,
+              "server apply stores external impulse");
     check(serverPlayer.onGround == false, "server apply writes ground bool");
     check(serverPlayer.dashAvailable, "server apply writes dash availability");
     check(serverPlayer.health == 23, "server apply leaves health untouched");
@@ -409,9 +432,9 @@ void testServerMapping()
     MovementServerConversionSupport support = currentServerMovementConversionSupport();
     check(support.position && support.baseVelocity && support.lifecycleTransformEpoch,
           "server conversion support reports mapped fields");
-    check(!support.externalImpulse && !support.jumpTimers && !support.downDashState &&
-              !support.freezeTimerState && !support.dashMomentumProtection,
-          "server conversion support reports parity gaps");
+    check(support.externalImpulse && support.jumpTimers && support.downDashState &&
+              support.freezeTimerState && support.dashMomentumProtection,
+          "server conversion support reports Stage 3A parity fields");
 }
 
 void testConfigAndFreezeCurve()

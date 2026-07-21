@@ -1,3 +1,13 @@
+// 07 21 2026, 18 32
+/* purpose
+* Adapts IceAgent datagrams to the generic game transport interface.
+* Drains queued ICE receive events into ReceivedPacket records for server/client code.
+* Keeps ICE transport ownership tied to its live agent lifetime.
+* Does NOT own ICE signaling, packet schemas, UDP sockets, or gameplay simulation.
+* Does NOT validate movement, authorize joins, or contact the coordinator.
+* Does NOT buffer packets beyond one caller poll.
+*/
+
 #pragma once
 
 #include "network/game-transport.h"
@@ -25,6 +35,7 @@ public:
     {
         out.clear();
         if (!mAgent) return;
+        mAgent->tick();
 
         std::vector<IceEvent> events;
         mAgent->pollEvents(events);

@@ -1,3 +1,13 @@
+// 07 21 2026, 17 20
+/* purpose
+* Owns process-test event JSON line emission helpers.
+* Escapes event field strings and writes complete event lines to stdout.
+* Keeps harness-visible lifecycle evidence machine parseable under threaded logs.
+* Does NOT own gameplay state, network packet schemas, or test pass criteria.
+* Does NOT suppress normal server/client diagnostics.
+* Does NOT replace centralized runtime debug logging.
+*/
+
 #include "network/test-events.h"
 
 #include <cstdio>
@@ -27,10 +37,16 @@ void emitTestEvent(const char* type, const std::string& fieldsJson)
 {
     if (!type || !*type)
         return;
-    std::printf("[MIMITA_TEST_EVENT] {\"type\":\"%s\"", type);
+    std::string line = "[MIMITA_TEST_EVENT] {\"type\":\"";
+    line += type;
+    line += "\"";
     if (!fieldsJson.empty())
-        std::printf(",%s", fieldsJson.c_str());
-    std::printf("}\n");
+    {
+        line += ",";
+        line += fieldsJson;
+    }
+    line += "}";
+    std::printf("%s\n", line.c_str());
     std::fflush(stdout);
 }
 

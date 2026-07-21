@@ -15,6 +15,7 @@
 #include "network/ice-transport.h"
 #include "network/coordinator-client.h"
 #include "network/packets.h"
+#include "network/movement-validation.h"
 #include "network/test-events.h"
 #include "debug/debug-log.h"
 
@@ -652,6 +653,9 @@ bool runIceJoinOnly(const std::string& roomCode, const IceTestOptions& opts)
 
     // Now send InputPackets and receive compact SnapshotChunks
     uint32_t myPlayerId = accept->assignedPlayerId;
+    uint32_t movementSequence = 1;
+    uint32_t spawnGeneration = 1;
+    uint32_t transformEpoch = accept->header.transformEpoch;
     for (int step = 0; step < 60; ++step) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
@@ -661,10 +665,23 @@ bool runIceJoinOnly(const std::string& roomCode, const IceTestOptions& opts)
         input.header.type = MimitaNet::PACKET_INPUT;
         input.header.playerId = myPlayerId;
         input.header.tick = (uint32_t)step;
+        input.header.transformEpoch = transformEpoch;
         input.wishX = (step % 100 < 50) ? 5.0f : -5.0f;
         input.yaw = (float)step * 0.5f;
         input.stateFlags = (step % 60 == 0) ? (uint16_t)MimitaNet::NET_STATE_DASHING : 0;
         input.attackPressed = (step % 30 == 0) ? 1 : 0;
+        input.transformEpoch = transformEpoch;
+        input.spawnGeneration = spawnGeneration;
+        input.movementSequence = movementSequence++;
+        input.clientSimulationTick = (uint64_t)step;
+        input.sizeScale = 1.0f;
+        input.movementFlags =
+            MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE |
+            ((input.stateFlags & MimitaNet::NET_STATE_DASHING) != 0
+                ? MimitaNet::MOVEMENT_REPORT_DASH_PRESSED : 0u);
         agent.send(&input, sizeof(input));
 
         std::vector<IceEvent> evs; agent.pollEvents(evs);
@@ -953,6 +970,9 @@ bool runIceGameClient(const std::string& roomCode, const IceTestOptions& opts)
         printf("[ICE GAME CLIENT] bad accept header\n"); return false;
     }
     uint32_t myId = accept->assignedPlayerId;
+    uint32_t movementSequence = 1;
+    uint32_t spawnGeneration = 1;
+    uint32_t transformEpoch = accept->header.transformEpoch;
     printf("[ICE GAME JOIN ACCEPT] playerId=%u mapId=%.*s\n", myId, (int)sizeof(accept->mapId), accept->mapId);
     fflush(stdout);
 
@@ -966,10 +986,23 @@ bool runIceGameClient(const std::string& roomCode, const IceTestOptions& opts)
         input.header.type = MimitaNet::PACKET_INPUT;
         input.header.playerId = myId;
         input.header.tick = (uint32_t)step;
+        input.header.transformEpoch = transformEpoch;
         // Oscillate movement for visual confirmation
         input.wishX = (step % 100 < 50) ? 5.0f : -5.0f;
         input.yaw = (float)step * 0.5f;
         input.stateFlags = (step % 60 == 0) ? (uint16_t)MimitaNet::NET_STATE_DASHING : 0;
+        input.transformEpoch = transformEpoch;
+        input.spawnGeneration = spawnGeneration;
+        input.movementSequence = movementSequence++;
+        input.clientSimulationTick = (uint64_t)step;
+        input.sizeScale = 1.0f;
+        input.movementFlags =
+            MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE |
+            ((input.stateFlags & MimitaNet::NET_STATE_DASHING) != 0
+                ? MimitaNet::MOVEMENT_REPORT_DASH_PRESSED : 0u);
         agent.send(&input, sizeof(input));
 
         std::vector<IceEvent> evs; agent.pollEvents(evs);
@@ -1011,5 +1044,8 @@ int runIceConnect(const std::string& roomCode, const IceTestOptions& opts)
     IceServerOptions srv;
     srv.timeoutSeconds = opts.timeoutSeconds;
     srv.disableRelay = opts.disableRelay;
+    srv.deathRespawnCycles = opts.deathRespawnCycles;
+    srv.clientIndex = opts.clientIndex;
+    srv.reconnectToken = opts.reconnectToken;
     return ::runIceClient(roomCode, srv);
 }

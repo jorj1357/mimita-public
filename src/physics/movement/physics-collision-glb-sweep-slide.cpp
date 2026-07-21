@@ -1,3 +1,13 @@
+// 07 21 2026, 17 25
+/* purpose
+* Runs the GLB capsule sweep/slide collision phase for local Player movement.
+* Emits step movement contacts when step-up succeeds while preserving slide behavior.
+* Records collision trace data for diagnostics and stress tests.
+* Does NOT own movement reset formulas, networking, rendering effects, audio, or damage.
+* Does NOT change projectile, weapon, death, respawn, ICE, or packet behavior.
+* Does NOT replace body, safety, or block collision phases.
+*/
+
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-glb-sweep.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
@@ -307,7 +317,13 @@ void doGLBSweepSlide(
                     }
 
                     groundedThisFrame = true;
-                    applyTouchResets(p);
+                    appendPlayerMovementContact(
+                        p,
+                        MovementContactKind::Step,
+                        earliest.normal,
+                        earliest.point,
+                        SURFACE_SLOP,
+                        earliest.triangleIndex);
 
                     if (p.vel.z < 0.0f)
                         p.vel.z = 0.0f;

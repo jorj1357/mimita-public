@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns client local-player reconciliation against authoritative server snapshots.
+* Applies lifecycle snaps for spawn, respawn, teleport, reconnect, death, and catastrophic divergence.
+* Reports correction severity using the same movement validation thresholds as the server.
+* Does NOT parse network packets, send input packets, or own server validation policy.
+* Does NOT replace local physics prediction or remote entity interpolation.
+* Does NOT smooth over authoritative lifecycle changes.
+*/
+
 #include "network/multiplayer-context.h"
 #include "network/server.h"
 #include "combat/weapon-runtime.h"
@@ -54,7 +64,9 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     const glm::vec3 clientPosition = player.pos;
     const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);
-    constexpr float CATASTROPHIC_DIVERGENCE = 100.0f;
+    const MovementValidationConfig correctionConfig;
+    const MovementCorrectionClass correctionClass =
+        classifyMovementCorrection(error, correctionConfig);
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
     constexpr uint64_t TELEPORT_ACK_TIMEOUT_MS = 1500;
     const uint64_t currentMs = nowMs();
@@ -98,7 +110,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     const bool catastrophicDivergence =
         authoritativeEpochReady &&
         ctx.localPlayerReconciled &&
-        error > CATASTROPHIC_DIVERGENCE &&
+        correctionClass == MovementCorrectionClass::Major &&
         !ctx.awaitingTeleportAck &&
         !player.dead;
 
@@ -223,10 +235,11 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     if (logCorrection &&
         (applyPosition || currentMs - ctx.lastLocalCorrectionLogMs >= 500))
     {
-        printf("[LOCAL CORRECTION] distance=%.3f "
+        printf("[LOCAL CORRECTION] distance=%.3f class=%s "
                "serverPos=(%.2f,%.2f,%.2f) clientPos=(%.2f,%.2f,%.2f) "
                "applied=%d reason=%s localEpoch=%u serverEpoch=%u lastAppliedEpoch=%u\n",
                error,
+               movementCorrectionClassName(correctionClass),
                ctx.localServerPosition.x,
                ctx.localServerPosition.y,
                ctx.localServerPosition.z,

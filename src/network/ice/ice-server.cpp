@@ -1,10 +1,24 @@
+// 07 21 2026, 16 50
+/* purpose
+* Owns ICE CLI debug server/client entry points and full-server client probes.
+* Exercises libjuice transport with Mimita network packet structures and lifecycle packets.
+* Keeps raw ICE diagnostics separate from the authoritative server gameplay path.
+* Does NOT own production server movement validation or matchmaking policy.
+* Does NOT render gameplay, change movement formulas, or run weapon migration.
+* Does NOT make ICE connected state create authoritative gameplay players.
+*/
+
 #include "network/ice/ice-server.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
 #include "network/coordinator-client.h"
 #include "network/packets.h"
+#include "network/movement-validation.h"
+#include "network/snapshot-chunks.h"
+#include "network/test-events.h"
 #include "debug/debug-log.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -341,12 +355,31 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
     }
 
     std::string sessionId = "iceclient_" + std::to_string(GetCurrentProcessId());
-    auto joinResult = MimitaNet::coordinatorIceJoin(roomCode, sessionId, agent.localSdp());
-    if (!joinResult.ok || joinResult.hostIceDescription.empty()) {
-        printf("[ICE CLIENT] join failed\n"); return 1;
+    auto beginJoin = MimitaNet::coordinatorIceBeginJoin(roomCode, sessionId, agent.localSdp());
+    if (!beginJoin.ok || beginJoin.requestId.empty()) {
+        printf("[ICE CLIENT] begin join failed error=%s\n",
+               beginJoin.errorCode.c_str()); return 1;
     }
 
-    if (!agent.setRemoteDescription(joinResult.hostIceDescription)) {
+    std::string hostAnswer;
+    {
+        int w = 0;
+        while (hostAnswer.empty() && w < 30000) {
+            auto poll = MimitaNet::coordinatorIceClientPoll(roomCode, beginJoin.requestId);
+            if (poll.ok && !poll.hostIceDescription.empty()) {
+                hostAnswer = poll.hostIceDescription;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            w += 100;
+        }
+    }
+    if (hostAnswer.empty()) {
+        printf("[ICE CLIENT] host answer timeout req=%s\n",
+               beginJoin.requestId.substr(0, 12).c_str()); return 1;
+    }
+
+    if (!agent.setRemoteDescription(hostAnswer)) {
         printf("[ICE CLIENT] remote desc failed\n"); return 1;
     }
 
@@ -363,32 +396,70 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
 
     printf("[ICE CLIENT] connected!\n");
     agent.logSelectedPath();
+    MimitaNet::emitTestEvent("ice_connected",
+        "\"role\":\"client\",\"clientIndex\":" + std::to_string(opts.clientIndex));
 
     // Drain pending events
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     std::vector<IceEvent> drain; agent.pollEvents(drain);
 
-    // Send JoinRequest
-    MimitaNet::JoinRequestPacket joinReq{};
-    joinReq.header.magic = MimitaNet::PROTOCOL_MAGIC;
-    joinReq.header.version = MimitaNet::PROTOCOL_VERSION;
-    joinReq.header.type = MimitaNet::PACKET_JOIN_REQUEST;
-    memcpy(joinReq.joinToken, joinResult.joinToken.c_str(),
-           std::min(joinResult.joinToken.size(), sizeof(joinReq.joinToken)));
-    const char* pname = "IcePlayer";
-    memcpy(joinReq.name, pname, strlen(pname) + 1);
-    if (!agent.send(&joinReq, sizeof(joinReq))) {
-        printf("[ICE CLIENT] join send failed\n"); return 1;
+    const bool reconnectMode = !opts.reconnectToken.empty();
+    if (reconnectMode)
+    {
+        MimitaNet::ReconnectRequestPacket req{};
+        req.header.magic = MimitaNet::PROTOCOL_MAGIC;
+        req.header.version = MimitaNet::PROTOCOL_VERSION;
+        req.header.type = MimitaNet::PACKET_RECONNECT_REQUEST;
+        std::strncpy(req.reconnectToken, opts.reconnectToken.c_str(),
+                     sizeof(req.reconnectToken) - 1);
+        if (!agent.send(&req, sizeof(req))) {
+            printf("[ICE CLIENT] reconnect send failed\n"); return 1;
+        }
+        MimitaNet::emitTestEvent("reconnect_request_sent",
+            "\"clientIndex\":" + std::to_string(opts.clientIndex));
+    }
+    else
+    {
+        MimitaNet::JoinRequestPacket joinReq{};
+        joinReq.header.magic = MimitaNet::PROTOCOL_MAGIC;
+        joinReq.header.version = MimitaNet::PROTOCOL_VERSION;
+        joinReq.header.type = MimitaNet::PACKET_JOIN_REQUEST;
+        std::strncpy(joinReq.joinToken, beginJoin.joinToken.c_str(),
+                     sizeof(joinReq.joinToken) - 1);
+        std::string pname = opts.clientIndex > 0
+            ? "IcePlayer" + std::to_string(opts.clientIndex)
+            : "IcePlayer";
+        std::strncpy(joinReq.name, pname.c_str(), sizeof(joinReq.name) - 1);
+        if (!agent.send(&joinReq, sizeof(joinReq))) {
+            printf("[ICE CLIENT] join send failed\n"); return 1;
+        }
+        MimitaNet::emitTestEvent("join_request_sent",
+            "\"clientIndex\":" + std::to_string(opts.clientIndex));
     }
 
-    // Wait for JoinAccept
+    // Wait for JoinAccept or ReconnectAccept from the normal server decoder.
     std::string acceptData;
     int timeoutMs = opts.timeoutSeconds * 1000, waited = 0;
     while (waited < timeoutMs) {
         std::vector<IceEvent> evs; agent.pollEvents(evs);
         for (auto& ev : evs) {
-            if (ev.type == IceEventType::Recv)
+            if (ev.type != IceEventType::Recv ||
+                ev.data.size() < (int)sizeof(MimitaNet::PacketHeader))
+                continue;
+            auto* header =
+                reinterpret_cast<const MimitaNet::PacketHeader*>(ev.data.data());
+            if (header->magic != MimitaNet::PROTOCOL_MAGIC ||
+                header->version != MimitaNet::PROTOCOL_VERSION)
+                continue;
+            const uint8_t expected =
+                reconnectMode ? MimitaNet::PACKET_RECONNECT_ACCEPT
+                              : MimitaNet::PACKET_JOIN_ACCEPT;
+            if (header->type == expected ||
+                header->type == MimitaNet::PACKET_JOIN_REJECT)
+            {
                 acceptData.assign(ev.data.data(), ev.data.size());
+                break;
+            }
         }
         if (!acceptData.empty()) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(50)); waited += 50;
@@ -402,54 +473,355 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
             printf("[ICE CLIENT] join rejected\n"); return 1;
         }
     }
-    if (acceptData.size() < sizeof(MimitaNet::JoinAcceptPacket)) {
-        printf("[ICE CLIENT] bad accept size\n"); return 1;
-    }
-    auto* accept = reinterpret_cast<const MimitaNet::JoinAcceptPacket*>(acceptData.data());
-    if (accept->header.magic != MimitaNet::PROTOCOL_MAGIC) {
-        printf("[ICE CLIENT] bad accept header\n"); return 1;
-    }
-    uint32_t myId = accept->assignedPlayerId;
-    printf("[ICE CLIENT] joined as player %u\n", myId);
 
-    // Game loop: send inputs, receive snapshots
+    uint32_t myId = 0;
+    uint32_t movementSequence = 1;
+    uint32_t spawnGeneration = 0;
+    uint32_t transformEpoch = 0;
+    std::string reconnectToken;
+    bool gameplayActive = false;
+    if (reconnectMode)
+    {
+        if (acceptData.size() < sizeof(MimitaNet::ReconnectAcceptPacket)) {
+            printf("[ICE CLIENT] bad reconnect accept size\n"); return 1;
+        }
+        auto* accept = reinterpret_cast<const MimitaNet::ReconnectAcceptPacket*>(acceptData.data());
+        if (accept->header.magic != MimitaNet::PROTOCOL_MAGIC ||
+            accept->header.type != MimitaNet::PACKET_RECONNECT_ACCEPT) {
+            printf("[ICE CLIENT] bad reconnect accept header\n"); return 1;
+        }
+        myId = accept->assignedPlayerId;
+        spawnGeneration = accept->spawnGeneration;
+        transformEpoch = accept->header.transformEpoch;
+        reconnectToken = accept->reconnectToken;
+        gameplayActive = true;
+        printf("[ICE CLIENT] reconnected as player %u\n", myId);
+        MimitaNet::emitTestEvent("reconnect_confirmed",
+            "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+            ",\"playerId\":" + std::to_string(myId) +
+            ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
+            ",\"transformEpoch\":" + std::to_string(transformEpoch) +
+            ",\"reconnectToken\":\"" + MimitaNet::testEventJsonEscape(reconnectToken) + "\"");
+    }
+    else
+    {
+        if (acceptData.size() < sizeof(MimitaNet::JoinAcceptPacket)) {
+            printf("[ICE CLIENT] bad accept size\n"); return 1;
+        }
+        auto* accept = reinterpret_cast<const MimitaNet::JoinAcceptPacket*>(acceptData.data());
+        if (accept->header.magic != MimitaNet::PROTOCOL_MAGIC ||
+            accept->header.type != MimitaNet::PACKET_JOIN_ACCEPT) {
+            printf("[ICE CLIENT] bad accept header\n"); return 1;
+        }
+        myId = accept->assignedPlayerId;
+        transformEpoch = accept->header.transformEpoch;
+        reconnectToken = accept->reconnectToken;
+        printf("[ICE CLIENT] joined as player %u\n", myId);
+        MimitaNet::emitTestEvent("join_accepted",
+            "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+            ",\"playerId\":" + std::to_string(myId) +
+            ",\"protocolVersion\":" + std::to_string(MimitaNet::PROTOCOL_VERSION) +
+            ",\"map\":\"" + MimitaNet::testEventJsonEscape(accept->mapId) + "\"" +
+            ",\"reconnectToken\":\"" + MimitaNet::testEventJsonEscape(reconnectToken) + "\"");
+
+        MimitaNet::ClientMapReadyPacket ready{};
+        ready.header.magic = MimitaNet::PROTOCOL_MAGIC;
+        ready.header.version = MimitaNet::PROTOCOL_VERSION;
+        ready.header.type = MimitaNet::PACKET_CLIENT_MAP_READY;
+        ready.header.playerId = myId;
+        ready.header.transformEpoch = transformEpoch;
+        ready.assignedPlayerId = myId;
+        std::strncpy(ready.mapId, accept->mapId, sizeof(ready.mapId) - 1);
+        if (!agent.send(&ready, sizeof(ready))) {
+            printf("[ICE CLIENT] map-ready send failed\n"); return 1;
+        }
+        MimitaNet::emitTestEvent("map_ready_sent",
+            "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+            ",\"playerId\":" + std::to_string(myId) +
+            ",\"map\":\"" + MimitaNet::testEventJsonEscape(ready.mapId) + "\"");
+    }
+
+    float clientPx = 1.0f + (float)std::max(0, opts.clientIndex - 1) * 1.5f;
+    float clientPy = 5.0f;
+    float clientPz = 30.0f;
+    float clientVx = 0.0f;
+    float clientVy = 0.0f;
+    float clientVz = 0.0f;
+    int currentHealth = 100;
+    bool haveLocalSnapshot = false;
+    bool remoteSnapshotReported = false;
+    bool movementReported = false;
+    bool postRespawnMovementReported = false;
+    bool postReconnectMovementReported = false;
+    bool deathPending = false;
+    bool deathConfirmed = false;
+    uint32_t deathSpawnGeneration = 0;
+    uint16_t respawnSerial = 0;
+    uint16_t pendingRespawnSerial = 0;
+    int completedDeathCycles = 0;
+    uint64_t nextDeathAtMs = GetTickCount64() + 800;
+
+    // Game loop: receive lifecycle/snapshots and send normal InputPackets.
     int step = 0;
     while (step < 6000 && waited < timeoutMs) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 Hz
 
-        MimitaNet::InputPacket input{};
-        input.header.magic = MimitaNet::PROTOCOL_MAGIC;
-        input.header.version = MimitaNet::PROTOCOL_VERSION;
-        input.header.type = MimitaNet::PACKET_INPUT;
-        input.header.playerId = myId;
-        input.header.tick = (uint32_t)step;
-        input.wishX = (step % 200 < 100) ? 5.0f : -5.0f;
-        input.yaw = (float)step * 0.2f;
-        input.stateFlags = (step % 120 == 0) ? (uint16_t)MimitaNet::NET_STATE_DASHING : 0;
-        agent.send(&input, sizeof(input));
-
         std::vector<IceEvent> evs; agent.pollEvents(evs);
         for (auto& ev : evs) {
-            if (ev.type == IceEventType::Recv && ev.data.size() >= (int)sizeof(MimitaNet::PacketHeader)) {
-                auto* h = reinterpret_cast<const MimitaNet::PacketHeader*>(ev.data.data());
-                if (h->magic == MimitaNet::PROTOCOL_MAGIC && h->type == MimitaNet::PACKET_SNAPSHOT) {
-                    auto* snap = reinterpret_cast<const MimitaNet::SnapshotChunkPacket*>(ev.data.data());
-                    printf("[ICE CLIENT SNAP] tick=%u entities=%d\n", snap->serverTick, snap->entityCount);
-                    for (uint16_t ei = 0; ei < snap->entityCount; ++ei) {
-                        auto& e = snap->entities[ei];
-                        printf("  entity=%u pos=(%.1f,%.1f,%.1f) yaw=%.1f hp=%d\n",
-                               e.networkEntityId, e.px, e.py, e.pz, e.yaw, e.health);
-                    }
-                    fflush(stdout);
+            if (ev.type != IceEventType::Recv ||
+                ev.data.size() < (int)sizeof(MimitaNet::PacketHeader))
+                continue;
+
+            auto* h = reinterpret_cast<const MimitaNet::PacketHeader*>(ev.data.data());
+            if (h->magic != MimitaNet::PROTOCOL_MAGIC ||
+                h->version != MimitaNet::PROTOCOL_VERSION)
+                continue;
+
+            if (h->type == MimitaNet::PACKET_PLAYER_RESPAWNED &&
+                ev.data.size() >= (int)sizeof(MimitaNet::PlayerRespawnedPacket))
+            {
+                auto* spawn =
+                    reinterpret_cast<const MimitaNet::PlayerRespawnedPacket*>(ev.data.data());
+                const bool deathCycleSpawn =
+                    deathConfirmed && spawn->spawnGeneration != deathSpawnGeneration;
+                spawnGeneration = spawn->spawnGeneration;
+                transformEpoch = spawn->transformEpoch;
+                currentHealth = spawn->health;
+                movementSequence = 1;
+                gameplayActive = false;
+                MimitaNet::emitTestEvent("spawn_sent",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId) +
+                    ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
+                    ",\"transformEpoch\":" + std::to_string(transformEpoch) +
+                    ",\"health\":" + std::to_string(currentHealth));
+
+                MimitaNet::SpawnAckPacket ack{};
+                ack.header.magic = MimitaNet::PROTOCOL_MAGIC;
+                ack.header.version = MimitaNet::PROTOCOL_VERSION;
+                ack.header.type = MimitaNet::PACKET_SPAWN_ACK;
+                ack.header.playerId = myId;
+                ack.header.transformEpoch = transformEpoch;
+                ack.spawnGeneration = spawnGeneration;
+                ack.transformEpoch = transformEpoch;
+                agent.send(&ack, sizeof(ack));
+                MimitaNet::emitTestEvent("spawn_ack",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId) +
+                    ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
+                    ",\"transformEpoch\":" + std::to_string(transformEpoch));
+
+                if (deathCycleSpawn)
+                {
+                    ++completedDeathCycles;
+                    deathPending = false;
+                    deathConfirmed = false;
+                    pendingRespawnSerial = 0;
+                    nextDeathAtMs = GetTickCount64() + 250;
+                    MimitaNet::emitTestEvent("respawn_confirmed",
+                        "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                        ",\"playerId\":" + std::to_string(myId) +
+                        ",\"cycle\":" + std::to_string(completedDeathCycles) +
+                        ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
+                        ",\"transformEpoch\":" + std::to_string(transformEpoch));
                 }
             }
+            else if (h->type == MimitaNet::PACKET_SPAWN_ACTIVATED &&
+                     ev.data.size() >= (int)sizeof(MimitaNet::SpawnActivatedPacket))
+            {
+                auto* act =
+                    reinterpret_cast<const MimitaNet::SpawnActivatedPacket*>(ev.data.data());
+                if (act->spawnGeneration == spawnGeneration)
+                {
+                    gameplayActive = true;
+                    MimitaNet::emitTestEvent("spawn_activated",
+                        "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                        ",\"playerId\":" + std::to_string(myId) +
+                        ",\"spawnGeneration\":" + std::to_string(act->spawnGeneration) +
+                        ",\"transformEpoch\":" + std::to_string(act->transformEpoch));
+                }
+            }
+            else if (h->type == MimitaNet::PACKET_SNAPSHOT)
+            {
+                MimitaNet::SnapshotChunkPacket snap{};
+                std::string parseError;
+                if (!MimitaNet::parseSnapshotChunk(ev.data.data(), ev.data.size(),
+                                                   snap, &parseError))
+                    continue;
+                printf("[ICE CLIENT SNAP] tick=%u entities=%d\n",
+                       snap.serverTick, snap.entityCount);
+                for (uint16_t ei = 0; ei < snap.entityCount; ++ei) {
+                    auto& e = snap.entities[ei];
+                    printf("  entity=%u owner=%u pos=(%.1f,%.1f,%.1f) yaw=%.1f hp=%d gen=%u epoch=%u\n",
+                           e.networkEntityId, e.ownerClientId,
+                           e.px, e.py, e.pz, e.yaw, e.health,
+                           e.spawnGeneration, (unsigned)e.transformEpoch);
+                    if (e.entityType == MimitaNet::ENTITY_PLAYER &&
+                        e.ownerClientId == myId)
+                    {
+                        haveLocalSnapshot = true;
+                        clientPx = e.px;
+                        clientPy = e.py;
+                        clientPz = e.pz;
+                        clientVx = e.vx;
+                        clientVy = e.vy;
+                        clientVz = e.vz;
+                        currentHealth = e.health;
+                        if (e.spawnGeneration != 0)
+                            spawnGeneration = e.spawnGeneration;
+                        if (e.transformEpoch != 0)
+                            transformEpoch = e.transformEpoch;
+                        if (deathPending && !deathConfirmed && e.health <= 0)
+                        {
+                            deathConfirmed = true;
+                            pendingRespawnSerial = ++respawnSerial;
+                            MimitaNet::emitTestEvent("death_confirmed",
+                                "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                                ",\"playerId\":" + std::to_string(myId) +
+                                ",\"cycle\":" + std::to_string(completedDeathCycles + 1) +
+                                ",\"spawnGeneration\":" + std::to_string(deathSpawnGeneration));
+                        }
+                    }
+                    else if (e.entityType == MimitaNet::ENTITY_PLAYER &&
+                             e.ownerClientId != 0 &&
+                             e.ownerClientId != myId &&
+                             !remoteSnapshotReported)
+                    {
+                        remoteSnapshotReported = true;
+                        MimitaNet::emitTestEvent("remote_snapshot_received",
+                            "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                            ",\"playerId\":" + std::to_string(myId) +
+                            ",\"remotePlayerId\":" + std::to_string(e.ownerClientId) +
+                            ",\"serverTick\":" + std::to_string(snap.serverTick));
+                    }
+                }
+                MimitaNet::emitTestEvent("snapshot_received",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId) +
+                    ",\"serverTick\":" + std::to_string(snap.serverTick) +
+                    ",\"entities\":" + std::to_string(snap.entityCount));
+                fflush(stdout);
+            }
         }
+
+        if (gameplayActive && haveLocalSnapshot &&
+            opts.deathRespawnCycles > 0 &&
+            completedDeathCycles < opts.deathRespawnCycles &&
+            !deathPending &&
+            GetTickCount64() >= nextDeathAtMs)
+        {
+            MimitaNet::ExplodeRequestPacket explode{};
+            explode.header.magic = MimitaNet::PROTOCOL_MAGIC;
+            explode.header.version = MimitaNet::PROTOCOL_VERSION;
+            explode.header.type = MimitaNet::PACKET_EXPLODE_REQUEST;
+            explode.header.playerId = myId;
+            explode.header.tick = (uint32_t)step;
+            explode.header.transformEpoch = transformEpoch;
+            if (agent.send(&explode, sizeof(explode)))
+            {
+                deathPending = true;
+                deathConfirmed = false;
+                deathSpawnGeneration = spawnGeneration;
+                MimitaNet::emitTestEvent("death_requested",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId) +
+                    ",\"cycle\":" + std::to_string(completedDeathCycles + 1) +
+                    ",\"spawnGeneration\":" + std::to_string(spawnGeneration));
+            }
+        }
+
+        if (myId != 0 && (gameplayActive || pendingRespawnSerial != 0))
+        {
+            const bool dashPressed = (step % 90) == 10;
+            const bool downDashPressed = (step % 120) == 20;
+            const bool freezeHeld = (step % 150) < 10;
+            const bool jumpHeld = (step % 75) < 6;
+
+            MimitaNet::InputPacket input{};
+            input.header.magic = MimitaNet::PROTOCOL_MAGIC;
+            input.header.version = MimitaNet::PROTOCOL_VERSION;
+            input.header.type = MimitaNet::PACKET_INPUT;
+            input.header.playerId = myId;
+            input.header.tick = (uint32_t)step;
+            input.header.transformEpoch = transformEpoch;
+            input.wishX = (step % 200 < 100) ? 1.0f : -1.0f;
+            input.wishY = (step % 260 < 130) ? 0.2f : -0.2f;
+            input.camForwardX = 1.0f;
+            input.camForwardY = 0.0f;
+            input.camForwardZ = 0.0f;
+            input.yaw = (float)step * 0.2f;
+            input.clientPx = clientPx;
+            input.clientPy = clientPy;
+            input.clientPz = clientPz;
+            input.clientVx = clientVx;
+            input.clientVy = clientVy;
+            input.clientVz = clientVz;
+            input.sizeScale = 1.0f;
+            input.transformEpoch = transformEpoch;
+            input.spawnGeneration = spawnGeneration;
+            input.respawnSerial = pendingRespawnSerial;
+            input.movementSequence = movementSequence++;
+            input.clientSimulationTick = (uint64_t)step;
+            input.stateFlags =
+                (uint16_t)(MimitaNet::NET_STATE_WALKING |
+                (jumpHeld ? MimitaNet::NET_STATE_JUMPING : 0) |
+                (dashPressed ? MimitaNet::NET_STATE_DASHING : 0) |
+                (downDashPressed ? MimitaNet::NET_STATE_DOWN_DASHING : 0) |
+                (freezeHeld ? MimitaNet::NET_STATE_FREEZING : 0));
+            input.movementFlags =
+                MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+                MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+                MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+                MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE |
+                (jumpHeld ? MimitaNet::MOVEMENT_REPORT_JUMP_HELD : 0u) |
+                (dashPressed ? MimitaNet::MOVEMENT_REPORT_DASH_PRESSED : 0u) |
+                (downDashPressed ? MimitaNet::MOVEMENT_REPORT_DOWN_DASH_PRESSED : 0u) |
+                (freezeHeld ? MimitaNet::MOVEMENT_REPORT_FREEZE_HELD : 0u);
+            agent.send(&input, sizeof(input));
+
+            if (!movementReported)
+            {
+                movementReported = true;
+                MimitaNet::emitTestEvent("movement_sent",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId) +
+                    ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
+                    ",\"transformEpoch\":" + std::to_string(transformEpoch));
+            }
+            if (completedDeathCycles > 0 && gameplayActive &&
+                !postRespawnMovementReported)
+            {
+                postRespawnMovementReported = true;
+                MimitaNet::emitTestEvent("post_respawn_movement",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId) +
+                    ",\"cycle\":" + std::to_string(completedDeathCycles));
+            }
+            if (reconnectMode && gameplayActive && !postReconnectMovementReported)
+            {
+                postReconnectMovementReported = true;
+                MimitaNet::emitTestEvent("post_reconnect_movement",
+                    "\"clientIndex\":" + std::to_string(opts.clientIndex) +
+                    ",\"playerId\":" + std::to_string(myId));
+            }
+        }
+
+        if (reconnectMode && postReconnectMovementReported)
+            break;
+        if (!reconnectMode && opts.deathRespawnCycles > 0 &&
+            completedDeathCycles >= opts.deathRespawnCycles &&
+            postRespawnMovementReported)
+            break;
+        if (!reconnectMode && opts.deathRespawnCycles == 0 &&
+            remoteSnapshotReported && movementReported && step > 120)
+            break;
 
         step++;
         waited += 16;
     }
 
-    printf("[ICE CLIENT] done (steps=%d)\n", step);
+    printf("[ICE CLIENT] done (steps=%d deaths=%d reconnect=%d health=%d)\n",
+           step, completedDeathCycles, (int)reconnectMode, currentHealth);
     agent.shutdown();
     return 0;
 }

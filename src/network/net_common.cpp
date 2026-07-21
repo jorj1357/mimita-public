@@ -1,9 +1,20 @@
+// 07 21 2026, 18 32
+/* purpose
+* Implements shared WinSock startup, endpoint parsing, and socket utility helpers.
+* Normalizes localhost IPv4 endpoints for process-level UDP transport tests.
+* Formats socket endpoints so runtime logs identify exact bind and packet paths.
+* Does NOT own packet schemas, transport loops, coordinator calls, or ICE signaling.
+* Does NOT perform general DNS resolution or implicit IPv6 socket creation.
+* Does NOT start gameplay, rendering, server, or client processes.
+*/
+
 #include "network/net_common.h"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 
 namespace MimitaNet {
 
@@ -33,8 +44,13 @@ bool setNonBlocking(SOCKET socketHandle)
     return result == 0;
 }
 
-bool parseAddress(const std::string& text, sockaddr_in& out)
+bool parseAddress(const std::string& text, sockaddr_in& out, bool allowPortZero)
 {
+    if (text.empty())
+        return false;
+    if (text.front() == '[')
+        return false;
+
     std::string host = text;
     uint16_t port = DEFAULT_PORT;
 
@@ -42,11 +58,23 @@ bool parseAddress(const std::string& text, sockaddr_in& out)
     if (colon != std::string::npos)
     {
         host = text.substr(0, colon);
-        int parsedPort = std::atoi(text.substr(colon + 1).c_str());
-        if (parsedPort <= 0 || parsedPort > 65535)
+        std::string portText = text.substr(colon + 1);
+        if (portText.empty())
+            return false;
+        for (char c : portText)
+        {
+            if (!std::isdigit((unsigned char)c))
+                return false;
+        }
+        unsigned long parsedPort = std::strtoul(portText.c_str(), nullptr, 10);
+        if (parsedPort > 65535)
+            return false;
+        if (parsedPort == 0 && !allowPortZero)
             return false;
         port = (uint16_t)parsedPort;
     }
+    if (host == "localhost")
+        host = "127.0.0.1";
 
     out = {};
     out.sin_family = AF_INET;

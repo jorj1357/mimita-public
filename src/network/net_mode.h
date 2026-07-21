@@ -1,3 +1,13 @@
+// 07 21 2026, 18 32
+/* purpose
+* Declares process launch options for headless server and client networking.
+* Keeps CLI-owned bind, coordinator, ICE, and bounded-test flags in one struct.
+* Exposes small entry points used by main.cpp and process-level harnesses.
+* Does NOT own socket creation, packet dispatch, rendering, or gameplay logic.
+* Does NOT register rooms, validate movement, or mutate weapon behavior.
+* Does NOT change the no-argument single-player launch path.
+*/
+
 #pragma once
 
 #include <string>
@@ -10,6 +20,8 @@ struct LaunchOptions
     bool client = false;
     std::string connect = "127.0.0.1:1357";
     bool connectExplicit = false;
+    std::string bind = "0.0.0.0:1357";
+    bool bindExplicit = false;
     std::string roomFilePath;
     std::string name;
     std::string sessionToken;
@@ -19,6 +31,8 @@ struct LaunchOptions
     uint32_t npcCount = 3;
     uint32_t timeoutSecs = 0; // 0 = no timeout (default), >0 = auto-exit after N seconds
     bool iceEnabled = false;  // enable ICE for NAT traversal
+    bool noCoordinator = false;
+    bool udpEcho = false;
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

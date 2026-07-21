@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns multiplayer packet send helpers, connection teardown, and connection attempt setup.
+* Keeps session lifecycle state reset before new UDP or ICE connections.
+* Provides request helpers for gameplay packets outside the main receive loop.
+* Does NOT parse server snapshots, validate movement reports, or render network entities.
+* Does NOT own authoritative server gameplay state or packet binary schemas.
+* Does NOT carry movement lifecycle ids across unrelated sessions.
+*/
+
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "network/udp-transport.h"
@@ -187,6 +197,11 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.lastSeenServerHealth = 100;
     ctx.localServerEpoch = 0;
     ctx.lastAppliedEpoch = 0;
+    ctx.lastKnownSpawnGeneration = 0;
+    ctx.nextMovementSequence = 1;
+    ctx.latestLocalSnapshotTick = 0;
+    ctx.latestAliveSnapshotTick = 0;
+    ctx.gameplayActive = false;
     ctx.pendingTeleportPosition = glm::vec3(0.0f);
     ctx.pendingTeleportSentMs = 0;
     ctx.awaitingTeleportAck = false;

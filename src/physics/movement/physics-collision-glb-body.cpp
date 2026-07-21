@@ -1,3 +1,13 @@
+// 07 21 2026, 17 25
+/* purpose
+* Runs local body-part and equipped-weapon collision against GLB world geometry.
+* Emits typed body/weapon-sourced movement contacts while preserving correction behavior.
+* Keeps body/weapon collision diagnostics bounded and local to the collision system.
+* Does NOT own movement reset formulas, weapon firing, damage, packets, rendering, or audio.
+* Does NOT network body or weapon contacts, projectile hits, or explosion resets.
+* Does NOT replace root capsule, sweep-slide, safety, or block collision phases.
+*/
+
 #include "physics/movement/physics-collision-glb-body.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/config.h"
@@ -15,6 +25,13 @@
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define BODY_LOG(...) Debug::logThrottled(Debug::Category::Collision, "body-weapon", 1.0f, __VA_ARGS__)
+
+static MovementContactSource bodyWeaponContactSource(const char* label)
+{
+    return label && std::strcmp(label, "weapon") == 0
+        ? MovementContactSource::Weapon
+        : MovementContactSource::PlayerBody;
+}
 
 static int runBodyWeaponPass(
     Player& p, const World& world, bool& groundedThisFrame,
@@ -39,7 +56,15 @@ static int runBodyWeaponPass(
         p.ground.realWorldContactThisFrame = true;
         p.ground.hasWorldContact = true;
         p.ground.worldContactLostTimer = 0.033f;
-        applyTouchResets(p);
+        appendPlayerMovementContactForNormal(
+            p,
+            c.normal.z > MAX_WALKABLE_SLOPE_DOT,
+            false,
+            c.normal,
+            c.point,
+            c.penetration,
+            c.triangleIndex,
+            bodyWeaponContactSource(c.label));
     }
 
     if (bwContacts.empty())
@@ -59,7 +84,6 @@ static int runBodyWeaponPass(
         if (!groundedByWeapon && wc.label && std::strcmp(wc.label, "weapon") == 0) {
             groundedByWeapon = true;
             groundedThisFrame = true;
-            applyTouchResets(p);
             if (p.vel.z < 0.0f) p.vel.z = 0.0f;
         }
     }

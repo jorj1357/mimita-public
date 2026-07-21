@@ -1,3 +1,13 @@
+// 07 21 2026, 18 32
+/* purpose
+* Implements the UDP-backed IGameTransport used by client networking paths.
+* Sends datagrams to the selected server endpoint and drains local receive data.
+* Keeps transport polling small and independent from packet interpretation.
+* Does NOT own packet schemas, server authority, coordinator signaling, or ICE.
+* Does NOT validate movement, simulate gameplay, or own reconnect policy.
+* Does NOT allocate persistent packet queues outside the caller-provided vector.
+*/
+
 #pragma once
 
 #include "network/game-transport.h"
@@ -28,10 +38,10 @@ public:
         out.clear();
         char buffer[2048];
         sockaddr_in from{};
-        int fromLen = sizeof(from);
 
         for (;;)
         {
+            int fromLen = sizeof(from);
             int bytes = recvfrom(mSock, buffer, sizeof(buffer), 0,
                                  (sockaddr*)&from, &fromLen);
             if (bytes <= 0)

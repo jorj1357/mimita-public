@@ -13,6 +13,7 @@
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/projectile-terminal-dedupe.h"
+#include "network/movement-validation.h"
 #include "entities/player.h"
 
 #include <string>
@@ -91,6 +92,7 @@ struct SnapshotTransform
     uint16_t directionChangeSerial = 0;
     uint16_t equipSerial = 0;
     uint16_t freezeSerial = 0;
+    uint32_t spawnGeneration = 0;
 };
 
 struct QueuedPacket
@@ -171,6 +173,9 @@ struct EntityInterpolationState
     bool renderRegistered = false;
     uint32_t networkEntityId = 0;
     uint16_t lastTransformEpoch = 0;
+    uint32_t lastServerTick = 0;
+    uint32_t lastSpawnGeneration = 0;
+    uint32_t lastSnapshotTransformEpoch = 0;
     std::string displayName;
 };
 
@@ -279,6 +284,7 @@ struct MultiplayerContext
     // ── Transform epoch for spawn/resync detection ────────────────────
     uint32_t transformEpoch = 0;
     uint32_t lastKnownSpawnGeneration = 0;  // from server's PlayerRespawned
+    uint32_t nextMovementSequence = 1;
     bool gameplayActive = false;  // true after SpawnActivated received (not just transport connected)
 
     // ── Ghost: show authoritative server position ─────────────────────
@@ -458,12 +464,28 @@ struct MpInput
 {
     glm::vec3 position{0.0f};
     glm::vec3 velocity{0.0f};
+    glm::vec3 externalImpulse{0.0f};
     float yaw = 0.0f;
+    float lookPitch = 0.0f;
     glm::vec3 camForward{1.0f, 0.0f, 0.0f};
     float wishX = 0.0f;
     float wishY = 0.0f;
+    uint64_t movementSimulationTick = 0;
+    bool onGround = false;
+    bool stableOnGround = false;
+    bool hasWorldContact = false;
+    bool realWorldContactThisFrame = false;
+    bool airJumpArmed = false;
+    bool airJumpLocked = false;
+    bool dashAvailable = true;
+    bool dashMomentumProtectionActive = false;
+    bool downDashAvailable = true;
+    bool freezeActive = false;
+    bool freezeAvailable = true;
+    bool groundReturnAvailable = true;
     bool jumpHeld = false;
     bool dashPressed = false;
+    bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
     int equippedSlot = 0;
@@ -579,7 +601,7 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
 void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);
 
 // Interpolation helpers (defined in multiplayer-interpolation.cpp)
-void pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
+bool pushInterpolationTarget(EntityInterpolationState& interpolation, const SnapshotEntity& entity, uint32_t serverTick);
 void updateRenderedReplica(Player& player, EntityInterpolationState& interpolation, float dt);
 void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt);
 

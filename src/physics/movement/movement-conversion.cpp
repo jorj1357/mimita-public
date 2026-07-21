@@ -90,8 +90,10 @@ MovementCommand movementCommandFromServerInput(const MimitaNet::ServerInput& inp
     command.moveAxes = movementClampUnitOrZero(input.wish);
     command.horizontalCameraForward = normalizedHorizontalForward(input.camForward, input.yaw);
     command.lookYaw = input.yaw;
+    command.lookPitch = input.lookPitch;
     command.jumpHeld = input.jumpHeld;
     command.dashPressed = input.dashPressed;
+    command.downDashPressed = input.downDashPressed;
     command.freezeHeld = input.freezeHeld;
     command.movementDirectionPressed =
         command.moveAxes.x != 0.0f || command.moveAxes.y != 0.0f;
@@ -159,6 +161,7 @@ MovementState movementStateFromPlayer(const Player& player,
     state.groundReturn.available = player.groundReturn.available;
     state.groundReturn.charges = player.groundReturn.charges;
     state.groundReturn.rechargeTimerSeconds = player.groundReturn.rechargeTimer;
+    state.contactHistory = player.movementContactHistory;
     return state;
 }
 
@@ -219,18 +222,29 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.groundReturn.available = state.groundReturn.available;
     player.groundReturn.charges = state.groundReturn.charges;
     player.groundReturn.rechargeTimer = state.groundReturn.rechargeTimerSeconds;
+    player.movementContactHistory = state.contactHistory;
     player.syncLegacyStateToLayers();
 }
 
 MovementState movementStateFromServerPlayer(const MimitaNet::ServerPlayer& player)
 {
-    MovementState state;
+    MovementState state = player.movement;
     state.lifecycle.spawnGeneration = player.spawnGeneration;
     state.lifecycle.transformEpoch = player.transformEpoch;
     state.movementEnabled = !player.dead && player.spawnState == MimitaNet::ServerPlayer::Active;
     state.position = player.pos;
-    state.baseVelocity = player.vel;
-    state.externalImpulse = glm::vec3(0.0f);
+    if (!movementIsFinite(state.baseVelocity) ||
+        !movementIsFinite(state.externalImpulse) ||
+        glm::length((state.baseVelocity + state.externalImpulse) - player.vel) > 0.25f)
+    {
+        if (movementIsFinite(state.externalImpulse))
+            state.baseVelocity = player.vel - state.externalImpulse;
+        else
+        {
+            state.baseVelocity = player.vel;
+            state.externalImpulse = glm::vec3(0.0f);
+        }
+    }
     state.lastInputMoveAxes = movementClampUnitOrZero(player.input.wish);
     state.yaw = player.yaw;
     state.sizeScale = player.sizeScale;
@@ -238,6 +252,9 @@ MovementState movementStateFromServerPlayer(const MimitaNet::ServerPlayer& playe
     state.ground.stableOnGround = player.onGround;
     state.ground.hasWorldContact = player.onGround;
     state.dash.dashAvailable = player.dashAvailable;
+    state.downDash.available = player.movement.downDash.available;
+    state.freeze.available = player.movement.freeze.available;
+    state.freeze.active = player.movement.freeze.active;
     state.freeze.heldPreviously = player.input.freezeHeld;
     return state;
 }
@@ -247,8 +264,9 @@ void applyMovementStateToServerPlayer(const MovementState& state,
 {
     player.spawnGeneration = state.lifecycle.spawnGeneration;
     player.transformEpoch = static_cast<uint16_t>(state.lifecycle.transformEpoch);
+    player.movement = state;
     player.pos = state.position;
-    player.vel = state.baseVelocity;
+    player.vel = state.baseVelocity + state.externalImpulse;
     player.yaw = state.yaw;
     player.sizeScale = state.sizeScale;
     player.onGround = state.ground.onGround;
@@ -300,5 +318,14 @@ MovementConfig makeCurrentRuntimeMovementConfig()
 
 MovementServerConversionSupport currentServerMovementConversionSupport()
 {
-    return MovementServerConversionSupport{};
+    MovementServerConversionSupport support;
+    support.externalImpulse = true;
+    support.detailedGroundTimers = true;
+    support.jumpTimers = true;
+    support.airJumpState = true;
+    support.downDashState = true;
+    support.freezeTimerState = true;
+    support.groundReturnState = true;
+    support.dashMomentumProtection = true;
+    return support;
 }

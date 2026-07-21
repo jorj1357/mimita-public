@@ -1,3 +1,13 @@
+// 07 21 2026, 17 10
+/* purpose
+* Owns client multiplayer tick IO, packet receive dispatch, snapshot processing, and input sends.
+* Converts local shared movement state into Stage 3A client movement reports.
+* Keeps local and remote snapshot lifecycle filtering consistent across legacy and chunked snapshots.
+* Does NOT define server validation policy, render interpolation math, or packet binary layouts.
+* Does NOT own physics simulation, weapon runtime reconciliation internals, or server authority.
+* Does NOT apply stale local snapshots before lifecycle checks pass.
+*/
+
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "network/snapshot-chunks.h"
@@ -16,6 +26,44 @@
 namespace MimitaNet {
 
 namespace {
+
+uint32_t movementReportFlagsFromMpInput(const MpInput& input)
+{
+    uint32_t flags = 0;
+    if (input.onGround)
+        flags |= MOVEMENT_REPORT_ON_GROUND;
+    if (input.stableOnGround)
+        flags |= MOVEMENT_REPORT_STABLE_ON_GROUND;
+    if (input.hasWorldContact)
+        flags |= MOVEMENT_REPORT_HAS_WORLD_CONTACT;
+    if (input.realWorldContactThisFrame)
+        flags |= MOVEMENT_REPORT_REAL_WORLD_CONTACT;
+    if (input.airJumpArmed)
+        flags |= MOVEMENT_REPORT_AIR_JUMP_ARMED;
+    if (input.airJumpLocked)
+        flags |= MOVEMENT_REPORT_AIR_JUMP_LOCKED;
+    if (input.dashAvailable)
+        flags |= MOVEMENT_REPORT_DASH_AVAILABLE;
+    if (input.dashMomentumProtectionActive)
+        flags |= MOVEMENT_REPORT_DASH_PROTECTED;
+    if (input.downDashAvailable)
+        flags |= MOVEMENT_REPORT_DOWN_DASH_AVAILABLE;
+    if (input.freezeActive)
+        flags |= MOVEMENT_REPORT_FREEZE_ACTIVE;
+    if (input.freezeAvailable)
+        flags |= MOVEMENT_REPORT_FREEZE_AVAILABLE;
+    if (input.groundReturnAvailable)
+        flags |= MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
+    if (input.jumpHeld)
+        flags |= MOVEMENT_REPORT_JUMP_HELD;
+    if (input.dashPressed)
+        flags |= MOVEMENT_REPORT_DASH_PRESSED;
+    if (input.downDashPressed)
+        flags |= MOVEMENT_REPORT_DOWN_DASH_PRESSED;
+    if (input.freezeHeld)
+        flags |= MOVEMENT_REPORT_FREEZE_HELD;
+    return flags;
+}
 
 // ── Shared snapshot entity processing ──────────────────────────────
 // Called by both legacy (SnapshotPacket) and chunked (CompactEntityData)
@@ -56,12 +104,20 @@ static void processSnapshotEntities(
 
             if (!acceptLifecycle)
             {
-                ctx.localServerPosition = {entity.px, entity.py, entity.pz};
-                ctx.localServerVelocity = {entity.vx, entity.vy, entity.vz};
-                ctx.localServerYaw = entity.yaw;
-                ctx.localServerOnGround = entity.onGround != 0;
-                ctx.localPingMs = entity.pingMs;
-                ctx.hasLocalServerPosition = true;
+                Debug::logThrottled(
+                    Debug::Category::Networking,
+                    "client-local-stale-snapshot",
+                    0.5f,
+                    "[CLIENT SNAPSHOT DROP] entityId=%u reason=stale-local "
+                    "tick=%u latestTick=%u epoch=%u localEpoch=%u spawnGen=%u "
+                    "knownSpawnGen=%u\n",
+                    entity.networkEntityId,
+                    serverTick,
+                    ctx.latestLocalSnapshotTick,
+                    (unsigned)entity.transformEpoch,
+                    (unsigned)ctx.localServerEpoch,
+                    entity.spawnGeneration,
+                    ctx.lastKnownSpawnGeneration);
                 continue;
             }
 
@@ -150,7 +206,6 @@ static void processSnapshotEntities(
         Player& p = (*replicas)[entity.networkEntityId];
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
-        p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
         {
             if (GetPlayerSettings().avatarName.empty()) {
@@ -166,7 +221,9 @@ static void processSnapshotEntities(
                    entity.px, entity.py, entity.pz);
         }
 
-        pushInterpolationTarget(interpolation, entity, serverTick);
+        if (!pushInterpolationTarget(interpolation, entity, serverTick))
+            continue;
+        p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
             updateRenderedReplica(p, interpolation, dt);
         (*seen)[entity.networkEntityId] = true;
@@ -264,6 +321,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
 {
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
+    ctx.nextMovementSequence = 1;
 
     // Cancel old-life pending attack requests
     for (auto it = ctx.pendingAttackRequests.begin(); it != ctx.pendingAttackRequests.end(); )
@@ -423,6 +481,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.reliableEventSessionId = welcome->reliableEventSessionId;
             ctx.requiredMapId = welcome->mapId;
             ctx.transformEpoch = welcome->header.transformEpoch;
+            ctx.nextMovementSequence = 1;
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
@@ -458,6 +517,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.reliableEventSessionId = accept->reliableEventSessionId;
             ctx.requiredMapId = accept->mapId;
             ctx.transformEpoch = accept->header.transformEpoch;
+            ctx.nextMovementSequence = 1;
             ctx.clientMapReadySent = false;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
@@ -496,18 +556,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
             ctx.reliableEventSessionId = accept->reliableEventSessionId;
+            if (accept->spawnGeneration != 0)
+                ctx.lastKnownSpawnGeneration = accept->spawnGeneration;
             ctx.localServerPosition = {accept->restorePx, accept->restorePy, accept->restorePz};
             ctx.localServerHealth = accept->restoredHealth;
             ctx.hasLocalServerPosition = true;
             ctx.transformEpoch = accept->header.transformEpoch;
             ctx.localServerEpoch = accept->header.transformEpoch;
+            ctx.nextMovementSequence = 1;
             ctx.lastAppliedEpoch = 0;
             ctx.localPlayerReconciled = false;
             ctx.teleportResync = false;
             ctx.awaitingTeleportAck = false;
-            printf("[NET RECONNECT] accepted player=%u health=%d kills=%d deaths=%d epoch=%u\n",
+            printf("[NET RECONNECT] accepted player=%u health=%d kills=%d deaths=%d epoch=%u spawnGen=%u\n",
                    ctx.localPlayerId, accept->restoredHealth,
-                   accept->restoredKills, accept->restoredDeaths);
+                   accept->restoredKills, accept->restoredDeaths,
+                   ctx.transformEpoch, ctx.lastKnownSpawnGeneration);
         }
         else if (header->type == PACKET_DISAGREEMENT && bytes >= (int)sizeof(DisagreementPacket))
         {
@@ -862,6 +926,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (walking) stateFlags |= NET_STATE_WALKING;
         if (input->jumpHeld) stateFlags |= NET_STATE_JUMPING;
         if (input->dashPressed) stateFlags |= NET_STATE_DASHING;
+        if (input->downDashPressed) stateFlags |= NET_STATE_DOWN_DASHING;
         if (input->freezeHeld) stateFlags |= NET_STATE_FREEZING;
         if (input->attackPressed) stateFlags |= NET_STATE_ATTACKING;
 
@@ -888,6 +953,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.camForwardY = input->camForward.y;
         in.camForwardZ = input->camForward.z;
         in.yaw = input->yaw;
+        in.lookPitch = input->lookPitch;
 
         // ── Client authoritative-transform gate ────────────────────────
         // If we have received a new server epoch but haven't applied it
@@ -909,6 +975,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             in.clientVx = ctx.localServerVelocity.x;
             in.clientVy = ctx.localServerVelocity.y;
             in.clientVz = ctx.localServerVelocity.z;
+            in.externalImpulseX = 0.0f;
+            in.externalImpulseY = 0.0f;
+            in.externalImpulseZ = 0.0f;
         }
         else
         {
@@ -918,6 +987,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             in.clientVx = input->velocity.x;
             in.clientVy = input->velocity.y;
             in.clientVz = input->velocity.z;
+            in.externalImpulseX = input->externalImpulse.x;
+            in.externalImpulseY = input->externalImpulse.y;
+            in.externalImpulseZ = input->externalImpulse.z;
         }
 
         {
@@ -955,6 +1027,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         in.weaponState = input->weaponState;
         in.clientPingMs = ctx.localPingMs;
         in.stateFlags = stateFlags;
+        in.movementSequence = ctx.nextMovementSequence++;
+        if (ctx.nextMovementSequence == 0)
+            ctx.nextMovementSequence = 1;
+        in.clientSimulationTick = input->movementSimulationTick != 0
+            ? input->movementSimulationTick
+            : ctx.tick;
+        in.spawnGeneration = ctx.lastKnownSpawnGeneration;
+        in.transformEpoch = ctx.transformEpoch;
+        in.movementFlags = movementReportFlagsFromMpInput(*input);
         in.dashSerial = ctx.nextLocalDashSerial;
         in.groundJumpSerial = ctx.nextLocalGroundJumpSerial;
         in.airJumpSerial = ctx.nextLocalAirJumpSerial;

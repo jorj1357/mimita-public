@@ -11,9 +11,11 @@ Requirements:
 import sys
 import subprocess
 import os
+import time
 
 # ── Config ──────────────────────────────────────────────────────────
 SOUND_VOLUME = 0.1  # 1 = full volume, 0 = full mute
+SOUND_PREVIEW_SECONDS = 0.75
 # ────────────────────────────────────────────────────────────────────
 
 
@@ -78,7 +80,12 @@ def play_sound():
                 wf.writeframes(frames)
             temp_path = tmp.name
 
-        winsound.PlaySound(temp_path, winsound.SND_NODEFAULT)
+        winsound.PlaySound(
+            temp_path,
+            winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+        )
+        time.sleep(SOUND_PREVIEW_SECONDS)
+        winsound.PlaySound(None, 0)
         os.unlink(temp_path)
     except Exception as e:
         print(f"[AGENT WARNING] Sound playback failed: {e}")

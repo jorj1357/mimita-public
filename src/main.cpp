@@ -84,6 +84,7 @@
 #include "debug/transform-debug-commands.h"
 #include "debug/debug-diag.h"
 #include "network/net_mode.h"
+#include "network/udp-echo.h"
 #include "network/multiplayer-context.h"
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
@@ -230,6 +231,11 @@ int main(int argc, char** argv)
         printf("[MAIN] choose only one mode: --server or --client\n");
         MimitaNet::printLaunchUsage();
         return 1;
+    }
+    if (launchOptions.udpEcho)
+    {
+        printf("[BOOT MODE] mode=udp-echo-server graphicsInitialized=0 uiInitialized=0\n");
+        return MimitaNet::runUdpEchoServer(launchOptions);
     }
     if (launchOptions.server)
     {

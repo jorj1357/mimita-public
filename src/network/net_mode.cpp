@@ -1,3 +1,13 @@
+// 07 21 2026, 18 32
+/* purpose
+* Parses MiMITA networking launch flags for local clients, servers, and harnesses.
+* Preserves the no-argument single-player path while adding bounded diagnostics.
+* Keeps process mode selection data-only so main.cpp remains the orchestrator.
+* Does NOT create sockets, run gameplay loops, or contact the coordinator.
+* Does NOT own packet schemas, movement validation, or ICE agent setup.
+* Does NOT launch graphics windows or mutate runtime gameplay rules.
+*/
+
 #include "network/net_mode.h"
 
 #include <cstdio>
@@ -20,6 +30,11 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.connect = argv[++i];
             options.connectExplicit = true;
         }
+        else if (std::strcmp(argv[i], "--bind") == 0 && i + 1 < argc)
+        {
+            options.bind = argv[++i];
+            options.bindExplicit = true;
+        }
         else if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc)
             options.name = argv[++i];
         else if (std::strcmp(argv[i], "--session") == 0 && i + 1 < argc)
@@ -38,6 +53,13 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.timeoutSecs = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--ice") == 0)
             options.iceEnabled = true;
+        else if (std::strcmp(argv[i], "--no-coordinator") == 0)
+            options.noCoordinator = true;
+        else if (std::strcmp(argv[i], "--udp-echo") == 0)
+        {
+            options.udpEcho = true;
+            options.server = true;
+        }
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
             printLaunchUsage();
     }
@@ -47,10 +69,13 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
 void printLaunchUsage()
 {
     printf("Mimita local multiplayer test mode:\n");
-    printf("  mimita.exe --server [--timeout <secs>]\n");
+    printf("  mimita.exe --server [--bind 0.0.0.0:1357] [--timeout <secs>] [--no-coordinator]\n");
+    printf("  mimita.exe --server --udp-echo --bind 127.0.0.1:0 --timeout <secs> --no-coordinator\n");
     printf("  mimita.exe --client --name client1 --connect 127.0.0.1:1357\n");
     printf("  mimita.exe --session <token>\n");
+    printf("  --bind <addr:port> Server UDP bind address (IPv4; port 0 allowed for harnesses)\n");
     printf("  --timeout <secs>  Auto-exit server after N seconds (0=no timeout, default)\n");
+    printf("  --no-coordinator  Skip room registration and heartbeats for local harnesses\n");
     printf("  --ice             Enable ICE NAT traversal for global connections\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }

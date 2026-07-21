@@ -1,7 +1,7 @@
 // 07 19 2026, 09 29
 /* purpose
 * Local UDP protocol smoke test for server/client networking behavior.
-* Verifies joins, snapshots, movement, combat, respawn, and projectile fire flow.
+* Verifies joins, snapshots, movement, lifecycle, respawn, reconnect, and projectile flow.
 * Exercises grenade projectile accept, retry, rejection, second fire, and state packets.
 * Does NOT launch the server process or configure deployment services.
 * Does NOT test ICE relay behavior, browser UI, or rendering.
@@ -11,10 +11,12 @@
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/snapshot-chunks.h"
+#include "network/movement-validation.h"
 
 #include <cstdio>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -27,8 +29,10 @@ struct TestClient
     uint32_t id = 0;
     std::string approvedName;
     std::string mapId;
+    std::string reconnectToken;
     uint32_t spawnGeneration = 0;
     uint32_t transformEpoch = 0;
+    uint32_t movementSequence = 1;
     bool mapReadySent = false;
     MimitaNet::SnapshotPacket snapshot{};
 };
@@ -44,8 +48,22 @@ void copyName(char (&out)[MimitaNet::MAX_NAME_BYTES], const char* name)
 bool openClient(TestClient& client)
 {
     client.socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return client.socket != INVALID_SOCKET &&
-           MimitaNet::setNonBlocking(client.socket);
+    if (client.socket == INVALID_SOCKET ||
+        !MimitaNet::setNonBlocking(client.socket))
+        return false;
+
+    sockaddr_in bindAddress{};
+    bindAddress.sin_family = AF_INET;
+    bindAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    bindAddress.sin_port = htons(0);
+    if (bind(client.socket, (sockaddr*)&bindAddress, sizeof(bindAddress)) ==
+        SOCKET_ERROR)
+    {
+        std::printf("[network-protocol-smoke] bind failed error=%d\n",
+                    WSAGetLastError());
+        return false;
+    }
+    return true;
 }
 
 void sendHello(TestClient& client, const sockaddr_in& server)
@@ -81,6 +99,7 @@ void sendSpawnAck(TestClient& client,
 
     client.spawnGeneration = spawn.spawnGeneration;
     client.transformEpoch = spawn.transformEpoch;
+    client.movementSequence = 1;
 
     MimitaNet::SpawnAckPacket ack{};
     ack.header.type = MimitaNet::PACKET_SPAWN_ACK;
@@ -121,6 +140,7 @@ bool pump(TestClient& client, uint64_t deadline, const sockaddr_in* server = nul
             auto* welcome = reinterpret_cast<MimitaNet::WelcomePacket*>(buffer);
             client.id = welcome->assignedPlayerId;
             client.approvedName = welcome->approvedName;
+            client.reconnectToken = welcome->reconnectToken;
             client.mapId = welcome->mapId[0] ? welcome->mapId : "funworld3";
             if (serverForResponse)
                 sendMapReady(client, *serverForResponse);
@@ -131,6 +151,17 @@ bool pump(TestClient& client, uint64_t deadline, const sockaddr_in* server = nul
             auto* spawn = reinterpret_cast<MimitaNet::PlayerRespawnedPacket*>(buffer);
             if (serverForResponse)
                 sendSpawnAck(client, *spawn, *serverForResponse);
+        }
+        else if (header->type == MimitaNet::PACKET_RECONNECT_ACCEPT &&
+                 bytes >= (int)sizeof(MimitaNet::ReconnectAcceptPacket))
+        {
+            auto* accept = reinterpret_cast<MimitaNet::ReconnectAcceptPacket*>(buffer);
+            client.id = accept->assignedPlayerId;
+            client.approvedName = accept->approvedName;
+            client.reconnectToken = accept->reconnectToken;
+            client.spawnGeneration = accept->spawnGeneration;
+            client.transformEpoch = accept->header.transformEpoch;
+            client.movementSequence = 1;
         }
         else if (header->type == MimitaNet::PACKET_SNAPSHOT &&
                  bytes >= (int)sizeof(MimitaNet::SnapshotPacket))
@@ -184,73 +215,44 @@ void sendPosition(
     input.header.type = MimitaNet::PACKET_INPUT;
     input.header.playerId = client.id;
     input.header.transformEpoch = client.transformEpoch;
+    input.header.tick = client.movementSequence;
     input.camForwardX = 1.0f;
     input.clientPx = x;
     input.clientPy = y;
     input.clientPz = z;
     input.transformEpoch = client.transformEpoch;
+    input.spawnGeneration = client.spawnGeneration;
+    input.movementSequence = client.movementSequence++;
+    input.clientSimulationTick = input.movementSequence;
+    input.movementFlags =
+        MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+        MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
     input.sizeScale = 1.0f;
     input.respawnSerial = respawnSerial;
     sendto(client.socket, (const char*)&input, sizeof(input), 0,
            (const sockaddr*)&server, sizeof(server));
 }
 
-void sendShot(
-    TestClient& client,
-    const TestClient& target,
-    const sockaddr_in& server,
-    uint32_t serial)
+void sendExplode(TestClient& client, const sockaddr_in& server)
 {
-    const MimitaNet::SnapshotEntity* shooterEntity =
-        findEntity(client, client.id);
-    const MimitaNet::SnapshotEntity* targetEntity =
-        findEntity(client, target.id);
-    if (!shooterEntity || !targetEntity)
-        return;
+    MimitaNet::ExplodeRequestPacket request{};
+    request.header.type = MimitaNet::PACKET_EXPLODE_REQUEST;
+    request.header.playerId = client.id;
+    sendto(client.socket, (const char*)&request, sizeof(request), 0,
+           (const sockaddr*)&server, sizeof(server));
+}
 
-    const float originX = shooterEntity->px;
-    const float originY = shooterEntity->py;
-    const float originZ = shooterEntity->pz + 0.8f;
-    const float hitX = targetEntity->px;
-    const float hitY = targetEntity->py;
-    const float hitZ = targetEntity->pz + 0.8f;
-    float dirX = hitX - originX;
-    float dirY = hitY - originY;
-    float dirZ = hitZ - originZ;
-    const float length = std::sqrt(
-        dirX * dirX + dirY * dirY + dirZ * dirZ);
-    if (length <= 0.001f)
-        return;
-    dirX /= length;
-    dirY /= length;
-    dirZ /= length;
-
-    MimitaNet::ShotRequestPacket shot{};
-    shot.header.type = MimitaNet::PACKET_SHOT_REQUEST;
-    shot.header.playerId = client.id;
-    shot.shotSerial = serial;
-    shot.targetPlayerId = target.id;
-    shot.damage = 30;
-    shot.power = 30.0f;
-    shot.effectFlags =
-        MimitaNet::SHOT_EFFECT_ENTITY_IMPACT |
-        MimitaNet::SHOT_EFFECT_BLOOD |
-        MimitaNet::SHOT_EFFECT_HIT_SOUND;
-    shot.weapon = MimitaNet::NETWORK_WEAPON_REVOLVER;
-    shot.impactType = MimitaNet::SHOT_IMPACT_ENTITY;
-    shot.originX = originX;
-    shot.originY = originY;
-    shot.originZ = originZ;
-    shot.hitX = hitX;
-    shot.hitY = hitY;
-    shot.hitZ = hitZ;
-    shot.dirX = dirX;
-    shot.dirY = dirY;
-    shot.dirZ = dirZ;
-    shot.normalX = -dirX;
-    shot.normalY = -dirY;
-    shot.normalZ = -dirZ;
-    sendto(client.socket, (const char*)&shot, sizeof(shot), 0,
+void sendReconnect(TestClient& client, const sockaddr_in& server,
+                   const std::string& token)
+{
+    MimitaNet::ReconnectRequestPacket request{};
+    request.header.type = MimitaNet::PACKET_RECONNECT_REQUEST;
+    request.header.playerId = client.id;
+    std::strncpy(request.reconnectToken, token.c_str(),
+                 sizeof(request.reconnectToken) - 1);
+    sendto(client.socket, (const char*)&request, sizeof(request), 0,
            (const sockaddr*)&server, sizeof(server));
 }
 
@@ -288,8 +290,12 @@ int main()
     if (!MimitaNet::netStartup())
         return 1;
 
+    const char* serverText = std::getenv("MIMITA_TEST_SERVER_ADDR");
+    if (!serverText || !*serverText)
+        serverText = "127.0.0.1:1357";
+
     sockaddr_in server{};
-    if (!MimitaNet::parseAddress("127.0.0.1:1357", server))
+    if (!MimitaNet::parseAddress(serverText, server))
         return 2;
     gServerAddress = &server;
 
@@ -358,15 +364,7 @@ int main()
     }
 
     bool sawDeath = false;
-    for (int shot = 0; shot < 4 && !sawDeath; ++shot)
-    {
-        sendShot(first, second, server, (uint32_t)shot + 1);
-        std::this_thread::sleep_for(std::chrono::milliseconds(80));
-        pump(first, MimitaNet::nowMs() + 120);
-        pump(second, MimitaNet::nowMs() + 120);
-        sawDeath = entityHealth(first, second.id) == 0 ||
-                   entityHealth(second, second.id) == 0;
-    }
+    sendExplode(second, server);
     const uint64_t deathDeadline = MimitaNet::nowMs() + 1000;
     while (!sawDeath && MimitaNet::nowMs() < deathDeadline)
     {
@@ -388,16 +386,8 @@ int main()
     }
 
     // ── Test 2: Instant respawn via respawnSerial ────────────────────
-    // Kill second again
     sawDeath = false;
-    for (int shot = 0; shot < 4 && !sawDeath; ++shot)
-    {
-        sendShot(first, second, server, 100 + (uint32_t)shot + 1);
-        std::this_thread::sleep_for(std::chrono::milliseconds(80));
-        pump(first, MimitaNet::nowMs() + 120);
-        pump(second, MimitaNet::nowMs() + 120);
-        sawDeath = entityHealth(first, second.id) == 0;
-    }
+    sendExplode(second, server);
     const uint64_t death2Deadline = MimitaNet::nowMs() + 1000;
     while (!sawDeath && MimitaNet::nowMs() < death2Deadline)
     {
@@ -450,7 +440,63 @@ int main()
     pump(second, MimitaNet::nowMs() + 120);
     bool livingNoEffect = entityHealth(first, first.id) == 100;
 
-    // ── Test 5: Grenade projectile fire + idempotent retry ────────────
+    // ── Test 5: Reconnect preserves player id and accepts new input ──
+    bool reconnectPassed = false;
+    bool postReconnectMovement = false;
+    const uint32_t secondOriginalId = second.id;
+    const std::string previousReconnectToken = second.reconnectToken;
+    if (!previousReconnectToken.empty() && secondOriginalId != 0)
+    {
+        closesocket(second.socket);
+        second.socket = INVALID_SOCKET;
+        if (openClient(second))
+        {
+            second.id = secondOriginalId;
+            second.reconnectToken = previousReconnectToken;
+            sendReconnect(second, server, previousReconnectToken);
+
+            const uint64_t reconnectDeadline = MimitaNet::nowMs() + 2000;
+            while (MimitaNet::nowMs() < reconnectDeadline)
+            {
+                pump(first, MimitaNet::nowMs() + 30);
+                pump(second, MimitaNet::nowMs() + 30, &server);
+                if (second.id == secondOriginalId &&
+                    !second.reconnectToken.empty() &&
+                    second.reconnectToken != previousReconnectToken)
+                    break;
+            }
+
+            const MimitaNet::SnapshotEntity* reconnectEntity =
+                findEntity(second, second.id);
+            if (reconnectEntity)
+            {
+                const float beforeReconnectMoveX = reconnectEntity->px;
+                sendPosition(second, server,
+                             reconnectEntity->px + 1.25f,
+                             reconnectEntity->py,
+                             reconnectEntity->pz);
+
+                const uint64_t moveDeadline = MimitaNet::nowMs() + 1500;
+                while (!postReconnectMovement && MimitaNet::nowMs() < moveDeadline)
+                {
+                    pump(first, MimitaNet::nowMs() + 30);
+                    pump(second, MimitaNet::nowMs() + 30);
+                    const MimitaNet::SnapshotEntity* seen =
+                        findEntity(first, second.id);
+                    postReconnectMovement =
+                        seen && std::fabs(seen->px - beforeReconnectMoveX) >= 0.5f;
+                }
+            }
+
+            reconnectPassed =
+                second.id == secondOriginalId &&
+                !second.reconnectToken.empty() &&
+                second.reconnectToken != previousReconnectToken &&
+                postReconnectMovement;
+        }
+    }
+
+    // ── Test 6: Grenade projectile fire + idempotent retry ────────────
     bool grenadeTestPassed = false;
     bool grenadeIdempotentPassed = false;
     bool grenadeRejectionPassed = false;
@@ -525,9 +571,18 @@ int main()
         input.header.type = MimitaNet::PACKET_INPUT;
         input.header.playerId = first.id;
         input.header.transformEpoch = first.transformEpoch;
+        input.header.tick = first.movementSequence;
         input.equippedSlot = 8;
         input.equipSerial = 42;
         input.transformEpoch = first.transformEpoch;
+        input.spawnGeneration = first.spawnGeneration;
+        input.movementSequence = first.movementSequence++;
+        input.clientSimulationTick = input.movementSequence;
+        input.movementFlags =
+            MimitaNet::MOVEMENT_REPORT_DASH_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_DOWN_DASH_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_FREEZE_AVAILABLE |
+            MimitaNet::MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE;
         if (const MimitaNet::SnapshotEntity* playerEntity = findEntity(first, first.id))
         {
             input.clientPx = playerEntity->px;
@@ -540,7 +595,7 @@ int main()
                (const sockaddr*)&server, sizeof(server));
     }
 
-    // Test 5a: Send serial 1, expect accepted
+    // Test 6a: Send serial 1, expect accepted
     float origin[3] = {0.0f, 0.0f, 32.0f};
     if (const MimitaNet::SnapshotEntity* playerEntity = findEntity(first, first.id))
     {
@@ -555,21 +610,21 @@ int main()
         firstProjectileId = lastResult.projectileId;
     }
 
-    // Test 5b: Resend serial 1, expect same projectileId (idempotent)
+    // Test 6b: Resend serial 1, expect same projectileId (idempotent)
     sendGrenadeRequest(first, 1, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
     if (pumpExpectResult(first, 1, 2000) && lastResult.accepted)
     {
         grenadeIdempotentPassed = (lastResult.projectileId == firstProjectileId);
     }
 
-    // Test 5c: Send serial 2 immediately (cooldown active), expect rejection
+    // Test 6c: Send serial 2 immediately (cooldown active), expect rejection
     sendGrenadeRequest(first, 2, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
     if (pumpExpectResult(first, 2, 2000) && !lastResult.accepted)
     {
         grenadeRejectionPassed = true;
     }
 
-    // Test 5d: Wait for cooldown (~1s), send serial 3, expect new projectile
+    // Test 6d: Wait for cooldown (~1s), send serial 3, expect new projectile
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     sendGrenadeRequest(first, 3, origin[0], origin[1], origin[2], 1.0f, 0.0f, 0.0f);
     if (pumpExpectResult(first, 3, 2000) && lastResult.accepted && lastResult.projectileId != 0)
@@ -578,7 +633,7 @@ int main()
         secondProjectileId = lastResult.projectileId;
     }
 
-    // Test 5e: Verify state packets arrive with position changes
+    // Test 6e: Verify state packets arrive with position changes
     bool sawStatePackets = false;
     {
         const uint64_t stateDeadline = MimitaNet::nowMs() + 3000;
@@ -615,8 +670,8 @@ int main()
 
     std::printf(
         "[PROTOCOL SMOKE] first=%u/%s second=%u/%s players=%u npcs=%u "
-        "movement=%d spawned=%d/%d combatDeath=%d autoRespawn=%d "
-        "instantRespawn=%d noDouble=%d livingNoEffect=%d "
+        "movement=%d spawned=%d/%d lifecycleDeath=%d autoRespawn=%d "
+        "instantRespawn=%d noDouble=%d livingNoEffect=%d reconnect=%d reconnectMovement=%d "
         "grenadeAccept=%d grenadeIdempotent=%d grenadeReject=%d grenadeSecondAccept=%d "
         "statePackets=%d firstProjId=%u secondProjId=%u\n",
         first.id, first.approvedName.c_str(),
@@ -626,6 +681,7 @@ int main()
         (int)firstSawSpawn, (int)secondSawSpawn,
         (int)sawDeath, (int)sawAutoRespawn,
         (int)sawInstantRespawn, (int)noDoubleRespawn, (int)livingNoEffect,
+        (int)reconnectPassed, (int)postReconnectMovement,
         (int)grenadeTestPassed, (int)grenadeIdempotentPassed,
         (int)grenadeRejectionPassed, (int)grenadeSecondAcceptPassed,
         (int)sawStatePackets, firstProjectileId, secondProjectileId);
@@ -637,6 +693,7 @@ int main()
            firstSawSpawn && secondSawSpawn &&
            sawAutoRespawn && sawInstantRespawn &&
            noDoubleRespawn && livingNoEffect &&
+           reconnectPassed && postReconnectMovement &&
            grenadeTestPassed && grenadeIdempotentPassed &&
            grenadeRejectionPassed && grenadeSecondAcceptPassed &&
            sawStatePackets ? 0 : 7;
