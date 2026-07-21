@@ -1,4 +1,5 @@
 {
+  "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/weapon_hitfx.json defining hit effect behavior for all weapons in mimita",
   "defaults": {
     "hitForce": {
       "enabled": true,

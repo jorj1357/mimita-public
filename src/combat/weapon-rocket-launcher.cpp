@@ -1,3 +1,13 @@
+// 07 20 2026, 19 45
+/* purpose
+* Implements rocket launcher firing, local projectile update, and visual effects.
+* Owns local rocket gameplay behavior for single-player and client prediction.
+* Keeps heavy render, audio, replay, hit effect, and NPC interactions out of the header.
+* Does NOT own server projectile authority or packet routing.
+* Does NOT define generic weapon request validation.
+* Does NOT implement movement, spawn, or respawn policy.
+*/
+
 #include "weapon-rocket-launcher.h"
 #include "weapon-types.h"
 #include "weapon-fire.h"
@@ -513,65 +523,6 @@ void update(
 
 void clear(RocketLauncherState& state) {
     state.activeRockets.clear();
-}
-
-void tagLatestLocalRocket(RocketLauncherState& state, uint32_t fireSerial)
-{
-    if (fireSerial == 0 || state.activeRockets.empty())
-        return;
-    for (auto it = state.activeRockets.rbegin(); it != state.activeRockets.rend(); ++it)
-    {
-        if (it->fireSerial == 0 && it->authoritativeProjectileId == 0)
-        {
-            it->fireSerial = fireSerial;
-            return;
-        }
-    }
-}
-
-bool attachAuthoritativeRocket(RocketLauncherState& state, uint32_t fireSerial, uint32_t projectileId)
-{
-    if (fireSerial == 0 || projectileId == 0)
-        return false;
-    for (auto& rocket : state.activeRockets)
-    {
-        if (rocket.fireSerial == fireSerial)
-        {
-            rocket.authoritativeProjectileId = projectileId;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool removeAuthoritativeRocket(RocketLauncherState& state, uint32_t projectileId)
-{
-    if (projectileId == 0)
-        return false;
-    for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); ++it)
-    {
-        if (it->authoritativeProjectileId == projectileId)
-        {
-            state.activeRockets.erase(it);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool removeLocalRocketByFireSerial(RocketLauncherState& state, uint32_t fireSerial)
-{
-    if (fireSerial == 0)
-        return false;
-    for (auto it = state.activeRockets.begin(); it != state.activeRockets.end(); ++it)
-    {
-        if (it->fireSerial == fireSerial)
-        {
-            state.activeRockets.erase(it);
-            return true;
-        }
-    }
-    return false;
 }
 
 } // namespace WeaponRocketLauncher

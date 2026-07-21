@@ -702,17 +702,11 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 
 void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const ProjectileFireResultPacket* event)
 {
-    // Also clear generic pending attack entry (migration bridge)
-    auto genIt = ctx.pendingAttackRequests.find(event->fireSerial);
-    if (genIt != ctx.pendingAttackRequests.end())
-        ctx.pendingAttackRequests.erase(genIt);
+    const ProjectileFireResultApplyOutcome outcome =
+        mpApplyProjectileFireResultToPending(ctx, *event);
 
-    auto it = ctx.pendingFireRequests.find(event->fireSerial);
-    if (event->accepted)
+    if (outcome.accepted)
     {
-        // Accepted: erase immediately, never refund
-        if (it != ctx.pendingFireRequests.end())
-            ctx.pendingFireRequests.erase(it);
         {
             auto& _lg = ::StructuredLogger::instance();
             if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
@@ -735,19 +729,8 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
     }
     else
     {
-        if (it != ctx.pendingFireRequests.end())
+        if (outcome.clearedProjectilePending)
         {
-            // Genuine rejection of a still-pending, never-accepted serial
-            if (ctx.processedRefundSerials.count(event->fireSerial) == 0)
-            {
-                MultiplayerContext::FireRejection fr;
-                fr.fireSerial = event->fireSerial;
-                fr.weapon = event->weapon;
-                fr.reason = event->reason;
-                fr.cooldownRemaining = event->cooldownRemaining;
-                ctx.fireRejections.push_back(fr);
-                ctx.processedRefundSerials.insert(event->fireSerial);
-            }
             {
                 auto& _lg = ::StructuredLogger::instance();
                 if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
@@ -760,13 +743,13 @@ void mpProcessProjectileFireResultPacket(MultiplayerContext& ctx, const Projecti
                     e.reason = "rejected";
                     char b[256]; std::snprintf(b, sizeof(b),
                         "fireSerial=%u reason=%d cooldownRemaining=%.2f refundQueued=%d",
-                        event->fireSerial, (int)event->reason, event->cooldownRemaining,
+                        event->fireSerial, (int)event->reason,
+                        event->cooldownRemaining,
                         (int)(ctx.processedRefundSerials.count(event->fireSerial) > 0));
                     e.message = b;
                     _lg.write(e);
                 }
             }
-            ctx.pendingFireRequests.erase(it);
         }
         else
         {

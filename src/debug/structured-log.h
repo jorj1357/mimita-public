@@ -1,7 +1,18 @@
+// 07 20 2026, 19 43
+/* purpose
+* Declares the structured debug logging API and configuration types.
+* Provides category, level, throttling, and structured field definitions.
+* Shares logger entry points used by gameplay, networking, and diagnostics.
+* Does NOT own gameplay decisions, rendering, audio, or networking transport.
+* Does NOT replace the lightweight Debug log facade.
+* Does NOT define checker policy or task completion behavior.
+*/
+
 #pragma once
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
